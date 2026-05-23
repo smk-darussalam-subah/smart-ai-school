@@ -1,0 +1,208 @@
+// =============================================================================
+// Prisma Schema — Smart AI School (SMK Darussalam Subah)
+// Database: PostgreSQL 16 + pgvector
+// Prinsip: UUID PK, timestamps di semua tabel, soft delete, schema terpisah
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema", "postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector, uuidOssp(map: "uuid-ossp"), pgTrgm(map: "pg_trgm")]
+  schemas    = ["auth", "academic", "student", "teacher", "ppdb", "finance", "notification", "ai_knowledge"]
+}
+
+// =============================================================================
+// AUTH SCHEMA
+// =============================================================================
+
+model User {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  keycloakId  String    @unique @map("keycloak_id") @db.Uuid
+  email       String    @unique @db.VarChar(255)
+  fullName    String    @map("full_name") @db.VarChar(255)
+  phone       String?   @db.VarChar(20)
+  role        UserRole
+  isActive    Boolean   @default(true) @map("is_active")
+  avatarUrl   String?   @map("avatar_url")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at") // soft delete
+
+  // Relations
+  student     Student?
+  teacher     Teacher?
+  parent      Student[] @relation("ParentStudent")
+  leads       PpdbLead[] @relation("AssignedLeads")
+
+  @@map("users")
+  @@schema("auth")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  KEPALA_SEKOLAH
+  GURU
+  SISWA
+  ORANG_TUA
+  INDUSTRI
+
+  @@schema("auth")
+}
+
+// =============================================================================
+// ACADEMIC SCHEMA
+// =============================================================================
+
+model Class {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String    @db.VarChar(50)   // mis: 'XII RPL 1'
+  majorCode    String    @map("major_code") @db.VarChar(10) // RPL, TKRO, DKV, AKL
+  grade        Int       // 10, 11, 12
+  academicYear String    @map("academic_year") @db.VarChar(9) // '2025/2026'
+  capacity     Int       @default(36)
+  teacherId    String?   @map("teacher_id") @db.Uuid // wali kelas
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  students   Student[]
+  teacher    Teacher?  @relation(fields: [teacherId], references: [id])
+
+  @@unique([name, academicYear])
+  @@map("classes")
+  @@schema("academic")
+}
+
+// =============================================================================
+// STUDENT SCHEMA
+// =============================================================================
+
+model Student {
+  id        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String        @unique @map("user_id") @db.Uuid
+  nis       String        @unique @db.VarChar(20) // Nomor Induk Siswa
+  classId   String?       @map("class_id") @db.Uuid
+  parentId  String?       @map("parent_id") @db.Uuid
+  status    StudentStatus @default(active)
+  joinedAt  DateTime      @map("joined_at") @db.Date
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+  deletedAt DateTime?     @map("deleted_at")
+
+  // Relations
+  user      User    @relation(fields: [userId], references: [id])
+  class     Class?  @relation(fields: [classId], references: [id])
+  parent    User?   @relation("ParentStudent", fields: [parentId], references: [id])
+
+  @@map("students")
+  @@schema("student")
+}
+
+enum StudentStatus {
+  active
+  inactive
+  graduated
+  dropped
+
+  @@schema("student")
+}
+
+// =============================================================================
+// TEACHER SCHEMA
+// =============================================================================
+
+model Teacher {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String    @unique @map("user_id") @db.Uuid
+  nip         String?   @unique @db.VarChar(20) // Nomor Induk Pegawai
+  isWaliKelas Boolean   @default(false) @map("is_wali_kelas")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  // Relations
+  user       User    @relation(fields: [userId], references: [id])
+  walikelas  Class[]
+
+  @@map("teachers")
+  @@schema("teacher")
+}
+
+// =============================================================================
+// PPDB SCHEMA
+// =============================================================================
+
+model PpdbLead {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fullName       String     @map("full_name") @db.VarChar(255)
+  phone          String     @db.VarChar(20)
+  schoolOrigin   String?    @map("school_origin") @db.VarChar(255)
+  interestMajor  String?    @map("interest_major") @db.VarChar(100)
+  source         LeadSource @default(other)
+  status         LeadStatus @default(new)
+  notes          String?    @db.Text
+  assignedTo     String?    @map("assigned_to") @db.Uuid
+  followUpAt     DateTime?  @map("follow_up_at")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  // Relations
+  assignedUser  User? @relation("AssignedLeads", fields: [assignedTo], references: [id])
+
+  @@index([status, createdAt])
+  @@index([phone])
+  @@map("leads")
+  @@schema("ppdb")
+}
+
+enum LeadStatus {
+  new
+  contacted
+  interested
+  registered
+  paid
+  accepted
+  rejected
+  cold
+
+  @@schema("ppdb")
+}
+
+enum LeadSource {
+  chatbot_wa
+  website
+  referral
+  instagram
+  tiktok
+  event
+  walk_in
+  other
+
+  @@schema("ppdb")
+}
+
+// =============================================================================
+// AI KNOWLEDGE SCHEMA (untuk RAG)
+// =============================================================================
+
+model KnowledgeDocument {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title       String   @db.VarChar(500)
+  content     String   @db.Text
+  // embedding di-handle via raw query karena Prisma belum support vector type sepenuhnya
+  source      String   @db.VarChar(255)
+  category    String   @db.VarChar(100)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@map("documents")
+  @@schema("ai_knowledge")
+}
