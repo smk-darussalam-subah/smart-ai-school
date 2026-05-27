@@ -335,7 +335,6 @@ services:
         /opt/backup-bin/mc mb --ignore-existing myminio/"$$BACKUP_BUCKET"
         echo "[pg-backup] Bucket '$$BACKUP_BUCKET' siap"
         printenv | grep -E '^(PGPASSWORD|POSTGRES_HOST|POSTGRES_USER|POSTGRES_DB|MINIO_|BACKUP_|TZ)=' > /etc/backup.env
-        chmod +x /backup.sh
         echo "0 19 * * * . /etc/backup.env && sh /backup.sh >> /var/log/backup.log 2>&1" | crontab -
         echo '[pg-backup] Backup dijadwalkan setiap 02:00 WIB (19:00 UTC). Container siap.'
         crond -f -l 2
