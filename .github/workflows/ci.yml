@@ -81,18 +81,28 @@ jobs:
           npm run db:generate
           npm run db:migrate -- --skip-seed
 
-      - name: Run tests
+      # Menjalankan semua test di semua packages via Turborepo:
+      #   - packages/auth: unit tests (mock jwks-rsa + jsonwebtoken) — ≥70% coverage enforced
+      #   - apps/api: integration tests NestJS (KeycloakGuard, ZodPipe)
+      #   - apps/web: belum ada test (Tahap 1)
+      - name: Run tests (semua packages)
         env:
           DATABASE_URL: postgresql://smk_test:smk_test_password@localhost:5432/smk_test
           REDIS_URL: redis://localhost:6379
           NODE_ENV: test
+          KEYCLOAK_URL: http://localhost:8080
+          KEYCLOAK_REALM: diis
         run: npm run test -- --coverage
 
-      - name: Upload coverage
+      - name: Upload coverage (semua packages)
         uses: codecov/codecov-action@v4
         if: always()
         with:
           fail_ci_if_error: false
+          # Coverage files dari semua packages
+          files: |
+            packages/auth/coverage/lcov.info
+            apps/api/coverage/lcov.info
 
   # ── Build Check ────────────────────────────────────────────────────────────
   build:
