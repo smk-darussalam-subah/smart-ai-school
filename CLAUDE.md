@@ -1,6 +1,6 @@
 # CLAUDE.md — DIIS Smart AI School
 > Brief permanen untuk Claude Code. Baca ini sebelum mengerjakan task apapun.
-> Diperbarui oleh: Cowork AI (koordinator) | Versi: 1.0 | 25 Mei 2026
+> Diperbarui oleh: Cowork AI (koordinator) | Versi: 1.1 | 28 Mei 2026
 
 ---
 
@@ -9,7 +9,8 @@
 **Nama:** DIIS — Digital Integrated Information System
 **Visi:** Smart AI Vocational School Ecosystem 5.0
 **Sekolah:** SMK Darussalam Subah
-**Fase aktif:** Tahap 0 — Foundation (23 Mei – 20 Juni 2026)
+**Fase aktif:** Tahap 1 — System Design & Core Build (mulai 28 Mei 2026)
+**Tahap 0:** ✅ SELESAI 2026-05-28 — Go/No-Go LULUS, 23/23 deliverable terverifikasi
 **Direktur:** Kang Sholah (Arsitek & Decision Maker)
 **Koordinator AI:** Cowork (planning, specs, Linear, Notion)
 **Eksekutor AI:** Claude Code (coding, testing, refactor, debug)
@@ -318,4 +319,4 @@ WAJIB menyertakan bukti runtime berupa salah satu:
 ---
 
 *Dokumen ini dikelola oleh Cowork AI. Claude Code hanya membaca, tidak mengubah file ini.*
-*Update terakhir: 2026-05-26 — Audit System Analyst: 9 blocking issues, runtime DoD baru, APP_GUARD decision*
+*Update terakhir: 2026-05-28 — Tahap 0 SELESAI. Go/No-Go LULUS 23/23. Fase aktif: Tahap 1.*
