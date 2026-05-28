@@ -105,11 +105,14 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9000/health/ready || exit 1"]
+      # Keycloak 24 ubi9-micro image tidak punya curl/wget/bash.
+      # Gunakan /proc/net/tcp6 untuk verifikasi port 8080 (0x1F90) listening.
+      # tcp6 dipakai karena Keycloak 24 default listen di IPv6 stack.
+      test: ["CMD-SHELL", "cat /proc/net/tcp6 2>/dev/null | grep -q ':1F90 ' || cat /proc/net/tcp 2>/dev/null | grep -q ':1F90 '"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 90s
 
   # ─── AUTOMATION ENGINE ────────────────────────────────────────────────────
 
