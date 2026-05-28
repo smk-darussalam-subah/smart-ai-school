@@ -14,6 +14,8 @@
 | Regulasi (R-) | 5 | 5 | 0 | 0 |
 | **TOTAL** | **24** | **12** | **0** | **12** |
 
+> ℹ️ W3-03 Security Hardening Verification (SMA-16) selesai 2026-05-28 — 62 tests PASS, 12 item diverifikasi runtime. Bukan temuan audit baru, tapi verifikasi ulang security baseline Tahap 0. Lihat `.tasks/done/SMA-16-W3-03-DONE.md`.
+
 ---
 
 ## 🔴 CRITICAL — Wajib selesai sebelum Security Gate (9 Juni 2026)

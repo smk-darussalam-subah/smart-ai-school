@@ -1,49 +1,75 @@
-# 🎉 TAHAP 0 SELESAI — MASUK TAHAP 1
+# TASK AKTIF — W4-01 Dokumentasi Arsitektur (SMA-18)
 
 **Update oleh:** Cowork AI
 **Tanggal:** 2026-05-28
 
 ---
 
-## Go/No-Go Decision — ✅ GO
+## W3-03 Selesai ✅
 
 | Item | Status |
 |---|---|
-| 23/23 deliverable Tahap 0 LULUS | ✅ |
-| Security Gate sign-off | ✅ 2026-05-28 |
-| staging → main merge | ✅ 2026-05-28 |
-| Go/No-Go dokumen formal (SMA-20) | ✅ `docs/gates/go-no-go-tahap0.md` |
-
-**Tahap 1 — System Design & Core Build: DIBUKA** 🟢
-
----
-
-## TASK AKTIF — Carryover & Kickoff Tahap 1
-
-### Prioritas segera (Cowork + Claude Code):
-
-| Task | Linear | Estimasi | Model | Catatan |
-|---|---|---|---|---|
-| W3-03 Security Hardening Verification ulang | SMA-16 | 1 jam | Sonnet | 12 item dengan runtime proof |
-| W3-02 Grafana dashboards | SMA-15 | 1.5 jam | Haiku | Node.js + PostgreSQL + Redis |
-| W4-01 Dokumentasi Arsitektur | SMA-18 | 1.5 jam | Haiku | system-overview, env-vars, setup-server |
-| W4-02 Developer Onboarding Guide | SMA-19 | 45 menit | Haiku | |
-| W2-04 n8n workflow health-check | SMA-12 | 1 jam | Haiku | HTTP check setiap 5 menit |
-
-### CLAUDE.md perlu diupdate:
-- Fase aktif: Tahap 0 → **Tahap 1**
-- Section 7 status diupdate
+| 12/12 security hardening items diverifikasi | ✅ |
+| 62/62 tests PASS (8 test suites) | ✅ |
+| env.validation.ts fail-fast di startup | ✅ |
+| Bug fix: Helmet Express → Fastify onSend hook | ✅ |
+| CLAUDE.md Section 10 + 2 keputusan arsitektur baru | ✅ |
+| Done report: `.tasks/done/SMA-16-W3-03-DONE.md` | ✅ |
 
 ---
 
-## Keycloak Status
+## TASK AKTIF — W4-01 Dokumentasi Arsitektur (SMA-18)
 
-`smk-keycloak` sekarang **healthy** — health check diganti ke `/proc/net/tcp6` (ubi9-micro tidak punya curl).
+**Linear:** SMA-18
+**Estimasi:** 1.5 jam
+**Model rekomendasi:** Claude Haiku 4.5
+
+### Scope — 3 dokumen:
+
+#### 1. `docs/architecture/system-overview.md`
+Dokumen teknis arsitektur sistem DIIS. Isi:
+- Diagram teks (ASCII/mermaid) infrastruktur Docker (14 services)
+- Penjelasan setiap layer: Frontend → API → Auth → DB → Cache → AI → Monitoring → Backup
+- Network topology (smk-network internal, nginx sebagai satu-satunya public-facing)
+- Role-based access matrix ringkasan (7 roles)
+- Tech stack table lengkap (dari CLAUDE.md Section 3)
+- Data flow diagram: user request → nginx → api → keycloak verify → postgres
+
+#### 2. `docs/deployment/env-variables.md`
+Dokumentasi lengkap semua environment variable. Isi:
+- **apps/api/.env** — semua var dari `env.validation.ts` + optional vars
+- **apps/web/.env.local** — NEXTAUTH_URL, NEXTAUTH_SECRET, KEYCLOAK_*, API_URL
+- **infrastructure/docker/docker-compose.yml** — semua `${VAR}` yang digunakan services
+- Format tabel: Variable | Required | Default | Deskripsi | Contoh Nilai
+- Security note: file mana yang TIDAK boleh di-commit ke git
+
+#### 3. `docs/deployment/setup-server.md`
+Panduan setup VPS baru dari scratch. Isi:
+- Prasyarat: Ubuntu 22.04, Docker Compose v2, minimum spec (2 CPU, 4GB RAM)
+- Step-by-step: clone repo → copy .env → docker compose up
+- Keycloak first-time setup (import realm, buat admin user)
+- DNS + Cloudflare config ringkasan
+- Verifikasi deployment (checklist `docker compose ps` semua healthy)
+- Referensi ke docs lain (development-setup.md, restore-database.md)
+
+### Constraints
+- Tidak ada kode baru — dokumentasi saja
+- Semua path file harus akurat (cek dari codebase nyata)
+- Tidak ada info sensitif (password, IP VPS, API key) — pakai placeholder `<nilai>`
+- `npx tsc --noEmit` tidak perlu dijalankan (tidak ada kode TypeScript)
+
+### Definition of Done
+- [ ] `docs/architecture/system-overview.md` dibuat
+- [ ] `docs/deployment/env-variables.md` dibuat
+- [ ] `docs/deployment/setup-server.md` dibuat
+- [ ] Semua path file di dokumen akurat (tidak ada referensi file fiktif)
+- [ ] Laporan di `.tasks/done/SMA-18-W4-01-DONE.md`
 
 ---
 
-## Catatan Penting untuk Claude Code (Tahap 1)
+## Paralel (bisa dikerjakan Claude Code bersamaan):
 
-- Semua task Tahap 1 WAJIB ikuti Runtime Verification DoD (CLAUDE.md Section 9)
-- Setiap PR ke staging → main butuh review (checklist CLAUDE.md)
-- Carryover items C-01..C-09 tersedia di `docs/gates/go-no-go-tahap0.md`
+| Task | Linear | Estimasi | Model |
+|---|---|---|---|
+| W4-02 Developer Onboarding Guide | SMA-19 | 45 menit | Haiku |
+| W2-04 n8n workflow health-check | SMA-12 | 1 jam | Haiku |

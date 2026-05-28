@@ -310,6 +310,8 @@ WAJIB menyertakan bukti runtime berupa salah satu:
 | Validation | Zod (bukan class-validator) | Runtime type safety, shareable dengan frontend |
 | Auth Provider | Keycloak JWKS (bukan JWT secret) | Production-grade, key rotation support |
 | Auth Guard Model | APP_GUARD global, opt-out via @Public() | Security by default — endpoint baru protected tanpa perlu dekorasi eksplisit. Mencegah T-02 terulang. (SMA-23, 2026-05-26) |
+| Auth Rate Limit | @Throttle({ default: { ttl: 60_000, limit: 15 } }) wajib di auth endpoints | Mencegah credential stuffing. Default global throttle (100 req/menit) terlalu longgar untuk auth endpoints. Auth dibatasi 15 req/menit per IP. (SMA-16, 2026-05-28) |
+| Security Headers | Fastify onSend hook (bukan Express helmet as Fastify plugin) | Express helmet tidak kompatibel langsung sebagai Fastify plugin. Header di-set via addHook('onSend') — fungsional equivalent, tested runtime. (SMA-16, 2026-05-28) |
 | DB Pattern | Multi-schema Prisma | Domain isolation tanpa overhead microservice |
 | AI Lokal | Ollama (bukan OpenAI default) | Data sensitif siswa tidak keluar server |
 | State Mgmt | React Server Components first | Minimal client JS, better SEO, faster TTFB |
