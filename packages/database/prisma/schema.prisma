@@ -46,10 +46,11 @@ model User {
 enum UserRole {
   SUPER_ADMIN
   KEPALA_SEKOLAH
+  TATA_USAHA    // Staf administrasi: keuangan, PPDB admin, data siswa
   GURU
   SISWA
   ORANG_TUA
-  INDUSTRI
+  INDUSTRI      // Mitra industri: PKL/Prakerin, BKK, rekrutmen
 
   @@schema("auth")
 }

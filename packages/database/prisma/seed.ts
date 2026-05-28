@@ -1,291 +1,324 @@
 import { PrismaClient } from '@prisma/client';
-import { randomUUID } from 'crypto';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: { db: { url: process.env.DATABASE_URL } },
+  log: ['error'],
+});
+
+// =============================================================================
+// Helper
+// =============================================================================
+
+function uuid(prefix: string, n: number): string {
+  const hex = n.toString(16).padStart(4, '0');
+  return `${prefix}-0000-0000-0000-${hex.padStart(12, '0')}`;
+}
+
+// =============================================================================
+// Seed
+// =============================================================================
 
 async function main() {
-  console.log('🌱 Starting seed...');
+  console.log('🌱 Starting seed — SMK Darussalam Subah...\n');
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // USERS & ROLES
+  // USERS — AUTH SCHEMA
+  // Jurusan: AKL, TKJ, TKRO, TBSM (baru)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const adminUser = await prisma.user.upsert({
+  // ── Super Admin ────────────────────────────────────────────────────────────
+  await prisma.user.upsert({
     where: { email: 'admin@smkdarussalamsubah.sch.id' },
     update: {},
     create: {
       keycloakId: 'fb0f3a8e-7a8d-4c2f-89b1-3e4c5d6f7a8b',
       email: 'admin@smkdarussalamsubah.sch.id',
       fullName: 'Administrator Sistem',
-      phone: '08123456789',
+      phone: '08123456780',
       role: 'SUPER_ADMIN',
       isActive: true,
     },
   });
 
-  console.log('✓ Admin user created/updated');
-
-  // Kepala Sekolah
-  const kepalaSekolah = await prisma.user.upsert({
+  // ── Kepala Sekolah ─────────────────────────────────────────────────────────
+  await prisma.user.upsert({
     where: { email: 'kepala@smkdarussalamsubah.sch.id' },
     update: {},
     create: {
       keycloakId: 'fc1f3a9e-7a8d-4c2f-89b1-3e4c5d6f7a8c',
       email: 'kepala@smkdarussalamsubah.sch.id',
-      fullName: 'Drs. Kepala Sekolah',
-      phone: '08198765432',
+      fullName: 'Drs. H. Abdul Karim, M.Pd',
+      phone: '08198765430',
       role: 'KEPALA_SEKOLAH',
       isActive: true,
     },
   });
 
-  // 5 Guru
-  const gurus = await Promise.all(
-    [
-      {
-        keycloakId: '12345678-1234-1234-1234-123456789abc',
-        email: 'guru.agus@smkdarussalamsubah.sch.id',
-        fullName: 'Agus Hermawan, S.Pd',
-      },
-      {
-        keycloakId: '12345678-1234-1234-1234-123456789abd',
-        email: 'guru.siti@smkdarussalamsubah.sch.id',
-        fullName: 'Siti Nurhaliza, S.Pd',
-      },
-      {
-        keycloakId: '12345678-1234-1234-1234-123456789abe',
-        email: 'guru.budi@smkdarussalamsubah.sch.id',
-        fullName: 'Budi Santoso, S.T',
-      },
-      {
-        keycloakId: '12345678-1234-1234-1234-123456789abf',
-        email: 'guru.rina@smkdarussalamsubah.sch.id',
-        fullName: 'Rina Wijaya, S.Kom',
-      },
-      {
-        keycloakId: '12345678-1234-1234-1234-123456789ab0',
-        email: 'guru.hendra@smkdarussalamsubah.sch.id',
-        fullName: 'Hendra Gunawan, S.Pd.T',
-      },
-    ].map((guru) =>
-      prisma.user.upsert({
-        where: { email: guru.email },
-        update: {},
-        create: {
-          ...guru,
-          phone: `08${Math.random().toString().slice(2, 11)}`,
-          role: 'GURU',
-          isActive: true,
-        },
-      }),
-    ),
-  );
+  // ── Tata Usaha ─────────────────────────────────────────────────────────────
+  const tuUser = await prisma.user.upsert({
+    where: { email: 'tu@smkdarussalamsubah.sch.id' },
+    update: {},
+    create: {
+      keycloakId: 'fd2f3b0e-7a8d-4c2f-89b1-3e4c5d6f7a8d',
+      email: 'tu@smkdarussalamsubah.sch.id',
+      fullName: 'Sari Wulandari, S.Pd',
+      phone: '08198765431',
+      role: 'TATA_USAHA',
+      isActive: true,
+    },
+  });
 
-  console.log('✓ 5 Guru users created/updated');
+  // ── Mitra Industri ─────────────────────────────────────────────────────────
+  await prisma.user.upsert({
+    where: { email: 'industri@smkdarussalamsubah.sch.id' },
+    update: {},
+    create: {
+      keycloakId: 'fe3f3c1e-7a8d-4c2f-89b1-3e4c5d6f7a8e',
+      email: 'industri@smkdarussalamsubah.sch.id',
+      fullName: 'PT Mitra Teknologi Subah',
+      phone: '08567000001',
+      role: 'INDUSTRI',
+      isActive: true,
+    },
+  });
 
-  // 20 Siswa
-  const siswaUsers = await Promise.all(
-    Array.from({ length: 20 }, (_, i) =>
-      prisma.user.upsert({
-        where: { email: `siswa${i + 1}@smkdarussalamsubah.sch.id` },
-        update: {},
-        create: {
-          keycloakId: randomUUID(),
-          email: `siswa${i + 1}@smkdarussalamsubah.sch.id`,
-          fullName: `Siswa ${i + 1}`,
-          phone: `08${Math.random().toString().slice(2, 11)}`,
-          role: 'SISWA',
-          isActive: true,
-        },
-      }),
-    ),
-  );
+  console.log('✓ Admin, Kepala Sekolah, TU, Industri — created');
 
-  console.log('✓ 20 Siswa users created/updated');
+  // ── 10 Guru (1 per kelas sebagai wali kelas) ───────────────────────────────
+  // AKL: 3 guru | TKJ: 3 guru | TKRO: 3 guru | TBSM: 1 guru
+  const guruData = [
+    // AKL
+    { n: 1, name: 'Dra. Hj. Nurul Hidayah, M.Ak',  jurusan: 'AKL',  mapel: 'Akuntansi Dasar' },
+    { n: 2, name: 'Lina Marlina, S.E',              jurusan: 'AKL',  mapel: 'Perpajakan' },
+    { n: 3, name: 'Rudi Hartono, S.E., M.M',        jurusan: 'AKL',  mapel: 'Perbankan' },
+    // TKJ
+    { n: 4, name: 'Agus Setiawan, S.Kom',           jurusan: 'TKJ',  mapel: 'Jaringan Komputer' },
+    { n: 5, name: 'Budi Prasetyo, S.T',             jurusan: 'TKJ',  mapel: 'Sistem Operasi' },
+    { n: 6, name: 'Maya Sari, S.Kom',               jurusan: 'TKJ',  mapel: 'Pemrograman Web' },
+    // TKRO
+    { n: 7, name: 'Dedi Kurniawan, S.T',            jurusan: 'TKRO', mapel: 'Motor Bensin' },
+    { n: 8, name: 'Eko Wahyudi, S.T',               jurusan: 'TKRO', mapel: 'Kelistrikan Otomotif' },
+    { n: 9, name: 'Fajar Nugroho, S.T',             jurusan: 'TKRO', mapel: 'Chasis & Pemindah Daya' },
+    // TBSM
+    { n: 10, name: 'Ganda Pratama, S.T',            jurusan: 'TBSM', mapel: 'Teknik Sepeda Motor' },
+  ];
 
-  // 5 Orang Tua
-  const orangTuaUsers = await Promise.all(
-    Array.from({ length: 5 }, (_, i) =>
-      prisma.user.upsert({
-        where: { email: `orangtua${i + 1}@smkdarussalamsubah.sch.id` },
-        update: {},
-        create: {
-          keycloakId: randomUUID(),
-          email: `orangtua${i + 1}@smkdarussalamsubah.sch.id`,
-          fullName: `Orang Tua ${i + 1}`,
-          phone: `08${Math.random().toString().slice(2, 11)}`,
-          role: 'ORANG_TUA',
-          isActive: true,
-        },
-      }),
-    ),
-  );
+  const guruUsers = [];
+  for (const { n, name } of guruData) {
+    const u = await prisma.user.upsert({
+      where: { email: `guru${n}@smkdarussalamsubah.sch.id` },
+      update: {},
+      create: {
+        keycloakId: uuid('aaaa0000', n),
+        email: `guru${n}@smkdarussalamsubah.sch.id`,
+        fullName: name,
+        phone: `081${String(n).padStart(9, '0')}`,
+        role: 'GURU',
+        isActive: true,
+      },
+    });
+    guruUsers.push(u);
+  }
 
-  console.log('✓ 5 Orang Tua users created/updated');
+  console.log('✓ 10 Guru users — created');
+
+  // ── 20 Siswa ───────────────────────────────────────────────────────────────
+  const siswaUsers = [];
+  for (let i = 0; i < 20; i++) {
+    const u = await prisma.user.upsert({
+      where: { email: `siswa${i + 1}@smkdarussalamsubah.sch.id` },
+      update: {},
+      create: {
+        keycloakId: uuid('bbbb0000', i + 1),
+        email: `siswa${i + 1}@smkdarussalamsubah.sch.id`,
+        fullName: `Siswa ${i + 1} SMK Darussalam`,
+        phone: `082${String(i + 1).padStart(9, '0')}`,
+        role: 'SISWA',
+        isActive: true,
+      },
+    });
+    siswaUsers.push(u);
+  }
+
+  console.log('✓ 20 Siswa users — created');
+
+  // ── 5 Orang Tua ───────────────────────────────────────────────────────────
+  const orangTuaUsers = [];
+  for (let i = 0; i < 5; i++) {
+    const u = await prisma.user.upsert({
+      where: { email: `orangtua${i + 1}@smkdarussalamsubah.sch.id` },
+      update: {},
+      create: {
+        keycloakId: uuid('cccc0000', i + 1),
+        email: `orangtua${i + 1}@smkdarussalamsubah.sch.id`,
+        fullName: `Orang Tua Siswa ${i + 1}`,
+        phone: `083${String(i + 1).padStart(9, '0')}`,
+        role: 'ORANG_TUA',
+        isActive: true,
+      },
+    });
+    orangTuaUsers.push(u);
+  }
+
+  console.log('✓ 5 Orang Tua users — created');
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TEACHER — GURU PROFILES (must be before Class creation)
+  // TEACHER PROFILES
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const teachers = await Promise.all(
-    gurus.map((guru, i) =>
-      prisma.teacher.upsert({
-        where: { userId: guru.id },
-        update: {},
-        create: {
-          userId: guru.id,
-          nip: `19${80 + i}0101${String(i + 1).padStart(5, '0')}`,
-          isWaliKelas: i < 3,
-        },
-      }),
-    ),
-  );
+  const teachers = [];
+  for (let i = 0; i < guruUsers.length; i++) {
+    const t = await prisma.teacher.upsert({
+      where: { userId: guruUsers[i].id },
+      update: {},
+      create: {
+        userId: guruUsers[i].id,
+        nip: `19${(75 + i).toString().padStart(2, '0')}0101${String(i + 1).padStart(6, '0')}`,
+        isWaliKelas: true,
+      },
+    });
+    teachers.push(t);
+  }
 
-  console.log('✓ 5 Guru profiles created/updated');
+  console.log('✓ 10 Teacher profiles — created');
 
   // ═══════════════════════════════════════════════════════════════════════════
   // ACADEMIC — KELAS
+  // Jurusan aktif: AKL, TKJ, TKRO
+  // Jurusan baru (persiapan): TBSM (hanya kelas X)
   // ═══════════════════════════════════════════════════════════════════════════
 
   const kelasData = [
+    // AKL — Akuntansi & Keuangan Lembaga
+    { name: 'X AKL 1',   majorCode: 'AKL',  grade: 10, teacherIdx: 0 },
+    { name: 'XI AKL 1',  majorCode: 'AKL',  grade: 11, teacherIdx: 1 },
+    { name: 'XII AKL 1', majorCode: 'AKL',  grade: 12, teacherIdx: 2 },
+    // TKJ — Teknik Komputer & Jaringan
+    { name: 'X TKJ 1',   majorCode: 'TKJ',  grade: 10, teacherIdx: 3 },
+    { name: 'XI TKJ 1',  majorCode: 'TKJ',  grade: 11, teacherIdx: 4 },
+    { name: 'XII TKJ 1', majorCode: 'TKJ',  grade: 12, teacherIdx: 5 },
+    // TKRO — Teknik Kendaraan Ringan Otomotif
+    { name: 'X TKRO 1',  majorCode: 'TKRO', grade: 10, teacherIdx: 6 },
+    { name: 'XI TKRO 1', majorCode: 'TKRO', grade: 11, teacherIdx: 7 },
+    { name: 'XII TKRO 1',majorCode: 'TKRO', grade: 12, teacherIdx: 8 },
+    // TBSM — Teknik & Bisnis Sepeda Motor (dibuka TA 2026/2027)
+    { name: 'X TBSM 1',  majorCode: 'TBSM', grade: 10, teacherIdx: 9 },
+  ];
+
+  const academicYear = '2025/2026';
+
+  const kelas = [];
+  for (const { name, majorCode, grade, teacherIdx } of kelasData) {
+    const k = await prisma.class.upsert({
+      where: { name_academicYear: { name, academicYear } },
+      update: {},
+      create: {
+        name,
+        majorCode,
+        grade,
+        academicYear,
+        capacity: 36,
+        teacherId: teachers[teacherIdx]?.id,
+        isActive: true,
+      },
+    });
+    kelas.push(k);
+  }
+
+  console.log('✓ 10 Kelas (AKL×3, TKJ×3, TKRO×3, TBSM×1) — created');
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STUDENT PROFILES
+  // Distribusi: 2 siswa per kelas × 10 kelas = 20 siswa
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  for (let i = 0; i < siswaUsers.length; i++) {
+    const kelasIdx = Math.floor(i / 2) % kelas.length;
+    await prisma.student.upsert({
+      where: { userId: siswaUsers[i].id },
+      update: {},
+      create: {
+        userId: siswaUsers[i].id,
+        nis: `20250${String(i + 1).padStart(4, '0')}`,
+        classId: kelas[kelasIdx]?.id,
+        parentId: i < 5 ? orangTuaUsers[i]?.id : undefined,
+        status: 'active',
+        joinedAt: new Date('2025-07-14'),
+      },
+    });
+  }
+
+  console.log('✓ 20 Student profiles — distributed across 10 kelas');
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PPDB — LEADS (berbagai status)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const leadsData = [
     {
-      name: 'X RPL 1',
-      majorCode: 'RPL',
-      grade: 10,
-      academicYear: '2025/2026',
-      capacity: 36,
-      teacherId: teachers[0]?.id,
+      id: 'aaaaaaaa-0001-0000-0000-000000000001',
+      fullName: 'Ahmad Rizki Maulana',
+      phone: '08123456789',
+      schoolOrigin: 'SMP Negeri 1 Subah',
+      interestMajor: 'TKJ',
+      source: 'website'  as const,
+      status: 'new'       as const,
+      assignedTo: guruUsers[3]?.id, // guru TKJ
     },
     {
-      name: 'XI RPL 1',
-      majorCode: 'RPL',
-      grade: 11,
-      academicYear: '2025/2026',
-      capacity: 36,
-      teacherId: teachers[1]?.id,
+      id: 'aaaaaaaa-0001-0000-0000-000000000002',
+      fullName: 'Budi Hermanto',
+      phone: '08234567890',
+      schoolOrigin: 'SMP Negeri 2 Subah',
+      interestMajor: 'AKL',
+      source: 'referral'  as const,
+      status: 'contacted' as const,
+      assignedTo: guruUsers[0]?.id, // guru AKL
     },
     {
-      name: 'XII RPL 1',
-      majorCode: 'RPL',
-      grade: 12,
-      academicYear: '2025/2026',
-      capacity: 36,
-      teacherId: teachers[2]?.id,
+      id: 'aaaaaaaa-0001-0000-0000-000000000003',
+      fullName: 'Citra Dewi Lestari',
+      phone: '08345678901',
+      schoolOrigin: 'SMP Islam Subah',
+      interestMajor: 'AKL',
+      source: 'instagram'  as const,
+      status: 'interested' as const,
+      assignedTo: guruUsers[1]?.id,
+    },
+    {
+      id: 'aaaaaaaa-0001-0000-0000-000000000004',
+      fullName: 'Dina Salsabila',
+      phone: '08456789012',
+      schoolOrigin: 'SMP Negeri 3 Subah',
+      interestMajor: 'TKRO',
+      source: 'tiktok'     as const,
+      status: 'registered' as const,
+      assignedTo: guruUsers[6]?.id, // guru TKRO
+    },
+    {
+      id: 'aaaaaaaa-0001-0000-0000-000000000005',
+      fullName: 'Eka Putra Ramadhan',
+      phone: '08567890123',
+      schoolOrigin: 'SMP Swasta Al-Hidayah',
+      interestMajor: 'TBSM',
+      source: 'event'     as const,
+      status: 'paid'      as const,
+      assignedTo: guruUsers[9]?.id, // guru TBSM
     },
   ];
 
-  const kelas = await Promise.all(
-    kelasData.map((k) =>
-      prisma.class.upsert({
-        where: { name_academicYear: { name: k.name, academicYear: k.academicYear } },
-        update: {},
-        create: k,
-      }),
-    ),
-  );
+  for (const lead of leadsData) {
+    await prisma.ppdbLead.upsert({
+      where: { id: lead.id },
+      update: {},
+      create: lead,
+    });
+  }
 
-  console.log('✓ 3 Kelas created/updated');
+  console.log('✓ 5 PPDB Leads (new→paid pipeline) — created');
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // STUDENT — SISWA
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  const students = await Promise.all(
-    siswaUsers.map((user, i) =>
-      prisma.student.upsert({
-        where: { userId: user.id },
-        update: {},
-        create: {
-          userId: user.id,
-          nis: `2025${String(i + 1).padStart(5, '0')}`,
-          classId: kelas[i % 3]?.id,
-          parentId: i < 5 ? orangTuaUsers[i]?.id : undefined,
-          status: 'active',
-          joinedAt: new Date('2025-01-01'),
-        },
-      }),
-    ),
-  );
-
-  console.log('✓ 20 Siswa profiles created/updated');
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PPDB — LEADS
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  const leadIds = [
-    'aaaaaaaa-0001-0000-0000-000000000001',
-    'aaaaaaaa-0001-0000-0000-000000000002',
-    'aaaaaaaa-0001-0000-0000-000000000003',
-    'aaaaaaaa-0001-0000-0000-000000000004',
-    'aaaaaaaa-0001-0000-0000-000000000005',
-  ];
-
-  const leads = await Promise.all(
-    [
-      {
-        id: leadIds[0],
-        fullName: 'Ahmad Rizki',
-        phone: '08123456789',
-        schoolOrigin: 'SMP Negeri 1 Subah',
-        interestMajor: 'RPL',
-        source: 'website' as const,
-        status: 'new' as const,
-        assignedTo: gurus[0]?.id,
-      },
-      {
-        id: leadIds[1],
-        fullName: 'Budi Hermanto',
-        phone: '08234567890',
-        schoolOrigin: 'SMP Negeri 2 Subah',
-        interestMajor: 'RPL',
-        source: 'referral' as const,
-        status: 'contacted' as const,
-        assignedTo: gurus[1]?.id,
-      },
-      {
-        id: leadIds[2],
-        fullName: 'Citra Dewi',
-        phone: '08345678901',
-        schoolOrigin: 'SMP Islam Subah',
-        interestMajor: 'RPL',
-        source: 'instagram' as const,
-        status: 'interested' as const,
-        assignedTo: gurus[2]?.id,
-      },
-      {
-        id: leadIds[3],
-        fullName: 'Dina Salsabila',
-        phone: '08456789012',
-        schoolOrigin: 'SMP Negeri 3 Subah',
-        interestMajor: 'RPL',
-        source: 'tiktok' as const,
-        status: 'registered' as const,
-        assignedTo: gurus[3]?.id,
-      },
-      {
-        id: leadIds[4],
-        fullName: 'Eka Putra',
-        phone: '08567890123',
-        schoolOrigin: 'SMP Swasta Subah',
-        interestMajor: 'RPL',
-        source: 'event' as const,
-        status: 'paid' as const,
-        assignedTo: gurus[4]?.id,
-      },
-    ].map((lead) =>
-      prisma.ppdbLead.upsert({
-        where: { id: lead.id },
-        update: {},
-        create: lead,
-      }),
-    ),
-  );
-
-  console.log('✓ 5 PPDB Leads created/updated');
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // AI KNOWLEDGE — DOCUMENTS
+  // AI KNOWLEDGE — DOCUMENT
   // ═══════════════════════════════════════════════════════════════════════════
 
   await prisma.knowledgeDocument.upsert({
@@ -293,25 +326,35 @@ async function main() {
     update: {},
     create: {
       id: 'bbbbbbbb-0001-0000-0000-000000000001',
-      title: 'Panduan Kurikulum SMK RPL',
+      title: 'Panduan Kurikulum SMK Darussalam Subah',
       content:
-        'Kurikulum Rekayasa Perangkat Lunak (RPL) mencakup mata pelajaran teknologi informasi, pemrograman, dan pengembangan web.',
+        'SMK Darussalam Subah menyelenggarakan 4 program keahlian: ' +
+        'AKL (Akuntansi dan Keuangan Lembaga), ' +
+        'TKJ (Teknik Komputer dan Jaringan), ' +
+        'TKRO (Teknik Kendaraan Ringan Otomotif), ' +
+        'dan TBSM (Teknik dan Bisnis Sepeda Motor) yang akan dibuka TA 2026/2027.',
       source: 'internal',
       category: 'curriculum',
       isActive: true,
     },
   });
 
-  console.log('✓ AI Knowledge documents created/updated');
+  console.log('✓ AI Knowledge document — created\n');
 
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  console.log('🎉 Seed completed successfully!');
+  // ── Ringkasan ─────────────────────────────────────────────────────────────
+  console.log('═══════════════════════════════════════════════');
+  console.log('🎉 Seed completed! SMK Darussalam Subah data:');
+  console.log('   Users    : 4 staff + 10 guru + 20 siswa + 5 ortu + 1 industri = 40');
+  console.log('   Kelas    : AKL(3) + TKJ(3) + TKRO(3) + TBSM(1) = 10');
+  console.log('   Leads    : 5 (new→contacted→interested→registered→paid)');
+  console.log('   Roles    : SUPER_ADMIN, KEPALA_SEKOLAH, TATA_USAHA, GURU,');
+  console.log('              SISWA, ORANG_TUA, INDUSTRI (7 total)');
+  console.log('═══════════════════════════════════════════════');
 }
 
 main()
   .catch((e) => {
-    console.error('Error during seed:', e);
+    console.error('❌ Seed error:', e);
     process.exit(1);
   })
   .finally(async () => {

@@ -1,0 +1,11 @@
+{
+  "name": "@smk/config",
+  "version": "1.0.0",
+  "private": true,
+  "exports": {
+    "./tsconfig/*": "./tsconfig/*.json"
+  },
+  "scripts": {
+    "clean": "echo 'nothing to clean'"
+  }
+}
