@@ -30,28 +30,30 @@ jobs:
             set -euo pipefail
 
             echo "🚀 Deploying branch: ${{ github.ref_name }}"
-            cd /home/appuser/smart-ai-school
 
             # Pull kode terbaru
+            cd /home/appuser/smart-ai-school
             git fetch origin
             git checkout ${{ github.ref_name }}
             git pull origin ${{ github.ref_name }}
 
-            # Install dependencies (jika ada yang berubah)
-            npm ci --only=production
+            # Semua docker compose dijalankan dari direktori yang benar
+            cd /home/appuser/smart-ai-school/infrastructure/docker
 
-            # Pull image terbaru
-            docker compose pull api web
+            # Build image lokal (api & web pakai build: bukan image: dari registry)
+            docker compose build --no-cache api web
 
-            # Jalankan database migrations
+            # Jalankan database migrations sebelum restart
             docker compose run --rm api npx prisma migrate deploy
 
-            # Restart service dengan zero-downtime (recreate hanya yang berubah)
-            docker compose up -d --build --no-deps api web
+            # Restart service dengan rebuild
+            docker compose up -d --no-deps api web
 
-            # Verifikasi health check
-            sleep 15
-            curl -f http://localhost:3000/health || (echo "❌ API health check gagal!" && exit 1)
+            # Verifikasi health check — API tidak expose port ke host (security),
+            # gunakan docker exec untuk cek dari dalam container
+            sleep 20
+            docker exec smk-api curl -sf http://localhost:3001/health \
+              || (echo "❌ API health check gagal!" && exit 1)
 
             echo "✅ Deploy berhasil! Branch: ${{ github.ref_name }}"
 
