@@ -46,10 +46,11 @@ model User {
 enum UserRole {
   SUPER_ADMIN
   KEPALA_SEKOLAH
+  TATA_USAHA    // Staf administrasi: keuangan, PPDB admin, data siswa
   GURU
   SISWA
   ORANG_TUA
-  INDUSTRI
+  INDUSTRI      // Mitra industri: PKL/Prakerin, BKK, rekrutmen
 
   @@schema("auth")
 }
@@ -204,5 +205,17 @@ model KnowledgeDocument {
 
   @@index([category])
   @@map("documents")
+  @@schema("ai_knowledge")
+}
+
+model AiDocument {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  content   String   @db.Text
+  embedding Unsupported("vector(1536)")?
+  source    String   @db.VarChar(255)
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("ai_documents")
   @@schema("ai_knowledge")
 }

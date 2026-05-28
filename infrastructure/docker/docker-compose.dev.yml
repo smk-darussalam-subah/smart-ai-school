@@ -1,0 +1,24 @@
+# =============================================================================
+# docker-compose.dev.yml — Development Override
+# Expose port DB ke host agar developer bisa connect langsung dari mesin lokal
+# (Prisma Studio, DBeaver, redis-cli, dll.)
+#
+# PERINGATAN: JANGAN dipakai di production/VPS.
+# =============================================================================
+#
+# Cara pakai:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Atau tambahkan alias di shell:
+#   alias dcd="docker compose -f docker-compose.yml -f docker-compose.dev.yml"
+#   dcd up -d
+# =============================================================================
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
