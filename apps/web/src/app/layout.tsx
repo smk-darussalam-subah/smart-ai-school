@@ -1,18 +1,27 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
-import { SessionProvider } from '@/components/providers/SessionProvider';
+import dynamic from 'next/dynamic';
 import './globals.css';
 
-// Root layout sengaja TIDAK memanggil getServerSession() atau headers() di sini.
+// SessionProvider di-load dengan ssr: false — ini adalah fix untuk
+// next-auth v4 + React 19 incompatibility.
 //
-// Alasan:
-// - next-auth v4 + React 19 incompatibility: memanggil getServerSession di luar
-//   HTTP context (e.g. saat Next.js static-generate /404) memicu React error #31.
-// - nonce sudah di-generate middleware.ts via x-nonce header, tapi tidak perlu
-//   di-pass dari sini — component yang butuh nonce bisa baca sendiri via headers().
+// Root cause: next-auth v4 menggunakan React 18 internal APIs (refs, context)
+// yang incompatible dengan React 19 saat server-side rendering / static generation.
+// Hasilnya: React error #31 saat Next.js mencoba static-generate halaman seperti /404.
 //
-// Session difetch client-side oleh SessionProvider (via /api/auth/session).
-// Auth protection tetap aman karena middleware.ts redirect ke /login jika tidak ada session.
+// Dengan ssr: false:
+// - SessionProvider TIDAK di-render di server (tidak ada SSR / static gen masalah)
+// - SessionProvider di-mount di client setelah hydration
+// - Session difetch client-side via /api/auth/session endpoint next-auth
+// - Auth protection tetap aman: middleware.ts redirect ke /login jika tidak ada session
+//
+// Trade-off: initial server render tidak punya session context (status: 'loading')
+// → acceptable untuk app berbasis auth seperti DIIS (semua pages di-protect middleware)
+const SessionProvider = dynamic(
+  () => import('@/components/providers/SessionProvider').then((mod) => mod.SessionProvider),
+  { ssr: false },
+);
 
 const inter = Inter({ subsets: ['latin'] });
 
