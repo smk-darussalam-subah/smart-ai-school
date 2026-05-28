@@ -6,6 +6,12 @@ import { authOptions } from '@/lib/auth';
 import { SessionProvider } from '@/components/providers/SessionProvider';
 import './globals.css';
 
+// Force dynamic rendering — layout ini memanggil headers() dan getServerSession()
+// yang butuh HTTP request context. Tanpa ini, Next.js mencoba static-generate
+// halaman seperti /404 di build time (tidak ada request → React error #31).
+// Semua halaman di app ini auth-protected, jadi static generation tidak relevan.
+export const dynamic = 'force-dynamic';
+
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
