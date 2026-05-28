@@ -21,7 +21,14 @@ COPY apps/web/ ./apps/web/
 # Install semua workspace dependencies dari root
 RUN npm ci
 
-# Build Next.js → output standalone ke apps/web/.next/standalone/
+# ─── Step 1: Build workspace packages ────────────────────────────────────────
+# Next.js `transpilePackages` compile source TS, tapi TypeScript type-checker
+# tetap butuh "types": "./dist/index.d.ts" — harus ada sebelum next build.
+RUN cd packages/types  && npx tsc --project tsconfig.json
+RUN cd packages/logger && npx tsc --project tsconfig.json
+RUN cd packages/auth   && npx tsc --project tsconfig.json
+
+# ─── Step 2: Build Next.js ───────────────────────────────────────────────────
 RUN cd apps/web && npx next build
 
 # =============================================================================

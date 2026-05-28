@@ -18,7 +18,19 @@ COPY apps/api/ ./apps/api/
 # Install semua workspace dependencies dari root
 RUN npm ci
 
-# Build NestJS → output ke apps/api/dist/
+# ─── Step 1: Build workspace packages dalam urutan dependency ─────────────────
+# Packages memiliki "main": "./dist/index.js" — harus dikompilasi dulu
+# sebelum TypeScript di apps/api bisa me-resolve import-nya.
+RUN cd packages/types  && npx tsc --project tsconfig.json
+RUN cd packages/logger && npx tsc --project tsconfig.json
+RUN cd packages/auth   && npx tsc --project tsconfig.json
+
+# ─── Step 2: Generate Prisma client ──────────────────────────────────────────
+# prisma generate membaca schema.prisma dan menghasilkan @prisma/client types.
+# Tidak butuh koneksi DB — hanya baca file schema.
+RUN cd packages/database && npx prisma generate
+
+# ─── Step 3: Build NestJS API ────────────────────────────────────────────────
 RUN cd apps/api && npx nest build
 
 # =============================================================================
@@ -36,7 +48,8 @@ COPY --from=builder /app/apps/api/dist ./apps/api/dist
 # Copy node_modules (workspace node_modules ada di root)
 COPY --from=builder /app/node_modules ./node_modules
 
-# Copy packages source (dibutuhkan sebagai workspace symlinks)
+# Copy packages (dist/ sudah ada karena di-build di tahap builder)
+# node_modules/@smk/* symlink → /app/packages/*/dist/index.js
 COPY --from=builder /app/packages ./packages
 
 # Copy package.json untuk module resolution
