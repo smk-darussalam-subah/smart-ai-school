@@ -13,6 +13,7 @@
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",
     "test": "turbo run test",
+    "test:ci": "turbo run test -- --coverage",
     "test:e2e": "turbo run test:e2e",
     "clean": "turbo run clean && rm -rf node_modules",
     "db:generate": "turbo run db:generate",
