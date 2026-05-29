@@ -43,6 +43,16 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint-and-typecheck
 
+    # Env vars di job level agar tersedia untuk SEMUA steps termasuk
+    # subproses yang dipanggil Turborepo (globalEnv di turbo.json pun
+    # sudah mendeklarasikan vars ini, tapi job-level adalah safety net).
+    env:
+      DATABASE_URL: postgresql://smk_test:smk_test_password@localhost:5432/smk_test
+      REDIS_URL: redis://localhost:6379
+      NODE_ENV: test
+      KEYCLOAK_URL: http://localhost:8080
+      KEYCLOAK_REALM: diis
+
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -82,8 +92,6 @@ jobs:
         run: npm ci
 
       - name: Setup test database
-        env:
-          DATABASE_URL: postgresql://smk_test:smk_test_password@localhost:5432/smk_test
         run: |
           npm run db:generate
           # prisma migrate deploy hanya menerapkan migrasi pending — tidak ada seed step.
@@ -95,12 +103,6 @@ jobs:
       #   - apps/api: integration tests NestJS (KeycloakGuard, ZodPipe)
       #   - apps/web: belum ada test (Tahap 1)
       - name: Run tests (semua packages)
-        env:
-          DATABASE_URL: postgresql://smk_test:smk_test_password@localhost:5432/smk_test
-          REDIS_URL: redis://localhost:6379
-          NODE_ENV: test
-          KEYCLOAK_URL: http://localhost:8080
-          KEYCLOAK_REALM: diis
         # turbo run test -- --coverage (Turbo v2: '--' memisahkan flag turbo vs Jest)
         run: npm run test:ci
 
