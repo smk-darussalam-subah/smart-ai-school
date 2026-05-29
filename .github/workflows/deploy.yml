@@ -43,28 +43,28 @@ jobs:
             # Build image lokal (api & web pakai build: bukan image: dari registry)
             docker compose build --no-cache api web
 
-            # Restart service dengan image baru
+            # Restart service dengan image baru.
+            # Migrasi Prisma dijalankan OTOMATIS di dalam CMD container api:
+            #   sh -c "cd /app/packages/database && prisma migrate deploy && exec node ..."
+            # Sehingga container tidak akan healthy sampai migrasi selesai.
             docker compose up -d --no-deps api web
 
-            # Jalankan database migrations di dalam container yang sudah running.
-            # Alasan pakai docker exec (bukan docker compose run --rm):
-            #   - Container smk-api sudah di smk-network → bisa reach postgres
-            #   - DATABASE_URL sudah ter-set benar dari docker-compose environment
-            #   - docker compose run ephemeral bisa gagal parse DATABASE_URL
-            #     jika POSTGRES_PASSWORD mengandung karakter khusus (@, #, dll)
-            # Tunggu container benar-benar up sebelum exec
-            echo "⏳ Menunggu smk-api start..."
-            timeout 60 sh -c 'until docker exec smk-api echo ok 2>/dev/null; do sleep 2; done'
-            docker exec smk-api \
-              sh -c "cd /app/packages/database && npx prisma migrate deploy" \
-              || (echo "❌ Migration gagal!" && exit 1)
-            echo "✅ Migration selesai"
-
-            # Verifikasi health check — API tidak expose port ke host (security),
-            # gunakan docker exec untuk cek dari dalam container
-            sleep 10
-            docker exec smk-api curl -sf http://localhost:3001/health \
-              || (echo "❌ API health check gagal!" && exit 1)
+            # Tunggu smk-api benar-benar healthy (migrasi + NestJS startup).
+            # Healthcheck docker-compose: curl http://localhost:3001/health
+            # interval=30s, timeout=10s, retries=3 → max wait ~120s.
+            echo "⏳ Menunggu smk-api healthy (migrasi + NestJS startup)..."
+            timeout 150 sh -c \
+              'until [ "$(docker inspect smk-api --format "{{.State.Health.Status}}" 2>/dev/null)" = "healthy" ]; do
+                 STATUS=$(docker inspect smk-api --format "{{.State.Status}}" 2>/dev/null)
+                 echo "  status: $STATUS, health: $(docker inspect smk-api --format \"{{.State.Health.Status}}\" 2>/dev/null)"
+                 sleep 10
+              done' \
+              || (
+                echo "❌ smk-api tidak healthy setelah 150s. Log terakhir:"
+                docker logs smk-api --tail 50 2>&1
+                exit 1
+              )
+            echo "✅ smk-api healthy!"
 
             echo "✅ Deploy berhasil! Branch: ${{ github.ref_name }}"
 
