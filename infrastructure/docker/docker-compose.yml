@@ -264,7 +264,9 @@ services:
       # akan parse hostname yang salah (P1001).
       # deploy.yml generate nilai ini otomatis dengan python3 urllib.parse.quote().
       DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      # REDIS_URL harus di-set di .env dengan password yang sudah URL-encoded.
+      # Sama seperti DATABASE_URL — deploy.yml generate nilai ini otomatis.
+      REDIS_URL: ${REDIS_URL}
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: diis
       KEYCLOAK_CLIENT_ID: diis-api

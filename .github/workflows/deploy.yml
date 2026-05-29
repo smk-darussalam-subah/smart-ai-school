@@ -55,6 +55,23 @@ jobs:
             fi
             echo "✅ DATABASE_URL → postgresql://${_USER}:***@postgres:5432/${_DB}"
 
+            # ── Patch .env: tulis REDIS_URL dengan password URL-encoded ────────────
+            # REDIS_PASSWORD bisa mengandung @ atau # yang merusak URL redis://:PASS@host.
+            # Sama dengan DATABASE_URL — gunakan python3 via stdin pipe.
+            _RPW=$(grep '^REDIS_PASSWORD=' .env | head -1 | cut -d= -f2- || echo '')
+            if [ -n "$_RPW" ]; then
+              _RENC=$(printf '%s' "$_RPW" | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(),safe=''),end='')")
+              _RURL="redis://:${_RENC}@redis:6379"
+            else
+              _RURL="redis://redis:6379"
+            fi
+            if grep -q '^REDIS_URL=' .env 2>/dev/null; then
+              sed -i "s|^REDIS_URL=.*|REDIS_URL=${_RURL}|" .env
+            else
+              printf '\nREDIS_URL=%s\n' "${_RURL}" >> .env
+            fi
+            echo "✅ REDIS_URL → redis://:***@redis:6379"
+
             # Build image lokal (api & web pakai build: bukan image: dari registry)
             docker compose build --no-cache api web
 
