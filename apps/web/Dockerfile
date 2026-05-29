@@ -44,6 +44,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Standalone build sudah include semua dependencies yang dibutuhkan
 COPY --from=builder /app/apps/web/.next/standalone ./
 COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
+# public/ mungkin kosong (hanya .gitkeep) — mkdir -p agar COPY tidak fail
+RUN mkdir -p ./apps/web/public
 COPY --from=builder /app/apps/web/public ./apps/web/public
 
 EXPOSE 3000
