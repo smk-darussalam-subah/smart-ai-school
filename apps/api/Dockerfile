@@ -67,4 +67,10 @@ COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
 
 EXPOSE 3001
 
-CMD ["node", "apps/api/dist/main.js"]
+# Startup: jalankan migrasi dulu, lalu start API.
+# Prisma migrate deploy bersifat idempotent — tidak ada migrasi pending → selesai < 1s.
+# Container sudah di smk-network → bisa reach postgres service.
+# DATABASE_URL tersedia dari docker-compose.yml environment.
+# Jika migrasi gagal (DB belum siap), container exit → Docker restart ulang
+# sampai postgres healthy dan migrasi berhasil sebelum API start.
+CMD ["sh", "-c", "cd /app/packages/database && /app/node_modules/.bin/prisma migrate deploy && exec node /app/apps/api/dist/main.js"]
