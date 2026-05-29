@@ -6,6 +6,11 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
+# OpenSSL diperlukan di builder agar prisma generate menghasilkan
+# binary linux-musl-openssl-3.0.x (bukan default linux-musl yang butuh 1.1.x).
+# Alpine 3.19+ pakai OpenSSL 3.x — harus konsisten antara builder dan runner.
+RUN apk add --no-cache openssl openssl-dev
+
 # Copy root manifests
 COPY package.json package-lock.json turbo.json ./
 
@@ -40,9 +45,8 @@ RUN cd apps/api && npx nest build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
-# Prisma schema engine (migration-engine / query-engine) adalah binary Rust
-# yang butuh libssl. Alpine tidak include OpenSSL by default.
-# Tanpa ini: "Could not parse schema engine response" saat prisma migrate deploy.
+# OpenSSL 3.x diperlukan untuk Prisma engine binary linux-musl-openssl-3.0.x.
+# openssl-dev tidak perlu di runner (hanya header, tidak dibutuhkan runtime).
 RUN apk add --no-cache openssl
 
 ENV NODE_ENV=production
