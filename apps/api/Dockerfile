@@ -51,7 +51,8 @@ WORKDIR /app
 
 # OpenSSL 3.x diperlukan untuk Prisma engine binary linux-musl-openssl-3.0.x.
 # openssl-dev tidak perlu di runner (hanya header, tidak dibutuhkan runtime).
-RUN apk add --no-cache openssl
+# curl diperlukan untuk Docker healthcheck (CMD-SHELL: curl -f http://localhost:3001/health).
+RUN apk add --no-cache openssl curl
 
 ENV NODE_ENV=production
 
