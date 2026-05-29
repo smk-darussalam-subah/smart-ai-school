@@ -40,7 +40,7 @@ export class KeycloakGuard implements CanActivate {
       const user = extractAuthUser(payload);
 
       // Inject user ke request untuk dipakai controller
-      (request as any).user = user;
+      (request as FastifyRequest & { user: AuthUser }).user = user;
 
       auditLog('AUTH', 'token', user.keycloakId, user.keycloakId, {
         roles: user.roles,

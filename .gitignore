@@ -9,6 +9,7 @@ build/
 .next/
 .turbo/
 out/
+*.tsbuildinfo
 
 # Environment files — JANGAN PERNAH DI-COMMIT!
 .env

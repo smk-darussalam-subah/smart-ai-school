@@ -1,12 +1,21 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
-import { Providers } from '@/components/providers/Providers';
 import './globals.css';
 
-// layout.tsx tetap Server Component agar metadata export bisa bekerja.
-// SessionProvider di-load via Providers.tsx ('use client') dengan ssr:false
-// untuk menghindari next-auth v4 + React 19 SSR incompatibility.
-// Lihat: src/components/providers/Providers.tsx untuk penjelasan lengkap.
+// =============================================================================
+// Root Layout — Server Component (WAJIB Server Component agar metadata export
+// bekerja dan Next.js bisa static-generate halaman seperti /404).
+//
+// Arsitektur SessionProvider:
+// - SessionProvider TIDAK di-mount di root, tetapi di-mount per-segment via
+//   DashboardProviders.tsx hanya di bawah /dashboard/*.
+// - Rationale: halaman publik (/, /login, /404) tidak butuh SessionProvider,
+//   jadi hindari "use client" boundary yang tidak perlu di root → memungkinkan
+//   /404 dan halaman publik di-static-prerender dengan zero client JS.
+// - Login page pakai signIn() langsung; redirect auth ditangani middleware.ts.
+//
+// Lihat: apps/web/src/components/providers/DashboardProviders.tsx
+// =============================================================================
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -23,9 +32,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="id" className="h-full">
       <body className={`${inter.className} h-full`}>
-        <Providers>{children}</Providers>
+        {children}
       </body>
     </html>
   );
 }
-

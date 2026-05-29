@@ -317,6 +317,7 @@ WAJIB menyertakan bukti runtime berupa salah satu:
 | State Mgmt | React Server Components first | Minimal client JS, better SEO, faster TTFB |
 | Monorepo | Turborepo (bukan Nx) | Simpler config, cukup untuk skala ini |
 | Package Manager | npm workspaces | Sudah terkonfigurasi, konsisten |
+| React Version Pinning | `overrides.react=^19.1.0` + `overrides.react-dom=^19.1.0` di root package.json | next-auth v4 dan next 15 peer-deps menerima React 17/18/19. Tanpa overrides, npm hoist React 18.3.1 ke root karena `react-dom@18.3.1` peer-pin `react@^18.3.1`. Akibatnya `next` resolve React 18 dari root sementara `apps/web` resolve React 19 — dua copy berbeda di proses build menyebabkan React error #31 ("object with keys $$typeof, type, key, ref, props") saat prerender `/404`. Overrides memaksa single React 19.x di seluruh workspace. (2026-05-29) |
 
 ---
 

@@ -222,6 +222,15 @@
 - W3-01 GitHub Actions CI ✅
 - W3-04 Next.js Web Scaffold ✅
 - SMA-6 Cloudflare DNS ✅ 2026-05-27 — 9 records aktif. NS `celeste` + `corey` sudah diset di Hostinger (registrar). Propagasi berjalan.
+- FIX-WEB-BUILD-31 ✅ 2026-05-29 — React error #31 saat `next build` diperbaiki.
+  Root cause: duplikasi React 18 (root node_modules) vs React 19 (apps/web node_modules).
+  Fix: tambah `overrides` di root package.json, regenerasi package-lock.json.
+  Arsitektur: SessionProvider dipindah ke DashboardProviders.tsx (hanya /dashboard/*).
+  Bukti: `✓ Generating static pages (7/7)` + `npx tsc --noEmit → 0 errors`.
+  Done report: `.tasks/done/FIX-react19-duplicate-DONE.md`
+  Lesson learned: monorepo npm workspaces bisa install versi React berbeda di
+  tiap workspace jika tidak di-pin dengan overrides → selalu cek duplikasi
+  dengan `npm ls react` saat ada React version error.
 
 ## ⚠️ DIKLAIM SELESAI — BELUM DIVERIFIKASI RUNTIME
 

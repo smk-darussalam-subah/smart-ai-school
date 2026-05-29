@@ -12,10 +12,11 @@ import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { FastifyRequest } from 'fastify';
 import { logger } from '@smk/logger';
+import { AuthUser } from '@smk/auth';
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
-  // Observable<any> matches NestInterceptor<any,any> signature; rxjs paths alias resolves dual-instance issue
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
     const { method, url } = request;
@@ -30,7 +31,7 @@ export class LoggingInterceptor implements NestInterceptor {
             method,
             url,
             duration,
-            userId: (request as any).user?.keycloakId,
+            userId: (request as FastifyRequest & { user?: AuthUser }).user?.keycloakId,
           });
         },
         error: (error: Error) => {

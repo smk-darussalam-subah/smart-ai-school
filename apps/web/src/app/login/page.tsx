@@ -1,31 +1,20 @@
 'use client';
 
-import { signIn, useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+// Login page — tidak pakai useSession() karena SessionProvider hanya
+// di-mount di bawah /dashboard/* (lihat DashboardProviders.tsx).
+// Redirect authenticated users ditangani middleware.ts.
+// signIn() dari next-auth/react bisa dipanggil tanpa SessionProvider scope.
+
+import { signIn } from 'next-auth/react';
+import { useState } from 'react';
 
 export default function LoginPage() {
-  const { status } = useSession();
-  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
-
-  // Already authenticated — go to dashboard
-  useEffect(() => {
-    if (status === 'authenticated') router.replace('/dashboard');
-  }, [status, router]);
 
   const handleLogin = async () => {
     setIsLoading(true);
     await signIn('keycloak', { callbackUrl: '/dashboard' });
   };
-
-  if (status === 'loading' || status === 'authenticated') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="w-8 h-8 border-4 border-smk-blue border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-900 via-primary-700 to-smk-green">
