@@ -40,6 +40,11 @@ RUN cd apps/api && npx nest build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
+# Prisma schema engine (migration-engine / query-engine) adalah binary Rust
+# yang butuh libssl. Alpine tidak include OpenSSL by default.
+# Tanpa ini: "Could not parse schema engine response" saat prisma migrate deploy.
+RUN apk add --no-cache openssl
+
 ENV NODE_ENV=production
 
 # Copy build output
