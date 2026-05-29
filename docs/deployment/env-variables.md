@@ -42,9 +42,15 @@ Digunakan oleh: `postgres` container, `api` service, `keycloak`, `n8n`, `metabas
 | `POSTGRES_DB` | Ya | `smk_db` | Nama database utama | `smk_db` |
 | `POSTGRES_USER` | Ya | `smk_admin` | Username superuser PostgreSQL | `smk_admin` |
 | `POSTGRES_PASSWORD` | **Wajib diisi** | — | Password PostgreSQL (min 20 karakter) | `<password-kuat>` |
-| `DATABASE_URL` | Ya | — | Connection string Prisma (format postgresql://) | `postgresql://smk_admin:<pass>@postgres:5432/smk_db` |
+| `DATABASE_URL` | Ya | — | Connection string Prisma (format postgresql://) | `postgresql://smk_admin:<pass-encoded>@postgres:5432/smk_db` |
 
 > **Catatan:** `DATABASE_URL` digunakan oleh `apps/api` via Prisma. Untuk koneksi dari dalam Docker network, hostname adalah `postgres` (bukan `localhost`). Untuk dev lokal, gunakan `localhost` dengan port dari `docker-compose.dev.yml`.
+>
+> ⚠️ **URL-Encoding Wajib:** Jika `POSTGRES_PASSWORD` mengandung karakter khusus (`@`, `#`, `!`, `%`, dll), password **harus di-URL-encode** sebelum dimasukkan ke `DATABASE_URL`. Contoh: password `p@ss#1` → encoded `p%40ss%231`. Script `deploy.yml` melakukan encoding otomatis via `python3 urllib.parse.quote()`. Untuk set manual:
+> ```bash
+> python3 -c "import urllib.parse; print(urllib.parse.quote('p@ss#1', safe=''))"
+> # Output: p%40ss%231
+> ```
 
 ---
 
@@ -55,7 +61,9 @@ Digunakan oleh: `redis` container, `api` service (ThrottlerModule, queue)
 | Variable | Required | Default | Deskripsi | Contoh |
 |----------|----------|---------|-----------|--------|
 | `REDIS_PASSWORD` | **Wajib diisi** | — | Password Redis (--requirepass) | `<password-kuat>` |
-| `REDIS_URL` | Ya | — | Connection URL dengan password | `redis://:<pass>@redis:6379` |
+| `REDIS_URL` | Ya | — | Connection URL dengan password (URL-encoded) | `redis://:<pass-encoded>@redis:6379` |
+
+> ⚠️ **URL-Encoding Wajib:** Sama seperti `DATABASE_URL` — jika `REDIS_PASSWORD` mengandung karakter khusus, harus di-URL-encode. Script `deploy.yml` menangani ini secara otomatis.
 
 ---
 

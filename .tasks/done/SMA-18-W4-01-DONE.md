@@ -82,4 +82,11 @@
 
 ---
 
+---
+
+## Update 2026-05-29 (post-deploy)
+
+Setelah deploy production berhasil, tambahan ke `env-variables.md`:
+- **Catatan URL-encoding** untuk `DATABASE_URL` dan `REDIS_URL` — jika password mengandung `@`, `#`, `!` dll, harus di-URL-encode. Script `deploy.yml` menangani otomatis. Pelajaran dari P1001 + Zod `.url()` validation failure di deploy.
+
 *Tidak ada kode TypeScript baru — murni dokumentasi. `npx tsc --noEmit` tidak diperlukan.*
