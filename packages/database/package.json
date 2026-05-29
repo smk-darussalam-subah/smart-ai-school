@@ -10,7 +10,8 @@
     "db:migrate:dev": "prisma migrate dev",
     "db:seed": "ts-node prisma/seed.ts",
     "db:studio": "prisma studio",
-    "build": "tsc",
+    "postinstall": "prisma generate",
+    "build": "prisma generate && tsc",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist"
   },

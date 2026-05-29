@@ -24,6 +24,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate Prisma client
+        # Prisma client types (termasuk $queryRawUnsafe) hanya tersedia
+        # setelah `prisma generate`. Tanpa ini, type-check di apps/api gagal
+        # karena PrismaHealthIndicator.pingCheck() butuh structural type
+        # PrismaClientSQL dengan method $queryRawUnsafe.
+        run: npm run db:generate
+
       - name: Lint
         run: npm run lint
 
@@ -121,6 +128,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
 
       - name: Build all packages
         run: npm run build
