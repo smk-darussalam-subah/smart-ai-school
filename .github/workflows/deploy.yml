@@ -40,6 +40,44 @@ jobs:
             # Semua docker compose dijalankan dari direktori yang benar
             cd /home/appuser/smart-ai-school/infrastructure/docker
 
+            # ── Patch .env: tulis DATABASE_URL dengan password URL-encoded ──────────
+            # POSTGRES_PASSWORD di .env bisa mengandung karakter @ atau # yang
+            # merusak konstruksi URL secara langsung. python3 urllib.parse.quote()
+            # menghasilkan DATABASE_URL yang aman untuk semua karakter khusus.
+            python3 - << 'PYEOF'
+import re, urllib.parse, sys
+
+env_file = '/home/appuser/smart-ai-school/infrastructure/docker/.env'
+try:
+    with open(env_file) as f:
+        content = f.read()
+except FileNotFoundError:
+    print('ERROR: .env file tidak ditemukan!', file=sys.stderr)
+    sys.exit(1)
+
+def get_var(key, default=''):
+    m = re.search(rf'^{key}=(.*)$', content, re.MULTILINE)
+    return m.group(1).strip() if m else default
+
+user       = get_var('POSTGRES_USER', 'smk_admin')
+raw_pw     = get_var('POSTGRES_PASSWORD', '')
+db_name    = get_var('POSTGRES_DB', 'smk_db')
+encoded_pw = urllib.parse.quote(raw_pw, safe='')
+db_url     = f'postgresql://{user}:{encoded_pw}@postgres:5432/{db_name}'
+
+# Update atau append DATABASE_URL
+if re.search(r'^DATABASE_URL=', content, re.MULTILINE):
+    new_content = re.sub(r'^DATABASE_URL=.*$', f'DATABASE_URL={db_url}',
+                         content, flags=re.MULTILINE)
+else:
+    new_content = content.rstrip('\n') + f'\nDATABASE_URL={db_url}\n'
+
+with open(env_file, 'w') as f:
+    f.write(new_content)
+
+print(f'✅ DATABASE_URL → postgresql://{user}:***@postgres:5432/{db_name}')
+PYEOF
+
             # Build image lokal (api & web pakai build: bukan image: dari registry)
             docker compose build --no-cache api web
 
