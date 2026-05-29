@@ -41,42 +41,19 @@ jobs:
             cd /home/appuser/smart-ai-school/infrastructure/docker
 
             # ── Patch .env: tulis DATABASE_URL dengan password URL-encoded ──────────
-            # POSTGRES_PASSWORD di .env bisa mengandung karakter @ atau # yang
-            # merusak konstruksi URL secara langsung. python3 urllib.parse.quote()
-            # menghasilkan DATABASE_URL yang aman untuk semua karakter khusus.
-            python3 - << 'PYEOF'
-import re, urllib.parse, sys
-
-env_file = '/home/appuser/smart-ai-school/infrastructure/docker/.env'
-try:
-    with open(env_file) as f:
-        content = f.read()
-except FileNotFoundError:
-    print('ERROR: .env file tidak ditemukan!', file=sys.stderr)
-    sys.exit(1)
-
-def get_var(key, default=''):
-    m = re.search(rf'^{key}=(.*)$', content, re.MULTILINE)
-    return m.group(1).strip() if m else default
-
-user       = get_var('POSTGRES_USER', 'smk_admin')
-raw_pw     = get_var('POSTGRES_PASSWORD', '')
-db_name    = get_var('POSTGRES_DB', 'smk_db')
-encoded_pw = urllib.parse.quote(raw_pw, safe='')
-db_url     = f'postgresql://{user}:{encoded_pw}@postgres:5432/{db_name}'
-
-# Update atau append DATABASE_URL
-if re.search(r'^DATABASE_URL=', content, re.MULTILINE):
-    new_content = re.sub(r'^DATABASE_URL=.*$', f'DATABASE_URL={db_url}',
-                         content, flags=re.MULTILINE)
-else:
-    new_content = content.rstrip('\n') + f'\nDATABASE_URL={db_url}\n'
-
-with open(env_file, 'w') as f:
-    f.write(new_content)
-
-print(f'✅ DATABASE_URL → postgresql://{user}:***@postgres:5432/{db_name}')
-PYEOF
+            # POSTGRES_PASSWORD di .env bisa mengandung @ atau # yang merusak URL.
+            # Gunakan python3 via stdin pipe — tidak butuh heredoc, YAML-safe.
+            _PW=$(grep '^POSTGRES_PASSWORD=' .env | head -1 | cut -d= -f2-)
+            _USER=$(grep '^POSTGRES_USER=' .env | head -1 | cut -d= -f2- || echo 'smk_admin')
+            _DB=$(grep '^POSTGRES_DB=' .env | head -1 | cut -d= -f2- || echo 'smk_db')
+            _ENC=$(printf '%s' "$_PW" | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(),safe=''),end='')")
+            _URL="postgresql://${_USER}:${_ENC}@postgres:5432/${_DB}"
+            if grep -q '^DATABASE_URL=' .env 2>/dev/null; then
+              sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${_URL}|" .env
+            else
+              printf '\nDATABASE_URL=%s\n' "${_URL}" >> .env
+            fi
+            echo "✅ DATABASE_URL → postgresql://${_USER}:***@postgres:5432/${_DB}"
 
             # Build image lokal (api & web pakai build: bukan image: dari registry)
             docker compose build --no-cache api web
