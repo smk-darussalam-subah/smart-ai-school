@@ -7,6 +7,11 @@
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["multiSchema", "postgresqlExtensions"]
+  // binaryTargets: "native" untuk dev (macOS/Windows/Linux glibc),
+  // "linux-musl-openssl-3.0.x" untuk Docker Alpine (musl + OpenSSL 3.x).
+  // Alpine 3.19+ pakai OpenSSL 3.x — binary default Prisma (linux-musl)
+  // di-compile dengan OpenSSL 1.1.x sehingga crash di Alpine modern.
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
