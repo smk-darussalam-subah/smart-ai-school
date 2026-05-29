@@ -38,6 +38,10 @@ RUN cd packages/database && npx prisma generate
 # ─── Step 3: Build NestJS API ────────────────────────────────────────────────
 RUN cd apps/api && npx nest build
 
+# Pastikan apps/api/node_modules ada (meski kosong) agar COPY di runner tidak fail.
+# npm workspaces bisa saja menaruh beberapa package di sini (tidak di-hoist ke root).
+RUN mkdir -p /app/apps/api/node_modules
+
 # =============================================================================
 # Production image — minimal, tanpa devDependencies
 # =============================================================================
@@ -56,6 +60,12 @@ COPY --from=builder /app/apps/api/dist ./apps/api/dist
 
 # Copy node_modules (workspace node_modules ada di root)
 COPY --from=builder /app/node_modules ./node_modules
+
+# Copy workspace-specific node_modules untuk apps/api.
+# npm workspaces tidak selalu hoist semua package ke root — beberapa
+# dependencies (misal @nestjs/platform-fastify) bisa ada di sini.
+# mkdir -p di builder memastikan COPY tidak fail meski direktori kosong.
+COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules
 
 # Copy packages (dist/ sudah ada karena di-build di tahap builder)
 # node_modules/@smk/* symlink → /app/packages/*/dist/index.js
