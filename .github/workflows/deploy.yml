@@ -43,18 +43,26 @@ jobs:
             # Build image lokal (api & web pakai build: bukan image: dari registry)
             docker compose build --no-cache api web
 
-            # Jalankan database migrations sebelum restart.
-            # Schema Prisma ada di packages/database/prisma/schema.prisma —
-            # harus cd ke sana dulu karena Prisma CLI cari schema di cwd.
-            docker compose run --rm api \
-              sh -c "cd /app/packages/database && npx prisma migrate deploy"
-
-            # Restart service dengan rebuild
+            # Restart service dengan image baru
             docker compose up -d --no-deps api web
+
+            # Jalankan database migrations di dalam container yang sudah running.
+            # Alasan pakai docker exec (bukan docker compose run --rm):
+            #   - Container smk-api sudah di smk-network → bisa reach postgres
+            #   - DATABASE_URL sudah ter-set benar dari docker-compose environment
+            #   - docker compose run ephemeral bisa gagal parse DATABASE_URL
+            #     jika POSTGRES_PASSWORD mengandung karakter khusus (@, #, dll)
+            # Tunggu container benar-benar up sebelum exec
+            echo "⏳ Menunggu smk-api start..."
+            timeout 60 sh -c 'until docker exec smk-api echo ok 2>/dev/null; do sleep 2; done'
+            docker exec smk-api \
+              sh -c "cd /app/packages/database && npx prisma migrate deploy" \
+              || (echo "❌ Migration gagal!" && exit 1)
+            echo "✅ Migration selesai"
 
             # Verifikasi health check — API tidak expose port ke host (security),
             # gunakan docker exec untuk cek dari dalam container
-            sleep 20
+            sleep 10
             docker exec smk-api curl -sf http://localhost:3001/health \
               || (echo "❌ API health check gagal!" && exit 1)
 
