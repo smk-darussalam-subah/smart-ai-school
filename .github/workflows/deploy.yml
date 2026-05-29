@@ -43,8 +43,11 @@ jobs:
             # Build image lokal (api & web pakai build: bukan image: dari registry)
             docker compose build --no-cache api web
 
-            # Jalankan database migrations sebelum restart
-            docker compose run --rm api npx prisma migrate deploy
+            # Jalankan database migrations sebelum restart.
+            # Schema Prisma ada di packages/database/prisma/schema.prisma —
+            # harus cd ke sana dulu karena Prisma CLI cari schema di cwd.
+            docker compose run --rm api \
+              sh -c "cd /app/packages/database && npx prisma migrate deploy"
 
             # Restart service dengan rebuild
             docker compose up -d --no-deps api web
