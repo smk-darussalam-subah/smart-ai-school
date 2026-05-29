@@ -2,14 +2,11 @@
 // 404 Not Found — Custom App Router page
 //
 // Kenapa file ini ADA DI SINI:
-// Tanpa not-found.tsx, Next.js fallback ke /_error (mekanisme Pages Router
-// internal yang pakai React 18 code). Dengan React 19, /_error menyebabkan
-// React error #31 saat static generation saat build (Docker / CI).
-// Custom not-found.tsx ini memaksa Next.js pakai App Router path (React 19
-// compatible) untuk halaman 404.
+// App Router membutuhkan not-found.tsx untuk halaman 404 yang konsisten
+// dengan branding. Tanpa file ini, Next.js menggunakan default error page.
 //
 // PENTING: jangan import next-auth, session, atau hooks di sini.
-// Halaman ini harus bisa di-static-generate tanpa HTTP context.
+// Halaman ini di-static-prerender saat build → tidak punya HTTP context.
 // =============================================================================
 
 import Link from 'next/link';
