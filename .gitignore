@@ -60,6 +60,10 @@ packages/database/prisma/*.db
 **/flutter/.flutter-plugins-dependencies
 **/flutter/.packages
 
+# TLS Certificates — JANGAN PERNAH DI-COMMIT (N-7)
+# Cloudflare Origin Cert + private key hanya ada di VPS
+infrastructure/nginx/certs/
+
 # Misc
 *.pem
 .vercel
