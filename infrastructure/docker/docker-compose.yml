@@ -396,10 +396,10 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      # - "443:443"   # diaktifkan di N-7 setelah origin cert siap
+      - "443:443"
     volumes:
       - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      # - ../nginx/certs:/etc/nginx/certs:ro   # untuk N-7
+      - ../nginx/certs:/etc/nginx/certs:ro
     depends_on:
       - web
       - api
