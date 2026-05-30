@@ -1,0 +1,43 @@
+# =============================================================================
+# .gitattributes — Normalisasi line-ending lintas OS (Windows/macOS/Linux)
+# Tujuan: mencegah diff palsu CRLF vs LF (temuan N-3, Laporan Analyst 29 Mei 2026)
+# =============================================================================
+
+# Default: deteksi teks otomatis, simpan sebagai LF di repo
+* text=auto eol=lf
+
+# File teks/kode — paksa LF
+*.ts     text eol=lf
+*.tsx    text eol=lf
+*.js     text eol=lf
+*.jsx    text eol=lf
+*.json   text eol=lf
+*.md     text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.css    text eol=lf
+*.scss   text eol=lf
+*.html   text eol=lf
+*.prisma text eol=lf
+*.sql    text eol=lf
+*.env    text eol=lf
+*.sh     text eol=lf
+Dockerfile text eol=lf
+
+# Script shell wajib LF agar bisa dieksekusi di container Linux
+*.sh text eol=lf
+
+# File biner — jangan diutak-atik
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
