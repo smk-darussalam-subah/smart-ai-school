@@ -142,15 +142,23 @@
 
 ## 📋 ANTRIAN REGULER (setelah semua BLOCKING selesai)
 
-### [QUEUE-1] W3-02 Monitoring Config ✅ SELESAI
-**Linear:** SMA-15 | **Status:** ✅ DONE 2026-05-30
-**Branch:** `feat/SMA-15-monitoring-grafana`
+### [QUEUE-1] W3-02 Monitoring Config — 🟡 KODE MERGED, RUNTIME PENDING VPS
+**Linear:** SMA-15 | **Status:** 🟡 Kode merged ke main, runtime `/metrics` belum diverifikasi di VPS
+**Branch:** `feat/SMA-15-monitoring-grafana` → merged ke main
 
-**Hasil:**
+**Hasil (terverifikasi lokal):**
 - `/metrics` endpoint NestJS (prom-client default + `smk_http_requests_total`), @Public(), TSC OK, 62/62 test hijau
-- `prometheus.yml`: fix port api:3000→3001, tambah scrape_interval 15s
+- `prometheus.yml`: fix port api:3000→3001, scrape_interval 15s eksplisit untuk semua job
 - Grafana: `grafana/dashboards/{nodejs,postgresql,redis}.json` + `provisioning.yml` + `datasources/prometheus.yml`
-- JSON valid: semua 3 dashboard JSON parseable
+- `docker-compose.yml`: tambah `postgres-exporter` + `redis-exporter` (internal network only)
+- JSON valid: 3 dashboard parseable, `docker compose config` OK
+
+**Runtime VPS yang masih pending (wajib sebelum ✅ penuh):**
+```bash
+curl -s -o /dev/null -w "%{http_code}" https://<api>/metrics  # harus 200
+curl -sf https://<api>/metrics | head -5                       # harus ada process_cpu_user_seconds_total
+```
+Setelah curl di atas 200 → ubah status ke ✅ DONE.
 **Laporan:** `.tasks/done/SMA-15-monitoring-DONE.md`
 
 ---

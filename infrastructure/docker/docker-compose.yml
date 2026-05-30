@@ -248,6 +248,35 @@ services:
     depends_on:
       - prometheus
 
+  # Exporter untuk Prometheus — metrics PostgreSQL dan Redis.
+  # Tidak ada ports mapping: aksesibel hanya dari smk-network (scraped oleh prometheus).
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: smk-postgres-exporter
+    restart: unless-stopped
+    environment:
+      # DATA_SOURCE_NAME memakai DATABASE_URL yang sudah ada (format postgresql://user:pass@host/db).
+      # Password wajib URL-encoded jika mengandung karakter khusus — sama dengan catatan DATABASE_URL.
+      DATA_SOURCE_NAME: ${DATABASE_URL}
+    networks:
+      - smk-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: smk-redis-exporter
+    restart: unless-stopped
+    environment:
+      # REDIS_ADDR memakai REDIS_URL yang sudah ada (format redis://:pass@host:port).
+      REDIS_ADDR: ${REDIS_URL}
+    networks:
+      - smk-network
+    depends_on:
+      - redis
+
   # ─── BACKEND API (NestJS) ─────────────────────────────────────────────────
 
   api:
