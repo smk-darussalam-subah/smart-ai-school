@@ -43,7 +43,7 @@ Tahap 1 membangun **core operasional sekolah** — modul yang digunakan setiap h
 
 **Masalah:** Dua model RAG yang tidak konsisten:
 - `KnowledgeDocument` (schema `ai_knowledge`): punya `title`, `content`, `source`, `category`, `isActive` — tapi **tidak ada embedding**
-- `AiDocument` (schema `ai_knowledge`): punya `content`, `embedding vector(1536)`, `source`, `metadata` — tapi **tidak ada title, category, isActive**
+- `AiDocument` (schema `ai_knowledge`): punya `content`, `embedding` (dimensi tidak ditetapkan — warisan dari eksperimen awal), `source`, `metadata` — tapi **tidak ada title, category, isActive**
 
 **Keputusan: Ganti keduanya dengan satu model `RagChunk`**
 
@@ -51,7 +51,7 @@ Tahap 1 membangun **core operasional sekolah** — modul yang digunakan setiap h
 
 **⚠️ Keputusan Embedding Model & Dimensi (wajib ditetapkan sebelum SMA-44):**
 
-`AiDocument` memakai `vector(1536)` — dimensi OpenAI `text-embedding-ada-002`. Tapi decision tree §6 menetapkan Ollama untuk data PII (lokal). Model embedding Ollama yang umum dipakai **bukan** 1536 dimensi:
+Dimensi `vector(N)` di tabel PostgreSQL **harus sama persis** dengan output model embedding yang dipakai — mismatch → pgvector error saat INSERT. Pilihan model Ollama yang relevan:
 
 | Model Ollama | Dimensi | Kecepatan | Akurasi Bahasa Indonesia |
 |---|---|---|---|
@@ -241,7 +241,7 @@ auth.users ───────────────────────
                                                                     │
 ppdb.leads ──── assigned_to ────────────────────────────────────────┘
 
-ai_knowledge.rag_chunks (standalone — tidak berelasi ke entitas bisnis)
+ai_knowledge.rag_chunks (standalone — embedding vector(768), model: nomic-embed-text via Ollama)
 notification.notification_logs (log saja — bukan foreign key ke entitas lain)
 ```
 
@@ -585,7 +585,7 @@ Mulai: setelah dokumen ini di-approve oleh Kang Sholah.
 
 ## 8. Prasyarat Regulasi (Trek Paralel)
 
-Trek ini berjalan **paralel** dengan sprint coding — kecuali R-05 yang merupakan **prasyarat keras** (bukan sekedar paralel) untuk input data siswa nyata.
+Trek ini berjalan **paralel** dengan sprint coding — kecuali R-05 yang merupakan **prasyarat keras** (bukan sekedar paralel) untuk input data siswa nyata. **R-05 harus aktif dan tanda tangan consent terkumpul sebelum TU menginput data siswa nyata ke sistem, tanpa kecuali.**
 
 | Regulasi | ID | Owner | Target | Status |
 |---|---|---|---|---|
