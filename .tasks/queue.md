@@ -23,6 +23,20 @@
 
 ---
 
+## 🚑 HARDENING MENDESAK — Insiden 30 Mei 2026 (situs sempat down 521)
+
+> Brief siap-eksekusi: `.tasks/HARDENING-N7-N8-BRIEF.md`.
+
+| ID | Masalah | Status | Aksi |
+|---|---|---|---|
+| **N-8** | nginx reverse proxy TIDAK ada di docker-compose → hilang tiap reboot (akar 521). Sekarang ditambal container manual `smk-nginx` (bukan di git) | 🟡 PR merged, VPS runtime pending | Commit `0c01f84`, laporan `.tasks/done/N8-nginx-compose-DONE.md`. Runtime VPS wajib (`docker compose down+up → nginx Up`) sebelum ✅ |
+| **N-7** | Origin tanpa TLS 443; Cloudflare dipaksa Flexible (trafik CF↔origin tak terenkripsi) | 🟠 SEBELUM TAHAP 2 | PR `fix/N7-origin-tls` — Cloudflare Origin Cert + 443 + Full Strict |
+
+**Status W3-02 (SMA-15):** ✅ `/metrics` terverifikasi runtime 200 (https://api.smkdarussalamsubah.sch.id/metrics, 30 Mei).
+Dashboard Node.js jalan. ⚠️ Dashboard PostgreSQL/Redis butuh `postgres-exporter`+`redis-exporter` (addendum, belum dikerjakan).
+
+---
+
 ## 🔄 SEDANG DIKERJAKAN
 
 → Lihat `.tasks/current.md` (hanya pointer; status resmi tetap di file ini)
