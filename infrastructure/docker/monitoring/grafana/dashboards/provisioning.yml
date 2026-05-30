@@ -1,0 +1,15 @@
+apiVersion: 1
+
+providers:
+  - name: 'DIIS Dashboards'
+    orgId: 1
+    folder: 'DIIS'
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    options:
+      # Path ini sesuai dengan mount di docker-compose.yml:
+      # ./monitoring/grafana/dashboards → /etc/grafana/provisioning/dashboards
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

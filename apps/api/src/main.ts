@@ -77,7 +77,9 @@ async function bootstrap() {
 
   // ── API Prefix ──────────────────────────────────────────────────────────────
   app.setGlobalPrefix('api/v1', {
-    exclude: ['health'],
+    // 'health'  → GET /health (tidak pakai prefix, diakses oleh load balancer & n8n)
+    // 'metrics' → GET /metrics (tidak pakai prefix, diakses oleh Prometheus scraper)
+    exclude: ['health', 'metrics'],
   });
 
   const port = env.API_PORT || 3001;
