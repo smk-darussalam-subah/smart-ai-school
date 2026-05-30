@@ -251,6 +251,35 @@ services:
     depends_on:
       - prometheus
 
+  # ─── MONITORING EXPORTERS ────────────────────────────────────────────────
+  # Metrics exporter untuk Prometheus — diakses internal (tidak ada ports mapping).
+  # Dashboard Grafana postgresql.json + redis.json butuh kedua service ini.
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: smk-postgres-exporter
+    restart: unless-stopped
+    environment:
+      # DATABASE_URL sudah URL-encoded (di-patch oleh deploy.yml). Exporter menerima format postgresql://.
+      DATA_SOURCE_NAME: ${DATABASE_URL}
+    networks:
+      - smk-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: smk-redis-exporter
+    restart: unless-stopped
+    environment:
+      # REDIS_URL format redis://:pass@host:port — didukung langsung oleh redis-exporter.
+      REDIS_ADDR: ${REDIS_URL}
+    networks:
+      - smk-network
+    depends_on:
+      - redis
+
   # ─── BACKEND API (NestJS) ─────────────────────────────────────────────────
 
   api:
