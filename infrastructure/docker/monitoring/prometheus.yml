@@ -10,8 +10,9 @@ scrape_configs:
       - targets: ['localhost:9090']
 
   - job_name: 'smk-api'
+    scrape_interval: 15s
     static_configs:
-      - targets: ['api:3000']
+      - targets: ['api:3001']
     metrics_path: '/metrics'
 
   - job_name: 'postgres'

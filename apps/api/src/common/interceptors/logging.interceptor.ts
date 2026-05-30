@@ -13,6 +13,7 @@ import { tap } from 'rxjs/operators';
 import { FastifyRequest } from 'fastify';
 import { logger } from '@smk/logger';
 import { AuthUser } from '@smk/auth';
+import { httpRequestsTotal } from '../../metrics/counters';
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
@@ -26,6 +27,7 @@ export class LoggingInterceptor implements NestInterceptor {
       tap({
         next: () => {
           const duration = Date.now() - startTime;
+          httpRequestsTotal.inc({ method });
           logger.info(`${method} ${url} — ${duration}ms`, {
             type: 'request',
             method,

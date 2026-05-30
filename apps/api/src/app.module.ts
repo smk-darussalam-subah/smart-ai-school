@@ -8,6 +8,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { MetricsModule } from './metrics/metrics.module';
 import { KeycloakGuard } from './auth/guards/keycloak.guard';
 
 @Module({
@@ -24,6 +25,7 @@ import { KeycloakGuard } from './auth/guards/keycloak.guard';
     PrismaModule,
     AuthModule,
     HealthModule,
+    MetricsModule,
 
     // Domain modules akan ditambahkan di Tahap 2:
     // AcademicModule, StudentModule, PpdbModule, FinanceModule, ...

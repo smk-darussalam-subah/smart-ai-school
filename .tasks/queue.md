@@ -142,13 +142,16 @@
 
 ## 📋 ANTRIAN REGULER (setelah semua BLOCKING selesai)
 
-### [QUEUE-1] W3-02 Monitoring Config
-**Linear:** SMA-15 | **Estimasi:** 1.5 jam
+### [QUEUE-1] W3-02 Monitoring Config ✅ SELESAI
+**Linear:** SMA-15 | **Status:** ✅ DONE 2026-05-30
+**Branch:** `feat/SMA-15-monitoring-grafana`
 
-**Scope:**
-- Verifikasi `infrastructure/monitoring/prometheus.yml` scrape NestJS `/metrics`
-- Buat 3 Grafana dashboard JSON: nodejs, postgresql, redis
-- Tambahkan NestJS Prometheus metrics ke apps/api
+**Hasil:**
+- `/metrics` endpoint NestJS (prom-client default + `smk_http_requests_total`), @Public(), TSC OK, 62/62 test hijau
+- `prometheus.yml`: fix port api:3000→3001, tambah scrape_interval 15s
+- Grafana: `grafana/dashboards/{nodejs,postgresql,redis}.json` + `provisioning.yml` + `datasources/prometheus.yml`
+- JSON valid: semua 3 dashboard JSON parseable
+**Laporan:** `.tasks/done/SMA-15-monitoring-DONE.md`
 
 ---
 
