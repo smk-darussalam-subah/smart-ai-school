@@ -98,6 +98,13 @@ jobs:
               )
             echo "✅ smk-api healthy!"
 
+            # Pastikan nginx berjalan dan pakai nginx.conf terbaru.
+            # up -d: start jika mati (misalnya setelah reboot), no-op jika sudah Up.
+            # nginx -s reload: hot-reload config tanpa downtime (picks up nginx.conf changes dari git pull).
+            docker compose up -d --no-deps nginx
+            docker exec smk-nginx nginx -s reload 2>/dev/null || true
+            echo "✅ nginx up & config reloaded"
+
             echo "✅ Deploy berhasil! Branch: ${{ github.ref_name }}"
 
       - name: Notify deployment success
