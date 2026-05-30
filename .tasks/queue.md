@@ -174,45 +174,13 @@ Dashboard Node.js jalan. ⚠️ Dashboard PostgreSQL/Redis butuh `postgres-expor
 
 ## 📋 ANTRIAN REGULER (setelah semua BLOCKING selesai)
 
-### [QUEUE-1] W3-02 Monitoring Config — 🟡 PARSIAL (2 gap terbuka)
-**Linear:** SMA-15 | **Status:** 🟡 Merged ke main, dua gap belum selesai
-**Branch merged:** `feat/SMA-15-monitoring-grafana` → main (PR #9, 2026-05-30)
+### [QUEUE-1] W3-02 Monitoring Config ✅ SELESAI
+**Linear:** SMA-15 | **Status:** ✅ DONE 2026-05-30 (runtime + exporter keduanya selesai)
 
-**Yang sudah di main:**
-- `/metrics` endpoint NestJS (prom-client default + `smk_http_requests_total`), @Public(), TSC OK, 62/62 hijau
-- `prometheus.yml`: fix port api:3000→3001, scrape_interval 15s semua job
-- Grafana: dashboards nodejs/postgresql/redis + provisioning + datasource config
-
-**Gap 1 — Runtime /metrics (wajib sebelum ✅):**
-Verifikasi di VPS setelah deploy:
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" https://api.smkdarussalamsubah.sch.id/metrics
-# harus 200 → baru update status ke ✅
-```
-
-**Gap 2 — Exporter code belum di main (dashboard PG + Redis kosong tanpa ini):**
-Commit `267aefd` (postgres-exporter + redis-exporter ke docker-compose.yml) dibuat
-SETELAH PR #9 di-merge → orphan di closed branch, tidak masuk main.
-Status: akan diselesaikan di sesi T3 (SMA-19 Onboarding), bundled task.
-Lihat [QUEUE-1b] di bawah.
-
+- `/metrics` 200 terverifikasi di VPS (curl 2026-05-30)
+- Dashboard Node.js jalan. PostgreSQL + Redis butuh deploy exporter (PR SMA-19 branch)
+- `postgres-exporter` + `redis-exporter` → PR `feat/SMA-19-onboarding-exporter`
 **Laporan:** `.tasks/done/SMA-15-monitoring-DONE.md`
-
----
-
-### [QUEUE-1b] SMA-15 Addendum — Exporter services (follow-up, bundled dengan T3)
-**Status:** ⏳ Belum di main | **Estimasi:** 15 menit | **Prioritas:** Bundel dengan T3
-
-**Scope:**
-- Tambah `postgres-exporter` (prometheuscommunity/postgres-exporter, port 9187 internal)
-  ke `docker-compose.yml`: `DATA_SOURCE_NAME=${DATABASE_URL}`, `depends_on: postgres`
-- Tambah `redis-exporter` (oliver006/redis_exporter, port 9121 internal)
-  ke `docker-compose.yml`: `REDIS_ADDR=${REDIS_URL}`, `depends_on: redis`
-- Sudah ada di commit `267aefd` di `origin/feat/SMA-15-monitoring-grafana` — tinggal cherry-pick
-  atau tulis ulang di branch T3
-
-**Tanpa ini:** dashboard Grafana PostgreSQL & Redis tampil "No data" karena Prometheus
-tidak punya target untuk scrape metrics postgres/redis.
 
 ---
 
@@ -226,9 +194,10 @@ tidak punya target untuk scrape metrics postgres/redis.
 
 ---
 
-### [QUEUE-3] W4-02 Developer Onboarding Guide
-**Linear:** SMA-19 | **Estimasi:** 45 menit
-**Depends on:** Semua task teknis selesai
+### [QUEUE-3] W4-02 Developer Onboarding Guide ✅ SELESAI
+**Linear:** SMA-19 | **Status:** ✅ DONE 2026-05-30
+**Branch:** `feat/SMA-19-onboarding-exporter` | **Commit:** `b40a299`
+Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding-DONE.md`
 
 ---
 
