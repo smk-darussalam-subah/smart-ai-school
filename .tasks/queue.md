@@ -247,6 +247,22 @@ Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding
 
 ---
 
+## 🏁 SPRINT-0 SELESAI — 2026-05-30
+
+> Semua 4 carryover Tahap 0 tuntas. Sprint-0 ditutup.
+> **Tahap 1 resmi dibuka.** Design gate: `docs/tahap1-sprint-plan.md` (PR #14).
+> Langkah berikutnya: buat Linear issues SMA-31..SMA-52, mulai Sprint 1 coding.
+
+| Task | Status | PR |
+|---|---|---|
+| W2-04 n8n workflows (SMA-12) | ✅ | #10 |
+| W3-02 /metrics + exporter (SMA-15) | ✅ | #9, #13 |
+| W4-02 Developer Onboarding (SMA-19) | ✅ | #13 |
+| W4-04 Sprint Plan Tahap 1 | ✅ | #14 |
+| N-8 nginx compose | ✅ | #11, #12 |
+
+---
+
 ## ✅ SUDAH SELESAI (Terverifikasi Runtime)
 
 - W1-01 VPS Setup Script ✅
