@@ -1,0 +1,161 @@
+{
+  "name": "DIIS — Health Check API (setiap 5 menit)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "hc-trigger-001",
+      "name": "Jadwal Cek 5 Menit",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://api:3001/health",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "hc-request-001",
+      "name": "Cek API /health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-api-down",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "hc-if-down-001",
+      "name": "API DOWN?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.FONNTE_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "target",
+              "value": "={{ $env.ADMIN_PHONE_NUMBER }}"
+            },
+            {
+              "name": "message",
+              "value": "=⚠️ [DIIS Alert] API smk-api DOWN!\nEndpoint: http://api:3001/health\nStatus: {{ $json.status ?? 'tidak terjangkau' }}\nWaktu: {{ $now.setZone('Asia/Jakarta').toFormat('dd-MM-yyyy HH:mm:ss') }} WIB\nSegera cek server!"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "hc-notif-down-001",
+      "name": "Notif WA — API DOWN",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 180]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Jadwal Cek 5 Menit": {
+      "main": [
+        [
+          {
+            "node": "Cek API /health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cek API /health": {
+      "main": [
+        [
+          {
+            "node": "API DOWN?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API DOWN?": {
+      "main": [
+        [
+          {
+            "node": "Notif WA — API DOWN",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "diis-health-check-v1",
+  "tags": [
+    {
+      "createdAt": "2026-05-30",
+      "updatedAt": "2026-05-30",
+      "id": "tag-monitoring",
+      "name": "monitoring"
+    }
+  ]
+}

@@ -1,22 +1,40 @@
-# TASK QUEUE — DIIS Tahap 0
+# TASK QUEUE — DIIS Tahap 0 → Sprint-0 Tahap 1
 
+> ⭐ **FILE INI = SATU-SATUNYA SUMBER KEBENARAN STATUS (canonical ledger).**
+> Dokumen lain (`current.md`, `CLAUDE.md` §7, gate docs) hanya MENAUTKAN ke sini,
+> tidak menduplikasi status. Jika ada konflik, file INI yang menang.
 > Dikelola oleh Cowork AI. Claude Code hanya membaca file ini.
-> Task dikerjakan secara berurutan kecuali ada keterangan "parallel".
-> Update terakhir: 2026-05-26 — Audit System Analyst, semua temuan Critical/High masuk BLOCKING section
+> Update terakhir: 2026-05-29 — Rekonsiliasi status (Laporan System Analyst v2.0).
+
+---
+
+## 📊 STATUS RINGKAS (per 2026-05-29)
+
+| | |
+|---|---|
+| **Fase** | Tahap 0 core SELESAI & terverifikasi → membuka Sprint-0 Tahap 1 |
+| **Go/No-Go** | ✅ **CONDITIONAL GO** (28 Mei) — Tahap 1 boleh mulai, TAPI 4 carryover Tahap 0 wajib tuntas sebagai Sprint-0 |
+| **Audit teknis** | 10/12 temuan CLOSED & diverifikasi runtime (T-07, T-08, T-09, T-12 = medium, masuk desain Tahap 1) |
+| **Test terverifikasi** | packages/auth 50/50 (coverage 100%) · apps/api 62/62 — diuji ulang 29 Mei |
+| **Carryover Tahap 0 (Sprint-0)** | W2-04 n8n · W3-02 Grafana+/metrics · W4-02 onboarding · W4-04 sprint-plan Tahap 1 |
+
+> Catatan koreksi: deklarasi "Tahap 0 SELESAI 23/23" sebelumnya terlalu optimistis.
+> Status akurat = **core selesai + 4 carryover non-blocking dipindah ke Sprint-0**.
 
 ---
 
 ## 🔄 SEDANG DIKERJAKAN
 
-→ Lihat `.tasks/current.md`
+→ Lihat `.tasks/current.md` (hanya pointer; status resmi tetap di file ini)
 
 ---
 
-## 🚨 BLOCKING — Audit Fix dari Laporan System Analyst (26 Mei 2026)
+## ✅ BLOCKING — Audit Fix dari Laporan System Analyst (26 Mei 2026) — SEMUA CLOSED
 
-> Temuan ini harus diselesaikan SEBELUM melanjutkan task reguler W3/W4.
-> W4-03 (Go/No-Go) secara eksplisit BLOCKED oleh semua FIX-T01..T05.
-> Referensi laporan: `docs/Laporan_System_Analyst_DIIS_2026-05-26.docx`
+> **STATUS 2026-05-29: SELURUH item BLOCKING di bawah sudah CLOSED & diverifikasi runtime.**
+> FIX-T01..T06, T10, T11, DOC-O02 — semua selesai. W4-03 Go/No-Go tidak lagi BLOCKED.
+> Detail per item tetap diarsipkan di bawah untuk jejak audit. Referensi laporan:
+> `docs/Laporan_System_Analyst_DIIS_2026-05-26.docx` & `Laporan_..._2026-05-29.docx`.
 
 ---
 
@@ -171,21 +189,25 @@
 
 ---
 
-### [QUEUE-4] W4-03 Checklist Final Go/No-Go ⛔ BLOCKED
-**Linear:** SMA-20 | **Estimasi:** 1 jam
-**BLOCKED by:** SEMUA FIX-T01..T05 harus selesai dan diverifikasi runtime dulu
+### [QUEUE-4] W4-03 Checklist Final Go/No-Go ✅ SELESAI
+**Linear:** SMA-20 | **Status:** ✅ CONDITIONAL GO (2026-05-28)
+**Hasil:** `docs/gates/go-no-go-tahap0.md` — semua FIX-T01..T05 sudah closed & diverifikasi.
+4 carryover non-blocking dipindah ke Sprint-0 Tahap 1 (lihat STATUS RINGKAS di atas).
 
 ---
 
-### [QUEUE-5] W2-04 n8n Workflow Health-Check
-**Linear:** SMA-12 | **Estimasi:** 1 jam
-> Catatan: backup-daily sudah di BLOCKING-5. Ini untuk workflow health-check.
+### [QUEUE-5] W2-04 n8n Workflow Health-Check ✅ SELESAI
+**Linear:** SMA-12 | **Status:** ✅ DONE 2026-05-30
+**Branch:** `feat/SMA-12-n8n-workflows`
 
-**Scope:**
-- Buat `infrastructure/n8n/workflows/health-check.json`
-  - Trigger: setiap 5 menit
-  - Action: HTTP check ke /health endpoint
-  - If down: kirim notif
+**Hasil:**
+- `infrastructure/n8n/workflows/health-check.json` — monitor /health setiap 5 menit, notif WA jika DOWN
+- `infrastructure/n8n/workflows/backup-daily.json` — konfirmasi backup MinIO setiap 02:00 WIB, notif OK/GAGAL
+- `infrastructure/n8n/README.md` — panduan import + konfigurasi credential
+- `infrastructure/docker/docker-compose.yml` — tambah FONNTE_API_KEY + ADMIN_PHONE_NUMBER ke env n8n
+
+**Bukti:** JSON valid (node -e JSON.parse → OK). Tidak ada secret hardcoded (grep bersih).
+**Laporan:** `.tasks/done/SMA-12-n8n-DONE.md`
 
 ---
 
@@ -225,6 +247,12 @@
 - W3-01 GitHub Actions CI ✅
 - W3-04 Next.js Web Scaffold ✅
 - SMA-6 Cloudflare DNS ✅ 2026-05-27 — 9 records aktif. NS `celeste` + `corey` sudah diset di Hostinger (registrar). Propagasi berjalan.
+- W4-01 Dokumentasi Arsitektur (SMA-18) ✅ 2026-05-29 — 3 dokumen selesai:
+  `docs/architecture/system-overview.md`, `docs/deployment/env-variables.md`,
+  `docs/deployment/setup-server.md`. Sekalian fix 2 production issues:
+  REDIS_URL URL-encoding (Zod reject karena `@`/`#` di password) → python3
+  encode di deploy.yml; healthcheck curl missing di node:20-alpine → apk add
+  curl di runner stage. Deploy production berhasil commit fb71fc3.
 - FIX-WEB-BUILD-31 ✅ 2026-05-29 — React error #31 saat `next build` diperbaiki.
   Root cause: duplikasi React 18 (root node_modules) vs React 19 (apps/web node_modules).
   Fix: tambah `overrides` di root package.json, regenerasi package-lock.json.

@@ -138,6 +138,9 @@ services:
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
       GENERIC_TIMEZONE: Asia/Jakarta
       TZ: Asia/Jakarta
+      # Env vars untuk workflow notifikasi WA (diakses via $env.* di workflow JSON)
+      FONNTE_API_KEY: ${FONNTE_API_KEY}
+      ADMIN_PHONE_NUMBER: ${ADMIN_PHONE_NUMBER}
     volumes:
       - n8n_data:/home/node/.n8n
     networks:

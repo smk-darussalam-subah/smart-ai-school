@@ -1,0 +1,278 @@
+{
+  "name": "DIIS — Backup Daily Monitor (02:00 WIB)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 19 * * *"
+            }
+          ]
+        }
+      },
+      "id": "bd-trigger-001",
+      "name": "Jadwal Cek Backup",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "notes": "Cron: 0 19 * * * = 19:00 UTC = 02:00 WIB (UTC+7). Dipilih sejajar dengan schedule pg-backup."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Siapkan prefix tanggal untuk filter object MinIO.\n// pg-backup (backup.sh) membuat file dengan format: postgres/YYYY-MM-DD_HH-MM.sql.gz\n// menggunakan $(date +%Y-%m-%d_%H-%M) yang berjalan di UTC.\n// Cron ini trigger pada 19:00 UTC (= 02:00 WIB), jadi date prefix = tanggal UTC saat ini.\nconst now = new Date();\nconst yyyy = now.getUTCFullYear();\nconst mm = String(now.getUTCMonth() + 1).padStart(2, '0');\nconst dd = String(now.getUTCDate()).padStart(2, '0');\nconst datePrefix = `${yyyy}-${mm}-${dd}`;\nconst listUrl = `http://minio:9000/diis-backup?list-type=2&prefix=postgres/${datePrefix}&max-keys=10`;\nreturn [{ json: { datePrefix, listUrl } }];"
+      },
+      "id": "bd-code-date-001",
+      "name": "Siapkan Tanggal",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://minio:9000/diis-backup",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "list-type",
+              "value": "2"
+            },
+            {
+              "name": "prefix",
+              "value": "=postgres/{{ $json.datePrefix }}"
+            },
+            {
+              "name": "max-keys",
+              "value": "10"
+            }
+          ]
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "aws",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "aws": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "MinIO Backup Credentials"
+        }
+      },
+      "id": "bd-request-minio-001",
+      "name": "Daftar File MinIO",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "onError": "continueRegularOutput",
+      "notes": "Credential 'MinIO Backup Credentials' harus dikonfigurasi di n8n: Credentials → New → AWS → isi Access Key, Secret Key, Region=us-east-1, Custom Endpoint=http://minio:9000"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse respons XML dari MinIO S3 ListObjectsV2.\n// Cek apakah ada file backup untuk tanggal hari ini.\nconst responseText = $input.all()[0].json?.data ?? '';\n\n// Ekstrak KeyCount dari XML\nconst keyCountMatch = responseText.match(/<KeyCount>(\\d+)<\\/KeyCount>/);\nconst keyCount = keyCountMatch ? parseInt(keyCountMatch[1], 10) : 0;\n\n// Ekstrak ukuran file pertama jika ada\nconst sizeMatch = responseText.match(/<Size>(\\d+)<\\/Size>/);\nconst sizeBytes = sizeMatch ? parseInt(sizeMatch[1], 10) : 0;\nconst sizeKB = sizeBytes > 0 ? (sizeBytes / 1024).toFixed(1) + ' KiB' : '0 KiB';\n\n// Ekstrak nama file pertama\nconst keyMatch = responseText.match(/<Key>([^<]+)<\\/Key>/);\nconst fileName = keyMatch ? keyMatch[1] : '(tidak ditemukan)';\n\nreturn [{ json: { backupFound: keyCount > 0, fileCount: keyCount, sizeKB, fileName } }];"
+      },
+      "id": "bd-code-parse-001",
+      "name": "Cek Ada Backup?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-backup-found",
+              "leftValue": "={{ $json.backupFound }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bd-if-found-001",
+      "name": "Backup Ada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.FONNTE_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "target",
+              "value": "={{ $env.ADMIN_PHONE_NUMBER }}"
+            },
+            {
+              "name": "message",
+              "value": "=✅ [DIIS Backup] Backup OK!\nFile: {{ $json.fileName }}\nUkuran: {{ $json.sizeKB }}\nJumlah file: {{ $json.fileCount }}\nWaktu cek: {{ $now.setZone('Asia/Jakarta').toFormat('dd-MM-yyyy HH:mm') }} WIB"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bd-notif-ok-001",
+      "name": "Notif WA — Backup OK",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fonnte.com/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.FONNTE_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "target",
+              "value": "={{ $env.ADMIN_PHONE_NUMBER }}"
+            },
+            {
+              "name": "message",
+              "value": "=🚨 [DIIS Alert] Backup GAGAL!\nTidak ada file backup PostgreSQL ditemukan di MinIO untuk tanggal {{ $('Siapkan Tanggal').item.json.datePrefix }}.\nBucket: diis-backup/postgres/\nWaktu cek: {{ $now.setZone('Asia/Jakarta').toFormat('dd-MM-yyyy HH:mm') }} WIB\nSegera cek service pg-backup!"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bd-notif-fail-001",
+      "name": "Notif WA — Backup GAGAL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 420]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Jadwal Cek Backup": {
+      "main": [
+        [
+          {
+            "node": "Siapkan Tanggal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Siapkan Tanggal": {
+      "main": [
+        [
+          {
+            "node": "Daftar File MinIO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daftar File MinIO": {
+      "main": [
+        [
+          {
+            "node": "Cek Ada Backup?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cek Ada Backup?": {
+      "main": [
+        [
+          {
+            "node": "Backup Ada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backup Ada?": {
+      "main": [
+        [
+          {
+            "node": "Notif WA — Backup OK",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notif WA — Backup GAGAL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "diis-backup-daily-v1",
+  "tags": [
+    {
+      "createdAt": "2026-05-30",
+      "updatedAt": "2026-05-30",
+      "id": "tag-backup",
+      "name": "backup"
+    },
+    {
+      "createdAt": "2026-05-30",
+      "updatedAt": "2026-05-30",
+      "id": "tag-monitoring",
+      "name": "monitoring"
+    }
+  ]
+}
