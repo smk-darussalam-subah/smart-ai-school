@@ -70,8 +70,30 @@ docker compose down && docker compose up -d && sleep 15 && docker ps | grep smk-
 # nginx harus otomatis Up tanpa intervensi manual
 ```
 
-**Tempel output dari VPS di sini setelah dijalankan:**
+**Output VPS — 2026-05-30:**
 ```
+docker rm -f smk-nginx
+→ smk-nginx
+
+docker compose up -d nginx
+→ [+] up 11/11  ✔ smk-nginx Started 1.3s
+
+docker ps | grep smk-nginx
+→ nginx:alpine  Up Less than a second  0.0.0.0:80->80/tcp  smk-nginx
+
+docker inspect smk-nginx --format 'restart={{.HostConfig.RestartPolicy.Name}}'
+→ restart=unless-stopped
+
+grep -n "nginx:" docker-compose.yml
+→ 364:  nginx:
+   365:    image: nginx:alpine
+
+curl -s -o /dev/null -w "%{http_code}\n" https://smkdarussalamsubah.sch.id
+→ 307  (Cloudflare Flexible redirect — situs live ✅)
+```
+Status: ✅ **VERIFIED** — nginx managed by compose, port 80 exposed, restart policy aktif.
+307 adalah expected di Cloudflare Flexible mode (bukan error).
+
 [output VPS]
 ```
 
