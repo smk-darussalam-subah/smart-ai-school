@@ -256,7 +256,13 @@ Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding
 **Blocker sebelum merge:** jalankan cek data dulu (lihat DONE file), lalu SSH tunnel + `migrate deploy`
 **Laporan:** `.tasks/done/SMA-31-foundation-schema-DONE.md`
 
-> **Unlock setelah SMA-31 merge:** SMA-32 (Student CRUD), SMA-34 (PPDB), SMA-36 (TeachingAssignment)
+> **Unlock setelah SMA-31 merge:** SMA-34 (PPDB), SMA-36 (TeachingAssignment)
+
+### SMA-32 — Student Module CRUD
+**Status:** ✅ DONE 2026-05-31 — siap PR review
+**Branch:** `feat/SMA-32-student-module` (commit `c996395`)
+**Laporan:** `.tasks/done/SMA-32-student-DONE.md`
+**Note:** ⚠️ R-05 gate aktif — jangan input data siswa nyata sampai SMA-55 (consent) selesai
 
 ### SMA-35 — Auth /me + RolesGuard
 **Status:** ✅ DONE 2026-05-31 — merged main + deployed (#47)
