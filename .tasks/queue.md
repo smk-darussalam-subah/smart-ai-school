@@ -258,6 +258,11 @@ Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding
 
 > **Unlock setelah SMA-31 merge:** SMA-32 (Student CRUD), SMA-34 (PPDB), SMA-36 (TeachingAssignment)
 
+### SMA-35 — Auth /me + RolesGuard
+**Status:** ✅ DONE 2026-05-31 — siap PR review
+**Branch:** `feat/SMA-35-auth-me-rolesguard` (commit `b6181cd`)
+**Laporan:** `.tasks/done/SMA-35-auth-me-DONE.md`
+
 ---
 
 ## 🏁 SPRINT-0 SELESAI — 2026-05-30
