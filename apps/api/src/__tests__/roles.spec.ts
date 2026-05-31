@@ -106,4 +106,14 @@ describe('RolesGuard (SMA-35)', () => {
     });
     expect(() => guard.canActivate(ctx)).toThrow(ForbiddenException);
   });
+
+  it('@Roles() set + request.user undefined → ForbiddenException (edge case: token bypass)', () => {
+    // userRoles: [] → buildContext sets user = undefined
+    const ctx = buildContext({
+      reflector,
+      requiredRoles: ['SUPER_ADMIN'],
+      userRoles: [],
+    });
+    expect(() => guard.canActivate(ctx)).toThrow(ForbiddenException);
+  });
 });

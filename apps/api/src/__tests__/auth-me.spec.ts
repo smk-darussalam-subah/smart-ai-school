@@ -27,6 +27,7 @@ import { KeycloakGuard } from '../auth/guards/keycloak.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuthController } from '../auth/auth.controller';
 import { AuthService } from '../auth/auth.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { IS_PUBLIC_KEY } from '../auth/decorators/public.decorator';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -199,5 +200,122 @@ describe('Test 3 — @Roles("SUPER_ADMIN") diakses GURU → ForbiddenException (
       userRoles: ['ORANG_TUA'],
     });
     expect(() => rolesGuard.canActivate(ctx)).toThrow(ForbiddenException);
+  });
+});
+
+// ── AuthService unit tests (coverage SMA-35 auth.service.ts) ─────────────────
+
+describe('AuthService — getMe + updateMe', () => {
+  let service: AuthService;
+  let prisma: {
+    user: { findUnique: jest.Mock; update: jest.Mock };
+  };
+
+  const mockProfile = {
+    id: 'db-uuid-abcd',
+    keycloakId: 'kc-uuid-1234',
+    email: 'guru@smk.sch.id',
+    fullName: 'Agus Setiawan',
+    role: 'GURU',
+  };
+
+  beforeEach(async () => {
+    prisma = { user: { findUnique: jest.fn(), update: jest.fn() } };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        { provide: PrismaService, useValue: prisma },
+      ],
+    }).compile();
+
+    service = module.get(AuthService);
+    jest.clearAllMocks();
+  });
+
+  describe('getMe', () => {
+    it('user ditemukan → mengembalikan profil', async () => {
+      prisma.user.findUnique.mockResolvedValue(mockProfile);
+
+      const result = await service.getMe('kc-uuid-1234');
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { keycloakId: 'kc-uuid-1234' } }),
+      );
+      expect(result).toEqual(mockProfile);
+    });
+
+    it('user tidak ditemukan → NotFoundException', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(service.getMe('tidak-ada')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('updateMe', () => {
+    it('update berhasil → mengembalikan profil terupdate', async () => {
+      const updated = { ...mockProfile, phone: '08123456789' };
+      prisma.user.findUnique.mockResolvedValue({ id: 'db-uuid-abcd' });
+      prisma.user.update.mockResolvedValue(updated);
+
+      const result = await service.updateMe('kc-uuid-1234', { phone: '08123456789' });
+
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { keycloakId: 'kc-uuid-1234' },
+          data: { phone: '08123456789' },
+        }),
+      );
+      expect(result).toEqual(updated);
+    });
+
+    it('user tidak ditemukan → NotFoundException', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(service.updateMe('tidak-ada', { phone: '08123456789' })).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+});
+
+// ── AuthController.updateMe ──────────────────────────────────────────────────
+
+describe('AuthController — PATCH /auth/me (updateMe)', () => {
+  let controller: AuthController;
+  let authService: jest.Mocked<AuthService>;
+
+  const mockUser = {
+    keycloakId: 'kc-uuid-1234',
+    email: 'guru@smk.sch.id',
+    username: 'guru1',
+    roles: ['GURU' as const],
+    fullName: 'Agus Setiawan',
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [AuthController],
+      providers: [
+        {
+          provide: AuthService,
+          useValue: {
+            getMe: jest.fn(),
+            updateMe: jest.fn().mockResolvedValue({ id: 'x', phone: '08123456789' }),
+          },
+        },
+      ],
+    }).compile();
+
+    controller = module.get(AuthController);
+    authService = module.get(AuthService);
+    jest.clearAllMocks();
+  });
+
+  it('PATCH /me → delegasi ke authService.updateMe dengan keycloakId + dto', async () => {
+    const dto = { phone: '08123456789' };
+    await controller.updateMe(mockUser, dto);
+
+    expect(authService.updateMe).toHaveBeenCalledWith(mockUser.keycloakId, dto);
   });
 });
