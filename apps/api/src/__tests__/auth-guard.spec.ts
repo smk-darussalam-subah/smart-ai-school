@@ -25,6 +25,7 @@ import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { KeycloakGuard } from '../auth/guards/keycloak.guard';
 import { IS_PUBLIC_KEY } from '../auth/decorators/public.decorator';
+import { verifyKeycloakToken, extractAuthUser } from '@smk/auth';
 
 function buildMockContext(options: {
   reflector: Reflector;
@@ -96,5 +97,36 @@ describe('KeycloakGuard — APP_GUARD Global Protection (FIX-T02)', () => {
     });
 
     await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('token valid → user di-inject ke request, returns true (success path)', async () => {
+    const mockPayload = {
+      sub: 'kc-uuid-001',
+      email: 'guru@smk.sch.id',
+      preferred_username: 'guru1',
+      realm_access: { roles: ['GURU'] },
+      iat: 0,
+      exp: 9_999_999_999,
+      iss: 'http://localhost:8080/realms/diis',
+    };
+    const mockUser = {
+      keycloakId: 'kc-uuid-001',
+      email: 'guru@smk.sch.id',
+      username: 'guru1',
+      roles: ['GURU'],
+      fullName: 'Guru Test',
+    };
+
+    (verifyKeycloakToken as jest.Mock).mockResolvedValue(mockPayload);
+    (extractAuthUser as jest.Mock).mockReturnValue(mockUser);
+
+    const ctx = buildMockContext({
+      reflector,
+      isPublic: false,
+      authHeader: 'Bearer valid-token-abc',
+    });
+
+    const result = await guard.canActivate(ctx);
+    expect(result).toBe(true);
   });
 });

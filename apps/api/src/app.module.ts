@@ -14,6 +14,7 @@ import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { StudentModule } from './student/student.module';
 import { KeycloakGuard } from './auth/guards/keycloak.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -33,8 +34,9 @@ import { RolesGuard } from './auth/guards/roles.guard';
     HealthModule,
     MetricsModule,
 
-    // Domain modules akan ditambahkan di Sprint 1+:
-    // StudentModule (SMA-32), PpdbModule (SMA-34), AcademicModule (SMA-36), ...
+    // Domain modules Sprint 1
+    StudentModule,
+    // PpdbModule (SMA-34), AcademicModule (SMA-36), FinanceModule (SMA-41), ...
   ],
   providers: [
     // 1. Throttler aktif global — cek rate limit sebelum auth
