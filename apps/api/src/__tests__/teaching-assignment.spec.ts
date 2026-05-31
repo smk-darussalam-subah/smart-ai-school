@@ -22,7 +22,6 @@ jest.mock('@smk/logger', () => ({
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -258,21 +257,21 @@ describe('TeachingAssignmentService', () => {
       await expect(service.create(CREATE_DTO)).rejects.toThrow(BadRequestException);
     });
 
-    it('duplikat [teacher,class,subject,year] → ConflictException (409)', async () => {
+    it('duplikat [teacher,class,subject,year] → P2002 di-propagate ke PrismaExceptionFilter global', async () => {
       prisma.teacher.findUnique.mockResolvedValue({ id: 'teacher-uuid-001' });
       prisma.class.findUnique.mockResolvedValue({ id: 'class-uuid-001' });
 
-      // Simulasi Prisma P2002 unique constraint violation
+      // Service tidak lagi menangkap P2002 — PrismaExceptionFilter global → 409
       const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint', {
         code: 'P2002',
         clientVersion: '5.0.0',
       });
       prisma.teachingAssignment.create.mockRejectedValue(p2002);
 
-      await expect(service.create(CREATE_DTO)).rejects.toThrow(ConflictException);
+      await expect(service.create(CREATE_DTO)).rejects.toThrow(Prisma.PrismaClientKnownRequestError);
     });
 
-    it('error Prisma lain (bukan P2002) → di-rethrow', async () => {
+    it('error Prisma lain → di-propagate ke PrismaExceptionFilter global', async () => {
       prisma.teacher.findUnique.mockResolvedValue({ id: 'teacher-uuid-001' });
       prisma.class.findUnique.mockResolvedValue({ id: 'class-uuid-001' });
 
@@ -306,7 +305,7 @@ describe('TeachingAssignmentService', () => {
       );
     });
 
-    it('update menyebabkan duplikat → ConflictException (409)', async () => {
+    it('update menyebabkan duplikat → P2002 di-propagate ke PrismaExceptionFilter global', async () => {
       prisma.teachingAssignment.findUnique.mockResolvedValue({
         id: 'assign-uuid-001', teacherId: 'teacher-uuid-001', classId: 'class-uuid-001',
       });
@@ -317,7 +316,7 @@ describe('TeachingAssignmentService', () => {
 
       await expect(
         service.update('assign-uuid-001', { academicYear: '2024/2025' }),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toThrow(Prisma.PrismaClientKnownRequestError);
     });
   });
 
