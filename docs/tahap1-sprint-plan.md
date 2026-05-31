@@ -621,3 +621,5 @@ Secara hukum (UU PDP Pasal 20), consent harus diperoleh **sebelum** data pribadi
 
 *Dokumen ini adalah design gate — harus di-review dan di-approve Kang Sholah sebelum Sprint 1 coding dimulai.*
 *Setelah approve: buat Linear issues SMA-31..SMA-52, assign ke sprint, mulai coding.*
+
+> **Tahap 2 pointer:** Modul KBM (session-based) direncanakan Tahap 2 — lihat `docs/tahap2-kbm-design.md`; di Tahap 1 jaga forward-compat: `Attendance` siap diberi `sessionId` nullable, dan jadwal SMA-39 mengakomodasi JP + ruang.
