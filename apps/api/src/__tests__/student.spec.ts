@@ -316,6 +316,53 @@ describe('StudentService', () => {
 
       await expect(service.remove('non-existent')).rejects.toThrow(NotFoundException);
     });
+
+    // ── Verifikasi: setelah DELETE, GET endpoint tidak mengembalikan record ──
+
+    it('setelah remove() — findById menggunakan filter {deletedAt: null} → NotFoundException', async () => {
+      // Langkah 1: soft delete berhasil
+      prisma.student.findFirst
+        .mockResolvedValueOnce({ id: 'student-uuid-001' }) // cek existence di remove()
+        .mockResolvedValueOnce(null);                       // findById: record ter-filter karena deletedAt set
+      prisma.student.update.mockResolvedValue({
+        id: 'student-uuid-001',
+        nis: '20250001',
+        deletedAt: new Date(),
+      });
+      await service.remove('student-uuid-001');
+
+      // Langkah 2: findById → null (filter deletedAt: null tidak menemukan record)
+      await expect(service.findById('student-uuid-001', SA_USER)).rejects.toThrow(
+        NotFoundException,
+      );
+
+      // Verifikasi filter yang dikirim ke Prisma
+      const findByIdCall = prisma.student.findFirst.mock.calls[1][0];
+      expect(findByIdCall.where).toMatchObject({ id: 'student-uuid-001', deletedAt: null });
+    });
+
+    it('setelah remove() — findAll menggunakan filter {deletedAt: null}, record tidak muncul', async () => {
+      // Langkah 1: soft delete
+      prisma.student.findFirst.mockResolvedValue({ id: 'student-uuid-001' });
+      prisma.student.update.mockResolvedValue({
+        id: 'student-uuid-001',
+        nis: '20250001',
+        deletedAt: new Date(),
+      });
+      await service.remove('student-uuid-001');
+
+      // Langkah 2: findAll — DB mengembalikan kosong (soft-deleted tidak lolos filter)
+      prisma.student.findMany.mockResolvedValue([]);
+      prisma.student.count.mockResolvedValue(0);
+      const list = await service.findAll({ page: 1, limit: 20 });
+
+      expect(list.data).toHaveLength(0);
+      expect(list.total).toBe(0);
+
+      // Verifikasi filter deletedAt: null ada di query
+      const findManyCall = prisma.student.findMany.mock.calls[0][0];
+      expect(findManyCall.where).toMatchObject({ deletedAt: null });
+    });
   });
 
   // ── findGrades ───────────────────────────────────────────────────────────
