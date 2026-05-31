@@ -14,7 +14,20 @@ export const SubmitLeadSchema = z
     fullName: z.string().min(2).max(255),
     phone: z
       .string()
-      .regex(/^62\d{8,12}$/, 'Nomor HP harus diawali 62 dan terdiri 10-14 digit'),
+      .transform((val) => {
+        // Normalisasi sebelum validasi — tangani format umum yang diketik pengguna:
+        //   0812...   → 62812...    (format lokal Indonesia)
+        //   +62812... → 62812...   (format internasional dengan +)
+        //   62812...  → 62812...   (sudah benar, biarkan)
+        const s = val.replace(/[\s\-().]/g, ''); // strip spasi, dash, tanda kurung, titik
+        if (s.startsWith('+62')) return s.slice(1); // hapus +
+        if (s.startsWith('0')) return '62' + s.slice(1); // ganti 0 → 62
+        return s;
+      })
+      .refine(
+        (val) => /^62\d{8,12}$/.test(val),
+        'Format nomor HP tidak valid. Contoh: 08123456789, +6281234567890, atau 6281234567890',
+      ),
     schoolOrigin: z.string().max(255).optional(),
     interestMajor: z.enum(['AKL', 'TKJ', 'TKRO', 'TBSM']).optional(),
     source: z
