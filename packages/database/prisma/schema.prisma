@@ -41,7 +41,7 @@ model User {
   // Relations
   student     Student?
   teacher     Teacher?
-  parent      Student[] @relation("ParentStudent")
+  parent      Student[]  @relation("ParentStudent")
   leads       PpdbLead[] @relation("AssignedLeads")
 
   @@map("users")
@@ -77,8 +77,10 @@ model Class {
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  students   Student[]
-  teacher    Teacher?  @relation(fields: [teacherId], references: [id])
+  students            Student[]
+  teacher             Teacher?             @relation(fields: [teacherId], references: [id])
+  teachingAssignments TeachingAssignment[]
+  attendanceRecords   Attendance[]
 
   @@unique([name, academicYear])
   @@map("classes")
@@ -102,9 +104,12 @@ model Student {
   deletedAt DateTime?     @map("deleted_at")
 
   // Relations
-  user      User    @relation(fields: [userId], references: [id])
-  class     Class?  @relation(fields: [classId], references: [id])
-  parent    User?   @relation("ParentStudent", fields: [parentId], references: [id])
+  user        User         @relation(fields: [userId], references: [id])
+  class       Class?       @relation(fields: [classId], references: [id])
+  parent      User?        @relation("ParentStudent", fields: [parentId], references: [id])
+  grades      Grade[]
+  attendance  Attendance[]
+  sppPayments SppPayment[]
 
   @@map("students")
   @@schema("student")
@@ -133,8 +138,9 @@ model Teacher {
   deletedAt   DateTime? @map("deleted_at")
 
   // Relations
-  user       User    @relation(fields: [userId], references: [id])
-  walikelas  Class[]
+  user        User                 @relation(fields: [userId], references: [id])
+  walikelas   Class[]
+  assignments TeachingAssignment[]
 
   @@map("teachers")
   @@schema("teacher")
@@ -194,33 +200,186 @@ enum LeadSource {
 }
 
 // =============================================================================
-// AI KNOWLEDGE SCHEMA (untuk RAG)
+// ACADEMIC SCHEMA — Model baru T-12 (boundary: academic = operasional)
+// teacher schema = identitas SDM; academic schema = mengajar + nilai + absensi
 // =============================================================================
 
-model KnowledgeDocument {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  title       String   @db.VarChar(500)
-  content     String   @db.Text
-  // embedding di-handle via raw query karena Prisma belum support vector type sepenuhnya
-  source      String   @db.VarChar(255)
-  category    String   @db.VarChar(100)
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+model TeachingAssignment {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teacherId    String   @map("teacher_id") @db.Uuid  // ref ke teacher.teachers
+  classId      String   @map("class_id") @db.Uuid
+  subject      String   @db.VarChar(100)              // Matematika, B.Indonesia, dll
+  hoursPerWeek Int      @default(2) @map("hours_per_week")
+  academicYear String   @map("academic_year") @db.VarChar(9)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  @@index([category])
-  @@map("documents")
-  @@schema("ai_knowledge")
+  // Relations
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+  class   Class   @relation(fields: [classId], references: [id])
+  grades  Grade[]
+
+  @@unique([teacherId, classId, subject, academicYear])
+  @@map("teaching_assignments")
+  @@schema("academic")
 }
 
-model AiDocument {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  content   String   @db.Text
-  embedding Unsupported("vector(1536)")?
-  source    String   @db.VarChar(255)
-  metadata  Json?
-  createdAt DateTime @default(now()) @map("created_at")
+model Grade {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId    String    @map("student_id") @db.Uuid
+  assignmentId String    @map("assignment_id") @db.Uuid  // ref TeachingAssignment
+  semester     Int                                        // 1 atau 2
+  academicYear String    @map("academic_year") @db.VarChar(9)
+  score        Decimal   @db.Decimal(5, 2)
+  type         GradeType
+  notes        String?   @db.Text
+  submittedBy  String    @map("submitted_by") @db.Uuid   // userId pelaku (auth.users, audit — no FK; jika perlu teacher, trace via user→teacher)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  @@map("ai_documents")
+  // Relations
+  student    Student            @relation(fields: [studentId], references: [id])
+  assignment TeachingAssignment @relation(fields: [assignmentId], references: [id])
+
+  @@index([studentId, academicYear, semester])
+  @@map("grades")
+  @@schema("academic")
+}
+
+enum GradeType {
+  uts
+  uh
+  uas
+  praktik
+  sikap
+
+  @@schema("academic")
+}
+
+model Attendance {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId  String           @map("student_id") @db.Uuid
+  classId    String           @map("class_id") @db.Uuid
+  date       DateTime         @db.Date
+  status     AttendanceStatus
+  notes      String?          @db.Text
+  recordedBy String           @map("recorded_by") @db.Uuid  // userId pelaku (auth.users, audit — no FK; jika perlu teacher, trace via user→teacher)
+  createdAt  DateTime         @default(now()) @map("created_at")
+
+  // Relations
+  student Student @relation(fields: [studentId], references: [id])
+  class   Class   @relation(fields: [classId], references: [id])
+
+  @@unique([studentId, classId, date])
+  @@index([classId, date])
+  @@map("attendance")
+  @@schema("academic")
+}
+
+enum AttendanceStatus {
+  hadir
+  izin
+  sakit
+  alpha
+
+  @@schema("academic")
+}
+
+// =============================================================================
+// FINANCE SCHEMA — minimal model (N-1)
+// =============================================================================
+
+model SppPayment {
+  id         String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId  String        @map("student_id") @db.Uuid
+  month      Int                                    // 1-12
+  year       Int
+  amount     Decimal       @db.Decimal(12, 2)
+  status     PaymentStatus @default(unpaid)
+  paidAt     DateTime?     @map("paid_at")
+  receiptNo  String?       @unique @map("receipt_no") @db.VarChar(50)
+  recordedBy String?       @map("recorded_by") @db.Uuid  // userId pelaku (auth.users, audit — no FK)
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@unique([studentId, month, year])
+  @@index([status, year, month])
+  @@map("spp_payments")
+  @@schema("finance")
+}
+
+enum PaymentStatus {
+  unpaid
+  paid
+  late
+  waived
+
+  @@schema("finance")
+}
+
+// =============================================================================
+// NOTIFICATION SCHEMA — minimal model (N-1)
+// =============================================================================
+
+model NotificationLog {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recipient String       @db.VarChar(100)   // nomor WA atau email
+  channel   NotifChannel
+  subject   String?      @db.VarChar(255)
+  body      String       @db.Text
+  status    NotifStatus  @default(pending)
+  sentAt    DateTime?    @map("sent_at")
+  error     String?      @db.Text
+  refType   String?      @map("ref_type")   // "grade", "payment", "ppdb"
+  refId     String?      @map("ref_id") @db.Uuid
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  @@index([recipient, createdAt])
+  @@index([status])
+  @@map("notification_logs")
+  @@schema("notification")
+}
+
+enum NotifChannel {
+  whatsapp
+  email
+  push
+
+  @@schema("notification")
+}
+
+enum NotifStatus {
+  pending
+  sent
+  failed
+
+  @@schema("notification")
+}
+
+// =============================================================================
+// AI KNOWLEDGE SCHEMA — N-2: konsolidasi KnowledgeDocument + AiDocument
+// Diganti dengan satu model RagChunk
+// Embedding model: nomic-embed-text via Ollama → 768 dimensi
+// ⚠️ vector(768) HARUS konsisten dengan OLLAMA_EMBED_DIMENSIONS=768 di .env
+// =============================================================================
+
+model RagChunk {
+  id        String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title     String                      @db.VarChar(500)
+  content   String                      @db.Text                // teks asli untuk display
+  embedding Unsupported("vector(768)")? // nomic-embed-text = 768d
+  source    String                      @db.VarChar(255)        // nama file / URL asal
+  category  String                      @db.VarChar(100)        // faq, peraturan, jadwal, dll
+  metadata  Json?                                               // page number, section, dll
+  isActive  Boolean                     @default(true) @map("is_active")
+  createdAt DateTime                    @default(now()) @map("created_at")
+  updatedAt DateTime                    @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@index([isActive])
+  @@map("rag_chunks")
   @@schema("ai_knowledge")
 }

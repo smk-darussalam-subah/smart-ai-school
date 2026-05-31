@@ -318,10 +318,11 @@ async function main() {
   console.log('✓ 5 PPDB Leads (new→paid pipeline) — created');
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // AI KNOWLEDGE — DOCUMENT
+  // AI KNOWLEDGE — RAG CHUNKS (N-2: menggantikan knowledgeDocument)
+  // Embedding dikosongkan di seed — akan diisi oleh SMA-44 saat ingest dokumen
   // ═══════════════════════════════════════════════════════════════════════════
 
-  await prisma.knowledgeDocument.upsert({
+  await prisma.ragChunk.upsert({
     where: { id: 'bbbbbbbb-0001-0000-0000-000000000001' },
     update: {},
     create: {
@@ -339,7 +340,7 @@ async function main() {
     },
   });
 
-  console.log('✓ AI Knowledge document — created\n');
+  console.log('✓ AI Knowledge RAG chunk — created\n');
 
   // ── Ringkasan ─────────────────────────────────────────────────────────────
   console.log('═══════════════════════════════════════════════');

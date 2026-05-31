@@ -247,6 +247,19 @@ Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding
 
 ---
 
+## 🏁 SPRINT-1 SEDANG BERJALAN — Tahap 1
+
+### SMA-31 — Foundation Schema (N-1, N-2, T-12)
+**Status:** ⏳ Schema + migration file selesai — **migrate dev PENDING** (butuh SSH tunnel untuk apply ke DB)
+**Branch:** `feat/SMA-31-foundation-schema` — siap PR review
+**Deliverable:** schema.prisma ✅ · migration SQL ✅ · generate ✅ · validate ✅ · tsc ✅
+**Blocker sebelum merge:** jalankan cek data dulu (lihat DONE file), lalu SSH tunnel + `migrate deploy`
+**Laporan:** `.tasks/done/SMA-31-foundation-schema-DONE.md`
+
+> **Unlock setelah SMA-31 merge:** SMA-32 (Student CRUD), SMA-34 (PPDB), SMA-36 (TeachingAssignment)
+
+---
+
 ## 🏁 SPRINT-0 SELESAI — 2026-05-30
 
 > Semua 4 carryover Tahap 0 tuntas. Sprint-0 ditutup.
