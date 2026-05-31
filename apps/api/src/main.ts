@@ -7,6 +7,7 @@ import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { validateEnv } from './config/env.validation';
 import { logger } from '@smk/logger';
@@ -72,7 +73,10 @@ async function bootstrap() {
   // ── Global Filters, Interceptors ────────────────────────────────────────────
   // Validation: per-endpoint via @Body(new ZodPipe(schema)) — tidak ada global pipe
   // karena Zod schema harus dideklarasikan per-endpoint. Lihat CLAUDE.md section 5.
-  app.useGlobalFilters(new HttpExceptionFilter());
+  // Urutan: HttpExceptionFilter dulu, lalu PrismaExceptionFilter.
+  // NestJS evaluasi filter dari belakang, jadi PrismaExceptionFilter (spesifik)
+  // dicek lebih dulu sebelum HttpExceptionFilter (catch-all).
+  app.useGlobalFilters(new HttpExceptionFilter(), new PrismaExceptionFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
 
   // ── API Prefix ──────────────────────────────────────────────────────────────

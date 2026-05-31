@@ -12,12 +12,10 @@
 
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAssignmentDto } from './dto/create-assignment.dto';
@@ -142,23 +140,11 @@ export class TeachingAssignmentService {
 
   async create(dto: CreateAssignmentDto) {
     await this.validateForeignKeys(dto.teacherId, dto.classId);
-
-    try {
-      return await this.prisma.teachingAssignment.create({
-        data: dto,
-        select: ASSIGNMENT_SELECT,
-      });
-    } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2002'
-      ) {
-        throw new ConflictException(
-          'Kombinasi guru–kelas–mapel–tahun ajaran ini sudah ada',
-        );
-      }
-      throw e;
-    }
+    // P2002 (duplikat unique constraint) → ditangani PrismaExceptionFilter global → 409
+    return this.prisma.teachingAssignment.create({
+      data: dto,
+      select: ASSIGNMENT_SELECT,
+    });
   }
 
   async update(id: string, dto: UpdateAssignmentDto) {
@@ -168,23 +154,12 @@ export class TeachingAssignmentService {
     });
     if (!existing) throw new NotFoundException('TeachingAssignment tidak ditemukan');
 
-    try {
-      return await this.prisma.teachingAssignment.update({
-        where: { id },
-        data: dto,
-        select: ASSIGNMENT_SELECT,
-      });
-    } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2002'
-      ) {
-        throw new ConflictException(
-          'Kombinasi guru–kelas–mapel–tahun ajaran ini sudah ada',
-        );
-      }
-      throw e;
-    }
+    // P2002 (duplikat unique constraint) → ditangani PrismaExceptionFilter global → 409
+    return this.prisma.teachingAssignment.update({
+      where: { id },
+      data: dto,
+      select: ASSIGNMENT_SELECT,
+    });
   }
 
   async remove(id: string) {
