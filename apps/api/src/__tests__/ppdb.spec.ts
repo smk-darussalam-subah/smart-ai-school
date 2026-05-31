@@ -413,14 +413,40 @@ describe('PpdbController', () => {
 describe('SubmitLeadSchema — hardening validasi', () => {
   const { SubmitLeadSchema: schema } = jest.requireActual('../ppdb/dto/submit-lead.dto');
 
-  it('phone tidak diawali 62 → gagal validasi', () => {
+  // ── Normalisasi phone (format umum yang diketik calon siswa) ─────────────────
+
+  it('phone format 08xxx (lokal) → dinormalisasi ke 62xxx dan lolos', () => {
     const result = schema.safeParse({ ...VALID_SUBMIT_DTO, phone: '08123456789' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.phone).toBe('628123456789');
+  });
+
+  it('phone format +62xxx (internasional) → dinormalisasi ke 62xxx dan lolos', () => {
+    const result = schema.safeParse({ ...VALID_SUBMIT_DTO, phone: '+6281234567890' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.phone).toBe('6281234567890');
+  });
+
+  it('phone format 62xxx (sudah benar) → lolos tanpa perubahan', () => {
+    const result = schema.safeParse({ ...VALID_SUBMIT_DTO, phone: '6281234567890' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.phone).toBe('6281234567890');
+  });
+
+  it('phone dengan spasi dan dash → di-strip sebelum normalisasi', () => {
+    const result = schema.safeParse({ ...VALID_SUBMIT_DTO, phone: '0812-3456-789' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.phone).toBe('628123456789');
+  });
+
+  it('phone terlalu pendek setelah normalisasi → gagal refine', () => {
+    const result = schema.safeParse({ ...VALID_SUBMIT_DTO, phone: '0812' });
     expect(result.success).toBe(false);
   });
 
-  it('phone valid format 62xxx → lolos', () => {
-    const result = schema.safeParse({ ...VALID_SUBMIT_DTO, phone: '6281234567890' });
-    expect(result.success).toBe(true);
+  it('phone format tidak dikenal (bukan 0/+62/62) → gagal refine', () => {
+    const result = schema.safeParse({ ...VALID_SUBMIT_DTO, phone: '99999999999' });
+    expect(result.success).toBe(false);
   });
 
   it('_hp terisi → gagal validasi Zod (max 0 chars)', () => {
