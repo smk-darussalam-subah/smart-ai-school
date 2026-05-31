@@ -19,9 +19,13 @@
 
 import { Module } from '@nestjs/common';
 import { KeycloakGuard } from './guards/keycloak.guard';
+import { RolesGuard } from './guards/roles.guard';
+import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
 
 @Module({
-  providers: [KeycloakGuard],
-  exports: [KeycloakGuard],
+  controllers: [AuthController],
+  providers: [KeycloakGuard, RolesGuard, AuthService],
+  exports: [KeycloakGuard, RolesGuard],
 })
 export class AuthModule {}
