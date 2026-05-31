@@ -258,6 +258,12 @@ Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding
 
 > **Unlock setelah SMA-31 merge:** SMA-37/38 (Grade + Attendance)
 
+### SMA-37 — Grade Module
+**Status:** ✅ DONE 2026-05-31 — siap PR review
+**Branch:** `feat/SMA-37-grade-module` (commit `4a80b94`, branch dari SMA-36)
+**Laporan:** `.tasks/done/SMA-37-grade-DONE.md`
+**Note:** Branch ini include PrismaExceptionFilter global + cleanup TeachingAssignmentService.
+
 ### SMA-36 — TeachingAssignment Module
 **Status:** ✅ DONE 2026-05-31 — siap PR review
 **Branch:** `feat/SMA-36-teaching-assignment` (commit `d2258af`)
