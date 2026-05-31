@@ -29,11 +29,6 @@ import { AuthController } from '../auth/auth.controller';
 import { AuthService } from '../auth/auth.service';
 import { IS_PUBLIC_KEY } from '../auth/decorators/public.decorator';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator';
-import { verifyKeycloakToken, extractAuthUser } from '@smk/auth';
-
-const mockVerify = verifyKeycloakToken as jest.Mock;
-const mockExtract = extractAuthUser as jest.Mock;
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function buildKeycloakContext(options: {
