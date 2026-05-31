@@ -15,6 +15,7 @@ import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { StudentModule } from './student/student.module';
+import { PpdbModule } from './ppdb/ppdb.module';
 import { KeycloakGuard } from './auth/guards/keycloak.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -36,7 +37,8 @@ import { RolesGuard } from './auth/guards/roles.guard';
 
     // Domain modules Sprint 1
     StudentModule,
-    // PpdbModule (SMA-34), AcademicModule (SMA-36), FinanceModule (SMA-41), ...
+    PpdbModule,
+    // AcademicModule (SMA-36), FinanceModule (SMA-41), ...
   ],
   providers: [
     // 1. Throttler aktif global — cek rate limit sebelum auth
