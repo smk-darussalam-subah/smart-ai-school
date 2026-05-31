@@ -4,7 +4,10 @@
 > Dokumen lain (`current.md`, `CLAUDE.md` §7, gate docs) hanya MENAUTKAN ke sini,
 > tidak menduplikasi status. Jika ada konflik, file INI yang menang.
 > Dikelola oleh Cowork AI. Claude Code hanya membaca file ini.
-> Update terakhir: 2026-05-29 — Rekonsiliasi status (Laporan System Analyst v2.0).
+> Update terakhir: 2026-05-31 — Rekonsiliasi status (Sprint 2 Tahap 1).
+>
+> ⚠️ **Linear ditinggalkan mulai 2026-05-31.** Status task kini canonical di file ini.
+> `SMA-XX` = kode internal saja (tidak ada Linear issue). Claude Code: baca queue.md sebagai sumber tunggal.
 
 ---
 
@@ -257,6 +260,12 @@ Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding
 **Laporan:** `.tasks/done/SMA-31-foundation-schema-DONE.md`
 
 > **Unlock setelah SMA-31 merge:** SMA-37/38 (Grade + Attendance)
+
+### Portal Nilai & Absensi (frontend)
+**Status:** ✅ DONE 2026-05-31 — siap PR review
+**Branch:** `feat/portal-nilai` (commit `1e8c342`)
+**Laporan:** `.tasks/done/portal-nilai-DONE.md`
+**Note:** `/dashboard/nilai` untuk SISWA + ORANG_TUA. Server component fetch, child selector client-side. tsc ✅ · next build ✅ (7/7 pages).
 
 ### SMA-38 — Attendance Module
 **Status:** ✅ DONE 2026-05-31 — siap PR review
