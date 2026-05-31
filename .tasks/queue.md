@@ -258,6 +258,12 @@ Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding
 
 > **Unlock setelah SMA-31 merge:** SMA-37/38 (Grade + Attendance)
 
+### SMA-38 — Attendance Module
+**Status:** ✅ DONE 2026-05-31 — siap PR review
+**Branch:** `feat/SMA-38-attendance` (commit `9615a11`)
+**Laporan:** `.tasks/done/SMA-38-attendance-DONE.md`
+**Note:** Bulk insert atomik (prisma.$transaction), ownership GURU via TeachingAssignment.
+
 ### SMA-37 — Grade Module
 **Status:** ✅ DONE 2026-05-31 — siap PR review
 **Branch:** `feat/SMA-37-grade-module` (commit `4a80b94`, branch dari SMA-36)
