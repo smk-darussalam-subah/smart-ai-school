@@ -256,7 +256,12 @@ Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding
 **Blocker sebelum merge:** jalankan cek data dulu (lihat DONE file), lalu SSH tunnel + `migrate deploy`
 **Laporan:** `.tasks/done/SMA-31-foundation-schema-DONE.md`
 
-> **Unlock setelah SMA-31 merge:** SMA-36 (TeachingAssignment)
+> **Unlock setelah SMA-31 merge:** SMA-37/38 (Grade + Attendance)
+
+### SMA-36 — TeachingAssignment Module
+**Status:** ✅ DONE 2026-05-31 — siap PR review
+**Branch:** `feat/SMA-36-teaching-assignment` (commit `d2258af`)
+**Laporan:** `.tasks/done/SMA-36-teaching-assignment-DONE.md`
 
 ### SMA-34 — PPDB Lead Pipeline
 **Status:** ✅ DONE 2026-05-31 — siap PR review
