@@ -259,8 +259,8 @@ Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding
 > **Unlock setelah SMA-31 merge:** SMA-34 (PPDB), SMA-36 (TeachingAssignment)
 
 ### SMA-32 — Student Module CRUD
-**Status:** ✅ DONE 2026-05-31 — siap PR review
-**Branch:** `feat/SMA-32-student-module` (commit `c996395`)
+**Status:** ✅ DONE 2026-05-31 — merged main + CI hijau
+**Branch:** `feat/SMA-32-student-module` (merged)
 **Laporan:** `.tasks/done/SMA-32-student-DONE.md`
 **Note:** ⚠️ R-05 gate aktif — jangan input data siswa nyata sampai SMA-55 (consent) selesai
 
