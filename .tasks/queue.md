@@ -250,24 +250,36 @@ Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding
 
 ---
 
-## 🏁 SPRINT 3 — Finance + AI + Notification (antrian aktif)
+## 🏁 SPRINT 3 — Finance + AI + Notification (berjalan)
 
-### SMA-41 — Finance SPP CRUD + Approval — ✅ SELESAI (2026-06-01)
-**Sprint:** 3 | **Selesai:** 2026-06-01 | **Model:** Sonnet 4.6
-**Branch:** `feat/SMA-41-finance-spp` | **Commit:** `ff08ecb`
-**Deliverable:**
-- Migration additive `20260601000002_sprint3_spp_approval` (approvedBy/approvedAt)
-- 5 endpoint: POST record · GET list · GET summary · GET history · POST approve
-- RBAC: SA/TU input · SA/KS approve (separation of duties) · SISWA/OT ownership
-- 36 unit tests · coverage finance 99% · tsc 0 · eslint 0 · prisma validate ✅
-**Laporan:** `.tasks/done/SMA-41-finance-spp-DONE.md`
-**Keputusan terbuka:** paidAt input historis (saat ini = now()); event SMA-43; gerbang review wajib sebelum merge
+> ⚙️ **KEBIJAKAN (2026-06-01): EKSEKUSI SERIAL — satu task per waktu.** Paralel SMA-41+42 memicu collision (schema.prisma, migration, docs, pull main, queue.md ketimpa) + Prisma client tak ter-regenerate (Finance error approvedBy/approvedAt → perlu `prisma generate`). Urutkan by dependency; tunggu merge+CI hijau sebelum task berikutnya. Setelah merge schema → `prisma generate` dulu.
 
-### SMA-44 — RAG: RagChunk model + seeder FAQ — ✅ SELESAI (2026-06-01, Sonnet 4.6)
-**Branch:** `feat/SMA-44-rag-chunk` | **Laporan:** `.tasks/done/SMA-44-rag-chunk-DONE.md`
-**N-11 STATUS: ✅ CLOSED** — drift schema/DB `ai_knowledge.rag_chunks` tertutup.
-Model `RagChunk` cocok 1:1 tabel existing. Accessor `prisma.ragChunk` tersedia. 10 FAQ chunk dummy (embedding NULL, diisi SMA-45). RagModule/RagService skeleton untuk SMA-45.
-**Gerbang review Cowork:** WAJIB review sebelum merge (schema sync sensitif).
+### SMA-42 — NotificationAdapter — ✅ MERGED ke main (CI hijau, 2026-06-01)
+**Model:** Sonnet 4.6 | Interface `NotificationAdapter` @smk/types + 3 adapter (Log default/Fonnte/SMTP stub) + factory env + durability (pending-first, idempotensi N-9, fail-soft, startup retry). Review ✅ APPROVE.
+**Backlog LOW:** N-9b (idempotensi hanya cek `sent`) · SMTP stub (Nodemailer Sprint 4). **Laporan:** `.tasks/done/SMA-42-notification-adapter-DONE.md`
+
+### SMA-41 — Finance SPP CRUD + Approval — ✅ MERGED ke main (CI hijau, 2026-06-01)
+**Model:** Sonnet 4.6 | **Commit:** `ff08ecb` | digabung satu merge dengan SMA-42.
+Migration additive `20260601000002_sprint3_spp_approval` (approvedBy/approvedAt) · 5 endpoint (record/list/summary/history/approve) · RBAC SA/TU input + SA/KS approve (separation of duties) + SISWA/OT ownership · 36 test, coverage finance 99%.
+**⚠️ Pasca-merge:** `prisma generate` wajib (Finance error sebelumnya karena client lama). **Laporan:** `.tasks/done/SMA-41-finance-spp-DONE.md`
+**Backlog:** paidAt historis (saat ini now()) → enhancement.
+
+### SMA-44 — RAG: RagChunk model + seeder FAQ — ✅ MERGED ke main (PR #30, `837a939`, Deploy #65 hijau)
+**Branch:** `feat/SMA-44-rag-chunk` | **Laporan:** `.tasks/done/SMA-44-rag-chunk-DONE.md` | **Model:** Sonnet 4.6
+**N-11 ✅ CLOSED:** model `RagChunk` cocok tabel existing, accessor `prisma.ragChunk`, 10 FAQ chunk dummy (embedding NULL → diisi SMA-45), RagService skeleton.
+**Verifikasi analis:** Deploy hijau = migrate deploy sukses (tak ada DROP/ALTER destruktif rag_chunks). Verifikasi schema-sync penuh (grep model di working tree) tertunda sampai mount lokal sinkron dengan main — pola sama SMA-31/39.
+
+### SMA-43 — Event Wiring (producer→NotificationService) — ✅ SELESAI (PR dalam review)
+**Branch:** `feat/SMA-43-event-wiring` | **Commit:** `a39ec99` | **Model:** Sonnet 4.6
+5 event ter-wire: student.enrolled · student.statusChanged · grade.submitted · attendance.recorded (alpha/sakit) · payment.received (paid/late). NotificationListener @OnEvent() → notify() dengan refType+refId idempotensi. N-10: BOS = TODO Tahap 2. @nestjs/event-emitter@^3.1.0 dikonfirmasi oleh Director.
+tsc 0 · eslint 0 · 346 tests hijau · coverage 85.58%.
+**Laporan:** `.tasks/done/SMA-43-event-wiring-DONE.md`
+**⏳ Menunggu:** gerbang review Cowork (event arch + idempotensi) sebelum merge.
+
+### Antrian Sprint 3 (SERIAL — satu per waktu)
+1. ~~SMA-43~~ ✅ selesai, tunggu merge
+2. **SMA-45** AIGateway+OllamaAdapter (Sonnet) — deps SMA-44 ✅.
+3. **SMA-46** Chatbot /ai/chat (Sonnet) — deps SMA-45.
 
 ---
 
