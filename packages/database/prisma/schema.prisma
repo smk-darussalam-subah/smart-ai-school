@@ -81,6 +81,7 @@ model Class {
   teacher             Teacher?             @relation(fields: [teacherId], references: [id])
   teachingAssignments TeachingAssignment[]
   attendanceRecords   Attendance[]
+  schedules           Schedule[]
 
   @@unique([name, academicYear])
   @@map("classes")
@@ -215,9 +216,10 @@ model TeachingAssignment {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   // Relations
-  teacher Teacher @relation(fields: [teacherId], references: [id])
-  class   Class   @relation(fields: [classId], references: [id])
-  grades  Grade[]
+  teacher   Teacher    @relation(fields: [teacherId], references: [id])
+  class     Class      @relation(fields: [classId], references: [id])
+  grades    Grade[]
+  schedules Schedule[]
 
   @@unique([teacherId, classId, subject, academicYear])
   @@map("teaching_assignments")
@@ -282,6 +284,46 @@ enum AttendanceStatus {
   sakit
   alpha
 
+  @@schema("academic")
+}
+
+// =============================================================================
+// ACADEMIC SCHEMA — Schedule (SMA-39)
+//
+// Schedule = TEMPLATE jadwal mingguan rekuren (bukan sesi konkret).
+// Konsep JP (jam pelajaran) sengaja dipakai, BUKAN jam dinding (clock-time).
+// Pemetaan JP → jam dinding adalah konfigurasi sekolah (bel), bukan urusan tabel ini.
+// dayOfWeek disimpan mentah (1–6); libur/kalender akademik diatur oleh konsumen.
+//
+// Forward-compat Tahap 2 (KBM):
+//   TimetableEntry akan di-generate dari Schedule (+ penambahan field Room FK opsional).
+//   ClassSession harian di-generate dari TimetableEntry.
+//   Attendance siswa akan diberi kolom sessionId? (nullable, additive migration).
+//   Jangan reserve nama tabel: sessions, rooms, timetable_entries, substitutions,
+//   session_event_logs → sudah dicadangkan untuk modul KBM Tahap 2.
+// =============================================================================
+
+model Schedule {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  classId              String   @map("class_id") @db.Uuid
+  teachingAssignmentId String   @map("teaching_assignment_id") @db.Uuid
+  dayOfWeek            Int      @map("day_of_week")  // 1=Senin .. 6=Sabtu
+  jpStart              Int      @map("jp_start")     // jam pelajaran ke-N mulai
+  jpEnd                Int      @map("jp_end")       // jam pelajaran ke-N selesai (inklusif)
+  room                 String?  @db.VarChar(50)      // nullable — sekolah kecil mungkin belum pakai
+  academicYear         String   @map("academic_year") @db.VarChar(9)
+  semester             Int
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  class              Class              @relation(fields: [classId], references: [id])
+  teachingAssignment TeachingAssignment @relation(fields: [teachingAssignmentId], references: [id])
+
+  // Satu kelas tidak bisa punya dua jadwal di slot JP yang sama
+  @@unique([classId, dayOfWeek, jpStart, academicYear, semester])
+  @@index([teachingAssignmentId])
+  @@map("schedules")
   @@schema("academic")
 }
 

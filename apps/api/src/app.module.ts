@@ -19,6 +19,7 @@ import { PpdbModule } from './ppdb/ppdb.module';
 import { TeachingAssignmentModule } from './teaching-assignment/teaching-assignment.module';
 import { GradeModule } from './grade/grade.module';
 import { AttendanceModule } from './attendance/attendance.module';
+import { ScheduleModule } from './schedule/schedule.module';
 import { KeycloakGuard } from './auth/guards/keycloak.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -44,6 +45,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     TeachingAssignmentModule,
     GradeModule,
     AttendanceModule,
+    ScheduleModule,
     // FinanceModule (SMA-41), ...
   ],
   providers: [
