@@ -117,6 +117,19 @@ export interface Notification {
   createdAt: Date;
 }
 
+/**
+ * Abstraksi pengiriman notifikasi — anti lock-in ke provider manapun.
+ * Throw jika pengiriman gagal; caller (NotificationService) yang mencatat failed.
+ */
+export interface NotificationAdapter {
+  send(
+    channel: 'whatsapp' | 'email',
+    to: string,
+    body: string,
+    subject?: string,
+  ): Promise<void>;
+}
+
 // ── API Response Wrapper ──────────────────────────────────────────────────────
 
 export interface ApiResponse<T = unknown> {
