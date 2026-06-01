@@ -1,9 +1,5 @@
 // =============================================================================
 // app.module.ts — Root Module
-// =============================================================================
-
-// =============================================================================
-// app.module.ts — Root Module
 // Guard urutan (per sprint-plan §4): ThrottlerGuard → KeycloakGuard → RolesGuard
 // =============================================================================
 
@@ -22,6 +18,7 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { ScheduleModule } from './schedule/schedule.module';
 import { NotificationModule } from './notification/notification.module';
 import { FinanceModule } from './finance/finance.module';
+import { RagModule } from './rag/rag.module';
 import { KeycloakGuard } from './auth/guards/keycloak.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -41,15 +38,18 @@ import { RolesGuard } from './auth/guards/roles.guard';
     HealthModule,
     MetricsModule,
 
-    // Domain modules Sprint 1
+    // Domain modules Sprint 1 + 2
     StudentModule,
     PpdbModule,
     TeachingAssignmentModule,
     GradeModule,
     AttendanceModule,
     ScheduleModule,
+
+    // Domain modules Sprint 3
     NotificationModule,
     FinanceModule,
+    RagModule,
   ],
   providers: [
     // 1. Throttler aktif global — cek rate limit sebelum auth
