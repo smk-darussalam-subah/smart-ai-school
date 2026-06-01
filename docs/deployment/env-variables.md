@@ -205,6 +205,32 @@ Digunakan oleh `apps/api` — `NotificationModule`. Semua opsional; CI tanpa key
 
 ---
 
+### 11b. AIGateway / OllamaAdapter (SMA-45)
+
+Digunakan oleh `apps/api` — `AiModule`. Semua opsional; CI tanpa Ollama tetap boot (gateway tersedia via DI tapi backfill tidak dijalankan otomatis).
+
+> **Gate §2.1 (ATURAN KERAS):** `OLLAMA_EMBED_DIMENSIONS` HARUS sama persis dengan output dimensi model embedding yang dipakai. Mismatch → pgvector error saat INSERT. Single source of truth dimensi = env ini.
+
+| Variable | Required | Default | Deskripsi | Contoh |
+|----------|----------|---------|-----------|--------|
+| `AI_PROVIDER` | Tidak | `ollama` | Provider aktif: `ollama` \| `claude` (Sprint 4) | `ollama` |
+| `OLLAMA_URL` | Tidak | `http://ollama:11434` | Base URL Ollama (dalam Docker network) | `http://ollama:11434` |
+| `OLLAMA_CHAT_MODEL` | Tidak | `qwen2.5:7b` | Model Ollama untuk chat RAG (D-2: qwen2.5:7b) | `qwen2.5:7b` |
+| `OLLAMA_EMBED_MODEL` | Tidak | `nomic-embed-text` | Model Ollama untuk embedding (§2.1: 768d) | `nomic-embed-text` |
+| `OLLAMA_EMBED_DIMENSIONS` | Tidak | `768` | Dimensi output model embed — HARUS cocok model | `768` |
+
+> **Catatan:**
+> - `AI_PROVIDER=claude` belum diimplementasikan (Sprint 4, SMA-48 — R-03 strip-PII gerbang keras).
+> - Model Ollama harus sudah di-pull di VPS sebelum backfill:
+>   ```bash
+>   docker exec ollama ollama pull nomic-embed-text
+>   docker exec ollama ollama pull qwen2.5:7b
+>   ```
+> - Backfill embedding FAQ: `cd apps/api && npm run db:embed-faq` (jalankan di VPS).
+> - Di dev/CI, gateway tetap terdaftar sebagai provider DI (inject `AI_GATEWAY`); Ollama tidak dipanggil kecuali backfill dijalankan eksplisit.
+
+---
+
 ## 12. File yang TIDAK Boleh Di-Commit ke Git
 
 ```

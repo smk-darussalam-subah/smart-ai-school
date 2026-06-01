@@ -269,17 +269,26 @@ Migration additive `20260601000002_sprint3_spp_approval` (approvedBy/approvedAt)
 **N-11 ✅ CLOSED:** model `RagChunk` cocok tabel existing, accessor `prisma.ragChunk`, 10 FAQ chunk dummy (embedding NULL → diisi SMA-45), RagService skeleton.
 **Verifikasi analis:** Deploy hijau = migrate deploy sukses (tak ada DROP/ALTER destruktif rag_chunks). Verifikasi schema-sync penuh (grep model di working tree) tertunda sampai mount lokal sinkron dengan main — pola sama SMA-31/39.
 
-### SMA-43 — Event Wiring (producer→NotificationService) — ✅ SELESAI (PR dalam review)
+### SMA-43 — Event Wiring (producer→NotificationService) — ✅ MERGED ke main (PR #32, CI hijau, 2026-06-01)
 **Branch:** `feat/SMA-43-event-wiring` | **Commit:** `a39ec99` | **Model:** Sonnet 4.6
 5 event ter-wire: student.enrolled · student.statusChanged · grade.submitted · attendance.recorded (alpha/sakit) · payment.received (paid/late). NotificationListener @OnEvent() → notify() dengan refType+refId idempotensi. N-10: BOS = TODO Tahap 2. @nestjs/event-emitter@^3.1.0 dikonfirmasi oleh Director.
 tsc 0 · eslint 0 · 346 tests hijau · coverage 85.58%.
 **Laporan:** `.tasks/done/SMA-43-event-wiring-DONE.md`
-**⏳ Menunggu:** gerbang review Cowork (event arch + idempotensi) sebelum merge.
+**Gerbang review Cowork (2026-06-01):** ✅ APPROVE — boleh merge. Verified: emit pasca-commit (tak ada notif hantu), filter di sisi emit, idempotensi refId per-penerima (`:ortu`), N-10 tanpa BOS.
+  - **N-12 LOW (backlog):** durability — `pending` ditulis di listener pasca-emit, bukan pre-emit per gate §5. Aman Tahap 1 (EventEmitter2 in-process sync, jendela commit→pending sub-ms tanpa I/O). Outbox/pre-emit pending = ranah BullMQ Tahap 2.
+
+### SMA-45 — AIGateway + OllamaAdapter — ⏳ PR OPEN (review Cowork)
+**Branch:** `feat/SMA-45-ai-gateway` | **Model:** Sonnet 4.6
+Interface `AIGateway`+`RagContext` @smk/types · `OllamaAdapter` (embed+chat, timeout, dimensi guard gate §2.1) · factory `AI_GATEWAY` via env (`AI_PROVIDER=ollama` default, `claude` → throw Sprint 4) · `AiService.backfillEmbeddings()` via `$queryRaw`+`$executeRaw` · script `db:embed-faq` · env Zod (OLLAMA_*) · docs env-variables.md §11b.
+tsc 0 · eslint 0 · 361/361 tests hijau · coverage 83.81%.
+**Laporan:** `.tasks/done/SMA-45-ai-gateway-DONE.md`
+**⚠️ Backfill nyata:** Director jalankan `npm run db:embed-faq` di VPS setelah merge (Ollama + model nomic-embed-text sudah pull).
+**Gerbang review Cowork (abstraksi AI + embed pipeline) wajib sebelum merge.**
 
 ### Antrian Sprint 3 (SERIAL — satu per waktu)
-1. ~~SMA-43~~ ✅ selesai, tunggu merge
-2. **SMA-45** AIGateway+OllamaAdapter (Sonnet) — deps SMA-44 ✅.
-3. **SMA-46** Chatbot /ai/chat (Sonnet) — deps SMA-45.
+1. ~~SMA-43~~ ✅ merged
+2. ~~SMA-45~~ ⏳ PR open — tunggu review + merge
+3. **SMA-46** Chatbot /ai/chat (Sonnet) — deps SMA-45 ✅.
 
 ---
 

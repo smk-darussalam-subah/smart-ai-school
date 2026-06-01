@@ -20,6 +20,7 @@ import { ScheduleModule } from './schedule/schedule.module';
 import { NotificationModule } from './notification/notification.module';
 import { FinanceModule } from './finance/finance.module';
 import { RagModule } from './rag/rag.module';
+import { AiModule } from './ai/ai.module';
 import { KeycloakGuard } from './auth/guards/keycloak.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -56,6 +57,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     NotificationModule,
     FinanceModule,
     RagModule,
+    AiModule,
   ],
   providers: [
     // 1. Throttler aktif global — cek rate limit sebelum auth
