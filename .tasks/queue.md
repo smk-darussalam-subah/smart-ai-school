@@ -4,7 +4,7 @@
 > Dokumen lain (`current.md`, `CLAUDE.md` §7, gate docs) hanya MENAUTKAN ke sini,
 > tidak menduplikasi status. Jika ada konflik, file INI yang menang.
 > Dikelola oleh Cowork AI. Claude Code hanya membaca file ini.
-> Update terakhir: 2026-06-01 — SMA-39 Schedule selesai (feat/SMA-39-schedule, PR pending). Sprint 2 DITUTUP. Sprint 3 (Finance+AI+Notif) menjadi antrian aktif berikutnya.
+> Update terakhir: 2026-06-01 — SMA-39 + SMA-39a (F-1) keduanya MERGED ke main, CI ✅. Sprint 2 SELESAI TOTAL. Sprint 3 (Finance+AI+Notif) = antrian aktif.
 >
 > ⚠️ **Linear ditinggalkan mulai 2026-05-31.** Status task kini canonical di file ini.
 > `SMA-XX` = kode internal saja (tidak ada Linear issue). Claude Code: baca queue.md sebagai sumber tunggal.
@@ -260,9 +260,9 @@ Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding
 **Deliverable:** schema Schedule additive + migration SQL + GET/POST /schedules + RBAC ownership + 409 konflik (kelas/guru/ruang) + seed dummy + 28 unit test (coverage ~95%) + forward-compat KBM didokumentasikan
 **Laporan:** `.tasks/done/SMA-39-schedule-DONE.md`
 **Gerbang review Cowork (2026-06-01):** ✅ APPROVE. PR sudah di-merge ke main oleh Director sebelum F-1 difix → F-1 turun jadi **fast-follow** (non-blocking, bukan security).
-  - **F-1 MEDIUM → SMA-39a ✅ CLOSED (2026-06-01):** `academicYear` cross-check vs `assignment.academicYear` — mismatch → 400 BadRequestException, gagal cepat. +1 unit test. 272 tests. PR fix/SMA-39a-academicyear. Laporan: `.tasks/done/SMA-39a-academicyear-DONE.md`. Tunggu konfirmasi merge.
+  - **F-1 MEDIUM → SMA-39a ✅ CLOSED & MERGED (2026-06-01):** `academicYear` cross-check vs `assignment.academicYear` — mismatch → 400 BadRequestException, gagal cepat. +1 unit test. 272 tests. PR #27 MERGED ke main, CI ✅. Laporan: `.tasks/done/SMA-39a-academicyear-DONE.md`.
   - **F-2 LOW (backlog):** konflik guru/ruang app-level non-transaksional → celah TOCTOU double-book (kelas aman via unique DB). Mitigasi nanti.
-  - **F-3 INFO:** verifikasi `api/health` 200 pasca-deploy berikutnya = bukti runtime DB tabel `schedules`.
+  - **F-3 INFO → ✅ VERIFIED (2026-06-01):** VPS `curl https://api.smkdarussalamsubah.sch.id/health` → 200 pasca-reboot. `migrate deploy` jalan sebelum NestJS start → tabel `academic.schedules` ada di DB production. (Bonus: reboot-safety N-8 terbukti ulang.)
 
 ### SMA-31 — Foundation Schema (N-1, N-2, T-12)
 **Status:** ✅ DONE & MERGED (PR #17, `f505d88`) — migration **APPLIED & verified di production**
