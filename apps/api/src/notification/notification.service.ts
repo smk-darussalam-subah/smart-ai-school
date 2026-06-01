@@ -38,23 +38,33 @@ export class NotificationService implements OnModuleInit {
   ) {}
 
   // ── onModuleInit: startup retry ───────────────────────────────────────────
+  // Fail-soft: jika tabel belum ada (P2021 saat migration belum applied),
+  // log warning dan lanjut — jangan crash seluruh aplikasi.
 
   async onModuleInit(): Promise<void> {
-    const staleThreshold = new Date(Date.now() - PENDING_STALE_MINUTES * 60 * 1000);
-    const stale = await this.prisma.notificationLog.findMany({
-      where: { status: 'pending', createdAt: { lt: staleThreshold } },
-      take: RETRY_BATCH_LIMIT,
-      orderBy: { createdAt: 'asc' },
-    });
-
-    if (stale.length > 0) {
-      logger.info(`[NotificationService] Startup retry: ${stale.length} pending stale`, {
-        count: stale.length,
+    try {
+      const staleThreshold = new Date(Date.now() - PENDING_STALE_MINUTES * 60 * 1000);
+      const stale = await this.prisma.notificationLog.findMany({
+        where: { status: 'pending', createdAt: { lt: staleThreshold } },
+        take: RETRY_BATCH_LIMIT,
+        orderBy: { createdAt: 'asc' },
       });
-    }
 
-    for (const log of stale) {
-      await this._attemptSend(log.id, log.channel as 'whatsapp' | 'email', log.recipient, log.body, log.subject ?? undefined);
+      if (stale.length > 0) {
+        logger.info(`[NotificationService] Startup retry: ${stale.length} pending stale`, {
+          count: stale.length,
+        });
+      }
+
+      for (const log of stale) {
+        await this._attemptSend(log.id, log.channel as 'whatsapp' | 'email', log.recipient, log.body, log.subject ?? undefined);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        '[NotificationService] Startup retry skipped — tabel belum tersedia atau error DB',
+        { error: message },
+      );
     }
   }
 
