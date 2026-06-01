@@ -318,6 +318,137 @@ async function main() {
   console.log('✓ 5 PPDB Leads (new→paid pipeline) — created');
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // TEACHING ASSIGNMENTS — agar Schedule bisa dibuat (FK dependency)
+  // Dummy: 3 assignment untuk TKJ × kelas (guru4, guru5, guru6)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // kelas[3] = X TKJ 1, kelas[4] = XI TKJ 1
+  const taXTkj1 = await prisma.teachingAssignment.upsert({
+    where: {
+      teacherId_classId_subject_academicYear: {
+        teacherId:    teachers[3]!.id,
+        classId:      kelas[3]!.id,
+        subject:      'Jaringan Komputer',
+        academicYear: '2025/2026',
+      },
+    },
+    update: {},
+    create: {
+      teacherId:    teachers[3]!.id,
+      classId:      kelas[3]!.id,
+      subject:      'Jaringan Komputer',
+      hoursPerWeek: 4,
+      academicYear: '2025/2026',
+    },
+  });
+
+  const taXiTkj1 = await prisma.teachingAssignment.upsert({
+    where: {
+      teacherId_classId_subject_academicYear: {
+        teacherId:    teachers[4]!.id,
+        classId:      kelas[4]!.id,
+        subject:      'Sistem Operasi',
+        academicYear: '2025/2026',
+      },
+    },
+    update: {},
+    create: {
+      teacherId:    teachers[4]!.id,
+      classId:      kelas[4]!.id,
+      subject:      'Sistem Operasi',
+      hoursPerWeek: 2,
+      academicYear: '2025/2026',
+    },
+  });
+
+  const taXTkj1Web = await prisma.teachingAssignment.upsert({
+    where: {
+      teacherId_classId_subject_academicYear: {
+        teacherId:    teachers[5]!.id,
+        classId:      kelas[3]!.id,
+        subject:      'Pemrograman Web',
+        academicYear: '2025/2026',
+      },
+    },
+    update: {},
+    create: {
+      teacherId:    teachers[5]!.id,
+      classId:      kelas[3]!.id,
+      subject:      'Pemrograman Web',
+      hoursPerWeek: 4,
+      academicYear: '2025/2026',
+    },
+  });
+
+  console.log('✓ 3 TeachingAssignment dummy (TKJ) — created');
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SCHEDULE — SMA-39 (data dummy; R-05: jangan data nyata)
+  // JP = jam pelajaran ke-N (bukan jam dinding); mapping JP→jam = config sekolah
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const scheduleData = [
+    // X TKJ 1 — Senin JP 1–2: Jaringan Komputer (Lab TKJ)
+    {
+      id:                   'cccccccc-0039-0000-0000-000000000001',
+      classId:              kelas[3]!.id,
+      teachingAssignmentId: taXTkj1.id,
+      dayOfWeek:            1,   // Senin
+      jpStart:              1,
+      jpEnd:                2,
+      room:                 'Lab TKJ',
+      academicYear:         '2025/2026',
+      semester:             1,
+    },
+    // X TKJ 1 — Rabu JP 3–6: Pemrograman Web (Lab Komputer)
+    {
+      id:                   'cccccccc-0039-0000-0000-000000000002',
+      classId:              kelas[3]!.id,
+      teachingAssignmentId: taXTkj1Web.id,
+      dayOfWeek:            3,   // Rabu
+      jpStart:              3,
+      jpEnd:                6,
+      room:                 'Lab Komputer',
+      academicYear:         '2025/2026',
+      semester:             1,
+    },
+    // XI TKJ 1 — Selasa JP 1–2: Sistem Operasi (Kelas XI-B)
+    {
+      id:                   'cccccccc-0039-0000-0000-000000000003',
+      classId:              kelas[4]!.id,
+      teachingAssignmentId: taXiTkj1.id,
+      dayOfWeek:            2,   // Selasa
+      jpStart:              1,
+      jpEnd:                2,
+      room:                 'Kelas XI-B',
+      academicYear:         '2025/2026',
+      semester:             1,
+    },
+    // X TKJ 1 — Jumat JP 1–2: Jaringan Komputer tanpa ruang (sekolah kecil)
+    {
+      id:                   'cccccccc-0039-0000-0000-000000000004',
+      classId:              kelas[3]!.id,
+      teachingAssignmentId: taXTkj1.id,
+      dayOfWeek:            5,   // Jumat
+      jpStart:              1,
+      jpEnd:                2,
+      room:                 null,  // nullable — sekolah belum assign ruang
+      academicYear:         '2025/2026',
+      semester:             1,
+    },
+  ];
+
+  for (const s of scheduleData) {
+    await prisma.schedule.upsert({
+      where: { id: s.id },
+      update: {},
+      create: s,
+    });
+  }
+
+  console.log('✓ 4 Schedule dummy (TKJ, TA 2025/2026, Sem 1) — created');
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // AI KNOWLEDGE — RAG CHUNKS (N-2: menggantikan knowledgeDocument)
   // Embedding dikosongkan di seed — akan diisi oleh SMA-44 saat ingest dokumen
   // ═══════════════════════════════════════════════════════════════════════════
@@ -348,6 +479,7 @@ async function main() {
   console.log('   Users    : 4 staff + 10 guru + 20 siswa + 5 ortu + 1 industri = 40');
   console.log('   Kelas    : AKL(3) + TKJ(3) + TKRO(3) + TBSM(1) = 10');
   console.log('   Leads    : 5 (new→contacted→interested→registered→paid)');
+  console.log('   Schedules: 4 dummy (TKJ, TA 2025/2026, Sem 1)');
   console.log('   Roles    : SUPER_ADMIN, KEPALA_SEKOLAH, TATA_USAHA, GURU,');
   console.log('              SISWA, ORANG_TUA, INDUSTRI (7 total)');
   console.log('═══════════════════════════════════════════════');

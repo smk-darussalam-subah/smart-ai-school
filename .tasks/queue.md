@@ -4,7 +4,7 @@
 > Dokumen lain (`current.md`, `CLAUDE.md` §7, gate docs) hanya MENAUTKAN ke sini,
 > tidak menduplikasi status. Jika ada konflik, file INI yang menang.
 > Dikelola oleh Cowork AI. Claude Code hanya membaca file ini.
-> Update terakhir: 2026-05-31 — Rekonsiliasi status (Sprint 2 Tahap 1).
+> Update terakhir: 2026-06-01 — SMA-39 Schedule selesai (feat/SMA-39-schedule, PR pending). Sprint 2 DITUTUP. Sprint 3 (Finance+AI+Notif) menjadi antrian aktif berikutnya.
 >
 > ⚠️ **Linear ditinggalkan mulai 2026-05-31.** Status task kini canonical di file ini.
 > `SMA-XX` = kode internal saja (tidak ada Linear issue). Claude Code: baca queue.md sebagai sumber tunggal.
@@ -32,7 +32,7 @@
 
 | ID | Masalah | Status | Aksi |
 |---|---|---|---|
-| **N-8** | nginx reverse proxy TIDAK ada di docker-compose → hilang tiap reboot (akar 521). Sekarang ditambal container manual `smk-nginx` (bukan di git) | 🟡 PR merged, VPS runtime pending | Commit `0c01f84`, laporan `.tasks/done/N8-nginx-compose-DONE.md`. Runtime VPS wajib (`docker compose down+up → nginx Up`) sebelum ✅ |
+| **N-8** | nginx reverse proxy TIDAK ada di docker-compose → hilang tiap reboot (akar 521). Kini nginx ADA di docker-compose dengan `restart=unless-stopped` | ✅ CLOSED (31 Mei) — verified VPS | nginx di compose, `restart=unless-stopped`, situs 307. Commit `0c01f84`, laporan `.tasks/done/N8-nginx-compose-DONE.md`. Reboot-safe. |
 | **N-7** | Origin tanpa TLS 443; Cloudflare Flexible (trafik CF↔origin tak terenkripsi) | ✅ CLOSED (30 Mei) | nginx `listen 443 ssl` + Cloudflare Origin Cert (15-thn, di VPS `infrastructure/nginx/certs/`, gitignored). Cloudflare **Full (Strict)** + Always Use HTTPS. Verifikasi: `https://localhost/login`=200, web 307, api 200, Edge SSL Active. Enkripsi end-to-end. |
 
 **Status W3-02 (SMA-15):** ✅ `/metrics` terverifikasi runtime 200 (https://api.smkdarussalamsubah.sch.id/metrics, 30 Mei).
@@ -250,42 +250,51 @@ Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding
 
 ---
 
-## 🏁 SPRINT-1 SEDANG BERJALAN — Tahap 1
+## 🏁 SPRINT 1 & 2 — Tahap 1 — ✅ SPRINT 2 SELESAI
+
+> Sprint 1 (Foundation/Student/PPDB/Auth) + Sprint 2 (Academic Core) semua modul P0 = SELESAI.
+> **Sprint 2 DITUTUP 2026-06-01.** Sprint 3 (Finance+AI+Notif) menjadi antrian aktif.
+
+### SMA-39 — Schedule View (semua role) — ✅ SELESAI (PR feat/SMA-39-schedule, pending review)
+**Sprint:** 2 (penutup) | **Selesai:** 2026-06-01 | **Model:** Sonnet 4.6
+**Deliverable:** schema Schedule additive + migration SQL + GET/POST /schedules + RBAC ownership + 409 konflik (kelas/guru/ruang) + seed dummy + 28 unit test (coverage ~95%) + forward-compat KBM didokumentasikan
+**Laporan:** `.tasks/done/SMA-39-schedule-DONE.md`
+**⚠️ Tunggu:** review gerbang skema/security Cowork sebelum merge ke main.
 
 ### SMA-31 — Foundation Schema (N-1, N-2, T-12)
-**Status:** ⏳ Schema + migration file selesai — **migrate dev PENDING** (butuh SSH tunnel untuk apply ke DB)
-**Branch:** `feat/SMA-31-foundation-schema` — siap PR review
-**Deliverable:** schema.prisma ✅ · migration SQL ✅ · generate ✅ · validate ✅ · tsc ✅
-**Blocker sebelum merge:** jalankan cek data dulu (lihat DONE file), lalu SSH tunnel + `migrate deploy`
+**Status:** ✅ DONE & MERGED (PR #17, `f505d88`) — migration **APPLIED & verified di production**
+**Branch:** `feat/SMA-31-foundation-schema` (merged main)
+**Deliverable:** schema.prisma ✅ · migration `20260531000001_sprint1_foundation` ✅ · generate ✅ · validate ✅ · tsc ✅
+**Bukti runtime DB nyata:** deploy.yml jalankan `prisma migrate deploy` SEBELUM NestJS start → api tidak akan healthy jika migrasi gagal. Deploy `f505d88` hijau + `curl api/health` → 200 = tabel Grade/Attendance/RagChunk SUDAH ada di DB production (bukan mock).
 **Laporan:** `.tasks/done/SMA-31-foundation-schema-DONE.md`
 
-> **Unlock setelah SMA-31 merge:** SMA-37/38 (Grade + Attendance)
+> **Unlocked:** SMA-37/38 (Grade + Attendance) — keduanya sudah merged.
 
 ### Portal Nilai & Absensi (frontend)
-**Status:** ✅ DONE 2026-05-31 — siap PR review
+**Status:** ✅ DONE 2026-05-31 — MERGED ke main (PR #20–#25)
 **Branch:** `feat/portal-nilai` (commit `1e8c342`)
 **Laporan:** `.tasks/done/portal-nilai-DONE.md`
 **Note:** `/dashboard/nilai` untuk SISWA + ORANG_TUA. Server component fetch, child selector client-side. tsc ✅ · next build ✅ (7/7 pages).
 
 ### SMA-38 — Attendance Module
-**Status:** ✅ DONE 2026-05-31 — siap PR review
+**Status:** ✅ DONE 2026-05-31 — MERGED ke main (PR #20–#25)
 **Branch:** `feat/SMA-38-attendance` (commit `9615a11`)
 **Laporan:** `.tasks/done/SMA-38-attendance-DONE.md`
 **Note:** Bulk insert atomik (prisma.$transaction), ownership GURU via TeachingAssignment.
 
 ### SMA-37 — Grade Module
-**Status:** ✅ DONE 2026-05-31 — siap PR review
+**Status:** ✅ DONE 2026-05-31 — MERGED ke main (PR #20–#25)
 **Branch:** `feat/SMA-37-grade-module` (commit `4a80b94`, branch dari SMA-36)
 **Laporan:** `.tasks/done/SMA-37-grade-DONE.md`
 **Note:** Branch ini include PrismaExceptionFilter global + cleanup TeachingAssignmentService.
 
 ### SMA-36 — TeachingAssignment Module
-**Status:** ✅ DONE 2026-05-31 — siap PR review
+**Status:** ✅ DONE 2026-05-31 — MERGED ke main (PR #20–#25)
 **Branch:** `feat/SMA-36-teaching-assignment` (commit `d2258af`)
 **Laporan:** `.tasks/done/SMA-36-teaching-assignment-DONE.md`
 
 ### SMA-34 — PPDB Lead Pipeline
-**Status:** ✅ DONE 2026-05-31 — siap PR review
+**Status:** ✅ DONE 2026-05-31 — MERGED ke main (PR #20–#25)
 **Branch:** `feat/SMA-34-ppdb-pipeline` (commit `985d1d9`)
 **Laporan:** `.tasks/done/SMA-34-ppdb-DONE.md`
 
