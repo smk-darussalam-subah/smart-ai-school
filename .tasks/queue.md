@@ -263,6 +263,12 @@ Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding
 **Laporan:** `.tasks/done/SMA-41-finance-spp-DONE.md`
 **Keputusan terbuka:** paidAt input historis (saat ini = now()); event SMA-43; gerbang review wajib sebelum merge
 
+### SMA-44 — RAG: RagChunk model + seeder FAQ — ✅ SELESAI (2026-06-01, Sonnet 4.6)
+**Branch:** `feat/SMA-44-rag-chunk` | **Laporan:** `.tasks/done/SMA-44-rag-chunk-DONE.md`
+**N-11 STATUS: ✅ CLOSED** — drift schema/DB `ai_knowledge.rag_chunks` tertutup.
+Model `RagChunk` cocok 1:1 tabel existing. Accessor `prisma.ragChunk` tersedia. 10 FAQ chunk dummy (embedding NULL, diisi SMA-45). RagModule/RagService skeleton untuk SMA-45.
+**Gerbang review Cowork:** WAJIB review sebelum merge (schema sync sensitif).
+
 ---
 
 ## 🏁 SPRINT 1 & 2 — Tahap 1 — ✅ SPRINT 2 SELESAI
