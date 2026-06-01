@@ -38,6 +38,10 @@ const EnvSchema = z.object({
   OLLAMA_CHAT_MODEL: z.string().default('qwen2.5:7b'),
   OLLAMA_EMBED_MODEL: z.string().default('nomic-embed-text'),
   OLLAMA_EMBED_DIMENSIONS: z.coerce.number().int().positive().default(768),
+
+  // ── RAG retrieval (SMA-46 chatbot) ───────────────────────────────────────────
+  AI_RAG_TOP_K: z.coerce.number().int().positive().default(4),
+  AI_RAG_MIN_SIMILARITY: z.coerce.number().min(0).max(1).default(0.3),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
