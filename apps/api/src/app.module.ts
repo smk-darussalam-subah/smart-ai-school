@@ -21,6 +21,7 @@ import { GradeModule } from './grade/grade.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { ScheduleModule } from './schedule/schedule.module';
 import { NotificationModule } from './notification/notification.module';
+import { FinanceModule } from './finance/finance.module';
 import { KeycloakGuard } from './auth/guards/keycloak.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -48,7 +49,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     AttendanceModule,
     ScheduleModule,
     NotificationModule,
-    // FinanceModule (SMA-41), ...
+    FinanceModule,
   ],
   providers: [
     // 1. Throttler aktif global — cek rate limit sebelum auth

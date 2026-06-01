@@ -453,6 +453,7 @@ async function main() {
   // Embedding dikosongkan di seed — akan diisi oleh SMA-44 saat ingest dokumen
   // ═══════════════════════════════════════════════════════════════════════════
 
+  // ── Chunk 1 (existing): Kurikulum ─────────────────────────────────────────
   await prisma.ragChunk.upsert({
     where: { id: 'bbbbbbbb-0001-0000-0000-000000000001' },
     update: {},
@@ -471,7 +472,146 @@ async function main() {
     },
   });
 
-  console.log('✓ AI Knowledge RAG chunk — created\n');
+  // ── SMA-44 FAQ chunks (embedding = NULL, diisi SMA-45) ────────────────────
+  const faqChunks = [
+    {
+      id: 'bbbbbbbb-0044-0000-0000-000000000001',
+      title: 'Cara Pendaftaran Siswa Baru (PPDB)',
+      content:
+        'Pendaftaran siswa baru (PPDB) dapat dilakukan secara online melalui portal ' +
+        'sekolah maupun langsung di kantor Tata Usaha. Calon siswa wajib melampirkan: ' +
+        'fotokopi ijazah/STTB SMP sederajat, akta kelahiran, kartu keluarga, dan ' +
+        'pas foto terbaru. Formulir pendaftaran tersedia gratis. Kuota per kelas ' +
+        'adalah 36 siswa. Daftar lebih awal untuk mendapat prioritas seleksi.',
+      source: 'faq-ppdb',
+      category: 'faq',
+    },
+    {
+      id: 'bbbbbbbb-0044-0000-0000-000000000002',
+      title: 'Jadwal dan Periode Pendaftaran PPDB',
+      content:
+        'Penerimaan Peserta Didik Baru (PPDB) dibuka setiap tahun mulai bulan Mei ' +
+        'hingga Juli sebelum tahun ajaran baru dimulai. Tahun ajaran baru dimulai ' +
+        'pada pertengahan Juli. Pengumuman hasil seleksi disampaikan melalui portal ' +
+        'online dan papan pengumuman sekolah. Daftar ulang bagi yang diterima ' +
+        'dilakukan dalam 3 hari kerja setelah pengumuman.',
+      source: 'faq-ppdb',
+      category: 'faq',
+    },
+    {
+      id: 'bbbbbbbb-0044-0000-0000-000000000003',
+      title: 'Informasi Biaya SPP dan Pembayaran',
+      content:
+        'SPP (Sumbangan Pembinaan Pendidikan) dibayarkan setiap bulan paling lambat ' +
+        'tanggal 10. Pembayaran dapat dilakukan melalui Tata Usaha sekolah atau ' +
+        'transfer ke rekening resmi sekolah. Siswa yang mengalami kesulitan ekonomi ' +
+        'dapat mengajukan keringanan melalui surat permohonan yang disetujui oleh ' +
+        'Kepala Sekolah. Keterlambatan pembayaran tidak menghalangi proses belajar ' +
+        'mengajar namun wajib diselesaikan sebelum ujian semester.',
+      source: 'faq-keuangan',
+      category: 'faq',
+    },
+    {
+      id: 'bbbbbbbb-0044-0000-0000-000000000004',
+      title: 'Program Beasiswa dan Bantuan Pendidikan',
+      content:
+        'Sekolah menyediakan informasi dan pendampingan pengajuan beasiswa dari ' +
+        'berbagai sumber: KIP (Kartu Indonesia Pintar), beasiswa prestasi akademik, ' +
+        'dan beasiswa dari mitra industri. Siswa yang ingin mengajukan beasiswa ' +
+        'dapat menghubungi bagian Tata Usaha untuk panduan persyaratan. Beasiswa ' +
+        'KIP diproses setiap awal tahun ajaran bagi siswa yang memenuhi syarat.',
+      source: 'faq-keuangan',
+      category: 'faq',
+    },
+    {
+      id: 'bbbbbbbb-0044-0000-0000-000000000005',
+      title: 'Jurusan TKJ — Teknik Komputer dan Jaringan',
+      content:
+        'Program Keahlian Teknik Komputer dan Jaringan (TKJ) mempersiapkan siswa ' +
+        'menjadi teknisi jaringan komputer, administrator sistem, dan teknisi ' +
+        'perangkat keras. Materi meliputi: instalasi dan konfigurasi jaringan, ' +
+        'administrasi server Linux/Windows, keamanan jaringan, dan pemrograman web. ' +
+        'Lulusan TKJ berpeluang kerja di perusahaan IT, ISP, instansi pemerintah, ' +
+        'atau berwirausaha di bidang jasa komputer dan jaringan.',
+      source: 'info-jurusan',
+      category: 'jurusan',
+    },
+    {
+      id: 'bbbbbbbb-0044-0000-0000-000000000006',
+      title: 'Jurusan AKL — Akuntansi dan Keuangan Lembaga',
+      content:
+        'Program Keahlian Akuntansi dan Keuangan Lembaga (AKL) membekali siswa ' +
+        'dengan kemampuan pembukuan, pengolahan data keuangan, perpajakan, dan ' +
+        'perbankan dasar. Siswa belajar menggunakan software akuntansi seperti ' +
+        'Accurate dan MYOB. Lulusan AKL dapat bekerja sebagai staf keuangan, ' +
+        'kasir, asisten akuntan di perusahaan swasta, BUMN, koperasi, atau ' +
+        'melanjutkan studi ke perguruan tinggi jurusan akuntansi/manajemen.',
+      source: 'info-jurusan',
+      category: 'jurusan',
+    },
+    {
+      id: 'bbbbbbbb-0044-0000-0000-000000000007',
+      title: 'Jurusan TKRO — Teknik Kendaraan Ringan Otomotif',
+      content:
+        'Program Keahlian Teknik Kendaraan Ringan Otomotif (TKRO) mencetak teknisi ' +
+        'otomotif yang kompeten dalam perawatan dan perbaikan kendaraan roda empat. ' +
+        'Materi mencakup: mesin bensin dan diesel, sistem kelistrikan kendaraan, ' +
+        'transmisi dan chasis, serta tune-up dan overhaul. Praktik dilaksanakan di ' +
+        'bengkel sekolah yang dilengkapi peralatan standar industri. Lulusan TKRO ' +
+        'dapat bekerja di bengkel resmi, dealer mobil, atau membuka usaha sendiri.',
+      source: 'info-jurusan',
+      category: 'jurusan',
+    },
+    {
+      id: 'bbbbbbbb-0044-0000-0000-000000000008',
+      title: 'Peraturan Seragam dan Atribut Sekolah',
+      content:
+        'Siswa wajib mengenakan seragam sesuai ketentuan: seragam putih-abu (Senin-' +
+        'Selasa), seragam batik sekolah (Rabu-Kamis), dan seragam olahraga/praktek ' +
+        'sesuai jadwal (Jumat). Atribut wajib: dasi, badge nama, dan badge sekolah. ' +
+        'Sepatu hitam polos dan kaos kaki putih. Rambut rapi tidak diwarnai. ' +
+        'Pelanggaran seragam berulang dicatat di buku pembinaan dan orang tua ' +
+        'akan dihubungi.',
+      source: 'tata-tertib',
+      category: 'peraturan',
+    },
+    {
+      id: 'bbbbbbbb-0044-0000-0000-000000000009',
+      title: 'Peraturan Kehadiran dan Prosedur Izin',
+      content:
+        'Kehadiran minimal 80% dari total hari efektif per semester wajib dipenuhi ' +
+        'untuk dapat mengikuti ujian semester. Siswa yang tidak hadir wajib ' +
+        'memberikan surat izin: sakit disertai surat dokter, keperluan keluarga ' +
+        'disertai surat orang tua. Izin disampaikan paling lambat hari pertama ' +
+        'ketidakhadiran melalui wali kelas. Siswa terlambat lebih dari 15 menit ' +
+        'dianggap tidak hadir pada jam pertama.',
+      source: 'tata-tertib',
+      category: 'peraturan',
+    },
+    {
+      id: 'bbbbbbbb-0044-0000-0000-000000000010',
+      title: 'Praktik Kerja Lapangan (PKL/Prakerin)',
+      content:
+        'Praktik Kerja Lapangan (PKL) atau Prakerin dilaksanakan selama 3-6 bulan ' +
+        'pada semester 5 (kelas XII) sesuai program keahlian masing-masing. Sekolah ' +
+        'memfasilitasi penempatan PKL di perusahaan/instansi mitra yang telah ' +
+        'bekerjasama. Siswa dapat juga mengajukan tempat PKL sendiri dengan ' +
+        'persetujuan sekolah. Selama PKL, siswa dibimbing oleh instruktur lapangan ' +
+        'dan guru pembimbing dari sekolah.',
+      source: 'faq-akademik',
+      category: 'faq',
+    },
+  ] as const;
+
+  for (const chunk of faqChunks) {
+    await prisma.ragChunk.upsert({
+      where: { id: chunk.id },
+      update: {},
+      create: { ...chunk, isActive: true },
+    });
+  }
+
+  console.log(`✓ AI Knowledge RAG chunks — 1 curriculum + ${faqChunks.length} FAQ/jurusan/peraturan\n`);
 
   // ── Ringkasan ─────────────────────────────────────────────────────────────
   console.log('═══════════════════════════════════════════════');
@@ -480,6 +620,7 @@ async function main() {
   console.log('   Kelas    : AKL(3) + TKJ(3) + TKRO(3) + TBSM(1) = 10');
   console.log('   Leads    : 5 (new→contacted→interested→registered→paid)');
   console.log('   Schedules: 4 dummy (TKJ, TA 2025/2026, Sem 1)');
+  console.log('   RAG      : 11 chunks (1 curriculum + 4 faq + 3 jurusan + 2 peraturan + 1 faq-akademik)');
   console.log('   Roles    : SUPER_ADMIN, KEPALA_SEKOLAH, TATA_USAHA, GURU,');
   console.log('              SISWA, ORANG_TUA, INDUSTRI (7 total)');
   console.log('═══════════════════════════════════════════════');
