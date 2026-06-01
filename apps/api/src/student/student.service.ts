@@ -14,11 +14,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 import { ListStudentsQuery } from './dto/list-students.dto';
+import {
+  EVENTS,
+  StudentEnrolledPayload,
+  StudentStatusChangedPayload,
+} from '../events/events.types';
 
 // ── Select shapes ────────────────────────────────────────────────────────────
 
@@ -76,7 +82,10 @@ function needsOwnershipCheck(user: AuthUser): boolean {
 
 @Injectable()
 export class StudentService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -162,24 +171,51 @@ export class StudentService {
   }
 
   async create(dto: CreateStudentDto) {
-    return this.prisma.student.create({
+    const student = await this.prisma.student.create({
       data: dto,
       select: STUDENT_BASE_SELECT,
     });
+
+    // Emit student.enrolled — fire-and-forget (tidak boleh gagalkan transaksi)
+    const enrollPayload: StudentEnrolledPayload = {
+      studentId: student.id,
+      nis:       student.nis,
+      fullName:  student.user.fullName,
+      parentId:  student.parentId,
+    };
+    this.eventEmitter.emit(EVENTS.STUDENT_ENROLLED, enrollPayload);
+
+    return student;
   }
 
   async update(id: string, dto: UpdateStudentDto) {
     const existing = await this.prisma.student.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true },
+      select: { id: true, status: true },
     });
     if (!existing) throw new NotFoundException('Student tidak ditemukan');
 
-    return this.prisma.student.update({
+    const updated = await this.prisma.student.update({
       where: { id },
       data: dto,
       select: STUDENT_BASE_SELECT,
     });
+
+    // Emit student.statusChanged hanya jika status benar-benar berubah
+    if (dto.status && dto.status !== existing.status) {
+      const statusPayload: StudentStatusChangedPayload = {
+        studentId: updated.id,
+        nis:       updated.nis,
+        fullName:  updated.user.fullName,
+        userId:    updated.userId,
+        parentId:  updated.parentId,
+        oldStatus: existing.status,
+        newStatus: dto.status,
+      };
+      this.eventEmitter.emit(EVENTS.STUDENT_STATUS_CHANGED, statusPayload);
+    }
+
+    return updated;
   }
 
   async remove(id: string) {

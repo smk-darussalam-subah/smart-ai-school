@@ -5,6 +5,7 @@
 
 import { Module } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { APP_GUARD } from '@nestjs/core';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
@@ -31,6 +32,11 @@ import { RolesGuard } from './auth/guards/roles.guard';
         limit: 100,
       },
     ]),
+
+    // Event bus in-process — listener dipanggil via @OnEvent(), emit = fire-and-forget
+    // Global by default — EventEmitter2 tersedia di semua module tanpa import eksplisit
+    // ignoreErrors: true = kegagalan listener tidak crash proses (fail-soft guardrail §5)
+    EventEmitterModule.forRoot({ ignoreErrors: true }),
 
     // Core modules
     PrismaModule,

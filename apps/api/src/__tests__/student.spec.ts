@@ -21,6 +21,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { StudentService } from '../student/student.service';
 import { StudentController } from '../student/student.controller';
 import { StudentModule } from '../student/student.module';
@@ -116,6 +117,7 @@ describe('StudentService', () => {
       providers: [
         StudentService,
         { provide: PrismaService, useValue: prisma },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
       ],
     }).compile();
 

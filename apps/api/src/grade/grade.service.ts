@@ -21,12 +21,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GradeType, Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGradeDto } from './dto/create-grade.dto';
 import { UpdateGradeDto } from './dto/update-grade.dto';
 import { ListGradesQuery } from './dto/list-grades.dto';
+import { EVENTS, GradeSubmittedPayload } from '../events/events.types';
 
 // ── Konstanta ─────────────────────────────────────────────────────────────────
 
@@ -99,7 +101,10 @@ function isOrangTuaOnly(user: AuthUser): boolean {
 
 @Injectable()
 export class GradeService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   // ── Private helpers ─────────────────────────────────────────────────────────
 
@@ -241,7 +246,7 @@ export class GradeService {
     // UH/praktik/sikap: boleh banyak, tidak ada guard dobel
 
     // 5. Simpan
-    return this.prisma.grade.create({
+    const grade = await this.prisma.grade.create({
       data: {
         studentId:    dto.studentId,
         assignmentId: dto.assignmentId,
@@ -254,6 +259,20 @@ export class GradeService {
       },
       select: GRADE_SELECT,
     });
+
+    // Emit grade.submitted — fire-and-forget
+    const gradePayload: GradeSubmittedPayload = {
+      gradeId:      grade.id,
+      studentId:    grade.studentId,
+      subject:      grade.assignment.subject,
+      score:        grade.score.toString(),
+      type:         grade.type,
+      semester:     grade.semester,
+      academicYear: grade.academicYear,
+    };
+    this.eventEmitter.emit(EVENTS.GRADE_SUBMITTED, gradePayload);
+
+    return grade;
   }
 
   // ── update ──────────────────────────────────────────────────────────────────

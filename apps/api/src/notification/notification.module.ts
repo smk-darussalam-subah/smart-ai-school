@@ -12,6 +12,7 @@
 import { Module } from '@nestjs/common';
 import { NotificationAdapter } from '@smk/types';
 import { NotificationService } from './notification.service';
+import { NotificationListener } from './notification.listener';
 import { LogAdapter } from './adapters/log.adapter';
 import { FonnteAdapter } from './adapters/fonnte.adapter';
 import { SmtpAdapter } from './adapters/smtp.adapter';
@@ -45,6 +46,7 @@ function buildAdapter(): NotificationAdapter {
       useFactory: buildAdapter,
     },
     NotificationService,
+    NotificationListener,
   ],
   exports: [NotificationService],
 })
