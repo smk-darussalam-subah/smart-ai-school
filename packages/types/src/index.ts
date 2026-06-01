@@ -130,6 +130,26 @@ export interface NotificationAdapter {
   ): Promise<void>;
 }
 
+// ── AI Gateway ───────────────────────────────────────────────────────────────
+
+/**
+ * Potongan konteks RAG yang dioper ke AIGateway.chat().
+ * Decoupled dari Prisma model agar tidak ada ketergantungan langsung.
+ */
+export interface RagContext {
+  title: string;
+  content: string;
+}
+
+/**
+ * Abstraksi AI provider — anti lock-in ke Ollama/Claude/OpenAI.
+ * embed() panjang array HARUS == OLLAMA_EMBED_DIMENSIONS (768).
+ */
+export interface AIGateway {
+  chat(prompt: string, context?: RagContext[]): Promise<string>;
+  embed(text: string): Promise<number[]>;
+}
+
 // ── API Response Wrapper ──────────────────────────────────────────────────────
 
 export interface ApiResponse<T = unknown> {
