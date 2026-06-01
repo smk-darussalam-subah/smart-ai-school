@@ -218,10 +218,10 @@ export class ScheduleService {
   // ── create ───────────────────────────────────────────────────────────────────
 
   async create(dto: CreateScheduleDto) {
-    // 1. Validasi teachingAssignmentId → ambil teacherId + classId
+    // 1. Validasi teachingAssignmentId → ambil teacherId, classId, academicYear
     const assignment = await this.prisma.teachingAssignment.findUnique({
       where: { id: dto.teachingAssignmentId },
-      select: { id: true, teacherId: true, classId: true },
+      select: { id: true, teacherId: true, classId: true, academicYear: true },
     });
     if (!assignment) {
       throw new BadRequestException(
@@ -231,6 +231,11 @@ export class ScheduleService {
     if (assignment.classId !== dto.classId) {
       throw new BadRequestException(
         'teachingAssignmentId tidak sesuai dengan classId yang diberikan',
+      );
+    }
+    if (dto.academicYear !== assignment.academicYear) {
+      throw new BadRequestException(
+        `academicYear '${dto.academicYear}' tidak sesuai dengan TeachingAssignment (${assignment.academicYear})`,
       );
     }
 

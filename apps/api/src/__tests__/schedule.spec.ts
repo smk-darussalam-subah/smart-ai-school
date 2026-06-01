@@ -145,13 +145,15 @@ describe('ScheduleService', () => {
   describe('create', () => {
     function setupValidCreate(opts: {
       taClassId?: string;
+      taAcademicYear?: string;
       guruConflict?: boolean;
       roomConflict?: boolean;
     } = {}) {
       prisma.teachingAssignment.findUnique.mockResolvedValue({
-        id:        'ta-uuid-001',
-        teacherId: 'teacher-uuid-001',
-        classId:   opts.taClassId ?? 'class-uuid-001',
+        id:           'ta-uuid-001',
+        teacherId:    'teacher-uuid-001',
+        classId:      opts.taClassId ?? 'class-uuid-001',
+        academicYear: opts.taAcademicYear ?? '2025/2026',
       });
       prisma.teachingAssignment.findMany.mockResolvedValue([{ id: 'ta-uuid-001' }]);
       prisma.schedule.findFirst
@@ -179,6 +181,17 @@ describe('ScheduleService', () => {
       expect(prisma.schedule.create).not.toHaveBeenCalled();
     });
 
+    it('academicYear mismatch vs TeachingAssignment → BadRequestException (F-1)', async () => {
+      // assignment punya 2024/2025, dto kirim 2025/2026 → inkonsisten → 400
+      setupValidCreate({ taAcademicYear: '2024/2025' });
+      await expect(
+        service.create({ ...CREATE_DTO, academicYear: '2025/2026' }),
+      ).rejects.toThrow(BadRequestException);
+      // gagal cepat: cek konflik tidak boleh dijalankan
+      expect(prisma.schedule.findFirst).not.toHaveBeenCalled();
+      expect(prisma.schedule.create).not.toHaveBeenCalled();
+    });
+
     it('konflik guru (slot JP overlap) → ConflictException', async () => {
       setupValidCreate({ guruConflict: true });
       await expect(service.create(CREATE_DTO)).rejects.toThrow(ConflictException);
@@ -194,6 +207,7 @@ describe('ScheduleService', () => {
     it('room null → cek konflik ruang di-skip (schedule.findFirst dipanggil hanya 1×)', async () => {
       prisma.teachingAssignment.findUnique.mockResolvedValue({
         id: 'ta-uuid-001', teacherId: 'teacher-uuid-001', classId: 'class-uuid-001',
+        academicYear: '2025/2026',
       });
       prisma.teachingAssignment.findMany.mockResolvedValue([{ id: 'ta-uuid-001' }]);
       prisma.schedule.findFirst.mockResolvedValue(null); // guru tidak conflict
