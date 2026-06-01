@@ -21,12 +21,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PaymentStatus, Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSppDto } from './dto/create-spp.dto';
 import { ListSppQuery } from './dto/list-spp.dto';
 import { SummarySppQuery } from './dto/summary-spp.dto';
+import { EVENTS, PaymentReceivedPayload } from '../events/events.types';
 
 // ── Konstanta ─────────────────────────────────────────────────────────────────
 
@@ -84,7 +86,10 @@ function isOrangTuaOnly(user: AuthUser): boolean {
 
 @Injectable()
 export class FinanceService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   // ── Private helpers ─────────────────────────────────────────────────────────
 
@@ -128,7 +133,7 @@ export class FinanceService {
     const userId = await this.resolveUserId(user.keycloakId);
 
     // P2002 (@@unique [studentId,month,year]) propagate ke PrismaExceptionFilter → 409
-    return this.prisma.sppPayment.create({
+    const payment = await this.prisma.sppPayment.create({
       data: {
         studentId:  dto.studentId,
         month:      dto.month,
@@ -141,6 +146,22 @@ export class FinanceService {
       },
       select: SPP_SELECT,
     });
+
+    // Emit payment.received hanya jika pembayaran benar-benar diterima (paid/late)
+    // N-10: TIDAK ada logika BOS di sini — TODO Tahap 2 saat model BOS tersedia
+    if (payment.status === 'paid' || payment.status === 'late') {
+      const payPayload: PaymentReceivedPayload = {
+        paymentId:  payment.id,
+        studentId:  payment.studentId,
+        month:      payment.month,
+        year:       payment.year,
+        amount:     payment.amount.toString(),
+        receiptNo:  payment.receiptNo ?? null,
+      };
+      this.eventEmitter.emit(EVENTS.PAYMENT_RECEIVED, payPayload);
+    }
+
+    return payment;
   }
 
   // ── findAll ──────────────────────────────────────────────────────────────────

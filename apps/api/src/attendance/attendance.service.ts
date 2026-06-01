@@ -19,11 +19,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AttendanceStatus, Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAttendanceDto } from './dto/create-attendance.dto';
 import { ListAttendanceQuery } from './dto/list-attendance.dto';
+import { EVENTS, AttendanceRecordedPayload } from '../events/events.types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -92,7 +94,10 @@ function isOrangTuaOnly(user: AuthUser): boolean {
 
 @Injectable()
 export class AttendanceService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   // ── Private helpers ─────────────────────────────────────────────────────────
 
@@ -196,6 +201,20 @@ export class AttendanceService {
         }),
       ),
     );
+
+    // Emit attendance.recorded hanya untuk alpha/sakit (guardrail SMA-43)
+    for (const record of results) {
+      if (record.status === 'alpha' || record.status === 'sakit') {
+        const absPayload: AttendanceRecordedPayload = {
+          attendanceId: record.id,
+          studentId:    record.studentId,
+          classId:      record.classId,
+          date:         dto.date,
+          status:       record.status as 'alpha' | 'sakit',
+        };
+        this.eventEmitter.emit(EVENTS.ATTENDANCE_RECORDED, absPayload);
+      }
+    }
 
     return {
       count:   results.length,

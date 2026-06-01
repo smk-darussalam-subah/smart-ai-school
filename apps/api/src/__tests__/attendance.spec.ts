@@ -37,6 +37,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AttendanceService } from '../attendance/attendance.service';
 import { AttendanceController } from '../attendance/attendance.controller';
 import { AttendanceModule } from '../attendance/attendance.module';
@@ -123,6 +124,7 @@ describe('AttendanceService', () => {
       providers: [
         AttendanceService,
         { provide: PrismaService, useValue: prisma },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
       ],
     }).compile();
     service = module.get(AttendanceService);

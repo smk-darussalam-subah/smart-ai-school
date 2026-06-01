@@ -37,6 +37,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { FinanceService } from '../finance/finance.service';
 import { FinanceController } from '../finance/finance.controller';
 import { FinanceModule } from '../finance/finance.module';
@@ -116,6 +117,7 @@ describe('FinanceService', () => {
       providers: [
         FinanceService,
         { provide: PrismaService, useValue: prisma },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
       ],
     }).compile();
     service = module.get(FinanceService);
