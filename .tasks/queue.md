@@ -250,6 +250,21 @@ Semua path + script terverifikasi nyata. Laporan: `.tasks/done/SMA-19-onboarding
 
 ---
 
+## 🏁 SPRINT 3 — Finance + AI + Notification (antrian aktif)
+
+### SMA-41 — Finance SPP CRUD + Approval — ✅ SELESAI (2026-06-01)
+**Sprint:** 3 | **Selesai:** 2026-06-01 | **Model:** Sonnet 4.6
+**Branch:** `feat/SMA-41-finance-spp` | **Commit:** `ff08ecb`
+**Deliverable:**
+- Migration additive `20260601000002_sprint3_spp_approval` (approvedBy/approvedAt)
+- 5 endpoint: POST record · GET list · GET summary · GET history · POST approve
+- RBAC: SA/TU input · SA/KS approve (separation of duties) · SISWA/OT ownership
+- 36 unit tests · coverage finance 99% · tsc 0 · eslint 0 · prisma validate ✅
+**Laporan:** `.tasks/done/SMA-41-finance-spp-DONE.md`
+**Keputusan terbuka:** paidAt input historis (saat ini = now()); event SMA-43; gerbang review wajib sebelum merge
+
+---
+
 ## 🏁 SPRINT 1 & 2 — Tahap 1 — ✅ SPRINT 2 SELESAI
 
 > Sprint 1 (Foundation/Student/PPDB/Auth) + Sprint 2 (Academic Core) semua modul P0 = SELESAI.
