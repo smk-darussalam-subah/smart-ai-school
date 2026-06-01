@@ -230,6 +230,19 @@ describe('NotificationService', () => {
     expect(adapter.send).not.toHaveBeenCalled();
   });
 
+  // ── Test 7b: Startup retry — tabel belum ada (P2021) → tidak crash ───────
+
+  it('onModuleInit: DB error (tabel belum ada) → tidak throw, fail-soft', async () => {
+    prisma.notificationLog.findMany.mockRejectedValue(
+      Object.assign(new Error('The table `notification.notification_logs` does not exist'), {
+        code: 'P2021',
+      }),
+    );
+
+    await expect(service.onModuleInit()).resolves.not.toThrow();
+    expect(adapter.send).not.toHaveBeenCalled();
+  });
+
   // ── Test 8: Startup retry dengan refType+refId tersedia ─────────────────
 
   it('onModuleInit: stale dengan refType/refId → retry tetap dikirim', async () => {
