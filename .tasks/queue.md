@@ -266,7 +266,16 @@ Migration additive `20260601000002_sprint3_spp_approval` (approvedBy/approvedAt)
 
 ### SMA-44 — RAG: RagChunk model + seeder FAQ — ✅ MERGED ke main (PR #30, `837a939`, Deploy #65 hijau)
 **Branch:** `feat/SMA-44-rag-chunk` | **Laporan:** `.tasks/done/SMA-44-rag-chunk-DONE.md` | **Model:** Sonnet 4.6
-**N-11 ✅ CLOSED:** model `RagChunk` cocok tabel existing, accessor `prisma.ragChunk`, 10 FAQ chunk dummy (embedding NULL → diisi SMA-45), RagService skeleton.
+**N-11 ⚠️ REOPENED (prod):** model `RagChunk` benar di schema, TAPI verifikasi produksi 2026-06-01 menunjukkan tabel TIDAK ADA → lihat N-14.
+
+> 🔴 **N-14 (CRITICAL) — CONFIRMED 2026-06-01 — SELURUH skema DIIS tidak pernah terbentuk di produksi.** Detail + runbook: `.tasks/INCIDENT-N14-prod-schema-missing.md`.
+> **Akar:** `smk_db` dibagi DIIS+Keycloak+n8n+Metabase → `migrate deploy` pertama P3005 (DB tak kosong) → `start.sh` (baris 16–30) auto-baseline: `migrate resolve --applied` semua migration TANPA jalankan SQL (`_prisma_migrations` semua `steps=0`) → tabel DIIS tak pernah dibuat. Data loss NIHIL (R-05). Set migration lengkap & bisa dari nol.
+> **Pemulihan — ✅ CONTAINED 2026-06-01:** backup (`~/smk_pre_n14.dump`, 840K) · `prisma db push` SUKSES (tabel `academic.*`/`finance.spp_payments`/`ai_knowledge.rag_chunks` ADA di smk_db, N-11 CLOSED) · `_prisma_migrations` direkonsiliasi → 6 baris bersih, semua finished_at terisi, 0 NULL/duplikat → restart api tak akan re-baseline. ⏳ Sisa: FAQ chunks via endpoint SMA-46 + backfill embedding.
+> **Follow-up wajib:** ~~**N-15**~~ ✅ **CLOSED (2026-06-02)** lalu **SMA-46**.
+> **N-15 (HIGH) ✅ CLOSED 2026-06-02:** `start.sh` — cabang auto-baseline dihapus, fail-hard dengan `exit 1` + pesan jelas. Branch `fix/N15-startsh-no-autobaseline`. Laporan: `.tasks/done/N15-startsh-DONE.md`. Tunggu review Cowork sebelum merge.
+> **N-16 (keputusan Director 2026-06-01):** pemulihan dilakukan di **`smk_db` (shared)** demi kecepatan; isolasi DB (`diis_db`) DITUNDA sebagai perbaikan terpisah. Mitigasi P3005 ke depan = fix start.sh (N-15).
+> **N-11:** CLOSED otomatis saat rag_chunks nyata terbentuk (Fase 2 runbook).
+> **SMA-46 DITAHAN** sampai pemulihan Fase 2–4 selesai.
 **Verifikasi analis:** Deploy hijau = migrate deploy sukses (tak ada DROP/ALTER destruktif rag_chunks). Verifikasi schema-sync penuh (grep model di working tree) tertunda sampai mount lokal sinkron dengan main — pola sama SMA-31/39.
 
 ### SMA-43 — Event Wiring (producer→NotificationService) — ✅ MERGED ke main (PR #32, CI hijau, 2026-06-01)
@@ -277,18 +286,18 @@ tsc 0 · eslint 0 · 346 tests hijau · coverage 85.58%.
 **Gerbang review Cowork (2026-06-01):** ✅ APPROVE — boleh merge. Verified: emit pasca-commit (tak ada notif hantu), filter di sisi emit, idempotensi refId per-penerima (`:ortu`), N-10 tanpa BOS.
   - **N-12 LOW (backlog):** durability — `pending` ditulis di listener pasca-emit, bukan pre-emit per gate §5. Aman Tahap 1 (EventEmitter2 in-process sync, jendela commit→pending sub-ms tanpa I/O). Outbox/pre-emit pending = ranah BullMQ Tahap 2.
 
-### SMA-45 — AIGateway + OllamaAdapter — ⏳ PR OPEN (review Cowork)
+### SMA-45 — AIGateway + OllamaAdapter — ✅ SELESAI, review ✅ APPROVE (PR #33, siap merge)
 **Branch:** `feat/SMA-45-ai-gateway` | **Model:** Sonnet 4.6
 Interface `AIGateway`+`RagContext` @smk/types · `OllamaAdapter` (embed+chat, timeout, dimensi guard gate §2.1) · factory `AI_GATEWAY` via env (`AI_PROVIDER=ollama` default, `claude` → throw Sprint 4) · `AiService.backfillEmbeddings()` via `$queryRaw`+`$executeRaw` · script `db:embed-faq` · env Zod (OLLAMA_*) · docs env-variables.md §11b.
 tsc 0 · eslint 0 · 361/361 tests hijau · coverage 83.81%.
 **Laporan:** `.tasks/done/SMA-45-ai-gateway-DONE.md`
 **⚠️ Backfill nyata:** Director jalankan `npm run db:embed-faq` di VPS setelah merge (Ollama + model nomic-embed-text sudah pull).
-**Gerbang review Cowork (abstraksi AI + embed pipeline) wajib sebelum merge.**
+**Gerbang review Cowork (2026-06-01):** ✅ APPROVE. Verified: `$queryRaw`/`$executeRaw` parameterized (aman injection), dimensi guard 768, backfill idempoten (IS NULL filter), factory env tanpa hardcode. Backlog **LOW:** `vector.join(',')` bisa notasi eksponensial — format eksplisit bila backfill error.
 
 ### Antrian Sprint 3 (SERIAL — satu per waktu)
-1. ~~SMA-43~~ ✅ merged
-2. ~~SMA-45~~ ⏳ PR open — tunggu review + merge
-3. **SMA-46** Chatbot /ai/chat (Sonnet) — deps SMA-45 ✅.
+1. ~~SMA-43~~ ✅ merged · ~~SMA-45~~ ✅ approve, siap merge
+2. **SMA-46** Chatbot `/ai/chat` (Sonnet) — deps SMA-45 → **TASK PENUTUP SPRINT 3.** Endpoint authenticated + vector search cosine `$queryRaw` (top-K dari rag_chunks) → AIGateway.chat(prompt, context). Prompt: `PROMPT_ClaudeCode_SMA-46_Chatbot.md`.
+   - **N-13 (ops, ditemukan 2026-06-01):** container Ollama = `smk-ollama` (bukan `ollama`); pull model via `docker exec smk-ollama ollama pull nomic-embed-text|qwen2.5:7b`. Script `db:embed-faq` (ts-node+src) TIDAK jalan di image produksi (hanya dist) → backfill dipindah ke **endpoint SA `POST /ai/knowledge/backfill`** di SMA-46 (jalan di proses api hidup). Done-report SMA-45 perlu koreksi instruksi backfill (`docker exec ollama` → salah).
 
 ---
 
