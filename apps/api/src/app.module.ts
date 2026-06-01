@@ -1,9 +1,5 @@
 // =============================================================================
 // app.module.ts — Root Module
-// =============================================================================
-
-// =============================================================================
-// app.module.ts — Root Module
 // Guard urutan (per sprint-plan §4): ThrottlerGuard → KeycloakGuard → RolesGuard
 // =============================================================================
 
@@ -41,13 +37,15 @@ import { RolesGuard } from './auth/guards/roles.guard';
     HealthModule,
     MetricsModule,
 
-    // Domain modules Sprint 1
+    // Domain modules Sprint 1 + 2
     StudentModule,
     PpdbModule,
     TeachingAssignmentModule,
     GradeModule,
     AttendanceModule,
     ScheduleModule,
+
+    // Domain modules Sprint 3
     NotificationModule,
     FinanceModule,
   ],
