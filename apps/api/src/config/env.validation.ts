@@ -19,6 +19,16 @@ const EnvSchema = z.object({
   KEYCLOAK_REALM: z.string().min(1, 'KEYCLOAK_REALM tidak boleh kosong'),
   KEYCLOAK_CLIENT_ID: z.string().min(1, 'KEYCLOAK_CLIENT_ID tidak boleh kosong'),
   KEYCLOAK_CLIENT_SECRET: z.string().min(1, 'KEYCLOAK_CLIENT_SECRET tidak boleh kosong'),
+
+  // ── Notification (semua opsional — CI tetap boot tanpa key, pakai LogAdapter) ──
+  // NOTIF_PROVIDER: 'fonnte' | 'smtp' | 'log' (default: 'log')
+  NOTIF_PROVIDER: z.enum(['fonnte', 'smtp', 'log']).default('log'),
+  FONNTE_API_KEY: z.string().optional(),
+  ADMIN_PHONE_NUMBER: z.string().optional(),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.string().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

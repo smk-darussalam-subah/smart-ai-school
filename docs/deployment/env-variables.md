@@ -186,6 +186,23 @@ Diset otomatis dari variable lain — tidak perlu diisi terpisah jika sudah meng
 | `SMTP_USER` | Tidak | SMTP username/email | `noreply@smkdarussalamsubah.sch.id` |
 | `SMTP_PASSWORD` | Tidak | SMTP password/app password | `<app-password>` |
 
+### 11a. NotificationAdapter (SMA-42)
+
+Digunakan oleh `apps/api` — `NotificationModule`. Semua opsional; CI tanpa key tetap boot pakai `LogAdapter`.
+
+| Variable | Required | Default | Deskripsi | Contoh |
+|----------|----------|---------|-----------|--------|
+| `NOTIF_PROVIDER` | Tidak | `log` | Provider aktif: `fonnte` \| `smtp` \| `log` | `fonnte` |
+| `FONNTE_API_KEY` | Ya jika `NOTIF_PROVIDER=fonnte` | — | API key Fonnte (header Authorization) | `<api-key-fonnte>` |
+| `ADMIN_PHONE_NUMBER` | Tidak | — | Nomor WA admin (dipakai n8n + notif sistem) | `628XXXXXXXXXX` |
+| `SMTP_HOST` | Ya jika `NOTIF_PROVIDER=smtp` | — | SMTP server | `smtp.gmail.com` |
+| `SMTP_PORT` | Ya jika `NOTIF_PROVIDER=smtp` | `587` | SMTP port | `587` |
+| `SMTP_USER` | Ya jika `NOTIF_PROVIDER=smtp` | — | Email pengirim | `noreply@smkdarussalamsubah.sch.id` |
+| `SMTP_PASSWORD` | Ya jika `NOTIF_PROVIDER=smtp` | — | App password / SMTP password | `<app-password>` |
+
+> **Catatan:** `NOTIF_PROVIDER=smtp` adalah stub (Sprint 4 — Nodemailer belum dikonfirmasi direktur). Gunakan `fonnte` atau `log` di Sprint 3.
+> `LogAdapter` hanya men-log ke Winston (aman untuk dev/CI — tidak kirim ke luar).
+
 ---
 
 ## 12. File yang TIDAK Boleh Di-Commit ke Git
