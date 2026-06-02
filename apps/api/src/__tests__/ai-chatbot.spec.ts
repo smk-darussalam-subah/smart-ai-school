@@ -29,11 +29,23 @@ import { AiService } from '../ai/ai.service';
 import { AiController } from '../ai/ai.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { AIGateway, RagContext } from '@smk/types';
+import { AuthUser } from '@smk/auth';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function makeVector(len = 768): number[] {
   return Array.from({ length: len }, (_, i) => i / len);
+}
+
+function makeUser(overrides?: Partial<AuthUser>): AuthUser {
+  return {
+    keycloakId: 'kc-uuid-sa',
+    email: 'sa@smk.sch.id',
+    username: 'sa',
+    roles: ['SUPER_ADMIN'],
+    fullName: 'Super Admin',
+    ...overrides,
+  };
 }
 
 function makeGateway(overrides?: Partial<AIGateway>): AIGateway {
@@ -48,13 +60,17 @@ function makePrisma(overrides?: Partial<PrismaService>): PrismaService {
   return {
     $queryRaw: jest.fn().mockResolvedValue([]),
     $executeRaw: jest.fn().mockResolvedValue(1),
+    user: {
+      findUnique: jest.fn().mockResolvedValue({ id: 'db-user-uuid-sa' }),
+    },
     ragChunk: {
       create: jest.fn().mockResolvedValue({
         id: 'uuid-chunk-1',
         title: 'FAQ PPDB',
         category: 'faq',
         source: 'manual',
-        isActive: true,
+        isActive: false,
+        createdBy: 'db-user-uuid-sa',
         createdAt: new Date(),
       }),
       findMany: jest.fn().mockResolvedValue([]),
@@ -197,15 +213,14 @@ describe('AiService.createKnowledge()', () => {
     const mod = await buildModule(gateway, prisma);
     const svc = mod.get(AiService);
 
-    const result = await svc.createKnowledge({
-      title: 'FAQ PPDB',
-      content: 'Syarat pendaftaran...',
-      category: 'faq',
-    });
+    const result = await svc.createKnowledge(
+      { title: 'FAQ PPDB', content: 'Syarat pendaftaran...', category: 'faq' },
+      makeUser(),
+    );
 
     expect(prisma.ragChunk.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ title: 'FAQ PPDB', category: 'faq' }),
+        data: expect.objectContaining({ title: 'FAQ PPDB', category: 'faq', isActive: false }),
       }),
     );
     expect(gateway.embed).toHaveBeenCalledWith('Syarat pendaftaran...');
@@ -221,11 +236,10 @@ describe('AiService.createKnowledge()', () => {
     const mod = await buildModule(gateway, prisma);
     const svc = mod.get(AiService);
 
-    const result = await svc.createKnowledge({
-      title: 'Artikel',
-      content: 'Konten...',
-      category: 'info',
-    });
+    const result = await svc.createKnowledge(
+      { title: 'Artikel', content: 'Konten...', category: 'info' },
+      makeUser(),
+    );
 
     expect(prisma.ragChunk.create).toHaveBeenCalled();
     expect(prisma.$executeRaw).not.toHaveBeenCalled();
@@ -238,7 +252,7 @@ describe('AiService.createKnowledge()', () => {
     const mod = await buildModule(gateway, prisma);
     const svc = mod.get(AiService);
 
-    await svc.createKnowledge({ title: 'T', content: 'C', category: 'cat' });
+    await svc.createKnowledge({ title: 'T', content: 'C', category: 'cat' }, makeUser());
 
     expect(prisma.ragChunk.create).toHaveBeenCalledWith(
       expect.objectContaining({

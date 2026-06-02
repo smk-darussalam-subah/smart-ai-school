@@ -1,35 +1,48 @@
 // =============================================================================
 // AiController — /api/v1/ai
 //
-// POST /ai/chat        — semua authenticated (tanpa @Roles = any auth user)
-// GET  /ai/knowledge   — SA only
-// POST /ai/knowledge   — SA only
-// POST /ai/knowledge/backfill — SA only (N-13: pengganti script ts-node di prod)
+// POST   /ai/chat                     — semua authenticated
+// GET    /ai/knowledge                — SA, KS, TU
+// POST   /ai/knowledge                — SA, KS, TU (create → draft)
+// GET    /ai/knowledge/:id            — SA, KS, TU
+// PATCH  /ai/knowledge/:id            — SA, KS, TU (re-embed + draft jika content berubah)
+// POST   /ai/knowledge/:id/publish    — SA, KS (separation of duties: TU tidak bisa self-publish)
+// POST   /ai/knowledge/:id/unpublish  — SA, KS
+// DELETE /ai/knowledge/:id            — SA only
+// POST   /ai/knowledge/backfill       — SA (N-13: pengganti script ts-node)
 // =============================================================================
 
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
   Post,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AiService } from './ai.service';
 import { ChatSchema, ChatDto } from './dto/chat.dto';
 import { CreateKnowledgeSchema, CreateKnowledgeDto } from './dto/create-knowledge.dto';
+import { UpdateKnowledgeSchema, UpdateKnowledgeDto } from './dto/update-knowledge.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
+import { AuthUser } from '@smk/auth';
 
 @Controller('ai')
 export class AiController {
   constructor(private readonly aiService: AiService) {}
 
+  // ── Chatbot ─────────────────────────────────────────────────────────────────
+
   /**
-   * POST /ai/chat — Chatbot RAG untuk semua user authenticated.
-   * Rate limit ketat (20 req/menit) karena setiap request memanggil Ollama.
-   * sessionId di-echo tapi tidak di-persist (history = Sprint 4 SMA-48).
+   * POST /ai/chat — RAG chatbot, semua authenticated.
+   * Throttle ketat: setiap request → Ollama embed + chat.
    */
   @Post('chat')
   @HttpCode(HttpStatus.OK)
@@ -38,31 +51,35 @@ export class AiController {
     return this.aiService.chatWithRag(dto);
   }
 
+  // ── Knowledge — collection ──────────────────────────────────────────────────
+
   /**
-   * GET /ai/knowledge — List semua knowledge chunk + flag hasEmbedding.
-   * SA only: manajemen konten internal.
+   * GET /ai/knowledge — List semua chunk (draft + published) untuk manajemen.
+   * SA/KS/TU: admin content. Chatbot hanya baca is_active=true via searchSimilar.
    */
   @Get('knowledge')
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
   listKnowledge() {
     return this.aiService.listKnowledge();
   }
 
   /**
-   * POST /ai/knowledge — Buat chunk baru + langsung embed.
-   * Fail-soft: jika Ollama down → chunk tersimpan, embeddingOk=false, bisa di-backfill via /backfill.
+   * POST /ai/knowledge — Buat chunk baru sebagai DRAFT (isActive=false).
+   * SA/KS/TU bisa create, tapi publish butuh SA/KS (separation of duties).
    */
   @Post('knowledge')
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
   @HttpCode(HttpStatus.CREATED)
-  createKnowledge(@Body(ZodPipe(CreateKnowledgeSchema)) dto: CreateKnowledgeDto) {
-    return this.aiService.createKnowledge(dto);
+  createKnowledge(
+    @Body(ZodPipe(CreateKnowledgeSchema)) dto: CreateKnowledgeDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.aiService.createKnowledge(dto, user);
   }
 
   /**
-   * POST /ai/knowledge/backfill — Backfill embedding semua chunk NULL.
-   * N-13: pengganti script ts-node db:embed-faq yang tidak bisa jalan di image prod.
-   * Idempoten — chunk yang sudah ada embedding di-skip.
+   * POST /ai/knowledge/backfill — Embed semua chunk NULL.
+   * HARUS didefinisikan sebelum :id routes agar 'backfill' tidak diparse sebagai :id.
    */
   @Post('knowledge/backfill')
   @Roles('SUPER_ADMIN')
@@ -75,5 +92,68 @@ export class AiController {
       failed: results.filter((r) => !r.success).length,
       results,
     };
+  }
+
+  // ── Knowledge — item ────────────────────────────────────────────────────────
+
+  /**
+   * GET /ai/knowledge/:id — Detail chunk termasuk content + audit trail.
+   */
+  @Get('knowledge/:id')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
+  getKnowledge(@Param('id', ParseUUIDPipe) id: string) {
+    return this.aiService.getKnowledgeById(id);
+  }
+
+  /**
+   * PATCH /ai/knowledge/:id — Edit title/content/category.
+   * Jika content berubah → re-embed (fail-soft) + kembali draft.
+   * Jika hanya title/category → status tidak berubah.
+   */
+  @Patch('knowledge/:id')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
+  updateKnowledge(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(UpdateKnowledgeSchema)) dto: UpdateKnowledgeDto,
+  ) {
+    return this.aiService.updateKnowledge(id, dto);
+  }
+
+  /**
+   * POST /ai/knowledge/:id/publish — Set isActive=true.
+   * Gate: embedding HARUS ada (422 jika NULL). SA/KS only.
+   */
+  @Post('knowledge/:id/publish')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @HttpCode(HttpStatus.OK)
+  publishKnowledge(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.aiService.publishKnowledge(id, user);
+  }
+
+  /**
+   * POST /ai/knowledge/:id/unpublish — Set isActive=false. SA/KS only.
+   */
+  @Post('knowledge/:id/unpublish')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @HttpCode(HttpStatus.OK)
+  unpublishKnowledge(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.aiService.unpublishKnowledge(id, user);
+  }
+
+  /**
+   * DELETE /ai/knowledge/:id — Hard-delete. SA only.
+   * Keputusan: hard-delete karena tidak ada kolom deletedAt (out of scope).
+   */
+  @Delete('knowledge/:id')
+  @Roles('SUPER_ADMIN')
+  @HttpCode(HttpStatus.OK)
+  deleteKnowledge(@Param('id', ParseUUIDPipe) id: string) {
+    return this.aiService.deleteKnowledge(id);
   }
 }
