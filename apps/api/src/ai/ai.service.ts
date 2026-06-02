@@ -2,16 +2,30 @@
 // AiService — Embed, RAG search, chat, knowledge management
 //
 // Kolom vector(768) adalah Unsupported di Prisma — semua INSERT/UPDATE embedding
-// wajib via $executeRaw, SELECT via $queryRaw (::vector cast). Pola ini konsisten
-// dengan SMA-44 dan SMA-45.
+// wajib via $executeRaw, SELECT via $queryRaw (::vector cast).
+//
+// Alur knowledge:
+//   create  → isActive=false (draft), embed fail-soft
+//   PATCH   → jika content berubah: re-embed + isActive=false kembali draft
+//   publish → SA/KS; cek embedding IS NOT NULL (422 jika NULL); isActive=true
+//   unpublish → SA/KS; isActive=false
+//   delete  → SA; hard-delete
 // =============================================================================
 
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { AIGateway, RagContext } from '@smk/types';
+import { AuthUser } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { CreateKnowledgeDto } from './dto/create-knowledge.dto';
+import { UpdateKnowledgeDto } from './dto/update-knowledge.dto';
 import { ChatDto } from './dto/chat.dto';
 
 export interface EmbedChunkResult {
@@ -33,8 +47,21 @@ export interface KnowledgeListItemRaw {
   category: string;
   isActive: boolean;
   hasEmbedding: boolean;
+  createdBy: string | null;
+  publishedBy: string | null;
+  publishedAt: Date | null;
   createdAt: Date;
 }
+
+export interface KnowledgeDetailRaw extends KnowledgeListItemRaw {
+  content: string;
+  source: string;
+  updatedAt: Date;
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const SA_KS = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] as const;
 
 @Injectable()
 export class AiService {
@@ -43,9 +70,27 @@ export class AiService {
     @Inject('AI_GATEWAY') private readonly gateway: AIGateway,
   ) {}
 
+  // ── Private helpers ─────────────────────────────────────────────────────────
+
+  /** keycloakId → auth.users.id (UUID) */
+  private async resolveUserId(keycloakId: string): Promise<string> {
+    const user = await this.prisma.user.findUnique({
+      where: { keycloakId },
+      select: { id: true },
+    });
+    if (!user) throw new ForbiddenException('User tidak ditemukan');
+    return user.id;
+  }
+
+  private canPublish(user: AuthUser): boolean {
+    return user.roles.some((r) => (SA_KS as readonly string[]).includes(r));
+  }
+
+  // ── Chatbot RAG ─────────────────────────────────────────────────────────────
+
   /**
    * Cari chunk paling mirip berdasarkan cosine similarity.
-   * Menggunakan index hnsw vector_cosine_ops (operator <=>).
+   * Hanya chunk is_active=true (published) yang dipakai.
    * Parameterized via Prisma.sql — tidak ada string concat (injection safe).
    */
   async searchSimilar(
@@ -70,11 +115,9 @@ export class AiService {
 
   /**
    * Endpoint chatbot RAG utama.
-   * Alur: embed → vector search → chat(context) → {answer, sources, sessionId}.
-   * Graceful empty: bila tidak ada chunk ber-embedding → balas tanpa context (tidak 500).
+   * Graceful empty: retrieval kosong → chat tanpa context, tidak 500.
    *
-   * TODO (Sprint 4 SMA-48): persist sessionId ke ChatSession/ChatMessage
-   * untuk history GET /ai/chat/:sessionId/history.
+   * TODO (Sprint 4 SMA-48): persist sessionId ke ChatSession/ChatMessage.
    */
   async chatWithRag(dto: ChatDto): Promise<{
     answer: string;
@@ -88,7 +131,9 @@ export class AiService {
     const chunks = await this.searchSimilar(vector, topK, minSimilarity);
 
     const context: RagContext[] | undefined =
-      chunks.length > 0 ? chunks.map((c) => ({ title: c.title, content: c.content })) : undefined;
+      chunks.length > 0
+        ? chunks.map((c) => ({ title: c.title, content: c.content }))
+        : undefined;
 
     const answer = await this.gateway.chat(dto.message, context);
 
@@ -99,25 +144,35 @@ export class AiService {
     };
   }
 
+  // ── Knowledge CRUD ──────────────────────────────────────────────────────────
+
   /**
-   * Buat knowledge chunk baru dan langsung embed kontennya.
-   * Fail-soft: jika Ollama tidak tersedia → chunk tersimpan, embedding NULL (bisa di-backfill nanti).
+   * Buat knowledge chunk sebagai DRAFT (isActive=false).
+   * createdBy = auth.users.id. Embed fail-soft.
    */
-  async createKnowledge(dto: CreateKnowledgeDto): Promise<{
+  async createKnowledge(
+    dto: CreateKnowledgeDto,
+    user: AuthUser,
+  ): Promise<{
     id: string;
     title: string;
     category: string;
     source: string;
     isActive: boolean;
+    createdBy: string | null;
     createdAt: Date;
     embeddingOk: boolean;
   }> {
+    const createdBy = await this.resolveUserId(user.keycloakId);
+
     const chunk = await this.prisma.ragChunk.create({
       data: {
         title: dto.title,
         content: dto.content,
         category: dto.category,
         source: dto.source ?? 'manual',
+        isActive: false, // draft — wajib publish setelah embed
+        createdBy,
       },
       select: {
         id: true,
@@ -125,6 +180,7 @@ export class AiService {
         category: true,
         source: true,
         isActive: true,
+        createdBy: true,
         createdAt: true,
       },
     });
@@ -152,8 +208,8 @@ export class AiService {
   }
 
   /**
-   * List knowledge chunk dengan flag hasEmbedding.
-   * Menggunakan $queryRaw karena embedding (Unsupported) tidak bisa di-select via Prisma biasa.
+   * List semua knowledge chunk (termasuk draft + unpublished) untuk manajemen.
+   * Chatbot hanya mengambil is_active=true via searchSimilar — tidak terganggu.
    */
   async listKnowledge(): Promise<KnowledgeListItemRaw[]> {
     return this.prisma.$queryRaw<KnowledgeListItemRaw[]>(Prisma.sql`
@@ -161,9 +217,12 @@ export class AiService {
         id::text,
         title,
         category,
-        is_active AS "isActive",
+        is_active      AS "isActive",
         (embedding IS NOT NULL) AS "hasEmbedding",
-        created_at AS "createdAt"
+        created_by::text   AS "createdBy",
+        published_by::text AS "publishedBy",
+        published_at   AS "publishedAt",
+        created_at     AS "createdAt"
       FROM ai_knowledge.rag_chunks
       ORDER BY created_at DESC
       LIMIT 200
@@ -171,9 +230,153 @@ export class AiService {
   }
 
   /**
+   * Detail satu chunk termasuk content + audit.
+   */
+  async getKnowledgeById(id: string): Promise<KnowledgeDetailRaw> {
+    const rows = await this.prisma.$queryRaw<KnowledgeDetailRaw[]>(Prisma.sql`
+      SELECT
+        id::text,
+        title,
+        content,
+        source,
+        category,
+        is_active      AS "isActive",
+        (embedding IS NOT NULL) AS "hasEmbedding",
+        created_by::text   AS "createdBy",
+        published_by::text AS "publishedBy",
+        published_at   AS "publishedAt",
+        created_at     AS "createdAt",
+        updated_at     AS "updatedAt"
+      FROM ai_knowledge.rag_chunks
+      WHERE id = ${id}::uuid
+      LIMIT 1
+    `);
+    const row = rows[0];
+    if (!row) throw new NotFoundException(`RagChunk ${id} tidak ditemukan`);
+    return row;
+  }
+
+  /**
+   * Edit chunk. Jika content berubah → re-embed (fail-soft) + isActive=false (kembali draft).
+   * Jika hanya title/category → update tanpa re-embed, status tidak berubah.
+   */
+  async updateKnowledge(id: string, dto: UpdateKnowledgeDto): Promise<KnowledgeDetailRaw> {
+    const existing = await this.prisma.ragChunk.findUnique({
+      where: { id },
+      select: { id: true, isActive: true },
+    });
+    if (!existing) throw new NotFoundException(`RagChunk ${id} tidak ditemukan`);
+
+    const contentChanged = dto.content !== undefined;
+
+    await this.prisma.ragChunk.update({
+      where: { id },
+      data: {
+        ...(dto.title !== undefined ? { title: dto.title } : {}),
+        ...(dto.content !== undefined ? { content: dto.content } : {}),
+        ...(dto.category !== undefined ? { category: dto.category } : {}),
+        ...(contentChanged ? { isActive: false } : {}),
+      },
+    });
+
+    if (contentChanged && dto.content) {
+      try {
+        const vector = await this.gateway.embed(dto.content);
+        const vectorStr = `[${vector.join(',')}]`;
+        await this.prisma.$executeRaw(Prisma.sql`
+          UPDATE ai_knowledge.rag_chunks
+          SET embedding = ${vectorStr}::vector
+          WHERE id = ${id}::uuid
+        `);
+        logger.info(`[AiService] Re-embed chunk ${id} berhasil`);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn(`[AiService] Re-embed gagal — chunk kembali draft, embedding stale`, {
+          chunkId: id,
+          error: message,
+        });
+      }
+    }
+
+    return this.getKnowledgeById(id);
+  }
+
+  /**
+   * Publish chunk: isActive=true. SA/KS only.
+   * Gate: embedding HARUS ada — 422 jika NULL.
+   */
+  async publishKnowledge(id: string, user: AuthUser): Promise<{ id: string; isActive: boolean; publishedAt: Date | null }> {
+    if (!this.canPublish(user)) {
+      throw new ForbiddenException('Akses ditolak: hanya SA/KS yang bisa publish');
+    }
+
+    const rows = await this.prisma.$queryRaw<Array<{ id: string; hasEmbedding: boolean }>>(Prisma.sql`
+      SELECT id::text, (embedding IS NOT NULL) AS "hasEmbedding"
+      FROM ai_knowledge.rag_chunks
+      WHERE id = ${id}::uuid
+      LIMIT 1
+    `);
+    const chunk = rows[0];
+    if (!chunk) throw new NotFoundException(`RagChunk ${id} tidak ditemukan`);
+    if (!chunk.hasEmbedding) {
+      throw new UnprocessableEntityException(
+        'Chunk tidak bisa dipublish: embedding NULL. Jalankan backfill atau re-embed terlebih dahulu.',
+      );
+    }
+
+    const publishedBy = await this.resolveUserId(user.keycloakId);
+    const now = new Date();
+
+    await this.prisma.ragChunk.update({
+      where: { id },
+      data: { isActive: true, publishedBy, publishedAt: now },
+    });
+
+    return { id, isActive: true, publishedAt: now };
+  }
+
+  /**
+   * Unpublish chunk: isActive=false. SA/KS only.
+   */
+  async unpublishKnowledge(id: string, user: AuthUser): Promise<{ id: string; isActive: boolean }> {
+    if (!this.canPublish(user)) {
+      throw new ForbiddenException('Akses ditolak: hanya SA/KS yang bisa unpublish');
+    }
+    const existing = await this.prisma.ragChunk.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!existing) throw new NotFoundException(`RagChunk ${id} tidak ditemukan`);
+
+    await this.prisma.ragChunk.update({
+      where: { id },
+      data: { isActive: false },
+    });
+    return { id, isActive: false };
+  }
+
+  /**
+   * Hard-delete chunk. SA only (dikontrol di controller via @Roles).
+   * Keputusan: hard-delete (bukan soft) karena tidak ada kolom deletedAt dalam scope.
+   * Soft-delete tidak bisa dibedakan dari unpublish tanpa kolom tambahan.
+   */
+  async deleteKnowledge(id: string): Promise<{ id: string }> {
+    const existing = await this.prisma.ragChunk.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!existing) throw new NotFoundException(`RagChunk ${id} tidak ditemukan`);
+
+    await this.prisma.ragChunk.delete({ where: { id } });
+    return { id };
+  }
+
+  // ── Backfill ────────────────────────────────────────────────────────────────
+
+  /**
    * Backfill embedding untuk semua RagChunk yang embedding IS NULL.
-   * Chunk yang sudah ada embedding → di-skip (idempoten).
-   * Dijalankan via endpoint POST /ai/knowledge/backfill (pengganti script ts-node N-13).
+   * N-13: pengganti script ts-node db:embed-faq di image prod.
+   * Idempoten — chunk yang sudah ada embedding di-skip.
    */
   async backfillEmbeddings(): Promise<EmbedChunkResult[]> {
     const chunks = await this.prisma.$queryRaw<Array<{ id: string; content: string }>>(Prisma.sql`

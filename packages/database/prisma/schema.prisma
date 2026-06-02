@@ -411,16 +411,19 @@ enum NotifStatus {
 // =============================================================================
 
 model RagChunk {
-  id        String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  title     String                      @db.VarChar(500)
-  content   String                      @db.Text                // teks asli untuk display
-  embedding Unsupported("vector(768)")? // nomic-embed-text = 768d
-  source    String                      @db.VarChar(255)        // nama file / URL asal
-  category  String                      @db.VarChar(100)        // faq, peraturan, jadwal, dll
-  metadata  Json?                                               // page number, section, dll
-  isActive  Boolean                     @default(true) @map("is_active")
-  createdAt DateTime                    @default(now()) @map("created_at")
-  updatedAt DateTime                    @updatedAt @map("updated_at")
+  id          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title       String                      @db.VarChar(500)
+  content     String                      @db.Text                // teks asli untuk display
+  embedding   Unsupported("vector(768)")? // nomic-embed-text = 768d
+  source      String                      @db.VarChar(255)        // nama file / URL asal
+  category    String                      @db.VarChar(100)        // faq, peraturan, jadwal, dll
+  metadata    Json?                                               // page number, section, dll
+  isActive    Boolean                     @default(false) @map("is_active") // false = draft
+  createdBy   String?                     @map("created_by")   @db.Uuid    // audit: auth.users.id
+  publishedBy String?                     @map("published_by") @db.Uuid    // audit: auth.users.id
+  publishedAt DateTime?                   @map("published_at")
+  createdAt   DateTime                    @default(now()) @map("created_at")
+  updatedAt   DateTime                    @updatedAt @map("updated_at")
 
   @@index([category])
   @@index([isActive])
