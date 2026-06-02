@@ -2,50 +2,77 @@ const values = [
   {
     icon: '☾',
     title: 'Pendidikan Berbasis Pesantren',
-    desc: 'Pembinaan akhlak, ibadah, dan kemandirian setiap hari dalam lingkungan islami.',
+    desc: 'Pembinaan akhlak, ibadah, dan kemandirian setiap hari — karakter yang tak ternilai untuk karir dan kehidupan.',
   },
   {
     icon: '⚒',
     title: 'Praktik Industri Nyata',
-    desc: 'Bengkel, lab, dan kemitraan PKL langsung dengan dunia usaha dan industri.',
+    desc: 'Bengkel, lab komputer, dan kemitraan PKL langsung dengan dunia usaha dan industri setempat.',
   },
   {
     icon: '◈',
     title: 'Bursa Kerja Khusus (BKK)',
-    desc: 'Penyaluran lulusan ke industri, jejaring alumni, dan rekrutmen mitra kerja.',
+    desc: 'Jaringan alumni dan penyaluran kerja aktif — lulusan kami ada di berbagai perusahaan se-Jawa Tengah.',
   },
 ] as const;
 
 export function WhyUs() {
   return (
-    <section id="kenapa" className="py-0 pb-[90px] bg-smk-cream">
-      <div className="max-w-[1180px] mx-auto px-6">
-        <div className="bg-smk-emerald-deep text-[#eafaf2] rounded-[24px] md:rounded-[32px] p-8 md:p-16 grid md:grid-cols-2 gap-8 md:gap-14 items-center">
+    <section id="kenapa" className="py-0 pb-[70px] md:pb-[90px] bg-smk-cream">
+      <div className="max-w-[1180px] mx-auto px-5 md:px-6">
+        <div className="bg-smk-emerald-deep rounded-[20px] md:rounded-[32px] p-7 md:p-16 grid md:grid-cols-[1fr_1.1fr] gap-8 md:gap-16 items-start">
           {/* Left */}
           <div>
-            <div className="font-bold text-[13px] tracking-[0.12em] uppercase text-smk-lime mb-3.5">
+            <div className="font-bold text-[12px] md:text-[13px] tracking-[0.12em] uppercase text-smk-lime mb-3 md:mb-3.5">
               Kenapa Darussalam
             </div>
-            <h2 className="font-fraunces font-semibold text-[clamp(26px,3.4vw,40px)] leading-[1.1] tracking-tight text-white">
+            <h2 className="font-fraunces font-semibold text-[clamp(24px,3.2vw,40px)] leading-[1.1] tracking-tight text-white mb-4 md:mb-5">
               Bukan sekadar sekolah kejuruan.
             </h2>
-            <p className="mt-3.5 text-[16px] text-[#a9cdbd] leading-relaxed">
-              Di sini, keahlian teknis tumbuh bersama karakter. Kamu belajar skill
-              yang laku di dunia kerja, sekaligus dibimbing adab dan agama dalam
-              lingkungan pesantren.
+            <p className="text-[14px] md:text-[15px] text-[#a9cdbd] leading-relaxed mb-6 md:mb-8">
+              Di sini keahlian teknis tumbuh bersama karakter. Kamu belajar skill yang
+              laku di dunia kerja, sekaligus dibimbing adab dan agama dalam lingkungan
+              pesantren yang kondusif.
             </p>
+
+            {/* Mini stat */}
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                { val: '318+', label: 'Siswa aktif' },
+                { val: '15+', label: 'Tahun berpengalaman' },
+              ].map((s) => (
+                <div
+                  key={s.label}
+                  className="bg-white/8 rounded-xl md:rounded-2xl px-4 py-3.5"
+                >
+                  <b className="block font-fraunces font-semibold text-2xl md:text-3xl text-smk-lime leading-none">
+                    {s.val}
+                  </b>
+                  <span className="text-[12px] md:text-[13px] text-[#a9cdbd] mt-1 block">
+                    {s.label}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Right: value list */}
-          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4 md:gap-5">
             {values.map((v) => (
-              <div key={v.title} className="flex gap-4 items-start">
-                <div className="flex-shrink-0 w-[46px] h-[46px] rounded-xl bg-smk-lime/16 text-smk-lime grid place-items-center text-[22px]">
+              <div
+                key={v.title}
+                className="flex gap-3.5 md:gap-4 items-start bg-white/6 rounded-xl md:rounded-2xl p-4 md:p-5 border border-white/8"
+              >
+                <div className="flex-shrink-0 w-10 h-10 md:w-11 md:h-11 rounded-xl bg-smk-lime/15 text-smk-lime grid place-items-center text-lg md:text-xl">
                   {v.icon}
                 </div>
                 <div>
-                  <b className="text-[17px] text-white font-semibold">{v.title}</b>
-                  <p className="text-[14px] text-[#a9cdbd] mt-1 leading-snug">{v.desc}</p>
+                  <b className="text-[15px] md:text-[17px] text-white font-semibold block mb-1">
+                    {v.title}
+                  </b>
+                  <p className="text-[13px] md:text-sm text-[#a9cdbd] leading-relaxed">
+                    {v.desc}
+                  </p>
                 </div>
               </div>
             ))}

@@ -69,7 +69,8 @@ function buildCsp(nonce: string): string {
     `connect-src ${connectSrc}`,
     "media-src 'none'",
     "object-src 'none'",
-    "frame-src 'none'",
+    // youtube-nocookie = privacy-enhanced embed (tidak set cookie tracking)
+    "frame-src https://www.youtube-nocookie.com",
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",

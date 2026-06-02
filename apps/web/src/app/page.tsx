@@ -3,6 +3,7 @@ import { LandingNav } from '@/components/landing/LandingNav';
 import { Hero } from '@/components/landing/Hero';
 import { MarqueeStrip } from '@/components/landing/MarqueeStrip';
 import { Jurusan } from '@/components/landing/Jurusan';
+import { VideoProfile } from '@/components/landing/VideoProfile';
 import { WhyUs } from '@/components/landing/WhyUs';
 import { Stats } from '@/components/landing/Stats';
 import { CtaPPDB } from '@/components/landing/CtaPPDB';
@@ -14,11 +15,11 @@ export const dynamic = 'force-static';
 export const metadata: Metadata = {
   title: 'SMK Darussalam Subah — Sekolah Industri Berbasis Pesantren',
   description:
-    'SMK Darussalam Subah, Batang Jawa Tengah. Tiga program keahlian: Teknik Otomotif, TJKT, dan AKL. Berbasis Pondok Pesantren Darussalam. SPMB 2026/2027 dibuka.',
+    'SMK Darussalam Subah, Batang Jawa Tengah. 3 program keahlian: Teknik Otomotif (TKRO & TBSM), TJKT, AKL. Berbasis Pondok Pesantren Darussalam. SPMB 2026/2027 dibuka, terbatas 234 kursi.',
   keywords: [
     'SMK Darussalam Subah',
-    'SPMB 2025',
-    'sekolah vokasi pesantren',
+    'SPMB 2026',
+    'sekolah vokasi pesantren Batang',
     'teknik otomotif Batang',
     'TJKT Subah',
     'AKL SMK Batang',
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'SMK Darussalam Subah — Sekolah Industri Berbasis Pesantren',
     description:
-      'Memadukan pendidikan pesantren dengan keahlian vokasi terkini. SPMB 2026/2027 dibuka.',
+      'Memadukan pendidikan pesantren dengan keahlian vokasi terkini. SPMB 2026/2027 dibuka, terbatas 234 kursi.',
     url: 'https://smkdarussalamsubah.sch.id',
     siteName: 'SMK Darussalam Subah',
     locale: 'id_ID',
@@ -75,7 +76,6 @@ const jsonLd = {
 export default function LandingPage() {
   return (
     <>
-      {/* JSON-LD structured data */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -92,7 +92,11 @@ export default function LandingPage() {
             <Jurusan />
           </ScrollReveal>
 
-          <ScrollReveal delay={80}>
+          <ScrollReveal delay={60}>
+            <VideoProfile />
+          </ScrollReveal>
+
+          <ScrollReveal delay={60}>
             <WhyUs />
           </ScrollReveal>
 
