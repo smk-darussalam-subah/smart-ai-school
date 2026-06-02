@@ -383,7 +383,6 @@ export class AiService {
       SELECT id::text, content
       FROM ai_knowledge.rag_chunks
       WHERE embedding IS NULL
-        AND is_active = true
       ORDER BY created_at ASC
     `);
 

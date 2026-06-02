@@ -367,3 +367,25 @@ describe('AiService.listKnowledge() + getKnowledgeById()', () => {
     await expect(svc.getKnowledgeById(CHUNK_ID)).rejects.toThrow(NotFoundException);
   });
 });
+
+// ── backfillEmbeddings — N-17: draft chunks ikut terjaring ───────────────────
+
+describe('AiService.backfillEmbeddings() — N-17 draft inclusion', () => {
+  it('chunk is_active=false + embedding NULL → ikut ter-embed (draft tidak di-skip)', async () => {
+    const gateway = makeGateway();
+    const prisma = makePrisma({
+      $queryRaw: jest.fn().mockResolvedValue([
+        { id: 'draft-chunk-1', content: 'FAQ draft belum publish' },
+      ]),
+    });
+    const mod = await buildModule(gateway, prisma);
+    const svc = mod.get(AiService);
+
+    const results = await svc.backfillEmbeddings();
+
+    expect(gateway.embed).toHaveBeenCalledWith('FAQ draft belum publish');
+    expect(prisma.$executeRaw).toHaveBeenCalled();
+    expect(results).toHaveLength(1);
+    expect(results[0]?.success).toBe(true);
+  });
+});
