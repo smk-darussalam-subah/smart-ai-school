@@ -44,6 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Keuangan', href: '/dashboard/keuangan', icon: '💰', roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN'] },
   { label: 'Nilai & Absensi', href: '/dashboard/nilai', icon: '📊', roles: ['SISWA', 'ORANG_TUA'] },
   { label: 'Lowongan', href: '/dashboard/lowongan', icon: '💼', roles: ['INDUSTRI', 'SISWA'] },
+  { label: 'Basis Pengetahuan', href: '/dashboard/knowledge', icon: '🧠', roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
   { label: 'AI Asisten', href: '/dashboard/ai', icon: '🤖' },
   { label: 'Manajemen User', href: '/dashboard/users', icon: '👥', roles: ['SUPER_ADMIN'] },
   { label: 'System Health', href: '/dashboard/health', icon: '🩺', roles: ['SUPER_ADMIN'] },
