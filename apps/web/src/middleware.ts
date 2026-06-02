@@ -84,6 +84,10 @@ function buildCsp(nonce: string): string {
 // PUBLIC PATHS — tidak memerlukan autentikasi
 // =============================================================================
 
+// Exact match: hanya path ini persis yang public
+const PUBLIC_EXACT: readonly string[] = ['/'];
+
+// Prefix match: semua path yang diawali prefix ini public
 const PUBLIC_PATH_PREFIXES = [
   '/login',
   '/api/auth',  // next-auth callback routes
@@ -93,6 +97,7 @@ const PUBLIC_PATH_PREFIXES = [
 ] as const;
 
 function isPublicPath(pathname: string): boolean {
+  if (PUBLIC_EXACT.includes(pathname)) return true;
   return PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
