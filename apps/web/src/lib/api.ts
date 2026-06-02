@@ -49,6 +49,32 @@ export interface PaginatedResponse<T> {
   limit: number;
 }
 
+// ── Knowledge Base types ──────────────────────────────────────────────────────
+
+export interface KnowledgeListItem {
+  id: string;
+  title: string;
+  category: string;
+  isActive: boolean;
+  hasEmbedding: boolean;
+  createdBy: string | null;
+  publishedBy: string | null;
+  publishedAt: string | null;
+  createdAt: string;
+}
+
+export interface KnowledgeDetail extends KnowledgeListItem {
+  content: string;
+  source: string;
+  updatedAt: string;
+}
+
+export interface BackfillResult {
+  total: number;
+  success: number;
+  failed: number;
+}
+
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
 /**
