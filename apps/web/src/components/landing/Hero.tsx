@@ -1,30 +1,76 @@
+// C:\Users\USER\Documents\Claude\Projects\DIIS\smart-ai-school\apps\web\src\components\landing\Hero.tsx
 import Image from 'next/image';
+import { ParallaxLayer } from './ParallaxLayer';
 
 const SPMB_URL = 'https://taplink.cc/smkdarussalamsubah';
+const WA_URL = 'https://wa.me/6287775564779';
 
+/**
+ * Hero section — 2-column editorial layout.
+ * Left: copy + CTAs + trust stats.
+ * Right: asymmetric collage of 3 real photos + accreditation badge.
+ *
+ * Server Component. Parallax decoration delegates to ParallaxLayer (client).
+ */
 export function Hero() {
   return (
     <section className="relative overflow-hidden bg-smk-cream">
-      {/* Subtle bg texture */}
+      {/* Ambient gradient backdrop */}
       <div
         aria-hidden
-        className="absolute inset-0 opacity-[0.03] pointer-events-none"
+        className="pointer-events-none absolute inset-0 opacity-[0.035]"
         style={{
           backgroundImage:
-            'radial-gradient(circle at 20% 50%, #064534 0%, transparent 50%), radial-gradient(circle at 80% 20%, #c5f04a 0%, transparent 40%)',
+            'radial-gradient(ellipse 60% 70% at 10% 60%, #064534 0%, transparent 70%), radial-gradient(ellipse 50% 55% at 85% 15%, #c5f04a 0%, transparent 60%)',
         }}
       />
 
-      <div className="max-w-[1180px] mx-auto px-5 md:px-6 grid md:grid-cols-[1.1fr_0.9fr] gap-8 md:gap-10 items-center py-12 md:py-[72px]">
-        {/* LEFT */}
+      {/* Parallax dot pattern — top-right decorative */}
+      <ParallaxLayer
+        speed={0.08}
+        className="pointer-events-none absolute right-[-24px] top-[-24px] h-40 w-40 opacity-[0.15]"
+      >
+        <div
+          className="h-full w-full"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle, #064534 1.5px, transparent 1.5px)',
+            backgroundSize: '10px 10px',
+          }}
+        />
+      </ParallaxLayer>
+
+      {/* Parallax dot pattern — bottom-left decorative */}
+      <ParallaxLayer
+        speed={0.12}
+        className="pointer-events-none absolute bottom-8 left-[-20px] h-28 w-28 opacity-[0.10]"
+      >
+        <div
+          className="h-full w-full"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle, #c5f04a 1.5px, transparent 1.5px)',
+            backgroundSize: '10px 10px',
+          }}
+        />
+      </ParallaxLayer>
+
+      <div className="relative mx-auto grid max-w-[1180px] items-center gap-8 px-5 py-12 md:grid-cols-[1.1fr_0.9fr] md:gap-10 md:px-6 md:py-[72px]">
+        {/* ── LEFT COLUMN ── */}
         <div className="order-2 md:order-1">
-          {/* Eyebrow pill */}
-          <div className="inline-flex items-center gap-2 bg-[#e7f3ec] text-smk-emerald-deep font-semibold text-[12px] md:text-[13px] px-3.5 py-1.5 rounded-full mb-5 md:mb-6">
-            <span className="w-1.5 h-1.5 rounded-full bg-smk-emerald-bright animate-pulse inline-block" />
+          {/* Sub-brand tagline */}
+          <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.16em] text-smk-emerald md:text-[12px]">
+            Sekolah Industri Berbasis Pesantren
+          </p>
+
+          {/* SPMB eyebrow pill */}
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[#e7f3ec] px-3.5 py-1.5 text-[12px] font-semibold text-smk-emerald-deep md:mb-6 md:text-[13px]">
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-smk-emerald-bright" />
             SPMB 2026/2027 Telah Dibuka
           </div>
 
-          <h1 className="font-fraunces font-semibold leading-[1.04] tracking-tight text-smk-ink text-[36px] sm:text-[44px] md:text-[clamp(40px,5vw,62px)]">
+          {/* H1 */}
+          <h1 className="font-fraunces text-[36px] font-semibold leading-[1.04] tracking-tight text-smk-ink sm:text-[44px] md:text-[clamp(40px,5vw,62px)]">
             Berakhlak,
             <br />
             Berkeahlian,
@@ -32,40 +78,44 @@ export function Hero() {
             <em className="not-italic text-smk-emerald">Siap Masa Depan.</em>
           </h1>
 
-          <p className="mt-4 md:mt-5 mb-6 md:mb-8 text-base md:text-[17px] text-smk-ink-soft max-w-[44ch] leading-relaxed">
+          {/* Lead text */}
+          <p className="mb-6 mt-4 max-w-[44ch] text-base leading-relaxed text-smk-ink-soft md:mb-8 md:mt-5 md:text-[17px]">
             SMK Darussalam Subah memadukan pendidikan pesantren dengan keahlian
             vokasi terkini — lulusan santun, terampil, dan melek teknologi.
           </p>
 
-          <div className="flex gap-3 flex-wrap">
+          {/* CTA buttons */}
+          <div className="flex flex-wrap gap-3">
             <a
               href={SPMB_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 font-semibold text-[14px] md:text-[15px] px-5 md:px-6 py-3 md:py-3.5 rounded-full bg-smk-emerald-deep text-white hover:bg-smk-emerald hover:-translate-y-px transition-all shadow-sm shadow-smk-emerald-deep/30"
+              className="inline-flex items-center gap-2 rounded-full bg-smk-emerald-deep px-5 py-3 text-[14px] font-semibold text-white shadow-sm shadow-smk-emerald-deep/30 transition-all hover:-translate-y-px hover:bg-smk-emerald md:px-6 md:py-3.5 md:text-[15px]"
             >
               Daftar Sekarang <span aria-hidden>→</span>
             </a>
             <a
-              href="#jurusan"
-              className="inline-flex items-center gap-2 font-semibold text-[14px] md:text-[15px] px-5 md:px-6 py-3 md:py-3.5 rounded-full border-[1.5px] border-smk-ink/12 text-smk-ink hover:border-smk-emerald hover:text-smk-emerald transition-all"
+              href={WA_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-smk-ink/12 px-5 py-3 text-[14px] font-semibold text-smk-ink transition-all hover:border-smk-emerald hover:text-smk-emerald md:px-6 md:py-3.5 md:text-[15px]"
             >
-              Jelajahi Jurusan
+              Tanya via WhatsApp
             </a>
           </div>
 
           {/* Trust stats */}
-          <div className="flex gap-5 md:gap-8 mt-8 md:mt-10 pt-6 md:pt-8 border-t border-smk-ink/8 flex-wrap">
+          <div className="mt-8 flex flex-wrap gap-5 border-t border-smk-ink/8 pt-6 md:mt-10 md:gap-8 md:pt-8">
             {[
+              { val: '318', label: '318 siswa telah bergabung' },
               { val: '3', label: 'Program Keahlian' },
-              { val: '234', label: 'Kursi Tersedia' },
               { val: '2008', label: 'Sejak Berdiri' },
             ].map((s) => (
               <div key={s.label}>
-                <b className="block font-fraunces font-semibold text-2xl md:text-[26px] text-smk-ink leading-none">
+                <b className="block font-fraunces text-2xl font-semibold leading-none text-smk-ink md:text-[26px]">
                   {s.val}
                 </b>
-                <span className="text-[12px] md:text-[13px] text-smk-ink-soft mt-1 block">
+                <span className="mt-1 block text-[12px] text-smk-ink-soft md:text-[13px]">
                   {s.label}
                 </span>
               </div>
@@ -73,59 +123,68 @@ export function Hero() {
           </div>
         </div>
 
-        {/* RIGHT — collage */}
-        <div className="order-1 md:order-2 relative h-[300px] sm:h-[380px] md:h-[500px]">
-          {/* Main large card */}
-          <div className="absolute inset-0 right-[26%] bottom-[32%] rounded-[20px] md:rounded-[24px] overflow-hidden bg-gradient-to-br from-[#0e7a5b] to-[#06392b]">
-            {/* TODO: ganti dengan <Image> foto nyata dari IG */}
-            <div className="absolute inset-0 flex flex-col justify-end p-4">
-              <span className="inline-block bg-black/25 text-white/70 text-[10px] px-2 py-1 rounded-md backdrop-blur-sm">
-                [Ganti: foto suasana belajar]
-              </span>
-            </div>
+        {/* ── RIGHT COLUMN — photo collage ── */}
+        <div className="relative order-1 h-[300px] sm:h-[380px] md:order-2 md:h-[500px]">
+          {/* Large primary card — hero-1.jpg */}
+          <div className="absolute inset-0 bottom-[32%] right-[26%] overflow-hidden rounded-[20px] md:rounded-[24px]">
+            <Image
+              src="/landing/hero-1.jpg"
+              alt="Suasana belajar di SMK Darussalam Subah"
+              fill
+              priority
+              className="object-cover"
+              sizes="(max-width: 768px) 70vw, 35vw"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-smk-emerald-deep/40 to-transparent" />
           </div>
 
-          {/* Top-right card */}
-          <div className="absolute top-[4%] right-0 w-[47%] h-[47%] rounded-[16px] md:rounded-[20px] overflow-hidden bg-gradient-to-br from-[#13361f] to-smk-emerald">
-            <div className="absolute inset-0 flex flex-col justify-end p-3">
-              <span className="inline-block bg-black/25 text-white/70 text-[10px] px-2 py-1 rounded-md backdrop-blur-sm">
-                [Ganti: foto kegiatan santri]
-              </span>
-            </div>
+          {/* Top-right secondary card — hero-2.jpg */}
+          <div className="absolute right-0 top-[4%] h-[47%] w-[47%] overflow-hidden rounded-[16px] md:rounded-[20px]">
+            <Image
+              src="/landing/hero-2.jpg"
+              alt="Kegiatan santri SMK Darussalam Subah"
+              fill
+              className="object-cover"
+              sizes="(max-width: 768px) 45vw, 22vw"
+            />
+            <div className="absolute inset-0 bg-gradient-to-br from-smk-emerald-deep/20 to-transparent" />
           </div>
 
-          {/* Bottom-right card */}
-          <div className="absolute bottom-0 right-[4%] w-[43%] h-[38%] rounded-[16px] md:rounded-[20px] overflow-hidden bg-gradient-to-br from-smk-lime to-[#7fae1b]">
-            <div className="absolute inset-0 flex flex-col justify-end p-3">
-              <span className="inline-block bg-black/15 text-[#22330a]/70 text-[10px] px-2 py-1 rounded-md backdrop-blur-sm">
-                [Ganti: foto bengkel & lab]
-              </span>
-            </div>
+          {/* Bottom-right tertiary card — hero-3.jpg */}
+          <div className="absolute bottom-0 right-[4%] h-[38%] w-[43%] overflow-hidden rounded-[16px] md:rounded-[20px]">
+            <Image
+              src="/landing/hero-3.jpg"
+              alt="Praktik bengkel dan lab SMK Darussalam Subah"
+              fill
+              className="object-cover"
+              sizes="(max-width: 768px) 42vw, 20vw"
+            />
+            <div className="absolute inset-0 bg-gradient-to-tl from-smk-lime/15 to-transparent" />
           </div>
 
           {/* Floating badge — Akreditasi */}
-          <div className="absolute left-[-4px] md:left-[-12px] bottom-[28%] bg-white border border-smk-ink/10 rounded-xl md:rounded-2xl px-3 md:px-4 py-2.5 md:py-3 flex items-center gap-2.5 shadow-[0_12px_32px_-16px_rgba(6,69,52,0.45)]">
-            <div className="relative w-8 h-8 md:w-9 md:h-9 flex-shrink-0">
+          <div className="absolute bottom-[28%] left-[-4px] flex items-center gap-2.5 rounded-xl border border-smk-ink/10 bg-white px-3 py-2.5 shadow-[0_12px_32px_-16px_rgba(6,69,52,0.45)] md:left-[-12px] md:rounded-2xl md:px-4 md:py-3">
+            <div className="relative h-8 w-8 flex-shrink-0 md:h-9 md:w-9">
               <Image
                 src="/landing/logo-smk.jpg"
                 alt="Logo SMK Darussalam Subah"
                 fill
-                className="object-contain rounded-lg"
+                className="rounded-lg object-contain"
                 sizes="36px"
               />
             </div>
             <div>
-              <b className="text-[12px] md:text-sm text-smk-ink block">Akreditasi B</b>
-              <small className="text-[10px] md:text-[11px] text-smk-ink-soft">
+              <b className="block text-[12px] text-smk-ink md:text-sm">Akreditasi B</b>
+              <small className="text-[10px] text-smk-ink-soft md:text-[11px]">
                 BAN-S/M · NPSN 20350670
               </small>
             </div>
           </div>
 
-          {/* Decorative dot pattern */}
+          {/* Decorative dot grid — top-right of collage */}
           <div
             aria-hidden
-            className="absolute -top-3 -right-3 w-20 h-20 opacity-20"
+            className="pointer-events-none absolute -right-3 -top-3 h-20 w-20 opacity-20"
             style={{
               backgroundImage:
                 'radial-gradient(circle, #064534 1px, transparent 1px)',
