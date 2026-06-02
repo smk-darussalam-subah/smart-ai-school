@@ -32,6 +32,12 @@ import { RolesGuard } from './auth/guards/roles.guard';
         ttl: 60_000, // 1 menit dalam ms
         limit: 100,
       },
+      // Named throttler untuk AI chat — lebih ketat karena setiap request ke Ollama mahal
+      {
+        name: 'aichat',
+        ttl: 60_000,
+        limit: 20,
+      },
     ]),
 
     // Event bus in-process — listener dipanggil via @OnEvent(), emit = fire-and-forget

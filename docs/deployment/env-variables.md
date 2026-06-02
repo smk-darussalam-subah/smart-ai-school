@@ -223,11 +223,25 @@ Digunakan oleh `apps/api` — `AiModule`. Semua opsional; CI tanpa Ollama tetap 
 > - `AI_PROVIDER=claude` belum diimplementasikan (Sprint 4, SMA-48 — R-03 strip-PII gerbang keras).
 > - Model Ollama harus sudah di-pull di VPS sebelum backfill:
 >   ```bash
->   docker exec ollama ollama pull nomic-embed-text
->   docker exec ollama ollama pull qwen2.5:7b
+>   docker exec smk-ollama ollama pull nomic-embed-text
+>   docker exec smk-ollama ollama pull qwen2.5:7b
 >   ```
-> - Backfill embedding FAQ: `cd apps/api && npm run db:embed-faq` (jalankan di VPS).
+> - Backfill embedding FAQ di produksi: `POST /api/v1/ai/knowledge/backfill` dengan token SA (N-13: menggantikan script ts-node yang tidak bisa jalan di image prod).
 > - Di dev/CI, gateway tetap terdaftar sebagai provider DI (inject `AI_GATEWAY`); Ollama tidak dipanggil kecuali backfill dijalankan eksplisit.
+
+### 11c. RAG Retrieval (SMA-46 Chatbot)
+
+Digunakan oleh `AiService.searchSimilar()` saat memproses request `POST /ai/chat`.
+
+| Variable | Required | Default | Deskripsi | Contoh |
+|----------|----------|---------|-----------|--------|
+| `AI_RAG_TOP_K` | Tidak | `4` | Jumlah chunk paling mirip yang di-retrieve dari pgvector | `4` |
+| `AI_RAG_MIN_SIMILARITY` | Tidak | `0.3` | Ambang minimum cosine similarity (0–1) — chunk di bawah ini dibuang | `0.3` |
+
+> **Catatan:**
+> - `AI_RAG_TOP_K`: nilai lebih tinggi = konteks lebih kaya tapi prompt lebih panjang (lebih lambat + lebih mahal).
+> - `AI_RAG_MIN_SIMILARITY`: nilai lebih tinggi = konteks lebih relevan tapi bisa jadi kosong (graceful fallback: chat tanpa context).
+> - Keduanya sudah tervalidasi Zod di `env.validation.ts` — API gagal start jika nilainya non-numerik.
 
 ---
 

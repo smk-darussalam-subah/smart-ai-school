@@ -4,13 +4,14 @@
 //   claude  → belum diimplementasikan (Sprint 4 SMA-48) — throw
 //
 // Pola identik NotificationModule (useFactory buildAdapter).
-// Ekspor AI_GATEWAY agar bisa dipakai RagModule / SMA-46.
+// Ekspor AI_GATEWAY agar bisa dipakai RagModule / modul lain.
 // =============================================================================
 
 import { Module } from '@nestjs/common';
 import { AIGateway } from '@smk/types';
 import { OllamaAdapter } from './adapters/ollama.adapter';
 import { AiService } from './ai.service';
+import { AiController } from './ai.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 
 function buildAiGateway(): AIGateway {
@@ -34,6 +35,7 @@ function buildAiGateway(): AIGateway {
 
 @Module({
   imports: [PrismaModule],
+  controllers: [AiController],
   providers: [
     {
       provide: 'AI_GATEWAY',

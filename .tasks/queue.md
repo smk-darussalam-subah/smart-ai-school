@@ -295,9 +295,14 @@ tsc 0 · eslint 0 · 361/361 tests hijau · coverage 83.81%.
 **Gerbang review Cowork (2026-06-01):** ✅ APPROVE. Verified: `$queryRaw`/`$executeRaw` parameterized (aman injection), dimensi guard 768, backfill idempoten (IS NULL filter), factory env tanpa hardcode. Backlog **LOW:** `vector.join(',')` bisa notasi eksponensial — format eksplisit bila backfill error.
 
 ### Antrian Sprint 3 (SERIAL — satu per waktu)
-1. ~~SMA-43~~ ✅ merged · ~~SMA-45~~ ✅ approve, siap merge
-2. **SMA-46** Chatbot `/ai/chat` (Sonnet) — deps SMA-45 → **TASK PENUTUP SPRINT 3.** Endpoint authenticated + vector search cosine `$queryRaw` (top-K dari rag_chunks) → AIGateway.chat(prompt, context). Prompt: `PROMPT_ClaudeCode_SMA-46_Chatbot.md`.
-   - **N-13 (ops, ditemukan 2026-06-01):** container Ollama = `smk-ollama` (bukan `ollama`); pull model via `docker exec smk-ollama ollama pull nomic-embed-text|qwen2.5:7b`. Script `db:embed-faq` (ts-node+src) TIDAK jalan di image produksi (hanya dist) → backfill dipindah ke **endpoint SA `POST /ai/knowledge/backfill`** di SMA-46 (jalan di proses api hidup). Done-report SMA-45 perlu koreksi instruksi backfill (`docker exec ollama` → salah).
+1. ~~SMA-43~~ ✅ merged · ~~SMA-45~~ ✅ merged
+2. **SMA-46** ✅ SELESAI 2026-06-02 — PR `feat/SMA-46-chatbot`, menunggu review Cowork + merge.
+   POST /ai/chat (RAG, throttle 20/mnt) · GET+POST /ai/knowledge (SA) · POST /ai/knowledge/backfill (SA, N-13).
+   tsc 0 · eslint 0 · 375/375 tests · src/ai coverage 95.6%. Laporan: `.tasks/done/SMA-46-chatbot-DONE.md`.
+   - **N-13 CLOSED:** backfill dipindah ke `POST /ai/knowledge/backfill` (ganti script ts-node yang tidak bisa jalan di image prod).
+
+> 🏁 **SPRINT 3 SELESAI** (pending merge SMA-46). Semua modul Finance+AI+Notif ter-deliver.
+> Langkah berikutnya: review Cowork SMA-46 → merge → mulai Sprint 4 (SMA-48 Claude adapter, SMA-49 chat history, dll).
 
 ---
 
