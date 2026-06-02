@@ -19,6 +19,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { FastifyReply, FastifyRequest } from 'fastify';
+import { captureException } from '@sentry/nestjs';
 import { logError } from '@smk/logger';
 
 const PRISMA_HTTP_MAP: Record<string, { status: number; error: string; message: string }> = {
@@ -60,11 +61,13 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       return;
     }
 
-    // Prisma error yang tidak dikenal → 500 + log
+    // Prisma error yang tidak dikenal → 500 + log + capture ke Sentry
+    // P2002/P2003/P2025 (4xx) sudah ditangani di atas, tidak capture.
     logError('Unhandled Prisma error', exception, {
       code: exception.code,
       path: request.url,
     });
+    captureException(exception);
 
     reply.status(HttpStatus.INTERNAL_SERVER_ERROR).send({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,

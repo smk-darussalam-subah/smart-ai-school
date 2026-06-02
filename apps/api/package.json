@@ -20,6 +20,7 @@
     "@nestjs/platform-fastify": "^11.1.0",
     "@nestjs/terminus": "^11.0.0",
     "@nestjs/throttler": "^6.4.0",
+    "@sentry/nestjs": "^10.55.0",
     "@smk/auth": "*",
     "@smk/logger": "*",
     "helmet": "^8.0.0",

@@ -15,4 +15,18 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+// Env-gated: withSentryConfig hanya aktif jika SENTRY_DSN tersedia.
+// Tanpa DSN → ekspor nextConfig langsung (tidak ada overhead Sentry webpack plugin).
+// Dengan DSN → wrap untuk source map support & error capture yang tepat.
+const hasSentry = process.env.NEXT_PUBLIC_SENTRY_DSN || process.env.SENTRY_DSN;
+
+if (hasSentry) {
+  const { withSentryConfig } = require('@sentry/nextjs');
+  module.exports = withSentryConfig(nextConfig, {
+    silent: true, // Tidak ada output CLI Sentry saat build
+    // Tanpa org/project/authToken → source map upload di-skip secara otomatis.
+    // Set SENTRY_ORG, SENTRY_PROJECT, SENTRY_AUTH_TOKEN untuk mengaktifkan.
+  });
+} else {
+  module.exports = nextConfig;
+}

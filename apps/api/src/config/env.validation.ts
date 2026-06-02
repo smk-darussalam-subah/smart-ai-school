@@ -42,6 +42,12 @@ const EnvSchema = z.object({
   // ── RAG retrieval (SMA-46 chatbot) ───────────────────────────────────────────
   AI_RAG_TOP_K: z.coerce.number().int().positive().default(4),
   AI_RAG_MIN_SIMILARITY: z.coerce.number().min(0).max(1).default(0.3),
+
+  // ── Sentry observability (OBS-1) — semua opsional, boot tanpa DSN = no-op ───
+  // SENTRY_DSN         : Data Source Name dari Sentry project (https://xxx@sentry.io/yyy)
+  // SENTRY_RELEASE     : Identifikasi release, biasanya git SHA (di-set deploy.yml)
+  SENTRY_DSN: z.string().optional(),
+  SENTRY_RELEASE: z.string().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
