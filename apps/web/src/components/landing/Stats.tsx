@@ -1,6 +1,6 @@
 const stats = [
   { value: '3', label: 'Program Keahlian', sub: 'TO · TJKT · AKL' },
-  { value: '318', label: 'Siswa Aktif', sub: 'Tahun ajaran 2025/2026' },
+  { value: '318', label: 'Siswa Bergabung', sub: '318 siswa telah bergabung' },
   { value: '2008', label: 'Tahun Berdiri', sub: '15+ tahun pengalaman' },
   { value: 'B', label: 'Akreditasi', sub: 'BAN-S/M Kemdikbud' },
 ] as const;

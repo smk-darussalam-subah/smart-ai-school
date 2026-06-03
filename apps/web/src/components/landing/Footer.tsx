@@ -15,17 +15,17 @@ export function Footer() {
             <div className="flex items-center gap-3 mb-4">
               <div className="relative w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 border border-white/10">
                 <Image
-                  src="/landing/logo-smk.jpg"
+                  src="/landing/logo-smk.png"
                   alt="Logo SMK Darussalam Subah"
                   fill
-                  className="object-cover"
+                  className="object-contain"
                   sizes="40px"
                 />
               </div>
               <span className="text-white font-bold text-sm leading-snug">
                 SMK Darussalam Subah
                 <small className="block font-normal text-[11px] text-[#9fc3b4] mt-0.5">
-                  Vokasi Berbasis Pesantren
+                  Sekolah Industri Berbasis Pesantren
                 </small>
               </span>
             </div>

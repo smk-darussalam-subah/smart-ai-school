@@ -36,7 +36,7 @@ export function LandingNav() {
         <Link href="/" className="flex items-center gap-2.5 min-w-0">
           <div className="relative w-9 h-9 md:w-10 md:h-10 flex-shrink-0">
             <Image
-              src="/landing/logo-smk.jpg"
+              src="/landing/logo-smk.png"
               alt="Logo SMK Darussalam Subah"
               fill
               className="object-contain rounded-xl"
@@ -47,7 +47,7 @@ export function LandingNav() {
           <span className="font-bold text-smk-ink leading-tight text-[13px] md:text-sm">
             SMK Darussalam Subah
             <small className="block font-medium text-[10px] md:text-[11px] tracking-wider uppercase text-smk-ink-soft">
-              Vokasi Berbasis Pesantren
+              Sekolah Industri Berbasis Pesantren
             </small>
           </span>
         </Link>

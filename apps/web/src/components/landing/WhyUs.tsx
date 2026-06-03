@@ -38,7 +38,7 @@ export function WhyUs() {
             {/* Mini stat */}
             <div className="grid grid-cols-2 gap-4">
               {[
-                { val: '318+', label: 'Siswa aktif' },
+                { val: '318', label: 'Siswa telah bergabung' },
                 { val: '15+', label: 'Tahun berpengalaman' },
               ].map((s) => (
                 <div

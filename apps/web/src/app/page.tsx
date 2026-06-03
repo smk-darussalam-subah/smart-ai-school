@@ -8,6 +8,7 @@ import { VisiMisi } from '@/components/landing/VisiMisi';
 import { Keunggulan } from '@/components/landing/Keunggulan';
 import { VideoProfile } from '@/components/landing/VideoProfile';
 import { WhyUs } from '@/components/landing/WhyUs';
+import { Ekstrakurikuler } from '@/components/landing/Ekstrakurikuler';
 import { Galeri } from '@/components/landing/Galeri';
 import { SPMBSection } from '@/components/landing/SPMBSection';
 import { Stats } from '@/components/landing/Stats';
@@ -126,27 +127,32 @@ export default function LandingPage() {
             <WhyUs />
           </ScrollReveal>
 
-          {/* 8. Galeri */}
+          {/* 8. Ekstrakurikuler */}
+          <ScrollReveal delay={60}>
+            <Ekstrakurikuler />
+          </ScrollReveal>
+
+          {/* 9. Galeri */}
           <ScrollReveal delay={60}>
             <Galeri />
           </ScrollReveal>
 
-          {/* 9. SPMBSection */}
+          {/* 10. SPMBSection */}
           <ScrollReveal delay={60}>
             <SPMBSection />
           </ScrollReveal>
 
-          {/* 10. Stats */}
+          {/* 11. Stats */}
           <ScrollReveal delay={60}>
             <Stats />
           </ScrollReveal>
 
-          {/* 11. Testimoni */}
+          {/* 12. Testimoni */}
           <ScrollReveal delay={60}>
             <Testimoni />
           </ScrollReveal>
 
-          {/* 12. CtaPPDB */}
+          {/* 13. CtaPPDB */}
           <ScrollReveal delay={40}>
             <CtaPPDB />
           </ScrollReveal>

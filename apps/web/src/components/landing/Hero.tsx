@@ -166,7 +166,7 @@ export function Hero() {
           <div className="absolute bottom-[28%] left-[-4px] flex items-center gap-2.5 rounded-xl border border-smk-ink/10 bg-white px-3 py-2.5 shadow-[0_12px_32px_-16px_rgba(6,69,52,0.45)] md:left-[-12px] md:rounded-2xl md:px-4 md:py-3">
             <div className="relative h-8 w-8 flex-shrink-0 md:h-9 md:w-9">
               <Image
-                src="/landing/logo-smk.jpg"
+                src="/landing/logo-smk.png"
                 alt="Logo SMK Darussalam Subah"
                 fill
                 className="rounded-lg object-contain"
