@@ -106,7 +106,7 @@ function useReveal() {
 const spmbPhotos = [
   { src: '/landing/spmb-1.png', alt: 'Preview seragam & suasana SPMB SMK Darussalam Subah 2026' },
   { src: '/landing/spmb-2.png', alt: 'Kegiatan pendaftaran SPMB SMK Darussalam Subah' },
-  { src: '/landing/spmb-3.png', alt: 'Siswa baru SMK Darussalam Subah' },
+ // { src: '/landing/spmb-3.png', alt: 'Siswa baru SMK Darussalam Subah' },
 ] as const;
 
 export function SPMBSection() {
@@ -211,32 +211,38 @@ export function SPMBSection() {
           </div>
         </div>
 
-        {/* ── BOTTOM: photos + CTA + info ── */}
-        <div className="grid gap-10 md:grid-cols-2 md:gap-14 lg:gap-20 items-start">
-          {/* Left: quota + CTA */}
+        {/* ── BOTTOM: stats + CTA + foto SPMB ── */}
+        {/*
+          P3: tata letak proporsional & seimbang.
+          Left: stat badges + tombol + persyaratan (konten padat).
+          Right: foto SPMB dalam grid 2-col, aspect konsisten, siap foto pengganti.
+          Mobile: kol kanan di bawah kol kiri (default grid behavior).
+        */}
+        <div className="grid gap-8 md:grid-cols-[1.1fr_0.9fr] md:gap-12 lg:gap-16 items-start">
+          {/* Left: quota + CTA + persyaratan */}
           <div>
             {/* Quota badges */}
             <div className="mb-6 flex flex-wrap gap-3">
-              <div className="flex items-center gap-2 rounded-full border border-smk-ink/10 bg-smk-sand px-4 py-2.5">
-                <span className="text-xl">🎓</span>
+              <div className="flex items-center gap-2.5 rounded-[14px] border border-smk-ink/10 bg-smk-sand px-4 py-3 md:rounded-[16px]">
+                <span className="text-2xl leading-none">🎓</span>
                 <div>
-                  <b className="block text-[15px] font-fraunces font-semibold text-smk-ink leading-none">
+                  <b className="block font-fraunces text-[16px] font-semibold leading-none text-smk-ink md:text-[18px]">
                     234 Kursi
                   </b>
-                  <small className="text-[11px] text-smk-ink-soft">Total kuota tersedia</small>
+                  <small className="mt-0.5 block text-[11px] text-smk-ink-soft">Total kuota tersedia</small>
                 </div>
               </div>
-              <div className="flex items-center gap-2 rounded-full border border-smk-ink/10 bg-smk-sand px-4 py-2.5">
-                <span className="text-xl">👥</span>
+              <div className="flex items-center gap-2.5 rounded-[14px] border border-smk-ink/10 bg-smk-sand px-4 py-3 md:rounded-[16px]">
+                <span className="text-2xl leading-none">👥</span>
                 <div>
-                  <b className="block text-[15px] font-fraunces font-semibold text-smk-ink leading-none">
+                  <b className="block font-fraunces text-[16px] font-semibold leading-none text-smk-ink md:text-[18px]">
                     26 Siswa
                   </b>
-                  <small className="text-[11px] text-smk-ink-soft">Per kelas</small>
+                  <small className="mt-0.5 block text-[11px] text-smk-ink-soft">Per kelas</small>
                 </div>
               </div>
-              <div className="flex items-center gap-2 rounded-full bg-smk-lime px-4 py-2.5">
-                <span className="text-xl">⏳</span>
+              <div className="flex items-center gap-2 rounded-[14px] bg-smk-lime px-4 py-3">
+                <span className="text-xl leading-none">⏳</span>
                 <span className="text-[12px] font-bold text-[#22330a]">Terbatas!</span>
               </div>
             </div>
@@ -262,10 +268,10 @@ export function SPMBSection() {
 
             {/* Persyaratan umum */}
             <div className="mt-6 rounded-[14px] border border-smk-emerald/20 bg-[#e7f3ec] p-4 md:mt-7 md:rounded-[16px]">
-              <p className="text-[13px] font-semibold text-smk-emerald-deep mb-1">
+              <p className="mb-1 text-[13px] font-semibold text-smk-emerald-deep">
                 Persyaratan Umum Pendaftar
               </p>
-              <ul className="list-inside list-disc text-[13px] text-smk-ink-soft space-y-0.5">
+              <ul className="list-inside list-disc space-y-0.5 text-[13px] text-smk-ink-soft">
                 <li>Lulusan SMP/MTs atau sederajat</li>
                 <li>Foto copy ijazah/SKL &amp; rapor semester 1–5</li>
                 <li>Pas foto terbaru 3×4 (2 lembar)</li>
@@ -273,19 +279,19 @@ export function SPMBSection() {
             </div>
           </div>
 
-          {/* Right: photos preview */}
-          <div className="flex gap-3 overflow-x-auto pb-2 md:grid md:grid-cols-3 md:overflow-visible md:pb-0 md:gap-4">
+          {/* Right: foto SPMB — grid 2-col, aspect konsisten, siap foto pengganti Director */}
+          <div className="grid grid-cols-2 gap-3 md:gap-4">
             {spmbPhotos.map((photo) => (
               <div
                 key={photo.src}
-                className="relative aspect-[3/4] w-[180px] flex-shrink-0 overflow-hidden rounded-[14px] md:w-auto md:rounded-[16px]"
+                className="relative aspect-[3/4] overflow-hidden rounded-[14px] md:rounded-[16px]"
               >
                 <Image
                   src={photo.src}
                   alt={photo.alt}
                   fill
                   className="object-cover"
-                  sizes="(max-width: 768px) 180px, (max-width: 1024px) 33vw, 180px"
+                  sizes="(max-width: 768px) 45vw, (max-width: 1024px) 22vw, 18vw"
                 />
               </div>
             ))}

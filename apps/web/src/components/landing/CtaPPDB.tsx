@@ -44,21 +44,22 @@ export function CtaPPDB() {
           </div>
 
           <div className="relative z-10 flex flex-col md:flex-row items-end gap-0">
-            {/* V8: Model cutout sisi kiri — bottom-aligned, keluar frame ke atas */}
-            <div className="hidden md:flex md:w-[240px] lg:w-[280px] flex-shrink-0 items-end justify-center pt-4 pl-8 pr-0 self-end">
-              <div className="relative w-full h-[230px] lg:h-[270px]">
+            {/* P2: Model cutout sisi kiri — diperbesar, bottom-aligned, keluar frame ke atas.
+                Banner overflow:hidden → model yang terlalu tinggi terpotong di atas secara alami. */}
+            <div className="hidden md:flex md:w-[290px] lg:w-[360px] flex-shrink-0 items-end justify-center pl-6 pr-0 self-end">
+              <div className="relative w-full h-[300px] lg:h-[390px]">
                 <Image
                   src="/landing/model-cut-out.png"
                   alt="Siswa SMK Darussalam Subah membawa buku"
                   fill
                   className="object-contain object-bottom"
-                  sizes="280px"
+                  sizes="(max-width: 1024px) 290px, 360px"
                 />
               </div>
             </div>
 
             {/* Text + CTA */}
-            <div className="flex-1 text-center md:text-left py-8 sm:py-10 px-6 sm:px-8 md:py-14 md:px-10 lg:px-14 w-full">
+            <div className="flex-1 text-center md:text-left py-8 sm:py-10 px-6 sm:px-8 md:py-12 md:px-8 lg:py-14 lg:px-12 w-full">
               {/* Urgency badge */}
               <span className="inline-flex items-center gap-1.5 bg-smk-lime/20 border border-smk-lime/30 text-smk-lime text-[11px] md:text-[12px] font-semibold px-3 py-1.5 rounded-full mb-4 tracking-wide">
                 ⏳ Terbatas 234 kursi · 26 siswa/kelas
