@@ -118,7 +118,7 @@ export function Jurusan() {
             return (
               <TiltCard
                 key={j.num}
-                className={`group relative min-h-[320px] overflow-hidden rounded-[20px] border md:min-h-[360px] md:rounded-[22px] ${s.border}`}
+                className={`group relative min-h-[320px] overflow-hidden rounded-[20px] border bg-smk-emerald-deep/10 md:min-h-[360px] md:rounded-[22px] ${s.border}`}
               >
                 {/* Background photo */}
                 <Image

@@ -125,11 +125,11 @@ export function Hero() {
 
         {/* ── RIGHT COLUMN — photo collage ── */}
         <div className="relative order-1 h-[300px] sm:h-[380px] md:order-2 md:h-[500px]">
-          {/* Large primary card — hero-1.jpg */}
-          <div className="absolute inset-0 bottom-[32%] right-[26%] overflow-hidden rounded-[20px] md:rounded-[24px]">
+          {/* Large primary card — school-front.jpg (hero-1 removed by director) */}
+          <div className="absolute inset-0 bottom-[32%] right-[26%] overflow-hidden rounded-[20px] bg-smk-emerald-deep/20 md:rounded-[24px]">
             <Image
-              src="/landing/hero-1.jpg"
-              alt="Suasana belajar di SMK Darussalam Subah"
+              src="/landing/school-front.jpg"
+              alt="Tampak depan SMK Darussalam Subah"
               fill
               priority
               className="object-cover"
@@ -138,11 +138,11 @@ export function Hero() {
             <div className="absolute inset-0 bg-gradient-to-t from-smk-emerald-deep/40 to-transparent" />
           </div>
 
-          {/* Top-right secondary card — hero-2.jpg */}
-          <div className="absolute right-0 top-[4%] h-[47%] w-[47%] overflow-hidden rounded-[16px] md:rounded-[20px]">
+          {/* Top-right secondary card — campus.jpg (hero-2 removed by director) */}
+          <div className="absolute right-0 top-[4%] h-[47%] w-[47%] overflow-hidden rounded-[16px] bg-smk-sand md:rounded-[20px]">
             <Image
-              src="/landing/hero-2.jpg"
-              alt="Kegiatan santri SMK Darussalam Subah"
+              src="/landing/campus.jpg"
+              alt="Suasana kampus SMK Darussalam Subah"
               fill
               className="object-cover"
               sizes="(max-width: 768px) 45vw, 22vw"
@@ -150,16 +150,15 @@ export function Hero() {
             <div className="absolute inset-0 bg-gradient-to-br from-smk-emerald-deep/20 to-transparent" />
           </div>
 
-          {/* Bottom-right tertiary card — hero-3.jpg */}
-          <div className="absolute bottom-0 right-[4%] h-[38%] w-[43%] overflow-hidden rounded-[16px] md:rounded-[20px]">
+          {/* Bottom-right tertiary card — transparent remove-bg PNG */}
+          <div className="absolute bottom-0 right-[4%] h-[38%] w-[43%] overflow-hidden rounded-[16px] bg-smk-lime/40 md:rounded-[20px]">
             <Image
-              src="/landing/hero-3.jpg"
-              alt="Praktik bengkel dan lab SMK Darussalam Subah"
+              src="/landing/hero-3-removebg-preview.png"
+              alt="Siswa SMK Darussalam Subah"
               fill
-              className="object-cover"
+              className="object-contain p-2"
               sizes="(max-width: 768px) 42vw, 20vw"
             />
-            <div className="absolute inset-0 bg-gradient-to-tl from-smk-lime/15 to-transparent" />
           </div>
 
           {/* Floating badge — Akreditasi */}
