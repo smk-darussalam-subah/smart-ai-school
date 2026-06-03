@@ -161,7 +161,9 @@ export async function middleware(request: NextRequest) {
   return response;
 }
 
-// Terapkan ke semua route kecuali static assets dan gambar
+// Terapkan ke semua route kecuali static assets, gambar, dan public/landing/
+// Note: dengan images.unoptimized:true gambar di-serve langsung via /landing/*.jpg
+// (bukan /_next/image), sehingga path ini harus diexclude dari auth middleware.
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|landing/).*)'],
 };
