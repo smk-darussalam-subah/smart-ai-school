@@ -41,7 +41,6 @@ export function LandingNav() {
               fill
               className="object-contain rounded-xl"
               sizes="40px"
-              priority
             />
           </div>
           <span className="font-bold text-smk-ink leading-tight text-[13px] md:text-sm">
