@@ -69,7 +69,8 @@ function buildCsp(nonce: string): string {
     `connect-src ${connectSrc}`,
     "media-src 'none'",
     "object-src 'none'",
-    "frame-src 'none'",
+    // youtube-nocookie = privacy-enhanced embed (tidak set cookie tracking)
+    "frame-src https://www.youtube-nocookie.com",
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
@@ -84,6 +85,15 @@ function buildCsp(nonce: string): string {
 // PUBLIC PATHS — tidak memerlukan autentikasi
 // =============================================================================
 
+// Exact match: hanya path ini persis yang public
+const PUBLIC_EXACT: readonly string[] = [
+  '/',
+  '/jurusan/tkro',
+  '/jurusan/tjkt',
+  '/jurusan/akl',
+];
+
+// Prefix match: semua path yang diawali prefix ini public
 const PUBLIC_PATH_PREFIXES = [
   '/login',
   '/api/auth',  // next-auth callback routes
@@ -93,6 +103,9 @@ const PUBLIC_PATH_PREFIXES = [
 ] as const;
 
 function isPublicPath(pathname: string): boolean {
+  if (PUBLIC_EXACT.includes(pathname)) return true;
+  // Public: semua sub-route /jurusan/ (halaman detail jurusan)
+  if (pathname.startsWith('/jurusan/')) return true;
   return PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
@@ -148,7 +161,9 @@ export async function middleware(request: NextRequest) {
   return response;
 }
 
-// Terapkan ke semua route kecuali static assets dan gambar
+// Terapkan ke semua route kecuali static assets, gambar, dan public/landing/
+// Note: dengan images.unoptimized:true gambar di-serve langsung via /landing/*.jpg
+// (bukan /_next/image), sehingga path ini harus diexclude dari auth middleware.
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|landing/).*)'],
 };

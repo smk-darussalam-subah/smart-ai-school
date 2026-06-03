@@ -1,7 +1,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Hide Next.js dev indicator badge — dev-only indicator, tidak muncul di production build
+  devIndicators: false,
   output: 'standalone',
   transpilePackages: ['@smk/auth', '@smk/logger', '@smk/types'],
+  // output:'standalone' sets minimalMode on dev server, which disables /_next/image optimizer
+  // and returns 400 for all local images. With unoptimized:true Next.js serves images
+  // directly from /public — no /_next/image pipeline needed.
+  // Our images are already well-optimized: baseline JPEG 163–265KB, sized correctly.
+  images: {
+    unoptimized: true,
+  },
   env: {
     NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'http://localhost:3000',
   },
