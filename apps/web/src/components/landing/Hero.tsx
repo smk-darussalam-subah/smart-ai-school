@@ -131,7 +131,6 @@ export function Hero() {
               src="/landing/school-front.jpg"
               alt="Tampak depan SMK Darussalam Subah"
               fill
-              priority
               className="object-cover"
               sizes="(max-width: 768px) 70vw, 35vw"
             />
