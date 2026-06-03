@@ -1,12 +1,9 @@
-// C:\Users\USER\Documents\Claude\Projects\DIIS\smart-ai-school\apps\web\src\components\landing\Galeri.tsx
 import Image from 'next/image';
 
 /**
- * Galeri section — CSS grid masonry/bento layout.
- * - 3 columns desktop, 2 tablet, 1 mobile.
- * - Some items span 2 columns for visual variety.
- * - All images use <Image fill object-cover> inside a sized container.
- * - Category overlay label on each photo.
+ * Galeri section — CSS columns masonry (Tailwind columns-*).
+ * V5: break-inside-avoid tiap item → masonry alami, tanpa ruang kosong.
+ * Responsif: 1→2→3 kolom. Rasio bervariasi untuk ritme visual rapi.
  *
  * Server Component.
  */
@@ -17,10 +14,7 @@ interface GalleryItem {
   src: string;
   alt: string;
   category: Category;
-  /** Tailwind col-span class — default 'col-span-1' */
-  colSpan?: string;
-  /** aspect-ratio as a Tailwind class */
-  aspect?: string;
+  aspect: string;
 }
 
 const categoryColors: Record<Category, string> = {
@@ -34,14 +28,19 @@ const items: readonly GalleryItem[] = [
     src: '/landing/kunjungan-industri-1.jpg',
     alt: 'Kunjungan industri siswa SMK Darussalam Subah ke kawasan industri Batang',
     category: 'Kunjungan Industri',
-    colSpan: 'col-span-1 sm:col-span-2',
-    aspect: 'aspect-[16/7]',
+    aspect: 'aspect-[4/3]',
   },
   {
     src: '/landing/workshop-1.jpg',
     alt: 'Workshop praktik kejuruan SMK Darussalam Subah',
     category: 'Workshop',
-    aspect: 'aspect-square',
+    aspect: 'aspect-[3/4]',
+  },
+  {
+    src: '/landing/ruang-kelas.jpg',
+    alt: 'Ruang kelas SMK Darussalam Subah',
+    category: 'Fasilitas',
+    aspect: 'aspect-[4/3]',
   },
   {
     src: '/landing/kunjungan-industri-2.jpg',
@@ -53,32 +52,31 @@ const items: readonly GalleryItem[] = [
     src: '/landing/workshop-2.jpg',
     alt: 'Workshop jaringan komputer TJKT SMK Darussalam Subah',
     category: 'Workshop',
-    aspect: 'aspect-square',
+    aspect: 'aspect-[4/3]',
   },
   {
     src: '/landing/fasilitas-lapangan.jpg',
-    alt: 'Fasilitas lapangan olahraga SMK Darussalam Subah',
+    alt: 'Fasilitas lapangan serbaguna SMK Darussalam Subah',
     category: 'Fasilitas',
-    aspect: 'aspect-square',
+    aspect: 'aspect-[3/4]',
   },
   {
     src: '/landing/workshop-3.jpg',
     alt: 'Workshop otomotif TKRO SMK Darussalam Subah',
     category: 'Workshop',
-    aspect: 'aspect-[3/4]',
-  },
-  {
-    src: '/landing/ruang-kelas.jpg',
-    alt: 'Ruang kelas SMK Darussalam Subah',
-    category: 'Fasilitas',
-    aspect: 'aspect-[4/3]',
+    aspect: 'aspect-square',
   },
   {
     src: '/landing/kunjungan-industri-3.jpg',
     alt: 'Kunjungan industri ke PLTU Batang',
     category: 'Kunjungan Industri',
-    colSpan: 'col-span-1 sm:col-span-2',
-    aspect: 'aspect-[16/7]',
+    aspect: 'aspect-[4/3]',
+  },
+  {
+    src: '/landing/workshop-4.jpg',
+    alt: 'Workshop kebekerjaan siswa SMK Darussalam Subah',
+    category: 'Workshop',
+    aspect: 'aspect-[3/4]',
   },
 ] as const;
 
@@ -100,31 +98,29 @@ export function Galeri() {
           </p>
         </div>
 
-        {/* Masonry-style CSS grid */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 md:gap-4">
+        {/* CSS columns masonry — 1 → 2 → 3 kolom */}
+        <div className="columns-1 gap-3 sm:columns-2 lg:columns-3 md:gap-4">
           {items.map((item) => (
             <div
               key={item.src}
-              className={`relative overflow-hidden rounded-[14px] md:rounded-[18px] ${item.colSpan ?? 'col-span-1'} ${item.aspect ?? 'aspect-square'}`}
+              className="break-inside-avoid mb-3 overflow-hidden rounded-[14px] md:mb-4 md:rounded-[18px]"
             >
-              <Image
-                src={item.src}
-                alt={item.alt}
-                fill
-                className="object-cover transition-transform duration-500 hover:scale-[1.04]"
-                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-              />
-
-              {/* Dark overlay on hover */}
-              <div className="absolute inset-0 bg-smk-ink/0 transition-colors duration-300 hover:bg-smk-ink/15" />
-
-              {/* Category label */}
-              <div className="absolute bottom-3 left-3">
-                <span
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm md:text-[12px] ${categoryColors[item.category]}`}
-                >
-                  {item.category}
-                </span>
+              <div className={`relative w-full ${item.aspect}`}>
+                <Image
+                  src={item.src}
+                  alt={item.alt}
+                  fill
+                  className="object-cover transition-transform duration-500 hover:scale-[1.04]"
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                />
+                <div className="absolute inset-0 bg-smk-ink/0 transition-colors duration-300 hover:bg-smk-ink/15" />
+                <div className="absolute bottom-3 left-3">
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm md:text-[12px] ${categoryColors[item.category]}`}
+                  >
+                    {item.category}
+                  </span>
+                </div>
               </div>
             </div>
           ))}

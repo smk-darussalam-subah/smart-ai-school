@@ -260,18 +260,6 @@ export function SPMBSection() {
               </a>
             </div>
 
-            <p className="mt-4 text-[12px] text-smk-ink-soft">
-              WhatsApp panitia:{' '}
-              <a
-                href={WA_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-semibold text-smk-emerald hover:underline"
-              >
-                +62 877-7556-4779
-              </a>
-            </p>
-
             {/* Persyaratan umum */}
             <div className="mt-6 rounded-[14px] border border-smk-emerald/20 bg-[#e7f3ec] p-4 md:mt-7 md:rounded-[16px]">
               <p className="text-[13px] font-semibold text-smk-emerald-deep mb-1">
@@ -279,8 +267,7 @@ export function SPMBSection() {
               </p>
               <ul className="list-inside list-disc text-[13px] text-smk-ink-soft space-y-0.5">
                 <li>Lulusan SMP/MTs atau sederajat</li>
-                <li>Usia maksimal 21 tahun pada awal tahun ajaran</li>
-                <li>Foto copy ijazah/SKL &amp; raport semester 1–5</li>
+                <li>Foto copy ijazah/SKL &amp; rapor semester 1–5</li>
                 <li>Pas foto terbaru 3×4 (2 lembar)</li>
               </ul>
             </div>

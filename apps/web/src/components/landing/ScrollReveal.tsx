@@ -15,12 +15,14 @@ export function ScrollReveal({ children, className = '', delay = 0 }: Props) {
     const el = ref.current;
     if (!el) return;
 
-    // Skip animation jika user prefer-reduced-motion
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (prefersReduced) {
       el.style.opacity = '1';
       return;
     }
 
+    // Initial hidden state
     el.style.opacity = '0';
     el.style.transform = 'translateY(24px)';
     el.style.transition = `opacity 0.5s ease ${delay}ms, transform 0.5s ease ${delay}ms`;
@@ -28,10 +30,20 @@ export function ScrollReveal({ children, className = '', delay = 0 }: Props) {
     const observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
-        if (entry?.isIntersecting) {
-          el.style.opacity = '1';
-          el.style.transform = 'translateY(0)';
-          observer.unobserve(el);
+        if (!entry) return;
+
+        if (entry.isIntersecting) {
+          // Re-enable transition then animate in — rAF ensures reset paint is committed first
+          requestAnimationFrame(() => {
+            el.style.transition = `opacity 0.5s ease ${delay}ms, transform 0.5s ease ${delay}ms`;
+            el.style.opacity = '1';
+            el.style.transform = 'translateY(0)';
+          });
+        } else {
+          // Instant reset (no transition) when element leaves viewport fully
+          el.style.transition = 'none';
+          el.style.opacity = '0';
+          el.style.transform = 'translateY(24px)';
         }
       },
       { threshold: 0.12 }

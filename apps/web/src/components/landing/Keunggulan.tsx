@@ -100,7 +100,26 @@ const variantStyles: Record<
 
 export function Keunggulan() {
   return (
-    <section id="keunggulan" className="bg-smk-cream py-[70px] md:py-[90px]">
+    <section id="keunggulan" className="relative bg-smk-cream py-[70px] md:py-[90px] overflow-hidden">
+      {/* V10: Islamic geometric star — corner kiri atas */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -left-4 top-8 opacity-[0.05] text-smk-emerald-deep hidden md:block"
+      >
+        <svg width="110" height="110" viewBox="0 0 60 60" className="fill-current">
+          <polygon points="52,30 38.31,26.56 45.56,14.44 33.44,21.69 30,8 26.56,21.69 14.44,14.44 21.69,26.56 8,30 21.69,33.44 14.44,45.56 26.56,38.31 30,52 33.44,38.31 45.56,45.56 38.31,33.44" />
+        </svg>
+      </div>
+      {/* V10: Islamic geometric star — corner kanan bawah */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute right-2 bottom-6 opacity-[0.045] text-smk-lime hidden lg:block"
+      >
+        <svg width="88" height="88" viewBox="0 0 60 60" className="fill-current">
+          <polygon points="52,30 38.31,26.56 45.56,14.44 33.44,21.69 30,8 26.56,21.69 14.44,14.44 21.69,26.56 8,30 21.69,33.44 14.44,45.56 26.56,38.31 30,52 33.44,38.31 45.56,45.56 38.31,33.44" />
+        </svg>
+      </div>
+
       <div className="mx-auto max-w-[1180px] px-5 md:px-6">
         {/* Header */}
         <div className="mb-10 flex flex-col gap-4 md:mb-12 md:flex-row md:items-end md:justify-between">

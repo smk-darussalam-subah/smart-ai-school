@@ -3,6 +3,13 @@ import Image from 'next/image';
 const SPMB_URL = 'https://taplink.cc/smkdarussalamsubah';
 const WA_URL = 'https://wa.me/6287775564779';
 
+/**
+ * CTA section — "Wujudkan masa depanmu".
+ * V8: sisi kiri desktop menampilkan model/cutout (bottom-aligned, object-contain).
+ *     Aset model belum tersedia → pakai hero-3-removebg-preview.png sementara.
+ *     TODO: ganti dgn model bawa buku saat Director upload aset model.
+ * V10: hiasan geometrik islami (bintang 8 SVG) di sudut banner.
+ */
 export function CtaPPDB() {
   return (
     <section id="ppdb" className="py-0 pb-[70px] md:pb-[90px] bg-smk-cream">
@@ -18,22 +25,40 @@ export function CtaPPDB() {
             className="absolute bottom-[-120px] left-[-40px] w-[260px] md:w-[320px] h-[260px] md:h-[320px] rounded-full bg-white/5 blur-[50px] pointer-events-none"
           />
 
-          <div className="relative z-10 flex flex-col md:flex-row items-center gap-0 p-6 sm:p-8 md:p-0">
-            {/* Logo side decoration — desktop only */}
-            <div className="hidden md:flex md:w-[260px] lg:w-[300px] flex-shrink-0 items-center justify-center py-14 pl-12 pr-0">
-              <div className="w-[130px] h-[130px] lg:w-[150px] lg:h-[150px] rounded-3xl overflow-hidden border-4 border-smk-lime/30 shadow-[0_0_0_8px_rgba(197,240,74,0.08)] bg-smk-emerald">
+          {/* V10: Islamic geometric star decorations */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute right-6 bottom-6 opacity-[0.07] text-smk-lime"
+          >
+            <svg width="80" height="80" viewBox="0 0 60 60" className="fill-current">
+              <polygon points="52,30 38.31,26.56 45.56,14.44 33.44,21.69 30,8 26.56,21.69 14.44,14.44 21.69,26.56 8,30 21.69,33.44 14.44,45.56 26.56,38.31 30,52 33.44,38.31 45.56,45.56 38.31,33.44" />
+            </svg>
+          </div>
+          <div
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-4 opacity-[0.04] text-smk-lime hidden md:block"
+          >
+            <svg width="52" height="52" viewBox="0 0 60 60" className="fill-current">
+              <polygon points="52,30 38.31,26.56 45.56,14.44 33.44,21.69 30,8 26.56,21.69 14.44,14.44 21.69,26.56 8,30 21.69,33.44 14.44,45.56 26.56,38.31 30,52 33.44,38.31 45.56,45.56 38.31,33.44" />
+            </svg>
+          </div>
+
+          <div className="relative z-10 flex flex-col md:flex-row items-end gap-0">
+            {/* V8: Model cutout sisi kiri — bottom-aligned, keluar frame ke atas */}
+            <div className="hidden md:flex md:w-[240px] lg:w-[280px] flex-shrink-0 items-end justify-center pt-4 pl-8 pr-0 self-end">
+              <div className="relative w-full h-[230px] lg:h-[270px]">
                 <Image
-                  src="/landing/logo-smk.png"
-                  alt="Logo SMK Darussalam Subah"
-                  width={150}
-                  height={150}
-                  className="object-contain w-full h-full p-2"
+                  src="/landing/model-cut-out.png"
+                  alt="Siswa SMK Darussalam Subah membawa buku"
+                  fill
+                  className="object-contain object-bottom"
+                  sizes="280px"
                 />
               </div>
             </div>
 
             {/* Text + CTA */}
-            <div className="flex-1 text-center md:text-left py-4 sm:py-6 md:py-14 md:px-10 lg:px-14 w-full">
+            <div className="flex-1 text-center md:text-left py-8 sm:py-10 px-6 sm:px-8 md:py-14 md:px-10 lg:px-14 w-full">
               {/* Urgency badge */}
               <span className="inline-flex items-center gap-1.5 bg-smk-lime/20 border border-smk-lime/30 text-smk-lime text-[11px] md:text-[12px] font-semibold px-3 py-1.5 rounded-full mb-4 tracking-wide">
                 ⏳ Terbatas 234 kursi · 26 siswa/kelas
@@ -48,7 +73,7 @@ export function CtaPPDB() {
                 kunjungi kami langsung di Jl. Lapangan Selatan No. 05, Subah, Batang.
               </p>
 
-              {/* Buttons — stacked on mobile, row on sm+ */}
+              {/* Buttons */}
               <div className="flex flex-col sm:flex-row gap-3 md:gap-4 items-stretch sm:items-center justify-center md:justify-start">
                 <a
                   href={SPMB_URL}

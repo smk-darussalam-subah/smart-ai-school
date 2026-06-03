@@ -55,6 +55,26 @@ export function Hero() {
         />
       </ParallaxLayer>
 
+      {/* Islamic geometric star — corner ornament kiri bawah */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute bottom-10 left-6 opacity-[0.055] text-smk-emerald-deep hidden md:block"
+      >
+        <svg width="72" height="72" viewBox="0 0 60 60" className="fill-current">
+          <polygon points="52,30 38.31,26.56 45.56,14.44 33.44,21.69 30,8 26.56,21.69 14.44,14.44 21.69,26.56 8,30 21.69,33.44 14.44,45.56 26.56,38.31 30,52 33.44,38.31 45.56,45.56 38.31,33.44" />
+        </svg>
+      </div>
+
+      {/* Islamic geometric star — corner ornament kanan atas */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute right-4 top-6 opacity-[0.04] text-smk-emerald-deep hidden lg:block"
+      >
+        <svg width="96" height="96" viewBox="0 0 60 60" className="fill-current">
+          <polygon points="52,30 38.31,26.56 45.56,14.44 33.44,21.69 30,8 26.56,21.69 14.44,14.44 21.69,26.56 8,30 21.69,33.44 14.44,45.56 26.56,38.31 30,52 33.44,38.31 45.56,45.56 38.31,33.44" />
+        </svg>
+      </div>
+
       <div className="relative mx-auto grid max-w-[1180px] items-center gap-8 px-5 py-12 md:grid-cols-[1.1fr_0.9fr] md:gap-10 md:px-6 md:py-[72px]">
         {/* ── LEFT COLUMN ── */}
         <div className="order-2 md:order-1">
@@ -149,15 +169,16 @@ export function Hero() {
             <div className="absolute inset-0 bg-gradient-to-br from-smk-emerald-deep/20 to-transparent" />
           </div>
 
-          {/* Bottom-right tertiary card — transparent remove-bg PNG */}
-          <div className="absolute bottom-0 right-[4%] h-[38%] w-[43%] overflow-hidden rounded-[16px] bg-smk-lime/40 md:rounded-[20px]">
+          {/* Bottom-right tertiary card — suasana kelas nyata */}
+          <div className="absolute bottom-0 right-[4%] h-[38%] w-[43%] overflow-hidden rounded-[16px] bg-smk-sand md:rounded-[20px]">
             <Image
-              src="/landing/hero-3-removebg-preview.png"
-              alt="Siswa SMK Darussalam Subah"
+              src="/landing/ruang-kelas.jpg"
+              alt="Suasana ruang kelas SMK Darussalam Subah"
               fill
-              className="object-contain p-2"
+              className="object-cover"
               sizes="(max-width: 768px) 42vw, 20vw"
             />
+            <div className="absolute inset-0 bg-gradient-to-t from-smk-emerald-deep/30 to-transparent" />
           </div>
 
           {/* Floating badge — Akreditasi */}

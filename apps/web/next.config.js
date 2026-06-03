@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Hide Next.js dev indicator badge — dev-only indicator, tidak muncul di production build
+  devIndicators: false,
   output: 'standalone',
   transpilePackages: ['@smk/auth', '@smk/logger', '@smk/types'],
   // output:'standalone' sets minimalMode on dev server, which disables /_next/image optimizer

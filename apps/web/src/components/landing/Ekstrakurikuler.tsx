@@ -1,15 +1,14 @@
-import Image from 'next/image';
+import { DockStrip } from './DockStrip';
 
 /**
  * Ekstrakurikuler & Pembinaan Karakter section.
- * Konten dari LANDING_CONTENT_resmi.md §Ekstrakurikuler.
- * Tiga pilar: Pramuka / Debat & Jurnalistik / Keagamaan Pesantren.
- * Layout: editorial 2-col — foto kampus kiri, kartu nilai kanan.
+ * V3: 6 kartu ekskul resmi dari KSP.
+ * V6: 4 foto seragam dengan DockStrip (dock magnify effect).
  *
- * Server Component.
+ * Server Component — DockStrip adalah 'use client' boundary.
  */
 
-const PILLARS = [
+const EKSKUL = [
   {
     icon: '⚜️',
     title: 'Pramuka',
@@ -18,15 +17,33 @@ const PILLARS = [
   },
   {
     icon: '🗣️',
-    title: 'Debat & Jurnalistik',
-    desc: 'Mengembangkan berpikir kritis, komunikasi efektif, dan kepercayaan diri tampil di publik.',
-    tags: ['Bernalar Kritis', 'Komunikatif', 'Kolaborasi'],
+    title: 'Jurnalistik',
+    desc: 'Mengembangkan berpikir kritis, menulis, dan komunikasi efektif — menyuarakan ide lewat tulisan dan media.',
+    tags: ['Bernalar Kritis', 'Komunikatif', 'Kreatif'],
   },
   {
     icon: '☪️',
-    title: 'Pembinaan Pesantren',
-    desc: 'Kajian keagamaan harian, tahfidz, dan pengembangan akhlak — karakter religius dan rahmatan lil \'alamin.',
+    title: 'IPNU-IPPNU',
+    desc: 'Kajian keagamaan, tahfidz, dan pengembangan akhlak — karakter religius dan rahmatan lil \'alamin.',
     tags: ['Religius', 'Akhlak Mulia', 'Toleran'],
+  },
+  {
+    icon: '🌐',
+    title: 'English Club',
+    desc: 'Melatih percakapan, debat, dan presentasi dalam Bahasa Inggris — siap bersaing di era global.',
+    tags: ['Bahasa Inggris', 'Komunikatif', 'Global'],
+  },
+  {
+    icon: '🩺',
+    title: 'PMR',
+    desc: 'Palang Merah Remaja — melatih pertolongan pertama, kepedulian sosial, dan tanggung jawab kemanusiaan.',
+    tags: ['Peduli Sosial', 'Tanggung Jawab', 'Kemanusiaan'],
+  },
+  {
+    icon: '🏔️',
+    title: 'Pecinta Alam',
+    desc: 'Mengenal dan menjaga alam, melatih ketangguhan fisik dan mental melalui kegiatan outdoor bertanggung jawab.',
+    tags: ['Cinta Alam', 'Mandiri', 'Tangguh'],
   },
 ] as const;
 
@@ -39,13 +56,20 @@ const VALUES = [
   { label: 'Komunikatif', color: 'bg-smk-emerald-deep text-smk-lime' },
 ] as const;
 
+const SERAGAM = [
+  { src: '/landing/seragam-olahraga.jpg', alt: 'Seragam olahraga siswa SMK Darussalam Subah', label: 'Olahraga' },
+  { src: '/landing/seragam-tjkt.jpg',     alt: 'Seragam jurusan TJKT SMK Darussalam Subah',  label: 'TJKT' },
+  { src: '/landing/seragam-akl.jpg',      alt: 'Seragam jurusan AKL SMK Darussalam Subah',   label: 'AKL' },
+  { src: '/landing/seragam-to.jpg',       alt: 'Seragam jurusan TKRO SMK Darussalam Subah',  label: 'TO' },
+] as const;
+
 export function Ekstrakurikuler() {
   return (
     <section id="ekskul" className="bg-smk-cream py-[70px] md:py-[90px]">
       <div className="mx-auto max-w-[1180px] px-5 md:px-6">
 
         {/* ── HEADER ── */}
-        <div className="mb-10 flex flex-col gap-4 md:mb-14 md:flex-row md:items-end md:justify-between">
+        <div className="mb-10 flex flex-col gap-4 md:mb-12 md:flex-row md:items-end md:justify-between">
           <div className="max-w-[520px]">
             <div className="mb-3 text-[12px] font-bold uppercase tracking-[0.12em] text-smk-emerald md:text-[13px]">
               Ekstrakurikuler &amp; Karakter
@@ -60,102 +84,64 @@ export function Ekstrakurikuler() {
           </p>
         </div>
 
-        {/* ── MAIN GRID: foto + kartu nilai ── */}
-        <div className="grid gap-6 md:grid-cols-[1fr_1.15fr] md:gap-10 lg:gap-14 mb-8 md:mb-10">
+        {/* ── PROFIL PELAJAR PANCASILA ── */}
+        <div className="mb-8 flex flex-wrap items-center gap-3 rounded-[16px] border border-smk-ink/8 bg-smk-sand px-5 py-4 md:rounded-[18px]">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-smk-ink-soft">
+            Profil Pelajar Pancasila
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {VALUES.map((v) => (
+              <span
+                key={v.label}
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold md:text-[12px] ${v.color}`}
+              >
+                {v.label}
+              </span>
+            ))}
+          </div>
+        </div>
 
-          {/* Left: campus photo + profil pelajar pills */}
-          <div className="flex flex-col gap-4">
-            <div className="relative h-[260px] overflow-hidden rounded-[20px] sm:h-[320px] md:h-full md:min-h-[380px] md:rounded-[24px]">
-              <Image
-                src="/landing/campus.jpg"
-                alt="Suasana kampus dan lingkungan pesantren SMK Darussalam Subah"
-                fill
-                className="object-cover"
-                sizes="(max-width: 768px) 100vw, 45vw"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-smk-emerald-deep/70 via-smk-emerald-deep/15 to-transparent" />
-              <div className="absolute bottom-0 left-0 right-0 p-5 md:p-6">
-                <p className="mb-1 text-[11px] font-bold uppercase tracking-widest text-smk-lime/80">
-                  Profil Pelajar Pancasila
+        {/* ── 6 EKSKUL CARDS GRID ── */}
+        <div className="mb-10 grid gap-3 sm:grid-cols-2 md:grid-cols-3 md:gap-4">
+          {EKSKUL.map((e) => (
+            <div
+              key={e.title}
+              className="flex gap-4 rounded-[18px] border border-smk-ink/8 bg-white p-5 md:rounded-[20px] md:p-6"
+            >
+              {/* Icon */}
+              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-smk-sand text-2xl md:h-12 md:w-12 md:rounded-[14px]">
+                {e.icon}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-fraunces mb-1 text-[15px] font-semibold text-smk-ink md:text-[17px]">
+                  {e.title}
+                </h3>
+                <p className="mb-3 text-[12px] leading-[1.65] text-smk-ink-soft md:text-[13px]">
+                  {e.desc}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {VALUES.map((v) => (
+                  {e.tags.map((tag) => (
                     <span
-                      key={v.label}
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold md:text-[12px] ${v.color}`}
+                      key={tag}
+                      className="rounded-full bg-smk-emerald/10 px-2.5 py-0.5 text-[11px] font-medium text-smk-emerald-deep"
                     >
-                      {v.label}
+                      {tag}
                     </span>
                   ))}
                 </div>
               </div>
             </div>
-          </div>
-
-          {/* Right: 3 pillars */}
-          <div className="flex flex-col gap-4">
-            {PILLARS.map((p) => (
-              <div
-                key={p.title}
-                className="flex gap-4 rounded-[18px] border border-smk-ink/8 bg-white p-5 md:rounded-[20px] md:p-6"
-              >
-                {/* Icon */}
-                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-smk-sand text-2xl md:h-12 md:w-12 md:rounded-[14px]">
-                  {p.icon}
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-fraunces mb-1 text-[16px] font-semibold text-smk-ink md:text-[18px]">
-                    {p.title}
-                  </h3>
-                  <p className="mb-3 text-[13px] leading-[1.65] text-smk-ink-soft md:text-[14px]">
-                    {p.desc}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {p.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full bg-smk-emerald/10 px-2.5 py-0.5 text-[11px] font-medium text-smk-emerald-deep"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ── BOTTOM STRIP: mini-galeri seragam & suasana ── */}
-        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:gap-4 lg:grid-cols-6">
-          {[
-            { src: '/landing/seragam-olahraga.jpg', alt: 'Seragam olahraga siswa SMK Darussalam Subah', label: 'Olahraga' },
-            { src: '/landing/seragam-to.jpg',       alt: 'Seragam Teknik Otomotif TKRO', label: 'TKRO' },
-            { src: '/landing/suasana-tjkt.jpg',     alt: 'Suasana praktik TJKT lab komputer', label: 'TJKT' },
-            { src: '/landing/guru.jpg',             alt: 'Guru SMK Darussalam Subah', label: 'Guru' },
-            { src: '/landing/school-front.jpg',     alt: 'Tampak depan gedung SMK Darussalam Subah', label: 'Gedung' },
-            { src: '/landing/gedung-to.jpg',        alt: 'Gedung bengkel Teknik Otomotif', label: 'Bengkel' },
-          ].map((img) => (
-            <div
-              key={img.src}
-              className="relative aspect-square overflow-hidden rounded-[12px] md:rounded-[14px]"
-            >
-              <Image
-                src={img.src}
-                alt={img.alt}
-                fill
-                className="object-cover transition-transform duration-500 hover:scale-[1.05]"
-                sizes="(max-width: 640px) 33vw, (max-width: 1024px) 25vw, 16vw"
-              />
-              <div className="absolute inset-0 bg-smk-ink/0 transition-colors hover:bg-smk-ink/12" />
-              <div className="absolute bottom-2 left-2">
-                <span className="rounded-md bg-smk-emerald-deep/75 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
-                  {img.label}
-                </span>
-              </div>
-            </div>
           ))}
         </div>
+
+        {/* ── SERAGAM STRIP dengan Dock Effect ── */}
+        <div>
+          <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-smk-ink-soft">
+            Seragam Siswa
+          </p>
+          <DockStrip items={SERAGAM} />
+        </div>
+
       </div>
     </section>
   );

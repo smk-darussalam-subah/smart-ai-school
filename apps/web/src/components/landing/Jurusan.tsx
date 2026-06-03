@@ -1,21 +1,17 @@
-// C:\Users\USER\Documents\Claude\Projects\DIIS\smart-ai-school\apps\web\src\components\landing\Jurusan.tsx
-import Image from 'next/image';
 import Link from 'next/link';
 import { TiltCard } from './TiltCard';
 
 /**
  * Jurusan section — Bento 3-card layout.
- * Each card uses a real photo as full-bleed background (fill + overlay gradient).
- * Cards are wrapped in TiltCard for 3D tilt on pointer move.
- *
- * Server Component — TiltCard is imported as a 'use client' boundary.
+ * V1: kartu solid bersih tanpa background foto — teks tajam terbaca.
+ * Palet bento: TKRO emerald gelap, TJKT sand, AKL lime.
+ * Foto jurusan dipakai di halaman /jurusan/[slug].
  */
 
 const jurusan = [
   {
     num: '01',
     slug: 'tkro',
-    photo: '/landing/jurusan-tkro.jpg',
     name: 'Teknik Kendaraan Ringan',
     sub: 'TKRO',
     desc: 'Perawatan & perbaikan kendaraan ringan, sistem kelistrikan, chassis, hingga diagnosa mesin via scanner — praktik bengkel nyata berstandar industri.',
@@ -25,7 +21,6 @@ const jurusan = [
   {
     num: '02',
     slug: 'tjkt',
-    photo: '/landing/jurusan-tjkt.jpg',
     name: 'Jaringan Komputer & Telekomunikasi',
     sub: 'TJKT',
     desc: 'Instalasi LAN/WAN, server Linux & Windows, fiber optik, keamanan jaringan, dan infrastruktur telekomunikasi — kompetensi paling dicari di era digital.',
@@ -35,7 +30,6 @@ const jurusan = [
   {
     num: '03',
     slug: 'akl',
-    photo: '/landing/jurusan-akl.jpg',
     name: 'Akuntansi & Keuangan Lembaga',
     sub: 'AKL',
     desc: 'Siklus akuntansi lengkap, perpajakan, administrasi perkantoran, software akuntansi — keterampilan keuangan fundamental yang dibutuhkan semua jenis usaha.',
@@ -46,11 +40,49 @@ const jurusan = [
 
 type Variant = 'dark' | 'sand' | 'lime';
 
+/* Icon SVG per jurusan */
+function IconTKRO({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function IconTJKT({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+      <path d="M7 8h.01M11 8h.01M15 8h.01" />
+    </svg>
+  );
+}
+
+function IconAKL({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M9 7H6a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-3" />
+      <path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2M9 7h6" />
+      <path d="M9 12h6M9 16h4" />
+    </svg>
+  );
+}
+
+const icons = {
+  dark: IconTKRO,
+  sand: IconTJKT,
+  lime: IconAKL,
+} as const;
+
 const styles: Record<
   Variant,
   {
-    overlay: string;
+    card: string;
     num: string;
+    iconBg: string;
+    iconColor: string;
     title: string;
     sub: string;
     desc: string;
@@ -60,8 +92,10 @@ const styles: Record<
   }
 > = {
   dark: {
-    overlay: 'from-smk-emerald-deep/90 via-smk-emerald-deep/70 to-transparent',
-    num: 'text-smk-lime/50',
+    card: 'bg-smk-emerald-deep',
+    num: 'text-smk-lime/20',
+    iconBg: 'bg-smk-lime/15',
+    iconColor: 'text-smk-lime',
     title: 'text-[#d7efe4]',
     sub: 'text-smk-lime/80',
     desc: 'text-[#a9cdbd]',
@@ -70,8 +104,10 @@ const styles: Record<
     border: 'border-white/8',
   },
   sand: {
-    overlay: 'from-white/95 via-white/80 to-white/20',
-    num: 'text-smk-ink/25',
+    card: 'bg-[#f0ebe0]',
+    num: 'text-smk-ink/15',
+    iconBg: 'bg-smk-emerald/12',
+    iconColor: 'text-smk-emerald-deep',
     title: 'text-smk-ink',
     sub: 'text-smk-emerald',
     desc: 'text-smk-ink-soft',
@@ -80,8 +116,10 @@ const styles: Record<
     border: 'border-smk-ink/8',
   },
   lime: {
-    overlay: 'from-[#c5f04a]/95 via-[#c5f04a]/80 to-[#c5f04a]/20',
-    num: 'text-[#22330a]/30',
+    card: 'bg-[#c5f04a]',
+    num: 'text-[#22330a]/20',
+    iconBg: 'bg-smk-emerald-deep/12',
+    iconColor: 'text-smk-emerald-deep',
     title: 'text-[#22330a]',
     sub: 'text-smk-emerald-deep',
     desc: 'text-[#3f5417]',
@@ -111,40 +149,38 @@ export function Jurusan() {
           </p>
         </div>
 
-        {/* Bento grid */}
+        {/* Bento grid — solid cards */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 md:gap-[18px]">
           {jurusan.map((j) => {
             const s = styles[j.variant];
+            const Icon = icons[j.variant];
             return (
               <TiltCard
                 key={j.num}
-                className={`group relative min-h-[320px] overflow-hidden rounded-[20px] border bg-smk-emerald-deep/10 md:min-h-[360px] md:rounded-[22px] ${s.border}`}
+                className={`group relative min-h-[320px] overflow-hidden rounded-[20px] border md:min-h-[360px] md:rounded-[22px] ${s.card} ${s.border}`}
               >
-                {/* Background photo */}
-                <Image
-                  src={j.photo}
-                  alt={`Jurusan ${j.name} SMK Darussalam Subah`}
-                  fill
-                  className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                />
-                {/* Gradient overlay */}
-                <div
-                  className={`absolute inset-0 bg-gradient-to-t ${s.overlay}`}
-                />
+                {/* Decorative large number — background watermark */}
+                <span
+                  aria-hidden
+                  className={`pointer-events-none absolute -right-2 -top-3 font-fraunces text-[120px] font-semibold leading-none select-none md:text-[140px] ${s.num}`}
+                >
+                  {j.num}
+                </span>
 
                 {/* Content */}
                 <div className="relative flex h-full flex-col justify-between p-6 md:p-7">
                   <div>
-                    <p className={`font-fraunces text-sm mb-1.5 ${s.num}`}>{j.num}</p>
+                    {/* Icon */}
+                    <div className={`mb-5 inline-flex h-11 w-11 items-center justify-center rounded-xl md:h-12 md:w-12 md:rounded-[14px] ${s.iconBg} ${s.iconColor}`}>
+                      <Icon className="h-5 w-5 md:h-6 md:w-6" />
+                    </div>
+
                     <h3
-                      className={`font-fraunces text-[22px] font-semibold leading-tight tracking-tight md:text-2xl mb-1 ${s.title}`}
+                      className={`font-fraunces mb-1 text-[22px] font-semibold leading-tight tracking-tight md:text-2xl ${s.title}`}
                     >
                       {j.name}
                     </h3>
-                    <p
-                      className={`text-[11px] font-bold uppercase tracking-widest mb-3 ${s.sub}`}
-                    >
+                    <p className={`mb-3 text-[11px] font-bold uppercase tracking-widest ${s.sub}`}>
                       {j.sub}
                     </p>
                     <p className={`text-[13px] leading-[1.6] md:text-sm ${s.desc}`}>
