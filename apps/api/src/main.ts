@@ -3,6 +3,9 @@
 // Smart AI School — SMK Darussalam Subah
 // =============================================================================
 
+// HARUS baris pertama — Sentry instrumentation wajib hook sebelum import lain
+import './instrument';
+
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';

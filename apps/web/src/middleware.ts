@@ -76,6 +76,10 @@ function buildCsp(nonce: string, isPublicStatic: boolean): string {
     `connect-src ${connectSrc}`,
     "media-src 'none'",
     "object-src 'none'",
+<<<<<<< HEAD
+=======
+    // youtube-nocookie = privacy-enhanced embed (tidak set cookie tracking)
+>>>>>>> origin/main
     "frame-src https://www.youtube-nocookie.com",
     "base-uri 'self'",
     "form-action 'self'",
@@ -90,10 +94,22 @@ function buildCsp(nonce: string, isPublicStatic: boolean): string {
 // PUBLIC PATHS — tidak memerlukan autentikasi
 // =============================================================================
 
+<<<<<<< HEAD
 // Exact match: landing page dan halaman detail jurusan (semua force-static SSG)
 const PUBLIC_STATIC_EXACT: readonly string[] = ['/', '/jurusan/tkro', '/jurusan/tjkt', '/jurusan/akl'];
 
 // Prefix match: route publik lainnya (login, auth callback, health, assets)
+=======
+// Exact match: hanya path ini persis yang public
+const PUBLIC_EXACT: readonly string[] = [
+  '/',
+  '/jurusan/tkro',
+  '/jurusan/tjkt',
+  '/jurusan/akl',
+];
+
+// Prefix match: semua path yang diawali prefix ini public
+>>>>>>> origin/main
 const PUBLIC_PATH_PREFIXES = [
   '/login',
   '/api/auth',
@@ -104,7 +120,13 @@ const PUBLIC_PATH_PREFIXES = [
 ] as const;
 
 function isPublicPath(pathname: string): boolean {
+<<<<<<< HEAD
   if (PUBLIC_STATIC_EXACT.includes(pathname)) return true;
+=======
+  if (PUBLIC_EXACT.includes(pathname)) return true;
+  // Public: semua sub-route /jurusan/ (halaman detail jurusan)
+  if (pathname.startsWith('/jurusan/')) return true;
+>>>>>>> origin/main
   return PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
@@ -158,6 +180,12 @@ export async function middleware(request: NextRequest) {
   return response;
 }
 
+<<<<<<< HEAD
+=======
+// Terapkan ke semua route kecuali static assets, gambar, dan public/landing/
+// Note: dengan images.unoptimized:true gambar di-serve langsung via /landing/*.jpg
+// (bukan /_next/image), sehingga path ini harus diexclude dari auth middleware.
+>>>>>>> origin/main
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|landing/).*)'],
 };

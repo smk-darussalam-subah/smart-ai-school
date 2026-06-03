@@ -245,6 +245,50 @@ Digunakan oleh `AiService.searchSimilar()` saat memproses request `POST /ai/chat
 
 ---
 
+### 11d. Sentry Error Monitoring (OBS-1)
+
+Digunakan oleh `apps/api` (NestJS) dan `apps/web` (Next.js). **Semua opsional** — tanpa DSN = no-op, CI tetap hijau.
+
+#### apps/api (NestJS)
+
+| Variable | Required | Default | Deskripsi | Contoh |
+|----------|----------|---------|-----------|--------|
+| `SENTRY_DSN` | Tidak | — | Data Source Name proyek Sentry (URL format) | `https://abc123@o123.ingest.sentry.io/456` |
+| `SENTRY_RELEASE` | Tidak | — | Identifikasi release (biasanya git SHA — di-set `deploy.yml`) | `a1b2c3d` |
+
+#### apps/web (Next.js)
+
+| Variable | Required | Default | Deskripsi | Contoh |
+|----------|----------|---------|-----------|--------|
+| `NEXT_PUBLIC_SENTRY_DSN` | Tidak | — | DSN untuk client bundle (browser) — NEXT_PUBLIC_ → masuk bundle | `https://abc123@o123.ingest.sentry.io/456` |
+| `SENTRY_DSN` | Tidak | — | DSN untuk server/edge runtime | `https://abc123@o123.ingest.sentry.io/456` |
+| `SENTRY_RELEASE` | Tidak | — | Identifikasi release untuk Next.js server | `a1b2c3d` |
+| `SENTRY_ORG` | Tidak | — | Nama organisasi Sentry (hanya untuk upload source map) | `smk-darussalam` |
+| `SENTRY_PROJECT` | Tidak | — | Nama proyek Sentry (hanya untuk upload source map) | `diis-web` |
+| `SENTRY_AUTH_TOKEN` | Tidak | — | Auth token upload source map (generate di Sentry > Settings > Auth Tokens) | `sntrys_...` |
+
+> **Catatan perilaku:**
+> - Tanpa `SENTRY_DSN` → SDK **tidak diinisialisasi** (`Sentry.init()` tidak dipanggil). Boot tetap normal.
+> - Dengan `SENTRY_DSN` → error 5xx dan exception tidak tertangani dikirim ke Sentry. Error 4xx (400/401/403/404/409/422) **tidak dikirim** (terlalu noisy).
+> - Tanpa `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` → source map upload di-skip saat `next build`.
+
+> **⚠️ PII Scrubbing (UU PDP — Data Minor):**
+> Sekolah memproses data anak di bawah umur. Sentry dikonfigurasi dengan scrubber wajib (`beforeSend`):
+> - `sendDefaultPii: false` — IP address, user-agent, dll. tidak dikirim.
+> - Header **`Authorization`**, **`Cookie`**, **`Set-Cookie`**, **`X-Api-Key`** dihapus dari setiap event.
+> - **Request body dihapus seluruhnya** (`[REDACTED]`) — bisa mengandung NIS, fullName, nilai, dll.
+> - Session replay **dimatikan** (`replaysSessionSampleRate: 0`) — tidak ada rekaman layar.
+>
+> Implementasi: `apps/api/src/common/sentry.utils.ts` (backend) + `apps/web/src/lib/sentry.utils.ts` (frontend).
+
+> **Cara set `SENTRY_RELEASE` dari git SHA di deploy.yml (opsional):**
+> ```yaml
+> - name: Set Sentry release
+>   run: echo "SENTRY_RELEASE=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+> ```
+
+---
+
 ## 12. File yang TIDAK Boleh Di-Commit ke Git
 
 ```

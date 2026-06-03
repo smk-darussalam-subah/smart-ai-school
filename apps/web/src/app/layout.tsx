@@ -1,23 +1,35 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, Plus_Jakarta_Sans, Fraunces } from 'next/font/google';
 import './globals.css';
 
 // =============================================================================
 // Root Layout — Server Component (WAJIB Server Component agar metadata export
 // bekerja dan Next.js bisa static-generate halaman seperti /404).
 //
-// Arsitektur SessionProvider:
-// - SessionProvider TIDAK di-mount di root, tetapi di-mount per-segment via
-//   DashboardProviders.tsx hanya di bawah /dashboard/*.
-// - Rationale: halaman publik (/, /login, /404) tidak butuh SessionProvider,
-//   jadi hindari "use client" boundary yang tidak perlu di root → memungkinkan
-//   /404 dan halaman publik di-static-prerender dengan zero client JS.
-// - Login page pakai signIn() langsung; redirect auth ditangani middleware.ts.
+// Font strategy:
+// - Inter → dashboard (existing, via inter.className)
+// - Plus Jakarta Sans + Fraunces → landing page (via CSS variables)
+//   Keduanya dimuat di root agar next/font bisa subset + self-host dengan benar.
+//   Landing page mengakses via --font-jakarta / --font-fraunces CSS vars.
 //
+// SessionProvider TIDAK di-mount di root — hanya di /dashboard/* via DashboardProviders.tsx.
 // Lihat: apps/web/src/components/providers/DashboardProviders.tsx
 // =============================================================================
 
 const inter = Inter({ subsets: ['latin'] });
+
+const plusJakarta = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  variable: '--font-jakarta',
+  display: 'swap',
+});
+
+const fraunces = Fraunces({
+  subsets: ['latin'],
+  variable: '--font-fraunces',
+  display: 'swap',
+  axes: ['opsz'],
+});
 
 export const metadata: Metadata = {
   title: {
@@ -30,8 +42,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id" className="h-full">
-      <body className={`${inter.className} h-full`}>
+    <html lang="id" className="h-full" data-scroll-behavior="smooth">
+      <body className={`${inter.className} ${plusJakarta.variable} ${fraunces.variable} h-full`}>
         {children}
       </body>
     </html>

@@ -11,6 +11,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { FastifyReply, FastifyRequest } from 'fastify';
+import { captureException } from '@sentry/nestjs';
 import { logError } from '@smk/logger';
 
 interface ErrorResponse {
@@ -44,6 +45,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message = (resp.message as string | string[]) || message;
         errorType = (resp.error as string) || exception.name;
       }
+
+      // Kirim ke Sentry hanya untuk 5xx — 4xx (400/401/403/404/409/422) adalah noise
+      if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
+        captureException(exception);
+      }
     } else if (exception instanceof Error) {
       // Jangan expose detail error internal ke client
       if (process.env.NODE_ENV !== 'production') {
@@ -54,6 +60,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
         path: request.url,
         method: request.method,
       });
+
+      // Semua unhandled non-HttpException error = 500 → selalu capture
+      captureException(exception);
     }
 
     const response: ErrorResponse = {
