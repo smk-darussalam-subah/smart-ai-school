@@ -42,7 +42,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id" className="h-full">
+    <html lang="id" className="h-full" data-scroll-behavior="smooth">
       <body className={`${inter.className} ${plusJakarta.variable} ${fraunces.variable} h-full`}>
         {children}
       </body>
