@@ -8,7 +8,7 @@
 // =============================================================================
 
 import * as Sentry from '@sentry/nestjs';
-import { scrubPii } from './common/sentry.utils';
+import { scrubBreadcrumb, scrubPii } from './common/sentry.utils';
 
 const dsn = process.env.SENTRY_DSN;
 
@@ -19,19 +19,20 @@ if (dsn) {
     release: process.env.SENTRY_RELEASE,
 
     // Hanya tangkap error — matikan performance tracing (0 = off).
-    // Performance tracing menambah overhead dan data yang tidak diperlukan saat ini.
     tracesSampleRate: 0,
 
     // Jangan kirim PII secara default (IP, user-agent, dll.)
     sendDefaultPii: false,
 
-    // PII scrubber wajib — sekolah memproses data minor (UU PDP).
-    // Hapus header sensitif + request body sebelum event dikirim.
+    // Breadcrumbs dimatikan: bisa mengandung URL, query-param, atau body request
+    // yang memuat PII (UU PDP — data minor).
+    maxBreadcrumbs: 0,
+
+    // Defence-in-depth: pastikan tidak ada breadcrumb yang lolos filter maxBreadcrumbs.
+    beforeBreadcrumb: scrubBreadcrumb,
+
+    // PII scrubber wajib — header sensitif + body + URL query + exception values.
     beforeSend(event) {
-      // Double-cast via unknown: Sentry Event dan SentryEventLike
-      // adalah subset struktural satu sama lain — cast aman secara runtime.
-      // (TypeScript strict tidak mengizinkan cast langsung karena konflik
-      // dengan tipe DOM ErrorEvent yang memiliki property 'type' required.)
       return scrubPii(event as unknown as Parameters<typeof scrubPii>[0]) as unknown as typeof event;
     },
   });

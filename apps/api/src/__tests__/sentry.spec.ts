@@ -1,11 +1,14 @@
 // =============================================================================
-// sentry.spec.ts — Unit tests OBS-1 Sentry integration
+// sentry.spec.ts — Unit tests OBS-1 + OBS-1a Sentry integration
 //
-// Test cases (sesuai task brief):
+// Test cases:
 //   (a) Tanpa SENTRY_DSN → app tetap boot/no-op (env schema tidak throw)
 //   (b) Error 5xx/unhandled → captureException dipanggil
 //   (c) Error 4xx yang diharapkan → captureException TIDAK dipanggil
-//   (d) scrubPii → menghapus field PII dari event
+//   (d) scrubPii → menghapus field PII dari event (request)
+//   (e) scrubPii → meredaksi exception.values[].value (NIS, email, phone, nama)
+//   (f) scrubPii → strip query-string dari event.request.url
+//   (g) scrubBreadcrumb → selalu kembalikan null
 // =============================================================================
 
 jest.mock('@sentry/nestjs', () => ({
@@ -23,7 +26,12 @@ import { captureException } from '@sentry/nestjs';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { HttpExceptionFilter } from '../common/filters/http-exception.filter';
 import { PrismaExceptionFilter } from '../common/filters/prisma-exception.filter';
-import { scrubPii, type SentryEventLike } from '../common/sentry.utils';
+import {
+  redactPiiFromText,
+  scrubBreadcrumb,
+  scrubPii,
+  type SentryEventLike,
+} from '../common/sentry.utils';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -49,13 +57,10 @@ beforeEach(() => {
   captureExceptionMock().mockClear();
 });
 
-// ── (a) Tanpa SENTRY_DSN → no-op: captureException aman dipanggil tanpa init ─
+// ── (a) Tanpa SENTRY_DSN → no-op ─────────────────────────────────────────────
 
 describe('(a) No-op tanpa SENTRY_DSN: captureException & scrubPii aman tanpa inisialisasi', () => {
   it('captureException() dapat dipanggil tanpa init (SDK no-op by design)', () => {
-    // Mock sudah aktif — merepresentasikan Sentry SDK yang tidak diinisialisasi:
-    // memanggil captureException() tanpa Sentry.init() tidak boleh throw.
-    // (Sentry SDK dirancang sebagai no-op ketika tidak diinisialisasi.)
     expect(() => {
       captureException(new Error('no DSN configured'));
     }).not.toThrow();
@@ -175,9 +180,9 @@ describe('(b) PrismaExceptionFilter: unknown code (5xx) → captureException dip
   });
 });
 
-// ── (d) scrubPii — buang field PII dari event ─────────────────────────────────
+// ── (d) scrubPii — buang field PII dari event.request ────────────────────────
 
-describe('(d) scrubPii: PII scrubbing sebelum kirim ke Sentry', () => {
+describe('(d) scrubPii: PII scrubbing request fields sebelum kirim ke Sentry', () => {
   it('menghapus header Authorization dari event', () => {
     const event: SentryEventLike = {
       request: {
@@ -247,7 +252,221 @@ describe('(d) scrubPii: PII scrubbing sebelum kirim ke Sentry', () => {
 
     scrubPii(event);
 
-    // Objek asli tidak diubah
     expect(originalHeaders.authorization).toBe('Bearer secret');
+  });
+});
+
+// ── (e) OBS-1a: scrubPii — redaksi exception.values[].value ──────────────────
+
+describe('(e) OBS-1a: scrubPii meredaksi PII di exception.values[].value', () => {
+  it('NIS berlabel dalam pesan exception → [REDACTED]', () => {
+    const event: SentryEventLike = {
+      exception: {
+        values: [{ type: 'Error', value: 'Student NIS: 1234567890 tidak ditemukan' }],
+      },
+    };
+
+    const result = scrubPii(event);
+
+    expect(result.exception?.values?.[0]?.value).not.toContain('1234567890');
+    expect(result.exception?.values?.[0]?.value).toContain('[REDACTED]');
+  });
+
+  it('email dalam pesan exception → [REDACTED]', () => {
+    const event: SentryEventLike = {
+      exception: {
+        values: [{ type: 'ConflictException', value: 'Email siswa@smk.sch.id sudah terdaftar' }],
+      },
+    };
+
+    const result = scrubPii(event);
+
+    expect(result.exception?.values?.[0]?.value).not.toContain('siswa@smk.sch.id');
+    expect(result.exception?.values?.[0]?.value).toContain('[REDACTED]');
+  });
+
+  it('nomor HP Indonesia dalam pesan exception → [REDACTED]', () => {
+    const event: SentryEventLike = {
+      exception: {
+        values: [{ type: 'Error', value: 'Notifikasi ke 081234567890 gagal dikirim' }],
+      },
+    };
+
+    const result = scrubPii(event);
+
+    expect(result.exception?.values?.[0]?.value).not.toContain('081234567890');
+    expect(result.exception?.values?.[0]?.value).toContain('[REDACTED]');
+  });
+
+  it('nama berlabel dalam pesan exception → [REDACTED]', () => {
+    const event: SentryEventLike = {
+      exception: {
+        values: [{ type: 'Error', value: 'Duplikat fullName: Ahmad Fauzi pada insert' }],
+      },
+    };
+
+    const result = scrubPii(event);
+
+    expect(result.exception?.values?.[0]?.value).not.toContain('Ahmad Fauzi');
+    expect(result.exception?.values?.[0]?.value).toContain('[REDACTED]');
+  });
+
+  it('exception value dengan NIS+email+phone dummy → semua ter-redaksi', () => {
+    const event: SentryEventLike = {
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value:
+              'Gagal proses: NIS: 9876543210, email siswa.dummy@sekolah.id, HP 081298765432',
+          },
+        ],
+      },
+    };
+
+    const result = scrubPii(event);
+    const redacted = result.exception?.values?.[0]?.value ?? '';
+
+    expect(redacted).not.toContain('9876543210');
+    expect(redacted).not.toContain('siswa.dummy@sekolah.id');
+    expect(redacted).not.toContain('081298765432');
+    expect(redacted).toContain('[REDACTED]');
+  });
+
+  it('exception value tanpa PII → tidak berubah', () => {
+    const safeMsg = 'Database connection timeout after 5000ms';
+    const event: SentryEventLike = {
+      exception: {
+        values: [{ type: 'Error', value: safeMsg }],
+      },
+    };
+
+    const result = scrubPii(event);
+
+    expect(result.exception?.values?.[0]?.value).toBe(safeMsg);
+  });
+
+  it('exception value undefined → tidak throw', () => {
+    const event: SentryEventLike = {
+      exception: {
+        values: [{ type: 'Error', value: undefined }],
+      },
+    };
+
+    expect(() => scrubPii(event)).not.toThrow();
+  });
+
+  it('event tanpa exception → tidak berubah', () => {
+    const event: SentryEventLike = { extra: { info: 'test' } };
+
+    const result = scrubPii(event);
+
+    expect(result.exception).toBeUndefined();
+  });
+
+  it('tidak mengubah exception asli (immutable)', () => {
+    const originalValue = 'Error: siswa@contoh.id tidak valid';
+    const event: SentryEventLike = {
+      exception: { values: [{ type: 'Error', value: originalValue }] },
+    };
+
+    scrubPii(event);
+
+    // Objek asli tidak diubah
+    expect(event.exception?.values?.[0]?.value).toBe(originalValue);
+  });
+});
+
+// ── (f) OBS-1a: scrubPii — strip query-string dari request.url ───────────────
+
+describe('(f) OBS-1a: scrubPii strip query-string dari event.request.url', () => {
+  it('URL dengan query-string → query dihapus, path tetap', () => {
+    const event: SentryEventLike = {
+      request: { url: '/api/v1/students?nis=123456&kelas=X-RPL' },
+    };
+
+    const result = scrubPii(event);
+
+    expect(result.request?.url).toBe('/api/v1/students');
+    expect(result.request?.url).not.toContain('?');
+    expect(result.request?.url).not.toContain('nis=');
+  });
+
+  it('URL tanpa query-string → tidak berubah', () => {
+    const event: SentryEventLike = {
+      request: { url: '/api/v1/health' },
+    };
+
+    const result = scrubPii(event);
+
+    expect(result.request?.url).toBe('/api/v1/health');
+  });
+
+  it('URL dengan query-string kompleks → hanya path yang tersisa', () => {
+    const event: SentryEventLike = {
+      request: {
+        url: 'https://api.smk.sch.id/api/v1/finance?startDate=2026-01-01&nama=Ahmad&nis=12345',
+      },
+    };
+
+    const result = scrubPii(event);
+
+    expect(result.request?.url).toBe('https://api.smk.sch.id/api/v1/finance');
+  });
+
+  it('URL undefined → tidak throw', () => {
+    const event: SentryEventLike = {
+      request: { headers: {} },
+    };
+
+    expect(() => scrubPii(event)).not.toThrow();
+    const result = scrubPii(event);
+    expect(result.request?.url).toBeUndefined();
+  });
+});
+
+// ── (g) OBS-1a: scrubBreadcrumb → selalu null ────────────────────────────────
+
+describe('(g) OBS-1a: scrubBreadcrumb selalu mengembalikan null', () => {
+  it('scrubBreadcrumb() mengembalikan null', () => {
+    expect(scrubBreadcrumb()).toBeNull();
+  });
+});
+
+// ── redactPiiFromText — unit test fungsi helper ───────────────────────────────
+
+describe('redactPiiFromText: helper PII redaction', () => {
+  it('email → [REDACTED]', () => {
+    expect(redactPiiFromText('user@example.com gagal login')).not.toContain('user@example.com');
+    expect(redactPiiFromText('user@example.com gagal login')).toContain('[REDACTED]');
+  });
+
+  it('nomor HP +62 → [REDACTED]', () => {
+    expect(redactPiiFromText('kirim ke +6281234567890')).toContain('[REDACTED]');
+    expect(redactPiiFromText('kirim ke +6281234567890')).not.toContain('+6281234567890');
+  });
+
+  it('nomor HP 08xx → [REDACTED]', () => {
+    expect(redactPiiFromText('HP: 081299887766')).toContain('[REDACTED]');
+  });
+
+  it('NIS berlabel → [REDACTED]', () => {
+    expect(redactPiiFromText('NIS: 1234567890')).toContain('[REDACTED]');
+    expect(redactPiiFromText('NIS: 1234567890')).not.toContain('1234567890');
+  });
+
+  it('nama berlabel fullName → [REDACTED]', () => {
+    expect(redactPiiFromText('Conflict fullName: Budi Santoso')).toContain('[REDACTED]');
+    expect(redactPiiFromText('Conflict fullName: Budi Santoso')).not.toContain('Budi Santoso');
+  });
+
+  it('teks tanpa PII → tidak berubah', () => {
+    const safe = 'Connection timeout after 5000ms on query #42';
+    expect(redactPiiFromText(safe)).toBe(safe);
+  });
+
+  it('string kosong → tidak throw', () => {
+    expect(() => redactPiiFromText('')).not.toThrow();
+    expect(redactPiiFromText('')).toBe('');
   });
 });
