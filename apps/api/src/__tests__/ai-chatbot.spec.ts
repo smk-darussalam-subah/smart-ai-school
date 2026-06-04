@@ -75,6 +75,15 @@ function makePrisma(overrides?: Partial<PrismaService>): PrismaService {
       }),
       findMany: jest.fn().mockResolvedValue([]),
     },
+    // SMA-49: chat session defaults
+    chatSession: {
+      findUnique: jest.fn().mockResolvedValue({ id: 'session-uuid', userId: 'db-user-uuid-sa' }),
+      create: jest.fn().mockResolvedValue({ id: 'new-session-uuid' }),
+    },
+    chatMessage: {
+      createMany: jest.fn().mockResolvedValue({ count: 2 }),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     ...overrides,
   } as unknown as PrismaService;
 }
@@ -101,11 +110,17 @@ describe('AiService.chatWithRag()', () => {
       { id: 'c2', title: 'Biaya SPP', content: 'SPP per bulan...', similarity: 0.78 },
     ];
     const gateway = makeGateway();
-    const prisma = makePrisma({ $queryRaw: jest.fn().mockResolvedValue(chunks) });
+    // sessionId ada → chatSession.findUnique return session milik user tsb
+    const prisma = makePrisma({
+      $queryRaw: jest.fn().mockResolvedValue(chunks),
+    });
     const mod = await buildModule(gateway, prisma);
     const svc = mod.get(AiService);
 
-    const result = await svc.chatWithRag({ message: 'cara daftar?', sessionId: 'session-uuid' });
+    const result = await svc.chatWithRag(
+      { message: 'cara daftar?', sessionId: 'session-uuid' },
+      makeUser(),
+    );
 
     expect(gateway.embed).toHaveBeenCalledWith('cara daftar?');
     expect(gateway.chat).toHaveBeenCalledWith(
@@ -117,6 +132,7 @@ describe('AiService.chatWithRag()', () => {
     );
     expect(result.answer).toBe('jawaban dari AI');
     expect(result.sources).toEqual([{ title: 'FAQ PPDB' }, { title: 'Biaya SPP' }]);
+    // sessionId yang dikirim digunakan (bukan session baru)
     expect(result.sessionId).toBe('session-uuid');
   });
 
@@ -126,7 +142,7 @@ describe('AiService.chatWithRag()', () => {
     const mod = await buildModule(gateway, prisma);
     const svc = mod.get(AiService);
 
-    const result = await svc.chatWithRag({ message: 'apa itu DIIS?' });
+    const result = await svc.chatWithRag({ message: 'apa itu DIIS?' }, makeUser());
 
     expect(gateway.chat).toHaveBeenCalledWith('apa itu DIIS?', undefined);
     expect(result.sources).toEqual([]);
@@ -134,7 +150,6 @@ describe('AiService.chatWithRag()', () => {
   });
 
   it('threshold similarity menyaring chunk tidak relevan', async () => {
-    // Chunk dengan similarity 0.1 (di bawah default 0.3) tidak ikut ke context
     const chunks = [
       { id: 'c1', title: 'Tidak relevan', content: '...', similarity: 0.1 },
     ];
@@ -143,10 +158,9 @@ describe('AiService.chatWithRag()', () => {
     const mod = await buildModule(gateway, prisma);
     const svc = mod.get(AiService);
 
-    // Override env sementara
     const origMin = process.env['AI_RAG_MIN_SIMILARITY'];
     process.env['AI_RAG_MIN_SIMILARITY'] = '0.3';
-    const result = await svc.chatWithRag({ message: 'pertanyaan' });
+    const result = await svc.chatWithRag({ message: 'pertanyaan' }, makeUser());
     process.env['AI_RAG_MIN_SIMILARITY'] = origMin;
 
     // Chunk di-filter → chat dipanggil tanpa context
@@ -154,14 +168,16 @@ describe('AiService.chatWithRag()', () => {
     expect(result.sources).toEqual([]);
   });
 
-  it('sessionId undefined → tidak di-include di response', async () => {
+  it('tanpa sessionId → session baru dibuat, sessionId selalu dikembalikan', async () => {
     const gateway = makeGateway();
     const prisma = makePrisma();
     const mod = await buildModule(gateway, prisma);
     const svc = mod.get(AiService);
 
-    const result = await svc.chatWithRag({ message: 'tanya' });
-    expect(result.sessionId).toBeUndefined();
+    const result = await svc.chatWithRag({ message: 'tanya' }, makeUser());
+    // Session baru dibuat → sessionId dikembalikan (bukan undefined)
+    expect(result.sessionId).toBe('new-session-uuid');
+    expect(prisma.chatSession.create).toHaveBeenCalled();
   });
 });
 
@@ -330,22 +346,27 @@ describe('AiController — endpoint wiring', () => {
     expect(result.total).toBe(0);
   });
 
-  it('POST /ai/chat memanggil aiService.chatWithRag() dan return hasilnya', async () => {
+  it('POST /ai/chat memanggil aiService.chatWithRag() dengan dto + user dan return hasilnya', async () => {
     const gateway = makeGateway();
     const prisma = makePrisma();
     const mod = await buildModule(gateway, prisma);
     const controller = mod.get(AiController);
     const svc = mod.get(AiService);
+    const user = makeUser();
 
     jest.spyOn(svc, 'chatWithRag').mockResolvedValue({
       answer: 'jawaban',
       sources: [{ title: 'FAQ' }],
-      sessionId: undefined,
+      sessionId: 'new-session-uuid',
     });
 
-    const result = await controller.chat({ message: 'pertanyaan' });
+    const result = await controller.chat({ message: 'pertanyaan' }, user);
 
-    expect(svc.chatWithRag).toHaveBeenCalledWith({ message: 'pertanyaan' });
-    expect(result).toEqual({ answer: 'jawaban', sources: [{ title: 'FAQ' }], sessionId: undefined });
+    expect(svc.chatWithRag).toHaveBeenCalledWith({ message: 'pertanyaan' }, user);
+    expect(result).toEqual({
+      answer: 'jawaban',
+      sources: [{ title: 'FAQ' }],
+      sessionId: 'new-session-uuid',
+    });
   });
 });
