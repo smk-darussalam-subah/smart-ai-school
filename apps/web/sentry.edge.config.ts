@@ -5,7 +5,7 @@
 // =============================================================================
 
 import * as Sentry from '@sentry/nextjs';
-import { scrubPiiNext } from './src/lib/sentry.utils';
+import { scrubBreadcrumbNext, scrubPiiNext } from './src/lib/sentry.utils';
 
 const dsn = process.env.SENTRY_DSN;
 
@@ -16,6 +16,8 @@ if (dsn) {
     release: process.env.SENTRY_RELEASE,
     tracesSampleRate: 0,
     sendDefaultPii: false,
+    maxBreadcrumbs: 0,
+    beforeBreadcrumb: scrubBreadcrumbNext,
     beforeSend(event) {
       return scrubPiiNext(event as unknown as Parameters<typeof scrubPiiNext>[0]) as unknown as typeof event;
     },
