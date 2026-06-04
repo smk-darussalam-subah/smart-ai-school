@@ -430,3 +430,43 @@ model RagChunk {
   @@map("rag_chunks")
   @@schema("ai_knowledge")
 }
+
+// =============================================================================
+// AI KNOWLEDGE SCHEMA — Chat history (SMA-49)
+// ChatSession: satu percakapan per user (additive — tidak menyentuh tabel lain)
+// ChatMessage: pesan individual dalam satu session
+// =============================================================================
+
+enum MessageRole {
+  user
+  assistant
+
+  @@schema("ai_knowledge")
+}
+
+model ChatSession {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid   // auth.users.id — audit trail, no FK (cross-schema)
+  title     String?   @db.VarChar(100)            // ~50 char dari pesan pertama
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  messages  ChatMessage[]
+
+  @@index([userId])
+  @@map("chat_sessions")
+  @@schema("ai_knowledge")
+}
+
+model ChatMessage {
+  id        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String      @map("session_id") @db.Uuid
+  role      MessageRole
+  content   String      @db.Text
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("chat_messages")
+  @@schema("ai_knowledge")
+}

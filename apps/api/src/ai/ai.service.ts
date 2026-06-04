@@ -114,16 +114,48 @@ export class AiService {
   }
 
   /**
-   * Endpoint chatbot RAG utama.
-   * Graceful empty: retrieval kosong → chat tanpa context, tidak 500.
+   * Endpoint chatbot RAG utama dengan persistent chat history (SMA-49).
    *
-   * TODO (Sprint 4 SMA-48): persist sessionId ke ChatSession/ChatMessage.
+   * Alur session:
+   *  - dto.sessionId ada  → validasi kepemilikan → append messages ke session itu
+   *  - dto.sessionId null → buat ChatSession baru (title = 50 char pertama pesan)
+   *
+   * Selalu kembalikan sessionId (string, bukan undefined).
    */
-  async chatWithRag(dto: ChatDto): Promise<{
+  async chatWithRag(
+    dto: ChatDto,
+    user: AuthUser,
+  ): Promise<{
     answer: string;
     sources: { title: string }[];
-    sessionId: string | undefined;
+    sessionId: string;
   }> {
+    const userId = await this.resolveUserId(user.keycloakId);
+
+    let sessionId: string;
+
+    if (dto.sessionId) {
+      // Validasi session ada dan milik user ini
+      const session = await this.prisma.chatSession.findUnique({
+        where: { id: dto.sessionId },
+        select: { id: true, userId: true },
+      });
+      if (!session) throw new NotFoundException('Chat session tidak ditemukan');
+      if (session.userId !== userId) throw new ForbiddenException('Bukan session milik Anda');
+      sessionId = session.id;
+    } else {
+      // Buat session baru — title dari 50 char pertama pesan
+      const newSession = await this.prisma.chatSession.create({
+        data: {
+          userId,
+          title: dto.message.slice(0, 50),
+        },
+        select: { id: true },
+      });
+      sessionId = newSession.id;
+    }
+
+    // RAG — sama dengan sebelumnya
     const topK = parseInt(process.env['AI_RAG_TOP_K'] ?? '4', 10);
     const minSimilarity = parseFloat(process.env['AI_RAG_MIN_SIMILARITY'] ?? '0.3');
 
@@ -137,10 +169,56 @@ export class AiService {
 
     const answer = await this.gateway.chat(dto.message, context);
 
+    // Simpan pesan user + jawaban assistant ke chat history
+    await this.prisma.chatMessage.createMany({
+      data: [
+        { sessionId, role: 'user', content: dto.message },
+        { sessionId, role: 'assistant', content: answer },
+      ],
+    });
+
     return {
       answer,
       sources: chunks.map((c) => ({ title: c.title })),
-      sessionId: dto.sessionId,
+      sessionId,
+    };
+  }
+
+  /**
+   * Riwayat pesan satu ChatSession, diurutkan createdAt ASC.
+   * RBAC (service-level): pemilik session ATAU SUPER_ADMIN.
+   * Non-pemilik → 403; session tak ada → 404.
+   */
+  async getChatHistory(
+    sessionId: string,
+    user: AuthUser,
+  ): Promise<{
+    sessionId: string;
+    messages: Array<{ id: string; role: string; content: string; createdAt: Date }>;
+  }> {
+    const session = await this.prisma.chatSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, userId: true },
+    });
+    if (!session) throw new NotFoundException('Chat session tidak ditemukan');
+
+    const isSuperAdmin = user.roles.includes('SUPER_ADMIN');
+    if (!isSuperAdmin) {
+      const userId = await this.resolveUserId(user.keycloakId);
+      if (session.userId !== userId) {
+        throw new ForbiddenException('Akses ditolak: bukan session milik Anda');
+      }
+    }
+
+    const messages = await this.prisma.chatMessage.findMany({
+      where: { sessionId },
+      select: { id: true, role: true, content: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return {
+      sessionId,
+      messages,
     };
   }
 

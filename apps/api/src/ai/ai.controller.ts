@@ -43,12 +43,31 @@ export class AiController {
   /**
    * POST /ai/chat — RAG chatbot, semua authenticated.
    * Throttle ketat: setiap request → Ollama embed + chat.
+   * SMA-49: pesan user + jawaban assistant disimpan ke ChatSession/ChatMessage.
+   * Tanpa sessionId → buat session baru; sessionId selalu dikembalikan.
    */
   @Post('chat')
   @HttpCode(HttpStatus.OK)
   @Throttle({ aichat: { ttl: 60_000, limit: 20 } })
-  chat(@Body(ZodPipe(ChatSchema)) dto: ChatDto) {
-    return this.aiService.chatWithRag(dto);
+  chat(
+    @Body(ZodPipe(ChatSchema)) dto: ChatDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.aiService.chatWithRag(dto, user);
+  }
+
+  /**
+   * GET /ai/chat/:sessionId/history — riwayat pesan satu session.
+   * RBAC (service-level): pemilik session ATAU SUPER_ADMIN.
+   * Non-pemilik → 403; session tak ada → 404.
+   */
+  @Get('chat/:sessionId/history')
+  @HttpCode(HttpStatus.OK)
+  history(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.aiService.getChatHistory(sessionId, user);
   }
 
   // ── Knowledge — collection ──────────────────────────────────────────────────
