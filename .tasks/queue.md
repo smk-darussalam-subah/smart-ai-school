@@ -10,6 +10,12 @@
 > ## 🔄 REKONSILIASI 2026-06-04 (Cowork analyst) — BLOK INI MENANG atas isi lama di bawah
 > > Disusun setelah verifikasi langsung riwayat GitHub Actions + `git log origin/main`. Bagian historis di bawah (Sprint 1–3) sengaja dibiarkan sebagai arsip; status TERKINI ada di sini.
 >
+> ### ➕ PROGRESS 2026-06-05 (Sprint 4 berjalan)
+> - **OBS-1a ✅ CLOSED & MERGED** (PR #43→develop→main, Deploy #81). Review Cowork APPROVE: scrub PII Sentry diperluas (exception values, breadcrumbs off ganda, URL query-strip), 100% coverage util. Backlog **OBS-1b LOW:** nama/NIS hanya tertangkap bila berlabel; HP >13 digit lolos. Done: `.tasks/done/OBS-1a-scrub-hardening-DONE.md`.
+> - **SMA-49 chat history ✅ CLOSED & MERGED** (PR #45→develop→#47 staging→main, Deploy #83). Review Cowork APPROVE: schema additive (`ChatSession`/`ChatMessage`/`MessageRole` @ ai_knowledge), migration `20260605000001` CREATE-only terverifikasi, RBAC ownership via `userId` (404→403, SA bypass), FK cascade, index `(session_id,created_at)`. Tabel terbukti di prod (`\dt ai_knowledge.chat_*`). Backlog LOW: `userId` tanpa FK lintas-schema (orphan risk).
+> - **🔴 N-20 (HIGH) OPEN — staging & produksi TIDAK terisolasi.** deploy.yml: satu `SERVER_HOST`, satu `.env`, DB `smk_db` sama, `git checkout <branch>` di satu direktori. → deploy "staging" menjalankan migration di DB **produksi** & checkout branch staging di server prod. Gerbang staging = ilusi keamanan untuk migration destruktif. Menyatu dgn N-16. **Fix sebelum migration destruktif berikut:** DB staging terpisah (`smk_staging_db`)+compose/port terpisah, atau server staging terpisah. Keputusan arsitektur Director.
+> - **▶️ Berikutnya: SMA-48 ClaudeAdapter + R-03 strip-PII** (gerbang regulasi egress PII) — menunggu keputusan Director D4-2 (aktifkan/flag-off) & D4-3 (ANTHROPIC_API_KEY).
+>
 > **A. Yang SUDAH live di `main` + Produksi (terverifikasi git log, Deploy #68–#76, 2 Juni):**
 > N-15-base start.sh fail-hard (#34/D#68) · **SMA-46 chatbot `/ai/chat`** (#35/D#69) · **SMA-46a KB-CRUD draft→publish** (#36/D#70) · **SMA-46b knowledge-UI `/dashboard/knowledge`** (#37/D#71) · N-17 backfill-drafts (#38/D#72) · OBS-1 Sentry (#39/D#73) · Landing page (#40/D#74) · CSP fix (#41/D#76). → **Koreksi:** ledger lama menandai SMA-46/N-15 "DITAHAN/menunggu merge" — itu KELIRU; semua sudah merged+deploy. SMA-46a & SMA-46b sebelumnya tak tercatat sama sekali. Sprint 3 = TUTUP TOTAL.
 >
