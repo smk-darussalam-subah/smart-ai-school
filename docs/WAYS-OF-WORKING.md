@@ -32,6 +32,13 @@ chat — selalu di file. Maka sesi boleh pendek & sekali-pakai; konteks dibangun
 - **Gerbang review** untuk schema, security, dan keputusan desain (oleh Cowork analyst).
 - Branch per task `feat/...`, conventional commits, **CI hijau sebelum merge**.
 
+## Git flow (branching) — diadopsi 2026-06-04
+> Sebelumnya feature→main langsung (pragmatis, 165 commit). Mulai 2026-06-04 = **gitflow 3-tingkat**.
+- **Alur:** `feat/...` atau `fix/...` → PR ke **`develop`** (integrasi) → PR `develop`→**`staging`** (deploy Staging, asap test) → PR `staging`→**`main`** (deploy Produksi).
+- **Deploy trigger (`deploy.yml`):** hanya `push` ke **`staging`** & **`main`**. `develop` = CI saja, TIDAK men-deploy. → **jangan pernah berharap perubahan di `develop` masuk produksi tanpa dipromosikan.**
+- **Aturan emas:** `main` ⊇ `staging` ⊇ `develop` (superset). Sebelum kerja baru, **`develop` harus selalu di-rebase/merge dari `main`** agar tak pernah tertinggal → mencegah promosi yang merevert produksi (pelajaran N-18).
+- Branch fitur **selalu dicabang dari `develop` terkini** (yang sudah sinkron dengan `main`).
+
 ## Definition of Done per task
 - [ ] `tsc --noEmit` 0 error · eslint 0 error · jest hijau (coverage ≥70% bila ada logic)
 - [ ] Bukti runtime ditempel di laporan

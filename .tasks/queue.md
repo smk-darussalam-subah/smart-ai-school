@@ -6,6 +6,26 @@
 > Dikelola oleh Cowork AI. Claude Code hanya membaca file ini.
 > Update terakhir: 2026-06-01 — SMA-39 + SMA-39a (F-1) keduanya MERGED ke main, CI ✅. Sprint 2 SELESAI TOTAL. Sprint 3 (Finance+AI+Notif) = antrian aktif.
 >
+> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+> ## 🔄 REKONSILIASI 2026-06-04 (Cowork analyst) — BLOK INI MENANG atas isi lama di bawah
+> > Disusun setelah verifikasi langsung riwayat GitHub Actions + `git log origin/main`. Bagian historis di bawah (Sprint 1–3) sengaja dibiarkan sebagai arsip; status TERKINI ada di sini.
+>
+> **A. Yang SUDAH live di `main` + Produksi (terverifikasi git log, Deploy #68–#76, 2 Juni):**
+> N-15-base start.sh fail-hard (#34/D#68) · **SMA-46 chatbot `/ai/chat`** (#35/D#69) · **SMA-46a KB-CRUD draft→publish** (#36/D#70) · **SMA-46b knowledge-UI `/dashboard/knowledge`** (#37/D#71) · N-17 backfill-drafts (#38/D#72) · OBS-1 Sentry (#39/D#73) · Landing page (#40/D#74) · CSP fix (#41/D#76). → **Koreksi:** ledger lama menandai SMA-46/N-15 "DITAHAN/menunggu merge" — itu KELIRU; semua sudah merged+deploy. SMA-46a & SMA-46b sebelumnya tak tercatat sama sekali. Sprint 3 = TUTUP TOTAL.
+>
+> **B. 🔴 N-18 (HIGH) — OPEN — guardrail nyangkut, tak sampai produksi.**
+> N-15a smoke-test tabel domain (`auth.users` via `prisma db execute`) ✅ kode di-APPROVE Cowork, tapi PR #42 ter-merge ke **`develop`**. `deploy.yml` hanya men-deploy `staging`/`main` → smoke-test **belum di produksi**; `main:start.sh` masih versi tanpa smoke-test. `develop` tertinggal **165 commit** dari `main` → promosi langsung develop→main akan MEREVERT produksi.
+> **Keputusan Director 2026-06-04: ADOPSI GITFLOW** `feat→develop→staging→main` (lihat `docs/WAYS-OF-WORKING.md` §Git flow). Aksi: selaraskan `develop`←`main` (+cherry-pick smoke-test) lalu promosi via staging→main.
+>
+> **C. 🔧 P0 REPO — index git lokal KORUP** (`git status` → "index file corrupt"). Inilah penyebab working-tree queue.md ter-revert & operasi merge berperilaku aneh. Perbaikan di mesin Director: `rm -f .git/index && git reset` lalu verifikasi `git status`.
+>
+> **D. 📒 Disiplin baru — queue.md WAJIB di-commit tiap update** (di `develop`). Akar masalah hari ini: update Sprint 4 sesi sebelumnya di-edit tapi tak pernah di-commit → checkout menimpanya → hilang.
+>
+> **E. ⏳ N-14 Fase 4 BELUM diverifikasi.** SMA-46 live, tapi seed FAQ + backfill embedding di prod belum dibuktikan dengan hitung tabel nyata. N-11/N-14 BELUM boleh ditutup sampai `SELECT count(*) FROM ai_knowledge.rag_chunks WHERE embedding IS NOT NULL` > 0 + `/ai/chat` menjawab ber-`sources`.
+>
+> **F. ▶️ Urutan kerja berikut (SERIAL):** ① fix index git (C) → ② selaraskan gitflow + bawa N-15a smoke-test ke prod (B) → ③ verifikasi N-14 Fase 4 (E) → ④ commit ledger ini → ⑤ Sprint 4: OBS-1a → SMA-49 → SMA-48(R-03).
+> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+>
 > ⚠️ **Linear ditinggalkan mulai 2026-05-31.** Status task kini canonical di file ini.
 > `SMA-XX` = kode internal saja (tidak ada Linear issue). Claude Code: baca queue.md sebagai sumber tunggal.
 
