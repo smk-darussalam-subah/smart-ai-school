@@ -27,6 +27,7 @@ import { Prisma } from '@prisma/client';
 import { CreateKnowledgeDto } from './dto/create-knowledge.dto';
 import { UpdateKnowledgeDto } from './dto/update-knowledge.dto';
 import { ChatDto } from './dto/chat.dto';
+import { hasPii, stripPiiForLlm } from './adapters/pii-strip.utils';
 
 export interface EmbedChunkResult {
   id: string;
@@ -68,6 +69,7 @@ export class AiService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject('AI_GATEWAY') private readonly gateway: AIGateway,
+    @Inject('CLAUDE_GATEWAY') private readonly claudeGateway: AIGateway | null,
   ) {}
 
   // ── Private helpers ─────────────────────────────────────────────────────────
@@ -155,7 +157,7 @@ export class AiService {
       sessionId = newSession.id;
     }
 
-    // RAG — sama dengan sebelumnya
+    // RAG — embed + similarity search (selalu via Ollama, data tidak keluar)
     const topK = parseInt(process.env['AI_RAG_TOP_K'] ?? '4', 10);
     const minSimilarity = parseFloat(process.env['AI_RAG_MIN_SIMILARITY'] ?? '0.3');
 
@@ -167,7 +169,28 @@ export class AiService {
         ? chunks.map((c) => ({ title: c.title, content: c.content }))
         : undefined;
 
-    const answer = await this.gateway.chat(dto.message, context);
+    // ── Decision tree R-03 (gate §6) ──────────────────────────────────────────
+    // hasPii pada message + seluruh context content → paksa Ollama (lokal, aman)
+    // non-PII + claudeGateway tersedia → ClaudeAdapter dengan strip (belt-and-suspenders)
+    // DEFAULT AMAN = Ollama. Bila ragu → Ollama.
+    const combinedInput =
+      dto.message + (context ? ' ' + context.map((c) => c.content).join(' ') : '');
+    const piiDetected = hasPii(combinedInput);
+
+    let answer: string;
+    if (!piiDetected && this.claudeGateway) {
+      // Teks bersih + Claude dikonfigurasi → strip (belt-and-suspenders) lalu kirim ke Claude
+      const safeMessage = stripPiiForLlm(dto.message);
+      const safeContext = context?.map((c) => ({ ...c, content: stripPiiForLlm(c.content) }));
+      logger.info('[AiService] Routing ke ClaudeAdapter (non-PII, R-03 strip aktif)');
+      answer = await this.claudeGateway.chat(safeMessage, safeContext);
+    } else {
+      // PII terdeteksi → paksa Ollama; atau Claude tidak dikonfigurasi → Ollama default
+      if (piiDetected) {
+        logger.info('[AiService] PII terdeteksi — routing ke Ollama (R-03 failsafe)');
+      }
+      answer = await this.gateway.chat(dto.message, context);
+    }
 
     // Simpan pesan user + jawaban assistant ke chat history
     await this.prisma.chatMessage.createMany({

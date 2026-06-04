@@ -1,36 +1,40 @@
 // =============================================================================
-// AiModule — Provider AI_GATEWAY dipilih via env AI_PROVIDER:
-//   ollama  → OllamaAdapter (default)
-//   claude  → belum diimplementasikan (Sprint 4 SMA-48) — throw
+// AiModule — Provider AI_GATEWAY (Ollama, selalu) + CLAUDE_GATEWAY (opsional)
 //
+// AI_GATEWAY  = OllamaAdapter — selalu aktif; dipakai untuk embed() + chat fallback.
+// CLAUDE_GATEWAY = ClaudeAdapter | null — aktif hanya jika:
+//   AI_PROVIDER=claude DAN ANTHROPIC_API_KEY tersedia.
+//   Tanpa key → null → service fallback ke Ollama.
+//
+// Decision tree PII (R-03) ada di AiService.chatWithRag(), bukan di sini.
 // Pola identik NotificationModule (useFactory buildAdapter).
-// Ekspor AI_GATEWAY agar bisa dipakai RagModule / modul lain.
 // =============================================================================
 
 import { Module } from '@nestjs/common';
 import { AIGateway } from '@smk/types';
 import { OllamaAdapter } from './adapters/ollama.adapter';
+import { ClaudeAdapter } from './adapters/claude.adapter';
 import { AiService } from './ai.service';
 import { AiController } from './ai.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 
 function buildAiGateway(): AIGateway {
-  const provider = process.env['AI_PROVIDER'] ?? 'ollama';
-
-  if (provider === 'claude') {
-    throw new Error(
-      'AI_PROVIDER=claude belum diimplementasikan — tersedia Sprint 4 (SMA-48). ' +
-        'Gunakan AI_PROVIDER=ollama.',
-    );
-  }
-
-  // Default: ollama
   const baseUrl = process.env['OLLAMA_URL'] ?? 'http://ollama:11434';
   const chatModel = process.env['OLLAMA_CHAT_MODEL'] ?? 'qwen2.5:7b';
   const embedModel = process.env['OLLAMA_EMBED_MODEL'] ?? 'nomic-embed-text';
   const embedDimensions = parseInt(process.env['OLLAMA_EMBED_DIMENSIONS'] ?? '768', 10);
 
   return new OllamaAdapter(baseUrl, chatModel, embedModel, embedDimensions);
+}
+
+/** Kembalikan ClaudeAdapter jika AI_PROVIDER=claude + ANTHROPIC_API_KEY tersedia; null jika tidak. */
+function buildClaudeGateway(): AIGateway | null {
+  const provider = process.env['AI_PROVIDER'] ?? 'ollama';
+  const apiKey = process.env['ANTHROPIC_API_KEY'];
+
+  if (provider !== 'claude' || !apiKey) return null;
+
+  return new ClaudeAdapter(apiKey);
 }
 
 @Module({
@@ -41,8 +45,12 @@ function buildAiGateway(): AIGateway {
       provide: 'AI_GATEWAY',
       useFactory: buildAiGateway,
     },
+    {
+      provide: 'CLAUDE_GATEWAY',
+      useFactory: buildClaudeGateway,
+    },
     AiService,
   ],
-  exports: ['AI_GATEWAY', AiService],
+  exports: ['AI_GATEWAY', 'CLAUDE_GATEWAY', AiService],
 })
 export class AiModule {}
