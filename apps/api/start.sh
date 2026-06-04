@@ -21,10 +21,19 @@ if ! $PRISMA migrate deploy; then
   exit 1
 fi
 
-# TODO (N-15 hardening): smoke-test keberadaan tabel domain pasca-deploy
-# Contoh: psql "$DATABASE_URL" -c "SELECT 1 FROM auth.users LIMIT 1"
-# Jika gagal → exit 1. Tunda: psql mungkin tidak tersedia di image Alpine.
+# Smoke-test: verifikasi tabel domain terbentuk pasca migrate deploy.
+# Gunakan prisma db execute — psql tidak tersedia di image Alpine.
+echo "  Smoke-testing schema domain (auth.users)..."
+if ! echo "SELECT 1 FROM auth.users LIMIT 1;" | $PRISMA db execute --stdin --schema=prisma/schema.prisma > /dev/null 2>&1; then
+  echo ""
+  echo "❌ SMOKE-TEST GAGAL — auth.users tidak ada di database."
+  echo "   Skema DIIS tidak terbentuk meskipun migrate deploy sukses."
+  echo "   Kemungkinan: migration dibaseline tanpa SQL dieksekusi (shared-DB)."
+  echo "   Rujuk insiden + runbook: .tasks/INCIDENT-N14-prod-schema-missing.md"
+  echo "   Pemulihan manual: prisma db push --skip-generate --accept-data-loss"
+  exit 1
+fi
 
-echo "✅ Database migrations OK"
+echo "✅ Database migrations + schema OK"
 echo "🚀 Starting API server..."
 exec node /app/apps/api/dist/main.js
