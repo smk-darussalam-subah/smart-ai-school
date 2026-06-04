@@ -30,10 +30,12 @@ const EnvSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
 
-  // ── AI / Ollama (semua opsional — default cukup untuk dev; pakai Ollama lokal di VPS) ──
-  // AI_PROVIDER: 'ollama' (default) | 'claude' (Sprint 4 SMA-48, belum tersedia)
+  // ── AI / Ollama + Claude (SMA-48) ────────────────────────────────────────────
+  // AI_PROVIDER: 'ollama' (default, safe) | 'claude' (aktifkan ClaudeAdapter)
+  // ANTHROPIC_API_KEY: opsional — tanpa key → factory return null → Ollama-only
   // OLLAMA_EMBED_DIMENSIONS: HARUS cocok dengan output model (gate §2.1)
   AI_PROVIDER: z.enum(['ollama', 'claude']).default('ollama'),
+  ANTHROPIC_API_KEY: z.string().optional(),
   OLLAMA_URL: z.string().url('OLLAMA_URL harus berupa URL valid').default('http://ollama:11434'),
   OLLAMA_CHAT_MODEL: z.string().default('qwen2.5:7b'),
   OLLAMA_EMBED_MODEL: z.string().default('nomic-embed-text'),

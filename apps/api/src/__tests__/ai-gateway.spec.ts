@@ -245,15 +245,21 @@ describe('AiModule factory (AI_PROVIDER env)', () => {
     expect(gateway).toBeInstanceOf(OllamaAdapter);
   });
 
-  it('AI_PROVIDER=claude → throw saat compile() (Sprint 4 belum tersedia)', async () => {
+  it('AI_PROVIDER=claude tanpa ANTHROPIC_API_KEY → CLAUDE_GATEWAY null, AI_GATEWAY tetap Ollama', async () => {
     process.env['AI_PROVIDER'] = 'claude';
+    delete process.env['ANTHROPIC_API_KEY'];
 
-    await expect(
-      Test.createTestingModule({ imports: [AiModule] })
-        .overrideProvider(PrismaService)
-        .useValue(buildPrismaMock())
-        .compile(),
-    ).rejects.toThrow(/claude.*belum diimplementasikan|SMA-48/i);
+    const mod = await Test.createTestingModule({ imports: [AiModule] })
+      .overrideProvider(PrismaService)
+      .useValue(buildPrismaMock())
+      .compile();
+
+    // AI_GATEWAY tetap OllamaAdapter (embed + fallback chat)
+    const gateway = mod.get<AIGateway>('AI_GATEWAY');
+    expect(gateway).toBeInstanceOf(OllamaAdapter);
+    // CLAUDE_GATEWAY null karena tanpa API key
+    const claude = mod.get<AIGateway | null>('CLAUDE_GATEWAY');
+    expect(claude).toBeNull();
   });
 });
 
@@ -278,6 +284,7 @@ describe('AiService.backfillEmbeddings()', () => {
         AiService,
         { provide: PrismaService, useValue: prismaMock },
         { provide: 'AI_GATEWAY', useValue: gatewayMock },
+        { provide: 'CLAUDE_GATEWAY', useValue: null }, // SMA-48: default off
       ],
     }).compile();
     return mod.get(AiService);
