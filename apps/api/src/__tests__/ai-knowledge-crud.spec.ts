@@ -100,6 +100,7 @@ async function buildModule(gateway: AIGateway, prisma: PrismaService): Promise<T
     providers: [
       AiService,
       { provide: 'AI_GATEWAY', useValue: gateway },
+      { provide: 'CLAUDE_GATEWAY', useValue: null }, // SMA-48: default off in tests
       { provide: PrismaService, useValue: prisma },
     ],
   }).compile();
