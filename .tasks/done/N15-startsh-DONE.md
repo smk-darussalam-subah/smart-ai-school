@@ -1,7 +1,7 @@
 # N-15 — start.sh: fail-hard tanpa auto-baseline — DONE
 
-**Status:** ✅ CLOSED  
-**Tanggal:** 2026-06-02  
+**Status:** ✅ CLOSED (smoke-test closed 2026-06-04)  
+**Tanggal:** 2026-06-02 | **Smoke-test hardening:** 2026-06-04  
 **Branch:** `fix/N15-startsh-no-autobaseline`  
 **Commit:** (lihat git log)  
 **Model:** Sonnet 4.6
@@ -54,10 +54,24 @@ SYNTAX OK
 Script menggunakan `#!/bin/sh`, `set -e`, `if ! cmd; then ... exit 1; fi` — semua POSIX kompatibel,
 tanpa bash-isms.
 
-### Hardening opsional (TODO)
+### Smoke-test domain schema (CLOSED 2026-06-04)
 
-Smoke-test tabel domain (`SELECT 1 FROM auth.users LIMIT 1`) ditandai TODO karena `psql` tidak tersedia
-di image Alpine. Implementasi lewat `prisma db execute` bisa dilakukan di follow-up jika diperlukan.
+Smoke-test `SELECT 1 FROM auth.users LIMIT 1` diimplementasikan via `prisma db execute --stdin`
+(psql tidak ada di Alpine). Blok berjalan SETELAH `migrate deploy` sukses, SEBELUM `exec node`.
+
+Skenario gagal: tabel `auth.users` tidak ada → non-zero exit → `if !` trap →
+cetak pesan jelas rujuk INCIDENT-N14 → `exit 1` → container crash (visible alarm).
+`set -e` dipertahankan; `if ! cmd` adalah cara POSIX-safe mencegah `set -e` memotong
+sebelum error message tercetak.
+
+**Invocation final:**
+```sh
+echo "SELECT 1 FROM auth.users LIMIT 1;" | $PRISMA db execute --stdin --schema=prisma/schema.prisma > /dev/null 2>&1
+```
+
+**DoD terpenuhi:**
+- [x] `migrate deploy` gagal → exit 1 (dari sesi N-15 awal)
+- [x] Tabel domain tidak ada → exit 1 (smoke-test, sesi ini)
 
 ---
 
