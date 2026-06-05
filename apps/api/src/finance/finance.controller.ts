@@ -4,7 +4,7 @@
 // POST   /finance/spp               [SA, TU]         — record pembayaran
 // GET    /finance/spp               [SA, KS, TU, SISWA, OT]  — list + ownership
 // GET    /finance/spp/summary       [SA, KS, TU]     — agregat per bulan/tahun
-// GET    /finance/spp/:studentId/history [SA, TU, SISWA, OT] — histori 1 siswa
+// GET    /finance/spp/:studentId/history [SA, KS, TU, SISWA, OT] — histori 1 siswa
 // POST   /finance/spp/:id/approve   [SA, KS]         — approve (bukan TU)
 // =============================================================================
 

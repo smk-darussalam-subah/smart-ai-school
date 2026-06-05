@@ -188,7 +188,7 @@ type UserRole =
 |---|---|---|---|---|---|---|---|
 | Dashboard Eksekutif | ✅ | ✅ | - | - | - | - | - |
 | Keuangan (SPP/BOS) | ✅ | 👁 | ✅ | - | 👁 | 👁 | - |
-| PPDB / CRM | ✅ | 👁 | ✅ | 👁 | - | - | - |
+| PPDB / CRM | ✅ | 👁 | ✅ | 👁¹ | - | - | - |
 | Data Siswa | ✅ | 👁 | ✅ | 👁 | 👁 | 👁 | - |
 | Nilai & Absensi | ✅ | 👁 | - | ✅ | 👁 | 👁 | - |
 | PKL/Prakerin | ✅ | 👁 | 👁 | ✅ | ✅ | 👁 | ✅ |
@@ -196,6 +196,9 @@ type UserRole =
 | Monitoring/AI | ✅ | - | - | - | - | - | - |
 
 (✅ = write access, 👁 = read only, - = no access)
+
+¹ **GURU 👁 PPDB** = HANYA `GET /ppdb/stats` (agregat: total leads per status, conversion rate — tanpa PII).
+  GURU TIDAK boleh akses `GET /ppdb/leads` atau detail lead individual (mengandung nama + nomor HP calon siswa).
 
 ---
 

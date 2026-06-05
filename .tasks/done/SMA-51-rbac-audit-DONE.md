@@ -138,7 +138,7 @@ Test: "KS melihat histori student manapun (F-1 fix)" → PASS ✅
 
 ---
 
-### F-2 — LOW (TIDAK DIPERBAIKI — butuh konfirmasi Cowork) — GURU hilang dari endpoint PPDB read
+### F-2 — LOW (DIPERBAIKI — parsial per konfirmasi Cowork) — GURU hilang dari endpoint PPDB read
 
 **Lokasi:** `apps/api/src/ppdb/ppdb.controller.ts`
 
@@ -149,16 +149,19 @@ CLAUDE.md §6 menetapkan GURU = 👁 pada PPDB/CRM. Namun:
 
 **Dampak:** GURU tidak bisa melihat pipeline PPDB (calon siswa).
 
-**Pertanyaan untuk Cowork:**
-1. Apakah GURU 👁 pada PPDB intentional di sprint ini, atau belum diimplementasikan?
-2. Jika ya, endpoint mana yang relevan (leads list? stats saja?)?
-3. Apakah ada filter ownership yang diperlukan (GURU tidak boleh lihat nomor HP calon siswa)?
+**Resolusi (konfirmasi Cowork):**
+GURU 👁 PPDB = **hanya `/ppdb/stats`** (agregat: total per status + conversion rate, tanpa PII).
+GURU TIDAK boleh akses `/ppdb/leads` atau detail individual (nama + nomor HP calon siswa).
 
-**Tidak diperbaiki** tanpa konfirmasi — menambah GURU ke PPDB berarti GURU bisa melihat data pribadi calon siswa (nama, phone) yang mungkin perlu dibatasi lebih lanjut.
+**Fix:**
+- `GET /ppdb/stats` → tambah `'GURU'` ke `@Roles`
+- `GET /ppdb/leads`, `GET /ppdb/leads/:id` → GURU tetap diblokir
+- CLAUDE.md §6 → tambah catatan `¹` yang menjelaskan batasan ini
+- Test: GURU ada di @Roles stats ✅; GURU tidak ada di @Roles leads ✅ (403 terjaga)
 
 ---
 
-### F-3 — INFO (TIDAK DIPERBAIKI — mitigasi infra) — `/metrics` tanpa rate limit
+### F-3 — INFO (BACKLOG — mitigasi infra) — `/metrics` tanpa rate limit
 
 **Lokasi:** `apps/api/src/metrics/metrics.controller.ts`
 
@@ -205,11 +208,16 @@ berpotensi merusak monitoring. Dapat ditambahkan IP allowlist di nginx level jik
 ```
 tsc --noEmit   → exit 0 (0 errors)
 eslint         → exit 0 (0 warnings)
-jest (full)    → 475 passed, 27 suites
+jest (full)    → 477 passed, 27 suites (+2 test F-2)
 ```
 
-Test F-1 sebelum fix: `service.findHistory('student-uuid-001', KS_USER)` → lulus karena
-service sudah benar (KS dalam ELEVATED_ROLES); gap ada di @Roles controller yang sekarang diperbaiki.
+### Test pembukti
+
+| Test | Sebelum | Sesudah |
+|------|---------|---------|
+| KS `findHistory` (F-1) | service pass; controller 403 | ✅ controller+service pass |
+| GURU ada di @Roles stats (F-2a) | — | ✅ `Reflect.getMetadata('roles', getStats)` contains GURU |
+| GURU tidak ada di @Roles leads (F-2b) | — | ✅ `Reflect.getMetadata('roles', findAll)` not contains GURU |
 
 ---
 
@@ -217,8 +225,11 @@ service sudah benar (KS dalam ELEVATED_ROLES); gap ada di @Roles controller yang
 
 | File | Perubahan |
 |------|-----------|
-| `apps/api/src/finance/finance.controller.ts` | F-1: tambah KS ke @Roles `GET /:studentId/history` |
-| `apps/api/src/__tests__/finance.spec.ts` | F-1: tambah test KS findHistory |
+| `apps/api/src/finance/finance.controller.ts` | F-1: tambah KS ke @Roles + update header comment |
+| `apps/api/src/__tests__/finance.spec.ts` | F-1: test KS findHistory |
+| `apps/api/src/ppdb/ppdb.controller.ts` | F-2: tambah GURU ke @Roles stats; komentar batas PII |
+| `apps/api/src/__tests__/ppdb.spec.ts` | F-2: test RBAC metadata stats (GURU ✅) + leads (GURU ❌) |
+| `CLAUDE.md §6` | Klarifikasi GURU 👁 PPDB = stats agregat saja (catatan ¹) |
 
 ---
 
