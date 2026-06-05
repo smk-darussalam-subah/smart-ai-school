@@ -77,10 +77,12 @@ export class PpdbController {
   }
 
   /**
-   * GET /ppdb/stats — statistik per status + conversion rate.
+   * GET /ppdb/stats — statistik per status + conversion rate (AGREGAT, tanpa PII).
+   * GURU boleh akses statistik agregat (CLAUDE.md §6: GURU 👁 PPDB/CRM = stats saja).
+   * GURU TIDAK boleh akses /leads (data individual calon siswa mengandung PII: nama, phone).
    * Harus SEBELUM leads/:id agar 'stats' tidak ditangkap sebagai :id.
    */
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU')
   @Get('stats')
   getStats() {
     return this.ppdbService.getStats();

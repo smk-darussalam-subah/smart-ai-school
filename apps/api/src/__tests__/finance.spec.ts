@@ -335,6 +335,15 @@ describe('FinanceService', () => {
       expect(result.payments).toHaveLength(1);
     });
 
+    it('KS melihat histori student manapun (F-1 fix: KS harus bisa akses history, bukan hanya list)', async () => {
+      // KS masuk ELEVATED_ROLES → isElevated()=true → tidak kena pembatasan ownership
+      // @Roles di controller sebelumnya tidak include KS — bug → sudah diperbaiki
+      const result = await service.findHistory('student-uuid-001', KS_USER);
+
+      expect(result.payments).toHaveLength(1);
+      expect(result.student.id).toBe('student-uuid-001');
+    });
+
     it('SISWA melihat histori sendiri', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-siswa' });
       // student.findUnique dipanggil 2x: sekali untuk resolve siswa, sekali untuk student check

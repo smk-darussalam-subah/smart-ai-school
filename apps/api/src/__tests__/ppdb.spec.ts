@@ -378,6 +378,24 @@ describe('PpdbController', () => {
       expect(result).toHaveProperty('total');
       expect(result).toHaveProperty('conversionRate');
     });
+
+    it('(F-2 fix) GURU ada di @Roles stats → boleh akses statistik agregat', () => {
+      // Reflect.getMetadata('roles') = metadata yang di-set @Roles() decorator
+      // Verifikasi bahwa GURU dapat mengakses endpoint stats (agregat, tanpa PII)
+      const statsRoles: string[] = Reflect.getMetadata('roles', PpdbController.prototype.getStats) ?? [];
+      expect(statsRoles).toContain('GURU');
+    });
+  });
+
+  // ── RBAC: GURU harus tetap diblokir dari /ppdb/leads (PII calon siswa) ────────
+
+  describe('RBAC metadata — GURU di leads vs stats', () => {
+    it('(F-2 guard) GURU TIDAK ada di @Roles leads → tetap 403 (PII calon siswa tertutup)', () => {
+      // Verifikasi bahwa @Roles pada findAll (GET /ppdb/leads) TIDAK menyertakan GURU
+      // Ini membuktikan: statistik agregat boleh, data individual (nama+phone) tidak
+      const leadsRoles: string[] = Reflect.getMetadata('roles', PpdbController.prototype.findAll) ?? [];
+      expect(leadsRoles).not.toContain('GURU');
+    });
   });
 
   // ── GET /ppdb/leads/:id ───────────────────────────────────────────────────────
