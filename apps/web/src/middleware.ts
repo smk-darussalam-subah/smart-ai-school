@@ -52,7 +52,7 @@ function buildCsp(nonce: string, isPublicStatic: boolean): string {
     `connect-src ${connectSrc}`,
     "media-src 'none'",
     "object-src 'none'",
-    "frame-src https://www.youtube-nocookie.com",
+    `frame-src https://www.youtube-nocookie.com${process.env.METABASE_SITE_URL ? ` ${process.env.METABASE_SITE_URL}` : ''}`,
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",

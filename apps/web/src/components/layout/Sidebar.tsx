@@ -38,6 +38,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: '🏠' },
+  { label: 'Dashboard Eksekutif', href: '/dashboard/executive', icon: '📊', roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN'] },
   { label: 'Akademik', href: '/dashboard/akademik', icon: '📚', roles: ['GURU', 'SISWA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN'] },
   { label: 'Data Siswa', href: '/dashboard/siswa', icon: '🎓', roles: ['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN'] },
   { label: 'PPDB', href: '/dashboard/ppdb', icon: '📋', roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN'] },
