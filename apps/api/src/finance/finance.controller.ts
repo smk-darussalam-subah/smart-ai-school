@@ -73,9 +73,10 @@ export class FinanceController {
 
   /**
    * GET /finance/spp/:studentId/history — histori pembayaran 1 siswa.
-   * Ownership di service: SISWA=self, OT=anak, SA/TU=semua.
+   * Ownership di service: SISWA=self, OT=anak, SA/KS/TU=semua.
+   * KS ditambahkan (CLAUDE.md §6: KS 👁 Keuangan — konsisten dgn GET list + approve).
    */
-  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'SISWA', 'ORANG_TUA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'SISWA', 'ORANG_TUA')
   @Get(':studentId/history')
   findHistory(
     @Param('studentId', ParseUUIDPipe) studentId: string,
