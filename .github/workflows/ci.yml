@@ -106,6 +106,12 @@ jobs:
         # turbo run test -- --coverage (Turbo v2: '--' memisahkan flag turbo vs Jest)
         run: npm run test:ci
 
+      - name: Run E2E tests (SMA-50)
+        # Jest --runInBand: E2E berjalan serial (satu DB, hindari race condition).
+        # --forceExit: tutup Nest app + Prisma connection setelah selesai.
+        # Database: smk_test (service postgres di atas) — BUKAN smk_db produksi.
+        run: cd apps/api && npx jest --config test/jest-e2e.json --runInBand --forceExit
+
       - name: Upload coverage (semua packages)
         uses: codecov/codecov-action@v4
         if: always()
