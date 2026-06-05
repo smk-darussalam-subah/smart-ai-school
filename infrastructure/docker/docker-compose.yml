@@ -336,6 +336,10 @@ services:
       NEXT_PUBLIC_KEYCLOAK_URL: https://auth.smkdarussalamsubah.sch.id
       NEXT_PUBLIC_KEYCLOAK_REALM: diis
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: diis-web
+      # Metabase embed (SMA-47) — server-side only, JANGAN NEXT_PUBLIC_
+      METABASE_SITE_URL: ${METABASE_SITE_URL}
+      METABASE_SECRET_KEY: ${METABASE_SECRET_KEY}
+      METABASE_DASHBOARD_ID: ${METABASE_DASHBOARD_ID}
     networks:
       - smk-network
     depends_on:
