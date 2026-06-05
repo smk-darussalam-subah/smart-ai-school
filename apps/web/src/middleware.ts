@@ -81,8 +81,18 @@ function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
+// Routes yang di-render STATIS (○ build) DAN punya client component interaktif
+// (useState/onClick) → tidak bisa embed nonce per-request → butuh 'unsafe-inline'.
+// Dynamic routes (/dashboard/*, /api/*) tetap pakai nonce + strict-dynamic (N21).
+const STATIC_INTERACTIVE: readonly string[] = [
+  '/',          // landing — client components (MarqueeStrip, LandingNav, dll)
+  '/login',     // 'use client', onClick → signIn Keycloak (N21a)
+  '/health',    // 'use client', useEffect + onClick (N21a)
+];
+
 function isPublicStaticPage(pathname: string): boolean {
-  return pathname === '/' || pathname.startsWith('/jurusan/');
+  if (STATIC_INTERACTIVE.includes(pathname)) return true;
+  return pathname.startsWith('/jurusan/');
 }
 
 export async function middleware(request: NextRequest) {
