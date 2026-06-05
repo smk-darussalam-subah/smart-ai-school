@@ -4,7 +4,7 @@
 > Dokumen lain (`current.md`, `CLAUDE.md` §7, gate docs) hanya MENAUTKAN ke sini,
 > tidak menduplikasi status. Jika ada konflik, file INI yang menang.
 > Dikelola oleh Cowork AI. Claude Code hanya membaca file ini.
-> Update terakhir: 2026-06-05 — SMA-47 Dashboard KS CLOSED & MERGED main (PR #57→#58→#59). Sisa Sprint 4: SMA-52 perf/index → SMA-53 API docs → Tahap 1 DITUTUP.
+> Update terakhir: 2026-06-06 — N-21 CSP nonce FIXED & MERGED develop (PR #60). App terautentikasi kembali hidup. Next: staging verify login → promote main → SMA-52 → SMA-53 → Tahap 1 DITUTUP.
 >
 > ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 > ## 🔄 REKONSILIASI 2026-06-04 (Cowork analyst) — BLOK INI MENANG atas isi lama di bawah
@@ -21,6 +21,7 @@
 > - **D4-1 ✅ DIPUTUSKAN (Director 2026-06-05): Metabase embed** untuk Dashboard KS (SMA-47) — Metabase sudah di stack `smk_db`, dashboard agregat signed-embed + kartu KPI dikoding di header.
 > - **SMA-50 E2E ✅ CLOSED & APPROVE** (PR #54). 28/28 skenario jalur P0 (auth→student→grade→attendance→SPP→chat) + negatif 401/403 hijau di CI. Verifikasi Cowork: berjalan di DB **`smk_test`** ephemeral (service pgvector di CI), TIDAK menyentuh smk_db prod/staging (N-20 aman). Done: `.tasks/done/SMA-50-e2e-DONE.md`.
 > - **SMA-47 Dashboard KS ✅ CLOSED & APPROVE** (PR #57, Metabase embed). Verifikasi Cowork di kode: secret server-only (bukan NEXT_PUBLIC_, tak ke bundle browser), JWT HS256 exp+10mnt mint per-request (route dynamic), RBAC `/dashboard/executive` server-side fail-closed (KS/SA saja, else redirect), env-gated placeholder, CSP+compose `${}` gated. Director: Metabase "KS Overview" + 4 kartu + embedding + `.env` VPS sudah diset. Done: `.tasks/done/SMA-47-dashboard-ks-DONE.md`.
+> - **🔴 N-21 (CRITICAL) ✅ FIXED & APPROVE** (PR #60). Seluruh app terautentikasi (login + semua dashboard) JS-nya MATI di prod sejak SMA-26 (FIX-T05) — tak terdeteksi karena hanya landing/API/Metabase yang pernah diuji; SMA-47 menyingkapnya (tombol login tak merespons). Akar: middleware nonce-CSP tak set `Content-Security-Policy` di REQUEST header → Next.js 15 tak bisa menyetempel nonce ke `<script>` → `strict-dynamic` blokir semua JS halaman dinamis. Fix: 1 baris `requestHeaders.set('Content-Security-Policy', csp)`. Verifikasi Cowork di diff. **Wajib bukti login hidup di staging sebelum main.** Done: `.tasks/done/N21-csp-nonce-DONE.md`.
 > - **▶️ Sisa Sprint 4 (penutup Tahap 1, SERIAL):** ▶️SMA-52 perf/index → SMA-53 API docs → **Tahap 1 DITUTUP**. **Backlog:** OBS-1b (scrub nama tak-berlabel), R-03 hardening (gate aktivasi Claude), **F-3** (`/metrics` publik → batasi internal/auth), N-20 (isolasi DB staging/prod), N-19 (relokasi clone non-sync).
 >
 > **A. Yang SUDAH live di `main` + Produksi (terverifikasi git log, Deploy #68–#76, 2 Juni):**
