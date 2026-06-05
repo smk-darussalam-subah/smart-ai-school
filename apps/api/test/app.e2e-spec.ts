@@ -60,6 +60,8 @@ const IDS = {
   userGuru:     'e2e00000-0000-4000-a000-000000000004',
   userSiswa:    'e2e00000-0000-4000-a000-000000000005',
   userOrtu:     'e2e00000-0000-4000-a000-000000000006',
+  // Student milik TU (bukan SISWA) — untuk test ownership 403
+  student2:     'e2e00000-0000-4000-b000-000000000005',
   class:        'e2e00000-0000-4000-b000-000000000001',
   teacher:      'e2e00000-0000-4000-b000-000000000002',
   assignment:   'e2e00000-0000-4000-b000-000000000003',
@@ -121,7 +123,7 @@ async function seedTestData() {
   await prisma.sppPayment.deleteMany({ where: { studentId: IDS.student } });
   await prisma.attendance.deleteMany({ where: { classId: IDS.class } });
   await prisma.grade.deleteMany({ where: { assignmentId: IDS.assignment } });
-  await prisma.student.deleteMany({ where: { id: IDS.student } });
+  await prisma.student.deleteMany({ where: { id: { in: [IDS.student, IDS.student2] } } });
   await prisma.teachingAssignment.deleteMany({ where: { id: IDS.assignment } });
   await prisma.teacher.deleteMany({ where: { id: IDS.teacher } });
   await prisma.class.deleteMany({ where: { id: IDS.class } });
@@ -161,7 +163,7 @@ async function seedTestData() {
     },
   });
 
-  // Student
+  // Student 1 — milik SISWA
   await prisma.student.create({
     data: {
       id: IDS.student,
@@ -169,6 +171,18 @@ async function seedTestData() {
       nis: 'E2E00001',
       classId: IDS.class,
       parentId: IDS.userOrtu,
+      status: 'active',
+      joinedAt: new Date('2025-07-14'),
+    },
+  });
+
+  // Student 2 — milik TU (dipakai untuk test ownership 403 oleh SISWA)
+  await prisma.student.create({
+    data: {
+      id: IDS.student2,
+      userId: IDS.userTU,
+      nis: 'E2E00002',
+      classId: IDS.class,
       status: 'active',
       joinedAt: new Date('2025-07-14'),
     },
@@ -181,7 +195,7 @@ async function cleanupTestData() {
   await prisma.sppPayment.deleteMany({ where: { studentId: IDS.student } });
   await prisma.attendance.deleteMany({ where: { classId: IDS.class } });
   await prisma.grade.deleteMany({ where: { assignmentId: IDS.assignment } });
-  await prisma.student.deleteMany({ where: { id: IDS.student } });
+  await prisma.student.deleteMany({ where: { id: { in: [IDS.student, IDS.student2] } } });
   await prisma.teachingAssignment.deleteMany({ where: { id: IDS.assignment } });
   await prisma.teacher.deleteMany({ where: { id: IDS.teacher } });
   await prisma.class.deleteMany({ where: { id: IDS.class } });
@@ -267,10 +281,10 @@ describe('Student CRUD', () => {
     expect(res.body.id).toBe(IDS.student);
   });
 
-  it('GET /api/v1/students/:id — SISWA akses student lain → 403', async () => {
-    // ID yang tidak dimiliki siswa ini
+  it('GET /api/v1/students/:id — SISWA akses student lain (milik TU) → 403', async () => {
+    // student2 ada di DB tapi userId-nya = TU, bukan SISWA → ownership check → 403
     await req()
-      .get(`/api/v1/students/${IDS.userSA}`)
+      .get(`/api/v1/students/${IDS.student2}`)
       .set(auth('e2e-token-siswa'))
       .expect(403);
   });
