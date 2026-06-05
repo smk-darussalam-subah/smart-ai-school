@@ -93,6 +93,8 @@ export async function middleware(request: NextRequest) {
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-nonce', nonce);
+  // Next.js 15 reads CSP from request headers to stamp nonce onto <script> tags.
+  requestHeaders.set('Content-Security-Policy', csp);
 
   const token = await getToken({
     req: request,
