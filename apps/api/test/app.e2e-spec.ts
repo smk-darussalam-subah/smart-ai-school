@@ -54,22 +54,22 @@ import { PrismaService } from '../src/prisma/prisma.service';
 // ── Test IDs — deterministik agar mudah cleanup ──────────────────────────────
 // Semua UUID valid format (36 char) — diperlukan oleh @db.Uuid constraint
 const IDS = {
-  userSA:       'e2e0000-0000-4000-a000-000000000001',
-  userKS:       'e2e0000-0000-4000-a000-000000000002',
-  userTU:       'e2e0000-0000-4000-a000-000000000003',
-  userGuru:     'e2e0000-0000-4000-a000-000000000004',
-  userSiswa:    'e2e0000-0000-4000-a000-000000000005',
-  userOrtu:     'e2e0000-0000-4000-a000-000000000006',
-  class:        'e2e0000-0000-4000-b000-000000000001',
-  teacher:      'e2e0000-0000-4000-b000-000000000002',
-  assignment:   'e2e0000-0000-4000-b000-000000000003',
-  student:      'e2e0000-0000-4000-b000-000000000004',
-  kcSA:         'e2e0000-0000-4000-c000-000000000001',
-  kcKS:         'e2e0000-0000-4000-c000-000000000002',
-  kcTU:         'e2e0000-0000-4000-c000-000000000003',
-  kcGuru:       'e2e0000-0000-4000-c000-000000000004',
-  kcSiswa:      'e2e0000-0000-4000-c000-000000000005',
-  kcOrtu:       'e2e0000-0000-4000-c000-000000000006',
+  userSA:       'e2e00000-0000-4000-a000-000000000001',
+  userKS:       'e2e00000-0000-4000-a000-000000000002',
+  userTU:       'e2e00000-0000-4000-a000-000000000003',
+  userGuru:     'e2e00000-0000-4000-a000-000000000004',
+  userSiswa:    'e2e00000-0000-4000-a000-000000000005',
+  userOrtu:     'e2e00000-0000-4000-a000-000000000006',
+  class:        'e2e00000-0000-4000-b000-000000000001',
+  teacher:      'e2e00000-0000-4000-b000-000000000002',
+  assignment:   'e2e00000-0000-4000-b000-000000000003',
+  student:      'e2e00000-0000-4000-b000-000000000004',
+  kcSA:         'e2e00000-0000-4000-c000-000000000001',
+  kcKS:         'e2e00000-0000-4000-c000-000000000002',
+  kcTU:         'e2e00000-0000-4000-c000-000000000003',
+  kcGuru:       'e2e00000-0000-4000-c000-000000000004',
+  kcSiswa:      'e2e00000-0000-4000-c000-000000000005',
+  kcOrtu:       'e2e00000-0000-4000-c000-000000000006',
 };
 
 // ── Test tokens → AuthUser mapping ───────────────────────────────────────────
@@ -117,7 +117,7 @@ let prisma: PrismaService;
 async function seedTestData() {
   // Hapus data sebelumnya (idempoten) — urutan terbalik
   await prisma.chatMessage.deleteMany({ where: { session: { userId: IDS.userSiswa } } });
-  await prisma.chatSession.deleteMany({ where: { userId: { in: Object.values(IDS).filter(id => id.startsWith('e2e0000-0000-4000-a')) } } });
+  await prisma.chatSession.deleteMany({ where: { userId: { in: Object.values(IDS).filter(id => id.startsWith('e2e00000-0000-4000-a')) } } });
   await prisma.sppPayment.deleteMany({ where: { studentId: IDS.student } });
   await prisma.attendance.deleteMany({ where: { classId: IDS.class } });
   await prisma.grade.deleteMany({ where: { assignmentId: IDS.assignment } });
