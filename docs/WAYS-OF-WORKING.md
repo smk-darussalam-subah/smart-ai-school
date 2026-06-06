@@ -38,6 +38,7 @@ chat — selalu di file. Maka sesi boleh pendek & sekali-pakai; konteks dibangun
 - **Deploy trigger (`deploy.yml`):** hanya `push` ke **`staging`** & **`main`**. `develop` = CI saja, TIDAK men-deploy. → **jangan pernah berharap perubahan di `develop` masuk produksi tanpa dipromosikan.**
 - **Aturan emas:** `main` ⊇ `staging` ⊇ `develop` (superset). Sebelum kerja baru, **`develop` harus selalu di-rebase/merge dari `main`** agar tak pernah tertinggal → mencegah promosi yang merevert produksi (pelajaran N-18).
 - Branch fitur **selalu dicabang dari `develop` terkini** (yang sudah sinkron dengan `main`).
+- **JANGAN `--delete-branch` pada `develop`/`staging`/`main`** — ketiganya permanen. `--delete-branch` HANYA untuk branch `feat/*` & `fix/*` setelah merge. (Insiden 2026-06-05: promosi develop→staging dgn `--delete-branch` menghapus `develop`, untung ter-restore.)
 
 ## Definition of Done per task
 - [ ] `tsc --noEmit` 0 error · eslint 0 error · jest hijau (coverage ≥70% bila ada logic)

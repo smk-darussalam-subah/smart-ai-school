@@ -29,6 +29,12 @@ RUN cd packages/logger && npx tsc --project tsconfig.json
 RUN cd packages/auth   && npx tsc --project tsconfig.json
 
 # ─── Step 2: Build Next.js ───────────────────────────────────────────────────
+# API_URL baked into rewrites destination at build-time (Next.js standalone freezes
+# routes-manifest.json). Default: Docker internal service name. Override via
+# --build-arg API_URL=http://localhost:3001 for local Docker builds.
+ARG API_URL=http://api:3001
+ENV API_URL=${API_URL}
+
 RUN cd apps/web && npx next build
 
 # =============================================================================
