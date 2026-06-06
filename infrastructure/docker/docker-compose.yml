@@ -336,6 +336,13 @@ services:
       NEXT_PUBLIC_KEYCLOAK_URL: https://auth.smkdarussalamsubah.sch.id
       NEXT_PUBLIC_KEYCLOAK_REALM: diis
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: diis-web
+      # Next-Auth server-side (N22) — JANGAN NEXT_PUBLIC_ untuk secret
+      NEXTAUTH_URL: https://smkdarussalamsubah.sch.id
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      KEYCLOAK_ISSUER: https://auth.smkdarussalamsubah.sch.id/realms/diis
+      KEYCLOAK_CLIENT_ID: diis-web
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_WEB_CLIENT_SECRET}
+      API_URL: https://api.smkdarussalamsubah.sch.id
       # Metabase embed (SMA-47) — server-side only, JANGAN NEXT_PUBLIC_
       METABASE_SITE_URL: ${METABASE_SITE_URL}
       METABASE_SECRET_KEY: ${METABASE_SECRET_KEY}
