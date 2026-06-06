@@ -91,6 +91,10 @@ services:
       KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: "8080"
       KC_LOG_LEVEL: INFO
+      # N-23: Keycloak di belakang Nginx reverse proxy — baca X-Forwarded-* headers
+      # agar issuer URL menggunakan https:// (bukan http:// internal). Tanpa ini,
+      # token issuer = http://keycloak:8080/realms/diis → validasi gagal.
+      KC_PROXY_HEADERS: xforwarded
     # --import-realm: otomatis import realm-diis.json saat container pertama kali start
     # start-dev: mode development — lebih toleran, tidak butuh HTTPS
     command: start-dev --import-realm
@@ -343,6 +347,9 @@ services:
       KEYCLOAK_CLIENT_ID: diis-web
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_WEB_CLIENT_SECRET}
       API_URL: https://api.smkdarussalamsubah.sch.id
+      # N-26: Next.js standalone default bind 127.0.0.1 → tidak terjangkau dari nginx.
+      # HOSTNAME=0.0.0.0 memaksa listen di semua interface Docker network.
+      HOSTNAME: "0.0.0.0"
       # Metabase embed (SMA-47) — server-side only, JANGAN NEXT_PUBLIC_
       METABASE_SITE_URL: ${METABASE_SITE_URL}
       METABASE_SECRET_KEY: ${METABASE_SECRET_KEY}

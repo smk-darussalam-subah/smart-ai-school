@@ -26,15 +26,13 @@
       "clientId": "diis-web",
       "name": "DIIS Web Portal",
       "description": "Next.js frontend untuk SMK Darussalam Subah",
-      "rootUrl": "http://localhost:3000",
-      "adminUrl": "http://localhost:3000",
-      "baseUrl": "http://localhost:3000",
+      "rootUrl": "https://smkdarussalamsubah.sch.id",
+      "adminUrl": "https://smkdarussalamsubah.sch.id",
+      "baseUrl": "https://smkdarussalamsubah.sch.id",
       "redirectUris": [
-        "http://localhost:3000/*",
         "https://smkdarussalamsubah.sch.id/*"
       ],
       "webOrigins": [
-        "http://localhost:3000",
         "https://smkdarussalamsubah.sch.id"
       ],
       "enabled": true,
@@ -61,7 +59,7 @@
         "microprofile-jwt"
       ],
       "attributes": {
-        "post.logout.redirect.uris": "http://localhost:3000/*",
+        "post.logout.redirect.uris": "https://smkdarussalamsubah.sch.id/*",
         "backchannel.logout.session.required": "true"
       },
       "protocolMappers": [
