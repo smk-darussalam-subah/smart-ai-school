@@ -112,6 +112,8 @@ model Student {
   attendance  Attendance[]
   sppPayments SppPayment[]
 
+  @@index([classId])   // StudentService.findAll(classId filter) + ownership SISWA/OT
+  @@index([parentId])  // resolveChildStudentIds() — setiap request ORANG_TUA
   @@map("students")
   @@schema("student")
 }
@@ -222,6 +224,7 @@ model TeachingAssignment {
   schedules Schedule[]
 
   @@unique([teacherId, classId, subject, academicYear])
+  @@index([classId])  // TeachingAssignmentService.findAll(classId-only, elevated) — unik composite mulai dari teacherId, tidak cover classId standalone
   @@map("teaching_assignments")
   @@schema("academic")
 }
@@ -244,6 +247,7 @@ model Grade {
   assignment TeachingAssignment @relation(fields: [assignmentId], references: [id])
 
   @@index([studentId, academicYear, semester])
+  @@index([assignmentId])  // GradeService.findAll(assignmentId filter) + DOBEL GUARD WHERE (studentId,assignmentId,semester,type)
   @@map("grades")
   @@schema("academic")
 }
@@ -383,6 +387,7 @@ model NotificationLog {
 
   @@index([recipient, createdAt])
   @@index([status])
+  @@index([refType, refId])  // notify() idempotensi check: WHERE refType=? AND refId=? AND recipient=? AND channel=? AND status='sent'
   @@map("notification_logs")
   @@schema("notification")
 }
