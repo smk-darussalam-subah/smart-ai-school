@@ -4,11 +4,39 @@
 > Dokumen lain (`current.md`, `CLAUDE.md` §7, gate docs) hanya MENAUTKAN ke sini,
 > tidak menduplikasi status. Jika ada konflik, file INI yang menang.
 > Dikelola oleh Cowork AI. Claude Code hanya membaca file ini.
-> Update terakhir: 2026-06-06 — N-21 CSP nonce FIXED & MERGED develop (PR #60). App terautentikasi kembali hidup. Next: staging verify login → promote main → SMA-52 → SMA-53 → Tahap 1 DITUTUP.
+> Update terakhir: 2026-06-07 — **TAHAP 1 DITUTUP.** Main = N24+N26 (auth) + SMA-52 (index) + SMA-53 (API docs). VPS = repo. Login + dashboard hidup. Selanjutnya: deploy manual VPS (`git reset --hard origin/main` + `docker compose up -d --build`) → Tahap 2.
 >
 > ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 > ## 🔄 REKONSILIASI 2026-06-04 (Cowork analyst) — BLOK INI MENANG atas isi lama di bawah
 > > Disusun setelah verifikasi langsung riwayat GitHub Actions + `git log origin/main`. Bagian historis di bawah (Sprint 1–3) sengaja dibiarkan sebagai arsip; status TERKINI ada di sini.
+>
+> ### 📌 KEPUTUSAN DIRECTOR 2026-06-06 (penutupan Tahap 1) — CARRY-OVER ke Tahap 2 / backlog
+> - **Frontend 7 halaman modul** (Siswa/Akademik/PPDB/Keuangan/AI/Users/Health) = **Tahap 2** (di luar scope Sprint 4; API sudah ada). Gate sidebar = opsional nanti.
+> - **N-27 DIBATALKAN** — terbukti SALAH (web→API publik & internal sama-sama 200; bukan loopback).
+> - **Bug data knowledge/KPI Eksekutif (Fase 2)** = **CATATAN/backlog** — gejala: SSR fetch ke API gagal render; diagnosa via log ditunda. Kemungkinan terkait React #418 (lihat di bawah).
+> - **React #418 (hydration) + CSP email-decode** = akibat **Cloudflare Email Obfuscation/Rocket Loader menyuntik HTML**. **KEPUTUSAN: BIARKAN** — fitur masih dibutuhkan untuk landing page (rekomendasi sesi Cowork sebelumnya). Trade-off: #418 di halaman terautentikasi diterima untuk sekarang. Backlog: scope obfuscation hanya ke landing (page rule) bila perlu.
+> - **Fase 4 (keamanan & hardening: N-23b Keycloak prod-mode + tutup port 8080, N-20 isolasi staging, rotasi secret)** = **CATATAN/backlog Tahap 2** — tidak dikerjakan sekarang.
+> - **Arah:** langsung **Fase 5 (SMA-52 perf + SMA-53 docs)** → lalu **TUTUP Tahap 1** (backend + auth + fondasi). Deploy final SMA-52/53 sebagai `appuser` sekaligus **memformalkan VPS = repo** (main sudah lengkap).
+>
+> ### 🎉 PROGRESS 2026-06-06 — LOGIN PRODUKSI PULIH (pertama kali aplikasi terautentikasi hidup)
+> Login admin (SUPER_ADMIN) tembus ke `/dashboard`. Seluruh sisi terautentikasi (login + dashboard) ternyata **tak pernah berfungsi di prod** sebelumnya. Rantai blocker yang dibongkar berurutan:
+> - **N-21 (CRIT)** CSP nonce tak di-set di request header → JS halaman dinamis mati. Fix: `requestHeaders.set('Content-Security-Policy', csp)`. (PR #60)
+> - **N-21a (CRIT)** `/login` & `/health` statis ('use client') kena CSP ketat → JS mati. Fix: STATIC_INTERACTIVE → `unsafe-inline`. (PR #63)
+> - **N-22 (CRIT)** container web tak punya env server next-auth. Fix: tambah NEXTAUTH_URL/SECRET, KEYCLOAK_ISSUER/CLIENT_ID/CLIENT_SECRET, API_URL ke service web. (PR #65)
+> - **Realm Keycloak `diis` HILANG** dari Keycloak (volume ter-reset, --import-realm skip) → re-impor `realm-diis.json`. Client diis-web URL diperbaiki ke prod (https).
+> - **N-23 (CRIT)** Keycloak (start-dev, tanpa proxy header) hasilkan issuer `http://`. Fix: `KC_PROXY_HEADERS: xforwarded` di service keycloak → issuer https.
+> - **N-24 (CRIT)** `next.config.js` blok `env:{NEXTAUTH_URL: ...||'localhost:3000'}` membakar localhost saat build → redirect_uri selalu localhost. Fix: HAPUS NEXTAUTH_URL dari `env:` (next-auth baca runtime). + `.dockerignore` cegah `.env.local` dev.
+> - **N-25 (HIGH)** nginx blok web tanpa `proxy_buffer_size` besar → "upstream sent too big header" (Set-Cookie JWT). Fix: `proxy_buffer_size 128k; proxy_buffers 4 256k; proxy_busy_buffers_size 256k`.
+> - **N-23b (backlog hardening):** Keycloak masih `start-dev` + port 8080 ter-expose publik → pindah `start` production-mode + tutup 8080. Admin console hanya via SSH tunnel.
+>
+> ### 🚨 BELUM DIFORMALKAN — SEMUA FIX DI ATAS = EDIT LANGSUNG DI VPS, BUKAN DI REPO
+> **BAHAYA: deploy berikutnya (`git pull` + build) akan MEREVERT semua ini → login rusak lagi.** JANGAN trigger deploy sampai diformalkan. Yang wajib masuk repo via gitflow:
+> 1. `apps/web/next.config.js` — hapus NEXTAUTH_URL dari `env:` (N-24).
+> 2. `infrastructure/docker/docker-compose.yml` — keycloak: `KC_PROXY_HEADERS: xforwarded`; web: 6 env next-auth (= #65, pastikan ter-merge ke main) + `HOSTNAME: "0.0.0.0"` bila ditambah.
+> 3. `infrastructure/nginx/nginx.conf` — blok web: proxy_buffer besar (N-25).
+> 4. `infrastructure/keycloak/realm-diis.json` — diis-web Root/Home/baseUrl/redirectUris/webOrigins → https prod (hapus localhost), agar re-impor tak balikkan localhost (N-26).
+> 5. `.dockerignore` baru (N-24).
+> 6. Nilai rahasia (`NEXTAUTH_SECRET`, `KEYCLOAK_WEB_CLIENT_SECRET`) tetap di `.env` VPS (gitignored, persist) — dokumentasikan di `.env.example`.
 >
 > ### ➕ PROGRESS 2026-06-05 (Sprint 4 berjalan)
 > - **OBS-1a ✅ CLOSED & MERGED** (PR #43→develop→main, Deploy #81). Review Cowork APPROVE: scrub PII Sentry diperluas (exception values, breadcrumbs off ganda, URL query-strip), 100% coverage util. Backlog **OBS-1b LOW:** nama/NIS hanya tertangkap bila berlabel; HP >13 digit lolos. Done: `.tasks/done/OBS-1a-scrub-hardening-DONE.md`.
