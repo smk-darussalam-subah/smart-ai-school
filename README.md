@@ -141,6 +141,7 @@ smart-ai-school/
 ## Dokumentasi
 
 - [CLAUDE.md](CLAUDE.md) — Panduan untuk Claude Code (conventions, task queue, arsitektur)
+- [docs/api/api-reference.md](docs/api/api-reference.md) — **Referensi API lengkap** (44 endpoint, semua modul, RBAC, DTO)
 - [.tasks/AUDIT-FINDINGS.md](.tasks/AUDIT-FINDINGS.md) — Status 24 temuan dari System Analyst
 - [docs/gates/security-gate.md](docs/gates/security-gate.md) — Checklist Security Gate (Tahap 0 → 1)
 - [docs/gates/compliance-gate.md](docs/gates/compliance-gate.md) — Checklist Compliance Gate (Tahap 1 → 2)
