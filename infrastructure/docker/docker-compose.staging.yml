@@ -1,0 +1,144 @@
+# =============================================================================
+# Docker Compose Override — Staging Stack (N-20)
+# Compose project name: smk-staging
+#
+# CARA PAKAI (dari direktori infrastructure/docker):
+#
+#   # 1. Init DB staging (idempoten, jalankan sekali sebelum deploy pertama
+#   #    atau setelah postgres di-reset):
+#   docker compose -p smk-staging --env-file .env.staging \
+#     -f docker-compose.yml -f docker-compose.staging.yml \
+#     run --rm db-init-staging
+#
+#   # 2. Build images staging:
+#   docker compose -p smk-staging --env-file .env.staging \
+#     -f docker-compose.yml -f docker-compose.staging.yml \
+#     build --no-cache api web
+#
+#   # 3. Deploy (tidak start deps — postgres/redis/keycloak sudah running di prod):
+#   docker compose -p smk-staging --env-file .env.staging \
+#     -f docker-compose.yml -f docker-compose.staging.yml \
+#     up -d --no-deps api web
+#
+# PRASAYARAT:
+#   - Stack prod (smk-network) sudah running dengan postgres/redis/keycloak
+#   - .env.staging tersedia di infrastructure/docker/ (gitignored)
+#   - smk_staging_db sudah dibuat (via db-init-staging atau init-staging-db.sh)
+#
+# JARINGAN:
+#   Menggunakan smk-network yang sama dengan prod (explicit name: smk-network
+#   di docker-compose.yml → bukan project-prefixed). Staging api/web terhubung
+#   ke smk-postgres / smk-redis / smk-keycloak tanpa duplikasi container.
+#
+# PORTS TERPISAH:
+#   web  → host :3100 (prod: nginx forward, staging: langsung atau staging-nginx)
+#   api  → host :3101 (prod: port 3001 tidak di-expose, staging: debug access)
+# =============================================================================
+
+version: '3.8'
+
+services:
+
+  # ── DB INIT (one-shot idempoten) ─────────────────────────────────────────
+  # Membuat smk_staging_db dan schemas-nya di smk-postgres yang sudah running.
+  # Gunakan: docker compose ... run --rm db-init-staging
+  # Container keluar (exit 0) setelah selesai — tidak perlu di-stop manual.
+
+  db-init-staging:
+    image: postgres:16-alpine
+    container_name: smk-staging-db-init
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER:-smk_admin}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        echo "[db-init-staging] Memastikan smk_staging_db ada di smk-postgres..."
+
+        # Buat database jika belum ada (idempoten)
+        DB_EXISTS=$$(psql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='smk_staging_db'")
+        if [ "$$DB_EXISTS" != "1" ]; then
+          psql -d postgres -c "CREATE DATABASE smk_staging_db"
+          echo "[db-init-staging] Database smk_staging_db dibuat."
+        else
+          echo "[db-init-staging] Database smk_staging_db sudah ada, skip CREATE."
+        fi
+
+        # Extensions (idempoten)
+        psql -d smk_staging_db -c "CREATE EXTENSION IF NOT EXISTS vector;"
+        psql -d smk_staging_db -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
+        psql -d smk_staging_db -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+
+        # Schemas DIIS (idempoten)
+        psql -d smk_staging_db -c "CREATE SCHEMA IF NOT EXISTS auth;"
+        psql -d smk_staging_db -c "CREATE SCHEMA IF NOT EXISTS academic;"
+        psql -d smk_staging_db -c "CREATE SCHEMA IF NOT EXISTS student;"
+        psql -d smk_staging_db -c "CREATE SCHEMA IF NOT EXISTS teacher;"
+        psql -d smk_staging_db -c "CREATE SCHEMA IF NOT EXISTS ppdb;"
+        psql -d smk_staging_db -c "CREATE SCHEMA IF NOT EXISTS finance;"
+        psql -d smk_staging_db -c "CREATE SCHEMA IF NOT EXISTS notification;"
+        psql -d smk_staging_db -c "CREATE SCHEMA IF NOT EXISTS ai_knowledge;"
+
+        echo "[db-init-staging] smk_staging_db siap (extensions + schemas) ✓"
+    networks:
+      - smk-network
+
+  # ── API STAGING ───────────────────────────────────────────────────────────
+  # Menggantikan smk-api (prod) dengan smk-staging-api.
+  # DATABASE_URL → smk_staging_db (bukan smk_db).
+  # Port host 3101 agar tidak konflik dengan prod api (tidak di-expose di prod).
+
+  api:
+    container_name: smk-staging-api
+    environment:
+      NODE_ENV: staging
+      DATABASE_URL: ${STAGING_DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: diis
+      KEYCLOAK_CLIENT_ID: diis-api
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_API_CLIENT_SECRET}
+      OLLAMA_URL: http://ollama:11434
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      API_PORT: "3001"
+      TZ: Asia/Jakarta
+      # Guardrail N-20: start.sh fail-hard jika STAGING_DATABASE_URL salah target
+      GUARD_STAGING_DB: "1"
+    ports:
+      - "3101:3001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3001/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── WEB STAGING ───────────────────────────────────────────────────────────
+  # Menggantikan smk-web (prod) dengan smk-staging-web.
+  # Port host 3100 untuk staging frontend.
+
+  web:
+    container_name: smk-staging-web
+    environment:
+      NODE_ENV: staging
+      NEXT_PUBLIC_API_URL: ${STAGING_API_URL:-https://staging-api.smkdarussalamsubah.sch.id}
+      NEXT_PUBLIC_KEYCLOAK_URL: https://auth.smkdarussalamsubah.sch.id
+      NEXT_PUBLIC_KEYCLOAK_REALM: diis
+      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: diis-web
+      NEXTAUTH_URL: ${STAGING_WEB_URL:-https://staging.smkdarussalamsubah.sch.id}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      KEYCLOAK_ISSUER: https://auth.smkdarussalamsubah.sch.id/realms/diis
+      KEYCLOAK_CLIENT_ID: diis-web
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_WEB_CLIENT_SECRET}
+      # API_URL internal → container name smk-staging-api
+      API_URL: http://smk-staging-api:3001
+      HOSTNAME: "0.0.0.0"
+      METABASE_SITE_URL: ${METABASE_SITE_URL}
+      METABASE_SECRET_KEY: ${METABASE_SECRET_KEY}
+      METABASE_DASHBOARD_ID: ${METABASE_DASHBOARD_ID}
+    ports:
+      - "3100:3000"

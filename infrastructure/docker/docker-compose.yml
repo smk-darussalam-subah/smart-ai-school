@@ -41,6 +41,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/01-init-db.sql:ro
+      - ./init-staging-db.sh:/docker-entrypoint-initdb.d/02-init-staging-db.sh:ro
     # ports tidak dimapping — aksesibel hanya via Docker network internal.
     # Dev lokal: gunakan docker-compose.dev.yml atau SSH tunnel ke VPS.
     networks:

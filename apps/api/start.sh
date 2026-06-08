@@ -5,6 +5,27 @@
 # =============================================================================
 set -e
 
+# ── GUARDRAIL N-20: anti-salah-target DB ─────────────────────────────────────
+# Jika GUARD_STAGING_DB=1 (di-set oleh docker-compose.staging.yml),
+# DATABASE_URL HARUS menunjuk smk_staging_db — bukan smk_db.
+# Cegah prisma migrate deploy nyasar ke DB produksi.
+if [ "${GUARD_STAGING_DB:-0}" = "1" ]; then
+  _DB_NAME=$(printf '%s' "${DATABASE_URL}" | sed 's|.*\/||' | sed 's|?.*||')
+  if [ "$_DB_NAME" != "smk_staging_db" ]; then
+    echo ""
+    echo "❌ GUARDRAIL N-20 TRIGGERED — Stack staging menunjuk DB yang salah!"
+    echo "   DATABASE_URL target DB: '${_DB_NAME}'"
+    echo "   Expected: 'smk_staging_db'"
+    echo ""
+    echo "   BAHAYA: prisma migrate deploy TIDAK dijalankan."
+    echo "   Periksa STAGING_DATABASE_URL di .env.staging dan pastikan"
+    echo "   docker-compose.staging.yml men-set DATABASE_URL=\${STAGING_DATABASE_URL}."
+    echo ""
+    exit 1
+  fi
+  echo "✅ Guardrail N-20 OK — DATABASE_URL menunjuk smk_staging_db"
+fi
+
 echo "🔄 Running database migrations..."
 cd /app/packages/database
 PRISMA=/app/node_modules/.bin/prisma
