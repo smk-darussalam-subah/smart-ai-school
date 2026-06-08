@@ -96,7 +96,9 @@ services:
   api:
     container_name: smk-staging-api
     environment:
-      NODE_ENV: staging
+      # NODE_ENV harus 'production' — NestJS config enum tidak terima 'staging'.
+      # Isolasi staging dijamin oleh DATABASE_URL + GUARD_STAGING_DB, bukan NODE_ENV.
+      NODE_ENV: production
       DATABASE_URL: ${STAGING_DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       KEYCLOAK_URL: http://keycloak:8080
@@ -124,7 +126,7 @@ services:
   web:
     container_name: smk-staging-web
     environment:
-      NODE_ENV: staging
+      NODE_ENV: production
       NEXT_PUBLIC_API_URL: ${STAGING_API_URL:-https://staging-api.smkdarussalamsubah.sch.id}
       NEXT_PUBLIC_KEYCLOAK_URL: https://auth.smkdarussalamsubah.sch.id
       NEXT_PUBLIC_KEYCLOAK_REALM: diis
