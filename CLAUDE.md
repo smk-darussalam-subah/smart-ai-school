@@ -1,6 +1,26 @@
 # CLAUDE.md — DIIS Smart AI School
 > Brief permanen untuk Claude Code. Baca ini sebelum mengerjakan task apapun.
-> Diperbarui oleh: Cowork AI (koordinator) | Versi: 1.1 | 28 Mei 2026
+> Diperbarui oleh: Cowork AI (koordinator) | Versi: 1.2 | 8 Juni 2026
+
+---
+
+## ⭐ KEPUTUSAN TAHAP 2 (2026-06-08) — MENANG atas teks lama bila bertentangan
+> Pasca audit eksternal (`Laporan_Audit_Komparatif_DIIS_2026-06-08.md`) + brainstorm Director.
+> Detail & rationale: `docs/decision-log.md`. Roadmap: `docs/SUPER-PROMPT-tahap2-system-analyst.md`.
+> **Bila §3/§5/§6 di bawah bertentangan dengan poin di sini, poin ini yang berlaku.**
+
+- **RBAC → permission-based pragmatis** (mengganti "role-based" di §5/§6). **7 role tetap sebagai DASAR**
+  (tidak dihapus), TAPI ditambah tabel `permission` + `role_permissions` (Super Admin ubah izin TANPA deploy)
+  + override per-user (mis. guru wali-kelas lihat siswa kelasnya). Frasa "IMMUTABLE" di §6 = jumlah/ nama 7
+  role dasar tetap; model otorisasi menjadi permission-based.
+- **Stack §3 "IMMUTABLE" = inti tetap, dengan TAMBAHAN Tahap 2 yang disahkan:** **shadcn/ui** (komponen UI),
+  **BullMQ** (antrian keandalan broadcast WA — rate-limit/retry/tahan-restart). Bukan mengganti, menambah.
+- **Event/automasi:** domain event tetap **EventEmitter (NestJS)**; **BullMQ** untuk broadcast WA; **n8n hybrid**
+  = pemicu terjadwal (SPP bayar/telat dari `spp_payments`, kalender akademik). Domain logic tetap di NestJS.
+- **GERBANG GO-LIVE DATA NYATA:** R-05 consent + N-20 isolasi (`smk_staging_db`) + N-23b + AuditLog persisten +
+  R-03 ditutup (bila Claude). Sebelum gerbang → semua dummy (di tabel DB), CRUD penuh termasuk DELETE aman.
+- **Git VPS:** dijalankan sebagai user **`appuser`** (punya deploy key); root tidak.
+- API docs: Markdown cukup (Swagger ditunda). Blueprint akan direvisi → v2.1.
 
 ---
 

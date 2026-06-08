@@ -39,15 +39,53 @@ Lalu **konfirmasi 3–4 baris**: fase, kondisi produksi, kandidat task aktif, ri
   Sentry/Metabase/monitoring), landing page, Dashboard + Dashboard Eksekutif + Basis Pengetahuan + Nilai.
 - **Frontend PARSIAL:** 5 dari 12 halaman. **7 halaman modul = carry-over Tahap 2.**
 
-## CARRY-OVER TAHAP 2 (dari `tahap1-closure.md` — prioritas awal)
-1. **Frontend modul:** Data Siswa, Akademik, PPDB, Keuangan, AI Asisten, Manajemen User, System Health.
-   (Sidebar saat ini menaut ke halaman yang belum ada → 404. Gate/sembunyikan dulu = quick win.)
-2. **Hardening keamanan:** **N-23b** (Keycloak `start-dev`→production `start` + tutup port 8080 publik),
-   **N-20** (staging & prod berbagi server+DB `smk_db` → isolasi), rotasi secret, audit tak ada secret di repo.
-3. **Bug data:** knowledge/KPI Eksekutif gagal render — **React #418 hydration** akibat Cloudflare Email
-   Obfuscation/Rocket Loader menyuntik HTML (Cloudflare dibiarkan demi landing → scope ke landing saja / fix hydration).
-4. **R-03:** ClaudeAdapter tetap **flag-OFF** sampai deteksi PII diperkuat + `ANTHROPIC_API_KEY` + audit egress.
-5. **Visi Tahap 2 (KBM):** fitur operasional belajar-mengajar (jadwal JP+ruang, sesi absensi, dll) — schema sudah forward-compat.
+## KEPUTUSAN & ROADMAP TAHAP 2 (FINAL — pasca audit eksternal 2026-06-08, Director menyetujui)
+> Basis: `Laporan_Audit_Komparatif_DIIS_2026-06-08.md` (skor 82%, "sehat & profesional, layak lanjut").
+> Brainstorm Director–analis 2026-06-08 menghasilkan keputusan di bawah. Catat semua di `docs/decision-log.md`.
+
+**STRATEGI SEKUENSING (sintesis):** "boleh dibangun" ≠ "boleh menerima data nyata". Frontend & fitur DIBANGUN
+di atas **dummy yang hidup di TABEL DB (di-seed, bukan mock kode)**; **data siswa nyata DIGERBANG**.
+- **GERBANG GO-LIVE DATA NYATA (wajib semua):** R-05 consent terkumpul · N-20 isolasi · N-23b · **AuditLog live** · R-03 ditutup (bila Claude dipakai). Sampai gerbang terpenuhi → semua dummy.
+
+**URUTAN KERJA (SERIAL): 2A → 2B → 2C**
+
+**2A — Stabilkan & formalkan (cepat)**
+- N-24/25/26 formalisasi → **SUDAH SELESAI** (VPS=repo 2026-06-07). 
+- **N-20 (P0):** DB **`smk_staging_db` terpisah** + compose/port terpisah (keputusan Director: minimal, bukan server baru).
+- **N-23b:** Keycloak `start-dev`→production `start`, **tutup port 8080** publik (admin via SSH tunnel).
+- **F-3:** batasi `/metrics` ke internal/auth (bundle dgn N-23b).
+- **decision-log:** formalkan semua keputusan arsitektur (hentikan "deviasi diam-diam").
+
+**2B — Fondasi (prasyarat go-live / sebelum modul terkait)**
+- **AuditLog persisten** (tabel `AuditLog` + interceptor) — temuan auditor, prasyarat UU PDP. **Prasyarat gerbang.**
+- **Permission-based RBAC pragmatis** (keputusan Director — REVISI dari role-based): 7 role dasar + tabel
+  `permission` + `role_permissions` di DB (Super Admin ubah izin TANPA deploy) + **override per-user** (mis. guru
+  wali-kelas → lihat siswa kelasnya; bisa via atribut `isWaliKelas`+scope kelas). UI di **Manajemen User**.
+- **School Profile & Config** (identitas sekolah, jurusan, tahun ajaran, semester aktif, **kalender akademik** —
+  dipakai trigger n8n).
+- **Tabel referensi** (DEV-03): `Subject`, `Major/Jurusan`, formalkan `Parent` — **sebelum** frontend Akademik & PPDB.
+
+**2C — Frontend modul + adopsi (di atas dummy DB)**
+- Bangun 7 halaman bertahap: **Data Siswa & Keuangan DULU** (tak butuh tabel referensi baru), lalu Akademik/PPDB
+  (setelah tabel referensi), AI Asisten, Manajemen User, System Health. **Gate sidebar** dulu agar tak 404.
+- **WAJIB tiap modul:** **CRUD backend penuh termasuk DELETE lewat admin panel**, aman terhadap FK
+  (cascade/soft-delete/409, tak merusak logic) → dummy bisa dihapus bersih sebelum data nyata.
+- UI/UX: shadcn/ui + design system landing; state loading/empty/error; responsif; a11y. Mock-up via visualize → approve Director → prompt Claude Code.
+
+**KEPUTUSAN ARSITEKTUR (formalkan di decision-log):**
+- **RBAC → permission-based pragmatis** (lihat 2B). [REVISI DEV-01]
+- **Event/queue:** domain event tetap **EventEmitter di NestJS**; **BullMQ diintroduksi untuk keandalan broadcast WA**
+  (antrian+retry+rate-limit, adapter Fonnte sudah di NestJS) — 350 ortu = volume rendah tapi batch wajib tahan-restart.
+- **n8n = automasi terjadwal/eksternal (hybrid):** pemicu **(a) SPP** (waktu bayar + keterlambatan, data telat dari
+  `spp_payments`) dan **(b) kalender akademik** (broadcast pengingat fleksibel) → cron n8n memanggil endpoint NestJS
+  yang enqueue batch BullMQ. Domain logic tetap di NestJS. [REVISI DEV-02 + peran n8n]
+- **API docs:** Markdown (`api-reference.md`) cukup; Swagger **ditunda**. [DEV-04]
+- **Blueprint → v2.1** (cerminkan stack nyata + deviasi resmi: Next15/NestJS11-Fastify/PG16, permission-RBAC,
+  EventEmitter+BullMQ, n8n hybrid, Flutter Tahun 2+).
+- **Activity Tracking & File Storage API** = **just-in-time** (saat modul yang membutuhkan digarap, bukan diborong).
+
+**Backlog non-blok:** bug data knowledge/#418 (Cloudflare email-obfuscation dibiarkan demi landing — scope ke
+landing/page-rule nanti) · OBS-1b (scrub nama tak berlabel) · aktivasi Sentry (buat project+DSN).
 
 ---
 
@@ -85,7 +123,7 @@ lapor (done-report; JANGAN suruh update queue.md) + PR ke develop.
 
 ## KONTEKS TEKNIS (ringkas — detail di file)
 **Stack immutable:** NestJS 11+Fastify, Prisma multi-schema, PostgreSQL16+pgvector, Zod, Keycloak JWKS;
-Next.js 15+React 19+Tailwind (shadcn TIDAK terpasang, next-auth v4); Docker Compose VPS Hetzner
+Next.js 15+React 19+Tailwind (shadcn belum terpasang → **diadopsi Tahap 2**, lihat §KEPUTUSAN; next-auth v4); Docker Compose VPS Hetzner
 (`smk-*` containers; DB `smk_db` user `smk_admin`); Cloudflare Full(Strict); CI/CD GitHub Actions;
 Ollama (`qwen2.5:7b` chat, `nomic-embed-text` 768 embed); Fonnte WA; Sentry (env-gated, PII-scrubbed);
 Metabase embed (Dashboard Eksekutif).
@@ -135,6 +173,9 @@ data siswa nyata — semua dummy) · UU PDP (data minor).
   Keuangan dulu) → tiap halaman lewat review + gitflow.
 
 ## MULAI
-Kerjakan **LANGKAH 0**, lapor konfirmasi 3–4 baris, lalu **tunggu arahan Director**.
-Kandidat fokus Tahap 2 (tunggu prioritas Director): (a) gate sidebar + bangun frontend modul bertahap,
-(b) hardening N-23b/N-20, (c) fix data knowledge (#418). Usulkan urutan SERIAL + minta keputusan prioritas.
+Kerjakan **LANGKAH 0**, lapor konfirmasi 3–4 baris. Urutan & gerbang **sudah diputuskan** (lihat §KEPUTUSAN &
+ROADMAP TAHAP 2): mulai **2A** (N-20 isolasi `smk_staging_db` → N-23b/F-3 → decision-log), lalu **2B** (AuditLog,
+permission-RBAC, School Config+kalender, tabel referensi), lalu **2C** (frontend modul: Data Siswa & Keuangan dulu,
+di atas dummy DB, CRUD+DELETE via admin panel).
+**Usul task pertama yang tepat:** rekomendasikan item awal 2A + buat prompt siap-tempel Claude Code (branch dari
+develop), lalu minta konfirmasi Director sebelum eksekusi. Tetap SERIAL + gerbang review + gitflow.
