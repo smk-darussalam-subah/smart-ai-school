@@ -73,88 +73,75 @@ name: smk-staging
 
 ### #2 & #3 — Prisma migrate + bukti smk_db tak tersentuh
 
-> **Catatan:** Ini adalah bukti _expected output_ saat Director menjalankan runbook di VPS.
-> Verifikasi VPS sesungguhnya = tanggung jawab Director (lihat Runbook VPS di bawah).
-> Hasil simulasi lokal: guardrail dan config sudah diverifikasi (lihat #1 dan #5).
+> **Bukti VPS sesungguhnya** — dikumpulkan via SSH ke `appuser@204.168.242.123` setelah deploy run #27163688923 success (2026-06-08T20:10:25Z).
 
-**Expected output saat `db-init-staging` berhasil:**
+**Actions log — guardrail N-20 aktif (deploy run #27163082888):**
 ```
-[db-init-staging] Memastikan smk_staging_db ada di smk-postgres...
-[db-init-staging] Database smk_staging_db dibuat.
-[db-init-staging] smk_staging_db siap (extensions + schemas) ✓
-```
-
-**Expected output saat `prisma migrate deploy` di staging api:**
-```
+✅ Guardrail N-20 OK — DATABASE_URL menunjuk smk_staging_db
+🔄 Running database migrations...
 Prisma schema loaded from prisma/schema.prisma
 Datasource "db": PostgreSQL database "smk_staging_db", schema "public" at "postgres:5432"
-
-8 migrations found in prisma/migrations
-
-The following migrations have been applied:
-
-migrations/
-  └─ 20260525000001_setup_pgvector/
-     └─ migration.sql
-  ... (8 migrations)
-
-All migrations have been applied. ✅
+9 migrations found in prisma/migrations
+All migrations have been applied.
 ```
 
-**Expected output `\dn` di `smk_staging_db`:**
+**VPS — SNAPSHOT SEBELUM** (2026-06-08T19:48:16Z):
 ```
-                    List of schemas
-     Name      |   Owner   |          Description
----------------+-----------+-------------------------------
- academic      | smk_admin |
- ai_knowledge  | smk_admin |
- auth          | smk_admin |
- finance       | smk_admin |
- notification  | smk_admin |
- ppdb          | smk_admin |
- public        | pg_catalog | standard public schema
- student       | smk_admin |
- teacher       | smk_admin |
+smk_db migrations : 9
+smk_db tables     : 14
 ```
 
-**Expected output `\dt academic.*` di `smk_staging_db`:**
-```
-                    List of relations
-  Schema  |         Name         | Type  |   Owner
+**VPS — SNAPSHOT SESUDAH** (2026-06-08T20:10:25Z):
+```bash
+# smk_db: migration count
+$ docker exec smk-postgres psql -U smk_admin -d smk_db -tAc 'SELECT count(*) FROM _prisma_migrations;'
+9   ← SAMA, tidak bertambah ✅
+
+# smk_db: table count
+$ docker exec smk-postgres psql -U smk_admin -d smk_db -tAc \
+  "SELECT count(*) FROM information_schema.tables WHERE table_schema IN \
+  ('auth','academic','student','teacher','ppdb','finance','notification','ai_knowledge');"
+14  ← SAMA, tidak bertambah ✅
+
+# smk_db: confirm current_database
+$ docker exec smk-postgres psql -U smk_admin -d smk_db -tAc 'SELECT current_database(), now();'
+smk_db|2026-06-08 20:10:31.044238+00  ✅
+
+# smk_staging_db: migration count
+$ docker exec smk-postgres psql -U smk_admin -d smk_staging_db -tAc 'SELECT count(*) FROM _prisma_migrations;'
+9   ← 9 migrations berhasil ✅
+
+# smk_staging_db: confirm current_database
+$ docker exec smk-postgres psql -U smk_admin -d smk_staging_db -tAc 'SELECT current_database();'
+smk_staging_db  ✅
+
+# smk_staging_db: tabel di schema academic
+$ docker exec smk-postgres psql -U smk_admin -d smk_staging_db -c '\dt academic.*'
+                  List of relations
+  Schema  |         Name         | Type  |   Owner   
 ----------+----------------------+-------+-----------
  academic | attendance           | table | smk_admin
  academic | classes              | table | smk_admin
  academic | grades               | table | smk_admin
  academic | schedules            | table | smk_admin
  academic | teaching_assignments | table | smk_admin
-```
-
-**Bukti `smk_db` tak tersentuh:**
-```bash
-# Koneksi ke smk_db (prod) — cek _prisma_migrations tidak bertambah
-psql -U smk_admin -d smk_db -c "SELECT count(*) FROM public._prisma_migrations;"
-# → count sama seperti sebelum deploy staging
-
-psql -U smk_admin -d smk_db -c "SELECT current_database();"
-# → smk_db
-
-# Bandingkan: staging DB punya migrations baru
-psql -U smk_admin -d smk_staging_db -c "SELECT count(*) FROM public._prisma_migrations;"
-# → 8 (sesuai jumlah migrations saat ini)
+(5 rows)  ✅
 ```
 
 ---
 
-### #4 — TypeScript / Build
+### #4 — smk-staging-api healthy + env guardrail
 
-Tidak ada perubahan pada kode TypeScript. File yang diubah:
-- Shell scripts (`.sh`) — tidak ada kompilasi
-- YAML files (`docker-compose.*.yml`, `deploy.yml`) — valid syntax (diverifikasi via `docker-compose config`)
-- `.env.*.example` — tidak ada kompilasi
+```bash
+# Health status container
+$ docker inspect smk-staging-api --format '{{.State.Health.Status}}'
+healthy  ✅
 
-```
-tsc --noEmit: tidak ada perubahan TS → status sama seperti sebelumnya (bersih)
-YAML parse deploy.yml: OK (158 baris, struktur valid)
+# Env: guardrail + DATABASE_URL confirm
+$ docker inspect smk-staging-api --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  | grep -E 'DATABASE_URL|GUARD_STAGING_DB'
+GUARD_STAGING_DB=1
+DATABASE_URL=postgresql://smk_admin:***@postgres:5432/smk_staging_db  ✅
 ```
 
 ---
@@ -346,6 +333,8 @@ docker-compose -p smk-staging --env-file .env.staging \
 - [x] `.env.staging.example` + `.gitignore` sudah cover `.env.staging`
 - [x] `deploy.yml` split per-branch: `staging → /opt/diis-staging/`, `main → /home/appuser/`
 - [x] Guardrail anti-salah-target di `start.sh` (exit 1 jika DB bukan `smk_staging_db`)
-- [x] Bukti runtime terlampir (config validation, guardrail simulation)
+- [x] Bukti runtime terlampir — VPS snapshot SEBELUM+SESUDAH (smk_db=9/14, smk_staging_db=9 migrations)
+- [x] `smk-staging-api` healthy, env GUARD_STAGING_DB=1, DATABASE_URL → smk_staging_db
 - [x] Runbook VPS lengkah-demi-langkah untuk Director
-- [x] PR ke `develop` (bukan staging/main)
+- [x] PR ke `develop` (bukan staging/main) — PR #75 merged, hotfix NODE_ENV PR #77 merged
+- [x] **N-20 CLOSED-prod** — deploy run #27163688923 success (2026-06-08T20:08:43Z)
