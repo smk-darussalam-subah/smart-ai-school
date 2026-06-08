@@ -5,7 +5,8 @@
 **Tanggal:** 2026-06-09
 **Executor:** Claude Code (Sonnet 4.6)
 **Status Fase 1:** ✅ HIJAU (throwaway validation di VPS selesai)
-**Status Fase 2:** ⏳ MENUNGGU Director — cutover prod (runbook di bawah)
+**Status Fase 2:** 🔶 PARSIAL — F-3 + nginx + Prometheus DONE; Keycloak container recreate menunggu Director
+**Deploy main:** ✅ `859a755` (2026-06-08T20:48Z) + hotfix `d81f70a` nginx --force-recreate
 
 ---
 
@@ -407,17 +408,29 @@ psql_restore() {
 - [x] Throwaway container dihancurkan setelah validasi
 - [x] PR #78 ke `develop` terbuat
 
-### Fase 2 (Cutover Prod — menunggu Director)
+### Fase 2 (Cutover Prod)
+
+> Snapshot VPS: 2026-06-08T20:55:27Z
+
+**F-3 — SELESAI:**
+- [x] `curl https://api.smkdarussalamsubah.sch.id/metrics` → `404` ✅ (nginx recreated, inode fresh)
+- [x] Prometheus target `smk-api` state = `up`, scrapeUrl = `http://api:3001/metrics` ✅
+- [x] `/health` → `200` (api tidak terpengaruh) ✅
+- [x] Hotfix `deploy.yml`: nginx `--force-recreate` di setiap deploy main (cegah stale inode) ✅
+
+**Issuer — sudah https (sebelum N-23b keycloak recreate):**
+- [x] `curl https://auth.smkdarussalamsubah.sch.id/realms/diis/.well-known/openid-configuration` → `issuer: https://auth.smkdarussalamsubah.sch.id/realms/diis` ✅ (KC_PROXY_HEADERS dari N-23 sudah aktif)
+- [x] Realm diis count = `1` (tidak ter-reset) ✅
+- [x] `smk-api` healthy, `smk-web` running ✅
+
+**N-23b (Keycloak container) — menunggu Director:**
 - [ ] Backup `smk_db.keycloak` tersimpan + realm diis count=1 pra-cutover
-- [ ] `smk-keycloak` recreate dengan config N-23b (`start`, `KC_HOSTNAME`, loopback port)
+- [ ] `docker compose up -d --no-deps --force-recreate keycloak` (Langkah 4 runbook di atas)
 - [ ] `Profile prod activated` di log prod
 - [ ] Realm diis count=1 pasca-restart (tidak ter-reset)
 - [ ] Login admin nyata tembus `/dashboard`, console bersih
-- [ ] `curl https://auth.smkdarussalamsubah.sch.id/realms/diis/.well-known/openid-configuration` → issuer https
 - [ ] `curl -m5 http://103.253.215.19:8080/` dari luar VPS → gagal/timeout
 - [ ] SSH tunnel → admin console via localhost:8080 OK
-- [ ] `curl https://api.smkdarussalamsubah.sch.id/metrics` → 404
-- [ ] Prometheus target `smk-api` state = up
 
 ---
 
