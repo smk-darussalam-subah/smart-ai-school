@@ -135,11 +135,14 @@ jobs:
             echo "✅ ${API_CONTAINER} healthy!"
 
             if [ "$BRANCH" = "main" ]; then
-              # ── Prod: reload nginx ──────────────────────────────────────────
+              # ── Prod: recreate nginx ────────────────────────────────────────
+              # --force-recreate diperlukan karena git mengganti file nginx.conf
+              # dengan inode baru (bukan modifikasi in-place). Tanpa recreate,
+              # container nginx masih membaca inode lama → perubahan nginx.conf
+              # tidak aktif meski nginx -s reload berhasil.
               docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
-                up -d --no-deps nginx
-              docker exec smk-nginx nginx -s reload 2>/dev/null || true
-              echo "✅ nginx up & config reloaded"
+                up -d --no-deps --force-recreate nginx
+              echo "✅ nginx recreated (fresh bind mount)"
             fi
 
             echo "✅ Deploy berhasil! Branch: ${BRANCH} → ${API_CONTAINER} / ${WEB_CONTAINER}"
