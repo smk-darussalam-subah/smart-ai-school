@@ -5,6 +5,50 @@
 
 ---
 
+## 2026-06-08 — Keputusan arsitektur Tahap 2 (pasca audit eksternal)
+
+> Basis: `Laporan_Audit_Komparatif_DIIS_2026-06-08.md` (skor 82%) + brainstorm Director–analis.
+> Memformalkan deviasi (saran auditor: hentikan "deviasi diam-diam"). Berlaku untuk Tahap 2.
+
+**1. RBAC → permission-based pragmatis (REVISI dari role-based, DEV-01).**
+7 role tetap sebagai dasar; tambah tabel `permission` + `role_permissions` di DB yang dikelola Super Admin
+(ubah izin tanpa deploy) + override per-user. Konteks: Director butuh izin fleksibel (mis. guru wali-kelas
+lihat siswa kelasnya) — role-based murni butuh ganti kode+deploy. Sejalan rencana awal Tahap 1/3. Wali-kelas
+bisa via atribut `Teacher.isWaliKelas` + scope kelas. Effort sedang; UI di halaman Manajemen User.
+
+**2. Event/queue: EventEmitter (domain) + BullMQ (broadcast WA) + n8n (terjadwal) — REVISI DEV-02.**
+Domain event tetap EventEmitter NestJS (type-safe, tested). BullMQ diintroduksi untuk **keandalan broadcast WA**
+(antrian/retry/rate-limit/tahan-restart) — 350 ortu = volume rendah tapi batch wajib andal (Fonnte rate-limit
+20–30 mnt/batch; EventEmitter in-process hilang bila restart). n8n = pemicu terjadwal eksternal: SPP (waktu
+bayar + keterlambatan dari `spp_payments`) & kalender akademik (broadcast fleksibel) → cron n8n panggil endpoint
+NestJS yang enqueue BullMQ. n8n = hybrid (terjadwal/eksternal), bukan automation engine tunggal.
+
+**3. UI: adopsi shadcn/ui + design system landing.** 7 halaman frontend modul Tahap 2 butuh UI profesional &
+konsisten. shadcn (Radix+Tailwind) aksesibel & cepat. State loading/empty/error wajib.
+
+**4. Strategi data: dummy di TABEL DB (di-seed) + gerbang go-live data nyata.** Frontend dibangun di atas dummy
+DB (bukan mock kode), CRUD penuh termasuk DELETE aman (FK: cascade/soft-delete/409). Data siswa NYATA digerbang:
+R-05 consent + N-20 (`smk_staging_db` terpisah) + N-23b (Keycloak prod-mode, tutup 8080) + AuditLog persisten +
+R-03 ditutup bila Claude.
+
+**5. AuditLog persisten (temuan auditor, prasyarat UU PDP).** Tabel `AuditLog` + interceptor (bukan hanya Winston).
+
+**6. Tabel referensi (DEV-03):** tambah `Subject`, `Major/Jurusan`, formalkan `Parent` sebelum frontend Akademik/PPDB.
+
+**7. API docs Markdown cukup (Swagger ditunda, DEV-04). Blueprint → revisi v2.1** (cerminkan stack nyata).
+
+**8. Activity Tracking & File Storage API = just-in-time** (saat modul yang membutuhkan digarap).
+
+**9. Tooling.** **Context7 MCP** ditambahkan ke **Claude Code** (dokumentasi library versi-terkini: Next.js 15,
+React 19, NestJS 11, Prisma, shadcn) → kurangi halusinasi API saat eksekusi Tahap 2. **Obsidian** = konsumsi
+PRIBADI (lensa navigasi/backlink antar-dokumen) dengan **vault menunjuk ke folder repo git-tracked** — BUKAN
+store terpisah (mencegah sumber-kebenaran ganda). Tidak memakai Obsidian-MCP (Claude Code sudah baca file repo).
+
+**Lesson learned:** keputusan arsitektur WAJIB ditulis di sini saat dibuat; "deviasi diam-diam" (implementasi
+menyimpang dari dokumen tanpa catatan) adalah temuan utama audit. CLAUDE.md §⭐ memuat ringkasan + presedensi.
+
+---
+
 ## 2026-05-29 — React version deduplikasi via npm overrides
 
 **Keputusan:** Paksa single React version di seluruh monorepo via `overrides` di root `package.json`.

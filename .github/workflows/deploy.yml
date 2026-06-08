@@ -29,83 +29,120 @@ jobs:
           script: |
             set -euo pipefail
 
-            echo "🚀 Deploying branch: ${{ github.ref_name }}"
+            BRANCH="${{ github.ref_name }}"
+            echo "🚀 Deploying branch: ${BRANCH}"
 
-            # Pull kode terbaru
-            cd /home/appuser/smart-ai-school
+            # ── Tentukan working-dir dan env-file berdasarkan branch ──────────
+            if [ "$BRANCH" = "main" ]; then
+              WORK_DIR=/home/appuser/smart-ai-school
+              ENV_FILE=.env
+              COMPOSE_ARGS="-f docker-compose.yml"
+              COMPOSE_PROJECT=""
+              API_CONTAINER=smk-api
+              WEB_CONTAINER=smk-web
+            else
+              # Staging: direktori terpisah, DB terpisah, compose project terpisah
+              WORK_DIR=/opt/diis-staging/smart-ai-school
+              ENV_FILE=.env.staging
+              COMPOSE_ARGS="-p smk-staging -f docker-compose.yml -f docker-compose.staging.yml"
+              COMPOSE_PROJECT="-p smk-staging"
+              API_CONTAINER=smk-staging-api
+              WEB_CONTAINER=smk-staging-web
+            fi
+
+            # ── Pull kode terbaru di working-dir yang benar ───────────────────
+            # PENTING: staging menggunakan direktori /opt/diis-staging/ terpisah
+            # sehingga git checkout staging TIDAK menyentuh working-tree produksi.
+            cd "$WORK_DIR"
             git fetch origin
-            git checkout ${{ github.ref_name }}
-            git pull origin ${{ github.ref_name }}
+            git checkout "$BRANCH"
+            git pull origin "$BRANCH"
 
-            # Semua docker compose dijalankan dari direktori yang benar
-            cd /home/appuser/smart-ai-school/infrastructure/docker
+            # Masuk ke direktori docker (relatif terhadap WORK_DIR)
+            cd "$WORK_DIR/infrastructure/docker"
 
-            # ── Patch .env: tulis DATABASE_URL dengan password URL-encoded ──────────
-            # POSTGRES_PASSWORD di .env bisa mengandung @ atau # yang merusak URL.
-            # Gunakan python3 via stdin pipe — tidak butuh heredoc, YAML-safe.
-            _PW=$(grep '^POSTGRES_PASSWORD=' .env | head -1 | cut -d= -f2-)
-            _USER=$(grep '^POSTGRES_USER=' .env | head -1 | cut -d= -f2- || echo 'smk_admin')
-            _DB=$(grep '^POSTGRES_DB=' .env | head -1 | cut -d= -f2- || echo 'smk_db')
+            # ── Patch env-file: tulis DATABASE_URL dengan password URL-encoded ──
+            _PW=$(grep '^POSTGRES_PASSWORD=' "$ENV_FILE" | head -1 | cut -d= -f2-)
+            _USER=$(grep '^POSTGRES_USER=' "$ENV_FILE" | head -1 | cut -d= -f2- || echo 'smk_admin')
+            _DB=$(grep '^POSTGRES_DB=' "$ENV_FILE" | head -1 | cut -d= -f2- || echo 'smk_db')
             _ENC=$(printf '%s' "$_PW" | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(),safe=''),end='')")
             _URL="postgresql://${_USER}:${_ENC}@postgres:5432/${_DB}"
-            if grep -q '^DATABASE_URL=' .env 2>/dev/null; then
-              sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${_URL}|" .env
+            if grep -q '^DATABASE_URL=' "$ENV_FILE" 2>/dev/null; then
+              sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${_URL}|" "$ENV_FILE"
             else
-              printf '\nDATABASE_URL=%s\n' "${_URL}" >> .env
+              printf '\nDATABASE_URL=%s\n' "${_URL}" >> "$ENV_FILE"
             fi
             echo "✅ DATABASE_URL → postgresql://${_USER}:***@postgres:5432/${_DB}"
 
-            # ── Patch .env: tulis REDIS_URL dengan password URL-encoded ────────────
-            # REDIS_PASSWORD bisa mengandung @ atau # yang merusak URL redis://:PASS@host.
-            # Sama dengan DATABASE_URL — gunakan python3 via stdin pipe.
-            _RPW=$(grep '^REDIS_PASSWORD=' .env | head -1 | cut -d= -f2- || echo '')
+            # ── Patch env-file: tulis REDIS_URL dengan password URL-encoded ────
+            _RPW=$(grep '^REDIS_PASSWORD=' "$ENV_FILE" | head -1 | cut -d= -f2- || echo '')
             if [ -n "$_RPW" ]; then
               _RENC=$(printf '%s' "$_RPW" | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(),safe=''),end='')")
               _RURL="redis://:${_RENC}@redis:6379"
             else
               _RURL="redis://redis:6379"
             fi
-            if grep -q '^REDIS_URL=' .env 2>/dev/null; then
-              sed -i "s|^REDIS_URL=.*|REDIS_URL=${_RURL}|" .env
+            if grep -q '^REDIS_URL=' "$ENV_FILE" 2>/dev/null; then
+              sed -i "s|^REDIS_URL=.*|REDIS_URL=${_RURL}|" "$ENV_FILE"
             else
-              printf '\nREDIS_URL=%s\n' "${_RURL}" >> .env
+              printf '\nREDIS_URL=%s\n' "${_RURL}" >> "$ENV_FILE"
             fi
             echo "✅ REDIS_URL → redis://:***@redis:6379"
 
-            # Build image lokal (api & web pakai build: bukan image: dari registry)
-            docker compose build --no-cache api web
+            if [ "$BRANCH" = "staging" ]; then
+              # ── Patch .env.staging: tulis STAGING_DATABASE_URL ──────────────
+              # STAGING_DATABASE_URL selalu menunjuk smk_staging_db (bukan smk_db).
+              _STAGING_URL="postgresql://${_USER}:${_ENC}@postgres:5432/smk_staging_db"
+              if grep -q '^STAGING_DATABASE_URL=' "$ENV_FILE" 2>/dev/null; then
+                sed -i "s|^STAGING_DATABASE_URL=.*|STAGING_DATABASE_URL=${_STAGING_URL}|" "$ENV_FILE"
+              else
+                printf '\nSTAGING_DATABASE_URL=%s\n' "${_STAGING_URL}" >> "$ENV_FILE"
+              fi
+              echo "✅ STAGING_DATABASE_URL → postgresql://${_USER}:***@postgres:5432/smk_staging_db"
 
-            # Restart service dengan image baru.
-            # Migrasi Prisma dijalankan OTOMATIS di dalam CMD container api:
-            #   sh -c "cd /app/packages/database && prisma migrate deploy && exec node ..."
-            # Sehingga container tidak akan healthy sampai migrasi selesai.
-            docker compose up -d --no-deps api web
+              # ── Init staging DB (idempoten) ─────────────────────────────────
+              echo "🔧 Memastikan smk_staging_db siap..."
+              docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
+                run --rm db-init-staging
+              echo "✅ smk_staging_db siap"
+            fi
 
-            # Tunggu smk-api benar-benar healthy (migrasi + NestJS startup).
-            # Healthcheck docker-compose: curl http://localhost:3001/health
-            # interval=30s, timeout=10s, retries=3 → max wait ~120s.
-            echo "⏳ Menunggu smk-api healthy (migrasi + NestJS startup)..."
+            # ── Build image (api & web) ───────────────────────────────────────
+            docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
+              build --no-cache api web
+
+            # ── Deploy: restart api & web dengan image baru ──────────────────
+            # --no-deps: jangan start postgres/redis/keycloak (sudah running dari prod stack)
+            # Migrasi Prisma dijalankan OTOMATIS di dalam CMD container api (start.sh):
+            #   - Staging: migrate ke smk_staging_db (guardrail N-20 aktif)
+            #   - Prod:    migrate ke smk_db
+            docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
+              up -d --no-deps api web
+
+            # ── Tunggu api healthy ────────────────────────────────────────────
+            echo "⏳ Menunggu ${API_CONTAINER} healthy (migrasi + NestJS startup)..."
             timeout 150 sh -c \
-              'until [ "$(docker inspect smk-api --format "{{.State.Health.Status}}" 2>/dev/null)" = "healthy" ]; do
-                 STATUS=$(docker inspect smk-api --format "{{.State.Status}}" 2>/dev/null)
-                 echo "  status: $STATUS, health: $(docker inspect smk-api --format \"{{.State.Health.Status}}\" 2>/dev/null)"
+              "until [ \"\$(docker inspect ${API_CONTAINER} --format '{{.State.Health.Status}}' 2>/dev/null)\" = \"healthy\" ]; do
+                 STATUS=\$(docker inspect ${API_CONTAINER} --format '{{.State.Status}}' 2>/dev/null)
+                 echo \"  status: \$STATUS, health: \$(docker inspect ${API_CONTAINER} --format '{{.State.Health.Status}}' 2>/dev/null)\"
                  sleep 10
-              done' \
+              done" \
               || (
-                echo "❌ smk-api tidak healthy setelah 150s. Log terakhir:"
-                docker logs smk-api --tail 50 2>&1
+                echo "❌ ${API_CONTAINER} tidak healthy setelah 150s. Log terakhir:"
+                docker logs "${API_CONTAINER}" --tail 50 2>&1
                 exit 1
               )
-            echo "✅ smk-api healthy!"
+            echo "✅ ${API_CONTAINER} healthy!"
 
-            # Pastikan nginx berjalan dan pakai nginx.conf terbaru.
-            # up -d: start jika mati (misalnya setelah reboot), no-op jika sudah Up.
-            # nginx -s reload: hot-reload config tanpa downtime (picks up nginx.conf changes dari git pull).
-            docker compose up -d --no-deps nginx
-            docker exec smk-nginx nginx -s reload 2>/dev/null || true
-            echo "✅ nginx up & config reloaded"
+            if [ "$BRANCH" = "main" ]; then
+              # ── Prod: reload nginx ──────────────────────────────────────────
+              docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
+                up -d --no-deps nginx
+              docker exec smk-nginx nginx -s reload 2>/dev/null || true
+              echo "✅ nginx up & config reloaded"
+            fi
 
-            echo "✅ Deploy berhasil! Branch: ${{ github.ref_name }}"
+            echo "✅ Deploy berhasil! Branch: ${BRANCH} → ${API_CONTAINER} / ${WEB_CONTAINER}"
 
       - name: Notify deployment success
         if: success()
