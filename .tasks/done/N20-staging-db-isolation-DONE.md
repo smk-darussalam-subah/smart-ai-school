@@ -1,6 +1,7 @@
 # N-20 Done Report — Isolasi DB Staging (`smk_staging_db`)
 
 **Branch:** `feat/N20-staging-db-isolation` → PR ke `develop`
+**PR:** https://github.com/smk-darussalam-subah/smart-ai-school/pull/75
 **Tanggal:** 2026-06-09
 **Executor:** Claude Code (Sonnet 4.6)
 
