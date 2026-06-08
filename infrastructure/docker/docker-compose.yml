@@ -86,21 +86,29 @@ services:
       KC_DB_SCHEMA: keycloak
       KEYCLOAK_ADMIN: ${KC_ADMIN_USER:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD}
-      # Dev: HTTP only, no proxy, auto hostname detection
+      # N-23b: Production mode (start). Sintaks diverifikasi via Keycloak 24.0 source.
+      # KC_HOSTNAME wajib di start mode; v1 hostname provider (default di 24.0).
+      KC_HOSTNAME: auth.smkdarussalamsubah.sch.id
+      # strict=false: izinkan admin console via SSH tunnel (Host: localhost).
       KC_HOSTNAME_STRICT: "false"
+      # strict-https=false: KC listen HTTP internal; TLS diterminasi nginx/Cloudflare.
       KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: "8080"
       KC_LOG_LEVEL: INFO
-      # N-23: Keycloak di belakang Nginx reverse proxy — baca X-Forwarded-* headers
-      # agar issuer URL menggunakan https:// (bukan http:// internal). Tanpa ini,
-      # token issuer = http://keycloak:8080/realms/diis → validasi gagal.
+      # N-23: Baca X-Forwarded-Proto: https dari nginx → issuer = https://.
       KC_PROXY_HEADERS: xforwarded
-    # --import-realm: otomatis import realm-diis.json saat container pertama kali start
-    # start-dev: mode development — lebih toleran, tidak butuh HTTPS
-    command: start-dev --import-realm
+      # Single-node VPS: gunakan local cache (bukan Infinispan cluster).
+      KC_CACHE: local
+    # N-23b: start (production) — tanpa --import-realm.
+    # realm-diis.json tetap di repo sebagai sumber, tapi TIDAK auto-import.
+    # Auto-import berisiko revert URL prod ke localhost (N-26).
+    # Realm diis sudah persist di smk_db.keycloak schema.
+    command: start
     ports:
-      - "8080:8080"
+      # N-23b: loopback binding — 8080 tidak accessible dari internet.
+      # Admin console: ssh -L 8080:localhost:8080 appuser@103.253.215.19
+      - "127.0.0.1:8080:8080"
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ../keycloak:/opt/keycloak/data/import:ro
