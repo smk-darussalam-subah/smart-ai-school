@@ -39,6 +39,11 @@ R-03 ditutup bila Claude.
 
 **8. Activity Tracking & File Storage API = just-in-time** (saat modul yang membutuhkan digarap).
 
+**9. Tooling.** **Context7 MCP** ditambahkan ke **Claude Code** (dokumentasi library versi-terkini: Next.js 15,
+React 19, NestJS 11, Prisma, shadcn) → kurangi halusinasi API saat eksekusi Tahap 2. **Obsidian** = konsumsi
+PRIBADI (lensa navigasi/backlink antar-dokumen) dengan **vault menunjuk ke folder repo git-tracked** — BUKAN
+store terpisah (mencegah sumber-kebenaran ganda). Tidak memakai Obsidian-MCP (Claude Code sudah baca file repo).
+
 **Lesson learned:** keputusan arsitektur WAJIB ditulis di sini saat dibuat; "deviasi diam-diam" (implementasi
 menyimpang dari dokumen tanpa catatan) adalah temuan utama audit. CLAUDE.md §⭐ memuat ringkasan + presedensi.
 

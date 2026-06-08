@@ -157,6 +157,10 @@ data siswa nyata — semua dummy) · UU PDP (data minor).
   terbukti efektif (diagnosa 404 Tahap 1).
 - **visualize (`show_widget`):** analis bisa membuat **mock-up UI/desain** untuk persetujuan Director
   SEBELUM Claude Code membangun.
+- **Context7 MCP (di Claude Code):** dokumentasi library versi-terkini (Next 15/React 19/NestJS 11/Prisma/
+  shadcn) → kurangi halusinasi API. **Pakai saat eksekusi koding Tahap 2.**
+- **Obsidian (konsumsi pribadi Director):** lensa navigasi/backlink antar-dokumen — **vault = folder repo
+  git-tracked**, BUKAN store terpisah (anti drift). Bukan sumber kebenaran; git tetap kanonik.
 
 ## STANDAR UI/UX (Tahap 2 — frontend modul, WAJIB profesional & konsisten)
 - **Adopsi component library: shadcn/ui** (Radix + Tailwind — aksesibel, profesional, konsisten).
