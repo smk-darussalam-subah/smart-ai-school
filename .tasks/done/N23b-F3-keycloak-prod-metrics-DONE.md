@@ -5,7 +5,9 @@
 **Tanggal:** 2026-06-09
 **Executor:** Claude Code (Sonnet 4.6)
 **Status Fase 1:** ✅ HIJAU (throwaway validation di VPS selesai)
-**Status Fase 2:** ⏳ MENUNGGU Director — cutover prod (runbook di bawah)
+**Status Fase 2:** 🔶 G1–G5 internal+eksternal ✅ — menunggu konfirmasi browser login Director (G4b UI)
+**Deploy main:** ✅ `859a755` (2026-06-08T20:48Z) + hotfix `d81f70a` nginx --force-recreate
+**Cutover dilakukan:** 2026-06-08T21:22Z — backup `keycloak-backup-20260608-212149.sql` (311 951 bytes)
 
 ---
 
@@ -407,17 +409,78 @@ psql_restore() {
 - [x] Throwaway container dihancurkan setelah validasi
 - [x] PR #78 ke `develop` terbuat
 
-### Fase 2 (Cutover Prod — menunggu Director)
-- [ ] Backup `smk_db.keycloak` tersimpan + realm diis count=1 pra-cutover
-- [ ] `smk-keycloak` recreate dengan config N-23b (`start`, `KC_HOSTNAME`, loopback port)
-- [ ] `Profile prod activated` di log prod
-- [ ] Realm diis count=1 pasca-restart (tidak ter-reset)
-- [ ] Login admin nyata tembus `/dashboard`, console bersih
-- [ ] `curl https://auth.smkdarussalamsubah.sch.id/realms/diis/.well-known/openid-configuration` → issuer https
-- [ ] `curl -m5 http://103.253.215.19:8080/` dari luar VPS → gagal/timeout
-- [ ] SSH tunnel → admin console via localhost:8080 OK
-- [ ] `curl https://api.smkdarussalamsubah.sch.id/metrics` → 404
-- [ ] Prometheus target `smk-api` state = up
+### Fase 2 (Cutover Prod)
+
+> Snapshot VPS: 2026-06-08T20:55:27Z
+
+**F-3 — SELESAI:**
+- [x] `curl https://api.smkdarussalamsubah.sch.id/metrics` → `404` ✅ (nginx recreated, inode fresh)
+- [x] Prometheus target `smk-api` state = `up`, scrapeUrl = `http://api:3001/metrics` ✅
+- [x] `/health` → `200` (api tidak terpengaruh) ✅
+- [x] Hotfix `deploy.yml`: nginx `--force-recreate` di setiap deploy main (cegah stale inode) ✅
+
+**Issuer — sudah https (sebelum N-23b keycloak recreate):**
+- [x] `curl https://auth.smkdarussalamsubah.sch.id/realms/diis/.well-known/openid-configuration` → `issuer: https://auth.smkdarussalamsubah.sch.id/realms/diis` ✅ (KC_PROXY_HEADERS dari N-23 sudah aktif)
+- [x] Realm diis count = `1` (tidak ter-reset) ✅
+- [x] `smk-api` healthy, `smk-web` running ✅
+
+**N-23b (Keycloak container) — CUTOVER 2026-06-08T21:22Z:**
+
+```
+Pra-flight (21:21Z):
+  config baru ada di prod dir:  ✅ start mode OK / loopback OK
+  container CMD sebelum:        ["start-dev","--import-realm"]
+  container Port sebelum:       {"8080/tcp":[{"HostIp":"","HostPort":"8080"}]}
+  realm diis count sebelum:     1 ✅
+
+Backup:
+  path:  /home/appuser/keycloak-backup-20260608-212149.sql
+  size:  311951 bytes ✅
+
+Cutover:
+  docker compose up -d --no-deps --force-recreate keycloak → started
+  healthy polling: 21:22:04 starting → 21:22:14 starting → 21:22:25 starting
+  → ✅ smk-keycloak healthy (≈30s)
+
+G1 — container config aktif:
+  CMD:  ["start"] ✅
+  Port: {"8080/tcp":[{"HostIp":"127.0.0.1","HostPort":"8080"}]} ✅
+  Log:  Hostname settings: Hostname: auth.smkdarussalamsubah.sch.id, Proxied: true ✅
+        Profile prod activated. ✅
+
+G2 — issuer https via nginx:
+  issuer: https://auth.smkdarussalamsubah.sch.id/realms/diis ✅
+
+G3 — port 8080 dari LUAR VPS (mesin lokal):
+  curl -m5 http://103.253.215.19:8080/ → curl: (28) Connection timed out, exit=28 ✅
+  loopback dari dalam VPS: curl http://127.0.0.1:8080/ → loopback=302 ✅
+
+G4a — admin token loopback:
+  user=admin → token_http=200 ✅
+
+G4b — auth chain programmatik:
+  smk-api health: healthy ✅
+  diis realm openid-config (HTTPS): issuer https://auth.smkdarussalamsubah.sch.id/realms/diis ✅
+  JWKS keys count: 2 ✅
+  web env KEYCLOAK_ISSUER: https://auth.smkdarussalamsubah.sch.id/realms/diis ✅ (cocok)
+  NEXTAUTH_URL: https://smkdarussalamsubah.sch.id ✅
+  🔶 Browser login UI — menunggu konfirmasi Director (Claude in Chrome tidak tersedia)
+
+G5 — admin console loopback:
+  admin=302 ✅
+
+Realm diis pasca-recreate: count=1 ✅ (tidak ter-reset)
+```
+
+- [x] Backup 311 951 bytes tersimpan + realm diis count=1 pra-cutover
+- [x] `smk-keycloak` recreate → `start` mode + `127.0.0.1:8080` + healthy (≈30s)
+- [x] `Profile prod activated` di log prod
+- [x] Realm diis count=1 pasca-restart (tidak ter-reset)
+- [x] issuer `https://auth.smkdarussalamsubah.sch.id/realms/diis` ✅
+- [x] `curl -m5 http://103.253.215.19:8080/` dari luar → timeout (exit=28) ✅
+- [x] SSH tunnel admin console loopback → 302 ✅
+- [x] Prometheus smk-api UP + /metrics 404 (dari sesi sebelumnya)
+- [ ] **Browser login UI (G4b)** — konfirmasi Director: `https://smkdarussalamsubah.sch.id/login` → login → `/dashboard`, console bersih
 
 ---
 
