@@ -5,9 +5,16 @@
 **Tanggal:** 2026-06-09
 **Executor:** Claude Code (Sonnet 4.6)
 **Status Fase 1:** ✅ HIJAU (throwaway validation di VPS selesai)
-**Status Fase 2:** 🔶 G1–G5 internal+eksternal ✅ — menunggu konfirmasi browser login Director (G4b UI)
-**Deploy main:** ✅ `859a755` (2026-06-08T20:48Z) + hotfix `d81f70a` nginx --force-recreate
+**Status Fase 2:** ✅ CLOSED-prod — G4b browser login fixed (2026-06-09, N-20b hotfix)
+**Deploy main:** ✅ `859a755` (2026-06-08T20:48Z) + hotfix `d81f70a` nginx --force-recreate + `42c0cd4` N-20b network fix
 **Cutover dilakukan:** 2026-06-08T21:22Z — backup `keycloak-backup-20260608-212149.sql` (311 951 bytes)
+
+> **G4b Regression Fix (N-20b):** Root cause loop redirect prod↔staging ditemukan:
+> `smk-staging-web` dan `smk-web` keduanya mendaftar alias `web` di `smk-network`.
+> Docker DNS round-robin → nginx random routing ke staging container (NEXTAUTH_URL=staging)
+> → Keycloak tolak redirect_uri → loop redirect. Konflik `api` alias (smk-api vs smk-staging-api)
+> juga ditemukan. Hotfix VPS: smk-staging-web dipindah ke smk-staging-net (terisolasi).
+> PR #79 → merged ke develop→staging→main. DNS verified: web=172.18.0.17/8 queries, api=172.18.0.13/6 queries.
 
 ---
 
