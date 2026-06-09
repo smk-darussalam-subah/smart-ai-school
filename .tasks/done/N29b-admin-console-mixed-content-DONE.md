@@ -163,6 +163,6 @@ Cloudflare → nginx → Keycloak (HTTP internal, port 8080 loopback)
 - [x] Semua G1–G5 (N-23b) re-verified setelah KC restart
 - [x] N-23b done report diperbarui (rationale KC_HOSTNAME_STRICT_HTTPS dikoreksi)
 - [ ] PR #80 di-merge develop → staging → main (menunggu approval + CI)
-- [ ] Browser test admin console pasca fix (Director)
+- [x] Browser test admin console pasca fix — ✅ dikonfirmasi Director 2026-06-09: admin console Keycloak berhasil load dan bisa login.
 - [ ] Cloudflare Speed Brain Page Rule (rekomendasi, backlog)
 - [ ] nginx proxy_hide_header cleanup (rekomendasi, backlog)
