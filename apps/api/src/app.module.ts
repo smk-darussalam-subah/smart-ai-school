@@ -6,7 +6,7 @@
 import { Module } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -25,6 +25,8 @@ import { KeycloakGuard } from './auth/guards/keycloak.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { PermissionModule } from './permissions/permissions.module';
 import { PermissionGuard } from './permissions/permissions.guard';
+import { AuditLogModule } from './audit-log/audit-log.module';
+import { AuditInterceptor } from './audit-log/interceptors/audit.interceptor';
 
 @Module({
   imports: [
@@ -67,6 +69,9 @@ import { PermissionGuard } from './permissions/permissions.guard';
     RagModule,
     AiModule,
 
+    // Tahap 2B-1 — AuditLog persisten
+    AuditLogModule,
+
     // Tahap 2B-2 — Permission-based RBAC
     PermissionModule,
   ],
@@ -90,6 +95,11 @@ import { PermissionGuard } from './permissions/permissions.guard';
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
+    },
+    // 5. Audit global — catat setiap mutasi (POST/PUT/PATCH/DELETE) ke tabel audit
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuditInterceptor,
     },
   ],
 })
