@@ -6,7 +6,7 @@
 import { Module } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -23,6 +23,8 @@ import { RagModule } from './rag/rag.module';
 import { AiModule } from './ai/ai.module';
 import { KeycloakGuard } from './auth/guards/keycloak.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
+import { AuditLogModule } from './audit-log/audit-log.module';
+import { AuditInterceptor } from './audit-log/interceptors/audit.interceptor';
 
 @Module({
   imports: [
@@ -64,6 +66,9 @@ import { RolesGuard } from './auth/guards/roles.guard';
     FinanceModule,
     RagModule,
     AiModule,
+
+    // Tahap 2B-1 — AuditLog persisten
+    AuditLogModule,
   ],
   providers: [
     // 1. Throttler aktif global — cek rate limit sebelum auth
@@ -80,6 +85,11 @@ import { RolesGuard } from './auth/guards/roles.guard';
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
+    },
+    // 4. Audit global — catat setiap mutasi (POST/PUT/PATCH/DELETE) ke tabel audit
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuditInterceptor,
     },
   ],
 })
