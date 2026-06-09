@@ -91,8 +91,12 @@ services:
       KC_HOSTNAME: auth.smkdarussalamsubah.sch.id
       # strict=false: izinkan admin console via SSH tunnel (Host: localhost).
       KC_HOSTNAME_STRICT: "false"
-      # strict-https=false: KC listen HTTP internal; TLS diterminasi nginx/Cloudflare.
-      KC_HOSTNAME_STRICT_HTTPS: "false"
+      # N-29b: strict-https=true — paksa KC generate https:// untuk semua front-channel URL
+      # (CSP frame-src, login-status-iframe, dll). Tanpa ini KC menambah http:// ke
+      # frame-src → browser blokir iframe sebagai Mixed Content → admin console spinner.
+      # KC_HTTP_ENABLED=true (di bawah) tetap mengizinkan KC listen HTTP di port 8080
+      # untuk internal nginx; strict-https hanya mengontrol URL yang KC kirim ke browser.
+      KC_HOSTNAME_STRICT_HTTPS: "true"
       KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: "8080"
       KC_LOG_LEVEL: INFO
