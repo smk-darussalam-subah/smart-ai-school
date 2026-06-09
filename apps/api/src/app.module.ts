@@ -23,6 +23,7 @@ import { RagModule } from './rag/rag.module';
 import { AiModule } from './ai/ai.module';
 import { KeycloakGuard } from './auth/guards/keycloak.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
+import { SchoolConfigModule } from './school-config/school-config.module';
 
 @Module({
   imports: [
@@ -64,6 +65,9 @@ import { RolesGuard } from './auth/guards/roles.guard';
     FinanceModule,
     RagModule,
     AiModule,
+
+    // Tahap 2B-3 — School Profile & Config
+    SchoolConfigModule,
   ],
   providers: [
     // 1. Throttler aktif global — cek rate limit sebelum auth
