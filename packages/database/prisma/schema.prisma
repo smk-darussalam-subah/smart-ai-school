@@ -60,6 +60,49 @@ enum UserRole {
   @@schema("auth")
 }
 
+// ── Permission-Based RBAC ────────────────────────────────────────────────────
+// 7 role = dasar (Keycloak realm roles). Permission = granular aksi.
+// Super Admin ubah izin role/user TANPA deploy.
+
+model Permission {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String   @unique @db.VarChar(100)  // 'student.create', 'spp.approve'
+  description String   @db.VarChar(255)
+  module      String   @db.VarChar(50)            // 'student', 'finance', 'academic'
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  rolePermissions      RolePermission[]
+  userOverrides        UserPermissionOverride[]
+
+  @@map("permissions")
+  @@schema("auth")
+}
+
+model RolePermission {
+  role         UserRole
+  permissionId String     @map("permission_id") @db.Uuid
+
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([role, permissionId])
+  @@map("role_permissions")
+  @@schema("auth")
+}
+
+model UserPermissionOverride {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String     @map("user_id") @db.Uuid  // FK ke auth.users
+  permissionId String     @map("permission_id") @db.Uuid
+  grant        Boolean                                 // true = beri, false = tarik
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([userId, permissionId])
+  @@map("user_permission_overrides")
+  @@schema("auth")
+}
+
 // =============================================================================
 // ACADEMIC SCHEMA
 // =============================================================================

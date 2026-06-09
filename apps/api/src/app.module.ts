@@ -1,6 +1,6 @@
 // =============================================================================
 // app.module.ts — Root Module
-// Guard urutan (per sprint-plan §4): ThrottlerGuard → KeycloakGuard → RolesGuard
+// Guard urutan: ThrottlerGuard → KeycloakGuard → PermissionGuard → RolesGuard
 // =============================================================================
 
 import { Module } from '@nestjs/common';
@@ -23,6 +23,8 @@ import { RagModule } from './rag/rag.module';
 import { AiModule } from './ai/ai.module';
 import { KeycloakGuard } from './auth/guards/keycloak.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
+import { PermissionModule } from './permissions/permissions.module';
+import { PermissionGuard } from './permissions/permissions.guard';
 
 @Module({
   imports: [
@@ -64,6 +66,9 @@ import { RolesGuard } from './auth/guards/roles.guard';
     FinanceModule,
     RagModule,
     AiModule,
+
+    // Tahap 2B-2 — Permission-based RBAC
+    PermissionModule,
   ],
   providers: [
     // 1. Throttler aktif global — cek rate limit sebelum auth
@@ -76,7 +81,12 @@ import { RolesGuard } from './auth/guards/roles.guard';
       provide: APP_GUARD,
       useClass: KeycloakGuard,
     },
-    // 3. Roles global — cek @Roles() metadata setelah auth berhasil
+    // 3. Permission guard — cek @RequirePermission() sebelum RolesGuard fallback
+    {
+      provide: APP_GUARD,
+      useClass: PermissionGuard,
+    },
+    // 4. Roles global — cek @Roles() metadata setelah auth berhasil
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
