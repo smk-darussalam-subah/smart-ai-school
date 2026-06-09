@@ -18,7 +18,7 @@ datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
   extensions = [vector, uuidOssp(map: "uuid-ossp"), pgTrgm(map: "pg_trgm")]
-  schemas    = ["auth", "academic", "student", "teacher", "ppdb", "finance", "notification", "ai_knowledge", "school"]
+  schemas    = ["auth", "academic", "student", "teacher", "ppdb", "finance", "notification", "ai_knowledge", "audit", "school"]
 }
 
 // =============================================================================
@@ -57,6 +57,49 @@ enum UserRole {
   ORANG_TUA
   INDUSTRI      // Mitra industri: PKL/Prakerin, BKK, rekrutmen
 
+  @@schema("auth")
+}
+
+// ── Permission-Based RBAC ────────────────────────────────────────────────────
+// 7 role = dasar (Keycloak realm roles). Permission = granular aksi.
+// Super Admin ubah izin role/user TANPA deploy.
+
+model Permission {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String   @unique @db.VarChar(100)  // 'student.create', 'spp.approve'
+  description String   @db.VarChar(255)
+  module      String   @db.VarChar(50)            // 'student', 'finance', 'academic'
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  rolePermissions      RolePermission[]
+  userOverrides        UserPermissionOverride[]
+
+  @@map("permissions")
+  @@schema("auth")
+}
+
+model RolePermission {
+  role         UserRole
+  permissionId String     @map("permission_id") @db.Uuid
+
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([role, permissionId])
+  @@map("role_permissions")
+  @@schema("auth")
+}
+
+model UserPermissionOverride {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String     @map("user_id") @db.Uuid  // FK ke auth.users
+  permissionId String     @map("permission_id") @db.Uuid
+  grant        Boolean                                 // true = beri, false = tarik
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([userId, permissionId])
+  @@map("user_permission_overrides")
   @@schema("auth")
 }
 
@@ -573,4 +616,35 @@ enum CalendarType {
   break
 
   @@schema("school")
+}
+
+// =============================================================================
+// AUDIT SCHEMA — 2B-1: AuditLog persisten
+// Prasyarat UU PDP + gerbang go-live data nyata.
+// PII-minimal: actorId=keycloakId, username, roles (denormalisasi forensik).
+// Tidak menyimpan kredensial, body sensitif, atau nilai PII mentah.
+// =============================================================================
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now()) @map("created_at")
+  actorId      String?  @map("actor_id")       // Keycloak sub; null = sistem/anonim
+  actorUsername String? @map("actor_username")
+  actorRoles   String[] @map("actor_roles")     // denormalisasi — tetap terbaca walau user dihapus
+  action       String                            // mis. "student.create", "spp.approve"
+  resourceType String?  @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  method       String
+  path         String
+  statusCode   Int      @map("status_code")
+  outcome      String                            // "success" | "failure"
+  ip           String?
+  userAgent    String?  @map("user_agent")
+  metadata     Json?                             // PII-minimal: field names + non-sensitive values
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([resourceType, resourceId])
+  @@map("audit_log")
+  @@schema("audit")
 }

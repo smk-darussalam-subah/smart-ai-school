@@ -34,7 +34,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "smk_staging_db" <<
     CREATE SCHEMA IF NOT EXISTS media;
     CREATE SCHEMA IF NOT EXISTS notification;
     CREATE SCHEMA IF NOT EXISTS ai_knowledge;
+    CREATE SCHEMA IF NOT EXISTS audit;
     CREATE SCHEMA IF NOT EXISTS school;
+    CREATE SCHEMA IF NOT EXISTS industry;
     CREATE SCHEMA IF NOT EXISTS alumni;
 
     DO \$\$
