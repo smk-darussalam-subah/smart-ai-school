@@ -100,6 +100,16 @@ jobs:
               fi
               echo "✅ STAGING_DATABASE_URL → postgresql://${_USER}:***@postgres:5432/smk_staging_db"
 
+              # ── Pastikan smk-staging-net ada (external di compose.staging.yml) ──
+              # Jaringan ini dibuat di luar compose; compose tidak akan membuatnya.
+              # docker network create idempoten via kondisi if.
+              if ! docker network inspect smk-staging-net >/dev/null 2>&1; then
+                docker network create smk-staging-net
+                echo "✅ smk-staging-net created"
+              else
+                echo "✅ smk-staging-net already exists"
+              fi
+
               # ── Init staging DB (idempoten) ─────────────────────────────────
               echo "🔧 Memastikan smk_staging_db siap..."
               docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
