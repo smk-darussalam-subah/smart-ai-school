@@ -25,10 +25,18 @@
 #   - .env.staging tersedia di infrastructure/docker/ (gitignored)
 #   - smk_staging_db sudah dibuat (via db-init-staging atau init-staging-db.sh)
 #
-# JARINGAN:
-#   Menggunakan smk-network yang sama dengan prod (explicit name: smk-network
-#   di docker-compose.yml → bukan project-prefixed). Staging api/web terhubung
-#   ke smk-postgres / smk-redis / smk-keycloak tanpa duplikasi container.
+# JARINGAN (BUG-FIX N-20b):
+#   smk-staging-api  → smk-network (untuk postgres/redis/keycloak) + smk-staging-net
+#                       alias di smk-network: HANYA "smk-staging-api" (bukan "api")
+#                       → mencegah konflik DNS dengan smk-api di nginx
+#   smk-staging-web  → smk-staging-net SAJA (tidak di smk-network)
+#                       → mencegah konflik DNS alias "web" dengan smk-web di nginx
+#                       → akses Keycloak via HTTPS publik (hairpin OK)
+#                       → akses staging-api via smk-staging-net (container name alias)
+#
+#   Sebelum fix ini: smk-staging-web dan smk-staging-web terdaftar alias "web"/"api"
+#   di smk-network → Docker DNS round-robin → nginx random routing ke staging container
+#   → NEXTAUTH_URL=staging → loop redirect prod↔staging di browser login.
 #
 # PORTS TERPISAH:
 #   web  → host :3100 (prod: nginx forward, staging: langsung atau staging-nginx)
@@ -118,6 +126,14 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      smk-network:
+        # WAJIB: hanya alias container-name, BUKAN "api".
+        # Tanpa ini, Docker DNS mendaftarkan alias "api" di smk-network → konflik
+        # dengan smk-api (prod) → nginx round-robin ke staging-api → data salah.
+        aliases:
+          - smk-staging-api
+      smk-staging-net: {}
 
   # ── WEB STAGING ───────────────────────────────────────────────────────────
   # Menggantikan smk-web (prod) dengan smk-staging-web.
@@ -136,7 +152,7 @@ services:
       KEYCLOAK_ISSUER: https://auth.smkdarussalamsubah.sch.id/realms/diis
       KEYCLOAK_CLIENT_ID: diis-web
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_WEB_CLIENT_SECRET}
-      # API_URL internal → container name smk-staging-api
+      # API_URL internal → container name smk-staging-api (reachable via smk-staging-net)
       API_URL: http://smk-staging-api:3001
       HOSTNAME: "0.0.0.0"
       METABASE_SITE_URL: ${METABASE_SITE_URL}
@@ -144,3 +160,19 @@ services:
       METABASE_DASHBOARD_ID: ${METABASE_DASHBOARD_ID}
     ports:
       - "3100:3000"
+    networks:
+      # WAJIB: smk-staging-net SAJA — TIDAK di smk-network.
+      # Tanpa ini, Docker DNS mendaftarkan alias "web" di smk-network → konflik
+      # dengan smk-web (prod) → nginx round-robin ke staging-web → NEXTAUTH_URL
+      # staging masuk di request prod → loop redirect login prod↔staging.
+      # Akses Keycloak tetap via HTTPS publik (auth.*); akses staging-api via
+      # smk-staging-net (container name alias smk-staging-api).
+      - smk-staging-net
+
+networks:
+  smk-network:
+    external: true
+    name: smk-network
+  smk-staging-net:
+    name: smk-staging-net
+    driver: bridge
