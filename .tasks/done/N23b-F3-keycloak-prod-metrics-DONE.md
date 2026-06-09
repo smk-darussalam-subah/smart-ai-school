@@ -6,6 +6,7 @@
 **Executor:** Claude Code (Sonnet 4.6)
 **Status Fase 1:** ✅ HIJAU (throwaway validation di VPS selesai)
 **Status Fase 2:** ✅ CLOSED-prod — G4b browser login fixed (2026-06-09, N-20b hotfix)
+**N-29b Admin Console:** ✅ FIXED (2026-06-09) — KC_HOSTNAME_STRICT_HTTPS=true; PR #80 + VPS hotfix; CSP Mixed Content resolved
 **Deploy main:** ✅ `859a755` (2026-06-08T20:48Z) + hotfix `d81f70a` nginx --force-recreate + `42c0cd4` N-20b network fix
 **Cutover dilakukan:** 2026-06-08T21:22Z — backup `keycloak-backup-20260608-212149.sql` (311 951 bytes)
 
@@ -37,7 +38,7 @@
 | `KC_HOSTNAME` | *(tidak ada)* | `auth.smkdarussalamsubah.sch.id` |
 | `KC_CACHE` | *(tidak ada)* | `local` |
 | `KC_HOSTNAME_STRICT` | `"false"` | `"false"` *(dipertahankan)* |
-| `KC_HOSTNAME_STRICT_HTTPS` | `"false"` | `"false"` *(dipertahankan)* |
+| `KC_HOSTNAME_STRICT_HTTPS` | `"false"` | `"true"` *(N-29b fix — lihat catatan di bawah)* |
 | `KC_HTTP_ENABLED` | `"true"` | `"true"` *(dipertahankan)* |
 | `KC_PROXY_HEADERS` | `xforwarded` | `xforwarded` *(dipertahankan)* |
 | `ports` | `"8080:8080"` | `"127.0.0.1:8080:8080"` |
@@ -49,7 +50,7 @@
 | `start` (tanpa `--import-realm`) | Production mode, lebih efisien; realm persist di `smk_db.keycloak`. `--import-realm` berisiko revert URL prod ke localhost (N-26). |
 | `KC_HOSTNAME: auth.smkdarussalamsubah.sch.id` | Wajib di `start` mode; v1 hostname provider (default Keycloak 24.0). |
 | `KC_HOSTNAME_STRICT: "false"` | Izinkan admin console via SSH tunnel (`Host: localhost`). Jika strict=true, tunnel ke port 8081 ditolak Keycloak karena Host header tidak cocok. |
-| `KC_HOSTNAME_STRICT_HTTPS: "false"` | Keycloak menerima HTTP internal; TLS diterminasi nginx/Cloudflare. Dengan `KC_PROXY_HEADERS: xforwarded`, issuer tetap https. |
+| `KC_HOSTNAME_STRICT_HTTPS: "true"` *(N-29b)* | **Wajib true di produksi.** Mencegah KC menambah `http://auth.*` ke CSP `frame-src` → tanpa ini, browser blokir `login-status-iframe` sebagai Mixed Content → admin console spinner. Catatan: nilai awal `"false"` di N-23b salah kaprah — `KC_HOSTNAME_STRICT_HTTPS` bukan tentang apakah KC listen HTTP (itu urusan `KC_HTTP_ENABLED`), tapi tentang apakah KC enforce HTTPS untuk URL browser-facing. Fix via N-29b: PR #80. |
 | `KC_CACHE: local` | VPS single-node — tidak butuh Infinispan cluster distributed. `start-dev` menggunakan local cache otomatis; `start` default ispn → butuh clustering. |
 | `KC_PROXY_HEADERS: xforwarded` | Sudah ada (N-23). Membaca `X-Forwarded-Proto: https` dari nginx → issuer = `https://`. |
 | `127.0.0.1:8080:8080` | Port 8080 hanya accessible via SSH tunnel. Admin console tetap bisa dicapai; tidak accessible dari internet. |
