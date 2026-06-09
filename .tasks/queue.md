@@ -4,7 +4,20 @@
 > Dokumen lain (`current.md`, `CLAUDE.md` §7, gate docs) hanya MENAUTKAN ke sini,
 > tidak menduplikasi status. Jika ada konflik, file INI yang menang.
 > Dikelola oleh Cowork AI. Claude Code hanya membaca file ini.
-> Update terakhir: 2026-06-07 — **TAHAP 1 DITUTUP.** Main = N24+N26 (auth) + SMA-52 (index) + SMA-53 (API docs). VPS = repo. Login + dashboard hidup. Selanjutnya: deploy manual VPS (`git reset --hard origin/main` + `docker compose up -d --build`) → Tahap 2.
+> Update terakhir: 2026-06-09 — **2A DITUTUP.** N-20+N-23b+F-3+N-29+N-29b CLOSED-prod, CI hijau. Berikutnya: 2B Fondasi (AuditLog→RBAC→SchoolProfile→tabel referensi).
+>
+> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+> ## 🔄 REKONSILIASI 2026-06-09 (Penutupan 2A)
+>
+> **2A ✅ DITUTUP (2026-06-09).** N-20 ✅ CLOSED-prod · N-23b ✅ CLOSED-prod (G1–G5 + login browser, Director
+> konfirmasi) · F-3 ✅ (/metrics→404, Prometheus up) · N-29 ✅ (fix permanen: nginx→container name smk-web/smk-api;
+> root cause: Compose merge networks) · N-29b ✅ (KC_HOSTNAME_STRICT_HTTPS=true, mixed-content) · CI hijau.
+> **Backlog (non-blok):** smk-staging-web landing di `smk-staging_default` (interaksi `!reset`+`external:true`
+> Compose 5.1.4 — tak pengaruhi prod, fix saat staging dipakai serius) · T-N20a (`DATABASE_URL` di `.env.staging`)
+> · T-N20b (selaraskan schema 2 jalur init) · Redis db-index staging terpisah · keputusan ekspos admin console
+> publik vs tunnel-only · OBS-1b · aktivasi Sentry (project+DSN) · #418 Cloudflare obfuscation.
+> **Berikutnya: 2B Fondasi** — AuditLog persisten → permission-RBAC → School Profile/Config+kalender → tabel
+> referensi (Subject/Major/Parent). SERIAL + gerbang review + gitflow.
 >
 > ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 > ## 🔄 REKONSILIASI 2026-06-04 (Cowork analyst) — BLOK INI MENANG atas isi lama di bawah
