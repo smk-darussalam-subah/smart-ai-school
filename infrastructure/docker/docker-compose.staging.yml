@@ -160,13 +160,12 @@ services:
       METABASE_DASHBOARD_ID: ${METABASE_DASHBOARD_ID}
     ports:
       - "3100:3000"
-    networks:
-      # WAJIB: smk-staging-net SAJA — TIDAK di smk-network.
-      # Tanpa ini, Docker DNS mendaftarkan alias "web" di smk-network → konflik
-      # dengan smk-web (prod) → nginx round-robin ke staging-web → NEXTAUTH_URL
-      # staging masuk di request prod → loop redirect login prod↔staging.
-      # Akses Keycloak tetap via HTTPS publik (auth.*); akses staging-api via
-      # smk-staging-net (container name alias smk-staging-api).
+    networks: !reset
+      # !reset wajib: Docker Compose MERGE networks dari base docker-compose.yml
+      # (smk-network) dengan override ini. Tanpa !reset, smk-staging-web masuk
+      # smk-network → service name alias "web" terdaftar → DNS round-robin dengan
+      # smk-web (prod) → nginx proxy_pass ke smk-staging-web → loop redirect login.
+      # !reset mengabaikan nilai base dan hanya pakai daftar berikut:
       - smk-staging-net
 
 networks:
