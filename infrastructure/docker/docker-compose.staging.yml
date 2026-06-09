@@ -91,6 +91,8 @@ services:
         psql -d smk_staging_db -c "CREATE SCHEMA IF NOT EXISTS finance;"
         psql -d smk_staging_db -c "CREATE SCHEMA IF NOT EXISTS notification;"
         psql -d smk_staging_db -c "CREATE SCHEMA IF NOT EXISTS ai_knowledge;"
+        psql -d smk_staging_db -c "CREATE SCHEMA IF NOT EXISTS audit;"
+        psql -d smk_staging_db -c "CREATE SCHEMA IF NOT EXISTS school;"
 
         echo "[db-init-staging] smk_staging_db siap (extensions + schemas) ✓"
     networks:
