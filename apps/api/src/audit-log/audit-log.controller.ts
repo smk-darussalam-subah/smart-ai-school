@@ -5,7 +5,6 @@ import {
   Query,
 } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { AuditLogService } from './audit-log.service';
 import { ListAuditLogsSchema } from './dto/list-audit-logs.dto';
 import { SkipAudit } from './decorators/audit.decorator';
