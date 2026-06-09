@@ -488,7 +488,7 @@ Realm diis pasca-recreate: count=1 ✅ (tidak ter-reset)
 - [x] `curl -m5 http://103.253.215.19:8080/` dari luar → timeout (exit=28) ✅
 - [x] SSH tunnel admin console loopback → 302 ✅
 - [x] Prometheus smk-api UP + /metrics 404 (dari sesi sebelumnya)
-- [ ] **Browser login UI (G4b)** — konfirmasi Director: `https://smkdarussalamsubah.sch.id/login` → login → `/dashboard`, console bersih
+- [x] **Browser login UI (G4 + admin console)** — ✅ dikonfirmasi Director 2026-06-09: login `/dashboard` berhasil, admin console Keycloak bisa diakses. Tidak ada loop redirect.
 
 ---
 
