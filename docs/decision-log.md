@@ -5,6 +5,44 @@
 
 ---
 
+## 2026-06-08/09 — Penutupan 2A: isolasi staging, Keycloak prod-mode, isolasi network
+
+**N-20 — Isolasi staging (bentuk final).** DB logis `smk_staging_db` di container `smk-postgres` yang sama +
+stack `smk-staging-*` (compose project `smk-staging`, port 3100/3101) + `deploy.yml` per-branch (staging
+`/opt/diis-staging`, main `/home/appuser`) + guardrail `GUARD_STAGING_DB` (fail-hard bila target ≠ smk_staging_db).
+*Trade-off (Director):* staging & prod berbagi proses PostgreSQL/Keycloak/Redis — minimal, bukan server baru.
+*Bukti CLOSED-prod:* smk_db 9→9 migration / 14→14 tabel tak berubah; smk_staging_db 9 migration + schema terbentuk.
+
+**N-23b — Keycloak production mode + tutup 8080.** `command: start` (tanpa `--import-realm` — anti revert URL
+prod N-26; realm `diis` persist di DB). Env 24.0: `KC_HOSTNAME=auth.smkdarussalamsubah.sch.id`,
+`KC_HOSTNAME_STRICT=false` (admin via tunnel), **`KC_HOSTNAME_STRICT_HTTPS=true`** (WAJIB true di belakang proxy
+TLS — `false` memicu http:// di CSP → mixed-content; lihat N-29b), `KC_HTTP_ENABLED=true`, `KC_PROXY_HEADERS=xforwarded`,
+`KC_CACHE=local` (single-node). Port `127.0.0.1:8080:8080` (loopback — tertutup internet, admin via SSH tunnel).
+Cutover prod via `--force-recreate keycloak` (deploy biasa tak me-restart keycloak — by design). *Bukti:* G1–G5
++ login browser nyata dikonfirmasi Director.
+
+**F-3 — Harden /metrics.** nginx blok publik `api.*`: `location /metrics { return 404; }`. Prometheus scrape
+`api:3001/metrics` via jaringan internal, tak terpengaruh. *Bukti:* curl publik → 404, Prometheus target up.
+
+**N-29 — DNS alias collision staging↔prod (regresi N-20).** *Root cause definitif:* Docker Compose **merge**
+networks (bukan replace) → service override `api`/`web` di staging mendaftarkan alias service-name yang SAMA
+(`api`/`web`) di `smk-network` → Docker DNS round-robin → nginx random-route prod→staging → login loop
+(NEXTAUTH_URL staging). *Fix permanen:* nginx upstream menunjuk **container name** `smk-web`/`smk-api`
+(bukan alias service `web`/`api`) → kebal terhadap alias apa pun yang didaftarkan staging. *Pelajaran:* stack
+berbagi network = berbagi namespace alias; jangan andalkan alias service-name untuk routing kritis — pakai
+nama container eksplisit, dan isolasi network sejak desain.
+
+**N-29b — Admin console spinner.** *Root cause:* `KC_HOSTNAME_STRICT_HTTPS=false` → Keycloak emit `http://`
+self-URL → masuk CSP halaman https → browser blokir login-status-iframe sebagai **Mixed Content** → spinner.
+*Fix:* set `true`. *Pelajaran:* di belakang proxy TLS-terminating, strict-https HARUS true meski KC listen HTTP internal.
+
+**CI merah — dua sebab terpisah** (dirty git working-tree di VPS + label `smk-staging-net`) → keduanya difix.
+
+**Lesson umum sesi ini:** diagnosa konsol browser sering menunjuk GEJALA (redirect_uri/NEXTAUTH) bukan PENYEBAB
+(DNS/Compose). Selalu turun ke lapisan infrastruktur sebelum menyalahkan konfigurasi aplikasi.
+
+---
+
 ## 2026-06-08 — Keputusan arsitektur Tahap 2 (pasca audit eksternal)
 
 > Basis: `Laporan_Audit_Komparatif_DIIS_2026-06-08.md` (skor 82%) + brainstorm Director–analis.
