@@ -29,28 +29,13 @@ async function fetchApi(path: string, method: string, body?: unknown) {
   return { success: true, data: await res.json() };
 }
 
-export async function createSiswa(formData: FormData) {
-  const body = {
-    userId: formData.get('userId'),
-    nis: formData.get('nis'),
-    classId: formData.get('classId') || undefined,
-    parentId: formData.get('parentId') || undefined,
-    status: formData.get('status') || 'active',
-    joinedAt: formData.get('joinedAt'),
-  };
+export async function createSiswa(body: Record<string, unknown>) {
   const result = await fetchApi('/students', 'POST', body);
   revalidatePath('/dashboard/siswa');
   return result;
 }
 
-export async function updateSiswa(id: string, formData: FormData) {
-  const body = {
-    nis: formData.get('nis'),
-    classId: formData.get('classId') || undefined,
-    parentId: formData.get('parentId') || undefined,
-    status: formData.get('status'),
-    joinedAt: formData.get('joinedAt') || undefined,
-  };
+export async function updateSiswa(id: string, body: Record<string, unknown>) {
   const result = await fetchApi(`/students/${id}`, 'PATCH', body);
   revalidatePath('/dashboard/siswa');
   return result;
