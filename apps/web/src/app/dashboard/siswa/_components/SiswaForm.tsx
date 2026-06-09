@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,20 +22,44 @@ interface Props {
   classes: { id: string; name: string }[];
 }
 
+interface FormState {
+  nis: string;
+  userId: string;
+  classId: string;
+  status: string;
+  joinedAt: string;
+}
+
 export default function SiswaFormDialog({ open, onOpenChange, student, classes }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [form, setForm] = useState<FormState>({
+    nis: student?.nis ?? '',
+    userId: '',
+    classId: student?.class?.id ?? '',
+    status: student?.status ?? 'active',
+    joinedAt: student?.joinedAt?.split('T')[0] ?? '',
+  });
   const isEdit = !!student;
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const update = (key: keyof FormState, value: string) => setForm(prev => ({ ...prev, [key]: value }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    const form = new FormData(e.currentTarget);
+    const body: Record<string, unknown> = {
+      nis: form.nis,
+      status: form.status || 'active',
+    };
+    if (form.classId) body.classId = form.classId;
+    if (form.joinedAt) body.joinedAt = new Date(form.joinedAt).toISOString();
+    if (!isEdit && form.userId) body.userId = form.userId;
+
     const result = isEdit
-      ? await updateSiswa(student!.id, form)
-      : await createSiswa(form);
+      ? await updateSiswa(student!.id, body)
+      : await createSiswa(body);
 
     setLoading(false);
 
@@ -48,27 +72,28 @@ export default function SiswaFormDialog({ open, onOpenChange, student, classes }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{isEdit ? 'Edit Siswa' : 'Tambah Siswa'}</DialogTitle>
+          <DialogDescription>
+            {isEdit ? 'Ubah data siswa yang sudah ada.' : 'Isi data untuk menambahkan siswa baru.'}
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="nis">NIS</Label>
-            <Input id="nis" name="nis" defaultValue={student?.nis ?? ''} required minLength={5} maxLength={20} />
+            <Input id="nis" value={form.nis} onChange={e => update('nis', e.target.value)} required minLength={5} maxLength={20} />
           </div>
           <div>
             <Label htmlFor="userId">User ID (Keycloak UUID)</Label>
-            <Input id="userId" name="userId" placeholder="UUID dari Keycloak" disabled={isEdit} />
+            <Input id="userId" value={form.userId} onChange={e => update('userId', e.target.value)} placeholder="UUID dari Keycloak" disabled={isEdit} />
           </div>
           <div>
-            <Label htmlFor="classId">Kelas</Label>
-            <Select name="classId" defaultValue={student?.class?.id ?? ''}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih kelas (opsional)" />
-              </SelectTrigger>
+            <Label>Kelas</Label>
+            <Select value={form.classId || 'none'} onValueChange={(v: string) => update('classId', v === 'none' ? '' : v)}>
+              <SelectTrigger><SelectValue placeholder="Pilih kelas (opsional)" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">-- Tidak ada --</SelectItem>
+                <SelectItem value="none">-- Tidak ada --</SelectItem>
                 {classes.map((c) => (
                   <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                 ))}
@@ -76,11 +101,9 @@ export default function SiswaFormDialog({ open, onOpenChange, student, classes }
             </Select>
           </div>
           <div>
-            <Label htmlFor="status">Status</Label>
-            <Select name="status" defaultValue={student?.status ?? 'active'}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
+            <Label>Status</Label>
+            <Select value={form.status} onValueChange={(v: string) => update('status', v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="active">Aktif</SelectItem>
                 <SelectItem value="inactive">Nonaktif</SelectItem>
@@ -91,7 +114,7 @@ export default function SiswaFormDialog({ open, onOpenChange, student, classes }
           </div>
           <div>
             <Label htmlFor="joinedAt">Tanggal Masuk</Label>
-            <Input id="joinedAt" name="joinedAt" type="date" defaultValue={student?.joinedAt?.split('T')[0] ?? ''} />
+            <Input id="joinedAt" type="date" value={form.joinedAt} onChange={e => update('joinedAt', e.target.value)} />
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex justify-end gap-3 pt-2">
