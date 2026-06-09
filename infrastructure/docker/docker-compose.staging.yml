@@ -174,5 +174,8 @@ networks:
     external: true
     name: smk-network
   smk-staging-net:
+    # external: jaringan dibuat di luar compose (manual atau via deploy.yml guard).
+    # Tanpa ini, compose memvalidasi label com.docker.compose.network yang tidak
+    # ada di jaringan yang dibuat manual → deploy gagal.
+    external: true
     name: smk-staging-net
-    driver: bridge
