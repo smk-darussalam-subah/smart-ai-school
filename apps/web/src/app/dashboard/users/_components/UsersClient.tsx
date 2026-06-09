@@ -1,18 +1,42 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
+interface Permission { code: string; description: string; module: string; }
+
 export default function UsersClient() {
-  const [permissions, setPermissions] = useState<Array<{ code: string; description: string; module: string }>>([]);
+  const { data: session } = useSession();
+  const [permissions, setPermissions] = useState<Permission[]>([]);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/backend/permissions').then(r => r.json()).then(setPermissions).catch(() => {
-      setError('Gagal memuat data permission');
-    });
-  }, []);
+    if (!session?.accessToken) return;
+
+    fetch('/api/backend/permissions', {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
+    })
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(data => {
+        if (Array.isArray(data)) {
+          setPermissions(data);
+        } else if (data?.data && Array.isArray(data.data)) {
+          setPermissions(data.data);
+        } else {
+          setError('Format data tidak dikenal');
+        }
+      })
+      .catch(err => {
+        setError(`Gagal memuat permission (${err.message}). Pastikan backend sudah di-deploy dengan module permissions.`);
+      })
+      .finally(() => setLoading(false));
+  }, [session]);
 
   return (
     <div className="space-y-6">
@@ -21,22 +45,21 @@ export default function UsersClient() {
       <Card>
         <CardHeader><CardTitle>Permission System</CardTitle></CardHeader>
         <CardContent>
-          {error ? (
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Memuat data permission...</p>
+          ) : error ? (
             <p className="text-sm text-red-600">{error}</p>
+          ) : permissions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Belum ada permission terdaftar. Jalankan seed untuk menginisialisasi.</p>
           ) : (
-            <>
-              <p className="text-sm text-muted-foreground mb-4">
-                Permission saat ini dikelola via API. Gunakan endpoint di bawah untuk mengelola RBAC.
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                {permissions.map(p => (
-                  <div key={p.code} className="text-xs bg-gray-50 rounded-lg p-2 border">
-                    <code className="text-slate-700 font-mono">{p.code}</code>
-                    <p className="text-muted-foreground mt-0.5">{p.module}</p>
-                  </div>
-                ))}
-              </div>
-            </>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {permissions.map(p => (
+                <div key={p.code} className="text-xs bg-gray-50 rounded-lg p-2 border">
+                  <code className="text-slate-700 font-mono">{p.code}</code>
+                  <p className="text-muted-foreground mt-0.5">{p.module}</p>
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
