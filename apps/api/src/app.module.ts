@@ -1,6 +1,6 @@
 // =============================================================================
 // app.module.ts — Root Module
-// Guard urutan (per sprint-plan §4): ThrottlerGuard → KeycloakGuard → RolesGuard
+// Guard urutan: ThrottlerGuard → KeycloakGuard → PermissionGuard → RolesGuard
 // =============================================================================
 
 import { Module } from '@nestjs/common';
@@ -23,6 +23,8 @@ import { RagModule } from './rag/rag.module';
 import { AiModule } from './ai/ai.module';
 import { KeycloakGuard } from './auth/guards/keycloak.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
+import { PermissionModule } from './permissions/permissions.module';
+import { PermissionGuard } from './permissions/permissions.guard';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { AuditInterceptor } from './audit-log/interceptors/audit.interceptor';
 
@@ -69,6 +71,9 @@ import { AuditInterceptor } from './audit-log/interceptors/audit.interceptor';
 
     // Tahap 2B-1 — AuditLog persisten
     AuditLogModule,
+
+    // Tahap 2B-2 — Permission-based RBAC
+    PermissionModule,
   ],
   providers: [
     // 1. Throttler aktif global — cek rate limit sebelum auth
@@ -81,12 +86,17 @@ import { AuditInterceptor } from './audit-log/interceptors/audit.interceptor';
       provide: APP_GUARD,
       useClass: KeycloakGuard,
     },
-    // 3. Roles global — cek @Roles() metadata setelah auth berhasil
+    // 3. Permission guard — cek @RequirePermission() sebelum RolesGuard fallback
+    {
+      provide: APP_GUARD,
+      useClass: PermissionGuard,
+    },
+    // 4. Roles global — cek @Roles() metadata setelah auth berhasil
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
     },
-    // 4. Audit global — catat setiap mutasi (POST/PUT/PATCH/DELETE) ke tabel audit
+    // 5. Audit global — catat setiap mutasi (POST/PUT/PATCH/DELETE) ke tabel audit
     {
       provide: APP_INTERCEPTOR,
       useClass: AuditInterceptor,
