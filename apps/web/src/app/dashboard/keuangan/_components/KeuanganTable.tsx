@@ -40,6 +40,7 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
   const [formOpen, setFormOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [approving, setApproving] = useState<string | null>(null);
 
   const filtered = payments.filter((p) => {
     const matchSearch = !search || p.student.nis.includes(search) || p.student.user.fullName.toLowerCase().includes(search.toLowerCase());
@@ -59,7 +60,9 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
   };
 
   const handleApprove = async (id: string) => {
+    setApproving(id);
     await approveSpp(id);
+    setApproving(null);
   };
 
   return (
@@ -108,7 +111,10 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
                 {canApprove && (
                   <TableCell>
                     {p.status === 'paid' && !p.approvedAt && (
-                      <Button variant="outline" size="sm" className="text-green-700" onClick={() => handleApprove(p.id)}>Approve</Button>
+                      <Button variant="outline" size="sm" className="text-green-700" disabled={approving === p.id}
+                        onClick={() => handleApprove(p.id)}>
+                        {approving === p.id ? '...' : 'Approve'}
+                      </Button>
                     )}
                     {p.approvedAt && <span className="text-xs text-green-600">✓ Approved</span>}
                   </TableCell>

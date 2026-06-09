@@ -34,6 +34,7 @@ const STATUS_FLOW: Record<string, { label: string; variant: 'default' | 'seconda
 export default function PpdbTable({ leads, total, canEdit }: Props) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [updating, setUpdating] = useState<string | null>(null);
 
   const filtered = leads.filter(l => {
     const matchSearch = !search || l.fullName.toLowerCase().includes(search.toLowerCase()) || l.phone.includes(search);
@@ -42,7 +43,9 @@ export default function PpdbTable({ leads, total, canEdit }: Props) {
   });
 
   const handleStatus = async (id: string, newStatus: string) => {
+    setUpdating(id);
     await updateLeadStatus(id, newStatus);
+    setUpdating(null);
   };
 
   return (
@@ -88,8 +91,9 @@ export default function PpdbTable({ leads, total, canEdit }: Props) {
                     {(() => { const s = STATUS_FLOW[l.status]; return s && s.next.length > 0 ? (
                       <div className="flex gap-1 flex-wrap">
                         {s.next.map(ns => (
-                          <Button key={ns} variant="outline" size="sm" onClick={() => handleStatus(l.id, ns)}>
-                            {STATUS_FLOW[ns]?.label ?? ns}
+                          <Button key={ns} variant="outline" size="sm" disabled={updating === l.id}
+                            onClick={() => handleStatus(l.id, ns)}>
+                            {updating === l.id ? '...' : STATUS_FLOW[ns]?.label ?? ns}
                           </Button>
                         ))}
                       </div>

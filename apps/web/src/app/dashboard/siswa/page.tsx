@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { redirect } from 'next/navigation';
 import { apiFetch, PaginatedResponse } from '@/lib/api';
 import SiswaTable from './_components/SiswaTable';
 
@@ -10,23 +11,19 @@ interface StudentItem {
   joinedAt?: string; createdAt: string;
 }
 
-interface ClassItem {
-  id: string; name: string;
-}
-
-interface ClassApiResponse {
-  data: ClassItem[]; total: number; limit: number; offset: number;
-}
-
 export default async function SiswaPage() {
   const session = await getServerSession(authOptions);
-  const token = session?.accessToken ?? '';
+  if (!session) redirect('/login');
   const roles: string[] = (session?.roles as string[]) ?? [];
-  const primaryRole = roles[0] ?? '';
+
+  if (roles.includes('INDUSTRI')) redirect('/dashboard');
+
+  const token = session.accessToken ?? '';
+  const canEdit = roles.includes('SUPER_ADMIN') || roles.includes('TATA_USAHA');
 
   const [studentsData, classesData] = await Promise.all([
     apiFetch<PaginatedResponse<StudentItem>>('/students?limit=100', token),
-    apiFetch<ClassApiResponse>('/classes?limit=100', token),
+    apiFetch<{ data: { id: string; name: string }[] }>('/classes?limit=100', token),
   ]);
 
   const students = studentsData?.data ?? [];
@@ -34,11 +31,6 @@ export default async function SiswaPage() {
   const classes = classesData?.data ?? [];
 
   return (
-    <SiswaTable
-      students={students}
-      total={total}
-      classes={classes}
-      currentRole={primaryRole}
-    />
+    <SiswaTable students={students} total={total} classes={classes} canEdit={canEdit} />
   );
 }

@@ -12,14 +12,20 @@ interface Props {
 
 export default function SiswaDeleteDialog({ student, onClose }: Props) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   if (!student) return null;
 
   const handleDelete = async () => {
     setLoading(true);
-    await deleteSiswa(student.id);
+    setError('');
+    const result = await deleteSiswa(student.id);
     setLoading(false);
-    onClose();
+    if (result?.success) {
+      onClose();
+    } else {
+      setError(result?.error || 'Gagal menghapus data');
+    }
   };
 
   return (
@@ -33,6 +39,7 @@ export default function SiswaDeleteDialog({ student, onClose }: Props) {
           </DialogDescription>
         </DialogHeader>
         <div className="flex justify-end gap-3 pt-2">
+          {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
           <Button variant="outline" onClick={onClose}>Batal</Button>
           <Button variant="destructive" onClick={handleDelete} disabled={loading}>
             {loading ? 'Menghapus...' : 'Hapus'}

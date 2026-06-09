@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
-interface ServiceStatus { name: string; status: 'up' | 'down' | 'checking'; description: string; }
+interface ServiceStatus { name: string; status: 'up' | 'down' | 'checking' | 'unverified'; description: string; }
 
 export default function HealthClient() {
   const [services, setServices] = useState<ServiceStatus[]>([]);
@@ -21,23 +21,28 @@ export default function HealthClient() {
 
       try {
         const res = await fetch('/api/backend/health');
-        if (res.ok) updateService('API Backend', 'up');
-        else updateService('API Backend', 'down');
+        if (res.ok) {
+          updateService('API Backend', 'up');
+          const data = await res.json().catch(() => null);
+          if (data) {
+            if (data.status === 'ok' || data.database === 'connected') updateService('Database', 'up');
+            else updateService('Database', 'unverified');
+          }
+        } else {
+          updateService('API Backend', 'down');
+        }
       } catch { updateService('API Backend', 'down'); }
 
-      // Check other services via health endpoint response
-      setTimeout(() => {
-        updateService('Database', 'up');
-        updateService('Keycloak SSO', 'up');
-        updateService('Ollama AI', 'up');
-        updateService('Redis Cache', 'up');
-      }, 2000);
+      // Services without direct health endpoints marked as unverified
+      updateService('Keycloak SSO', 'unverified');
+      updateService('Ollama AI', 'unverified');
+      updateService('Redis Cache', 'unverified');
     };
 
     checkServices();
   }, []);
 
-  const updateService = (name: string, status: 'up' | 'down') => {
+  const updateService = (name: string, status: 'up' | 'down' | 'unverified') => {
     setServices(prev => prev.map(s => s.name === name ? { ...s, status } : s));
   };
 
@@ -51,8 +56,8 @@ export default function HealthClient() {
             <CardHeader className="pb-2"><CardTitle className="text-sm">{s.name}</CardTitle></CardHeader>
             <CardContent>
               <Badge variant={s.status === 'up' ? 'default' : s.status === 'down' ? 'destructive' : 'secondary'}
-                className={s.status === 'up' ? 'bg-green-600 hover:bg-green-700' : ''}>
-                {s.status === 'up' ? '✅ UP' : s.status === 'down' ? '❌ DOWN' : '⏳ Checking...'}
+                className={s.status === 'up' ? 'bg-green-600 hover:bg-green-700' : s.status === 'unverified' ? 'bg-yellow-100 text-yellow-700' : ''}>
+                {s.status === 'up' ? '✅ UP' : s.status === 'down' ? '❌ DOWN' : s.status === 'unverified' ? '❓ Unverified' : '⏳ Checking...'}
               </Badge>
               <p className="text-xs text-muted-foreground mt-2">{s.description}</p>
             </CardContent>

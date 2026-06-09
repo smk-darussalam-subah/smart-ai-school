@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 
 interface Message { role: 'user' | 'assistant'; content: string; }
 
-export default function AiClient(_props: { isAuthenticated: boolean }) {
+export default function AiClient() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);

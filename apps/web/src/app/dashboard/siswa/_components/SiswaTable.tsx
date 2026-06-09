@@ -20,7 +20,7 @@ interface SiswaTableProps {
   students: Student[];
   total: number;
   classes: { id: string; name: string }[];
-  currentRole: string;
+  canEdit: boolean;
 }
 
 const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -30,14 +30,13 @@ const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondar
   dropped: { label: 'DO', variant: 'destructive' },
 };
 
-export default function SiswaTable({ students, total, classes, currentRole }: SiswaTableProps) {
+export default function SiswaTable({ students, total, classes, canEdit }: SiswaTableProps) {
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [formOpen, setFormOpen] = useState(false);
   const [editStudent, setEditStudent] = useState<Student | null>(null);
   const [deleteStudent, setDeleteStudent] = useState<Student | null>(null);
-  const canEdit = currentRole === 'SUPER_ADMIN' || currentRole === 'TATA_USAHA';
 
   const filtered = students.filter((s) => {
     const matchSearch = !search || s.nis.includes(search) || s.user.fullName.toLowerCase().includes(search.toLowerCase());

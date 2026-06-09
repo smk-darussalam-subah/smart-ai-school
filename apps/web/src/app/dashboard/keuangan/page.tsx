@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { redirect } from 'next/navigation';
 import { apiFetch, PaginatedResponse } from '@/lib/api';
 import KeuanganTable from './_components/KeuanganTable';
 
@@ -13,8 +14,11 @@ interface SppPayment {
 
 export default async function KeuanganPage() {
   const session = await getServerSession(authOptions);
+  if (!session) redirect('/login');
   const token = session?.accessToken ?? '';
   const roles: string[] = (session?.roles as string[]) ?? [];
+
+  if (roles.includes('INDUSTRI')) redirect('/dashboard');
 
   const data = await apiFetch<PaginatedResponse<SppPayment>>('/finance/spp?limit=100', token);
   const payments = data?.data ?? [];

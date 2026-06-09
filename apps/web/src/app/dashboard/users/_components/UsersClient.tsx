@@ -6,9 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function UsersClient() {
   const [permissions, setPermissions] = useState<Array<{ code: string; description: string; module: string }>>([]);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    fetch('/api/backend/permissions').then(r => r.json()).then(setPermissions).catch(() => {});
+    fetch('/api/backend/permissions').then(r => r.json()).then(setPermissions).catch(() => {
+      setError('Gagal memuat data permission');
+    });
   }, []);
 
   return (
@@ -18,17 +21,23 @@ export default function UsersClient() {
       <Card>
         <CardHeader><CardTitle>Permission System</CardTitle></CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground mb-4">
-            Permission saat ini dikelola via API. Gunakan endpoint di bawah untuk mengelola RBAC.
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-            {permissions.map(p => (
-              <div key={p.code} className="text-xs bg-gray-50 rounded-lg p-2 border">
-                <code className="text-slate-700 font-mono">{p.code}</code>
-                <p className="text-muted-foreground mt-0.5">{p.module}</p>
+          {error ? (
+            <p className="text-sm text-red-600">{error}</p>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground mb-4">
+                Permission saat ini dikelola via API. Gunakan endpoint di bawah untuk mengelola RBAC.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {permissions.map(p => (
+                  <div key={p.code} className="text-xs bg-gray-50 rounded-lg p-2 border">
+                    <code className="text-slate-700 font-mono">{p.code}</code>
+                    <p className="text-muted-foreground mt-0.5">{p.module}</p>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
