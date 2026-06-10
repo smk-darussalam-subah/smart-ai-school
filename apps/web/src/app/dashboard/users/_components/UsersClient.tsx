@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,6 +27,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  updateUserRole,
+  updateUserActive,
+  grantUserPermission,
+  revokeUserPermission,
+  fetchUserOverrides,
+} from '../actions';
 
 const ROLES = [
   'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA',
@@ -63,7 +70,7 @@ interface UserItem {
   createdAt: string;
 }
 
-interface Permission {
+interface PermissionItem {
   id: string;
   code: string;
   description: string;
@@ -71,26 +78,26 @@ interface Permission {
 }
 
 interface UserPermission {
-  permission: Permission;
+  permission: PermissionItem;
   grant: boolean;
 }
 
-export default function UsersClient() {
-  const { data: session } = useSession();
-  const token = session?.accessToken ?? '';
+interface Props {
+  initialUsers: UserItem[];
+  initialTotal: number;
+  initialPermissions: PermissionItem[];
+}
 
-  const [users, setUsers] = useState<UserItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+export default function UsersClient({ initialUsers, initialTotal, initialPermissions }: Props) {
+  const router = useRouter();
+
+  const [users] = useState<UserItem[]>(initialUsers);
+  const [total] = useState(initialTotal);
+  const [permissions] = useState<PermissionItem[]>(initialPermissions);
 
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [page, setPage] = useState(1);
-
-  const [permissions, setPermissions] = useState<Permission[]>([]);
-  const [permError, setPermError] = useState('');
-  const [permLoading, setPermLoading] = useState(true);
 
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
@@ -98,153 +105,65 @@ export default function UsersClient() {
 
   const [actionMsg, setActionMsg] = useState('');
 
-  const fetchUsers = useCallback(async () => {
-    if (!token) return;
-    setLoading(true);
-    setError('');
+  const handleSearch = (value: string) => {
+    setSearch(value);
+    setPage(1);
+    const params = new URLSearchParams({ page: '1', limit: '20', ...(value && { search: value }), ...(roleFilter && { role: roleFilter }) });
+    router.push(`/dashboard/users?${params.toString()}`);
+  };
 
-    const params = new URLSearchParams();
-    params.set('page', String(page));
-    params.set('limit', '20');
-    if (search) params.set('search', search);
-    if (roleFilter) params.set('role', roleFilter);
+  const handleRoleFilter = (value: string) => {
+    const v = value === 'all' ? '' : value;
+    setRoleFilter(v);
+    setPage(1);
+    const params = new URLSearchParams({ page: '1', limit: '20', ...(search && { search }), ...(v && { role: v }) });
+    router.push(`/dashboard/users?${params.toString()}`);
+  };
 
-    try {
-      const res = await fetch(`/api/backend/users?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      setUsers(json.data ?? []);
-      setTotal(json.total ?? 0);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      setError(`Gagal memuat data user (${msg})`);
-    } finally {
-      setLoading(false);
-    }
-  }, [token, page, search, roleFilter]);
-
-  const fetchPermissions = useCallback(async () => {
-    if (!token) return;
-    setPermLoading(true);
-    setPermError('');
-
-    try {
-      const res = await fetch('/api/backend/permissions', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (Array.isArray(data)) setPermissions(data);
-      else if (data?.data && Array.isArray(data.data)) setPermissions(data.data);
-      else setPermError('Format data tidak dikenal');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      setPermError(`Gagal memuat permission (${msg}). Pastikan backend sudah di-deploy dengan module permissions.`);
-    } finally {
-      setPermLoading(false);
-    }
-  }, [token]);
-
-  const fetchUserOverrides = useCallback(async (userId: string) => {
-    if (!token) return;
-    setOverrideLoading(true);
-    try {
-      const res = await fetch(`/api/backend/permissions/users/${userId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setUserPermissions(Array.isArray(data) ? data : []);
-    } catch {
-      setUserPermissions([]);
-    } finally {
-      setOverrideLoading(false);
-    }
-  }, [token]);
-
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
-  useEffect(() => { fetchPermissions(); }, [fetchPermissions]);
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+    const params = new URLSearchParams({ page: String(newPage), limit: '20', ...(search && { search }), ...(roleFilter && { role: roleFilter }) });
+    router.push(`/dashboard/users?${params.toString()}`);
+  };
 
   const handleRoleChange = async (userId: string, newRole: string) => {
-    if (!token) return;
     setActionMsg('');
-    try {
-      const res = await fetch(`/api/backend/users/${userId}/role`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ role: newRole }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
-        setActionMsg(`Gagal: ${err.message}`);
-        return;
-      }
-      setActionMsg('Role berhasil diubah');
-      fetchUsers();
-    } catch {
-      setActionMsg('Gagal mengubah role');
-    }
+    const result = await updateUserRole(userId, newRole);
+    if (result.error) setActionMsg(`Gagal: ${result.error}`);
+    else setActionMsg('Role berhasil diubah');
+    router.refresh();
   };
 
   const handleToggleActive = async (userId: string, current: boolean) => {
-    if (!token) return;
     setActionMsg('');
-    try {
-      const res = await fetch(`/api/backend/users/${userId}/active`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ isActive: !current }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setActionMsg(current ? 'User dinonaktifkan' : 'User diaktifkan');
-      fetchUsers();
-    } catch {
-      setActionMsg('Gagal mengubah status');
-    }
+    const result = await updateUserActive(userId, !current);
+    if (result.error) setActionMsg(`Gagal: ${result.error}`);
+    else setActionMsg(current ? 'User dinonaktifkan' : 'User diaktifkan');
+    router.refresh();
+  };
+
+  const loadUserOverrides = async (userId: string) => {
+    setOverrideLoading(true);
+    const result = await fetchUserOverrides(userId);
+    if (result.data) setUserPermissions(Array.isArray(result.data) ? result.data : []);
+    else setUserPermissions([]);
+    setOverrideLoading(false);
   };
 
   const handleOverride = async (userId: string, permissionId: string, grant: boolean) => {
-    if (!token) return;
     setActionMsg('');
-    try {
-      const res = await fetch(`/api/backend/permissions/users/${userId}/grant`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ permissionId, grant }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setActionMsg(grant ? 'Permission diberikan' : 'Permission dicabut');
-      fetchUserOverrides(userId);
-    } catch {
-      setActionMsg('Gagal mengubah permission override');
-    }
+    const result = await grantUserPermission(userId, permissionId, grant);
+    if (result.error) setActionMsg(`Gagal: ${result.error}`);
+    else setActionMsg(grant ? 'Permission diberikan' : 'Permission dicabut');
+    loadUserOverrides(userId);
   };
 
   const handleRevokeOverride = async (userId: string, permissionId: string) => {
-    if (!token) return;
     setActionMsg('');
-    try {
-      const res = await fetch(`/api/backend/permissions/users/${userId}/revoke?permissionId=${permissionId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setActionMsg('Override dihapus');
-      fetchUserOverrides(userId);
-    } catch {
-      setActionMsg('Gagal menghapus override');
-    }
+    const result = await revokeUserPermission(userId, permissionId);
+    if (result.error) setActionMsg(`Gagal: ${result.error}`);
+    else setActionMsg('Override dihapus');
+    loadUserOverrides(userId);
   };
 
   const totalPages = Math.max(1, Math.ceil(total / 20));
@@ -259,7 +178,7 @@ export default function UsersClient() {
         </div>
       )}
 
-      {/* ── User List ────────────────────────────────────────────────────────── */}
+      {/* ── User List ──────────────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Daftar User ({total})</CardTitle>
@@ -267,10 +186,10 @@ export default function UsersClient() {
             <Input
               placeholder="Cari nama atau email..."
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              onChange={(e) => handleSearch(e.target.value)}
               className="w-56 text-sm"
             />
-            <Select value={roleFilter} onValueChange={(v: string) => { setRoleFilter(v === 'all' ? '' : v); setPage(1); }}>
+            <Select value={roleFilter || 'all'} onValueChange={(v: string) => handleRoleFilter(v)}>
               <SelectTrigger className="w-40 text-sm">
                 <SelectValue placeholder="Semua Role" />
               </SelectTrigger>
@@ -281,14 +200,13 @@ export default function UsersClient() {
                 ))}
               </SelectContent>
             </Select>
+            <Button size="sm" variant="outline" onClick={() => router.refresh()}>
+              Refresh
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Memuat data user...</p>
-          ) : error ? (
-            <p className="text-sm text-red-600">{error}</p>
-          ) : users.length === 0 ? (
+          {users.length === 0 ? (
             <p className="text-sm text-muted-foreground">Belum ada user terdaftar.</p>
           ) : (
             <>
@@ -337,7 +255,7 @@ export default function UsersClient() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => { setSelectedUser(u.id); fetchUserOverrides(u.id); }}
+                            onClick={() => { setSelectedUser(u.id); loadUserOverrides(u.id); }}
                           >
                             Permission
                           </Button>
@@ -355,25 +273,16 @@ export default function UsersClient() {
                 </TableBody>
               </Table>
 
-              {/* Pagination */}
               {totalPages > 1 && (
                 <div className="flex items-center justify-between mt-4">
                   <p className="text-sm text-muted-foreground">
                     Halaman {page} dari {totalPages}
                   </p>
                   <div className="flex gap-2">
-                    <Button
-                      size="sm" variant="outline"
-                      disabled={page <= 1}
-                      onClick={() => setPage((p) => p - 1)}
-                    >
+                    <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => handlePageChange(page - 1)}>
                       Sebelumnya
                     </Button>
-                    <Button
-                      size="sm" variant="outline"
-                      disabled={page >= totalPages}
-                      onClick={() => setPage((p) => p + 1)}
-                    >
+                    <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => handlePageChange(page + 1)}>
                       Berikutnya
                     </Button>
                   </div>
@@ -384,7 +293,7 @@ export default function UsersClient() {
         </CardContent>
       </Card>
 
-      {/* ── Permission Override per User ─────────────────────────────────────── */}
+      {/* ── Permission Override per User ───────────────────────────────────── */}
       {selectedUser && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -430,15 +339,11 @@ export default function UsersClient() {
         </Card>
       )}
 
-      {/* ── Permission System ─────────────────────────────────────────────────── */}
+      {/* ── Permission System ───────────────────────────────────────────────── */}
       <Card>
         <CardHeader><CardTitle>Permission System</CardTitle></CardHeader>
         <CardContent>
-          {permLoading ? (
-            <p className="text-sm text-muted-foreground">Memuat data permission...</p>
-          ) : permError ? (
-            <p className="text-sm text-red-600">{permError}</p>
-          ) : permissions.length === 0 ? (
+          {permissions.length === 0 ? (
             <p className="text-sm text-muted-foreground">Belum ada permission terdaftar. Jalankan seed untuk menginisialisasi.</p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
@@ -453,7 +358,7 @@ export default function UsersClient() {
         </CardContent>
       </Card>
 
-      {/* ── API Endpoints ─────────────────────────────────────────────────────── */}
+      {/* ── API Endpoints ───────────────────────────────────────────────────── */}
       <Card>
         <CardHeader><CardTitle>API Endpoints</CardTitle></CardHeader>
         <CardContent className="space-y-2 text-sm">
