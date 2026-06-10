@@ -5,8 +5,6 @@
 # Hanya Nginx yang terhubung ke internet (port 80/443)
 # =============================================================================
 
-version: '3.8'
-
 networks:
   smk-network:
     driver: bridge
@@ -52,6 +50,10 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    deploy:
+      resources:
+        limits: { cpus: '2', memory: '2G' }
+        reservations: { cpus: '0.5', memory: '512M' }
 
   # ─── CACHE & QUEUE ────────────────────────────────────────────────────────
 
@@ -59,7 +61,11 @@ services:
     image: redis:7-alpine
     container_name: smk-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    # Password ditulis ke config file saat startup (tidak di command line)
+    # $$ escape mencegah Docker Compose ekspansi variabel — shell container yang resolve.
+    command: sh -c 'echo "requirepass $${REDIS_PASSWORD}" > /tmp/redis.conf && echo "appendonly yes" >> /tmp/redis.conf && redis-server /tmp/redis.conf'
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
     # ports tidak dimapping — aksesibel hanya via Docker network internal.
     # Dev lokal: gunakan docker-compose.dev.yml atau SSH tunnel ke VPS.
     volumes:
@@ -67,7 +73,14 @@ services:
     networks:
       - smk-network
     healthcheck:
-      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { cpus: '1', memory: '512M' }
+        reservations: { cpus: '0.25', memory: '128M' }
       interval: 10s
       timeout: 5s
       retries: 5
@@ -130,6 +143,10 @@ services:
       timeout: 10s
       retries: 5
       start_period: 90s
+    deploy:
+      resources:
+        limits: { cpus: '1', memory: '1G' }
+        reservations: { cpus: '0.5', memory: '512M' }
 
   # ─── AUTOMATION ENGINE ────────────────────────────────────────────────────
 
@@ -176,6 +193,10 @@ services:
       - ollama_data:/root/.ollama
     networks:
       - smk-network
+    deploy:
+      resources:
+        limits: { cpus: '3', memory: '6G' }
+        reservations: { cpus: '1', memory: '2G' }
     # Uncomment jika VPS punya GPU:
     # deploy:
     #   resources:
@@ -299,6 +320,28 @@ services:
 
   # ─── BACKEND API (NestJS) ─────────────────────────────────────────────────
 
+  # One-shot container: jalankan Prisma migration sebelum API start.
+  # Dipanggil oleh deploy.yml sebagai langkah terpisah.
+  # Ini memisahkan hak DDL (CREATE/ALTER) dari runtime API.
+  api-migrate:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    container_name: smk-api-migrate
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL}
+      GUARD_STAGING_DB: ${GUARD_STAGING_DB:-0}
+    networks:
+      - smk-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Entrypoint: jalankan migration dengan guardrail N-20.
+    entrypoint: ["sh", "-c", "if [ \"$${GUARD_STAGING_DB:-0}\" = \"1\" ]; then _DB=$$(echo $${DATABASE_URL} | sed 's|.*/||' | sed 's|?.*||'); if [ \"$$_DB\" != \"smk_staging_db\" ]; then echo '❌ GUARDRAIL N-20: DATABASE_URL bukan smk_staging_db!' >&2; exit 1; fi; echo '✅ Guardrail N-20 OK'; fi; cd /app/packages/database && /app/node_modules/.bin/prisma migrate deploy"]
+    profiles:
+      - migrate
+
   api:
     build:
       context: ../..
@@ -339,6 +382,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits: { cpus: '1', memory: '1G' }
+        reservations: { cpus: '0.25', memory: '256M' }
 
   # ─── FRONTEND WEB (Next.js) ───────────────────────────────────────────────
 
@@ -372,6 +419,10 @@ services:
       - smk-network
     depends_on:
       - api
+    deploy:
+      resources:
+        limits: { cpus: '1', memory: '512M' }
+        reservations: { cpus: '0.25', memory: '128M' }
 
   # ─── BACKUP OTOMATIS ──────────────────────────────────────────────────────
 
@@ -442,3 +493,7 @@ services:
       - uptime-kuma
     networks:
       - smk-network
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: '256M' }
+        reservations: { cpus: '0.25', memory: '64M' }

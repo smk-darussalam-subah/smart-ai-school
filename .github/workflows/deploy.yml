@@ -121,16 +121,21 @@ jobs:
             docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
               build --no-cache api web
 
-            # ── Deploy: restart api & web dengan image baru ──────────────────
+            # ── Step 1: Jalankan Prisma migration (one-shot, DDL terpisah dari runtime) ──
+            # api-migrate: service dengan profile migrate — jalankan prisma migrate deploy lalu exit.
+            # Memisahkan hak DDL (CREATE/ALTER) dari runtime API container.
+            echo "🔄 Running Prisma migration (${BRANCH})..."
+            docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" --profile migrate \
+              run --rm api-migrate
+            echo "✅ Migration selesai"
+
+            # ── Step 2: Deploy api & web dengan image baru ─────────────────────
             # --no-deps: jangan start postgres/redis/keycloak (sudah running dari prod stack)
-            # Migrasi Prisma dijalankan OTOMATIS di dalam CMD container api (start.sh):
-            #   - Staging: migrate ke smk_staging_db (guardrail N-20 aktif)
-            #   - Prod:    migrate ke smk_db
             docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
               up -d --no-deps api web
 
             # ── Tunggu api healthy ────────────────────────────────────────────
-            echo "⏳ Menunggu ${API_CONTAINER} healthy (migrasi + NestJS startup)..."
+            echo "⏳ Menunggu ${API_CONTAINER} healthy (NestJS startup)..."
             timeout 150 sh -c \
               "until [ \"\$(docker inspect ${API_CONTAINER} --format '{{.State.Health.Status}}' 2>/dev/null)\" = \"healthy\" ]; do
                  STATUS=\$(docker inspect ${API_CONTAINER} --format '{{.State.Status}}' 2>/dev/null)
