@@ -14,11 +14,19 @@
 
 // ── jest.mock harus sebelum semua import (hoisted oleh Jest transform) ────────
 
-jest.mock('@smk/auth', () => ({
-  verifyKeycloakToken: jest.fn(),
-  extractAuthUser: jest.fn(),
-  hasRole: jest.fn(),
-}));
+jest.mock('@smk/auth', () => {
+  const { z } = require('zod');
+  const UserRole = z.enum([
+    'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA',
+    'GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI',
+  ]);
+  return {
+    UserRole,
+    verifyKeycloakToken: jest.fn(),
+    extractAuthUser: jest.fn(),
+    hasRole: jest.fn(),
+  };
+});
 
 jest.mock('@smk/logger', () => ({
   auditLog: jest.fn(),
