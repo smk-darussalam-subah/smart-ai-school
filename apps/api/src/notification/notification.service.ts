@@ -1,24 +1,21 @@
 // =============================================================================
-// NotificationService — Durability layer untuk notifikasi
+// NotificationService — Durability + Queue
 //
-// Pola (dari docs/tahap1-sprint-plan.md §5 + sprint3-design §1):
-//   1. Tulis notification_logs status=pending SEBELUM kirim (crash-safe)
-//   2. Idempotensi (N-9): jika sudah ada log sent untuk
-//      refType+refId+recipient+channel → SKIP
-//   3. Panggil adapter.send(). Sukses → sent; Gagal → failed + error (TIDAK throw)
-//   4. onModuleInit: retry pending > 5 menit (batch 50) sebagai crash recovery
-//
-// Catatan: NotificationService tidak di-expose via controller di Sprint 3.
-//          Hanya dipanggil via event wiring (SMA-43).
+// Flow:
+//   1. notify() → idempotensi check → tulis pending → queue.add() → return
+//   2. NotificationWorker pick up job → adapter.send() → update to sent/failed
+//   3. Retry + rate-limit + backoff di-handle BullMQ (queue.config.ts)
+//   4. onModuleInit: stale pending jobs → queue.add() (recovery)
 // =============================================================================
 
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
-import { NotificationAdapter } from '@smk/types';
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Queue } from 'bullmq';
 import { logger } from '@smk/logger';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotifJob } from './queue.config';
 
-const RETRY_BATCH_LIMIT = 50;
-const PENDING_STALE_MINUTES = 5;
+const STALE_MINUTES = 5;
+const STALE_RETRY_LIMIT = 50;
 
 export interface NotifyInput {
   channel: 'whatsapp' | 'email';
@@ -31,94 +28,82 @@ export interface NotifyInput {
 
 @Injectable()
 export class NotificationService implements OnModuleInit {
-  constructor(
-    private readonly prisma: PrismaService,
-    @Inject('NOTIFICATION_ADAPTER')
-    private readonly adapter: NotificationAdapter,
-  ) {}
+  private queue: Queue<NotifJob> | null = null;
 
-  // ── onModuleInit: startup retry ───────────────────────────────────────────
-  // Fail-soft: jika tabel belum ada (P2021 saat migration belum applied),
-  // log warning dan lanjut — jangan crash seluruh aplikasi.
+  constructor(private readonly prisma: PrismaService) {}
+
+  setQueue(queue: Queue<NotifJob>): void {
+    this.queue = queue;
+  }
 
   async onModuleInit(): Promise<void> {
+    // Startup recovery: ambil pending stale > 5 menit → masukkan ke queue
+    if (!this.queue) {
+      logger.warn('[NotificationService] Queue not ready, skipping startup recovery');
+      return;
+    }
+
     try {
-      const staleThreshold = new Date(Date.now() - PENDING_STALE_MINUTES * 60 * 1000);
+      const staleThreshold = new Date(Date.now() - STALE_MINUTES * 60 * 1000);
       const stale = await this.prisma.notificationLog.findMany({
         where: { status: 'pending', createdAt: { lt: staleThreshold } },
-        take: RETRY_BATCH_LIMIT,
+        take: STALE_RETRY_LIMIT,
         orderBy: { createdAt: 'asc' },
       });
 
       if (stale.length > 0) {
-        logger.info(`[NotificationService] Startup retry: ${stale.length} pending stale`, {
-          count: stale.length,
-        });
-      }
+        logger.info(`[NotificationService] Recovery: adding ${stale.length} stale jobs to queue`);
 
-      for (const log of stale) {
-        await this._attemptSend(log.id, log.channel as 'whatsapp' | 'email', log.recipient, log.body, log.subject ?? undefined);
+        for (const log of stale) {
+          await this.queue.add(log.channel as 'whatsapp' | 'email', {
+            logId: log.id,
+            channel: log.channel as 'whatsapp' | 'email',
+            to: log.recipient,
+            body: log.body,
+            subject: log.subject ?? undefined,
+          }, { jobId: log.id });
+        }
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.warn(
-        '[NotificationService] Startup retry skipped — tabel belum tersedia atau error DB',
-        { error: message },
-      );
+      logger.warn('[NotificationService] Startup recovery skipped', { error: message });
     }
   }
 
-  // ── notify() — entrypoint utama ───────────────────────────────────────────
-
   async notify(input: NotifyInput): Promise<void> {
+    if (!this.queue) {
+      logger.error('[NotificationService] Queue not initialized — notification skipped', input);
+      return;
+    }
+
     const { channel, to, body, subject, refType, refId } = input;
 
-    // 1. Idempotensi: skip jika sudah terkirim dengan ref yang sama
+    // 1. Idempotensi
     if (refType && refId) {
       const existing = await this.prisma.notificationLog.findFirst({
         where: { refType, refId, recipient: to, channel, status: 'sent' },
         select: { id: true },
       });
       if (existing) {
-        logger.info('[NotificationService] Skip (sudah sent)', { refType, refId, channel, to });
+        logger.info('[NotificationService] Skip (already sent)', { refType, refId, channel });
         return;
       }
     }
 
-    // 2. Tulis pending SEBELUM kirim (durability guardrail)
+    // 2. Tulis pending (durability)
     const log = await this.prisma.notificationLog.create({
       data: { recipient: to, channel, subject, body, status: 'pending', refType, refId },
     });
 
-    // 3. Kirim via adapter; fail-soft (tidak throw ke caller)
-    await this._attemptSend(log.id, channel, to, body, subject);
-  }
+    // 3. Queue job — fire and forget
+    await this.queue.add(channel, {
+      logId: log.id,
+      channel,
+      to,
+      body,
+      subject,
+    }, { jobId: log.id });
 
-  // ── _attemptSend — update status setelah kirim ───────────────────────────
-
-  private async _attemptSend(
-    logId: string,
-    channel: 'whatsapp' | 'email',
-    to: string,
-    body: string,
-    subject?: string,
-  ): Promise<void> {
-    try {
-      await this.adapter.send(channel, to, body, subject);
-      await this.prisma.notificationLog.update({
-        where: { id: logId },
-        data: { status: 'sent', sentAt: new Date() },
-      });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.warn('[NotificationService] Pengiriman gagal (fail-soft)', { logId, channel, to, error: message });
-      await this.prisma.notificationLog.update({
-        where: { id: logId },
-        data: { status: 'failed', error: message },
-      }).catch((updateErr: unknown) => {
-        logger.error('[NotificationService] Gagal update status failed', { logId, updateErr });
-      });
-      // Sengaja tidak throw — kegagalan notif tidak boleh menggagalkan transaksi bisnis
-    }
+    logger.debug('[NotificationService] Queued', { logId: log.id, channel });
   }
 }
