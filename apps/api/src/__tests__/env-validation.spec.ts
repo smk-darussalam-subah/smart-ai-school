@@ -5,6 +5,19 @@
 
 import { validateEnv } from '../config/env.validation';
 
+jest.mock('@smk/logger', () => ({
+  logger: {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  },
+  auditLog: jest.fn(),
+  logError: jest.fn(),
+}));
+
+import { logger } from '@smk/logger';
+
 // Valid env values yang dipakai sebagai baseline di setiap test
 const VALID_ENV: Record<string, string> = {
   NODE_ENV: 'development',
@@ -22,25 +35,21 @@ const ENV_KEYS = Object.keys(VALID_ENV);
 describe('validateEnv() — Environment Variable Validation at Startup (Item 12)', () => {
   let savedEnv: Record<string, string | undefined>;
   let exitSpy: jest.SpyInstance;
-  let consoleErrorSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    // Simpan state env sebelum test
     savedEnv = {};
     ENV_KEYS.forEach((key) => {
       savedEnv[key] = process.env[key];
       delete process.env[key];
     });
 
-    // Mock process.exit agar tidak benar-benar terminate process
     exitSpy = jest
       .spyOn(process, 'exit')
       .mockImplementation((code?: string | number | null | undefined) => {
         throw new Error(`process.exit(${code}) called`);
       });
 
-    // Suppress console.error output agar test output bersih
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
@@ -53,7 +62,6 @@ describe('validateEnv() — Environment Variable Validation at Startup (Item 12)
       }
     });
     exitSpy.mockRestore();
-    consoleErrorSpy.mockRestore();
   });
 
   // ── VALID CASES ─────────────────────────────────────────────────────────────
@@ -146,12 +154,10 @@ describe('validateEnv() — Environment Variable Validation at Startup (Item 12)
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
-  it('saat exit, console.error menampilkan field errors (tidak silent)', () => {
+  it('saat exit, logger.error dipanggil dengan field errors', () => {
     Object.assign(process.env, { ...VALID_ENV, DATABASE_URL: '' });
 
     expect(() => validateEnv()).toThrow();
-    // console.error harus dipanggil 2x: untuk pesan + untuk field errors
-    expect(consoleErrorSpy).toHaveBeenCalledWith('❌ Invalid environment variables:');
-    expect(consoleErrorSpy).toHaveBeenCalledTimes(2);
+    expect(logger.error).toHaveBeenCalledWith('Invalid environment variables', expect.objectContaining({ errors: expect.any(Object) }));
   });
 });

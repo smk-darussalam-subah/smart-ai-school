@@ -24,12 +24,9 @@ import {
 import { AuthUser } from '@smk/auth';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { isGuruOnly, isSiswaOnly, isOrangTuaOnly, resolveUserId, resolveTeacherId, resolveSiswaClassId } from '../common/helpers/role-helpers';
 import { CreateScheduleDto } from './dto/create-schedule.dto';
 import { ListScheduleQuery } from './dto/list-schedule.dto';
-
-// ── Konstanta ─────────────────────────────────────────────────────────────────
-
-const ELEVATED_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] as const;
 
 // ── Select shape ──────────────────────────────────────────────────────────────
 
@@ -62,63 +59,15 @@ const SCHEDULE_SELECT = {
   },
 } as const;
 
-// ── Role helpers ──────────────────────────────────────────────────────────────
-
-function isElevated(user: AuthUser): boolean {
-  return user.roles.some((r) => (ELEVATED_ROLES as readonly string[]).includes(r));
-}
-
-function isGuruOnly(user: AuthUser): boolean {
-  return user.roles.includes('GURU') && !isElevated(user);
-}
-
-function isSiswaOnly(user: AuthUser): boolean {
-  return (
-    user.roles.includes('SISWA') &&
-    !isElevated(user) &&
-    !user.roles.includes('GURU')
-  );
-}
-
-function isOrangTuaOnly(user: AuthUser): boolean {
-  return (
-    user.roles.includes('ORANG_TUA') &&
-    !isElevated(user) &&
-    !user.roles.includes('GURU') &&
-    !user.roles.includes('SISWA')
-  );
-}
-
 // ── Service ───────────────────────────────────────────────────────────────────
 
 @Injectable()
 export class ScheduleService {
   constructor(private prisma: PrismaService) {}
 
-  // ── Private resolvers ────────────────────────────────────────────────────────
-
-  private async resolveUserId(keycloakId: string): Promise<string> {
-    const u = await this.prisma.user.findUnique({
-      where: { keycloakId },
-      select: { id: true },
-    });
-    if (!u) throw new ForbiddenException('User tidak ditemukan');
-    return u.id;
-  }
-
-  private async resolveTeacherIdFromKeycloak(keycloakId: string): Promise<string> {
-    const userId = await this.resolveUserId(keycloakId);
-    const t = await this.prisma.teacher.findUnique({
-      where: { userId },
-      select: { id: true },
-    });
-    if (!t) throw new ForbiddenException('Profil guru tidak ditemukan untuk akun ini');
-    return t.id;
-  }
-
   /** keycloakId → teacher.id[] (untuk resolusi jadwal guru: semua assignment-nya) */
   private async resolveGuruAssignmentIds(keycloakId: string): Promise<string[]> {
-    const teacherId = await this.resolveTeacherIdFromKeycloak(keycloakId);
+    const teacherId = await resolveTeacherId(this.prisma, keycloakId);
     const assignments = await this.prisma.teachingAssignment.findMany({
       where: { teacherId },
       select: { id: true },
@@ -126,20 +75,9 @@ export class ScheduleService {
     return assignments.map((a) => a.id);
   }
 
-  /** keycloakId → classId kelas siswa (null jika belum assigned ke kelas) */
-  private async resolveSiswaClassId(keycloakId: string): Promise<string | null> {
-    const userId = await this.resolveUserId(keycloakId);
-    const student = await this.prisma.student.findUnique({
-      where: { userId },
-      select: { classId: true },
-    });
-    if (!student) throw new ForbiddenException('Profil siswa tidak ditemukan untuk akun ini');
-    return student.classId ?? null;
-  }
-
   /** keycloakId → classId[] semua kelas anak-anak (untuk ORANG_TUA) */
   private async resolveChildClassIds(keycloakId: string): Promise<string[]> {
-    const userId = await this.resolveUserId(keycloakId);
+    const userId = await resolveUserId(this.prisma, keycloakId);
     const children = await this.prisma.student.findMany({
       where: { parentId: userId },
       select: { classId: true },
@@ -170,7 +108,7 @@ export class ScheduleService {
       // classId query dari GURU: bisa filter, tapi tidak override ownership
       if (query.classId) where.classId = query.classId;
     } else if (isSiswaOnly(user)) {
-      const myClassId = await this.resolveSiswaClassId(user.keycloakId);
+      const myClassId = await resolveSiswaClassId(this.prisma, user.keycloakId);
       if (!myClassId) {
         return { data: [], total: 0, page: query.page, limit: query.limit };
       }

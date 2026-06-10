@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { z } from 'zod';
+import { logger } from '@smk/logger';
 
 /**
  * Schema untuk semua environment variable yang dibutuhkan API.
@@ -67,8 +68,7 @@ export function validateEnv(): Env {
   const result = EnvSchema.safeParse(process.env);
 
   if (!result.success) {
-    console.error('❌ Invalid environment variables:');
-    console.error(result.error.flatten().fieldErrors);
+    logger.error('Invalid environment variables', { errors: result.error.flatten().fieldErrors });
     process.exit(1);
   }
 

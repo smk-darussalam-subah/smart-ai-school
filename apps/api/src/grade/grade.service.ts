@@ -25,6 +25,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GradeType, Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
+import { isGuruOnly, isSiswaOnly, isOrangTuaOnly, resolveUserId, resolveTeacherId, resolveSiswaId } from '../common/helpers/role-helpers';
 import { CreateGradeDto } from './dto/create-grade.dto';
 import { UpdateGradeDto } from './dto/update-grade.dto';
 import { ListGradesQuery } from './dto/list-grades.dto';
@@ -33,8 +34,6 @@ import { EVENTS, GradeSubmittedPayload } from '../events/events.types';
 // ── Konstanta ─────────────────────────────────────────────────────────────────
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-
-const ELEVATED_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] as const;
 
 // ── Select shape ─────────────────────────────────────────────────────────────
 
@@ -70,33 +69,6 @@ const GRADE_SELECT = {
   },
 } as const;
 
-// ── Role helpers ─────────────────────────────────────────────────────────────
-
-function isElevated(user: AuthUser): boolean {
-  return user.roles.some((r) => (ELEVATED_ROLES as readonly string[]).includes(r));
-}
-
-function isGuruOnly(user: AuthUser): boolean {
-  return (
-    user.roles.includes('GURU') && !isElevated(user)
-  );
-}
-
-function isSiswaOnly(user: AuthUser): boolean {
-  return (
-    user.roles.includes('SISWA') && !isElevated(user) && !user.roles.includes('GURU')
-  );
-}
-
-function isOrangTuaOnly(user: AuthUser): boolean {
-  return (
-    user.roles.includes('ORANG_TUA') &&
-    !isElevated(user) &&
-    !user.roles.includes('GURU') &&
-    !user.roles.includes('SISWA')
-  );
-}
-
 // ── Service ───────────────────────────────────────────────────────────────────
 
 @Injectable()
@@ -106,43 +78,9 @@ export class GradeService {
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
-  // ── Private helpers ─────────────────────────────────────────────────────────
-
-  /** keycloakId → auth.users.id */
-  private async resolveUserId(keycloakId: string): Promise<string> {
-    const user = await this.prisma.user.findUnique({
-      where: { keycloakId },
-      select: { id: true },
-    });
-    if (!user) throw new ForbiddenException('User tidak ditemukan');
-    return user.id;
-  }
-
-  /** keycloakId → teacher.id (dua langkah: user → teacher) */
-  private async resolveTeacherId(keycloakId: string): Promise<string> {
-    const userId = await this.resolveUserId(keycloakId);
-    const teacher = await this.prisma.teacher.findUnique({
-      where: { userId },
-      select: { id: true },
-    });
-    if (!teacher) throw new ForbiddenException('Profil guru tidak ditemukan untuk akun ini');
-    return teacher.id;
-  }
-
-  /** keycloakId → student.id (untuk SISWA) */
-  private async resolveSiswaId(keycloakId: string): Promise<string> {
-    const userId = await this.resolveUserId(keycloakId);
-    const student = await this.prisma.student.findUnique({
-      where: { userId },
-      select: { id: true },
-    });
-    if (!student) throw new ForbiddenException('Profil siswa tidak ditemukan untuk akun ini');
-    return student.id;
-  }
-
   /** keycloakId → student.id[] (satu atau lebih anak untuk ORANG_TUA) */
   private async resolveChildStudentIds(keycloakId: string): Promise<string[]> {
-    const userId = await this.resolveUserId(keycloakId);
+    const userId = await resolveUserId(this.prisma, keycloakId);
     const children = await this.prisma.student.findMany({
       where: { parentId: userId },
       select: { id: true },
@@ -170,12 +108,12 @@ export class GradeService {
 
     if (isGuruOnly(user)) {
       // GURU: hanya nilai dari assignment yang dipegang sendiri
-      const myTeacherId = await this.resolveTeacherId(user.keycloakId);
+      const myTeacherId = await resolveTeacherId(this.prisma, user.keycloakId);
       assignmentFilter.teacherId = myTeacherId;
       where.assignment = assignmentFilter;
     } else if (isSiswaOnly(user)) {
       // SISWA: hanya nilai sendiri (query.studentId diabaikan)
-      where.studentId = await this.resolveSiswaId(user.keycloakId);
+      where.studentId = await resolveSiswaId(this.prisma, user.keycloakId);
     } else if (isOrangTuaOnly(user)) {
       // ORANG_TUA: hanya nilai anak (query.studentId diabaikan)
       const childIds = await this.resolveChildStudentIds(user.keycloakId);
@@ -205,10 +143,10 @@ export class GradeService {
 
   async create(dto: CreateGradeDto, user: AuthUser) {
     // 1. Resolve userId untuk submittedBy
-    const userId = await this.resolveUserId(user.keycloakId);
+    const userId = await resolveUserId(this.prisma, user.keycloakId);
 
     // 2. Pastikan guru punya profil teacher dan assignment-nya milik dia
-    const myTeacherId = await this.resolveTeacherId(user.keycloakId);
+    const myTeacherId = await resolveTeacherId(this.prisma, user.keycloakId);
 
     const assignment = await this.prisma.teachingAssignment.findUnique({
       where: { id: dto.assignmentId },
@@ -287,7 +225,7 @@ export class GradeService {
     // SA: akses penuh, tidak ada batasan waktu
     if (!user.roles.includes('SUPER_ADMIN')) {
       // GURU: cek ownership submittedBy dan jendela 7 hari
-      const userId = await this.resolveUserId(user.keycloakId);
+      const userId = await resolveUserId(this.prisma, user.keycloakId);
 
       if (grade.submittedBy !== userId) {
         throw new ForbiddenException('Hanya guru yang menginput nilai ini yang bisa mengeditnya');

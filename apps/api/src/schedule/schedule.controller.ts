@@ -18,6 +18,7 @@ import {
 import { AuthUser } from '@smk/auth';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { ScheduleService } from './schedule.service';
 import { CreateScheduleSchema, CreateScheduleDto } from './dto/create-schedule.dto';
@@ -32,6 +33,7 @@ export class ScheduleController {
    * Query opsional: classId, teacherId, dayOfWeek, academicYear, semester.
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @RequirePermission('academic.schedule.read')
   @Get()
   findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     const parsed = ListScheduleQuerySchema.safeParse(rawQuery);
@@ -45,6 +47,7 @@ export class ScheduleController {
    * Konflik guru/ruang → 409 via ConflictException (app-level).
    */
   @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @RequirePermission('academic.schedule.manage')
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(@Body(ZodPipe(CreateScheduleSchema)) dto: CreateScheduleDto) {

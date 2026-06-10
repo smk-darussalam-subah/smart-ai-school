@@ -19,6 +19,7 @@ import {
 import { AuthUser } from '@smk/auth';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { StudentService } from './student.service';
 import { CreateStudentSchema, CreateStudentDto } from './dto/create-student.dto';
@@ -34,6 +35,7 @@ export class StudentController {
    * GURU: read-only access, future SMA-36 bisa tambah filter "assigned class" di query
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU')
+  @RequirePermission('student.read')
   @Get()
   findAll(@Query() rawQuery: unknown, @CurrentUser() _user: AuthUser) {
     const parsed = ListStudentsQuerySchema.safeParse(rawQuery);
@@ -45,6 +47,7 @@ export class StudentController {
    * GET /students/:id — ownership check (SISWA self, ORANG_TUA anak) di service
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @RequirePermission('student.read')
   @Get(':id')
   findById(
     @Param('id', ParseUUIDPipe) id: string,
@@ -58,6 +61,7 @@ export class StudentController {
    * ⚠️ R-05: Gunakan data dummy sampai consent aktif (SMA-55)
    */
   @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @RequirePermission('student.create')
   @Post()
   create(@Body(ZodPipe(CreateStudentSchema)) dto: CreateStudentDto) {
     return this.studentService.create(dto);
@@ -67,6 +71,7 @@ export class StudentController {
    * PATCH /students/:id — partial update data siswa
    */
   @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @RequirePermission('student.update')
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -79,6 +84,7 @@ export class StudentController {
    * DELETE /students/:id — SOFT DELETE: set deletedAt, record TIDAK dihapus dari DB
    */
   @Roles('SUPER_ADMIN')
+  @RequirePermission('student.delete')
   @Delete(':id')
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.studentService.remove(id);
@@ -89,6 +95,7 @@ export class StudentController {
    * Ownership: SISWA self, ORANG_TUA anak. GURU: TODO SMA-36 tambah filter kelas sendiri.
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @RequirePermission('student.read')
   @Get(':id/grades')
   findGrades(
     @Param('id', ParseUUIDPipe) id: string,
@@ -102,6 +109,7 @@ export class StudentController {
    * Ownership: SISWA self, ORANG_TUA anak. GURU: TODO SMA-36 tambah filter kelas sendiri.
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @RequirePermission('student.read')
   @Get(':id/attendance')
   findAttendance(
     @Param('id', ParseUUIDPipe) id: string,

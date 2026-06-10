@@ -11,7 +11,7 @@
 //   6. Response publik hanya { id, status } — TIDAK return data lead lain
 // =============================================================================
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { logger } from '@smk/logger';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubmitLeadDto } from './dto/submit-lead.dto';
@@ -49,7 +49,7 @@ export class PpdbService {
     if (process.env.PPDB_CAPTCHA_SECRET && !dto.captchaToken) {
       // TODO: verifikasi ke captcha provider (hCaptcha/reCAPTCHA) di SMA-34+
       // Untuk sekarang, jika secret ada tapi token kosong → tolak
-      throw new Error('Captcha token diperlukan');
+      throw new BadRequestException('Captcha token diperlukan');
     }
 
     // Hapus field meta sebelum simpan ke DB

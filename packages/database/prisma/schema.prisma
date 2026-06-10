@@ -45,6 +45,9 @@ model User {
   leads       PpdbLead[] @relation("AssignedLeads")
 
   @@map("users")
+  @@index([role])
+  @@index([isActive])
+  @@index([deletedAt])
   @@schema("auth")
 }
 
@@ -215,6 +218,7 @@ model PpdbLead {
 
   @@index([status, createdAt])
   @@index([phone])
+  @@index([assignedTo])
   @@map("leads")
   @@schema("ppdb")
 }
@@ -290,7 +294,8 @@ model Grade {
   assignment TeachingAssignment @relation(fields: [assignmentId], references: [id])
 
   @@index([studentId, academicYear, semester])
-  @@index([assignmentId])  // GradeService.findAll(assignmentId filter) + DOBEL GUARD WHERE (studentId,assignmentId,semester,type)
+  @@index([assignmentId])
+  @@index([submittedBy])
   @@map("grades")
   @@schema("academic")
 }
@@ -430,7 +435,7 @@ model NotificationLog {
 
   @@index([recipient, createdAt])
   @@index([status])
-  @@index([refType, refId])  // notify() idempotensi check: WHERE refType=? AND refId=? AND recipient=? AND channel=? AND status='sent'
+  @@index([refType, refId, recipient, channel, status])
   @@map("notification_logs")
   @@schema("notification")
 }
@@ -494,13 +499,15 @@ enum MessageRole {
 
 model ChatSession {
   id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String    @map("user_id") @db.Uuid   // auth.users.id — audit trail, no FK (cross-schema)
-  title     String?   @db.VarChar(100)            // ~50 char dari pesan pertama
+  userId    String    @map("user_id") @db.Uuid
+  title     String?   @db.VarChar(100)
   createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   messages  ChatMessage[]
 
   @@index([userId])
+  @@index([updatedAt])
   @@map("chat_sessions")
   @@schema("ai_knowledge")
 }
@@ -605,6 +612,7 @@ model AcademicCalendar {
 
   @@index([academicYearId])
   @@index([type])
+  @@index([startDate, endDate])
   @@map("academic_calendar")
   @@schema("school")
 }
@@ -626,7 +634,7 @@ enum CalendarType {
 // =============================================================================
 
 model AuditLog {
-  id           String   @id @default(cuid())
+  id           String   @id @default(dbgenerated("gen_random_uuid()"))
   createdAt    DateTime @default(now()) @map("created_at")
   actorId      String?  @map("actor_id")       // Keycloak sub; null = sistem/anonim
   actorUsername String? @map("actor_username")
