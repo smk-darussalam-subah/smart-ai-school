@@ -81,9 +81,6 @@ services:
       resources:
         limits: { cpus: '1', memory: '512M' }
         reservations: { cpus: '0.25', memory: '128M' }
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   # ─── AUTHENTICATION ───────────────────────────────────────────────────────
 
