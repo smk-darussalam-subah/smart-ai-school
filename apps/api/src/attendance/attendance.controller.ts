@@ -18,6 +18,7 @@ import {
 import { AuthUser } from '@smk/auth';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { AttendanceService } from './attendance.service';
 import { CreateAttendanceSchema, CreateAttendanceDto } from './dto/create-attendance.dto';
@@ -33,6 +34,7 @@ export class AttendanceController {
    * Duplikat (siswa+kelas+tanggal sama) → P2002 → PrismaExceptionFilter → 409.
    */
   @Roles('GURU')
+  @RequirePermission('academic.attendance.create')
   @Post()
   @HttpCode(HttpStatus.CREATED)
   bulkCreate(
@@ -47,6 +49,7 @@ export class AttendanceController {
    * Query: classId, studentId, dateFrom, dateTo, page, limit.
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @RequirePermission('academic.attendance.read')
   @Get()
   findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     const parsed = ListAttendanceQuerySchema.safeParse(rawQuery);

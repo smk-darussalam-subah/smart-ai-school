@@ -22,6 +22,7 @@ import {
 import { AuthUser } from '@smk/auth';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { GradeService } from './grade.service';
 import { CreateGradeSchema, CreateGradeDto } from './dto/create-grade.dto';
@@ -37,6 +38,7 @@ export class GradeController {
    * Ownership + dobel guard UTS/UAS di service layer.
    */
   @Roles('GURU')
+  @RequirePermission('academic.grade.create')
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(
@@ -51,6 +53,7 @@ export class GradeController {
    * Ownership difilter di service (GURU=kelas sendiri, SISWA=diri, OT=anak).
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @RequirePermission('academic.grade.read')
   @Get()
   findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     const parsed = ListGradesQuerySchema.safeParse(rawQuery);
@@ -64,6 +67,7 @@ export class GradeController {
    * GURU: hanya nilai yang dia input + dalam 7 hari kalender.
    */
   @Roles('SUPER_ADMIN', 'GURU')
+  @RequirePermission('academic.grade.update')
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,

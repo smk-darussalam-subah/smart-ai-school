@@ -39,6 +39,15 @@ jest.mock('@smk/logger', () => ({
   },
 }));
 
+// Mock PermissionsService.hasPermission — bypass semua permission check di E2E
+// (CI tidak punya data permission ter-seed di DB smk_test)
+jest.mock('../src/permissions/permissions.service', () => ({
+  PermissionsService: jest.fn().mockImplementation(() => ({
+    hasPermission: jest.fn().mockResolvedValue(true),
+    getEffectivePermissions: jest.fn().mockResolvedValue(new Set()),
+  })),
+}));
+
 // ── Set env vars wajib sebelum AppModule diinisialisasi ──────────────────────
 process.env['KEYCLOAK_URL'] = process.env['KEYCLOAK_URL'] ?? 'http://localhost:8080';
 process.env['KEYCLOAK_REALM'] = process.env['KEYCLOAK_REALM'] ?? 'diis';
