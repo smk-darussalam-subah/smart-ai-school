@@ -12,7 +12,7 @@
 
 import { Module } from '@nestjs/common';
 import { NotificationAdapter } from '@smk/types';
-import { Queue, Worker, RedisOptions } from 'bullmq';
+import { Queue, RedisOptions } from 'bullmq';
 import { NotificationService } from './notification.service';
 import { NotificationListener } from './notification.listener';
 import { LogAdapter } from './adapters/log.adapter';

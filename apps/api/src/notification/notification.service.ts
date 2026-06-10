@@ -12,7 +12,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { logger } from '@smk/logger';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotifJob, NOTIFICATION_QUEUE } from './queue.config';
+import { NotifJob } from './queue.config';
 
 const STALE_MINUTES = 5;
 const STALE_RETRY_LIMIT = 50;

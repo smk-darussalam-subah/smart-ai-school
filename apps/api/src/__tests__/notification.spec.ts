@@ -17,11 +17,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationModule } from '../notification/notification.module';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationAdapter } from '@smk/types';
 import { LogAdapter } from '../notification/adapters/log.adapter';
 import { FonnteAdapter } from '../notification/adapters/fonnte.adapter';
 
-const NOW = new Date('2026-06-01T08:00:00.000Z');
 const STALE = new Date('2026-06-01T07:50:00.000Z');
 
 function buildPrismaMock() {
