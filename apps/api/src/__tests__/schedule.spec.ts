@@ -337,11 +337,14 @@ describe('ScheduleService', () => {
         expect(prisma.schedule.findMany).not.toHaveBeenCalled();
       });
 
-      it('SISWA tidak ada profil → ForbiddenException', async () => {
+      it('SISWA tidak ada profil → mengembalikan data kosong', async () => {
         prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-siswa' });
         prisma.student.findUnique.mockResolvedValue(null);
 
-        await expect(service.findAll(BASE_QUERY, SISWA_USER)).rejects.toThrow(ForbiddenException);
+        const result = await service.findAll(BASE_QUERY, SISWA_USER);
+
+        expect(result.data).toEqual([]);
+        expect(result.total).toBe(0);
       });
     });
 
