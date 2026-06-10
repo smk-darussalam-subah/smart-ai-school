@@ -28,6 +28,7 @@ import { PermissionModule } from './permissions/permissions.module';
 import { PermissionGuard } from './permissions/permissions.guard';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { AuditInterceptor } from './audit-log/interceptors/audit.interceptor';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { AuditInterceptor } from './audit-log/interceptors/audit.interceptor';
     AiModule,
     AuditLogModule,
     PermissionModule,
+    UsersModule,
     SchoolConfigModule,
   ],
   providers: [
