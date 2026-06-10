@@ -21,6 +21,7 @@ import {
 import { AuthUser } from '@smk/auth';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { TeachingAssignmentService } from './teaching-assignment.service';
 import { CreateAssignmentSchema, CreateAssignmentDto } from './dto/create-assignment.dto';
@@ -37,6 +38,7 @@ export class TeachingAssignmentController {
    * SA/KS/TU: melihat semua, bisa filter via query.
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU')
+  @RequirePermission('academic.teaching.read')
   @Get()
   findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     const parsed = ListAssignmentsQuerySchema.safeParse(rawQuery);
@@ -49,6 +51,7 @@ export class TeachingAssignmentController {
    * Guru: 403 jika assignment bukan miliknya (service layer).
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU')
+  @RequirePermission('academic.teaching.read')
   @Get(':id')
   findById(
     @Param('id', ParseUUIDPipe) id: string,
@@ -63,6 +66,7 @@ export class TeachingAssignmentController {
    * 409 jika kombinasi sudah ada.
    */
   @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @RequirePermission('academic.teaching.manage')
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(@Body(ZodPipe(CreateAssignmentSchema)) dto: CreateAssignmentDto) {
@@ -74,6 +78,7 @@ export class TeachingAssignmentController {
    * teacherId/classId tidak bisa diubah via PATCH.
    */
   @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @RequirePermission('academic.teaching.manage')
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -86,6 +91,7 @@ export class TeachingAssignmentController {
    * DELETE /teaching-assignments/:id — hard delete (record konfigurasi, bukan data).
    */
   @Roles('SUPER_ADMIN')
+  @RequirePermission('academic.teaching.manage')
   @Delete(':id')
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.remove(id);

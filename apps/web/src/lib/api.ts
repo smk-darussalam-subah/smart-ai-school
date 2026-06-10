@@ -98,9 +98,13 @@ export async function apiFetch<T>(
       cache: 'no-store', // data absensi/nilai harus selalu fresh
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      if (process.env.NODE_ENV === 'development') console.error(`[apiFetch] ${res.status} ${path}`);
+      return null;
+    }
     return res.json() as Promise<T>;
-  } catch {
+  } catch (err) {
+    if (process.env.NODE_ENV === 'development') console.error(`[apiFetch] network error ${path}:`, err);
     return null;
   }
 }

@@ -25,14 +25,11 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PaymentStatus, Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
+import { isSiswaOnly, isOrangTuaOnly, resolveUserId, resolveSiswaId } from '../common/helpers/role-helpers';
 import { CreateSppDto } from './dto/create-spp.dto';
 import { ListSppQuery } from './dto/list-spp.dto';
 import { SummarySppQuery } from './dto/summary-spp.dto';
 import { EVENTS, PaymentReceivedPayload } from '../events/events.types';
-
-// ── Konstanta ─────────────────────────────────────────────────────────────────
-
-const ELEVATED_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] as const;
 
 // ── Select shape ─────────────────────────────────────────────────────────────
 
@@ -59,29 +56,6 @@ const SPP_SELECT = {
   },
 } as const;
 
-// ── Role helpers ─────────────────────────────────────────────────────────────
-
-function isElevated(user: AuthUser): boolean {
-  return user.roles.some((r) => (ELEVATED_ROLES as readonly string[]).includes(r));
-}
-
-function isSiswaOnly(user: AuthUser): boolean {
-  return (
-    user.roles.includes('SISWA') &&
-    !isElevated(user) &&
-    !user.roles.includes('GURU')
-  );
-}
-
-function isOrangTuaOnly(user: AuthUser): boolean {
-  return (
-    user.roles.includes('ORANG_TUA') &&
-    !isElevated(user) &&
-    !user.roles.includes('GURU') &&
-    !user.roles.includes('SISWA')
-  );
-}
-
 // ── Service ───────────────────────────────────────────────────────────────────
 
 @Injectable()
@@ -91,32 +65,9 @@ export class FinanceService {
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
-  // ── Private helpers ─────────────────────────────────────────────────────────
-
-  /** keycloakId → auth.users.id */
-  private async resolveUserId(keycloakId: string): Promise<string> {
-    const user = await this.prisma.user.findUnique({
-      where: { keycloakId },
-      select: { id: true },
-    });
-    if (!user) throw new ForbiddenException('User tidak ditemukan');
-    return user.id;
-  }
-
-  /** keycloakId → student.id (untuk SISWA) */
-  private async resolveSiswaId(keycloakId: string): Promise<string> {
-    const userId = await this.resolveUserId(keycloakId);
-    const student = await this.prisma.student.findUnique({
-      where: { userId },
-      select: { id: true },
-    });
-    if (!student) throw new ForbiddenException('Profil siswa tidak ditemukan untuk akun ini');
-    return student.id;
-  }
-
   /** keycloakId → student.id[] (anak untuk ORANG_TUA) */
   private async resolveChildStudentIds(keycloakId: string): Promise<string[]> {
-    const userId = await this.resolveUserId(keycloakId);
+    const userId = await resolveUserId(this.prisma, keycloakId);
     const children = await this.prisma.student.findMany({
       where: { parentId: userId },
       select: { id: true },
@@ -130,7 +81,7 @@ export class FinanceService {
   // ── createRecord ─────────────────────────────────────────────────────────────
 
   async createRecord(dto: CreateSppDto, user: AuthUser) {
-    const userId = await this.resolveUserId(user.keycloakId);
+    const userId = await resolveUserId(this.prisma, user.keycloakId);
 
     // P2002 (@@unique [studentId,month,year]) propagate ke PrismaExceptionFilter → 409
     const payment = await this.prisma.sppPayment.create({
@@ -174,7 +125,7 @@ export class FinanceService {
 
     if (isSiswaOnly(user)) {
       // SISWA: hanya pembayaran sendiri — query.studentId diabaikan
-      where.studentId = await this.resolveSiswaId(user.keycloakId);
+      where.studentId = await resolveSiswaId(this.prisma, user.keycloakId);
     } else if (isOrangTuaOnly(user)) {
       // ORANG_TUA: hanya pembayaran anak
       const childIds = await this.resolveChildStudentIds(user.keycloakId);
@@ -228,7 +179,7 @@ export class FinanceService {
   async findHistory(studentId: string, user: AuthUser) {
     if (isSiswaOnly(user)) {
       // SISWA: studentId harus milik sendiri
-      const ownStudentId = await this.resolveSiswaId(user.keycloakId);
+      const ownStudentId = await resolveSiswaId(this.prisma, user.keycloakId);
       if (studentId !== ownStudentId) {
         throw new ForbiddenException('Siswa hanya bisa melihat riwayat pembayaran sendiri');
       }
@@ -260,7 +211,7 @@ export class FinanceService {
   // ── approve ──────────────────────────────────────────────────────────────────
 
   async approve(id: string, user: AuthUser) {
-    const userId = await this.resolveUserId(user.keycloakId);
+    const userId = await resolveUserId(this.prisma, user.keycloakId);
 
     const payment = await this.prisma.sppPayment.findUnique({
       where:  { id },

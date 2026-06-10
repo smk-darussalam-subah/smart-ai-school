@@ -30,6 +30,7 @@ import { ChatSchema, ChatDto } from './dto/chat.dto';
 import { CreateKnowledgeSchema, CreateKnowledgeDto } from './dto/create-knowledge.dto';
 import { UpdateKnowledgeSchema, UpdateKnowledgeDto } from './dto/update-knowledge.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { AuthUser } from '@smk/auth';
@@ -46,6 +47,7 @@ export class AiController {
    * SMA-49: pesan user + jawaban assistant disimpan ke ChatSession/ChatMessage.
    * Tanpa sessionId → buat session baru; sessionId selalu dikembalikan.
    */
+  @RequirePermission('ai.chat')
   @Post('chat')
   @HttpCode(HttpStatus.OK)
   @Throttle({ aichat: { ttl: 60_000, limit: 20 } })
@@ -61,6 +63,7 @@ export class AiController {
    * RBAC (service-level): pemilik session ATAU SUPER_ADMIN.
    * Non-pemilik → 403; session tak ada → 404.
    */
+  @RequirePermission('ai.chat')
   @Get('chat/:sessionId/history')
   @HttpCode(HttpStatus.OK)
   history(
@@ -77,6 +80,7 @@ export class AiController {
    * SA/KS/TU: admin content. Chatbot hanya baca is_active=true via searchSimilar.
    */
   @Get('knowledge')
+  @RequirePermission('ai.knowledge.read')
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
   listKnowledge() {
     return this.aiService.listKnowledge();
@@ -87,6 +91,7 @@ export class AiController {
    * SA/KS/TU bisa create, tapi publish butuh SA/KS (separation of duties).
    */
   @Post('knowledge')
+  @RequirePermission('ai.knowledge.create')
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
   @HttpCode(HttpStatus.CREATED)
   createKnowledge(
@@ -101,6 +106,7 @@ export class AiController {
    * HARUS didefinisikan sebelum :id routes agar 'backfill' tidak diparse sebagai :id.
    */
   @Post('knowledge/backfill')
+  @RequirePermission('ai.knowledge.create')
   @Roles('SUPER_ADMIN')
   @HttpCode(HttpStatus.OK)
   async backfill() {
@@ -119,6 +125,7 @@ export class AiController {
    * GET /ai/knowledge/:id — Detail chunk termasuk content + audit trail.
    */
   @Get('knowledge/:id')
+  @RequirePermission('ai.knowledge.read')
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
   getKnowledge(@Param('id', ParseUUIDPipe) id: string) {
     return this.aiService.getKnowledgeById(id);
@@ -130,6 +137,7 @@ export class AiController {
    * Jika hanya title/category → status tidak berubah.
    */
   @Patch('knowledge/:id')
+  @RequirePermission('ai.knowledge.update')
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
   updateKnowledge(
     @Param('id', ParseUUIDPipe) id: string,
@@ -143,6 +151,7 @@ export class AiController {
    * Gate: embedding HARUS ada (422 jika NULL). SA/KS only.
    */
   @Post('knowledge/:id/publish')
+  @RequirePermission('ai.knowledge.update')
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
   @HttpCode(HttpStatus.OK)
   publishKnowledge(
@@ -156,6 +165,7 @@ export class AiController {
    * POST /ai/knowledge/:id/unpublish — Set isActive=false. SA/KS only.
    */
   @Post('knowledge/:id/unpublish')
+  @RequirePermission('ai.knowledge.update')
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
   @HttpCode(HttpStatus.OK)
   unpublishKnowledge(
@@ -170,6 +180,7 @@ export class AiController {
    * Keputusan: hard-delete karena tidak ada kolom deletedAt (out of scope).
    */
   @Delete('knowledge/:id')
+  @RequirePermission('ai.knowledge.delete')
   @Roles('SUPER_ADMIN')
   @HttpCode(HttpStatus.OK)
   deleteKnowledge(@Param('id', ParseUUIDPipe) id: string) {

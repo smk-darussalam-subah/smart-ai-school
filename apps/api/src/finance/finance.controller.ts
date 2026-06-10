@@ -23,6 +23,7 @@ import {
 import { AuthUser } from '@smk/auth';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { FinanceService } from './finance.service';
 import { CreateSppSchema, CreateSppDto } from './dto/create-spp.dto';
@@ -38,6 +39,7 @@ export class FinanceController {
    * KS tidak boleh input pembayaran (read + approve saja).
    */
   @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @RequirePermission('finance.create')
   @Post()
   @HttpCode(HttpStatus.CREATED)
   createRecord(
@@ -52,6 +54,7 @@ export class FinanceController {
    * Ownership difilter di service: SISWA=self, OT=anak, SA/KS/TU=semua.
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'SISWA', 'ORANG_TUA')
+  @RequirePermission('finance.read')
   @Get()
   findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     const parsed = ListSppQuerySchema.safeParse(rawQuery);
@@ -64,6 +67,7 @@ export class FinanceController {
    * Harus didaftarkan sebelum /:studentId/history agar tidak salah capture.
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
+  @RequirePermission('finance.read')
   @Get('summary')
   summary(@Query() rawQuery: unknown) {
     const parsed = SummarySppQuerySchema.safeParse(rawQuery);
@@ -77,6 +81,7 @@ export class FinanceController {
    * KS ditambahkan (CLAUDE.md §6: KS 👁 Keuangan — konsisten dgn GET list + approve).
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'SISWA', 'ORANG_TUA')
+  @RequirePermission('finance.read')
   @Get(':studentId/history')
   findHistory(
     @Param('studentId', ParseUUIDPipe) studentId: string,
@@ -90,6 +95,7 @@ export class FinanceController {
    * TU tidak boleh approve (separation of duties).
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @RequirePermission('finance.approve')
   @Post(':id/approve')
   @HttpCode(HttpStatus.OK)
   approve(

@@ -23,6 +23,7 @@ import { AIGateway, RagContext } from '@smk/types';
 import { AuthUser } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveUserId } from '../common/helpers/role-helpers';
 import { Prisma } from '@prisma/client';
 import { CreateKnowledgeDto } from './dto/create-knowledge.dto';
 import { UpdateKnowledgeDto } from './dto/update-knowledge.dto';
@@ -74,16 +75,6 @@ export class AiService {
 
   // ── Private helpers ─────────────────────────────────────────────────────────
 
-  /** keycloakId → auth.users.id (UUID) */
-  private async resolveUserId(keycloakId: string): Promise<string> {
-    const user = await this.prisma.user.findUnique({
-      where: { keycloakId },
-      select: { id: true },
-    });
-    if (!user) throw new ForbiddenException('User tidak ditemukan');
-    return user.id;
-  }
-
   private canPublish(user: AuthUser): boolean {
     return user.roles.some((r) => (SA_KS as readonly string[]).includes(r));
   }
@@ -132,7 +123,7 @@ export class AiService {
     sources: { title: string }[];
     sessionId: string;
   }> {
-    const userId = await this.resolveUserId(user.keycloakId);
+    const userId = await resolveUserId(this.prisma, user.keycloakId);
 
     let sessionId: string;
 
@@ -227,7 +218,7 @@ export class AiService {
 
     const isSuperAdmin = user.roles.includes('SUPER_ADMIN');
     if (!isSuperAdmin) {
-      const userId = await this.resolveUserId(user.keycloakId);
+      const userId = await resolveUserId(this.prisma, user.keycloakId);
       if (session.userId !== userId) {
         throw new ForbiddenException('Akses ditolak: bukan session milik Anda');
       }
@@ -264,7 +255,7 @@ export class AiService {
     createdAt: Date;
     embeddingOk: boolean;
   }> {
-    const createdBy = await this.resolveUserId(user.keycloakId);
+    const createdBy = await resolveUserId(this.prisma, user.keycloakId);
 
     const chunk = await this.prisma.ragChunk.create({
       data: {
@@ -425,7 +416,7 @@ export class AiService {
       );
     }
 
-    const publishedBy = await this.resolveUserId(user.keycloakId);
+    const publishedBy = await resolveUserId(this.prisma, user.keycloakId);
     const now = new Date();
 
     await this.prisma.ragChunk.update({

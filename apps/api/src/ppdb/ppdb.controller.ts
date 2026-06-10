@@ -27,6 +27,7 @@ import { Throttle } from '@nestjs/throttler';
 import { FastifyRequest } from 'fastify';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { PpdbService } from './ppdb.service';
 import { SubmitLeadSchema, SubmitLeadDto } from './dto/submit-lead.dto';
@@ -69,6 +70,7 @@ export class PpdbController {
    * GET /ppdb/leads — daftar lead dengan filter (TU, SA, KS).
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
+  @RequirePermission('ppdb.read')
   @Get('leads')
   findAll(@Query() rawQuery: unknown) {
     const parsed = ListLeadsQuerySchema.safeParse(rawQuery);
@@ -83,6 +85,7 @@ export class PpdbController {
    * Harus SEBELUM leads/:id agar 'stats' tidak ditangkap sebagai :id.
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU')
+  @RequirePermission('ppdb.stats.read')
   @Get('stats')
   getStats() {
     return this.ppdbService.getStats();
@@ -92,6 +95,7 @@ export class PpdbController {
    * GET /ppdb/leads/:id — detail satu lead.
    */
   @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @RequirePermission('ppdb.read')
   @Get('leads/:id')
   findById(@Param('id', ParseUUIDPipe) id: string) {
     return this.ppdbService.findById(id);
@@ -101,6 +105,7 @@ export class PpdbController {
    * PATCH /ppdb/leads/:id/status — transisi status lead.
    */
   @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @RequirePermission('ppdb.update')
   @Patch('leads/:id/status')
   updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
@@ -114,6 +119,7 @@ export class PpdbController {
    * assignedTo: UUID staff, atau null untuk un-assign.
    */
   @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @RequirePermission('ppdb.update')
   @Patch('leads/:id/assign')
   assignLead(
     @Param('id', ParseUUIDPipe) id: string,

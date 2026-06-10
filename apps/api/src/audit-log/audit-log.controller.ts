@@ -5,6 +5,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { AuditLogService } from './audit-log.service';
 import { ListAuditLogsSchema } from './dto/list-audit-logs.dto';
 import { SkipAudit } from './decorators/audit.decorator';
@@ -19,6 +20,7 @@ export class AuditLogController {
    * @SkipAudit: pembacaan log audit tidak diaudit sendiri (mencegah loop + volume berlebihan).
    */
   @SkipAudit()
+  @RequirePermission('audit.read')
   @Get()
   findAll(@Query() rawQuery: unknown) {
     const parsed = ListAuditLogsSchema.safeParse(rawQuery);

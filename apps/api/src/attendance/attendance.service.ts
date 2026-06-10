@@ -23,6 +23,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AttendanceStatus, Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
+import { isGuruOnly, isSiswaOnly, isOrangTuaOnly, resolveUserId, resolveTeacherId, resolveGuruClassIds, resolveSiswaId } from '../common/helpers/role-helpers';
 import { CreateAttendanceDto } from './dto/create-attendance.dto';
 import { ListAttendanceQuery } from './dto/list-attendance.dto';
 import { EVENTS, AttendanceRecordedPayload } from '../events/events.types';
@@ -37,10 +38,6 @@ function parseDateStr(s: string): Date {
   const d = parseInt(parts[2] ?? '1', 10);
   return new Date(Date.UTC(y, m - 1, d));
 }
-
-// ── Konstanta ─────────────────────────────────────────────────────────────────
-
-const ELEVATED_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] as const;
 
 // ── Select shape ─────────────────────────────────────────────────────────────
 
@@ -63,33 +60,6 @@ const ATTENDANCE_SELECT = {
   class: { select: { id: true, name: true, majorCode: true } },
 } as const;
 
-// ── Role helpers ─────────────────────────────────────────────────────────────
-
-function isElevated(user: AuthUser): boolean {
-  return user.roles.some((r) => (ELEVATED_ROLES as readonly string[]).includes(r));
-}
-
-function isGuruOnly(user: AuthUser): boolean {
-  return user.roles.includes('GURU') && !isElevated(user);
-}
-
-function isSiswaOnly(user: AuthUser): boolean {
-  return (
-    user.roles.includes('SISWA') &&
-    !isElevated(user) &&
-    !user.roles.includes('GURU')
-  );
-}
-
-function isOrangTuaOnly(user: AuthUser): boolean {
-  return (
-    user.roles.includes('ORANG_TUA') &&
-    !isElevated(user) &&
-    !user.roles.includes('GURU') &&
-    !user.roles.includes('SISWA')
-  );
-}
-
 // ── Service ───────────────────────────────────────────────────────────────────
 
 @Injectable()
@@ -99,54 +69,9 @@ export class AttendanceService {
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
-  // ── Private helpers ─────────────────────────────────────────────────────────
-
-  /** keycloakId → auth.users.id */
-  private async resolveUserId(keycloakId: string): Promise<string> {
-    const user = await this.prisma.user.findUnique({
-      where: { keycloakId },
-      select: { id: true },
-    });
-    if (!user) throw new ForbiddenException('User tidak ditemukan');
-    return user.id;
-  }
-
-  /** keycloakId → teacher.id (user → teacher, dua langkah) */
-  private async resolveTeacherId(keycloakId: string): Promise<string> {
-    const userId = await this.resolveUserId(keycloakId);
-    const teacher = await this.prisma.teacher.findUnique({
-      where: { userId },
-      select: { id: true },
-    });
-    if (!teacher) throw new ForbiddenException('Profil guru tidak ditemukan untuk akun ini');
-    return teacher.id;
-  }
-
-  /** keycloakId → semua classId yang diajar guru ini (distinct) */
-  private async resolveGuruClassIds(keycloakId: string): Promise<string[]> {
-    const teacherId = await this.resolveTeacherId(keycloakId);
-    const assignments = await this.prisma.teachingAssignment.findMany({
-      where: { teacherId },
-      select: { classId: true },
-      distinct: ['classId'],
-    });
-    return assignments.map((a) => a.classId);
-  }
-
-  /** keycloakId → student.id (untuk SISWA) */
-  private async resolveSiswaId(keycloakId: string): Promise<string> {
-    const userId = await this.resolveUserId(keycloakId);
-    const student = await this.prisma.student.findUnique({
-      where: { userId },
-      select: { id: true },
-    });
-    if (!student) throw new ForbiddenException('Profil siswa tidak ditemukan untuk akun ini');
-    return student.id;
-  }
-
   /** keycloakId → student.id[] (satu atau lebih anak untuk ORANG_TUA) */
   private async resolveChildStudentIds(keycloakId: string): Promise<string[]> {
-    const userId = await this.resolveUserId(keycloakId);
+    const userId = await resolveUserId(this.prisma, keycloakId);
     const children = await this.prisma.student.findMany({
       where: { parentId: userId },
       select: { id: true },
@@ -161,10 +86,10 @@ export class AttendanceService {
 
   async bulkCreate(dto: CreateAttendanceDto, user: AuthUser) {
     // 1. Resolve userId untuk recordedBy
-    const userId = await this.resolveUserId(user.keycloakId);
+    const userId = await resolveUserId(this.prisma, user.keycloakId);
 
     // 2. Pastikan guru mengajar di classId ini (ownership POST)
-    const teacherId = await this.resolveTeacherId(user.keycloakId);
+    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
     const assignment = await this.prisma.teachingAssignment.findFirst({
       where: { teacherId, classId: dto.classId },
       select: { id: true },
@@ -239,7 +164,7 @@ export class AttendanceService {
 
     // Ownership filter per role
     if (isGuruOnly(user)) {
-      const myClassIds = await this.resolveGuruClassIds(user.keycloakId);
+      const myClassIds = await resolveGuruClassIds(this.prisma, user.keycloakId);
       if (myClassIds.length === 0) {
         return { data: [], total: 0, page: query.page, limit: query.limit };
       }
@@ -252,7 +177,7 @@ export class AttendanceService {
         where.classId = { in: myClassIds };
       }
     } else if (isSiswaOnly(user)) {
-      where.studentId = await this.resolveSiswaId(user.keycloakId);
+      where.studentId = await resolveSiswaId(this.prisma, user.keycloakId);
       // query.studentId diabaikan — paksa ke diri sendiri
       if (query.classId) where.classId = query.classId;
     } else if (isOrangTuaOnly(user)) {
