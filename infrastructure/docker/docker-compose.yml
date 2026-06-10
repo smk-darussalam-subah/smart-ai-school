@@ -318,6 +318,7 @@ services:
       REDIS_URL: ${REDIS_URL}
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: diis
+      KEYCLOAK_ISSUER: https://auth.smkdarussalamsubah.sch.id/realms/diis
       KEYCLOAK_CLIENT_ID: diis-api
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_API_CLIENT_SECRET}
       OLLAMA_URL: http://ollama:11434

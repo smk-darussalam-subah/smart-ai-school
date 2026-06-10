@@ -91,9 +91,10 @@ export async function verifyKeycloakToken(token: string): Promise<KeycloakTokenP
 
   const keycloakUrl = process.env.KEYCLOAK_URL || 'http://localhost:8080';
   const realm = process.env.KEYCLOAK_REALM || 'smk-ecosystem';
+  const issuer = process.env.KEYCLOAK_ISSUER || `${keycloakUrl}/realms/${realm}`;
 
   const verified = jwt.verify(token, publicKey, {
-    issuer: `${keycloakUrl}/realms/${realm}`,
+    issuer,
     algorithms: ['RS256'],
   });
 
