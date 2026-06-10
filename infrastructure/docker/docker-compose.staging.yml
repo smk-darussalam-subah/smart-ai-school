@@ -98,6 +98,14 @@ services:
     networks:
       - smk-network
 
+  # ── API MIGRATE STAGING ───────────────────────────────────────────────────
+  # Guardrail N-20 aktif — pastikan target smk_staging_db.
+
+  api-migrate:
+    environment:
+      DATABASE_URL: ${STAGING_DATABASE_URL}
+      GUARD_STAGING_DB: "1"
+
   # ── API STAGING ───────────────────────────────────────────────────────────
   # Menggantikan smk-api (prod) dengan smk-staging-api.
   # DATABASE_URL → smk_staging_db (bukan smk_db).
