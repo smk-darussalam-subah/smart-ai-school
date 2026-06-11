@@ -23,6 +23,7 @@ import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { AttendanceService } from './attendance.service';
 import { CreateAttendanceSchema, CreateAttendanceDto } from './dto/create-attendance.dto';
 import { ListAttendanceQuerySchema } from './dto/list-attendance.dto';
+import { HeatmapQuerySchema } from './dto/heatmap.dto';
 
 @Controller('attendance')
 export class AttendanceController {
@@ -42,6 +43,19 @@ export class AttendanceController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.service.bulkCreate(dto, user);
+  }
+
+  /**
+   * GET /attendance/heatmap — Grid kehadiran kelas × hari (N hari terakhir).
+   * Konsumsi: widget dashboard (referensi KamilEdu Modul 1). Staf saja.
+   */
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
+  @RequirePermission('academic.attendance.read')
+  @Get('heatmap')
+  heatmap(@Query() rawQuery: unknown) {
+    const parsed = HeatmapQuerySchema.safeParse(rawQuery);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.service.heatmap(parsed.data.days);
   }
 
   /**

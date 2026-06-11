@@ -204,4 +204,97 @@ export class AttendanceService {
 
     return { data, total, page: query.page, limit: query.limit };
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Heatmap Kehadiran per Kelas × Hari (referensi KamilEdu Modul 1)
+  // Grid N hari terakhir (default 10): pct hadir per kelas per hari.
+  // Agregasi penuh di DB (groupBy classId+date+status) — bukan scan baris di JS.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async heatmap(days: number) {
+    const now = new Date();
+    const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const from = new Date(today);
+    from.setUTCDate(from.getUTCDate() - (days - 1));
+
+    const dates: string[] = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(from);
+      d.setUTCDate(d.getUTCDate() + i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+
+    const [classes, grouped] = await Promise.all([
+      this.prisma.class.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, grade: true },
+        orderBy: [{ grade: 'asc' }, { name: 'asc' }],
+      }),
+      this.prisma.attendance.groupBy({
+        by: ['classId', 'date', 'status'],
+        where: { date: { gte: from, lte: today } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    // (classId|date) → { total, hadir }
+    const cellMap = new Map<string, { total: number; hadir: number }>();
+    for (const g of grouped) {
+      const dateKey = g.date.toISOString().slice(0, 10);
+      const key = `${g.classId}|${dateKey}`;
+      const cell = cellMap.get(key) ?? { total: 0, hadir: 0 };
+      cell.total += g._count._all;
+      if (g.status === 'hadir') cell.hadir += g._count._all;
+      cellMap.set(key, cell);
+    }
+
+    const rows = classes.map((c) => ({
+      classId: c.id,
+      className: c.name,
+      grade: c.grade,
+      cells: dates.map((date) => {
+        const cell = cellMap.get(`${c.id}|${date}`);
+        if (!cell || cell.total === 0) return { date, total: 0, hadir: 0, pct: null };
+        return {
+          date,
+          total: cell.total,
+          hadir: cell.hadir,
+          pct: Math.round((cell.hadir / cell.total) * 1000) / 10,
+        };
+      }),
+    }));
+
+    const overallFor = (date: string) => {
+      let total = 0;
+      let hadir = 0;
+      for (const c of classes) {
+        const cell = cellMap.get(`${c.id}|${date}`);
+        if (cell) {
+          total += cell.total;
+          hadir += cell.hadir;
+        }
+      }
+      return {
+        date,
+        total,
+        hadir,
+        pct: total > 0 ? Math.round((hadir / total) * 1000) / 10 : null,
+      };
+    };
+
+    const todayKey = dates[dates.length - 1] as string;
+    const yesterdayKey = dates.length > 1 ? (dates[dates.length - 2] as string) : null;
+
+    return {
+      from: dates[0],
+      to: todayKey,
+      dates,
+      classes: rows,
+      overall: {
+        today: overallFor(todayKey),
+        yesterday: yesterdayKey ? overallFor(yesterdayKey) : null,
+      },
+    };
+  }
+
 }

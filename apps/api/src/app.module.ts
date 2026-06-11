@@ -30,6 +30,7 @@ import { AuditLogModule } from './audit-log/audit-log.module';
 import { AuditInterceptor } from './audit-log/interceptors/audit.interceptor';
 import { UsersModule } from './users/users.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
+import { ClassesModule } from './classes/classes.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { AnnouncementsModule } from './announcements/announcements.module';
     PermissionModule,
     UsersModule,
     AnnouncementsModule,
+    ClassesModule,
     SchoolConfigModule,
   ],
   providers: [

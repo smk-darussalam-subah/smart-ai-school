@@ -1,6 +1,8 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import type { Metadata } from 'next';
+import { apiFetch } from '@/lib/api';
+import AttendanceHeatmap, { HeatmapData } from './_components/AttendanceHeatmap';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -49,14 +51,29 @@ const ROLE_GREETING: Record<string, string> = {
 // =============================================================================
 // Placeholder stats per role
 // =============================================================================
-function RoleStats({ role }: { role: string }) {
+interface AdminStats {
+  totalSiswa: number | null;
+  totalKelas: number | null;
+  kehadiranHariIni: number | null;
+  kehadiranDelta: number | null;
+  ppdbLeads: number | null;
+}
+
+function RoleStats({ role, adminStats }: { role: string; adminStats?: AdminStats }) {
   if (role === 'SUPER_ADMIN' || role === 'KEPALA_SEKOLAH') {
+    const st = adminStats;
+    const fmt = (v: number | null | undefined, suffix = '') =>
+      v === null || v === undefined ? '—' : `${v}${suffix}`;
+    const deltaSub =
+      st?.kehadiranDelta === null || st?.kehadiranDelta === undefined
+        ? 'vs kemarin: —'
+        : `vs kemarin: ${st.kehadiranDelta >= 0 ? '+' : ''}${st.kehadiranDelta.toFixed(1)}%`;
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-6">
-        <StatCard icon="👥" label="Total Siswa" value="542" sub="Aktif TA 2024/2025" color="bg-blue-50" />
-        <StatCard icon="👨‍🏫" label="Guru & Staff" value="48" sub="Mengajar aktif" color="bg-green-50" />
-        <StatCard icon="🏫" label="Rombel Aktif" value="18" sub="Kelas X, XI, XII" color="bg-purple-50" />
-        <StatCard icon="📋" label="Pendaftar PPDB" value="124" sub="Semester ini" color="bg-orange-50" />
+        <StatCard icon="👥" label="Total Siswa" value={fmt(st?.totalSiswa)} sub="Terdaftar aktif" color="bg-blue-50" />
+        <StatCard icon="🏫" label="Rombel Aktif" value={fmt(st?.totalKelas)} sub="Kelas X, XI, XII" color="bg-purple-50" />
+        <StatCard icon="✅" label="Kehadiran Hari Ini" value={fmt(st?.kehadiranHariIni, '%')} sub={deltaSub} color="bg-green-50" />
+        <StatCard icon="📋" label="Pendaftar PPDB" value={fmt(st?.ppdbLeads)} sub="Total leads" color="bg-orange-50" />
       </div>
     );
   }
@@ -94,6 +111,36 @@ export default async function DashboardPage() {
   const greeting = ROLE_GREETING[primaryRole] ?? 'Selamat datang di DIIS.';
   const firstName = session?.user?.name?.split(' ')[0] ?? 'Pengguna';
 
+  // Data nyata untuk staf (SA/KS/TU) — gagal fetch ⇒ tampil '—', halaman tetap hidup
+  const isStaf = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'].some((r) => roles.includes(r));
+  let adminStats: AdminStats | undefined;
+  let heatmap: HeatmapData | null = null;
+  if (isStaf) {
+    const token = session?.accessToken ?? '';
+    const [students, classes, hm, ppdb] = await Promise.all([
+      apiFetch<{ total: number }>('/students?limit=1', token),
+      apiFetch<{ total: number }>('/classes?limit=1', token),
+      apiFetch<HeatmapData>('/attendance/heatmap?days=10', token),
+      apiFetch<{ total?: number; data?: { total?: number } }>('/ppdb/stats', token),
+    ]);
+    heatmap = hm ?? null;
+    const ppdbTotal =
+      typeof ppdb?.total === 'number'
+        ? ppdb.total
+        : typeof ppdb?.data?.total === 'number'
+          ? ppdb.data.total
+          : null;
+    const today = hm?.overall?.today?.pct ?? null;
+    const yest = hm?.overall?.yesterday?.pct ?? null;
+    adminStats = {
+      totalSiswa: students?.total ?? null,
+      totalKelas: classes?.total ?? null,
+      kehadiranHariIni: today,
+      kehadiranDelta: today !== null && yest !== null ? Math.round((today - yest) * 10) / 10 : null,
+      ppdbLeads: ppdbTotal,
+    };
+  }
+
   return (
     <div>
       {/* Header */}
@@ -105,7 +152,14 @@ export default async function DashboardPage() {
       </div>
 
       {/* Stats */}
-      <RoleStats role={primaryRole} />
+      <RoleStats role={primaryRole} adminStats={adminStats} />
+
+      {/* Heatmap kehadiran (staf) */}
+      {heatmap && (
+        <div className="mt-6">
+          <AttendanceHeatmap data={heatmap} />
+        </div>
+      )}
 
       {/* Quick info */}
       <div className="mt-6 card">
