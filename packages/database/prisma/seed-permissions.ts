@@ -49,6 +49,9 @@ const PERMISSIONS: PermissionDef[] = [
   { code: 'ai.knowledge.delete', description: 'Menghapus knowledge base', module: 'ai' },
   { code: 'notification.manage', description: 'Mengelola notifikasi', module: 'notification' },
   { code: 'notification.read', description: 'Melihat notifikasi', module: 'notification' },
+  { code: 'announcement.read', description: 'Melihat pengumuman sekolah', module: 'notification' },
+  { code: 'announcement.manage', description: 'Mengelola pengumuman (buat/ubah/terbit/sematkan/arsip)', module: 'notification' },
+  { code: 'announcement.delete', description: 'Menghapus pengumuman', module: 'notification' },
   { code: 'audit.read', description: 'Melihat audit log', module: 'audit' },
   { code: 'permissions.manage', description: 'Mengelola permission & RBAC', module: 'permissions' },
   { code: 'permissions.read', description: 'Melihat konfigurasi permission', module: 'permissions' },
@@ -62,29 +65,35 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'finance.read', 'finance.approve',
     'ppdb.read', 'ppdb.stats.read',
     'ai.knowledge.read', 'notification.read', 'audit.read',
+    'announcement.read', 'announcement.manage',
   ],
   TATA_USAHA: [
     'student.create', 'student.read', 'student.update', 'student.delete',
     'ppdb.create', 'ppdb.read', 'ppdb.update',
     'finance.create', 'finance.read', 'finance.update',
     'notification.read', 'notification.manage',
+    'announcement.read',
   ],
   GURU: [
     'academic.grade.create', 'academic.grade.read', 'academic.grade.update',
     'academic.attendance.create', 'academic.attendance.read',
     'academic.teaching.read', 'academic.schedule.read',
     'student.read', 'ppdb.stats.read', 'ai.knowledge.read',
+    'announcement.read',
   ],
   SISWA: [
     'student.own.read', 'grade.own.read', 'attendance.own.read',
     'finance.own.read', 'ai.chat',
+    'announcement.read',
   ],
   ORANG_TUA: [
     'student.child.read', 'grade.child.read', 'attendance.child.read',
     'finance.child.read',
+    'announcement.read',
   ],
   INDUSTRI: [
     'student.read',
+    'announcement.read',
   ],
 };
 
