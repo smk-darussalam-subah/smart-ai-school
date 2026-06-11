@@ -1,12 +1,13 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default async function LowonganPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
-  const roles: string[] = (session?.roles as string[]) ?? [];
+  const roles: string[] = await getEffectiveRoles(session);
   if (!roles.some(r => ['INDUSTRI', 'SISWA', 'SUPER_ADMIN'].includes(r))) redirect('/dashboard');
 
   return (

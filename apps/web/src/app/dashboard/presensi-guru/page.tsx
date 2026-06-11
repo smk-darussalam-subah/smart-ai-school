@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import PresensiGuru, { AttendanceRecord, TodayStatus } from './_components/PresensiGuru';
@@ -12,7 +13,7 @@ interface ListResponse {
 export default async function PresensiGuruPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
-  const roles: string[] = (session?.roles as string[]) ?? [];
+  const roles: string[] = await getEffectiveRoles(session);
 
   const isGuru = roles.includes('GURU');
   const isStaf = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'].some((r) => roles.includes(r));
