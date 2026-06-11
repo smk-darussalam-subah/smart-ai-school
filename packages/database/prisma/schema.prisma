@@ -129,6 +129,8 @@ model Class {
   attendanceRecords   Attendance[]
   schedules           Schedule[]
   rpps                Rpp[]
+  reportCards         ReportCard[]
+  activities          ClassActivity[]
 
   @@unique([name, academicYear])
   @@map("classes")
@@ -157,6 +159,7 @@ model Student {
   parent      User?        @relation("ParentStudent", fields: [parentId], references: [id])
   grades      Grade[]
   attendance  Attendance[]
+  reportCards ReportCard[]
   sppPayments SppPayment[]
 
   @@index([classId])   // StudentService.findAll(classId filter) + ownership SISWA/OT
@@ -193,6 +196,7 @@ model Teacher {
   assignments TeachingAssignment[]
   attendances TeacherAttendance[]
   rpps        Rpp[]
+  activities  ClassActivity[]
 
   @@map("teachers")
   @@schema("teacher")
@@ -453,6 +457,77 @@ enum RppStatus {
   submitted
   approved
   revision
+
+  @@schema("academic")
+}
+
+
+// Rapor (KamilEdu M12) — snapshot nilai+kehadiran per siswa per semester.
+// Pipeline: draft → checked (diperiksa) → published (terbit) → distributed (dibagikan);
+// return: checked → draft. grades/attendance = SNAPSHOT JSON (immutable saat terbit).
+model ReportCard {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId     String       @map("student_id") @db.Uuid
+  classId       String       @map("class_id") @db.Uuid
+  academicYear  String       @map("academic_year") @db.VarChar(9)
+  semester      Int
+  status        ReportStatus @default(draft)
+  grades        Json         // SubjectSnapshot[]: {subject,count,average,byType}
+  attendance    Json?        // {hadir,izin,sakit,alpha}
+  notes         String?      @db.Text
+  generatedAt   DateTime     @default(now()) @map("generated_at")
+  checkedAt     DateTime?    @map("checked_at")
+  publishedAt   DateTime?    @map("published_at")
+  distributedAt DateTime?    @map("distributed_at")
+  updatedAt     DateTime     @default(now()) @updatedAt @map("updated_at")
+
+  student Student @relation(fields: [studentId], references: [id])
+  class   Class   @relation(fields: [classId], references: [id])
+
+  @@unique([studentId, academicYear, semester])
+  @@index([classId, academicYear, semester])
+  @@index([status])
+  @@map("report_cards")
+  @@schema("academic")
+}
+
+enum ReportStatus {
+  draft
+  checked
+  published
+  distributed
+
+  @@schema("academic")
+}
+
+// Kegiatan Kelas (KamilEdu M9) — jurnal kegiatan per kelas oleh guru.
+model ClassActivity {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  classId     String           @map("class_id") @db.Uuid
+  teacherId   String           @map("teacher_id") @db.Uuid
+  date        DateTime         @db.Date
+  title       String           @db.VarChar(255)
+  description String?          @db.Text
+  category    ActivityCategory @default(pembelajaran)
+  photoUrl    String?          @map("photo_url") @db.Text
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @default(now()) @updatedAt @map("updated_at")
+
+  class   Class   @relation(fields: [classId], references: [id])
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+
+  @@index([classId, date])
+  @@index([teacherId])
+  @@map("class_activities")
+  @@schema("academic")
+}
+
+enum ActivityCategory {
+  pembelajaran
+  ulangan
+  praktikum
+  kegiatan
+  lainnya
 
   @@schema("academic")
 }
