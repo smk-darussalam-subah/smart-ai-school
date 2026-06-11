@@ -9,6 +9,7 @@ import {
   HealthCheckService,
   PrismaHealthIndicator,
   MemoryHealthIndicator,
+  HealthIndicatorFunction,
 } from '@nestjs/terminus';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../auth/decorators/public.decorator';
@@ -30,7 +31,7 @@ export class HealthController {
   @Get()
   @HealthCheck()
   check() {
-    const checks = [
+    const checks: HealthIndicatorFunction[] = [
       // PostgreSQL via Prisma
       () => this.prismaHealth.pingCheck('database', this.prisma),
     ];
