@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import RppBoard, { RppItem } from './_components/RppBoard';
@@ -9,7 +10,7 @@ interface ListResponse { data: RppItem[]; total: number; }
 export default async function RppPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
-  const roles: string[] = (session?.roles as string[]) ?? [];
+  const roles: string[] = await getEffectiveRoles(session);
 
   const isGuru = roles.includes('GURU');
   const isReviewer = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'].some((r) => roles.includes(r));

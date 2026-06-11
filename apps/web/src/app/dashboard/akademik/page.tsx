@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch, PaginatedResponse, GradeItem, AttendanceItem } from '@/lib/api';
 import AkademikClient from './_components/AkademikClient';
@@ -11,7 +12,7 @@ export default async function AkademikPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
   const token = session?.accessToken ?? '';
-  const roles: string[] = (session?.roles as string[]) ?? [];
+  const roles: string[] = await getEffectiveRoles(session);
 
   if (roles.includes('INDUSTRI')) redirect('/dashboard');
   const canManage = roles.includes('SUPER_ADMIN') || roles.includes('GURU');

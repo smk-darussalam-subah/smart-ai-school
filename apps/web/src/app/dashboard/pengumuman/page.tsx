@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import PengumumanList, { Announcement } from './_components/PengumumanList';
@@ -14,7 +15,7 @@ interface ListResponse {
 export default async function PengumumanPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
-  const roles: string[] = (session?.roles as string[]) ?? [];
+  const roles: string[] = await getEffectiveRoles(session);
 
   const token = session.accessToken ?? '';
   const canManage = roles.includes('SUPER_ADMIN') || roles.includes('KEPALA_SEKOLAH');
