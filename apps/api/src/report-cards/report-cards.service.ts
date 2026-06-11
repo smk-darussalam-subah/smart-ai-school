@@ -224,7 +224,7 @@ export class ReportCardsService {
   }
 
   /** Transisi status sesuai pipeline; aksi tidak sah → 409 dengan pesan jelas. */
-  async transition(id: string, dto: TransitionDto, user: AuthUser) {
+  async transition(id: string, dto: TransitionDto, _user: AuthUser) {
     const existing = await this.prisma.reportCard.findUnique({
       where: { id },
       select: { id: true, status: true, studentId: true, academicYear: true, semester: true },
