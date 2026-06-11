@@ -13,6 +13,7 @@ import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { authOptions } from '@/lib/auth';
+import { getEffectiveRoles } from '@/lib/view-as';
 import { apiFetch, type KnowledgeListItem } from '@/lib/api';
 import { KnowledgeManager } from './_components/KnowledgeManager';
 
@@ -54,7 +55,7 @@ export default async function KnowledgePage() {
   const session = await getServerSession(authOptions);
   if (!session?.accessToken) redirect('/login');
 
-  const roles = (session.roles as string[] | undefined) ?? [];
+  const roles: string[] = await getEffectiveRoles(session);
 
   if (!ALLOWED_ROLES.some((r) => roles.includes(r))) {
     return <AccessDenied />;

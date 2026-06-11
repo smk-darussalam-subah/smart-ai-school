@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { getEffectiveRoles } from '@/lib/view-as';
 import type { Metadata } from 'next';
 import { apiFetch } from '@/lib/api';
 import AttendanceHeatmap, { HeatmapData } from './_components/AttendanceHeatmap';
@@ -108,7 +109,7 @@ function RoleStats({ role, adminStats }: { role: string; adminStats?: AdminStats
 // =============================================================================
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
-  const roles: string[] = (session?.roles as string[]) ?? [];
+  const roles: string[] = await getEffectiveRoles(session);
   const primaryRole = roles[0] ?? '';
   const greeting = ROLE_GREETING[primaryRole] ?? 'Selamat datang di DIIS.';
   const firstName = session?.user?.name?.split(' ')[0] ?? 'Pengguna';
