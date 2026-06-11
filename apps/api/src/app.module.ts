@@ -33,6 +33,8 @@ import { AnnouncementsModule } from './announcements/announcements.module';
 import { ClassesModule } from './classes/classes.module';
 import { TeacherAttendanceModule } from './teacher-attendance/teacher-attendance.module';
 import { RppModule } from './rpp/rpp.module';
+import { ReportCardsModule } from './report-cards/report-cards.module';
+import { ClassActivitiesModule } from './class-activities/class-activities.module';
 
 @Module({
   imports: [
@@ -62,6 +64,8 @@ import { RppModule } from './rpp/rpp.module';
     ClassesModule,
     TeacherAttendanceModule,
     RppModule,
+    ReportCardsModule,
+    ClassActivitiesModule,
     SchoolConfigModule,
   ],
   providers: [

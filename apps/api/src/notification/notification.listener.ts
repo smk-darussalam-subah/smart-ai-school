@@ -25,6 +25,7 @@ import {
   PaymentReceivedPayload,
   RppReviewedPayload,
   AnnouncementPublishedPayload,
+  ReportDistributedPayload,
 } from '../events/events.types';
 
 @Injectable()
@@ -337,6 +338,37 @@ export class NotificationListener {
       });
     } catch (err) {
       logger.error('[NotificationListener] announcement.published gagal (fail-soft)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * report.distributed → WA ke ORANG TUA siswa (rapor sudah bisa dilihat).
+   * Idempoten per rapor via refType+refId.
+   */
+  @OnEvent(EVENTS.REPORT_DISTRIBUTED)
+  async onReportDistributed(payload: ReportDistributedPayload): Promise<void> {
+    try {
+      const c = await this.resolveStudentContacts(payload.studentId);
+      if (!c.parentPhone) {
+        logger.warn('[NotificationListener] report.distributed: ortu tanpa nomor WA', {
+          reportCardId: payload.reportCardId,
+        });
+        return;
+      }
+      await this.notificationService.notify({
+        channel: 'whatsapp',
+        to: c.parentPhone,
+        body:
+          `Yth. Orang Tua/Wali ${c.fullName}, rapor ${payload.academicYear} ` +
+          `Semester ${payload.semester} ananda telah DIBAGIKAN dan dapat dilihat ` +
+          `di DIIS.\n— SMK Darussalam Subah`,
+        refType: 'report-card',
+        refId: payload.reportCardId,
+      });
+    } catch (err) {
+      logger.error('[NotificationListener] report.distributed gagal (fail-soft)', {
         error: err instanceof Error ? err.message : String(err),
       });
     }
