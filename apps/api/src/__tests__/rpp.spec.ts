@@ -11,6 +11,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException, ConflictException, ForbiddenException, NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AuthUser } from '@smk/auth';
 import { RppService } from '../rpp/rpp.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -46,7 +47,7 @@ describe('RppService', () => {
       },
     };
     const module: TestingModule = await Test.createTestingModule({
-      providers: [RppService, { provide: PrismaService, useValue: prisma }],
+      providers: [RppService, { provide: PrismaService, useValue: prisma }, { provide: EventEmitter2, useValue: { emit: jest.fn() } }],
     }).compile();
     service = module.get(RppService);
   });

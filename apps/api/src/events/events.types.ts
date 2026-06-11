@@ -14,6 +14,8 @@ export const EVENTS = {
   GRADE_SUBMITTED:        'grade.submitted',
   ATTENDANCE_RECORDED:    'attendance.recorded',
   PAYMENT_RECEIVED:       'payment.received',
+  RPP_REVIEWED:           'rpp.reviewed',
+  ANNOUNCEMENT_PUBLISHED: 'announcement.published',
 } as const;
 
 // ── Producer payloads ─────────────────────────────────────────────────────────
@@ -64,4 +66,23 @@ export interface PaymentReceivedPayload {
   year:       number;
   amount:     string;   // Decimal.toString()
   receiptNo:  string | null;
+}
+
+export interface RppReviewedPayload {
+  rppId:         string;
+  teacherId:     string;
+  title:         string;
+  decision:      'approved' | 'revision';
+  note:          string | null;
+  /** ISO reviewedAt — bagian refId idempotensi (unik per aksi review) */
+  reviewedAtIso: string;
+}
+
+export interface AnnouncementPublishedPayload {
+  announcementId: string;
+  title:          string;
+  category:       string;
+  priority:       string;
+  /** ["ALL"] atau daftar role */
+  audience:       string[];
 }

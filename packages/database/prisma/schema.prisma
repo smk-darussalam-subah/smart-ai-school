@@ -405,7 +405,10 @@ model Schedule {
   class              Class              @relation(fields: [classId], references: [id])
   teachingAssignment TeachingAssignment @relation(fields: [teachingAssignmentId], references: [id])
 
-  // Satu kelas tidak bisa punya dua jadwal di slot JP yang sama
+  // Satu kelas tidak bisa punya dua jadwal di slot JP yang sama.
+  // + 2G-2: exclusion constraint "schedules_class_jp_range_excl" (raw SQL,
+  //   migration 20260611000004) menolak OVERLAP RENTANG di level DB —
+  //   Prisma tidak bisa mengekspresikan EXCLUDE, jangan di-drop saat db pull.
   @@unique([classId, dayOfWeek, jpStart, academicYear, semester])
   @@index([teachingAssignmentId])
   @@map("schedules")

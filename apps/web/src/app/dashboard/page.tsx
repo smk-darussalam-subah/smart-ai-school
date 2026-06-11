@@ -57,6 +57,7 @@ interface AdminStats {
   kehadiranHariIni: number | null;
   kehadiranDelta: number | null;
   ppdbLeads: number | null;
+  rppMenunggu: number | null;
 }
 
 function RoleStats({ role, adminStats }: { role: string; adminStats?: AdminStats }) {
@@ -74,6 +75,7 @@ function RoleStats({ role, adminStats }: { role: string; adminStats?: AdminStats
         <StatCard icon="🏫" label="Rombel Aktif" value={fmt(st?.totalKelas)} sub="Kelas X, XI, XII" color="bg-purple-50" />
         <StatCard icon="✅" label="Kehadiran Hari Ini" value={fmt(st?.kehadiranHariIni, '%')} sub={deltaSub} color="bg-green-50" />
         <StatCard icon="📋" label="Pendaftar PPDB" value={fmt(st?.ppdbLeads)} sub="Total leads" color="bg-orange-50" />
+        <StatCard icon="📄" label="RPP Menunggu" value={fmt(st?.rppMenunggu)} sub="Perlu direview" color="bg-yellow-50" />
       </div>
     );
   }
@@ -117,11 +119,15 @@ export default async function DashboardPage() {
   let heatmap: HeatmapData | null = null;
   if (isStaf) {
     const token = session?.accessToken ?? '';
-    const [students, classes, hm, ppdb] = await Promise.all([
+    const isReviewer = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'].some((r) => roles.includes(r));
+    const [students, classes, hm, ppdb, rpp] = await Promise.all([
       apiFetch<{ total: number }>('/students?limit=1', token),
       apiFetch<{ total: number }>('/classes?limit=1', token),
       apiFetch<HeatmapData>('/attendance/heatmap?days=10', token),
       apiFetch<{ total?: number; data?: { total?: number } }>('/ppdb/stats', token),
+      isReviewer
+        ? apiFetch<{ total: number }>('/rpp?status=submitted&limit=1', token)
+        : Promise.resolve(null),
     ]);
     heatmap = hm ?? null;
     const ppdbTotal =
@@ -138,6 +144,7 @@ export default async function DashboardPage() {
       kehadiranHariIni: today,
       kehadiranDelta: today !== null && yest !== null ? Math.round((today - yest) * 10) / 10 : null,
       ppdbLeads: ppdbTotal,
+      rppMenunggu: rpp?.total ?? null,
     };
   }
 
