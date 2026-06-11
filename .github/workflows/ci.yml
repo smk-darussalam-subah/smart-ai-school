@@ -110,6 +110,9 @@ jobs:
         # Jest --runInBand: E2E berjalan serial (satu DB, hindari race condition).
         # --forceExit: tutup Nest app + Prisma connection setelah selesai.
         # Database: smk_test (service postgres di atas) — BUKAN smk_db produksi.
+        # NODE_OPTIONS: tambah heap memory (CI runner 7GB, NestJS E2E butuh ~2GB peak)
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: cd apps/api && npx jest --config test/jest-e2e.json --runInBand --forceExit
 
       - name: Upload coverage (semua packages)
