@@ -7,7 +7,6 @@ jobs:
   fix:
     name: Sync REDIS_PASSWORD prod→staging & restart
     runs-on: ubuntu-latest
-    environment: staging
 
     steps:
       - name: Fix via SSH
