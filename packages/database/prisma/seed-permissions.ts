@@ -49,6 +49,8 @@ const PERMISSIONS: PermissionDef[] = [
   { code: 'ai.knowledge.delete', description: 'Menghapus knowledge base', module: 'ai' },
   { code: 'notification.manage', description: 'Mengelola notifikasi', module: 'notification' },
   { code: 'notification.read', description: 'Melihat notifikasi', module: 'notification' },
+  { code: 'teacher.attendance.checkin', description: 'Check-in/out presensi guru (GURU)', module: 'teacher' },
+  { code: 'teacher.attendance.read', description: 'Melihat rekap presensi guru', module: 'teacher' },
   { code: 'announcement.read', description: 'Melihat pengumuman sekolah', module: 'notification' },
   { code: 'announcement.manage', description: 'Mengelola pengumuman (buat/ubah/terbit/sematkan/arsip)', module: 'notification' },
   { code: 'announcement.delete', description: 'Menghapus pengumuman', module: 'notification' },
@@ -66,6 +68,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'ppdb.read', 'ppdb.stats.read',
     'ai.knowledge.read', 'notification.read', 'audit.read',
     'announcement.read', 'announcement.manage',
+    'teacher.attendance.read',
   ],
   TATA_USAHA: [
     'student.create', 'student.read', 'student.update', 'student.delete',
@@ -73,6 +76,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'finance.create', 'finance.read', 'finance.update',
     'notification.read', 'notification.manage',
     'announcement.read',
+    'teacher.attendance.read',
   ],
   GURU: [
     'academic.grade.create', 'academic.grade.read', 'academic.grade.update',
@@ -80,6 +84,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'academic.teaching.read', 'academic.schedule.read',
     'student.read', 'ppdb.stats.read', 'ai.knowledge.read',
     'announcement.read',
+    'teacher.attendance.checkin', 'teacher.attendance.read',
   ],
   SISWA: [
     'student.own.read', 'grade.own.read', 'attendance.own.read',

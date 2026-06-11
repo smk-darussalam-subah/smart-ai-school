@@ -190,8 +190,39 @@ model Teacher {
   user        User                 @relation(fields: [userId], references: [id])
   walikelas   Class[]
   assignments TeachingAssignment[]
+  attendances TeacherAttendance[]
 
   @@map("teachers")
+  @@schema("teacher")
+}
+
+
+// Presensi Guru (referensi KamilEdu Modul 8) — check-in/out + GPS geofence.
+// Foto selfie: photoUrl nullable (File Storage API = just-in-time, lihat decision-log).
+// outsideGeofence: true bila (a) jarak > radius, atau (b) sekolah ber-geofence
+// tapi koordinat tidak dikirim (tak dapat diverifikasi).
+model TeacherAttendance {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teacherId       String    @map("teacher_id") @db.Uuid
+  date            DateTime  @db.Date
+  checkInAt       DateTime  @map("check_in_at")
+  checkOutAt      DateTime? @map("check_out_at")
+  latIn           Decimal?  @map("lat_in") @db.Decimal(9, 6)
+  lngIn           Decimal?  @map("lng_in") @db.Decimal(9, 6)
+  latOut          Decimal?  @map("lat_out") @db.Decimal(9, 6)
+  lngOut          Decimal?  @map("lng_out") @db.Decimal(9, 6)
+  distanceInM     Int?      @map("distance_in_m")
+  outsideGeofence Boolean   @default(false) @map("outside_geofence")
+  photoUrl        String?   @map("photo_url") @db.Text
+  notes           String?   @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+
+  @@unique([teacherId, date])
+  @@index([date])
+  @@map("teacher_attendance")
   @@schema("teacher")
 }
 
@@ -596,6 +627,10 @@ model SchoolProfile {
   headmasterNip  String?  @map("headmaster_nip") @db.VarChar(30)
   logoUrl        String?  @map("logo_url")
   accreditation  String?  @db.VarChar(5)          // A, B, C
+  // 2F-2: geofence presensi guru (null = geofence nonaktif)
+  latitude        Decimal? @db.Decimal(9, 6)
+  longitude       Decimal? @db.Decimal(9, 6)
+  geofenceRadiusM Int      @default(300) @map("geofence_radius_m")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 

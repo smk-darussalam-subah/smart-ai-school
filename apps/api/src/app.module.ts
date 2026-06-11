@@ -31,6 +31,7 @@ import { AuditInterceptor } from './audit-log/interceptors/audit.interceptor';
 import { UsersModule } from './users/users.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { ClassesModule } from './classes/classes.module';
+import { TeacherAttendanceModule } from './teacher-attendance/teacher-attendance.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { ClassesModule } from './classes/classes.module';
     UsersModule,
     AnnouncementsModule,
     ClassesModule,
+    TeacherAttendanceModule,
     SchoolConfigModule,
   ],
   providers: [
