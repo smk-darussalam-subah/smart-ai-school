@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-06-11 — 2E: Agent harness terkurasi + Jadwal matrix
+
+1. **ECC v2.0.0 diadopsi SUBSET, bukan wholesale** (14 skill + 13 agent + 4 rules relevan
+   stack). **Hooks ECC sengaja TIDAK dipasang** — auto-exec script pihak-ketiga pada tiap
+   tool-use memperluas permukaan serang tanpa kebutuhan; quality gate tetap CI + gerbang
+   review. Audit keamanan & daftar eksklusi: `.claude/HARNESS.md`. Re-vendor manual.
+2. **Skill ui-ux-pro-max v2.5.0** = referensi WAJIB pekerjaan frontend (CLAUDE.md).
+   Symlink upstream di-resolve; script sinkronisasi upstream dihapus dari vendor.
+3. **Deteksi bentrok jadwal dua lapis**: DB constraint (unique jpStart) + deteksi klien
+   rentang-overlap (guru lintas kelas & kelas dobel). *Diketahui:* unique DB tidak
+   menangkap overlap rentang (1–3 vs 2–4) — kandidat constraint/exclusion server-side.
+4. **Redaksi audit diperkuat** (case-insensitive, substring, nested depth 3) + statusCode
+   @HttpCode-aware. *Lesson:* denylist exact-match case-sensitive adalah ilusi keamanan.
+
+---
+
 ## 2026-06-11 — 2D: Review-gate retrospektif 2B/2C + stabilisasi + modul KamilEdu
 
 **Konteks.** 2B-1/2/3 + 2C-0..7 merged 9–10 Juni TANPA gerbang review & done-report (deviasi
