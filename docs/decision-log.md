@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-06-12 — 2H: Insiden kode tak bertuan + API Rapor & Kegiatan
+
+**INSIDEN.** ~820 baris frontend rapor+kegiatan masuk commit 2G via `git add -A`
+tanpa ditulis/direview di sesi pembuatnya (worktree terkontaminasi sesi lain),
+lolos CI, deploy prod sebagai cangkang kosong (API target tidak ada — pola bug
+/classes 2C terulang). **Guard baru:** `git diff --cached --stat` wajib diperiksa
+sebelum commit; file tak dikenal = keluarkan; satu worktree = satu sesi aktif.
+
+**Keputusan 2H:** kontrak frontend yang sudah live = kontrak API (bukan sebaliknya)
+— menghindari redeploy frontend. Snapshot rapor immutable pasca-generate; SISWA/ORTU
+hanya melihat rapor `distributed` (di QUERY); distribute memancarkan WA ke ortu.
+Prinsip Eksekusi Director ditambahkan ke WAYS-OF-WORKING §Prinsip Eksekusi + memory/.
+
+---
+
 ## 2026-06-11 (malam) — 2F: CRUD Jadwal + Presensi Guru + RPP
 
 1. **Konflik jadwal = rentang INKLUSIF** — `lt/gt` lama meloloskan overlap tepi;
