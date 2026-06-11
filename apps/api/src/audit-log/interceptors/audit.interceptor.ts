@@ -14,6 +14,7 @@ import {
   Injectable,
   NestInterceptor,
 } from '@nestjs/common';
+import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
@@ -28,26 +29,39 @@ import {
 } from '../decorators/audit.decorator';
 import { Prisma } from '@prisma/client';
 
-// Field names yang TIDAK BOLEH masuk ke metadata.metadata — strip nilainya.
+// Field sensitif — dicocokkan CASE-INSENSITIVE. Dua mekanisme:
+//   1. exact match (set di bawah, lowercase)
+//   2. substring kunci (password/secret/token/credential/apikey/privatekey)
+//      sehingga varian seperti PASSWORD, user_password, xApiKey ikut ter-redaksi.
 const SENSITIVE_FIELDS = new Set([
   'password',
-  'currentPassword',
-  'newPassword',
-  'confirmPassword',
+  'currentpassword',
+  'newpassword',
+  'confirmpassword',
   'secret',
   'token',
-  'accessToken',
-  'refreshToken',
-  'clientSecret',
+  'accesstoken',
+  'refreshtoken',
+  'clientsecret',
   'authorization',
-  'apiKey',
-  'privateKey',
+  'apikey',
+  'privatekey',
   'credential',
   'credentials',
   'nik',
   'kk',
   'npwp',
 ]);
+
+const SENSITIVE_SUBSTRINGS = ['password', 'secret', 'token', 'credential', 'apikey', 'privatekey'];
+
+function isSensitiveKey(key: string): boolean {
+  const k = key.toLowerCase().replace(/[_-]/g, '');
+  if (SENSITIVE_FIELDS.has(k)) return true;
+  return SENSITIVE_SUBSTRINGS.some((sub) => k.includes(sub));
+}
+
+const MAX_SANITIZE_DEPTH = 3;
 
 const MUTATIVE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -119,8 +133,14 @@ export class AuditInterceptor implements NestInterceptor {
             ? this.sanitizeBody(request.body)
             : null;
 
-          // statusCode: POST→201, lainnya→200 (NestJS default sebelum reply dikirim)
-          const statusCode = method === 'POST' ? 201 : 200;
+          // statusCode akurat: hormati @HttpCode(...) handler; fallback default
+          // NestJS per method (POST→201, lainnya→200). Reply belum terkirim pada
+          // titik tap, jadi metadata adalah sumber paling andal tanpa onResponse hook.
+          const httpCodeMeta = Reflect.getMetadata(
+            HTTP_CODE_METADATA,
+            context.getHandler(),
+          ) as number | undefined;
+          const statusCode = httpCodeMeta ?? (method === 'POST' ? 201 : 200);
 
           this.writeLog({
             ...baseData,
@@ -223,21 +243,29 @@ export class AuditInterceptor implements NestInterceptor {
     return null;
   }
 
-  // Sanitasi request body: strip nilai field sensitif, pertahankan key + non-sensitif values
+  // Sanitasi request body: redaksi field sensitif (case-insensitive, substring-aware),
+  // REKURSIF untuk objek bersarang (maks depth 3 — di bawahnya diringkas '[object]').
   private sanitizeBody(body: unknown): Prisma.InputJsonValue | null {
     if (typeof body !== 'object' || body === null) return null;
+    return this.sanitizeObject(body as Record<string, unknown>, 1) as Prisma.InputJsonValue;
+  }
+
+  private sanitizeObject(obj: Record<string, unknown>, depth: number): Record<string, unknown> {
     const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(
-      body as Record<string, unknown>,
-    )) {
-      if (SENSITIVE_FIELDS.has(key)) {
+    for (const [key, value] of Object.entries(obj)) {
+      if (isSensitiveKey(key)) {
         result[key] = '[REDACTED]';
+      } else if (Array.isArray(value)) {
+        result[key] = `[array:${value.length}]`;
       } else if (typeof value === 'object' && value !== null) {
-        result[key] = '[object]';
+        result[key] =
+          depth < MAX_SANITIZE_DEPTH
+            ? this.sanitizeObject(value as Record<string, unknown>, depth + 1)
+            : '[object]';
       } else {
         result[key] = value;
       }
     }
-    return result as Prisma.InputJsonValue;
+    return result;
   }
 }

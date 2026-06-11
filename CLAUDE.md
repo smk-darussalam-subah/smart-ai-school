@@ -21,6 +21,10 @@
   R-03 ditutup (bila Claude). Sebelum gerbang → semua dummy (di tabel DB), CRUD penuh termasuk DELETE aman.
 - **Git VPS:** dijalankan sebagai user **`appuser`** (punya deploy key); root tidak.
 - API docs: Markdown cukup (Swagger ditunda). Blueprint akan direvisi → v2.1.
+- **Agent harness (2026-06-11):** subset terkurasi ECC + skill ui-ux-pro-max di `.claude/`
+  (lihat `.claude/HARNESS.md` — termasuk daftar yang sengaja TIDAK dipasang & audit keamanan).
+  Pekerjaan frontend WAJIB konsultasi skill `ui-ux-pro-max`; sebelum PR jalankan persona
+  code-reviewer + security-reviewer.
 
 ---
 
