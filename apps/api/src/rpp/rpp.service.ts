@@ -11,9 +11,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
+import { EVENTS, RppReviewedPayload } from '../events/events.types';
 import {
   CreateRppDto,
   ListRppQueryDto,
@@ -36,7 +38,10 @@ const RPP_SELECT = {
 
 @Injectable()
 export class RppService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   private isReviewer(user: AuthUser): boolean {
     return user.roles.some((r) => (REVIEWER_ROLES as readonly string[]).includes(r));
@@ -172,7 +177,7 @@ export class RppService {
         `Hanya RPP berstatus 'submitted' yang bisa direview (sekarang '${existing.status}')`,
       );
     }
-    return this.prisma.rpp.update({
+    const reviewed = await this.prisma.rpp.update({
       where: { id },
       data: {
         status: dto.decision,
@@ -183,6 +188,18 @@ export class RppService {
       },
       select: RPP_SELECT,
     });
+
+    // Notifikasi WA ke guru (konsumer: NotificationListener — fail-soft)
+    this.eventEmitter.emit(EVENTS.RPP_REVIEWED, {
+      rppId: reviewed.id,
+      teacherId: reviewed.teacherId,
+      title: reviewed.title,
+      decision: dto.decision,
+      note: dto.note ?? null,
+      reviewedAtIso: reviewed.reviewedAt?.toISOString() ?? new Date().toISOString(),
+    } satisfies RppReviewedPayload);
+
+    return reviewed;
   }
 
   /** Hapus: GURU milik sendiri status draft; SA bebas (CRUD penuh dummy). */
