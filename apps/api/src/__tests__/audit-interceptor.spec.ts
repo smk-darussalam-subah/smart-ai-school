@@ -178,7 +178,7 @@ describe('AuditInterceptor', () => {
 
     let receivedValue: unknown;
     interceptor.intercept(ctx, handler).subscribe({
-      next: (value) => { receivedValue = value; },
+      next: (value: unknown) => { receivedValue = value; },
       complete: () => {
         expect(receivedValue).toEqual({ id: 'xyz', name: 'Test Student' });
         done();
