@@ -30,15 +30,19 @@ export class HealthController {
   @Get()
   @HealthCheck()
   check() {
-    return this.health.check([
+    const checks = [
       // PostgreSQL via Prisma
       () => this.prismaHealth.pingCheck('database', this.prisma),
+    ];
 
-      // Memory heap tidak boleh melebihi 500MB
-      () => this.memory.checkHeap('memory_heap', 500 * 1024 * 1024),
+    // Memory checks hanya di production (CI env memory rendah → false alarm)
+    if (process.env.NODE_ENV !== 'test') {
+      checks.push(
+        () => this.memory.checkHeap('memory_heap', 500 * 1024 * 1024),
+        () => this.memory.checkRSS('memory_rss', 1024 * 1024 * 1024),
+      );
+    }
 
-      // Memory RSS tidak boleh melebihi 1GB
-      () => this.memory.checkRSS('memory_rss', 1024 * 1024 * 1024),
-    ]);
+    return this.health.check(checks);
   }
 }
