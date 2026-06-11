@@ -67,3 +67,7 @@ infrastructure/nginx/certs/
 # Misc
 *.pem
 .vercel
+
+# Coverage artifacts (semua varian nama, di mana pun)
+coverage*/
+*.lcov
