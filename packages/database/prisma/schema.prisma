@@ -128,6 +128,7 @@ model Class {
   teachingAssignments TeachingAssignment[]
   attendanceRecords   Attendance[]
   schedules           Schedule[]
+  rpps                Rpp[]
 
   @@unique([name, academicYear])
   @@map("classes")
@@ -191,6 +192,7 @@ model Teacher {
   walikelas   Class[]
   assignments TeachingAssignment[]
   attendances TeacherAttendance[]
+  rpps        Rpp[]
 
   @@map("teachers")
   @@schema("teacher")
@@ -407,6 +409,48 @@ model Schedule {
   @@unique([classId, dayOfWeek, jpStart, academicYear, semester])
   @@index([teachingAssignmentId])
   @@map("schedules")
+  @@schema("academic")
+}
+
+
+// RPP — Rencana Pelaksanaan Pembelajaran (referensi KamilEdu Modul 11)
+// Pipeline: draft → submitted → approved | revision (revisi → edit → submitted lagi).
+// fileUrl nullable (File Storage API just-in-time); content = isi RPP teks/markdown.
+// reviewerId/actor = Keycloak sub (pola AuditLog — tanpa FK lintas-schema).
+model Rpp {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teacherId    String    @map("teacher_id") @db.Uuid
+  classId      String?   @map("class_id") @db.Uuid
+  subject      String    @db.VarChar(100)
+  title        String    @db.VarChar(255)
+  content      String?   @db.Text
+  fileUrl      String?   @map("file_url") @db.Text
+  status       RppStatus @default(draft)
+  reviewerId   String?   @map("reviewer_id") @db.VarChar(64)
+  reviewerName String?   @map("reviewer_name") @db.VarChar(100)
+  reviewNote   String?   @map("review_note") @db.Text
+  submittedAt  DateTime? @map("submitted_at")
+  reviewedAt   DateTime? @map("reviewed_at")
+  academicYear String    @map("academic_year") @db.VarChar(9)
+  semester     Int
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+  class   Class?  @relation(fields: [classId], references: [id])
+
+  @@index([status, submittedAt])
+  @@index([teacherId, academicYear, semester])
+  @@map("rpp")
+  @@schema("academic")
+}
+
+enum RppStatus {
+  draft
+  submitted
+  approved
+  revision
+
   @@schema("academic")
 }
 

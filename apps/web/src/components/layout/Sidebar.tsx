@@ -46,6 +46,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Nilai & Absensi', href: '/dashboard/nilai', icon: '📊', roles: ['SISWA', 'ORANG_TUA'] },
   { label: 'Lowongan', href: '/dashboard/lowongan', icon: '💼', roles: ['INDUSTRI', 'SISWA'] },
   { label: 'Jadwal', href: '/dashboard/jadwal', icon: '📅', roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA'] },
+  { label: 'RPP', href: '/dashboard/rpp', icon: '📄', roles: ['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN'] },
   { label: 'Presensi Guru', href: '/dashboard/presensi-guru', icon: '📍', roles: ['GURU', 'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
   { label: 'Pengumuman', href: '/dashboard/pengumuman', icon: '📢' },
   { label: 'Basis Pengetahuan', href: '/dashboard/knowledge', icon: '🧠', roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },

@@ -49,6 +49,9 @@ const PERMISSIONS: PermissionDef[] = [
   { code: 'ai.knowledge.delete', description: 'Menghapus knowledge base', module: 'ai' },
   { code: 'notification.manage', description: 'Mengelola notifikasi', module: 'notification' },
   { code: 'notification.read', description: 'Melihat notifikasi', module: 'notification' },
+  { code: 'rpp.read', description: 'Melihat RPP', module: 'academic' },
+  { code: 'rpp.own.manage', description: 'Membuat/mengubah/submit RPP sendiri (GURU)', module: 'academic' },
+  { code: 'rpp.review', description: 'Mereview RPP (approve/revisi)', module: 'academic' },
   { code: 'teacher.attendance.checkin', description: 'Check-in/out presensi guru (GURU)', module: 'teacher' },
   { code: 'teacher.attendance.read', description: 'Melihat rekap presensi guru', module: 'teacher' },
   { code: 'announcement.read', description: 'Melihat pengumuman sekolah', module: 'notification' },
@@ -69,6 +72,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'ai.knowledge.read', 'notification.read', 'audit.read',
     'announcement.read', 'announcement.manage',
     'teacher.attendance.read',
+    'rpp.read', 'rpp.review',
   ],
   TATA_USAHA: [
     'student.create', 'student.read', 'student.update', 'student.delete',
@@ -85,6 +89,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'student.read', 'ppdb.stats.read', 'ai.knowledge.read',
     'announcement.read',
     'teacher.attendance.checkin', 'teacher.attendance.read',
+    'rpp.read', 'rpp.own.manage',
   ],
   SISWA: [
     'student.own.read', 'grade.own.read', 'attendance.own.read',

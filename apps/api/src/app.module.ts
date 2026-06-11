@@ -32,6 +32,7 @@ import { UsersModule } from './users/users.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { ClassesModule } from './classes/classes.module';
 import { TeacherAttendanceModule } from './teacher-attendance/teacher-attendance.module';
+import { RppModule } from './rpp/rpp.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { TeacherAttendanceModule } from './teacher-attendance/teacher-attendance
     AnnouncementsModule,
     ClassesModule,
     TeacherAttendanceModule,
+    RppModule,
     SchoolConfigModule,
   ],
   providers: [
