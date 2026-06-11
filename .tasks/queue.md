@@ -4,7 +4,17 @@
 > Dokumen lain (`current.md`, `CLAUDE.md` §7, gate docs) hanya MENAUTKAN ke sini,
 > tidak menduplikasi status. Jika ada konflik, file INI yang menang.
 > Dikelola oleh Cowork AI. Claude Code hanya membaca file ini.
-> Update terakhir: 2026-06-11 (sore) — **2D MERGED ke main (PR #107) + infra redis fixed.**
+> Update terakhir: 2026-06-11 (malam) — **2F selesai dikoding** (branch
+> `feat/2F-jadwal-presensi`, 4 commit dari tip 2E, menunggu PR): 2F-1 CRUD Jadwal
+> (+fix bug overlap inklusif & cek rentang kelas) · 2F-2 **Presensi Guru GPS geofence**
+> (M8; haversine, flag luar-area, geofence config di SchoolProfile) · 2F-3 **RPP
+> pipeline** (M11; draft→submitted→approved|revision, revisi wajib catatan).
+> Bukti: api **622 test** hijau · web 17 · tsc/eslint 0 · nest build OK · next build via CI.
+> **2 migration baru WAJIB uji di smk_staging_db** + re-seed permissions (5 baru).
+> Detail: `.tasks/done/2F-jadwal-presensi-rpp-DONE.md`. Berikutnya: Rapor hub (M12) /
+> kegiatan kelas (M9) / file storage + selfie presensi — keputusan Director.
+>
+> (Catatan 2E sore: 2026-06-11 (sore) — **2D MERGED ke main (PR #107) + infra redis fixed.**
 > **2E selesai dikoding** (branch `feat/2E-harness-uiux`, menunggu PR): agent harness
 > terkurasi (.claude/ — ECC subset TANPA hooks + ui-ux-pro-max; audit di .claude/HARNESS.md)
 > · 3 backlog-fix 2D (audit statusCode @HttpCode, redaksi case-insensitive+nested, SiswaForm

@@ -11,6 +11,10 @@ export const UpdateProfileSchema = z.object({
   headmasterNip: z.string().max(30).optional().nullable(),
   logoUrl: z.string().optional().nullable(),
   accreditation: z.string().max(5).optional().nullable(),
+  // 2F-2: geofence presensi guru (null = nonaktif)
+  latitude: z.coerce.number().min(-90).max(90).optional().nullable(),
+  longitude: z.coerce.number().min(-180).max(180).optional().nullable(),
+  geofenceRadiusM: z.coerce.number().int().min(20).max(5000).optional(),
 }).strict();
 
 export type UpdateProfileDto = z.infer<typeof UpdateProfileSchema>;
