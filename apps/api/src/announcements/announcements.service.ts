@@ -8,9 +8,11 @@
 // =============================================================================
 
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
+import { AnnouncementPublishedPayload, EVENTS } from '../events/events.types';
 import {
   CreateAnnouncementDto,
   ListAnnouncementsQueryDto,
@@ -21,7 +23,22 @@ const MANAGER_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] as const;
 
 @Injectable()
 export class AnnouncementsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
+
+  private emitPublished(a: {
+    id: string; title: string; category: string; priority: string; audience: unknown;
+  }): void {
+    this.eventEmitter.emit(EVENTS.ANNOUNCEMENT_PUBLISHED, {
+      announcementId: a.id,
+      title: a.title,
+      category: String(a.category),
+      priority: String(a.priority),
+      audience: Array.isArray(a.audience) ? (a.audience as string[]) : ['ALL'],
+    } satisfies AnnouncementPublishedPayload);
+  }
 
   private isManager(user: AuthUser): boolean {
     return user.roles.some((r) => (MANAGER_ROLES as readonly string[]).includes(r));
@@ -92,7 +109,7 @@ export class AnnouncementsService {
   }
 
   async create(dto: CreateAnnouncementDto, user: AuthUser) {
-    return this.prisma.announcement.create({
+    const created = await this.prisma.announcement.create({
       data: {
         title: dto.title,
         content: dto.content,
@@ -107,6 +124,8 @@ export class AnnouncementsService {
         createdByName: user.username,
       },
     });
+    if (created.status === 'published') this.emitPublished(created);
+    return created;
   }
 
   async update(id: string, dto: UpdateAnnouncementDto, user: AuthUser) {
@@ -133,18 +152,24 @@ export class AnnouncementsService {
       }
     }
 
-    return this.prisma.announcement.update({ where: { id }, data });
+    const updated = await this.prisma.announcement.update({ where: { id }, data });
+    if (dto.status === 'published' && existing.status !== 'published') {
+      this.emitPublished(updated);
+    }
+    return updated;
   }
 
   async publish(id: string, user: AuthUser) {
     const existing = await this.findOne(id, user);
-    return this.prisma.announcement.update({
+    const published = await this.prisma.announcement.update({
       where: { id },
       data: {
         status: 'published',
         publishedAt: existing.publishedAt ?? new Date(),
       },
     });
+    if (existing.status !== 'published') this.emitPublished(published);
+    return published;
   }
 
   async archive(id: string, user: AuthUser) {
