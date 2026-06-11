@@ -11,6 +11,8 @@
 
 import { useMemo, useState } from 'react';
 import { detectConflicts } from './conflicts';
+import JadwalFormDialog, { AssignmentOption } from './JadwalForm';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -44,6 +46,8 @@ interface Props {
   schedules: ScheduleItem[];
   classes: ClassOption[];
   isStaf: boolean;
+  canManage?: boolean;
+  assignments?: AssignmentOption[];
 }
 
 const DAYS = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -66,7 +70,7 @@ function subjectColor(subject: string): string {
   return SUBJECT_COLORS[h % SUBJECT_COLORS.length]!;
 }
 
-export default function JadwalMatrix({ schedules, classes, isStaf }: Props) {
+export default function JadwalMatrix({ schedules, classes, isStaf, canManage = false, assignments = [] }: Props) {
   const classOptions = useMemo<ClassOption[]>(() => {
     if (classes.length > 0) return classes;
     // non-staf: turunkan opsi dari jadwal yang visible
@@ -86,6 +90,15 @@ export default function JadwalMatrix({ schedules, classes, isStaf }: Props) {
 
   const [classFilter, setClassFilter] = useState<string>(classOptions[0]?.id ?? 'all');
   const [semesterFilter, setSemesterFilter] = useState<string>('all');
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<ScheduleItem | null>(null);
+
+  const openCreate = () => { setEditing(null); setFormOpen(true); };
+  const openEdit = (item: ScheduleItem) => {
+    if (!canManage) return;
+    setEditing(item);
+    setFormOpen(true);
+  };
 
   const conflicts = useMemo(() => detectConflicts(schedules), [schedules]);
   const totalConflicts = conflicts.size;
@@ -116,6 +129,9 @@ export default function JadwalMatrix({ schedules, classes, isStaf }: Props) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {canManage && (
+            <Button onClick={openCreate}>+ Slot Jadwal</Button>
+          )}
           <Select value={classFilter} onValueChange={(v: string) => setClassFilter(v)}>
             <SelectTrigger className="w-44" aria-label="Filter kelas">
               <SelectValue placeholder="Pilih kelas" />
@@ -150,7 +166,7 @@ export default function JadwalMatrix({ schedules, classes, isStaf }: Props) {
           </CardContent>
         </Card>
       ) : classFilter === 'all' ? (
-        <ListView items={visible} conflicts={conflicts} />
+        <ListView items={visible} conflicts={conflicts} onEdit={canManage ? openEdit : undefined} />
       ) : (
         <Card>
           <CardContent className="pt-4 overflow-x-auto">
@@ -180,8 +196,9 @@ export default function JadwalMatrix({ schedules, classes, isStaf }: Props) {
                         <td
                           key={day}
                           rowSpan={span}
-                          title={conflict ? conflict.join('; ') : `${item.teachingAssignment.subject} · ${item.teachingAssignment.teacher.user.fullName}${item.room ? ` · ${item.room}` : ''}`}
-                          className={`rounded border px-2 py-1.5 align-top ${
+                          onClick={() => openEdit(item)}
+                          title={`${conflict ? conflict.join('; ') + ' — ' : ''}${item.teachingAssignment.subject} · ${item.teachingAssignment.teacher.user.fullName}${item.room ? ` · ${item.room}` : ''}${canManage ? ' (klik untuk edit)' : ''}`}
+                          className={`rounded border px-2 py-1.5 align-top ${canManage ? 'cursor-pointer hover:ring-2 hover:ring-primary/40' : ''} ${
                             conflict
                               ? 'bg-red-50 border-red-300 text-red-900'
                               : subjectColor(item.teachingAssignment.subject)
@@ -213,12 +230,21 @@ export default function JadwalMatrix({ schedules, classes, isStaf }: Props) {
           </CardContent>
         </Card>
       )}
+
+      {canManage && (
+        <JadwalFormDialog
+          open={formOpen}
+          onOpenChange={setFormOpen}
+          schedule={editing}
+          assignments={assignments}
+        />
+      )}
     </div>
   );
 }
 
 // ── List view (Semua Kelas, staf): kompak per hari ───────────────────────────
-function ListView({ items, conflicts }: { items: ScheduleItem[]; conflicts: Map<string, string[]> }) {
+function ListView({ items, conflicts, onEdit }: { items: ScheduleItem[]; conflicts: Map<string, string[]>; onEdit?: (item: ScheduleItem) => void }) {
   const byDay = DAYS.map((label, i) => ({
     label,
     items: items
@@ -239,7 +265,8 @@ function ListView({ items, conflicts }: { items: ScheduleItem[]; conflicts: Map<
                   <div
                     key={s.id}
                     title={conflict?.join('; ')}
-                    className={`rounded border px-2.5 py-1.5 text-xs flex items-center justify-between gap-2 ${
+                    onClick={() => onEdit?.(s)}
+                    className={`rounded border px-2.5 py-1.5 text-xs flex items-center justify-between gap-2 ${onEdit ? 'cursor-pointer hover:ring-2 hover:ring-primary/40' : ''} ${
                       conflict ? 'bg-red-50 border-red-300 text-red-900' : 'bg-gray-50 border-gray-200'
                     }`}
                   >

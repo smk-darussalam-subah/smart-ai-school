@@ -20,12 +20,14 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { AuthUser } from '@smk/auth';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { isGuruOnly, isSiswaOnly, isOrangTuaOnly, resolveUserId, resolveTeacherId, resolveSiswaClassId } from '../common/helpers/role-helpers';
 import { CreateScheduleDto } from './dto/create-schedule.dto';
+import { UpdateScheduleDto } from './dto/update-schedule.dto';
 import { ListScheduleQuery } from './dto/list-schedule.dto';
 
 // ── Select shape ──────────────────────────────────────────────────────────────
@@ -177,6 +179,13 @@ export class ScheduleService {
       );
     }
 
+    // 1b. Cek konflik RENTANG kelas (2F-1; unique DB hanya jpStart)
+    await this.assertNoClassRangeConflict({
+      classId: dto.classId, dayOfWeek: dto.dayOfWeek,
+      jpStart: dto.jpStart, jpEnd: dto.jpEnd,
+      academicYear: dto.academicYear, semester: dto.semester,
+    });
+
     // 2. Cek konflik guru (app-level, sebelum insert):
     //    Guru yang sama tidak boleh mengajar di slot JP yang overlap di hari & semester yang sama
     const guruTaIds = await this.prisma.teachingAssignment
@@ -192,8 +201,11 @@ export class ScheduleService {
         dayOfWeek:            dto.dayOfWeek,
         academicYear:         dto.academicYear,
         semester:             dto.semester,
-        jpStart:              { lt: dto.jpEnd },
-        jpEnd:                { gt: dto.jpStart },
+        // INKLUSIF: jpEnd adalah JP terakhir yang dipakai → overlap bila
+        // existing.jpStart <= dto.jpEnd && existing.jpEnd >= dto.jpStart.
+        // (lt/gt lama MELOLOSKAN overlap tepi, mis. 1–3 vs 3–4 — bug 2F-1.)
+        jpStart:              { lte: dto.jpEnd },
+        jpEnd:                { gte: dto.jpStart },
       },
       select: { id: true, classId: true },
     });
@@ -212,8 +224,8 @@ export class ScheduleService {
           dayOfWeek:    dto.dayOfWeek,
           academicYear: dto.academicYear,
           semester:     dto.semester,
-          jpStart:      { lt: dto.jpEnd },
-          jpEnd:        { gt: dto.jpStart },
+          jpStart:      { lte: dto.jpEnd },
+          jpEnd:        { gte: dto.jpStart },
         },
         select: { id: true },
       });
@@ -239,5 +251,111 @@ export class ScheduleService {
       },
       select: SCHEDULE_SELECT,
     });
+  }
+  // ── 2F-1: cek konflik rentang KELAS (unique DB hanya menjaga jpStart) ───────
+  private async assertNoClassRangeConflict(params: {
+    classId: string; dayOfWeek: number; jpStart: number; jpEnd: number;
+    academicYear: string; semester: number; excludeId?: string;
+  }): Promise<void> {
+    const clash = await this.prisma.schedule.findFirst({
+      where: {
+        classId:      params.classId,
+        dayOfWeek:    params.dayOfWeek,
+        academicYear: params.academicYear,
+        semester:     params.semester,
+        jpStart:      { lte: params.jpEnd },
+        jpEnd:        { gte: params.jpStart },
+        ...(params.excludeId ? { id: { not: params.excludeId } } : {}),
+      },
+      select: { id: true, jpStart: true, jpEnd: true },
+    });
+    if (clash) {
+      throw new ConflictException(
+        `Kelas sudah punya jadwal di rentang JP ${clash.jpStart}–${clash.jpEnd} pada hari ini`,
+      );
+    }
+  }
+
+  // ── 2F-1: update slot (hari/JP/ruang/semester) dengan re-cek konflik ────────
+  async update(id: string, dto: UpdateScheduleDto) {
+    const existing = await this.prisma.schedule.findUnique({
+      where: { id },
+      select: {
+        id: true, classId: true, teachingAssignmentId: true, dayOfWeek: true,
+        jpStart: true, jpEnd: true, room: true, academicYear: true, semester: true,
+        teachingAssignment: { select: { teacherId: true } },
+      },
+    });
+    if (!existing) throw new NotFoundException('Jadwal tidak ditemukan');
+
+    const next = {
+      dayOfWeek: dto.dayOfWeek ?? existing.dayOfWeek,
+      jpStart:   dto.jpStart   ?? existing.jpStart,
+      jpEnd:     dto.jpEnd     ?? existing.jpEnd,
+      room:      dto.room !== undefined ? dto.room : existing.room,
+      semester:  dto.semester  ?? existing.semester,
+    };
+    if (next.jpEnd < next.jpStart) {
+      throw new BadRequestException('jpEnd harus >= jpStart');
+    }
+
+    await this.assertNoClassRangeConflict({
+      classId: existing.classId, dayOfWeek: next.dayOfWeek,
+      jpStart: next.jpStart, jpEnd: next.jpEnd,
+      academicYear: existing.academicYear, semester: next.semester,
+      excludeId: id,
+    });
+
+    // Konflik guru (exclude diri sendiri) — inklusif
+    const guruTaIds = await this.prisma.teachingAssignment
+      .findMany({ where: { teacherId: existing.teachingAssignment.teacherId }, select: { id: true } })
+      .then((rows) => rows.map((r) => r.id));
+    const guruConflict = await this.prisma.schedule.findFirst({
+      where: {
+        id:                   { not: id },
+        teachingAssignmentId: { in: guruTaIds },
+        dayOfWeek:            next.dayOfWeek,
+        academicYear:         existing.academicYear,
+        semester:             next.semester,
+        jpStart:              { lte: next.jpEnd },
+        jpEnd:                { gte: next.jpStart },
+      },
+      select: { id: true },
+    });
+    if (guruConflict) {
+      throw new ConflictException('Guru sudah memiliki jadwal di slot JP ini');
+    }
+
+    if (next.room) {
+      const roomConflict = await this.prisma.schedule.findFirst({
+        where: {
+          id:           { not: id },
+          room:         next.room,
+          dayOfWeek:    next.dayOfWeek,
+          academicYear: existing.academicYear,
+          semester:     next.semester,
+          jpStart:      { lte: next.jpEnd },
+          jpEnd:        { gte: next.jpStart },
+        },
+        select: { id: true },
+      });
+      if (roomConflict) {
+        throw new ConflictException(`Ruang '${next.room}' sudah dipakai di slot JP ini`);
+      }
+    }
+
+    return this.prisma.schedule.update({
+      where: { id },
+      data: next,
+      select: SCHEDULE_SELECT,
+    });
+  }
+
+  // ── 2F-1: hapus slot (hard delete — template mingguan tanpa dependen FK) ────
+  async remove(id: string) {
+    const existing = await this.prisma.schedule.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) throw new NotFoundException('Jadwal tidak ditemukan');
+    await this.prisma.schedule.delete({ where: { id } });
+    return { deleted: true, id };
   }
 }

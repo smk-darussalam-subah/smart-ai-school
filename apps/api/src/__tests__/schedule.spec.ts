@@ -204,7 +204,7 @@ describe('ScheduleService', () => {
       expect(prisma.schedule.create).not.toHaveBeenCalled();
     });
 
-    it('room null → cek konflik ruang di-skip (schedule.findFirst dipanggil hanya 1×)', async () => {
+    it('room null → cek konflik ruang di-skip (findFirst 2×: rentang kelas + guru)', async () => {
       prisma.teachingAssignment.findUnique.mockResolvedValue({
         id: 'ta-uuid-001', teacherId: 'teacher-uuid-001', classId: 'class-uuid-001',
         academicYear: '2025/2026',
@@ -215,8 +215,8 @@ describe('ScheduleService', () => {
 
       await service.create({ ...CREATE_DTO, room: null });
 
-      // findFirst dipanggil 1× (guru conflict check saja — room skip)
-      expect(prisma.schedule.findFirst).toHaveBeenCalledTimes(1);
+      // findFirst 2× (2F-1: cek rentang kelas + cek guru) — room check di-skip
+      expect(prisma.schedule.findFirst).toHaveBeenCalledTimes(2);
     });
 
     it('P2002 dari DB → error di-propagate ke PrismaExceptionFilter', async () => {
