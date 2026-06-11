@@ -128,6 +128,7 @@ model Class {
   teachingAssignments TeachingAssignment[]
   attendanceRecords   Attendance[]
   schedules           Schedule[]
+  rpps                Rpp[]
 
   @@unique([name, academicYear])
   @@map("classes")
@@ -190,8 +191,40 @@ model Teacher {
   user        User                 @relation(fields: [userId], references: [id])
   walikelas   Class[]
   assignments TeachingAssignment[]
+  attendances TeacherAttendance[]
+  rpps        Rpp[]
 
   @@map("teachers")
+  @@schema("teacher")
+}
+
+
+// Presensi Guru (referensi KamilEdu Modul 8) — check-in/out + GPS geofence.
+// Foto selfie: photoUrl nullable (File Storage API = just-in-time, lihat decision-log).
+// outsideGeofence: true bila (a) jarak > radius, atau (b) sekolah ber-geofence
+// tapi koordinat tidak dikirim (tak dapat diverifikasi).
+model TeacherAttendance {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teacherId       String    @map("teacher_id") @db.Uuid
+  date            DateTime  @db.Date
+  checkInAt       DateTime  @map("check_in_at")
+  checkOutAt      DateTime? @map("check_out_at")
+  latIn           Decimal?  @map("lat_in") @db.Decimal(9, 6)
+  lngIn           Decimal?  @map("lng_in") @db.Decimal(9, 6)
+  latOut          Decimal?  @map("lat_out") @db.Decimal(9, 6)
+  lngOut          Decimal?  @map("lng_out") @db.Decimal(9, 6)
+  distanceInM     Int?      @map("distance_in_m")
+  outsideGeofence Boolean   @default(false) @map("outside_geofence")
+  photoUrl        String?   @map("photo_url") @db.Text
+  notes           String?   @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+
+  @@unique([teacherId, date])
+  @@index([date])
+  @@map("teacher_attendance")
   @@schema("teacher")
 }
 
@@ -376,6 +409,48 @@ model Schedule {
   @@unique([classId, dayOfWeek, jpStart, academicYear, semester])
   @@index([teachingAssignmentId])
   @@map("schedules")
+  @@schema("academic")
+}
+
+
+// RPP — Rencana Pelaksanaan Pembelajaran (referensi KamilEdu Modul 11)
+// Pipeline: draft → submitted → approved | revision (revisi → edit → submitted lagi).
+// fileUrl nullable (File Storage API just-in-time); content = isi RPP teks/markdown.
+// reviewerId/actor = Keycloak sub (pola AuditLog — tanpa FK lintas-schema).
+model Rpp {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teacherId    String    @map("teacher_id") @db.Uuid
+  classId      String?   @map("class_id") @db.Uuid
+  subject      String    @db.VarChar(100)
+  title        String    @db.VarChar(255)
+  content      String?   @db.Text
+  fileUrl      String?   @map("file_url") @db.Text
+  status       RppStatus @default(draft)
+  reviewerId   String?   @map("reviewer_id") @db.VarChar(64)
+  reviewerName String?   @map("reviewer_name") @db.VarChar(100)
+  reviewNote   String?   @map("review_note") @db.Text
+  submittedAt  DateTime? @map("submitted_at")
+  reviewedAt   DateTime? @map("reviewed_at")
+  academicYear String    @map("academic_year") @db.VarChar(9)
+  semester     Int
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+  class   Class?  @relation(fields: [classId], references: [id])
+
+  @@index([status, submittedAt])
+  @@index([teacherId, academicYear, semester])
+  @@map("rpp")
+  @@schema("academic")
+}
+
+enum RppStatus {
+  draft
+  submitted
+  approved
+  revision
+
   @@schema("academic")
 }
 
@@ -596,6 +671,10 @@ model SchoolProfile {
   headmasterNip  String?  @map("headmaster_nip") @db.VarChar(30)
   logoUrl        String?  @map("logo_url")
   accreditation  String?  @db.VarChar(5)          // A, B, C
+  // 2F-2: geofence presensi guru (null = geofence nonaktif)
+  latitude        Decimal? @db.Decimal(9, 6)
+  longitude       Decimal? @db.Decimal(9, 6)
+  geofenceRadiusM Int      @default(300) @map("geofence_radius_m")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 

@@ -9,9 +9,13 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -22,6 +26,7 @@ import { RequirePermission } from '../permissions/decorators/require-permission.
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { ScheduleService } from './schedule.service';
 import { CreateScheduleSchema, CreateScheduleDto } from './dto/create-schedule.dto';
+import { UpdateScheduleSchema, UpdateScheduleDto } from './dto/update-schedule.dto';
 import { ListScheduleQuerySchema } from './dto/list-schedule.dto';
 
 @Controller('schedules')
@@ -52,5 +57,24 @@ export class ScheduleController {
   @HttpCode(HttpStatus.CREATED)
   create(@Body(ZodPipe(CreateScheduleSchema)) dto: CreateScheduleDto) {
     return this.service.create(dto);
+  }
+
+  /** PATCH /schedules/:id — ubah slot (hari/JP/ruang/semester); re-cek konflik. */
+  @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @RequirePermission('academic.schedule.manage')
+  @Patch(':id')
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(UpdateScheduleSchema)) dto: UpdateScheduleDto,
+  ) {
+    return this.service.update(id, dto);
+  }
+
+  /** DELETE /schedules/:id — hard delete (template mingguan tanpa dependen). */
+  @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @RequirePermission('academic.schedule.manage')
+  @Delete(':id')
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.remove(id);
   }
 }
