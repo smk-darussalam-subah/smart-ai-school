@@ -23,6 +23,8 @@ import {
   GradeSubmittedPayload,
   AttendanceRecordedPayload,
   PaymentReceivedPayload,
+  RppReviewedPayload,
+  AnnouncementPublishedPayload,
 } from '../events/events.types';
 
 @Injectable()
@@ -247,6 +249,94 @@ export class NotificationListener {
     } catch (err: unknown) {
       logger.warn('[NotificationListener] handlePaymentReceived error', {
         paymentId: payload.paymentId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * rpp.reviewed → WA ke guru pemilik RPP.
+   * refId memuat reviewedAtIso → idempoten per AKSI review (re-review setelah
+   * resubmit tetap terkirim; retry event yang sama tidak dobel).
+   */
+  @OnEvent(EVENTS.RPP_REVIEWED)
+  async onRppReviewed(payload: RppReviewedPayload): Promise<void> {
+    try {
+      const teacher = await this.prisma.teacher.findUnique({
+        where: { id: payload.teacherId },
+        select: { user: { select: { phone: true, fullName: true } } },
+      });
+      const phone = teacher?.user?.phone ?? null;
+      if (!phone) {
+        logger.warn('[NotificationListener] rpp.reviewed: guru tanpa nomor WA', {
+          rppId: payload.rppId,
+        });
+        return;
+      }
+      const verdict =
+        payload.decision === 'approved'
+          ? 'DISETUJUI ✅'
+          : `PERLU REVISI ↩\nCatatan: ${payload.note ?? '-'}`;
+      await this.notificationService.notify({
+        channel: 'whatsapp',
+        to: phone,
+        body:
+          `Halo ${teacher?.user?.fullName ?? 'Bapak/Ibu Guru'}, hasil review RPP ` +
+          `"${payload.title}": ${verdict}\n— DIIS SMK Darussalam Subah`,
+        refType: 'rpp-review',
+        refId: `${payload.rppId}:${payload.reviewedAtIso}`,
+      });
+    } catch (err) {
+      logger.error('[NotificationListener] rpp.reviewed gagal (fail-soft)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * announcement.published → broadcast WA HANYA untuk kategori darurat ATAU
+   * prioritas urgent (kontrol volume; pengumuman biasa cukup in-app).
+   * Penerima: users aktif ber-phone sesuai audiens. Idempoten per
+   * (announcementId, penerima) via refType+refId+to.
+   */
+  @OnEvent(EVENTS.ANNOUNCEMENT_PUBLISHED)
+  async onAnnouncementPublished(payload: AnnouncementPublishedPayload): Promise<void> {
+    try {
+      if (payload.category !== 'darurat' && payload.priority !== 'urgent') return;
+
+      const isAll = payload.audience.includes('ALL');
+      const recipients = await this.prisma.user.findMany({
+        where: {
+          isActive: true,
+          deletedAt: null,
+          phone: { not: null },
+          ...(isAll ? {} : { role: { in: payload.audience as never } }),
+        },
+        select: { phone: true },
+      });
+      if (recipients.length === 0) return;
+
+      const body =
+        `📢 PENGUMUMAN ${payload.category === 'darurat' ? 'DARURAT' : 'PENTING'}: ` +
+        `${payload.title}\nBuka DIIS untuk detail.\n— SMK Darussalam Subah`;
+
+      // notify() per penerima — antrian BullMQ yang mengatur rate-limit/retry
+      for (const r of recipients) {
+        if (!r.phone) continue;
+        await this.notificationService.notify({
+          channel: 'whatsapp',
+          to: r.phone,
+          body,
+          refType: 'announcement',
+          refId: payload.announcementId,
+        });
+      }
+      logger.info('[NotificationListener] broadcast pengumuman dienqueue', {
+        announcementId: payload.announcementId,
+        recipients: recipients.length,
+      });
+    } catch (err) {
+      logger.error('[NotificationListener] announcement.published gagal (fail-soft)', {
         error: err instanceof Error ? err.message : String(err),
       });
     }

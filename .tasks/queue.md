@@ -4,7 +4,14 @@
 > Dokumen lain (`current.md`, `CLAUDE.md` §7, gate docs) hanya MENAUTKAN ke sini,
 > tidak menduplikasi status. Jika ada konflik, file INI yang menang.
 > Dikelola oleh Cowork AI. Claude Code hanya membaca file ini.
-> Update terakhir: 2026-06-11 (malam) — **2F selesai dikoding** (branch
+> Update terakhir: 2026-06-11 (larut) — **2G selesai dikoding** (branch
+> `feat/2G-pending-backlog`, dari tip 2F): notif WA rpp.reviewed + broadcast
+> pengumuman darurat/urgent (idempoten, fail-soft, via BullMQ existing) · kartu
+> RPP Menunggu nyata · EXCLUDE constraint overlap rentang jadwal (btree_gist).
+> api 628 test hijau. ⚠ migration 2G: cek data overlap dulu di staging (query di
+> header migration). Detail: `.tasks/done/2G-backlog-tertunda-DONE.md`.
+>
+> (Catatan 2F malam: 2026-06-11 (malam) — **2F selesai dikoding** (branch
 > `feat/2F-jadwal-presensi`, 4 commit dari tip 2E, menunggu PR): 2F-1 CRUD Jadwal
 > (+fix bug overlap inklusif & cek rentang kelas) · 2F-2 **Presensi Guru GPS geofence**
 > (M8; haversine, flag luar-area, geofence config di SchoolProfile) · 2F-3 **RPP

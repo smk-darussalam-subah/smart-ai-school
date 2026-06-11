@@ -11,6 +11,7 @@ jest.mock('@smk/logger', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AuthUser } from '@smk/auth';
 import { AnnouncementsService } from '../announcements/announcements.service';
 import { AnnouncementsController } from '../announcements/announcements.controller';
@@ -70,6 +71,7 @@ describe('AnnouncementsService', () => {
       providers: [
         AnnouncementsService,
         { provide: PrismaService, useValue: prisma },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
       ],
     }).compile();
     service = module.get(AnnouncementsService);
