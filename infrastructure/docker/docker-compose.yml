@@ -63,7 +63,14 @@ services:
     restart: unless-stopped
     # Password di command line — visible di docker inspect.
     # Mitigasi: batasi akses Docker socket (hanya root dan appuser via sudo).
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    # WAJIB list syntax: string form dijalankan via sh -c sehingga karakter
+    # shell special (&, #, @) di password bisa memotong argumen.
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD}
+      - --appendonly
+      - yes
     # ports tidak dimapping — aksesibel hanya via Docker network internal.
     # Dev lokal: gunakan docker-compose.dev.yml atau SSH tunnel ke VPS.
     volumes:
