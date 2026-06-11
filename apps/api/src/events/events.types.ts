@@ -16,6 +16,7 @@ export const EVENTS = {
   PAYMENT_RECEIVED:       'payment.received',
   RPP_REVIEWED:           'rpp.reviewed',
   ANNOUNCEMENT_PUBLISHED: 'announcement.published',
+  REPORT_DISTRIBUTED:     'report.distributed',
 } as const;
 
 // ── Producer payloads ─────────────────────────────────────────────────────────
@@ -85,4 +86,11 @@ export interface AnnouncementPublishedPayload {
   priority:       string;
   /** ["ALL"] atau daftar role */
   audience:       string[];
+}
+
+export interface ReportDistributedPayload {
+  reportCardId: string;
+  studentId:    string;
+  academicYear: string;
+  semester:     number;
 }
