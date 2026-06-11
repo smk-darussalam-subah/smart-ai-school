@@ -120,3 +120,53 @@ Dependensi: TIDAK menabrak 2I (file berbeda); butuh 2H sudah merged ✓.
 | Duplikasi nomor HP ortu beda-orang | konfirmasi UI saat dedup match ("gunakan wali existing X?") — bukan auto-silent |
 | Kredensial temp tercecer | sekali-tampil, tak disimpan; requiredAction memaksa ganti |
 | Provision massal PPDB nanti | desain service sudah batch-ready (loop saga per-item), UI massal = fase terpisah |
+
+---
+
+# ADDENDUM v1.1 — Hasil Validasi Ulang (2026-06-12, atas mandat Director)
+
+> Metode: bedah-ulang rencana sendiri + verifikasi kode untuk tiap asumsi.
+> Hasil: rencana inti TETAP VALID; 4 celah di RFC v1.0 ditambal; 1 temuan
+> KRITIS baru menggeser urutan; 8 blind-spot proyek diangkat ke Director.
+
+## V1. Temuan KRITIS baru — A4b: "Nonaktifkan user" = ilusi total
+Verifikasi kode: `updateActive()` hanya flip kolom DB; `isActive` TIDAK dicek
+di guard/auth path mana pun (grep nol); KC tidak disentuh. **User yang
+dinonaktifkan dari dashboard tetap bisa login dan memakai seluruh API.**
+→ **2J-0 (HOTFIX, duluan, kecil):** (a) AuthGuard menolak token milik user
+`isActive=false`/`deletedAt` (lookup ber-cache TTL 5 mnt, pola PermissionsService,
+fail-closed); (b) `updateActive` juga men-disable user di KC begitu
+KeycloakAdminService ada (2J-1) — KC = saklar utama, guard = sabuk pengaman.
+
+## V2. Celah RFC v1.0 yang ditambal
+| # | Celah | Tambalan |
+|---|-------|----------|
+| C1 | `auth.users.email` NOT NULL+UNIQUE, padahal ortu/siswa sering tanpa email | Kebijakan email sintetis: `{nis}@siswa.…sch.id`, `{phone}@ortu.…sch.id`; email asli menggantikan saat tersedia |
+| C2 | Dedup ortu by phone TANPA normalisasi → `0812…` ≠ `+62812…` = dobel akun | Util normalisasi E.164 (default +62) WAJIB sebelum simpan/cari; terapkan juga saat kirim WA |
+| C3 | `updateRole` semantics utk akun multi-role (inspector!) tidak terdefinisi | Definisi: dashboard role = REPLACE role tunggal kanonik; akun multi-role dikelola via flag khusus & DILINDUNGI dari updateRole; **proteksi last-SA**: tolak demote/nonaktifkan SUPER_ADMIN terakhir (anti-lockout) |
+| C4 | Distribusi password temp tidak diputuskan; SMTP realm = env yang belum tentu terisi → reset via email kemungkinan MATI | Keputusan Director diperlukan: (a) sekali-tampil di layar admin [paling aman, beban TU], atau (b) kirim via WA + kedaluwarsa 24 jam + wajib ganti [praktis utk 350 ortu, risiko kanal]. Rekomendasi saya: (b) utk ORTU/SISWA, (a) utk staf |
+
+## V3. Blind-spot proyek (di luar 2J — yang luput dari pengawasan kita)
+1. **`PASS The WALL.txt` di folder DIIS** (luar repo, satu folder proyek) —
+   bila berisi kredensial plaintext: pindahkan ke password manager, hapus file.
+2. **Backup DB & restore drill belum pernah masuk ledger** — pg_dump terjadwal
+   + simpan off-VPS + SATU kali latihan restore = PRASYARAT data nyata,
+   setara gerbang R-05. (Rapor/nilai tidak boleh bergantung pada satu disk.)
+3. **R-05 consent**: form provisioning ortu (2J-3) = momen alami menangkap
+   consent UU PDP (checkbox + kolom `consent_at`) — gabungkan, jangan proyek
+   terpisah.
+4. **Lifecycle deprovisioning** (siswa lulus, guru resign): disable + arsip,
+   JANGAN delete (rapor/audit historis); kebijakan tahunan kenaikan kelas =
+   modul tersendiri nanti.
+5. **Kuota/rate Fonnte** belum diuji utk broadcast 350 — uji 1×50 di staging
+   sebelum mengandalkan pengumuman darurat.
+6. **Sentry DSN masih backlog lama** (OBS) + belum ada uptime alert eksternal
+   sederhana — dua jam kerja, nilai besar saat insiden.
+7. SMTP realm perlu diisi/diuji ATAU resmi dinyatakan tidak dipakai (C4).
+8. Halaman privacy notice publik (PDP) belum ada di landing — kecil, perlu.
+
+## V4. Urutan eksekusi FINAL (revisi)
+**2J-0 HOTFIX isActive (kecil, duluan) → 2J-1 → 2J-2 (+C1,C3, A4, A4b-KC-sync)
+→ 2J-3 (+C2, consent R-05) → 2J-4 UI → 2J-5 backfill.**
+Paralel non-blok: blind-spot #1 (Director, 5 menit), #2 (runbook backup —
+bisa saya kerjakan kapan pun), #5/#6 (sesi ringan).
