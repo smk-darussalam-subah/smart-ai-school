@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-06-11 (malam) — 2F: CRUD Jadwal + Presensi Guru + RPP
+
+1. **Konflik jadwal = rentang INKLUSIF** — `lt/gt` lama meloloskan overlap tepi;
+   distandarkan `lte/gte` + cek rentang kelas (unique DB hanya jpStart). *Lesson:*
+   semantik inklusif/eksklusif batas rentang harus eksplisit di tes.
+2. **Presensi luar geofence DICATAT + DIFLAG, tidak ditolak** (kebijakan KamilEdu
+   flag_luar_area) — keputusan tindak lanjut di kepala sekolah, bukan sistem.
+   Geofence aktif + koordinat absen = flag (fail-secure, bukan fail-open).
+3. **Foto selfie & file RPP = URL nullable** — File Storage API tetap just-in-time
+   (konsisten keputusan 2026-06-08), tidak diborong sekarang.
+4. **Revisi RPP wajib bercatatan** (divalidasi di DTO) — umpan balik tanpa alasan
+   = antipattern UX review.
+
+---
+
 ## 2026-06-11 — 2E: Agent harness terkurasi + Jadwal matrix
 
 1. **ECC v2.0.0 diadopsi SUBSET, bukan wholesale** (14 skill + 13 agent + 4 rules relevan
