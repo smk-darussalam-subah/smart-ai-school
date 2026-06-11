@@ -89,12 +89,39 @@ describe('PermissionsService', () => {
     it('User override grant → menambah permission di luar role', async () => {
       mockRpFindMany.mockResolvedValue([{ permission: { code: 'student.read' } }]);
       mockUpoFindMany.mockResolvedValue([
-        { permission: { code: 'finance.approve' }, userId: 'auth-1' },
+        { grant: true, permission: { code: 'finance.approve' } },
       ]);
       mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
 
       const result = await service.hasPermission('kc-guru', ['GURU'], 'finance.approve');
       expect(result).toBe(true);
+      // Filter override WAJIB di level query (bukan scan seluruh tabel di JS)
+      expect(mockUpoFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { userId: 'auth-1' } }),
+      );
+    });
+
+    it('User override revoke (grant=false) → MENARIK permission yang diberikan role', async () => {
+      mockRpFindMany.mockResolvedValue([
+        { permission: { code: 'student.read' } },
+        { permission: { code: 'student.delete' } },
+      ]);
+      mockUpoFindMany.mockResolvedValue([
+        { grant: false, permission: { code: 'student.delete' } },
+      ]);
+      mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
+
+      expect(await service.hasPermission('kc-guru', ['GURU'], 'student.delete')).toBe(false);
+      service.invalidateUser('kc-guru');
+      expect(await service.hasPermission('kc-guru', ['GURU'], 'student.read')).toBe(true);
+    });
+
+    it('User tanpa baris auth.users → override TIDAK di-query, role tetap berlaku', async () => {
+      mockRpFindMany.mockResolvedValue([{ permission: { code: 'student.read' } }]);
+      mockUserFindUnique.mockResolvedValue(null);
+
+      expect(await service.hasPermission('kc-baru', ['GURU'], 'student.read')).toBe(true);
+      expect(mockUpoFindMany).not.toHaveBeenCalled();
     });
 
     it('Cache hit → tidak query DB ulang', async () => {
@@ -105,6 +132,19 @@ describe('PermissionsService', () => {
       await service.hasPermission('kc-guru', ['GURU'], 'student.read');
       await service.hasPermission('kc-guru', ['GURU'], 'student.read');
       expect(mockRpFindMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('setRolePermissions → seluruh cache dibersihkan (perubahan role berdampak semua user)', async () => {
+      mockRpFindMany.mockResolvedValue([{ permission: { code: 'student.read' } }]);
+      mockUpoFindMany.mockResolvedValue([]);
+      mockUserFindUnique.mockResolvedValue(null);
+      mockTransaction.mockResolvedValue([]);
+
+      await service.hasPermission('kc-guru', ['GURU'], 'student.read');
+      await service.setRolePermissions('GURU', ['p1']);
+      await service.hasPermission('kc-guru', ['GURU'], 'student.read');
+
+      expect(mockRpFindMany).toHaveBeenCalledTimes(2); // cache miss setelah invalidateAll
     });
 
     it('invalidateUser → clear cache user tertentu', async () => {
@@ -200,12 +240,12 @@ describe('PermissionGuard', () => {
     expect(await guard.canActivate(buildCtx())).toBe(true);
   });
 
-  it('user tidak ada di request → return true', async () => {
+  it('user tidak ada di request → ForbiddenException (FAIL-CLOSED)', async () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) => {
       if (key === REQUIRED_PERMISSION_KEY) return 'student.create';
       return undefined;
     });
-    expect(await guard.canActivate(buildCtx(null))).toBe(true);
+    await expect(guard.canActivate(buildCtx(null))).rejects.toThrow(ForbiddenException);
   });
 
   it('punya permission → return true', async () => {

@@ -37,7 +37,14 @@ export class PermissionGuard implements CanActivate {
       .getRequest<FastifyRequest & { user?: AuthUser }>();
 
     const user = request.user;
-    if (!user) return true;
+    // FAIL-CLOSED: endpoint ber-@RequirePermission tanpa user terautentikasi
+    // = tolak. (Sebelumnya return true — fail-open bila AuthGuard tak terpasang
+    // pada rute, urutan guard berubah, atau rute keliru di-@Public().)
+    if (!user) {
+      throw new ForbiddenException(
+        `Akses ditolak: permission '${requiredPermission}' membutuhkan autentikasi`,
+      );
+    }
 
     const hasPermission = await this.permissionsService.hasPermission(
       user.keycloakId,

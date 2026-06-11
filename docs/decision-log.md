@@ -5,6 +5,35 @@
 
 ---
 
+## 2026-06-11 — 2D: Review-gate retrospektif 2B/2C + stabilisasi + modul KamilEdu
+
+**Konteks.** 2B-1/2/3 + 2C-0..7 merged 9–10 Juni TANPA gerbang review & done-report (deviasi
+WAYS-OF-WORKING); queue.md drift. Sesi 2026-06-11 (mandat Director: "sempurnakan, referensi
+KamilEdu, tanpa intervensi") melakukan review retrospektif + perbaikan + 2 modul baru.
+
+**Keputusan & temuan kunci:**
+1. **PermissionGuard wajib FAIL-CLOSED** — rute ber-@RequirePermission tanpa user = 403,
+   bukan pass. *Lesson:* guard otorisasi tidak boleh mengandalkan urutan guard lain.
+2. **Override permission grant=false kini menarik izin role** (semantik schema ditegakkan);
+   resolusi override difilter di QUERY (bukan scan tabel di JS); invalidasi cache:
+   perubahan role-level → clear-all (350 user, TTL 5 mnt — konsistensi > hit-rate).
+3. **Pengumuman (KamilEdu M14)** = schema `notification.announcements`, visibilitas audiens
+   ditegakkan DI QUERY untuk non-manager; DELETE diizinkan penuh (tabel tanpa FK) — selaras
+   kebijakan "CRUD penuh termasuk DELETE atas data dummy".
+4. **/classes API resmi ada (KamilEdu M4)** — menutup bug frontend 2C yang memanggil endpoint
+   fiktif (silent 404). DELETE kelas = 409 bila berelasi; nonaktifkan via isActive.
+5. **Dashboard (KamilEdu M1)**: statistik hardcoded diganti data nyata + heatmap kehadiran
+   kelas×hari (agregasi groupBy di DB; sel tanpa data = null, bukan 0%).
+6. **Artefak coverage dilarang di git** (`coverage*/` di .gitignore; 677 file dibersihkan).
+7. **Verifikasi sandbox ≠ CI penuh**: next build SIGBUS di sandbox → bukti build web
+   didelegasikan ke CI; semua verifikasi lain (tsc/eslint/jest 592/nest build) hijau lokal.
+
+**Lesson umum:** kecepatan merge 2B+2C dalam 2 hari membayar utang berupa 3 bug otorisasi
+nyata + endpoint fiktif. Gerbang review BUKAN birokrasi — dua dari tiga bug permission
+bersifat security (fail-open, revoke tak efektif). SERIAL + review tetap aturan.
+
+---
+
 ## 2026-06-08/09 — Penutupan 2A: isolasi staging, Keycloak prod-mode, isolasi network
 
 **N-20 — Isolasi staging (bentuk final).** DB logis `smk_staging_db` di container `smk-postgres` yang sama +

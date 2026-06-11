@@ -4,7 +4,39 @@
 > Dokumen lain (`current.md`, `CLAUDE.md` §7, gate docs) hanya MENAUTKAN ke sini,
 > tidak menduplikasi status. Jika ada konflik, file INI yang menang.
 > Dikelola oleh Cowork AI. Claude Code hanya membaca file ini.
-> Update terakhir: 2026-06-09 — **2A DITUTUP.** N-20+N-23b+F-3+N-29+N-29b CLOSED-prod, CI hijau. Berikutnya: 2B Fondasi (AuditLog→RBAC→SchoolProfile→tabel referensi).
+> Update terakhir: 2026-06-11 — **REKONSILIASI 2D** (lihat blok di bawah). 2B & 2C ternyata
+> sudah merged 9–10 Juni TANPA gerbang; review retrospektif selesai, perbaikan + modul baru
+> menunggu PR `feat/2D-*`.
+>
+> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+> ## 🔄 REKONSILIASI 2026-06-11 (2D — stabilisasi & review retrospektif) — BLOK INI MENANG
+>
+> **Fakta:** 2B-1 AuditLog ✅ · 2B-2 Permission-RBAC ✅ · 2B-3 SchoolConfig ✅ · 2C-0..7
+> (frontend 7 modul + shadcn + Users CRUD) ✅ — SEMUA sudah merged ke develop PR #91–#94 dst.
+> (9–10 Juni) **tanpa done-report/gerbang review**. Drift ledger ini direkonsiliasi sekarang.
+>
+> **2D (sesi 2026-06-11, branch stack `feat/2D-1..4`, MENUNGGU PR + CI):**
+> - 2D-1 hygiene: 677 artefak coverage keluar dari git + .gitignore `coverage*/` + fix tsc spec.
+> - 2D-2 permission hardening (temuan review retrospektif 2B-2 — 2 temuan SECURITY):
+>   guard fail-open→fail-closed · revoke override kini efektif · filter override di QUERY
+>   · invalidasi cache benar. 592 test hijau.
+> - 2D-3 **Pengumuman** (KamilEdu M14): schema notification.announcements + API CRUD penuh
+>   (visibilitas audiens di QUERY, DELETE aman) + halaman /dashboard/pengumuman + 3 permission baru.
+> - 2D-4 **Dashboard realtime + /classes** (KamilEdu M1/M4): heatmap kehadiran kelas×hari
+>   (groupBy DB) + stat nyata (ganti hardcoded 542/48/18/124) + API /classes (menutup bug
+>   frontend 2C yang memanggil endpoint fiktif → silent 404).
+>
+> **Gerbang merge 2D (WAJIB):** CI hijau termasuk `next build` (sandbox tak bisa build web —
+> SIGBUS swc) · migration 2D3 diuji di `smk_staging_db` dulu · pasca-merge: `prisma generate`
+> + re-run `seed-permissions.ts` (announcement.*) staging→prod · smoke UI pengumuman+heatmap.
+>
+> **Backlog baru (non-blok):** statusCode audit dari reply aktual · denylist redaksi
+> case-insensitive/nested · SiswaForm masih POST `/api/backend/classes` (route fiktif) →
+> alihkan ke /classes · broadcast WA saat publish pengumuman darurat (BullMQ) · drill-down
+> heatmap. **Berikutnya setelah 2D merged:** lanjut roadmap (RPP/jadwal-matrix/presensi guru
+> per referensi KamilEdu M6/M8/M11, atau prioritas Director).
+>
+> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 >
 > ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 > ## 🔄 REKONSILIASI 2026-06-09 (Penutupan 2A)
