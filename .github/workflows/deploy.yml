@@ -125,9 +125,12 @@ jobs:
             # ── Step 1: Jalankan Prisma migration (one-shot, DDL terpisah dari runtime) ──
             # api-migrate: service dengan profile migrate — jalankan prisma migrate deploy lalu exit.
             # Memisahkan hak DDL (CREATE/ALTER) dari runtime API container.
+            # --no-deps wajib di staging: api-migrate.depends_on=postgres dari base compose
+            # akan membuat container smk-postgres baru → conflict dengan prod container.
+            # Postgres sudah running (prod stack) dan reachable via smk-network.
             echo "🔄 Running Prisma migration (${BRANCH})..."
             docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" --profile migrate \
-              run --rm api-migrate
+              run --rm --no-deps api-migrate
             echo "✅ Migration selesai"
 
             # ── Step 2: Deploy api & web dengan image baru ─────────────────────
