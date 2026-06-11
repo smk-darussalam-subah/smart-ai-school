@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { createSiswa, updateSiswa } from '../actions';
+import { createKelas, createSiswa, updateSiswa } from '../actions';
 
 interface Student {
   id: string; nis: string; status: string;
@@ -61,16 +61,13 @@ export default function SiswaFormDialog({ open, onOpenChange, student, classes: 
   const handleTambahKelas = async (e: React.FormEvent) => {
     e.preventDefault(); setKelasLoading(true); setKelasError('');
     try {
-      const res = await fetch('/api/backend/classes', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: kelasName, majorCode: kelasMajor, grade: Number(kelasGrade), academicYear: kelasTA, capacity: 36 }),
+      const r = await createKelas({
+        name: kelasName, majorCode: kelasMajor, grade: Number(kelasGrade),
+        academicYear: kelasTA, capacity: 36,
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: 'Gagal' }));
-        throw new Error(err.message || `HTTP ${res.status}`);
-      }
-      const newClass = await res.json();
-      const newItem = { id: newClass.id || newClass.data?.id, name: newClass.name || newClass.data?.name || kelasName };
+      if (!r.success) throw new Error(('error' in r && r.error) || 'Gagal membuat kelas');
+      const newClass = r.data as { id: string; name: string };
+      const newItem = { id: newClass.id, name: newClass.name || kelasName };
       setClasses(p => [...p, newItem]);
       setForm(p => ({ ...p, classId: newItem.id }));
       setKelasOpen(false);

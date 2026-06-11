@@ -46,3 +46,9 @@ export async function deleteSiswa(id: string) {
   revalidatePath('/dashboard/siswa');
   return result;
 }
+
+export async function createKelas(body: Record<string, unknown>) {
+  const result = await fetchApi('/classes', 'POST', body);
+  revalidatePath('/dashboard/siswa');
+  return result;
+}
