@@ -9,7 +9,7 @@ jest.mock('@smk/logger', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import {
-  BadRequestException, ConflictException, ForbiddenException, NotFoundException,
+  BadRequestException, ConflictException, ForbiddenException,
 } from '@nestjs/common';
 import { AuthUser } from '@smk/auth';
 import { RppService } from '../rpp/rpp.service';
