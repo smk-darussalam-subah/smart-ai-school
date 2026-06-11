@@ -61,3 +61,12 @@ chat — selalu di file. Maka sesi boleh pendek & sekali-pakai; konteks dibangun
 | Reasoning sangat kompleks (jarang) | Opus |
 
 *Dikelola Cowork analyst. Update bila cara kerja berubah.*
+
+## Prinsip Eksekusi (Director, 2026-06-12 — berlaku untuk SETIAP pengerjaan)
+> **Yang TIDAK BOLEH dilakukan:** mengurangi kemampuan terbaik yang dimiliki.
+> **Yang HARUS dilakukan:** mengoptimalkan kemampuan hingga batas maksimal,
+> bahkan melampauinya.
+
+Konsekuensi praktis: tidak ada solusi setengah jadi tanpa alasan tertulis; setiap
+deliverable disertai bukti runtime; temuan di luar scope tetap dilaporkan; kualitas
+tidak dinegosiasikan demi kecepatan — kecepatan dicapai lewat disiplin, bukan potongan.

@@ -49,6 +49,11 @@ const PERMISSIONS: PermissionDef[] = [
   { code: 'ai.knowledge.delete', description: 'Menghapus knowledge base', module: 'ai' },
   { code: 'notification.manage', description: 'Mengelola notifikasi', module: 'notification' },
   { code: 'notification.read', description: 'Melihat notifikasi', module: 'notification' },
+  { code: 'report.read', description: 'Melihat rapor (ownership per role)', module: 'academic' },
+  { code: 'report.manage', description: 'Generate rapor + edit catatan (SA/TU)', module: 'academic' },
+  { code: 'report.review', description: 'Periksa/kembalikan/terbitkan rapor (SA/KS)', module: 'academic' },
+  { code: 'activity.read', description: 'Melihat kegiatan kelas', module: 'academic' },
+  { code: 'activity.manage', description: 'Mencatat kegiatan kelas (GURU)', module: 'academic' },
   { code: 'rpp.read', description: 'Melihat RPP', module: 'academic' },
   { code: 'rpp.own.manage', description: 'Membuat/mengubah/submit RPP sendiri (GURU)', module: 'academic' },
   { code: 'rpp.review', description: 'Mereview RPP (approve/revisi)', module: 'academic' },
@@ -73,6 +78,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'announcement.read', 'announcement.manage',
     'teacher.attendance.read',
     'rpp.read', 'rpp.review',
+    'report.read', 'report.review', 'activity.read',
   ],
   TATA_USAHA: [
     'student.create', 'student.read', 'student.update', 'student.delete',
@@ -81,6 +87,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'notification.read', 'notification.manage',
     'announcement.read',
     'teacher.attendance.read',
+    'report.read', 'report.manage', 'activity.read',
   ],
   GURU: [
     'academic.grade.create', 'academic.grade.read', 'academic.grade.update',
@@ -90,16 +97,19 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'announcement.read',
     'teacher.attendance.checkin', 'teacher.attendance.read',
     'rpp.read', 'rpp.own.manage',
+    'report.read', 'activity.read', 'activity.manage',
   ],
   SISWA: [
     'student.own.read', 'grade.own.read', 'attendance.own.read',
     'finance.own.read', 'ai.chat',
     'announcement.read',
+    'report.read', 'activity.read',
   ],
   ORANG_TUA: [
     'student.child.read', 'grade.child.read', 'attendance.child.read',
     'finance.child.read',
     'announcement.read',
+    'report.read', 'activity.read',
   ],
   INDUSTRI: [
     'student.read',
