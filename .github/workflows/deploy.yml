@@ -118,9 +118,10 @@ jobs:
               echo "✅ smk_staging_db siap"
             fi
 
-            # ── Build image (api & web) ───────────────────────────────────────
+            # ── Build image (api, web, api-migrate) ──────────────────────────
+            # api-migrate harus ikut di-build agar migration files selalu up-to-date.
             docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
-              build --no-cache api web
+              build --no-cache api web api-migrate
 
             # ── Step 1: Jalankan Prisma migration (one-shot, DDL terpisah dari runtime) ──
             # api-migrate: service dengan profile migrate — jalankan prisma migrate deploy lalu exit.
