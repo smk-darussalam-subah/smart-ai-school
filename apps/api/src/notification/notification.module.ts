@@ -31,7 +31,7 @@ function buildRedisConnection(): RedisOptions {
     return {
       host: parsed.hostname || 'localhost',
       port: parseInt(parsed.port || '6379', 10),
-      password: parsed.password || undefined,
+      password: parsed.password ? decodeURIComponent(parsed.password) : undefined,
       maxRetriesPerRequest: null,
     };
   } catch {
