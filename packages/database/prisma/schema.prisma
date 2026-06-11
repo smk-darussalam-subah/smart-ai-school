@@ -456,6 +456,57 @@ enum NotifStatus {
   @@schema("notification")
 }
 
+
+// Pengumuman Sekolah (referensi KamilEdu Modul 14)
+// createdBy = Keycloak sub, TANPA FK lintas-schema (pola ChatSession.userId)
+model Announcement {
+  id            String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title         String               @db.VarChar(255)
+  content       String               @db.Text
+  category      AnnouncementCategory @default(umum)
+  priority      AnnouncementPriority @default(biasa)
+  audience      Json                 @default("[\"ALL\"]")  // array role atau ["ALL"]
+  isPinned      Boolean              @default(false) @map("is_pinned")
+  status        AnnouncementStatus   @default(draft)
+  publishedAt   DateTime?            @map("published_at")
+  scheduledAt   DateTime?            @map("scheduled_at")
+  createdBy     String?              @map("created_by") @db.VarChar(64)
+  createdByName String?              @map("created_by_name") @db.VarChar(100)
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @default(now()) @updatedAt @map("updated_at")
+
+  @@index([status, isPinned, publishedAt(sort: Desc)])
+  @@index([category, status])
+  @@map("announcements")
+  @@schema("notification")
+}
+
+enum AnnouncementCategory {
+  umum
+  akademik
+  keuangan
+  kegiatan
+  darurat
+
+  @@schema("notification")
+}
+
+enum AnnouncementPriority {
+  biasa
+  penting
+  urgent
+
+  @@schema("notification")
+}
+
+enum AnnouncementStatus {
+  draft
+  published
+  archived
+
+  @@schema("notification")
+}
+
 // =============================================================================
 // AI KNOWLEDGE SCHEMA — N-2: konsolidasi KnowledgeDocument + AiDocument
 // Diganti dengan satu model RagChunk
@@ -483,6 +534,7 @@ model RagChunk {
   @@map("rag_chunks")
   @@schema("ai_knowledge")
 }
+
 
 // =============================================================================
 // AI KNOWLEDGE SCHEMA — Chat history (SMA-49)

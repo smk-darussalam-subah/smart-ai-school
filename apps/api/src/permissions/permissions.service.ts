@@ -34,12 +34,14 @@ export class PermissionsService {
     this.cache.delete(keycloakId);
   }
 
-  invalidateRole(_role: UserRole): void {
-    for (const [key, entry] of this.cache.entries()) {
-      if (entry.expiresAt < Date.now()) {
-        this.cache.delete(key);
-      }
-    }
+  /**
+   * Perubahan permission level-role berdampak ke SEMUA user dengan role tsb.
+   * Cache tidak menyimpan pemetaan role→user, jadi satu-satunya invalidasi
+   * yang benar adalah membersihkan seluruh cache. Volume (≤350 user, TTL 5 menit)
+   * membuat full-clear murah; konsistensi > hit-rate untuk otorisasi.
+   */
+  invalidateAll(): void {
+    this.cache.clear();
   }
 
   async hasPermission(keycloakId: string, roles: UserRole[], requiredPermission: string): Promise<boolean> {
@@ -65,7 +67,9 @@ export class PermissionsService {
   }
 
   async deletePermission(id: string) {
-    return this.prisma.permission.delete({ where: { id } });
+    const result = await this.prisma.permission.delete({ where: { id } });
+    this.invalidateAll();
+    return result;
   }
 
   async getRolePermissions(role: UserRole) {
@@ -88,7 +92,7 @@ export class PermissionsService {
       }),
     ]);
 
-    this.invalidateRole(role);
+    this.invalidateAll();
     logger.info(`Permissions updated for role ${role}`, { permissionIds });
   }
 
@@ -112,6 +116,7 @@ export class PermissionsService {
       update: { grant: true },
       create: { userId, permissionId, grant: true },
     });
+    await this.invalidateByAuthUserId(userId);
     return result;
   }
 
@@ -123,24 +128,34 @@ export class PermissionsService {
       update: { grant: false },
       create: { userId, permissionId, grant: false },
     });
+    await this.invalidateByAuthUserId(userId);
     return result;
   }
 
+  /**
+   * Resolusi permission efektif:
+   *   1. Union permission dari semua role user (role_permissions).
+   *   2. Override per-user diterapkan DI ATAS role: grant=true menambah,
+   *      grant=false MENARIK permission meski diberikan oleh role
+   *      (semantik "true = beri, false = tarik" sesuai schema).
+   * Semua filter dilakukan di QUERY level (bukan di JS atas seluruh tabel).
+   */
   private async resolvePermissions(keycloakId: string, roles: UserRole[]): Promise<Set<string>> {
     const permSet = new Set<string>();
+
+    const authUserId = await this.findAuthUserId(keycloakId);
 
     const [rolePermissions, userOverrides] = await Promise.all([
       this.prisma.rolePermission.findMany({
         where: { role: { in: roles } },
         select: { permission: { select: { code: true } } },
       }),
-      this.prisma.userPermissionOverride.findMany({
-        where: { grant: true },
-        select: {
-          permission: { select: { code: true } },
-          userId: true,
-        },
-      }),
+      authUserId
+        ? this.prisma.userPermissionOverride.findMany({
+            where: { userId: authUserId },
+            select: { grant: true, permission: { select: { code: true } } },
+          })
+        : Promise.resolve([] as { grant: boolean; permission: { code: string } }[]),
     ]);
 
     for (const rp of rolePermissions) {
@@ -148,12 +163,32 @@ export class PermissionsService {
     }
 
     for (const override of userOverrides) {
-      if (override.userId === keycloakId || override.userId === (await this.findAuthUserId(keycloakId))) {
+      if (override.grant) {
         permSet.add(override.permission.code);
+      } else {
+        permSet.delete(override.permission.code);
       }
     }
 
     return permSet;
+  }
+
+  /** Cache di-key dengan keycloakId; override memakai auth User.id → perlu reverse lookup. */
+  private async invalidateByAuthUserId(userId: string): Promise<void> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { keycloakId: true },
+      });
+      if (user?.keycloakId) {
+        this.invalidateUser(user.keycloakId);
+      } else {
+        this.invalidateAll();
+      }
+    } catch {
+      // Fail-safe: bila lookup gagal, bersihkan semua agar tak ada izin basi.
+      this.invalidateAll();
+    }
   }
 
   private async findAuthUserId(keycloakId: string): Promise<string | null> {
