@@ -187,6 +187,60 @@ describe('AuditInterceptor', () => {
     });
   });
 
+  // Hardening 2E: redaksi case-insensitive + bersarang + substring
+  it('(c2) redaksi: PASSWORD uppercase, user_password, nested keycloak.clientSecret ter-redaksi', (done) => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) => {
+      if (key === SKIP_AUDIT_KEY) return undefined;
+      if (key === AUDIT_KEY) return { captureBody: true };
+      return undefined;
+    });
+
+    const ctx = buildContext({
+      method: 'POST',
+      url: '/api/v1/users',
+      body: {
+        PASSWORD: 'rahasia',
+        user_password: 'rahasia2',
+        xApiKey: 'key-123',
+        profile: { fullName: 'Budi', keycloak: { clientSecret: 'ks-secret' } },
+        tags: ['a', 'b'],
+        nama: 'aman',
+      },
+    });
+
+    interceptor.intercept(ctx, buildHandler({ id: 'u1' })).subscribe({
+      complete: () => {
+        const meta = mockCreate.mock.calls[0][0]['metadata'] as Record<string, unknown>;
+        expect(meta['PASSWORD']).toBe('[REDACTED]');
+        expect(meta['user_password']).toBe('[REDACTED]');
+        expect(meta['xApiKey']).toBe('[REDACTED]');
+        const profile = meta['profile'] as Record<string, unknown>;
+        expect(profile['fullName']).toBe('Budi');
+        expect((profile['keycloak'] as Record<string, unknown>)['clientSecret']).toBe('[REDACTED]');
+        expect(meta['tags']).toBe('[array:2]');
+        expect(meta['nama']).toBe('aman');
+        done();
+      },
+      error: (e: unknown) => done.fail(String(e)),
+    });
+  });
+
+  // Hardening 2E: statusCode menghormati @HttpCode handler
+  it('statusCode mengikuti @HttpCode metadata bila ada (mis. DELETE 204)', (done) => {
+    const handlerFn = function customHandler() { return; };
+    Reflect.defineMetadata('__httpCode__', 204, handlerFn);
+    const ctx = buildContext({ method: 'DELETE', url: '/api/v1/students/s1', params: { id: 's1' } });
+    (ctx as unknown as { getHandler: () => unknown }).getHandler = () => handlerFn;
+
+    interceptor.intercept(ctx, buildHandler(undefined)).subscribe({
+      complete: () => {
+        expect(mockCreate.mock.calls[0][0]['statusCode']).toBe(204);
+        done();
+      },
+      error: (e: unknown) => done.fail(String(e)),
+    });
+  });
+
   // Bonus: PATCH → action "*.update", resourceId dari params.id
   it('PATCH → action "students.update", resourceId dari params.id', (done) => {
     const ctx = buildContext({

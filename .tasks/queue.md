@@ -4,9 +4,14 @@
 > Dokumen lain (`current.md`, `CLAUDE.md` §7, gate docs) hanya MENAUTKAN ke sini,
 > tidak menduplikasi status. Jika ada konflik, file INI yang menang.
 > Dikelola oleh Cowork AI. Claude Code hanya membaca file ini.
-> Update terakhir: 2026-06-11 — **REKONSILIASI 2D** (lihat blok di bawah). 2B & 2C ternyata
-> sudah merged 9–10 Juni TANPA gerbang; review retrospektif selesai, perbaikan + modul baru
-> menunggu PR `feat/2D-*`.
+> Update terakhir: 2026-06-11 (sore) — **2D MERGED ke main (PR #107) + infra redis fixed.**
+> **2E selesai dikoding** (branch `feat/2E-harness-uiux`, menunggu PR): agent harness
+> terkurasi (.claude/ — ECC subset TANPA hooks + ui-ux-pro-max; audit di .claude/HARNESS.md)
+> · 3 backlog-fix 2D (audit statusCode @HttpCode, redaksi case-insensitive+nested, SiswaForm
+> → /classes nyata) · **modul Jadwal matrix + deteksi bentrok** (KamilEdu M6). Bukti: api
+> 594 test hijau, web 17 test hijau, tsc/eslint 0, nest build OK; next build via CI.
+> Detail: `.tasks/done/2E-harness-jadwal-DONE.md`. Berikutnya (pasca-merge 2E): presensi
+> guru GPS (M8) / RPP (M11) / CRUD jadwal — keputusan Director.
 >
 > ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 > ## 🔄 REKONSILIASI 2026-06-11 (2D — stabilisasi & review retrospektif) — BLOK INI MENANG
