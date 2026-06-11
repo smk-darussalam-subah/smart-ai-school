@@ -71,3 +71,6 @@ infrastructure/nginx/certs/
 # Coverage artifacts (semua varian nama, di mana pun)
 coverage*/
 *.lcov
+
+# Claude Code local settings (per-mesin, jangan commit)
+.claude/settings.local.json
