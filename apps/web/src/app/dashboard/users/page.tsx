@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import UsersClient from './_components/UsersClient';
@@ -27,7 +28,7 @@ interface Props {
 
 export default async function UsersPage({ searchParams }: Props) {
   const session = await getServerSession(authOptions);
-  const roles: string[] = (session?.roles as string[]) ?? [];
+  const roles: string[] = await getEffectiveRoles(session);
   if (!roles.includes('SUPER_ADMIN')) redirect('/dashboard');
 
   const token = session?.accessToken ?? '';

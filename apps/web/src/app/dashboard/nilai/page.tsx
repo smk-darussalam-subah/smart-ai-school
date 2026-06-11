@@ -16,6 +16,7 @@ import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { authOptions } from '@/lib/auth';
+import { getEffectiveRoles } from '@/lib/view-as';
 import {
   apiFetch,
   type GradeItem,
@@ -61,7 +62,7 @@ export default async function NilaiPage() {
   const session = await getServerSession(authOptions);
   if (!session?.accessToken) redirect('/login');
 
-  const roles = (session.roles as string[] | undefined) ?? [];
+  const roles: string[] = await getEffectiveRoles(session);
   const isSiswa    = roles.includes('SISWA');
   const isOrangTua = roles.includes('ORANG_TUA');
 

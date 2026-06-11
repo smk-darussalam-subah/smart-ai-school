@@ -4,18 +4,19 @@
 > Dokumen lain (`current.md`, `CLAUDE.md` §7, gate docs) hanya MENAUTKAN ke sini,
 > tidak menduplikasi status. Jika ada konflik, file INI yang menang.
 > Dikelola oleh Cowork AI. Claude Code hanya membaca file ini.
-> Update terakhir: 2026-06-12 — **2G MERGED→prod (PR #116–118) + 2H selesai dikoding**
-> (branch `feat/2H-rapor-kegiatan-api`). 🚨 Insiden: frontend rapor+kegiatan ikut 2G
-> tanpa review (worktree terkontaminasi) & live sebagai cangkang kosong → 2H
-> melengkapi API Rapor (M12) + Kegiatan (M9) sesuai kontrak frontend live + WA ortu
-> saat distribute. api **639 test** hijau. Wajib: migration 2H di staging + re-seed
-> permissions (5 baru). Guard baru: cek `git diff --cached --stat` pra-commit.
-> Detail: `.tasks/done/2H-rapor-kegiatan-api-DONE.md` + decision-log 2026-06-12.
-> KamilEdu tersisa: M2/M3 (siswa/guru—parsial ada), M5 mapel, M7 sudah, M10 nilai
-> (ada), M12 ✅, jadi inti 12 modul ≈ LENGKAP. Berikutnya: File Storage+selfie,
-> heatmap drill-down, atau konsolidasi kualitas — keputusan Director.
+> Update terakhir: 2026-06-12 (siang).
+> **2G ✅ MERGED→prod** (PR #116–118, exclusion constraint live di prod DB).
+> **2H selesai dikoding** (`feat/2H-rapor-kegiatan-api`): API Rapor M12 + Kegiatan M9
+> melengkapi frontend yang terlanjur live kosong; 🚨 insiden kode-tak-bertuan dicatat
+> di decision-log 2026-06-12 + guard `git diff --cached --stat` pra-commit.
+> **2I selesai dikoding** (`feat/2I-inspector-uiux`): akun inspektur 7-role + mode
+> "Masuk sebagai" (validasi server, tampilan saja) + audit UI/UX
+> (docs/audits/UIUX-AUDIT-2026-06-12.md) dgn 2 fix KRITIS data-palsu dashboard.
+> api 639 test · web 17 · semua tsc/eslint 0.
+> Wajib 2I: jalankan scripts/create-inspector-account.sh lalu tinjau 7 role.
+> Done-reports: 2H & 2I di .tasks/done/. Backlog desain: sidebar mobile drawer.
 >
-> (Catatan 2G larut: 2026-06-11 (larut) — **2G selesai dikoding** (branch
+> (Arsip — 2G larut malam: **2G selesai dikoding** (branch
 > `feat/2G-pending-backlog`, dari tip 2F): notif WA rpp.reviewed + broadcast
 > pengumuman darurat/urgent (idempoten, fail-soft, via BullMQ existing) · kartu
 > RPP Menunggu nyata · EXCLUDE constraint overlap rentang jadwal (btree_gist).

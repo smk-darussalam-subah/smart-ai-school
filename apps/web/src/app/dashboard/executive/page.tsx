@@ -13,6 +13,7 @@ import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { authOptions } from '@/lib/auth';
+import { getEffectiveRoles } from '@/lib/view-as';
 import { apiFetch, type PaginatedResponse } from '@/lib/api';
 import { metabaseEmbedUrl } from '@/lib/metabase';
 
@@ -95,7 +96,7 @@ export default async function ExecutiveDashboardPage() {
   const session = await getServerSession(authOptions);
   if (!session?.accessToken) redirect('/login');
 
-  const roles = (session.roles as string[] | undefined) ?? [];
+  const roles: string[] = await getEffectiveRoles(session);
 
   // RBAC: non-KS/SA → back to dashboard hub
   if (!ALLOWED_ROLES.some((r) => roles.includes(r))) {

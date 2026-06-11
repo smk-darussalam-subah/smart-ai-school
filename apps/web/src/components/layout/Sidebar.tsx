@@ -4,6 +4,7 @@ import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
+import ViewAsSwitcher from './ViewAsSwitcher';
 
 // =============================================================================
 // Role → Label mapping
@@ -11,6 +12,7 @@ import clsx from 'clsx';
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: 'Super Admin',
   KEPALA_SEKOLAH: 'Kepala Sekolah',
+  TATA_USAHA: 'Tata Usaha',
   GURU: 'Guru',
   SISWA: 'Siswa',
   ORANG_TUA: 'Orang Tua',
@@ -20,6 +22,7 @@ const ROLE_LABELS: Record<string, string> = {
 const ROLE_COLORS: Record<string, string> = {
   SUPER_ADMIN: 'bg-red-100 text-red-700',
   KEPALA_SEKOLAH: 'bg-purple-100 text-purple-700',
+  TATA_USAHA: 'bg-teal-100 text-teal-700',
   GURU: 'bg-blue-100 text-blue-700',
   SISWA: 'bg-green-100 text-green-700',
   ORANG_TUA: 'bg-yellow-100 text-yellow-700',
@@ -60,10 +63,12 @@ const NAV_ITEMS: NavItem[] = [
 // =============================================================================
 // Sidebar Component
 // =============================================================================
-export function Sidebar() {
+export function Sidebar({ viewAs = null }: { viewAs?: string | null }) {
   const { data: session } = useSession();
   const pathname = usePathname();
-  const roles: string[] = (session?.roles as string[]) ?? [];
+  const realRoles: string[] = (session?.roles as string[]) ?? [];
+  // Mode tinjau: sempitkan tampilan ke role terpilih (server sudah validasi cookie)
+  const roles: string[] = viewAs && realRoles.includes(viewAs) ? [viewAs] : realRoles;
 
   const primaryRole = roles[0] ?? '';
   const roleLabel = ROLE_LABELS[primaryRole] ?? primaryRole;
@@ -90,7 +95,13 @@ export function Sidebar() {
       <div className="px-5 py-4 border-b border-gray-100">
         <p className="text-sm font-medium text-gray-800 truncate">{session?.user?.name ?? '—'}</p>
         <p className="text-xs text-gray-400 truncate mb-2">{session?.user?.email ?? ''}</p>
-        <span className={clsx('badge', roleBadgeColor)}>{roleLabel}</span>
+        <span className={clsx('badge', roleBadgeColor)}>
+          {roleLabel}
+          {viewAs ? ' · tinjau' : ''}
+        </span>
+        <div className="mt-3">
+          <ViewAsSwitcher realRoles={realRoles} viewAs={viewAs} />
+        </div>
       </div>
 
       {/* Navigation */}
