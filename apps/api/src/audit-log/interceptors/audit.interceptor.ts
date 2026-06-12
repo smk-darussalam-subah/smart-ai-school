@@ -53,7 +53,7 @@ const SENSITIVE_FIELDS = new Set([
   'npwp',
 ]);
 
-const SENSITIVE_SUBSTRINGS = ['password', 'secret', 'token', 'credential', 'apikey', 'privatekey'];
+const SENSITIVE_SUBSTRINGS = ['password', 'secret', 'token', 'credential', 'apikey', 'privatekey', 'phone'];
 
 function isSensitiveKey(key: string): boolean {
   const k = key.toLowerCase().replace(/[_-]/g, '');

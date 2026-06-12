@@ -65,6 +65,7 @@ const PERMISSIONS: PermissionDef[] = [
   { code: 'audit.read', description: 'Melihat audit log', module: 'audit' },
   { code: 'permissions.manage', description: 'Mengelola permission & RBAC', module: 'permissions' },
   { code: 'permissions.read', description: 'Melihat konfigurasi permission', module: 'permissions' },
+  { code: 'user.provision', description: 'Provision akun user baru (KC+DB)', module: 'users' },
 ];
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
@@ -88,6 +89,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'announcement.read',
     'teacher.attendance.read',
     'report.read', 'report.manage', 'activity.read',
+    'user.provision',
   ],
   GURU: [
     'academic.grade.create', 'academic.grade.read', 'academic.grade.update',
