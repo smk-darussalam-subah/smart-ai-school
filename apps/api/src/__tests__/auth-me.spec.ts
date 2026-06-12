@@ -24,6 +24,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { KeycloakGuard } from '../auth/guards/keycloak.guard';
+import { UserStatusService } from '../auth/user-status.service';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuthController } from '../auth/auth.controller';
 import { AuthService } from '../auth/auth.service';
@@ -83,7 +84,7 @@ describe('Test 1 — GET /auth/me tanpa token → 401', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [KeycloakGuard, Reflector],
+      providers: [KeycloakGuard, Reflector, { provide: UserStatusService, useValue: { isBlocked: jest.fn().mockResolvedValue(false), invalidate: jest.fn(), invalidateAll: jest.fn() } }],
     }).compile();
 
     keycloakGuard = module.get(KeycloakGuard);
