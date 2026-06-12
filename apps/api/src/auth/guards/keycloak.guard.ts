@@ -15,10 +15,14 @@ import { FastifyRequest } from 'fastify';
 import { verifyKeycloakToken, extractAuthUser, AuthUser } from '@smk/auth';
 import { auditLog } from '@smk/logger';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { UserStatusService } from '../user-status.service';
 
 @Injectable()
 export class KeycloakGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    private readonly userStatus: UserStatusService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // Cek apakah route di-mark @Public()
@@ -35,10 +39,25 @@ export class KeycloakGuard implements CanActivate {
       throw new UnauthorizedException('Token tidak ditemukan');
     }
 
+    let user: AuthUser;
     try {
       const payload = await verifyKeycloakToken(token);
-      const user = extractAuthUser(payload);
+      user = extractAuthUser(payload);
+    } catch (error) {
+      throw new UnauthorizedException('Token tidak valid atau sudah expired');
+    }
+    if (!user?.keycloakId) {
+      // extractAuthUser gagal membentuk identitas → token tidak sah
+      throw new UnauthorizedException('Token tidak valid atau sudah expired');
+    }
 
+    // 2J-0 (A4b): user dinonaktifkan/di-soft-delete dari dashboard TIDAK boleh
+    // lewat meski token KC masih hidup. (Saklar KC menyusul di 2J-1/2.)
+    if (await this.userStatus.isBlocked(user.keycloakId)) {
+      throw new UnauthorizedException('Akun dinonaktifkan. Hubungi administrator.');
+    }
+
+    {
       // Inject user ke request untuk dipakai controller
       (request as FastifyRequest & { user: AuthUser }).user = user;
 
@@ -48,8 +67,6 @@ export class KeycloakGuard implements CanActivate {
       });
 
       return true;
-    } catch (error) {
-      throw new UnauthorizedException('Token tidak valid atau sudah expired');
     }
   }
 

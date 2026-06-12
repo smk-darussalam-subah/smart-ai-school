@@ -22,6 +22,7 @@ import { FinanceModule } from './finance/finance.module';
 import { RagModule } from './rag/rag.module';
 import { AiModule } from './ai/ai.module';
 import { KeycloakGuard } from './auth/guards/keycloak.guard';
+import { UserStatusService } from './auth/user-status.service';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { SchoolConfigModule } from './school-config/school-config.module';
 import { PermissionModule } from './permissions/permissions.module';
@@ -69,6 +70,7 @@ import { ClassActivitiesModule } from './class-activities/class-activities.modul
     SchoolConfigModule,
   ],
   providers: [
+    UserStatusService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: KeycloakGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
