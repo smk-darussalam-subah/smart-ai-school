@@ -67,8 +67,6 @@ export class KeycloakAdminService {
     opts: RequestInit & { retryAttempt?: number },
   ): Promise<{ status: number; data: T; location?: string }> {
     const maxRetries = opts.retryAttempt !== undefined ? opts.retryAttempt : 0;
-    let lastStatus = 0;
-    let lastBody = '';
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
@@ -85,8 +83,6 @@ export class KeycloakAdminService {
           signal: controller.signal,
         });
 
-        lastStatus = res.status;
-
         if (res.status === 401 && attempt === 0) {
           this.tokenCache = null;
           clearTimeout(timeout);
@@ -98,12 +94,12 @@ export class KeycloakAdminService {
             status: res.status,
             path: url.replace(ADMIN_URL, ''),
           });
+          clearTimeout(timeout);
           continue;
         }
 
         if (!res.ok) {
-          lastBody = await res.text().catch(() => '(empty body)');
-          throw this.httpError(res.status, url, lastBody);
+          throw this.httpError(res.status, url);
         }
 
         if (res.status === 204) {
@@ -150,7 +146,6 @@ export class KeycloakAdminService {
     try {
       const res = await fetch(url, { ...opts, signal: controller.signal });
       if (!res.ok) {
-        const body = await res.text().catch(() => '(empty body)');
         throw new ServiceUnavailableException(
           `Keycloak Auth API error ${res.status}`,
         );
@@ -168,7 +163,7 @@ export class KeycloakAdminService {
 
   // ── Error handling ──────────────────────────────────────────────────────────
 
-  private httpError(status: number, url: string, _body: string): Error {
+  private httpError(status: number, url: string): Error {
     const path = url.replace(ADMIN_URL, '');
     logger.error(`[KC Admin] HTTP ${status}`, { path });
 

@@ -2,8 +2,15 @@
 
 **Branch**: `feat/2J-1-2-keycloak-provisioning`  
 **Base**: `develop` (HEAD `6efc0f9`)  
-**Commits**: `9ee4d37` + `a408f09`  
-**Tests**: 637 passed (+43 from baseline 594), 0 regressions
+**Commits**: `9ee4d37` (2J-1) + `a408f09` (2J-2) + `b682ac5` (done-report) + 1 commit verifikasi lokal (lint cleanup + bukti runtime)  
+**Tests**: **690 passed / 43 suites — SEMUA hijau** (baseline develop 645 + 45 baru, 0 regresi; diverifikasi LOKAL pasca `prisma generate`)
+
+> Catatan verifikasi lokal (2026-06-12): eksekusi awal di cloud melaporkan 637 passed
+> dengan 4 suite gagal karena Prisma client belum di-generate di environment cloud.
+> Setelah `prisma generate` di lokal: seluruh 43 suite hijau. Sesi lokal juga
+> menutup 10 error eslint (dead code/unused imports) + 2 error tsc (`ProvisionResult`
+> belum di-export) yang lolos di cloud, plus perbaikan minor `clearTimeout` pada
+> jalur retry-5xx KeycloakAdminService.
 
 ---
 
@@ -29,7 +36,7 @@
 
 ### Files baru
 - `apps/api/src/common/helpers/phone.ts` — `normalizePhoneE164`, `normalizeOrThrow`, `phoneE164` (Zod)
-- `apps/api/src/__tests__/phone.spec.ts` — 13 tests (0812→+62, 62→+62, spasi/strip, invalid pendek/panjang/huruf)
+- `apps/api/src/__tests__/phone.spec.ts` — 14 tests (0812→+62, 62→+62, spasi/strip/titik/kurung, invalid pendek/panjang/huruf)
 - `apps/api/src/provisioning/dto/provision.dto.ts` — `ProvisionUserSchema`, `ProvisionStudentSchema` (Zod strict)
 - `apps/api/src/provisioning/provisioning.service.ts` — `provisionUser`, `provisionStudent` (saga terkompensasi)
 - `apps/api/src/provisioning/provisioning.controller.ts` — `POST /provision/users`, `POST /provision/students`
@@ -41,7 +48,7 @@
 - `apps/api/src/users/users.module.ts` — + import KeycloakAdminModule, PermissionModule
 - `apps/api/src/audit-log/interceptors/audit.interceptor.ts` — `SENSITIVE_SUBSTRINGS` + `'phone'`
 - `packages/database/prisma/seed-permissions.ts` — + `{code:'user.provision', module:'users'}`; assign ke TATA_USAHA
-- `apps/api/src/__tests__/users.spec.ts` — +5 tests (KC sync, kompensasi, last-SA, multi-role)
+- `apps/api/src/__tests__/users.spec.ts` — +6 tests (KC sync, role-sama early-return, kompensasi, last-SA, multi-role)
 - `apps/api/src/__tests__/audit-interceptor.spec.ts` — +1 test (phone/parentPhone redacted)
 
 ### Kebijakan username
@@ -61,23 +68,53 @@
 
 ---
 
-## Bukti Runtime
+## Bukti Runtime (LOKAL — Windows dev machine, 2026-06-12)
 
-### Test suite lengkap
+### Gerbang penuh
 ```
-Test Suites: 4 failed, 39 passed, 43 total
-Tests:       637 passed, 637 total
+$ npx tsc --noEmit          → exit 0 (0 error)
+$ npx eslint src --ext .ts  → exit 0 (0 error, 0 warning)
+$ npx nest build            → exit 0
+$ npx jest
+Test Suites: 43 passed, 43 total
+Tests:       690 passed, 690 total
+Snapshots:   0 total
+Time:        55.25 s
+Ran all test suites.
 ```
-4 failing suites = pre-existing TS errors di `announcements`, `rpp`, `teacher-attendance`, `report-cards` (Prisma client not regenerated — bukan dari perubahan ini).
+`npx jest --detectOpenHandles` → 0 handle bocor (warning "worker process has failed
+to exit gracefully" yang kadang muncul = artefak teardown flaky antar-worker,
+tidak muncul saat deteksi handle aktif — bukan dari kode baru).
 
-### Key tests (kunci)
+### Output mentah test kunci (saga-kompensasi · dedup-E.164 · last-SA · A4-sync)
 ```
-✓ keycloak-admin: token cache, createUser→Location, 5xx retry, 401 refresh, role mapping, no password leak (12/12)
-✓ phone: normalize E.164, invalid throw (13/13)
-✓ provisioning: guru KC→role→pw order, TU→SA 403, DB fail→deleteUser, dedup ortu, NIS dup 409 pre-flight (12/12)
-✓ users (A4): KC assign+remove, kompensasi DB gagal, last-SA demote 409, last-SA deactivate 409, multi-role 409 (17/17)
-✓ audit-interceptor: phone/parentPhone → [REDACTED] (11/11)
+PASS src/__tests__/provisioning.spec.ts
+  √ guru sukses → urutan KC(create→role→pw)→DB benar
+  √ TU provision SUPER_ADMIN → 403
+  √ TU provision GURU → sukses
+  √ DB gagal → deleteUser KC untuk user BARU saja
+  √ SISWA via /provision/users → 400 (Zod refine)
+  √ email sintetis ortu tanpa email
+  √ tempPassword tak pernah masuk argumen logger
+  √ siswa+ortu baru → 2 createUser + parentId terisi
+  √ ortu existing (input 0812 match DB +628...) → 1 createUser saja
+  √ NIS duplikat → 409 pre-flight (KC tidak dipanggil)
+  √ gagal KC siswa → hapus KC ortu baru saja, TANPA hapus ortu existing
+  √ email sintetis siswa benar: {nis}@siswa.smkdarussalamsubah.sch.id
+PASS src/__tests__/users.spec.ts (A4/A4b/C3)
+  √ berhasil ubah role — sync KC (assign + remove)
+  √ role sama → early-return tanpa menyentuh KC maupun update DB
+  √ kompensasi saat DB gagal — kembalikan role KC
+  √ last-SA demote → 409 ConflictException
+  √ multi-role KC → 409 ConflictException
+  √ berhasil nonaktifkan — KC-first + invalidasi cache
+  √ kompensasi saat DB gagal — restore KC enabled
+  √ last-SA deactivate → 409 ConflictException
 ```
+Suite baru lain: `keycloak-admin.spec.ts` 12 test (token cache/refresh, Location
+parse, 5xx retry→503 fail-closed, role name→id, no password leak),
+`phone.spec.ts` 14 test (E.164 edge: 08/62/+62/spasi/strip/titik/kurung),
+`audit-interceptor.spec.ts` +1 (phone/parentPhone → [REDACTED]).
 
 ### Verifikasi staging (untuk Director)
 ```bash
@@ -116,7 +153,7 @@ curl -s -X POST "https://api.smkdarussalamsubah.sch.id/api/v1/provision/users" \
 |---|---|---|
 | UI 7-tab provision | 2J-4 | Frontend form + role selector |
 | Wajib-ortu create-student lama | 2J-3 | Backfill students tanpa ortu |
-| Kirim kredensial via WA | Keputusan Director C4 | Password temp dikirim via Fonnte |
+| Kirim kredensial via WA | Keputusan Director C4 | **TIDAK diimplement** (sesuai instruksi). Default saat ini = C4-(a) sekali-tampil di layar admin; opsi (b) kirim via Fonnte menunggu keputusan Director |
 | Field gender/birthDate/address | TBD | Akan ditambah bila diminta Director |
 | Re-seed permissions pasca-merge | Runbook | `npx ts-node packages/database/prisma/seed-permissions.ts` |
 | Runbook enable service account | Manual (prod) | `docs/runbooks/keycloak-service-account.md` — jalankan SEKALI |
@@ -124,9 +161,11 @@ curl -s -X POST "https://api.smkdarussalamsubah.sch.id/api/v1/provision/users" \
 ---
 
 ## Checklist penutupan
-- [x] `npx tsc --noEmit` — 0 error baru (pre-existing errors unchanged)
-- [x] `npx jest` — 637 passed, +43 dari baseline, 0 regresi
-- [x] 2 commit serial (2J-1 → 2J-2)
+- [x] `npx tsc --noEmit` — **0 error mutlak** (diverifikasi lokal)
+- [x] `npx eslint src --ext .ts` — **0 error** (10 temuan cloud diperbaiki lokal, tanpa suppress)
+- [x] `npx nest build` — hijau
+- [x] `npx jest` — **690 passed / 43 suites**, 0 regresi dari baseline 645
+- [x] Commit serial (2J-1 → 2J-2 → done-report → verifikasi lokal)
 - [x] Branch `feat/2J-1-2-keycloak-provisioning` pushed
-- [ ] Draft PR ke `develop` — BUKA MANUAL via GitHub
-- [ ] `.tasks/queue.md` — TIDAK DISENTUH (sesuai instruksi)
+- [ ] Draft PR ke `develop` — link menyusul di bawah
+- [x] `.tasks/queue.md` — TIDAK DISENTUH (diverifikasi: `git diff develop...HEAD -- .tasks/queue.md` kosong)

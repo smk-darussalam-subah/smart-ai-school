@@ -210,6 +210,18 @@ describe('UsersService', () => {
       expect(mockPerms.invalidateUser).toHaveBeenCalledWith('kc-001');
     });
 
+    it('role sama → early-return tanpa menyentuh KC maupun update DB', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ keycloakId: 'kc-001', role: 'GURU' }));
+
+      const result = await service.updateRole('u-001', 'GURU', 'kc-sa');
+
+      expect(result.role).toBe('GURU');
+      expect(mockKc.getUserRealmRoles).not.toHaveBeenCalled();
+      expect(mockKc.assignRealmRole).not.toHaveBeenCalled();
+      expect(mockKc.removeRealmRole).not.toHaveBeenCalled();
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
     it('kompensasi saat DB gagal — kembalikan role KC', async () => {
       mockFindUnique.mockResolvedValue(makeUser({ keycloakId: 'kc-001', role: 'GURU' }));
       mockKc.getUserRealmRoles.mockResolvedValue(['GURU']);

@@ -26,6 +26,10 @@ describe('normalizePhoneE164', () => {
     expect(normalizePhoneE164('08 12-34.56.78')).toBe('+62812345678');
   });
 
+  it('format internasional berkurung — "+62 (812) 3456-7890" → +6281234567890', () => {
+    expect(normalizePhoneE164('+62 (812) 3456-7890')).toBe('+6281234567890');
+  });
+
   it('terlalu pendek (<8 digit setelah +62) → throw', () => {
     expect(() => normalizePhoneE164('0812')).toThrow();
   });

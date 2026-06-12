@@ -10,7 +10,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { UserRole } from '@smk/auth';
 import { logger } from '@smk/logger';
@@ -23,10 +22,6 @@ import { normalizeOrThrow } from '../common/helpers/phone';
 import { ProvisionUserDto, ProvisionStudentDto } from './dto/provision.dto';
 
 const DOMAIN = 'smkdarussalamsubah.sch.id';
-
-const ROLE_REQUIRES_EMAIL: UserRole[] = [
-  'GURU', 'TATA_USAHA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'INDUSTRI',
-];
 
 function syntheticEmailNis(nis: string): string {
   return `${nis}@siswa.${DOMAIN}`;
@@ -52,7 +47,7 @@ interface TempCredential {
   tempPassword: string;
 }
 
-interface ProvisionResult {
+export interface ProvisionResult {
   user: { id: string; keycloakId: string; email: string; fullName: string; role: string };
   tempCredentials: TempCredential[];
 }
@@ -227,7 +222,11 @@ export class ProvisioningService {
       // Step 2: KC create ortu (bila baru)
       if (!existingOrtuUser) {
         const kcOrtuExisting = await this.kc.findByUsername(ortuUsername);
-        if (kcOrtuExisting) throw new ConflictException(`Username ortu "${ortuUsername}" sudah digunakan`);
+        if (kcOrtuExisting) {
+          throw new ConflictException(
+            `Username ortu "${ortuUsername}" sudah digunakan — bila ini wali yang sama, kirim ulang dengan reuseParentByPhone: true`,
+          );
+        }
 
         ortuKcId = await this.kc.createUser({
           username: ortuUsername,

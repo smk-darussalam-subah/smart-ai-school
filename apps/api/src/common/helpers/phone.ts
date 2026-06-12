@@ -15,7 +15,7 @@ export class PhoneValidationError extends Error {
 }
 
 export function normalizePhoneE164(raw: string): string {
-  let cleaned = raw.replace(/[\s\-\.\(\)]/g, '');
+  let cleaned = raw.replace(/[\s.()-]/g, '');
 
   if (cleaned.startsWith('+')) {
     // already E.164

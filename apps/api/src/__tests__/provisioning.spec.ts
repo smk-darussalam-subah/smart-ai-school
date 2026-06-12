@@ -7,18 +7,21 @@ jest.mock('@smk/logger', () => ({
   auditLog: jest.fn(),
 }));
 
-jest.mock('../common/helpers/phone', () => ({
-  ...jest.requireActual('../common/helpers/phone'),
-  normalizeOrThrow: jest.fn((raw: string) => {
-    if (raw === '081234567890' || raw === '+6281234567890') return '+6281234567890';
-    if (raw === '089876543210' || raw === '+6289876543210') return '+6289876543210';
-    if (/^\+62\d{8,13}$/.test(raw)) return raw;
-    throw new (require('@nestjs/common')).BadRequestException('Invalid phone');
-  }),
-}));
+jest.mock('../common/helpers/phone', () => {
+  const { BadRequestException } = jest.requireActual<typeof import('@nestjs/common')>('@nestjs/common');
+  return {
+    ...jest.requireActual('../common/helpers/phone'),
+    normalizeOrThrow: jest.fn((raw: string) => {
+      if (raw === '081234567890' || raw === '+6281234567890') return '+6281234567890';
+      if (raw === '089876543210' || raw === '+6289876543210') return '+6289876543210';
+      if (/^\+62\d{8,13}$/.test(raw)) return raw;
+      throw new BadRequestException('Invalid phone');
+    }),
+  };
+});
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { ProvisioningService, Actor } from '../provisioning/provisioning.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
@@ -237,6 +240,11 @@ describe('ProvisioningService', () => {
       expect(kc.createUser).toHaveBeenCalledWith(expect.objectContaining({
         email: expect.stringContaining('@ortu.smkdarussalamsubah.sch.id'),
       }));
+      // Username ortu = phone E.164; tempPassword sekali-tampil 12 char
+      expect(result.tempCredentials).toEqual([
+        expect.objectContaining({ username: '+6281234567890' }),
+      ]);
+      expect(result.tempCredentials[0]!.tempPassword).toHaveLength(12);
     });
 
     it('tempPassword tak pernah masuk argumen logger', async () => {
