@@ -54,6 +54,7 @@ describe('UsersService', () => {
   const mockPerms = {
     invalidateUser: jest.fn(),
     invalidateAll: jest.fn(),
+    getEffectivePermissions: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -145,6 +146,30 @@ describe('UsersService', () => {
       await service.findAll({ page: 2, limit: 20 });
 
       expect(mockFindMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 20, take: 20 }));
+    });
+
+    it('cursor-based pagination — mengembalikan nextCursor', async () => {
+      const users = Array.from({ length: 20 }, (_, i) => makeUser({ id: `u-${String(i + 1).padStart(3, '0')}` }));
+      mockFindMany.mockResolvedValue(users);
+
+      const result = await service.findAll({ page: 1, limit: 20, cursor: 'u-050' });
+
+      expect(result.data).toHaveLength(20);
+      expect(result.nextCursor).toBe('u-020');
+      expect(result.total).toBe(-1); // cursor mode tidak menghitung total
+      expect(mockFindMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ id: { lt: 'u-050' } }),
+        orderBy: { id: 'desc' },
+      }));
+    });
+
+    it('cursor-based pagination — data kurang dari limit → nextCursor null', async () => {
+      const users = [makeUser({ id: 'u-010' }), makeUser({ id: 'u-009' })];
+      mockFindMany.mockResolvedValue(users);
+
+      const result = await service.findAll({ page: 1, limit: 20, cursor: 'u-015' });
+
+      expect(result.nextCursor).toBeNull();
     });
 
     it('kombinasi filter role + search + page', async () => {
@@ -311,8 +336,74 @@ describe('UsersService', () => {
 
     it('user tidak ditemukan → NotFoundException', async () => {
       mockFindUnique.mockResolvedValue(null);
-
       await expect(service.updateActive('u-xxx', true, 'kc-sa')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ── findGrouped ────────────────────────────────────────────────────────────
+
+  describe('findGrouped', () => {
+    it('mengembalikan 7 grup role dengan user dan count', async () => {
+      mockFindMany.mockResolvedValue([makeUser()]);
+      mockCount.mockResolvedValue(1);
+
+      const result = await service.findGrouped({ limit: 50 });
+
+      expect(result.groups).toHaveLength(7);
+      expect(result.groups[0]).toMatchObject({
+        role: 'SUPER_ADMIN',
+        label: 'Super Admin',
+        count: 1,
+      });
+      expect(mockFindMany).toHaveBeenCalledTimes(7); // satu per role
+    });
+
+    it('filter search diterapkan ke semua grup', async () => {
+      mockFindMany.mockResolvedValue([]);
+      mockCount.mockResolvedValue(0);
+
+      await service.findGrouped({ search: 'Agus', limit: 50 });
+
+      // Setiap pemanggilan findMany harus menyertakan filter OR
+      for (let i = 0; i < 7; i++) {
+        expect(mockFindMany).toHaveBeenNthCalledWith(i + 1, expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [
+              { fullName: { contains: 'Agus', mode: 'insensitive' } },
+              { email: { contains: 'Agus', mode: 'insensitive' } },
+            ],
+          }),
+        }));
+      }
+    });
+
+    it('limit per grup membatasi hasil', async () => {
+      mockFindMany.mockResolvedValue([]);
+      mockCount.mockResolvedValue(0);
+
+      await service.findGrouped({ limit: 10 });
+
+      expect(mockFindMany).toHaveBeenCalledWith(expect.objectContaining({ take: 10 }));
+    });
+  });
+
+  // ── getEffectivePermissions ────────────────────────────────────────────────
+
+  describe('getEffectivePermissions', () => {
+    it('mengembalikan daftar permission efektif user', async () => {
+      mockFindUnique.mockResolvedValue({ keycloakId: 'kc-001', role: 'GURU' });
+      mockPerms.getEffectivePermissions.mockResolvedValue(new Set(['student.read', 'academic.grade.read']));
+
+      const result = await service.getEffectivePermissions('u-001');
+
+      expect(result).toEqual(['academic.grade.read', 'student.read']);
+      expect(mockPerms.getEffectivePermissions).toHaveBeenCalledWith('kc-001', ['GURU']);
+    });
+
+    it('user tidak ditemukan → NotFoundException', async () => {
+      mockFindUnique.mockResolvedValue(null);
+
+      await expect(service.getEffectivePermissions('u-xxx')).rejects.toThrow(NotFoundException);
     });
   });
 });
@@ -327,15 +418,17 @@ describe('UsersController', () => {
   const mockFindById = jest.fn();
   const mockUpdateRole = jest.fn();
   const mockUpdateActive = jest.fn();
+  const mockFindGrouped = jest.fn();
+  const mockGetEffectivePermissions = jest.fn();
 
   beforeEach(async () => {
-    [mockFindAll, mockFindById, mockUpdateRole, mockUpdateActive].forEach(m => m.mockReset());
+    [mockFindAll, mockFindById, mockUpdateRole, mockUpdateActive, mockFindGrouped, mockGetEffectivePermissions].forEach(m => m.mockReset());
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UsersController],
       providers: [
         { provide: UserStatusService, useValue: { isBlocked: jest.fn().mockResolvedValue(false), invalidate: jest.fn(), invalidateAll: jest.fn() } },
-        { provide: UsersService, useValue: { findAll: mockFindAll, findById: mockFindById, updateRole: mockUpdateRole, updateActive: mockUpdateActive } },
+        { provide: UsersService, useValue: { findAll: mockFindAll, findById: mockFindById, updateRole: mockUpdateRole, updateActive: mockUpdateActive, findGrouped: mockFindGrouped, getEffectivePermissions: mockGetEffectivePermissions } },
       ],
     }).compile();
     controller = module.get(UsersController);
@@ -404,6 +497,38 @@ describe('UsersController', () => {
       await expect(
         controller.updateActive('u-001', { isActive: 'yes' as never }, SA_USER),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  // ── findGrouped controller ──────────────────────────────────────────────────
+
+  describe('findGrouped', () => {
+    it('query valid → mengembalikan data tergrup', async () => {
+      mockFindGrouped.mockResolvedValue({ groups: [] });
+
+      const result = await controller.findGrouped({});
+
+      expect(result.groups).toEqual([]);
+    });
+
+    it('query search valid → delegasi ke service', async () => {
+      mockFindGrouped.mockResolvedValue({ groups: [] });
+
+      await controller.findGrouped({ search: 'Agus' });
+
+      expect(mockFindGrouped).toHaveBeenCalledWith(expect.objectContaining({ search: 'Agus' }));
+    });
+  });
+
+  // ── getEffectivePermissions controller ───────────────────────────────────────
+
+  describe('getEffectivePermissions', () => {
+    it('UUID valid → mengembalikan { permissions }', async () => {
+      mockGetEffectivePermissions.mockResolvedValue(['student.read', 'user.read']);
+
+      const result = await controller.getEffectivePermissions('00000000-0000-0000-0000-000000000001');
+
+      expect(result.permissions).toEqual(['student.read', 'user.read']);
     });
   });
 });

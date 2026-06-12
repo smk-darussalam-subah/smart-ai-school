@@ -23,7 +23,7 @@ export class AuthController {
    */
   @Get('me')
   getMe(@CurrentUser() user: AuthUser) {
-    return this.authService.getMe(user.keycloakId);
+    return this.authService.getMe(user.keycloakId, user.roles);
   }
 
   /**

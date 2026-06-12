@@ -15,6 +15,13 @@ interface UserItem {
   createdAt: string;
 }
 
+interface UserGroup {
+  role: string;
+  label: string;
+  count: number;
+  users: UserItem[];
+}
+
 interface PermissionItem {
   id: string;
   code: string;
@@ -23,30 +30,27 @@ interface PermissionItem {
 }
 
 interface Props {
-  searchParams: Promise<{ search?: string; role?: string; page?: string }>;
+  searchParams: Promise<{ search?: string }>;
 }
 
 export default async function UsersPage({ searchParams }: Props) {
   const session = await getServerSession(authOptions);
   const roles: string[] = await getEffectiveRoles(session);
-  if (!roles.includes('SUPER_ADMIN')) redirect('/dashboard');
+  if (!roles.includes('SUPER_ADMIN') && !roles.includes('TATA_USAHA')) redirect('/dashboard');
 
   const token = session?.accessToken ?? '';
   const sp = await searchParams;
 
   const queryParams = new URLSearchParams();
-  queryParams.set('page', sp.page || '1');
-  queryParams.set('limit', '20');
+  queryParams.set('limit', '50');
   if (sp.search) queryParams.set('search', sp.search);
-  if (sp.role) queryParams.set('role', sp.role);
 
-  const [usersData, permsData] = await Promise.all([
-    apiFetch<{ data: UserItem[]; total: number; page: number; limit: number }>(`/users?${queryParams.toString()}`, token),
+  const [groupedData, permsData] = await Promise.all([
+    apiFetch<{ groups: UserGroup[] }>(`/users/grouped?${queryParams.toString()}`, token),
     apiFetch<PermissionItem[]>('/permissions', token),
   ]);
 
-  const users = usersData?.data ?? [];
-  const total = usersData?.total ?? 0;
+  const groups = groupedData?.groups ?? [];
   let permissions: PermissionItem[] = [];
   if (Array.isArray(permsData)) {
     permissions = permsData;
@@ -57,8 +61,7 @@ export default async function UsersPage({ searchParams }: Props) {
 
   return (
     <UsersClient
-      initialUsers={users}
-      initialTotal={total}
+      initialGroups={groups}
       initialPermissions={permissions}
     />
   );
