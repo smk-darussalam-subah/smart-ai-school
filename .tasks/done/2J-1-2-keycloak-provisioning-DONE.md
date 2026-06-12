@@ -167,5 +167,5 @@ curl -s -X POST "https://api.smkdarussalamsubah.sch.id/api/v1/provision/users" \
 - [x] `npx jest` — **690 passed / 43 suites**, 0 regresi dari baseline 645
 - [x] Commit serial (2J-1 → 2J-2 → done-report → verifikasi lokal)
 - [x] Branch `feat/2J-1-2-keycloak-provisioning` pushed
-- [ ] Draft PR ke `develop` — link menyusul di bawah
+- [x] Draft PR ke `develop` — https://github.com/smk-darussalam-subah/smart-ai-school/pull/129
 - [x] `.tasks/queue.md` — TIDAK DISENTUH (diverifikasi: `git diff develop...HEAD -- .tasks/queue.md` kosong)
