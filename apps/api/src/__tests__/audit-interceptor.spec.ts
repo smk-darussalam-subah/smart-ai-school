@@ -225,6 +225,37 @@ describe('AuditInterceptor', () => {
     });
   });
 
+  // 2J-2: redaksi 'phone' substring
+  it('(c3) redaksi phone: key "phone" & nested "parentPhone" → [REDACTED]', (done) => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) => {
+      if (key === SKIP_AUDIT_KEY) return undefined;
+      if (key === AUDIT_KEY) return { captureBody: true };
+      return undefined;
+    });
+
+    const ctx = buildContext({
+      method: 'POST',
+      url: '/api/v1/provision/students',
+      body: {
+        siswa: { nis: '12345', fullName: 'Siswa A' },
+        ortu: { name: 'Ortu A', phone: '+6281234567890', parentPhone: '+6289876543210' },
+      },
+    });
+
+    interceptor.intercept(ctx, buildHandler({ id: 'st-1' })).subscribe({
+      complete: () => {
+        const meta = mockCreate.mock.calls[0][0]['metadata'] as Record<string, unknown>;
+        const ortu = meta['ortu'] as Record<string, unknown>;
+        expect(ortu['phone']).toBe('[REDACTED]');
+        // parentPhone contains substring 'phone' → redacted
+        expect(ortu['parentPhone']).toBe('[REDACTED]');
+        expect(ortu['name']).toBe('Ortu A');
+        done();
+      },
+      error: (e: unknown) => done.fail(String(e)),
+    });
+  });
+
   // Hardening 2E: statusCode menghormati @HttpCode handler
   it('statusCode mengikuti @HttpCode metadata bila ada (mis. DELETE 204)', (done) => {
     const handlerFn = function customHandler() { return; };
