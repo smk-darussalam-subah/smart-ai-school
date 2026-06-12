@@ -26,3 +26,7 @@ export async function revokeUserPermission(userId: string, permissionId: string)
 export async function fetchUserOverrides(userId: string) {
   return apiAction(`/permissions/users/${userId}`, 'GET');
 }
+
+export async function fetchEffectivePermissions(userId: string) {
+  return apiAction<{ permissions: string[] }>(`/users/${userId}/effective-permissions`, 'GET');
+}

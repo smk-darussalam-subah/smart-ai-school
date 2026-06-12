@@ -23,6 +23,7 @@ jest.mock('../common/helpers/phone', () => {
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { ProvisioningService, Actor } from '../provisioning/provisioning.service';
+import { ProvisionStudentSchema } from '../provisioning/dto/provision.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -299,6 +300,7 @@ describe('ProvisioningService', () => {
       const result = await svc.provisionStudent({
         siswa: { nis: '12345', fullName: 'Siswa Baru' },
         ortu: { name: 'Ortu Baru', phone: '+6281234567890' },
+        consent: true,
       }, SA_ACTOR);
 
       expect(kc.createUser).toHaveBeenCalledTimes(2);
@@ -328,6 +330,7 @@ describe('ProvisioningService', () => {
         siswa: { nis: '54321', fullName: 'Siswa Exist' },
         ortu: { name: 'Ortu Exist', phone: '+6281234567890' },
         reuseParentByPhone: true,
+        consent: true,
       }, SA_ACTOR);
 
       expect(kc.createUser).toHaveBeenCalledTimes(1); // hanya siswa
@@ -348,6 +351,7 @@ describe('ProvisioningService', () => {
         svc.provisionStudent({
           siswa: { nis: '11111', fullName: 'Duplikat' },
           ortu: { name: 'Ortu', phone: '+6281234567890' },
+          consent: true,
         }, SA_ACTOR),
       ).rejects.toThrow(ConflictException);
 
@@ -374,6 +378,7 @@ describe('ProvisioningService', () => {
         svc.provisionStudent({
           siswa: { nis: '99999', fullName: 'Fail' },
           ortu: { name: 'Ortu', phone: '+6281234567890' },
+          consent: true,
         }, SA_ACTOR),
       ).rejects.toThrow('KC down');
 
@@ -400,12 +405,43 @@ describe('ProvisioningService', () => {
       await svc.provisionStudent({
         siswa: { nis: '2024001', fullName: 'Email Test' },
         ortu: { name: 'Ortu', phone: '+6281234567890' },
+        consent: true,
       }, SA_ACTOR);
 
       const createUserCall = kc.createUser.mock.calls.find(
         (call: unknown[]) => (call[0] as Record<string, unknown>).email === '2024001@siswa.smkdarussalamsubah.sch.id',
       );
       expect(createUserCall).toBeDefined();
+    });
+  });
+
+  // ── 2J-3: ProvisionStudentSchema consent validation ─────────────────────────
+
+  describe('ProvisionStudentSchema — consent wajib true', () => {
+    it('consent: true → valid (Zod parse sukses)', () => {
+      const result = ProvisionStudentSchema.safeParse({
+        siswa: { nis: '12345', fullName: 'Siswa' },
+        ortu: { name: 'Ortu', phone: '+6281234567890' },
+        consent: true,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('consent: false → invalid (Zod reject)', () => {
+      const result = ProvisionStudentSchema.safeParse({
+        siswa: { nis: '12345', fullName: 'Siswa' },
+        ortu: { name: 'Ortu', phone: '+6281234567890' },
+        consent: false,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('consent absent → invalid (Zod reject)', () => {
+      const result = ProvisionStudentSchema.safeParse({
+        siswa: { nis: '12345', fullName: 'Siswa' },
+        ortu: { name: 'Ortu', phone: '+6281234567890' },
+      });
+      expect(result.success).toBe(false);
     });
   });
 });

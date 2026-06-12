@@ -62,8 +62,9 @@ else
     usermod -aG sudo appuser
 
     # Set password — GANTI PASSWORD INI!
-    echo "appuser:SmkDarussalamAI2026!" | chpasswd
-    warn "Password default appuser: SmkDarussalamAI2026! — SEGERA GANTI setelah login!"
+    echo "appuser:CHANGE_ME_IMMEDIATELY" | chpasswd
+    warn "Password default appuser harus diganti segera setelah login!"
+    warn "Jalankan: passwd appuser"
     log "User 'appuser' berhasil dibuat"
 fi
 

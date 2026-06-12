@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
 import ViewAsSwitcher from './ViewAsSwitcher';
+import { can } from '@/lib/permissions';
 
 // =============================================================================
 // Role → Label mapping
@@ -30,40 +31,41 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 // =============================================================================
-// Navigation menu — filtered by role visibility
+// Menu navigasi — difilter berdasarkan role + permission
 // =============================================================================
 interface NavItem {
   label: string;
   href: string;
   icon: string;
-  roles?: string[]; // undefined = all roles
+  roles?: string[]; // undefined = semua role
+  permissions?: string[]; // undefined = tidak perlu permission khusus
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard', href: '/dashboard', icon: '🏠' },
-  { label: 'Dashboard Eksekutif', href: '/dashboard/executive', icon: '📊', roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN'] },
-  { label: 'Akademik', href: '/dashboard/akademik', icon: '📚', roles: ['GURU', 'SISWA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN'] },
-  { label: 'Data Siswa', href: '/dashboard/siswa', icon: '🎓', roles: ['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA'] },
-  { label: 'PPDB', href: '/dashboard/ppdb', icon: '📋', roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA'] },
-  { label: 'Keuangan', href: '/dashboard/keuangan', icon: '💰', roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'SISWA', 'ORANG_TUA'] },
-  { label: 'Nilai & Absensi', href: '/dashboard/nilai', icon: '📊', roles: ['SISWA', 'ORANG_TUA'] },
-  { label: 'Lowongan', href: '/dashboard/lowongan', icon: '💼', roles: ['INDUSTRI', 'SISWA'] },
-  { label: 'Jadwal', href: '/dashboard/jadwal', icon: '📅', roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA'] },
-  { label: 'Kegiatan Kelas', href: '/dashboard/kegiatan', icon: '🎒', roles: ['GURU', 'SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA'] },
-  { label: 'Rapor', href: '/dashboard/rapor', icon: '🎓', roles: ['SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'GURU'] },
-  { label: 'RPP', href: '/dashboard/rpp', icon: '📄', roles: ['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN'] },
-  { label: 'Presensi Guru', href: '/dashboard/presensi-guru', icon: '📍', roles: ['GURU', 'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
-  { label: 'Pengumuman', href: '/dashboard/pengumuman', icon: '📢' },
-  { label: 'Basis Pengetahuan', href: '/dashboard/knowledge', icon: '🧠', roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
-  { label: 'AI Asisten', href: '/dashboard/ai', icon: '🤖' },
-  { label: 'Manajemen User', href: '/dashboard/users', icon: '👥', roles: ['SUPER_ADMIN'] },
-  { label: 'System Health', href: '/dashboard/health', icon: '🩺', roles: ['SUPER_ADMIN'] },
+  { label: 'Beranda', href: '/dashboard', icon: '🏠' },
+  { label: 'Dasbor Eksekutif', href: '/dashboard/executive', icon: '📊', roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN'], permissions: ['finance.read'] },
+  { label: 'Akademik', href: '/dashboard/akademik', icon: '📚', roles: ['GURU', 'SISWA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN'], permissions: ['academic.grade.read'] },
+  { label: 'Data Siswa', href: '/dashboard/siswa', icon: '🎓', roles: ['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA'], permissions: ['student.read'] },
+  { label: 'PPDB', href: '/dashboard/ppdb', icon: '📋', roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA'], permissions: ['ppdb.read'] },
+  { label: 'Keuangan', href: '/dashboard/keuangan', icon: '💰', roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'SISWA', 'ORANG_TUA'], permissions: ['finance.read', 'finance.own.read', 'finance.child.read'] },
+  { label: 'Nilai & Absensi', href: '/dashboard/nilai', icon: '📊', roles: ['SISWA', 'ORANG_TUA'], permissions: ['grade.own.read', 'grade.child.read'] },
+  { label: 'Lowongan', href: '/dashboard/lowongan', icon: '💼', roles: ['INDUSTRI', 'SISWA'], permissions: ['student.read', 'ai.chat'] },
+  { label: 'Jadwal', href: '/dashboard/jadwal', icon: '📅', roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA'], permissions: ['academic.schedule.read'] },
+  { label: 'Kegiatan Kelas', href: '/dashboard/kegiatan', icon: '🎒', roles: ['GURU', 'SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA'], permissions: ['activity.read'] },
+  { label: 'Rapor', href: '/dashboard/rapor', icon: '🎓', roles: ['SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'GURU'], permissions: ['report.read'] },
+  { label: 'RPP', href: '/dashboard/rpp', icon: '📄', roles: ['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN'], permissions: ['rpp.read'] },
+  { label: 'Presensi Guru', href: '/dashboard/presensi-guru', icon: '📍', roles: ['GURU', 'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'], permissions: ['teacher.attendance.read'] },
+  { label: 'Pengumuman', href: '/dashboard/pengumuman', icon: '📢', permissions: ['announcement.read'] },
+  { label: 'Basis Pengetahuan', href: '/dashboard/knowledge', icon: '🧠', roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'], permissions: ['ai.knowledge.read'] },
+  { label: 'Asisten AI', href: '/dashboard/ai', icon: '🤖', permissions: ['ai.chat'] },
+  { label: 'Manajemen Pengguna', href: '/dashboard/users', icon: '👥', roles: ['SUPER_ADMIN', 'TATA_USAHA'], permissions: ['user.read'] },
+  { label: 'Kesehatan Sistem', href: '/dashboard/health', icon: '🩺', roles: ['SUPER_ADMIN'], permissions: ['audit.read'] },
 ];
 
 // =============================================================================
 // Sidebar Component
 // =============================================================================
-export function Sidebar({ viewAs = null, className }: { viewAs?: string | null, className?: string }) {
+export function Sidebar({ viewAs = null, permissions = [], className }: { viewAs?: string | null; permissions?: string[]; className?: string }) {
   const { data: session } = useSession();
   const pathname = usePathname();
   const realRoles: string[] = (session?.roles as string[]) ?? [];
@@ -74,9 +76,17 @@ export function Sidebar({ viewAs = null, className }: { viewAs?: string | null, 
   const roleLabel = ROLE_LABELS[primaryRole] ?? primaryRole;
   const roleBadgeColor = ROLE_COLORS[primaryRole] ?? 'bg-gray-100 text-gray-700';
 
-  const visibleItems = NAV_ITEMS.filter(
-    (item) => !item.roles || item.roles.some((r) => roles.includes(r)),
-  );
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    // Filter berdasarkan role
+    if (item.roles && !item.roles.some((r) => roles.includes(r))) {
+      return false;
+    }
+    // Filter berdasarkan permission
+    if (item.permissions && !can(permissions, item.permissions)) {
+      return false;
+    }
+    return true;
+  });
 
   return (
     <aside className={clsx("flex flex-col w-64 min-h-screen bg-white border-r border-gray-100 shadow-sm", className)}>
@@ -91,7 +101,7 @@ export function Sidebar({ viewAs = null, className }: { viewAs?: string | null, 
         </div>
       </div>
 
-      {/* User info */}
+      {/* Info pengguna */}
       <div className="px-5 py-4 border-b border-gray-100">
         <p className="text-sm font-medium text-gray-800 truncate">{session?.user?.name ?? '—'}</p>
         <p className="text-xs text-gray-400 truncate mb-2">{session?.user?.email ?? ''}</p>
@@ -104,7 +114,7 @@ export function Sidebar({ viewAs = null, className }: { viewAs?: string | null, 
         </div>
       </div>
 
-      {/* Navigation */}
+      {/* Navigasi */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {visibleItems.map((item) => {
           const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
@@ -126,7 +136,7 @@ export function Sidebar({ viewAs = null, className }: { viewAs?: string | null, 
         })}
       </nav>
 
-      {/* Logout */}
+      {/* Keluar */}
       <div className="px-3 py-4 border-t border-gray-100">
         <button
           onClick={() => signOut({ callbackUrl: '/login' })}

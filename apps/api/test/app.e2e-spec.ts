@@ -319,6 +319,7 @@ describe('Student CRUD', () => {
         userId: IDS.userOrtu,
         nis: 'E2E-TMP-002',
         classId: IDS.class,
+        parentId: IDS.userOrtu,
         status: 'active',
         joinedAt: '2025-07-14',
       })

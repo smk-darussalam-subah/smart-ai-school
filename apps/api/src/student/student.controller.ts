@@ -24,11 +24,24 @@ import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { StudentService } from './student.service';
 import { CreateStudentSchema, CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentSchema, UpdateStudentDto } from './dto/update-student.dto';
+import { AssignParentSchema, AssignParentDto } from './dto/assign-parent.dto';
 import { ListStudentsQuerySchema } from './dto/list-students.dto';
 
 @Controller('students')
 export class StudentController {
   constructor(private studentService: StudentService) {}
+
+  /**
+   * GET /students/without-parent — siswa tanpa orang tua (untuk assign-parent wizard)
+   */
+  @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @RequirePermission('student.read')
+  @Get('without-parent')
+  findWithoutParent(@Query() rawQuery: unknown) {
+    const parsed = ListStudentsQuerySchema.pick({ page: true, limit: true }).safeParse(rawQuery);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.studentService.findWithoutParent(parsed.data);
+  }
 
   /**
    * GET /students — list dengan filter classId, status, search, page, limit
@@ -57,8 +70,7 @@ export class StudentController {
   }
 
   /**
-   * POST /students — buat data siswa baru
-   * ⚠️ R-05: Gunakan data dummy sampai consent aktif (SMA-55)
+   * POST /students — buat data siswa baru (wajib parentId — gunakan wizard provisioning)
    */
   @Roles('SUPER_ADMIN', 'TATA_USAHA')
   @RequirePermission('student.create')
@@ -78,6 +90,23 @@ export class StudentController {
     @Body(ZodPipe(UpdateStudentSchema)) dto: UpdateStudentDto,
   ) {
     return this.studentService.update(id, dto);
+  }
+
+  /**
+   * PATCH /students/:id/assign-parent — tambahkan orang tua ke siswa tanpa ortu
+   */
+  @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @RequirePermission('user.provision')
+  @Patch(':id/assign-parent')
+  assignParent(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(AssignParentSchema)) dto: AssignParentDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.studentService.assignParent(id, dto, {
+      keycloakId: user.keycloakId,
+      roles: user.roles,
+    });
   }
 
   /**
