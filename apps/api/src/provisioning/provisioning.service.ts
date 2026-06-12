@@ -42,7 +42,7 @@ function generateTempPassword(): string {
   return result;
 }
 
-interface TempCredential {
+export interface TempCredential {
   username: string;
   tempPassword: string;
 }
@@ -273,6 +273,8 @@ export class ProvisioningService {
           parentId = ortu.id;
         }
 
+        const consentAt = new Date();
+
         const siswaUser = await tx.user.create({
           data: {
             keycloakId: siswaKcId,
@@ -280,6 +282,7 @@ export class ProvisioningService {
             fullName: dto.siswa.fullName,
             role: 'SISWA',
             isActive: true,
+            consentAt,
           },
         });
 
@@ -312,6 +315,86 @@ export class ProvisioningService {
         await this.kc.deleteUser(kcId).catch((e) => {
           logger.error('[Provision] gagal kompensasi deleteUser KC (student saga)', {
             kcId,
+            error: e instanceof Error ? e.message : String(e),
+          });
+        });
+      }
+      throw err;
+    }
+  }
+
+  // ── provisionOrtu — dipanggil oleh assignParent ────────────────────────────
+
+  async provisionOrtu(
+    input: { name: string; phone: string; email?: string; reuseByPhone: boolean },
+    actor: Actor,
+  ): Promise<{ userId: string; keycloakId: string; isNew: boolean; tempCredentials: TempCredential[] }> {
+    this.authorize(actor, 'ORANG_TUA');
+
+    const ortuPhone = normalizeOrThrow(input.phone);
+    const ortuEmail = input.email || syntheticEmailOrtu(ortuPhone);
+    const ortuUsername = ortuPhone;
+
+    if (input.reuseByPhone) {
+      const existing = await this.prisma.user.findFirst({
+        where: { phone: ortuPhone, role: 'ORANG_TUA', deletedAt: null },
+        select: { id: true, keycloakId: true },
+      });
+      if (existing) {
+        return { userId: existing.id, keycloakId: existing.keycloakId, isNew: false, tempCredentials: [] };
+      }
+    }
+
+    const kcExisting = await this.kc.findByUsername(ortuUsername);
+    if (kcExisting) {
+      throw new ConflictException(
+        `Username ortu "${ortuUsername}" sudah digunakan — kirim ulang dengan reuseParentByPhone: true`,
+      );
+    }
+
+    const tempPw = generateTempPassword();
+    const nameParts = input.name.split(' ');
+    const firstName = nameParts[0]!;
+    const lastName = nameParts.slice(1).join(' ') || firstName;
+
+    let ortuKcId: string | undefined;
+    try {
+      ortuKcId = await this.kc.createUser({
+        username: ortuUsername,
+        email: ortuEmail,
+        firstName,
+        lastName,
+        enabled: true,
+      });
+
+      await this.kc.assignRealmRole(ortuKcId, 'ORANG_TUA');
+      await this.kc.setTempPassword(ortuKcId, tempPw);
+
+      const ortu = await this.prisma.user.create({
+        data: {
+          keycloakId: ortuKcId,
+          email: ortuEmail,
+          fullName: input.name,
+          phone: ortuPhone,
+          role: 'ORANG_TUA',
+          isActive: true,
+        },
+        select: { id: true, keycloakId: true },
+      });
+
+      this.invalidateCaches(ortuKcId);
+
+      return {
+        userId: ortu.id,
+        keycloakId: ortu.keycloakId,
+        isNew: true,
+        tempCredentials: [{ username: ortuUsername, tempPassword: tempPw }],
+      };
+    } catch (err: unknown) {
+      if (ortuKcId) {
+        await this.kc.deleteUser(ortuKcId).catch((e) => {
+          logger.error('[Provision] gagal kompensasi deleteUser KC (provisionOrtu)', {
+            ortuKcId,
             error: e instanceof Error ? e.message : String(e),
           });
         });

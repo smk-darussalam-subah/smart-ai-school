@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import clsx from 'clsx';
 import type { GradeItem, AttendanceItem, StudentRef } from '@/lib/api';
+import { Card } from '@/components/ui/card';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -50,17 +51,17 @@ function AttendanceSummary({ records }: { records: AttendanceItem[] }) {
       </div>
 
       {total === 0 ? (
-        <div className="card text-center py-8 text-gray-400 text-sm">Belum ada data kehadiran</div>
+        <Card className="p-6 text-center py-8 text-gray-400 text-sm">Belum ada data kehadiran</Card>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {items.map(({ key, icon, label, count, bg, text }) => (
-            <div key={key} className={clsx('card p-4 flex items-center gap-3', bg)}>
+            <Card key={key} className={clsx('p-4 flex items-center gap-3', bg)}>
               <span className="text-2xl" role="img" aria-label={label}>{icon}</span>
               <div>
                 <p className={clsx('text-xl font-bold leading-tight', text)}>{count}</p>
                 <p className="text-xs text-gray-500">{label}</p>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -71,9 +72,9 @@ function AttendanceSummary({ records }: { records: AttendanceItem[] }) {
 function GradeTable({ grades }: { grades: GradeItem[] }) {
   if (grades.length === 0) {
     return (
-      <div className="card text-center py-8 text-gray-400 text-sm">
+      <Card className="p-6 text-center py-8 text-gray-400 text-sm">
         Belum ada data nilai
-      </div>
+      </Card>
     );
   }
 

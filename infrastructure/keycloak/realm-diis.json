@@ -151,7 +151,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "Admin@DIIS2026!",
+          "value": "CHANGE_ME_ON_FIRST_LOGIN",
           "temporary": true
         }
       ],

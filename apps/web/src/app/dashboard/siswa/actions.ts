@@ -52,3 +52,9 @@ export async function createKelas(body: Record<string, unknown>) {
   revalidatePath('/dashboard/siswa');
   return result;
 }
+
+export async function provisionStudentAction(body: Record<string, unknown>) {
+  const result = await fetchApi('/provision/students', 'POST', body);
+  revalidatePath('/dashboard/siswa');
+  return result;
+}

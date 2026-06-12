@@ -5,7 +5,7 @@ import { PermissionsService } from '../permissions/permissions.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { UserRole } from '@smk/auth';
 import { logger } from '@smk/logger';
-import { ListUsersQuery } from './dto/list-users.dto';
+import { ListUsersQuery, GroupedUsersQuery } from './dto/list-users.dto';
 
 const USER_SELECT = {
   id: true,
@@ -29,10 +29,9 @@ export class UsersService {
   ) {}
 
   async findAll(query: ListUsersQuery) {
-    const { role, search, isActive, page, limit } = query;
-    const skip = (page - 1) * limit;
+    const { role, search, isActive, page, limit, cursor } = query;
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { deletedAt: null };
     if (role) where.role = role;
     if (isActive !== undefined) where.isActive = isActive;
     if (search) {
@@ -42,6 +41,21 @@ export class UsersService {
       ];
     }
 
+    // Cursor-based pagination
+    if (cursor) {
+      where.id = { lt: cursor };
+      const data = await this.prisma.user.findMany({
+        where,
+        take: limit,
+        select: USER_SELECT,
+        orderBy: { id: 'desc' },
+      });
+      const nextCursor = data.length === limit ? data[data.length - 1]!.id : null;
+      return { data, total: -1, page: -1, limit, nextCursor };
+    }
+
+    // Offset-based pagination (backward compatible)
+    const skip = (page - 1) * limit;
     const [data, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
@@ -53,7 +67,7 @@ export class UsersService {
       this.prisma.user.count({ where }),
     ]);
 
-    return { data, total, page, limit };
+    return { data, total, page, limit, nextCursor: null as string | null };
   }
 
   async findById(id: string) {
@@ -68,6 +82,75 @@ export class UsersService {
 
     if (!user) throw new NotFoundException('User tidak ditemukan');
     return user;
+  }
+
+  // ── findGrouped ──────────────────────────────────────────────────────────────
+
+  private readonly ROLE_ORDER: UserRole[] = [
+    'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA',
+    'GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI',
+  ];
+
+  private readonly ROLE_LABELS: Record<UserRole, string> = {
+    SUPER_ADMIN: 'Super Admin',
+    KEPALA_SEKOLAH: 'Kepala Sekolah',
+    TATA_USAHA: 'Tata Usaha',
+    GURU: 'Guru',
+    SISWA: 'Siswa',
+    ORANG_TUA: 'Orang Tua',
+    INDUSTRI: 'Industri',
+  };
+
+  async findGrouped(query: GroupedUsersQuery) {
+    const { search, limit } = query;
+
+    const baseWhere: Record<string, unknown> = { deletedAt: null };
+    if (search) {
+      baseWhere.OR = [
+        { fullName: { contains: search, mode: 'insensitive' as const } },
+        { email: { contains: search, mode: 'insensitive' as const } },
+      ];
+    }
+
+    const groups = await Promise.all(
+      this.ROLE_ORDER.map(async (role) => {
+        const where = { ...baseWhere, role };
+        const [users, count] = await Promise.all([
+          this.prisma.user.findMany({
+            where,
+            take: limit,
+            select: USER_SELECT,
+            orderBy: { fullName: 'asc' },
+          }),
+          this.prisma.user.count({ where }),
+        ]);
+
+        return {
+          role,
+          label: this.ROLE_LABELS[role],
+          count,
+          users,
+        };
+      }),
+    );
+
+    return { groups };
+  }
+
+  // ── getEffectivePermissions ──────────────────────────────────────────────────
+
+  async getEffectivePermissions(id: string): Promise<string[]> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { keycloakId: true, role: true },
+    });
+    if (!user) throw new NotFoundException('User tidak ditemukan');
+
+    const permSet = await this.permissions.getEffectivePermissions(
+      user.keycloakId,
+      [user.role as UserRole],
+    );
+    return Array.from(permSet).sort();
   }
 
   async updateRole(id: string, role: UserRole, actor: string) {
