@@ -6,7 +6,7 @@ on:
 jobs:
   fix:
     runs-on: ubuntu-latest
-    environment: staging
+    environment: production
     steps:
       - name: Fix NEXTAUTH_URL and restart staging web
         uses: appleboy/ssh-action@v1.0.3
