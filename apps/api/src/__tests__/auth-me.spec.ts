@@ -29,6 +29,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuthController } from '../auth/auth.controller';
 import { AuthService } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { IS_PUBLIC_KEY } from '../auth/decorators/public.decorator';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -139,10 +140,10 @@ describe('Test 2 — GET /auth/me dengan token valid → 200 profil', () => {
     jest.clearAllMocks();
   });
 
-  it('controller.getMe() dengan user valid → mengembalikan profil {id, email, fullName, role, keycloakId}', async () => {
+  it('controller.getMe() dengan user valid → mengembalikan profil {id, email, fullName, role, keycloakId, permissions}', async () => {
     const result = await controller.getMe(mockUser);
 
-    expect(authService.getMe).toHaveBeenCalledWith(mockUser.keycloakId);
+    expect(authService.getMe).toHaveBeenCalledWith(mockUser.keycloakId, mockUser.roles);
     expect(result).toEqual(mockProfile);
     expect(result).toMatchObject({
       id: expect.any(String),
@@ -211,6 +212,9 @@ describe('AuthService — getMe + updateMe', () => {
   let prisma: {
     user: { findUnique: jest.Mock; update: jest.Mock };
   };
+  let permissionsService: {
+    getEffectivePermissions: jest.Mock;
+  };
 
   const mockProfile = {
     id: 'db-uuid-abcd',
@@ -218,15 +222,19 @@ describe('AuthService — getMe + updateMe', () => {
     email: 'guru@smk.sch.id',
     fullName: 'Agus Setiawan',
     role: 'GURU',
+    phone: null,
+    isActive: true,
   };
 
   beforeEach(async () => {
     prisma = { user: { findUnique: jest.fn(), update: jest.fn() } };
+    permissionsService = { getEffectivePermissions: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
         { provide: PrismaService, useValue: prisma },
+        { provide: PermissionsService, useValue: permissionsService },
       ],
     }).compile();
 
@@ -235,21 +243,32 @@ describe('AuthService — getMe + updateMe', () => {
   });
 
   describe('getMe', () => {
-    it('user ditemukan → mengembalikan profil', async () => {
+    it('user ditemukan → mengembalikan profil + permissions', async () => {
       prisma.user.findUnique.mockResolvedValue(mockProfile);
+      permissionsService.getEffectivePermissions.mockResolvedValue(new Set(['student.read', 'academic.grade.read']));
 
-      const result = await service.getMe('kc-uuid-1234');
+      const result = await service.getMe('kc-uuid-1234', ['GURU']);
 
       expect(prisma.user.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { keycloakId: 'kc-uuid-1234' } }),
       );
-      expect(result).toEqual(mockProfile);
+      expect(result.permissions).toEqual(['academic.grade.read', 'student.read']);
+      expect(result.id).toBe('db-uuid-abcd');
     });
 
     it('user tidak ditemukan → NotFoundException', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.getMe('tidak-ada')).rejects.toThrow(NotFoundException);
+      await expect(service.getMe('tidak-ada', ['GURU'])).rejects.toThrow(NotFoundException);
+    });
+
+    it('SUPER_ADMIN → semua permission dikembalikan', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...mockProfile, role: 'SUPER_ADMIN' });
+      permissionsService.getEffectivePermissions.mockResolvedValue(new Set(['student.read', 'permissions.manage', 'user.provision']));
+
+      const result = await service.getMe('kc-sa', ['SUPER_ADMIN']);
+
+      expect(result.permissions.length).toBeGreaterThan(0);
     });
   });
 
