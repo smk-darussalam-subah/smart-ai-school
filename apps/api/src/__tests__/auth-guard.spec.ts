@@ -24,6 +24,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { KeycloakGuard } from '../auth/guards/keycloak.guard';
+import { UserStatusService } from '../auth/user-status.service';
 import { IS_PUBLIC_KEY } from '../auth/decorators/public.decorator';
 import { verifyKeycloakToken, extractAuthUser } from '@smk/auth';
 
@@ -57,7 +58,7 @@ describe('KeycloakGuard — APP_GUARD Global Protection (FIX-T02)', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [KeycloakGuard, Reflector],
+      providers: [KeycloakGuard, Reflector, { provide: UserStatusService, useValue: { isBlocked: jest.fn().mockResolvedValue(false), invalidate: jest.fn(), invalidateAll: jest.fn() } }],
     }).compile();
 
     guard = module.get<KeycloakGuard>(KeycloakGuard);
