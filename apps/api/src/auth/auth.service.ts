@@ -52,7 +52,14 @@ export class AuthService {
       throw new NotFoundException('User tidak ditemukan di database');
     }
 
-    // Resolve effective permissions
+    // Resolve effective permissions.
+    // SUPER_ADMIN → wildcard '*' (kontrak dgn web lib/permissions.can()):
+    // hasPermission() backend memang bypass SA, tapi getEffectivePermissions
+    // membaca DB — bila seed tertinggal, daftar SA bisa bolong dan menu SA
+    // ikut hilang. Wildcard menghilangkan ketergantungan pada kelengkapan seed.
+    if (roles.includes('SUPER_ADMIN')) {
+      return { ...user, permissions: ['*'] };
+    }
     const permSet = await this.permissionsService.getEffectivePermissions(keycloakId, roles);
     const permissions = Array.from(permSet).sort();
 

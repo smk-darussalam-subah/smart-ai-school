@@ -243,6 +243,13 @@ describe('AuthService — getMe + updateMe', () => {
   });
 
   describe('getMe', () => {
+    it("SUPER_ADMIN → permissions = ['*'] (wildcard, tak bergantung kelengkapan seed)", async () => {
+      prisma.user.findUnique.mockResolvedValue(mockProfile);
+      const res = await service.getMe('kc-uuid-1234', ['SUPER_ADMIN']);
+      expect(res.permissions).toEqual(['*']);
+      expect(permissionsService.getEffectivePermissions).not.toHaveBeenCalled();
+    });
+
     it('user ditemukan → mengembalikan profil + permissions', async () => {
       prisma.user.findUnique.mockResolvedValue(mockProfile);
       permissionsService.getEffectivePermissions.mockResolvedValue(new Set(['student.read', 'academic.grade.read']));
