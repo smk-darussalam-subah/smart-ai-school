@@ -3,6 +3,7 @@
 // (referensi KamilEdu Modul 1). 4 level warna: <75 / <80 / <90 / <95 / ≥95.
 // Server component: data sudah di-fetch oleh page.
 // =============================================================================
+import { Card } from '@/components/ui/card';
 
 export interface HeatmapCell {
   date: string;
@@ -46,15 +47,15 @@ function shortDate(iso: string): string {
 export default function AttendanceHeatmap({ data }: { data: HeatmapData }) {
   if (data.classes.length === 0) {
     return (
-      <div className="card">
+      <Card className="p-6">
         <h2 className="font-semibold text-gray-700 mb-2">🗓️ Heatmap Kehadiran</h2>
         <p className="text-sm text-gray-400">Belum ada kelas aktif.</p>
-      </div>
+      </Card>
     );
   }
 
   return (
-    <div className="card overflow-x-auto">
+    <Card className="p-6 overflow-x-auto">
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-semibold text-gray-700">
           🗓️ Heatmap Kehadiran <span className="text-gray-400 font-normal">· kelas × hari, {data.dates.length} hari terakhir</span>
@@ -100,6 +101,6 @@ export default function AttendanceHeatmap({ data }: { data: HeatmapData }) {
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-300 inline-block" /> ≥95%</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100 inline-block" /> tanpa data</span>
       </div>
-    </div>
+    </Card>
   );
 }

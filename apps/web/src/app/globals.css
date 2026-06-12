@@ -52,10 +52,6 @@
       transition-colors duration-150;
   }
 
-  .card {
-    @apply bg-white rounded-xl shadow-sm border border-gray-100 p-6;
-  }
-
   .badge {
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
   }
