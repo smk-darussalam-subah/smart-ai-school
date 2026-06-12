@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { authOptions } from '@/lib/auth';
 import { Sidebar } from '@/components/layout/Sidebar';
+import MobileNav from '@/components/layout/MobileNav';
 import ViewAsBanner from '@/components/layout/ViewAsBanner';
 import { DashboardProviders } from '@/components/providers/DashboardProviders';
 import { getActiveViewAs } from '@/lib/view-as';
@@ -19,17 +20,13 @@ export default async function DashboardLayout({
   const viewAs = await getActiveViewAs(session);
 
   return (
-    // SessionProvider di-mount di sini, bukan di root layout.
-    // Rationale: halaman publik (/, /login, /404) tidak butuh session context,
-    // jadi membatasi 'use client' boundary ke /dashboard/* menjaga halaman
-    // publik tetap fully static. Session di-pass dari server untuk menghindari
-    // loading flash dan extra round-trip ke /api/auth/session.
     <DashboardProviders session={session}>
-      <div className="flex h-full min-h-screen">
-        <Sidebar viewAs={viewAs} />
+      <div className="flex flex-col md:flex-row h-full min-h-screen">
+        <MobileNav viewAs={viewAs} />
+        <Sidebar viewAs={viewAs} className="hidden md:flex" />
         <main className="flex-1 overflow-auto bg-gray-50">
           {viewAs && <ViewAsBanner viewAs={viewAs} />}
-          <div className="p-6">{children}</div>
+          <div className="p-4 md:p-6">{children}</div>
         </main>
       </div>
     </DashboardProviders>

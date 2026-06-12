@@ -63,7 +63,7 @@ const NAV_ITEMS: NavItem[] = [
 // =============================================================================
 // Sidebar Component
 // =============================================================================
-export function Sidebar({ viewAs = null }: { viewAs?: string | null }) {
+export function Sidebar({ viewAs = null, className }: { viewAs?: string | null, className?: string }) {
   const { data: session } = useSession();
   const pathname = usePathname();
   const realRoles: string[] = (session?.roles as string[]) ?? [];
@@ -79,7 +79,7 @@ export function Sidebar({ viewAs = null }: { viewAs?: string | null }) {
   );
 
   return (
-    <aside className="flex flex-col w-64 min-h-screen bg-white border-r border-gray-100 shadow-sm">
+    <aside className={clsx("flex flex-col w-64 min-h-screen bg-white border-r border-gray-100 shadow-sm", className)}>
       {/* Brand */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-gray-100">
         <div className="w-9 h-9 bg-smk-blue rounded-lg flex items-center justify-center shrink-0">

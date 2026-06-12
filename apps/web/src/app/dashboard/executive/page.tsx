@@ -16,6 +16,7 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
 import { apiFetch, type PaginatedResponse } from '@/lib/api';
 import { metabaseEmbedUrl } from '@/lib/metabase';
+import { Card } from '@/components/ui/card';
 
 export const metadata: Metadata = { title: 'Dashboard Eksekutif' };
 export const dynamic = 'force-dynamic';
@@ -60,7 +61,7 @@ function KpiCard({
   icon: string; label: string; value: string; sub?: string; color: string;
 }) {
   return (
-    <div className="card flex items-start gap-4">
+    <Card className="p-6 flex items-start gap-4">
       <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${color}`}>
         {icon}
       </div>
@@ -69,13 +70,13 @@ function KpiCard({
         <p className="text-2xl font-bold text-gray-900 leading-tight">{value}</p>
         {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
       </div>
-    </div>
+    </Card>
   );
 }
 
 function DashboardNotConfigured() {
   return (
-    <div className="card text-center py-16">
+    <Card className="p-6 text-center py-16">
       <p className="text-4xl mb-4">⚙️</p>
       <h2 className="text-lg font-semibold text-gray-800 mb-2">Dashboard belum dikonfigurasi</h2>
       <p className="text-sm text-gray-500 max-w-md mx-auto">
@@ -86,7 +87,7 @@ function DashboardNotConfigured() {
         ke environment. Lihat{' '}
         <span className="font-medium">docs/runbooks/metabase-dashboard-ks-setup.md</span>.
       </p>
-    </div>
+    </Card>
   );
 }
 
@@ -165,7 +166,7 @@ export default async function ExecutiveDashboardPage() {
 
       {/* Metabase Embed / Placeholder */}
       {embedUrl ? (
-        <div className="card p-0 overflow-hidden rounded-xl">
+        <Card className="p-0 overflow-hidden rounded-xl">
           <iframe
             src={embedUrl}
             title="Dashboard Analitik — KS Overview"
@@ -173,7 +174,7 @@ export default async function ExecutiveDashboardPage() {
             style={{ height: '640px' }}
             allowFullScreen
           />
-        </div>
+        </Card>
       ) : (
         <DashboardNotConfigured />
       )}

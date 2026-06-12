@@ -16,6 +16,7 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
 import { apiFetch, type KnowledgeListItem } from '@/lib/api';
 import { KnowledgeManager } from './_components/KnowledgeManager';
+import { Card } from '@/components/ui/card';
 
 export const metadata: Metadata = { title: 'Basis Pengetahuan' };
 
@@ -27,25 +28,25 @@ const ALLOWED_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] as const;
 
 function AccessDenied() {
   return (
-    <div className="card text-center py-12">
+    <Card className="p-6 text-center py-12">
       <p className="text-4xl mb-4" role="img" aria-label="Dilarang">🔒</p>
       <h2 className="text-lg font-semibold text-gray-800 mb-2">Akses Tidak Diizinkan</h2>
       <p className="text-sm text-gray-500">
         Halaman ini hanya untuk Super Admin, Kepala Sekolah, dan Tata Usaha.
       </p>
-    </div>
+    </Card>
   );
 }
 
 function FetchError() {
   return (
-    <div className="card text-center py-12">
+    <Card className="p-6 text-center py-12">
       <p className="text-4xl mb-4" role="img" aria-label="Error">⚠️</p>
       <h2 className="text-lg font-semibold text-gray-800 mb-2">Gagal Memuat Data</h2>
       <p className="text-sm text-gray-500">
         Tidak dapat terhubung ke server. Coba muat ulang halaman.
       </p>
-    </div>
+    </Card>
   );
 }
 
