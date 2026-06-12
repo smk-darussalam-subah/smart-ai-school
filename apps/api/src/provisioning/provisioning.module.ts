@@ -9,5 +9,6 @@ import { ProvisioningService } from './provisioning.service';
   imports: [AuthModule, PermissionModule, KeycloakAdminModule],
   controllers: [ProvisioningController],
   providers: [ProvisioningService],
+  exports: [ProvisioningService],
 })
 export class ProvisioningModule {}

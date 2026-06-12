@@ -48,6 +48,9 @@ export const ProvisionStudentSchema = z.object({
     email: z.string().email().optional(),
   }),
   reuseParentByPhone: z.boolean().optional(),
+  consent: z.literal(true, {
+    errorMap: () => ({ message: 'consent harus bernilai true — operator wajib konfirmasi persetujuan data' }),
+  }),
 }).strict();
 
 export type ProvisionStudentDto = z.infer<typeof ProvisionStudentSchema>;

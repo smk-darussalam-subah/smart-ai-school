@@ -24,8 +24,9 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { StudentService } from '../student/student.service';
 import { StudentController } from '../student/student.controller';
-import { StudentModule } from '../student/student.module';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProvisioningService } from '../provisioning/provisioning.service';
+import { CreateStudentSchema } from '../student/dto/create-student.dto';
 import { AuthUser } from '@smk/auth';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -86,6 +87,7 @@ function buildPrisma() {
   return {
     user: {
       findUnique: jest.fn(),
+      update: jest.fn(),
     },
     student: {
       findMany: jest.fn(),
@@ -101,6 +103,7 @@ function buildPrisma() {
     attendance: {
       findMany: jest.fn(),
     },
+    $transaction: jest.fn(),
   };
 }
 
@@ -118,6 +121,7 @@ describe('StudentService', () => {
         StudentService,
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        { provide: ProvisioningService, useValue: { provisionOrtu: jest.fn() } },
       ],
     }).compile();
 
@@ -253,6 +257,7 @@ describe('StudentService', () => {
       const dto = {
         userId: 'siswa-db-user-id',
         nis: '20250001',
+        parentId: 'parent-db-user-id',
         status: 'active' as const,
         joinedAt: new Date('2025-07-14'),
       };
@@ -476,6 +481,156 @@ describe('StudentService', () => {
       );
     });
   });
+
+  // ── 2J-3: update — reject parentId null bila ortu sudah ada ────────────────
+
+  describe('update — 2J-3 guard parentId null', () => {
+    it('parentId: null dengan ortu sudah ada → BadRequestException', async () => {
+      prisma.student.findFirst.mockResolvedValue({
+        id: 'student-uuid-001',
+        status: 'active',
+        parentId: 'ortu-db-user-id',
+      });
+
+      await expect(
+        service.update('student-uuid-001', { parentId: null }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.student.update).not.toHaveBeenCalled();
+    });
+
+    it('parentId: null dengan ortu belum ada → boleh (update berhasil)', async () => {
+      prisma.student.findFirst.mockResolvedValue({
+        id: 'student-uuid-001',
+        status: 'active',
+        parentId: null,
+      });
+      prisma.student.update.mockResolvedValue(MOCK_STUDENT);
+
+      const result = await service.update('student-uuid-001', { parentId: null });
+
+      expect(prisma.student.update).toHaveBeenCalled();
+      expect(result).toEqual(MOCK_STUDENT);
+    });
+  });
+
+  // ── 2J-3: findWithoutParent ───────────────────────────────────────────────
+
+  describe('findWithoutParent', () => {
+    it('mengembalikan siswa tanpa parentId dengan pagination', async () => {
+      const ORPHAN = { ...MOCK_STUDENT, parentId: null };
+      prisma.student.findMany.mockResolvedValue([ORPHAN]);
+      prisma.student.count.mockResolvedValue(1);
+
+      const result = await service.findWithoutParent({ page: 1, limit: 20 });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.total).toBe(1);
+      expect(prisma.student.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { parentId: null, deletedAt: null } }),
+      );
+    });
+
+    it('halaman 2 menggunakan skip yang benar', async () => {
+      prisma.student.findMany.mockResolvedValue([]);
+      prisma.student.count.mockResolvedValue(0);
+
+      await service.findWithoutParent({ page: 2, limit: 10 });
+
+      expect(prisma.student.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 10, take: 10 }),
+      );
+    });
+  });
+
+  // ── 2J-3: assignParent ────────────────────────────────────────────────────
+
+  describe('assignParent', () => {
+    const PROVISIONING_MOCK = {
+      provisionOrtu: jest.fn(),
+    };
+    const ACTOR = { keycloakId: 'kc-tu', roles: ['TATA_USAHA'] as const };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('student sudah punya ortu → BadRequestException', async () => {
+      prisma.student.findFirst.mockResolvedValue({
+        id: 'student-uuid-001',
+        userId: 'siswa-db-user-id',
+        parentId: 'existing-parent',
+        nis: '12345',
+      });
+
+      const svcWithProv = new (await import('../student/student.service')).StudentService(
+        prisma as unknown as import('../prisma/prisma.service').PrismaService,
+        { emit: jest.fn() } as unknown as EventEmitter2,
+        PROVISIONING_MOCK as unknown as ProvisioningService,
+      );
+
+      await expect(
+        svcWithProv.assignParent('student-uuid-001', {
+          ortu: { name: 'Ortu', phone: '+6281234567890' },
+          consent: true,
+        }, ACTOR as unknown as import('../provisioning/provisioning.service').Actor),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('student tidak ditemukan → NotFoundException', async () => {
+      prisma.student.findFirst.mockResolvedValue(null);
+
+      const svcWithProv = new (await import('../student/student.service')).StudentService(
+        prisma as unknown as import('../prisma/prisma.service').PrismaService,
+        { emit: jest.fn() } as unknown as EventEmitter2,
+        PROVISIONING_MOCK as unknown as ProvisioningService,
+      );
+
+      await expect(
+        svcWithProv.assignParent('non-existent', {
+          ortu: { name: 'Ortu', phone: '+6281234567890' },
+          consent: true,
+        }, ACTOR as unknown as import('../provisioning/provisioning.service').Actor),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('sukses: ortu baru dibuat, student diperbarui, consent_at dicatat', async () => {
+      prisma.student.findFirst.mockResolvedValue({
+        id: 'student-uuid-001',
+        userId: 'siswa-db-user-id',
+        parentId: null,
+        nis: '12345',
+      });
+      PROVISIONING_MOCK.provisionOrtu.mockResolvedValue({
+        userId: 'new-ortu-id',
+        keycloakId: 'kc-ortu-new',
+        isNew: true,
+        tempCredentials: [{ username: '+6281234567890', tempPassword: 'Abc123' }],
+      });
+      prisma.$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => {
+        prisma.user.update.mockResolvedValue({});
+        prisma.student.update.mockResolvedValue({ ...MOCK_STUDENT, parentId: 'new-ortu-id' });
+        return cb(prisma);
+      });
+
+      const svcWithProv = new (await import('../student/student.service')).StudentService(
+        prisma as unknown as import('../prisma/prisma.service').PrismaService,
+        { emit: jest.fn() } as unknown as EventEmitter2,
+        PROVISIONING_MOCK as unknown as ProvisioningService,
+      );
+
+      const result = await svcWithProv.assignParent('student-uuid-001', {
+        ortu: { name: 'Ortu Baru', phone: '+6281234567890' },
+        consent: true,
+      }, ACTOR as unknown as import('../provisioning/provisioning.service').Actor);
+
+      expect(result.ortu.isNew).toBe(true);
+      expect(result.tempCredentials).toHaveLength(1);
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ consentAt: expect.any(Date) }) }),
+      );
+    });
+  });
 });
 
 // ── StudentController tests ───────────────────────────────────────────────────
@@ -498,6 +653,8 @@ describe('StudentController', () => {
             remove: jest.fn().mockResolvedValue({ id: 'x', nis: '001', deletedAt: new Date() }),
             findGrades: jest.fn().mockResolvedValue([]),
             findAttendance: jest.fn().mockResolvedValue([]),
+            findWithoutParent: jest.fn().mockResolvedValue({ data: [], total: 0, page: 1, limit: 20 }),
+            assignParent: jest.fn().mockResolvedValue({ student: MOCK_STUDENT, ortu: {}, tempCredentials: [] }),
           },
         },
       ],
@@ -532,6 +689,7 @@ describe('StudentController', () => {
     const dto = {
       userId: 'uid',
       nis: '20250001',
+      parentId: 'parent-uid',
       status: 'active' as const,
       joinedAt: new Date(),
     };
@@ -559,19 +717,70 @@ describe('StudentController', () => {
     await controller.findAttendance('student-uuid-001', ORANGTUA_USER);
     expect(service.findAttendance).toHaveBeenCalledWith('student-uuid-001', ORANGTUA_USER);
   });
+
+  it('findWithoutParent — delegasi ke service dengan pagination', async () => {
+    await controller.findWithoutParent({ page: '1', limit: '10' } as unknown);
+    expect(service.findWithoutParent).toHaveBeenCalledWith({ page: 1, limit: 10 });
+  });
+
+  it('findWithoutParent — query tidak valid → BadRequestException', async () => {
+    let caught: unknown;
+    try {
+      await controller.findWithoutParent({ page: 'tidak-valid' } as unknown);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(BadRequestException);
+  });
+
+  it('assignParent — delegasi ke service dengan actor dari CurrentUser', async () => {
+    const dto = { ortu: { name: 'Ortu', phone: '+6281234567890' }, consent: true as const };
+    await controller.assignParent('student-uuid-001', dto, SA_USER);
+    expect(service.assignParent).toHaveBeenCalledWith(
+      'student-uuid-001',
+      dto,
+      { keycloakId: SA_USER.keycloakId, roles: SA_USER.roles },
+    );
+  });
+});
+
+// ── 2J-3: CreateStudentSchema validation ─────────────────────────────────────
+
+describe('CreateStudentSchema — 2J-3 parentId wajib', () => {
+  it('tanpa parentId → invalid (Zod reject)', () => {
+    const result = CreateStudentSchema.safeParse({
+      userId: '00000000-0000-0000-0000-000000000001',
+      nis: '20250001',
+      joinedAt: new Date().toISOString(),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('dengan parentId valid → valid (Zod parse sukses)', () => {
+    const result = CreateStudentSchema.safeParse({
+      userId: '00000000-0000-0000-0000-000000000001',
+      nis: '20250001',
+      parentId: '00000000-0000-0000-0000-000000000002',
+      joinedAt: new Date().toISOString(),
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 // ── StudentModule compilation test ───────────────────────────────────────────
 
 describe('StudentModule', () => {
-  it('compiles — student.module.ts @Module decorator terkover', async () => {
-    // Override StudentService agar PrismaService tidak dibutuhkan di scope ini
+  it('compiles — StudentController dapat di-resolve dengan mock providers', async () => {
+    const prisma = buildPrisma();
     const module = await Test.createTestingModule({
-      imports: [StudentModule],
-    })
-      .overrideProvider(StudentService)
-      .useValue({ findAll: jest.fn(), findById: jest.fn(), create: jest.fn(), update: jest.fn(), remove: jest.fn(), findGrades: jest.fn(), findAttendance: jest.fn() })
-      .compile();
+      controllers: [StudentController],
+      providers: [
+        { provide: StudentService, useValue: { findAll: jest.fn(), findById: jest.fn(), create: jest.fn(), update: jest.fn(), remove: jest.fn(), findGrades: jest.fn(), findAttendance: jest.fn(), findWithoutParent: jest.fn(), assignParent: jest.fn() } },
+        { provide: PrismaService, useValue: prisma },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        { provide: ProvisioningService, useValue: { provisionOrtu: jest.fn() } },
+      ],
+    }).compile();
 
     expect(module).toBeDefined();
     expect(module.get(StudentController)).toBeDefined();
