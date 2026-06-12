@@ -184,6 +184,7 @@ describe('StudentService — event producer', () => {
         StudentService,
         { provide: PrismaService,  useValue: prisma },
         { provide: EventEmitter2,  useValue: emitter },
+        { provide: (await import('../provisioning/provisioning.service')).ProvisioningService, useValue: { provisionOrtu: jest.fn() } },
       ],
     }).compile();
     service = module.get(StudentService);

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import SiswaFormDialog from './SiswaForm';
 import SiswaDeleteDialog from './SiswaDelete';
+import SiswaWizard from './SiswaWizard';
 
 interface Student {
   id: string; nis: string; status: string;
@@ -37,6 +38,7 @@ export default function SiswaTable({ students, total, classes, canEdit }: SiswaT
   const [formOpen, setFormOpen] = useState(false);
   const [editStudent, setEditStudent] = useState<Student | null>(null);
   const [deleteStudent, setDeleteStudent] = useState<Student | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const filtered = students.filter((s) => {
     const matchSearch = !search || s.nis.includes(search) || s.user.fullName.toLowerCase().includes(search.toLowerCase());
@@ -51,8 +53,7 @@ export default function SiswaTable({ students, total, classes, canEdit }: SiswaT
   };
 
   const handleNew = () => {
-    setEditStudent(null);
-    setFormOpen(true);
+    setWizardOpen(true);
   };
 
   return (
@@ -150,6 +151,11 @@ export default function SiswaTable({ students, total, classes, canEdit }: SiswaT
         open={formOpen}
         onOpenChange={setFormOpen}
         student={editStudent}
+        classes={classes}
+      />
+      <SiswaWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
         classes={classes}
       />
       <SiswaDeleteDialog

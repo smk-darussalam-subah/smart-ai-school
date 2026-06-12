@@ -5,7 +5,7 @@ export const CreateStudentSchema = z
     userId: z.string().uuid(),
     nis: z.string().min(5).max(20),
     classId: z.string().uuid().optional(),
-    parentId: z.string().uuid().optional(),
+    parentId: z.string().uuid('parentId wajib diisi — gunakan wizard provisioning bila ortu belum ada'),
     status: z.enum(['active', 'inactive', 'graduated', 'dropped']).default('active'),
     joinedAt: z.coerce.date(),
   })

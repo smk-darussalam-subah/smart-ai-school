@@ -10,6 +10,7 @@
 // =============================================================================
 
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -17,8 +18,11 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProvisioningService, Actor } from '../provisioning/provisioning.service';
+import { normalizeOrThrow } from '../common/helpers/phone';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
+import { AssignParentDto } from './dto/assign-parent.dto';
 import { ListStudentsQuery } from './dto/list-students.dto';
 import {
   EVENTS,
@@ -85,6 +89,7 @@ export class StudentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly provisioning: ProvisioningService,
   ) {}
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -191,9 +196,13 @@ export class StudentService {
   async update(id: string, dto: UpdateStudentDto) {
     const existing = await this.prisma.student.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, status: true },
+      select: { id: true, status: true, parentId: true },
     });
     if (!existing) throw new NotFoundException('Student tidak ditemukan');
+
+    if (dto.parentId === null && existing.parentId !== null) {
+      throw new BadRequestException('Tidak boleh menghapus orang tua siswa yang sudah terdaftar');
+    }
 
     const updated = await this.prisma.student.update({
       where: { id },
@@ -273,5 +282,70 @@ export class StudentService {
       select: ATTENDANCE_SELECT,
       orderBy: { date: 'desc' },
     });
+  }
+
+  // ── Provisioning sub-resources ────────────────────────────────────────────
+
+  async findWithoutParent(query: { page: number; limit: number }) {
+    const { page, limit } = query;
+    const skip = (page - 1) * limit;
+    const where = { parentId: null, deletedAt: null };
+
+    const [data, total] = await Promise.all([
+      this.prisma.student.findMany({
+        where,
+        skip,
+        take: limit,
+        select: STUDENT_BASE_SELECT,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.student.count({ where }),
+    ]);
+
+    return { data, total, page, limit };
+  }
+
+  async assignParent(id: string, dto: AssignParentDto, actor: Actor) {
+    const student = await this.prisma.student.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, userId: true, parentId: true, nis: true },
+    });
+    if (!student) throw new NotFoundException('Student tidak ditemukan');
+    if (student.parentId) {
+      throw new BadRequestException('Student sudah memiliki orang tua — gunakan update biasa untuk mengganti');
+    }
+
+    const ortuPhone = normalizeOrThrow(dto.ortu.phone);
+
+    const ortuResult = await this.provisioning.provisionOrtu(
+      {
+        name: dto.ortu.name,
+        phone: ortuPhone,
+        email: dto.ortu.email,
+        reuseByPhone: dto.reuseParentByPhone ?? false,
+      },
+      actor,
+    );
+
+    const consentAt = new Date();
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: student.userId },
+        data: { consentAt },
+      });
+
+      return tx.student.update({
+        where: { id },
+        data: { parentId: ortuResult.userId },
+        select: STUDENT_BASE_SELECT,
+      });
+    });
+
+    return {
+      student: updated,
+      ortu: { userId: ortuResult.userId, keycloakId: ortuResult.keycloakId, isNew: ortuResult.isNew },
+      tempCredentials: ortuResult.tempCredentials,
+    };
   }
 }

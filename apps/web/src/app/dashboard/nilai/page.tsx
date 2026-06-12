@@ -23,6 +23,7 @@ import {
   type AttendanceItem,
   type PaginatedResponse,
 } from '@/lib/api';
+import { Card } from '@/components/ui/card';
 import { PortalNilaiClient } from './_components/PortalNilaiClient';
 
 export const metadata: Metadata = { title: 'Nilai & Absensi' };
@@ -34,25 +35,25 @@ export const dynamic = 'force-dynamic';
 
 function AccessDenied() {
   return (
-    <div className="card text-center py-12">
+    <Card className="p-6 text-center py-12">
       <p className="text-4xl mb-4" role="img" aria-label="Dilarang">🔒</p>
       <h2 className="text-lg font-semibold text-gray-800 mb-2">Akses Tidak Diizinkan</h2>
       <p className="text-sm text-gray-500">
         Halaman ini hanya untuk siswa dan orang tua.
       </p>
-    </div>
+    </Card>
   );
 }
 
 function FetchError() {
   return (
-    <div className="card text-center py-12">
+    <Card className="p-6 text-center py-12">
       <p className="text-4xl mb-4" role="img" aria-label="Error">⚠️</p>
       <h2 className="text-lg font-semibold text-gray-800 mb-2">Gagal Memuat Data</h2>
       <p className="text-sm text-gray-500">
         Tidak dapat terhubung ke server. Coba muat ulang halaman.
       </p>
-    </div>
+    </Card>
   );
 }
 
@@ -111,13 +112,13 @@ export default async function NilaiPage() {
           </p>
         </div>
         {avgScore && (
-          <div className="card py-3 px-4 flex items-center gap-2 self-start sm:self-auto">
+          <Card className="p-6 py-3 px-4 flex items-center gap-2 self-start sm:self-auto">
             <span className="text-2xl" role="img" aria-label="Bintang">⭐</span>
             <div>
               <p className="text-xs text-gray-400">Rata-rata nilai</p>
               <p className="text-xl font-bold text-gray-900 leading-tight">{avgScore}</p>
             </div>
-          </div>
+          </Card>
         )}
       </div>
 

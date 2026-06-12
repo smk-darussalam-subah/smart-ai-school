@@ -13,6 +13,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import type { KnowledgeListItem, KnowledgeDetail, BackfillResult } from '@/lib/api';
+import { Card } from '@/components/ui/card';
 import {
   getKnowledgeDetailAction,
   createKnowledgeAction,
@@ -374,7 +375,7 @@ export function KnowledgeManager({ initialItems, userRoles }: Props) {
 
       {/* ── Create / Edit Form ─────────────────────────────────────────────── */}
       {view !== 'list' && (
-        <div className="card space-y-4">
+        <Card className="p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold text-gray-900">
               {view === 'create' ? 'Buat Knowledge Baru' : 'Edit Knowledge'}
@@ -483,7 +484,7 @@ export function KnowledgeManager({ initialItems, userRoles }: Props) {
                 : 'Simpan Perubahan'}
             </button>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* ── List view ─────────────────────────────────────────────────────── */}
@@ -566,14 +567,14 @@ export function KnowledgeManager({ initialItems, userRoles }: Props) {
 
           {/* Table / empty state */}
           {filtered.length === 0 ? (
-            <div className="card text-center py-12">
+            <Card className="p-6 text-center py-12">
               <p className="text-3xl mb-3" role="img" aria-label="Otak">🧠</p>
               <p className="text-gray-500 text-sm">
                 {search.trim() || filter !== 'all'
                   ? 'Tidak ada knowledge yang sesuai dengan filter'
                   : 'Belum ada knowledge. Klik "+ Buat Baru" untuk memulai.'}
               </p>
-            </div>
+            </Card>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-gray-100 shadow-sm">
               <table

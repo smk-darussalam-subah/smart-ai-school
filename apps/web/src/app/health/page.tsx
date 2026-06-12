@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Card } from '@/components/ui/card';
 
 interface HealthStatus {
   status: 'ok' | 'error' | 'shutting_down';
@@ -38,7 +39,7 @@ export default function HealthPage() {
 
   return (
     <div className="max-w-xl mx-auto pt-10 px-4">
-      <div className="card">
+      <Card className="p-6">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-bold text-gray-900">🩺 System Health</h1>
           <button
@@ -81,7 +82,7 @@ export default function HealthPage() {
             Terakhir diperiksa: {lastChecked.toLocaleTimeString('id-ID')}
           </p>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

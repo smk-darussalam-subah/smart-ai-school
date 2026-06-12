@@ -3,6 +3,8 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
 import type { Metadata } from 'next';
 import { apiFetch } from '@/lib/api';
+import { Card } from '@/components/ui/card';
+import Link from 'next/link';
 import AttendanceHeatmap, { HeatmapData } from './_components/AttendanceHeatmap';
 
 export const metadata: Metadata = { title: 'Dashboard' };
@@ -24,7 +26,7 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div className="card flex items-start gap-4">
+    <Card className="p-6 flex items-start gap-4">
       <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${color}`}>
         {icon}
       </div>
@@ -33,7 +35,7 @@ function StatCard({
         <p className="text-2xl font-bold text-gray-900 leading-tight">{value}</p>
         {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -106,13 +108,15 @@ function RoleStats({ role, adminStats }: { role: string; adminStats?: AdminStats
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-6">
         {links.map((l) => (
-          <a key={l.href} href={l.href} className="card flex items-start gap-4 hover:shadow-md transition-shadow">
-            <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center text-xl shrink-0">{l.icon}</div>
-            <div>
-              <p className="font-semibold text-gray-900 text-sm">{l.label}</p>
-              <p className="text-xs text-gray-400 mt-0.5">{l.desc}</p>
-            </div>
-          </a>
+          <Link key={l.href} href={l.href} className="block group">
+            <Card className="p-6 flex items-start gap-4 group-hover:shadow-md transition-shadow">
+              <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center text-xl shrink-0">{l.icon}</div>
+              <div>
+                <p className="font-semibold text-gray-900 text-sm">{l.label}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{l.desc}</p>
+              </div>
+            </Card>
+          </Link>
         ))}
       </div>
     );
@@ -223,7 +227,7 @@ async function SystemStatus({ token }: { token: string }) {
     { label: 'Database', up: apiUp && (health?.info?.['database']?.status ?? 'up') !== 'down' },
   ];
   return (
-    <div className="mt-6 card">
+    <Card className="mt-6 p-6">
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-semibold text-gray-700">📡 Status Sistem</h2>
         <a href="/dashboard/health" className="text-xs text-smk-blue hover:underline">Detail →</a>
@@ -236,6 +240,6 @@ async function SystemStatus({ token }: { token: string }) {
           </span>
         ))}
       </div>
-    </div>
+    </Card>
   );
 }

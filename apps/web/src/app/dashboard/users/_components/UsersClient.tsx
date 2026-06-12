@@ -7,13 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Table,
   TableBody,
   TableCell,
@@ -33,6 +26,7 @@ import {
   grantUserPermission,
   revokeUserPermission,
   fetchUserOverrides,
+  fetchEffectivePermissions,
 } from '../actions';
 
 const ROLES = [
@@ -70,6 +64,13 @@ interface UserItem {
   createdAt: string;
 }
 
+interface UserGroup {
+  role: string;
+  label: string;
+  count: number;
+  users: UserItem[];
+}
+
 interface PermissionItem {
   id: string;
   code: string;
@@ -83,46 +84,29 @@ interface UserPermission {
 }
 
 interface Props {
-  initialUsers: UserItem[];
-  initialTotal: number;
+  initialGroups: UserGroup[];
   initialPermissions: PermissionItem[];
 }
 
-export default function UsersClient({ initialUsers, initialTotal, initialPermissions }: Props) {
+export default function UsersClient({ initialGroups, initialPermissions }: Props) {
   const router = useRouter();
 
-  const [users] = useState<UserItem[]>(initialUsers);
-  const [total] = useState(initialTotal);
+  const [groups] = useState<UserGroup[]>(initialGroups);
   const [permissions] = useState<PermissionItem[]>(initialPermissions);
-
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState('');
-  const [page, setPage] = useState(1);
 
+  const [expandedRole, setExpandedRole] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
+  const [effectivePerms, setEffectivePerms] = useState<string[]>([]);
   const [overrideLoading, setOverrideLoading] = useState(false);
+  const [tab, setTab] = useState<'override' | 'effective'>('effective');
 
   const [actionMsg, setActionMsg] = useState('');
 
   const handleSearch = (value: string) => {
     setSearch(value);
-    setPage(1);
-    const params = new URLSearchParams({ page: '1', limit: '20', ...(value && { search: value }), ...(roleFilter && { role: roleFilter }) });
-    router.push(`/dashboard/users?${params.toString()}`);
-  };
-
-  const handleRoleFilter = (value: string) => {
-    const v = value === 'all' ? '' : value;
-    setRoleFilter(v);
-    setPage(1);
-    const params = new URLSearchParams({ page: '1', limit: '20', ...(search && { search }), ...(v && { role: v }) });
-    router.push(`/dashboard/users?${params.toString()}`);
-  };
-
-  const handlePageChange = (newPage: number) => {
-    setPage(newPage);
-    const params = new URLSearchParams({ page: String(newPage), limit: '20', ...(search && { search }), ...(roleFilter && { role: roleFilter }) });
+    const params = new URLSearchParams({ ...(value && { search: value }) });
     router.push(`/dashboard/users?${params.toString()}`);
   };
 
@@ -130,7 +114,7 @@ export default function UsersClient({ initialUsers, initialTotal, initialPermiss
     setActionMsg('');
     const result = await updateUserRole(userId, newRole);
     if (result.error) setActionMsg(`Gagal: ${result.error}`);
-    else setActionMsg('Role berhasil diubah');
+    else setActionMsg('Peran berhasil diubah');
     router.refresh();
   };
 
@@ -138,15 +122,25 @@ export default function UsersClient({ initialUsers, initialTotal, initialPermiss
     setActionMsg('');
     const result = await updateUserActive(userId, !current);
     if (result.error) setActionMsg(`Gagal: ${result.error}`);
-    else setActionMsg(current ? 'User dinonaktifkan' : 'User diaktifkan');
+    else setActionMsg(current ? 'Pengguna dinonaktifkan' : 'Pengguna diaktifkan');
     router.refresh();
   };
 
-  const loadUserOverrides = async (userId: string) => {
+  const loadUserPermissions = async (userId: string) => {
+    setSelectedUser(userId);
     setOverrideLoading(true);
-    const result = await fetchUserOverrides(userId);
-    if (result.data) setUserPermissions(Array.isArray(result.data) ? result.data : []);
+    const [overrideResult, effectiveResult] = await Promise.all([
+      fetchUserOverrides(userId),
+      fetchEffectivePermissions(userId),
+    ]);
+    if (overrideResult.data) setUserPermissions(Array.isArray(overrideResult.data) ? overrideResult.data : []);
     else setUserPermissions([]);
+    if (effectiveResult.data) {
+      const d = effectiveResult.data as { permissions: string[] };
+      setEffectivePerms(d.permissions ?? []);
+    } else {
+      setEffectivePerms([]);
+    }
     setOverrideLoading(false);
   };
 
@@ -154,23 +148,25 @@ export default function UsersClient({ initialUsers, initialTotal, initialPermiss
     setActionMsg('');
     const result = await grantUserPermission(userId, permissionId, grant);
     if (result.error) setActionMsg(`Gagal: ${result.error}`);
-    else setActionMsg(grant ? 'Permission diberikan' : 'Permission dicabut');
-    loadUserOverrides(userId);
+    else setActionMsg(grant ? 'Izin diberikan' : 'Izin dicabut');
+    loadUserPermissions(userId);
   };
 
   const handleRevokeOverride = async (userId: string, permissionId: string) => {
     setActionMsg('');
     const result = await revokeUserPermission(userId, permissionId);
     if (result.error) setActionMsg(`Gagal: ${result.error}`);
-    else setActionMsg('Override dihapus');
-    loadUserOverrides(userId);
+    else setActionMsg('Penggantian izin dihapus');
+    loadUserPermissions(userId);
   };
 
-  const totalPages = Math.max(1, Math.ceil(total / 20));
+  const toggleGroup = (role: string) => {
+    setExpandedRole((prev) => (prev === role ? null : role));
+  };
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Manajemen User</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Manajemen Pengguna</h1>
 
       {actionMsg && (
         <div className={`text-sm px-4 py-2 rounded-lg ${actionMsg.startsWith('Gagal') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
@@ -178,131 +174,155 @@ export default function UsersClient({ initialUsers, initialTotal, initialPermiss
         </div>
       )}
 
-      {/* ── User List ──────────────────────────────────────────────────────── */}
+      {/* ── Pencarian ──────────────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Daftar User ({total})</CardTitle>
+          <CardTitle>Daftar Pengguna per Peran</CardTitle>
           <div className="flex gap-2">
             <Input
-              placeholder="Cari nama atau email..."
+              placeholder="Cari nama atau surel..."
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
               className="w-56 text-sm"
             />
-            <Select value={roleFilter || 'all'} onValueChange={(v: string) => handleRoleFilter(v)}>
-              <SelectTrigger className="w-40 text-sm">
-                <SelectValue placeholder="Semua Role" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Role</SelectItem>
-                {ROLES.map((r) => (
-                  <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             <Button size="sm" variant="outline" onClick={() => router.refresh()}>
-              Refresh
+              Segarkan
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
-          {users.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada user terdaftar.</p>
-          ) : (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nama</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-[200px]">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {users.map((u) => (
-                    <TableRow key={u.id}>
-                      <TableCell className="font-medium">{u.fullName}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{u.email}</TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button className={`text-xs px-2 py-1 rounded-full font-medium cursor-pointer ${ROLE_COLORS[u.role] || 'bg-gray-100'}`}>
-                              {ROLE_LABELS[u.role] || u.role}
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent>
-                            {ROLES.map((r) => (
-                              <DropdownMenuItem
-                                key={r}
-                                onClick={() => handleRoleChange(u.id, r)}
-                                disabled={r === u.role}
-                              >
-                                {ROLE_LABELS[r]} {r === u.role ? '(aktif)' : ''}
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={u.isActive ? 'default' : 'secondary'}>
-                          {u.isActive ? 'Aktif' : 'Nonaktif'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => { setSelectedUser(u.id); loadUserOverrides(u.id); }}
-                          >
-                            Permission
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant={u.isActive ? 'destructive' : 'default'}
-                            onClick={() => handleToggleActive(u.id, u.isActive)}
-                          >
-                            {u.isActive ? 'Nonaktifkan' : 'Aktifkan'}
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4">
-                  <p className="text-sm text-muted-foreground">
-                    Halaman {page} dari {totalPages}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => handlePageChange(page - 1)}>
-                      Sebelumnya
-                    </Button>
-                    <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => handlePageChange(page + 1)}>
-                      Berikutnya
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
       </Card>
 
-      {/* ── Permission Override per User ───────────────────────────────────── */}
+      {/* ── Akordeon per Peran ─────────────────────────────────────────────── */}
+      {groups.map((group) => (
+        <Card key={group.role}>
+          <button
+            onClick={() => toggleGroup(group.role)}
+            className="w-full text-left px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${ROLE_COLORS[group.role] || 'bg-gray-100'}`}>
+                {ROLE_LABELS[group.role] || group.role}
+              </span>
+              <span className="text-sm text-gray-500">
+                {group.count} pengguna
+              </span>
+            </div>
+            <span className="text-gray-400 text-lg">
+              {expandedRole === group.role ? '\u25B2' : '\u25BC'}
+            </span>
+          </button>
+
+          {expandedRole === group.role && (
+            <CardContent className="pt-0 pb-4">
+              {group.users.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4">Belum ada pengguna dengan peran ini.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nama</TableHead>
+                      <TableHead>Surel</TableHead>
+                      <TableHead>Peran</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-[260px]">Tindakan</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {group.users.map((u) => (
+                      <TableRow key={u.id}>
+                        <TableCell className="font-medium">{u.fullName}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{u.email}</TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className={`text-xs px-2 py-1 rounded-full font-medium cursor-pointer ${ROLE_COLORS[u.role] || 'bg-gray-100'}`}>
+                                {ROLE_LABELS[u.role] || u.role}
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              {ROLES.map((r) => (
+                                <DropdownMenuItem
+                                  key={r}
+                                  onClick={() => handleRoleChange(u.id, r)}
+                                  disabled={r === u.role}
+                                >
+                                  {ROLE_LABELS[r]} {r === u.role ? '(aktif)' : ''}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={u.isActive ? 'default' : 'secondary'}>
+                            {u.isActive ? 'Aktif' : 'Nonaktif'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => loadUserPermissions(u.id)}
+                            >
+                              Izin
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={u.isActive ? 'destructive' : 'default'}
+                              onClick={() => handleToggleActive(u.id, u.isActive)}
+                            >
+                              {u.isActive ? 'Nonaktifkan' : 'Aktifkan'}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          )}
+        </Card>
+      ))}
+
+      {/* ── Panel Izin Pengguna ──────────────────────────────────────────────── */}
       {selectedUser && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Permission Override — User</CardTitle>
-            <Button size="sm" variant="ghost" onClick={() => setSelectedUser(null)}>Tutup</Button>
+            <CardTitle>Izin Pengguna</CardTitle>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant={tab === 'effective' ? 'default' : 'outline'}
+                onClick={() => setTab('effective')}
+              >
+                Izin Efektif
+              </Button>
+              <Button
+                size="sm"
+                variant={tab === 'override' ? 'default' : 'outline'}
+                onClick={() => setTab('override')}
+              >
+                Penggantian Izin
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelectedUser(null)}>Tutup</Button>
+            </div>
           </CardHeader>
           <CardContent>
             {overrideLoading ? (
-              <p className="text-sm text-muted-foreground">Memuat data override...</p>
+              <p className="text-sm text-muted-foreground">Memuat data izin...</p>
+            ) : tab === 'effective' ? (
+              <div className="flex flex-wrap gap-2">
+                {effectivePerms.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Tidak ada izin efektif.</p>
+                ) : (
+                  effectivePerms.map((code) => (
+                    <span key={code} className="text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2.5 py-1 font-mono">
+                      {code}
+                    </span>
+                  ))
+                )}
+              </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                 {permissions.map((perm) => {
@@ -328,8 +348,8 @@ export default function UsersClient({ initialUsers, initialTotal, initialPermiss
                     >
                       <code className="text-slate-700 font-mono">{perm.code}</code>
                       <p className="text-muted-foreground mt-0.5">{perm.module}</p>
-                      {isGranted && <span className="text-green-600 font-medium">Granted</span>}
-                      {isDenied && <span className="text-red-600 font-medium">Revoked</span>}
+                      {isGranted && <span className="text-green-600 font-medium">Diberikan</span>}
+                      {isDenied && <span className="text-red-600 font-medium">Dicabut</span>}
                     </div>
                   );
                 })}
@@ -339,12 +359,12 @@ export default function UsersClient({ initialUsers, initialTotal, initialPermiss
         </Card>
       )}
 
-      {/* ── Permission System ───────────────────────────────────────────────── */}
+      {/* ── Sistem Izin ───────────────────────────────────────────────────────── */}
       <Card>
-        <CardHeader><CardTitle>Permission System</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Sistem Izin</CardTitle></CardHeader>
         <CardContent>
           {permissions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada permission terdaftar. Jalankan seed untuk menginisialisasi.</p>
+            <p className="text-sm text-muted-foreground">Belum ada izin terdaftar. Jalankan seed untuk menginisialisasi.</p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
               {permissions.map((p) => (
@@ -355,32 +375,6 @@ export default function UsersClient({ initialUsers, initialTotal, initialPermiss
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* ── API Endpoints ───────────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader><CardTitle>API Endpoints</CardTitle></CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          {[
-            { method: 'GET', path: '/api/v1/users', desc: 'List user (filter role, search, pagination)' },
-            { method: 'GET', path: '/api/v1/users/:id', desc: 'Detail user' },
-            { method: 'PATCH', path: '/api/v1/users/:id/role', desc: 'Ubah role user' },
-            { method: 'PATCH', path: '/api/v1/users/:id/active', desc: 'Aktifkan/nonaktifkan user' },
-            { method: 'GET', path: '/api/v1/permissions', desc: 'List permission' },
-            { method: 'POST', path: '/api/v1/permissions', desc: 'Buat permission baru' },
-            { method: 'GET', path: '/api/v1/permissions/roles/:role', desc: 'Permission per role' },
-            { method: 'PUT', path: '/api/v1/permissions/roles/:role', desc: 'Set permission role' },
-            { method: 'GET', path: '/api/v1/permissions/users/:userId', desc: 'Override per-user' },
-            { method: 'POST', path: '/api/v1/permissions/users/:userId/grant', desc: 'Grant override' },
-            { method: 'DELETE', path: '/api/v1/permissions/users/:userId/revoke', desc: 'Revoke override' },
-          ].map((ep) => (
-            <div key={ep.path} className="flex gap-3 items-start">
-              <Badge variant={ep.method === 'GET' ? 'default' : ep.method === 'DELETE' ? 'destructive' : 'secondary'} className="font-mono text-xs shrink-0">{ep.method}</Badge>
-              <code className="text-xs text-slate-700 shrink-0">{ep.path}</code>
-              <span className="text-muted-foreground">{ep.desc}</span>
-            </div>
-          ))}
         </CardContent>
       </Card>
     </div>
