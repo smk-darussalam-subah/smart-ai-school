@@ -82,15 +82,15 @@
     {
       "clientId": "diis-api",
       "name": "DIIS API Server",
-      "description": "NestJS backend API — bearer-only, tidak melakukan login langsung",
+      "description": "NestJS backend API — service account untuk Admin REST API (provisioning)",
       "enabled": true,
       "publicClient": false,
-      "bearerOnly": true,
+      "bearerOnly": false,
       "protocol": "openid-connect",
       "standardFlowEnabled": false,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
-      "serviceAccountsEnabled": false,
+      "serviceAccountsEnabled": true,
       "fullScopeAllowed": false,
       "defaultClientScopes": [
         "web-origins",
