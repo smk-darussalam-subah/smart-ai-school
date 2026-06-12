@@ -2,12 +2,12 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { PermissionModule } from '../permissions/permissions.module';
 import { KeycloakAdminModule } from '../keycloak-admin/keycloak-admin.module';
-import { UsersController } from './users.controller';
-import { UsersService } from './users.service';
+import { ProvisioningController } from './provisioning.controller';
+import { ProvisioningService } from './provisioning.service';
 
 @Module({
   imports: [AuthModule, PermissionModule, KeycloakAdminModule],
-  controllers: [UsersController],
-  providers: [UsersService],
+  controllers: [ProvisioningController],
+  providers: [ProvisioningService],
 })
-export class UsersModule {}
+export class ProvisioningModule {}

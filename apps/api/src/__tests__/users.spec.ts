@@ -4,9 +4,11 @@ jest.mock('@smk/logger', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { UserStatusService } from '../auth/user-status.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { UsersController } from '../users/users.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '@smk/auth';
@@ -43,9 +45,25 @@ describe('UsersService', () => {
   const mockCount = jest.fn();
   const mockFindUnique = jest.fn();
   const mockUpdate = jest.fn();
+  const mockKc = {
+    assignRealmRole: jest.fn(),
+    removeRealmRole: jest.fn(),
+    setEnabled: jest.fn(),
+    getUserRealmRoles: jest.fn(),
+  };
+  const mockPerms = {
+    invalidateUser: jest.fn(),
+    invalidateAll: jest.fn(),
+  };
 
   beforeEach(async () => {
     [mockFindMany, mockCount, mockFindUnique, mockUpdate].forEach(m => m.mockReset());
+    mockKc.assignRealmRole.mockReset();
+    mockKc.removeRealmRole.mockReset();
+    mockKc.setEnabled.mockReset();
+    mockKc.getUserRealmRoles.mockReset();
+    mockPerms.invalidateUser.mockReset();
+    mockPerms.invalidateAll.mockReset();
 
     const prisma = {
       user: { findMany: mockFindMany, count: mockCount, findUnique: mockFindUnique, update: mockUpdate },
@@ -54,6 +72,8 @@ describe('UsersService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         { provide: UserStatusService, useValue: { isBlocked: jest.fn().mockResolvedValue(false), invalidate: jest.fn(), invalidateAll: jest.fn() } },
+        { provide: KeycloakAdminService, useValue: mockKc },
+        { provide: PermissionsService, useValue: mockPerms },
         UsersService,
         { provide: PrismaService, useValue: prisma },
       ],
@@ -170,18 +190,67 @@ describe('UsersService', () => {
   // ── updateRole ───────────────────────────────────────────────────────────
 
   describe('updateRole', () => {
-    it('berhasil ubah role', async () => {
-      mockFindUnique.mockResolvedValue(makeUser());
-      mockUpdate.mockResolvedValue(makeUser({ role: 'KEPALA_SEKOLAH' }));
+    it('berhasil ubah role — sync KC (assign + remove)', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ keycloakId: 'kc-001', role: 'GURU' }));
+      mockKc.getUserRealmRoles.mockResolvedValue(['GURU']);
+      mockKc.assignRealmRole.mockResolvedValue(undefined);
+      mockKc.removeRealmRole.mockResolvedValue(undefined);
+      mockUpdate.mockResolvedValue(makeUser({ keycloakId: 'kc-001', role: 'KEPALA_SEKOLAH' }));
 
       const result = await service.updateRole('u-001', 'KEPALA_SEKOLAH', 'kc-sa');
 
       expect(result.role).toBe('KEPALA_SEKOLAH');
+      expect(mockKc.assignRealmRole).toHaveBeenCalledWith('kc-001', 'KEPALA_SEKOLAH');
+      expect(mockKc.removeRealmRole).toHaveBeenCalledWith('kc-001', 'GURU');
       expect(mockUpdate).toHaveBeenCalledWith({
         where: { id: 'u-001' },
         data: { role: 'KEPALA_SEKOLAH' },
         select: expect.any(Object),
       });
+      expect(mockPerms.invalidateUser).toHaveBeenCalledWith('kc-001');
+    });
+
+    it('role sama → early-return tanpa menyentuh KC maupun update DB', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ keycloakId: 'kc-001', role: 'GURU' }));
+
+      const result = await service.updateRole('u-001', 'GURU', 'kc-sa');
+
+      expect(result.role).toBe('GURU');
+      expect(mockKc.getUserRealmRoles).not.toHaveBeenCalled();
+      expect(mockKc.assignRealmRole).not.toHaveBeenCalled();
+      expect(mockKc.removeRealmRole).not.toHaveBeenCalled();
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it('kompensasi saat DB gagal — kembalikan role KC', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ keycloakId: 'kc-001', role: 'GURU' }));
+      mockKc.getUserRealmRoles.mockResolvedValue(['GURU']);
+      mockKc.assignRealmRole.mockResolvedValue(undefined);
+      mockKc.removeRealmRole.mockResolvedValue(undefined);
+      mockUpdate.mockRejectedValue(new Error('DB error'));
+
+      await expect(service.updateRole('u-001', 'KEPALA_SEKOLAH', 'kc-sa')).rejects.toThrow('DB error');
+
+      // Compensation: restore KC
+      expect(mockKc.assignRealmRole).toHaveBeenCalledWith('kc-001', 'GURU');
+      expect(mockKc.removeRealmRole).toHaveBeenCalledWith('kc-001', 'KEPALA_SEKOLAH');
+    });
+
+    it('last-SA demote → 409 ConflictException', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ keycloakId: 'kc-sa-target', role: 'SUPER_ADMIN' }));
+      mockKc.getUserRealmRoles.mockResolvedValue(['SUPER_ADMIN']);
+      mockCount.mockResolvedValue(0); // no other SA
+
+      await expect(service.updateRole('u-sa', 'GURU', 'kc-sa')).rejects.toThrow(ConflictException);
+      expect(mockKc.assignRealmRole).not.toHaveBeenCalled();
+    });
+
+    it('multi-role KC → 409 ConflictException', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ keycloakId: 'kc-multi', role: 'GURU' }));
+      mockKc.getUserRealmRoles.mockResolvedValue(['GURU', 'TATA_USAHA']);
+
+      await expect(service.updateRole('u-multi', 'SISWA', 'kc-sa')).rejects.toThrow(ConflictException);
+      expect(mockKc.assignRealmRole).not.toHaveBeenCalled();
     });
 
     it('user tidak ditemukan → NotFoundException', async () => {
@@ -194,27 +263,50 @@ describe('UsersService', () => {
   // ── updateActive ─────────────────────────────────────────────────────────
 
   describe('updateActive', () => {
-    it('berhasil nonaktifkan user', async () => {
-      mockFindUnique.mockResolvedValue(makeUser({ isActive: true }));
-      mockUpdate.mockResolvedValue(makeUser({ isActive: false }));
+    it('berhasil nonaktifkan — KC-first + invalidasi cache', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ keycloakId: 'kc-001', isActive: true, role: 'GURU' }));
+      mockKc.setEnabled.mockResolvedValue(undefined);
+      mockCount.mockResolvedValue(1); // ada SA lain
+      mockUpdate.mockResolvedValue(makeUser({ keycloakId: 'kc-001', isActive: false }));
 
       const result = await service.updateActive('u-001', false, 'kc-sa');
 
       expect(result.isActive).toBe(false);
-      expect(mockUpdate).toHaveBeenCalledWith({
-        where: { id: 'u-001' },
-        data: { isActive: false },
-        select: expect.any(Object),
-      });
+      expect(mockKc.setEnabled).toHaveBeenCalledWith('kc-001', false);
+      expect(mockUpdate).toHaveBeenCalled();
+    });
+
+    it('kompensasi saat DB gagal — restore KC enabled', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ keycloakId: 'kc-001', isActive: true, role: 'GURU' }));
+      mockKc.setEnabled.mockResolvedValue(undefined);
+      mockCount.mockResolvedValue(1);
+      mockUpdate.mockRejectedValue(new Error('DB error'));
+
+      await expect(service.updateActive('u-001', false, 'kc-sa')).rejects.toThrow('DB error');
+
+      // Compensation: restore KC
+      expect(mockKc.setEnabled).toHaveBeenCalledWith('kc-001', true);
+    });
+
+    it('last-SA deactivate → 409 ConflictException', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ keycloakId: 'kc-sa-last', role: 'SUPER_ADMIN' }));
+      mockKc.setEnabled.mockResolvedValue(undefined);
+      mockCount.mockResolvedValue(0);
+
+      await expect(service.updateActive('u-sa-last', false, 'kc-sa')).rejects.toThrow(ConflictException);
+      expect(mockKc.setEnabled).not.toHaveBeenCalled();
     });
 
     it('berhasil aktifkan user yang nonaktif', async () => {
-      mockFindUnique.mockResolvedValue(makeUser({ isActive: false }));
-      mockUpdate.mockResolvedValue(makeUser({ isActive: true }));
+      mockFindUnique.mockResolvedValue(makeUser({ keycloakId: 'kc-001', isActive: false, role: 'GURU' }));
+      mockKc.setEnabled.mockResolvedValue(undefined);
+      mockCount.mockResolvedValue(1);
+      mockUpdate.mockResolvedValue(makeUser({ keycloakId: 'kc-001', isActive: true }));
 
       const result = await service.updateActive('u-001', true, 'kc-sa');
 
       expect(result.isActive).toBe(true);
+      expect(mockKc.setEnabled).toHaveBeenCalledWith('kc-001', true);
     });
 
     it('user tidak ditemukan → NotFoundException', async () => {

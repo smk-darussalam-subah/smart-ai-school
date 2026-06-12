@@ -36,6 +36,8 @@ import { TeacherAttendanceModule } from './teacher-attendance/teacher-attendance
 import { RppModule } from './rpp/rpp.module';
 import { ReportCardsModule } from './report-cards/report-cards.module';
 import { ClassActivitiesModule } from './class-activities/class-activities.module';
+import { KeycloakAdminModule } from './keycloak-admin/keycloak-admin.module';
+import { ProvisioningModule } from './provisioning/provisioning.module';
 
 @Module({
   imports: [
@@ -68,6 +70,8 @@ import { ClassActivitiesModule } from './class-activities/class-activities.modul
     ReportCardsModule,
     ClassActivitiesModule,
     SchoolConfigModule,
+    KeycloakAdminModule,
+    ProvisioningModule,
   ],
   providers: [
     UserStatusService,
