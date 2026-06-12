@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { UserStatusService } from '../auth/user-status.service';
 import { UserRole } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { ListUsersQuery } from './dto/list-users.dto';
@@ -18,7 +19,9 @@ const USER_SELECT = {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService,
+    private readonly userStatus: UserStatusService,
+  ) {}
 
   async findAll(query: ListUsersQuery) {
     const { role, search, isActive, page, limit } = query;
@@ -91,6 +94,9 @@ export class UsersService {
       data: { isActive },
       select: USER_SELECT,
     });
+
+    // 2J-0: efek instan — token berikutnya langsung ditolak/diloloskan
+    this.userStatus.invalidate(updated.keycloakId);
 
     logger.info(`User ${isActive ? 'activated' : 'deactivated'}: ${user.fullName}`, {
       actor,

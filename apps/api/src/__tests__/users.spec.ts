@@ -6,6 +6,7 @@ jest.mock('@smk/logger', () => ({
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
+import { UserStatusService } from '../auth/user-status.service';
 import { UsersController } from '../users/users.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '@smk/auth';
@@ -52,6 +53,7 @@ describe('UsersService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: UserStatusService, useValue: { isBlocked: jest.fn().mockResolvedValue(false), invalidate: jest.fn(), invalidateAll: jest.fn() } },
         UsersService,
         { provide: PrismaService, useValue: prisma },
       ],
@@ -240,6 +242,7 @@ describe('UsersController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UsersController],
       providers: [
+        { provide: UserStatusService, useValue: { isBlocked: jest.fn().mockResolvedValue(false), invalidate: jest.fn(), invalidateAll: jest.fn() } },
         { provide: UsersService, useValue: { findAll: mockFindAll, findById: mockFindById, updateRole: mockUpdateRole, updateActive: mockUpdateActive } },
       ],
     }).compile();
