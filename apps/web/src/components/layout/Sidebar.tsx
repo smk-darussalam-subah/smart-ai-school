@@ -65,7 +65,7 @@ const NAV_ITEMS: NavItem[] = [
 // =============================================================================
 // Sidebar Component
 // =============================================================================
-export function Sidebar({ viewAs = null, permissions = [], className }: { viewAs?: string | null; permissions?: string[]; className?: string }) {
+export function Sidebar({ viewAs = null, permissions = [], permError = false, className }: { viewAs?: string | null; permissions?: string[]; permError?: boolean; className?: string }) {
   const { data: session } = useSession();
   const pathname = usePathname();
   const realRoles: string[] = (session?.roles as string[]) ?? [];
@@ -76,13 +76,20 @@ export function Sidebar({ viewAs = null, permissions = [], className }: { viewAs
   const roleLabel = ROLE_LABELS[primaryRole] ?? primaryRole;
   const roleBadgeColor = ROLE_COLORS[primaryRole] ?? 'bg-gray-100 text-gray-700';
 
+  // Kontrak izin: SUPER_ADMIN = wildcard '*' (lih. lib/permissions.can + auth.service.getMe).
+  // Jaga wildcard secara LOKAL agar menu SA tidak hilang walau /auth/me sempat gagal/seed tertinggal.
+  const isSuperAdmin = roles.includes('SUPER_ADMIN');
+  const effectivePermissions = isSuperAdmin ? ['*'] : permissions;
+
   const visibleItems = NAV_ITEMS.filter((item) => {
     // Filter berdasarkan role
     if (item.roles && !item.roles.some((r) => roles.includes(r))) {
       return false;
     }
-    // Filter berdasarkan permission
-    if (item.permissions && !can(permissions, item.permissions)) {
+    // Filter berdasarkan permission.
+    // Mode terbatas (permError = /auth/me gagal): lewati gate izin, andalkan filter role saja —
+    // RBAC backend tetap menegakkan akses di setiap request, jadi ini aman dan mencegah menu kosong.
+    if (!permError && item.permissions && !can(effectivePermissions, item.permissions)) {
       return false;
     }
     return true;
@@ -116,6 +123,11 @@ export function Sidebar({ viewAs = null, permissions = [], className }: { viewAs
 
       {/* Navigasi */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        {permError && (
+          <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-700">
+            Gagal memuat izin. Menu tampil <span className="font-semibold">mode terbatas</span> — coba muat ulang halaman.
+          </div>
+        )}
         {visibleItems.map((item) => {
           const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
           return (

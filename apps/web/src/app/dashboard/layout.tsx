@@ -23,13 +23,17 @@ export default async function DashboardLayout({
   // Ambil effective permissions dari backend
   const token = session.accessToken ?? '';
   const meData = await apiFetch<{ permissions: string[] }>('/auth/me', token);
+  // meData === null berarti /auth/me GAGAL (401/5xx/network) — BUKAN "tanpa izin".
+  // Tanpa pembedaan ini, sidebar runtuh ke menu kosong (hanya Beranda) saat fetch gagal.
+  // permError = true → Sidebar masuk mode terbatas (filter role saja) alih-alih menyembunyikan semua.
+  const permError = meData === null;
   const userPermissions: string[] = meData?.permissions ?? [];
 
   return (
     <DashboardProviders session={session}>
       <div className="flex flex-col md:flex-row h-full min-h-screen">
-        <MobileNav viewAs={viewAs} permissions={userPermissions} />
-        <Sidebar viewAs={viewAs} permissions={userPermissions} className="hidden md:flex" />
+        <MobileNav viewAs={viewAs} permissions={userPermissions} permError={permError} />
+        <Sidebar viewAs={viewAs} permissions={userPermissions} permError={permError} className="hidden md:flex" />
         <main className="flex-1 overflow-auto bg-gray-50">
           {viewAs && <ViewAsBanner viewAs={viewAs} />}
           <div className="p-4 md:p-6">{children}</div>

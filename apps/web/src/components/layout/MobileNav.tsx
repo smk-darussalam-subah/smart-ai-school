@@ -5,7 +5,7 @@ import { Sidebar } from './Sidebar';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Menu } from 'lucide-react';
 
-export default function MobileNav({ viewAs = null, permissions = [] }: { viewAs?: string | null; permissions?: string[] }) {
+export default function MobileNav({ viewAs = null, permissions = [], permError = false }: { viewAs?: string | null; permissions?: string[]; permError?: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -24,7 +24,7 @@ export default function MobileNav({ viewAs = null, permissions = [] }: { viewAs?
           </button>
         </SheetTrigger>
         <SheetContent side="left" className="p-0 w-64 border-none">
-          <Sidebar viewAs={viewAs} permissions={permissions} className="w-full h-full border-none shadow-none" />
+          <Sidebar viewAs={viewAs} permissions={permissions} permError={permError} className="w-full h-full border-none shadow-none" />
         </SheetContent>
       </Sheet>
     </div>
