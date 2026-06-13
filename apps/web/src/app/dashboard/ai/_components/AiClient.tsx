@@ -13,7 +13,7 @@ export default function AiClient() {
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
 
   const send = async () => {
     if (!input.trim() || loading) return;
@@ -52,7 +52,15 @@ export default function AiClient() {
               </div>
             </div>
           ))}
-          {loading && <div className="text-sm text-muted-foreground">AI sedang berpikir...</div>}
+          {loading && (
+            <div className="flex justify-start">
+              <div className="bg-gray-100 rounded-xl px-4 py-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce [animation-delay:0ms]" />
+                <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce [animation-delay:150ms]" />
+                <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce [animation-delay:300ms]" />
+              </div>
+            </div>
+          )}
           <div ref={bottomRef} />
         </div>
         <div className="border-t p-3 flex gap-2">

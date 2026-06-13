@@ -6,7 +6,13 @@
 // Password TIDAK PERNAH muncul di log atau pesan error.
 // =============================================================================
 
-import { Injectable, ServiceUnavailableException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { logger } from '@smk/logger';
 import {
   KcUserRepresentation,
@@ -167,6 +173,12 @@ export class KeycloakAdminService {
     const path = url.replace(ADMIN_URL, '');
     logger.error(`[KC Admin] HTTP ${status}`, { path });
 
+    if (status === 400) {
+      return new BadRequestException('Request tidak valid ke Keycloak Admin');
+    }
+    if (status === 404) {
+      return new NotFoundException('Resource tidak ditemukan di Keycloak');
+    }
     if (status === 409) {
       return new ConflictException('User sudah ada di Keycloak');
     }

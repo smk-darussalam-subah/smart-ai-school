@@ -60,6 +60,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Asisten AI', href: '/dashboard/ai', icon: '🤖', permissions: ['ai.chat'] },
   { label: 'Manajemen Pengguna', href: '/dashboard/users', icon: '👥', roles: ['SUPER_ADMIN', 'TATA_USAHA'], permissions: ['user.read'] },
   { label: 'Kesehatan Sistem', href: '/dashboard/health', icon: '🩺', roles: ['SUPER_ADMIN'], permissions: ['audit.read'] },
+  { label: 'Audit Log', href: '/dashboard/audit', icon: '🛡', roles: ['SUPER_ADMIN'], permissions: ['audit.read'] },
 ];
 
 // =============================================================================
