@@ -5,7 +5,7 @@
 // ruang guru), dan menu pengguna. Jam besar khusus Beranda ada di halamannya.
 // =============================================================================
 
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 import { PanelLeft, Maximize, LogOut } from 'lucide-react';
 
@@ -54,7 +54,7 @@ export default function TopBar({ onToggleSidebar }: { onToggleSidebar: () => voi
             {session?.user?.name ?? 'Pengguna'}
           </span>
           <button
-            onClick={() => signOut({ callbackUrl: '/login' })}
+            onClick={() => { window.location.href = '/api/auth/federated-logout'; }}
             aria-label="Keluar"
             className="ml-1 w-9 h-9 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 flex items-center justify-center transition-colors"
           >

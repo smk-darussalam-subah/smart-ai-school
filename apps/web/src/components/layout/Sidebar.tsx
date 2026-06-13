@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
@@ -212,7 +212,7 @@ export function Sidebar({ viewAs = null, permissions = [], permError = false, cl
       {/* Keluar */}
       <div className="px-3 py-4 border-t border-gray-100">
         <button
-          onClick={() => signOut({ callbackUrl: '/login' })}
+          onClick={() => { window.location.href = '/api/auth/federated-logout'; }}
           className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors"
         >
           <LogOut className="w-[18px] h-[18px] shrink-0" />
