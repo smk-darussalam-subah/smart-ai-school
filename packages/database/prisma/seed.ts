@@ -27,11 +27,12 @@ async function main() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   // ── Super Admin ────────────────────────────────────────────────────────────
+  // keycloakId = UUID asli dari Keycloak realm 'diis' (bukan placeholder)
   await prisma.user.upsert({
     where: { email: 'admin@smkdarussalamsubah.sch.id' },
-    update: {},
+    update: { keycloakId: '87ea6d9f-092d-4b74-940a-643961103a54' },
     create: {
-      keycloakId: 'fb0f3a8e-7a8d-4c2f-89b1-3e4c5d6f7a8b',
+      keycloakId: '87ea6d9f-092d-4b74-940a-643961103a54',
       email: 'admin@smkdarussalamsubah.sch.id',
       fullName: 'Administrator Sistem',
       phone: '08123456780',

@@ -34,6 +34,11 @@ const config: Config = {
         fraunces: ['var(--font-fraunces)', 'Georgia', 'serif'],
         jakarta: ['var(--font-jakarta)', 'Plus Jakarta Sans', 'system-ui', 'sans-serif'],
       },
+      boxShadow: {
+        // Skala bayangan lembut emerald (2L dashboard) — additive, tidak ubah default.
+        'soft-sm': '0 1px 3px rgba(6,69,52,0.07), 0 1px 2px rgba(6,69,52,0.04)',
+        'soft-md': '0 6px 18px rgba(6,69,52,0.08), 0 2px 6px rgba(6,69,52,0.05)',
+      },
       keyframes: {
         marquee: {
           from: { transform: 'translateX(0)' },

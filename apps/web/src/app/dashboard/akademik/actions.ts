@@ -37,3 +37,14 @@ export async function createAttendance(data: { classId: string; date: string; re
   revalidatePath('/dashboard/akademik');
   return r;
 }
+
+export async function createAssignment(data: { teacherId: string; classId: string; subject: string; hoursPerWeek: number; academicYear: string }) {
+  const r = await apiCall('/teaching-assignments', 'POST', data);
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+export async function createSubject(data: { code: string; name: string }) {
+  const r = await apiCall('/subjects', 'POST', data);
+  return r;
+}

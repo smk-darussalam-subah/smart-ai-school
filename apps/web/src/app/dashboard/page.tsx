@@ -5,9 +5,53 @@ import type { Metadata } from 'next';
 import { apiFetch } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import Link from 'next/link';
-import AttendanceHeatmap, { HeatmapData } from './_components/AttendanceHeatmap';
+import type { HeatmapData } from './_components/AttendanceHeatmap';
+import HeatmapInteractive from './_components/HeatmapInteractive';
+import PapanPembelajaran, { type PapanRow, type PapanCell } from './_components/PapanPembelajaran';
+import { scheduleDayOfWeek, JP_COUNT } from '@/lib/bell-times';
 
 export const metadata: Metadata = { title: 'Dashboard' };
+
+// =============================================================================
+// Papan Pembelajaran (2L-B2) — bentuk item /schedules + builder rombel × JP.
+// =============================================================================
+interface ScheduleApi {
+  classId: string;
+  jpStart: number;
+  jpEnd: number;
+  room: string | null;
+  class: { id: string; name: string; grade: number };
+  teachingAssignment: { subject: string; teacher: { user: { fullName: string } } };
+}
+
+const HARI_ID = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+// Dedupe defensif: bila slot (classId, jp) ganda antar-semester, yang pertama
+// menang (API orderBy academicYear desc). Hanya JP 1..JP_COUNT yang dipetakan.
+function buildPapanRows(list: ScheduleApi[]): PapanRow[] {
+  const byClass = new Map<string, { className: string; grade: number; cells: (PapanCell | null)[] }>();
+  for (const s of list) {
+    let entry = byClass.get(s.classId);
+    if (!entry) {
+      entry = { className: s.class.name, grade: s.class.grade, cells: Array(JP_COUNT).fill(null) };
+      byClass.set(s.classId, entry);
+    }
+    for (let jp = s.jpStart; jp <= s.jpEnd && jp <= JP_COUNT; jp++) {
+      const idx = jp - 1;
+      if (idx >= 0 && entry.cells[idx] === null) {
+        entry.cells[idx] = {
+          subject: s.teachingAssignment.subject,
+          teacher: s.teachingAssignment.teacher.user.fullName,
+          room: s.room,
+        };
+      }
+    }
+  }
+  return Array.from(byClass.entries())
+    .map(([classId, v]) => ({ classId, className: v.className, grade: v.grade, cells: v.cells }))
+    .sort((a, b) => a.grade - b.grade || a.className.localeCompare(b.className))
+    .map(({ classId, className, cells }) => ({ classId, className, cells }));
+}
 
 // =============================================================================
 // Stat Card (server component)
@@ -140,6 +184,9 @@ export default async function DashboardPage() {
   const isGuruOnly = !isStaf && roles.includes('GURU');
   let adminStats: AdminStats | undefined;
   let heatmap: HeatmapData | null = null;
+  let papanRows: PapanRow[] = [];
+  const dow = scheduleDayOfWeek(); // 0=Minggu (libur) … 6=Sabtu
+  const dayLabel = HARI_ID[dow] ?? '';
   if (isGuruOnly) {
     const token = session?.accessToken ?? '';
     const [assignments, rpp, today] = await Promise.all([
@@ -160,7 +207,7 @@ export default async function DashboardPage() {
   if (isStaf) {
     const token = session?.accessToken ?? '';
     const isReviewer = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'].some((r) => roles.includes(r));
-    const [students, classes, hm, ppdb, rpp] = await Promise.all([
+    const [students, classes, hm, ppdb, rpp, sched] = await Promise.all([
       apiFetch<{ total: number }>('/students?limit=1', token),
       apiFetch<{ total: number }>('/classes?limit=1', token),
       apiFetch<HeatmapData>('/attendance/heatmap?days=10', token),
@@ -168,8 +215,13 @@ export default async function DashboardPage() {
       isReviewer
         ? apiFetch<{ total: number }>('/rpp?status=submitted&limit=1', token)
         : Promise.resolve(null),
+      // Papan Pembelajaran: jadwal hari ini (skip bila Minggu/libur). limit 500 = pola halaman Jadwal.
+      dow !== 0
+        ? apiFetch<{ data: ScheduleApi[] }>(`/schedules?dayOfWeek=${dow}&limit=500`, token)
+        : Promise.resolve(null),
     ]);
     heatmap = hm ?? null;
+    papanRows = sched?.data ? buildPapanRows(sched.data) : [];
     const ppdbTotal =
       typeof ppdb?.total === 'number'
         ? ppdb.total
@@ -201,10 +253,17 @@ export default async function DashboardPage() {
       {/* Stats */}
       <RoleStats role={primaryRole} adminStats={adminStats} />
 
-      {/* Heatmap kehadiran (staf) */}
+      {/* Papan Pembelajaran hari ini (staf) — jadwal terencana dari /schedules */}
+      {isStaf && (
+        <div className="mt-6">
+          <PapanPembelajaran rows={papanRows} dayLabel={dayLabel} />
+        </div>
+      )}
+
+      {/* Heatmap kehadiran (staf) — interaktif: klik sel → panel detail */}
       {heatmap && (
         <div className="mt-6">
-          <AttendanceHeatmap data={heatmap} />
+          <HeatmapInteractive data={heatmap} />
         </div>
       )}
 
