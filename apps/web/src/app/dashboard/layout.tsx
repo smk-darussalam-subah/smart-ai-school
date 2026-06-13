@@ -1,9 +1,7 @@
 import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { authOptions } from '@/lib/auth';
-import { Sidebar } from '@/components/layout/Sidebar';
-import MobileNav from '@/components/layout/MobileNav';
-import ViewAsBanner from '@/components/layout/ViewAsBanner';
+import AppShell from '@/components/layout/AppShell';
 import { DashboardProviders } from '@/components/providers/DashboardProviders';
 import { getActiveViewAs } from '@/lib/view-as';
 import { apiFetch } from '@/lib/api';
@@ -31,14 +29,9 @@ export default async function DashboardLayout({
 
   return (
     <DashboardProviders session={session}>
-      <div className="flex flex-col md:flex-row h-full min-h-screen">
-        <MobileNav viewAs={viewAs} permissions={userPermissions} permError={permError} />
-        <Sidebar viewAs={viewAs} permissions={userPermissions} permError={permError} className="hidden md:flex" />
-        <main className="flex-1 overflow-auto bg-gray-50">
-          {viewAs && <ViewAsBanner viewAs={viewAs} />}
-          <div className="p-4 md:p-6">{children}</div>
-        </main>
-      </div>
+      <AppShell viewAs={viewAs} permissions={userPermissions} permError={permError}>
+        {children}
+      </AppShell>
     </DashboardProviders>
   );
 }
