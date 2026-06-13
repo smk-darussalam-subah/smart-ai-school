@@ -25,7 +25,34 @@
 - `scripts/restore-drill.sh` — buat smk_restore_test, pg_restore, hitung tabel/row per schema, drop test DB
 - `docs/runbooks/backup-restore.md` — setup, cron schedule (02:30 WIB), monthly drill policy, emergency restore
 
-**Gate:** Backup + drill harus dijalankan nyata di staging/dev lokal (output mentah belum tersedia — butuh akses VPS aktif).
+**Gate: LULUS — Bukti Runtime VPS (2026-06-13)**
+
+```
+[backup-db 2026-06-13 06:21:22] Mulai backup smk_db → /home/appuser/backups/smk_db_20260613_0621.dump
+[backup-db 2026-06-13 06:21:22] OK — file: smk_db_20260613_0621.dump, ukuran: 1.2M
+[backup-db 2026-06-13 06:21:22] sha256: 91038e5f4bbcb07b1eb2f0ee6ae43cc4f61b9a6aa7fd1a1f989d5fb83327bcad
+[backup-db 2026-06-13 06:21:22] Backup selesai
+
+[restore-drill 2026-06-13 06:22:01] Dump terbaru: /home/appuser/backups/smk_db_20260613_0621.dump
+[restore-drill 2026-06-13 06:22:01] Ukuran: 1.2M, SHA-256: 91038e5f4bbcb07b1eb2f0ee6ae43cc4f61b9a6aa7fd1a1f989d5fb83327bcad
+[restore-drill 2026-06-13 06:22:01] Membuat database sementara: smk_restore_test
+[restore-drill 2026-06-13 06:22:01] Restore selesai
+
+  LAPORAN DRILL RESTORE — 2026-06-13 06:22:06
+  Dump: smk_db_20260613_0621.dump (1.2M)
+
+  Jumlah Tabel per Schema:
+  academic|9  ai_knowledge|3  audit|1  auth|4  finance|1
+  keycloak|92  n8n|91  notification|2  ppdb|1  public|77  school|5  student|1  teacher|2
+
+  Row Count Tabel Kunci:
+  auth.users|39  student.students|20  audit.audit_log|9
+
+[restore-drill 2026-06-13 06:22:01] Database 'smk_restore_test' berhasil di-DROP
+[restore-drill 2026-06-13 06:22:01] Drill sukses
+```
+
+VPS: `appuser@204.168.242.123`, BACKUP_DIR=`~/backups`, deploy key `id_ed25519_deploy`.
 
 ---
 
@@ -86,10 +113,13 @@
 - C4 credentials via WA — butuh akses Keycloak realm live
 - FK subject → teaching_assignments — spec minta additive-only, FK tidak dibuat
 - 2J-5 backfill — spec menunda eksplisit
-- Drill backup runtime proof — butuh VPS aktif dengan data DB nyata
+- ~~Drill backup runtime proof~~ — ✅ SELESAI 2026-06-13 (lihat Blok 2K-1)
 
 ---
 
-## Next Step
+## Status Akhir
 
-Buka PR dari `feat/2K-konsolidasi` → `develop`.
+✅ PR #139 di-merge ke `develop` — 2026-06-13
+✅ Migration `20260613000001_2K4_subjects` applied di VPS
+✅ Backup + restore drill LULUS di VPS
+✅ Semua 5 blok selesai dengan bukti runtime

@@ -263,10 +263,26 @@ describe('AuthService — getMe + updateMe', () => {
       expect(result.id).toBe('db-uuid-abcd');
     });
 
-    it('user tidak ditemukan → NotFoundException', async () => {
+    it('user tidak ada di DB → fallback profil minimal + izin dari role (tidak 404)', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      permissionsService.getEffectivePermissions.mockResolvedValue(new Set(['announcement.read']));
+
+      const res = await service.getMe('kc-no-db', ['GURU']);
+
+      expect(res.keycloakId).toBe('kc-no-db');
+      expect(res.id).toBe('');
+      expect(res.role).toBe('GURU');
+      expect(res.isActive).toBe(true);
+      expect(res.permissions).toEqual(['announcement.read']);
+    });
+
+    it('user tidak ada di DB + SUPER_ADMIN → wildcard (tidak 404)', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.getMe('tidak-ada', ['GURU'])).rejects.toThrow(NotFoundException);
+      const res = await service.getMe('kc-inspector', ['SUPER_ADMIN']);
+
+      expect(res.permissions).toEqual(['*']);
+      expect(permissionsService.getEffectivePermissions).not.toHaveBeenCalled();
     });
 
     it('SUPER_ADMIN → semua permission dikembalikan', async () => {
