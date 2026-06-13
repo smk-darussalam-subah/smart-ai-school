@@ -6,9 +6,9 @@ import { apiFetch } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import Link from 'next/link';
 import type { HeatmapData } from './_components/AttendanceHeatmap';
-import HeatmapInteractive from './_components/HeatmapInteractive';
-import PapanPembelajaran, { type PapanRow, type PapanCell } from './_components/PapanPembelajaran';
-import { scheduleDayOfWeek, JP_COUNT } from '@/lib/bell-times';
+import { type PapanRow, type PapanCell } from './_components/PapanPembelajaran';
+import BerandaKiosk, { type KioskChartClass } from './_components/BerandaKiosk';
+import { scheduleDayOfWeek, JP_COUNT, currentJp, wibNow, wibTodayISO } from '@/lib/bell-times';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -23,8 +23,6 @@ interface ScheduleApi {
   class: { id: string; name: string; grade: number };
   teachingAssignment: { subject: string; teacher: { user: { fullName: string } } };
 }
-
-const HARI_ID = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
 // Dedupe defensif: bila slot (classId, jp) ganda antar-semester, yang pertama
 // menang (API orderBy academicYear desc). Hanya JP 1..JP_COUNT yang dipetakan.
@@ -185,8 +183,9 @@ export default async function DashboardPage() {
   let adminStats: AdminStats | undefined;
   let heatmap: HeatmapData | null = null;
   let papanRows: PapanRow[] = [];
+  let kioskKpi: { studentPct: number | null; studentDelta: number | null; teacherHadir: number | null; kelasTerjadwalNow: number | null; totalKelas: number | null } | null = null;
+  let kioskChart: { classes: KioskChartClass[]; dates: string[] } | null = null;
   const dow = scheduleDayOfWeek(); // 0=Minggu (libur) … 6=Sabtu
-  const dayLabel = HARI_ID[dow] ?? '';
   if (isGuruOnly) {
     const token = session?.accessToken ?? '';
     const [assignments, rpp, today] = await Promise.all([
@@ -207,7 +206,7 @@ export default async function DashboardPage() {
   if (isStaf) {
     const token = session?.accessToken ?? '';
     const isReviewer = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'].some((r) => roles.includes(r));
-    const [students, classes, hm, ppdb, rpp, sched] = await Promise.all([
+    const [students, classes, hm, ppdb, rpp, sched, teacherToday] = await Promise.all([
       apiFetch<{ total: number }>('/students?limit=1', token),
       apiFetch<{ total: number }>('/classes?limit=1', token),
       apiFetch<HeatmapData>('/attendance/heatmap?days=10', token),
@@ -219,6 +218,8 @@ export default async function DashboardPage() {
       dow !== 0
         ? apiFetch<{ data: ScheduleApi[] }>(`/schedules?dayOfWeek=${dow}&limit=500`, token)
         : Promise.resolve(null),
+      // Kehadiran guru hari ini (count untuk KPI; daftar lengkap via server action saat modal).
+      apiFetch<{ total: number }>('/teacher-attendance', token, { from: wibTodayISO(), to: wibTodayISO(), limit: '1' }),
     ]);
     heatmap = hm ?? null;
     papanRows = sched?.data ? buildPapanRows(sched.data) : [];
@@ -238,67 +239,34 @@ export default async function DashboardPage() {
       ppdbLeads: ppdbTotal,
       rppMenunggu: rpp?.total ?? null,
     };
+
+    // KPI + chart untuk Beranda kiosk (data nyata).
+    const jpNow = currentJp(wibNow().minutes);
+    kioskKpi = {
+      studentPct: today,
+      studentDelta: adminStats.kehadiranDelta,
+      teacherHadir: teacherToday?.total ?? null,
+      kelasTerjadwalNow: jpNow > 0 ? papanRows.filter((r) => r.cells[jpNow - 1]).length : 0,
+      totalKelas: classes?.total ?? null,
+    };
+    kioskChart = heatmap
+      ? { dates: heatmap.dates, classes: heatmap.classes.slice(0, 5).map((c) => ({ className: c.className, pcts: c.cells.map((cell) => cell.pct) })) }
+      : null;
   }
 
+  // Staf (SA/KS/TU): Beranda kiosk "Papan Hari Ini" — data nyata + drill-down.
+  if (isStaf && kioskKpi) {
+    return <BerandaKiosk firstName={firstName} papanRows={papanRows} kpi={kioskKpi} chart={kioskChart} />;
+  }
+
+  // Guru / Siswa / Orang Tua: sapaan + kartu per-role.
   return (
     <div>
-      {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Halo, {firstName}! 👋
-        </h1>
+        <h1 className="text-2xl font-bold text-gray-900">Halo, {firstName}! 👋</h1>
         <p className="text-gray-500 mt-1">{greeting}</p>
       </div>
-
-      {/* Stats */}
       <RoleStats role={primaryRole} adminStats={adminStats} />
-
-      {/* Papan Pembelajaran hari ini (staf) — jadwal terencana dari /schedules */}
-      {isStaf && (
-        <div className="mt-6">
-          <PapanPembelajaran rows={papanRows} dayLabel={dayLabel} />
-        </div>
-      )}
-
-      {/* Heatmap kehadiran (staf) — interaktif: klik sel → panel detail */}
-      {heatmap && (
-        <div className="mt-6">
-          <HeatmapInteractive data={heatmap} />
-        </div>
-      )}
-
-      {/* Status Sistem — hanya SA, dari /health NYATA (bukan indikator palsu) */}
-      {roles.includes('SUPER_ADMIN') && <SystemStatus token={session?.accessToken ?? ''} />}
     </div>
-  );
-}
-
-// =============================================================================
-// SystemStatus — indikator dari GET /health NYATA (SA saja); gagal = merah jujur
-// =============================================================================
-async function SystemStatus({ token }: { token: string }) {
-  const health = await apiFetch<{ status?: string; info?: Record<string, { status?: string }> }>(
-    '/health', token,
-  );
-  const apiUp = health?.status === 'ok';
-  const items = [
-    { label: 'API Backend', up: apiUp },
-    { label: 'Database', up: apiUp && (health?.info?.['database']?.status ?? 'up') !== 'down' },
-  ];
-  return (
-    <Card className="mt-6 p-6">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="font-semibold text-gray-700">📡 Status Sistem</h2>
-        <a href="/dashboard/health" className="text-xs text-smk-blue hover:underline">Detail →</a>
-      </div>
-      <div className="flex flex-wrap gap-3 text-sm">
-        {items.map((i) => (
-          <span key={i.label} className={`flex items-center gap-1.5 ${i.up ? 'text-green-600' : 'text-red-600'}`}>
-            <span className={`w-2 h-2 rounded-full inline-block ${i.up ? 'bg-green-500' : 'bg-red-500'}`} />
-            {i.label}{!i.up && ' (gangguan)'}
-          </span>
-        ))}
-      </div>
-    </Card>
   );
 }

@@ -34,9 +34,21 @@ export async function GET(req: NextRequest) {
   }
 
   const res = NextResponse.redirect(redirectTo);
-  // Hapus cookie sesi NextAuth (nama dev + prod secure-prefix).
-  for (const name of ['next-auth.session-token', '__Secure-next-auth.session-token']) {
-    res.cookies.set(name, '', { maxAge: 0, path: '/' });
+  // Hapus SEMUA cookie sesi NextAuth. PENTING:
+  //  - token besar (berisi id_token) → NextAuth memecah cookie jadi chunk
+  //    (`…session-token.0`, `.1`) → menghapus nama dasar saja TIDAK cukup.
+  //  - cookie ber-prefix `__Secure-`/`__Host-` HANYA bisa dihapus bila Set-Cookie
+  //    menyertakan flag Secure (kalau tidak, browser mengabaikannya → tetap login).
+  for (const c of req.cookies.getAll()) {
+    if (/next-auth\.(session-token|csrf-token|callback-url|pkce|state)/.test(c.name)) {
+      res.cookies.set(c.name, '', {
+        maxAge: 0,
+        path: '/',
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: c.name.startsWith('__Secure-') || c.name.startsWith('__Host-'),
+      });
+    }
   }
   return res;
 }

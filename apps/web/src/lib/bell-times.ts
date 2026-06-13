@@ -72,6 +72,19 @@ export function scheduleDayOfWeek(now: Date = new Date()): number {
   return wibNow(now).jsDay; // 0=Minggu (libur), 1=Senin … 6=Sabtu
 }
 
+/** Tanggal hari ini di WIB sebagai "YYYY-MM-DD" (untuk filter dateFrom/dateTo). */
+export function wibTodayISO(now: Date = new Date()): string {
+  return new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** Label tanggal Indonesia, mis. "Kamis, 13 Juni 2026" (WIB). */
+export function wibDateLabel(now: Date = new Date()): string {
+  const wib = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  const hari = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const bulan = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  return `${hari[wib.getUTCDay()]}, ${wib.getUTCDate()} ${bulan[wib.getUTCMonth()]} ${wib.getUTCFullYear()}`;
+}
+
 /** JP yang sedang berlangsung (1–8), atau 0 bila di luar jam pelajaran. */
 export function currentJp(minutes: number): number {
   const s = JP_SLOTS.find((x) => minutes >= x.startMin && minutes < x.endMin);
