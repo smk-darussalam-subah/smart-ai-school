@@ -9,7 +9,7 @@ import { can } from '@/lib/permissions';
 import {
   Home, BarChart3, BookOpen, CalendarDays, ClipboardCheck, GraduationCap,
   Backpack, FileText, Users, ClipboardList, Wallet, Briefcase, MapPin,
-  Megaphone, Sparkles, Brain, UserCog, Activity, LogOut,
+  Megaphone, Sparkles, Brain, UserCog, Activity, ShieldCheck, LogOut,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -104,7 +104,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Manajemen Pengguna', href: '/dashboard/users', icon: UserCog, roles: ['SUPER_ADMIN', 'TATA_USAHA'], permissions: ['user.read'] },
       { label: 'Kesehatan Sistem', href: '/dashboard/health', icon: Activity, roles: ['SUPER_ADMIN'], permissions: ['audit.read'] },
-      // Audit Log (/dashboard/audit) belum ada di develop (2K-5 tidak ter-merge) — jangan link mati.
+      { label: 'Audit Log', href: '/dashboard/audit', icon: ShieldCheck, roles: ['SUPER_ADMIN'], permissions: ['audit.read'] },
     ],
   },
 ];

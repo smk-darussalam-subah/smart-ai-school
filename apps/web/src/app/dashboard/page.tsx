@@ -5,7 +5,8 @@ import type { Metadata } from 'next';
 import { apiFetch } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import Link from 'next/link';
-import AttendanceHeatmap, { HeatmapData } from './_components/AttendanceHeatmap';
+import type { HeatmapData } from './_components/AttendanceHeatmap';
+import HeatmapInteractive from './_components/HeatmapInteractive';
 import PapanPembelajaran, { type PapanRow, type PapanCell } from './_components/PapanPembelajaran';
 import { scheduleDayOfWeek, JP_COUNT } from '@/lib/bell-times';
 
@@ -259,10 +260,10 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Heatmap kehadiran (staf) */}
+      {/* Heatmap kehadiran (staf) — interaktif: klik sel → panel detail */}
       {heatmap && (
         <div className="mt-6">
-          <AttendanceHeatmap data={heatmap} />
+          <HeatmapInteractive data={heatmap} />
         </div>
       )}
 

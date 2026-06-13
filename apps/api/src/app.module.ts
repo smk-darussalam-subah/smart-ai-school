@@ -38,6 +38,7 @@ import { ReportCardsModule } from './report-cards/report-cards.module';
 import { ClassActivitiesModule } from './class-activities/class-activities.module';
 import { KeycloakAdminModule } from './keycloak-admin/keycloak-admin.module';
 import { ProvisioningModule } from './provisioning/provisioning.module';
+import { SubjectModule } from './subject/subject.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { ProvisioningModule } from './provisioning/provisioning.module';
     SchoolConfigModule,
     KeycloakAdminModule,
     ProvisioningModule,
+    SubjectModule,
   ],
   providers: [
     UserStatusService,

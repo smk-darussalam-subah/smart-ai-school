@@ -1,0 +1,55 @@
+# =============================================================================
+# uptime.yml — Cek uptime API + halaman web produksi setiap 10 menit
+#
+# Bila endpoint tidak merespons dalam batas waktu → workflow FAIL
+# GitHub mengirim notifikasi email ke owner repo secara otomatis.
+#
+# Tidak ada secret yang dibutuhkan — hanya curl ke endpoint publik.
+# =============================================================================
+
+name: Uptime Check
+
+on:
+  schedule:
+    # Setiap 10 menit (minimum interval GitHub Actions)
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  uptime:
+    name: Check Production Endpoints
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Check API health
+        run: |
+          echo "==> Cek API health endpoint..."
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --max-time 15 \
+            --retry 2 \
+            --retry-delay 3 \
+            "https://api.smkdarussalamsubah.sch.id/api/v1/health"
+          echo ""
+          echo "API health: OK"
+
+      - name: Check web homepage
+        run: |
+          echo "==> Cek halaman utama web..."
+          HTTP_STATUS=$(curl \
+            --silent \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            --max-time 20 \
+            --retry 2 \
+            --retry-delay 3 \
+            "https://smkdarussalamsubah.sch.id/")
+          echo "HTTP status: ${HTTP_STATUS}"
+          if [ "${HTTP_STATUS}" != "200" ]; then
+            echo "ERROR: Halaman web merespons ${HTTP_STATUS} (bukan 200)"
+            exit 1
+          fi
+          echo "Web homepage: OK"
