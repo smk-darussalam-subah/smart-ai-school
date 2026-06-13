@@ -12,6 +12,12 @@ interface StudentItem {
   joinedAt?: string; createdAt: string;
 }
 
+export interface WithoutParentItem {
+  id: string; nis: string;
+  user: { fullName: string; email: string };
+  class?: { id: string; name: string } | null;
+}
+
 export default async function SiswaPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
@@ -22,16 +28,28 @@ export default async function SiswaPage() {
   const token = session.accessToken ?? '';
   const canEdit = roles.includes('SUPER_ADMIN') || roles.includes('TATA_USAHA');
 
-  const [studentsData, classesData] = await Promise.all([
+  const [studentsData, classesData, withoutParentData] = await Promise.all([
     apiFetch<PaginatedResponse<StudentItem>>('/students?limit=100', token),
     apiFetch<{ data: { id: string; name: string }[] }>('/classes?limit=100', token),
+    canEdit
+      ? apiFetch<PaginatedResponse<WithoutParentItem>>('/students/without-parent?limit=100', token)
+      : Promise.resolve(null),
   ]);
 
   const students = studentsData?.data ?? [];
   const total = studentsData?.total ?? 0;
   const classes = classesData?.data ?? [];
+  const withoutParentStudents = withoutParentData?.data ?? [];
+  const withoutParentTotal = withoutParentData?.total ?? 0;
 
   return (
-    <SiswaTable students={students} total={total} classes={classes} canEdit={canEdit} />
+    <SiswaTable
+      students={students}
+      total={total}
+      classes={classes}
+      canEdit={canEdit}
+      withoutParentStudents={withoutParentStudents}
+      withoutParentTotal={withoutParentTotal}
+    />
   );
 }

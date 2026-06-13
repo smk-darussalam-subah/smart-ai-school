@@ -5,7 +5,8 @@ import type { Metadata } from 'next';
 import { apiFetch } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import Link from 'next/link';
-import AttendanceHeatmap, { HeatmapData } from './_components/AttendanceHeatmap';
+import type { HeatmapData } from './_components/AttendanceHeatmap';
+import HeatmapInteractive from './_components/HeatmapInteractive';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -201,10 +202,10 @@ export default async function DashboardPage() {
       {/* Stats */}
       <RoleStats role={primaryRole} adminStats={adminStats} />
 
-      {/* Heatmap kehadiran (staf) */}
+      {/* Heatmap kehadiran (staf) — interaktif: klik sel → panel detail */}
       {heatmap && (
         <div className="mt-6">
-          <AttendanceHeatmap data={heatmap} />
+          <HeatmapInteractive data={heatmap} />
         </div>
       )}
 
