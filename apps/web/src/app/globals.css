@@ -56,3 +56,26 @@
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
   }
 }
+
+/* =============================================================================
+   Beranda "Mode Layar" (kiosk) — tampilan ruang guru/TV, gelap-emerald kontras
+   tinggi. Diaktifkan dengan menambah .kiosk-mode di root Beranda (+ fullscreen).
+   Override utility light → dark via scope, agar JSX tetap bersih.
+   ========================================================================== */
+.kiosk-mode {
+  background: radial-gradient(1200px 600px at 50% -10%, #06372a, #04241b 60%, #021712);
+  min-height: 100vh;
+  padding: 18px 28px;
+  overflow-y: auto;
+}
+.kiosk-mode .bg-white { background-color: rgba(255, 255, 255, 0.05) !important; }
+.kiosk-mode .text-gray-900 { color: #ffffff !important; }
+.kiosk-mode .text-gray-800 { color: #eafaf3 !important; }
+.kiosk-mode .text-gray-700 { color: #d3f0e3 !important; }
+.kiosk-mode .text-gray-500,
+.kiosk-mode .text-gray-400 { color: #8fc7b2 !important; }
+.kiosk-mode [class*="border-emerald-900"],
+.kiosk-mode .border { border-color: rgba(255, 255, 255, 0.12) !important; }
+.kiosk-mode .kiosk-clock { font-size: clamp(72px, 11vw, 140px) !important; line-height: 0.95; }
+.kiosk-mode .kiosk-kpi-value { font-size: 2.25rem !important; }
+.kiosk-mode .kiosk-hide { display: none !important; }
