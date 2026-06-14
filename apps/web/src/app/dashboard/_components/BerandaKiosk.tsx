@@ -7,11 +7,13 @@
 // Fase 1. Item yang butuh data eksekusi per-JP ditandai Fase 2 (tanpa palsu).
 // =============================================================================
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import {
   Users, UserCheck, Presentation, AlarmClockOff, Target, Sparkles,
   TrendingUp, TrendingDown, AlertTriangle, Lightbulb, MessageCircle, X, ArrowLeft,
+  Monitor, Minimize2, CalendarDays, Megaphone, Pin, Info,
 } from 'lucide-react';
 import PapanPembelajaran, { type PapanRow } from './PapanPembelajaran';
 import {
@@ -27,6 +29,21 @@ export interface KioskChartClass {
   className: string;
   pcts: (number | null)[];
 }
+export interface KioskAgendaItem {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  type: 'holiday' | 'exam' | 'event' | 'break';
+}
+export interface KioskAnnouncement {
+  id: string;
+  title: string;
+  category: string;
+  isPinned: boolean;
+  publishedAt: string | null;
+  createdAt: string;
+}
 export interface BerandaKioskProps {
   firstName: string;
   papanRows: PapanRow[];
@@ -38,6 +55,8 @@ export interface BerandaKioskProps {
     totalKelas: number | null;
   };
   chart: { classes: KioskChartClass[]; dates: string[] } | null;
+  agenda: KioskAgendaItem[];
+  announcements: KioskAnnouncement[];
 }
 
 const STATUS_LABEL: Record<string, string> = { hadir: 'Hadir', izin: 'Izin', sakit: 'Sakit', alpha: 'Alpha' };
@@ -53,7 +72,30 @@ function fmtPct(v: number | null): string {
 // =============================================================================
 // Komponen
 // =============================================================================
-export default function BerandaKiosk({ firstName, papanRows, kpi, chart }: BerandaKioskProps) {
+const REFRESH_MS = 60_000;
+
+export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda, announcements }: BerandaKioskProps) {
+  const router = useRouter();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [kiosk, setKiosk] = useState(false);
+  const [updatedAgo, setUpdatedAgo] = useState(0);
+
+  // Auto-refresh data (server component) tiap 60s + penghitung "diperbarui X dtk lalu".
+  useEffect(() => {
+    const refresh = setInterval(() => { router.refresh(); setUpdatedAgo(0); }, REFRESH_MS);
+    const ticker = setInterval(() => setUpdatedAgo((s) => s + 1), 1000);
+    return () => { clearInterval(refresh); clearInterval(ticker); };
+  }, [router]);
+
+  // Mode Layar (kiosk) + fullscreen; sinkron bila user tekan Esc.
+  const enterKiosk = () => { setKiosk(true); rootRef.current?.requestFullscreen?.().catch(() => {}); };
+  const exitKiosk = () => { setKiosk(false); if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); };
+  useEffect(() => {
+    const onFs = () => { if (!document.fullscreenElement) setKiosk(false); };
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
+
   // Jam + status JP (WIB), tick tiap detik.
   const [now, setNow] = useState<{ time: string; date: string; jpStatus: string; jp: number }>(() => ({
     time: '--:--', date: wibDateLabel(), jpStatus: '—', jp: 0,
@@ -79,7 +121,27 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart }: Beran
   const [modal, setModal] = useState<null | 'siswa' | 'guru' | 'kbm' | 'kosong' | 'silabus'>(null);
 
   return (
-    <div className="space-y-4">
+    <div ref={rootRef} className={clsx('space-y-4', kiosk && 'kiosk-mode')}>
+      {/* Toolbar: status LIVE auto-refresh + Mode Layar */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
+          LIVE · diperbarui {updatedAgo} dtk lalu
+        </span>
+        {kiosk ? (
+          <button onClick={exitKiosk} className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">
+            <Minimize2 className="h-4 w-4" /> Keluar Mode Layar
+          </button>
+        ) : (
+          <button onClick={enterKiosk} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+            <Monitor className="h-4 w-4" /> Mode Layar
+          </button>
+        )}
+      </div>
+
       {/* Header: sapaan + jam besar di tengah */}
       <div className="grid grid-cols-1 md:grid-cols-3 items-center gap-2">
         <div>
@@ -87,7 +149,7 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart }: Beran
           <p className="text-sm text-gray-500">Denyut sekolah hari ini.</p>
         </div>
         <div className="text-center leading-none">
-          <p className="text-4xl font-extrabold text-gray-900 tracking-tight tabular-nums">{now.time}</p>
+          <p className="kiosk-clock text-4xl font-extrabold text-gray-900 tracking-tight tabular-nums">{now.time}</p>
           <p className="text-xs text-gray-500 mt-1">
             {now.date} · <span className="text-emerald-700 font-semibold">{now.jpStatus}</span>
           </p>
@@ -123,6 +185,9 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart }: Beran
         </div>
       </div>
 
+      {/* Agenda sekolah + Pengumuman terbaru */}
+      <AgendaPengumuman agenda={agenda} announcements={announcements} />
+
       {modal && <KpiModal kind={modal} onClose={() => setModal(null)} papanRows={papanRows} currentJpNow={now.jp} />}
     </div>
   );
@@ -149,7 +214,7 @@ function KpiCard({ icon, tint, label, value, sub, delta, fase2, onClick }: {
           </span>
         )}
       </div>
-      <p className={clsx('text-2xl font-extrabold mt-3 leading-none', fase2 ? 'text-amber-400' : 'text-gray-900')}>{value}</p>
+      <p className={clsx('kiosk-kpi-value text-2xl font-extrabold mt-3 leading-none', fase2 ? 'text-amber-400' : 'text-gray-900')}>{value}</p>
       <p className="text-xs text-gray-500 mt-1">{label}{sub ? ` · ${sub}` : ''}</p>
     </button>
   );
@@ -235,6 +300,86 @@ function AiPanel({ kpi, papanRows, currentJpNow }: { kpi: BerandaKioskProps['kpi
       <a href="/dashboard/ai" className="mt-2 flex items-center justify-center gap-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg py-2">
         <MessageCircle className="w-4 h-4" /> Tanya Asisten AI
       </a>
+    </div>
+  );
+}
+
+// ── Agenda sekolah (kalender akademik) + Pengumuman terbaru ──────────────────
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const EVENT_META: Record<string, { label: string; badge: string; date: string }> = {
+  exam: { label: 'Ujian', badge: 'bg-red-100 text-red-700', date: 'bg-red-50 text-red-700' },
+  holiday: { label: 'Libur', badge: 'bg-sky-100 text-sky-700', date: 'bg-sky-50 text-sky-700' },
+  break: { label: 'Jeda', badge: 'bg-amber-100 text-amber-700', date: 'bg-amber-50 text-amber-700' },
+  event: { label: 'Acara', badge: 'bg-emerald-100 text-emerald-700', date: 'bg-emerald-50 text-emerald-700' },
+};
+function shortDate(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+function eventRange(startIso: string, endIso: string): string {
+  const s = new Date(startIso); const e = new Date(endIso);
+  if (s.toDateString() === e.toDateString()) return shortDate(startIso);
+  if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) return `${s.getDate()}–${e.getDate()} ${MONTHS[s.getMonth()]}`;
+  return `${shortDate(startIso)} – ${shortDate(endIso)}`;
+}
+
+function AgendaPengumuman({ agenda, announcements }: { agenda: KioskAgendaItem[]; announcements: KioskAnnouncement[] }) {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* Agenda */}
+      <div className="bg-white rounded-2xl border border-emerald-900/10 shadow-soft-sm">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <h2 className="font-semibold text-gray-800 text-sm flex items-center gap-2"><CalendarDays className="w-4 h-4 text-emerald-600" /> Agenda Sekolah</h2>
+          <span className="text-[10px] text-gray-400">mendatang</span>
+        </div>
+        <div className="px-4 py-2">
+          {agenda.length === 0 ? (
+            <p className="py-6 text-center text-xs text-gray-400">Belum ada agenda mendatang.</p>
+          ) : agenda.map((ev) => {
+            const meta = EVENT_META[ev.type] ?? EVENT_META.event!;
+            const d = new Date(ev.startDate);
+            return (
+              <div key={ev.id} className="flex gap-3 py-2.5 border-b border-gray-50 last:border-0">
+                <div className={clsx('shrink-0 w-12 text-center rounded-lg py-1.5 leading-none', meta.date)}>
+                  <p className="text-lg font-extrabold">{d.getDate()}</p>
+                  <p className="text-[10px] font-semibold uppercase">{MONTHS[d.getMonth()]}</p>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-800 flex items-center gap-1.5 flex-wrap">
+                    {ev.name}
+                    <span className={clsx('text-[10px] font-bold uppercase px-1.5 py-0.5 rounded', meta.badge)}>{meta.label}</span>
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">{eventRange(ev.startDate, ev.endDate)}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Pengumuman */}
+      <div className="bg-white rounded-2xl border border-emerald-900/10 shadow-soft-sm">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <h2 className="font-semibold text-gray-800 text-sm flex items-center gap-2"><Megaphone className="w-4 h-4 text-emerald-600" /> Pengumuman Terbaru</h2>
+          <a href="/dashboard/pengumuman" className="text-[11px] font-medium text-emerald-700 hover:underline">Lihat semua →</a>
+        </div>
+        <div className="px-4 py-2">
+          {announcements.length === 0 ? (
+            <p className="py-6 text-center text-xs text-gray-400">Belum ada pengumuman.</p>
+          ) : announcements.map((a) => (
+            <div key={a.id} className="flex gap-3 py-2.5 border-b border-gray-50 last:border-0">
+              <span className="shrink-0 w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                {a.isPinned ? <Pin className="w-4 h-4" /> : <Info className="w-4 h-4" />}
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-800 truncate">{a.title}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{a.category}{a.isPinned ? ' · disematkan' : ''} · {shortDate(a.publishedAt ?? a.createdAt)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
