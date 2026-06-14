@@ -21,26 +21,26 @@ jobs:
             ENV_FILE=/opt/diis-staging/smart-ai-school/infrastructure/docker/.env.staging
 
             if [ ! -f "$ENV_FILE" ]; then
-              echo ".env.staging not found at $ENV_FILE"
+              echo "❌ .env.staging tidak ditemukan di $ENV_FILE"
               exit 1
             fi
 
-            echo "Current STAGING_WEB_URL:"
-            grep -i STAGING_WEB_URL "$ENV_FILE" || echo "(not set)"
+            echo "📋 Current STAGING_WEB_URL:"
+            grep -i STAGING_WEB_URL "$ENV_FILE" || echo "(tidak ada)"
 
-            echo "Updating STAGING_WEB_URL..."
+            echo "🔧 Menambah/mengupdate STAGING_WEB_URL..."
             if grep -q '^STAGING_WEB_URL=' "$ENV_FILE"; then
               sed -i 's|^STAGING_WEB_URL=.*|STAGING_WEB_URL=https://staging.smkdarussalamsubah.sch.id|' "$ENV_FILE"
             else
               echo 'STAGING_WEB_URL=https://staging.smkdarussalamsubah.sch.id' >> "$ENV_FILE"
             fi
 
-            echo "STAGING_WEB_URL updated:"
+            echo "✅ STAGING_WEB_URL updated:"
             grep STAGING_WEB_URL "$ENV_FILE"
 
-            echo "Restarting staging web container..."
+            echo "🔄 Restart staging web container..."
             cd /opt/diis-staging/smart-ai-school/infrastructure/docker
             docker compose -p smk-staging -f docker-compose.yml -f docker-compose.staging.yml \
               --env-file .env.staging up -d --no-deps web
 
-            echo "Done. NEXTAUTH_URL is now staging."
+            echo "✅ Staging web restarted. NEXTAUTH_URL sekarang staging."
