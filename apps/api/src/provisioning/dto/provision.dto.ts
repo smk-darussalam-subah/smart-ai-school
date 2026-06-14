@@ -43,18 +43,19 @@ export const ProvisionUserSchema = z.object({
       return { message: `${dto.role} memerlukan ${(dto.role === 'ORANG_TUA' ? 'phone' : 'email')}` };
     },
   )
-  // Pegawai wajib NIY + status; non-pegawai (INDUSTRI/ORANG_TUA/SUPER_ADMIN) tidak boleh isi keduanya.
+  // Pegawai (GURU/TU/KS) wajib status kepegawaian; NIY opsional (boleh belum punya).
+  // Non-pegawai (INDUSTRI/ORANG_TUA/SUPER_ADMIN) tidak boleh isi niy/status.
   .refine(
     (dto) => {
       const isStaff = (STAFF_ROLES as readonly string[]).includes(dto.role);
-      if (isStaff) return !!dto.niy && !!dto.employmentStatus;
+      if (isStaff) return !!dto.employmentStatus;
       return dto.niy === undefined && dto.employmentStatus === undefined;
     },
     (dto) => {
       const isStaff = (STAFF_ROLES as readonly string[]).includes(dto.role);
       return {
         message: isStaff
-          ? `${dto.role} memerlukan niy dan employmentStatus`
+          ? `${dto.role} memerlukan employmentStatus`
           : `Role ${dto.role} tidak boleh memiliki niy/employmentStatus`,
       };
     },
