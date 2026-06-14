@@ -62,7 +62,11 @@ export function ymd(d: Date): string {
 // DATA DUMMY (sementara — ganti dengan data nyata via kaldik & endpoint rekap)
 // =============================================================================
 export type EventType = 'exam' | 'holiday' | 'event' | 'break';
-export interface KaldikEvent { id: string; name: string; date: string; endDate: string; type: EventType; source?: string }
+export interface KaldikEvent {
+  id: string; name: string; date: string; endDate: string; type: EventType; source?: string;
+  time?: string;          // mis. "07:30–09:00" (opsional)
+  agendaOnly?: boolean;   // tampil di Agenda Hari Ini saja (bukan Upcoming/penanda utama)
+}
 
 /** [DUMMY] Agenda/kaldik bulan berjalan. Hari libur (holiday/break) TIDAK dihitung hari aktif. */
 export function dummyEvents(year: number, month0: number): KaldikEvent[] {
@@ -70,9 +74,14 @@ export function dummyEvents(year: number, month0: number): KaldikEvent[] {
   const d = (day: number) => `${year}-${m}-${String(day).padStart(2, '0')}`;
   return [
     { id: 'e1', name: 'Penilaian Akhir Semester (PAS)', date: d(16), endDate: d(24), type: 'exam', source: 'Kurikulum' },
-    { id: 'e2', name: 'Rapat Pleno Kenaikan Kelas', date: d(20), endDate: d(20), type: 'event', source: 'Humas' },
+    { id: 'e2', name: 'Rapat Pleno Kenaikan Kelas', date: d(20), endDate: d(20), type: 'event', source: 'Humas', time: '09:00–11:00' },
     { id: 'e3', name: 'Class Meeting', date: d(25), endDate: d(27), type: 'event', source: 'Kesiswaan' },
     { id: 'e4', name: 'Libur Semester Genap', date: d(28), endDate: d(30), type: 'holiday', source: 'Kaldik' },
+    // Sub-agenda berjadwal (contoh) untuk hari pertama PAS — demo Agenda Hari Ini.
+    { id: 's0', name: 'Apel & Pengarahan PAS', date: d(16), endDate: d(16), type: 'event', source: 'Kesiswaan', time: '06:45–07:15', agendaOnly: true },
+    { id: 's1', name: 'PAS — Sesi 1', date: d(16), endDate: d(16), type: 'exam', source: 'Kurikulum', time: '07:30–09:00', agendaOnly: true },
+    { id: 's2', name: 'PAS — Sesi 2', date: d(16), endDate: d(16), type: 'exam', source: 'Kurikulum', time: '09:30–11:00', agendaOnly: true },
+    { id: 's3', name: 'PAS — Sesi 3', date: d(16), endDate: d(16), type: 'exam', source: 'Kurikulum', time: '12:30–14:00', agendaOnly: true },
   ];
 }
 export const EVENT_META: Record<EventType, { label: string; dot: string; soft: string; text: string }> = {

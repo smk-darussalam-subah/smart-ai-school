@@ -101,6 +101,8 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart }: Beran
   const todayStr = ymd(today);
   const [cal, setCal] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const navCal = (delta: number) => setCal((c) => { const d = new Date(c.y, c.m + delta, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const jumpCal = (y: number, m0: number) => setCal({ y, m: m0 });
+  const [selDate, setSelDate] = useState(todayStr); // tanggal terpilih di kalender
 
   const [modal, setModal] = useState<null | 'siswa' | 'guru' | 'kbm' | 'kosong' | 'silabus'>(null);
   const [picker, setPicker] = useState<null | 'siswa' | 'guru'>(null);
@@ -111,8 +113,14 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart }: Beran
   const evNext = dummyEvents(nextMo.getFullYear(), nextMo.getMonth());
   const allEvents = [...evNow, ...evNext];
   const calEvents = dummyEvents(cal.y, cal.m);
-  const agendaToday = allEvents.filter((e) => todayStr >= e.date && todayStr <= e.endDate);
-  const upcoming = allEvents.filter((e) => e.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4);
+  // Agenda untuk tanggal terpilih (default hari ini). All-day di atas, lalu per jam.
+  const agendaForSel = allEvents
+    .filter((e) => selDate >= e.date && selDate <= e.endDate)
+    .sort((a, b) => (a.time ? 1 : 0) - (b.time ? 1 : 0) || (a.time ?? '').localeCompare(b.time ?? ''));
+  const upcoming = allEvents.filter((e) => !e.agendaOnly && e.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 8);
+  const selIsToday = selDate === todayStr;
+  const selD = new Date(`${selDate}T00:00:00`);
+  const agendaTitle = selIsToday ? 'Agenda Hari Ini' : `Agenda ${selD.getDate()} ${(MONTH_NAMES[selD.getMonth()] ?? '').slice(0, 3)}`;
   const health = dummyHealth(kpi.studentPct);
 
   // Sapaan: personal saat login biasa; KOLEKTIF & menyemangati di Mode Ruang Guru.
@@ -202,8 +210,9 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart }: Beran
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         <div className="lg:col-span-2">
           <PapanCard theme={theme} papanRows={papanRows} dayLabel={now.date.split(',')[0] ?? ''}
-            cal={cal} navCal={navCal} calEvents={calEvents} todayStr={todayStr}
-            agendaToday={agendaToday} upcoming={upcoming} />
+            cal={cal} navCal={navCal} onJump={jumpCal} calEvents={calEvents} todayStr={todayStr}
+            selDate={selDate} onPickDate={setSelDate} agenda={agendaForSel} agendaTitle={agendaTitle}
+            upcoming={upcoming} selIsToday={selIsToday} nowMins={now.mins} />
         </div>
         <div className="space-y-3">
           <TrenChart chart={chart} theme={theme} />
@@ -248,10 +257,11 @@ function KpiCard({ theme, icon, label, value, sub, delta, fase2, onClick, onCale
 }
 
 // ── Papan card: toggle Papan ⇄ Agenda&Kalender (agenda slide-in, papan meramping) ─
-function PapanCard({ theme, papanRows, dayLabel, cal, navCal, calEvents, todayStr, agendaToday, upcoming }: {
+function PapanCard({ theme, papanRows, dayLabel, cal, navCal, onJump, calEvents, todayStr, selDate, onPickDate, agenda, agendaTitle, upcoming, selIsToday, nowMins }: {
   theme: KioskTheme; papanRows: PapanRow[]; dayLabel: string;
-  cal: { y: number; m: number }; navCal: (d: number) => void; calEvents: KaldikEvent[]; todayStr: string;
-  agendaToday: KaldikEvent[]; upcoming: KaldikEvent[];
+  cal: { y: number; m: number }; navCal: (d: number) => void; onJump: (y: number, m0: number) => void;
+  calEvents: KaldikEvent[]; todayStr: string; selDate: string; onPickDate: (ds: string) => void;
+  agenda: KaldikEvent[]; agendaTitle: string; upcoming: KaldikEvent[]; selIsToday: boolean; nowMins: number;
 }) {
   const [tab, setTab] = useState<'papan' | 'agenda'>('papan');
   const tabBtn = (key: 'papan' | 'agenda', label: string, icon: React.ReactNode) => (
@@ -268,21 +278,18 @@ function PapanCard({ theme, papanRows, dayLabel, cal, navCal, calEvents, todaySt
       {tab === 'papan' ? (
         <PapanPembelajaran rows={papanRows} dayLabel={dayLabel} />
       ) : (
-        <div className="flex flex-col xl:flex-row gap-3 anim-slide-right">
-          <div className="xl:basis-[36%] xl:shrink-0 min-w-0"><PapanPembelajaran rows={papanRows} dayLabel={dayLabel} /></div>
-          <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-soft-sm p-4">
-              <MonthCalendar year={cal.y} month0={cal.m} onNav={navCal} events={calEvents} todayStr={todayStr} accent={theme.ac} compact />
-              <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[10px] text-gray-500">
-                {(['exam', 'event', 'holiday'] as const).map((t) => (
-                  <span key={t} className="flex items-center gap-1"><i className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: EVENT_META[t].dot }} />{EVENT_META[t].label}</span>
-                ))}
-              </div>
+        <div className="flex flex-col xl:flex-row gap-3 anim-slide-right items-start">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-soft-sm p-3.5 xl:basis-[300px] xl:shrink-0 w-full">
+            <MonthCalendar year={cal.y} month0={cal.m} onNav={navCal} onJump={onJump} events={calEvents} todayStr={todayStr} accent={theme.ac} selectedDates={[selDate]} onDayClick={onPickDate} compact />
+            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[10px] text-gray-500">
+              {(['exam', 'event', 'holiday'] as const).map((t) => (
+                <span key={t} className="flex items-center gap-1"><i className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: EVENT_META[t].dot }} />{EVENT_META[t].label}</span>
+              ))}
             </div>
-            <div className="space-y-3">
-              <AgendaPanel title="Agenda Hari Ini" icon={<CalendarDays className="w-4 h-4" />} theme={theme} events={agendaToday} empty="Tidak ada agenda hari ini." mode="today" />
-              <AgendaPanel title="Upcoming Event" icon={<CalendarClock className="w-4 h-4" />} theme={theme} events={upcoming} empty="Belum ada agenda mendatang." mode="upcoming" />
-            </div>
+          </div>
+          <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-3 w-full">
+            <AgendaPanel title={agendaTitle} icon={<CalendarDays className="w-4 h-4" />} theme={theme} events={agenda} empty={selIsToday ? 'Tidak ada agenda hari ini.' : 'Tidak ada agenda pada tanggal ini.'} autoScroll={selIsToday} nowMins={nowMins} />
+            <AgendaPanel title="Upcoming Event" icon={<CalendarClock className="w-4 h-4" />} theme={theme} events={upcoming} empty="Belum ada agenda mendatang." showDate />
           </div>
         </div>
       )}
@@ -366,36 +373,67 @@ function AiPanel({ kpi, papanRows, currentJpNow, theme }: { kpi: BerandaKioskPro
   );
 }
 
-// ── Agenda Hari Ini / Upcoming ───────────────────────────────────────────────
-function AgendaPanel({ title, icon, theme, events, empty, mode }: { title: string; icon: React.ReactNode; theme: KioskTheme; events: KaldikEvent[]; empty: string; mode: 'today' | 'upcoming' }) {
+// ── Agenda Hari Ini / Upcoming — scrollable, font ringkas, auto-geser saat lewat ─
+function endMinOf(time?: string): number {
+  if (!time) return 0;
+  const m = time.split(/[–-]/)[1]?.trim();
+  if (!m) return 0;
+  const [h, mm] = m.split(':').map(Number);
+  return (h || 0) * 60 + (mm || 0);
+}
+function mon3(d: Date): string { return (MONTH_NAMES[d.getMonth()] ?? '').slice(0, 3); }
+
+function AgendaPanel({ title, icon, theme, events, empty, showDate = false, autoScroll = false, nowMins = 0 }: {
+  title: string; icon: React.ReactNode; theme: KioskTheme; events: KaldikEvent[]; empty: string;
+  showDate?: boolean; autoScroll?: boolean; nowMins?: number;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!autoScroll || !scrollRef.current) return;
+    let idx = events.findIndex((e) => { const em = endMinOf(e.time); return em === 0 || em >= nowMins; });
+    if (idx < 0) idx = 0;
+    const el = scrollRef.current.children[idx] as HTMLElement | undefined;
+    if (el) scrollRef.current.scrollTop = el.offsetTop;
+  }, [autoScroll, nowMins, events]);
+
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-soft-sm flex flex-col">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
-        <span style={{ color: theme.ac }}>{icon}</span><h2 className="font-semibold text-gray-800 text-sm">{title}</h2>
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-soft-sm flex flex-col min-h-0">
+      <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-gray-100">
+        <span style={{ color: theme.ac }}>{icon}</span><h2 className="font-semibold text-gray-800 text-[13px]">{title}</h2>
       </div>
-      <div className="p-3 flex-1">
-        {events.length === 0 ? <p className="py-6 text-center text-xs text-gray-400">{empty}</p> : events.map((e) => {
-          const meta = EVENT_META[e.type];
-          const d = new Date(e.date);
-          return (
-            <div key={e.id} className="flex gap-3 py-2 border-b border-gray-50 last:border-0">
-              <div className="shrink-0 w-11 text-center rounded-lg py-1.5 leading-none" style={{ background: meta.soft, color: meta.text }}>
-                <p className="text-base font-extrabold">{d.getDate()}</p>
-                <p className="text-[9px] font-semibold uppercase">{(MONTH_NAMES[d.getMonth()] ?? '').slice(0, 3)}</p>
+      {events.length === 0 ? (
+        <p className="py-8 text-center text-xs text-gray-400">{empty}</p>
+      ) : (
+        <div ref={scrollRef} className="px-3 overflow-y-auto max-h-[186px]">
+          {events.map((e) => {
+            const meta = EVENT_META[e.type];
+            const d = new Date(`${e.date}T00:00:00`);
+            const passed = autoScroll && !!e.time && endMinOf(e.time) < nowMins;
+            return (
+              <div key={e.id} className={clsx('flex gap-2.5 py-2 border-b border-gray-50 last:border-0', passed && 'opacity-50')}>
+                {showDate ? (
+                  <div className="shrink-0 w-9 text-center rounded-lg py-1 leading-none" style={{ background: meta.soft, color: meta.text }}>
+                    <p className="text-sm font-extrabold">{d.getDate()}</p>
+                    <p className="text-[8px] font-semibold uppercase">{mon3(d)}</p>
+                  </div>
+                ) : (
+                  <span className="shrink-0 w-1 rounded-full self-stretch" style={{ background: meta.dot }} />
+                )}
+                <div className="min-w-0">
+                  <p className="text-[12px] font-medium text-gray-800 leading-snug flex items-start gap-1.5 flex-wrap">
+                    <span className="line-clamp-2">{e.name}</span>
+                    <span className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 mt-0.5" style={{ background: meta.soft, color: meta.text }}>{meta.label}</span>
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    {e.time ? e.time : (e.date === e.endDate ? `${d.getDate()} ${mon3(d)}` : `${d.getDate()}–${new Date(`${e.endDate}T00:00:00`).getDate()} ${mon3(d)}`)}
+                    {e.source ? ` · ${e.source}` : ''}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-gray-800 flex items-center gap-1.5 flex-wrap">{e.name}
-                  <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ background: meta.soft, color: meta.text }}>{meta.label}</span>
-                </p>
-                <p className="text-[11px] text-gray-400 mt-0.5">
-                  {e.date === e.endDate ? `${d.getDate()} ${(MONTH_NAMES[d.getMonth()] ?? '').slice(0, 3)}` : `${d.getDate()}–${new Date(e.endDate).getDate()} ${(MONTH_NAMES[d.getMonth()] ?? '').slice(0, 3)}`}
-                  {e.source ? ` · ${e.source}` : ''}{mode === 'today' ? ' · berlangsung' : ''}
-                </p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -423,8 +461,10 @@ function DatePickerRecap({ kind, theme, events, onClose }: { kind: 'siswa' | 'gu
           <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-gray-100 text-gray-400 grid place-items-center" aria-label="Tutup"><X className="w-4 h-4" /></button>
         </div>
         <p className="text-xs text-gray-500 mb-3">Pilih satu atau beberapa tanggal (mis. 3, 4, 5). Hari libur tidak dihitung sebagai hari aktif.</p>
-        <MonthCalendar year={cal.y} month0={cal.m} onNav={(d) => setCal((c) => { const x = new Date(c.y, c.m + d, 1); return { y: x.getFullYear(), m: x.getMonth() }; })}
-          events={events} todayStr={ymd(today)} accent={theme.ac} selectable selected={sel} onToggle={toggle} />
+        <MonthCalendar year={cal.y} month0={cal.m}
+          onNav={(d) => setCal((c) => { const x = new Date(c.y, c.m + d, 1); return { y: x.getFullYear(), m: x.getMonth() }; })}
+          onJump={(y, m0) => setCal({ y, m: m0 })}
+          events={events} todayStr={ymd(today)} accent={theme.ac} selectedDates={sel} onDayClick={toggle} />
         <div className="mt-4 rounded-xl p-3 text-sm" style={{ background: theme.soft }}>
           {sel.length === 0 ? <p className="text-gray-500">Belum ada tanggal dipilih.</p> : (
             <>
