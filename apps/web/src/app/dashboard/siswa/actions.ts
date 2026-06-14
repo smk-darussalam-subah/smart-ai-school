@@ -58,3 +58,12 @@ export async function provisionStudentAction(body: Record<string, unknown>) {
   revalidatePath('/dashboard/siswa');
   return result;
 }
+
+export async function assignParentAction(
+  studentId: string,
+  body: Record<string, unknown>,
+) {
+  const result = await fetchApi(`/students/${studentId}/assign-parent`, 'PATCH', body);
+  revalidatePath('/dashboard/siswa');
+  return result;
+}

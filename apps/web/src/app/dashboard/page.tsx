@@ -5,9 +5,51 @@ import type { Metadata } from 'next';
 import { apiFetch } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import Link from 'next/link';
-import AttendanceHeatmap, { HeatmapData } from './_components/AttendanceHeatmap';
+import type { HeatmapData } from './_components/AttendanceHeatmap';
+import { type PapanRow, type PapanCell } from './_components/PapanPembelajaran';
+import BerandaKiosk, { type KioskChartClass } from './_components/BerandaKiosk';
+import { scheduleDayOfWeek, JP_COUNT, currentJp, wibNow, wibTodayISO } from '@/lib/bell-times';
 
 export const metadata: Metadata = { title: 'Dashboard' };
+
+// =============================================================================
+// Papan Pembelajaran (2L-B2) — bentuk item /schedules + builder rombel × JP.
+// =============================================================================
+interface ScheduleApi {
+  classId: string;
+  jpStart: number;
+  jpEnd: number;
+  room: string | null;
+  class: { id: string; name: string; grade: number };
+  teachingAssignment: { subject: string; teacher: { user: { fullName: string } } };
+}
+
+// Dedupe defensif: bila slot (classId, jp) ganda antar-semester, yang pertama
+// menang (API orderBy academicYear desc). Hanya JP 1..JP_COUNT yang dipetakan.
+function buildPapanRows(list: ScheduleApi[]): PapanRow[] {
+  const byClass = new Map<string, { className: string; grade: number; cells: (PapanCell | null)[] }>();
+  for (const s of list) {
+    let entry = byClass.get(s.classId);
+    if (!entry) {
+      entry = { className: s.class.name, grade: s.class.grade, cells: Array(JP_COUNT).fill(null) };
+      byClass.set(s.classId, entry);
+    }
+    for (let jp = s.jpStart; jp <= s.jpEnd && jp <= JP_COUNT; jp++) {
+      const idx = jp - 1;
+      if (idx >= 0 && entry.cells[idx] === null) {
+        entry.cells[idx] = {
+          subject: s.teachingAssignment.subject,
+          teacher: s.teachingAssignment.teacher.user.fullName,
+          room: s.room,
+        };
+      }
+    }
+  }
+  return Array.from(byClass.entries())
+    .map(([classId, v]) => ({ classId, className: v.className, grade: v.grade, cells: v.cells }))
+    .sort((a, b) => a.grade - b.grade || a.className.localeCompare(b.className))
+    .map(({ classId, className, cells }) => ({ classId, className, cells }));
+}
 
 // =============================================================================
 // Stat Card (server component)
@@ -140,6 +182,10 @@ export default async function DashboardPage() {
   const isGuruOnly = !isStaf && roles.includes('GURU');
   let adminStats: AdminStats | undefined;
   let heatmap: HeatmapData | null = null;
+  let papanRows: PapanRow[] = [];
+  let kioskKpi: { studentPct: number | null; studentDelta: number | null; teacherHadir: number | null; kelasTerjadwalNow: number | null; totalKelas: number | null } | null = null;
+  let kioskChart: { classes: KioskChartClass[]; dates: string[] } | null = null;
+  const dow = scheduleDayOfWeek(); // 0=Minggu (libur) … 6=Sabtu
   if (isGuruOnly) {
     const token = session?.accessToken ?? '';
     const [assignments, rpp, today] = await Promise.all([
@@ -160,7 +206,7 @@ export default async function DashboardPage() {
   if (isStaf) {
     const token = session?.accessToken ?? '';
     const isReviewer = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'].some((r) => roles.includes(r));
-    const [students, classes, hm, ppdb, rpp] = await Promise.all([
+    const [students, classes, hm, ppdb, rpp, sched, teacherToday] = await Promise.all([
       apiFetch<{ total: number }>('/students?limit=1', token),
       apiFetch<{ total: number }>('/classes?limit=1', token),
       apiFetch<HeatmapData>('/attendance/heatmap?days=10', token),
@@ -168,8 +214,15 @@ export default async function DashboardPage() {
       isReviewer
         ? apiFetch<{ total: number }>('/rpp?status=submitted&limit=1', token)
         : Promise.resolve(null),
+      // Papan Pembelajaran: jadwal hari ini (skip bila Minggu/libur). limit 500 = pola halaman Jadwal.
+      dow !== 0
+        ? apiFetch<{ data: ScheduleApi[] }>(`/schedules?dayOfWeek=${dow}&limit=500`, token)
+        : Promise.resolve(null),
+      // Kehadiran guru hari ini (count untuk KPI; daftar lengkap via server action saat modal).
+      apiFetch<{ total: number }>('/teacher-attendance', token, { from: wibTodayISO(), to: wibTodayISO(), limit: '1' }),
     ]);
     heatmap = hm ?? null;
+    papanRows = sched?.data ? buildPapanRows(sched.data) : [];
     const ppdbTotal =
       typeof ppdb?.total === 'number'
         ? ppdb.total
@@ -186,60 +239,34 @@ export default async function DashboardPage() {
       ppdbLeads: ppdbTotal,
       rppMenunggu: rpp?.total ?? null,
     };
+
+    // KPI + chart untuk Beranda kiosk (data nyata).
+    const jpNow = currentJp(wibNow().minutes);
+    kioskKpi = {
+      studentPct: today,
+      studentDelta: adminStats.kehadiranDelta,
+      teacherHadir: teacherToday?.total ?? null,
+      kelasTerjadwalNow: jpNow > 0 ? papanRows.filter((r) => r.cells[jpNow - 1]).length : 0,
+      totalKelas: classes?.total ?? null,
+    };
+    kioskChart = heatmap
+      ? { dates: heatmap.dates, classes: heatmap.classes.slice(0, 5).map((c) => ({ className: c.className, pcts: c.cells.map((cell) => cell.pct) })) }
+      : null;
   }
 
+  // Staf (SA/KS/TU): Beranda kiosk "Papan Hari Ini" — data nyata + drill-down.
+  if (isStaf && kioskKpi) {
+    return <BerandaKiosk firstName={firstName} papanRows={papanRows} kpi={kioskKpi} chart={kioskChart} />;
+  }
+
+  // Guru / Siswa / Orang Tua: sapaan + kartu per-role.
   return (
     <div>
-      {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Halo, {firstName}! 👋
-        </h1>
+        <h1 className="text-2xl font-bold text-gray-900">Halo, {firstName}! 👋</h1>
         <p className="text-gray-500 mt-1">{greeting}</p>
       </div>
-
-      {/* Stats */}
       <RoleStats role={primaryRole} adminStats={adminStats} />
-
-      {/* Heatmap kehadiran (staf) */}
-      {heatmap && (
-        <div className="mt-6">
-          <AttendanceHeatmap data={heatmap} />
-        </div>
-      )}
-
-      {/* Status Sistem — hanya SA, dari /health NYATA (bukan indikator palsu) */}
-      {roles.includes('SUPER_ADMIN') && <SystemStatus token={session?.accessToken ?? ''} />}
     </div>
-  );
-}
-
-// =============================================================================
-// SystemStatus — indikator dari GET /health NYATA (SA saja); gagal = merah jujur
-// =============================================================================
-async function SystemStatus({ token }: { token: string }) {
-  const health = await apiFetch<{ status?: string; info?: Record<string, { status?: string }> }>(
-    '/health', token,
-  );
-  const apiUp = health?.status === 'ok';
-  const items = [
-    { label: 'API Backend', up: apiUp },
-    { label: 'Database', up: apiUp && (health?.info?.['database']?.status ?? 'up') !== 'down' },
-  ];
-  return (
-    <Card className="mt-6 p-6">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="font-semibold text-gray-700">📡 Status Sistem</h2>
-        <a href="/dashboard/health" className="text-xs text-smk-blue hover:underline">Detail →</a>
-      </div>
-      <div className="flex flex-wrap gap-3 text-sm">
-        {items.map((i) => (
-          <span key={i.label} className={`flex items-center gap-1.5 ${i.up ? 'text-green-600' : 'text-red-600'}`}>
-            <span className={`w-2 h-2 rounded-full inline-block ${i.up ? 'bg-green-500' : 'bg-red-500'}`} />
-            {i.label}{!i.up && ' (gangguan)'}
-          </span>
-        ))}
-      </div>
-    </Card>
   );
 }

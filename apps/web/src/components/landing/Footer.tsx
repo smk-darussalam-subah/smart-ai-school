@@ -65,6 +65,7 @@ export function Footer() {
               { label: 'Profil Sekolah', href: '#profil', ext: false },
               { label: 'Portal Siswa', href: '/login', ext: false },
               { label: 'Video Profil', href: '#video', ext: false },
+              { label: 'Kebijakan Privasi', href: '/privacy', ext: false },
             ].map((l) => (
               <a
                 key={l.label}
