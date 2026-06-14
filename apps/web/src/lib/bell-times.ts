@@ -98,3 +98,14 @@ export function jpStatusLabel(minutes: number): string {
   const range = `${fmtMin(seg.startMin)}–${fmtMin(seg.endMin)}`;
   return seg.isJp ? `${seg.label} berlangsung (${range})` : `${seg.label} (${range})`;
 }
+
+// Segmen istirahat (Istirahat 1 / Ishoma) untuk pengingat waktu istirahat.
+const BREAK_SEGMENTS = BELL_SEGMENTS.filter((s) => /Istirahat|Ishoma/i.test(s.label));
+/** Istirahat yang sedang berlangsung sekarang (atau null). */
+export function currentBreak(minutes: number): { label: string; startMin: number; endMin: number } | null {
+  return BREAK_SEGMENTS.find((s) => minutes >= s.startMin && minutes < s.endMin) ?? null;
+}
+/** Istirahat berikutnya hari ini (atau null bila sudah lewat semua). */
+export function nextBreak(minutes: number): { label: string; startMin: number; endMin: number } | null {
+  return BREAK_SEGMENTS.find((s) => s.startMin > minutes) ?? null;
+}
