@@ -51,13 +51,13 @@ interface TeacherAttItem {
   id: string;
   checkInAt: string;
   outsideGeofence: boolean;
-  teacher: { nip: string; user: { fullName: string } };
+  teacher: { user: { fullName: string; staff: { niy: string | null } | null } };
 }
 
 export interface TodayTeacherAttendance {
   date: string;
   hadir: number;
-  list: { name: string; nip: string; checkInAt: string; outsideGeofence: boolean }[];
+  list: { name: string; niy: string | null; checkInAt: string; outsideGeofence: boolean }[];
 }
 
 export async function fetchTodayTeacherAttendance(): Promise<TodayTeacherAttendance | null> {
@@ -72,7 +72,7 @@ export async function fetchTodayTeacherAttendance(): Promise<TodayTeacherAttenda
   if (!data) return null;
   const list = (data.data ?? []).map((t) => ({
     name: t.teacher.user.fullName,
-    nip: t.teacher.nip,
+    niy: t.teacher.user.staff?.niy ?? null,
     checkInAt: t.checkInAt,
     outsideGeofence: t.outsideGeofence,
   }));

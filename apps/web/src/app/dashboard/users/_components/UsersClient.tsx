@@ -28,6 +28,7 @@ import {
   fetchUserOverrides,
   fetchEffectivePermissions,
 } from '../actions';
+import AddUserDialog from './AddUserDialog';
 
 const ROLES = [
   'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA',
@@ -86,9 +87,10 @@ interface UserPermission {
 interface Props {
   initialGroups: UserGroup[];
   initialPermissions: PermissionItem[];
+  isSuperAdmin: boolean;
 }
 
-export default function UsersClient({ initialGroups, initialPermissions }: Props) {
+export default function UsersClient({ initialGroups, initialPermissions, isSuperAdmin }: Props) {
   const router = useRouter();
 
   const [groups] = useState<UserGroup[]>(initialGroups);
@@ -166,7 +168,10 @@ export default function UsersClient({ initialGroups, initialPermissions }: Props
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Manajemen Pengguna</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Manajemen Pengguna</h1>
+        <AddUserDialog isSuperAdmin={isSuperAdmin} />
+      </div>
 
       {actionMsg && (
         <div className={`text-sm px-4 py-2 rounded-lg ${actionMsg.startsWith('Gagal') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>

@@ -63,7 +63,7 @@ const MOCK_ASSIGNMENT = {
   academicYear: '2025/2026',
   createdAt: new Date(),
   updatedAt: new Date(),
-  teacher: { id: 'teacher-uuid-001', nip: '199001010001', user: { fullName: 'Agus Setiawan', email: 'guru@smk.sch.id' } },
+  teacher: { id: 'teacher-uuid-001', user: { fullName: 'Agus Setiawan', email: 'guru@smk.sch.id', staff: { niy: 'Y0004' } } },
   class: { id: 'class-uuid-001', name: 'X TKJ 1', majorCode: 'TKJ', grade: 10 },
 };
 

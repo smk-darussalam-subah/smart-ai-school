@@ -30,3 +30,40 @@ export async function fetchUserOverrides(userId: string) {
 export async function fetchEffectivePermissions(userId: string) {
   return apiAction<{ permissions: string[] }>(`/users/${userId}/effective-permissions`, 'GET');
 }
+
+// ── Provisioning (2J-4) ───────────────────────────────────────────────────────
+
+export interface TempCredential {
+  username: string;
+  tempPassword: string;
+}
+
+export interface ProvisionUserResult {
+  user: { id: string; email: string; fullName: string; role: string };
+  tempCredentials: TempCredential[];
+}
+
+export async function provisionUserAction(body: Record<string, unknown>) {
+  const result = await apiAction<ProvisionUserResult>('/provision/users', 'POST', body);
+  if (!result.error) revalidatePath('/dashboard/users');
+  return result;
+}
+
+export interface BulkRowResult {
+  index: number;
+  status: 'ok' | 'error';
+  error?: string;
+  user?: { id: string; email: string; fullName: string; role: string };
+  tempCredentials?: TempCredential[];
+}
+
+export interface BulkResult {
+  results: BulkRowResult[];
+  summary: { ok: number; fail: number; total: number };
+}
+
+export async function provisionUsersBulkAction(users: Array<Record<string, unknown>>) {
+  const result = await apiAction<BulkResult>('/provision/users/bulk', 'POST', { users });
+  if (!result.error) revalidatePath('/dashboard/users');
+  return result;
+}

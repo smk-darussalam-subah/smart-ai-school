@@ -10,8 +10,16 @@ import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '@smk/auth';
 import { ProvisioningService } from './provisioning.service';
-import { ProvisionUserSchema, ProvisionStudentSchema } from './dto/provision.dto';
-import type { ProvisionUserDto, ProvisionStudentDto } from './dto/provision.dto';
+import {
+  ProvisionUserSchema,
+  ProvisionStudentSchema,
+  ProvisionUsersBulkSchema,
+} from './dto/provision.dto';
+import type {
+  ProvisionUserDto,
+  ProvisionStudentDto,
+  ProvisionUsersBulkDto,
+} from './dto/provision.dto';
 
 @Controller('provision')
 @Roles('SUPER_ADMIN', 'TATA_USAHA')
@@ -29,6 +37,19 @@ export class ProvisioningController {
       keycloakId: actor.keycloakId,
       roles: actor.roles,
     });
+  }
+
+  @Post('users/bulk')
+  @RequirePermission('user.provision')
+  @Audit({ captureBody: false }) // payload besar + kredensial sementara → jangan disimpan utuh
+  async provisionUsersBulk(
+    @Body(ZodPipe(ProvisionUsersBulkSchema)) dto: ProvisionUsersBulkDto,
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.provisioning.bulkProvisionUsers(
+      dto.users as Array<Record<string, unknown>>,
+      { keycloakId: actor.keycloakId, roles: actor.roles },
+    );
   }
 
   @Post('students')
