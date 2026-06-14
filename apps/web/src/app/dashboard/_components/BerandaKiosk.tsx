@@ -214,9 +214,9 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart }: Beran
             selDate={selDate} onPickDate={setSelDate} agenda={agendaForSel} agendaTitle={agendaTitle}
             upcoming={upcoming} selIsToday={selIsToday} nowMins={now.mins} />
         </div>
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <TrenChart chart={chart} theme={theme} />
-          <AiPanel kpi={kpi} papanRows={papanRows} currentJpNow={now.jp} theme={theme} />
+          <div className="flex-1 min-h-0"><AiPanel kpi={kpi} papanRows={papanRows} currentJpNow={now.jp} theme={theme} /></div>
         </div>
       </div>
 
@@ -278,7 +278,7 @@ function PapanCard({ theme, papanRows, dayLabel, cal, navCal, onJump, calEvents,
       {tab === 'papan' ? (
         <PapanPembelajaran rows={papanRows} dayLabel={dayLabel} />
       ) : (
-        <div className="flex flex-col xl:flex-row gap-3 anim-slide-right items-start">
+        <div className="flex flex-col xl:flex-row gap-3 anim-slide-right items-stretch">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-soft-sm p-3.5 xl:basis-[300px] xl:shrink-0 w-full">
             <MonthCalendar year={cal.y} month0={cal.m} onNav={navCal} onJump={onJump} events={calEvents} todayStr={todayStr} accent={theme.ac} selectedDates={[selDate]} onDayClick={onPickDate} compact />
             <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[10px] text-gray-500">
@@ -358,7 +358,7 @@ function AiPanel({ kpi, papanRows, currentJpNow, theme }: { kpi: BerandaKioskPro
   if (kpi.studentDelta !== null && kpi.studentDelta < 0) insights.push({ icon: <TrendingDown className="w-3.5 h-3.5 text-red-500" />, text: `Kehadiran siswa turun ${Math.abs(kpi.studentDelta).toFixed(1)}% vs kemarin.` });
   if (insights.length === 0) insights.push({ icon: <Lightbulb className="w-3.5 h-3.5 text-emerald-600" />, text: 'Kondisi terpantau normal dari data hari ini.' });
   return (
-    <div className="rounded-2xl border shadow-soft-sm p-4 flex flex-col" style={{ borderColor: theme.ring, background: `linear-gradient(180deg, ${theme.soft}, #fff)` }}>
+    <div className="rounded-2xl border shadow-soft-sm p-4 flex flex-col h-full" style={{ borderColor: theme.ring, background: `linear-gradient(180deg, ${theme.soft}, #fff)` }}>
       <div className="flex items-center justify-between mb-2">
         <h2 className="font-semibold flex items-center gap-1.5 text-sm" style={{ color: theme.ink }}><Sparkles className="w-4 h-4" style={{ color: theme.ac }} /> Asisten KBM (AI)</h2>
         <span className="text-[9px] font-bold uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Sebagian Fase 2</span>
@@ -397,14 +397,14 @@ function AgendaPanel({ title, icon, theme, events, empty, showDate = false, auto
   }, [autoScroll, nowMins, events]);
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-soft-sm flex flex-col min-h-0">
-      <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-gray-100">
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-soft-sm flex flex-col min-h-0 h-full overflow-hidden">
+      <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-gray-100 shrink-0">
         <span style={{ color: theme.ac }}>{icon}</span><h2 className="font-semibold text-gray-800 text-[13px]">{title}</h2>
       </div>
       {events.length === 0 ? (
-        <p className="py-8 text-center text-xs text-gray-400">{empty}</p>
+        <div className="flex-1 grid place-items-center min-h-[140px]"><p className="text-xs text-gray-400">{empty}</p></div>
       ) : (
-        <div ref={scrollRef} className="px-3 overflow-y-auto max-h-[186px]">
+        <div ref={scrollRef} className="px-3 overflow-y-auto flex-1 min-h-[140px]">
           {events.map((e) => {
             const meta = EVENT_META[e.type];
             const d = new Date(`${e.date}T00:00:00`);
