@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DIIS — Beranda Kiosk v3 (mockup)</title>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  /* ===== 7 tema SOFT berganti harian (harmonis, pastel) ===== */
+  .t-sen{--ac:#0d9488;--ac2:#5eead4;--soft:#f0fdfa;--ring:#99f6e4}
+  .t-sel{--ac:#0284c7;--ac2:#7dd3fc;--soft:#f0f9ff;--ring:#bae6fd}
+  .t-rab{--ac:#7c3aed;--ac2:#c4b5fd;--soft:#f5f3ff;--ring:#ddd6fe}
+  .t-kam{--ac:#d97706;--ac2:#fcd34d;--soft:#fffbeb;--ring:#fde68a}
+  .t-jum{--ac:#059669;--ac2:#6ee7b7;--soft:#ecfdf5;--ring:#a7f3d0}
+  .t-sab{--ac:#e11d48;--ac2:#fda4af;--soft:#fff1f2;--ring:#fecdd3}
+  .t-min{--ac:#4f46e5;--ac2:#a5b4fc;--soft:#eef2ff;--ring:#c7d2fe}
+  *{box-sizing:border-box;margin:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;color:#0f291f;background:var(--soft);height:100vh;overflow:hidden;transition:background .4s}
+  .app{height:100vh;display:flex;flex-direction:column;padding:14px 18px;gap:12px}
+  .surface{background:#fff;border:1px solid #e7ece9;border-radius:18px;box-shadow:0 1px 2px rgba(6,40,28,.04),0 10px 26px -16px rgba(6,40,28,.18)}
+  /* top bar (auto-hide di ruang guru) */
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .chips{display:flex;gap:5px;flex-wrap:wrap}
+  .chip{font-size:11px;font-weight:700;padding:5px 10px;border-radius:999px;border:1px solid #e0e7e3;background:#fff;cursor:pointer;color:#5b6b63}
+  .chip.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+  .live{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;color:var(--ac);background:var(--soft);border:1px solid var(--ring);padding:5px 11px;border-radius:999px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ac);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ac) 50%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+  .btn{border:0;font:inherit;font-size:12px;font-weight:700;padding:7px 13px;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .btn-ac{background:var(--ac);color:#fff}.btn-soft{background:#fff;border:1px solid #e0e7e3;color:#0f291f}
+  /* HEADER 3 kolom */
+  .head{display:grid;grid-template-columns:1.1fr .9fr 1.1fr;gap:12px}
+  .greet h1{font-size:20px}.greet .sub{color:#5b6b63;font-size:12.5px;margin-top:1px}
+  .quote{margin-top:9px;border-left:3px solid var(--ac2);padding:6px 10px;background:var(--soft);border-radius:0 10px 10px 0}
+  .quote p{font-size:13px;font-style:italic;color:#2b3a33}.quote .src{font-size:11px;color:var(--ac);font-weight:600;margin-top:2px;font-style:normal}
+  .clock{display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .clock .t{font-size:62px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1;color:#0f291f}
+  .clock .d{font-size:12.5px;color:#5b6b63;margin-top:5px}.clock .d b{color:var(--ac)}
+  /* skor kondisi sekolah */
+  .score{display:flex;gap:14px;align-items:center;padding:13px 16px}
+  .score .big{font-size:42px;font-weight:800;line-height:1;color:var(--ac)}
+  .score .lbl{font-size:11.5px;color:#5b6b63}
+  .score .delta{font-size:12px;font-weight:700;color:#059669;display:inline-flex;align-items:center;gap:3px}
+  .bars{flex:1;display:flex;flex-direction:column;gap:5px;min-width:0}
+  .bar{display:flex;align-items:center;gap:7px;font-size:10.5px;color:#5b6b63}
+  .bar .track{flex:1;height:6px;border-radius:99px;background:#eef2f0;overflow:hidden}
+  .bar .fill{height:100%;border-radius:99px;background:var(--ac)}
+  .bar .pc{width:30px;text-align:right;font-weight:700;color:#0f291f}
+  /* KPI strip */
+  .kpi{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+  .kc{padding:11px 13px;position:relative}
+  .kc .ic{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;background:var(--soft);color:var(--ac)}
+  .kc .v{font-size:21px;font-weight:800;margin-top:7px}.kc .l{font-size:11px;color:#5b6b63;margin-top:1px}
+  .kc .cal{position:absolute;top:9px;right:9px;color:#9aa8a1;cursor:pointer}
+  .kc.f2{border-style:dashed;border-color:#fde68a;background:#fffdf6}
+  .f2t{position:absolute;top:9px;right:9px;font-size:8px;font-weight:800;text-transform:uppercase;background:#fffbeb;color:#b45309;padding:2px 5px;border-radius:4px}
+  /* MAIN bento (1fr, no scroll) */
+  .main{flex:1;display:grid;grid-template-columns:1.55fr 1fr;gap:12px;min-height:0}
+  .panel{display:flex;flex-direction:column;min-height:0}
+  .ph{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid #eef2f0}
+  .ph h2{font-size:13px;display:flex;align-items:center;gap:7px}
+  .pb{padding:12px 14px;overflow:auto;flex:1}
+  .rightcol{display:grid;grid-template-rows:1fr auto;gap:12px;min-height:0}
+  .seg{display:inline-flex;background:#f1f5f3;border-radius:9px;padding:3px;gap:2px}
+  .seg button{border:0;background:transparent;font:inherit;font-size:11px;font-weight:700;color:#5b6b63;padding:4px 9px;border-radius:7px;cursor:pointer}
+  .seg button.on{background:var(--ac);color:#fff}
+  .muted{color:#9aa8a1;font-size:12px}
+  /* kalender mini */
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;font-size:11px}
+  .cal-grid .dow{text-align:center;color:#9aa8a1;font-weight:700;font-size:9.5px;padding-bottom:2px}
+  .cal-grid .cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:7px;color:#3b4a43;position:relative}
+  .cal-grid .cell.today{background:var(--ac);color:#fff;font-weight:800}
+  .cal-grid .cell.ev::after{content:"";position:absolute;bottom:3px;width:5px;height:5px;border-radius:50%}
+  .cal-grid .cell.exam::after{background:#fca5a5}.cal-grid .cell.holi::after{background:#93c5fd}.cal-grid .cell.acara::after{background:#6ee7b7}
+  .leg{display:flex;gap:12px;margin-top:8px;font-size:10px;color:#5b6b63}
+  .leg i{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:4px}
+  .footer{position:fixed;bottom:6px;left:0;right:0;text-align:center;font-size:11px;color:#9aa8a1}
+  /* popup tanggal */
+  .pop{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:50}
+  .pop.show{display:flex}
+  .popbox{background:#fff;border-radius:16px;padding:16px;width:320px}
+</style>
+</head>
+<body class="t-sen">
+<div class="app">
+  <!-- TOP BAR (di Ruang Guru: auto-hide, muncul saat kursor ke atas) -->
+  <div class="topbar">
+    <div class="live"><span class="dot"></span> LIVE · diperbarui <span id="ago">5</span> dtk lalu</div>
+    <div class="chips">
+      <span class="muted" style="align-self:center;font-size:11px;margin-right:4px">Pratinjau tema harian:</span>
+      <span class="chip on" data-t="t-sen">Sen</span><span class="chip" data-t="t-sel">Sel</span><span class="chip" data-t="t-rab">Rab</span>
+      <span class="chip" data-t="t-kam">Kam</span><span class="chip" data-t="t-jum">Jum</span><span class="chip" data-t="t-sab">Sab</span><span class="chip" data-t="t-min">Min</span>
+    </div>
+    <div style="display:flex;gap:7px">
+      <button class="btn btn-soft" id="copy"><i data-lucide="link" style="width:14px"></i> Salin Link Ruang Guru</button>
+      <button class="btn btn-ac"><i data-lucide="monitor" style="width:14px"></i> Mode Ruang Guru</button>
+    </div>
+  </div>
+
+  <!-- HEADER -->
+  <div class="head">
+    <div class="surface greet" style="padding:13px 16px">
+      <h1>Selamat pagi, Kang Sholah 👋</h1>
+      <p class="sub">Semoga hari ini penuh keberkahan untuk Bapak/Ibu guru & karyawan.</p>
+      <div class="quote">
+        <p>"Sebaik-baik manusia adalah yang paling bermanfaat bagi manusia lain."</p>
+        <p class="src">— HR. Ahmad (hasan)</p>
+      </div>
+    </div>
+    <div class="surface clock">
+      <div class="t" id="clk">07:24</div>
+      <div class="d">Senin, 15 Juni 2026 · <b>JP-2 berjalan</b></div>
+    </div>
+    <div class="surface score">
+      <div>
+        <div class="big">91%</div>
+        <div class="lbl">Kondisi Sekolah</div>
+        <div class="delta"><i data-lucide="trending-up" style="width:13px"></i> +2.3% vs pekan lalu</div>
+      </div>
+      <div class="bars">
+        <div class="bar"><span style="width:62px">Siswa</span><span class="track"><span class="fill" style="width:94%"></span></span><span class="pc">94%</span></div>
+        <div class="bar"><span style="width:62px">Guru</span><span class="track"><span class="fill" style="width:96%"></span></span><span class="pc">96%</span></div>
+        <div class="bar"><span style="width:62px">KPI Guru</span><span class="track"><span class="fill" style="width:88%"></span></span><span class="pc">88%</span></div>
+        <div class="bar"><span style="width:62px">Pembelajaran</span><span class="track"><span class="fill" style="width:85%"></span></span><span class="pc">85%</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI -->
+  <div class="kpi">
+    <div class="surface kc"><i class="cal" data-lucide="calendar-search" style="width:15px" title="Pilih tanggal/rentang"></i><span class="ic"><i data-lucide="users"></i></span><div class="v">94.2%</div><div class="l">Kehadiran Siswa</div></div>
+    <div class="surface kc"><i class="cal" data-lucide="calendar-search" style="width:15px"></i><span class="ic"><i data-lucide="user-check"></i></span><div class="v">38</div><div class="l">Kehadiran Guru</div></div>
+    <div class="surface kc"><span class="ic"><i data-lucide="presentation"></i></span><div class="v">12/16</div><div class="l">Kelas Terjadwal · JP-2</div></div>
+    <div class="surface kc f2"><span class="f2t">Fase 2</span><span class="ic"><i data-lucide="alarm-clock-off"></i></span><div class="v" style="color:#d6b46a">—</div><div class="l">Jam Kosong</div></div>
+    <div class="surface kc f2"><span class="f2t">Fase 2</span><span class="ic"><i data-lucide="target"></i></span><div class="v" style="color:#d6b46a">—</div><div class="l">Ketercapaian Silabus</div></div>
+  </div>
+
+  <!-- MAIN bento -->
+  <div class="main">
+    <div class="surface panel">
+      <div class="ph"><h2><i data-lucide="layout-grid" style="width:16px;color:var(--ac)"></i> Papan Pembelajaran · Senin</h2><span class="muted" style="font-size:10.5px">rombel × JP · JP-2 disorot</span></div>
+      <div class="pb" style="display:flex;align-items:center;justify-content:center"><span class="muted">— matriks rombel × JP (seperti sekarang, JP berjalan disorot) —</span></div>
+    </div>
+
+    <div class="rightcol">
+      <!-- Tren ⇄ Kalender (tab, hemat ruang) -->
+      <div class="surface panel">
+        <div class="ph">
+          <div class="seg" id="tabseg"><button class="on" data-tab="tren">Tren</button><button data-tab="kal">Kalender</button></div>
+          <div class="seg" id="rangeseg"><button class="on">10H</button><button>1B</button><button>3B</button><button>6B</button><button>1Th</button></div>
+        </div>
+        <div class="pb" id="tabbody">
+          <div id="tab-tren" style="height:100%;display:flex;flex-direction:column;justify-content:center">
+            <span class="muted" style="text-align:center">— grafik garis tren kehadiran (granularitas auto) —</span>
+            <p class="muted" style="text-align:center;margin-top:6px;font-size:11px">10 hari → harian · 3-12 bln → rata-rata mingguan/bulanan</p>
+          </div>
+          <div id="tab-kal" style="display:none">
+            <div class="cal-grid">
+              <div class="dow">S</div><div class="dow">S</div><div class="dow">R</div><div class="dow">K</div><div class="dow">J</div><div class="dow">S</div><div class="dow">M</div>
+              <div class="cell">1</div><div class="cell">2</div><div class="cell">3</div><div class="cell">4</div><div class="cell">5</div><div class="cell">6</div><div class="cell">7</div>
+              <div class="cell">8</div><div class="cell">9</div><div class="cell">10</div><div class="cell">11</div><div class="cell">12</div><div class="cell">13</div><div class="cell">14</div>
+              <div class="cell today">15</div><div class="cell ev exam">16</div><div class="cell ev exam">17</div><div class="cell ev exam">18</div><div class="cell ev exam">19</div><div class="cell ev acara">20</div><div class="cell">21</div>
+              <div class="cell ev exam">22</div><div class="cell ev exam">23</div><div class="cell ev exam">24</div><div class="cell">25</div><div class="cell">26</div><div class="cell">27</div><div class="cell ev holi">28</div>
+              <div class="cell ev holi">29</div><div class="cell ev holi">30</div>
+            </div>
+            <div class="leg"><span><i style="background:#fca5a5"></i>Ujian/PAS</span><span><i style="background:#6ee7b7"></i>Acara</span><span><i style="background:#93c5fd"></i>Libur</span></div>
+          </div>
+        </div>
+      </div>
+      <!-- Asisten AI ringkas -->
+      <div class="surface" style="padding:11px 14px">
+        <h2 style="font-size:13px;display:flex;align-items:center;gap:7px;color:var(--ac)"><i data-lucide="sparkles" style="width:15px"></i> Asisten KBM (AI)</h2>
+        <p style="font-size:12px;color:#3b4a33;margin-top:5px">• JP-2: 2 rombel tanpa jadwal · • Kehadiran stabil pekan ini.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">Mockup v3 · 1 layar tanpa scroll (≈43") · tema soft berganti harian · klik chip hari untuk pratinjau tema · klik ikon 🔍kalender di KPI = popup rekap tanggal</div>
+
+<!-- popup date-picker (poin 7) -->
+<div class="pop" id="pop"><div class="popbox">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>Rekap Kehadiran — pilih tanggal</b><i data-lucide="x" style="cursor:pointer;width:18px" id="popx"></i></div>
+  <p class="muted" style="margin-bottom:8px">Pilih 1 tanggal atau beberapa (mis. 3,4,5) → rekap gabungan muncul. Bisa ganti bulan.</p>
+  <div class="cal-grid">
+    <div class="dow">S</div><div class="dow">S</div><div class="dow">R</div><div class="dow">K</div><div class="dow">J</div><div class="dow">S</div><div class="dow">M</div>
+    <div class="cell">1</div><div class="cell">2</div><div class="cell" style="background:var(--ring)">3</div><div class="cell" style="background:var(--ring)">4</div><div class="cell" style="background:var(--ring)">5</div><div class="cell">6</div><div class="cell">7</div>
+  </div>
+  <div style="margin-top:10px;background:var(--soft);border-radius:10px;padding:10px;font-size:12px">Rekap 3–5 Jun: Hadir 92.1% · Izin 3 · Sakit 5 · Alpha 4</div>
+</div></div>
+
+<script>
+  lucide.createIcons();
+  // tema: default hari ini
+  const map=['t-min','t-sen','t-sel','t-rab','t-kam','t-jum','t-sab'];
+  document.body.className=map[new Date().getDay()];
+  document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{document.body.className=c.dataset.t;document.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));c.classList.add('on');});
+  // tab tren/kalender
+  document.querySelectorAll('#tabseg button').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('#tabseg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+    document.getElementById('tab-tren').style.display=b.dataset.tab==='tren'?'flex':'none';
+    document.getElementById('tab-kal').style.display=b.dataset.tab==='kal'?'block':'none';
+    document.getElementById('rangeseg').style.visibility=b.dataset.tab==='tren'?'visible':'hidden';
+  });
+  document.querySelectorAll('#rangeseg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#rangeseg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');});
+  // popup date picker
+  document.querySelectorAll('.kc .cal').forEach(i=>i.onclick=()=>document.getElementById('pop').classList.add('show'));
+  document.getElementById('popx').onclick=()=>document.getElementById('pop').classList.remove('show');
+  document.getElementById('copy').onclick=()=>{document.getElementById('copy').innerHTML='✓ Link disalin';};
+  // jam + ago
+  function tick(){const d=new Date();document.getElementById('clk').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
+  tick();setInterval(tick,1000);let a=5;setInterval(()=>{a=(a+1)%60;document.getElementById('ago').textContent=a;},1000);
+</script>
+</body>
+</html>
