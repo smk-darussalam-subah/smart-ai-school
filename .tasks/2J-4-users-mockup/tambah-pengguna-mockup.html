@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DIIS — Mockup Tambah Pengguna (2J-4)</title>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  :root{
+    --emerald-700:#047857; --emerald-600:#059669; --emerald-500:#10b981;
+    --emerald-50:#ecfdf5; --emerald-100:#d1fae5; --emerald-200:#a7f3d0;
+    --amber-50:#fffbeb; --amber-200:#fde68a; --amber-700:#b45309;
+    --red-50:#fef2f2; --red-200:#fecaca; --red-600:#dc2626; --red-700:#b91c1c;
+    --ink:#0f291f; --muted:#5b6b63; --line:#e3ebe7; --surface:#ffffff;
+    --bg:#f4f8f6; --shadow:0 1px 2px rgba(6,40,28,.04),0 8px 24px -12px rgba(6,40,28,.18);
+    --radius:16px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:
+    radial-gradient(1200px 500px at 100% -10%, #e6f5ee 0%, transparent 55%),
+    radial-gradient(900px 400px at -10% 0%, #eef7f2 0%, transparent 50%), var(--bg);
+    color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 24px 80px}
+  .crumb{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin-bottom:14px}
+  .crumb b{color:var(--emerald-700);font-weight:600}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:-.02em;display:flex;align-items:center;gap:10px}
+  .sub{color:var(--muted);font-size:14px;margin-bottom:24px}
+  .badge-mock{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    background:var(--amber-50);color:var(--amber-700);border:1px solid var(--amber-200);
+    padding:3px 9px;border-radius:999px;vertical-align:middle}
+  .tabs{display:inline-flex;background:#fff;border:1px solid var(--line);padding:5px;border-radius:14px;gap:4px;box-shadow:var(--shadow);margin-bottom:22px;flex-wrap:wrap}
+  .tab{border:0;background:transparent;font:inherit;font-size:14px;font-weight:600;color:var(--muted);
+    padding:9px 18px;border-radius:10px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:.15s}
+  .tab.active{background:linear-gradient(180deg,var(--emerald-600),var(--emerald-700));color:#fff;box-shadow:0 6px 16px -8px var(--emerald-600)}
+  .tab:not(.active):hover{background:var(--emerald-50);color:var(--emerald-700)}
+  .panel{display:none;animation:fade .25s ease}
+  .panel.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .card-h{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  .card-h .ic{width:36px;height:36px;border-radius:10px;background:var(--emerald-50);color:var(--emerald-700);display:grid;place-items:center}
+  .card-h h2{font-size:16px;margin:0}
+  .card-h p{margin:1px 0 0;font-size:12.5px;color:var(--muted)}
+  .card-b{padding:22px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:720px){.grid2{grid-template-columns:1fr}}
+  label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
+  label .req{color:var(--red-600)}
+  label .opt{color:var(--muted);font-weight:500}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:5px;display:flex;gap:5px;align-items:flex-start}
+  input,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:14px;background:#fff;color:var(--ink);transition:.15s}
+  input:focus,select:focus{outline:none;border-color:var(--emerald-500);box-shadow:0 0 0 3px var(--emerald-100)}
+  .field{margin-bottom:16px}
+  .field.full{grid-column:1/-1}
+  .role-pills{display:flex;flex-wrap:wrap;gap:8px}
+  .pill{border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:7px;color:var(--muted);transition:.15s}
+  .pill[data-on="1"]{border-color:var(--emerald-600);background:var(--emerald-50);color:var(--emerald-700);box-shadow:inset 0 0 0 1px var(--emerald-200)}
+  .pill .dot{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.55}
+  .note{display:flex;gap:10px;background:var(--amber-50);border:1px solid var(--amber-200);color:#7c5008;border-radius:12px;padding:12px 14px;font-size:13px;margin-top:4px}
+  .note.info{background:var(--emerald-50);border-color:var(--emerald-200);color:#0a5c41}
+  .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:8px}
+  .btn{border:0;font:inherit;font-size:14px;font-weight:600;padding:11px 20px;border-radius:11px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:.15s}
+  .btn-primary{background:linear-gradient(180deg,var(--emerald-600),var(--emerald-700));color:#fff;box-shadow:0 8px 18px -10px var(--emerald-600)}
+  .btn-primary:hover{filter:brightness(1.05)}
+  .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+  .btn-ghost:hover{background:var(--emerald-50);border-color:var(--emerald-200)}
+  .result{margin-top:18px;border:1px dashed var(--emerald-200);background:var(--emerald-50);border-radius:14px;padding:18px}
+  .result h3{margin:0 0 12px;font-size:14px;color:var(--emerald-700);display:flex;align-items:center;gap:8px}
+  .cred{display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--emerald-200);border-radius:10px;padding:11px 14px;font-size:13.5px;margin-bottom:8px}
+  .cred code{font-family:ui-monospace,'Cascadia Code',monospace;background:var(--emerald-50);padding:2px 7px;border-radius:6px;color:var(--emerald-700);font-weight:600}
+  .drop{border:2px dashed var(--emerald-200);border-radius:16px;background:linear-gradient(180deg,#fff,var(--emerald-50));padding:34px;text-align:center;transition:.15s;cursor:pointer}
+  .drop:hover{border-color:var(--emerald-500);background:var(--emerald-50)}
+  .drop .big{width:54px;height:54px;border-radius:14px;background:#fff;border:1px solid var(--emerald-200);color:var(--emerald-600);display:grid;place-items:center;margin:0 auto 12px}
+  .drop b{font-size:15px}
+  .drop p{margin:4px 0 0;font-size:13px;color:var(--muted)}
+  .steps{display:flex;gap:10px;margin:18px 0 4px;flex-wrap:wrap}
+  .step{flex:1;min-width:160px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 15px;display:flex;gap:11px;align-items:flex-start}
+  .step .n{width:24px;height:24px;border-radius:50%;background:var(--emerald-600);color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center;flex:none}
+  .step h4{margin:0 0 2px;font-size:13px}
+  .step span{font-size:12px;color:var(--muted)}
+  .tablewrap{border:1px solid var(--line);border-radius:14px;overflow:auto;margin-top:6px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#f6faf8;text-align:left;padding:10px 12px;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tr:last-child td{border-bottom:0}
+  tr.err{background:var(--red-50)}
+  tr.ok .st{color:var(--emerald-700)}
+  tr.err .st{color:var(--red-700)}
+  .st{font-weight:600;font-size:12px;display:inline-flex;gap:5px;align-items:center}
+  .rolechip{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px}
+  .r-guru{background:#fff3e6;color:#b4540a}
+  .r-tu{background:var(--emerald-100);color:var(--emerald-700)}
+  .r-ks{background:#ede9fe;color:#6d28d9}
+  .r-ind{background:#e0f2fe;color:#0369a1}
+  .errmsg{font-size:11.5px;color:var(--red-700)}
+  .summary{display:flex;gap:10px;margin:16px 0;flex-wrap:wrap}
+  .chip{display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;font-size:13px;font-weight:600;border:1px solid}
+  .chip.ok{background:var(--emerald-50);border-color:var(--emerald-200);color:var(--emerald-700)}
+  .chip.bad{background:var(--red-50);border-color:var(--red-200);color:var(--red-700)}
+  .xls{border:1px solid #cfddd6;border-radius:10px;overflow:auto;box-shadow:var(--shadow)}
+  .xls table{font-size:12.5px}
+  .xls th.col{background:#1f7a5a;color:#fff;text-align:center;font-weight:700;letter-spacing:0;text-transform:none;border:1px solid #15604a}
+  .xls td.rownum{background:#eef3f1;text-align:center;color:var(--muted);font-weight:600;width:34px;border:1px solid #dbe6e1}
+  .xls td{border:1px solid #e3ebe7;white-space:nowrap}
+  .xls .hdr td{background:#dff0e8;font-weight:700;color:#0a5c41}
+  .legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:16px}
+  .legend .li{background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px 14px}
+  .legend .li b{font-size:12.5px;display:flex;gap:7px;align-items:center}
+  .legend .li p{margin:5px 0 0;font-size:12px;color:var(--muted)}
+  .footer{margin-top:28px;font-size:12px;color:var(--muted);text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="crumb"><i data-lucide="users"></i> Dashboard <i data-lucide="chevron-right" style="width:14px"></i> <b>Pengguna</b> <i data-lucide="chevron-right" style="width:14px"></i> Tambah</div>
+  <h1><i data-lucide="user-plus" style="color:var(--emerald-600)"></i> Tambah Pengguna <span class="badge-mock">Mockup 2J-4 · v2</span></h1>
+  <p class="sub">Buat akun guru, tata usaha, kepala sekolah, atau mitra industri — satuan atau impor massal. Siswa dibuat di menu <b>Data Siswa</b> (butuh data ortu + persetujuan). <b>Jabatan diatur terpisah</b> di menu Struktur Organisasi sesuai periode.</p>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="satuan"><i data-lucide="user-round-plus" style="width:17px"></i> Input Satuan</button>
+    <button class="tab" data-tab="massal"><i data-lucide="upload-cloud" style="width:17px"></i> Import Massal (CSV/Excel)</button>
+    <button class="tab" data-tab="template"><i data-lucide="file-spreadsheet" style="width:17px"></i> Template File</button>
+  </div>
+
+  <!-- ============ TAB 1: SATUAN ============ -->
+  <div class="panel active" id="satuan">
+    <div class="card">
+      <div class="card-h"><div class="ic"><i data-lucide="id-card"></i></div>
+        <div><h2>Data Pengguna Baru</h2><p>Field menyesuaikan otomatis dengan peran yang dipilih.</p></div>
+      </div>
+      <div class="card-b">
+        <div class="field">
+          <label>Peran (role) <span class="req">*</span></label>
+          <div class="role-pills" id="pills">
+            <div class="pill" data-role="GURU" data-on="1"><span class="dot"></span>Guru</div>
+            <div class="pill" data-role="TATA_USAHA"><span class="dot"></span>Tata Usaha</div>
+            <div class="pill" data-role="KEPALA_SEKOLAH"><span class="dot"></span>Kepala Sekolah</div>
+            <div class="pill" data-role="INDUSTRI"><span class="dot"></span>Industri</div>
+          </div>
+          <div class="note" id="authNote"><i data-lucide="shield-alert" style="width:18px;flex:none"></i>
+            <span id="authText"></span></div>
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label>Nama Lengkap <span class="req">*</span></label>
+            <input placeholder="cth: Ahmad Fauzi, S.Pd" value="Ahmad Fauzi, S.Pd"/>
+          </div>
+          <div class="field">
+            <label>Jenis Kelamin <span class="req">*</span></label>
+            <select><option>Laki-laki</option><option>Perempuan</option></select>
+          </div>
+          <div class="field">
+            <label>Email <span class="req">*</span></label>
+            <input value="ahmad.fauzi@smkdarussalamsubah.sch.id"/>
+            <div class="hint"><i data-lucide="info" style="width:13px;flex:none"></i> Wajib & unik. Dipakai sebagai username login.</div>
+          </div>
+          <div class="field">
+            <label>No. HP</label>
+            <input value="081234567890"/>
+            <div class="hint"><i data-lucide="info" style="width:13px;flex:none"></i> Dinormalkan ke format +62 otomatis.</div>
+          </div>
+          <div class="field" id="niyField">
+            <label>NIY <span class="opt">(Nomor Induk Yayasan)</span></label>
+            <input placeholder="cth: Y0012" value="Y0012"/>
+            <div class="hint"><i data-lucide="info" style="width:13px;flex:none"></i> Untuk pegawai (KS / Guru / TU). Tanpa aturan digit khusus, harus unik.</div>
+          </div>
+          <div class="field">
+            <label>Tanggal Lahir</label>
+            <input type="date" value="1985-01-01"/>
+          </div>
+          <div class="field" id="statusField">
+            <label>Status Kepegawaian <span class="req">*</span></label>
+            <select id="statusSel">
+              <option value="GTY">GTY — Guru Tetap Yayasan</option>
+              <option value="GTT">GTT — Guru Tidak Tetap</option>
+              <option value="PTY">PTY — Pegawai Tetap Yayasan</option>
+              <option value="PTT">PTT — Pegawai Tidak Tetap</option>
+            </select>
+          </div>
+          <div class="field full">
+            <label>Alamat</label>
+            <input placeholder="Jl. ... RT/RW, Desa, Kecamatan, Kabupaten" value="Jl. Merdeka No. 1, Subah, Batang"/>
+          </div>
+        </div>
+
+        <div class="note info"><i data-lucide="briefcase" style="width:18px;flex:none"></i>
+          <span><b>Jabatan</b> (Wakasek, Kaprog, BK, Bendahara, Dapodik, dll) tidak diisi di sini — diatur di menu <b>Struktur Organisasi</b> sesuai periode/tahun ajaran, dan otomatis memberi akses modul sesuai jabatan.</span></div>
+
+        <div class="note info"><i data-lucide="lock" style="width:18px;flex:none"></i>
+          <span>Password sementara <b>dibuat otomatis</b> & wajib diganti saat login pertama.</span></div>
+
+        <div class="actions" style="margin-top:18px">
+          <button class="btn btn-ghost"><i data-lucide="x" style="width:16px"></i> Batal</button>
+          <button class="btn btn-primary" onclick="document.getElementById('res').style.display='block';this.scrollIntoView({behavior:'smooth',block:'center'})"><i data-lucide="check" style="width:16px"></i> Buat Akun</button>
+        </div>
+
+        <div class="result" id="res" style="display:none">
+          <h3><i data-lucide="party-popper" style="width:17px"></i> Akun berhasil dibuat — serahkan kredensial ini ke ybs</h3>
+          <div class="cred"><span><b>Ahmad Fauzi</b> · Guru · NIY Y0012</span><span>Username: <code>ahmad.fauzi@smkdarussalamsubah.sch.id</code></span></div>
+          <div class="cred"><span>Password sementara <span style="color:var(--muted);font-size:12px">(wajib diganti)</span></span><span><code>k7Pm2xQr9TnB</code> <i data-lucide="copy" style="width:14px;vertical-align:-2px;cursor:pointer"></i></span></div>
+          <div class="hint" style="margin-top:6px"><i data-lucide="info" style="width:13px;flex:none"></i> Kredensial hanya tampil sekali. Salin & kirim via kanal aman.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TAB 2: MASSAL ============ -->
+  <div class="panel" id="massal">
+    <div class="card">
+      <div class="card-h"><div class="ic"><i data-lucide="upload-cloud"></i></div>
+        <div><h2>Import Massal dari CSV / Excel</h2><p>Untuk input puluhan guru/TU sekaligus.</p></div>
+      </div>
+      <div class="card-b">
+        <div class="steps">
+          <div class="step"><div class="n">1</div><div><h4>Unduh template</h4><span>Isi sesuai kolom yang tersedia.</span></div></div>
+          <div class="step"><div class="n">2</div><div><h4>Unggah file</h4><span>CSV atau .xlsx, maks 500 baris.</span></div></div>
+          <div class="step"><div class="n">3</div><div><h4>Periksa & konfirmasi</h4><span>Baris error ditandai sebelum import.</span></div></div>
+        </div>
+
+        <div style="margin:16px 0 14px"><a class="btn btn-ghost" href="template-import-pengguna.csv" download><i data-lucide="download" style="width:16px"></i> Unduh Template (.csv)</a></div>
+
+        <div class="drop" onclick="document.getElementById('prev').style.display='block';this.querySelector('p').textContent='terpilih: daftar-guru-2026.csv (5 baris)'">
+          <div class="big"><i data-lucide="file-up"></i></div>
+          <b>Tarik file ke sini, atau klik untuk pilih</b>
+          <p>Mendukung .csv dan .xlsx</p>
+        </div>
+
+        <div id="prev" style="display:none;margin-top:22px">
+          <div class="summary">
+            <div class="chip ok"><i data-lucide="check-circle-2" style="width:16px"></i> 4 baris siap diimpor</div>
+            <div class="chip bad"><i data-lucide="alert-circle" style="width:16px"></i> 1 baris perlu perbaikan</div>
+          </div>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>#</th><th>Status</th><th>Peran</th><th>Nama</th><th>JK</th><th>Lahir</th><th>Email</th><th>NIY</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr class="ok"><td>1</td><td><span class="st"><i data-lucide="check" style="width:14px"></i> Valid</span></td><td><span class="rolechip r-guru">GURU</span></td><td>Ahmad Fauzi</td><td>L</td><td>1985-01-01</td><td>ahmad.fauzi@…sch.id</td><td>Y0012</td><td>GTY</td></tr>
+                <tr class="ok"><td>2</td><td><span class="st"><i data-lucide="check" style="width:14px"></i> Valid</span></td><td><span class="rolechip r-guru">GURU</span></td><td>Siti Nurhaliza</td><td>P</td><td>1990-03-15</td><td>siti.n@…sch.id</td><td>Y0024</td><td>GTT</td></tr>
+                <tr class="ok"><td>3</td><td><span class="st"><i data-lucide="check" style="width:14px"></i> Valid</span></td><td><span class="rolechip r-tu">TATA_USAHA</span></td><td>Budi Santoso</td><td>L</td><td>1988-07-20</td><td>budi.s@…sch.id</td><td>Y0101</td><td>PTY</td></tr>
+                <tr class="ok"><td>4</td><td><span class="st"><i data-lucide="check" style="width:14px"></i> Valid</span></td><td><span class="rolechip r-ind">INDUSTRI</span></td><td>PT Maju Jaya - Rina</td><td>P</td><td>—</td><td>rina@majujaya.co.id</td><td>—</td><td>—</td></tr>
+                <tr class="err"><td>5</td><td><span class="st"><i data-lucide="x" style="width:14px"></i> Error</span></td><td><span class="rolechip r-guru">GURU</span></td><td>Dewi Lestari</td><td>P</td><td>1992-09-09</td><td class="errmsg">email kosong</td><td class="errmsg">Y0024 duplikat</td><td>GTT</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="note" style="margin-top:14px"><i data-lucide="info" style="width:18px;flex:none"></i><span>Baris error <b>dilewati</b>, baris valid tetap diproses. Anda bisa perbaiki file lalu unggah ulang baris yang gagal.</span></div>
+          <div class="actions" style="margin-top:16px">
+            <button class="btn btn-ghost"><i data-lucide="rotate-ccw" style="width:16px"></i> Ganti File</button>
+            <button class="btn btn-primary"><i data-lucide="users" style="width:16px"></i> Impor 4 Akun Valid</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TAB 3: TEMPLATE ============ -->
+  <div class="panel" id="template">
+    <div class="card">
+      <div class="card-h"><div class="ic"><i data-lucide="file-spreadsheet"></i></div>
+        <div><h2>Struktur Template File</h2><p>Tampilan kolom seperti di Excel — baris 1 = header (jangan diubah).</p></div>
+      </div>
+      <div class="card-b">
+        <div class="xls">
+          <table>
+            <tr><th class="col" style="width:34px"></th><th class="col">A</th><th class="col">B</th><th class="col">C</th><th class="col">D</th><th class="col">E</th><th class="col">F</th><th class="col">G</th><th class="col">H</th></tr>
+            <tr class="hdr"><td class="rownum">1</td><td>role</td><td>fullName</td><td>gender</td><td>birthDate</td><td>niy</td><td>employmentStatus</td><td>phone</td><td>address</td></tr>
+            <tr><td class="rownum">2</td><td>GURU</td><td>Ahmad Fauzi</td><td>L</td><td>1985-01-01</td><td>Y0012</td><td>GTY</td><td>081234567890</td><td>Jl. Merdeka No. 1, Subah</td></tr>
+            <tr><td class="rownum">3</td><td>GURU</td><td>Siti Nurhaliza</td><td>P</td><td>1990-03-15</td><td>Y0024</td><td>GTT</td><td>081298765432</td><td>Dukuh Krajan RT 02/01</td></tr>
+            <tr><td class="rownum">4</td><td>TATA_USAHA</td><td>Budi Santoso</td><td>L</td><td>1988-07-20</td><td>Y0101</td><td>PTY</td><td>081211112222</td><td>Jl. Raya Subah No. 9</td></tr>
+            <tr><td class="rownum">5</td><td>KEPALA_SEKOLAH</td><td>Drs Hasanuddin</td><td>L</td><td>1972-11-05</td><td>Y0001</td><td>GTY</td><td>081233334444</td><td>Perum Griya Asri C2</td></tr>
+            <tr><td class="rownum">6</td><td>INDUSTRI</td><td>PT Maju Jaya - Rina</td><td>P</td><td></td><td></td><td></td><td>081255556666</td><td>Kawasan Industri Batang</td></tr>
+          </table>
+        </div>
+
+        <div class="legend">
+          <div class="li"><b><i data-lucide="tag" style="width:15px;color:var(--emerald-600)"></i> role</b><p>Wajib. <code style="font-size:11px">GURU</code>, <code style="font-size:11px">TATA_USAHA</code>, <code style="font-size:11px">KEPALA_SEKOLAH</code>, <code style="font-size:11px">INDUSTRI</code>. <b>SISWA tidak di sini.</b></p></div>
+          <div class="li"><b><i data-lucide="user" style="width:15px;color:var(--emerald-600)"></i> fullName</b><p>Wajib. Nama lengkap + gelar bila ada.</p></div>
+          <div class="li"><b><i data-lucide="venus-and-mars" style="width:15px;color:var(--emerald-600)"></i> gender</b><p>Wajib. <code style="font-size:11px">L</code> = laki-laki, <code style="font-size:11px">P</code> = perempuan.</p></div>
+          <div class="li"><b><i data-lucide="cake" style="width:15px;color:var(--emerald-600)"></i> birthDate</b><p>Opsional. Format <code style="font-size:11px">YYYY-MM-DD</code>. Untuk ucapan ultah app mobile.</p></div>
+          <div class="li"><b><i data-lucide="badge" style="width:15px;color:var(--emerald-600)"></i> niy</b><p>Nomor Induk Yayasan — pegawai (KS/Guru/TU), unik. Kosongkan untuk Industri.</p></div>
+          <div class="li"><b><i data-lucide="briefcase" style="width:15px;color:var(--emerald-600)"></i> employmentStatus</b><p>Pegawai: <code style="font-size:11px">GTY/GTT</code> (guru), <code style="font-size:11px">PTY/PTT</code> (tendik). Kosong utk Industri.</p></div>
+          <div class="li"><b><i data-lucide="phone" style="width:15px;color:var(--muted)"></i> phone</b><p>Opsional. 08xx atau +62, dinormalkan otomatis.</p></div>
+          <div class="li"><b><i data-lucide="map-pin" style="width:15px;color:var(--muted)"></i> address</b><p>Opsional. Alamat domisili. Pakai tanda kutip bila ada koma.</p></div>
+        </div>
+
+        <div class="note" style="margin-top:18px"><i data-lucide="shield-alert" style="width:18px;flex:none"></i><span>Baris <b>TATA_USAHA</b> & <b>KEPALA_SEKOLAH</b> hanya bisa diproses oleh akun <b>Super Admin</b>. Operator Tata Usaha hanya bisa membuat GURU / SISWA / ORANG TUA / INDUSTRI.</span></div>
+
+        <div class="actions" style="margin-top:18px">
+          <a class="btn btn-primary" href="template-import-pengguna.csv" download><i data-lucide="download" style="width:16px"></i> Unduh Template Ini (.csv)</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">Mockup statis untuk persetujuan · DIIS Smart AI School · sprint 2J-4 v2 · palet Emerald-hangat</div>
+</div>
+
+<script>
+  lucide.createIcons();
+  document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById(t.dataset.tab).classList.add('active');
+  });
+  const authMap={
+    GURU:'Dapat dibuat oleh Super Admin & Tata Usaha.',
+    TATA_USAHA:'Hanya dapat dibuat oleh Super Admin.',
+    KEPALA_SEKOLAH:'Hanya dapat dibuat oleh Super Admin.',
+    INDUSTRI:'Dapat dibuat oleh Super Admin & Tata Usaha.'
+  };
+  function refresh(role){
+    const isStaff = role!=='INDUSTRI';                 // NIY & status hanya untuk pegawai
+    document.getElementById('niyField').style.display = isStaff?'block':'none';
+    document.getElementById('statusField').style.display = isStaff?'block':'none';
+    // guru/KS default ke GTY/GTT, TU ke PTY/PTT
+    const sel=document.getElementById('statusSel');
+    sel.selectedIndex = (role==='TATA_USAHA')?2:0;
+    document.getElementById('authText').textContent = authMap[role];
+    const note=document.getElementById('authNote');
+    const saOnly = role==='TATA_USAHA'||role==='KEPALA_SEKOLAH';
+    note.style.background = saOnly?'var(--amber-50)':'var(--emerald-50)';
+    note.style.borderColor = saOnly?'var(--amber-200)':'var(--emerald-200)';
+    note.style.color = saOnly?'#7c5008':'#0a5c41';
+  }
+  document.querySelectorAll('#pills .pill').forEach(p=>p.onclick=()=>{
+    document.querySelectorAll('#pills .pill').forEach(x=>x.removeAttribute('data-on'));
+    p.setAttribute('data-on','1');
+    document.getElementById('res').style.display='none';
+    refresh(p.dataset.role);
+  });
+  refresh('GURU');
+</script>
+</body>
+</html>

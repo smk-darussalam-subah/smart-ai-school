@@ -302,7 +302,7 @@ function KpiModal({ kind, onClose, papanRows, currentJpNow }: {
                 <ul className="divide-y divide-gray-50">
                   {guru.list.map((t, i) => (
                     <li key={i} className="flex items-center justify-between py-2">
-                      <div><p className="font-medium text-gray-800">{t.name}</p><p className="text-xs text-gray-400">NIP {t.nip || '—'}</p></div>
+                      <div><p className="font-medium text-gray-800">{t.name}</p><p className="text-xs text-gray-400">NIY {t.niy || '—'}</p></div>
                       <span className={clsx('text-xs', t.outsideGeofence ? 'text-amber-600' : 'text-emerald-600')}>
                         {new Date(t.checkInAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}{t.outsideGeofence ? ' · luar area' : ''}
                       </span>
