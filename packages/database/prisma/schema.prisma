@@ -797,6 +797,8 @@ model Major {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  staffPositions StaffPosition[]
+
   @@map("majors")
   @@schema("school")
 }
@@ -812,6 +814,7 @@ model AcademicYear {
 
   semesters       Semester[]
   calendarEvents  AcademicCalendar[]
+  staffPositions  StaffPosition[]
 
   @@map("academic_years")
   @@schema("school")
@@ -882,7 +885,8 @@ model Staff {
   updatedAt        DateTime         @updatedAt @map("updated_at")
   deletedAt        DateTime?        @map("deleted_at")
 
-  user User @relation(fields: [userId], references: [id])
+  user      User            @relation(fields: [userId], references: [id])
+  positions StaffPosition[]
 
   @@index([deletedAt])
   @@map("staff")
@@ -895,6 +899,91 @@ enum EmploymentStatus {
   PTY // Pegawai Tetap Yayasan (tendik)
   PTT // Pegawai Tidak Tetap (tendik)
 
+  @@schema("school")
+}
+
+// =============================================================================
+// SCHOOL SCHEMA — Struktur Organisasi / Jabatan (2J-5)
+//
+// Jabatan struktural/fungsional/tendik TERPISAH dari role RBAC (7 role tetap).
+// Position = katalog jabatan (hierarki via parentId). StaffPosition = penugasan
+// pegawai ke jabatan, TERIKAT tahun ajaran (rotasi). PositionPermission = izin
+// yang otomatis diberikan (UserPermissionOverride) selama penugasan aktif.
+// Wali kelas TETAP di academic.Class.teacherId (tidak diduplikasi di sini).
+// =============================================================================
+enum PositionCategory {
+  STRUKTURAL // KS, Wakasek, Kepala TU
+  FUNGSIONAL // Koor BKK/Hubin, Guru BK, Kaprog, dll
+  TENDIK     // Bendahara, Kepegawaian, Dapodik, dll
+
+  @@schema("school")
+}
+
+enum PositionScopeType {
+  NONE  // jabatan tunggal sekolah
+  MAJOR // terikat jurusan (mis. Kaprog per TKRO/TBSM/TJKT/AKL)
+
+  @@schema("school")
+}
+
+model Position {
+  id        String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String            @unique @db.VarChar(50) // WAKA_KURIKULUM, KAPROG, KOOR_BKK, ...
+  name      String            @db.VarChar(100)
+  category  PositionCategory
+  parentId  String?           @map("parent_id") @db.Uuid // hierarki (BKK di bawah Humas)
+  scopeType PositionScopeType @default(NONE) @map("scope_type")
+  isActive  Boolean           @default(true) @map("is_active")
+  sortOrder Int               @default(0) @map("sort_order")
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+
+  parent      Position?            @relation("PositionHierarchy", fields: [parentId], references: [id])
+  children    Position[]           @relation("PositionHierarchy")
+  permissions PositionPermission[]
+  assignments StaffPosition[]
+
+  @@index([parentId])
+  @@map("positions")
+  @@schema("school")
+}
+
+// Izin yang menempel pada jabatan. permissionId → auth.permissions (lintas-schema,
+// tanpa FK — pola sama seperti audit field). Diterapkan sebagai UserPermissionOverride
+// saat penugasan aktif, dicabut saat penugasan berakhir.
+model PositionPermission {
+  positionId   String @map("position_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  position Position @relation(fields: [positionId], references: [id], onDelete: Cascade)
+
+  @@id([positionId, permissionId])
+  @@map("position_permissions")
+  @@schema("school")
+}
+
+model StaffPosition {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  staffId        String    @map("staff_id") @db.Uuid
+  positionId     String    @map("position_id") @db.Uuid
+  academicYearId String    @map("academic_year_id") @db.Uuid
+  majorId        String?   @map("major_id") @db.Uuid // wajib bila position.scopeType=MAJOR
+  isActive       Boolean   @default(true) @map("is_active")
+  startDate      DateTime? @map("start_date") @db.Date
+  endDate        DateTime? @map("end_date") @db.Date
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  staff        Staff        @relation(fields: [staffId], references: [id])
+  position     Position     @relation(fields: [positionId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  major        Major?       @relation(fields: [majorId], references: [id])
+
+  // Satu pegawai tak boleh dobel di jabatan+jurusan+tahun yang sama.
+  @@unique([staffId, positionId, academicYearId, majorId])
+  @@index([positionId, academicYearId])
+  @@index([academicYearId])
+  @@map("staff_positions")
   @@schema("school")
 }
 

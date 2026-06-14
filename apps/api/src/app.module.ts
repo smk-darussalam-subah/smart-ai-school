@@ -39,6 +39,7 @@ import { ClassActivitiesModule } from './class-activities/class-activities.modul
 import { KeycloakAdminModule } from './keycloak-admin/keycloak-admin.module';
 import { ProvisioningModule } from './provisioning/provisioning.module';
 import { SubjectModule } from './subject/subject.module';
+import { PositionsModule } from './positions/positions.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { SubjectModule } from './subject/subject.module';
     KeycloakAdminModule,
     ProvisioningModule,
     SubjectModule,
+    PositionsModule,
   ],
   providers: [
     UserStatusService,
