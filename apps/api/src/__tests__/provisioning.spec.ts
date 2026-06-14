@@ -540,12 +540,12 @@ describe('ProvisioningService', () => {
     });
 
     it('gender hilang → invalid', () => {
-      const { gender, ...rest } = guru;
+      const { gender: _gender, ...rest } = guru;
       expect(ProvisionUserSchema.safeParse(rest).success).toBe(false);
     });
 
     it('pegawai tanpa niy/status → invalid', () => {
-      const { niy, employmentStatus, ...rest } = guru;
+      const { niy: _niy, employmentStatus: _es, ...rest } = guru;
       expect(ProvisionUserSchema.safeParse(rest).success).toBe(false);
     });
 
