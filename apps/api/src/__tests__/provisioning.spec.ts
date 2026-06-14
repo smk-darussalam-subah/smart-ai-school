@@ -544,9 +544,14 @@ describe('ProvisioningService', () => {
       expect(ProvisionUserSchema.safeParse(rest).success).toBe(false);
     });
 
-    it('pegawai tanpa niy/status → invalid', () => {
-      const { niy: _niy, employmentStatus: _es, ...rest } = guru;
+    it('pegawai tanpa status → invalid', () => {
+      const { employmentStatus: _es, ...rest } = guru;
       expect(ProvisionUserSchema.safeParse(rest).success).toBe(false);
+    });
+
+    it('pegawai tanpa NIY (tapi ada status) → valid (NIY opsional)', () => {
+      const { niy: _niy, ...rest } = guru;
+      expect(ProvisionUserSchema.safeParse(rest).success).toBe(true);
     });
 
     it('industri dgn niy → invalid (non-pegawai tak boleh)', () => {
