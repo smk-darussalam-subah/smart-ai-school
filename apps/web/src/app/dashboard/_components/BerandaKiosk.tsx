@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import PapanPembelajaran, { type PapanRow } from './PapanPembelajaran';
 import MonthCalendar from './MonthCalendar';
-import { wibNow, currentJp, jpStatusLabel, wibDateLabel } from '@/lib/bell-times';
+import { wibNow, currentJp, jpStatusLabel, wibDateLabel, currentBreak, nextBreak, fmtMin } from '@/lib/bell-times';
 import {
   fetchTodayStudentAttendance, type TodayStudentAttendance,
   fetchTodayTeacherAttendance, type TodayTeacherAttendance,
@@ -66,12 +66,12 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart }: Beran
   const quote = quoteForDay(dayIdx);
 
   // Jam + status JP (WIB).
-  const [now, setNow] = useState<{ time: string; date: string; jpStatus: string; jp: number }>(() => ({ time: '--:--', date: wibDateLabel(), jpStatus: '—', jp: 0 }));
+  const [now, setNow] = useState<{ time: string; date: string; jpStatus: string; jp: number; mins: number }>(() => ({ time: '--:--', date: wibDateLabel(), jpStatus: '—', jp: 0, mins: 0 }));
   useEffect(() => {
     const tick = () => {
       const d = new Date(); const m = wibNow(d).minutes;
       const wib = new Date(d.getTime() + 7 * 60 * 60 * 1000);
-      setNow({ time: `${String(wib.getUTCHours()).padStart(2, '0')}:${String(wib.getUTCMinutes()).padStart(2, '0')}`, date: wibDateLabel(d), jpStatus: jpStatusLabel(m), jp: currentJp(m) });
+      setNow({ time: `${String(wib.getUTCHours()).padStart(2, '0')}:${String(wib.getUTCMinutes()).padStart(2, '0')}`, date: wibDateLabel(d), jpStatus: jpStatusLabel(m), jp: currentJp(m), mins: m });
     };
     tick(); const id = setInterval(tick, 1000); return () => clearInterval(id);
   }, []);
@@ -115,6 +115,18 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart }: Beran
   const upcoming = allEvents.filter((e) => e.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4);
   const health = dummyHealth(kpi.studentPct);
 
+  // Sapaan: personal saat login biasa; KOLEKTIF & menyemangati di Mode Ruang Guru.
+  const hour = Math.floor(now.mins / 60);
+  const timeOfDay = now.mins === 0 ? 'datang' : hour < 11 ? 'pagi' : hour < 15 ? 'siang' : hour < 18 ? 'sore' : 'malam';
+  const KIOSK_GREETS = ['Guru & Karyawan Hebat', 'Pahlawan Pendidikan', 'Insan Pembelajar', 'Pendidik Inspiratif'];
+  const greetTitle = kiosk ? `Selamat ${timeOfDay}, ${KIOSK_GREETS[dayIdx % KIOSK_GREETS.length]}! 👋` : `Halo, ${firstName} 👋`;
+  const brk = currentBreak(now.mins);
+  const nb = nextBreak(now.mins);
+  const breakLine = brk
+    ? `🍵 Waktu ${brk.label} (${fmtMin(brk.startMin)}–${fmtMin(brk.endMin)}) — selamat beristirahat.`
+    : nb ? `Istirahat berikutnya: ${nb.label} pukul ${fmtMin(nb.startMin)}.` : 'Semangat mengajar hari ini! 💪';
+  const greetSub = kiosk ? breakLine : 'Semoga hari penuh keberkahan untuk Bapak/Ibu guru & karyawan.';
+
   return (
     <div
       ref={rootRef}
@@ -145,8 +157,8 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart }: Beran
       {/* HEADER: sapaan+hadist | jam | skor kondisi sekolah */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-soft-sm p-4">
-          <h1 className="text-lg font-bold text-gray-900">Halo, {firstName} 👋</h1>
-          <p className="text-xs text-gray-500 mt-0.5">Semoga hari penuh keberkahan untuk Bapak/Ibu guru & karyawan.</p>
+          <h1 className="text-lg font-bold text-gray-900">{greetTitle}</h1>
+          <p className="text-xs text-gray-500 mt-0.5">{greetSub}</p>
           <div className="mt-2.5 rounded-r-xl pl-3 pr-2 py-2" style={{ borderLeft: `3px solid ${theme.ac2}`, background: theme.soft }}>
             <p className="text-[13px] italic text-gray-700 flex gap-1.5"><Quote className="h-3.5 w-3.5 shrink-0 mt-0.5" style={{ color: theme.ac }} /> {quote.text}</p>
             <p className="text-[11px] font-semibold mt-1" style={{ color: theme.ac }}>— {quote.src}</p>
@@ -186,27 +198,17 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart }: Beran
         <KpiCard theme={theme} icon={<Target className="w-5 h-5" />} label="Ketercapaian Silabus" value="—" fase2 onClick={() => setModal('silabus')} />
       </div>
 
-      {/* Papan + Tren/AI */}
+      {/* Papan (toggle Papan ⇄ Agenda&Kalender) + Tren/AI */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <div className="lg:col-span-2"><PapanPembelajaran rows={papanRows} dayLabel={now.date.split(',')[0] ?? ''} /></div>
+        <div className="lg:col-span-2">
+          <PapanCard theme={theme} papanRows={papanRows} dayLabel={now.date.split(',')[0] ?? ''}
+            cal={cal} navCal={navCal} calEvents={calEvents} todayStr={todayStr}
+            agendaToday={agendaToday} upcoming={upcoming} />
+        </div>
         <div className="space-y-3">
           <TrenChart chart={chart} theme={theme} />
           <AiPanel kpi={kpi} papanRows={papanRows} currentJpNow={now.jp} theme={theme} />
         </div>
-      </div>
-
-      {/* Kalender | Agenda Hari Ini | Upcoming Event */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-soft-sm p-4">
-          <MonthCalendar year={cal.y} month0={cal.m} onNav={navCal} events={calEvents} todayStr={todayStr} accent={theme.ac} compact />
-          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[10px] text-gray-500">
-            {(['exam', 'event', 'holiday'] as const).map((t) => (
-              <span key={t} className="flex items-center gap-1"><i className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: EVENT_META[t].dot }} />{EVENT_META[t].label}</span>
-            ))}
-          </div>
-        </div>
-        <AgendaPanel title="Agenda Hari Ini" icon={<CalendarDays className="w-4 h-4" />} theme={theme} events={agendaToday} empty="Tidak ada agenda hari ini." mode="today" />
-        <AgendaPanel title="Upcoming Event" icon={<CalendarClock className="w-4 h-4" />} theme={theme} events={upcoming} empty="Belum ada agenda mendatang." mode="upcoming" />
       </div>
 
       {modal && <KpiModal kind={modal} onClose={() => setModal(null)} papanRows={papanRows} currentJpNow={now.jp} />}
@@ -242,6 +244,49 @@ function KpiCard({ theme, icon, label, value, sub, delta, fase2, onClick, onCale
       <p className={clsx('text-2xl font-extrabold mt-3 leading-none', fase2 ? 'text-amber-400' : 'text-gray-900')}>{value}</p>
       <p className="text-xs text-gray-500 mt-1">{label}{sub ? ` · ${sub}` : ''}</p>
     </button>
+  );
+}
+
+// ── Papan card: toggle Papan ⇄ Agenda&Kalender (agenda slide-in, papan meramping) ─
+function PapanCard({ theme, papanRows, dayLabel, cal, navCal, calEvents, todayStr, agendaToday, upcoming }: {
+  theme: KioskTheme; papanRows: PapanRow[]; dayLabel: string;
+  cal: { y: number; m: number }; navCal: (d: number) => void; calEvents: KaldikEvent[]; todayStr: string;
+  agendaToday: KaldikEvent[]; upcoming: KaldikEvent[];
+}) {
+  const [tab, setTab] = useState<'papan' | 'agenda'>('papan');
+  const tabBtn = (key: 'papan' | 'agenda', label: string, icon: React.ReactNode) => (
+    <button onClick={() => setTab(key)}
+      className={clsx('flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition', tab === key ? 'text-white' : 'text-gray-500 hover:text-gray-700')}
+      style={tab === key ? { background: theme.ac } : undefined}>{icon}{label}</button>
+  );
+  return (
+    <div className="h-full flex flex-col gap-2">
+      <div className="inline-flex self-start bg-white border border-gray-100 rounded-xl p-0.5 shadow-soft-sm">
+        {tabBtn('papan', 'Papan Pembelajaran', <Presentation className="w-4 h-4" />)}
+        {tabBtn('agenda', 'Agenda & Kalender', <CalendarDays className="w-4 h-4" />)}
+      </div>
+      {tab === 'papan' ? (
+        <PapanPembelajaran rows={papanRows} dayLabel={dayLabel} />
+      ) : (
+        <div className="flex flex-col xl:flex-row gap-3 anim-slide-right">
+          <div className="xl:basis-[36%] xl:shrink-0 min-w-0"><PapanPembelajaran rows={papanRows} dayLabel={dayLabel} /></div>
+          <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-soft-sm p-4">
+              <MonthCalendar year={cal.y} month0={cal.m} onNav={navCal} events={calEvents} todayStr={todayStr} accent={theme.ac} compact />
+              <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[10px] text-gray-500">
+                {(['exam', 'event', 'holiday'] as const).map((t) => (
+                  <span key={t} className="flex items-center gap-1"><i className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: EVENT_META[t].dot }} />{EVENT_META[t].label}</span>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-3">
+              <AgendaPanel title="Agenda Hari Ini" icon={<CalendarDays className="w-4 h-4" />} theme={theme} events={agendaToday} empty="Tidak ada agenda hari ini." mode="today" />
+              <AgendaPanel title="Upcoming Event" icon={<CalendarClock className="w-4 h-4" />} theme={theme} events={upcoming} empty="Belum ada agenda mendatang." mode="upcoming" />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
