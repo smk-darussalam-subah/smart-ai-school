@@ -32,7 +32,7 @@ const RPP_SELECT = {
   reviewerId: true, reviewerName: true, reviewNote: true,
   submittedAt: true, reviewedAt: true,
   academicYear: true, semester: true, createdAt: true, updatedAt: true,
-  teacher: { select: { id: true, nip: true, user: { select: { fullName: true } } } },
+  teacher: { select: { id: true, user: { select: { fullName: true, staff: { select: { niy: true } } } } } },
   class: { select: { id: true, name: true } },
 } as const;
 

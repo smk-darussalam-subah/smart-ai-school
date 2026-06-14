@@ -63,6 +63,7 @@ export default async function UsersPage({ searchParams }: Props) {
     <UsersClient
       initialGroups={groups}
       initialPermissions={permissions}
+      isSuperAdmin={roles.includes('SUPER_ADMIN')}
     />
   );
 }

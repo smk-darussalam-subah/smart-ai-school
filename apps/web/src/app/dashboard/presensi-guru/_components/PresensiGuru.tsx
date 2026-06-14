@@ -23,7 +23,7 @@ export interface AttendanceRecord {
   distanceInM?: number | null;
   outsideGeofence: boolean;
   notes?: string | null;
-  teacher: { id: string; nip?: string | null; user: { fullName: string } };
+  teacher: { id: string; user: { fullName: string; staff?: { niy: string | null } | null } };
 }
 
 export interface TodayStatus {
@@ -178,7 +178,7 @@ export default function PresensiGuru({ isGuru, isStaf, today, records, total }: 
                     {isStaf && (
                       <TableCell>
                         {r.teacher.user.fullName}
-                        {r.teacher.nip ? <span className="text-muted-foreground"> · {r.teacher.nip}</span> : null}
+                        {r.teacher.user.staff?.niy ? <span className="text-muted-foreground"> · {r.teacher.user.staff.niy}</span> : null}
                       </TableCell>
                     )}
                     <TableCell>{fmtTime(r.checkInAt)}</TableCell>

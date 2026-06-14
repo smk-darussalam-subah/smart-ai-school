@@ -34,7 +34,7 @@ const ATTENDANCE_SELECT = {
   distanceInM: true, outsideGeofence: true,
   photoUrl: true, notes: true, createdAt: true,
   teacher: {
-    select: { id: true, nip: true, user: { select: { fullName: true } } },
+    select: { id: true, user: { select: { fullName: true, staff: { select: { niy: true } } } } },
   },
 } as const;
 

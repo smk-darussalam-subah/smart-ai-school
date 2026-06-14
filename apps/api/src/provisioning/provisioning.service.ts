@@ -19,7 +19,12 @@ import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { UserStatusService } from '../auth/user-status.service';
 import { normalizeOrThrow } from '../common/helpers/phone';
-import { ProvisionUserDto, ProvisionStudentDto } from './dto/provision.dto';
+import {
+  ProvisionUserDto,
+  ProvisionStudentDto,
+  ProvisionUserSchema,
+  STAFF_ROLES,
+} from './dto/provision.dto';
 
 const DOMAIN = 'smkdarussalamsubah.sch.id';
 
@@ -50,6 +55,14 @@ export interface TempCredential {
 export interface ProvisionResult {
   user: { id: string; keycloakId: string; email: string; fullName: string; role: string };
   tempCredentials: TempCredential[];
+}
+
+export interface BulkRowResult {
+  index: number;
+  status: 'ok' | 'error';
+  error?: string;
+  user?: ProvisionResult['user'];
+  tempCredentials?: TempCredential[];
 }
 
 export interface Actor {
@@ -107,17 +120,17 @@ export class ProvisioningService {
     const lastName = nameParts.slice(1).join(' ') || firstName;
 
     // Pre-flight idempotency
-    const [kcExisting, dbEmail, dbNip] = await Promise.all([
+    const [kcExisting, dbEmail, dbNiy] = await Promise.all([
       this.kc.findByUsername(username),
       this.prisma.user.findFirst({ where: { email }, select: { id: true } }),
-      dto.payload?.nip
-        ? this.prisma.teacher.findUnique({ where: { nip: dto.payload.nip }, select: { id: true } })
+      dto.niy
+        ? this.prisma.staff.findUnique({ where: { niy: dto.niy }, select: { id: true } })
         : Promise.resolve(null),
     ]);
 
     if (kcExisting) throw new ConflictException(`Username "${username}" sudah digunakan di Keycloak`);
     if (dbEmail) throw new ConflictException(`Email "${email}" sudah digunakan`);
-    if (dbNip) throw new ConflictException(`NIP "${dto.payload!.nip}" sudah digunakan`);
+    if (dbNiy) throw new ConflictException(`NIY "${dto.niy}" sudah digunakan`);
 
     let kcId: string | undefined;
     try {
@@ -138,6 +151,9 @@ export class ProvisioningService {
             keycloakId: kcId!,
             email,
             fullName: dto.fullName,
+            gender: dto.gender,
+            birthDate: dto.birthDate ? new Date(dto.birthDate) : null,
+            address: dto.address ?? null,
             phone: dto.phone ? normalizeOrThrow(dto.phone) : null,
             role: dto.role,
             isActive: true,
@@ -145,10 +161,21 @@ export class ProvisioningService {
           select: { id: true, keycloakId: true, email: true, fullName: true, role: true },
         });
 
-        if (dto.role === 'GURU' && dto.payload?.nip) {
-          await tx.teacher.create({
-            data: { userId: user.id, nip: dto.payload.nip },
+        // Pegawai (KS/Guru/TU) → baris identitas kepegawaian (NIY + status).
+        if ((STAFF_ROLES as readonly string[]).includes(dto.role)) {
+          await tx.staff.create({
+            data: {
+              userId: user.id,
+              niy: dto.niy ?? null,
+              employmentStatus: dto.employmentStatus!,
+              joinedAt: new Date(),
+            },
           });
+        }
+
+        // Guru → baris mengajar (tanpa NIP; identitas kepegawaian ada di staff).
+        if (dto.role === 'GURU') {
+          await tx.teacher.create({ data: { userId: user.id } });
         }
 
         return { user };
@@ -171,6 +198,43 @@ export class ProvisioningService {
       }
       throw err;
     }
+  }
+
+  // ── bulkProvisionUsers (import massal, skip baris invalid) ───────────────────
+
+  async bulkProvisionUsers(
+    rows: Array<Record<string, unknown>>,
+    actor: Actor,
+  ): Promise<{
+    results: Array<BulkRowResult>;
+    summary: { ok: number; fail: number; total: number };
+  }> {
+    const results: BulkRowResult[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const parsed = ProvisionUserSchema.safeParse(rows[i]);
+      if (!parsed.success) {
+        results.push({
+          index: i,
+          status: 'error',
+          error: parsed.error.issues.map((x) => x.message).join('; '),
+        });
+        continue;
+      }
+      try {
+        const r = await this.provisionUser(parsed.data, actor);
+        results.push({ index: i, status: 'ok', user: r.user, tempCredentials: r.tempCredentials });
+      } catch (err: unknown) {
+        results.push({
+          index: i,
+          status: 'error',
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const ok = results.filter((r) => r.status === 'ok').length;
+    return { results, summary: { ok, fail: results.length - ok, total: results.length } };
   }
 
   // ── provisionStudent ────────────────────────────────────────────────────────
