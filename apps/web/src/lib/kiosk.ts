@@ -42,10 +42,12 @@ export function quoteForDay(dayIdx: number): Quote {
 export interface CalCell { date: Date; inMonth: boolean }
 export function monthGrid(year: number, month0: number): CalCell[] {
   const first = new Date(year, month0, 1);
+  const daysInMonth = new Date(year, month0 + 1, 0).getDate();
+  const weeks = Math.ceil((first.getDay() + daysInMonth) / 7); // 4–6 minggu sesuai bulan (tanpa baris kosong)
   const start = new Date(first);
   start.setDate(1 - first.getDay()); // mundur ke Minggu
   const cells: CalCell[] = [];
-  for (let i = 0; i < 42; i++) {
+  for (let i = 0; i < weeks * 7; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     cells.push({ date: d, inMonth: d.getMonth() === month0 });
