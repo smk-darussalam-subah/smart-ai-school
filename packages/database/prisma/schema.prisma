@@ -31,6 +31,9 @@ model User {
   email       String    @unique @db.VarChar(255)
   fullName    String    @map("full_name") @db.VarChar(255)
   phone       String?   @db.VarChar(20)
+  gender      Gender?                              // L / P — atribut personal (dipakai juga utk siswa)
+  birthDate   DateTime? @map("birth_date") @db.Date
+  address     String?   @db.Text
   role        UserRole
   isActive    Boolean   @default(true) @map("is_active")
   avatarUrl   String?   @map("avatar_url")
@@ -42,6 +45,7 @@ model User {
   // Relations
   student     Student?
   teacher     Teacher?
+  staff       Staff?                               // identitas kepegawaian (KS/Guru/TU) — 2J-4
   parent      Student[]  @relation("ParentStudent")
   leads       PpdbLead[] @relation("AssignedLeads")
 
@@ -60,6 +64,13 @@ enum UserRole {
   SISWA
   ORANG_TUA
   INDUSTRI      // Mitra industri: PKL/Prakerin, BKK, rekrutmen
+
+  @@schema("auth")
+}
+
+enum Gender {
+  L  // Laki-laki
+  P  // Perempuan
 
   @@schema("auth")
 }
@@ -185,7 +196,7 @@ enum StudentStatus {
 model Teacher {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId      String    @unique @map("user_id") @db.Uuid
-  nip         String?   @unique @db.VarChar(20) // Nomor Induk Pegawai
+  // Identitas kepegawaian (NIY) pindah ke school.Staff (2J-4). Teacher = hal mengajar saja.
   isWaliKelas Boolean   @default(false) @map("is_wali_kelas")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
@@ -848,6 +859,41 @@ enum CalendarType {
   exam
   event
   break
+
+  @@schema("school")
+}
+
+// =============================================================================
+// SCHOOL SCHEMA — Staff / Kepegawaian (2J-4)
+//
+// Identitas kepegawaian untuk SEMUA pegawai internal (KS / Guru / TU), 1:1 dgn
+// auth.users. NIY = Nomor Induk Yayasan (yayasan swasta; tanpa aturan digit khusus).
+// Guru = punya baris Staff (identitas) + Teacher (mengajar). TU/KS = Staff saja.
+// Jabatan struktural/fungsional (Wakasek/Kaprog/BK/Bendahara/dll) = sprint 2J-5
+// (school.position + staff_position), BUKAN di sini.
+// =============================================================================
+model Staff {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String           @unique @map("user_id") @db.Uuid
+  niy              String?          @unique @db.VarChar(50) // Nomor Induk Yayasan — unik bila terisi
+  employmentStatus EmploymentStatus @map("employment_status")
+  joinedAt         DateTime?        @map("joined_at") @db.Date
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  deletedAt        DateTime?        @map("deleted_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([deletedAt])
+  @@map("staff")
+  @@schema("school")
+}
+
+enum EmploymentStatus {
+  GTY // Guru Tetap Yayasan
+  GTT // Guru Tidak Tetap
+  PTY // Pegawai Tetap Yayasan (tendik)
+  PTT // Pegawai Tidak Tetap (tendik)
 
   @@schema("school")
 }

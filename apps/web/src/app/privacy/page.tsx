@@ -53,7 +53,7 @@ export default function PrivacyPage() {
           <ul className="list-disc pl-5 space-y-1 mt-2">
             <li><strong>Siswa:</strong> nama lengkap, NIS, kelas, nilai akademik, data kehadiran, data keuangan SPP.</li>
             <li><strong>Orang Tua/Wali:</strong> nama, nomor telepon (WhatsApp), email, relasi ke siswa.</li>
-            <li><strong>Guru:</strong> nama, NIP, data kehadiran, penugasan mengajar, RPP yang diunggah.</li>
+            <li><strong>Guru:</strong> nama, NIY, data kehadiran, penugasan mengajar, RPP yang diunggah.</li>
             <li><strong>Calon Siswa (PPDB):</strong> nama, nomor telepon, asal sekolah, minat jurusan.</li>
             <li><strong>Log Teknis:</strong> alamat IP, browser, waktu akses, aktivitas sistem (untuk audit keamanan).</li>
           </ul>
