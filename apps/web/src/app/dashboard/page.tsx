@@ -7,7 +7,8 @@ import { Card } from '@/components/ui/card';
 import Link from 'next/link';
 import type { HeatmapData } from './_components/AttendanceHeatmap';
 import { type PapanRow, type PapanCell } from './_components/PapanPembelajaran';
-import BerandaKiosk, { type KioskChartClass } from './_components/BerandaKiosk';
+import BerandaKiosk, { type KioskChartClass, type KioskHealth } from './_components/BerandaKiosk';
+import type { KaldikEvent } from '@/lib/kiosk';
 import { scheduleDayOfWeek, JP_COUNT, currentJp, wibNow, wibTodayISO } from '@/lib/bell-times';
 
 export const metadata: Metadata = { title: 'Dashboard' };
@@ -22,6 +23,15 @@ interface ScheduleApi {
   room: string | null;
   class: { id: string; name: string; grade: number };
   teachingAssignment: { subject: string; teacher: { user: { fullName: string } } };
+}
+
+// Agenda (AcademicCalendar) + Pengumuman untuk Beranda kiosk.
+interface CalendarApi {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  type: 'holiday' | 'exam' | 'event' | 'break';
 }
 
 // Dedupe defensif: bila slot (classId, jp) ganda antar-semester, yang pertama
@@ -185,6 +195,8 @@ export default async function DashboardPage() {
   let papanRows: PapanRow[] = [];
   let kioskKpi: { studentPct: number | null; studentDelta: number | null; teacherHadir: number | null; kelasTerjadwalNow: number | null; totalKelas: number | null } | null = null;
   let kioskChart: { classes: KioskChartClass[]; dates: string[] } | null = null;
+  let kioskEvents: KaldikEvent[] = [];
+  let kioskHealth: KioskHealth = { score: null, delta: null, breakdown: [] };
   const dow = scheduleDayOfWeek(); // 0=Minggu (libur) … 6=Sabtu
   if (isGuruOnly) {
     const token = session?.accessToken ?? '';
@@ -206,7 +218,7 @@ export default async function DashboardPage() {
   if (isStaf) {
     const token = session?.accessToken ?? '';
     const isReviewer = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'].some((r) => roles.includes(r));
-    const [students, classes, hm, ppdb, rpp, sched, teacherToday] = await Promise.all([
+    const [students, classes, hm, ppdb, rpp, sched, teacherToday, calendarRes, guruRes] = await Promise.all([
       apiFetch<{ total: number }>('/students?limit=1', token),
       apiFetch<{ total: number }>('/classes?limit=1', token),
       apiFetch<HeatmapData>('/attendance/heatmap?days=10', token),
@@ -220,6 +232,10 @@ export default async function DashboardPage() {
         : Promise.resolve(null),
       // Kehadiran guru hari ini (count untuk KPI; daftar lengkap via server action saat modal).
       apiFetch<{ total: number }>('/teacher-attendance', token, { from: wibTodayISO(), to: wibTodayISO(), limit: '1' }),
+      // Agenda sekolah (kalender akademik) — Beranda kiosk (data nyata).
+      apiFetch<CalendarApi[]>('/school/calendar', token),
+      // Total guru → komponen Skor Kondisi Sekolah (kehadiran guru %).
+      apiFetch<{ total: number }>('/users?role=GURU&limit=1', token),
     ]);
     heatmap = hm ?? null;
     papanRows = sched?.data ? buildPapanRows(sched.data) : [];
@@ -252,11 +268,33 @@ export default async function DashboardPage() {
     kioskChart = heatmap
       ? { dates: heatmap.dates, classes: heatmap.classes.slice(0, 5).map((c) => ({ className: c.className, pcts: c.cells.map((cell) => cell.pct) })) }
       : null;
+
+    // Kalender akademik (semua event tahun aktif) → tanda kalender + agenda + upcoming.
+    kioskEvents = (Array.isArray(calendarRes) ? calendarRes : []).map((e) => ({
+      id: e.id, name: e.name, date: e.startDate.slice(0, 10), endDate: e.endDate.slice(0, 10), type: e.type,
+    }));
+
+    // Skor Kondisi Sekolah (DATA NYATA utk yg tersedia; KPI guru & pembelajaran = Fase 2).
+    const guruTotal = guruRes?.total ?? null;
+    const guruPct = guruTotal && guruTotal > 0 && teacherToday?.total != null
+      ? Math.min(100, Math.round((teacherToday.total / guruTotal) * 100)) : null;
+    const breakdown = [
+      { label: 'Kehadiran Siswa', pct: today !== null ? Math.round(today) : null },
+      { label: 'Kehadiran Guru', pct: guruPct },
+      { label: 'KPI Guru', pct: null, fase2: true },
+      { label: 'Ketercapaian Pembelajaran', pct: null, fase2: true },
+    ];
+    const avail = breakdown.filter((b) => !b.fase2 && b.pct !== null).map((b) => b.pct as number);
+    kioskHealth = {
+      score: avail.length ? Math.round(avail.reduce((a, b) => a + b, 0) / avail.length) : null,
+      delta: adminStats.kehadiranDelta,
+      breakdown,
+    };
   }
 
   // Staf (SA/KS/TU): Beranda kiosk "Papan Hari Ini" — data nyata + drill-down.
   if (isStaf && kioskKpi) {
-    return <BerandaKiosk firstName={firstName} papanRows={papanRows} kpi={kioskKpi} chart={kioskChart} />;
+    return <BerandaKiosk firstName={firstName} papanRows={papanRows} kpi={kioskKpi} chart={kioskChart} agenda={kioskEvents} health={kioskHealth} canManageKiosk={roles.includes('SUPER_ADMIN') || roles.includes('KEPALA_SEKOLAH')} />;
   }
 
   // Guru / Siswa / Orang Tua: sapaan + kartu per-role.

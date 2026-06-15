@@ -777,6 +777,7 @@ model SchoolProfile {
   headmasterNip  String?  @map("headmaster_nip") @db.VarChar(30)
   logoUrl        String?  @map("logo_url")
   accreditation  String?  @db.VarChar(5)          // A, B, C
+  kioskToken     String?  @unique @map("kiosk_token") @db.VarChar(64) // token link publik Ruang Guru (rotatable)
   // 2F-2: geofence presensi guru (null = geofence nonaktif)
   latitude        Decimal? @db.Decimal(9, 6)
   longitude       Decimal? @db.Decimal(9, 6)

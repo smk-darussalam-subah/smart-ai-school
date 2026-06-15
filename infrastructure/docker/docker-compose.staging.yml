@@ -171,12 +171,14 @@ services:
       METABASE_DASHBOARD_ID: ${METABASE_DASHBOARD_ID}
     ports:
       - "3100:3000"
-    networks: !reset
-      # !reset wajib: Docker Compose MERGE networks dari base docker-compose.yml
-      # (smk-network) dengan override ini. Tanpa !reset, smk-staging-web masuk
-      # smk-network → service name alias "web" terdaftar → DNS round-robin dengan
-      # smk-web (prod) → nginx proxy_pass ke smk-staging-web → loop redirect login.
-      # !reset mengabaikan nilai base dan hanya pakai daftar berikut:
+    networks: !override
+      # !override (BUKAN !reset): REPLACE daftar networks base sepenuhnya.
+      # CATATAN BUG (2026-06-13): sebelumnya pakai !reset → !reset MENG-NOL-KAN
+      # field (bukan replace) → web tidak join smk-staging-net, malah jatuh ke
+      # network default 'smk-staging_default' → web TIDAK bisa resolve
+      # smk-staging-api → SSR fetch gagal (lambat, data kosong, /auth/me 404).
+      # !override memaksa web HANYA di smk-staging-net (sama dgn api) → web↔api OK,
+      # sekaligus mencegah alias "web" di smk-network (cegah loop redirect login).
       - smk-staging-net
 
 networks:
