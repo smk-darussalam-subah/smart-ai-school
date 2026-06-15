@@ -70,7 +70,7 @@ export default function MonthCalendar({
         </div>
       )}
 
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-1 pb-0.5">
         {DOW_SHORT.map((d) => <div key={d} className="text-center text-[10px] font-semibold text-gray-400 pb-0.5">{d}</div>)}
         {cells.map((c, i) => {
           const ds = ymd(c.date);
@@ -81,7 +81,7 @@ export default function MonthCalendar({
           return (
             <button key={i} type="button" disabled={!clickable || !c.inMonth}
               onClick={() => clickable && c.inMonth && onDayClick?.(ds)}
-              className={clsx('relative aspect-square rounded-lg flex items-center justify-center transition', compact ? 'text-[11px]' : 'text-[12px]',
+              className={clsx('relative rounded-lg flex items-center justify-center transition', compact ? 'h-8 text-[11px]' : 'aspect-square text-[12px]',
                 !c.inMonth && 'text-gray-300',
                 c.inMonth && !isToday && !isSel && 'text-gray-700',
                 clickable && c.inMonth && !isToday && !isSel && 'hover:bg-gray-100 cursor-pointer')}
