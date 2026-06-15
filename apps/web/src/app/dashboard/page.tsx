@@ -294,7 +294,7 @@ export default async function DashboardPage() {
 
   // Staf (SA/KS/TU): Beranda kiosk "Papan Hari Ini" — data nyata + drill-down.
   if (isStaf && kioskKpi) {
-    return <BerandaKiosk firstName={firstName} papanRows={papanRows} kpi={kioskKpi} chart={kioskChart} agenda={kioskEvents} health={kioskHealth} />;
+    return <BerandaKiosk firstName={firstName} papanRows={papanRows} kpi={kioskKpi} chart={kioskChart} agenda={kioskEvents} health={kioskHealth} canManageKiosk={roles.includes('SUPER_ADMIN') || roles.includes('KEPALA_SEKOLAH')} />;
   }
 
   // Guru / Siswa / Orang Tua: sapaan + kartu per-role.
