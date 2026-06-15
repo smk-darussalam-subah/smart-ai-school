@@ -39,7 +39,7 @@ export default async function StrukturOrganisasiPage() {
   const [catalog, assignmentsRes, majorsRes, groupedRes] = await Promise.all([
     apiFetch<Position[]>('/positions', token),
     apiFetch<{ academicYear: { id: string; code: string } | null; assignments: Assignment[] }>('/positions/assignments', token),
-    apiFetch<Major[]>('/school-config/majors?activeOnly=true', token),
+    apiFetch<Major[]>('/school/majors?activeOnly=true', token),
     apiFetch<{ groups: { role: string; users: StaffCandidate[] }[] }>('/users/grouped?limit=200', token),
   ]);
 

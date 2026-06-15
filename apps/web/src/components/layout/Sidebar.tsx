@@ -104,6 +104,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Manajemen Pengguna', href: '/dashboard/users', icon: UserCog, roles: ['SUPER_ADMIN', 'TATA_USAHA'], permissions: ['user.read'] },
       { label: 'Struktur Organisasi', href: '/dashboard/struktur-organisasi', icon: Briefcase, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
+      { label: 'Kalender & Agenda', href: '/dashboard/kalender', icon: CalendarDays, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
       { label: 'Kesehatan Sistem', href: '/dashboard/health', icon: Activity, roles: ['SUPER_ADMIN'], permissions: ['audit.read'] },
       { label: 'Audit Log', href: '/dashboard/audit', icon: ShieldCheck, roles: ['SUPER_ADMIN'], permissions: ['audit.read'] },
     ],
