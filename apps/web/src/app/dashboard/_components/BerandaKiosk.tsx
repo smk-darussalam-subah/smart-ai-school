@@ -23,20 +23,28 @@ import { wibNow, currentJp, jpStatusLabel, wibDateLabel, currentBreak, nextBreak
 import {
   fetchTodayStudentAttendance, type TodayStudentAttendance,
   fetchTodayTeacherAttendance, type TodayTeacherAttendance,
+  fetchStudentRecap, fetchTeacherRecap, fetchTrenOverall,
+  type StudentRecap, type TeacherRecap, type TrenSeries,
 } from '../actions';
 import {
-  themeForDay, quoteForDay, dummyHealth, dummyTrend, dummyRecap,
+  themeForDay, quoteForDay,
   EVENT_META, MONTH_NAMES, TREND_RANGES, ymd,
   type KioskTheme, type TrendRangeKey, type KaldikEvent,
 } from '@/lib/kiosk';
 
 export interface KioskChartClass { className: string; pcts: (number | null)[] }
+export interface KioskHealth {
+  score: number | null;
+  delta: number | null;
+  breakdown: { label: string; pct: number | null; fase2?: boolean }[];
+}
 export interface BerandaKioskProps {
   firstName: string;
   papanRows: PapanRow[];
   kpi: { studentPct: number | null; studentDelta: number | null; teacherHadir: number | null; kelasTerjadwalNow: number | null; totalKelas: number | null };
   chart: { classes: KioskChartClass[]; dates: string[] } | null;
   agenda: KaldikEvent[]; // kalender akademik nyata (school.AcademicCalendar)
+  health: KioskHealth;   // skor kondisi sekolah (data nyata; Fase 2 ditandai)
 }
 
 const STATUS_LABEL: Record<string, string> = { hadir: 'Hadir', izin: 'Izin', sakit: 'Sakit', alpha: 'Alpha' };
@@ -48,7 +56,7 @@ const DEFAULT_THEME = themeForDay(5); // emerald (brand) untuk SSR; disetel ke h
 const REFRESH_MS = 60_000;
 function fmtPct(v: number | null): string { return v === null || v === undefined ? '—' : `${v.toFixed(1)}%`; }
 
-export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda }: BerandaKioskProps) {
+export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda, health }: BerandaKioskProps) {
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -115,8 +123,6 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda 
   const selIsToday = selDate === todayStr;
   const selD = new Date(`${selDate}T00:00:00`);
   const agendaTitle = selIsToday ? 'Agenda Hari Ini' : `Agenda ${selD.getDate()} ${(MONTH_NAMES[selD.getMonth()] ?? '').slice(0, 3)}`;
-  const health = dummyHealth(kpi.studentPct);
-
   // Sapaan: personal saat login biasa; KOLEKTIF & menyemangati di Mode Ruang Guru.
   const hour = Math.floor(now.mins / 60);
   const timeOfDay = now.mins === 0 ? 'datang' : hour < 11 ? 'pagi' : hour < 15 ? 'siang' : hour < 18 ? 'sore' : 'malam';
@@ -172,19 +178,23 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda 
         </div>
         <div className="bg-white rounded-2xl border border-gray-100 shadow-soft-sm p-4 flex gap-4 items-center">
           <div className="shrink-0">
-            <p className="text-[40px] font-extrabold leading-none" style={{ color: theme.ac }}>{health.score}%</p>
+            <p className="text-[40px] font-extrabold leading-none" style={{ color: theme.ac }}>{health.score != null ? `${health.score}%` : '—'}</p>
             <p className="text-[11px] text-gray-500">Kondisi Sekolah</p>
-            <p className={clsx('text-[11px] font-bold inline-flex items-center gap-0.5 mt-0.5', health.delta >= 0 ? 'text-emerald-600' : 'text-red-600')}>
-              {health.delta >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-              {health.delta >= 0 ? '+' : ''}{health.delta}% vs pekan lalu
-            </p>
+            {health.delta != null && (
+              <p className={clsx('text-[11px] font-bold inline-flex items-center gap-0.5 mt-0.5', health.delta >= 0 ? 'text-emerald-600' : 'text-red-600')}>
+                {health.delta >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                {health.delta >= 0 ? '+' : ''}{health.delta.toFixed(1)}% vs kemarin
+              </p>
+            )}
           </div>
           <div className="flex-1 min-w-0 space-y-1.5">
             {health.breakdown.map((b) => (
               <div key={b.label} className="flex items-center gap-2 text-[10.5px] text-gray-500">
-                <span className="w-[88px] truncate">{b.label}</span>
-                <span className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden"><span className="block h-full rounded-full" style={{ width: `${b.pct}%`, background: theme.ac }} /></span>
-                <span className="w-7 text-right font-bold text-gray-700">{b.pct}%</span>
+                <span className="w-[92px] truncate">{b.label}</span>
+                <span className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden"><span className="block h-full rounded-full" style={{ width: `${b.pct ?? 0}%`, background: theme.ac }} /></span>
+                {b.pct != null
+                  ? <span className="w-9 text-right font-bold text-gray-700">{b.pct}%</span>
+                  : <span className="w-9 text-right text-[8px] font-bold uppercase text-amber-600">Fase 2</span>}
               </div>
             ))}
           </div>
@@ -295,13 +305,21 @@ function PapanCard({ theme, papanRows, dayLabel, cal, navCal, onJump, calEvents,
 const LINE_COLORS = ['#059669', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ec4899'];
 function TrenChart({ chart, theme }: { chart: BerandaKioskProps['chart']; theme: KioskTheme }) {
   const [range, setRange] = useState<TrendRangeKey>('10h');
+  const [series, setSeries] = useState<TrenSeries | null>(null);
+  const [loading, startLoad] = useTransition();
   const W = 320, H = 88, pad = 6, min = 60, max = 100;
   const y = (v: number) => H - pad - ((Math.max(min, Math.min(max, v)) - min) / (max - min)) * (H - 2 * pad);
+
+  // Rentang panjang → tarik tren OVERALL nyata (granularitas auto). 10H = per-kelas (prop).
+  useEffect(() => {
+    if (range === '10h') { setSeries(null); return; }
+    const days = TREND_RANGES.find((r) => r.key === range)!.days;
+    startLoad(() => { fetchTrenOverall(days).then(setSeries); });
+  }, [range]);
 
   const isReal = range === '10h';
   const realClasses = (chart?.classes ?? []).slice(0, 5);
   const realN = chart?.dates.length ?? 0;
-  const dummy = dummyTrend(TREND_RANGES.find((r) => r.key === range)!.days);
 
   return (
     <div className="bg-white rounded-2xl border border-emerald-900/10 shadow-soft-sm p-4">
@@ -329,14 +347,18 @@ function TrenChart({ chart, theme }: { chart: BerandaKioskProps['chart']; theme:
             <p className="text-[10px] text-gray-400 mt-1">10 hari terakhir · per kelas (data nyata)</p>
           </>
         )
-      ) : (
+      ) : loading ? (
+        <p className="py-6 text-center text-xs text-gray-400">Memuat tren…</p>
+      ) : series && series.pcts.length >= 2 ? (
         <>
           <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-20">
             {[60, 80, 100].map((g) => <line key={g} x1={pad} y1={y(g)} x2={W - pad} y2={y(g)} stroke="#eef2f0" strokeWidth={1} />)}
-            <polyline points={dummy.pcts.map((p, i) => `${(pad + i * ((W - 2 * pad) / Math.max(1, dummy.pcts.length - 1))).toFixed(1)} ${y(p).toFixed(1)}`).join(' ')} fill="none" stroke={theme.ac} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+            <polyline points={series.pcts.map((p, i) => `${(pad + i * ((W - 2 * pad) / Math.max(1, series.pcts.length - 1))).toFixed(1)} ${y(p).toFixed(1)}`).join(' ')} fill="none" stroke={theme.ac} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <p className="text-[10px] text-amber-600 mt-1">Rentang {TREND_RANGES.find((r) => r.key === range)!.label} · data contoh (menunggu data nyata)</p>
+          <p className="text-[10px] text-gray-400 mt-1">Rentang {TREND_RANGES.find((r) => r.key === range)!.label} · rata-rata kehadiran (data nyata)</p>
         </>
+      ) : (
+        <p className="py-6 text-center text-xs text-gray-400">Belum cukup data untuk rentang ini.</p>
       )}
     </div>
   );
@@ -437,9 +459,19 @@ function DatePickerRecap({ kind, theme, events, onClose }: { kind: 'siswa' | 'gu
   const today = new Date();
   const [cal, setCal] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const [sel, setSel] = useState<string[]>([ymd(today)]);
+  const [siswa, setSiswa] = useState<StudentRecap | null>(null);
+  const [guru, setGuru] = useState<TeacherRecap | null>(null);
+  const [loading, startLoad] = useTransition();
   const toggle = (ds: string) => setSel((s) => s.includes(ds) ? s.filter((x) => x !== ds) : [...s, ds].sort());
-  const recap = dummyRecap(sel, events);
   const label = kind === 'siswa' ? 'Kehadiran Siswa' : 'Kehadiran Guru';
+
+  useEffect(() => {
+    if (sel.length === 0) { setSiswa(null); setGuru(null); return; }
+    startLoad(() => {
+      if (kind === 'siswa') fetchStudentRecap(sel).then(setSiswa);
+      else fetchTeacherRecap(sel).then(setGuru);
+    });
+  }, [sel, kind]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -454,19 +486,26 @@ function DatePickerRecap({ kind, theme, events, onClose }: { kind: 'siswa' | 'gu
           <h3 className="font-bold text-gray-900">Rekap {label}</h3>
           <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-gray-100 text-gray-400 grid place-items-center" aria-label="Tutup"><X className="w-4 h-4" /></button>
         </div>
-        <p className="text-xs text-gray-500 mb-3">Pilih satu atau beberapa tanggal (mis. 3, 4, 5). Hari libur tidak dihitung sebagai hari aktif.</p>
+        <p className="text-xs text-gray-500 mb-3">Pilih satu atau beberapa tanggal (mis. 3, 4, 5). Hari tanpa kegiatan/libur tidak ada datanya.</p>
         <MonthCalendar year={cal.y} month0={cal.m}
           onNav={(d) => setCal((c) => { const x = new Date(c.y, c.m + d, 1); return { y: x.getFullYear(), m: x.getMonth() }; })}
           onJump={(y, m0) => setCal({ y, m: m0 })}
           events={events} todayStr={ymd(today)} accent={theme.ac} selectedDates={sel} onDayClick={toggle} />
         <div className="mt-4 rounded-xl p-3 text-sm" style={{ background: theme.soft }}>
-          {sel.length === 0 ? <p className="text-gray-500">Belum ada tanggal dipilih.</p> : (
-            <>
-              <p className="font-semibold text-gray-800 mb-1">{recap.activeDays} hari aktif terpilih{sel.length > recap.activeDays ? ` (${sel.length - recap.activeDays} hari libur diabaikan)` : ''}</p>
-              <p className="text-gray-700">Hadir <b style={{ color: theme.ac }}>{recap.hadirPct}%</b> · Izin {recap.izin} · Sakit {recap.sakit} · Alpha {recap.alpha}</p>
-              <p className="text-[10px] text-amber-600 mt-1">Angka contoh (menunggu data nyata).</p>
-            </>
-          )}
+          {sel.length === 0 ? <p className="text-gray-500">Belum ada tanggal dipilih.</p>
+            : loading ? <p className="text-gray-500">Memuat rekap…</p>
+            : kind === 'siswa' ? (
+              !siswa || siswa.total === 0 ? <p className="text-gray-500">Tidak ada data kehadiran pada tanggal terpilih.</p> : (
+                <>
+                  <p className="font-semibold text-gray-800 mb-1">{siswa.activeDays} hari ada data · {siswa.total} catatan</p>
+                  <p className="text-gray-700">Hadir <b style={{ color: theme.ac }}>{siswa.hadirPct ?? '—'}%</b> · Izin {siswa.izin} · Sakit {siswa.sakit} · Alpha {siswa.alpha}</p>
+                </>
+              )
+            ) : (
+              !guru || guru.checkins === 0 ? <p className="text-gray-500">Tidak ada presensi guru pada tanggal terpilih.</p> : (
+                <p className="text-gray-700"><b style={{ color: theme.ac }}>{guru.checkins}</b> presensi (check-in) guru pada {guru.activeDays} hari terpilih.</p>
+              )
+            )}
         </div>
       </div>
     </div>
