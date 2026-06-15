@@ -40,6 +40,7 @@ import { KeycloakAdminModule } from './keycloak-admin/keycloak-admin.module';
 import { ProvisioningModule } from './provisioning/provisioning.module';
 import { SubjectModule } from './subject/subject.module';
 import { PositionsModule } from './positions/positions.module';
+import { PublicKioskModule } from './public-kiosk/public-kiosk.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { PositionsModule } from './positions/positions.module';
     ProvisioningModule,
     SubjectModule,
     PositionsModule,
+    PublicKioskModule,
   ],
   providers: [
     UserStatusService,

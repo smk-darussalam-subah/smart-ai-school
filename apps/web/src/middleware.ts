@@ -71,6 +71,7 @@ const PUBLIC_PREFIXES = [
   '/login',
   '/api/auth',
   '/health',
+  '/ruang-guru', // display publik Ruang Guru (token-gated di API, read-only)
   '/_next',
   '/favicon',
 ] as const;

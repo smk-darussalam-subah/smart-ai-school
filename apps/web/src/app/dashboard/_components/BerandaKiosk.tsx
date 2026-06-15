@@ -15,7 +15,7 @@ import clsx from 'clsx';
 import {
   Users, UserCheck, Presentation, AlarmClockOff, Target, Sparkles,
   TrendingUp, TrendingDown, AlertTriangle, Lightbulb, MessageCircle, X, ArrowLeft,
-  Monitor, Minimize2, Calendar, CalendarDays, CalendarClock, Quote,
+  Monitor, Minimize2, Calendar, CalendarDays, CalendarClock, Quote, Copy,
 } from 'lucide-react';
 import PapanPembelajaran, { type PapanRow } from './PapanPembelajaran';
 import MonthCalendar from './MonthCalendar';
@@ -24,6 +24,7 @@ import {
   fetchTodayStudentAttendance, type TodayStudentAttendance,
   fetchTodayTeacherAttendance, type TodayTeacherAttendance,
   fetchStudentRecap, fetchTeacherRecap, fetchTrenOverall,
+  fetchKioskLink, regenerateKioskLink,
   type StudentRecap, type TeacherRecap, type TrenSeries,
 } from '../actions';
 import {
@@ -45,6 +46,7 @@ export interface BerandaKioskProps {
   chart: { classes: KioskChartClass[]; dates: string[] } | null;
   agenda: KaldikEvent[]; // kalender akademik nyata (school.AcademicCalendar)
   health: KioskHealth;   // skor kondisi sekolah (data nyata; Fase 2 ditandai)
+  canManageKiosk: boolean; // SA/KS → boleh salin/aktifkan link Ruang Guru
 }
 
 const STATUS_LABEL: Record<string, string> = { hadir: 'Hadir', izin: 'Izin', sakit: 'Sakit', alpha: 'Alpha' };
@@ -56,9 +58,20 @@ const DEFAULT_THEME = themeForDay(5); // emerald (brand) untuk SSR; disetel ke h
 const REFRESH_MS = 60_000;
 function fmtPct(v: number | null): string { return v === null || v === undefined ? '—' : `${v.toFixed(1)}%`; }
 
-export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda, health }: BerandaKioskProps) {
+export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda, health, canManageKiosk }: BerandaKioskProps) {
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
+  const [linkMsg, setLinkMsg] = useState('');
+  const copyKioskLink = async () => {
+    setLinkMsg('Menyiapkan…');
+    const res = await fetchKioskLink();
+    let token = res.data?.token ?? null;
+    if (!token) { const gen = await regenerateKioskLink(); token = gen.data?.token ?? null; }
+    if (!token) { setLinkMsg('Gagal menyiapkan link'); return; }
+    try { await navigator.clipboard?.writeText(`${location.origin}/ruang-guru/${token}`); setLinkMsg('Link Ruang Guru tersalin ✓'); }
+    catch { setLinkMsg(`${location.origin}/ruang-guru/${token}`); }
+    setTimeout(() => setLinkMsg(''), 5000);
+  };
 
   // Tema soft harian + quote (WIB) — set saat mount agar konsisten.
   const [theme, setTheme] = useState<KioskTheme>(DEFAULT_THEME);
@@ -151,15 +164,23 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda,
           </span>
           LIVE · diperbarui {updatedAgo} dtk lalu
         </span>
-        {kiosk ? (
-          <button onClick={exitKiosk} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-            <Minimize2 className="h-4 w-4" /> Keluar Mode Ruang Guru
-          </button>
-        ) : (
-          <button onClick={enterKiosk} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white" style={{ background: theme.ac }}>
-            <Monitor className="h-4 w-4" /> Mode Ruang Guru
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {linkMsg && <span className="text-[11px] font-medium text-emerald-700">{linkMsg}</span>}
+          {canManageKiosk && !kiosk && (
+            <button onClick={copyKioskLink} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-emerald-50" title="Salin tautan publik untuk display ruang guru (tanpa login)">
+              <Copy className="h-4 w-4" /> Salin Link Ruang Guru
+            </button>
+          )}
+          {kiosk ? (
+            <button onClick={exitKiosk} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+              <Minimize2 className="h-4 w-4" /> Keluar Mode Ruang Guru
+            </button>
+          ) : (
+            <button onClick={enterKiosk} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white" style={{ background: theme.ac }}>
+              <Monitor className="h-4 w-4" /> Mode Ruang Guru
+            </button>
+          )}
+        </div>
       </div>
 
       {/* HEADER: sapaan+hadist | jam | skor kondisi sekolah */}
