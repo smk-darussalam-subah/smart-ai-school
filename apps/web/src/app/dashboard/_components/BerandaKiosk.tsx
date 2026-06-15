@@ -25,21 +25,18 @@ import {
   fetchTodayTeacherAttendance, type TodayTeacherAttendance,
 } from '../actions';
 import {
-  themeForDay, quoteForDay, dummyEvents, dummyHealth, dummyTrend, dummyRecap,
+  themeForDay, quoteForDay, dummyHealth, dummyTrend, dummyRecap,
   EVENT_META, MONTH_NAMES, TREND_RANGES, ymd,
   type KioskTheme, type TrendRangeKey, type KaldikEvent,
 } from '@/lib/kiosk';
 
 export interface KioskChartClass { className: string; pcts: (number | null)[] }
-export interface KioskAgendaItem { id: string; name: string; startDate: string; endDate: string; type: 'holiday' | 'exam' | 'event' | 'break' }
-export interface KioskAnnouncement { id: string; title: string; category: string; isPinned: boolean; publishedAt: string | null; createdAt: string }
 export interface BerandaKioskProps {
   firstName: string;
   papanRows: PapanRow[];
   kpi: { studentPct: number | null; studentDelta: number | null; teacherHadir: number | null; kelasTerjadwalNow: number | null; totalKelas: number | null };
   chart: { classes: KioskChartClass[]; dates: string[] } | null;
-  agenda: KioskAgendaItem[];
-  announcements: KioskAnnouncement[];
+  agenda: KaldikEvent[]; // kalender akademik nyata (school.AcademicCalendar)
 }
 
 const STATUS_LABEL: Record<string, string> = { hadir: 'Hadir', izin: 'Izin', sakit: 'Sakit', alpha: 'Alpha' };
@@ -51,7 +48,7 @@ const DEFAULT_THEME = themeForDay(5); // emerald (brand) untuk SSR; disetel ke h
 const REFRESH_MS = 60_000;
 function fmtPct(v: number | null): string { return v === null || v === undefined ? '—' : `${v.toFixed(1)}%`; }
 
-export default function BerandaKiosk({ firstName, papanRows, kpi, chart }: BerandaKioskProps) {
+export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda }: BerandaKioskProps) {
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -107,12 +104,9 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart }: Beran
   const [modal, setModal] = useState<null | 'siswa' | 'guru' | 'kbm' | 'kosong' | 'silabus'>(null);
   const [picker, setPicker] = useState<null | 'siswa' | 'guru'>(null);
 
-  // DUMMY agenda/kaldik (bulan ini + depan) — hari libur tak dihitung hari aktif.
-  const evNow = dummyEvents(today.getFullYear(), today.getMonth());
-  const nextMo = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-  const evNext = dummyEvents(nextMo.getFullYear(), nextMo.getMonth());
-  const allEvents = [...evNow, ...evNext];
-  const calEvents = dummyEvents(cal.y, cal.m);
+  // Kalender akademik NYATA (school.AcademicCalendar). Libur tak dihitung hari aktif.
+  const allEvents = agenda;
+  const calEvents = agenda;
   // Agenda untuk tanggal terpilih (default hari ini). All-day di atas, lalu per jam.
   const agendaForSel = allEvents
     .filter((e) => selDate >= e.date && selDate <= e.endDate)
