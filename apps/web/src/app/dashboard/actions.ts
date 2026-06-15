@@ -3,7 +3,16 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { apiFetch, PaginatedResponse, AttendanceItem } from '@/lib/api';
+import { apiAction } from '@/lib/server-actions';
 import { wibTodayISO } from '@/lib/bell-times';
+
+// R3 — Link publik Ruang Guru (token, SA/KS).
+export async function fetchKioskLink() {
+  return apiAction<{ token: string | null }>('/school/kiosk-link', 'GET');
+}
+export async function regenerateKioskLink() {
+  return apiAction<{ token: string }>('/school/kiosk-link/regenerate', 'POST');
+}
 
 // =============================================================================
 // 2L-B2 — Agregat kehadiran HARI INI (school-wide) untuk KPI + drill-down modal.

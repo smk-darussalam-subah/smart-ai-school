@@ -38,6 +38,19 @@ export class SchoolConfigController {
     return this.service.updateProfile(dto);
   }
 
+  // ═══ Kiosk link (token publik Ruang Guru) ══════════════════════════════════
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Get('kiosk-link')
+  getKioskLink() {
+    return this.service.getKioskToken();
+  }
+
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Post('kiosk-link/regenerate')
+  regenerateKioskLink() {
+    return this.service.regenerateKioskToken();
+  }
+
   // ═══ Majors ════════════════════════════════════════════════════════════════
 
   @Get('majors')
