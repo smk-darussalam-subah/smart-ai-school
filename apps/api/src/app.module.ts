@@ -41,6 +41,7 @@ import { ProvisioningModule } from './provisioning/provisioning.module';
 import { SubjectModule } from './subject/subject.module';
 import { PositionsModule } from './positions/positions.module';
 import { PublicKioskModule } from './public-kiosk/public-kiosk.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { PublicKioskModule } from './public-kiosk/public-kiosk.module';
     SubjectModule,
     PositionsModule,
     PublicKioskModule,
+    AnalyticsModule,
   ],
   providers: [
     UserStatusService,

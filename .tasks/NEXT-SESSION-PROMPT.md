@@ -39,9 +39,10 @@ Halo. Lanjutkan sebagai **Senior Full-Stack Engineer DIIS** untuk proyek **Smart
 - VPS: `appuser@204.168.242.123`, key `~/.ssh/id_ed25519_deploy`.
 - SSH baca prod / tulis prod DB / kcadm = **butuh izin eksplisit saya per-tugas**
   (auto-classifier akan blokir tanpa itu — minta saya dulu, jangan akali).
-- Tiap deploy PROD me-`--force-recreate nginx` → nginx lepas dari `smk-staging-net` → staging 502.
-  **Re-heal manual:** `docker network connect smk-staging-net <nginx>` + `nginx -s reload`
-  (perlu izin SSH saya).
+- Tiap deploy PROD me-`--force-recreate nginx` → nginx lepas dari `smk-staging-net`.
+  **Sudah auto-heal** (deploy.yml blok main reconnect + reload otomatis sejak PR #180) —
+  tak perlu heal manual lagi. Bila staging tetap 502 setelah prod deploy, baru cek manual
+  via SSH (perlu izin saya).
 - Platform: Windows + PowerShell/Git-Bash. lucide-react v1.17.0 (cek nama ikon sebelum import).
   noUncheckedIndexedAccess aktif (guard `?? ''`/`!`). Zod (bukan class-validator).
 
