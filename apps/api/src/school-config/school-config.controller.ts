@@ -116,7 +116,7 @@ export class SchoolConfigController {
     return this.service.getCalendarEvents(academicYearId, type);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
   @Post('calendar')
   createCalendarEvent(@Body(ZodPipe(CreateCalendarEventSchema)) dto: Record<string, unknown>) {
     return this.service.createCalendarEvent(dto as {
@@ -125,13 +125,13 @@ export class SchoolConfigController {
     });
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
   @Patch('calendar/:id')
   updateCalendarEvent(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(UpdateCalendarEventSchema)) dto: Record<string, unknown>) {
     return this.service.updateCalendarEvent(id, dto);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
   @Delete('calendar/:id')
   deleteCalendarEvent(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.deleteCalendarEvent(id);
