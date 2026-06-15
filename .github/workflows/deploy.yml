@@ -163,6 +163,21 @@ jobs:
               docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
                 up -d --no-deps --force-recreate nginx
               echo "✅ nginx recreated (fresh bind mount)"
+
+              # ── Re-heal staging: nginx ↔ smk-staging-net ────────────────────
+              # recreate nginx melepasnya dari smk-staging-net (jaringan staging
+              # SENGAJA di luar compose prod agar deploy main tak bergantung infra
+              # staging). Sambung ulang best-effort: || true agar deploy PROD tak
+              # pernah gagal walau staging-net belum ada. Idempoten.
+              if docker network inspect smk-staging-net >/dev/null 2>&1; then
+                docker network connect smk-staging-net smk-nginx 2>/dev/null \
+                  && echo "✅ nginx ↔ smk-staging-net reconnected" \
+                  || echo "ℹ️ nginx sudah tersambung ke smk-staging-net (atau dilewati)"
+                docker exec smk-nginx nginx -s reload 2>/dev/null \
+                  && echo "✅ nginx reloaded" || true
+              else
+                echo "ℹ️ smk-staging-net tidak ada — lewati re-heal staging"
+              fi
             fi
 
             echo "✅ Deploy berhasil! Branch: ${BRANCH} → ${API_CONTAINER} / ${WEB_CONTAINER}"
