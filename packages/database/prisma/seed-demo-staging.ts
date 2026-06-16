@@ -198,56 +198,63 @@ async function main() {
     console.log(`✓ PPDB leads: +${leads.count} (dari ${leadRows.length})`);
   }
 
-  // ── 7. Inspector sebagai GURU (akun login GURU yg bisa dites) + Schedule ────
-  // Pastikan akun inspector punya Teacher + assignment → dashboard Akademik Guru terisi.
-  const inspector = await prisma.user.findFirst({
-    where: { email: 'inspector@smkdarussalamsubah.sch.id' },
+  // ── 7. Akun GURU testable (inspector) + Teacher + assignment ───────────────
+  // Inspector dibuat bila belum ada (auth.users row mungkin hanya di prod) → dashboard
+  // Akademik Guru bisa dites dgn login inspector (password lihat memory).
+  const KC_INSPECTOR = 'af486cb9-84f7-4b19-9deb-63a2af4b4c2c';
+  let inspector = await prisma.user.findFirst({
+    where: { OR: [{ keycloakId: KC_INSPECTOR }, { email: 'inspector@smkdarussalamsubah.sch.id' }] },
     select: { id: true },
   });
-  if (inspector) {
-    let t = await prisma.teacher.findFirst({ where: { userId: inspector.id }, select: { id: true } });
-    if (!t) t = await prisma.teacher.create({ data: { userId: inspector.id }, select: { id: true } });
-    const someClasses = classes.slice(0, 2);
-    const subs = ['Pemrograman Web', 'Basis Data', 'Matematika'];
-    for (const c of someClasses) {
-      for (const subj of subs) {
-        await prisma.teachingAssignment.upsert({
-          where: { teacherId_classId_subject_academicYear: { teacherId: t.id, classId: c.id, subject: subj, academicYear: c.academicYear } },
-          update: {},
-          create: { teacherId: t.id, classId: c.id, subject: subj, hoursPerWeek: 2, academicYear: c.academicYear },
-        });
-      }
-    }
-    console.log(`✓ Inspector → Teacher + assignment (kelas: ${someClasses.map((c) => c.name).join(', ')})`);
-  } else {
-    console.log('• Akun inspector tak ditemukan → lewati setup guru testable.');
+  if (!inspector) {
+    inspector = await prisma.user.create({
+      data: { keycloakId: KC_INSPECTOR, email: 'inspector@smkdarussalamsubah.sch.id', fullName: 'Inspektur Demo', role: 'GURU', isActive: true },
+      select: { id: true },
+    });
+    console.log('✓ Inspector auth.users dibuat (staging).');
   }
+  let t = await prisma.teacher.findFirst({ where: { userId: inspector.id }, select: { id: true } });
+  if (!t) t = await prisma.teacher.create({ data: { userId: inspector.id }, select: { id: true } });
+  const someClasses = classes.slice(0, 2);
+  const subs = ['Pemrograman Web', 'Basis Data', 'Matematika'];
+  for (const c of someClasses) {
+    for (const subj of subs) {
+      await prisma.teachingAssignment.upsert({
+        where: { teacherId_classId_subject_academicYear: { teacherId: t.id, classId: c.id, subject: subj, academicYear: c.academicYear } },
+        update: {},
+        create: { teacherId: t.id, classId: c.id, subject: subj, hoursPerWeek: 2, academicYear: c.academicYear },
+      });
+    }
+  }
+  console.log(`✓ Inspector → Teacher + assignment (kelas: ${someClasses.map((c) => c.name).join(', ')})`);
 
-  // Jadwal mingguan (template) untuk SEMUA teaching-assignment, tanpa bentrok kelas/guru.
-  if ((await prisma.schedule.count()) > 0) {
-    console.log('• Schedule sudah ada → skip.');
-  } else {
-    const tas = await prisma.teachingAssignment.findMany({ select: { id: true, teacherId: true, classId: true, academicYear: true } });
-    const BLOCKS: [number, number][] = [[1, 2], [4, 5], [7, 8], [3, 3], [6, 6]];
-    const usedClass = new Set<string>();
-    const usedTeacher = new Set<string>();
-    const schedRows: { classId: string; teachingAssignmentId: string; dayOfWeek: number; jpStart: number; jpEnd: number; room: string; academicYear: string; semester: number }[] = [];
-    for (const ta of tas) {
-      let placed = false;
-      for (let day = 1; day <= 6 && !placed; day++) {
-        for (const [a, b] of BLOCKS) {
-          const ck = `${ta.classId}|${day}|${a}`;
-          const tk = `${ta.teacherId}|${day}|${a}`;
-          if (usedClass.has(ck) || usedTeacher.has(tk)) continue;
-          usedClass.add(ck); usedTeacher.add(tk);
-          schedRows.push({ classId: ta.classId, teachingAssignmentId: ta.id, dayOfWeek: day, jpStart: a, jpEnd: b, room: 'Lab Komputer', academicYear: ta.academicYear, semester });
-          placed = true; break;
-        }
+  // ── 8. Jadwal mingguan untuk SEMUA assignment yang belum punya jadwal ───────
+  const existing = await prisma.schedule.findMany({
+    select: { classId: true, dayOfWeek: true, jpStart: true, teachingAssignment: { select: { teacherId: true } } },
+  });
+  const usedClass = new Set<string>(existing.map((e) => `${e.classId}|${e.dayOfWeek}|${e.jpStart}`));
+  const usedTeacher = new Set<string>(existing.map((e) => `${e.teachingAssignment.teacherId}|${e.dayOfWeek}|${e.jpStart}`));
+  const tas = await prisma.teachingAssignment.findMany({
+    select: { id: true, teacherId: true, classId: true, academicYear: true, schedules: { select: { id: true } } },
+  });
+  const toPlace = tas.filter((ta) => ta.schedules.length === 0);
+  const BLOCKS: [number, number][] = [[1, 2], [4, 5], [7, 8], [3, 3], [6, 6]];
+  const schedRows: { classId: string; teachingAssignmentId: string; dayOfWeek: number; jpStart: number; jpEnd: number; room: string; academicYear: string; semester: number }[] = [];
+  for (const ta of toPlace) {
+    let placed = false;
+    for (let day = 1; day <= 6 && !placed; day++) {
+      for (const [a, b] of BLOCKS) {
+        const ck = `${ta.classId}|${day}|${a}`;
+        const tk = `${ta.teacherId}|${day}|${a}`;
+        if (usedClass.has(ck) || usedTeacher.has(tk)) continue;
+        usedClass.add(ck); usedTeacher.add(tk);
+        schedRows.push({ classId: ta.classId, teachingAssignmentId: ta.id, dayOfWeek: day, jpStart: a, jpEnd: b, room: 'Lab Komputer', academicYear: ta.academicYear, semester });
+        placed = true; break;
       }
     }
-    const sc = await prisma.schedule.createMany({ data: schedRows, skipDuplicates: true });
-    console.log(`✓ Schedule: +${sc.count} (dari ${schedRows.length})`);
   }
+  const sc = schedRows.length ? await prisma.schedule.createMany({ data: schedRows, skipDuplicates: true }) : { count: 0 };
+  console.log(`✓ Schedule: +${sc.count} (assignment tanpa jadwal: ${toPlace.length})`);
 
   console.log('🎉 Seed demo lengkap selesai.');
 }
