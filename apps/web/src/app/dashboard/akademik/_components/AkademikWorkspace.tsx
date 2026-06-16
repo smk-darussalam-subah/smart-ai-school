@@ -3,17 +3,18 @@
 import { useMemo, useState } from 'react';
 import {
   LayoutDashboard, CalendarClock, BookOpenCheck, ClipboardPenLine, CalendarCheck,
-  ClipboardList, Award, ClipboardCheck, BookMarked, Calendar, UserCheck, FileText, GraduationCap,
+  ClipboardList, Award, ClipboardCheck, BookMarked, Calendar, UserCheck, FileText, GraduationCap, Users,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem, ActivityItem, RppItem, TodayClass, ClassRef } from './guru-types';
-import { KKTP_DEFAULT } from './guru-types';
 import RingkasanGuru from './RingkasanGuru';
 import JadwalTimetable from './JadwalTimetable';
 import RekapPembelajaran from './RekapPembelajaran';
+import GradebookPenilaian from './GradebookPenilaian';
 import AbsenModal from './AbsenModal';
 import JurnalModal from './JurnalModal';
+import InputNilaiModal from './InputNilaiModal';
 
 interface Assignment { id: string; subject: string; class: { name: string } }
 
@@ -24,7 +25,7 @@ interface Props {
   assignments: Assignment[];
   schedules: ScheduleItem[];
   activities: ActivityItem[];
-  approvedRpp: RppItem[];
+  rpp: RppItem[];
   todayClasses: TodayClass[];
   academicYear: string;
   semester: number;
@@ -42,26 +43,41 @@ const NAV: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'capaian', label: 'Capaian & Rapor', icon: Award },
 ];
 
-const scoreCell = (s: number) =>
-  s >= KKTP_DEFAULT ? 'bg-emerald-50 text-emerald-700' : s >= KKTP_DEFAULT - 8 ? 'bg-orange-50 text-orange-700' : 'bg-rose-50 text-rose-600';
+const RPP_BADGE: Record<string, string> = {
+  approved: 'bg-emerald-50 text-emerald-700', submitted: 'bg-sky-50 text-sky-700', revision: 'bg-amber-50 text-amber-700', draft: 'bg-slate-100 text-slate-600',
+};
+const RPP_LABEL: Record<string, string> = { approved: 'Disetujui', submitted: 'Diajukan', revision: 'Revisi', draft: 'Draft' };
 
 export default function AkademikWorkspace({
-  grades, attendances, assignments, schedules, activities, approvedRpp, todayClasses, academicYear, semester,
+  grades, attendances, assignments, schedules, activities, rpp, todayClasses, academicYear, semester,
 }: Props) {
+  const approvedRpp = useMemo(() => rpp.filter((r) => r.status === 'approved'), [rpp]);
   const subjects = useMemo(() => {
     const set = new Set<string>();
     assignments.forEach((a) => set.add(a.subject));
     schedules.forEach((s) => set.add(s.teachingAssignment?.subject ?? ''));
     return [...set].filter(Boolean).sort();
   }, [assignments, schedules]);
+  const guruClasses = useMemo(() => {
+    const m = new Map<string, string>();
+    schedules.forEach((s) => { if (s.class) m.set(s.classId, s.class.name); });
+    return [...m.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [schedules]);
 
   const [screen, setScreen] = useState<Screen>('ringkasan');
   const [subject, setSubject] = useState<string>('all');
+  const [selClass, setSelClass] = useState<string>('all');
   const [absen, setAbsen] = useState<{ classId: string; className: string } | null>(null);
   const [jurnal, setJurnal] = useState<{ classId: string; className: string; subject: string; startLabel: string; jpStart: number } | null>(null);
+  const [inputNilai, setInputNilai] = useState(false);
 
-  const sGrades = subject === 'all' ? grades : grades.filter((g) => g.assignment.subject === subject);
-  const sAtt = attendances; // absensi tak punya subject; ditampilkan apa adanya
+  const selClassName = selClass === 'all' ? '' : (guruClasses.find((c) => c.id === selClass)?.name ?? '');
+
+  const penilaianGrades = grades.filter((g) =>
+    (subject === 'all' ? false : g.assignment.subject === subject) &&
+    (selClass === 'all' ? true : g.assignment.class.name === selClassName));
+  const sAtt = attendances.filter((a) => selClass === 'all' ? true : a.class.name === selClassName);
+  const inputAssignmentId = assignments.find((a) => a.subject === subject && a.class?.name === selClassName)?.id;
 
   return (
     <div className="space-y-1">
@@ -74,18 +90,22 @@ export default function AkademikWorkspace({
           <Calendar className="h-[15px] w-[15px] text-emerald-600" />TA {academicYear || '—'} · Semester {semester}
         </span>
         <label className="inline-flex items-center gap-2 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#355a4e] shadow-sm">
+          <Users className="h-[15px] w-[15px] text-emerald-600" />
+          <select value={selClass} onChange={(e) => setSelClass(e.target.value)} className="bg-transparent outline-none">
+            <option value="all">Semua Kelas</option>
+            {guruClasses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </label>
+        <label className="inline-flex items-center gap-2 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#355a4e] shadow-sm">
           <BookMarked className="h-[15px] w-[15px] text-emerald-600" />
           <select value={subject} onChange={(e) => setSubject(e.target.value)} className="bg-transparent outline-none">
             <option value="all">Semua Mapel</option>
             {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </label>
-        <button
-          type="button"
-          onClick={() => setScreen('rekap')}
+        <button type="button" onClick={() => setScreen('rekap')}
           className={clsx('inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[12.5px] font-bold shadow-sm',
-            screen === 'rekap' ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white hover:bg-emerald-700')}
-        >
+            screen === 'rekap' ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white hover:bg-emerald-700')}>
           <ClipboardCheck className="h-[15px] w-[15px]" />Rekap Pembelajaran
         </button>
         <span className="ml-auto inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11.5px] font-bold text-blue-700">
@@ -111,9 +131,8 @@ export default function AkademikWorkspace({
       <div className="pt-4">
         {screen === 'ringkasan' && (
           <RingkasanGuru
-            grades={grades} attendances={attendances} activities={activities} todayClasses={todayClasses}
-            onAbsen={(c) => setAbsen(c)}
-            onJurnal={(c) => setJurnal(c)}
+            grades={grades} attendances={attendances} activities={activities} rpp={rpp} todayClasses={todayClasses}
+            onAbsen={(c) => setAbsen(c)} onJurnal={(c) => setJurnal(c)}
           />
         )}
 
@@ -121,73 +140,61 @@ export default function AkademikWorkspace({
 
         {screen === 'rekap' && (
           <RekapPembelajaran
-            subject={subject === 'all' ? (subjects[0] ?? '') : subject}
-            grades={grades} attendances={attendances} activities={activities} approvedRpp={approvedRpp}
+            subject={subject} grades={grades} attendances={attendances} activities={activities} approvedRpp={approvedRpp}
             onBack={() => setScreen('ringkasan')}
           />
         )}
 
         {screen === 'pembelajaran' && (
-          <Card title="Modul Ajar (disetujui)" icon={FileText}>
-            {approvedRpp.length === 0 ? <Empty label="Belum ada Modul Ajar disetujui" /> : (
-              <ul className="divide-y divide-[#e6efea]">
-                {approvedRpp.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between py-2.5 text-[13px]">
-                    <span className="font-semibold text-[#0f2e25]">{r.title}</span>
-                    <span className="text-[#6b8079]">{r.subject}</span>
-                  </li>
-                ))}
-              </ul>
+          <Card title="Modul Ajar" icon={FileText}>
+            {rpp.length === 0 ? <Empty label="Belum ada Modul Ajar" /> : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[12.5px]">
+                  <thead><tr className="border-b border-[#e6efea] text-left text-[11px] uppercase tracking-wide text-[#6b8079]"><th className="py-2 pr-3">Judul / TP</th><th className="py-2 pr-3">Mapel</th><th className="py-2">Status</th></tr></thead>
+                  <tbody>
+                    {rpp.map((r) => (
+                      <tr key={r.id} className="border-b border-[#f0f4f2]">
+                        <td className="py-2.5 pr-3 font-semibold text-[#0f2e25]">{r.title}</td>
+                        <td className="py-2.5 pr-3 text-[#355a4e]">{r.subject}</td>
+                        <td className="py-2.5"><span className={clsx('rounded-md px-2 py-0.5 text-[11px] font-bold', RPP_BADGE[r.status] ?? 'bg-slate-100 text-slate-600')}>{RPP_LABEL[r.status] ?? r.status}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
-            <p className="mt-3 text-[11.5px] text-[#6b8079]">Pemetaan CP→TP→ATP terstruktur hadir di modul Pembelajaran berikutnya.</p>
+            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-semibold text-amber-700">Pemetaan CP→TP→ATP terstruktur (Modul Ajar Kurikulum Merdeka penuh) — <b>menyusul</b> di modul Pembelajaran/ATP.</p>
           </Card>
         )}
 
         {screen === 'penilaian' && (
-          <Card title={`Nilai${subject !== 'all' ? ` — ${subject}` : ''}`} icon={ClipboardPenLine}>
-            {sGrades.length === 0 ? <Empty label="Belum ada data nilai" /> : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-[12.5px]">
-                  <thead><tr className="border-b border-[#e6efea] text-left text-[11px] uppercase tracking-wide text-[#6b8079]">
-                    <th className="py-2 pr-3">Siswa</th><th className="py-2 pr-3">Mapel</th><th className="py-2 pr-3">Kelas</th><th className="py-2 pr-3">Tipe</th><th className="py-2 text-right">Nilai</th></tr></thead>
-                  <tbody>
-                    {sGrades.map((g) => (
-                      <tr key={g.id} className="border-b border-[#f0f4f2]">
-                        <td className="py-2.5 pr-3 font-semibold text-[#0f2e25]">{g.student.user.fullName}</td>
-                        <td className="py-2.5 pr-3 text-[#355a4e]">{g.assignment.subject}</td>
-                        <td className="py-2.5 pr-3 text-[#355a4e]">{g.assignment.class.name}</td>
-                        <td className="py-2.5 pr-3 uppercase text-[#6b8079]">{g.type}</td>
-                        <td className="py-2.5 text-right"><span className={clsx('inline-block rounded-md px-2 py-0.5 font-extrabold', scoreCell(Number(g.score)))}>{g.score}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+          <Card title={`Penilaian${subject !== 'all' ? ` — ${subject}` : ''}${selClassName ? ` · ${selClassName}` : ''}`} icon={ClipboardPenLine}>
+            {subject === 'all' && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-700">Pilih <b>Mapel</b> di bar atas untuk menampilkan nilai gradebook.</p>}
+            <GradebookPenilaian grades={penilaianGrades} className={selClassName || 'Semua Kelas'} subject={subject === 'all' ? '' : subject} onInputNilai={() => setInputNilai(true)} />
           </Card>
         )}
 
         {screen === 'kehadiran' && (
-          <Card title="Kehadiran" icon={CalendarCheck}>
+          <Card title={`Kehadiran${selClassName ? ` — ${selClassName}` : ''}`} icon={CalendarCheck}>
             <p className="mb-3 text-[12px] text-[#6b8079]">Absensi cepat tersedia dari kartu kelas di <b>Ringkasan</b> (popup, default hadir). Rekap di bawah.</p>
-            {sAtt.length === 0 ? <Empty label="Belum ada data absensi" /> : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-[12.5px]">
-                  <thead><tr className="border-b border-[#e6efea] text-left text-[11px] uppercase tracking-wide text-[#6b8079]">
-                    <th className="py-2 pr-3">Siswa</th><th className="py-2 pr-3">Kelas</th><th className="py-2 pr-3">Tanggal</th><th className="py-2">Status</th></tr></thead>
-                  <tbody>
-                    {sAtt.slice(0, 100).map((a) => (
-                      <tr key={a.id} className="border-b border-[#f0f4f2]">
-                        <td className="py-2.5 pr-3 font-semibold text-[#0f2e25]">{a.student.user.fullName}</td>
-                        <td className="py-2.5 pr-3 text-[#355a4e]">{a.class.name}</td>
-                        <td className="py-2.5 pr-3 text-[#355a4e]">{new Date(a.date).toLocaleDateString('id')}</td>
-                        <td className="py-2.5"><StatusBadge status={a.status} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <div className="overflow-x-auto rounded-2xl border border-[#e6efea]">
+              <table className="w-full text-[12.5px]">
+                <thead><tr className="border-b border-[#e6efea] bg-[#f9fbfa] text-left text-[11px] uppercase tracking-wide text-[#6b8079]">
+                  <th className="px-3 py-2">Siswa</th><th className="px-3 py-2">Kelas</th><th className="px-3 py-2">Tanggal</th><th className="px-3 py-2">Status</th></tr></thead>
+                <tbody>
+                  {sAtt.length === 0 ? (
+                    <tr><td colSpan={4} className="px-3 py-10 text-center text-[12.5px] font-medium text-[#9bb0a8]">Belum ada data absensi</td></tr>
+                  ) : sAtt.slice(0, 100).map((a) => (
+                    <tr key={a.id} className="border-b border-[#f0f4f2]">
+                      <td className="px-3 py-2.5 font-semibold text-[#0f2e25]">{a.student.user.fullName}</td>
+                      <td className="px-3 py-2.5 text-[#355a4e]">{a.class.name}</td>
+                      <td className="px-3 py-2.5 text-[#355a4e]">{new Date(a.date).toLocaleDateString('id')}</td>
+                      <td className="px-3 py-2.5"><StatusBadge status={a.status} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </Card>
         )}
 
@@ -214,16 +221,14 @@ export default function AkademikWorkspace({
         )}
       </div>
 
-      {absen && (
-        <AbsenModal classId={absen.classId} className={absen.className} onClose={() => setAbsen(null)} />
-      )}
+      {absen && <AbsenModal classId={absen.classId} className={absen.className} onClose={() => setAbsen(null)} />}
       {jurnal && (
-        <JurnalModal
-          classId={jurnal.classId} className={jurnal.className} subject={jurnal.subject}
-          startLabel={jurnal.startLabel} jpStart={jurnal.jpStart}
-          approvedRpp={approvedRpp} activities={activities}
-          onClose={() => setJurnal(null)}
-        />
+        <JurnalModal classId={jurnal.classId} className={jurnal.className} subject={jurnal.subject}
+          startLabel={jurnal.startLabel} jpStart={jurnal.jpStart} approvedRpp={approvedRpp} activities={activities} onClose={() => setJurnal(null)} />
+      )}
+      {inputNilai && (
+        <InputNilaiModal classId={selClass} className={selClassName || 'Semua Kelas'} subject={subject === 'all' ? '' : subject}
+          assignmentId={inputAssignmentId} academicYear={academicYear} semester={semester} onClose={() => setInputNilai(false)} />
       )}
     </div>
   );

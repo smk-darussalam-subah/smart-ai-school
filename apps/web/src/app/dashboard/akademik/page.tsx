@@ -38,7 +38,7 @@ export default async function AkademikPage() {
     const [schedulesRes, activitiesRes, rppRes, semRes] = await Promise.all([
       apiFetch<{ data: ScheduleItem[] }>('/schedules?limit=500', token),
       apiFetch<{ data: ActivityItem[] }>('/class-activities?limit=200', token),
-      apiFetch<{ data: RppItem[] }>('/rpp?status=approved&limit=100', token),
+      apiFetch<{ data: RppItem[] }>('/rpp?limit=100', token),
       apiFetch<ActiveSemester>('/school/semesters/active', token),
     ]);
 
@@ -72,7 +72,7 @@ export default async function AkademikPage() {
         assignments={assignmentsRes?.data ?? []}
         schedules={schedules}
         activities={activitiesRes?.data ?? []}
-        approvedRpp={rppRes?.data ?? []}
+        rpp={rppRes?.data ?? []}
         todayClasses={todayClasses}
         academicYear={academicYear}
         semester={semester}
