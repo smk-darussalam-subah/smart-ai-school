@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DIIS — Modul Akademik (Mockup final)</title>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  :root{
+    --em50:#ecfdf5;--em100:#d1fae5;--em200:#a7f3d0;--em500:#10b981;--em600:#059669;--em700:#047857;--em800:#065f46;
+    --ink:#0f2e25;--ink2:#355a4e;--muted:#6b8079;--line:#e6efea;--bg:#f4f7f5;--surface:#fff;
+    --amber:#d97706;--amberbg:#fef3c7;--rose:#e11d48;--rosebg:#ffe4e6;--sky:#0284c7;--violet:#7c3aed;
+    --sh:0 1px 2px rgba(16,40,33,.04),0 8px 24px -14px rgba(16,40,33,.14);
+    --r:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',system-ui,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+  /* ---------- Sidebar ---------- */
+  .side{background:var(--surface);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:6px}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px}
+  .brand .logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(145deg,var(--em600),var(--em800));display:grid;place-items:center;color:#fff;font-weight:800}
+  .brand b{font-size:15px;letter-spacing:-.2px}.brand small{display:block;color:var(--muted);font-size:11px;font-weight:500}
+  .me{padding:10px 8px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-bottom:6px}
+  .me b{font-size:13px}.me small{display:block;color:var(--muted);font-size:11px}
+  .me .role{display:inline-block;margin-top:5px;background:#fde2e4;color:#be123c;font-size:10px;font-weight:800;padding:2px 8px;border-radius:8px}
+  .navgrp{font-size:10px;font-weight:800;letter-spacing:.7px;color:#9bb0a8;padding:12px 10px 4px}
+  .nav{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;color:var(--ink2);font-weight:600;font-size:13.5px;cursor:pointer}
+  .nav svg{width:18px;height:18px;color:var(--muted)}
+  .nav:hover{background:var(--bg)}
+  .nav.on{background:var(--em50);color:var(--em700)}.nav.on svg{color:var(--em600)}
+  /* ---------- Topbar ---------- */
+  .main{display:flex;flex-direction:column;min-width:0}
+  .top{height:64px;background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:20}
+  .top .l{display:flex;align-items:center;gap:14px;color:var(--ink2)}
+  .iconbtn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:#fff;display:grid;place-items:center;color:var(--ink2);cursor:pointer}
+  .ghost{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--em200);color:var(--em700);background:var(--em50);border-radius:11px;padding:8px 13px;font-weight:700;font-size:13px;cursor:pointer}
+  .ava{width:34px;height:34px;border-radius:50%;background:var(--em100);color:var(--em700);display:grid;place-items:center;font-weight:800;font-size:13px}
+  /* ---------- Content ---------- */
+  .wrap{padding:22px 26px 60px;max-width:1320px;width:100%}
+  .h1{font-size:24px;font-weight:800;letter-spacing:-.5px}
+  .crumb{color:var(--muted);font-size:12.5px;margin-top:2px;font-weight:500}
+  .ctxbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 4px}
+  .sel{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--ink2);box-shadow:var(--sh)}
+  .sel svg{width:15px;height:15px;color:var(--em600)}
+  .sel .chev{color:var(--muted);margin-left:2px}
+  .rolehint{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-size:11.5px;font-weight:700;color:var(--em700);background:var(--em50);border:1px solid var(--em200);padding:6px 11px;border-radius:20px}
+  .rolehint svg{width:14px;height:14px}
+  /* ---------- Sub nav ---------- */
+  .subnav{display:flex;flex-wrap:wrap;gap:7px;margin:16px 0 18px;border-bottom:1px solid var(--line);padding-bottom:14px}
+  .pill{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border-radius:11px;font-size:13px;font-weight:700;color:var(--ink2);background:#fff;border:1px solid var(--line);cursor:pointer;position:relative}
+  .pill svg{width:16px;height:16px;color:var(--muted)}
+  .pill:hover{border-color:var(--em200)}
+  .pill.on{background:var(--em600);color:#fff;border-color:var(--em600);box-shadow:0 8px 18px -8px rgba(5,150,105,.5)}
+  .pill.on svg{color:#fff}
+  .pill .soon{font-size:8.5px;font-weight:800;background:var(--amberbg);color:var(--amber);padding:1px 5px;border-radius:6px;text-transform:uppercase;letter-spacing:.3px}
+  .pill.on .soon{background:rgba(255,255,255,.25);color:#fff}
+  /* ---------- Cards / generic ---------- */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh)}
+  .card.pad{padding:18px}
+  .row{display:flex;gap:16px}.grid{display:grid;gap:16px}
+  .between{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .btn{display:inline-flex;align-items:center;gap:7px;background:var(--em600);color:#fff;border:0;border-radius:11px;padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer}
+  .btn svg{width:16px;height:16px}
+  .btn.sec{background:#fff;color:var(--ink2);border:1px solid var(--line)}.btn.sec svg{color:var(--em600)}
+  .seg{display:inline-flex;background:var(--bg);border-radius:11px;padding:3px}
+  .seg button{border:0;background:transparent;font:inherit;font-size:12.5px;font-weight:700;color:var(--muted);padding:7px 13px;border-radius:8px;cursor:pointer}
+  .seg button.on{background:#fff;color:var(--em700);box-shadow:var(--sh)}
+  .title{font-size:15px;font-weight:800;display:flex;align-items:center;gap:9px}.title svg{width:18px;height:18px;color:var(--em600)}
+  .sub{color:var(--muted);font-size:12px;font-weight:500;margin-top:2px}
+  .badge{font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:8px;white-space:nowrap}
+  .b-ok{background:var(--em50);color:var(--em700)}.b-warn{background:var(--amberbg);color:var(--amber)}.b-info{background:#e0f2fe;color:#0369a1}.b-mut{background:#eef2f5;color:#64748b}.b-rose{background:var(--rosebg);color:var(--rose)}
+  .screen{display:none}.screen.on{display:block}
+  /* ---------- Gradebook ---------- */
+  .gb-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--r);background:#fff;box-shadow:var(--sh)}
+  table.gb{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px}
+  table.gb th,table.gb td{padding:0;text-align:center;white-space:nowrap}
+  table.gb thead .grp th{background:#f3f8f5;color:var(--em800);font-weight:800;font-size:11px;padding:8px 6px;border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.4px}
+  table.gb thead .col th{background:#fff;color:var(--ink2);font-weight:700;font-size:11px;padding:10px 8px;border-bottom:1px solid var(--line);position:sticky;top:0}
+  table.gb td{border-bottom:1px solid var(--line);padding:9px 8px;font-weight:700;color:var(--ink)}
+  .stk{position:sticky;left:0;background:#fff;text-align:left!important;z-index:2;border-right:1px solid var(--line);min-width:210px}
+  .stu{display:flex;align-items:center;gap:9px;padding-left:4px}
+  .stu .ini{width:28px;height:28px;border-radius:8px;background:var(--em100);color:var(--em700);display:grid;place-items:center;font-size:11px;font-weight:800}
+  .stu small{display:block;color:var(--muted);font-weight:600;font-size:10.5px}
+  .cell{display:inline-block;min-width:34px;padding:5px 0;border-radius:7px;font-weight:800}
+  .c-hi{background:var(--em50);color:var(--em700)}.c-mid{background:#fff7ed;color:#c2410c}.c-lo{background:var(--rosebg);color:var(--rose)}.c-na{color:#cbd5e1}
+  .rapor{background:var(--em600);color:#fff;border-radius:7px;padding:5px 9px;display:inline-block;font-weight:800}
+  .kktp-chip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px dashed var(--amber);color:var(--amber);font-weight:800;font-size:11px;padding:5px 10px;border-radius:8px}
+  /* misc lists */
+  .li{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#fff}
+  .li .ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex-shrink:0}
+  .kpi{flex:1;background:#fff;border:1px solid var(--line);border-radius:13px;padding:14px;box-shadow:var(--sh)}
+  .kpi .lab{font-size:11.5px;color:var(--muted);font-weight:700;display:flex;gap:6px;align-items:center}.kpi .lab svg{width:14px;height:14px;color:var(--em600)}
+  .kpi .v{font-size:26px;font-weight:800;letter-spacing:-1px;margin-top:5px}
+  .donut{--p:78;width:96px;height:96px;border-radius:50%;background:conic-gradient(var(--em500) calc(var(--p)*1%),#eef3f0 0);display:grid;place-items:center;flex-shrink:0}
+  .donut .in{width:70px;height:70px;border-radius:50%;background:#fff;display:grid;place-items:center;flex-direction:column;text-align:center}
+  .donut b{font-size:21px;font-weight:800;line-height:1}.donut small{font-size:9px;color:var(--muted);font-weight:700}
+  table.simple{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.simple th{text-align:left;color:var(--muted);font-weight:700;font-size:11px;padding:9px 10px;border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.3px}
+  table.simple td{padding:11px 10px;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink2)}
+  .att{display:inline-flex;gap:4px}
+  .att span{width:30px;height:28px;border-radius:7px;display:grid;place-items:center;font-weight:800;font-size:12px;border:1px solid var(--line);color:var(--muted);cursor:pointer;background:#fff}
+  .att span.H.on{background:var(--em50);border-color:var(--em200);color:var(--em700)}
+  .att span.I.on{background:#e0f2fe;border-color:#bae6fd;color:#0369a1}
+  .att span.S.on{background:var(--amberbg);border-color:#fde68a;color:var(--amber)}
+  .att span.A.on{background:var(--rosebg);border-color:#fecdd3;color:var(--rose)}
+  .timeline{position:relative;padding-left:22px}
+  .timeline::before{content:"";position:absolute;left:6px;top:4px;bottom:4px;width:2px;background:var(--line)}
+  .tl{position:relative;padding:0 0 16px 6px}
+  .tl::before{content:"";position:absolute;left:-19px;top:3px;width:11px;height:11px;border-radius:50%;background:var(--em500);border:2px solid #fff;box-shadow:0 0 0 2px var(--em100)}
+  .soonbox{border:1.5px dashed #cdd9d3;border-radius:14px;padding:26px;text-align:center;background:linear-gradient(180deg,#fbfdfc,#f2f7f4)}
+  .soonbox .ic{width:48px;height:48px;border-radius:13px;background:#fff;border:1px solid var(--line);display:grid;place-items:center;color:var(--em700);margin:0 auto 12px}
+  .flowbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:var(--em50);border:1px solid var(--em200);border-radius:12px;padding:11px 14px;font-size:12px;font-weight:700;color:var(--em800)}
+  .flowbar .step{background:#fff;border:1px solid var(--em200);border-radius:8px;padding:5px 10px}
+  .flowbar svg{width:14px;height:14px;color:var(--em600)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);font-weight:600;margin-top:10px}
+  .legend i{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:-1px}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="side">
+    <div class="brand"><div class="logo">D</div><div><b>DIIS</b><small>SMK Darussalam Subah</small></div></div>
+    <div class="me"><b>Super Admin</b><small>admin@smkdarussalamsubah.sch.id</small><span class="role">Super Admin</span></div>
+    <div class="navgrp">RINGKASAN</div>
+    <div class="nav"><svg data-lucide="home"></svg>Beranda</div>
+    <div class="nav"><svg data-lucide="bar-chart-3"></svg>Dasbor Eksekutif</div>
+    <div class="navgrp">AKADEMIK</div>
+    <div class="nav on"><svg data-lucide="book-open"></svg>Akademik</div>
+    <div class="nav"><svg data-lucide="calendar-days"></svg>Jadwal</div>
+    <div class="nav"><svg data-lucide="graduation-cap"></svg>Rapor</div>
+    <div class="nav"><svg data-lucide="backpack"></svg>Kegiatan Kelas</div>
+    <div class="nav"><svg data-lucide="file-text"></svg>RPP / Modul Ajar</div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <div class="main">
+    <header class="top">
+      <div class="l"><div class="iconbtn"><svg data-lucide="panel-left"></svg></div></div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="ghost"><svg data-lucide="scan" width="16"></svg> Mode Ruang Guru</button>
+        <div style="display:flex;align-items:center;gap:9px"><div class="ava">SA</div><b style="font-size:13px">Super Admin</b><svg data-lucide="log-out" width="17" style="color:var(--muted)"></svg></div>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <div class="h1">Akademik</div>
+      <div class="crumb">Pusat pembelajaran, penilaian & mutu — selaras Kurikulum Merdeka</div>
+
+      <!-- context bar -->
+      <div class="ctxbar">
+        <span class="sel"><svg data-lucide="calendar"></svg>TA 2025/2026 · Ganjil <svg data-lucide="chevron-down" class="chev" width="14"></svg></span>
+        <span class="sel"><svg data-lucide="users"></svg>XI TJKT 1 <svg data-lucide="chevron-down" class="chev" width="14"></svg></span>
+        <span class="sel"><svg data-lucide="book-marked"></svg>Pemrograman Web <svg data-lucide="chevron-down" class="chev" width="14"></svg></span>
+        <span class="rolehint"><svg data-lucide="shield-check"></svg>Tampilan guru pengampu · data kelas diampu</span>
+      </div>
+
+      <!-- sub nav -->
+      <nav class="subnav" id="subnav">
+        <button class="pill" data-s="ringkasan"><svg data-lucide="layout-dashboard"></svg>Ringkasan</button>
+        <button class="pill" data-s="pembelajaran"><svg data-lucide="book-open-check"></svg>Pembelajaran</button>
+        <button class="pill on" data-s="penilaian"><svg data-lucide="clipboard-pen-line"></svg>Penilaian</button>
+        <button class="pill" data-s="kehadiran"><svg data-lucide="calendar-check"></svg>Kehadiran</button>
+        <button class="pill" data-s="penugasan"><svg data-lucide="clipboard-list"></svg>Penugasan</button>
+        <button class="pill" data-s="capaian"><svg data-lucide="award"></svg>Capaian &amp; Rapor</button>
+        <button class="pill" data-s="mutu"><svg data-lucide="badge-check"></svg>Mutu &amp; Supervisi <span class="soon">soon</span></button>
+        <button class="pill" data-s="analitik"><svg data-lucide="line-chart"></svg>Analitik <span class="soon">soon</span></button>
+      </nav>
+
+      <!-- ===================== RINGKASAN ===================== -->
+      <section class="screen" id="s-ringkasan">
+        <div class="row" style="margin-bottom:16px">
+          <div class="kpi"><div class="lab"><svg data-lucide="target"></svg>Ketuntasan KKTP</div><div class="v">82<span style="font-size:15px;color:var(--muted)">%</span></div></div>
+          <div class="kpi"><div class="lab"><svg data-lucide="graduation-cap"></svg>Rata² Nilai Kelas</div><div class="v">81.4</div></div>
+          <div class="kpi"><div class="lab"><svg data-lucide="calendar-check"></svg>Kehadiran (bln ini)</div><div class="v">94<span style="font-size:15px;color:var(--muted)">%</span></div></div>
+          <div class="kpi"><div class="lab"><svg data-lucide="clipboard-list"></svg>Tugas belum dinilai</div><div class="v" style="color:var(--amber)">12</div></div>
+        </div>
+        <div class="grid" style="grid-template-columns:1.4fr 1fr">
+          <div class="card pad">
+            <div class="between"><div class="title"><svg data-lucide="clock"></svg>Kelas Hari Ini</div><span class="badge b-info">Senin · 3 sesi</span></div>
+            <div class="grid" style="gap:10px;margin-top:14px">
+              <div class="li"><div class="ic" style="background:var(--em50);color:var(--em700)"><svg data-lucide="code"></svg></div>
+                <div style="flex:1"><b>Pemrograman Web · XI TJKT 1</b><div class="sub">JP 1–2 · 07.00–08.20 · Lab Komputer</div></div>
+                <button class="btn sec"><svg data-lucide="calendar-check"></svg>Absen</button><button class="btn sec"><svg data-lucide="pen-line"></svg>Jurnal</button></div>
+              <div class="li"><div class="ic" style="background:#e0f2fe;color:#0369a1"><svg data-lucide="database"></svg></div>
+                <div style="flex:1"><b>Basis Data · XI TJKT 2</b><div class="sub">JP 4–5 · 09.20–10.40 · Lab Komputer</div></div>
+                <button class="btn sec"><svg data-lucide="calendar-check"></svg>Absen</button><button class="btn sec"><svg data-lucide="pen-line"></svg>Jurnal</button></div>
+            </div>
+          </div>
+          <div class="card pad">
+            <div class="title"><svg data-lucide="list-checks"></svg>Perlu Tindakan</div>
+            <div class="grid" style="gap:9px;margin-top:14px">
+              <div class="li"><div class="ic" style="background:var(--amberbg);color:var(--amber)"><svg data-lucide="clipboard-list"></svg></div><div style="flex:1"><b>12 tugas menunggu dinilai</b><div class="sub">Tugas 3 — Layout Flexbox</div></div><svg data-lucide="chevron-right" style="color:var(--muted)"></svg></div>
+              <div class="li"><div class="ic" style="background:var(--rosebg);color:var(--rose)"><svg data-lucide="user-x"></svg></div><div style="flex:1"><b>3 siswa di bawah KKTP</b><div class="sub">Perlu remedial TP 3.2</div></div><svg data-lucide="chevron-right" style="color:var(--muted)"></svg></div>
+              <div class="li"><div class="ic" style="background:#ede9fe;color:var(--violet)"><svg data-lucide="file-text"></svg></div><div style="flex:1"><b>Modul Ajar TP 3.3 = draft</b><div class="sub">Ajukan ke Wakakur untuk disetujui</div></div><svg data-lucide="chevron-right" style="color:var(--muted)"></svg></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== PEMBELAJARAN ===================== -->
+      <section class="screen" id="s-pembelajaran">
+        <div class="flowbar" style="margin-bottom:16px">
+          <svg data-lucide="git-branch"></svg> Alur Kurikulum Merdeka:
+          <span class="step">CP</span><svg data-lucide="arrow-right"></svg>
+          <span class="step">TP</span><svg data-lucide="arrow-right"></svg>
+          <span class="step">ATP</span><svg data-lucide="arrow-right"></svg>
+          <span class="step">Modul Ajar</span><svg data-lucide="arrow-right"></svg>
+          <span class="step">Jurnal Mengajar</span>
+        </div>
+        <div class="grid" style="grid-template-columns:1.5fr 1fr">
+          <div class="card pad">
+            <div class="between"><div><div class="title"><svg data-lucide="file-text"></svg>Modul Ajar</div><div class="sub">Pemrograman Web · Fase F</div></div><button class="btn"><svg data-lucide="plus"></svg>Modul Ajar</button></div>
+            <table class="simple" style="margin-top:12px">
+              <thead><tr><th>Tujuan Pembelajaran</th><th>Alokasi</th><th>Status</th><th></th></tr></thead>
+              <tbody>
+                <tr><td><b>TP 3.1</b> — Struktur HTML semantik</td><td>4 JP</td><td><span class="badge b-ok">Disetujui</span></td><td><svg data-lucide="eye" style="color:var(--muted)"></svg></td></tr>
+                <tr><td><b>TP 3.2</b> — Styling CSS & layout</td><td>6 JP</td><td><span class="badge b-ok">Disetujui</span></td><td><svg data-lucide="eye" style="color:var(--muted)"></svg></td></tr>
+                <tr><td><b>TP 3.3</b> — Flexbox & responsif</td><td>6 JP</td><td><span class="badge b-warn">Draft</span></td><td><svg data-lucide="send" style="color:var(--em600)"></svg></td></tr>
+                <tr><td><b>TP 3.4</b> — Form & validasi</td><td>4 JP</td><td><span class="badge b-info">Diajukan</span></td><td><svg data-lucide="clock" style="color:var(--muted)"></svg></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="grid">
+            <div class="card pad">
+              <div class="title"><svg data-lucide="git-branch"></svg>Pemetaan CP → TP</div>
+              <div class="sub" style="margin-bottom:10px">Elemen: Pemrograman Terstruktur</div>
+              <div style="background:var(--bg);border-radius:10px;padding:12px;font-size:12.5px;line-height:1.7;color:var(--ink2)">
+                <b style="color:var(--em800)">CP:</b> Peserta didik mampu membuat antarmuka web yang fungsional & responsif…
+                <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+                  <span>↳ <b>TP 3.1</b> · KKTP <b style="color:var(--amber)">75</b></span>
+                  <span>↳ <b>TP 3.2</b> · KKTP <b style="color:var(--amber)">75</b></span>
+                  <span>↳ <b>TP 3.3</b> · KKTP <b style="color:var(--amber)">78</b></span>
+                </div>
+              </div>
+            </div>
+            <div class="card pad">
+              <div class="title"><svg data-lucide="pen-line"></svg>Jurnal Mengajar</div>
+              <div class="timeline" style="margin-top:14px">
+                <div class="tl"><b style="font-size:13px">Pertemuan 5 · 16 Jun</b><div class="sub">TP 3.2 — Latihan layout · hadir 30/32</div></div>
+                <div class="tl"><b style="font-size:13px">Pertemuan 4 · 9 Jun</b><div class="sub">TP 3.2 — CSS selektor · hadir 31/32</div></div>
+                <div class="tl"><b style="font-size:13px">Pertemuan 3 · 2 Jun</b><div class="sub">TP 3.1 — Semantik HTML · hadir 32/32</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== PENILAIAN (HERO) ===================== -->
+      <section class="screen on" id="s-penilaian">
+        <div class="between" style="margin-bottom:14px">
+          <div class="seg">
+            <button class="on">Per-TP</button><button>Rekap Nilai</button><button>Rubrik / KKTP</button>
+          </div>
+          <div style="display:flex;gap:8px">
+            <span class="kktp-chip"><svg data-lucide="target" width="14"></svg>KKTP 75</span>
+            <button class="btn sec"><svg data-lucide="users-round"></svg>Remedial (3)</button>
+            <button class="btn sec"><svg data-lucide="download"></svg>Ekspor</button>
+            <button class="btn"><svg data-lucide="plus"></svg>Input Nilai</button>
+          </div>
+        </div>
+
+        <div class="gb-wrap">
+          <table class="gb">
+            <thead>
+              <tr class="grp">
+                <th class="stk" style="text-align:left">&nbsp;</th>
+                <th colspan="3">Formatif</th>
+                <th colspan="2">Sumatif</th>
+                <th>Akhir</th><th>Rapor</th><th>KKTP</th>
+              </tr>
+              <tr class="col">
+                <th class="stk" style="text-align:left;padding-left:12px">Siswa</th>
+                <th>TP 3.1</th><th>TP 3.2</th><th>TP 3.3</th>
+                <th>STS</th><th>SAS</th><th>NA</th><th>Nilai</th><th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="gbody"></tbody>
+            <tfoot>
+              <tr><td class="stk" style="text-align:left;padding-left:12px;color:var(--muted);font-weight:800">Rata-rata kelas</td>
+              <td>79</td><td>77</td><td>74</td><td>80</td><td>82</td><td><b>80.4</b></td><td><span class="rapor">81</span></td><td>—</td></tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--em500)"></i>≥ KKTP (tuntas)</span>
+          <span><i style="background:#fb923c"></i>Mendekati KKTP</span>
+          <span><i style="background:var(--rose)"></i>Di bawah KKTP → remedial</span>
+          <span style="margin-left:auto;color:var(--em700);font-weight:700">Klik sel untuk edit cepat · perubahan tersimpan otomatis</span>
+        </div>
+
+        <div class="flowbar" style="margin-top:16px">
+          <svg data-lucide="workflow"></svg> Alur penilaian:
+          <span class="step">Pilih TP</span><svg data-lucide="arrow-right"></svg>
+          <span class="step">Input formatif/sumatif</span><svg data-lucide="arrow-right"></svg>
+          <span class="step">Bandingkan KKTP</span><svg data-lucide="arrow-right"></svg>
+          <span class="step">Remedial / pengayaan</span><svg data-lucide="arrow-right"></svg>
+          <span class="step">Nilai Akhir → Rapor</span>
+        </div>
+      </section>
+
+      <!-- ===================== KEHADIRAN ===================== -->
+      <section class="screen" id="s-kehadiran">
+        <div class="card pad">
+          <div class="between">
+            <div><div class="title"><svg data-lucide="calendar-check"></svg>Absensi Sesi — Pertemuan 6</div><div class="sub">Senin, 16 Jun · JP 1–2 · Pemrograman Web · XI TJKT 1</div></div>
+            <div style="display:flex;gap:8px"><button class="btn sec"><svg data-lucide="qr-code"></svg>Mode QR</button><button class="btn sec"><svg data-lucide="check-check"></svg>Tandai semua hadir</button><button class="btn"><svg data-lucide="save"></svg>Simpan</button></div>
+          </div>
+          <div style="margin:14px 0 6px;display:flex;gap:10px;flex-wrap:wrap">
+            <span class="badge b-ok">Hadir 30</span><span class="badge b-info">Izin 1</span><span class="badge b-warn">Sakit 1</span><span class="badge b-rose">Alpha 0</span>
+            <span style="margin-left:auto;font-weight:800;color:var(--em700)">94% kehadiran</span>
+          </div>
+          <table class="simple" id="attbody"></table>
+        </div>
+      </section>
+
+      <!-- ===================== PENUGASAN ===================== -->
+      <section class="screen" id="s-penugasan">
+        <div class="grid" style="grid-template-columns:1fr 1.6fr">
+          <div class="card pad">
+            <div class="between"><div class="title"><svg data-lucide="clipboard-list"></svg>Tugas</div><button class="btn"><svg data-lucide="plus"></svg>Tugas</button></div>
+            <div class="grid" style="gap:10px;margin-top:12px">
+              <div class="li" style="border-color:var(--em200);background:var(--em50)"><div style="flex:1"><b>Tugas 3 — Layout Flexbox</b><div class="sub">Tenggat 18 Jun · 20/32 terkumpul</div></div><span class="badge b-warn">12 dinilai</span></div>
+              <div class="li"><div style="flex:1"><b>Tugas 2 — Styling Kartu</b><div class="sub">Tenggat 11 Jun · 32/32</div></div><span class="badge b-ok">Selesai</span></div>
+              <div class="li"><div style="flex:1"><b>Kuis 1 — Selektor CSS</b><div class="sub">Tenggat 4 Jun · 31/32</div></div><span class="badge b-ok">Selesai</span></div>
+            </div>
+          </div>
+          <div class="card pad">
+            <div class="between"><div><div class="title"><svg data-lucide="inbox"></svg>Pengumpulan — Tugas 3</div><div class="sub">Flexbox · KKTP 75</div></div><span class="badge b-info" style="display:inline-flex;gap:5px;align-items:center"><svg data-lucide="shield-check" width="13"></svg>Cek orisinalitas (AI) · soon</span></div>
+            <table class="simple" style="margin-top:10px">
+              <thead><tr><th>Siswa</th><th>Status</th><th>Berkas</th><th>Nilai</th><th></th></tr></thead>
+              <tbody>
+                <tr><td>Ahmad Fauzi</td><td><span class="badge b-ok">Terkumpul</span></td><td><svg data-lucide="paperclip" width="15" style="color:var(--muted)"></svg> tugas3.zip</td><td><b>88</b></td><td><button class="btn sec" style="padding:5px 10px">Nilai</button></td></tr>
+                <tr><td>Bunga Lestari</td><td><span class="badge b-warn">Terlambat</span></td><td><svg data-lucide="paperclip" width="15" style="color:var(--muted)"></svg> flex.html</td><td>—</td><td><button class="btn" style="padding:5px 10px">Nilai</button></td></tr>
+                <tr><td>Citra Dewi</td><td><span class="badge b-mut">Belum</span></td><td>—</td><td>—</td><td><button class="btn sec" style="padding:5px 10px">Ingatkan</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== CAPAIAN & RAPOR ===================== -->
+      <section class="screen" id="s-capaian">
+        <div class="grid" style="grid-template-columns:1fr 1.4fr">
+          <div class="card pad" style="display:flex;gap:18px;align-items:center">
+            <div class="donut"><div class="in"><b>82%</b><small>TUNTAS KKTP</small></div></div>
+            <div><div class="title" style="font-size:14px"><svg data-lucide="award"></svg>Capaian Kelas</div>
+              <div class="grid" style="gap:7px;margin-top:10px;font-size:12.5px;font-weight:700;color:var(--ink2)">
+                <span>Tuntas <b style="color:var(--em700)">26 siswa</b></span>
+                <span>Remedial <b style="color:var(--rose)">3 siswa</b></span>
+                <span>Pengayaan <b style="color:var(--sky)">3 siswa</b></span>
+              </div></div>
+          </div>
+          <div class="card pad">
+            <div class="title"><svg data-lucide="graduation-cap"></svg>Rapor Kurikulum Merdeka</div>
+            <div class="sub" style="margin-bottom:10px">Nilai + deskripsi capaian per TP (otomatis dari data penilaian)</div>
+            <div style="background:var(--bg);border-radius:10px;padding:14px;font-size:12.5px;line-height:1.7;color:var(--ink2)">
+              <b>Ahmad Fauzi — Pemrograman Web · 87 (A)</b>
+              <div style="margin-top:6px;display:flex;gap:7px;align-items:start"><svg data-lucide="sparkles" width="15" style="color:var(--violet);margin-top:2px"></svg>
+              <i>"Menunjukkan penguasaan sangat baik pada struktur HTML semantik & layout responsif (TP 3.1–3.3). Perlu penguatan pada validasi form."</i></div>
+              <div style="margin-top:8px"><span class="badge b-info" style="display:inline-flex;gap:5px;align-items:center"><svg data-lucide="sparkles" width="12"></svg>Deskripsi dibuat Asisten AI · dapat disunting guru</span></div>
+            </div>
+            <div class="flowbar" style="margin-top:12px">Alur: <span class="step">Nilai per TP</span><svg data-lucide="arrow-right"></svg><span class="step">Deskripsi (AI)</span><svg data-lucide="arrow-right"></svg><span class="step">Periksa KS</span><svg data-lucide="arrow-right"></svg><span class="step">Terbit & bagikan WA ortu</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== MUTU ===================== -->
+      <section class="screen" id="s-mutu">
+        <div class="soonbox"><div class="ic"><svg data-lucide="badge-check"></svg></div>
+          <div class="title" style="justify-content:center">Mutu &amp; Supervisi Akademik</div>
+          <p class="sub" style="max-width:560px;margin:8px auto 0;font-size:13px">Supervisi kelas oleh Kepala Sekolah/Wakakur (instrumen + tindak lanjut), analisis daya serap per TP, ketercapaian kurikulum (rencana vs realisasi), dan penjaminan mutu internal. <b style="color:var(--em700)">Menyusul setelah fondasi penilaian & jurnal terisi.</b></p>
+        </div>
+      </section>
+
+      <!-- ===================== ANALITIK ===================== -->
+      <section class="screen" id="s-analitik">
+        <div class="soonbox"><div class="ic"><svg data-lucide="line-chart"></svg></div>
+          <div class="title" style="justify-content:center">Analitik Pembelajaran &amp; AI</div>
+          <p class="sub" style="max-width:560px;margin:8px auto 0;font-size:13px">Learning analytics (tren penguasaan TP per siswa/kelas), early-warning akademik (nilai+kehadiran+tugas), rekomendasi belajar adaptif, dan Asisten AI Guru (buat soal, rubrik, deskripsi rapor). <b style="color:var(--em700)">Terhubung ke modul AI & Dasbor Eksekutif.</b></p>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  // data siswa + nilai (demo)
+  const STUD=[
+    ["Ahmad Fauzi","2024001",[85,88,82,86,90]],
+    ["Bunga Lestari","2024002",[78,74,80,79,84]],
+    ["Citra Dewi","2024003",[68,62,70,66,72]],
+    ["Dimas Pratama","2024004",[90,92,88,91,95]],
+    ["Eka Putri","2024005",[72,70,68,74,76]],
+    ["Fajar Nugroho","2024006",[58,55,60,62,64]],
+    ["Gita Maharani","2024007",[83,85,80,84,88]],
+    ["Hadi Santoso","2024008",[76,79,74,77,81]],
+  ];
+  const KKTP=75;
+  function cls(v){return v>=KKTP?'c-hi':v>=KKTP-8?'c-mid':'c-lo';}
+  function ini(n){return n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();}
+  const gb=document.getElementById('gbody');
+  STUD.forEach(([n,nis,s])=>{
+    const na=Math.round((s[0]+s[1]+s[2]+s[3]+s[4])/5);
+    const tuntas=na>=KKTP;
+    gb.insertAdjacentHTML('beforeend',`<tr>
+      <td class="stk"><div class="stu"><div class="ini">${ini(n)}</div><div><b>${n}</b><small>NIS ${nis}</small></div></div></td>
+      <td><span class="cell ${cls(s[0])}">${s[0]}</span></td>
+      <td><span class="cell ${cls(s[1])}">${s[1]}</span></td>
+      <td><span class="cell ${cls(s[2])}">${s[2]}</span></td>
+      <td><span class="cell ${cls(s[3])}">${s[3]}</span></td>
+      <td><span class="cell ${cls(s[4])}">${s[4]}</span></td>
+      <td><b>${na}</b></td>
+      <td><span class="rapor">${Math.round(na*0.99)}</span></td>
+      <td>${tuntas?'<span class="badge b-ok">Tuntas</span>':'<span class="badge b-rose">Remedial</span>'}</td>
+    </tr>`);
+  });
+  // absensi
+  const att=document.getElementById('attbody');
+  att.innerHTML='<thead><tr><th>Siswa</th><th>Status</th><th>Catatan</th></tr></thead>';
+  const tb=document.createElement('tbody');
+  const stat=['H','H','I','H','S','H','H','H'];
+  STUD.forEach(([n,nis],i)=>{
+    const cur=stat[i];
+    const seg=['H','I','S','A'].map(k=>`<span class="${k} ${k===cur?'on':''}">${k}</span>`).join('');
+    tb.insertAdjacentHTML('beforeend',`<tr><td><div class="stu"><div class="ini">${ini(n)}</div><div><b>${n}</b><small>NIS ${nis}</small></div></div></td>
+      <td><div class="att">${seg}</div></td><td style="color:var(--muted)">${cur==='I'?'Izin keluarga':cur==='S'?'Sakit':'—'}</td></tr>`);
+  });
+  att.appendChild(tb);
+  // nav switching
+  document.querySelectorAll('#subnav .pill').forEach(p=>p.addEventListener('click',()=>{
+    document.querySelectorAll('#subnav .pill').forEach(x=>x.classList.remove('on'));
+    p.classList.add('on');
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+    document.getElementById('s-'+p.dataset.s).classList.add('on');
+    lucide.createIcons();
+  }));
+  // attendance toggle interactivity
+  document.addEventListener('click',e=>{
+    const sp=e.target.closest('.att span'); if(!sp)return;
+    sp.parentElement.querySelectorAll('span').forEach(x=>x.classList.remove('on')); sp.classList.add('on');
+  });
+  lucide.createIcons();
+</script>
+</body>
+</html>

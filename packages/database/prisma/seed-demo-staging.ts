@@ -198,6 +198,57 @@ async function main() {
     console.log(`✓ PPDB leads: +${leads.count} (dari ${leadRows.length})`);
   }
 
+  // ── 7. Inspector sebagai GURU (akun login GURU yg bisa dites) + Schedule ────
+  // Pastikan akun inspector punya Teacher + assignment → dashboard Akademik Guru terisi.
+  const inspector = await prisma.user.findFirst({
+    where: { email: 'inspector@smkdarussalamsubah.sch.id' },
+    select: { id: true },
+  });
+  if (inspector) {
+    let t = await prisma.teacher.findFirst({ where: { userId: inspector.id }, select: { id: true } });
+    if (!t) t = await prisma.teacher.create({ data: { userId: inspector.id }, select: { id: true } });
+    const someClasses = classes.slice(0, 2);
+    const subs = ['Pemrograman Web', 'Basis Data', 'Matematika'];
+    for (const c of someClasses) {
+      for (const subj of subs) {
+        await prisma.teachingAssignment.upsert({
+          where: { teacherId_classId_subject_academicYear: { teacherId: t.id, classId: c.id, subject: subj, academicYear: c.academicYear } },
+          update: {},
+          create: { teacherId: t.id, classId: c.id, subject: subj, hoursPerWeek: 2, academicYear: c.academicYear },
+        });
+      }
+    }
+    console.log(`✓ Inspector → Teacher + assignment (kelas: ${someClasses.map((c) => c.name).join(', ')})`);
+  } else {
+    console.log('• Akun inspector tak ditemukan → lewati setup guru testable.');
+  }
+
+  // Jadwal mingguan (template) untuk SEMUA teaching-assignment, tanpa bentrok kelas/guru.
+  if ((await prisma.schedule.count()) > 0) {
+    console.log('• Schedule sudah ada → skip.');
+  } else {
+    const tas = await prisma.teachingAssignment.findMany({ select: { id: true, teacherId: true, classId: true, academicYear: true } });
+    const BLOCKS: [number, number][] = [[1, 2], [4, 5], [7, 8], [3, 3], [6, 6]];
+    const usedClass = new Set<string>();
+    const usedTeacher = new Set<string>();
+    const schedRows: { classId: string; teachingAssignmentId: string; dayOfWeek: number; jpStart: number; jpEnd: number; room: string; academicYear: string; semester: number }[] = [];
+    for (const ta of tas) {
+      let placed = false;
+      for (let day = 1; day <= 6 && !placed; day++) {
+        for (const [a, b] of BLOCKS) {
+          const ck = `${ta.classId}|${day}|${a}`;
+          const tk = `${ta.teacherId}|${day}|${a}`;
+          if (usedClass.has(ck) || usedTeacher.has(tk)) continue;
+          usedClass.add(ck); usedTeacher.add(tk);
+          schedRows.push({ classId: ta.classId, teachingAssignmentId: ta.id, dayOfWeek: day, jpStart: a, jpEnd: b, room: 'Lab Komputer', academicYear: ta.academicYear, semester });
+          placed = true; break;
+        }
+      }
+    }
+    const sc = await prisma.schedule.createMany({ data: schedRows, skipDuplicates: true });
+    console.log(`✓ Schedule: +${sc.count} (dari ${schedRows.length})`);
+  }
+
   console.log('🎉 Seed demo lengkap selesai.');
 }
 
