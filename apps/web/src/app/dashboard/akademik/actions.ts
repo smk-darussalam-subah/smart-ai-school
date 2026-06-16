@@ -48,3 +48,43 @@ export async function createSubject(data: { code: string; name: string }) {
   const r = await apiCall('/subjects', 'POST', data);
   return r;
 }
+
+// ── Dashboard Guru ────────────────────────────────────────────────────────────
+
+export interface RosterStudent {
+  id: string;
+  nis: string;
+  name: string;
+}
+
+/** Roster siswa aktif satu kelas (untuk modal Absen). */
+export async function fetchClassRoster(classId: string): Promise<RosterStudent[]> {
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) return [];
+  const res = await fetch(`${API_BASE}/api/v1/students?classId=${classId}&status=active&limit=100`, {
+    headers: { Authorization: `Bearer ${session.accessToken}` },
+    cache: 'no-store',
+  });
+  if (!res.ok) return [];
+  const json = (await res.json()) as { data?: { id: string; nis: string; user?: { fullName?: string } }[] };
+  return (json.data ?? []).map((s) => ({ id: s.id, nis: s.nis, name: s.user?.fullName ?? '—' }));
+}
+
+/** Simpan Jurnal Mengajar (disimpan sebagai ClassActivity / Kegiatan Kelas). */
+export async function createJurnal(data: {
+  classId: string;
+  date: string;
+  title: string;
+  description: string;
+  category?: string;
+}) {
+  const r = await apiCall('/class-activities', 'POST', {
+    classId: data.classId,
+    date: data.date,
+    title: data.title,
+    description: data.description,
+    category: data.category ?? 'pembelajaran',
+  });
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
