@@ -1,0 +1,1272 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="dark">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DIIS — Dashboard Siswa (Mockup)</title>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>try{var t=localStorage.getItem('diis-theme')||'dark';document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+<style>
+  :root[data-theme="dark"]{
+    --bg:#0a0f0d;--bg2:#0f1612;--surface:rgba(255,255,255,.035);--surface2:rgba(255,255,255,.06);
+    --border:rgba(255,255,255,.08);--border2:rgba(255,255,255,.12);
+    --text:#e8f5ee;--muted:#7a9b8e;--dim:#4a6b5e;
+    --em:#10b981;--eml:#34d399;--emd:#059669;--emdd:#065f46;
+    --grad:linear-gradient(135deg,#10b981,#065f46);--grad-v:linear-gradient(135deg,#34d399,#10b981,#0d9488);
+    --amber:#f59e0b;--rose:#ef4444;--sky:#0ea5e9;--violet:#a78bfa;--pink:#ec4899;
+    --sh:0 4px 24px -8px rgba(0,0,0,.5);--shlift:0 8px 40px -12px rgba(0,0,0,.6);
+    --r:16px;--r-sm:12px;--r-lg:20px;
+    --ring-bg:rgba(255,255,255,.06);--bar-bg:rgba(255,255,255,.06);
+    --ovl-bg:rgba(0,0,0,.6);--nav-bg:rgba(10,15,13,.9);--topbar-bg:rgba(10,15,13,.8);
+    --glow-bd:rgba(16,185,129,.2);--glow-sh:0 0 0 1px rgba(16,185,129,.1),0 4px 24px -8px rgba(16,185,129,.15);
+    --empty-cell:rgba(255,255,255,.02);--glow-text:0 0 20px rgba(16,185,129,.3);
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f7f5;--bg2:#fff;--surface:#fff;--surface2:#f0f5f2;
+    --border:#e6efea;--border2:#d1e4db;
+    --text:#0f2e25;--muted:#6b8079;--dim:#9bb0a8;
+    --em:#059669;--eml:#10b981;--emd:#047857;--emdd:#065f46;
+    --grad:linear-gradient(135deg,#059669,#065f46);--grad-v:linear-gradient(135deg,#10b981,#059669,#0d9488);
+    --amber:#d97706;--rose:#e11d48;--sky:#0284c7;--violet:#7c3aed;--pink:#db2777;
+    --sh:0 1px 2px rgba(16,40,33,.04),0 8px 24px -14px rgba(16,40,33,.14);
+    --shlift:0 2px 6px rgba(16,40,33,.06),0 22px 40px -20px rgba(16,40,33,.28);
+    --r:16px;--r-sm:12px;--r-lg:20px;
+    --ring-bg:#e6efea;--bar-bg:#e6efea;
+    --ovl-bg:rgba(0,0,0,.4);--nav-bg:rgba(255,255,255,.92);--topbar-bg:rgba(244,247,245,.85);
+    --glow-bd:rgba(5,150,105,.15);--glow-sh:0 0 0 1px rgba(5,150,105,.08),0 4px 24px -8px rgba(5,150,105,.1);
+    --empty-cell:rgba(0,0,0,.02);--glow-text:0 0 12px rgba(5,150,105,.2);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',system-ui,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:14px;-webkit-font-smoothing:antialiased;overflow-x:hidden;transition:background .3s,color .3s}
+  body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 0%,rgba(16,185,129,.08),transparent),radial-gradient(ellipse 40% 40% at 100% 100%,rgba(167,139,250,.05),transparent);pointer-events:none;z-index:0}
+  :root[data-theme="light"] body::before{background:radial-gradient(ellipse 60% 50% at 50% 0%,rgba(5,150,105,.06),transparent),radial-gradient(ellipse 40% 40% at 100% 100%,rgba(124,58,237,.03),transparent)}
+  .app{position:relative;z-index:1;max-width:560px;margin:0 auto;min-height:100vh;padding-bottom:80px}
+  /* topbar */
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;position:sticky;top:0;z-index:20;background:var(--topbar-bg);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
+  .topbar .brand{display:flex;align-items:center;gap:10px}
+  .topbar .logo{width:34px;height:34px;border-radius:10px;background:var(--grad);display:grid;place-items:center;color:#fff;font-weight:800;font-size:16px;box-shadow:0 0 20px rgba(16,185,129,.3)}
+  .topbar .brand b{font-size:15px}.topbar .brand small{display:block;color:var(--muted);font-size:10px;font-weight:600}
+  .topbar .acts{display:flex;gap:8px}
+  .iconbtn{width:38px;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);display:grid;place-items:center;cursor:pointer;position:relative}
+  .iconbtn svg{width:18px;height:18px}
+  .iconbtn .dot{position:absolute;top:8px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--rose);border:1.5px solid var(--bg)}
+  /* screens */
+  .screen{display:none;animation:fadeIn .3s ease}.screen.on{display:block}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+  .pad{padding:16px 20px}
+  /* card */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);backdrop-filter:blur(12px);padding:16px;margin-bottom:12px}
+  .card.glow{border-color:rgba(16,185,129,.2);box-shadow:0 0 0 1px rgba(16,185,129,.1),0 4px 24px -8px rgba(16,185,129,.15)}
+  .card-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .card-h .lbl{font-size:11px;font-weight:800;letter-spacing:.8px;color:var(--muted);text-transform:uppercase;display:flex;align-items:center;gap:6px}
+  .card-h .lbl svg{width:14px;height:14px;color:var(--em)}
+  .card-h .link{font-size:11px;font-weight:700;color:var(--eml);cursor:pointer;display:flex;align-items:center;gap:3px}
+  .card-h .link svg{width:13px;height:13px}
+  /* greeting */
+  .greet{padding:8px 20px 16px}
+  .greet h1{font-size:24px;font-weight:800;letter-spacing:-.5px;line-height:1.2}
+  .greet h1 .wave{display:inline-block;animation:wave 1.5s ease infinite}
+  @keyframes wave{0%,60%,100%{transform:rotate(0)}30%{transform:rotate(15deg)}}
+  .greet p{color:var(--muted);font-size:13px;font-weight:600;margin-top:3px}
+  .greet .streak{display:inline-flex;align-items:center;gap:5px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.25);color:var(--amber);font-size:11px;font-weight:800;padding:4px 10px;border-radius:20px;margin-top:8px}
+  .greet .streak svg{width:13px;height:13px}
+  /* stat grid */
+  .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:0 20px 16px}
+  .stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px;position:relative;overflow:hidden;cursor:pointer;transition:.2s}
+  .stat:hover{border-color:var(--border2);transform:translateY(-1px)}
+  .stat .ic{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;margin-bottom:8px}
+  .stat .ic svg{width:17px;height:17px}
+  .stat .v{font-size:22px;font-weight:800;letter-spacing:-.5px;line-height:1}
+  .stat .v small{font-size:13px;color:var(--muted);font-weight:700}
+  .stat .l{font-size:10.5px;color:var(--muted);font-weight:700;margin-top:3px}
+  .stat .delta{font-size:10px;font-weight:800;margin-top:2px}
+  .stat .delta.up{color:var(--em)}.stat .delta.down{color:var(--rose)}
+  /* schedule timeline */
+  .tl-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+  .tl-item:last-child{border-bottom:0}
+  .tl-time{width:48px;flex-shrink:0;text-align:right}
+  .tl-time .h{font-size:11px;font-weight:800;color:var(--text)}
+  .tl-time .m{font-size:9px;color:var(--muted);font-weight:600}
+  .tl-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px;border:2px solid var(--bg);box-shadow:0 0 0 2px var(--em)}
+  .tl-dot.done{background:var(--em)}.tl-dot.now{background:var(--amber);box-shadow:0 0 0 2px var(--amber),0 0 12px rgba(245,158,11,.5);animation:pulse 1.5s infinite}
+  .tl-dot.next{background:transparent;border-color:var(--dim)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+  .tl-body{flex:1;min-width:0}
+  .tl-body .mp{font-size:13px;font-weight:700;color:var(--text)}
+  .tl-body .meta{font-size:11px;color:var(--muted);font-weight:600;display:flex;gap:8px;align-items:center;margin-top:2px}
+  .tl-body .meta svg{width:11px;height:11px}
+  .tl-body .badge{font-size:9px;font-weight:800;padding:2px 7px;border-radius:6px;display:inline-block;margin-top:4px}
+  /* assignment card */
+  .task{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);margin-bottom:8px;cursor:pointer;transition:.2s}
+  .task:hover{border-color:var(--border2);background:var(--surface2)}
+  .task .ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex-shrink:0}
+  .task .ic svg{width:18px;height:18px}
+  .task .info{flex:1;min-width:0}
+  .task .info b{font-size:13px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .task .info small{font-size:11px;color:var(--muted);font-weight:600}
+  .task .info small.urgent{color:var(--rose)}
+  .task .stat-tag{font-size:10px;font-weight:800;padding:3px 8px;border-radius:7px;white-space:nowrap}
+  /* grade item */
+  .grade-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+  .grade-row:last-child{border-bottom:0}
+  .grade-row .ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;flex-shrink:0;font-size:13px;font-weight:800}
+  .grade-row .info{flex:1;min-width:0}
+  .grade-row .info b{font-size:13px}.grade-row .info small{display:block;font-size:11px;color:var(--muted);font-weight:600;margin-top:1px}
+  .grade-row .score{font-size:18px;font-weight:800;letter-spacing:-.5px}
+  .grade-row .bar{width:100%;height:5px;border-radius:4px;background:var(--bar-bg);margin-top:4px;overflow:hidden}
+  .grade-row .bar i{display:block;height:100%;border-radius:4px;background:var(--grad)}
+  /* progress ring */
+  .ring-wrap{display:flex;align-items:center;gap:14px}
+  .ring{position:relative;width:64px;height:64px;flex-shrink:0}
+  .ring svg{transform:rotate(-90deg)}
+  .ring .bg-c{stroke:var(--ring-bg)}
+  .ring .fg-c{stroke:var(--em);stroke-linecap:round;transition:stroke-dashoffset .5s ease}
+  .ring .pct{position:absolute;inset:0;display:grid;place-items:center;font-size:14px;font-weight:800}
+  /* badge */
+  .badge-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .badge-item{text-align:center;cursor:pointer;transition:.2s}
+  .badge-item:hover{transform:translateY(-2px)}
+  .badge-item .b-medal{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;margin:0 auto 6px;position:relative}
+  .badge-item .b-medal svg{width:26px;height:26px}
+  .badge-item.locked .b-medal{opacity:.35;filter:grayscale(1)}
+  .badge-item .b-name{font-size:10px;font-weight:700;color:var(--text)}
+  .badge-item.locked .b-name{color:var(--dim)}
+  .badge-item .b-prog{font-size:9px;color:var(--muted);font-weight:600;margin-top:1px}
+  /* calendar heatmap */
+  .cal-wrap{padding-bottom:4px;overflow:hidden}
+  .cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;width:100%}
+  .cal .cal-h{font-size:10px;color:var(--dim);font-weight:800;text-align:center;padding:2px 0}
+  .cal .cal-cell{aspect-ratio:1;border-radius:5px;display:grid;place-items:center;font-size:11px;font-weight:800;cursor:pointer;transition:.15s}
+  .cal .cal-cell:hover{transform:scale(1.15);z-index:1}
+  .cal .cal-cell.hadir{background:rgba(16,185,129,.25);color:var(--eml);border:1px solid rgba(16,185,129,.3)}
+  .cal .cal-cell.izin{background:rgba(14,165,233,.2);color:var(--sky);border:1px solid rgba(14,165,233,.25)}
+  .cal .cal-cell.sakit{background:rgba(245,158,11,.2);color:var(--amber);border:1px solid rgba(245,158,11,.25)}
+  .cal .cal-cell.alpha{background:rgba(239,68,68,.2);color:var(--rose);border:1px solid rgba(239,68,68,.25)}
+  .cal .cal-cell.empty{background:var(--empty-cell);border:1px solid var(--border)}
+  .cal .cal-cell.today{outline:2px solid var(--em);outline-offset:-3px}
+  /* pills/tabs */
+  .tabs{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+  .tab{padding:8px 14px;border-radius:10px;font-size:12.5px;font-weight:700;color:var(--muted);background:var(--surface);border:1px solid var(--border);cursor:pointer;white-space:nowrap;transition:.2s}
+  .tab.on{background:var(--grad);color:#fff;border-color:transparent}
+  .tab .cnt{font-size:10px;font-weight:800;background:rgba(255,255,255,.15);padding:1px 6px;border-radius:20px;margin-left:3px}
+  /* bottom nav */
+  .bottomnav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:560px;display:flex;justify-content:space-around;background:var(--nav-bg);backdrop-filter:blur(24px);border-top:1px solid var(--border);padding:8px 4px;z-index:30}
+  .nav-item{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 7px;border-radius:10px;cursor:pointer;transition:.2s;color:var(--dim)}
+  .nav-item svg{width:20px;height:20px}
+  .nav-item span{font-size:9px;font-weight:700}
+  .nav-item.on{color:var(--em)}
+  .nav-item.on svg{filter:drop-shadow(0 0 6px rgba(16,185,129,.4))}
+  /* level/XP bar */
+  .xp-card{background:var(--grad);border-radius:var(--r);padding:16px;color:#fff;position:relative;overflow:hidden}
+  .xp-card::after{content:'';position:absolute;top:-20px;right:-20px;width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,.08)}
+  .xp-card .lvl{display:flex;align-items:center;justify-content:space-between}
+  .xp-card .lvl b{font-size:20px;font-weight:800}
+  .xp-card .lvl small{font-size:11px;opacity:.8;font-weight:700}
+  .xp-card .xp-bar{height:8px;border-radius:5px;background:rgba(255,255,255,.2);margin-top:10px;overflow:hidden}
+  .xp-card .xp-bar i{display:block;height:100%;border-radius:5px;background:#fff}
+  .xp-card .xp-info{display:flex;justify-content:space-between;font-size:10px;margin-top:5px;opacity:.85;font-weight:600}
+  /* modal */
+  .ovl{position:fixed;inset:0;background:var(--ovl-bg);backdrop-filter:blur(4px);display:none;align-items:flex-end;justify-content:center;z-index:50}
+  .ovl.on{display:flex}
+  .modal{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r-lg) var(--r-lg) 0 0;width:100%;max-width:560px;max-height:85vh;overflow:auto;padding:20px;animation:slideUp .3s ease}
+  @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  .modal .mh{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .modal .mh b{font-size:17px;font-weight:800}.modal .mh .sub{font-size:12px;color:var(--muted);font-weight:600;margin-top:2px}
+  .modal .mfield{margin-bottom:14px}.modal .mfield label{font-size:11px;font-weight:800;color:var(--muted);display:block;margin-bottom:5px}
+  .modal .mfield .val{font-size:14px;font-weight:700;color:var(--text)}
+  .statrow{display:flex;gap:8px;margin:12px 0}
+  .statpill{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px;text-align:center}
+  .statpill .n{font-size:18px;font-weight:800}.statpill .l{font-size:10px;color:var(--muted);font-weight:700}
+  .seg{display:inline-flex;background:var(--surface);border-radius:10px;padding:3px;margin-bottom:12px}
+  .seg button{border:0;background:transparent;font:inherit;font-size:12px;font-weight:700;color:var(--muted);padding:7px 13px;border-radius:8px;cursor:pointer}
+  .seg button.on{background:var(--em);color:#fff}
+  .note{border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;margin-bottom:10px}
+  .note.info{background:rgba(14,165,233,.1);color:var(--sky);border:1px solid rgba(14,165,233,.2)}
+  .note.warn{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
+  .note.ok{background:rgba(16,185,129,.1);color:var(--eml);border:1px solid rgba(16,185,129,.2)}
+  /* schedule table */
+  .sday{display:none}.sday.on{display:block}
+  .day-tabs{display:flex;gap:5px;margin-bottom:14px;overflow-x:auto}
+  .day-tab{flex-shrink:0;padding:8px 14px;border-radius:10px;font-size:12px;font-weight:700;color:var(--muted);background:var(--surface);border:1px solid var(--border);cursor:pointer;text-align:center;min-width:50px}
+  .day-tab.on{background:var(--grad);color:#fff;border-color:transparent}
+  .day-tab small{display:block;font-size:9px;opacity:.7;margin-top:1px}
+  /* toast */
+  .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--em);color:var(--text);padding:10px 18px;border-radius:12px;font-size:12.5px;font-weight:700;box-shadow:var(--shlift);z-index:100;animation:fadeIn .3s}
+  .seedbar{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:8px 12px;font-size:11px;font-weight:700;color:var(--amber);margin:0 20px 12px;display:flex;align-items:center;gap:8px}
+  .seedbar svg{width:14px;height:14px}
+  .empty{text-align:center;padding:30px 20px;color:var(--dim)}
+  .empty svg{width:32px;height:32px;margin-bottom:8px;opacity:.5}
+  /* module card */
+  .modcard{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);overflow:hidden;margin-bottom:10px;cursor:pointer;transition:.2s;box-shadow:var(--sh)}
+  .modcard:hover{border-color:var(--border2);transform:translateY(-1px)}
+  .modcard.locked{opacity:.55}
+  .mc-banner{height:60px;background:var(--grad);position:relative;display:flex;align-items:center;padding:0 14px}
+  .mc-banner .mc-icon{width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.2);display:grid;place-items:center;backdrop-filter:blur(4px)}
+  .mc-banner .mc-icon svg{width:17px;height:17px;color:#fff}
+  .mc-banner .mc-tag{position:absolute;top:7px;left:10px;background:rgba(255,255,255,.2);color:#fff;font-size:9px;font-weight:800;padding:2px 7px;border-radius:5px;backdrop-filter:blur(4px)}
+  .mc-body{padding:12px 14px}.mc-body b{font-size:13px;display:block}.mc-body small{font-size:11px;color:var(--muted);font-weight:600}
+  .mc-foot{display:flex;align-items:center;gap:8px;margin-top:8px}
+  .mc-prog{flex:1;height:5px;border-radius:4px;background:var(--bar-bg);overflow:hidden}.mc-prog i{display:block;height:100%;border-radius:4px;background:var(--grad)}
+  .mc-pct{font-size:11px;font-weight:800;color:var(--em)}
+  .mc-lock{font-size:10px;color:var(--dim);font-weight:600;display:flex;align-items:center;gap:4px}.mc-lock svg{width:12px;height:12px}
+  /* learning path */
+  .lp-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer}.lp-item:last-child{border-bottom:0}
+  .lp-icon{width:28px;height:28px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;margin-top:2px}.lp-icon svg{width:15px;height:15px}
+  .lp-item.done .lp-icon{background:rgba(16,185,129,.15);color:var(--em)}
+  .lp-item.active .lp-icon{background:rgba(245,158,11,.15);color:var(--amber);animation:pulse 2s infinite}
+  .lp-item.todo .lp-icon{background:var(--surface2);color:var(--dim)}
+  .lp-item.locked .lp-icon{background:var(--surface2);color:var(--dim);opacity:.5}
+  .lp-body{flex:1;min-width:0}.lp-body b{font-size:12.5px;display:block}.lp-body small{font-size:11px;color:var(--muted);font-weight:600}
+  .lp-status{font-size:10px;font-weight:700;margin-top:3px;display:flex;align-items:center;gap:4px}.lp-status svg{width:12px;height:12px}
+  /* back btn + quiz + celebration */
+  .back-btn{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;margin-bottom:12px}.back-btn svg{width:16px;height:16px}
+  .qq{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px;margin-bottom:10px}
+  .qq .q-num{font-size:10px;font-weight:800;color:var(--em);text-transform:uppercase;letter-spacing:.5px}
+  .qq .q-text{font-size:13px;font-weight:700;margin:5px 0 10px}
+  .qq-opt{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:6px;cursor:pointer;transition:.15s;font-size:12.5px;font-weight:600}
+  .qq-opt:hover{border-color:var(--border2);background:var(--surface2)}
+  .qq-opt.sel{border-color:var(--em);background:rgba(16,185,129,.08)}
+  .qq-opt .q-letter{width:24px;height:24px;border-radius:6px;background:var(--surface2);display:grid;place-items:center;font-size:11px;font-weight:800;flex-shrink:0}
+  .qq-opt.sel .q-letter{background:var(--em);color:#fff}
+  .badge-overlay{position:fixed;inset:0;background:var(--ovl-bg);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;z-index:60}.badge-overlay.on{display:flex}
+  .badge-celeb{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r-lg);padding:28px 24px;text-align:center;max-width:340px;width:90%;animation:slideUp .4s ease;box-shadow:var(--shlift);position:relative}
+  .bc-badge{width:80px;height:80px;border-radius:50%;display:grid;place-items:center;margin:0 auto 14px;position:relative}.bc-badge svg{width:36px;height:36px;color:#fff}
+  .bc-badge::before{content:'';position:absolute;inset:-6px;border-radius:50%;border:2px solid currentColor;opacity:.3}
+  .bc-title{font-size:16px;font-weight:800}.bc-name{font-size:20px;font-weight:800;margin-top:4px}
+  .bc-desc{font-size:12px;color:var(--muted);font-weight:600;margin-top:8px;line-height:1.5}
+  .bc-score{font-size:28px;font-weight:800;color:var(--em);margin-top:12px}
+  .bc-actions{display:flex;gap:8px;margin-top:16px}.bc-actions button{flex:1;padding:11px;border:0;border-radius:10px;font-weight:700;font-size:12.5px;cursor:pointer}
+  .confetti{position:absolute;top:0;left:0;width:100%;height:100%;overflow:hidden;pointer-events:none;border-radius:var(--r-lg)}
+  .confetti span{position:absolute;width:8px;height:8px;animation:confettiFall 2s ease-out forwards}
+  @keyframes confettiFall{0%{transform:translateY(-20px) rotate(0);opacity:1}100%{transform:translateY(400px) rotate(360deg);opacity:0}}
+  /* TP list in capaian */
+  .tp-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px;font-weight:600}.tp-row:last-child{border-bottom:0}
+  .tp-check{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--dim);flex-shrink:0;display:grid;place-items:center}.tp-row.done .tp-check{background:var(--em);border-color:var(--em)}.tp-check svg{width:11px;height:11px;color:#fff}
+  .tp-row.done{color:var(--text)}.tp-row:not(.done){color:var(--muted)}
+  .tp-badge-icon{width:16px;height:16px;color:var(--amber);margin-left:auto}
+  .b-cat{font-size:8.5px;color:var(--dim);font-weight:600;margin-top:1px;text-transform:uppercase;letter-spacing:.3px}
+  /* announcement */
+  .ann-item{display:flex;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)}.ann-item:last-child{border-bottom:0}
+  .ann-ic{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;flex-shrink:0}.ann-ic svg{width:16px;height:16px}
+  .ann-body{flex:1;min-width:0}.ann-body b{font-size:13px;display:block}.ann-body small{font-size:11px;color:var(--muted);font-weight:600}
+  .ann-body p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5;font-weight:500}
+  .ann-tag{font-size:9px;font-weight:800;padding:2px 7px;border-radius:5px;display:inline-block;margin-top:4px}
+  /* rapor table */
+  .rapor-tbl{width:100%;border-collapse:collapse;font-size:12px}
+  .rapor-tbl th{text-align:left;font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;padding:8px 6px;border-bottom:1px solid var(--border2);letter-spacing:.5px}
+  .rapor-tbl td{padding:9px 6px;border-bottom:1px solid var(--border);font-weight:600}
+  .rapor-tbl td.n{text-align:right;font-weight:800}
+  .rapor-tbl tr:last-child td{border-bottom:0}
+  /* calendar event */
+  .cal-evt{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);margin-bottom:8px}
+  .cal-evt .ce-date{width:42px;flex-shrink:0;text-align:center}
+  .cal-evt .ce-date .d{font-size:18px;font-weight:800;line-height:1}
+  .cal-evt .ce-date .m{font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase}
+  .cal-evt .ce-body{flex:1;min-width:0}.cal-evt .ce-body b{font-size:12.5px;display:block}.cal-evt .ce-body small{font-size:11px;color:var(--muted);font-weight:600}
+  .cal-evt .ce-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  /* greeting flex + quest */
+  .greet{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;position:relative;overflow:hidden}
+  .greet::after{content:'';position:absolute;top:-30px;right:-40px;width:140px;height:140px;border-radius:50%;background:radial-gradient(circle,rgba(16,185,129,.1),transparent 70%);pointer-events:none}
+  .greet-main{flex:1;min-width:0}
+  .quest-mini{flex-shrink:0;width:72px;text-align:center;position:relative;z-index:1;cursor:pointer}
+  .quest-ring{width:56px;height:56px;margin:0 auto;position:relative}
+  .quest-ring svg{transform:rotate(-90deg)}
+  .quest-ring .qr-pct{position:absolute;inset:0;display:grid;place-items:center;font-size:10px;font-weight:800}
+  .quest-ring .qr-ic{position:absolute;inset:0;display:grid;place-items:center}
+  .quest-ring .qr-ic svg{width:20px;height:20px;color:var(--amber)}
+  .quest-label{font-size:7.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:4px;line-height:1.2}
+  /* active schedule enhanced */
+  .tl-item.now{background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.25);border-radius:var(--r-sm);padding:12px;margin:4px -4px;box-shadow:0 0 24px -8px rgba(245,158,11,.25);cursor:pointer}
+  .tl-item.now .tl-dot{transform:scale(1.3)}
+  .tl-item.now .tl-body .mp{font-size:14px}
+  .tl-item.now .tl-body .meta{color:var(--amber)}
+  /* modul redesign: mapel group + slim rows */
+  .mapel-group{margin-bottom:14px}
+  .mapel-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--r-sm) var(--r-sm) 0 0;position:relative}
+  .mapel-hdr .mh-ic{width:26px;height:26px;border-radius:7px;background:rgba(255,255,255,.2);display:grid;place-items:center;backdrop-filter:blur(4px)}
+  .mapel-hdr .mh-ic svg{width:14px;height:14px;color:#fff}
+  .mapel-hdr .mh-body{flex:1;min-width:0}
+  .mapel-hdr .mh-body b{font-size:12.5px;color:#fff;display:block}
+  .mapel-hdr .mh-body small{font-size:9.5px;color:rgba(255,255,255,.7);font-weight:600}
+  .mapel-hdr .mh-count{font-size:9px;font-weight:800;background:rgba(255,255,255,.2);color:#fff;padding:2px 7px;border-radius:5px}
+  .mod-list{border:1px solid var(--border);border-top:0;border-radius:0 0 var(--r-sm) var(--r-sm);overflow:hidden;background:var(--surface)}
+  .mod-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--border);cursor:pointer;transition:.15s}
+  .mod-row:last-child{border-bottom:0}
+  .mod-row:hover{background:var(--surface2)}
+  .mod-row.active{background:rgba(245,158,11,.06);border-left:3px solid var(--amber);padding-left:7px}
+  .mod-row.done{opacity:.65}
+  .mod-row.locked{opacity:.4;cursor:not-allowed}
+  .mod-row .mr-stat{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;flex-shrink:0}
+  .mod-row .mr-stat svg{width:12px;height:12px}
+  .mod-row.done .mr-stat{background:rgba(16,185,129,.15);color:var(--em)}
+  .mod-row.active .mr-stat{background:rgba(245,158,11,.15);color:var(--amber)}
+  .mod-row.locked .mr-stat{background:var(--surface2);color:var(--dim)}
+  .mod-row.todo .mr-stat{background:var(--surface2);color:var(--dim)}
+  .mod-row .mr-body{flex:1;min-width:0}
+  .mod-row .mr-body b{font-size:11.5px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mod-row .mr-body small{font-size:9px;color:var(--muted);font-weight:600}
+  .mod-row .mr-prog{width:36px;height:4px;border-radius:3px;background:var(--bar-bg);overflow:hidden;flex-shrink:0}
+  .mod-row .mr-prog i{display:block;height:100%;border-radius:3px;background:var(--grad)}
+  .mod-row .mr-badge{font-size:9px;flex-shrink:0}
+  /* leaderboard */
+  .lb-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;margin-bottom:4px;transition:.15s}
+  .lb-row:hover{background:var(--surface2)}
+  .lb-row.me{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2)}
+  .lb-rank{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;font-size:11px;font-weight:800;flex-shrink:0}
+  .lb-rank.gold{background:rgba(245,158,11,.15);color:var(--amber)}.lb-rank.silver{background:rgba(155,163,175,.15);color:#9ca3af}.lb-rank.bronze{background:rgba(180,83,9,.15);color:#b45309}
+  .lb-avatar{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:800;flex-shrink:0;color:#fff}
+  .lb-body{flex:1;min-width:0}.lb-body b{font-size:12px;display:block}.lb-body small{font-size:10px;color:var(--muted);font-weight:600}
+  .lb-score{font-size:13px;font-weight:800;color:var(--em);flex-shrink:0}
+  /* upload zone */
+  .upload-zone{border:2px dashed var(--border2);border-radius:var(--r-sm);padding:20px;text-align:center;cursor:pointer;transition:.2s}
+  .upload-zone:hover{border-color:var(--em);background:rgba(16,185,129,.04)}
+  .upload-zone svg{width:28px;height:28px;color:var(--muted);margin-bottom:6px}
+  .upload-zone b{font-size:12px;display:block}.upload-zone small{font-size:10px;color:var(--muted);font-weight:600}
+  .upload-file{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);margin-bottom:5px;font-size:11.5px;font-weight:600}
+  .upload-file .uf-ic{width:26px;height:26px;border-radius:6px;background:rgba(16,185,129,.12);color:var(--em);display:grid;place-items:center;flex-shrink:0}
+  .upload-file .uf-ic svg{width:13px;height:13px}
+  .upload-file .uf-rm{cursor:pointer;color:var(--rose);font-size:16px;margin-left:auto}
+  /* swipe hint + profile CV */
+  .swipe-hint{position:fixed;right:0;top:50%;transform:translateY(-50%);width:22px;height:70px;z-index:25;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .swipe-hint .sh-arc{width:22px;height:70px;border-radius:12px 0 0 12px;background:var(--grad);display:flex;align-items:center;justify-content:center;animation:swipePulse 2s ease infinite}
+  .swipe-hint .sh-arc svg{width:14px;height:14px;color:#fff}
+  @keyframes swipePulse{0%,100%{transform:translateX(0)}50%{transform:translateX(-5px)}}
+  .profile-screen{position:fixed;inset:0;background:var(--bg);z-index:45;transform:translateX(100%);transition:transform .35s cubic-bezier(.22,.61,.36,1);overflow-y:auto;max-width:560px;margin:0 auto}
+  .profile-screen.on{transform:translateX(0)}
+  .ps-header{position:relative;padding:36px 20px 20px;overflow:hidden}
+  .ps-header::before{content:'';position:absolute;inset:0;background:var(--grad)}
+  .ps-header::after{content:'';position:absolute;top:-40px;right:-30px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.08)}
+  .ps-back{position:absolute;top:16px;left:16px;z-index:2;color:#fff;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;cursor:pointer}
+  .ps-back svg{width:18px;height:18px}
+  .ps-avatar{width:76px;height:76px;border-radius:50%;background:rgba(255,255,255,.2);border:3px solid rgba(255,255,255,.3);display:grid;place-items:center;font-size:26px;font-weight:800;color:#fff;position:relative;z-index:1;margin:0 auto 10px}
+  .ps-name{font-size:21px;font-weight:800;color:#fff;text-align:center;position:relative;z-index:1}
+  .ps-role{font-size:12px;color:rgba(255,255,255,.8);font-weight:600;text-align:center;position:relative;z-index:1}
+  .ps-tags{display:flex;gap:5px;justify-content:center;flex-wrap:wrap;margin-top:8px;position:relative;z-index:1}
+  .ps-tag{font-size:9px;font-weight:700;padding:3px 8px;border-radius:6px;background:rgba(255,255,255,.15);color:#fff}
+  .ps-body{padding:16px 20px 80px}
+  .cv-section{margin-bottom:18px}
+  .cv-section h3{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+  .cv-section h3 svg{width:14px;height:14px;color:var(--em)}
+  .cv-skill{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);margin-bottom:5px}
+  .cv-skill .sk-ic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;flex-shrink:0}
+  .cv-skill .sk-ic svg{width:14px;height:14px}
+  .cv-skill .sk-body{flex:1}.cv-skill .sk-body b{font-size:12px;display:block}.cv-skill .sk-body small{font-size:10px;color:var(--muted);font-weight:600}
+  .cv-skill .sk-bar{width:50px;height:4px;border-radius:3px;background:var(--bar-bg);overflow:hidden}.cv-skill .sk-bar i{display:block;height:100%;border-radius:3px}
+  .cv-timeline{position:relative;padding-left:18px}
+  .cv-timeline::before{content:'';position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:var(--border2)}
+  .cv-tl-item{position:relative;padding-bottom:14px}
+  .cv-tl-item::before{content:'';position:absolute;left:-16px;top:4px;width:10px;height:10px;border-radius:50%;background:var(--em);border:2px solid var(--bg)}
+  .cv-tl-item b{font-size:12.5px;display:block}.cv-tl-item small{font-size:10px;color:var(--muted);font-weight:600}
+  .cv-tl-item p{font-size:11px;color:var(--muted);margin-top:3px;font-weight:500;line-height:1.5}
+  .cv-stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .cv-stat{text-align:center;padding:12px 8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface)}
+  .cv-stat .n{font-size:20px;font-weight:800}.cv-stat .l{font-size:9px;color:var(--muted);font-weight:700;margin-top:2px}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="brand"><div class="logo">D</div><div><b>DIIS</b><small>Smart AI School</small></div></div>
+    <div class="acts">
+      <button class="iconbtn" onclick="toggleTheme()" id="themeBtn"><svg data-lucide="sun"></svg></button>
+      <button class="iconbtn" onclick="openPengumuman()" style="position:relative"><svg data-lucide="bell"></svg><span class="dot"></span></button>
+      <button class="iconbtn" onclick="showToast('Pengaturan')"><svg data-lucide="settings"></svg></button>
+    </div>
+  </div>
+
+  <div class="seedbar"><svg data-lucide="flask-conical"></svg> MOCKUP — Data dummy untuk preview. Dashboard Siswa DIIS.</div>
+
+  <!-- BERANDA -->
+  <section class="screen on" id="s-beranda">
+    <div class="greet">
+      <div class="greet-main">
+        <h1>Halo, Rizky! <span class="wave">👋</span></h1>
+        <p>XI TJKT 1 · SMK Darussalam Subah</p>
+        <span class="streak"><svg data-lucide="flame"></svg>15 hari streak kehadiran!</span>
+      </div>
+      <div class="quest-mini" onclick="showToast('Daily Quest: Selesaikan 2 modul + 1 tugas hari ini!')" id="homeQuest"></div>
+    </div>
+    <div class="stats" id="homeStats"></div>
+    <div class="pad" style="padding-top:0">
+      <div class="card glow" id="homeContinue"></div>
+      <div class="card glow">
+        <div class="card-h"><div class="lbl"><svg data-lucide="calendar-clock"></svg>Jadwal Hari Ini</div><span class="link" onclick="go('jadwal')">Lihat semua <svg data-lucide="chevron-right"></svg></span></div>
+        <div id="homeSched"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="lbl"><svg data-lucide="clipboard-list"></svg>Tugas Mendesak</div><span class="link" onclick="go('tugas')">Semua <svg data-lucide="chevron-right"></svg></span></div>
+        <div id="homeTasks"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="lbl"><svg data-lucide="trending-up"></svg>Nilai Terbaru</div><span class="link" onclick="go('nilai')">Detail <svg data-lucide="chevron-right"></svg></span></div>
+        <div id="homeGrades"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="lbl"><svg data-lucide="award"></svg>Progress Capaian</div><span class="link" onclick="go('capaian')">Badge <svg data-lucide="chevron-right"></svg></span></div>
+        <div id="homeBadges"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- JADWAL -->
+  <section class="screen" id="s-jadwal">
+    <div class="pad">
+      <div class="card-h" style="margin-bottom:14px"><div class="lbl" style="font-size:13px"><svg data-lucide="calendar-clock"></svg>Jadwal Pelajaran</div></div>
+      <div class="day-tabs" id="dayTabs"></div>
+      <div id="schedDay"></div>
+      <div class="card" style="margin-top:14px">
+        <div class="card-h"><div class="lbl"><svg data-lucide="calendar-days"></svg>Kalender Akademik</div></div>
+        <div id="kalenderList"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MODUL -->
+  <section class="screen" id="s-modul">
+    <div class="pad">
+      <div class="card-h" style="margin-bottom:14px"><div class="lbl" style="font-size:13px"><svg data-lucide="book-open"></svg>Modul Ajar</div></div>
+      <div class="seedbar" style="margin:0 0 14px"><svg data-lucide="git-branch"></svg>Modul tersinkronisasi dari Modul Ajar yang disetujui KS</div>
+      <div id="modulList"></div>
+    </div>
+  </section>
+
+  <!-- MODUL DETAIL -->
+  <section class="screen" id="s-modul-detail">
+    <div class="pad">
+      <div class="back-btn" onclick="go('modul')"><svg data-lucide="arrow-left"></svg>Kembali ke Modul</div>
+      <div id="modulDetail"></div>
+    </div>
+  </section>
+
+  <!-- NILAI -->
+  <section class="screen" id="s-nilai">
+    <div class="pad">
+      <div class="card-h" style="margin-bottom:14px"><div class="lbl" style="font-size:13px"><svg data-lucide="trending-up"></svg>Nilai & Capaian</div></div>
+      <div class="card glow" style="margin-bottom:14px">
+        <div class="statrow" id="nilaiSummary"></div>
+      </div>
+      <div class="tabs" id="nilaiTabs">
+        <button class="tab on" onclick="setNilaiTab('all',this)">Semua</button>
+        <button class="tab" onclick="setNilaiTab('tuntas',this)">Tuntas</button>
+        <button class="tab" onclick="setNilaiTab('remedial',this)">Remedial</button>
+        <button class="tab" onclick="openRapor()" style="margin-left:auto;background:var(--surface2);color:var(--eml);border-color:var(--border2)"><svg data-lucide="file-text" style="width:14px;height:14px;vertical-align:-2px"></svg> Rapor</button>
+      </div>
+      <div class="card"><div id="nilaiList"></div></div>
+    </div>
+  </section>
+
+  <!-- TUGAS -->
+  <section class="screen" id="s-tugas">
+    <div class="pad">
+      <div class="card-h" style="margin-bottom:14px"><div class="lbl" style="font-size:13px"><svg data-lucide="clipboard-list"></svg>Tugas & Assignment</div></div>
+      <div class="tabs" id="tugasTabs">
+        <button class="tab on" onclick="setTugasTab('pending',this)">Belum Dikerjakan <span class="cnt" id="cntPending">0</span></button>
+        <button class="tab" onclick="setTugasTab('submitted',this)">Dikumpulkan <span class="cnt" id="cntSubmitted">0</span></button>
+        <button class="tab" onclick="setTugasTab('graded',this)">Dinilai <span class="cnt" id="cntGraded">0</span></button>
+      </div>
+      <div id="tugasList"></div>
+    </div>
+  </section>
+
+  <!-- KEHADIRAN -->
+  <section class="screen" id="s-kehadiran">
+    <div class="pad">
+      <div class="card-h" style="margin-bottom:14px"><div class="lbl" style="font-size:13px"><svg data-lucide="user-check"></svg>Kehadiran Siswa</div></div>
+      <div class="card glow" style="margin-bottom:14px">
+        <div class="ring-wrap" style="justify-content:center;text-align:center;flex-direction:column;gap:8px">
+          <div class="ring" style="width:100px;height:100px">
+            <svg width="100" height="100"><circle class="bg-c" cx="50" cy="50" r="42" stroke-width="8" fill="none"/><circle class="fg-c" cx="50" cy="50" r="42" stroke-width="8" fill="none" stroke-dasharray="264" stroke-dashoffset="19"/></svg>
+            <div class="pct" style="font-size:24px">92.8%</div>
+          </div>
+          <div style="font-size:12px;color:var(--muted);font-weight:600">Kehadiran Semester Ini</div>
+        </div>
+        <div class="statrow" id="kehStats" style="margin-top:14px"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="lbl"><svg data-lucide="calendar"></svg>Kalender Kehadiran</div></div>
+        <div class="cal-wrap" id="calWrap"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:10px;font-weight:700;color:var(--muted)">
+          <span style="display:flex;align-items:center;gap:4px"><i style="width:10px;height:10px;border-radius:3px;background:rgba(16,185,129,.25);border:1px solid rgba(16,185,129,.3)"></i>Hadir</span>
+          <span style="display:flex;align-items:center;gap:4px"><i style="width:10px;height:10px;border-radius:3px;background:rgba(14,165,233,.2);border:1px solid rgba(14,165,233,.25)"></i>Izin</span>
+          <span style="display:flex;align-items:center;gap:4px"><i style="width:10px;height:10px;border-radius:3px;background:rgba(245,158,11,.2);border:1px solid rgba(245,158,11,.25)"></i>Sakit</span>
+          <span style="display:flex;align-items:center;gap:4px"><i style="width:10px;height:10px;border-radius:3px;background:rgba(239,68,68,.2);border:1px solid rgba(239,68,68,.25)"></i>Alpha</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CAPAIAN -->
+  <section class="screen" id="s-capaian">
+    <div class="pad">
+      <div class="card-h" style="margin-bottom:14px"><div class="lbl" style="font-size:13px"><svg data-lucide="award"></svg>Capaian & Badge</div></div>
+      <div class="xp-card" style="margin-bottom:14px">
+        <div class="lvl"><div><b>Level 12</b><br><small style="opacity:.8">Rizky Pratama</small></div><svg data-lucide="zap" style="width:28px;height:28px;opacity:.8"></svg></div>
+        <div class="xp-bar"><i style="width:69%"></i></div>
+        <div class="xp-info"><span>3,450 XP</span><span>5,000 XP → Level 13</span></div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-h"><div class="lbl"><svg data-lucide="trophy"></svg>Leaderboard TJKT</div><span class="link" onclick="showToast('Periode: Semester Genap 2025/2026')">Info</span></div>
+        <div id="leaderboardList"></div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-h"><div class="lbl"><svg data-lucide="target"></svg>Progress CP per Mapel</div></div>
+        <div id="cpList"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="lbl"><svg data-lucide="medal"></svg>Skill Badges</div></div>
+        <div class="badge-grid" id="badgeGrid"></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- BOTTOM NAV -->
+<nav class="bottomnav" id="bottomnav">
+  <div class="nav-item on" data-s="beranda" onclick="go('beranda')"><svg data-lucide="home"></svg><span>Beranda</span></div>
+  <div class="nav-item" data-s="jadwal" onclick="go('jadwal')"><svg data-lucide="calendar-clock"></svg><span>Jadwal</span></div>
+  <div class="nav-item" data-s="modul" onclick="go('modul')"><svg data-lucide="book-open"></svg><span>Modul</span></div>
+  <div class="nav-item" data-s="nilai" onclick="go('nilai')"><svg data-lucide="trending-up"></svg><span>Nilai</span></div>
+  <div class="nav-item" data-s="tugas" onclick="go('tugas')"><svg data-lucide="clipboard-list"></svg><span>Tugas</span></div>
+  <div class="nav-item" data-s="kehadiran" onclick="go('kehadiran')"><svg data-lucide="user-check"></svg><span>Hadir</span></div>
+  <div class="nav-item" data-s="capaian" onclick="go('capaian')"><svg data-lucide="award"></svg><span>Capaian</span></div>
+</nav>
+
+<!-- MODAL -->
+<div class="ovl" id="ovl" onclick="if(event.target===this)closeM()"><div class="modal" id="modalBody"></div></div>
+
+<!-- BADGE CELEBRATION -->
+<div class="badge-overlay" id="badgeOverlay"><div class="badge-celeb" id="badgeCeleb"></div></div>
+
+<!-- SWIPE HINT -->
+<div class="swipe-hint" onclick="openProfile()" title="Swipe kiri untuk lihat CV"><div class="sh-arc"><svg data-lucide="chevron-left"></svg></div></div>
+
+<!-- PROFILE CV SCREEN -->
+<div class="profile-screen" id="profileScreen">
+  <div id="psContent"></div>
+</div>
+
+<script>
+const DOW=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+const MON=['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des'];
+const JP=[["JP 1","07.30–08.10"],["JP 2","08.10–08.50"],["JP 3","08.50–09.30"],["Istirahat","09.30–09.45"],["JP 4","09.45–10.25"],["JP 5","10.25–11.05"],["JP 6","11.05–11.45"],["Ishoma","11.45–12.25"],["JP 7","12.25–13.05"],["JP 8","13.05–13.45"]];
+const JPN=[[1,0],[2,1],[3,2],[4,4],[5,5],[6,6],[7,8],[8,9]];
+const now=new Date();
+// ═══ INTEGRATED DATA (matching guru + LMS patterns) ═══
+const KKTP=75;
+const NA_W=[.20,.25,.15,.20,.20]; // UH Praktik Sikap UTS UAS
+const naOf=s=>Math.round(s.reduce((a,b,i)=>a+b*NA_W[i],0)*10)/10;
+const cls=v=>v>=KKTP?'tuntas':v>=KKTP-8?'mid':'remedial';
+const ini=n=>n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+const STUDENT_GRADES={
+  'Pemrograman Web':[85,88,90,82,86],'Basis Data':[78,82,84,74,80],
+  'Matematika':[70,0,75,68,72],'B.Indonesia':[88,0,85,85,86],
+  'B.Inggris':[75,0,78,72,74],'Fisika':[65,0,70,62,68],
+  'PJOK':[90,92,88,88,90],'PKn':[80,0,82,78,79],
+};
+
+// ── STUDENT SCHEDULE (XI TJKT 1, rombel 7) ──
+const SCHED={
+  1:{0:{mp:'Pemrograman Web',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},1:{mp:'Pemrograman Web',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},2:{mp:'Matematika',g:'Siti Aminah, S.Pd',ruang:'R-107'},4:{mp:'B.Inggris',g:'Eko Prasetyo, S.Pd',ruang:'R-107'},5:{mp:'B.Inggris',g:'Eko Prasetyo, S.Pd',ruang:'R-107'},6:{mp:'PJOK',g:'Doni Kurniawan, S.Pd',ruang:'Lapangan'},8:{mp:'PKn',g:'Nur Hidayah, S.Pd',ruang:'R-107'},9:{mp:'PKn',g:'Nur Hidayah, S.Pd',ruang:'R-107'}},
+  2:{0:{mp:'Basis Data',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},1:{mp:'Basis Data',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},2:{mp:'B.Indonesia',g:'Dewi Lestari, S.Pd',ruang:'R-107'},4:{mp:'Fisika',g:'Hendra Gunawan, S.Pd',ruang:'R-107'},5:{mp:'Matematika',g:'Siti Aminah, S.Pd',ruang:'R-107'},6:{mp:'Pemrograman Web',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},8:{mp:'Pemrograman Web',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},9:{mp:'Pemrograman Web',g:'Budi Hartono, S.Kom',ruang:'Lab 1'}},
+  3:{0:{mp:'Matematika',g:'Siti Aminah, S.Pd',ruang:'R-107'},1:{mp:'B.Inggris',g:'Eko Prasetyo, S.Pd',ruang:'R-107'},2:{mp:'Basis Data',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},4:{mp:'B.Indonesia',g:'Dewi Lestari, S.Pd',ruang:'R-107'},5:{mp:'B.Indonesia',g:'Dewi Lestari, S.Pd',ruang:'R-107'},6:{mp:'Fisika',g:'Hendra Gunawan, S.Pd',ruang:'R-107'},8:{mp:'PJOK',g:'Doni Kurniawan, S.Pd',ruang:'Lapangan'},9:{mp:'PJOK',g:'Doni Kurniawan, S.Pd',ruang:'Lapangan'}},
+  4:{0:{mp:'Pemrograman Web',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},1:{mp:'Pemrograman Web',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},2:{mp:'Matematika',g:'Siti Aminah, S.Pd',ruang:'R-107'},4:{mp:'PKn',g:'Nur Hidayah, S.Pd',ruang:'R-107'},5:{mp:'B.Inggris',g:'Eko Prasetyo, S.Pd',ruang:'R-107'},6:{mp:'Basis Data',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},8:{mp:'Basis Data',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},9:{mp:'Basis Data',g:'Budi Hartono, S.Kom',ruang:'Lab 1'}},
+  5:{0:{mp:'B.Indonesia',g:'Dewi Lestari, S.Pd',ruang:'R-107'},1:{mp:'Fisika',g:'Hendra Gunawan, S.Pd',ruang:'R-107'},2:{mp:'Matematika',g:'Siti Aminah, S.Pd',ruang:'R-107'},4:{mp:'Pemrograman Web',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},5:{mp:'Pemrograman Web',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},6:{mp:'B.Inggris',g:'Eko Prasetyo, S.Pd',ruang:'R-107'},8:{mp:'B.Indonesia',g:'Dewi Lestari, S.Pd',ruang:'R-107'},9:{mp:'B.Indonesia',g:'Dewi Lestari, S.Pd',ruang:'R-107'}},
+  6:{0:{mp:'Matematika',g:'Siti Aminah, S.Pd',ruang:'R-107'},1:{mp:'Basis Data',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},2:{mp:'Basis Data',g:'Budi Hartono, S.Kom',ruang:'Lab 1'},4:{mp:'PJOK',g:'Doni Kurniawan, S.Pd',ruang:'Lapangan'},5:{mp:'Fisika',g:'Hendra Gunawan, S.Pd',ruang:'R-107'},6:{mp:'B.Inggris',g:'Eko Prasetyo, S.Pd',ruang:'R-107'},8:{mp:'PKn',g:'Nur Hidayah, S.Pd',ruang:'R-107'},9:{mp:'Matematika',g:'Siti Aminah, S.Pd',ruang:'R-107'}},
+};
+const MAPEL_COLORS={'Pemrograman Web':'#10b981','Basis Data':'#0ea5e9','Matematika':'#a78bfa','B.Indonesia':'#ec4899','B.Inggris':'#f59e0b','Fisika':'#ef4444','PJOK':'#14b8a6','PKn':'#8b5cf6'};
+function mpColor(mp){return MAPEL_COLORS[mp]||'#10b981'}
+function mpIcon(mp){if(mp.includes('Pemrograman'))return 'code-2';if(mp.includes('Basis'))return 'database';if(mp.includes('Matematika'))return 'calculator';if(mp.includes('Indonesia'))return 'book-open';if(mp.includes('Inggris'))return 'languages';if(mp.includes('Fisika'))return 'atom';if(mp.includes('PJOK'))return 'dumbbell';if(mp.includes('PKn'))return 'landmark';return 'book'}
+
+// ── GRADES ──
+const NILAI=Object.keys(STUDENT_GRADES).map((mp,i)=>{
+  const sc=STUDENT_GRADES[mp];
+  const trends=['up','up','down','stable','up','down','stable','up'];
+  const cps=[72,68,58,82,65,48,85,72];
+  return{mp,scores:sc,rata:naOf(sc),kktp:KKTP,trend:trends[i],cp:cps[i]};
+});
+
+// ── ASSIGNMENTS ──
+const TUGAS=[
+  {id:1,mp:'Pemrograman Web',title:'Layout Flexbox — Web Profil Sekolah',type:'Praktik',deadline:'20 Jun',dlDays:1,status:'pending',guru:'Budi Hartono',desc:'Buat halaman web profil sekolah menggunakan flexbox. Minimal 3 section responsif.'},
+  {id:2,mp:'Basis Data',title:'Normalisasi 3NF — Toko Online',type:'Tugas',deadline:'21 Jun',dlDays:2,status:'pending',guru:'Budi Hartono',desc:'Rancang skema database 3NF untuk toko online. Dokumentasi dalam PDF.'},
+  {id:3,mp:'Matematika',title:'Latihan SPL — Substitusi & Eliminasi',type:'Latihan',deadline:'22 Jun',dlDays:3,status:'pending',guru:'Siti Aminah',desc:'Kerjakan 10 soal sistem persamaan linear. Tunjukkan langkah penyelesaian.'},
+  {id:4,mp:'B.Inggris',title:'Recount Text — My Holiday Experience',type:'Tugas',deadline:'23 Jun',dlDays:4,status:'pending',guru:'Eko Prasetyo',desc:'Tulis recount text 300 kata tentang pengalaman liburan. Gunakan past tense.'},
+  {id:5,mp:'Fisika',title:'Laporan Praktikum — Gerak Lurus',type:'Praktik',deadline:'25 Jun',dlDays:6,status:'pending',guru:'Hendra Gunawan',desc:'Buat laporan praktikum gerak lurus beraturan (GLB) dan gerak lurus berubah beraturan (GLBB).'},
+  {id:6,mp:'Pemrograman Web',title:'Pre-test CSS Selector',type:'Diagnostik',deadline:'18 Jun',dlDays:0,status:'submitted',guru:'Budi Hartono',desc:'Pre-test kemampuan CSS selector dasar.'},
+  {id:7,mp:'B.Indonesia',title:'Esai Eksposisi — Pentingnya Literasi Digital',type:'Tugas',deadline:'15 Jun',dlDays:-3,status:'graded',score:88,guru:'Dewi Lestari',desc:'Esai eksposisi 500 kata tentang literasi digital di kalangan remaja.'},
+  {id:8,mp:'Matematika',title:'UH 2 — Sistem Persamaan Linear',type:'Sumatif',deadline:'12 Jun',dlDays:-6,status:'graded',score:72,guru:'Siti Aminah',desc:'Ulangan Harian 2 — 10 soal SPL.'},
+  {id:9,mp:'Basis Data',title:'Latihan ERD — Perpustakaan',type:'Latihan',deadline:'10 Jun',dlDays:-8,status:'graded',score:85,guru:'Budi Hartono',desc:'Entity Relationship Diagram untuk sistem perpustakaan.'},
+  {id:10,mp:'PJOK',title:'Praktik Voli — Servis Bawah',type:'Praktik',deadline:'8 Jun',dlDays:-10,status:'graded',score:92,guru:'Doni Kurniawan',desc:'Praktik servis bawah bola voli.'},
+  {id:11,mp:'B.Inggris',title:'Vocabulary Quiz — Unit 3',type:'Kuis',deadline:'5 Jun',dlDays:-13,status:'graded',score:78,guru:'Eko Prasetyo',desc:'Kuis kosakata unit 3 — 20 soal.'},
+  {id:12,mp:'PKn',title:'Makalah — Pancasila dalam Kehidupan',type:'Tugas',deadline:'3 Jun',dlDays:-15,status:'graded',score:80,guru:'Nur Hidayah',desc:'Makalah penerapan Pancasila dalam kehidupan sehari-hari.'},
+];
+
+// ── ATTENDANCE ──
+const KEH_STATS={hadir:156,izin:5,sakit:4,alpha:2,total:167,pct:92.8};
+const ATT_CAL=generateCal();
+function generateCal(){
+  const cal=[];const statuses=['hadir','hadir','hadir','hadir','hadir','hadir','hadir','hadir','izin','sakit','alpha','hadir','hadir','hadir'];
+  const today=now.getDate();
+  const dim=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
+  const firstDow=new Date(now.getFullYear(),now.getMonth(),1).getDay(); // 0=Sun
+  const offset=firstDow; // Sunday-first calendar (Minggu=col 0)
+  for(let i=0;i<offset;i++)cal.push({day:0,status:'empty'});
+  for(let d=1;d<=dim;d++){
+    const dow=(d+offset-1)%7;
+    if(dow===0){cal.push({day:d,status:'empty'});continue;} // Sunday=Minggu empty
+    if(d>today){cal.push({day:d,status:'future'});continue;}
+    cal.push({day:d,status:statuses[(d*3+dow)%statuses.length]});
+  }
+  return cal;
+}
+
+// ── BADGES ──
+const BADGES=[
+  {name:'HTML Starter',icon:'code-2',color:'#10b981',earned:true,cat:'CP1 · TP1',score:88,desc:'Selesai modul Struktur HTML dengan nilai ≥85'},
+  {name:'CSS Stylist',icon:'palette',color:'#0ea5e9',earned:true,cat:'CP1 · TP2',score:85,desc:'Selesai modul Styling CSS dengan nilai ≥80'},
+  {name:'Perfect Week',icon:'flame',color:'#f59e0b',earned:true,cat:'Kehadiran',score:null,desc:'Hadir 5 hari berturut-turut tanpa absen'},
+  {name:'Quick Submit',icon:'zap',color:'#a78bfa',earned:true,cat:'Tugas',score:null,desc:'Submit 10 tugas sebelum deadline'},
+  {name:'Flex Master',icon:'layout',color:'#ec4899',earned:false,cat:'CP2 · TP1',score:null,prog:75,desc:'Selesai modul Flexbox dengan nilai ≥80'},
+  {name:'Form Validator',icon:'check-square',color:'#8b5cf6',earned:false,cat:'CP2 · TP2',score:null,prog:0,desc:'Selesai modul Form & Validasi'},
+  {name:'Math Solver',icon:'calculator',color:'#ef4444',earned:false,cat:'Matematika',score:null,prog:58,desc:'Selesai 4 modul Matematika dengan rata-rata ≥75'},
+  {name:'English Star',icon:'languages',color:'#14b8a6',earned:false,cat:'B.Inggris',score:null,prog:72,desc:'Selesai 5 modul B.Inggris dengan rata-rata ≥80'},
+  {name:'Sport Champion',icon:'dumbbell',color:'#f97316',earned:false,cat:'PJOK',score:null,prog:85,desc:'Nilai PJOK ≥90 di 3 sumatif'},
+];
+// ═══ CP with TP breakdown (LMS pattern) ═══
+const CPDATA=[
+  {cp:'CP 1',desc:'Antarmuka web fungsional',progres:88,tps:[{tp:'TP 1.1',desc:'Struktur HTML semantik',done:true,badge:'HTML Starter'},{tp:'TP 1.2',desc:'Styling CSS dasar',done:true,badge:'CSS Stylist'}]},
+  {cp:'CP 2',desc:'Layout responsif',progres:74,tps:[{tp:'TP 2.1',desc:'Flexbox & responsif',done:true,badge:'Flex Master'},{tp:'TP 2.2',desc:'Form & validasi',done:false,badge:null}]},
+  {cp:'CP 3',desc:'Interaktivitas dasar',progres:35,tps:[{tp:'TP 3.1',desc:'JavaScript dasar',done:false,badge:null}]},
+  {cp:'CP 4',desc:'Proyek web',progres:0,tps:[{tp:'TP 4.1',desc:'Proyek akhir',done:false,badge:null}]},
+];
+// ═══ MODULS (guru MODULS + LMS pattern) ═══
+const MODULS=[
+  {id:1,tp:'TP 1.1',judul:'Struktur HTML Semantik',alokasi:'4 JP',kktp:75,status:'Selesai',lms:true,prog:100,badge:'HTML Starter',mapel:'Pemrograman Web'},
+  {id:2,tp:'TP 1.2',judul:'Styling CSS & Layout',alokasi:'6 JP',kktp:75,status:'Selesai',lms:true,prog:100,badge:'CSS Stylist',mapel:'Pemrograman Web'},
+  {id:3,tp:'TP 2.1',judul:'Flexbox & Responsif',alokasi:'6 JP',kktp:78,status:'Aktif',lms:true,prog:75,badge:'Flex Master',mapel:'Pemrograman Web'},
+  {id:4,tp:'TP 2.2',judul:'Form & Validasi',alokasi:'4 JP',kktp:75,status:'Terkunci',lms:false,prog:0,badge:null,mapel:'Pemrograman Web'},
+  {id:5,tp:'TP 1.1',judul:'Normalisasi 3NF',alokasi:'4 JP',kktp:75,status:'Selesai',lms:true,prog:100,badge:'DB Normalizer',mapel:'Basis Data'},
+  {id:6,tp:'TP 1.2',judul:'Relasi Tabel & ERD',alokasi:'6 JP',kktp:75,status:'Aktif',lms:true,prog:60,badge:null,mapel:'Basis Data'},
+  {id:7,tp:'TP 1.1',judul:'Sistem Persamaan Linear',alokasi:'4 JP',kktp:75,status:'Selesai',lms:true,prog:100,badge:'Math Solver',mapel:'Matematika'},
+  {id:8,tp:'TP 1.2',judul:'Matriks & Determinan',alokasi:'6 JP',kktp:75,status:'Aktif',lms:true,prog:40,badge:null,mapel:'Matematika'},
+  {id:9,tp:'TP 2.1',judul:'Program Linear',alokasi:'4 JP',kktp:75,status:'Terkunci',lms:false,prog:0,badge:null,mapel:'Matematika'},
+  {id:10,tp:'TP 1.1',judul:'Recount Text',alokasi:'4 JP',kktp:75,status:'Selesai',lms:true,prog:100,badge:'English Star',mapel:'B.Inggris'},
+  {id:11,tp:'TP 1.2',judul:'Narrative Text',alokasi:'4 JP',kktp:75,status:'Terkunci',lms:false,prog:0,badge:null,mapel:'B.Inggris'},
+];
+// ═══ PG_BANK (guru pattern) ═══
+const PG_BANK=[
+  {q:"Properti CSS untuk menyusun item dalam satu baris fleksibel?",opts:["display: block","display: flex","position: absolute","float: left"],correct:1,tp:"TP 2.1"},
+  {q:"justify-content: space-between akan...",opts:["Jarak merata, item tepi menempel","Menumpuk di kiri","Menyembunyikan item","Semua item di tengah"],correct:0,tp:"TP 2.1"},
+  {q:"Media query untuk layar maksimal 768px?",opts:["@media min-width: 768px","@media max-width: 768px","@screen 768px","@viewport 768"],correct:1,tp:"TP 2.1"},
+  {q:"Default flex-direction adalah...",opts:["row","column","row-reverse","inherit"],correct:0,tp:"TP 2.1"},
+  {q:"Apa kepanjangan dari CSS?",opts:["Cascading Style Sheets","Computer Style Sheets","Creative Style System","Colorful Style Sheets"],correct:0,tp:"TP 1.2"}
+];
+
+// ═══ PENGUMUMAN (announcements) ═══
+const PENGUMUMAN=[
+  {ic:'alert-circle',color:'#ef4444',title:'Ujian Tengah Semester (UTS)',from:'Kesiswaan',time:'2 jam lalu',body:'UTS Semester Genap akan dilaksanakan 23-27 Juni 2026. Jadwal lengkap dapat diunduh di portal sekolah.',tag:'Penting',tagColor:'#ef4444'},
+  {ic:'book-open',color:'#10b981',title:'Modul Baru: Flexbox & Responsif',from:'Budi Hartono, S.Kom · Pemrograman Web',time:'5 jam lalu',body:'Modul TP 2.1 sudah tersedia. Kerjakan asesmen diagnostik sebelum membuka materi.',tag:'Mapel',tagColor:'#10b981'},
+  {ic:'calendar-clock',color:'#f59e0b',title:'Libur Hari Raya Idul Adha',from:'Kesiswaan',time:'1 hari lalu',body:'Libur Idul Adha 1447 H pada 17 Juni 2026. Pembelajaran dimulai kembali 18 Juni.',tag:'Info',tagColor:'#f59e0b'},
+  {ic:'clipboard-list',color:'#0ea5e9',title:'Deadline Tugas Praktikum',from:'Budi Hartono, S.Kom',time:'1 hari lalu',body:'Tugas Layout Flexbox — Web Profil Sekolah deadline 20 Juni. Upload di portal LMS.',tag:'Tugas',tagColor:'#0ea5e9'},
+  {ic:'award',color:'#a78bfa',title:'Badge Baru Tersedia: Flex Master',from:'Sistem',time:'2 hari lalu',body:'Selesaikan modul Flexbox & Responsif dengan nilai ≥80 untuk mendapatkan badge Flex Master!',tag:'Badge',tagColor:'#a78bfa'},
+];
+// ═══ KALENDER AKADEMIK ═══
+const KALENDER=[
+  {d:17,m:'Jun',title:'Libur Idul Adha',desc:'Libur nasional',color:'#f59e0b'},
+  {d:20,m:'Jun',title:'Deadline Tugas Flexbox',desc:'Pemrograman Web',color:'#ef4444'},
+  {d:23,m:'Jun',title:'Ujian Tengah Semester',desc:'23-27 Juni · 08:00-12:00',color:'#0ea5e9'},
+  {d:30,m:'Jun',title:'Pengembalian Rapor',desc:'Penyerahan rapor semester genap',color:'#10b981'},
+  {d:1,m:'Jul',title:'Awal Semester Baru',desc:'Pendaftaran ulang kelas XII',color:'#a78bfa'},
+];
+// ═══ DAILY QUEST ═══
+const DAILY_QUEST={title:'Daily Quest',tasks:[{ic:'book-open',label:'Selesaikan 1 modul',done:true},{ic:'clipboard-list',label:'Kumpulkan 1 tugas',done:false},{ic:'check-circle',label:'Lihat pengumuman',done:true}]};
+// ═══ LEADERBOARD (per jurusan TJKT) ═══
+const LEADERBOARD=[
+  {name:'Ahmad Fauzi',kelas:'XI TJKT 2',xp:4120,badges:7,avg:88.5},
+  {name:'Siti Rahma',kelas:'XI TJKT 1',xp:3980,badges:6,avg:86.2},
+  {name:'Rizky Pratama',kelas:'XI TJKT 1',xp:3450,badges:4,avg:82.1,me:true},
+  {name:'Dewi Anjani',kelas:'XI TJKT 2',xp:3200,badges:5,avg:80.8},
+  {name:'Bagas Wicaksono',kelas:'XI TJKT 1',xp:2980,badges:3,avg:78.5},
+  {name:'Nadia Putri',kelas:'XI TJKT 2',xp:2750,badges:4,avg:77.2},
+];
+// ═══ PROFILE CV DATA ═══
+const PROFILE_CV={
+  name:'Rizky Pratama',role:'Siswa XI TJKT 1 · SMK Darussalam Subah',tags:['TJKT','Web Dev','Database','Networking'],
+  stats:[{n:'82.1',l:'Rata² Nilai'},{n:'3.4K',l:'Total XP'},{n:'4',l:'Badge'}],
+  skills:[
+    {ic:'code-2',color:'#10b981',name:'HTML & CSS',level:'Advanced',pct:88},
+    {ic:'database',color:'#0ea5e9',name:'SQL & Normalisasi',level:'Intermediate',pct:72},
+    {ic:'layout',color:'#a78bfa',name:'Flexbox & Grid',level:'Intermediate',pct:75},
+    {ic:'github',color:'#ec4899',name:'Git & Version Control',level:'Beginner',pct:45},
+    {ic:'network',color:'#f59e0b',name:'Jaringan Komputer',level:'Intermediate',pct:68},
+  ],
+  timeline:[
+    {title:'PKL — PT Teknologi Maju',date:'Jan-Mar 2026',desc:'Web developer intern. Membangun 3 halaman landing page company profile menggunakan HTML/CSS/JS. Mendapat rating "Sangat Baik".'},
+    {title:'Workshop UI/UX Design',date:'Feb 2026',desc:'Peserta workshop Figma & design thinking oleh IDN Boarding School. 3 hari intensif.'},
+    {title:'Uji Kompetensi LSP — Junior Web Developer',date:'Mei 2026',desc:'Lulus sertifikasi BNSP. Skor: 87/100. Kompetensi: HTML, CSS, JavaScript dasar.'},
+    {title:'Lomba Web Design — Festival Vokasi',date:'Mar 2026',desc:'Juara 2 tingkat kabupaten. Tema: "Website Sekolah Modern".'},
+    {title:'Bootcamp JavaScript',date:'Apr 2026',desc:'5 sesi bootcamp JavaScript dasar oleh Dicoding x DIIS. Selesai dengan nilai 85.'},
+  ],
+};
+
+// ── NAV ──
+let curScreen='beranda';
+function go(s){
+  curScreen=s;
+  document.querySelectorAll('.screen').forEach(el=>el.classList.remove('on'));
+  document.getElementById('s-'+s).classList.add('on');
+  document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('on',el.dataset.s===s));
+  window.scrollTo(0,0);
+  lucide.createIcons();
+}
+
+// ── THEME ──
+function toggleTheme(){
+  const html=document.documentElement;
+  const cur=html.getAttribute('data-theme')||'dark';
+  const next=cur==='dark'?'light':'dark';
+  html.setAttribute('data-theme',next);
+  try{localStorage.setItem('diis-theme',next);}catch(e){}
+  const btn=document.getElementById('themeBtn');
+  if(btn)btn.innerHTML=`<svg data-lucide="${next==='dark'?'sun':'moon'}"></svg>`;
+  lucide.createIcons();
+  showToast('Theme: '+(next==='dark'?'Gelap':'Terang'));
+}
+
+// ── RENDER: MODUL LIST ──
+function renderModul(){
+  const byMapel={};
+  MODULS.forEach(m=>{if(!byMapel[m.mapel])byMapel[m.mapel]=[];byMapel[m.mapel].push(m);});
+  document.getElementById('modulList').innerHTML=Object.keys(byMapel).map(mp=>{
+    const c=mpColor(mp);const mods=byMapel[mp];
+    const done=mods.filter(m=>m.status==='Selesai').length;
+    return `<div class="mapel-group">
+      <div class="mapel-hdr" style="background:linear-gradient(135deg,${c},${c}cc)">
+        <div class="mh-ic"><svg data-lucide="${mpIcon(mp)}"></svg></div>
+        <div class="mh-body"><b>${mp}</b><small>${done}/${mods.length} modul selesai</small></div>
+        <div class="mh-count">${mods.length}</div>
+      </div>
+      <div class="mod-list">${mods.map(m=>{
+        const st=m.status==='Selesai'?'done':m.status==='Aktif'?'active':m.status==='Terkunci'?'locked':'todo';
+        const stIc=st==='done'?'check':st==='active'?'play':st==='locked'?'lock':'circle';
+        return `<div class="mod-row ${st}" onclick="${st==='locked'?"showToast('Selesaikan modul sebelumnya')":`openModulDetail(${m.id})`}">
+          <div class="mr-stat"><svg data-lucide="${stIc}"></svg></div>
+          <div class="mr-body"><b>${m.tp} · ${m.judul}</b><small>${m.alokasi}${m.badge?' · 🏅 '+m.badge:''}</small></div>
+          ${st!=='locked'&&st!=='done'?`<div class="mr-prog"><i style="width:${m.prog}%"></i></div>`:''}
+          ${m.badge&&st==='done'?'<div class="mr-badge">🏅</div>':''}
+        </div>`;
+      }).join('')}</div>
+    </div>`;
+  }).join('');
+  lucide.createIcons();
+}
+
+// ── MODUL DETAIL ──
+let curModulId=null,curModulTab='materi';
+function openModulDetail(id){
+  const m=MODULS.find(x=>x.id===id);if(!m)return;
+  curModulId=id;go('modul-detail');
+  const c=mpColor(m.mapel);const locked=m.status==='Terkunci';const done=m.status==='Selesai';const active=m.status==='Aktif';
+  const lp=[
+    {ic:'stethoscope',t:'Asesmen Diagnostik',d:'5 soal pilihan ganda',st:done||active?'done':'todo',tx:done||active?'Selesai · Nilai 80':'Belum dimulai'},
+    {ic:'book-open',t:'Materi: '+m.judul,d:'Video + Modul Ajar',st:done||active?'done':'todo',tx:done||active?'Selesai':'Belum dimulai'},
+    {ic:'clipboard-list',t:'Tugas Praktikum',d:active?'Sedang dikerjakan':done?'Selesai':'Belum dimulai',st:active?'active':done?'done':'todo',tx:active?'Sedang dikerjakan':done?'Selesai':'Belum dimulai',badge:m.badge},
+    {ic:'file-check',t:'Asesmen Sumatif',d:'20 soal · Passing grade '+m.kktp,st:done?'done':'todo',tx:done?'Selesai · Nilai 85':'Belum dimulai'},
+    {ic:'award',t:'Skill Badge: '+(m.badge||'—'),d:'Lulus asesmen untuk membuka',st:done?'done':'locked',tx:done?'Earned':'Terkunci'}
+  ];
+  document.getElementById('modulDetail').innerHTML=`
+    <div class="card glow" style="margin-bottom:14px">
+      <div class="mc-banner" style="height:64px;border-radius:var(--r-sm) var(--r-sm) 0 0;margin:-16px -16px 12px;background:linear-gradient(135deg,${c},${c}80)">
+        <div class="mc-tag">${m.tp} · ${m.alokasi}</div>
+        <div class="mc-icon" style="width:34px;height:34px"><svg data-lucide="${mpIcon(m.mapel)}"></svg></div>
+      </div>
+      <div style="font-size:16px;font-weight:800">${m.judul}</div>
+      <div style="font-size:12px;color:var(--muted);font-weight:600;margin-top:2px">${m.mapel} · ${m.status} · KKTP ${m.kktp}</div>
+      ${!locked?`<div class="mc-foot" style="margin-top:10px"><div class="mc-prog" style="height:6px"><i style="width:${m.prog}%"></i></div><span class="mc-pct">${m.prog}%</span></div>`:'<div class="mc-lock" style="margin-top:10px"><svg data-lucide="lock"></svg>Selesaikan modul sebelumnya</div>'}
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-h"><div class="lbl"><svg data-lucide="route"></svg>Alur Pembelajaran</div></div>
+      ${lp.map(p=>`<div class="lp-item ${p.st}" onclick="${p.st==='active'?"switchModulTab('tugas')":p.st==='done'?"switchModulTab('materi')":''}"> 
+        <div class="lp-icon"><svg data-lucide="${p.st==='done'?'check':p.ic}"></svg></div>
+        <div class="lp-body"><b>${p.t}</b><small>${p.d}</small>
+          <div class="lp-status" style="color:${p.st==='done'?'var(--em)':p.st==='active'?'var(--amber)':'var(--dim)'}"><svg data-lucide="${p.st==='done'?'check-circle':p.st==='active'?'loader':p.st==='locked'?'lock':'circle'}"></svg>${p.tx}</div></div>
+      </div>`).join('')}
+    </div>
+    ${!locked?`<div class="tabs" id="modulTabs">
+      <button class="tab ${curModulTab==='diagnostik'?'on':''}" onclick="switchModulTab('diagnostik')">Diagnostik</button>
+      <button class="tab ${curModulTab==='materi'?'on':''}" onclick="switchModulTab('materi')">Materi</button>
+      <button class="tab ${curModulTab==='tugas'?'on':''}" onclick="switchModulTab('tugas')">Tugas</button>
+      <button class="tab ${curModulTab==='asesmen'?'on':''}" onclick="switchModulTab('asesmen')">Asesmen</button>
+    </div><div class="card" id="modulTabContent"></div>`:''}`;
+  if(!locked)switchModulTab(curModulTab);
+  lucide.createIcons();
+}
+function switchModulTab(tab){
+  curModulTab=tab;
+  document.querySelectorAll('#modulTabs .tab').forEach((b,i)=>{const t=['diagnostik','materi','tugas','asesmen'];b.classList.toggle('on',t[i]===tab);});
+  const m=MODULS.find(x=>x.id===curModulId);if(!m)return;
+  const el=document.getElementById('modulTabContent');if(!el)return;
+  if(tab==='diagnostik'){
+    el.innerHTML=`<div class="note info">Asesmen diagnostik dikerjakan sebelum materi untuk mengukur pengetahuan awal.</div>${PG_BANK.map((q,i)=>`<div class="qq"><div class="q-num">Soal ${i+1} · ${q.tp}</div><div class="q-text">${q.q}</div><div class="qq-opts">${q.opts.map((o,j)=>`<div class="qq-opt" onclick="selectQuizAnswer(this)"><div class="q-letter">${String.fromCharCode(65+j)}</div>${o}</div>`).join('')}</div></div>`).join('')}<button style="width:100%;padding:12px;border:0;border-radius:12px;background:var(--grad);color:#fff;font-weight:700;font-size:13px;cursor:pointer;margin-top:8px" onclick="showToast('Diagnostik selesai! Nilai: 80')">Selesai</button>`;
+  }else if(tab==='materi'){
+    el.innerHTML=`<div class="note info">Materi dari Modul Ajar yang disetujui KS.</div><div class="task" onclick="showToast('Memutar video...')"><div class="ic" style="background:rgba(239,68,68,.15);color:var(--rose)"><svg data-lucide="play-circle"></svg></div><div class="info"><b>Video: ${m.judul}</b><small>12:34 · Budi Hartono, S.Kom</small></div></div><div class="task" onclick="showToast('Membuka modul...')"><div class="ic" style="background:rgba(14,165,233,.15);color:var(--sky)"><svg data-lucide="file-text"></svg></div><div class="info"><b>Modul Ajar (PDF)</b><small>14 halaman · ${m.alokasi}</small></div></div>`;
+  }else if(tab==='tugas'){
+    el.innerHTML=`<div class="note warn">Tugas praktikum — upload hasil + laporan.</div><div class="task" onclick="showToast('Membuka tugas...')"><div class="ic" style="background:rgba(245,158,11,.15);color:var(--amber)"><svg data-lucide="clipboard-list"></svg></div><div class="info"><b>Praktikum: ${m.judul}</b><small>Deadline: 20 Jun · TP ${m.tp}</small></div><span class="stat-tag" style="background:rgba(245,158,11,.15);color:var(--amber)">${m.status==='Aktif'?'Aktif':'Selesai'}</span></div>`;
+  }else if(tab==='asesmen'){
+    el.innerHTML=`<div class="note warn">Asesmen sumatif — passing grade ${m.kktp}. Lulus = dapat badge!</div><div class="card" style="text-align:center;padding:24px;border-style:dashed"><svg data-lucide="file-check" style="width:40px;height:40px;color:var(--em);margin-bottom:8px"></svg><div style="font-size:16px;font-weight:800">Asesmen Sumatif</div><div style="font-size:12px;color:var(--muted);margin-top:4px">20 soal · 45 menit · Passing grade ${m.kktp}</div><button style="margin-top:14px;padding:12px 24px;border:0;border-radius:12px;background:var(--grad);color:#fff;font-weight:700;font-size:13px;cursor:pointer" onclick="startQuiz()">Mulai Asesmen</button></div>`;
+  }
+  lucide.createIcons();
+}
+function selectQuizAnswer(el){el.parentElement.querySelectorAll('.qq-opt').forEach(o=>o.classList.remove('sel'));el.classList.add('sel');}
+function startQuiz(){showToast('Asesmen dimulai! 20 soal · 45 menit');const m=MODULS.find(x=>x.id===curModulId);setTimeout(()=>showBadgeCelebration(m),1500);}
+function showBadgeCelebration(m){
+  const b=BADGES.find(x=>x.name===(m&&m.badge))||{name:(m&&m.badge)||'Skill Badge',color:'#10b981',icon:'award',desc:'Selamat! Anda lulus asesmen.'};
+  document.getElementById('badgeCeleb').innerHTML=`<div class="confetti" id="confetti"></div><div class="bc-badge" style="background:${b.color}"><svg data-lucide="${b.icon||'award'}"></svg></div><div class="bc-title">🎉 Badge Tercapai!</div><div class="bc-name">${b.name}</div><div class="bc-desc">${b.desc||'Selamat! Anda menguasai kompetensi ini.'}</div><div class="bc-score">85</div><div class="bc-actions"><button style="background:var(--surface);color:var(--text);border:1px solid var(--border)" onclick="closeBadgeOverlay()">Tutup</button><button style="background:var(--grad);color:#fff" onclick="closeBadgeOverlay();go('capaian')">Lihat Badge</button></div>`;
+  const colors=['#10b981','#f59e0b','#a78bfa','#0ea5e9','#ec4899','#ea580c'];const conf=document.getElementById('confetti');
+  if(conf){conf.innerHTML='';for(let i=0;i<20;i++){const s=document.createElement('span');s.style.left=Math.random()*100+'%';s.style.background=colors[Math.floor(Math.random()*colors.length)];s.style.animationDelay=Math.random()*1.5+'s';s.style.borderRadius=Math.random()>.5?'50%':'2px';conf.appendChild(s);}}
+  document.getElementById('badgeOverlay').classList.add('on');lucide.createIcons();
+}
+function closeBadgeOverlay(){document.getElementById('badgeOverlay').classList.remove('on');}
+
+// ── RENDER: BERANDA ──
+function renderBeranda(){
+  const dow=now.getDay()===0?6:now.getDay();
+  // daily quest
+  const qDone=DAILY_QUEST.tasks.filter(t=>t.done).length;
+  const qPct=Math.round(qDone/DAILY_QUEST.tasks.length*100);
+  const qCirc=2*Math.PI*22;
+  const qEl=document.getElementById('homeQuest');
+  if(qEl)qEl.innerHTML=`<div class="quest-ring"><svg width="56" height="56"><circle cx="28" cy="28" r="22" stroke="var(--ring-bg)" stroke-width="5" fill="none"/><circle cx="28" cy="28" r="22" stroke="var(--amber)" stroke-width="5" fill="none" stroke-linecap="round" stroke-dasharray="${qCirc}" stroke-dashoffset="${qCirc-(qCirc*qPct/100)}" transform="rotate(-90 28 28)"/></svg><div class="qr-ic"><svg data-lucide="target"></svg></div></div><div class="quest-label">${qDone}/${DAILY_QUEST.tasks.length} Quest</div>`;
+  // continue learning
+  const activeMod=MODULS.find(m=>m.status==='Aktif');
+  const contEl=document.getElementById('homeContinue');
+  if(activeMod&&contEl){const c=mpColor(activeMod.mapel);contEl.innerHTML=`<div class="card-h"><div class="lbl"><svg data-lucide="play-circle"></svg>Lanjutkan Belajar</div><span class="link" onclick="go('modul')">Semua <svg data-lucide="chevron-right"></svg></span></div><div class="modcard" style="margin:0;box-shadow:none" onclick="openModulDetail(${activeMod.id})"><div class="mc-banner" style="height:48px;background:linear-gradient(135deg,${c},${c}80)"><div class="mc-tag">${activeMod.tp}</div><div class="mc-icon"><svg data-lucide="${mpIcon(activeMod.mapel)}"></svg></div></div><div class="mc-body" style="padding:10px 12px"><b>${activeMod.judul}</b><small>${activeMod.mapel} · ${activeMod.alokasi}</small><div class="mc-foot"><div class="mc-prog"><i style="width:${activeMod.prog}%"></i></div><span class="mc-pct">${activeMod.prog}%</span></div></div></div>`;}
+  // stats
+  const avgNilai=Math.round(NILAI.reduce((a,b)=>a+b.rata,0)/NILAI.length*10)/10;
+  const pending=TUGAS.filter(t=>t.status==='pending').length;
+  const tuntas=NILAI.filter(n=>n.rata>=n.kktp).length;
+  document.getElementById('homeStats').innerHTML=`
+    <div class="stat" onclick="go('kehadiran')"><div class="ic" style="background:rgba(16,185,129,.12);color:var(--em)"><svg data-lucide="user-check"></svg></div><div class="v">92.8<small>%</small></div><div class="l">Kehadiran</div><div class="delta up">▲ 15 hari streak</div></div>
+    <div class="stat" onclick="go('nilai')"><div class="ic" style="background:rgba(167,139,250,.12);color:var(--violet)"><svg data-lucide="trending-up"></svg></div><div class="v">${avgNilai}</div><div class="l">Rata² Nilai</div><div class="delta ${avgNilai>=75?'up':'down'}">${tuntas}/${NILAI.length} tuntas</div></div>
+    <div class="stat" onclick="go('tugas')"><div class="ic" style="background:rgba(245,158,11,.12);color:var(--amber)"><svg data-lucide="clipboard-list"></svg></div><div class="v">${pending}</div><div class="l">Tugas Pending</div><div class="delta down">▼ perlu dikerjakan</div></div>
+    <div class="stat" onclick="go('capaian')"><div class="ic" style="background:rgba(236,72,153,.12);color:var(--pink)"><svg data-lucide="award"></svg></div><div class="v">4</div><div class="l">Badge Earned</div><div class="delta up">▲ Level 12</div></div>`;
+  // today schedule
+  const daySched=SCHED[dow]||{};
+  const ci=curJp();
+  let schedH='';
+  let hasSched=false;
+  JPN.forEach(([jp,idx])=>{
+    const slot=daySched[idx];if(!slot)return;hasSched=true;
+    const isDone=idx<ci, isNow=idx===ci;
+    const dotCls=isDone?'done':isNow?'now':'next';
+    const t=JP[idx][1].split('–');
+    schedH+=`<div class="tl-item${isNow?' now':''}"${isNow?` onclick="openLessonSession('${slot.mp}','${slot.g.split(',')[0]}','${slot.ruang}',${idx})"`:''}><div class="tl-time"><div class="h">${t[0]}</div><div class="m">${JP[idx][0]}</div></div><div class="tl-dot ${dotCls}"></div><div class="tl-body"><div class="mp">${slot.mp}</div><div class="meta"><svg data-lucide="user"></svg>${slot.g.split(',')[0]} · <svg data-lucide="map-pin"></svg>${slot.ruang}</div>${isNow?'<span class="badge" style="background:rgba(245,158,11,.15);color:var(--amber)">▶ Sedang berlangsung — klik untuk mulai sesi</span>':isDone?'<span class="badge" style="background:rgba(16,185,129,.12);color:var(--em)">Selesai</span>':'<span class="badge" style="background:rgba(255,255,255,.05);color:var(--muted)">Akan datang</span>'}</div></div>`;
+  });
+  if(!hasSched)schedH='<div class="empty"><svg data-lucide="calendar-x"></svg><div>Libur — tidak ada jadwal hari ini</div></div>';
+  document.getElementById('homeSched').innerHTML=schedH;
+  // tasks
+  const urgent=TUGAS.filter(t=>t.status==='pending').sort((a,b)=>a.dlDays-b.dlDays).slice(0,3);
+  document.getElementById('homeTasks').innerHTML=urgent.map(t=>{
+    const c=mpColor(t.mp);const urgent=t.dlDays<=1;
+    return `<div class="task" onclick="openTask(${t.id})"><div class="ic" style="background:${c}20;color:${c}"><svg data-lucide="${mpIcon(t.mp)}"></svg></div><div class="info"><b>${t.title.length>38?t.title.slice(0,37)+'…':t.title}</b><small class="${urgent?'urgent':''}">${t.mp} · ${t.dlDays===0?'Hari ini!':t.dlDays+' hari lagi'}</small></div><span class="stat-tag" style="background:${urgent?'rgba(239,68,68,.15)':'rgba(245,158,11,.15)'};color:${urgent?'var(--rose)':'var(--amber)'}">${t.type}</span></div>`;
+  }).join('')||'<div class="empty"><svg data-lucide="check-circle"></svg><div>Tidak ada tugas pending</div></div>';
+  // grades
+  const recentGrades=NILAI.slice(0,4);
+  document.getElementById('homeGrades').innerHTML=recentGrades.map(n=>{
+    const c=mpColor(n.mp);const tuntas=n.rata>=n.kktp;
+    return `<div class="grade-row" onclick="go('nilai')"><div class="ic" style="background:${c}20;color:${c}"><svg data-lucide="${mpIcon(n.mp)}"></svg></div><div class="info"><b>${n.mp}</b><small>${tuntas?'Tuntas':'Remedial'} · KKTP ${n.kktp}</small><div class="bar"><i style="width:${n.rata}%;background:${tuntas?'var(--grad)':'linear-gradient(90deg,#fbbf24,#d97706)'}"></i></div></div><div class="score" style="color:${tuntas?'var(--eml)':'var(--amber)'}">${n.rata}</div></div>`;
+  }).join('');
+  // badges preview
+  const earned=BADGES.filter(b=>b.earned);
+  document.getElementById('homeBadges').innerHTML=`<div class="badge-grid">${BADGES.slice(0,6).map(b=>`
+    <div class="badge-item ${b.earned?'':'locked'}" onclick="go('capaian')"><div class="b-medal" style="background:${b.color}20;border:2px solid ${b.color}40"><svg data-lucide="${b.icon}" style="color:${b.color}"></svg></div><div class="b-name">${b.name}</div>${b.earned?'':'<div class="b-prog">'+b.prog+'%</div>'}</div>`).join('')}</div>`;
+}
+function curJp(){const m=now.getHours()*60+now.getMinutes();for(let i=0;i<JPN.length;i++){const idx=JPN[i][1];const[a,b]=JP[idx][1].split('–').map(t=>{const[h,mn]=t.split('.').map(Number);return h*60+mn;});if(m>=a&&m<b)return idx;}return -1;}
+
+// ── RENDER: JADWAL ──
+let curDay=now.getDay()===0?6:now.getDay();
+function renderJadwal(){
+  const dayTabs=document.getElementById('dayTabs');
+  dayTabs.innerHTML='';
+  for(let d=1;d<=6;d++){
+    const hasSched=SCHED[d]&&Object.keys(SCHED[d]).length>0;
+    const tab=document.createElement('div');
+    tab.className='day-tab'+(d===curDay?' on':'');
+    tab.onclick=()=>{curDay=d;renderJadwal();};
+    tab.innerHTML=`${DOW[d].slice(0,3)}<small>${hasSched?'Aktif':'Libur'}</small>`;
+    dayTabs.appendChild(tab);
+  }
+  const daySched=SCHED[curDay]||{};
+  const ci=curJp();
+  const today=now.getDay()===0?6:now.getDay();
+  let h='';
+  let hasAny=false;
+  JPN.forEach(([jp,idx])=>{
+    const slot=daySched[idx];if(!slot)return;hasAny=true;
+    const isToday=curDay===today;
+    const isDone=isToday&&idx<ci, isNow=isToday&&idx===ci;
+    const dotCls=isDone?'done':isNow?'now':'next';
+    const t=JP[idx][1].split('–');const c=mpColor(slot.mp);
+    h+=`<div class="tl-item${isNow?' now':''}" onclick="${isNow?`openLessonSession('${slot.mp}','${slot.g.split(',')[0]}','${slot.ruang}',${idx})`:`openClassDetail(${idx},'${slot.mp}','${slot.g}','${slot.ruang}')`}" style="cursor:pointer">
+      <div class="tl-time"><div class="h">${t[0]}</div><div class="m">${JP[idx][0]}</div></div>
+      <div class="tl-dot ${dotCls}"></div>
+      <div class="tl-body"><div class="mp">${slot.mp}</div>
+      <div class="meta"><svg data-lucide="user"></svg>${slot.g.split(',')[0]} · <svg data-lucide="map-pin"></svg>${slot.ruang}</div>
+      ${isNow?'<span class="badge" style="background:rgba(245,158,11,.15);color:var(--amber)">▶ Sedang berlangsung — klik untuk mulai sesi</span>':isDone?'<span class="badge" style="background:rgba(16,185,129,.12);color:var(--em)">Selesai</span>':'<span class="badge" style="background:'+c+'15;color:'+c+'">Akan datang</span>'}</div></div>`;
+  });
+  if(!hasAny)h='<div class="empty"><svg data-lucide="calendar-x"></svg><div>Libur — tidak ada jadwal</div></div>';
+  document.getElementById('schedDay').innerHTML=h;
+  // kalender akademik
+  document.getElementById('kalenderList').innerHTML=KALENDER.map(e=>`<div class="cal-evt"><div class="ce-date" style="color:${e.color}"><div class="d">${e.d}</div><div class="m">${e.m}</div></div><div class="ce-body"><b>${e.title}</b><small>${e.desc}</small></div><div class="ce-dot" style="background:${e.color}"></div></div>`).join('');
+  lucide.createIcons();
+}
+
+// ── LESSON SESSION (mulai sesi) ──
+function openLessonSession(mp,guru,ruang,idx){
+  const c=mpColor(mp);
+  const relMods=MODULS.filter(m=>m.mapel===mp);
+  const actMod=relMods.find(m=>m.status==='Aktif')||relMods.find(m=>m.status==='Selesai');
+  document.getElementById('modalBody').innerHTML=`
+    <div class="mh"><div><b>Mulai Sesi — ${mp}</b><div class="sub">${JP[idx][0]} · ${JP[idx][1]} · ${ruang}</div></div><svg data-lucide="x" style="cursor:pointer;color:var(--muted)" onclick="closeM()"></svg></div>
+    <div class="statrow">
+      <div class="statpill"><div class="n" style="color:${c}"><svg data-lucide="${mpIcon(mp)}" style="width:20px;height:20px"></svg></div><div class="l">Mapel</div></div>
+      <div class="statpill"><div class="n" style="font-size:13px">${guru}</div><div class="l">Guru</div></div>
+      <div class="statpill"><div class="n" style="font-size:13px">${ruang}</div><div class="l">Ruang</div></div>
+    </div>
+    <div class="card-h" style="margin:14px 0 8px"><div class="lbl"><svg data-lucide="route"></svg>Rangkaian Pembelajaran</div></div>
+    ${relMods.length>0?relMods.map(m=>{
+      const st=m.status==='Selesai'?'done':m.status==='Aktif'?'active':'todo';
+      return `<div class="lp-item ${st}" onclick="closeM();openModulDetail(${m.id})" style="cursor:pointer">
+        <div class="lp-icon"><svg data-lucide="${st==='done'?'check':'book-open'}"></svg></div>
+        <div class="lp-body"><b>${m.tp} · ${m.judul}</b><small>${m.alokasi} · ${m.status}${m.badge?' · 🏅 '+m.badge:''}</small>
+          <div class="lp-status" style="color:${st==='done'?'var(--em)':st==='active'?'var(--amber)':'var(--dim)'}">${m.status==='Selesai'?'Selesai · '+m.prog+'%':m.status==='Aktif'?'Sedang berjalan · '+m.prog+'%':'Belum dimulai'}</div></div>
+      </div>`;
+    }).join(''):'<div class="empty"><svg data-lucide="book-x"></svg><div>Belum ada modul untuk mapel ini</div></div>'}
+    <div class="note info" style="margin-top:12px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Klik modul untuk membuka materi, tugas, dan asesmen</div>
+    ${actMod?`<button style="width:100%;margin-top:10px;padding:12px;border:0;border-radius:12px;background:var(--grad);color:#fff;font-weight:700;font-size:13px;cursor:pointer" onclick="closeM();openModulDetail(${actMod.id})"><svg data-lucide="play-circle" style="width:16px;height:16px;vertical-align:-3px"></svg> Buka Modul Aktif</button>`:''}
+    <button style="width:100%;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);font-weight:700;font-size:13px;cursor:pointer" onclick="closeM()">Tutup</button>`;
+  openM();lucide.createIcons();
+}
+
+// ── RENDER: NILAI ──
+let nilaiTab='all';
+function setNilaiTab(t,el){nilaiTab=t;document.querySelectorAll('#nilaiTabs .tab').forEach(b=>b.classList.remove('on'));el.classList.add('on');renderNilai();}
+function renderNilai(){
+  const avg=Math.round(NILAI.reduce((a,b)=>a+b.rata,0)/NILAI.length*10)/10;
+  const tuntas=NILAI.filter(n=>n.rata>=n.kktp).length;
+  const remedial=NILAI.length-tuntas;
+  const highest=Math.max(...NILAI.map(n=>n.rata));
+  document.getElementById('nilaiSummary').innerHTML=`
+    <div class="statpill"><div class="n" style="color:var(--eml)">${avg}</div><div class="l">Rata² Semester</div></div>
+    <div class="statpill"><div class="n" style="color:var(--em)">${tuntas}</div><div class="l">Tuntas</div></div>
+    <div class="statpill"><div class="n" style="color:var(--amber)">${remedial}</div><div class="l">Remedial</div></div>
+    <div class="statpill"><div class="n" style="color:var(--violet)">${highest}</div><div class="l">Tertinggi</div></div>`;
+  let filtered=NILAI;
+  if(nilaiTab==='tuntas')filtered=NILAI.filter(n=>n.rata>=n.kktp);
+  if(nilaiTab==='remedial')filtered=NILAI.filter(n=>n.rata<n.kktp);
+  document.getElementById('nilaiList').innerHTML=filtered.map(n=>{
+    const c=mpColor(n.mp);const isTuntas=n.rata>=n.kktp;
+    const trendIcon=n.trend==='up'?'trending-up':n.trend==='down'?'trending-down':'minus';
+    const trendColor=n.trend==='up'?'var(--em)':n.trend==='down'?'var(--rose)':'var(--muted)';
+    return `<div class="grade-row" onclick="openNilaiDetail('${n.mp}')">
+      <div class="ic" style="background:${c}20;color:${c}"><svg data-lucide="${mpIcon(n.mp)}"></svg></div>
+      <div class="info"><b>${n.mp}</b><small>UH ${n.scores[0]} · Praktik ${n.scores[1]>0?n.scores[1]:'—'} · UTS ${n.scores[3]} · UAS ${n.scores[4]}</small><div class="bar"><i style="width:${n.rata}%;background:${isTuntas?'var(--grad)':'linear-gradient(90deg,#fbbf24,#d97706)'}"></i></div></div>
+      <div style="text-align:right"><div class="score" style="color:${isTuntas?'var(--eml)':'var(--amber)'}">${n.rata}</div><svg data-lucide="${trendIcon}" style="width:14px;height:14px;color:${trendColor};margin-top:2px"></svg></div>
+    </div>`;
+  }).join('')||'<div class="empty"><svg data-lucide="inbox"></svg><div>Tidak ada data</div></div>';
+  lucide.createIcons();
+}
+function openNilaiDetail(mp){
+  const n=NILAI.find(x=>x.mp===mp);if(!n)return;
+  const c=mpColor(n.mp);const isTuntas=n.rata>=n.kktp;
+  document.getElementById('modalBody').innerHTML=`
+    <div class="mh"><div><b>Detail Nilai — ${n.mp}</b><div class="sub">Semester Ganjil 2025/2026</div></div><svg data-lucide="x" style="cursor:pointer;color:var(--muted)" onclick="closeM()"></svg></div>
+    <div class="ring-wrap" style="justify-content:center;flex-direction:column;gap:8px;margin-bottom:16px">
+      <div class="ring" style="width:90px;height:90px">
+        <svg width="90" height="90"><circle class="bg-c" cx="45" cy="45" r="38" stroke-width="7" fill="none"/><circle class="fg-c" cx="45" cy="45" r="38" stroke-width="7" fill="none" stroke="${c}" stroke-dasharray="239" stroke-dashoffset="${239-(239*n.rata/100)}"/></svg>
+        <div class="pct" style="font-size:20px;color:${isTuntas?'var(--eml)':'var(--amber)'}">${n.rata}</div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);font-weight:600">${isTuntas?'Tuntas':'Belum Tuntas'} · KKTP ${n.kktp}</div>
+    </div>
+    <div class="statrow">
+      <div class="statpill"><div class="n" style="color:${c}">${n.scores[0]}</div><div class="l">UH</div></div>
+      <div class="statpill"><div class="n" style="color:${c}">${n.scores[1]>0?n.scores[1]:'—'}</div><div class="l">Praktik</div></div>
+      <div class="statpill"><div class="n" style="color:${c}">${n.scores[3]}</div><div class="l">UTS</div></div>
+      <div class="statpill"><div class="n" style="color:${c}">${n.scores[4]}</div><div class="l">UAS</div></div>
+      <div class="statpill"><div class="n" style="color:var(--violet)">${n.cp}%</div><div class="l">CP</div></div>
+    </div>
+    <div class="mfield"><label>Status</label><div class="val" style="color:${isTuntas?'var(--eml)':'var(--amber)'}">${isTuntas?'✓ Tuntas — di atas KKTP':'⚠ Remedial — di bawah KKTP '+n.kktp}</div></div>
+    ${!isTuntas?'<div class="note warn"><svg data-lucide="alert-triangle" width="13" style="vertical-align:-2px"></svg> Kamu perlu remedial. Hubungi guru mapel untuk jadwal remedial.</div>':''}
+    <button class="btn" style="width:100%;margin-top:8px;padding:12px;border:0;border-radius:12px;background:var(--grad);color:#fff;font-weight:700;font-size:13px;cursor:pointer" onclick="closeM()">Tutup</button>`;
+  openM();lucide.createIcons();
+}
+
+// ── RENDER: TUGAS ──
+let tugasTab='pending';
+function setTugasTab(t,el){tugasTab=t;document.querySelectorAll('#tugasTabs .tab').forEach(b=>b.classList.remove('on'));el.classList.add('on');renderTugas();}
+function renderTugas(){
+  document.getElementById('cntPending').textContent=TUGAS.filter(t=>t.status==='pending').length;
+  document.getElementById('cntSubmitted').textContent=TUGAS.filter(t=>t.status==='submitted').length;
+  document.getElementById('cntGraded').textContent=TUGAS.filter(t=>t.status==='graded').length;
+  let list=TUGAS.filter(t=>t.status===tugasTab);
+  if(tugasTab==='pending')list=list.sort((a,b)=>a.dlDays-b.dlDays);
+  document.getElementById('tugasList').innerHTML=list.map(t=>{
+    const c=mpColor(t.mp);
+    if(t.status==='pending'){
+      const urgent=t.dlDays<=1;
+      return `<div class="task" onclick="openTask(${t.id})"><div class="ic" style="background:${c}20;color:${c}"><svg data-lucide="${mpIcon(t.mp)}"></svg></div><div class="info"><b>${t.title}</b><small class="${urgent?'urgent':''}">${t.mp} · ${t.dlDays===0?'⚠ Deadline hari ini!':t.dlDays+' hari lagi'}</small></div><span class="stat-tag" style="background:${urgent?'rgba(239,68,68,.15)':'rgba(245,158,11,.15)'};color:${urgent?'var(--rose)':'var(--amber)'}">${t.type}</span></div>`;
+    }
+    if(t.status==='submitted'){
+      return `<div class="task" onclick="openTask(${t.id})"><div class="ic" style="background:${c}20;color:${c}"><svg data-lucide="${mpIcon(t.mp)}"></svg></div><div class="info"><b>${t.title}</b><small>${t.mp} · Menunggu penilaian guru</small></div><span class="stat-tag" style="background:rgba(14,165,233,.15);color:var(--sky)">Dikumpulkan</span></div>`;
+    }
+    const isTuntas=t.score>=75;
+    return `<div class="task" onclick="openTask(${t.id})"><div class="ic" style="background:${c}20;color:${c}"><svg data-lucide="${mpIcon(t.mp)}"></svg></div><div class="info"><b>${t.title}</b><small>${t.mp} · Dinilai ${t.deadline}</small></div><span class="stat-tag" style="background:${isTuntas?'rgba(16,185,129,.15)':'rgba(245,158,11,.15)'};color:${isTuntas?'var(--eml)':'var(--amber)'}">${t.score}</span></div>`;
+  }).join('')||'<div class="empty"><svg data-lucide="check-circle"></svg><div>Tidak ada tugas</div></div>';
+  lucide.createIcons();
+}
+function openTask(id){
+  const t=TUGAS.find(x=>x.id===id);if(!t)return;
+  const c=mpColor(t.mp);
+  let statusHtml='';
+  if(t.status==='pending'){
+    const urgent=t.dlDays<=1;
+    statusHtml=`<div class="note ${urgent?'warn':'info'}"><svg data-lucide="${urgent?'alert-triangle':'clock'}" width="13" style="vertical-align:-2px"></svg> ${t.dlDays===0?'⚠ Deadline hari ini!':t.dlDays+' hari lagi'}</div>`;
+  }else if(t.status==='submitted'){
+    statusHtml='<div class="note info"><svg data-lucide="clock" width="13" style="vertical-align:-2px"></svg> Menunggu penilaian dari guru</div>';
+  }else{
+    const isTuntas=t.score>=75;
+    statusHtml=`<div class="note ${isTuntas?'ok':'warn'}"><svg data-lucide="${isTuntas?'check-circle':'alert-triangle'}" width="13" style="vertical-align:-2px"></svg> Nilai: <b>${t.score}</b> — ${isTuntas?'Tuntas':'Remedial'}</div>`;
+  }
+  document.getElementById('modalBody').innerHTML=`
+    <div class="mh"><div><b>${t.title}</b><div class="sub">${t.mp} · ${t.guru}</div></div><svg data-lucide="x" style="cursor:pointer;color:var(--muted)" onclick="closeM()"></svg></div>
+    <div class="statrow">
+      <div class="statpill"><div class="n" style="color:${c}">${t.type}</div><div class="l">Jenis</div></div>
+      <div class="statpill"><div class="n">${t.deadline}</div><div class="l">Deadline</div></div>
+      ${t.score?`<div class="statpill"><div class="n" style="color:${t.score>=75?'var(--eml)':'var(--amber)'}">${t.score}</div><div class="l">Nilai</div></div>`:`<div class="statpill"><div class="n" style="color:var(--muted)">—</div><div class="l">Nilai</div></div>`}
+    </div>
+    ${statusHtml}
+    <div class="mfield"><label>Deskripsi</label><div class="val" style="font-weight:600;color:var(--muted);line-height:1.6">${t.desc}</div></div>
+    ${t.status==='pending'?`<button style="width:100%;margin-top:8px;padding:12px;border:0;border-radius:12px;background:var(--grad);color:#fff;font-weight:700;font-size:13px;cursor:pointer" onclick="submitTask(${t.id})"><svg data-lucide="upload" style="width:16px;height:16px;vertical-align:-3px"></svg> Kumpulkan Tugas</button>`:''}
+    <button style="width:100%;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);font-weight:700;font-size:13px;cursor:pointer" onclick="closeM()">Tutup</button>`;
+  openM();lucide.createIcons();
+}
+let uploadedFiles=[];
+function submitTask(id){
+  const t=TUGAS.find(x=>x.id===id);if(!t)return;
+  uploadedFiles=[];
+  document.getElementById('modalBody').innerHTML=`
+    <div class="mh"><div><b>Kumpulkan Tugas</b><div class="sub">${t.title}</div></div><svg data-lucide="x" style="cursor:pointer;color:var(--muted)" onclick="closeM()"></svg></div>
+    <div class="mfield"><label>Instruksi dari Guru</label><div class="val" style="font-weight:600;color:var(--muted);line-height:1.6">${t.desc}</div></div>
+    <div class="mfield"><label>Format yang diterima</label><div class="val" style="font-size:12px">PDF, DOCX, ZIP, JPG · Maks 10MB</div></div>
+    <div class="upload-zone" onclick="simulateUpload()">
+      <svg data-lucide="cloud-upload"></svg><b>Klik untuk upload file</b><small>atau drag & drop file di sini</small>
+    </div>
+    <div id="uploadList"></div>
+    <div class="mfield"><label>Catatan untuk Guru (opsional)</label><textarea style="width:100%;min-height:60px;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font:inherit;font-size:12px;resize:vertical" placeholder="Tambahkan catatan..."></textarea></div>
+    <button style="width:100%;margin-top:8px;padding:12px;border:0;border-radius:12px;background:var(--grad);color:#fff;font-weight:700;font-size:13px;cursor:pointer" onclick="confirmSubmit(${t.id})"><svg data-lucide="send" style="width:16px;height:16px;vertical-align:-3px"></svg> Kumpulkan</button>
+    <button style="width:100%;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);font-weight:700;font-size:13px;cursor:pointer" onclick="closeM()">Batal</button>`;
+  openM();lucide.createIcons();
+}
+function simulateUpload(){
+  const fakes=['Tugas_Flexbox_Rizky.pdf','Source_Code.zip','Screenshot_Hasil.png','Laporan_Praktikum.docx'];
+  const fn=fakes[uploadedFiles.length%fakes.length];
+  const fs=(Math.random()*3+0.5).toFixed(1);
+  uploadedFiles.push({name:fn,size:fs});
+  renderUploadList();showToast('File diupload: '+fn);
+}
+function renderUploadList(){
+  document.getElementById('uploadList').innerHTML=uploadedFiles.map((f,i)=>`<div class="upload-file"><div class="uf-ic"><svg data-lucide="file-check"></svg></div><div style="flex:1"><div>${f.name}</div><small style="color:var(--muted)">${f.size} MB</small></div><span class="uf-rm" onclick="removeFile(${i})">×</span></div>`).join('');
+  lucide.createIcons();
+}
+function removeFile(i){uploadedFiles.splice(i,1);renderUploadList();}
+function confirmSubmit(id){
+  const t=TUGAS.find(x=>x.id===id);if(!t)return;
+  if(uploadedFiles.length===0){showToast('⚠ Upload minimal 1 file!');return;}
+  t.status='submitted';t.submittedFiles=uploadedFiles.length;
+  closeM();renderTugas();renderBeranda();
+  showToast('✓ Tugas dikumpulkan! ('+uploadedFiles.length+' file)');
+}
+
+// ── RENDER: KEHADIRAN ──
+function renderKehadiran(){
+  document.getElementById('kehStats').innerHTML=`
+    <div class="statpill"><div class="n" style="color:var(--eml)">${KEH_STATS.hadir}</div><div class="l">Hadir</div></div>
+    <div class="statpill"><div class="n" style="color:var(--sky)">${KEH_STATS.izin}</div><div class="l">Izin</div></div>
+    <div class="statpill"><div class="n" style="color:var(--amber)">${KEH_STATS.sakit}</div><div class="l">Sakit</div></div>
+    <div class="statpill"><div class="n" style="color:var(--rose)">${KEH_STATS.alpha}</div><div class="l">Alpha</div></div>`;
+  const todayDate=now.getDate();
+  const monthYear=MON[now.getMonth()]+' '+now.getFullYear();
+  let calHtml=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><b style="font-size:13px">${monthYear}</b><span style="font-size:10px;color:var(--muted);font-weight:600">${KEH_STATS.hadir+KEH_STATS.izin+KEH_STATS.sakit+KEH_STATS.alpha} hari recorded</span></div>`;
+  calHtml+='<div class="cal"><div class="cal-h">M</div><div class="cal-h">S</div><div class="cal-h">S</div><div class="cal-h">R</div><div class="cal-h">K</div><div class="cal-h">J</div><div class="cal-h">S</div>';
+  ATT_CAL.forEach((d,i)=>{
+    if(d.status==='empty'||d.day===0){calHtml+='<div class="cal-cell empty"></div>';}
+    else if(d.status==='future'){calHtml+=`<div class="cal-cell empty" style="opacity:.4">${d.day}</div>`;}
+    else{const isToday=d.day===todayDate;calHtml+=`<div class="cal-cell ${d.status} ${isToday?'today':''}" title="${d.day} ${MON[now.getMonth()]} — ${d.status}" onclick="openDayDetail(${d.day},'${d.status}')">${d.day}</div>`;}
+  });
+  calHtml+='</div>';
+  document.getElementById('calWrap').innerHTML=calHtml;
+}
+function openDayDetail(day,status){
+  const labels={hadir:'Hadir — semua sesi',izin:'Izin — keperluan keluarga',sakit:'Sakit — demam',alpha:'Alpha — tanpa keterangan',empty:'Libur'};
+  document.getElementById('modalBody').innerHTML=`
+    <div class="mh"><div><b>Kehadiran — ${day} ${MON[now.getMonth()]}</b><div class="sub">${labels[status]||status}</div></div><svg data-lucide="x" style="cursor:pointer;color:var(--muted)" onclick="closeM()"></svg></div>
+    ${status==='hadir'?'<div class="note ok"><svg data-lucide="check-circle" width="13" style="vertical-align:-2px"></svg> Hadir penuh — 8 JP tercatat</div>':''}
+    ${status==='alpha'?'<div class="note warn"><svg data-lucide="alert-triangle" width="13" style="vertical-align:-2px"></svg> Alpha — orang tua/WA telah diberi notifikasi</div>':''}
+    <div class="mfield"><label>Status</label><div class="val" style="text-transform:capitalize;color:${status==='hadir'?'var(--eml)':status==='izin'?'var(--sky)':status==='sakit'?'var(--amber)':'var(--rose)'}">${status}</div></div>
+    <button style="width:100%;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);font-weight:700;font-size:13px;cursor:pointer" onclick="closeM()">Tutup</button>`;
+  openM();lucide.createIcons();
+}
+
+// ── RENDER: CAPAIAN ──
+function renderCapaian(){
+  // leaderboard
+  document.getElementById('leaderboardList').innerHTML=LEADERBOARD.map((s,i)=>{
+    const rc=i===0?'gold':i===1?'silver':i===2?'bronze':'';
+    const avC=['#10b981','#0ea5e9','#a78bfa','#ec4899','#f59e0b','#14b8a6'][i%6];
+    return `<div class="lb-row ${s.me?'me':''}"><div class="lb-rank ${rc}">${i+1}</div><div class="lb-avatar" style="background:${avC}">${ini(s.name)}</div><div class="lb-body"><b>${s.name}${s.me?' (You)':''}</b><small>${s.kelas} · ${s.badges} badge · ${s.avg} avg</small></div><div class="lb-score">${s.xp.toLocaleString()}</div></div>`;
+  }).join('');
+  // CP cards with TP breakdown (LMS pattern)
+  document.getElementById('cpList').innerHTML=CPDATA.map(cp=>{
+    const ok=cp.progres>=75;
+    return `<div style="margin-bottom:10px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);box-shadow:var(--sh)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="display:flex;align-items:center;gap:8px"><div style="width:24px;height:24px;border-radius:6px;background:${ok?'rgba(16,185,129,.15)':'rgba(245,158,11,.15)'};display:grid;place-items:center"><svg data-lucide="${cp.progres>=100?'check-circle':cp.progres>0?'loader':'circle'}" style="width:14px;height:14px;color:${ok?'var(--em)':'var(--amber)'}"></svg></div><b style="font-size:13px">${cp.cp}: ${cp.desc}</b></div><span style="font-size:12px;font-weight:800;color:${ok?'var(--em)':'var(--amber)'}">${cp.progres}%</span></div>
+      <div class="bar" style="height:5px;border-radius:4px;background:var(--bar-bg);overflow:hidden;margin-bottom:8px"><i style="display:block;height:100%;border-radius:4px;background:${ok?'var(--grad)':'linear-gradient(90deg,#fbbf24,#d97706)'};width:${cp.progres}%"></i></div>
+      ${cp.tps.map(tp=>`<div class="tp-row ${tp.done?'done':''}"><div class="tp-check">${tp.done?'<svg data-lucide="check"></svg>':''}</div><span>${tp.tp}: ${tp.desc}</span>${tp.badge?'<svg class="tp-badge-icon" data-lucide="award"></svg>':''}</div>`).join('')}
+    </div>`;
+  }).join('');
+  document.getElementById('badgeGrid').innerHTML=BADGES.map(b=>`
+    <div class="badge-item ${b.earned?'':'locked'}" onclick="openBadge('${b.name}')">
+      <div class="b-medal" style="background:${b.color}20;border:2px solid ${b.color}40"><svg data-lucide="${b.icon}" style="color:${b.color}"></svg></div>
+      <div class="b-name">${b.name}</div>
+      <div class="b-cat">${b.cat||''}</div>
+      ${b.earned?(b.score?`<div class="b-prog" style="color:var(--em)">⭐ ${b.score}</div>`:'<div class="b-prog" style="color:var(--em)">✓ Earned</div>'):`<div class="b-prog">${b.prog||0}%</div>`}
+    </div>`).join('');
+  lucide.createIcons();
+}
+function openBadge(name){
+  const b=BADGES.find(x=>x.name===name);if(!b)return;
+  document.getElementById('modalBody').innerHTML=`
+    <div class="mh"><div><b>${b.name}</b><div class="sub">${b.earned?'Badge Earned':'In Progress'}${b.cat?' · '+b.cat:''}</div></div><svg data-lucide="x" style="cursor:pointer;color:var(--muted)" onclick="closeM()"></svg></div>
+    <div style="text-align:center;margin:16px 0">
+      <div style="width:80px;height:80px;border-radius:50%;background:${b.color}20;border:3px solid ${b.color}40;display:grid;place-items:center;margin:0 auto 12px">
+        <svg data-lucide="${b.icon}" style="width:36px;height:36px;color:${b.color}"></svg>
+      </div>
+      <div style="font-size:18px;font-weight:800">${b.name}</div>
+      <div style="font-size:12px;color:var(--muted);font-weight:600;margin-top:4px;max-width:280px;margin:4px auto 0">${b.desc}</div>
+      ${b.earned&&b.score?`<div style="font-size:24px;font-weight:800;color:${b.color};margin-top:8px">⭐ ${b.score}</div>`:''}
+    </div>
+    ${b.earned?'<div class="note ok"><svg data-lucide="check-circle" width="13" style="vertical-align:-2px"></svg> Badge ini sudah kamu dapatkan!</div>':`<div class="mfield"><label>Progress</label><div class="bar" style="height:8px;border-radius:5px;background:var(--bar-bg);overflow:hidden"><i style="display:block;height:100%;width:${b.prog||0}%;border-radius:5px;background:${b.color}"></i></div><div style="text-align:right;font-size:11px;color:var(--muted);margin-top:4px">${b.prog||0}%</div></div>`}
+    <button style="width:100%;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);font-weight:700;font-size:13px;cursor:pointer" onclick="closeM()">Tutup</button>`;
+  openM();lucide.createIcons();
+}
+
+// ── CLASS DETAIL MODAL ──
+function openClassDetail(idx,mp,g,ruang){
+  const c=mpColor(mp);
+  document.getElementById('modalBody').innerHTML=`
+    <div class="mh"><div><b>${mp}</b><div class="sub">${JP[idx][0]} · ${JP[idx][1]}</div></div><svg data-lucide="x" style="cursor:pointer;color:var(--muted)" onclick="closeM()"></svg></div>
+    <div class="statrow">
+      <div class="statpill"><div class="n" style="color:${c}"><svg data-lucide="${mpIcon(mp)}" style="width:20px;height:20px"></svg></div><div class="l">Mapel</div></div>
+      <div class="statpill"><div class="n" style="font-size:14px">${g.split(',')[0]}</div><div class="l">Guru</div></div>
+      <div class="statpill"><div class="n" style="font-size:14px">${ruang}</div><div class="l">Ruang</div></div>
+    </div>
+    <div class="mfield"><label>Guru Pengampu</label><div class="val">${g}</div></div>
+    <div class="mfield"><label>Sesi</label><div class="val">${JP[idx][0]} (${JP[idx][1]})</div></div>
+    <button style="width:100%;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);font-weight:700;font-size:13px;cursor:pointer" onclick="closeM()">Tutup</button>`;
+  openM();lucide.createIcons();
+}
+
+// ── PENGUMUMAN MODAL ──
+function openPengumuman(){
+  document.getElementById('modalBody').innerHTML=`
+    <div class="mh"><div><b>Pengumuman</b><div class="sub">${PENGUMUMAN.length} pengumuman · ${PENGUMUMAN.filter(p=>p.tag==='Penting').length} penting</div></div><svg data-lucide="x" style="cursor:pointer;color:var(--muted)" onclick="closeM()"></svg></div>
+    ${PENGUMUMAN.map(p=>`<div class="ann-item"><div class="ann-ic" style="background:${p.color}15;color:${p.color}"><svg data-lucide="${p.ic}"></svg></div><div class="ann-body"><b>${p.title}</b><small>${p.from} · ${p.time}</small><p>${p.body}</p><span class="ann-tag" style="background:${p.tagColor}15;color:${p.tagColor}">${p.tag}</span></div></div>`).join('')}
+    <button style="width:100%;margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);font-weight:700;font-size:13px;cursor:pointer" onclick="closeM()">Tutup</button>`;
+  openM();lucide.createIcons();
+}
+
+// ── RAPOR MODAL ──
+function openRapor(){
+  const avg=Math.round(NILAI.reduce((a,b)=>a+b.rata,0)/NILAI.length*10)/10;
+  const tuntas=NILAI.filter(n=>n.rata>=n.kktp).length;
+  const rank=3;
+  document.getElementById('modalBody').innerHTML=`
+    <div class="mh"><div><b>Rapor Semester</b><div class="sub">Rizky Pratama · XI TJKT 1 · Semester Genap 2025/2026</div></div><svg data-lucide="x" style="cursor:pointer;color:var(--muted)" onclick="closeM()"></svg></div>
+    <div class="statrow">
+      <div class="statpill"><div class="n" style="color:var(--eml)">${avg}</div><div class="l">Rata²</div></div>
+      <div class="statpill"><div class="n" style="color:var(--em)">${tuntas}/${NILAI.length}</div><div class="l">Tuntas</div></div>
+      <div class="statpill"><div class="n" style="color:var(--violet)">${rank}</div><div class="l">Ranking</div></div>
+    </div>
+    <table class="rapor-tbl">
+      <thead><tr><th>Mapel</th><th style="text-align:center">UH</th><th style="text-align:center">Prak</th><th style="text-align:center">UTS</th><th style="text-align:center">UAS</th><th class="n">NA</th><th class="n">Pred</th></tr></thead>
+      <tbody>
+        ${NILAI.map(n=>{const c=mpColor(n.mp);const ok=n.rata>=n.kktp;const pred=n.rata>=90?'A':n.rata>=80?'B':n.rata>=75?'C':'D';return `<tr><td style="color:${c};font-weight:700">${n.mp}</td><td style="text-align:center">${n.scores[0]||'—'}</td><td style="text-align:center">${n.scores[1]||'—'}</td><td style="text-align:center">${n.scores[3]||'—'}</td><td style="text-align:center">${n.scores[4]||'—'}</td><td class="n" style="color:${ok?'var(--eml)':'var(--amber)'}">${n.rata}</td><td class="n" style="color:${ok?'var(--em)':'var(--rose)'}">${pred}</td></tr>`}).join('')}
+      </tbody>
+    </table>
+    <div class="note info" style="margin-top:12px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> NA = Nilai Akhir (berbobot: UH 20% · Praktik 25% · Sikap 15% · UTS 20% · UAS 20%)</div>
+    <div class="note ${tuntas>=NILAI.length-1?'ok':'warn'}" style="margin-top:8px"><svg data-lucide="${tuntas>=NILAI.length-1?'check-circle':'alert-triangle'}" width="13" style="vertical-align:-2px"></svg> ${tuntas>=NILAI.length-1?'Naik kelas — semua mapel tuntas':'Ada mapel yang perlu remedial sebelum naik kelas'}</div>
+    <button style="width:100%;margin-top:12px;padding:12px;border:0;border-radius:12px;background:var(--grad);color:#fff;font-weight:700;font-size:13px;cursor:pointer" onclick="showToast('Rapor diunduh (mockup)')"><svg data-lucide="download" style="width:16px;height:16px;vertical-align:-3px"></svg> Unduh Rapor PDF</button>
+    <button style="width:100%;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);font-weight:700;font-size:13px;cursor:pointer" onclick="closeM()">Tutup</button>`;
+  openM();lucide.createIcons();
+}
+
+// ── PROFILE CV ──
+function openProfile(){document.getElementById('profileScreen').classList.add('on');renderProfile();}
+function closeProfile(){document.getElementById('profileScreen').classList.remove('on');}
+function renderProfile(){
+  const p=PROFILE_CV;
+  document.getElementById('psContent').innerHTML=`
+  <div class="ps-header">
+    <div class="ps-back" onclick="closeProfile()"><svg data-lucide="chevron-right"></svg> Kembali</div>
+    <div class="ps-avatar">${ini(p.name)}</div>
+    <div class="ps-name">${p.name}</div>
+    <div class="ps-role">${p.role}</div>
+    <div class="ps-tags">${p.tags.map(t=>`<span class="ps-tag">${t}</span>`).join('')}</div>
+  </div>
+  <div class="ps-body">
+    <div class="cv-stat-grid" style="margin-bottom:16px">
+      ${p.stats.map(s=>`<div class="cv-stat"><div class="n" style="color:var(--eml)">${s.n}</div><div class="l">${s.l}</div></div>`).join('')}
+    </div>
+    <div class="cv-section">
+      <h3><svg data-lucide="wrench"></svg>Skill Kompetensi</h3>
+      ${p.skills.map(s=>`<div class="cv-skill"><div class="sk-ic" style="background:${s.color}15;color:${s.color}"><svg data-lucide="${s.ic}"></svg></div><div class="sk-body"><b>${s.name}</b><small>${s.level}</small></div><div class="sk-bar"><i style="width:${s.pct}%;background:${s.color}"></i></div></div>`).join('')}
+    </div>
+    <div class="cv-section">
+      <h3><svg data-lucide="award"></svg>Badge & Sertifikasi</h3>
+      <div class="badge-grid">${BADGES.filter(b=>b.earned).map(b=>`<div class="badge-item" onclick="closeProfile();go('capaian')"><div class="b-medal" style="background:${b.color}20;border:2px solid ${b.color}40"><svg data-lucide="${b.icon}" style="color:${b.color}"></svg></div><div class="b-name">${b.name}</div></div>`).join('')}</div>
+    </div>
+    <div class="cv-section">
+      <h3><svg data-lucide="briefcase"></svg>Pengalaman & Sertifikasi</h3>
+      <div class="cv-timeline">${p.timeline.map(t=>`<div class="cv-tl-item"><b>${t.title}</b><small>${t.date}</small><p>${t.desc}</p></div>`).join('')}</div>
+    </div>
+    <div class="cv-section">
+      <h3><svg data-lucide="trending-up"></svg>Progress Pembelajaran</h3>
+      ${CPDATA.map(cp=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><div style="flex:1"><div style="font-size:12px;font-weight:700">${cp.cp}: ${cp.desc}</div><div class="bar" style="height:5px;border-radius:3px;background:var(--bar-bg);overflow:hidden;margin-top:3px"><i style="display:block;height:100%;border-radius:3px;background:var(--grad);width:${cp.progres}%"></i></div></div><span style="font-size:11px;font-weight:800;color:${cp.progres>=75?'var(--em)':'var(--amber)'}">${cp.progres}%</span></div>`).join('')}
+    </div>
+    <button style="width:100%;padding:12px;border:0;border-radius:12px;background:var(--grad);color:#fff;font-weight:700;font-size:13px;cursor:pointer" onclick="showToast('CV diunduh (mockup)')"><svg data-lucide="download" style="width:16px;height:16px;vertical-align:-3px"></svg> Unduh CV PDF</button>
+  </div>`;
+  lucide.createIcons();
+}
+// swipe gesture
+let touchStartX=0,touchEndX=0;
+document.addEventListener('touchstart',e=>{touchStartX=e.changedTouches[0].screenX;});
+document.addEventListener('touchend',e=>{
+  touchEndX=e.changedTouches[0].screenX;
+  if(touchStartX-touchEndX>60&&Math.abs(touchEndX-touchStartX)>60){openProfile();}
+  if(touchEndX-touchStartX>60&&Math.abs(touchEndX-touchStartX)>60){closeProfile();}
+});
+
+// ── MODAL & TOAST ──
+function openM(){document.getElementById('ovl').classList.add('on');}
+function closeM(){document.getElementById('ovl').classList.remove('on');}
+function showToast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
+
+// ── INIT ──
+// restore theme button icon
+const _savedTheme=document.documentElement.getAttribute('data-theme')||'dark';
+const _tBtn=document.getElementById('themeBtn');
+if(_tBtn)_tBtn.innerHTML=`<svg data-lucide="${_savedTheme==='dark'?'sun':'moon'}"></svg>`;
+renderBeranda();renderJadwal();renderModul();renderNilai();renderTugas();renderKehadiran();renderCapaian();lucide.createIcons();
+</script>
+</body>
+</html>

@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DIIS — Dashboard Akademik Guru (Mockup LENGKAP)</title>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  :root{--em50:#ecfdf5;--em100:#d1fae5;--em200:#a7f3d0;--em500:#10b981;--em600:#059669;--em700:#047857;--em800:#065f46;
+    --ink:#0f2e25;--ink2:#355a4e;--muted:#6b8079;--line:#e6efea;--bg:#f4f7f5;--surface:#fff;
+    --amber:#d97706;--amberbg:#fef3c7;--rose:#e11d48;--rosebg:#ffe4e6;--sky:#0284c7;--violet:#7c3aed;
+    --sh:0 1px 2px rgba(16,40,33,.04),0 8px 24px -14px rgba(16,40,33,.14);
+    --shlift:0 2px 6px rgba(16,40,33,.06),0 22px 40px -20px rgba(16,40,33,.28);--r:14px;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',system-ui,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+  .side{background:var(--surface);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:6px}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px}
+  .brand .logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(145deg,var(--em600),var(--em800));display:grid;place-items:center;color:#fff;font-weight:800}
+  .brand b{font-size:15px}.brand small{display:block;color:var(--muted);font-size:11px;font-weight:500}
+  .me{padding:10px 8px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-bottom:6px}
+  .me b{font-size:13px}.me small{display:block;color:var(--muted);font-size:11px}
+  .me .role{display:inline-block;margin-top:5px;background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:800;padding:2px 8px;border-radius:8px}
+  .navgrp{font-size:10px;font-weight:800;letter-spacing:.7px;color:#9bb0a8;padding:12px 10px 4px}
+  .nav{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;color:var(--ink2);font-weight:600;font-size:13.5px;cursor:pointer}
+  .nav svg{width:18px;height:18px;color:var(--muted)}.nav:hover{background:var(--bg)}
+  .nav.on{background:var(--em50);color:var(--em700)}.nav.on svg{color:var(--em600)}
+  .main{display:flex;flex-direction:column;min-width:0}
+  .top{height:64px;background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:20}
+  .iconbtn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:#fff;display:grid;place-items:center;color:var(--ink2);cursor:pointer}
+  .ghost{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--em200);color:var(--em700);background:var(--em50);border-radius:11px;padding:8px 13px;font-weight:700;font-size:13px;cursor:pointer}
+  .ava{width:34px;height:34px;border-radius:50%;background:#dbeafe;color:#1d4ed8;display:grid;place-items:center;font-weight:800;font-size:13px}
+  .wrap{padding:22px 26px 60px;max-width:1340px;width:100%}
+  .h1{font-size:24px;font-weight:800;letter-spacing:-.5px}.crumb{color:var(--muted);font-size:12.5px;margin-top:2px;font-weight:500}
+  .ctxbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 4px}
+  .sel{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--ink2);box-shadow:var(--sh);cursor:pointer}
+  .sel svg{width:15px;height:15px;color:var(--em600)}.sel select{border:0;background:transparent;font:inherit;font-weight:600;color:var(--ink2);outline:none;cursor:pointer}
+  .sel.rekap{background:var(--em600);color:#fff;border-color:var(--em600);box-shadow:0 8px 18px -8px rgba(5,150,105,.5)}.sel.rekap svg{color:#fff}
+  .rolehint{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-size:11.5px;font-weight:700;color:#1d4ed8;background:#eff6ff;border:1px solid #bfdbfe;padding:6px 11px;border-radius:20px}
+  .rolehint svg{width:14px;height:14px}
+  .subnav{display:flex;flex-wrap:wrap;gap:7px;margin:16px 0 18px;border-bottom:1px solid var(--line);padding-bottom:14px}
+  .pill{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border-radius:11px;font-size:13px;font-weight:700;color:var(--ink2);background:#fff;border:1px solid var(--line);cursor:pointer}
+  .pill svg{width:16px;height:16px;color:var(--muted)}.pill:hover{border-color:var(--em200)}
+  .pill.on{background:var(--em600);color:#fff;border-color:var(--em600);box-shadow:0 8px 18px -8px rgba(5,150,105,.5)}.pill.on svg{color:#fff}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh)}.card.pad{padding:18px}
+  .grid{display:grid;gap:16px}.row{display:flex;gap:16px}
+  .between{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .btn{display:inline-flex;align-items:center;gap:7px;background:var(--em600);color:#fff;border:0;border-radius:11px;padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer}.btn svg{width:16px;height:16px}
+  .btn.sec{background:#fff;color:var(--ink2);border:1px solid var(--line)}.btn.sec svg{color:var(--em600)}
+  .btn.sm{padding:6px 10px;font-size:12px}
+  .seg{display:inline-flex;background:var(--bg);border-radius:11px;padding:3px}
+  .seg button{border:0;background:transparent;font:inherit;font-size:12.5px;font-weight:700;color:var(--muted);padding:7px 13px;border-radius:8px;cursor:pointer}
+  .seg button.on{background:#fff;color:var(--em700);box-shadow:var(--sh)}
+  .title{font-size:15px;font-weight:800;display:flex;align-items:center;gap:9px}.title svg{width:18px;height:18px;color:var(--em600)}
+  .sub{color:var(--muted);font-size:12px;font-weight:500;margin-top:2px}
+  .badge{font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:8px;white-space:nowrap}
+  .b-ok{background:var(--em50);color:var(--em700)}.b-warn{background:var(--amberbg);color:var(--amber)}.b-info{background:#e0f2fe;color:#0369a1}.b-mut{background:#eef2f5;color:#64748b}.b-rose{background:var(--rosebg);color:var(--rose)}.b-violet{background:#ede9fe;color:#7c3aed}
+  .screen{display:none}.screen.on{display:block}
+  .kpi{flex:1;background:#fff;border:1px solid var(--line);border-radius:13px;padding:14px;box-shadow:var(--sh)}
+  .kpi .lab{font-size:11.5px;color:var(--muted);font-weight:700;display:flex;gap:6px;align-items:center}.kpi .lab svg{width:14px;height:14px;color:var(--em600)}
+  .kpi .v{font-size:26px;font-weight:800;letter-spacing:-1px;margin-top:5px}
+  .classcard{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--line);border-radius:12px;background:#fff;transition:.16s}
+  .classcard:hover{box-shadow:var(--shlift);border-color:var(--em200);transform:translateY(-1px)}
+  .classcard .ic{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;flex-shrink:0}
+  .li{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#fff}
+  .li .ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex-shrink:0}
+  /* calendar + timetable */
+  .cal table{width:100%;border-collapse:collapse}.cal th{font-size:10.5px;color:var(--muted);font-weight:800;padding:6px 0}
+  .cal td{text-align:center;padding:3px}.cal .d{width:34px;height:34px;border-radius:9px;display:inline-grid;place-items:center;font-size:12.5px;font-weight:700;color:var(--ink2);position:relative;cursor:pointer}
+  .cal .d:hover{background:var(--bg)}.cal .d.today{background:var(--em600);color:#fff}.cal .d.sel{outline:2px solid var(--em500);outline-offset:-2px}
+  .cal .d.has::after{content:"";position:absolute;bottom:4px;width:5px;height:5px;border-radius:50%;background:var(--em500)}.cal .d.today.has::after{background:#fff}
+  .daytabs{display:flex;gap:6px;margin-bottom:12px}
+  .daytab{flex:1;text-align:center;padding:9px 4px;border-radius:10px;font-size:12px;font-weight:800;color:var(--muted);background:var(--bg);cursor:pointer}
+  .daytab small{display:block;font-size:9.5px;font-weight:700;color:#9bb0a8}.daytab.on{background:var(--em600);color:#fff}.daytab.on small{color:#d1fae5}
+  .slot{display:grid;grid-template-columns:78px 1fr;gap:12px;padding:10px 12px;border-radius:11px;border:1px solid var(--line);margin-bottom:8px;background:#fff}
+  .slot .jp{font-size:11px;font-weight:800;color:var(--em700)}.slot .jp small{display:block;color:var(--muted);font-weight:600;font-size:10px}
+  .slot.empty{background:var(--bg);border-style:dashed;color:#9bb0a8}
+  .slot.now{border-color:var(--em500);background:linear-gradient(0deg,var(--em50),#fff);box-shadow:var(--shlift)}
+  .slot.now .liveb{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;color:var(--em700);background:var(--em100);padding:2px 8px;border-radius:20px;margin-top:5px}
+  .livedot{width:7px;height:7px;border-radius:50%;background:var(--em500)}
+  /* gradebook */
+  .gbtools{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .kktp-chip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px dashed var(--amber);color:var(--amber);font-weight:800;font-size:11px;padding:6px 10px;border-radius:8px}
+  .gb-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--r);background:#fff;box-shadow:var(--sh)}
+  table.gb{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px}
+  table.gb th,table.gb td{padding:0;text-align:center;white-space:nowrap}
+  table.gb thead .grp th{background:#f3f8f5;color:var(--em800);font-weight:800;font-size:11px;padding:8px 6px;border-bottom:1px solid var(--line);text-transform:uppercase}
+  table.gb thead .col th{background:#fff;color:var(--ink2);font-weight:700;font-size:11px;padding:10px 8px;border-bottom:1px solid var(--line)}
+  table.gb td{border-bottom:1px solid var(--line);padding:8px;font-weight:700}
+  .stk{position:sticky;left:0;background:#fff;text-align:left!important;border-right:1px solid var(--line);min-width:190px;z-index:2}
+  table.gb thead .stk{background:#f3f8f5}
+  .stu{display:flex;align-items:center;gap:9px}.stu .ini{width:26px;height:26px;border-radius:7px;background:var(--em100);color:var(--em700);display:grid;place-items:center;font-size:10px;font-weight:800}.stu small{display:block;color:var(--muted);font-weight:600;font-size:10px}
+  .cellv{min-width:34px;padding:5px 8px;border-radius:7px;font-weight:800;cursor:pointer;border:1px solid transparent}
+  .cellv:hover{border-color:var(--em300,#6ee7b7)}
+  .c-hi{background:var(--em50);color:var(--em700)}.c-mid{background:#fff7ed;color:#c2410c}.c-lo{background:var(--rosebg);color:var(--rose)}
+  .cellv input{width:42px;border:1px solid var(--em500);border-radius:6px;text-align:center;font:inherit;font-weight:800;padding:3px}
+  .rapor{background:var(--em600);color:#fff;border-radius:7px;padding:5px 9px;display:inline-block;font-weight:800}
+  table.gb tfoot td{background:#f9fbfa;font-weight:800;color:var(--ink2);border-top:1px solid var(--line)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);font-weight:600;margin-top:10px}.legend i{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:-1px}
+  .flowbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:var(--em50);border:1px solid var(--em200);border-radius:12px;padding:11px 14px;font-size:12px;font-weight:700;color:var(--em800);margin-top:14px}
+  .flowbar .step{background:#fff;border:1px solid var(--em200);border-radius:8px;padding:5px 10px}.flowbar svg{width:14px;height:14px;color:var(--em600)}
+  .note{border-radius:10px;padding:9px 12px;font-size:11.5px;font-weight:600}
+  .note.amber{background:var(--amberbg);color:var(--amber)}
+  table.simple{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.simple th{text-align:left;color:var(--muted);font-weight:700;font-size:11px;padding:9px 10px;border-bottom:1px solid var(--line);text-transform:uppercase}
+  table.simple td{padding:11px 10px;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink2)}
+  .timeline{position:relative;padding-left:22px}.timeline::before{content:"";position:absolute;left:6px;top:4px;bottom:4px;width:2px;background:var(--line)}
+  .tl{position:relative;padding:0 0 16px 6px}.tl::before{content:"";position:absolute;left:-19px;top:3px;width:11px;height:11px;border-radius:50%;background:var(--em500);border:2px solid #fff;box-shadow:0 0 0 2px var(--em100)}
+  /* modal */
+  .ovl{position:fixed;inset:0;background:rgba(15,46,37,.45);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;z-index:50;padding:24px}.ovl.on{display:flex}
+  .modal{background:#fff;border-radius:18px;width:560px;max-width:100%;max-height:88vh;overflow:auto;box-shadow:0 30px 70px -20px rgba(0,0,0,.4)}
+  .modal .mh{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;justify-content:space-between}
+  .modal .mb{padding:18px 20px}.modal .mf{padding:14px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;position:sticky;bottom:0;background:#fff}
+  .xclose{cursor:pointer;color:var(--muted)}
+  .att{display:inline-flex;gap:4px}.att span{width:30px;height:28px;border-radius:7px;display:grid;place-items:center;font-weight:800;font-size:12px;border:1px solid var(--line);color:var(--muted);cursor:pointer;background:#fff}
+  .att span.H.on{background:var(--em50);border-color:var(--em200);color:var(--em700)}.att span.I.on{background:#e0f2fe;border-color:#bae6fd;color:#0369a1}.att span.S.on{background:var(--amberbg);border-color:#fde68a;color:var(--amber)}.att span.A.on{background:var(--rosebg);border-color:#fecdd3;color:var(--rose)}
+  .field{margin-bottom:14px}.field label{font-size:11.5px;font-weight:800;color:var(--ink2);display:block;margin-bottom:5px}
+  .field input,.field textarea,.field select{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;color:var(--ink);resize:vertical;outline:none}
+  .field input:focus,.field textarea:focus,.field select:focus{border-color:var(--em500)}
+  .autofill{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;color:var(--violet);background:#ede9fe;padding:3px 9px;border-radius:7px;margin-left:8px}
+  .cp-chip{display:inline-block;background:var(--em50);color:var(--em700);border:1px solid var(--em200);border-radius:8px;padding:5px 10px;font-size:11.5px;font-weight:700;margin:0 6px 6px 0}
+  .seedbar{display:flex;align-items:center;gap:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 12px;font-size:11.5px;font-weight:700;color:#92400e;margin-bottom:14px}
+  .seedbar svg{width:15px;height:15px}
+  .tablabel{font-size:10px;font-weight:800;letter-spacing:.6px;color:#9bb0a8;margin:14px 2px 5px;display:flex;align-items:center;gap:6px}
+  .tablabel svg{width:13px;height:13px}
+  .shortrow{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-bottom:14px}
+  .shortrow .lbl{font-size:10px;font-weight:800;color:#9bb0a8;text-transform:uppercase;letter-spacing:.5px}
+  .short{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:6px 10px;font-size:12px;font-weight:600;color:var(--ink2);box-shadow:var(--sh)}
+  .short svg{width:14px;height:14px;color:var(--em600)}.short select{border:0;background:transparent;font:inherit;font-weight:600;color:var(--ink2);outline:none;cursor:pointer}
+  .progrow{display:grid;grid-template-columns:160px 1fr 50px 76px;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-size:12.5px;font-weight:700}
+  .pbar{height:9px;border-radius:6px;background:#eef3f0;overflow:hidden}.pbar i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#34d399,var(--em600))}
+  .cpgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-top:10px}
+  .cpcell{border:1px solid var(--line);border-radius:11px;padding:11px}.cpcell .pbar{height:7px;margin-top:8px}
+  .sess{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:11px 12px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;font-size:12px;font-weight:700}
+  .sess.warn{border-color:#fed7aa;background:#fff7ed}.sess.miss{border-color:#fecaca;background:#fef2f2}
+  .sess .mp{flex:1;min-width:160px}.sess .mp b{font-size:12.5px;color:var(--ink)}.sess .mp small{display:block;color:var(--muted);font-weight:600}
+  .chk{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;padding:4px 9px;border-radius:8px;white-space:nowrap}
+  .chk svg{width:12px;height:12px}
+  .chk.ok{background:var(--em50);color:var(--em700)}.chk.no{background:#f1f5f9;color:#94a3b8}.chk.warn{background:#fef3c7;color:#b45309}.chk.miss{background:var(--rosebg);color:var(--rose)}
+  /* filter global (Tab A) */
+  .filterbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0 4px}
+  .fblabel{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#9bb0a8;text-transform:uppercase;letter-spacing:.5px}.fblabel svg{width:14px;height:14px}
+  .fbtn{display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:8px 12px;font-size:12.5px;font-weight:700;color:var(--ink2);cursor:pointer;box-shadow:var(--sh)}
+  .fbtn svg{width:15px;height:15px;color:var(--em600)}.fbtn .chev{width:14px;height:14px;color:var(--muted)}.fbtn:hover{border-color:var(--em200)}
+  .fbtn .fval{color:var(--ink)}
+  .fbtn.primary{background:var(--em600);color:#fff;border-color:var(--em600);box-shadow:0 8px 18px -8px rgba(5,150,105,.5)}.fbtn.primary svg{color:#fff}
+  .fseg{display:inline-flex;background:var(--bg);border-radius:11px;padding:3px}
+  .fseg button{border:0;background:transparent;font:inherit;font-size:12px;font-weight:700;color:var(--muted);padding:7px 12px;border-radius:8px;cursor:pointer}
+  .fseg button.on{background:#fff;color:var(--em700);box-shadow:var(--sh)}
+  .popover{position:absolute;z-index:60;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 44px -16px rgba(16,40,33,.32);padding:8px;width:230px;display:none}
+  .popover.on{display:block}
+  .popsearch{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit;font-size:12.5px;outline:none;margin-bottom:6px}
+  .poplist{max-height:200px;overflow:auto}
+  .poplist button{display:block;width:100%;text-align:left;border:0;background:transparent;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink2);padding:8px 10px;border-radius:8px;cursor:pointer}
+  .poplist button:hover{background:var(--bg)}.poplist button.on{background:var(--em50);color:var(--em700);font-weight:800}
+  .hint1{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:600;color:var(--muted);margin:2px 2px 0}.hint1 svg{width:13px;height:13px;color:var(--em600)}
+  /* jadwal matriks */
+  table.matrix{border-collapse:separate;border-spacing:4px;width:100%;table-layout:fixed}
+  table.matrix th{font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase;padding:4px}
+  table.matrix td.jp{font-size:10.5px;font-weight:800;color:var(--em700);text-align:center;white-space:nowrap}
+  table.matrix td.cell{border-radius:8px;padding:7px 6px;font-size:10.5px;font-weight:700;text-align:center;vertical-align:top;background:#fff;border:1px solid var(--line)}
+  table.matrix td.cell.full{background:var(--em50);border-color:var(--em200);color:var(--em800)}
+  table.matrix td.cell small{display:block;color:var(--muted);font-weight:600;font-size:9.5px}
+  table.matrix td.cell.full small{color:var(--em700)}
+  table.matrix td.cell.brk{background:var(--bg);border-style:dashed;color:#9bb0a8}
+  /* rekap audit */
+  .rkpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px}
+  .matrixwrap td.hm{border-radius:8px;padding:8px;color:#fff;font-weight:800;text-align:center;font-size:12px}
+  /* sesi detail */
+  .statrow{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}
+  .statpill{flex:1;min-width:90px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;text-align:center}
+  .statpill .n{font-size:20px;font-weight:800}.statpill .l{font-size:10.5px;color:var(--muted);font-weight:700}
+  .sess.clk{cursor:pointer}.sess.clk:hover{border-color:var(--em200);box-shadow:var(--sh)}
+  /* tugas */
+  .tugas{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;background:#fff}
+  .tugas .ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex-shrink:0;background:var(--em50);color:var(--em700)}
+  .tugas .meta{flex:1;min-width:0}.tugas .meta b{font-size:13px}.tugas .meta small{display:block;color:var(--muted);font-weight:600}
+  /* penilaian (sesi) modal */
+  .penbanner{display:flex;align-items:flex-start;gap:8px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:10px;padding:9px 12px;font-size:11.5px;font-weight:600;margin:10px 0 14px}
+  .penbanner svg{width:15px;height:15px;flex-shrink:0;margin-top:1px}
+  .penhead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+  .qcard{border:1px solid var(--line);border-radius:13px;padding:14px;margin-bottom:10px;background:#fff}
+  .qcard .qtop{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+  .qcard .qno{display:inline-flex;align-items:center;gap:7px;font-weight:800;font-size:12.5px;color:var(--ink)}
+  .qcard .qno .n{width:22px;height:22px;border-radius:7px;background:var(--em600);color:#fff;display:grid;place-items:center;font-size:11px}
+  .qcard .qbody{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:9px}
+  .qopt{display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:6px}
+  .qopt.correct{border-color:var(--em300,#6ee7b7);background:var(--em50);color:var(--em700)}
+  .qopt .k{width:20px;height:20px;border-radius:6px;background:#f1f5f9;display:grid;place-items:center;font-weight:800;font-size:11px}
+  .qopt.correct .k{background:var(--em600);color:#fff}
+  .ai-badge{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;color:var(--violet);background:#ede9fe;padding:3px 8px;border-radius:7px}
+  .qtype{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;padding:3px 8px;border-radius:7px}
+  .qprog{display:flex;align-items:center;gap:10px;background:#f9fbfa;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12px;font-weight:700;color:var(--ink2);margin-bottom:12px}
+  .qprog .bar{flex:1;height:8px;border-radius:5px;background:#eef3f0;overflow:hidden}.qprog .bar i{display:block;height:100%;background:linear-gradient(90deg,#34d399,var(--em600))}
+  .fbwrap{text-align:center;padding:10px 6px}
+  .fbemoji{font-size:48px;line-height:1;height:54px}
+  .fbslider{width:100%;margin:14px 0 6px;accent-color:var(--em600)}
+  .fbval{font-size:13px;font-weight:800;color:var(--em700)}
+  .fbagg{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:14px}
+  .fbnote{background:#f4f7f5;border-radius:10px;padding:9px 12px;font-size:12px;color:var(--ink2);font-weight:600;text-align:left;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><div class="logo">D</div><div><b>DIIS</b><small>SMK Darussalam Subah</small></div></div>
+    <div class="me"><b>Budi Hartono, S.Kom</b><small>guru@smkdarussalamsubah.sch.id</small><span class="role">Guru</span></div>
+    <div class="navgrp">RINGKASAN</div>
+    <div class="nav"><svg data-lucide="home"></svg>Beranda</div>
+    <div class="navgrp">AKADEMIK</div>
+    <div class="nav on"><svg data-lucide="book-open"></svg>Akademik</div>
+    <div class="nav"><svg data-lucide="graduation-cap"></svg>Rapor</div>
+    <div class="nav"><svg data-lucide="backpack"></svg>Kegiatan Kelas</div>
+    <div class="nav"><svg data-lucide="file-text"></svg>RPP / Modul Ajar</div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <div class="iconbtn"><svg data-lucide="panel-left"></svg></div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="ghost"><svg data-lucide="scan" width="16"></svg> Mode Ruang Guru</button>
+        <div style="display:flex;align-items:center;gap:9px"><div class="ava">BH</div><b style="font-size:13px">Budi Hartono</b><svg data-lucide="log-out" width="17" style="color:var(--muted)"></svg></div>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <div class="seedbar"><svg data-lucide="database"></svg> MOCKUP dengan SEED LENGKAP — data demo penuh untuk review. Klik pill/tombol untuk menjelajah. Sel nilai bisa diklik (edit cepat).</div>
+      <div class="h1">Akademik</div>
+      <div class="crumb">Dashboard Guru — pembelajaran, penilaian &amp; jadwal mengajar</div>
+
+      <div class="filterbar">
+        <span class="fblabel"><svg data-lucide="sliders-horizontal"></svg>Filter</span>
+        <button class="fbtn" onclick="openPop('ta',this)"><svg data-lucide="calendar"></svg><span class="fval" id="vTA">2025/2026</span><svg data-lucide="chevron-down" class="chev"></svg></button>
+        <div class="fseg" id="segSem"><button class="on" data-sem="Semua" onclick="setSem('Semua')">Semua Sem</button><button data-sem="Ganjil" onclick="setSem('Ganjil')">Ganjil</button><button data-sem="Genap" onclick="setSem('Genap')">Genap</button></div>
+        <button class="fbtn" onclick="openPop('kelas',this)"><svg data-lucide="users"></svg><span class="fval" id="vKelas">Semua Kelas</span><svg data-lucide="chevron-down" class="chev"></svg></button>
+        <button class="fbtn" onclick="openPop('mapel',this)"><svg data-lucide="book-marked"></svg><span class="fval" id="vMapel">Semua Mapel</span><svg data-lucide="chevron-down" class="chev"></svg></button>
+        <button class="fbtn primary" onclick="openRekap()"><svg data-lucide="clipboard-check"></svg>Rekap Pembelajaran</button>
+        <span class="rolehint"><svg data-lucide="user-check"></svg>Budi Hartono · 3 mapel · 3 rombel</span>
+      </div>
+      <div class="hint1"><svg data-lucide="info"></svg>Satu kontrol global — filter ini mengatur semua tab di bawah &amp; hasil Rekap. (Ringkasan = hari ini.)</div>
+
+      <nav class="subnav" id="subnav" style="margin-top:14px">
+        <button class="pill on" data-s="ringkasan"><svg data-lucide="layout-dashboard"></svg>Ringkasan</button>
+        <button class="pill" data-s="jadwal"><svg data-lucide="calendar-clock"></svg>Jadwal</button>
+        <button class="pill" data-s="pembelajaran"><svg data-lucide="book-open-check"></svg>Pembelajaran</button>
+        <button class="pill" data-s="penilaian"><svg data-lucide="clipboard-pen-line"></svg>Penilaian</button>
+        <button class="pill" data-s="kehadiran"><svg data-lucide="calendar-check"></svg>Kehadiran</button>
+        <button class="pill" data-s="penugasan"><svg data-lucide="clipboard-list"></svg>Penugasan</button>
+        <button class="pill" data-s="capaian"><svg data-lucide="award"></svg>Capaian Pembelajaran</button>
+      </nav>
+
+      <!-- RINGKASAN -->
+      <section class="screen on" id="s-ringkasan">
+        <div class="row" style="margin-bottom:16px">
+          <div class="kpi"><div class="lab"><svg data-lucide="target"></svg>Ketuntasan KKTP</div><div class="v">82<span style="font-size:15px;color:var(--muted)">%</span></div></div>
+          <div class="kpi"><div class="lab"><svg data-lucide="graduation-cap"></svg>Rata² Nilai</div><div class="v">81.4</div></div>
+          <div class="kpi"><div class="lab"><svg data-lucide="calendar-check"></svg>Kehadiran</div><div class="v">94<span style="font-size:15px;color:var(--muted)">%</span></div></div>
+          <div class="kpi"><div class="lab"><svg data-lucide="book-open-check"></svg>Jurnal Pertemuan</div><div class="v">5</div></div>
+        </div>
+        <div class="grid" style="grid-template-columns:1.5fr 1fr">
+          <div class="card pad">
+            <div class="between"><div class="title"><svg data-lucide="clock"></svg>Kelas Hari Ini</div><span class="badge b-info" id="todaylabel">Hari ini</span></div>
+            <div class="grid" style="gap:10px;margin-top:14px" id="todayclasses"></div>
+            <p class="sub" style="margin-top:10px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Klik <b>Absen</b> (default semua hadir) atau <b>Jurnal</b> (terisi otomatis, dapat disunting).</p>
+          </div>
+          <div class="card pad">
+            <div class="title"><svg data-lucide="list-checks"></svg>Perlu Tindakan</div>
+            <div class="grid" style="gap:9px;margin-top:14px">
+              <div class="li"><div class="ic" style="background:var(--rosebg);color:var(--rose)"><svg data-lucide="users"></svg></div><div style="flex:1"><b>3 siswa di bawah KKTP</b><div class="sub">Perlu remedial</div></div><svg data-lucide="chevron-right" style="color:var(--muted)"></svg></div>
+              <div class="li"><div class="ic" style="background:var(--amberbg);color:var(--amber)"><svg data-lucide="clipboard-list"></svg></div><div style="flex:1"><b>1 kelas hari ini belum diabsen</b><div class="sub">Catat kehadiran dari kartu kelas</div></div><svg data-lucide="chevron-right" style="color:var(--muted)"></svg></div>
+              <div class="li"><div class="ic" style="background:#ede9fe;color:var(--violet)"><svg data-lucide="file-text"></svg></div><div style="flex:1"><b>1 Modul Ajar belum disetujui</b><div class="sub">Draft TP 3.3 — ajukan ke Wakakur</div></div><svg data-lucide="chevron-right" style="color:var(--muted)"></svg></div>
+            </div>
+          </div>
+        </div>
+        <!-- Rekap Hari Ini -->
+        <div class="card pad" style="margin-top:16px">
+          <div class="between"><div class="title"><svg data-lucide="clipboard-list"></svg>Rekap Hari Ini</div><span class="badge b-info" id="rhiDate">semua mapel · hari ini</span></div>
+          <p class="sub" style="margin:4px 0 12px">Status <b>absen · jurnal · penilaian (diagnostik/formatif) · feedback siswa</b> untuk tiap sesi hari ini.</p>
+          <div id="rekapHariIni"></div>
+          <div class="note amber" style="margin-top:6px"><svg data-lucide="alert-triangle" width="13" style="vertical-align:-2px"></svg> <b>Kasus khusus (otomatis ditandai):</b> guru tak masuk → sesi <b>"Tidak terlaksana"</b>; CP tak tercapai karena jam singkat → <b>"CP belum tercapai"</b> + CP di-<b>carry-over</b> ke pertemuan berikutnya (jurnal mencatat alasan).</div>
+        </div>
+      </section>
+
+      <!-- JADWAL -->
+      <section class="screen" id="s-jadwal">
+        <div class="grid" style="grid-template-columns:340px 1fr">
+          <div class="card pad">
+            <div class="between"><div class="title"><svg data-lucide="calendar-days"></svg><span id="calmonth">Bulan</span></div>
+              <div style="display:flex;gap:4px"><span class="iconbtn" style="width:30px;height:30px" onclick="calMove(-1)"><svg data-lucide="chevron-left" width="16"></svg></span><span class="iconbtn" style="width:30px;height:30px" onclick="calMove(1)"><svg data-lucide="chevron-right" width="16"></svg></span></div>
+            </div>
+            <div class="cal" id="cal" style="margin-top:12px"></div>
+            <div class="legend"><span><i style="background:var(--em600)"></i>Hari ini</span><span><i style="background:var(--em500)"></i>Ada jadwal</span></div>
+          </div>
+          <div class="card pad">
+            <div class="title" style="margin-bottom:12px"><svg data-lucide="calendar-clock"></svg>Jadwal Mengajar — <span id="dayDateLabel">Hari ini</span></div>
+            <div class="daytabs" id="daytabs"></div>
+            <div id="timetable"></div>
+          </div>
+        </div>
+        <div class="card pad" style="margin-top:16px">
+          <div class="title"><svg data-lucide="grid-3x3"></svg>Matriks Mingguan — semua kelas (hari × JP)</div>
+          <div class="sub" style="margin:2px 0 10px">Seluruh sesi mengajar minggu ini dalam satu pandang.</div>
+          <div style="overflow-x:auto"><table class="matrix" id="matrixSched"></table></div>
+        </div>
+        <div class="card pad" style="margin-top:16px">
+          <div class="title"><svg data-lucide="table-2"></svg>Jadwal Lengkap — semua kelas &amp; mapel</div>
+          <div class="sub" style="margin:2px 0 10px">Seluruh jadwal mengajar · hari, jam, kelas, mapel &amp; ruang</div>
+          <table class="simple"><thead><tr><th>Hari</th><th>JP</th><th>Jam</th><th>Mapel</th><th>Kelas</th><th>Ruang</th></tr></thead><tbody id="fullSched"></tbody></table>
+        </div>
+      </section>
+
+      <!-- PEMBELAJARAN -->
+      <section class="screen" id="s-pembelajaran">
+        <div class="card pad">
+          <div class="between"><div class="title"><svg data-lucide="file-text"></svg>Modul Ajar — Pemrograman Web</div><button class="btn"><svg data-lucide="plus"></svg>Modul Ajar</button></div>
+          <table class="simple" style="margin-top:12px">
+            <thead><tr><th>Judul / TP</th><th>Alokasi</th><th>KKTP</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td><b>TP 3.1</b> — Struktur HTML semantik</td><td>4 JP</td><td>75</td><td><span class="badge b-ok">Disetujui</span></td></tr>
+              <tr><td><b>TP 3.2</b> — Styling CSS &amp; layout</td><td>6 JP</td><td>75</td><td><span class="badge b-ok">Disetujui</span></td></tr>
+              <tr><td><b>TP 3.3</b> — Flexbox &amp; responsif</td><td>6 JP</td><td>78</td><td><span class="badge b-warn">Draft</span></td></tr>
+              <tr><td><b>TP 3.4</b> — Form &amp; validasi</td><td>4 JP</td><td>75</td><td><span class="badge b-info">Diajukan</span></td></tr>
+            </tbody>
+          </table>
+          <p class="note amber" style="margin-top:12px">Pemetaan CP→TP→ATP terstruktur (Modul Ajar Kurikulum Merdeka penuh) — <b>menyusul</b> di modul Pembelajaran/ATP.</p>
+        </div>
+        <!-- Progres / Ketercapaian Pembelajaran -->
+        <div class="card pad" style="margin-top:16px">
+          <div class="between"><div class="title"><svg data-lucide="trending-up"></svg>Progres / Ketercapaian Pembelajaran</div><span class="badge b-warn">data CP penuh aktif saat modul ATP</span></div>
+          <div class="sub" style="margin:2px 0 12px">Kemajuan <b>per Mapel</b> &amp; <b>per CP</b> — mengikuti short (TA·Sem·Kelas·Mapel) di atas. <i>(angka demo; relasi/logic disusun konsisten)</i></div>
+          <div class="progrow"><span>Pemrograman Web</span><div class="pbar"><i style="width:64%"></i></div><span>64%</span><span class="chk ok">5/8 TP</span></div>
+          <div class="progrow"><span>Basis Data</span><div class="pbar"><i style="width:48%"></i></div><span>48%</span><span class="chk warn">3/7 TP</span></div>
+          <div class="progrow"><span>Pemb. Berorientasi Objek</span><div class="pbar"><i style="width:72%"></i></div><span>72%</span><span class="chk ok">6/9 TP</span></div>
+          <div style="font-size:12px;font-weight:800;color:var(--ink2);margin:16px 0 4px">Ketercapaian per CP — Pemrograman Web (XI TJKT 1)</div>
+          <div class="cpgrid">
+            <div class="cpcell"><b style="font-size:12px">CP 1</b><div style="font-size:11px;color:var(--muted)">Antarmuka web fungsional</div><div class="pbar"><i style="width:88%"></i></div><small style="color:var(--em700);font-weight:700">88% tuntas</small></div>
+            <div class="cpcell"><b style="font-size:12px">CP 2</b><div style="font-size:11px;color:var(--muted)">Layout responsif</div><div class="pbar"><i style="width:74%"></i></div><small style="color:var(--em700);font-weight:700">74% tuntas</small></div>
+            <div class="cpcell"><b style="font-size:12px">CP 3</b><div style="font-size:11px;color:var(--muted)">Form &amp; validasi</div><div class="pbar"><i style="width:35%"></i></div><small style="color:var(--amber);font-weight:700">35% — berjalan</small></div>
+            <div class="cpcell"><b style="font-size:12px">CP 4</b><div style="font-size:11px;color:var(--muted)">Interaktivitas dasar</div><div class="pbar"><i style="width:0%"></i></div><small style="color:var(--muted);font-weight:700">belum mulai</small></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PENILAIAN (gradebook lengkap) -->
+      <section class="screen" id="s-penilaian">
+        <div class="gbtools">
+          <div class="seg"><button class="on">Rekap Nilai</button><button onclick="alert('Per-TP menyusul saat modul ATP aktif')">Per-TP</button><button onclick="alert('Rubrik/KKTP per-TP menyusul saat modul ATP aktif')">Rubrik / KKTP</button></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <span class="kktp-chip"><svg data-lucide="target" width="14"></svg>KKTP 75</span>
+            <button class="btn sec"><svg data-lucide="users"></svg>Remedial (3)</button>
+            <button class="btn sec"><svg data-lucide="download"></svg>Ekspor</button>
+            <button class="btn" onclick="openM('ovl-nilai')"><svg data-lucide="plus"></svg>Input Nilai</button>
+          </div>
+        </div>
+        <div class="gb-wrap">
+          <table class="gb">
+            <thead>
+              <tr class="grp"><th class="stk">&nbsp;</th><th colspan="3">Formatif</th><th colspan="2">Sumatif</th><th>Akhir</th><th>KKTP</th></tr>
+              <tr class="col"><th class="stk" style="padding-left:12px">Siswa</th><th>UH</th><th>Praktik</th><th>Sikap</th><th>UTS</th><th>UAS</th><th>NA</th><th>Status</th></tr>
+            </thead>
+            <tbody id="gbody"></tbody>
+            <tfoot id="gfoot"></tfoot>
+          </table>
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--em500)"></i>≥ KKTP (tuntas)</span>
+          <span><i style="background:#fb923c"></i>Mendekati KKTP</span>
+          <span><i style="background:var(--rose)"></i>Di bawah KKTP → remedial</span>
+          <span style="margin-left:auto;color:var(--em700);font-weight:700">Klik sel untuk edit cepat · tersimpan otomatis</span>
+        </div>
+        <div class="flowbar"><svg data-lucide="git-branch"></svg> Alur penilaian:
+          <span class="step">Pilih TP</span><svg data-lucide="arrow-right"></svg><span class="step">Input formatif/sumatif</span><svg data-lucide="arrow-right"></svg><span class="step">Bandingkan KKTP</span><svg data-lucide="arrow-right"></svg><span class="step">Remedial / pengayaan</span><svg data-lucide="arrow-right"></svg><span class="step">Nilai Akhir → Rapor</span>
+        </div>
+      </section>
+
+      <!-- KEHADIRAN -->
+      <section class="screen" id="s-kehadiran">
+        <div class="row" style="margin-bottom:14px;flex-wrap:wrap">
+          <div class="kpi"><div class="lab"><svg data-lucide="users"></svg>Kehadiran</div><div class="v">94<span style="font-size:15px;color:var(--muted)">%</span></div></div>
+          <div class="kpi"><div class="lab"><svg data-lucide="check"></svg>Hadir</div><div class="v" style="color:var(--em700)">301</div></div>
+          <div class="kpi"><div class="lab"><svg data-lucide="info"></svg>Izin</div><div class="v" style="color:var(--sky)">9</div></div>
+          <div class="kpi"><div class="lab"><svg data-lucide="thermometer"></svg>Sakit</div><div class="v" style="color:var(--amber)">7</div></div>
+          <div class="kpi"><div class="lab"><svg data-lucide="user-x"></svg>Alpha</div><div class="v" style="color:var(--rose)">3</div></div>
+        </div>
+        <div class="grid" style="grid-template-columns:1.4fr 1fr">
+          <div class="card pad"><div class="title"><svg data-lucide="calendar-check"></svg>Rekap Kehadiran per Sesi — <span id="khdKelas">XI TJKT 1</span></div>
+            <p class="sub" style="margin:2px 0 8px">Mengikuti filter global. Klik baris untuk rincian keterangan izin/sakit/alpha.</p>
+            <div style="overflow-x:auto"><table class="simple">
+              <thead><tr><th>Tanggal</th><th>Pertemuan</th><th style="text-align:center">Hadir</th><th style="text-align:center">Izin</th><th style="text-align:center">Sakit</th><th style="text-align:center">Alpha</th><th style="text-align:right">%</th></tr></thead>
+              <tbody>
+                <tr onclick="openAbsenDetail('Pert. 5 · 16 Jun')" style="cursor:pointer"><td>16 Jun</td><td>Pert. 5 · TP 3.2</td><td style="text-align:center"><b>30</b></td><td style="text-align:center">1</td><td style="text-align:center">1</td><td style="text-align:center">0</td><td style="text-align:right"><span class="badge b-ok">94%</span></td></tr>
+                <tr onclick="openAbsenDetail('Pert. 4 · 9 Jun')" style="cursor:pointer"><td>9 Jun</td><td>Pert. 4 · TP 3.2</td><td style="text-align:center"><b>31</b></td><td style="text-align:center">1</td><td style="text-align:center">0</td><td style="text-align:center">0</td><td style="text-align:right"><span class="badge b-ok">97%</span></td></tr>
+                <tr onclick="openAbsenDetail('Pert. 3 · 2 Jun')" style="cursor:pointer"><td>2 Jun</td><td>Pert. 3 · TP 3.1</td><td style="text-align:center"><b>32</b></td><td style="text-align:center">0</td><td style="text-align:center">0</td><td style="text-align:center">0</td><td style="text-align:right"><span class="badge b-ok">100%</span></td></tr>
+                <tr onclick="openAbsenDetail('Pert. 2 · 26 Mei')" style="cursor:pointer"><td>26 Mei</td><td>Pert. 2 · TP 3.1</td><td style="text-align:center"><b>29</b></td><td style="text-align:center">1</td><td style="text-align:center">1</td><td style="text-align:center">1</td><td style="text-align:right"><span class="badge b-warn">91%</span></td></tr>
+              </tbody>
+            </table></div>
+          </div>
+          <div class="card pad"><div class="title"><svg data-lucide="user-x"></svg>Siswa Perlu Perhatian</div>
+            <div class="grid" style="gap:8px;margin-top:12px">
+              <div class="li"><div class="ic" style="background:var(--rosebg);color:var(--rose)"><svg data-lucide="user-x"></svg></div><div style="flex:1"><b>Fajar Nugroho</b><div class="sub">2 alpha · 1 sakit (30 hari)</div></div></div>
+              <div class="li"><div class="ic" style="background:#e0f2fe;color:#0369a1"><svg data-lucide="info"></svg></div><div style="flex:1"><b>Citra Dewi</b><div class="sub">3 izin — keperluan keluarga</div></div></div>
+              <div class="li"><div class="ic" style="background:var(--amberbg);color:var(--amber)"><svg data-lucide="thermometer"></svg></div><div style="flex:1"><b>Joko Widodo</b><div class="sub">2 sakit berturut</div></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="card pad" style="margin-top:16px"><div class="title"><svg data-lucide="trending-up"></svg>Tren Kehadiran — 10 hari</div>
+          <svg viewBox="0 0 620 120" style="width:100%;margin-top:8px"><polyline fill="none" stroke="#059669" stroke-width="2.5" points="10,40 78,30 146,46 214,24 282,38 350,20 418,32 486,18 554,28 600,22"/></svg>
+        </div>
+      </section>
+
+      <!-- PENUGASAN -->
+      <section class="screen" id="s-penugasan">
+        <div class="grid" style="grid-template-columns:1.2fr 1.5fr">
+          <div class="card pad">
+            <div class="between"><div class="title"><svg data-lucide="clipboard-list"></svg>Tugas / Proyek Siswa</div><button class="btn"><svg data-lucide="plus"></svg>Tugas Baru</button></div>
+            <p class="sub" style="margin:4px 0 12px">Tugas terstruktur/proyek di luar penilaian formatif harian. Dikumpulkan online, dinilai dengan rubrik.</p>
+            <div class="tugas" style="border-color:var(--em200);background:var(--em50)"><div class="ic"><svg data-lucide="folder-git-2"></svg></div><div class="meta"><b>Proyek 1 — Web Profil Sekolah</b><small>Pemrograman Web · XI TJKT 1 · tenggat 24 Jun</small></div><span class="badge b-warn">18/32 · 6 dinilai</span></div>
+            <div class="tugas"><div class="ic"><svg data-lucide="file-text"></svg></div><div class="meta"><b>Tugas 3 — Layout Flexbox</b><small>Pemrograman Web · XI TJKT 1 · tenggat 18 Jun</small></div><span class="badge b-ok">selesai dinilai</span></div>
+            <div class="tugas"><div class="ic" style="background:#e0f2fe;color:#0369a1"><svg data-lucide="database"></svg></div><div class="meta"><b>Tugas 2 — Relasi Tabel</b><small>Basis Data · XI TJKT 1 · tenggat 12 Jun</small></div><span class="badge b-ok">selesai</span></div>
+          </div>
+          <div class="card pad">
+            <div class="between"><div class="title"><svg data-lucide="inbox"></svg>Pengumpulan — Proyek 1</div><span class="badge b-info" style="display:inline-flex;gap:5px;align-items:center"><svg data-lucide="shield-check" width="13"></svg>Cek orisinalitas (AI) · menyusul</span></div>
+            <table class="simple" style="margin-top:10px">
+              <thead><tr><th>Siswa</th><th>Status</th><th>Berkas</th><th>Nilai</th><th></th></tr></thead>
+              <tbody>
+                <tr><td>Ahmad Fauzi</td><td><span class="badge b-ok">Terkumpul</span></td><td><svg data-lucide="paperclip" width="14" style="color:var(--muted)"></svg> profil.zip</td><td><b>90</b></td><td><button class="btn sec sm">Nilai</button></td></tr>
+                <tr><td>Bunga Lestari</td><td><span class="badge b-warn">Terlambat</span></td><td><svg data-lucide="paperclip" width="14" style="color:var(--muted)"></svg> web.zip</td><td>—</td><td><button class="btn sm">Nilai</button></td></tr>
+                <tr><td>Citra Dewi</td><td><span class="badge b-mut">Belum</span></td><td>—</td><td>—</td><td><button class="btn sec sm">Ingatkan</button></td></tr>
+                <tr><td>Dimas Pratama</td><td><span class="badge b-ok">Terkumpul</span></td><td><svg data-lucide="paperclip" width="14" style="color:var(--muted)"></svg> tugas.zip</td><td><b>95</b></td><td><button class="btn sec sm">Nilai</button></td></tr>
+              </tbody>
+            </table>
+            <p class="note amber" style="margin-top:12px">Pengumpulan online & rubrik penilaian terhubung <b>LMS</b> (menyusul). Nilai proyek dapat dimasukkan ke gradebook.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- CAPAIAN -->
+      <section class="screen" id="s-capaian">
+        <div class="card pad"><div class="title"><svg data-lucide="award"></svg>Capaian Pembelajaran</div>
+          <p class="sub" style="margin-top:6px;font-size:13px">Deskripsi capaian per TP (otomatis dari penilaian, dapat disunting) → diperiksa Kepala Sekolah → terbit ke orang tua. Terhubung modul <b>Rapor</b>.</p>
+        </div>
+      </section>
+
+      <!-- REKAP PEMBELAJARAN -->
+      <section class="screen" id="s-rekap">
+        <div class="between" style="margin-bottom:6px">
+          <div><div class="title" style="font-size:17px"><svg data-lucide="clipboard-check"></svg>Rekap Pembelajaran <span class="badge b-violet" style="margin-left:6px">hasil Tab A</span></div><div class="sub" id="rekapCtx">TA 2025/2026 · Semua Semester · Semua Kelas · Semua Mapel</div></div>
+          <button class="btn sec" onclick="go('ringkasan')"><svg data-lucide="arrow-left"></svg>Kembali</button>
+        </div>
+        <p class="note" style="background:#ede9fe;color:#6d28d9;margin-bottom:14px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Hasil mengikuti <b>Filter global</b> (TA·Semester·Kelas·Mapel). "Semua" → breakdown lengkap semua kelas/mapel/semester yang diampu (bukan pemanis). Siap diaudit di dashboard <b>KS &amp; Wakakur</b>.</p>
+        <div class="rkpi" id="rekapKpi" style="margin-bottom:16px"></div>
+        <div class="card pad" style="margin-bottom:16px">
+          <div class="title"><svg data-lucide="table"></svg>Rincian per Kelas × Mapel <span id="rekapCount" class="badge b-mut"></span></div>
+          <div class="sub" style="margin:2px 0 8px">Setiap baris = relasi kelas diampu × mapel × semester (valid sesuai filter).</div>
+          <div style="overflow-x:auto"><table class="simple" id="rekapTable"></table></div>
+        </div>
+        <div class="grid" style="grid-template-columns:1.3fr 1fr">
+          <div class="card pad"><div class="title"><svg data-lucide="grid-3x3"></svg>Matriks Ketuntasan KKTP — Kelas × Mapel</div><div id="rekapMatrix" style="margin-top:12px;overflow-x:auto"></div></div>
+          <div class="card pad"><div class="title"><svg data-lucide="layers"></svg>Per Semester</div><div id="rekapSem" style="margin-top:12px"></div></div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ABSEN -->
+<div class="ovl" id="ovl-absen"><div class="modal">
+  <div class="mh"><div><div class="title"><svg data-lucide="calendar-check"></svg>Absensi — <span id="absenClass">Kelas</span></div><div class="sub" id="absenMeta">Pertemuan · default semua hadir</div></div><svg data-lucide="x" class="xclose" onclick="closeM('ovl-absen')"></svg></div>
+  <div class="mb">
+    <div class="between" style="margin-bottom:10px"><span class="badge b-ok" id="absSummary">Hadir 12 · Izin 0 · Sakit 0 · Alpha 0</span><button class="btn sec sm" onclick="allHadir()"><svg data-lucide="check-check"></svg>Semua hadir</button></div>
+    <table class="simple" id="absenBody"></table>
+  </div>
+  <div class="mf"><button class="btn sec" onclick="closeM('ovl-absen')">Batal</button><button class="btn"><svg data-lucide="save"></svg>Simpan Absensi</button></div>
+</div></div>
+
+<!-- MODAL JURNAL -->
+<div class="ovl" id="ovl-jurnal"><div class="modal">
+  <div class="mh"><div><div class="title"><svg data-lucide="pen-line"></svg>Jurnal Mengajar <span class="autofill"><svg data-lucide="sparkles" width="12"></svg>Terisi otomatis</span></div><div class="sub" id="jurnalMeta">Pertemuan · TP</div></div><svg data-lucide="x" class="xclose" onclick="closeM('ovl-jurnal')"></svg></div>
+  <div class="mb">
+    <div class="field"><label>Tujuan Pembelajaran (dari Modul Ajar disetujui)</label><input value="TP 3.3 — Flexbox & desain responsif" /></div>
+    <div class="field"><label>Poin Capaian Pembelajaran (CP)</label><div><span class="cp-chip">Menyusun layout flexbox</span><span class="cp-chip">Membuat halaman responsif</span><span class="cp-chip">Menerapkan media query</span></div></div>
+    <div class="field"><label>Detail kegiatan pembelajaran</label><textarea rows="3">Pendahuluan (apersepsi) → kegiatan inti Pemrograman Web → praktik/penugasan → refleksi. Mengacu Modul Ajar disetujui.</textarea></div>
+    <div class="field"><label>Catatan / kendala (opsional)</label><textarea rows="2" placeholder="mis. 2 siswa perlu pendampingan…"></textarea></div>
+    <p class="sub"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Tersimpan sebagai Kegiatan Kelas. Auto-isi poin CP penuh menyusul di modul ATP.</p>
+  </div>
+  <div class="mf"><button class="btn sec" onclick="closeM('ovl-jurnal')">Batal</button><button class="btn"><svg data-lucide="check"></svg>Simpan Jurnal</button></div>
+</div></div>
+
+<!-- MODAL INPUT NILAI -->
+<div class="ovl" id="ovl-nilai"><div class="modal" style="width:420px">
+  <div class="mh"><div><div class="title"><svg data-lucide="plus"></svg>Input Nilai</div><div class="sub">Pemrograman Web · XI TJKT 1 · Semester Ganjil</div></div><svg data-lucide="x" class="xclose" onclick="closeM('ovl-nilai')"></svg></div>
+  <div class="mb">
+    <div class="field"><label>Siswa</label><select id="inStu"></select></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="field"><label>Jenis</label><select><option>UH</option><option>UTS</option><option>UAS</option><option>Praktik</option><option>Sikap</option></select></div>
+      <div class="field"><label>Nilai</label><input type="number" min="0" max="100" placeholder="0–100" /></div>
+    </div>
+  </div>
+  <div class="mf"><button class="btn sec" onclick="closeM('ovl-nilai')">Batal</button><button class="btn"><svg data-lucide="save"></svg>Simpan</button></div>
+</div></div>
+
+<!-- MODAL PENILAIAN (Sesi: Diagnostik | Formatif | Feedback) -->
+<div class="ovl" id="ovl-penilaian"><div class="modal" style="width:700px">
+  <div class="mh"><div><div class="title"><svg data-lucide="clipboard-pen-line"></svg>Penilaian — <span id="penClass">Kelas</span></div><div class="sub">Pertemuan 6 · TP 3.3 — Flexbox &amp; responsif · siswa kerjakan online (auto-score)</div></div><svg data-lucide="x" class="xclose" onclick="closeM('ovl-penilaian')"></svg></div>
+  <div class="mb">
+    <div class="seg" id="penTabs" style="width:100%"><button class="on" data-p="diag" style="flex:1">Diagnostik</button><button data-p="form" style="flex:1">Formatif</button><button data-p="fb" style="flex:1">Feedback Siswa</button></div>
+    <div class="penbanner"><svg data-lucide="info"></svg><span>Soal diambil dari <b>LMS</b>. <b>Generate ulang (AI)</b> akan memperbarui LMS juga — <b>kartu soal harian = kartu soal LMS</b> (sinkron). Soal mengacu <b>TP &amp; CP</b>, sudah ada kunci + penilaian otomatis. Dikerjakan siswa via perangkat.</span></div>
+
+    <!-- DIAGNOSTIK -->
+    <div id="pen-diag">
+      <div class="penhead">
+        <div class="qno" style="font-size:13px"><svg data-lucide="brain" width="16" style="color:var(--violet)"></svg> Diagnostik awal <span class="badge b-mut">tidak masuk nilai</span></div>
+        <div style="display:flex;gap:8px"><button class="btn sec sm"><svg data-lucide="sparkles"></svg>Generate ulang (AI)</button><button class="btn sec sm"><svg data-lucide="plus"></svg>Tambah Soal</button></div>
+      </div>
+      <div class="qprog"><svg data-lucide="users" width="15" style="color:var(--em600)"></svg>28/32 siswa selesai<div class="bar"><i style="width:88%"></i></div>88%</div>
+      <div class="qcard">
+        <div class="qtop"><div class="qno"><span class="n">1</span>Pilihan Ganda</div><div style="display:flex;gap:6px"><span class="qtype" style="background:var(--em50);color:var(--em700)">TP 3.3</span><span class="ai-badge"><svg data-lucide="sparkles" width="11"></svg>AI</span></div></div>
+        <div class="qbody">Properti CSS untuk menyusun item dalam satu baris fleksibel adalah…</div>
+        <div class="qopt"><span class="k">A</span>display: block</div>
+        <div class="qopt correct"><span class="k">B</span>display: flex</div>
+        <div class="qopt"><span class="k">C</span>position: absolute</div>
+        <div class="qopt"><span class="k">D</span>float: left</div>
+      </div>
+      <div class="qcard">
+        <div class="qtop"><div class="qno"><span class="n">2</span>Pilihan Ganda</div><div style="display:flex;gap:6px"><span class="qtype" style="background:var(--em50);color:var(--em700)">CP · responsif</span><span class="ai-badge"><svg data-lucide="sparkles" width="11"></svg>AI</span></div></div>
+        <div class="qbody">Apa fungsi <b>media query</b> pada desain web?</div>
+        <div class="qopt correct"><span class="k">A</span>Menyesuaikan tampilan dengan ukuran layar</div>
+        <div class="qopt"><span class="k">B</span>Menyimpan data pengguna</div>
+        <div class="qopt"><span class="k">C</span>Mengamankan halaman</div>
+      </div>
+      <div class="qprog" style="margin-top:4px"><svg data-lucide="gauge" width="15" style="color:var(--em600)"></svg>Ringkasan kesiapan kelas: <b style="color:var(--em700)">72% paham konsep dasar</b> — 9 siswa perlu perhatian.</div>
+    </div>
+
+    <!-- FORMATIF -->
+    <div id="pen-form" style="display:none">
+      <div class="penhead">
+        <div class="qno" style="font-size:13px"><svg data-lucide="clipboard-check" width="16" style="color:var(--em600)"></svg> Formatif harian <span class="badge b-ok">masuk gradebook</span></div>
+        <div style="display:flex;gap:8px"><button class="btn sec sm"><svg data-lucide="sparkles"></svg>Generate ulang (AI)</button><button class="btn sec sm"><svg data-lucide="plus"></svg>Tambah Soal</button></div>
+      </div>
+      <div class="qprog"><svg data-lucide="users" width="15" style="color:var(--em600)"></svg>20/32 selesai · rata² <b>78</b> · auto-score<div class="bar"><i style="width:62%"></i></div>62%</div>
+      <div class="qcard">
+        <div class="qtop"><div class="qno"><span class="n">1</span>Pilihan Ganda</div><div style="display:flex;gap:6px"><span class="qtype" style="background:var(--em50);color:var(--em700)">TP 3.3</span><span class="qtype" style="background:#f1f5f9;color:#475569">bobot 20</span><span class="ai-badge"><svg data-lucide="sparkles" width="11"></svg>AI</span></div></div>
+        <div class="qbody">Nilai <code>justify-content: space-between</code> akan…</div>
+        <div class="qopt correct"><span class="k">A</span>Memberi jarak merata antar item, item tepi menempel</div>
+        <div class="qopt"><span class="k">B</span>Menumpuk semua item di kiri</div>
+        <div class="qopt"><span class="k">C</span>Menyembunyikan item</div>
+      </div>
+      <div class="qcard">
+        <div class="qtop"><div class="qno"><span class="n">2</span>Essay</div><div style="display:flex;gap:6px"><span class="qtype" style="background:var(--em50);color:var(--em700)">TP 3.3</span><span class="qtype" style="background:#fef3c7;color:#b45309">manual/rubrik</span></div></div>
+        <div class="qbody">Jelaskan perbedaan <b>flex-direction: row</b> dan <b>column</b> beserta contoh penggunaannya.</div>
+        <div class="qopt" style="border-style:dashed;color:var(--muted)">Kunci/rubrik: menyebut arah sumbu utama + 1 contoh tiap arah (skor 0–100)</div>
+      </div>
+      <div class="qcard">
+        <div class="qtop"><div class="qno"><span class="n">3</span>Praktikum</div><div style="display:flex;gap:6px"><span class="qtype" style="background:var(--em50);color:var(--em700)">TP 3.3</span><span class="qtype" style="background:#ede9fe;color:#6d28d9">unjuk kerja</span></div></div>
+        <div class="qbody">Buat layout kartu produk responsif (3 kolom → 1 kolom di layar kecil) memakai flexbox.</div>
+        <div class="qopt" style="border-style:dashed;color:var(--muted)">Rubrik: struktur (30) · flexbox (40) · responsif (30)</div>
+      </div>
+    </div>
+
+    <!-- FEEDBACK -->
+    <div id="pen-fb" style="display:none">
+      <div class="qno" style="font-size:13px;margin-bottom:6px"><svg data-lucide="message-circle-heart" width="16" style="color:var(--rose)"></svg> Umpan balik siswa → guru <span class="badge b-mut">otomatis usai formatif</span></div>
+      <div class="fbwrap">
+        <div style="font-size:11.5px;color:var(--muted);font-weight:700;margin-bottom:4px">Pratinjau tampilan siswa — geser menilai sesi hari ini</div>
+        <div class="fbemoji" id="fbEmoji">🙂</div>
+        <input type="range" min="1" max="100" value="78" class="fbslider" id="fbSlider" oninput="fbMove(this.value)">
+        <div class="fbval"><span id="fbNum">78</span>/100</div>
+        <textarea class="field" style="margin-top:12px" rows="2" placeholder="Catatan singkat untuk guru (opsional)…"></textarea>
+      </div>
+      <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:12px">
+        <div class="qno" style="font-size:12.5px;margin-bottom:8px">Rekap untuk guru (30 respons)</div>
+        <div class="fbagg">
+          <div class="kpi" style="text-align:center"><div class="lab" style="justify-content:center">Rata² sesi</div><div class="v">82 😊</div></div>
+          <div class="kpi" style="text-align:center"><div class="lab" style="justify-content:center">Tertinggi</div><div class="v">96 🤩</div></div>
+          <div class="kpi" style="text-align:center"><div class="lab" style="justify-content:center">Perlu perhatian</div><div class="v" style="color:var(--amber)">3 😕</div></div>
+        </div>
+        <div class="fbnote">“Materinya seru, tapi agak cepat di bagian media query.” — anonim</div>
+      </div>
+    </div>
+  </div>
+  <div class="mf"><button class="btn sec" onclick="closeM('ovl-penilaian')">Tutup</button><button class="btn"><svg data-lucide="send"></svg>Tugaskan ke Siswa</button></div>
+</div></div>
+
+<!-- popover filter + modal detail -->
+<div id="pop" class="popover"></div>
+<div class="ovl" id="ovl-detail"><div class="modal" style="width:560px">
+  <div class="mh"><div class="title"><svg data-lucide="clipboard-list"></svg><span id="detTitle">Detail</span></div><svg data-lucide="x" class="xclose" onclick="closeM('ovl-detail')"></svg></div>
+  <div class="mb" id="detBody"></div>
+  <div class="mf"><button class="btn sec" onclick="closeM('ovl-detail')">Tutup</button></div>
+</div></div>
+
+<script>
+  const DOW=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+  const MON=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  // 12 siswa + nilai [UH,Praktik,Sikap,UTS,UAS]
+  const STUD=[
+    ["Ahmad Fauzi","2024001",[85,88,90,82,86]],["Bunga Lestari","2024002",[78,82,84,74,80]],
+    ["Citra Dewi","2024003",[68,72,75,62,70]],["Dimas Pratama","2024004",[90,92,95,88,91]],
+    ["Eka Putri","2024005",[72,76,78,68,74]],["Fajar Nugroho","2024006",[58,62,64,55,60]],
+    ["Gita Maharani","2024007",[83,86,88,80,84]],["Hadi Santoso","2024008",[76,79,81,74,77]],
+    ["Indah Sari","2024009",[88,90,92,84,87]],["Joko Widodo","2024010",[65,68,72,60,66]],
+    ["Kartika Ayu","2024011",[80,83,85,78,82]],["Lukman Hakim","2024012",[74,77,80,70,75]],
+  ];
+  const KKTP=75; const ini=n=>n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  const cls=v=>v>=KKTP?'c-hi':v>=KKTP-8?'c-mid':'c-lo';
+  const JP=[["JP 1","07.30–08.10"],["JP 2","08.10–08.50"],["JP 3","08.50–09.30"],["Istirahat","09.30–09.45"],["JP 4","09.45–10.25"],["JP 5","10.25–11.05"],["JP 6","11.05–11.45"],["Ishoma","11.45–12.25"],["JP 7","12.25–13.05"],["JP 8","13.05–13.45"]];
+  const SCHED={1:{0:["Pemrograman Web","XI TJKT 1","Lab 1"],1:["Pemrograman Web","XI TJKT 1","Lab 1"],4:["Basis Data","XI TJKT 1","Lab 2"]},
+    2:{1:["Pemrograman Web","XI TJKT 2","Lab 1"],2:["Pemrograman Web","XI TJKT 2","Lab 1"],8:["PBO","XII TJKT 1","Lab 3"],9:["PBO","XII TJKT 1","Lab 3"]},
+    3:{0:["Basis Data","XI TJKT 1","Lab 2"]},4:{4:["PBO","XII TJKT 1","Lab 3"],5:["PBO","XII TJKT 1","Lab 3"]},5:{0:["Pemrograman Web","XI TJKT 1","Lab 1"]},6:{}};
+  const now=new Date(); let calRef=new Date(now.getFullYear(),now.getMonth(),1); let selDate=fmtISO(now);
+  function fmtISO(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+
+  // gradebook
+  function renderGB(){
+    const gb=document.getElementById('gbody'); gb.innerHTML='';
+    const sums=[0,0,0,0,0,0]; let cnt=0;
+    STUD.forEach(([n,nis,s],ri)=>{
+      const na=Math.round((s.reduce((a,b)=>a+b,0)/s.length)*10)/10;
+      const cells=s.map((v,ci)=>`<td><span class="cellv ${cls(v)}" onclick="editCell(${ri},${ci},this)">${v}</span></td>`).join('');
+      s.forEach((v,i)=>sums[i]+=v); cnt++;
+      gb.insertAdjacentHTML('beforeend',`<tr><td class="stk"><div class="stu" style="padding-left:4px"><div class="ini">${ini(n)}</div><div><b>${n}</b><small>NIS ${nis}</small></div></div></td>${cells}<td><b>${na}</b></td><td>${na>=KKTP?'<span class="badge b-ok">Tuntas</span>':'<span class="badge b-rose">Remedial</span>'}</td></tr>`);
+    });
+    const avg=sums.map(x=>Math.round(x/cnt*10)/10);
+    const avgNa=Math.round(avg.reduce((a,b)=>a+b,0)/avg.length*10)/10;
+    document.getElementById('gfoot').innerHTML=`<tr><td class="stk" style="padding-left:12px;color:var(--muted)">Rata-rata kelas</td>${avg.map(a=>`<td>${a}</td>`).join('')}<td><span class="rapor">${avgNa}</span></td><td>—</td></tr>`;
+  }
+  function editCell(ri,ci,el){
+    const cur=STUD[ri][2][ci];
+    el.innerHTML=`<input type="number" min="0" max="100" value="${cur}" onblur="commitCell(${ri},${ci},this.value)" onkeydown="if(event.key==='Enter')this.blur()" autofocus>`;
+    el.querySelector('input').focus();
+  }
+  function commitCell(ri,ci,val){ const v=Math.max(0,Math.min(100,Number(val)||0)); STUD[ri][2][ci]=v; renderGB(); lucide.createIcons(); }
+
+  // input nilai modal student list
+  document.getElementById('inStu').innerHTML='<option value="">Pilih siswa…</option>'+STUD.map(([n,nis])=>`<option>${n} · ${nis}</option>`).join('');
+
+  // today classes
+  function renderToday(){
+    const dow=now.getDay(); const day=SCHED[dow]||{};
+    document.getElementById('todaylabel').textContent=DOW[dow]+', '+now.getDate()+' '+MON[now.getMonth()];
+    const wrap=document.getElementById('todayclasses'); wrap.innerHTML='';
+    const colors=[['var(--em50)','var(--em700)','code'],['#e0f2fe','#0369a1','database'],['#ede9fe','#7c3aed','boxes']];
+    const seen=new Set(); let idx=0;
+    Object.keys(day).forEach(k=>{const [mp,kl,rm]=day[k]; const key=mp+kl; if(seen.has(key))return; seen.add(key);
+      const c=colors[idx%3]; idx++;
+      wrap.insertAdjacentHTML('beforeend',`<div class="classcard"><div class="ic" style="background:${c[0]};color:${c[1]}"><svg data-lucide="${c[2]}"></svg></div>
+        <div style="flex:1"><b>${mp} · ${kl}</b><div class="sub">${JP[k][1].split('–')[0]} · ${rm}</div></div>
+        <button class="btn sec sm" onclick="openAbsen('${kl}')"><svg data-lucide="calendar-check"></svg>Absen</button>
+        <button class="btn sec sm" onclick="openM('ovl-jurnal')"><svg data-lucide="pen-line"></svg>Jurnal</button>
+        <button class="btn sm" onclick="openPenilaian('${kl}')"><svg data-lucide="clipboard-pen-line"></svg>Penilaian</button></div>`);});
+    if(!seen.size)wrap.innerHTML='<div class="li" style="color:var(--muted)">Tidak ada jadwal mengajar hari ini.</div>';
+    lucide.createIcons();
+  }
+  // calendar
+  function hasS(d){const dow=d.getDay();return SCHED[dow]&&Object.keys(SCHED[dow]).length>0;}
+  function renderCal(){
+    document.getElementById('calmonth').textContent=MON[calRef.getMonth()]+' '+calRef.getFullYear();
+    let start=new Date(calRef.getFullYear(),calRef.getMonth(),1).getDay(); start=start===0?6:start-1;
+    const days=new Date(calRef.getFullYear(),calRef.getMonth()+1,0).getDate();
+    let h='<table><thead><tr>'+['Sn','Sl','Rb','Km','Jm','Sb','Mg'].map(d=>`<th>${d}</th>`).join('')+'</tr></thead><tbody><tr>';
+    for(let i=0;i<start;i++)h+='<td></td>';
+    for(let d=1;d<=days;d++){const dt=new Date(calRef.getFullYear(),calRef.getMonth(),d);const iso=fmtISO(dt);
+      const isT=iso===fmtISO(now),isS=iso===selDate,hs=hasS(dt)&&dt.getDay()!==0;
+      h+=`<td><span class="d ${isT?'today':''} ${isS&&!isT?'sel':''} ${hs?'has':''}" onclick="pickDate('${iso}',${dt.getDay()})">${d}</span></td>`;
+      if((start+d)%7===0)h+='</tr><tr>';}
+    document.getElementById('cal').innerHTML=h+'</tr></tbody></table>';
+  }
+  function calMove(n){calRef=new Date(calRef.getFullYear(),calRef.getMonth()+n,1);renderCal();}
+  function pickDate(iso,dow){selDate=iso;renderCal();renderTT(dow===0?0:dow);}
+  // timetable
+  function curJp(){const m=now.getHours()*60+now.getMinutes();for(let i=0;i<JP.length;i++){const[a,b]=JP[i][1].split('–').map(t=>{const[h,mn]=t.split('.').map(Number);return h*60+mn;});if(m>=a&&m<b)return i;}return -1;}
+  function renderDaytabs(active){const w=document.getElementById('daytabs');w.innerHTML='';
+    for(let d=1;d<=6;d++){const cnt=Object.keys(SCHED[d]||{}).filter(k=>JP[k][0].startsWith('JP')).length;
+      w.insertAdjacentHTML('beforeend',`<div class="daytab ${d===active?'on':''}" onclick="renderTT(${d})">${DOW[d].slice(0,3)}<small>${cnt} JP</small></div>`);}}
+  function renderTT(dow){if(dow===0)dow=1;renderDaytabs(dow);
+    const isToday=dow===now.getDay()&&selDate===fmtISO(now);const cur=isToday?curJp():-1;
+    document.getElementById('dayDateLabel').textContent=isToday?('Hari ini · '+DOW[dow]):DOW[dow];
+    const day=SCHED[dow]||{};const tt=document.getElementById('timetable');tt.innerHTML='';
+    JP.forEach((jp,i)=>{const isBreak=!jp[0].startsWith('JP');
+      if(isBreak){tt.insertAdjacentHTML('beforeend',`<div class="slot empty"><div class="jp">${jp[0]}<small>${jp[1]}</small></div><div style="align-self:center;font-size:12px">— ${jp[0]} —</div></div>`);return;}
+      const cell=day[i];const nc=i===cur?'now':'';
+      if(cell)tt.insertAdjacentHTML('beforeend',`<div class="slot ${nc}"><div class="jp">${jp[0]}<small>${jp[1]}</small></div><div style="align-self:center"><b style="font-size:13px">${cell[0]}</b><div class="sub">${cell[1]} · ${cell[2]}</div>${i===cur?'<span class="liveb"><span class="livedot"></span>Sedang berlangsung</span>':''}</div></div>`);
+      else tt.insertAdjacentHTML('beforeend',`<div class="slot empty"><div class="jp">${jp[0]}<small>${jp[1]}</small></div><div style="align-self:center;font-size:12px">Tidak mengajar</div></div>`);});
+    lucide.createIcons();
+  }
+  // absen modal
+  function openAbsen(kelas){document.getElementById('absenClass').textContent=kelas;
+    const b=document.getElementById('absenBody');b.innerHTML='<thead><tr><th>Siswa</th><th>Status (default Hadir)</th></tr></thead>';
+    const tb=document.createElement('tbody');
+    STUD.forEach(([n,nis])=>tb.insertAdjacentHTML('beforeend',`<tr><td><div class="stu"><div class="ini">${ini(n)}</div><b>${n}</b></div></td><td><div class="att">${['H','I','S','A'].map(k=>`<span class="${k} ${k==='H'?'on':''}">${k}</span>`).join('')}</div></td></tr>`));
+    b.appendChild(tb);openM('ovl-absen');lucide.createIcons();updAbs();}
+  function allHadir(){document.querySelectorAll('#absenBody .att').forEach(a=>{a.querySelectorAll('span').forEach(x=>x.classList.remove('on'));a.querySelector('.H').classList.add('on');});updAbs();}
+  function updAbs(){let h=0,i=0,s=0,a=0;document.querySelectorAll('#absenBody .att').forEach(at=>{const on=at.querySelector('.on');const c=on?on.className.split(' ')[0]:'H';c==='H'?h++:c==='I'?i++:c==='S'?s++:a++;});document.getElementById('absSummary').textContent=`Hadir ${h} · Izin ${i} · Sakit ${s} · Alpha ${a}`;}
+  document.addEventListener('click',e=>{const sp=e.target.closest('#absenBody .att span');if(!sp)return;sp.parentElement.querySelectorAll('span').forEach(x=>x.classList.remove('on'));sp.classList.add('on');updAbs();});
+  // penilaian (sesi) modal
+  function openPenilaian(kelas){document.getElementById('penClass').textContent='Pemrograman Web · '+kelas;openM('ovl-penilaian');lucide.createIcons();}
+  document.querySelectorAll('#penTabs button').forEach(b=>b.addEventListener('click',()=>{
+    document.querySelectorAll('#penTabs button').forEach(x=>x.classList.toggle('on',x===b));
+    ['diag','form','fb'].forEach(k=>document.getElementById('pen-'+k).style.display=(k===b.dataset.p?'block':'none'));
+    lucide.createIcons();
+  }));
+  const FB_EMOJI=[[20,'😣'],[40,'😕'],[60,'😐'],[80,'🙂'],[101,'🤩']];
+  function fbMove(v){document.getElementById('fbNum').textContent=v;document.getElementById('fbEmoji').textContent=(FB_EMOJI.find(e=>v<e[0])||['','😊'])[1];}
+  function openM(id){document.getElementById(id).classList.add('on');}function closeM(id){document.getElementById(id).classList.remove('on');}
+  document.querySelectorAll('.ovl').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('on');}));
+  function go(s){document.querySelectorAll('#subnav .pill').forEach(x=>x.classList.toggle('on',x.dataset.s===s));document.querySelectorAll('.screen').forEach(x=>x.classList.remove('on'));const el=document.getElementById('s-'+s);if(el)el.classList.add('on');lucide.createIcons();}
+  document.querySelectorAll('#subnav .pill').forEach(p=>p.addEventListener('click',()=>go(p.dataset.s)));
+  // ── Filter global (Tab A) ──
+  const OPTIONS={ta:['2025/2026','2024/2025','2023/2024'],kelas:['Semua Kelas','XI TJKT 1','XI TJKT 2','XII TJKT 1'],mapel:['Semua Mapel','Pemrograman Web','Basis Data','Pemb. Berorientasi Objek']};
+  const F={ta:'2025/2026',sem:'Semua',kelas:'Semua Kelas',mapel:'Semua Mapel'};
+  let popKey=null;
+  function openPop(key,btn){popKey=key;const pop=document.getElementById('pop');
+    pop.innerHTML='<input class="popsearch" placeholder="Cari…" oninput="filterPop(this.value)"><div class="poplist">'+OPTIONS[key].map(o=>`<button class="${o===F[key]?'on':''}" onclick="pickPop('${o}')">${o}</button>`).join('')+'</div>';
+    const r=btn.getBoundingClientRect();pop.style.left=(r.left+window.scrollX)+'px';pop.style.top=(r.bottom+window.scrollY+6)+'px';pop.classList.add('on');}
+  function filterPop(q){document.querySelectorAll('#pop .poplist button').forEach(b=>b.style.display=b.textContent.toLowerCase().includes(q.toLowerCase())?'block':'none');}
+  function pickPop(v){F[popKey]=v;document.getElementById('pop').classList.remove('on');applyFilter();}
+  function setSem(s){F.sem=s;document.querySelectorAll('#segSem button').forEach(b=>b.classList.toggle('on',b.dataset.sem===s));applyFilter();}
+  document.addEventListener('click',e=>{if(!e.target.closest('#pop')&&!e.target.closest('.fbtn'))document.getElementById('pop').classList.remove('on');});
+  function applyFilter(){
+    document.getElementById('vTA').textContent=F.ta;document.getElementById('vKelas').textContent=F.kelas;document.getElementById('vMapel').textContent=F.mapel;
+    const kh=document.getElementById('khdKelas');if(kh)kh.textContent=F.kelas==='Semua Kelas'?'semua kelas':F.kelas;
+    renderRekap();
+  }
+  // ── DATA rekap (relasi valid: kelas × mapel × semester) ──
+  const REKAP=[
+    {ta:'2025/2026',sem:'Ganjil',kelas:'XI TJKT 1',mapel:'Pemrograman Web',rata:82.3,tuntas:86,hadir:94,cp:64,pert:5,rencana:14,jurnal:5},
+    {ta:'2025/2026',sem:'Ganjil',kelas:'XI TJKT 1',mapel:'Basis Data',rata:79.1,tuntas:74,hadir:93,cp:48,pert:4,rencana:12,jurnal:4},
+    {ta:'2025/2026',sem:'Ganjil',kelas:'XI TJKT 2',mapel:'Pemrograman Web',rata:80.4,tuntas:81,hadir:92,cp:60,pert:5,rencana:14,jurnal:5},
+    {ta:'2025/2026',sem:'Ganjil',kelas:'XII TJKT 1',mapel:'Pemb. Berorientasi Objek',rata:81.0,tuntas:80,hadir:95,cp:72,pert:6,rencana:16,jurnal:6},
+    {ta:'2025/2026',sem:'Genap',kelas:'XI TJKT 1',mapel:'Pemrograman Web',rata:84.0,tuntas:89,hadir:95,cp:88,pert:12,rencana:14,jurnal:12},
+    {ta:'2025/2026',sem:'Genap',kelas:'XI TJKT 1',mapel:'Basis Data',rata:80.5,tuntas:78,hadir:94,cp:80,pert:10,rencana:12,jurnal:10},
+    {ta:'2025/2026',sem:'Genap',kelas:'XII TJKT 1',mapel:'Pemb. Berorientasi Objek',rata:83.2,tuntas:85,hadir:96,cp:90,pert:14,rencana:16,jurnal:14},
+    {ta:'2024/2025',sem:'Genap',kelas:'XI TJKT 1',mapel:'Pemrograman Web',rata:79.0,tuntas:76,hadir:91,cp:100,pert:14,rencana:14,jurnal:14},
+  ];
+  function tuntasColor(p){return p>=85?'#059669':p>=70?'#10b981':p>=55?'#f59e0b':'#e11d48';}
+  function renderRekap(){
+    document.getElementById('rekapCtx').textContent=`TA ${F.ta} · ${F.sem==='Semua'?'Semua Semester':'Semester '+F.sem} · ${F.kelas} · ${F.mapel}`;
+    const rows=REKAP.filter(r=>r.ta===F.ta&&(F.sem==='Semua'||r.sem===F.sem)&&(F.kelas==='Semua Kelas'||r.kelas===F.kelas)&&(F.mapel==='Semua Mapel'||r.mapel===F.mapel));
+    document.getElementById('rekapCount').textContent=rows.length+' baris';
+    const avg=(k)=>rows.length?Math.round(rows.reduce((a,b)=>a+b[k],0)/rows.length*10)/10:0;
+    const sum=(k)=>rows.reduce((a,b)=>a+b[k],0);
+    document.getElementById('rekapKpi').innerHTML=[['Kelas×Mapel',rows.length,'layers'],['Rata² nilai',avg('rata'),'graduation-cap'],['Tuntas KKTP',avg('tuntas')+'%','target'],['Kehadiran',avg('hadir')+'%','calendar-check'],['Ketercapaian CP',avg('cp')+'%','git-branch'],['Pertemuan',sum('pert')+'/'+sum('rencana'),'clock'],['Jurnal',sum('jurnal'),'pen-line']].map(([l,v,ic])=>`<div class="kpi"><div class="lab"><svg data-lucide="${ic}"></svg>${l}</div><div class="v" style="font-size:22px">${v}</div></div>`).join('');
+    document.getElementById('rekapTable').innerHTML='<thead><tr><th>Kelas</th><th>Mapel</th><th>Sem</th><th style="text-align:right">Rata²</th><th style="text-align:right">Tuntas</th><th style="text-align:right">Hadir</th><th style="text-align:right">CP</th><th style="text-align:right">Pertemuan</th><th style="text-align:right">Jurnal</th></tr></thead><tbody>'+(rows.length?rows.map(r=>`<tr><td><b>${r.kelas}</b></td><td>${r.mapel}</td><td>${r.sem}</td><td style="text-align:right">${r.rata}</td><td style="text-align:right"><span class="badge ${r.tuntas>=80?'b-ok':r.tuntas>=65?'b-warn':'b-rose'}">${r.tuntas}%</span></td><td style="text-align:right">${r.hadir}%</td><td style="text-align:right">${r.cp}%</td><td style="text-align:right">${r.pert}/${r.rencana}</td><td style="text-align:right">${r.jurnal}</td></tr>`).join(''):'<tr><td colspan="9" style="text-align:center;color:var(--muted)">Tidak ada data untuk filter ini</td></tr>')+'</tbody>';
+    const kelasL=[...new Set(rows.map(r=>r.kelas))],mapelL=[...new Set(rows.map(r=>r.mapel))];
+    let m='<table class="matrix" style="border-spacing:5px"><thead><tr><th></th>'+mapelL.map(x=>`<th>${x.replace('Pemb. Berorientasi Objek','PBO')}</th>`).join('')+'</tr></thead><tbody>';
+    kelasL.forEach(k=>{m+=`<tr><td class="jp" style="text-align:left">${k}</td>`+mapelL.map(mp=>{const r=rows.find(x=>x.kelas===k&&x.mapel===mp);return r?`<td class="hm" style="background:${tuntasColor(r.tuntas)}">${r.tuntas}%</td>`:'<td class="cell" style="color:#cbd5e1">–</td>';}).join('')+'</tr>';});
+    document.getElementById('rekapMatrix').innerHTML=kelasL.length?m+'</tbody></table>':'<div style="color:var(--muted);font-size:12.5px">—</div>';
+    const sems=[...new Set(rows.map(r=>r.sem))];
+    document.getElementById('rekapSem').innerHTML=sems.length?sems.map(s=>{const sr=rows.filter(r=>r.sem===s);const a=Math.round(sr.reduce((x,y)=>x+y.tuntas,0)/sr.length);return `<div class="progrow" style="grid-template-columns:90px 1fr 46px"><span>${s}</span><div class="pbar"><i style="width:${a}%"></i></div><span>${a}%</span></div>`;}).join(''):'<div style="color:var(--muted);font-size:12.5px">—</div>';
+    lucide.createIcons();
+  }
+  function openRekap(){document.querySelectorAll('#subnav .pill').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.screen').forEach(x=>x.classList.remove('on'));document.getElementById('s-rekap').classList.add('on');renderRekap();}
+  // helpers jadwal
+  function jpLabel(s,e){return e>s?`${JP[s][0]}–${JP[e][0].replace('JP ','')}`:JP[s][0];}
+  function jpTime(s,e){return JP[s][1].split('–')[0]+'–'+JP[e][1].split('–')[1];}
+  function blocksOf(day){const keys=Object.keys(day).map(Number).filter(i=>JP[i][0].startsWith('JP')).sort((a,b)=>a-b);let i=0;const b=[];while(i<keys.length){let j=i;const[mp,kl,rm]=day[keys[i]];while(j+1<keys.length&&keys[j+1]===keys[j]+1&&day[keys[j+1]][0]===mp&&day[keys[j+1]][1]===kl)j++;b.push({mp,kl,rm,s:keys[i],e:keys[j]});i=j+1;}return b;}
+  function renderFullSched(){const tb=document.getElementById('fullSched');tb.innerHTML='';
+    for(let d=1;d<=6;d++){const bl=blocksOf(SCHED[d]||{});bl.forEach((b,bi)=>tb.insertAdjacentHTML('beforeend',`<tr><td><b>${bi===0?DOW[d]:''}</b></td><td>${jpLabel(b.s,b.e)}</td><td>${jpTime(b.s,b.e)}</td><td><b>${b.mp}</b></td><td>${b.kl}</td><td>${b.rm}</td></tr>`));}
+    if(!tb.innerHTML)tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted)">Belum ada jadwal</td></tr>';}
+  function renderMatrix(){const JPN=[[1,0],[2,1],[3,2],[4,4],[5,5],[6,6],[7,8],[8,9]];
+    let h='<thead><tr><th style="width:64px">JP</th>'+[1,2,3,4,5,6].map(d=>`<th>${DOW[d].slice(0,3)}</th>`).join('')+'</tr></thead><tbody>';
+    JPN.forEach(([jp,idx])=>{h+=`<tr><td class="jp">JP ${jp}<small>${JP[idx][1].split('–')[0]}</small></td>`;
+      for(let d=1;d<=6;d++){const c=(SCHED[d]||{})[idx];h+=c?`<td class="cell full"><b>${c[1]}</b><small>${c[0].replace('Pemb. Berorientasi Objek','PBO')}</small><small>${c[2]}</small></td>`:'<td class="cell"></td>';}h+='</tr>';});
+    document.getElementById('matrixSched').innerHTML=h+'</tbody>';}
+  // rekap hari ini (klik → detail)
+  function renderRekapHariIni(){const wrap=document.getElementById('rekapHariIni');wrap.innerHTML='';
+    document.getElementById('rhiDate').textContent=DOW[now.getDay()]+', '+now.getDate()+' '+MON[now.getMonth()];
+    const bl=blocksOf(SCHED[now.getDay()]||{});
+    const states=[{c:'',jur:['ok','Jurnal ✓'],pen:['ok','Diag+Formatif ✓'],fb:['ok','Feedback 82 😊']},{c:'warn',jur:['warn','Jurnal: jam singkat'],pen:['warn','Formatif belum'],fb:['no','Feedback —'],tag:'CP belum tercapai · carry-over'}];
+    if(!bl.length)wrap.innerHTML='<div class="sess"><div class="mp" style="color:var(--muted)">Tidak ada sesi mengajar hari ini.</div></div>';
+    bl.forEach((b,bi)=>{const s=states[bi%states.length];const chip=(a)=>`<span class="chk ${a[0]}">${a[1]}</span>`;
+      wrap.insertAdjacentHTML('beforeend',`<div class="sess clk ${s.c}" onclick="openSesiDetail('${b.mp}','${b.kl}')"><div class="mp"><b>${b.mp} · ${b.kl}</b><small>${jpLabel(b.s,b.e)} · ${jpTime(b.s,b.e)} · klik untuk rincian</small></div><span class="chk ok">Absen ✓</span>${chip(s.jur)}${chip(s.pen)}${chip(s.fb)}${s.tag?`<span class="chk warn">${s.tag}</span>`:''}</div>`);});
+    wrap.insertAdjacentHTML('beforeend',`<div class="sess miss"><div class="mp"><b>Basis Data · XI TJKT 1</b><small>JP 4 · 09.45–10.25 · simulasi guru tak masuk</small></div><span class="chk miss">Tidak terlaksana</span><span class="chk warn">CP di-carry-over ke pertemuan berikutnya</span></div>`);
+  }
+  // detail modal
+  function detModal(title,html){document.getElementById('detTitle').textContent=title;document.getElementById('detBody').innerHTML=html;openM('ovl-detail');lucide.createIcons();}
+  function openSesiDetail(mp,kl){detModal(`Detail Sesi — ${mp} · ${kl}`,
+    `<div class="statrow"><div class="statpill"><div class="n" style="color:var(--em700)">30</div><div class="l">Hadir</div></div><div class="statpill"><div class="n" style="color:var(--sky)">1</div><div class="l">Izin</div></div><div class="statpill"><div class="n" style="color:var(--amber)">1</div><div class="l">Sakit</div></div><div class="statpill"><div class="n" style="color:var(--rose)">0</div><div class="l">Alpha</div></div></div>
+    <div class="fbnote">Izin: <b>Citra Dewi</b> (keperluan keluarga) · Sakit: <b>Joko Widodo</b> (demam, surat dokter)</div>
+    <div class="qcard" style="margin-top:12px"><div class="qno" style="font-size:12.5px;margin-bottom:6px"><svg data-lucide="pen-line" width="15" style="color:var(--em600)"></svg> Jurnal</div><div style="font-size:12.5px;color:var(--ink2)"><b>TP 3.2 — Styling CSS &amp; layout.</b> Apersepsi → demonstrasi → praktik kartu → refleksi.</div></div>
+    <div class="statrow"><div class="statpill"><div class="n">88%</div><div class="l">Diagnostik selesai</div></div><div class="statpill"><div class="n">78</div><div class="l">Rata² Formatif</div></div><div class="statpill"><div class="n" style="color:var(--em700)">82 😊</div><div class="l">Feedback</div></div></div>
+    <div class="fbnote">Feedback siswa: “Materinya seru, agak cepat di media query.”</div>
+    <p class="sub" style="margin-top:8px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Rincian ini masuk dashboard KS &amp; Wali Kelas.</p>`);}
+  function openAbsenDetail(label){detModal(`Detail Kehadiran — ${label}`,
+    `<div class="statrow"><div class="statpill"><div class="n" style="color:var(--em700)">30</div><div class="l">Hadir</div></div><div class="statpill"><div class="n" style="color:var(--sky)">1</div><div class="l">Izin</div></div><div class="statpill"><div class="n" style="color:var(--amber)">1</div><div class="l">Sakit</div></div><div class="statpill"><div class="n" style="color:var(--rose)">0</div><div class="l">Alpha</div></div></div>
+    <table class="simple" style="margin-top:6px"><thead><tr><th>Siswa</th><th>Status</th><th>Keterangan</th></tr></thead><tbody>
+    <tr><td>Citra Dewi</td><td><span class="badge b-info">Izin</span></td><td>Keperluan keluarga</td></tr>
+    <tr><td>Joko Widodo</td><td><span class="badge b-warn">Sakit</span></td><td>Demam (surat dokter)</td></tr></tbody></table>
+    <p class="sub" style="margin-top:8px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Data masuk dashboard KS &amp; Wali Kelas.</p>`);}
+  renderGB();renderToday();renderCal();renderTT(now.getDay()===0?1:now.getDay());renderFullSched();renderMatrix();renderRekapHariIni();applyFilter();lucide.createIcons();
+</script>
+</body>
+</html>

@@ -25,12 +25,39 @@ export interface RppItem {
   id: string;
   subject: string;
   title: string;
-  status: string;
+  content: string | null;
+  fileUrl: string | null;
+  classId: string | null;
+  class: { id: string; name: string } | null;
+  status: string; // draft | submitted | approved | revision
+  reviewNote: string | null;
+  academicYear: string;
+  semester: number;
+  submittedAt: string | null;
+  reviewedAt: string | null;
 }
 
 export interface ClassRef {
   id: string;
   name: string;
+}
+
+export interface LmsModuleItem {
+  id: string;
+  rppId: string | null;
+  classId: string | null;
+  subject: string;
+  title: string;
+  tp: string | null;
+  jpAllocation: number | null;
+  kktp: number;
+  content: string | null;
+  orderIndex: number;
+  status: string; // draft | published | archived
+  academicYear: string;
+  semester: number;
+  class: { id: string; name: string } | null;
+  _count?: { progress: number };
 }
 
 export interface GradeRow {
@@ -61,4 +88,6 @@ export interface TodayClass {
   isNow: boolean;
 }
 
-export const KKTP_DEFAULT = 75;
+// Sumber tunggal KKTP ada di lib/academic (fondasi W0). Re-export agar konsumen
+// guru lama (Ringkasan/Rekap) tetap impor dari sini tanpa perubahan.
+export { KKTP_DEFAULT } from '@/lib/academic';
