@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import {
   LayoutDashboard, CalendarClock, BookOpenCheck, ClipboardPenLine, CalendarCheck,
-  ClipboardList, Award, ClipboardCheck, BookMarked, Calendar, UserCheck, Users,
+  ClipboardList, Award, ClipboardCheck, BookMarked, Calendar, UserCheck, Users, AlertTriangle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { GradeItem, AttendanceItem } from '@/lib/api';
@@ -32,6 +32,8 @@ interface Props {
   todayClasses: TodayClass[];
   academicYear: string;
   semester: number;
+  /** true bila sebagian data inti (nilai/kehadiran) gagal dimuat. */
+  dataWarning?: boolean;
 }
 
 type Screen = 'ringkasan' | 'jadwal' | 'pembelajaran' | 'penilaian' | 'kehadiran' | 'penugasan' | 'capaian' | 'rekap';
@@ -47,7 +49,7 @@ const NAV: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = [
 ];
 
 export default function AkademikWorkspace({
-  grades, attendances, assignments, schedules, activities, rpp, lmsModules, todayClasses, academicYear, semester,
+  grades, attendances, assignments, schedules, activities, rpp, lmsModules, todayClasses, academicYear, semester, dataWarning,
 }: Props) {
   const approvedRpp = useMemo(() => rpp.filter((r) => r.status === 'approved'), [rpp]);
   const subjects = useMemo(() => {
@@ -85,6 +87,13 @@ export default function AkademikWorkspace({
     <div className="space-y-1">
       <h1 className="text-2xl font-bold tracking-tight text-[#0f2e25]">Akademik</h1>
       <p className="text-sm text-[#6b8079]">Dashboard Guru — pembelajaran, penilaian &amp; jadwal mengajar</p>
+
+      {dataWarning && (
+        <div className="mt-2 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[12.5px] font-semibold text-amber-700">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          Sebagian data gagal dimuat dari server. Muat ulang halaman; bila berlanjut, sesi mungkin berakhir — keluar lalu masuk lagi.
+        </div>
+      )}
 
       {/* context bar */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
