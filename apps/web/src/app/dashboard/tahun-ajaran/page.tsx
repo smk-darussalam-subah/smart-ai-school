@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
+import LoadError from '@/components/LoadError';
 import TahunAjaranClient, { type AcademicYearRow, type SemesterRow } from './_components/TahunAjaranClient';
 
 export const dynamic = 'force-dynamic';
@@ -18,6 +19,9 @@ export default async function TahunAjaranPage() {
     apiFetch<AcademicYearRow[]>('/school/academic-years', token),
     apiFetch<SemesterRow[]>('/school/semesters', token),
   ]);
+
+  // apiFetch null = gagal muat (bukan kosong) → tampilkan retry, bukan daftar kosong.
+  if (years === null && semesters === null) return <LoadError />;
 
   return <TahunAjaranClient years={years ?? []} semesters={semesters ?? []} />;
 }
