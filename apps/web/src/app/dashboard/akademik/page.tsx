@@ -9,7 +9,7 @@ import AkademikClient from './_components/AkademikClient';
 import AkademikWorkspace from './_components/AkademikWorkspace';
 import type { ScheduleItem, ActivityItem, RppItem, TodayClass, LmsModuleItem } from './_components/guru-types';
 
-interface Assignment { id: string; subject: string; class: { name: string } }
+interface Assignment { id: string; subject: string; class: { id: string; name: string } }
 interface ClassItem { id: string; name: string; }
 export interface SubjectItem { id: string; code: string; name: string; isActive: boolean; }
 
