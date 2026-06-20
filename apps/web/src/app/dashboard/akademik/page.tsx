@@ -4,6 +4,7 @@ import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch, PaginatedResponse, GradeItem, AttendanceItem } from '@/lib/api';
 import { scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-times';
+import LoadError from '@/components/LoadError';
 import AkademikClient from './_components/AkademikClient';
 import AkademikWorkspace from './_components/AkademikWorkspace';
 import type { ScheduleItem, ActivityItem, RppItem, TodayClass, LmsModuleItem } from './_components/guru-types';
@@ -32,6 +33,10 @@ export default async function AkademikPage() {
     apiFetch<{ data: Assignment[]; total: number }>('/teaching-assignments?limit=100', token),
     apiFetch<{ data: SubjectItem[] }>('/subjects?limit=200', token),
   ]);
+
+  // Gagal muat (server/jaringan): apiFetch mengembalikan null HANYA saat gagal,
+  // bukan saat kosong. Dua sumber inti null = gangguan nyata → tampilkan retry.
+  if (gradesData === null && attendanceData === null) return <LoadError />;
 
   // ── Dashboard Guru (IA baru). Role lain → tampilan lama (fallback). ─────────
   if (isGuru) {
