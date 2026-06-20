@@ -1,11 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SortableHeader } from '@/components/ui/sortable-header';
+import { TablePagination } from '@/components/ui/table-pagination';
+import { useQueryState } from '@/hooks/use-query-state';
+import { cn } from '@/lib/utils';
 import SiswaFormDialog from './SiswaForm';
 import SiswaDeleteDialog from './SiswaDelete';
 import SiswaWizard from './SiswaWizard';
@@ -19,6 +23,16 @@ interface Student {
   joinedAt?: string; createdAt: string;
 }
 
+interface SiswaQuery {
+  page: number;
+  limit: number;
+  search: string;
+  classId: string;
+  status: string;
+  sortBy: string;
+  sortOrder: 'asc' | 'desc';
+}
+
 interface SiswaTableProps {
   students: Student[];
   total: number;
@@ -26,6 +40,7 @@ interface SiswaTableProps {
   canEdit: boolean;
   withoutParentStudents: WithoutParentItem[];
   withoutParentTotal: number;
+  query: SiswaQuery;
 }
 
 const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -36,32 +51,32 @@ const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondar
 };
 
 export default function SiswaTable({
-  students, total, classes, canEdit, withoutParentStudents, withoutParentTotal,
+  students, total, classes, canEdit, withoutParentStudents, withoutParentTotal, query,
 }: SiswaTableProps) {
+  const { setParams, isPending } = useQueryState();
   const [activeTab, setActiveTab] = useState<'semua' | 'tanpa-wali'>('semua');
-  const [search, setSearch] = useState('');
-  const [classFilter, setClassFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [searchInput, setSearchInput] = useState(query.search);
   const [formOpen, setFormOpen] = useState(false);
   const [editStudent, setEditStudent] = useState<Student | null>(null);
   const [deleteStudent, setDeleteStudent] = useState<Student | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [assignParentStudent, setAssignParentStudent] = useState<WithoutParentItem | null>(null);
 
-  const filtered = students.filter((s) => {
-    const matchSearch = !search || s.nis.includes(search) || s.user.fullName.toLowerCase().includes(search.toLowerCase());
-    const matchClass = classFilter === 'all' || s.class?.id === classFilter;
-    const matchStatus = statusFilter === 'all' || s.status === statusFilter;
-    return matchSearch && matchClass && matchStatus;
-  });
+  // Filter/sort/search/pagination = SERVER-SIDE via URL (useQueryState). `students`
+  // sudah hasil query server. Search di-debounce; sinkron bila URL berubah dari luar.
+  useEffect(() => { setSearchInput(query.search); }, [query.search]);
+  useEffect(() => {
+    if (searchInput === query.search) return;
+    const t = setTimeout(() => setParams({ search: searchInput || null }), 400);
+    return () => clearTimeout(t);
+  }, [searchInput, query.search, setParams]);
 
+  const hasFilter = !!(query.search || query.classId || query.status);
   const handleEdit = (student: Student) => { setEditStudent(student); setFormOpen(true); };
   const handleNew = () => setWizardOpen(true);
-  const handleTabChange = (tab: 'semua' | 'tanpa-wali') => {
-    setActiveTab(tab);
-    setSearch('');
-    setClassFilter('all');
-    setStatusFilter('all');
+  const handleSort = (column: string) => {
+    const order = query.sortBy === column && query.sortOrder === 'asc' ? 'desc' : 'asc';
+    setParams({ sortBy: column, sortOrder: order });
   };
 
   return (
@@ -79,7 +94,7 @@ export default function SiswaTable({
       <div className="flex gap-1 border-b border-gray-200">
         <button
           type="button"
-          onClick={() => handleTabChange('semua')}
+          onClick={() => setActiveTab('semua')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'semua'
               ? 'border-smk-blue text-smk-blue'
@@ -92,7 +107,7 @@ export default function SiswaTable({
         {canEdit && (
           <button
             type="button"
-            onClick={() => handleTabChange('tanpa-wali')}
+            onClick={() => setActiveTab('tanpa-wali')}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
               activeTab === 'tanpa-wali'
                 ? 'border-smk-blue text-smk-blue'
@@ -115,11 +130,11 @@ export default function SiswaTable({
           <div className="flex flex-col sm:flex-row gap-3">
             <Input
               placeholder="Cari NIS atau nama..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="max-w-xs"
             />
-            <Select value={classFilter} onValueChange={setClassFilter}>
+            <Select value={query.classId || 'all'} onValueChange={(v: string) => setParams({ classId: v })}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Semua Kelas" />
               </SelectTrigger>
@@ -130,7 +145,7 @@ export default function SiswaTable({
                 ))}
               </SelectContent>
             </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select value={query.status || 'all'} onValueChange={(v: string) => setParams({ status: v })}>
               <SelectTrigger className="w-[150px]">
                 <SelectValue placeholder="Semua Status" />
               </SelectTrigger>
@@ -141,31 +156,28 @@ export default function SiswaTable({
                 ))}
               </SelectContent>
             </Select>
-            <span className="text-sm text-muted-foreground self-center">{total} siswa</span>
           </div>
 
-          <div className="rounded-xl border shadow-sm overflow-x-auto">
+          <div className={cn('rounded-xl border shadow-sm overflow-x-auto transition-opacity', isPending && 'opacity-60')}>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>NIS</TableHead>
-                  <TableHead>Nama</TableHead>
+                  <SortableHeader label="NIS" column="nis" sortBy={query.sortBy} sortOrder={query.sortOrder} onSort={handleSort} />
+                  <SortableHeader label="Nama" column="fullName" sortBy={query.sortBy} sortOrder={query.sortOrder} onSort={handleSort} />
                   <TableHead className="hidden md:table-cell">Kelas</TableHead>
-                  <TableHead className="hidden sm:table-cell">Status</TableHead>
+                  <SortableHeader label="Status" column="status" sortBy={query.sortBy} sortOrder={query.sortOrder} onSort={handleSort} className="hidden sm:table-cell" />
                   {canEdit && <TableHead className="w-24">Aksi</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.length === 0 ? (
+                {students.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={canEdit ? 5 : 4} className="text-center h-24 text-muted-foreground">
-                      {search || classFilter !== 'all' || statusFilter !== 'all'
-                        ? 'Tidak ada siswa yang cocok dengan filter'
-                        : 'Belum ada data siswa'}
+                      {hasFilter ? 'Tidak ada siswa yang cocok dengan filter' : 'Belum ada data siswa'}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filtered.map((s) => (
+                  students.map((s) => (
                     <TableRow key={s.id}>
                       <TableCell className="font-mono text-sm">{s.nis}</TableCell>
                       <TableCell className="font-medium">{s.user.fullName}</TableCell>
@@ -189,6 +201,8 @@ export default function SiswaTable({
               </TableBody>
             </Table>
           </div>
+
+          <TablePagination page={query.page} limit={query.limit} total={total} onPage={(p) => setParams({ page: p })} />
         </>
       )}
 
