@@ -8,7 +8,7 @@ export const ListAttendanceQuerySchema = z.object({
   dateFrom:  z.string().regex(DATE_REGEX, 'Format: YYYY-MM-DD').optional(),
   dateTo:    z.string().regex(DATE_REGEX, 'Format: YYYY-MM-DD').optional(),
   page:      z.coerce.number().int().positive().default(1),
-  limit:     z.coerce.number().int().positive().max(100).default(20),
+  limit:     z.coerce.number().int().positive().max(200).default(20),
 });
 
 export type ListAttendanceQuery = z.infer<typeof ListAttendanceQuerySchema>;
