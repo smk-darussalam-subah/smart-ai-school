@@ -39,6 +39,13 @@ export class LmsController {
     return this.service.findOne(id, user);
   }
 
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU')
+  @RequirePermission('lms.read')
+  @Get(':id/progress')
+  getProgress(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.service.getProgress(id, user);
+  }
+
   @Roles('GURU')
   @RequirePermission('lms.own.manage')
   @Post()

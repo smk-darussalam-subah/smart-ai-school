@@ -33,9 +33,11 @@ describe('LmsService', () => {
   const update = jest.fn();
   const del = jest.fn();
   const progressUpsert = jest.fn();
+  const progressFindMany = jest.fn();
+  const studentCount = jest.fn();
 
   beforeEach(async () => {
-    [teacherFindFirst, studentFindFirst, findFirst, findUnique, findMany, count, create, update, del, progressUpsert]
+    [teacherFindFirst, studentFindFirst, findFirst, findUnique, findMany, count, create, update, del, progressUpsert, progressFindMany, studentCount]
       .forEach((m) => m.mockReset());
     teacherFindFirst.mockResolvedValue({ id: 'teacher-1' });
     studentFindFirst.mockResolvedValue({ id: 'student-1', classId: 'class-1' });
@@ -44,12 +46,14 @@ describe('LmsService', () => {
     progressUpsert.mockImplementation((a: { create: Record<string, unknown> }) => Promise.resolve({ id: 'prog-1', ...a.create }));
     count.mockResolvedValue(0);
     findMany.mockResolvedValue([]);
+    progressFindMany.mockResolvedValue([]);
+    studentCount.mockResolvedValue(0);
 
     const prisma = {
       teacher: { findFirst: teacherFindFirst },
-      student: { findFirst: studentFindFirst },
+      student: { findFirst: studentFindFirst, count: studentCount },
       lmsModule: { findFirst, findUnique, findMany, count, create, update, delete: del },
-      lmsModuleProgress: { upsert: progressUpsert },
+      lmsModuleProgress: { upsert: progressUpsert, findMany: progressFindMany },
     };
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [LmsService, { provide: PrismaService, useValue: prisma }],
@@ -106,5 +110,21 @@ describe('LmsService', () => {
     findFirst.mockResolvedValue({ id: 'lms-1' });
     await service.setStatus('lms-1', 'published', GURU);
     expect(update.mock.calls[0][0].data.status).toBe('published');
+  });
+
+  it('getProgress milik sendiri → progres siswa + classStudentCount', async () => {
+    findUnique.mockResolvedValue({ id: 'lms-1', title: 'M', subject: 'X', classId: 'class-1', teacherId: 'teacher-1' });
+    progressFindMany.mockResolvedValue([
+      { progress: 100, status: 'completed', startedAt: new Date(), completedAt: new Date(), student: { nis: '101', user: { fullName: 'Ani' } } },
+    ]);
+    studentCount.mockResolvedValue(30);
+    const res = await service.getProgress('lms-1', GURU);
+    expect(res.progress[0]).toMatchObject({ name: 'Ani', nis: '101', progress: 100, status: 'completed' });
+    expect(res.classStudentCount).toBe(30);
+  });
+
+  it('getProgress modul bukan milik sendiri → Forbidden', async () => {
+    findUnique.mockResolvedValue({ id: 'lms-1', title: 'M', subject: 'X', classId: null, teacherId: 'teacher-LAIN' });
+    await expect(service.getProgress('lms-1', GURU)).rejects.toThrow(ForbiddenException);
   });
 });
