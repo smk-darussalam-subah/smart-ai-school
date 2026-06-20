@@ -18,7 +18,7 @@ import AbsenModal from './AbsenModal';
 import JurnalModal from './JurnalModal';
 import InputNilaiModal from './InputNilaiModal';
 
-interface Assignment { id: string; subject: string; class: { name: string } }
+interface Assignment { id: string; subject: string; class: { id: string; name: string } }
 
 interface Props {
   grades: GradeItem[];
@@ -56,11 +56,15 @@ export default function AkademikWorkspace({
     schedules.forEach((s) => set.add(s.teachingAssignment?.subject ?? ''));
     return [...set].filter(Boolean).sort();
   }, [assignments, schedules]);
+  // Kelas yang diampu: dari teaching-assignments (otoritatif — guru bisa pilih kelasnya
+  // walau belum ada jadwal/timetable) + dilengkapi dari schedules. Memperbaiki dropdown
+  // kelas yang kosong saat assignment ada tapi Schedule belum dibuat.
   const guruClasses = useMemo(() => {
     const m = new Map<string, string>();
+    assignments.forEach((a) => { if (a.class?.id) m.set(a.class.id, a.class.name); });
     schedules.forEach((s) => { if (s.class) m.set(s.classId, s.class.name); });
     return [...m.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [schedules]);
+  }, [assignments, schedules]);
 
   const [screen, setScreen] = useState<Screen>('ringkasan');
   const [subject, setSubject] = useState<string>('all');
