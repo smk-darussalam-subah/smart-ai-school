@@ -1,0 +1,1304 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DIIS — Dashboard KS / Waka Kurikulum (Mockup)</title>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  :root{--em50:#ecfdf5;--em100:#d1fae5;--em200:#a7f3d0;--em300:#6ee7b7;--em500:#10b981;--em600:#059669;--em700:#047857;--em800:#065f46;
+    --ink:#0f2e25;--ink2:#355a4e;--muted:#6b8079;--line:#e6efea;--bg:#f4f7f5;--surface:#fff;
+    --amber:#d97706;--amberbg:#fef3c7;--rose:#e11d48;--rosebg:#ffe4e6;--sky:#0284c7;--violet:#7c3aed;
+    --sh:0 1px 2px rgba(16,40,33,.04),0 8px 24px -14px rgba(16,40,33,.14);
+    --shlift:0 2px 6px rgba(16,40,33,.06),0 22px 40px -20px rgba(16,40,33,.28);--r:14px;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',system-ui,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+  .side{background:var(--surface);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:6px}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px}
+  .brand .logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(145deg,var(--em600),var(--em800));display:grid;place-items:center;color:#fff;font-weight:800}
+  .brand b{font-size:15px}.brand small{display:block;color:var(--muted);font-size:11px;font-weight:500}
+  .me{padding:10px 8px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-bottom:6px}
+  .me b{font-size:13px}.me small{display:block;color:var(--muted);font-size:11px}
+  .me .role{display:inline-block;margin-top:5px;background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:800;padding:2px 8px;border-radius:8px}
+  .navgrp{font-size:10px;font-weight:800;letter-spacing:.7px;color:#9bb0a8;padding:12px 10px 4px}
+  .nav{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;color:var(--ink2);font-weight:600;font-size:13.5px;cursor:pointer}
+  .nav svg{width:18px;height:18px;color:var(--muted)}.nav:hover{background:var(--bg)}
+  .nav.on{background:var(--em50);color:var(--em700)}.nav.on svg{color:var(--em600)}
+  .main{display:flex;flex-direction:column;min-width:0}
+  .top{height:64px;background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:20}
+  .iconbtn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:#fff;display:grid;place-items:center;color:var(--ink2);cursor:pointer}
+  .ghost{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--em200);color:var(--em700);background:var(--em50);border-radius:11px;padding:8px 13px;font-weight:700;font-size:13px;cursor:pointer}
+  .ava{width:34px;height:34px;border-radius:50%;background:#dbeafe;color:#1d4ed8;display:grid;place-items:center;font-weight:800;font-size:13px}
+  .wrap{padding:22px 26px 60px;max-width:1340px;width:100%}
+  .h1{font-size:24px;font-weight:800;letter-spacing:-.5px}.crumb{color:var(--muted);font-size:12.5px;margin-top:2px;font-weight:500}
+  .seedbar{display:flex;align-items:center;gap:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 12px;font-size:11.5px;font-weight:700;color:#92400e;margin-bottom:14px}
+  .seedbar svg{width:15px;height:15px}
+  .ctxbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 4px}
+  .sel{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--ink2);box-shadow:var(--sh);cursor:pointer}
+  .sel svg{width:15px;height:15px;color:var(--em600)}.sel select{border:0;background:transparent;font:inherit;font-weight:600;color:var(--ink2);outline:none;cursor:pointer}
+  .rolehint{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-size:11.5px;font-weight:700;color:#1d4ed8;background:#eff6ff;border:1px solid #bfdbfe;padding:6px 11px;border-radius:20px}
+  .rolehint svg{width:14px;height:14px}
+  .subnav{display:flex;flex-wrap:wrap;gap:7px;margin:16px 0 18px;border-bottom:1px solid var(--line);padding-bottom:14px}
+  .pill{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border-radius:11px;font-size:13px;font-weight:700;color:var(--ink2);background:#fff;border:1px solid var(--line);cursor:pointer}
+  .pill svg{width:16px;height:16px;color:var(--muted)}.pill:hover{border-color:var(--em200)}
+  .pill.on{background:var(--em600);color:#fff;border-color:var(--em600);box-shadow:0 8px 18px -8px rgba(5,150,105,.5)}.pill.on svg{color:#fff}
+  .pill .cnt{font-size:10px;font-weight:800;background:var(--rose);color:#fff;border-radius:20px;padding:1px 7px;margin-left:2px}
+  .pill.on .cnt{background:rgba(255,255,255,.25)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh)}.card.pad{padding:18px}
+  .grid{display:grid;gap:16px}.row{display:flex;gap:16px}
+  .between{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .btn{display:inline-flex;align-items:center;gap:7px;background:var(--em600);color:#fff;border:0;border-radius:11px;padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer}.btn svg{width:16px;height:16px}
+  .btn.sec{background:#fff;color:var(--ink2);border:1px solid var(--line)}.btn.sec svg{color:var(--em600)}
+  .btn.sm{padding:6px 10px;font-size:12px}
+  .btn.rose{background:var(--rose)}.btn.amber{background:var(--amber)}
+  .seg{display:inline-flex;background:var(--bg);border-radius:11px;padding:3px}
+  .seg button{border:0;background:transparent;font:inherit;font-size:12.5px;font-weight:700;color:var(--muted);padding:7px 13px;border-radius:8px;cursor:pointer}
+  .seg button.on{background:#fff;color:var(--em700);box-shadow:var(--sh)}
+  .title{font-size:15px;font-weight:800;display:flex;align-items:center;gap:9px}.title svg{width:18px;height:18px;color:var(--em600)}
+  .sub{color:var(--muted);font-size:12px;font-weight:500;margin-top:2px}
+  .badge{font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:8px;white-space:nowrap}
+  .b-ok{background:var(--em50);color:var(--em700)}.b-warn{background:var(--amberbg);color:var(--amber)}.b-info{background:#e0f2fe;color:#0369a1}.b-mut{background:#eef2f5;color:#64748b}.b-rose{background:var(--rosebg);color:var(--rose)}.b-violet{background:#ede9fe;color:#7c3aed}
+  .screen{display:none}.screen.on{display:block}
+  .kpi{flex:1;background:#fff;border:1px solid var(--line);border-radius:13px;padding:14px;box-shadow:var(--sh);position:relative}
+  .kpi .lab{font-size:11.5px;color:var(--muted);font-weight:700;display:flex;gap:6px;align-items:center}.kpi .lab svg{width:14px;height:14px;color:var(--em600)}
+  .kpi .v{font-size:26px;font-weight:800;letter-spacing:-1px;margin-top:5px}.kpi .v small{font-size:14px;color:var(--muted);font-weight:700}
+  .kpi .delta{font-size:11px;font-weight:800;margin-top:2px}.kpi .delta.up{color:var(--em600)}.kpi .delta.down{color:var(--rose)}
+  .li{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#fff;cursor:pointer;transition:.16s}
+  .li:hover{box-shadow:var(--shlift);border-color:var(--em200);transform:translateY(-1px)}
+  .li .ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex-shrink:0}
+  .classcard{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--line);border-radius:12px;background:#fff;transition:.16s}
+  .classcard:hover{box-shadow:var(--shlift);border-color:var(--em200);transform:translateY(-1px)}
+  .classcard .ic{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;flex-shrink:0}
+  .note{border-radius:10px;padding:9px 12px;font-size:11.5px;font-weight:600}
+  .note.amber{background:var(--amberbg);color:var(--amber)}.note.violet{background:#ede9fe;color:#6d28d9}.note.info{background:#e0f2fe;color:#0369a1}
+  table.simple{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.simple th{text-align:left;color:var(--muted);font-weight:700;font-size:11px;padding:9px 10px;border-bottom:1px solid var(--line);text-transform:uppercase}
+  table.simple td{padding:11px 10px;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink2)}
+  table.simple tr:hover td{background:var(--bg)}
+  /* papan */
+  .papan{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+  .papan .pcard{border:1px solid var(--line);border-radius:11px;padding:11px;background:#fff;position:relative}
+  .papan .pcard.live{border-color:var(--em500);background:linear-gradient(0deg,var(--em50),#fff);box-shadow:var(--shlift)}
+  .papan .pcard .jp{font-size:10px;font-weight:800;color:var(--em700);text-transform:uppercase;letter-spacing:.5px}
+  .papan .pcard .time{font-size:10px;color:var(--muted);font-weight:600}
+  .papan .pcard .mp{font-size:13px;font-weight:800;margin-top:5px;color:var(--ink)}
+  .papan .pcard .meta{font-size:11px;color:var(--muted);font-weight:600;margin-top:2px}
+  .papan .pcard .guru{font-size:10.5px;color:var(--ink2);font-weight:700;margin-top:4px;display:flex;align-items:center;gap:5px}
+  .papan .pcard .guru .gava{width:18px;height:18px;border-radius:50%;background:var(--em100);color:var(--em700);display:grid;place-items:center;font-size:8px;font-weight:800}
+  .papan .pcard .liveb{display:inline-flex;align-items:center;gap:5px;font-size:9px;font-weight:800;color:var(--em700);background:var(--em100);padding:2px 7px;border-radius:20px;margin-top:5px}
+  .livedot{width:6px;height:6px;border-radius:50%;background:var(--em500);animation:pulse 1.5s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  /* health gauge */
+  .health{display:flex;align-items:center;gap:20px}
+  .gauge-val{font-size:46px;font-weight:800;letter-spacing:-2px;line-height:1}
+  .gauge-val small{font-size:16px;color:var(--muted);font-weight:700}
+  .pill-up{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;padding:3px 8px;border-radius:20px;margin-top:6px;background:var(--em50);color:var(--em700)}
+  .pill-up svg{width:12px;height:12px}
+  .health-break{margin-top:4px;display:flex;flex-direction:column;gap:8px;flex:1}
+  .hb-row{display:grid;grid-template-columns:92px 1fr 30px;align-items:center;gap:9px;font-size:11px;font-weight:600;color:var(--ink2)}
+  .hb-track{height:7px;background:var(--bg);border-radius:6px;overflow:hidden}
+  .hb-fill{height:100%;border-radius:6px;background:linear-gradient(90deg,var(--em300),var(--em600))}
+  .hb-row.weak .hb-fill{background:linear-gradient(90deg,#fbbf24,#d97706)}
+  /* approval queue */
+  .aq{display:flex;align-items:center;gap:14px;padding:14px;border:1px solid var(--line);border-radius:13px;margin-bottom:10px;background:#fff;transition:.16s}
+  .aq:hover{box-shadow:var(--shlift);border-color:var(--em200)}
+  .aq .gava{width:42px;height:42px;border-radius:11px;background:var(--em100);color:var(--em700);display:grid;place-items:center;font-size:14px;font-weight:800;flex-shrink:0}
+  .aq .meta{flex:1;min-width:0}.aq .meta b{font-size:13.5px}.aq .meta small{display:block;color:var(--muted);font-weight:600;font-size:11.5px;margin-top:2px}
+  .aq .acts{display:flex;gap:7px;flex-shrink:0}
+  /* sumatif */
+  .sq{padding:14px;border:1px solid var(--line);border-radius:13px;margin-bottom:10px;background:#fff;cursor:pointer;transition:.16s}
+  .sq:hover{box-shadow:var(--shlift);border-color:var(--em200)}
+  .sq .qtop{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .sq .qmeta{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:5px}
+  /* monitor matrix */
+  table.matrix{border-collapse:separate;border-spacing:4px;width:100%;table-layout:fixed}
+  table.matrix th{font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase;padding:4px}
+  table.matrix td.rowh{font-size:11px;font-weight:800;color:var(--ink2);text-align:left;white-space:nowrap;padding-right:6px}
+  table.matrix td.cell{border-radius:8px;padding:8px 6px;font-size:10.5px;font-weight:700;text-align:center;vertical-align:top;background:#fff;border:1px solid var(--line);cursor:pointer}
+  table.matrix td.cell:hover{border-color:var(--em300)}
+  table.matrix td.cell.full{background:var(--em50);border-color:var(--em200);color:var(--em800)}
+  table.matrix td.cell.warn{background:var(--amberbg);border-color:#fde68a;color:var(--amber)}
+  table.matrix td.cell.risk{background:var(--rosebg);border-color:#fecdd3;color:var(--rose)}
+  table.matrix td.cell small{display:block;color:var(--muted);font-weight:600;font-size:9.5px}
+  .hm{border-radius:8px;padding:8px;color:#fff;font-weight:800;text-align:center;font-size:12px}
+  /* KKTP */
+  .kktp-row{display:grid;grid-template-columns:180px 1fr 60px 100px;gap:14px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+  .kktp-slider{width:100%;height:8px;border-radius:5px;background:linear-gradient(90deg,#e11d48 0%,#f59e0b 50%,#10b981 100%);-webkit-appearance:none;appearance:none;outline:none}
+  .kktp-slider::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid var(--em600);cursor:pointer;box-shadow:var(--sh)}
+  /* jadwal */
+  table.jsched{border-collapse:separate;border-spacing:3px;width:100%;table-layout:fixed}
+  table.jsched th{font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;padding:4px;text-align:center}
+  table.jsched td.jpl{font-size:10px;font-weight:800;color:var(--em700);text-align:center;white-space:nowrap;padding:4px}
+  table.jsched td.jcell{border-radius:7px;padding:6px 4px;font-size:9.5px;font-weight:700;text-align:center;vertical-align:top;background:#fff;border:1px solid var(--line);min-height:42px}
+  table.jsched td.jcell.full{background:var(--em50);border-color:var(--em200);color:var(--em800)}
+  table.jsched td.jcell.brk{background:var(--bg);border-style:dashed;color:#9bb0a8}
+  table.jsched td.jcell.empty{background:var(--rosebg);border-color:#fecdd3;color:var(--rose)}
+  table.jsched td.jcell small{display:block;color:var(--muted);font-weight:600;font-size:8.5px}
+  /* modal */
+  .ovl{position:fixed;inset:0;background:rgba(15,46,37,.45);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;z-index:50;padding:24px}.ovl.on{display:flex}
+  .modal{background:#fff;border-radius:18px;width:560px;max-width:100%;max-height:88vh;overflow:auto;box-shadow:0 30px 70px -20px rgba(0,0,0,.4)}
+  .modal .mh{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1}
+  .modal .mb{padding:18px 20px}.modal .mf{padding:14px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;position:sticky;bottom:0;background:#fff}
+  .xclose{cursor:pointer;color:var(--muted)}
+  .field{margin-bottom:14px}.field label{font-size:11.5px;font-weight:800;color:var(--ink2);display:block;margin-bottom:5px}
+  .field input,.field textarea,.field select{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;color:var(--ink);resize:vertical;outline:none}
+  .field input:focus,.field textarea:focus,.field select:focus{border-color:var(--em500)}
+  .cp-chip{display:inline-block;background:var(--em50);color:var(--em700);border:1px solid var(--em200);border-radius:8px;padding:5px 10px;font-size:11.5px;font-weight:700;margin:0 6px 6px 0}
+  .statrow{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}
+  .statpill{flex:1;min-width:90px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;text-align:center}
+  .statpill .n{font-size:20px;font-weight:800}.statpill .l{font-size:10.5px;color:var(--muted);font-weight:700}
+  .progrow{display:grid;grid-template-columns:150px 110px 1fr 48px 56px;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-size:12.5px;font-weight:700;cursor:pointer}
+  .pbar{height:9px;border-radius:6px;background:#eef3f0;overflow:hidden}.pbar i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#34d399,var(--em600))}
+  .pbar i.amber{background:linear-gradient(90deg,#fbbf24,#d97706)}.pbar i.rose{background:linear-gradient(90deg,#fb7185,#e11d48)}
+  .tload{display:grid;grid-template-columns:160px 1fr 50px;gap:12px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:12px;font-weight:700}
+  .sched-config{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-top:12px}
+  .sched-cfg-item{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-align:center}
+  .sched-cfg-item .v{font-size:22px;font-weight:800;color:var(--em700)}.sched-cfg-item .l{font-size:10.5px;color:var(--muted);font-weight:700;margin-top:2px}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);font-weight:600;margin-top:10px}.legend i{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:-1px}
+  .legend-mini{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);font-weight:600;margin-top:10px}
+  .legend-mini span{display:inline-flex;align-items:center;gap:5px}.legend-mini i{width:10px;height:10px;border-radius:3px}
+  .filterbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0 4px}
+  .fblabel{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#9bb0a8;text-transform:uppercase;letter-spacing:.5px}.fblabel svg{width:14px;height:14px}
+  .fbtn{display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:8px 12px;font-size:12.5px;font-weight:700;color:var(--ink2);cursor:pointer;box-shadow:var(--sh)}
+  .fbtn svg{width:15px;height:15px;color:var(--em600)}.fbtn .chev{width:14px;height:14px;color:var(--muted)}.fbtn:hover{border-color:var(--em200)}.fbtn .fval{color:var(--ink)}
+  .fbtn.primary{background:var(--em600);color:#fff;border-color:var(--em600);box-shadow:0 8px 18px -8px rgba(5,150,105,.5)}.fbtn.primary svg{color:#fff}
+  .popover{position:absolute;z-index:60;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 44px -16px rgba(16,40,33,.32);padding:8px;width:230px;display:none}
+  .popover.on{display:block}
+  .popsearch{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit;font-size:12.5px;outline:none;margin-bottom:6px}
+  .poplist{max-height:200px;overflow:auto}
+  .poplist button{display:block;width:100%;text-align:left;border:0;background:transparent;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink2);padding:8px 10px;border-radius:8px;cursor:pointer}
+  .poplist button:hover{background:var(--bg)}.poplist button.on{background:var(--em50);color:var(--em700);font-weight:800}
+  .desk-filter{display:none}
+  .filterstrip{display:none}
+  @media(min-width:1024px){.desk-filter{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0 4px}.filterstrip{display:none!important}}
+  @media(max-width:1023px){.desk-filter{display:none!important}.filterstrip{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 4px}}
+  .fchip{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:7px 11px;font-size:12px;font-weight:700;color:var(--ink2);cursor:pointer;box-shadow:var(--sh)}
+  .fchip svg{width:14px;height:14px;color:var(--em600)}.fchip select{border:0;background:transparent;font:inherit;font-weight:700;color:var(--ink2);outline:none;cursor:pointer}
+  /* papan table (all rombel) */
+  .ptable{width:100%;border-collapse:collapse;font-size:12px}
+  .ptable th{text-align:left;color:var(--muted);font-weight:700;font-size:10.5px;padding:8px 10px;border-bottom:1px solid var(--line);text-transform:uppercase;white-space:nowrap}
+  .ptable td{padding:9px 10px;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink2)}
+  .ptable tr.live td{background:var(--em50)}
+  .ptable tr:hover td{background:var(--bg)}
+  .ptable .gava-sm{width:22px;height:22px;border-radius:6px;background:var(--em100);color:var(--em700);display:inline-grid;place-items:center;font-size:9px;font-weight:800;margin-right:6px;vertical-align:middle}
+  .gava-sm{width:22px;height:22px;border-radius:6px;background:var(--em100);color:var(--em700);display:inline-grid;place-items:center;font-size:9px;font-weight:800;margin-right:6px;vertical-align:middle}
+  .rombel-sel{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--ink2);box-shadow:var(--sh)}
+  .rombel-sel svg{width:15px;height:15px;color:var(--em600)}.rombel-sel select{border:0;background:transparent;font:inherit;font-weight:600;color:var(--ink2);outline:none;cursor:pointer}
+  /* heatmap papan */
+  .heatmap{display:flex;flex-direction:column;gap:4px}
+  .heat-row{display:flex;align-items:center;gap:4px}
+  .heat-label{width:88px;flex-shrink:0;font-size:11px;font-weight:700;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .heat-cell{flex:1;min-width:48px;height:34px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;cursor:pointer;transition:.15s;overflow:hidden;padding:0 2px;text-align:center;white-space:nowrap;text-overflow:ellipsis}
+  .heat-cell.full{background:var(--em500);color:#fff}.heat-cell.full:hover{background:var(--em600);transform:scale(1.05)}
+  .heat-cell.warn{background:var(--amberbg);color:var(--amber);border:1px solid #fde68a}.heat-cell.warn:hover{background:#fde68a;transform:scale(1.05)}
+  .heat-cell.empty{background:var(--bg);border:1px dashed var(--line);color:#9bb0a8;cursor:default}
+  .heat-cell.now{box-shadow:0 0 0 2px var(--em700),0 0 0 4px #fff}
+  .heat-hdr{flex:1;text-align:center}.heat-hdr .jp{font-size:10px;font-weight:800}.heat-hdr .tm{font-size:9px;color:var(--muted)}
+  /* modul detail sections */
+  .mod-sec{margin-bottom:16px}
+  .mod-sec-h{font-size:11px;font-weight:800;color:var(--em700);text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:7px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  .mod-sec-h svg{width:15px;height:15px}
+  .mod-sec-b{font-size:13px;color:var(--ink2);font-weight:600;line-height:1.6;white-space:pre-line}
+  .mod-tl{padding-left:18px;position:relative;margin:6px 0}
+  .mod-tl::before{content:"";position:absolute;left:5px;top:2px;bottom:2px;width:2px;background:var(--line)}
+  .mod-tl-it{position:relative;padding-bottom:12px;padding-left:14px}
+  .mod-tl-it::before{content:"";position:absolute;left:0;top:3px;width:10px;height:10px;border-radius:50%;background:var(--em500);border:2px solid #fff;box-shadow:0 0 0 2px var(--em100)}
+  .mod-tl-it.pend::before{background:var(--sky)}.mod-tl-it.tutup::before{background:var(--violet)}
+  .mod-tl-l{font-size:11px;font-weight:800;margin-bottom:3px}
+  /* absensi student list */
+  .abs-list{max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+  .abs-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:12.5px}
+  .abs-row:last-child{border-bottom:0}
+  .abs-row .ava{width:28px;height:28px;border-radius:8px;background:var(--em100);color:var(--em700);display:grid;place-items:center;font-size:10px;font-weight:800;flex-shrink:0}
+  .abs-row .info{flex:1;min-width:0}.abs-row .info b{font-size:12.5px}.abs-row .info small{display:block;color:var(--muted);font-weight:600;font-size:10.5px}
+  /* mobile */
+  @media(max-width:1023px){
+    .app{grid-template-columns:1fr}
+    .side{display:none;position:fixed;top:0;left:0;bottom:0;width:260px;z-index:60;box-shadow:var(--shlift);overflow:auto}
+    .side.open{display:flex}
+    .top{padding:0 14px}
+    .wrap{padding:14px 12px 40px;max-width:100%}
+    .row{flex-direction:column;gap:10px}
+    .grid{grid-template-columns:1fr!important}
+    .kpi{min-width:0}
+    .h1{font-size:20px}
+    .ghost{display:none}
+    .subnav{gap:5px;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;padding-bottom:10px}
+    .pill{white-space:nowrap;font-size:12px;padding:8px 11px}
+    .filterbar{gap:6px}
+    .fbtn{font-size:11.5px;padding:7px 10px}
+    .seg button{font-size:11px;padding:6px 9px}
+    .rolehint{display:none}
+    .between{flex-direction:column;align-items:flex-start;gap:8px}
+    .aq{flex-wrap:wrap}.aq .acts{width:100%;justify-content:flex-end}
+    .kktp-row{grid-template-columns:1fr;gap:8px}
+    .progrow{grid-template-columns:1fr;gap:4px;font-size:11.5px}
+    .tload{grid-template-columns:1fr;gap:4px}
+    .sched-config{grid-template-columns:repeat(3,1fr)}
+    .health{flex-direction:column;align-items:flex-start;gap:14px}
+    .statrow{flex-direction:column}.statpill{min-width:0}
+    table.simple,table.matrix,table.jsched,table.ptable{font-size:11px}
+    table.matrix{min-width:520px}
+    table.jsched{min-width:480px}
+    .heatmap{min-width:860px}
+    .modal{width:100%;border-radius:14px}
+    .ovl{padding:12px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><div class="logo">D</div><div><b>DIIS</b><small>SMK Darussalam Subah</small></div></div>
+    <div class="me"><b>Drs. H. Sutrisno, M.Pd</b><small>ks@smkdarussalamsubah.sch.id</small><span class="role">Kepala Sekolah</span></div>
+    <div class="navgrp">RINGKASAN</div>
+    <div class="nav on" onclick="go('beranda')"><svg data-lucide="home"></svg>Beranda</div>
+    <div class="navgrp">AKADEMIK</div>
+    <div class="nav" onclick="go('modul')"><svg data-lucide="file-check-2"></svg>Modul Ajar</div>
+    <div class="nav" onclick="go('sumatif')"><svg data-lucide="clipboard-pen-line"></svg>Audit Sumatif</div>
+    <div class="nav" onclick="go('monitor')"><svg data-lucide="monitor"></svg>Monitoring KBM</div>
+    <div class="nav" onclick="go('rekap')"><svg data-lucide="clipboard-check"></svg>Rekap Audit</div>
+    <div class="navgrp">PENGATURAN</div>
+    <div class="nav" onclick="go('kktp')"><svg data-lucide="target"></svg>KKTP</div>
+    <div class="nav" onclick="go('jadwal')"><svg data-lucide="calendar-clock"></svg>Jadwal &amp; Tugas</div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <div class="iconbtn" onclick="document.querySelector('.side').style.display=document.querySelector('.side').style.display==='none'?'flex':'none'"><svg data-lucide="panel-left"></svg></div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="ghost"><svg data-lucide="scan" width="16"></svg> Mode Ruang Guru</button>
+        <div style="display:flex;align-items:center;gap:9px"><div class="ava">DS</div><b style="font-size:13px">Drs. Sutrisno</b><svg data-lucide="log-out" width="17" style="color:var(--muted)"></svg></div>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <div class="seedbar"><svg data-lucide="database"></svg> MOCKUP KS/WAKAKUR — seed data lengkap untuk review. Klik pill/kartu untuk menjelajah.</div>
+      <div class="h1">Dashboard KS / Waka Kurikulum</div>
+      <div class="crumb">Pengawasan akademik · approval modul ajar · audit sumatif · monitoring KBM</div>
+
+      <!-- FILTER GLOBAL -->
+      <div class="filterbar">
+        <span class="fblabel"><svg data-lucide="sliders-horizontal"></svg>Filter</span>
+        <button class="fbtn" onclick="openPop('ta',this)"><svg data-lucide="calendar"></svg><span class="fval" id="vTA">2025/2026</span><svg data-lucide="chevron-down" class="chev"></svg></button>
+        <div class="seg" id="segSem"><button class="on" data-sem="Semua" onclick="setSem('Semua')">Semua Sem</button><button data-sem="Ganjil" onclick="setSem('Ganjil')">Ganjil</button><button data-sem="Genap" onclick="setSem('Genap')">Genap</button></div>
+        <button class="fbtn" onclick="openPop('guru',this)"><svg data-lucide="users"></svg><span class="fval" id="vGuru">Semua Guru</span><svg data-lucide="chevron-down" class="chev"></svg></button>
+        <button class="fbtn" onclick="openPop('mapel',this)"><svg data-lucide="book-marked"></svg><span class="fval" id="vMapel">Semua Mapel</span><svg data-lucide="chevron-down" class="chev"></svg></button>
+        <span class="rolehint"><svg data-lucide="user-check"></svg>30 guru · 4 jurusan · 12 rombel</span>
+      </div>
+
+      <nav class="subnav" id="subnav" style="margin-top:14px">
+        <button class="pill on" data-s="beranda"><svg data-lucide="layout-dashboard"></svg>Beranda</button>
+        <button class="pill" data-s="modul"><svg data-lucide="file-check-2"></svg>Modul Ajar<span class="cnt" id="cntModul">3</span></button>
+        <button class="pill" data-s="sumatif"><svg data-lucide="clipboard-pen-line"></svg>Sumatif<span class="cnt" id="cntSumatif">2</span></button>
+        <button class="pill" data-s="monitor"><svg data-lucide="monitor"></svg>Monitoring KBM</button>
+        <button class="pill" data-s="rekap"><svg data-lucide="clipboard-check"></svg>Rekap Audit</button>
+        <button class="pill" data-s="kktp"><svg data-lucide="target"></svg>KKTP</button>
+        <button class="pill" data-s="jadwal"><svg data-lucide="calendar-clock"></svg>Jadwal &amp; Tugas</button>
+      </nav>
+
+      <!-- ====== BERANDA ====== -->
+      <section class="screen on" id="s-beranda">
+        <div class="row" style="margin-bottom:16px">
+          <div class="kpi" style="cursor:pointer" onclick="openKehadiranDetail()"><div class="lab"><svg data-lucide="users"></svg>Kehadiran Siswa</div><div class="v">92.8<small>%</small></div><div class="delta up">▲ 0.4% vs kemarin</div></div>
+          <div class="kpi" style="cursor:pointer" onclick="openGuruHadir()"><div class="lab"><svg data-lucide="badge-check"></svg>Guru Hadir</div><div class="v">29<small>/30</small></div><div class="delta up">▲ 1 izin</div></div>
+          <div class="kpi" style="cursor:pointer" onclick="openKelasBerjalan()"><div class="lab"><svg data-lucide="presentation"></svg>Kelas Berjalan</div><div class="v">12<small>/12</small></div><div class="delta up">▲ normal</div></div>
+          <div class="kpi" style="cursor:pointer" onclick="go('modul')"><div class="lab"><svg data-lucide="file-clock"></svg>Modul Pending</div><div class="v" style="color:var(--amber)">3</div><div class="delta down">▼ perlu review</div></div>
+          <div class="kpi" style="cursor:pointer" onclick="go('sumatif')"><div class="lab"><svg data-lucide="clipboard-list"></svg>Sumatif Pending</div><div class="v" style="color:var(--amber)">2</div><div class="delta down">▼ perlu audit</div></div>
+        </div>
+
+        <div class="grid" style="grid-template-columns:1.5fr 1fr;margin-bottom:16px">
+          <!-- Papan Hari Ini -->
+          <div class="card pad">
+            <div class="between"><div class="title"><svg data-lucide="presentation"></svg>Papan Pembelajaran Hari Ini</div><span class="badge b-info" id="papanDate">Hari ini</span></div>
+            <div style="margin-top:14px" id="papanGrid"></div>
+          </div>
+          <!-- Health Score -->
+          <div class="card pad">
+            <div class="between"><div class="title"><svg data-lucide="activity"></svg>Skor Kondisi Sekolah</div><span class="badge b-ok">BAIK</span></div>
+            <div class="health" style="margin-top:14px">
+              <div><div class="gauge-val">82<small>/100</small></div><div class="pill-up"><svg data-lucide="trending-up"></svg>+3 pt</div></div>
+              <div class="health-break">
+                <div class="hb-row"><span>Akademik</span><div class="hb-track"><div class="hb-fill" style="width:80%"></div></div><span>80</span></div>
+                <div class="hb-row"><span>Kehadiran</span><div class="hb-track"><div class="hb-fill" style="width:94%"></div></div><span>94</span></div>
+                <div class="hb-row weak"><span>Keuangan</span><div class="hb-track"><div class="hb-fill" style="width:88%"></div></div><span>88</span></div>
+                <div class="hb-row weak"><span>SDM/Guru</span><div class="hb-track"><div class="hb-fill" style="width:68%"></div></div><span>68</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <!-- Perlu Tindakan -->
+          <div class="card pad">
+            <div class="title"><svg data-lucide="list-checks"></svg>Perlu Tindakan</div>
+            <div class="grid" style="gap:9px;margin-top:14px">
+              <div class="li" onclick="go('modul')"><div class="ic" style="background:var(--amberbg);color:var(--amber)"><svg data-lucide="file-clock"></svg></div><div style="flex:1"><b>3 Modul Ajar menunggu approval</b><div class="sub">Budi Hartono (2), Ahmad Rifai (1)</div></div><svg data-lucide="chevron-right" style="color:var(--muted)"></svg></div>
+              <div class="li" onclick="go('sumatif')"><div class="ic" style="background:var(--amberbg);color:var(--amber)"><svg data-lucide="clipboard-list"></svg></div><div style="flex:1"><b>2 soal sumatif perlu audit</b><div class="sub">UH Matematika, UTS Pemrograman Web</div></div><svg data-lucide="chevron-right" style="color:var(--muted)"></svg></div>
+              <div class="li" onclick="go('monitor')"><div class="ic" style="background:var(--rosebg);color:var(--rose)"><svg data-lucide="alert-triangle"></svg></div><div style="flex:1"><b>5 kelas di bawah KKTP</b><div class="sub">X TBSM — MTK 42% · XI TJKT — Basis Data 48%</div></div><svg data-lucide="chevron-right" style="color:var(--muted)"></svg></div>
+              <div class="li" onclick="go('monitor')"><div class="ic" style="background:#ede9fe;color:var(--violet)"><svg data-lucide="user-x"></svg></div><div style="flex:1"><b>3 guru RPP turnaround > 7 hari</b><div class="sub">Perlu follow-up Wakakur</div></div><svg data-lucide="chevron-right" style="color:var(--muted)"></svg></div>
+            </div>
+          </div>
+          <!-- Tren -->
+          <div class="card pad">
+            <div class="between"><div class="title"><svg data-lucide="trending-up"></svg>Tren Kehadiran — 10 Hari</div><div class="seg"><button class="on">10H</button><button>1B</button><button>3B</button></div></div>
+            <svg viewBox="0 0 620 120" style="width:100%;margin-top:8px">
+              <line x1="0" y1="30" x2="620" y2="30" stroke="#e6efea" stroke-width="1"/>
+              <line x1="0" y1="60" x2="620" y2="60" stroke="#e6efea" stroke-width="1"/>
+              <line x1="0" y1="90" x2="620" y2="90" stroke="#e6efea" stroke-width="1"/>
+              <polyline fill="none" stroke="#059669" stroke-width="2.5" points="10,40 78,30 146,46 214,24 282,38 350,20 418,32 486,18 554,28 600,22"/>
+              <polyline fill="none" stroke="#0284c7" stroke-width="2" points="10,60 78,56 146,64 214,48 282,52 350,40 418,46 486,34 554,40 600,36"/>
+            </svg>
+            <div class="legend-mini"><span><i style="background:#059669"></i>Siswa</span><span><i style="background:#0284c7"></i>Guru</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====== MODUL AJAR ====== -->
+      <section class="screen" id="s-modul">
+        <div class="between" style="margin-bottom:14px">
+          <div><div class="title" style="font-size:17px"><svg data-lucide="file-check-2"></svg>Approval Modul Ajar / RPP</div><div class="sub">Review dan approve modul ajar yang diajukan guru</div></div>
+          <div class="seg" id="segModul"><button class="on" data-mst="Semua" onclick="setMst('Semua')">Semua</button><button data-mst="Menunggu" onclick="setMst('Menunggu')">Menunggu</button><button data-mst="Disetujui" onclick="setMst('Disetujui')">Disetujui</button><button data-mst="Ditolak" onclick="setMst('Ditolak')">Ditolak</button></div>
+        </div>
+        <div id="modulQueue"></div>
+      </section>
+
+      <!-- ====== SUMATIF ====== -->
+      <section class="screen" id="s-sumatif">
+        <div class="between" style="margin-bottom:14px">
+          <div><div class="title" style="font-size:17px"><svg data-lucide="clipboard-pen-line"></svg>Audit Sumatif</div><div class="sub">Review soal sumatif sebelum dipublikasi ke siswa</div></div>
+          <div class="seg" id="segSum"><button class="on" data-sst="Semua" onclick="setSst('Semua')">Semua</button><button data-sst="Menunggu" onclick="setSst('Menunggu')">Menunggu</button><button data-sst="Disetujui" onclick="setSst('Disetujui')">Disetujui</button><button data-sst="Ditolak" onclick="setSst('Ditolak')">Ditolak</button></div>
+        </div>
+        <div id="sumatifQueue"></div>
+      </section>
+
+      <!-- ====== MONITORING KBM ====== -->
+      <section class="screen" id="s-monitor">
+        <div class="between" style="margin-bottom:14px">
+          <div><div class="title" style="font-size:17px"><svg data-lucide="monitor"></svg>Monitoring KBM</div><div class="sub">Progres pembelajaran per guru × kelas × mapel — klik sel untuk detail</div></div>
+        </div>
+        <div class="row" style="margin-bottom:16px">
+          <div class="kpi"><div class="lab"><svg data-lucide="layers"></svg>Total Kelas×Mapel</div><div class="v">12</div></div>
+          <div class="kpi"><div class="lab"><svg data-lucide="check-circle-2"></svg>On Track</div><div class="v" style="color:var(--em700)">8</div></div>
+          <div class="kpi"><div class="lab"><svg data-lucide="alert-triangle"></svg>Perhatian</div><div class="v" style="color:var(--amber)">2</div></div>
+          <div class="kpi"><div class="lab"><svg data-lucide="x-circle"></svg>Berisiko</div><div class="v" style="color:var(--rose)">2</div></div>
+        </div>
+        <div class="card pad">
+          <div class="title"><svg data-lucide="grid-3x3"></svg>Matriks Progres CP — Guru × Kelas</div>
+          <div class="sub" style="margin:2px 0 10px">Persen ketercapaian CP/TP · klik sel untuk detail pertemuan & jurnal</div>
+          <div style="overflow-x:auto" id="monMatrix"></div>
+        </div>
+        <div class="card pad" style="margin-top:16px">
+          <div class="title"><svg data-lucide="list"></svg>Rincian Progres per Guru</div>
+          <div id="monList" style="margin-top:12px"></div>
+        </div>
+        <div class="card pad" style="margin-top:16px">
+          <div class="between"><div class="title"><svg data-lucide="users"></svg>Kehadiran Siswa per Sesi (JP)</div><span class="badge b-info" id="monKehDate">Hari ini</span></div>
+          <div class="sub" style="margin:2px 0 10px">Persentase kehadiran siswa per rombel × sesi (JP) — hari ini · klik sel untuk detail</div>
+          <div style="overflow-x:auto" id="monKehMatrix"></div>
+        </div>
+      </section>
+
+      <!-- ====== REKAP AUDIT ====== -->
+      <section class="screen" id="s-rekap">
+        <div class="between" style="margin-bottom:14px">
+          <div><div class="title" style="font-size:17px"><svg data-lucide="clipboard-check"></svg>Rekap Audit Per Guru</div><div class="sub">Agregasi data dari semua guru — mengikuti filter global</div></div>
+        </div>
+        <div class="note violet" style="margin-bottom:14px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Data otomatis ter agregat dari input harian guru (absen, jurnal, nilai). Siap untuk audit eksternal.</div>
+        <div class="row" style="margin-bottom:16px" id="rekapKpi"></div>
+        <div class="card pad" style="margin-bottom:16px">
+          <div class="title"><svg data-lucide="table"></svg>Rincian per Guru × Kelas × Mapel</div>
+          <div style="overflow-x:auto;margin-top:10px"><table class="simple" id="rekapTable"></table></div>
+        </div>
+        <div class="grid" style="grid-template-columns:1.3fr 1fr">
+          <div class="card pad"><div class="title"><svg data-lucide="grid-3x3"></svg>Matriks Ketuntasan KKTP — Kelas × Mapel</div><div id="rekapMatrix" style="margin-top:12px;overflow-x:auto"></div></div>
+          <div class="card pad"><div class="title"><svg data-lucide="bar-chart-3"></svg>Per Guru — Rata² Tuntas</div><div id="rekapGuru" style="margin-top:12px"></div></div>
+        </div>
+      </section>
+
+      <!-- ====== KKTP ====== -->
+      <section class="screen" id="s-kktp">
+        <div class="between" style="margin-bottom:14px">
+          <div><div class="title" style="font-size:17px"><svg data-lucide="target"></svg>Manajemen KKTP</div><div class="sub">Threshold Kriteria Ketuntasan Tujuan Pembelajaran per mapel</div></div>
+          <button class="btn"><svg data-lucide="save"></svg>Simpan Perubahan</button>
+        </div>
+        <div class="card pad">
+          <div class="note info" style="margin-bottom:14px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> KKTP default 75. Naikkan untuk mapel unggulan, turunkan untuk mapel yang masih adaptasi. Perubahan mempengaruhi status tuntas di gradebook semua kelas.</div>
+          <div id="kktpList"></div>
+        </div>
+      </section>
+
+      <!-- ====== JADWAL & TUGAS ====== -->
+      <section class="screen" id="s-jadwal">
+        <div class="between" style="margin-bottom:14px">
+          <div><div class="title" style="font-size:17px"><svg data-lucide="calendar-clock"></svg>Jadwal &amp; Pembagian Tugas Mengajar</div><div class="sub">Auto-scheduling · 6 hari × 8 JP · 12 rombel · 30 guru · klik sel untuk edit manual</div></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn sec" onclick="regenerateSched()"><svg data-lucide="refresh-cw"></svg>Generate Ulang</button>
+            <button class="btn" onclick="regenerateSched()"><svg data-lucide="zap"></svg>Generate Otomatis</button>
+          </div>
+        </div>
+        <div class="card pad" style="margin-bottom:14px">
+          <div class="title"><svg data-lucide="settings-2"></svg>Konfigurasi Penjadwalan</div>
+          <div class="sched-config" id="schedConfig"></div>
+        </div>
+        <div id="conflictPanel"></div>
+        <div class="card pad" style="margin-bottom:16px">
+          <div class="between">
+            <div class="title"><svg data-lucide="grid-3x3"></svg>Matriks Jadwal Mingguan</div>
+            <div class="rombel-sel" style="margin:0"><svg data-lucide="layers"></svg><select id="jadwalRombelSel" onchange="jadwalRombel=Number(this.value);renderJadwal()"></select></div>
+          </div>
+          <div style="overflow-x:auto;margin-top:10px" id="jadwalMatrix"></div>
+        </div>
+        <div class="card pad">
+          <div class="between"><div class="title"><svg data-lucide="users"></svg>Beban Mengajar per Guru</div><span class="badge b-info" id="tloadSummary">—</span></div>
+          <div id="tloadList" style="margin-top:12px;max-height:460px;overflow:auto"></div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Modul Ajar Detail -->
+<div class="ovl" id="ovl-modul"><div class="modal" style="width:620px">
+  <div class="mh"><div><div class="title"><svg data-lucide="file-text"></svg><span id="modTitle">Modul Ajar</span></div><div class="sub" id="modMeta">Guru · Mapel · Kelas</div></div><svg data-lucide="x" class="xclose" onclick="closeM('ovl-modul')"></svg></div>
+  <div class="mb" id="modBody"></div>
+  <div class="mf" id="modFooter"><button class="btn sec" onclick="closeM('ovl-modul')">Tutup</button></div>
+</div></div>
+
+<!-- MODAL: Sumatif Detail -->
+<div class="ovl" id="ovl-sumatif"><div class="modal" style="width:620px">
+  <div class="mh"><div><div class="title"><svg data-lucide="clipboard-pen-line"></svg><span id="sumTitle">Audit Sumatif</span></div><div class="sub" id="sumMeta">Guru · Mapel · Jenis</div></div><svg data-lucide="x" class="xclose" onclick="closeM('ovl-sumatif')"></svg></div>
+  <div class="mb" id="sumBody"></div>
+  <div class="mf" id="sumFooter"><button class="btn sec" onclick="closeM('ovl-sumatif')">Tutup</button></div>
+</div></div>
+
+<!-- MODAL: Monitor Detail -->
+<div class="ovl" id="ovl-mon"><div class="modal" style="width:560px">
+  <div class="mh"><div><div class="title"><svg data-lucide="monitor"></svg><span id="monTitle">Detail KBM</span></div><div class="sub" id="monMeta">Guru · Kelas · Mapel</div></div><svg data-lucide="x" class="xclose" onclick="closeM('ovl-mon')"></svg></div>
+  <div class="mb" id="monBody"></div>
+  <div class="mf"><button class="btn sec" onclick="closeM('ovl-mon')">Tutup</button></div>
+</div></div>
+
+<!-- MODAL: Kehadiran Detail -->
+<div class="ovl" id="ovl-kehadiran"><div class="modal" style="width:680px">
+  <div class="mh"><div><div class="title"><svg data-lucide="users"></svg>Kehadiran Siswa — Rincian</div><div class="sub" id="kehMeta">Per kelas · per mapel · per sesi</div></div><svg data-lucide="x" class="xclose" onclick="closeM('ovl-kehadiran')"></svg></div>
+  <div class="mb" id="kehBody"></div>
+  <div class="mf"><button class="btn sec" onclick="closeM('ovl-kehadiran')">Tutup</button></div>
+</div></div>
+
+<!-- MODAL: Guru Hadir Detail -->
+<div class="ovl" id="ovl-guru"><div class="modal" style="width:560px">
+  <div class="mh"><div><div class="title"><svg data-lucide="badge-check"></svg>Guru Hadir — 29/30</div><div class="sub" id="guruHdMeta">Status kehadiran guru hari ini</div></div><svg data-lucide="x" class="xclose" onclick="closeM('ovl-guru')"></svg></div>
+  <div class="mb" id="guruHdBody"></div>
+  <div class="mf"><button class="btn sec" onclick="closeM('ovl-guru')">Tutup</button></div>
+</div></div>
+
+<!-- MODAL: Kelas Berjalan Detail -->
+<div class="ovl" id="ovl-kelas"><div class="modal" style="width:680px">
+  <div class="mh"><div><div class="title"><svg data-lucide="presentation"></svg>Kelas Berjalan — 12/12</div><div class="sub" id="klsBjMeta">Status KBM semua rombel saat ini</div></div><svg data-lucide="x" class="xclose" onclick="closeM('ovl-kelas')"></svg></div>
+  <div class="mb" id="klsBjBody"></div>
+  <div class="mf"><button class="btn sec" onclick="closeM('ovl-kelas')">Tutup</button></div>
+</div></div>
+
+<!-- MODAL: Manual Schedule Edit -->
+<div class="ovl" id="ovl-sched-edit"><div class="modal" style="width:460px">
+  <div class="mh"><div><div class="title"><svg data-lucide="pencil-line"></svg><span id="schedEditTitle">Edit Jadwal Manual</span></div><div class="sub" id="schedEditMeta">Hari · JP · Rombel</div></div><svg data-lucide="x" class="xclose" onclick="closeM('ovl-sched-edit')"></svg></div>
+  <div class="mb" id="schedEditBody">
+    <div class="field"><label>Mapel</label><select id="schedEditMapel" onchange="updSchedGuruOptions()"></select></div>
+    <div class="field"><label>Guru Pengampu</label><select id="schedEditGuru"></select></div>
+    <div class="field"><label>Ruang</label><input id="schedEditRuang" type="text" placeholder="Contoh: R-101, Lab 1, Bengkel 1" /></div>
+    <div class="note info" style="margin-top:4px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Perubahan manual akan menggantikan jadwal otomatis pada slot ini. Konflik guru tidak dicegah pada edit manual.</div>
+  </div>
+  <div class="mf">
+    <button class="btn sec" style="margin-right:auto;color:var(--rose);border-color:#fecdd3" id="schedEditClear" onclick="clearSchedEdit()"><svg data-lucide="trash-2"></svg>Hapus</button>
+    <button class="btn sec" onclick="closeM('ovl-sched-edit')">Batal</button>
+    <button class="btn" onclick="saveSchedEdit()"><svg data-lucide="check"></svg>Simpan</button>
+  </div>
+</div></div>
+
+<!-- popover -->
+<div id="pop" class="popover"></div>
+
+<script>
+const DOW=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+const MON=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+const JP=[["JP 1","07.30–08.10"],["JP 2","08.10–08.50"],["JP 3","08.50–09.30"],["Istirahat","09.30–09.45"],["JP 4","09.45–10.25"],["JP 5","10.25–11.05"],["JP 6","11.05–11.45"],["Ishoma","11.45–12.25"],["JP 7","12.25–13.05"],["JP 8","13.05–13.45"]];
+const JPN=[[1,0],[2,1],[3,2],[4,4],[5,5],[6,6],[7,8],[8,9]];
+const ini=n=>n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+const now=new Date();
+
+// ── DATA: 12 Rombel ──
+const ROMBEL=[
+  {id:1,nama:'X TKRO 1',jur:'TKRO',tkt:'X'},
+  {id:2,nama:'X TBSM 1',jur:'TBSM',tkt:'X'},
+  {id:3,nama:'X TJKT 1',jur:'TJKT',tkt:'X'},
+  {id:4,nama:'X AKL 1',jur:'AKL',tkt:'X'},
+  {id:5,nama:'XI TKRO 1',jur:'TKRO',tkt:'XI'},
+  {id:6,nama:'XI TBSM 1',jur:'TBSM',tkt:'XI'},
+  {id:7,nama:'XI TJKT 1',jur:'TJKT',tkt:'XI'},
+  {id:8,nama:'XI TJKT 2',jur:'TJKT',tkt:'XI'},
+  {id:9,nama:'XI AKL 1',jur:'AKL',tkt:'XI'},
+  {id:10,nama:'XII TKRO 1',jur:'TKRO',tkt:'XII'},
+  {id:11,nama:'XII TJKT 1',jur:'TJKT',tkt:'XII'},
+  {id:12,nama:'XII AKL 1',jur:'AKL',tkt:'XII'},
+];
+// ── DATA: 30 Guru/Karyawan ──
+const GURU=[
+  {id:1,nama:'Budi Hartono, S.Kom',inisial:'BH',mapel:['Pemrograman Web','Basis Data','PBO'],jp:0,status:'Hadir'},
+  {id:2,nama:'Siti Aminah, S.Pd',inisial:'SA',mapel:['Matematika'],jp:0,status:'Hadir'},
+  {id:3,nama:'Ahmad Rifai, S.T.',inisial:'AR',mapel:['TKRO Prod'],jp:0,status:'Hadir'},
+  {id:4,nama:'Dewi Lestari, S.Pd',inisial:'DL',mapel:['B.Indonesia'],jp:0,status:'Hadir'},
+  {id:5,nama:'Eko Prasetyo, S.Pd',inisial:'EP',mapel:['B.Inggris'],jp:0,status:'Izin'},
+  {id:6,nama:'Rina Wati, S.E.',inisial:'RW',mapel:['Akuntansi','Ekonomi'],jp:0,status:'Hadir'},
+  {id:7,nama:'Hendra Gunawan, S.Pd',inisial:'HG',mapel:['Fisika'],jp:0,status:'Hadir'},
+  {id:8,nama:'Maya Sari, S.Pd',inisial:'MS',mapel:['Sejarah'],jp:0,status:'Hadir'},
+  {id:9,nama:'Joko Susilo, S.T.',inisial:'JS',mapel:['TBSM Prod'],jp:0,status:'Hadir'},
+  {id:10,nama:'Nur Hidayah, S.Pd',inisial:'NH',mapel:['PKn'],jp:0,status:'Hadir'},
+  {id:11,nama:'Agus Salim, S.Kom',inisial:'AS',mapel:['TJKT Prod'],jp:0,status:'Hadir'},
+  {id:12,nama:'Fitri Handayani, S.Pd',inisial:'FH',mapel:['Biologi'],jp:0,status:'Hadir'},
+  {id:13,nama:'Bambang Wijaya, S.Pd',inisial:'BW',mapel:['Seni Budaya'],jp:0,status:'Hadir'},
+  {id:14,nama:'Sari Dewi, S.Pd',inisial:'SD',mapel:['PKn'],jp:0,status:'Hadir'},
+  {id:15,nama:'Doni Kurniawan, S.Pd',inisial:'DK',mapel:['PJOK'],jp:0,status:'Hadir'},
+  {id:16,nama:'Andi Wijaya, S.Pd',inisial:'AW',mapel:['Matematika'],jp:0,status:'Hadir'},
+  {id:17,nama:'Rini Astuti, S.Pd',inisial:'RA',mapel:['B.Indonesia'],jp:0,status:'Hadir'},
+  {id:18,nama:'Bayu Saputra, S.Pd',inisial:'BS',mapel:['B.Inggris'],jp:0,status:'Hadir'},
+  {id:19,nama:'Carla Manopo, S.Pd',inisial:'CM',mapel:['Fisika'],jp:0,status:'Hadir'},
+  {id:20,nama:'Eko Pratama, S.Pd',inisial:'EP2',mapel:['PJOK'],jp:0,status:'Hadir'},
+  {id:21,nama:'Dian Permana, S.H.',inisial:'DP',mapel:['PKn'],jp:0,status:'Hadir'},
+  {id:22,nama:'Fajar Nurdin, S.Pd',inisial:'FN',mapel:['Sejarah'],jp:0,status:'Hadir'},
+  {id:23,nama:'Gilang Ramadhan, S.Kom',inisial:'GR',mapel:['Pemrograman Web'],jp:0,status:'Hadir'},
+  {id:24,nama:'Hesti Wulandari, S.Kom',inisial:'HW',mapel:['Basis Data'],jp:0,status:'Hadir'},
+  {id:25,nama:'Irfan Hakim, S.T.',inisial:'IH',mapel:['TKRO Prod'],jp:0,status:'Hadir'},
+  {id:26,nama:'Joko Anwar, S.T.',inisial:'JA',mapel:['TBSM Prod'],jp:0,status:'Hadir'},
+  {id:27,nama:'Kartika Sari, S.E.',inisial:'KS',mapel:['Akuntansi'],jp:0,status:'Hadir'},
+  {id:28,nama:'Lukman Hakim, S.E.',inisial:'LH',mapel:['Ekonomi'],jp:0,status:'Hadir'},
+  {id:29,nama:'Maya Anggraini, S.Sn',inisial:'MA',mapel:['Seni Budaya'],jp:0,status:'Hadir'},
+  {id:30,nama:'Nanda Pratama, S.Pd',inisial:'NP',mapel:['Biologi'],jp:0,status:'Hadir'},
+];
+// Mapel per jurusan
+const MAPEL_BY_JUR={
+  TKRO:['TKRO Prod','Matematika','B.Indonesia','B.Inggris','Fisika','PJOK','Sejarah','PKn'],
+  TBSM:['TBSM Prod','Matematika','B.Indonesia','B.Inggris','Fisika','PJOK','Sejarah','PKn'],
+  TJKT:['Pemrograman Web','Basis Data','Matematika','B.Indonesia','B.Inggris','Fisika','PJOK','PKn'],
+  AKL:['Akuntansi','Ekonomi','Matematika','B.Indonesia','B.Inggris','Sejarah','PJOK','PKn'],
+};
+// Mapel → [guruId, ...] (multiple guru per mapel for conflict avoidance)
+const GURU_MAPEL={
+  'Pemrograman Web':[1,23],'Basis Data':[1,24],'PBO':[1],
+  'Matematika':[2,16],
+  'TKRO Prod':[3,25],
+  'B.Indonesia':[4,17],
+  'B.Inggris':[5,18],
+  'Akuntansi':[6,27],'Ekonomi':[6,28],
+  'Fisika':[7,19],
+  'Sejarah':[8,22],
+  'TBSM Prod':[9,26],
+  'PKn':[10,14,21],
+  'TJKT Prod':[11],
+  'Biologi':[12,30],
+  'Seni Budaya':[13,29],
+  'PJOK':[15,20],
+};
+// ── SCHED CONFIG (flexible) ──
+const SCHED_CONFIG={days:6,jpPerDay:8,jpSlots:[0,1,2,4,5,6,8,9],maxJpGuru:32};
+// ── Auto-scheduling: constraint-based greedy with round-robin ──
+const SCHED_FULL={};
+let SCHED_CONFLICTS=[];
+function getRuang(mp,rombelId){
+  if(mp.includes('Prod'))return mp.includes('TKRO')?'Bengkel 1':mp.includes('TBSM')?'Bengkel 2':mp.includes('TJKT')?'Lab 1':'Lab 2';
+  if(mp.includes('Pemrograman')||mp.includes('Basis'))return 'Lab 1';
+  if(mp.includes('Akuntansi')||mp.includes('Ekonomi'))return 'Lab 2';
+  if(mp.includes('PJOK'))return 'Lapangan';
+  return 'R-'+(100+rombelId);
+}
+function genSchedAuto(){
+  Object.keys(SCHED_FULL).forEach(k=>delete SCHED_FULL[k]);
+  SCHED_CONFLICTS=[];
+  const slots=SCHED_CONFIG.jpSlots,days=SCHED_CONFIG.days;
+  const guruBusy={},guruJp={};
+  GURU.forEach(g=>guruJp[g.id]=0);
+  for(let d=1;d<=days;d++){guruBusy[d]={};slots.forEach(idx=>guruBusy[d][idx]=new Set());}
+  const rombelMpIdx={};ROMBEL.forEach(r=>rombelMpIdx[r.id]=0);
+  for(let d=1;d<=days;d++){
+    if(!SCHED_FULL[d])SCHED_FULL[d]={};
+    slots.forEach((idx,si)=>{
+      ROMBEL.forEach(r=>{
+        if(!SCHED_FULL[d][r.id])SCHED_FULL[d][r.id]={};
+        const mpList=MAPEL_BY_JUR[r.jur];
+        let assigned=false;
+        for(let attempt=0;attempt<mpList.length;attempt++){
+          const mpIdx=(rombelMpIdx[r.id]+attempt+si)%mpList.length;
+          const mp=mpList[mpIdx];
+          const guruIds=GURU_MAPEL[mp]||[];
+          for(const gid of guruIds){
+            if(gid===0||guruBusy[d][idx].has(gid))continue;
+            if(guruJp[gid]>=SCHED_CONFIG.maxJpGuru)continue;
+            SCHED_FULL[d][r.id][idx]={mp,gid,ruang:getRuang(mp,r.id)};
+            guruBusy[d][idx].add(gid);
+            guruJp[gid]++;
+            rombelMpIdx[r.id]=(mpIdx+1)%mpList.length;
+            assigned=true;break;
+          }
+          if(assigned)break;
+        }
+        if(!assigned){SCHED_CONFLICTS.push({day:d,jpIdx:idx,rombelId:r.id,rombel:r.nama});SCHED_FULL[d][r.id][idx]=null;}
+      });
+    });
+  }
+  GURU.forEach(g=>{g.jp=guruJp[g.id]||0;});
+}
+genSchedAuto();
+
+// ── DATA: Modul Ajar queue ──
+const MODUL=[
+  {id:1,guruId:1,guru:'Budi Hartono',mapel:'Pemrograman Web',kelas:'XI TJKT 1',tp:'TP 3.3 — Flexbox & desain responsif',status:'Menunggu',tanggal:'14 Jun',cp:['Menyusun layout flexbox','Membuat halaman responsif','Menerapkan media query'],materi:'Pengenalan flexbox model, properti justify-content, align-items, flex-wrap. Praktik membuat layout navigasi responsif dengan media query.',asesmen:'Diagnostik: pre-test CSS selector. Formatif: praktik kartu profil. Sumatif: layout web profil sekolah.',jp:6,progress:65},
+  {id:2,guruId:1,guru:'Budi Hartono',mapel:'Basis Data',kelas:'XI TJKT 1',tp:'TP 2.2 — Normalisasi data (1NF–3NF)',status:'Menunggu',tanggal:'12 Jun',cp:['Identifikasi anomali data','Normalisasi 1NF','Normalisasi 2NF','Normalisasi 3NF'],materi:'Konsep anomali (update, insert, delete). Tahapan normalisasi dari 1NF hingga 3NF. Studi kasus: tabel pesanan dengan redundansi.',asesmen:'Diagnostik: konsep key. Formatif: latihan normalisasi. Sumatif: rancang skema 3NF untuk toko online.',jp:8,progress:40},
+  {id:3,guruId:3,guru:'Ahmad Rifai',mapel:'TKRO Produktif',kelas:'XI TKRO 1',tp:'TP 4.1 — Sistem pendinginan mesin',status:'Menunggu',tanggal:'10 Jun',cp:['Komponen sistem pendinginan','Fungsi radiator & thermostat','Pemeliharaan sistem pendinginan'],materi:'Identifikasi komponen sistem pendinginan mesin. Praktik pembongkaran dan perakitan radiator. Diagnosis gangguan thermostat.',asesmen:'Diagnostik: pre-test komponen. Formatif: praktik bongkar-pasang. Sumatif: diagnosis gangguan pendinginan.',jp:10,progress:30},
+  {id:4,guruId:2,guru:'Siti Aminah',mapel:'Matematika',kelas:'X TKRO 1',tp:'TP 5.1 — Sistem persamaan linear',status:'Disetujui',tanggal:'5 Jun',cp:['Metode substitusi','Metode eliminasi','Metode grafik'],materi:'Penyelesaian SPL dua variabel. Metode substitusi, eliminasi, dan grafik. Aplikasi soal cerita.',asesmen:'Diagnostik: pre-test aljabar. Formatif: latihan soal. Sumatif: UH.',jp:6,progress:100},
+  {id:5,guruId:4,guru:'Dewi Lestari',mapel:'B. Indonesia',kelas:'XI TJKT 1',tp:'TP 3.2 — Teks eksposisi',status:'Disetujui',tanggal:'3 Jun',cp:['Struktur teks eksposisi','Menyusun argumen','Menulis esai eksposisi'],materi:'Struktur teks eksposisi (tesis, argumen, penegasan). Analisis contoh. Praktik menulis esai.',asesmen:'Diagnostik: identifikasi struktur. Formatif: outline esai. Sumatif: esai lengkap.',jp:6,progress:100},
+  {id:6,guruId:5,guru:'Eko Prasetyo',mapel:'B. Inggris',kelas:'X TJKT 1',tp:'TP 2.1 — Recount text',status:'Ditolak',tanggal:'1 Jun',catatan:'TP terlalu luas, pecah menjadi 2 TP. Tambahkan asesmen diagnostik.',cp:['Struktur recount text','Past tense'],materi:'Recount text structure. Past tense review.',asesmen:'UH',jp:4,progress:0},
+];
+
+// ── DATA: Sumatif queue ──
+const SUMATIF=[
+  {id:1,guruId:2,guru:'Siti Aminah',mapel:'Matematika',kelas:'X TKRO 1',jenis:'UH',judul:'UH 3 — Sistem Persamaan Linear',soal:10,status:'Menunggu',tanggal:'15 Jun',deskripsi:'10 soal: 5 PG, 3 isian, 2 uraian. Durasi 45 menit.',kkm:75},
+  {id:2,guruId:1,guru:'Budi Hartono',mapel:'Pemrograman Web',kelas:'XI TJKT 1',jenis:'UTS',judul:'UTS Ganjil — HTML, CSS & Layout',soal:15,status:'Menunggu',tanggal:'13 Jun',deskripsi:'15 soal: 8 PG, 4 isian, 3 praktik (kode). Durasi 90 menit.',kkm:75},
+  {id:3,guruId:4,guru:'Dewi Lestari',mapel:'B. Indonesia',kelas:'XI TJKT 1',jenis:'UH',judul:'UH 2 — Teks Eksposisi',soal:8,status:'Disetujui',tanggal:'8 Jun',deskripsi:'8 soal: 4 PG, 2 isian, 2 uraian. Durasi 40 menit.',kkm:75},
+  {id:4,guruId:5,guru:'Eko Prasetyo',mapel:'B. Inggris',kelas:'X TJKT 1',jenis:'UH',judul:'UH 1 — Recount Text',soal:10,status:'Ditolak',tanggal:'5 Jun',catatan:'Soal kurang variatif, tambahkan soal listening.',deskripsi:'10 soal PG. Durasi 30 menit.',kkm:70},
+];
+
+// ── DATA: Monitoring KBM (guru × kelas × mapel) ──
+const MON_DATA=[
+  {guruId:1,guru:'Budi Hartono',mapel:'Pemrograman Web',kelas:'XI TJKT 1',cp:64,pert:5,rencana:14,jurnal:5,hadir:94,rata:82.3,status:'on'},
+  {guruId:1,guru:'Budi Hartono',mapel:'Basis Data',kelas:'XI TJKT 1',cp:48,pert:4,rencana:12,jurnal:4,hadir:93,rata:79.1,status:'warn'},
+  {guruId:1,guru:'Budi Hartono',mapel:'PBO',kelas:'XII TJKT 1',cp:72,pert:6,rencana:16,jurnal:6,hadir:95,rata:81.0,status:'on'},
+  {guruId:2,guru:'Siti Aminah',mapel:'Matematika',kelas:'X TKRO 1',cp:58,pert:5,rencana:14,jurnal:5,hadir:92,rata:71.2,status:'warn'},
+  {guruId:2,guru:'Siti Aminah',mapel:'Matematika',kelas:'XI TKRO 1',cp:62,pert:6,rencana:14,jurnal:5,hadir:91,rata:73.8,status:'warn'},
+  {guruId:2,guru:'Siti Aminah',mapel:'Matematika',kelas:'XII TKRO 1',cp:70,pert:7,rencana:14,jurnal:7,hadir:94,rata:78.5,status:'on'},
+  {guruId:2,guru:'Siti Aminah',mapel:'Matematika',kelas:'X TBSM 1',cp:42,pert:4,rencana:14,jurnal:3,hadir:88,rata:64.1,status:'risk'},
+  {guruId:3,guru:'Ahmad Rifai',mapel:'TKRO Produktif',kelas:'X TKRO 1',cp:68,pert:6,rencana:16,jurnal:6,hadir:93,rata:79.0,status:'on'},
+  {guruId:3,guru:'Ahmad Rifai',mapel:'TKRO Produktif',kelas:'XI TKRO 1',cp:60,pert:5,rencana:16,jurnal:5,hadir:92,rata:76.5,status:'on'},
+  {guruId:4,guru:'Dewi Lestari',mapel:'B. Indonesia',kelas:'XI TJKT 1',cp:82,pert:7,rencana:12,jurnal:7,hadir:95,rata:84.0,status:'on'},
+  {guruId:4,guru:'Dewi Lestari',mapel:'B. Indonesia',kelas:'XI TBSM 1',cp:75,pert:6,rencana:12,jurnal:6,hadir:93,rata:80.5,status:'on'},
+  {guruId:4,guru:'Dewi Lestari',mapel:'B. Indonesia',kelas:'XII AKL 1',cp:78,pert:7,rencana:12,jurnal:6,hadir:94,rata:81.2,status:'on'},
+  {guruId:5,guru:'Eko Prasetyo',mapel:'B. Inggris',kelas:'X TJKT 1',cp:55,pert:5,rencana:14,jurnal:4,hadir:90,rata:72.0,status:'warn'},
+  {guruId:5,guru:'Eko Prasetyo',mapel:'B. Inggris',kelas:'XI TJKT 1',cp:68,pert:6,rencana:14,jurnal:6,hadir:93,rata:78.5,status:'on'},
+  {guruId:5,guru:'Eko Prasetyo',mapel:'B. Inggris',kelas:'XII TJKT 1',cp:72,pert:7,rencana:14,jurnal:7,hadir:95,rata:80.0,status:'on'},
+  {guruId:6,guru:'Rina Wati',mapel:'Akuntansi',kelas:'X AKL 1',cp:66,pert:6,rencana:14,jurnal:6,hadir:92,rata:77.0,status:'on'},
+  {guruId:6,guru:'Rina Wati',mapel:'Akuntansi',kelas:'XI AKL 1',cp:70,pert:7,rencana:14,jurnal:7,hadir:94,rata:79.5,status:'on'},
+];
+
+// ── FILTER GLOBAL ──
+const OPTIONS={ta:['2025/2026','2024/2025'],guru:['Semua Guru',...GURU.map(g=>g.nama)],mapel:['Semua Mapel','Pemrograman Web','Basis Data','PBO','Matematika','TKRO Produktif','B. Indonesia','B. Inggris','Akuntansi']};
+const F={ta:'2025/2026',sem:'Semua',guru:'Semua Guru',mapel:'Semua Mapel'};
+let popKey=null;
+function openPop(key,btn){popKey=key;const pop=document.getElementById('pop');
+  pop.innerHTML='<input class="popsearch" placeholder="Cari…" oninput="filterPop(this.value)"><div class="poplist">'+OPTIONS[key].map(o=>`<button class="${o===F[key]?'on':''}" onclick="pickPop('${o}')">${o}</button>`).join('')+'</div>';
+  const r=btn.getBoundingClientRect();pop.style.left=(r.left+window.scrollX)+'px';pop.style.top=(r.bottom+window.scrollY+6)+'px';pop.classList.add('on');}
+function filterPop(q){document.querySelectorAll('#pop .poplist button').forEach(b=>b.style.display=b.textContent.toLowerCase().includes(q.toLowerCase())?'block':'none');}
+function pickPop(v){F[popKey]=v;document.getElementById('pop').classList.remove('on');applyFilter();}
+function setSem(s){F.sem=s;document.querySelectorAll('#segSem button').forEach(b=>b.classList.toggle('on',b.dataset.sem===s));applyFilter();}
+document.addEventListener('click',e=>{if(!e.target.closest('#pop')&&!e.target.closest('.fbtn'))document.getElementById('pop').classList.remove('on');});
+function applyFilter(){
+  document.getElementById('vTA').textContent=F.ta;document.getElementById('vGuru').textContent=F.guru;document.getElementById('vMapel').textContent=F.mapel;
+  renderModul();renderSumatif();renderMonitor();renderRekap();renderKKTP();renderJadwal();renderTload();
+}
+
+// ── NAV ──
+function go(s){document.querySelectorAll('#subnav .pill').forEach(x=>x.classList.toggle('on',x.dataset.s===s));document.querySelectorAll('.screen').forEach(x=>x.classList.remove('on'));const el=document.getElementById('s-'+s);if(el)el.classList.add('on');lucide.createIcons();}
+document.querySelectorAll('#subnav .pill').forEach(p=>p.addEventListener('click',()=>go(p.dataset.s)));
+function openM(id){document.getElementById(id).classList.add('on');}function closeM(id){document.getElementById(id).classList.remove('on');}
+document.querySelectorAll('.ovl').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('on');}));
+
+// ── BERANDA: Papan Hari Ini (heatmap rombel × JP) ──
+function renderPapan(){
+  const dow=now.getDay()===0?1:now.getDay();
+  document.getElementById('papanDate').textContent=DOW[now.getDay()]+', '+now.getDate()+' '+MON[now.getMonth()];
+  const ci=curJp();const wrap=document.getElementById('papanGrid');
+  let h='<div style="overflow-x:auto"><div class="heatmap">';
+  h+='<div class="heat-row"><div class="heat-label"></div>';
+  JPN.forEach(([jp,idx])=>{const isNow=idx===ci;h+=`<div class="heat-hdr" style="${isNow?'color:var(--em700)':'color:var(--muted)'}"><div class="jp">${JP[idx][0]}</div><div class="tm">${JP[idx][1].split('–')[0]}</div></div>`;});
+  h+='</div>';
+  ROMBEL.forEach(r=>{const daySched=SCHED_FULL[dow]&&SCHED_FULL[dow][r.id];
+    h+=`<div class="heat-row"><div class="heat-label" title="${r.nama}">${r.nama}</div>`;
+    JPN.forEach(([jp,idx])=>{const slot=daySched?daySched[idx]:null;const isNow=idx===ci;
+      if(slot){const g=GURU.find(x=>x.id===slot.gid);const ga=g&&g.status!=='Hadir';
+        const title=JP[idx][0]+' ('+JP[idx][1]+') · '+slot.mp+' · '+(g?g.nama:'?')+' · '+slot.ruang+(ga?' · '+g.status:'');
+        const cls='heat-cell '+(ga?'warn':'full')+(isNow?' now':'');
+        const mp=slot.mp.length>8?slot.mp.slice(0,7)+'…':slot.mp;
+        h+=`<div class="${cls}" title="${title}" onclick="openPapanCell(${r.id},${idx})">${mp}</div>`;
+      }else h+=`<div class="heat-cell empty" title="${JP[idx][0]} · Tidak ada jadwal">—</div>`;
+    });h+='</div>';});
+  h+='</div></div>';
+  h+='<div class="legend-mini" style="margin-top:10px"><span><i style="background:var(--em500)"></i>Ada jadwal</span><span><i style="background:var(--amberbg);border:1px solid #fde68a"></i>Guru izin</span><span><i style="background:var(--bg);border:1px dashed var(--line)"></i>Kosong</span><span style="margin-left:auto;color:var(--muted)">Hover untuk info · klik untuk detail</span></div>';
+  wrap.innerHTML=h;lucide.createIcons();
+}
+function openPapanCell(rombelId,jpIdx){
+  const r=ROMBEL.find(x=>x.id===rombelId);if(!r)return;const dow=now.getDay()===0?1:now.getDay();const slot=SCHED_FULL[dow]&&SCHED_FULL[dow][rombelId]&&SCHED_FULL[dow][rombelId][jpIdx];if(!slot)return;
+  const g=GURU.find(x=>x.id===slot.gid);const ci=curJp();const isLive=jpIdx===ci;
+  const hadir=85+((rombelId*3+jpIdx*2)%13);const total=28+rombelId%5;
+  document.getElementById('monTitle').textContent='Detail KBM — '+r.nama;
+  document.getElementById('monMeta').textContent=JP[jpIdx][0]+' · '+slot.mp+' · '+(g?g.nama:'');
+  document.getElementById('monBody').innerHTML=`<div class="statrow"><div class="statpill"><div class="n">${slot.mp}</div><div class="l">Mapel</div></div><div class="statpill"><div class="n">${g?g.inisial:'?'}</div><div class="l">Guru</div></div><div class="statpill"><div class="n">${slot.ruang}</div><div class="l">Ruang</div></div><div class="statpill"><div class="n" style="color:var(--em700)">${hadir}%</div><div class="l">Kehadiran</div></div></div>${isLive?'<div class="note info" style="margin:8px 0"><svg data-lucide="radio" width="13" style="vertical-align:-2px"></svg> <b>Berlangsung sekarang</b> — '+JP[jpIdx][0]+' ('+JP[jpIdx][1]+')</div>':'<div class="note" style="margin:8px 0;background:var(--bg);color:var(--muted)"><svg data-lucide="clock" width="13" style="vertical-align:-2px"></svg> Terjadwal — '+JP[jpIdx][0]+' ('+JP[jpIdx][1]+')</div>'}${g&&g.status!=='Hadir'?'<div class="note amber" style="margin:8px 0"><svg data-lucide="alert-triangle" width="13" style="vertical-align:-2px"></svg> Guru '+g.status+' — kelas belajar mandiri atau digantikan.</div>':''}<p class="sub" style="margin-top:8px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Buka Monitoring KBM untuk detail kehadiran siswa per sesi.</p>`;
+  openM('ovl-mon');lucide.createIcons();
+}
+function curJp(){const m=now.getHours()*60+now.getMinutes();for(let i=0;i<JPN.length;i++){const idx=JPN[i][1];const[a,b]=JP[idx][1].split('–').map(t=>{const[h,mn]=t.split('.').map(Number);return h*60+mn;});if(m>=a&&m<b)return idx;}return -1;}
+
+// ── MODUL AJAR ──
+let mstFilter='Semua';
+function setMst(s){mstFilter=s;document.querySelectorAll('#segModul button').forEach(b=>b.classList.toggle('on',b.dataset.mst===s));renderModul();}
+function renderModul(){
+  const wrap=document.getElementById('modulQueue');wrap.innerHTML='';
+  const rows=MODUL.filter(m=>(mstFilter==='Semua'||m.status===mstFilter)&&(F.guru==='Semua Guru'||m.guru===F.guru)&&(F.mapel==='Semua Mapel'||m.mapel===F.mapel));
+  if(!rows.length){wrap.innerHTML='<div style="text-align:center;color:var(--muted);padding:20px">Tidak ada modul ajar untuk filter ini.</div>';return;}
+  const sb={Menunggu:'b-warn',Disetujui:'b-ok',Ditolak:'b-rose'};
+  const si={Menunggu:'clock',Disetujui:'check-circle-2',Ditolak:'x-circle'};
+  rows.forEach(m=>{
+    const g=GURU.find(g=>g.nama.split(',')[0]===m.guru);
+    wrap.insertAdjacentHTML('beforeend',`<div class="aq">
+      <div class="gava">${g?g.inisial:'?'}</div>
+      <div class="meta"><b>${m.tp}</b><small>${m.guru} · ${m.mapel} · ${m.kelas} · diajukan ${m.tanggal} · progres ${m.progress}%</small></div>
+      <span class="badge ${sb[m.status]}"><svg data-lucide="${si[m.status]}" width="12" style="vertical-align:-2px"></svg> ${m.status}</span>
+      <div class="acts">
+        <button class="btn sec sm" onclick="openModulDetail(${m.id})"><svg data-lucide="eye"></svg>Detail</button>
+        ${m.status==='Menunggu'?`<button class="btn sm" onclick="actModul(${m.id},'Disetujui')"><svg data-lucide="check"></svg>Approve</button><button class="btn rose sm" onclick="actModul(${m.id},'Ditolak')"><svg data-lucide="x"></svg>Tolak</button>`:''}
+      </div>
+    </div>`);
+  });
+  lucide.createIcons();
+}
+function actModul(id,action){
+  const m=MODUL.find(x=>x.id===id);if(!m)return;m.status=action;
+  renderModul();updCounts();
+  if(action==='Disetujui')showToast('Modul ajar disetujui — notifikasi terkirim ke guru');
+  else{const cat=prompt('Alasan penolakan (opsional):','');if(cat)m.catatan=cat;showToast('Modul ajar ditolak — guru diberi notifikasi dengan catatan');}
+}
+function openModulDetail(id){
+  const m=MODUL.find(x=>x.id===id);if(!m)return;
+  const g=GURU.find(x=>x.nama.split(',')[0]===m.guru);
+  const isProd=m.mapel.includes('Prod')||m.mapel.includes('Pemrograman')||m.mapel.includes('Basis');
+  const fase=m.kelas.startsWith('X')?'E (Kelas X)':m.kelas.startsWith('XI')?'F (XI-XII)':'F (XI-XII)';
+  const model=isProd?'Project-Based Learning (PjBL)':'Discovery Learning';
+  document.getElementById('modTitle').textContent=m.tp;
+  document.getElementById('modMeta').textContent=`${m.guru} · ${m.mapel} · ${m.kelas} · diajukan ${m.tanggal}`;
+  document.querySelector('#ovl-modul .modal').style.width='720px';
+  document.getElementById('modBody').innerHTML=`
+    <div class="statrow">
+      <div class="statpill"><div class="n">${m.jp}</div><div class="l">Alokasi JP</div></div>
+      <div class="statpill"><div class="n">${m.progress}%</div><div class="l">Progres</div></div>
+      <div class="statpill"><div class="n">${m.cp.length}</div><div class="l">CP/TP</div></div>
+      <div class="statpill"><div class="n">${fase}</div><div class="l">Fase</div></div>
+      <div class="statpill"><div class="n" style="color:${m.status==='Disetujui'?'var(--em700)':m.status==='Ditolak'?'var(--rose)':'var(--amber)'}">${m.status}</div><div class="l">Status</div></div>
+    </div>
+    ${m.catatan?`<div class="note amber" style="margin-bottom:14px"><svg data-lucide="alert-triangle" width="13" style="vertical-align:-2px"></svg> <b>Catatan KS:</b> ${m.catatan}</div>`:''}
+    <div class="mod-sec"><div class="mod-sec-h"><svg data-lucide="info"></svg>Identitas Modul Ajar</div>
+      <table class="simple"><tbody>
+        <tr><td style="width:140px;color:var(--muted)">Judul / TP</td><td><b>${m.tp}</b></td></tr>
+        <tr><td style="color:var(--muted)">Mata Pelajaran</td><td>${m.mapel}</td></tr>
+        <tr><td style="color:var(--muted)">Kelas / Fase</td><td>${m.kelas} · Fase ${fase}</td></tr>
+        <tr><td style="color:var(--muted)">Semester</td><td>Ganjil · TA 2025/2026</td></tr>
+        <tr><td style="color:var(--muted)">Alokasi JP</td><td>${m.jp} JP × 40 menit</td></tr>
+        <tr><td style="color:var(--muted)">Pengembang</td><td>${g?g.nama:m.guru}</td></tr>
+        <tr><td style="color:var(--muted)">Diajukan</td><td>${m.tanggal} 2025</td></tr>
+      </tbody></table>
+    </div>
+    <div class="mod-sec"><div class="mod-sec-h"><svg data-lucide="target"></svg>Capaian & Tujuan Pembelajaran</div>
+      <div class="field"><label style="font-size:11px;font-weight:800;color:var(--ink2)">Capaian Pembelajaran (CP)</label><div class="mod-sec-b">Pada akhir fase ${fase}, peserta didik mampu ${m.mapel.toLowerCase().includes('pemrograman')?'merancang dan mengimplementasikan antarmuka web responsif':m.mapel.toLowerCase().includes('basis')?'memahami konsep normalisasi data dan merancang skema database relasional':m.mapel.toLowerCase().includes('matematika')?'menyelesaikan masalah matematika menggunakan sistem persamaan':m.mapel.toLowerCase().includes('indonesia')?'menyusun teks eksposisi yang logis dan argumentatif':'menguasai kompetensi kejuruan '+m.mapel}.</div></div>
+      <div class="field"><label style="font-size:11px;font-weight:800;color:var(--ink2)">Kompetensi Awal</label><div class="mod-sec-b" style="color:var(--muted)">Peserta didik telah mempelajari materi prasyarat pada pertemuan sebelumnya.</div></div>
+      <div class="field"><label style="font-size:11px;font-weight:800;color:var(--ink2)">Tujuan Pembelajaran (TP)</label><div>${m.cp.map((c,i)=>`<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px"><span style="width:22px;height:22px;border-radius:7px;background:var(--em600);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:800;flex-shrink:0">${i+1}</span><span style="font-size:13px;font-weight:600;color:var(--ink2);line-height:1.5">${c}</span></div>`).join('')}</div></div>
+    </div>
+    <div class="mod-sec"><div class="mod-sec-h"><svg data-lucide="route"></svg>Alur Tujuan Pembelajaran (ATP)</div>
+      <table class="simple"><thead><tr><th>TP</th><th>Pertemuan</th><th>Indikator Ketercapaian</th></tr></thead><tbody>${m.cp.map((c,i)=>`<tr><td><b>TP ${i+1}</b></td><td>Pert. ${(i*2)+1}-${(i*2)+2}</td><td>${c}</td></tr>`).join('')}</tbody></table>
+    </div>
+    <div class="mod-sec"><div class="mod-sec-h"><svg data-lucide="users"></svg>Profil Pelajar Pancasila</div>
+      <div>${['Bernalar Kritis','Mandiri',isProd?'Kreatif':'Bergotong Royong'].map(d=>`<span class="cp-chip">${d}</span>`).join('')}</div>
+      <div class="mod-sec-b" style="margin-top:6px;font-size:12px">Melalui praktik dan diskusi kelompok, peserta didik mengembangkan ${isProd?'kreativitas dan kemandirian':'kerjasama dan bernalar kritis'} dalam menyelesaikan tugas.</div>
+    </div>
+    <div class="mod-sec"><div class="mod-sec-h"><svg data-lucide="package"></svg>Sarana & Target Peserta Didik</div>
+      <div class="field"><label style="font-size:11px;font-weight:800;color:var(--ink2)">Sarana Prasarana</label><div class="mod-sec-b">${isProd?'1. Lab Komputer dengan 20 unit PC\n2. Software/simulator sesuai mapel\n3. Proyektor dan whiteboard':'1. Ruang kelas dengan proyektor\n2. Buku teks dan LKS\n3. Papan tulis dan spidol'}</div></div>
+      <div class="field"><label style="font-size:11px;font-weight:800;color:var(--ink2)">Target Peserta Didik</label><div class="mod-sec-b" style="color:var(--muted)">Peserta didik ${m.kelas} dengan kemampuan heterogen. Pendekatan diferensiasi diterapkan.</div></div>
+      <div class="field"><label style="font-size:11px;font-weight:800;color:var(--ink2)">Model Pembelajaran</label><div><span class="badge b-violet">${model}</span></div></div>
+    </div>
+    <div class="mod-sec"><div class="mod-sec-h"><svg data-lucide="layers"></svg>Kegiatan Pembelajaran</div>
+      <div class="mod-tl">
+        <div class="mod-tl-it pend"><div class="mod-tl-l" style="color:var(--sky)">Pendahuluan (10 menit)</div><div class="mod-sec-b">Guru membuka pembelajaran, menyampaikan tujuan, dan melakukan apersepsi ke materi sebelumnya.</div></div>
+        <div class="mod-tl-it"><div class="mod-tl-l" style="color:var(--em700)">Inti (${m.jp*30} menit)</div><div class="mod-sec-b">${m.materi}</div><div class="mod-sec-b" style="margin-top:6px;color:var(--muted);font-size:12px"><b>Diferensiasi:</b> Konten/Proses/Produk disesuaikan dengan tingkat kemampuan siswa.</div></div>
+        <div class="mod-tl-it tutup"><div class="mod-tl-l" style="color:var(--violet)">Penutup (10 menit)</div><div class="mod-sec-b">Guru bersama siswa menyimpulkan materi. Refleksi singkat dan tindak lanjut untuk pertemuan berikutnya.</div></div>
+      </div>
+    </div>
+    <div class="mod-sec"><div class="mod-sec-h"><svg data-lucide="clipboard-check"></svg>Asesmen</div>
+      <div class="mod-sec-b">${m.asesmen}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px">
+        <div style="border:1px solid var(--line);border-radius:10px;padding:10px"><div style="font-size:10px;font-weight:800;color:var(--sky);text-transform:uppercase;margin-bottom:4px">Diagnostik</div><div style="font-size:12px;font-weight:600;color:var(--ink2)">Awal pembelajaran — petakan pengetahuan awal</div></div>
+        <div style="border:1px solid var(--line);border-radius:10px;padding:10px"><div style="font-size:10px;font-weight:800;color:var(--em700);text-transform:uppercase;margin-bottom:4px">Formatif</div><div style="font-size:12px;font-weight:600;color:var(--ink2)">Selama pembelajaran — pantau perkembangan</div></div>
+        <div style="border:1px solid var(--line);border-radius:10px;padding:10px"><div style="font-size:10px;font-weight:800;color:var(--amber);text-transform:uppercase;margin-bottom:4px">Sumatif</div><div style="font-size:12px;font-weight:600;color:var(--ink2)">Akhir modul — ukur ketercapaian TP</div></div>
+      </div>
+    </div>
+    <div class="mod-sec"><div class="mod-sec-h"><svg data-lucide="lightbulb"></svg>Pengayaan & Refleksi</div>
+      <div class="field"><label style="font-size:11px;font-weight:800;color:var(--ink2)">Pengayaan & Remedial</label><div class="mod-sec-b" style="color:var(--muted)">Pengayaan untuk siswa tuntas: topik lanjutan. Remedial untuk siswa di bawah KKTP: pembelajaran ulang + asesmen susulan.</div></div>
+      <div class="field"><label style="font-size:11px;font-weight:800;color:var(--ink2)">Refleksi Guru</label><div class="mod-sec-b" style="color:var(--muted)">Evaluasi efektivitas metode, kendala, dan perbaikan untuk pertemuan berikutnya.</div></div>
+    </div>
+    <div class="mod-sec"><div class="mod-sec-h"><svg data-lucide="paperclip"></svg>Lampiran</div>
+      <div>${['Slide presentasi','Modul/bahan bacaan','Rubrik penilaian','Soal latihan'].map(l=>`<span class="cp-chip"><svg data-lucide="file-text" width="12" style="vertical-align:-2px;margin-right:3px"></svg>${l}</span>`).join('')}</div>
+    </div>
+    <p class="sub" style="margin-top:8px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Modul ajar yang disetujui otomatis tersinkron ke dashboard guru dan LMS siswa.</p>`;
+  const ft=document.getElementById('modFooter');ft.innerHTML='';
+  if(m.status==='Menunggu')ft.innerHTML=`<button class="btn rose" onclick="actModul(${m.id},'Ditolak');closeM('ovl-modul')"><svg data-lucide="x"></svg>Tolak</button><button class="btn" onclick="actModul(${m.id},'Disetujui');closeM('ovl-modul')"><svg data-lucide="check"></svg>Setujui</button>`;
+  else ft.innerHTML='<button class="btn sec" onclick="closeM(\'ovl-modul\')">Tutup</button>';
+  openM('ovl-modul');lucide.createIcons();
+}
+
+// ── SUMATIF ──
+let sstFilter='Semua';
+function setSst(s){sstFilter=s;document.querySelectorAll('#segSum button').forEach(b=>b.classList.toggle('on',b.dataset.sst===s));renderSumatif();}
+function renderSumatif(){
+  const wrap=document.getElementById('sumatifQueue');wrap.innerHTML='';
+  const rows=SUMATIF.filter(s=>(sstFilter==='Semua'||s.status===sstFilter)&&(F.guru==='Semua Guru'||s.guru===F.guru)&&(F.mapel==='Semua Mapel'||s.mapel===F.mapel));
+  if(!rows.length){wrap.innerHTML='<div style="text-align:center;color:var(--muted);padding:20px">Tidak ada sumatif untuk filter ini.</div>';return;}
+  const sb={Menunggu:'b-warn',Disetujui:'b-ok',Ditolak:'b-rose'};
+  const ji={UH:'file-question',UTS:'file-text',UAS:'graduation-cap'};
+  rows.forEach(s=>{
+    const g=GURU.find(g=>g.nama.split(',')[0]===s.guru);
+    wrap.insertAdjacentHTML('beforeend',`<div class="sq" onclick="openSumatifDetail(${s.id})">
+      <div class="qtop">
+        <div style="display:flex;align-items:center;gap:10px"><div class="gava" style="width:36px;height:36px;font-size:12px;border-radius:10px;background:var(--em100);color:var(--em700);display:grid;place-items:center;font-weight:800">${g?g.inisial:'?'}</div>
+        <div><b style="font-size:13.5px">${s.judul}</b><div class="qmeta">${s.guru} · ${s.mapel} · ${s.kelas} · ${s.soal} soal · ${s.tanggal}</div></div></div>
+        <span class="badge ${sb[s.status]}">${s.status}</span>
+      </div>
+    </div>`);
+  });
+  lucide.createIcons();
+}
+function actSumatif(id,action){
+  const s=SUMATIF.find(x=>x.id===id);if(!s)return;s.status=action;
+  renderSumatif();updCounts();
+  if(action==='Disetujui')showToast('Sumatif disetujui — siap dipublikasi ke siswa');
+  else{const cat=prompt('Alasan penolakan (opsional):','');if(cat)s.catatan=cat;showToast('Sumatif ditolak — guru diberi notifikasi');}
+}
+function openSumatifDetail(id){
+  const s=SUMATIF.find(x=>x.id===id);if(!s)return;
+  document.getElementById('sumTitle').textContent=s.judul;
+  document.getElementById('sumMeta').textContent=`${s.guru} · ${s.mapel} · ${s.kelas} · ${s.jenis} · KKM ${s.kkm}`;
+  document.getElementById('sumBody').innerHTML=`
+    <div class="statrow">
+      <div class="statpill"><div class="n">${s.soal}</div><div class="l">Jumlah Soal</div></div>
+      <div class="statpill"><div class="n">${s.kkm}</div><div class="l">KKM</div></div>
+      <div class="statpill"><div class="n">${s.jenis}</div><div class="l">Jenis</div></div>
+      <div class="statpill"><div class="n" style="color:${s.status==='Disetujui'?'var(--em700)':s.status==='Ditolak'?'var(--rose)':'var(--amber)'}">${s.status}</div><div class="l">Status</div></div>
+    </div>
+    ${s.catatan?`<div class="note amber" style="margin-bottom:12px"><svg data-lucide="alert-triangle" width="13" style="vertical-align:-2px"></svg> <b>Catatan KS:</b> ${s.catatan}</div>`:''}
+    <div class="field"><label>Deskripsi</label><div style="font-size:13px;color:var(--ink2);font-weight:600">${s.deskripsi}</div></div>
+    <div class="field"><label>Pratinjau Soal (contoh)</label>
+      <div style="border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:8px;background:var(--bg)">
+        <div style="font-size:12px;font-weight:800;color:var(--em700);margin-bottom:5px">Soal 1 (PG)</div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink)">Diketahui sistem persamaan 2x + 3y = 12 dan x − y = 1. Nilai x + y = ...</div>
+        <div style="margin-top:8px;display:grid;grid-template-columns:repeat(2,1fr);gap:6px;font-size:12px;font-weight:600;color:var(--ink2)">
+          <div style="padding:6px 10px;border:1px solid var(--line);border-radius:8px">A. 3</div>
+          <div style="padding:6px 10px;border:1px solid var(--em200);border-radius:8px;background:var(--em50);color:var(--em700)">B. 4 ✓</div>
+          <div style="padding:6px 10px;border:1px solid var(--line);border-radius:8px">C. 5</div>
+          <div style="padding:6px 10px;border:1px solid var(--line);border-radius:8px">D. 6</div>
+        </div>
+      </div>
+      <div style="border:1px solid var(--line);border-radius:11px;padding:12px;background:var(--bg)">
+        <div style="font-size:12px;font-weight:800;color:var(--em700);margin-bottom:5px">Soal 2 (Isian)</div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink)">Faktor dari persamaan x² − 5x + 6 = 0 adalah (x−a)(x−b). Nilai a + b = ...</div>
+        <div style="margin-top:6px;font-size:12px;color:var(--muted);font-weight:600">Jawaban: 5</div>
+      </div>
+    </div>
+    <p class="sub" style="margin-top:8px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Soal lengkap tersedia setelah approval. Sumatif yang disetujui otomatis muncul di LMS siswa sesuai jadwal.</p>`;
+  const ft=document.getElementById('sumFooter');ft.innerHTML='';
+  if(s.status==='Menunggu')ft.innerHTML=`<button class="btn rose" onclick="actSumatif(${s.id},'Ditolak');closeM('ovl-sumatif')"><svg data-lucide="x"></svg>Tolak</button><button class="btn" onclick="actSumatif(${s.id},'Disetujui');closeM('ovl-sumatif')"><svg data-lucide="check"></svg>Setujui</button>`;
+  else ft.innerHTML='<button class="btn sec" onclick="closeM(\'ovl-sumatif\')">Tutup</button>';
+  openM('ovl-sumatif');lucide.createIcons();
+}
+
+// ── MONITORING KBM ──
+function renderMonitor(){
+  const rows=MON_DATA.filter(m=>(F.guru==='Semua Guru'||m.guru===F.guru)&&(F.mapel==='Semua Mapel'||m.mapel===F.mapel));
+  // Matrix: guru × kelas
+  const guruL=[...new Set(rows.map(r=>r.guru))];
+  const kelasL=[...new Set(rows.map(r=>r.kelas))];
+  let m='<table class="matrix"><thead><tr><th>Guru \ Kelas</th>'+kelasL.map(k=>`<th>${k}</th>`).join('')+'</tr></thead><tbody>';
+  guruL.forEach(g=>{
+    m+=`<tr><td class="rowh">${g.split(',')[0]}</td>`;
+    kelasL.forEach(k=>{
+      const r=rows.find(x=>x.guru===g&&x.kelas===k);
+      if(r){
+        const cls=r.status==='on'?'full':r.status==='warn'?'warn':'risk';
+        const col=r.status==='on'?'var(--em700)':r.status==='warn'?'var(--amber)':'var(--rose)';
+        m+=`<td class="cell ${cls}" onclick="openMonDetail(${r.guruId},'${r.mapel}','${r.kelas}')" style="cursor:pointer"><b style="color:${col}">${r.cp}%</b><small>${r.mapel.length>12?r.mapel.slice(0,11)+'…':r.mapel}</small><small>${r.pert}/${r.rencana} pert</small></td>`;
+      } else m+='<td class="cell" style="color:#cbd5e1">–</td>';
+    });
+    m+='</tr>';
+  });
+  document.getElementById('monMatrix').innerHTML=m+'</tbody></table>';
+  // List
+  const wl=document.getElementById('monList');wl.innerHTML='';
+  rows.forEach(r=>{
+    const col=r.status==='on'?'var(--em600)':r.status==='warn'?'#d97706':'#e11d48';
+    const barCls=r.status==='on'?'':r.status==='warn'?'amber':'rose';
+    wl.insertAdjacentHTML('beforeend',`<div class="progrow" onclick="openMonDetail(${r.guruId},'${r.mapel}','${r.kelas}')">
+      <span>${r.guru.split(',')[0]}</span><span style="color:var(--muted);font-weight:600">${r.kelas}</span>
+      <div><div style="font-size:11px;font-weight:700;margin-bottom:3px">${r.mapel}</div><div class="pbar"><i class="${barCls}" style="width:${r.cp}%"></i></div></div>
+      <span style="color:${col}">${r.cp}%</span>
+      <span style="color:var(--muted);font-weight:600">${r.pert}/${r.rencana}</span>
+    </div>`);
+  });
+  lucide.createIcons();
+}
+function openMonDetail(guruId,mapel,kelas){
+  const r=MON_DATA.find(m=>m.guruId===guruId&&m.mapel===mapel&&m.kelas===kelas);if(!r)return;
+  const g=GURU.find(g=>g.id===guruId);
+  document.getElementById('monTitle').textContent=`Detail KBM — ${mapel}`;
+  document.getElementById('monMeta').textContent=`${g?g.nama:''} · ${kelas}`;
+  const stCol=r.status==='on'?'var(--em700)':r.status==='warn'?'var(--amber)':'var(--rose)';
+  const stTxt=r.status==='on'?'On Track':r.status==='warn'?'Perlu Perhatian':'Berisiko';
+  document.getElementById('monBody').innerHTML=`
+    <div class="statrow">
+      <div class="statpill"><div class="n" style="color:var(--em700)">${r.hadir}%</div><div class="l">Kehadiran</div></div>
+      <div class="statpill"><div class="n">${r.rata}</div><div class="l">Rata² Nilai</div></div>
+      <div class="statpill"><div class="n" style="color:${stCol}">${r.cp}%</div><div class="l">CP Tercapai</div></div>
+      <div class="statpill"><div class="n">${r.pert}/${r.rencana}</div><div class="l">Pertemuan</div></div>
+      <div class="statpill"><div class="n">${r.jurnal}</div><div class="l">Jurnal</div></div>
+    </div>
+    <div class="note ${r.status==='on'?'info':'amber'}" style="margin:10px 0"><svg data-lucide="${r.status==='on'?'check-circle':'alert-triangle'}" width="13" style="vertical-align:-2px"></svg> Status: <b style="color:${stCol}">${stTxt}</b></div>
+    <div class="field"><label>Progres CP/TP</label><div class="pbar" style="height:12px"><i class="${r.status==='on'?'':'amber'}" style="width:${r.cp}%"></i></div></div>
+    ${r.status==='risk'?`<div class="note amber" style="margin-top:10px"><svg data-lucide="lightbulb" width="13" style="vertical-align:-2px"></svg> <b>Rekomendasi:</b> Jadwalkan remedial, evaluasi metode mengajar, koordinasi dengan wali kelas untuk intervensi.</div>`:''}
+    ${r.status==='warn'?`<div class="note amber" style="margin-top:10px"><svg data-lucide="lightbulb" width="13" style="vertical-align:-2px"></svg> <b>Rekomendasi:</b> Follow-up guru untuk percepatan CP, cek kendala jurnal/pertemuan.</div>`:''}
+    <p class="sub" style="margin-top:10px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Data otomatis dari input harian guru (absen, jurnal, gradebook).</p>`;
+  openM('ovl-mon');lucide.createIcons();
+}
+
+// ── REKAP AUDIT ──
+function renderRekap(){
+  const rows=MON_DATA.filter(m=>(F.guru==='Semua Guru'||m.guru===F.guru)&&(F.mapel==='Semua Mapel'||m.mapel===F.mapel));
+  const avg=k=>rows.length?Math.round(rows.reduce((a,b)=>a+b[k],0)/rows.length*10)/10:0;
+  const sum=k=>rows.reduce((a,b)=>a+b[k],0);
+  document.getElementById('rekapKpi').innerHTML=[
+    ['Guru',new Set(rows.map(r=>r.guru)).size,'users'],
+    ['Kelas×Mapel',rows.length,'layers'],
+    ['Rata² Nilai',avg('rata'),'graduation-cap'],
+    ['Tuntas KKTP',avg('cp')+'%','target'],
+    ['Kehadiran',avg('hadir')+'%','calendar-check']
+  ].map(([l,v,ic])=>`<div class="kpi"><div class="lab"><svg data-lucide="${ic}"></svg>${l}</div><div class="v" style="font-size:22px">${v}</div></div>`).join('');
+  document.getElementById('rekapTable').innerHTML='<thead><tr><th>Guru</th><th>Mapel</th><th>Kelas</th><th style="text-align:right">Rata²</th><th style="text-align:right">CP</th><th style="text-align:right">Hadir</th><th style="text-align:right">Pertemuan</th><th style="text-align:right">Jurnal</th><th>Status</th></tr></thead><tbody>'+
+    rows.map(r=>`<tr style="cursor:pointer" onclick="openMonDetail(${r.guruId},'${r.mapel}','${r.kelas}')"><td><b>${r.guru.split(',')[0]}</b></td><td>${r.mapel}</td><td>${r.kelas}</td><td style="text-align:right">${r.rata}</td><td style="text-align:right"><span class="badge ${r.cp>=80?'b-ok':r.cp>=60?'b-warn':'b-rose'}">${r.cp}%</span></td><td style="text-align:right">${r.hadir}%</td><td style="text-align:right">${r.pert}/${r.rencana}</td><td style="text-align:right">${r.jurnal}</td><td><span class="badge ${r.status==='on'?'b-ok':r.status==='warn'?'b-warn':'b-rose'}">${r.status==='on'?'On Track':r.status==='warn'?'Perhatian':'Berisiko'}</span></td></tr>`).join('')
+    +'</tbody>';
+  // Matrix: kelas × mapel
+  const kelasL=[...new Set(rows.map(r=>r.kelas))],mapelL=[...new Set(rows.map(r=>r.mapel))];
+  let m='<table class="matrix" style="border-spacing:5px;min-width:680px"><thead><tr><th></th>'+mapelL.map(x=>`<th>${x.length>12?x.slice(0,11)+'…':x}</th>`).join('')+'</tr></thead><tbody>';
+  kelasL.forEach(k=>{m+=`<tr><td class="rowh">${k}</td>`+mapelL.map(mp=>{const r=rows.find(x=>x.kelas===k&&x.mapel===mp);return r?`<td><div class="hm" style="background:${r.cp>=80?'#059669':r.cp>=60?'#f59e0b':'#e11d48'}">${r.cp}%</div></td>`:'<td class="cell" style="color:#cbd5e1">–</td>';}).join('')+'</tr>';});
+  document.getElementById('rekapMatrix').innerHTML=kelasL.length?m+'</tbody></table>':'<div style="color:var(--muted)">—</div>';
+  // Per guru
+  const guruL=[...new Set(rows.map(r=>r.guru))];
+  document.getElementById('rekapGuru').innerHTML=guruL.map(g=>{const gr=rows.filter(r=>r.guru===g);const a=Math.round(gr.reduce((x,y)=>x+y.cp,0)/gr.length);return `<div class="tload"><span>${g.split(',')[0]}</span><div class="pbar"><i class="${a>=75?'':'amber'}" style="width:${a}%"></i></div><span>${a}%</span></div>`;}).join('');
+  lucide.createIcons();
+}
+
+// ── KKTP ──
+const KKTP_DATA=[
+  {mapel:'Matematika',kktp:70,def:75,affected:4},
+  {mapel:'Pemrograman Web',kktp:75,def:75,affected:2},
+  {mapel:'Basis Data',kktp:75,def:75,affected:1},
+  {mapel:'PBO',kktp:78,def:75,affected:1},
+  {mapel:'B. Indonesia',kktp:75,def:75,affected:3},
+  {mapel:'B. Inggris',kktp:72,def:75,affected:3},
+  {mapel:'TKRO Produktif',kktp:75,def:75,affected:2},
+  {mapel:'Akuntansi',kktp:75,def:75,affected:2},
+];
+function renderKKTP(){
+  document.getElementById('kktpList').innerHTML=KKTP_DATA.map((k,i)=>`
+    <div class="kktp-row">
+      <div><b style="font-size:13px">${k.mapel}</b><div class="sub">${k.affected} kelas terdampak · default ${k.def}</div></div>
+      <input type="range" min="60" max="90" value="${k.kktp}" class="kktp-slider" oninput="updKKTP(${i},this.value)" />
+      <span id="kktpVal${i}" style="font-size:18px;font-weight:800;color:${k.kktp>=k.def?'var(--em700)':'var(--amber)'}">${k.kktp}</span>
+      <span class="badge ${k.kktp===k.def?'b-mut':k.kktp>k.def?'b-ok':'b-warn'}">${k.kktp===k.def?'Default':k.kktp>k.def?'Ditingkatkan':'Diturunkan'}</span>
+    </div>`).join('');
+}
+function updKKTP(i,val){KKTP_DATA[i].kktp=Number(val);document.getElementById('kktpVal'+i).textContent=val;document.getElementById('kktpVal'+i).style.color=val>=KKTP_DATA[i].def?'var(--em700)':'var(--amber)';}
+
+// ── JADWAL (per-rombel) ──
+let jadwalRombel=1;
+function renderJadwal(){
+  const r=ROMBEL.find(x=>x.id===jadwalRombel)||ROMBEL[0];
+  const sel=document.getElementById('jadwalRombelSel');
+  if(sel)sel.innerHTML=ROMBEL.map(x=>`<option value="${x.id}" ${x.id===jadwalRombel?'selected':''}>${x.nama}</option>`).join('');
+  const cfgEl=document.getElementById('schedConfig');
+  if(cfgEl)cfgEl.innerHTML=`
+    <div class="sched-cfg-item"><div class="v">${SCHED_CONFIG.days}</div><div class="l">Hari Aktif</div></div>
+    <div class="sched-cfg-item"><div class="v">${SCHED_CONFIG.jpPerDay}</div><div class="l">JP/Hari</div></div>
+    <div class="sched-cfg-item"><div class="v">${SCHED_CONFIG.days*SCHED_CONFIG.jpPerDay}</div><div class="l">Total JP/Minggu</div></div>
+    <div class="sched-cfg-item"><div class="v">${ROMBEL.length}</div><div class="l">Rombel</div></div>
+    <div class="sched-cfg-item"><div class="v">${GURU.length}</div><div class="l">Guru</div></div>
+    <div class="sched-cfg-item"><div class="v">${SCHED_CONFIG.maxJpGuru}</div><div class="l">Max JP/Guru</div></div>`;
+  const confEl=document.getElementById('conflictPanel');
+  if(confEl){
+    if(SCHED_CONFLICTS.length){
+      confEl.innerHTML=`<div class="card pad" style="margin-bottom:14px;border-color:#fecdd3">
+        <div class="title" style="color:var(--rose)"><svg data-lucide="alert-triangle"></svg>${SCHED_CONFLICTS.length} Konflik Penjadwalan</div>
+        <div class="sub" style="color:var(--rose);margin-bottom:8px">Tidak ada guru tersedia untuk slot berikut:</div>
+        <table class="simple"><thead><tr><th>Hari</th><th>JP</th><th>Rombel</th></tr></thead><tbody>
+        ${SCHED_CONFLICTS.map(c=>`<tr><td>${DOW[c.day]}</td><td>${JP[c.jpIdx][0]}</td><td>${c.rombel}</td></tr>`).join('')}
+        </tbody></table>
+        <div class="note amber" style="margin-top:10px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Klik \"Generate Ulang\" untuk penjadwalan ulang, atau tambahkan guru untuk mapel yang bentrok.</div>
+      </div>`;
+    } else {
+      confEl.innerHTML=`<div class="note" style="background:var(--em50);color:var(--em700);margin-bottom:14px"><svg data-lucide="check-circle-2" width="13" style="vertical-align:-2px"></svg> <b>Tanpa konflik!</b> Semua ${SCHED_CONFIG.days*SCHED_CONFIG.jpPerDay} slot × ${ROMBEL.length} rombel berhasil diisi. Algoritma: greedy round-robin dengan deteksi bentrok guru.</div>`;
+    }
+  }
+  let h='<table class="jsched"><thead><tr><th style="width:60px">JP</th>';
+  for(let d=1;d<=SCHED_CONFIG.days;d++)h+=`<th>${DOW[d].slice(0,3)}</th>`;
+  h+='</tr></thead><tbody>';
+  JPN.forEach(([jp,idx])=>{
+    h+=`<tr><td class="jpl">${JP[idx][0]}<div style="font-size:8.5px;color:var(--muted)">${JP[idx][1].split('–')[0]}</div></td>`;
+    for(let d=1;d<=SCHED_CONFIG.days;d++){
+      const slot=SCHED_FULL[d]&&SCHED_FULL[d][r.id]&&SCHED_FULL[d][r.id][idx];
+      if(slot){
+        const g=GURU.find(x=>x.id===slot.gid);
+        const mpShort=slot.mp.length>12?slot.mp.slice(0,11)+'…':slot.mp;
+        h+=`<td class="jcell full" style="cursor:pointer" onclick="openSchedEdit(${d},${r.id},${idx})" title="Klik untuk edit manual"><b>${mpShort}</b><small>${slot.ruang}</small><small>${g?g.inisial:'?'}</small></td>`;
+      } else {
+        const hasDay=SCHED_FULL[d]&&SCHED_FULL[d][r.id];
+        if(hasDay&&hasDay[idx]===null)h+=`<td class="jcell empty" style="cursor:pointer" onclick="openSchedEdit(${d},${r.id},${idx})" title="Klik untuk isi manual"><b>!</b><small>Konflik</small></td>`;
+        else h+=`<td class="jcell brk" style="cursor:pointer" onclick="openSchedEdit(${d},${r.id},${idx})" title="Klik untuk isi manual">+</td>`;
+      }
+    }
+    h+='</tr>';
+  });
+  document.getElementById('jadwalMatrix').innerHTML=h+'</tbody></table>';
+  lucide.createIcons();
+}
+function renderTload(){
+  const sorted=[...GURU].sort((a,b)=>b.jp-a.jp);
+  const over24=sorted.filter(g=>g.jp>24).length;
+  const summary=document.getElementById('tloadSummary');
+  if(summary)summary.textContent=over24+' guru >24 JP';
+  document.getElementById('tloadList').innerHTML=sorted.map(g=>{
+    const over=g.jp>24;
+    const pct=Math.min(100,g.jp/SCHED_CONFIG.maxJpGuru*100);
+    return `<div class="tload"><span title="${g.nama}">${g.nama.split(',')[0]}</span><div class="pbar"><i class="${over?'amber':''}" style="width:${pct}%"></i></div><span style="color:${over?'var(--amber)':'var(--ink2)'}">${g.jp} JP</span></div>`;
+  }).join('');
+}
+function regenerateSched(){
+  genSchedAuto();
+  renderJadwal();renderTload();renderPapan();renderMonKeh();
+  showToast('Jadwal digenerate ulang · '+SCHED_CONFLICTS.length+' konflik');
+}
+// ── MANUAL SCHEDULE EDIT ──
+let schedEditCtx={day:0,rombelId:0,jpIdx:0};
+function openSchedEdit(day,rombelId,jpIdx){
+  schedEditCtx={day,rombelId,jpIdx};
+  const r=ROMBEL.find(x=>x.id===rombelId);if(!r)return;
+  const slot=SCHED_FULL[day]&&SCHED_FULL[day][rombelId]&&SCHED_FULL[day][rombelId][jpIdx];
+  document.getElementById('schedEditTitle').textContent='Edit Jadwal — '+r.nama;
+  document.getElementById('schedEditMeta').textContent=DOW[day]+' · '+JP[jpIdx][0]+' ('+JP[jpIdx][1]+')';
+  const mpList=MAPEL_BY_JUR[r.jur];
+  const mpSel=document.getElementById('schedEditMapel');
+  mpSel.innerHTML=mpList.map(mp=>`<option value="${mp}" ${slot&&slot.mp===mp?'selected':''}>${mp}</option>`).join('');
+  updSchedGuruOptions();
+  document.getElementById('schedEditRuang').value=slot?slot.ruang:getRuang(mpSel.value,rombelId);
+  document.getElementById('schedEditClear').style.display=slot?'inline-flex':'none';
+  openM('ovl-sched-edit');lucide.createIcons();
+}
+function updSchedGuruOptions(){
+  const mp=document.getElementById('schedEditMapel').value;
+  const guruIds=GURU_MAPEL[mp]||[];
+  const gSel=document.getElementById('schedEditGuru');
+  const cur=schedEditCtx;
+  const slot=SCHED_FULL[cur.day]&&SCHED_FULL[cur.day][cur.rombelId]&&SCHED_FULL[cur.day][cur.rombelId][cur.jpIdx];
+  gSel.innerHTML=guruIds.map(gid=>{const g=GURU.find(x=>x.id===gid);return g?`<option value="${gid}" ${slot&&slot.gid===gid?'selected':''}>${g.nama}</option>`:'';}).join('')+'<option value="0">— Manual (tidak ada guru)</option>';
+  document.getElementById('schedEditRuang').value=getRuang(mp,cur.rombelId);
+}
+function saveSchedEdit(){
+  const{day,rombelId,jpIdx}=schedEditCtx;
+  const mp=document.getElementById('schedEditMapel').value;
+  const gid=Number(document.getElementById('schedEditGuru').value);
+  const ruang=document.getElementById('schedEditRuang').value||'R-'+(100+rombelId);
+  if(!SCHED_FULL[day])SCHED_FULL[day]={};
+  if(!SCHED_FULL[day][rombelId])SCHED_FULL[day][rombelId]={};
+  SCHED_FULL[day][rombelId][jpIdx]={mp,gid,ruang};
+  SCHED_CONFLICTS=SCHED_CONFLICTS.filter(c=>!(c.day===day&&c.jpIdx===jpIdx&&c.rombelId===rombelId));
+  closeM('ovl-sched-edit');renderJadwal();renderPapan();renderMonKeh();
+  showToast('Jadwal manual disimpan · '+DOW[day]+' '+JP[jpIdx][0]);
+}
+function clearSchedEdit(){
+  const{day,rombelId,jpIdx}=schedEditCtx;
+  if(SCHED_FULL[day]&&SCHED_FULL[day][rombelId])SCHED_FULL[day][rombelId][jpIdx]=null;
+  closeM('ovl-sched-edit');renderJadwal();renderPapan();renderMonKeh();
+  showToast('Slot jadwal dikosongkan');
+}
+
+// ── COUNTS ──
+function updCounts(){
+  const mp=MODUL.filter(m=>m.status==='Menunggu').length;
+  const sp=SUMATIF.filter(s=>s.status==='Menunggu').length;
+  document.getElementById('cntModul').textContent=mp;
+  document.getElementById('cntSumatif').textContent=sp;
+  document.getElementById('cntModul').style.display=mp?'inline-block':'none';
+  document.getElementById('cntSumatif').style.display=sp?'inline-block':'none';
+}
+
+// ── MOCK SISWA GENERATOR (deterministic per rombel) ──
+const SISWA_POOL=['Adi','Bunga','Citra','Dimas','Erika','Fajar','Gita','Hadi','Indah','Joko','Kirana','Lukman','Maya','Nanda','Oki','Putri','Qori','Rizki','Sari','Tono','Umar','Vina','Wawan','Yusuf','Zaki','Aldi','Bimo','Candra','Dewa','Eka','Fahmi','Gilang','Hana','Irfan','Jihan','Krisna','Lala','Miko','Nia','Oscar','Prita','Raka','Sinta','Tegar','Ujang','Vicky','Wulan','Yoga','Zahra','Bayu','Dina'];
+const SURNAMES=['Wijaya','Saputra','Pratama','Nugroho','Santoso','Wibowo','Hakim','Permana'];
+const ABS_REASONS=[
+  {status:'Izin',reason:'Izin — keperluan keluarga'},
+  {status:'Sakit',reason:'Sakit — demam & flu'},
+  {status:'Sakit',reason:'Sakit — sakit gigi'},
+  {status:'Alpha',reason:'Alpha — tidak ada kabar'},
+  {status:'Izin',reason:'Izin — acara keluarga'},
+  {status:'Sakit',reason:'Sakit — demam'},
+  {status:'Alpha',reason:'Alpha — tanpa keterangan'},
+];
+function genSiswa(rombelId){
+  const total=28+rombelId%5;
+  const hadirPct=88+((rombelId*7+rombelId%3))%10;
+  const hadirCount=Math.round(total*hadirPct/100);
+  const surname=SURNAMES[rombelId%SURNAMES.length];
+  const siswa=[];
+  for(let i=0;i<total;i++){
+    const nameIdx=(rombelId*7+i*3)%SISWA_POOL.length;
+    const name=SISWA_POOL[nameIdx]+' '+surname;
+    const nis='2025'+String(1000+rombelId*100+i).padStart(4,'0');
+    if(i<hadirCount)siswa.push({name,nis,status:'Hadir',reason:'—'});
+    else{const r=ABS_REASONS[(i-hadirCount)%ABS_REASONS.length];siswa.push({name,nis,status:r.status,reason:r.reason});}
+  }
+  return siswa;
+}
+
+// ── KPI DRILL-DOWNS ──
+function openKehadiranDetail(){
+  const dow=now.getDay()===0?1:now.getDay();const ci=curJp();
+  document.querySelector('#ovl-kehadiran .title').innerHTML='<svg data-lucide="users"></svg>Kehadiran Siswa — Rincian';
+  const kehData=ROMBEL.map(r=>{
+    const daySched=SCHED_FULL[dow]&&SCHED_FULL[dow][r.id];
+    let activeIdx=ci>=0?ci:JPN[0][1];let slot=daySched?daySched[activeIdx]:null;
+    if(!slot&&daySched){JPN.forEach(([jp,idx])=>{if(daySched[idx]&&!slot)slot=daySched[idx],activeIdx=idx;});}
+    const hadir=88+((r.id*7+r.id%3))%10;const total=28+r.id%5;const absen=total-Math.round(total*hadir/100);
+    return {id:r.id,rombel:r.nama,mapel:slot?slot.mp:'—',jp:slot?JP[activeIdx][0]:'—',hadir,total,absen};
+  });
+  const avg=Math.round(kehData.reduce((a,b)=>a+b.hadir,0)/kehData.length*10)/10;
+  const ge90=kehData.filter(d=>d.hadir>=90).length;const lt90=kehData.filter(d=>d.hadir<90).length;
+  document.getElementById('kehMeta').textContent=`Rata-rata ${avg}% · ${DOW[now.getDay()]}, ${now.getDate()} ${MON[now.getMonth()]}`;
+  let h=`<div class="statrow"><div class="statpill"><div class="n" style="color:var(--em700)">${avg}%</div><div class="l">Rata² Kehadiran</div></div><div class="statpill"><div class="n">${kehData.length}</div><div class="l">Total Rombel</div></div><div class="statpill"><div class="n" style="color:var(--em700)">${ge90}</div><div class="l">Rombel ≥90%</div></div><div class="statpill"><div class="n" style="color:var(--amber)">${lt90}</div><div class="l">Rombel &lt;90%</div></div></div>`;
+  h+='<div class="note info" style="margin-bottom:10px"><svg data-lucide="mouse-pointer-click" width="13" style="vertical-align:-2px"></svg> <b>≥90%</b> = rombel dengan kehadiran sehat · <b>&lt;90%</b> = rombel yang perlu perhatian. Klik baris rombel untuk melihat daftar siswa & alasan tidak hadir.</div>';
+  h+='<table class="simple"><thead><tr><th>Rombel</th><th>Sesi (JP)</th><th>Mapel</th><th style="text-align:right">Hadir</th><th style="text-align:right">Total</th><th style="text-align:right">Absen</th><th>%</th><th></th></tr></thead><tbody>';
+  kehData.forEach(d=>{h+=`<tr style="cursor:pointer" onclick="openKehRombelDetail(${d.id})" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''" title="Klik untuk detail absensi siswa"><td><b>${d.rombel}</b></td><td>${d.jp}</td><td>${d.mapel}</td><td style="text-align:right">${d.total-d.absen}</td><td style="text-align:right">${d.total}</td><td style="text-align:right;color:var(--rose)">${d.absen}</td><td><span class="badge ${d.hadir>=90?'b-ok':d.hadir>=85?'b-warn':'b-rose'}">${d.hadir}%</span></td><td><svg data-lucide="chevron-right" width="15" style="color:var(--muted)"></svg></td></tr>`;});
+  h+='</tbody></table>';
+  h+='<p class="sub" style="margin-top:10px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Kehadiran per sesi (JP) berdasarkan absensi QR/kode kelas. Klik rombel untuk detail siswa.</p>';
+  document.getElementById('kehBody').innerHTML=h;openM('ovl-kehadiran');lucide.createIcons();
+}
+function openKehRombelDetail(rombelId){
+  const r=ROMBEL.find(x=>x.id===rombelId);if(!r)return;
+  const dow=now.getDay()===0?1:now.getDay();const ci=curJp();
+  const daySched=SCHED_FULL[dow]&&SCHED_FULL[dow][r.id];
+  let activeIdx=ci>=0?ci:JPN[0][1];let slot=daySched?daySched[activeIdx]:null;
+  if(!slot&&daySched){JPN.forEach(([jp,idx])=>{if(daySched[idx]&&!slot)slot=daySched[idx],activeIdx=idx;});}
+  const hadirPct=88+((r.id*7+r.id%3))%10;const total=28+r.id%5;const hadirCount=Math.round(total*hadirPct/100);const absenCount=total-hadirCount;
+  const siswa=genSiswa(r.id);const g=slot?GURU.find(x=>x.id===slot.gid):null;
+  const izin=siswa.filter(s=>s.status==='Izin');const sakit=siswa.filter(s=>s.status==='Sakit');const alpha=siswa.filter(s=>s.status==='Alpha');
+  document.querySelector('#ovl-kehadiran .title').innerHTML='<svg data-lucide="users"></svg>Detail Absensi — '+r.nama;
+  document.getElementById('kehMeta').textContent=r.nama+' · '+(slot?slot.mp+' · '+JP[activeIdx][0]+' · ':'')+DOW[now.getDay()]+', '+now.getDate()+' '+MON[now.getMonth()];
+  let h='<button class="btn sec sm" style="margin-bottom:12px" onclick="openKehadiranDetail()"><svg data-lucide="arrow-left"></svg> Kembali ke Rincian</button>';
+  h+=`<div class="statrow"><div class="statpill"><div class="n" style="color:var(--em700)">${hadirPct}%</div><div class="l">Kehadiran</div></div><div class="statpill"><div class="n">${hadirCount}/${total}</div><div class="l">Hadir/Total</div></div><div class="statpill"><div class="n" style="color:var(--rose)">${absenCount}</div><div class="l">Tidak Hadir</div></div><div class="statpill"><div class="n">${slot?slot.mp:'—'}</div><div class="l">Mapel</div></div></div>`;
+  if(absenCount>0){
+    h+=`<div class="mod-sec"><div class="mod-sec-h"><svg data-lucide="user-x"></svg>Siswa Tidak Hadir (${absenCount})</div>`;
+    h+='<div style="display:flex;gap:8px;margin-bottom:8px">';
+    if(izin.length)h+=`<span class="badge b-info">Izin: ${izin.length}</span>`;
+    if(sakit.length)h+=`<span class="badge b-warn">Sakit: ${sakit.length}</span>`;
+    if(alpha.length)h+=`<span class="badge b-rose">Alpha: ${alpha.length}</span>`;
+    h+='</div>';
+    h+='<div class="abs-list">';
+    [...izin,...sakit,...alpha].forEach(s=>{
+      const cls=s.status==='Izin'?'b-info':s.status==='Sakit'?'b-warn':'b-rose';
+      h+=`<div class="abs-row"><div class="ava" style="background:${s.status==='Izin'?'#e0f2fe;color:#0369a1':s.status==='Sakit'?'var(--amberbg);color:var(--amber)':'var(--rosebg);color:var(--rose)'}">${s.name[0]}</div><div class="info"><b>${s.name}</b><small>NIS ${s.nis} · ${s.reason}</small></div><span class="badge ${cls}">${s.status}</span></div>`;
+    });h+='</div></div>';
+  }
+  h+=`<div class="mod-sec"><div class="mod-sec-h"><svg data-lucide="user-check"></svg>Siswa Hadir (${hadirCount})</div><div class="abs-list" style="max-height:220px">`;
+  siswa.filter(s=>s.status==='Hadir').forEach(s=>{
+    h+=`<div class="abs-row"><div class="ava">${s.name[0]}</div><div class="info"><b>${s.name}</b><small>NIS ${s.nis}</small></div><span class="badge b-ok">Hadir</span></div>`;
+  });
+  h+='</div></div>';
+  h+='<p class="sub"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Data absensi otomatis dari scan QR/kode kelas. Alasan izin/sakit diverifikasi oleh wali kelas. Notifikasi WA otomatis dikirim untuk siswa Alpha.</p>';
+  document.getElementById('kehBody').innerHTML=h;lucide.createIcons();
+}
+function openGuruHadir(){
+  const hadir=GURU.filter(g=>g.status==='Hadir').length;const izin=GURU.filter(g=>g.status!=='Hadir');
+  document.getElementById('guruHdMeta').textContent=`${hadir} hadir · ${izin.length} tidak hadir · ${DOW[now.getDay()]}`;
+  let h=`<div class="statrow"><div class="statpill"><div class="n" style="color:var(--em700)">${hadir}</div><div class="l">Hadir</div></div><div class="statpill"><div class="n" style="color:var(--amber)">${izin.length}</div><div class="l">Izin/Sakit</div></div><div class="statpill"><div class="n">${GURU.length}</div><div class="l">Total Guru</div></div></div>`;
+  h+='<table class="simple"><thead><tr><th>Guru</th><th>Mapel</th><th>JP</th><th>Status</th><th>Pengganti</th></tr></thead><tbody>';
+  GURU.forEach(g=>{const sub=g.status!=='Hadir'?'<span class="badge b-info">Belajar Mandiri</span>':'—';h+=`<tr><td><span class="gava-sm">${g.inisial}</span><b>${g.nama.split(',')[0]}</b></td><td>${g.mapel.join(', ')}</td><td>${g.jp} JP</td><td><span class="badge ${g.status==='Hadir'?'b-ok':'b-warn'}">${g.status}</span></td><td>${sub}</td></tr>`;});
+  h+='</tbody></table>';
+  if(izin.length)h+=`<div class="note amber" style="margin-top:12px"><svg data-lucide="alert-triangle" width="13" style="vertical-align:-2px"></svg> ${izin.map(g=>g.nama.split(',')[0]+' ('+g.status+')').join(', ')} — kelas yang bersangkutan belajar mandiri atau digantikan rekan sejawat.</div>`;
+  h+='<p class="sub" style="margin-top:8px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Status diperbarui otomatis dari absensi QR guru di gerbang sekolah.</p>';
+  document.getElementById('guruHdBody').innerHTML=h;openM('ovl-guru');lucide.createIcons();
+}
+function openKelasBerjalan(){
+  const dow=now.getDay()===0?1:now.getDay();const ci=curJp();let live=0,scheduled=0,idle=0;
+  const data=ROMBEL.map(r=>{
+    const daySched=SCHED_FULL[dow]&&SCHED_FULL[dow][r.id];let activeIdx=ci>=0?ci:JPN[0][1];let slot=daySched?daySched[activeIdx]:null;
+    if(!slot&&daySched){JPN.forEach(([jp,idx])=>{if(daySched[idx]&&!slot)slot=daySched[idx],activeIdx=idx;});}
+    const isLive=activeIdx===ci&&slot;const g=slot?GURU.find(x=>x.id===slot.gid):null;
+    if(isLive)live++;else if(slot)scheduled++;else idle++;
+    return {rombel:r.nama,jp:slot?JP[activeIdx][0]:'—',mapel:slot?slot.mp:'Libur',guru:g?g.nama.split(',')[0]:'—',ruang:slot?slot.ruang:'—',status:isLive?'Berlangsung':slot?'Terjadwal':'Libur',guruStatus:g?g.status:'—'};
+  });
+  document.getElementById('klsBjMeta').textContent=`${live} berlangsung · ${scheduled} terjadwal · ${idle} libur · ${DOW[now.getDay()]}`;
+  let h=`<div class="statrow"><div class="statpill"><div class="n" style="color:var(--em700)">${live}</div><div class="l">Berlangsung</div></div><div class="statpill"><div class="n">${scheduled}</div><div class="l">Terjadwal</div></div><div class="statpill"><div class="n">${idle}</div><div class="l">Libur</div></div><div class="statpill"><div class="n">${ROMBEL.length}</div><div class="l">Total Rombel</div></div></div>`;
+  h+='<table class="simple"><thead><tr><th>Rombel</th><th>JP</th><th>Mapel</th><th>Guru</th><th>Ruang</th><th>Status</th></tr></thead><tbody>';
+  data.forEach(d=>{const cls=d.status==='Berlangsung'?'b-ok':d.status==='Terjadwal'?'b-mut':'b-rose';const liveDot=d.status==='Berlangsung'?'<span class="livedot" style="display:inline-block;margin-right:4px"></span>':'';const guruTag=d.guruStatus!=='Hadir'&&d.guruStatus!=='—'?' <span class="badge b-warn">'+d.guruStatus+'</span>':'';h+=`<tr><td><b>${d.rombel}</b></td><td>${d.jp}</td><td>${d.mapel}</td><td>${d.guru}${guruTag}</td><td>${d.ruang}</td><td><span class="badge ${cls}">${liveDot}${d.status}</span></td></tr>`;});
+  h+='</tbody></table>';
+  h+='<p class="sub" style="margin-top:10px"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Status KBM real-time berdasarkan jadwal dan absensi guru.</p>';
+  document.getElementById('klsBjBody').innerHTML=h;openM('ovl-kelas');lucide.createIcons();
+}
+// ── MONITORING: Kehadiran Matrix ──
+function renderMonKeh(){
+  const dow=now.getDay()===0?1:now.getDay();
+  document.getElementById('monKehDate').textContent=DOW[now.getDay()]+', '+now.getDate()+' '+MON[now.getMonth()];
+  let h='<table class="matrix"><thead><tr><th>Rombel \\ JP</th>';
+  JPN.forEach(([jp,idx])=>{h+=`<th>${JP[idx][0]}</th>`;});h+='</tr></thead><tbody>';
+  ROMBEL.forEach(r=>{h+=`<tr><td class="rowh">${r.nama}</td>`;JPN.forEach(([jp,idx])=>{const daySched=SCHED_FULL[dow]&&SCHED_FULL[dow][r.id];const slot=daySched?daySched[idx]:null;if(slot){const hadir=85+((r.id*3+idx*2)%13);const cls=hadir>=90?'full':hadir>=85?'warn':'risk';const col=hadir>=90?'var(--em700)':hadir>=85?'var(--amber)':'var(--rose)';h+=`<td class="cell ${cls}" style="cursor:pointer" onclick="openKehRombel(${r.id},${idx})"><b style="color:${col}">${hadir}%</b><small>${slot.mp.length>10?slot.mp.slice(0,9)+'…':slot.mp}</small></td>`;}else h+='<td class="cell brk">—</td>';});h+='</tr>';});
+  document.getElementById('monKehMatrix').innerHTML=h+'</tbody></table>';lucide.createIcons();
+}
+function openKehRombel(rombelId,jpIdx){
+  const r=ROMBEL.find(x=>x.id===rombelId);const dow=now.getDay()===0?1:now.getDay();const slot=SCHED_FULL[dow]&&SCHED_FULL[dow][rombelId]&&SCHED_FULL[dow][rombelId][jpIdx];if(!slot)return;
+  const g=GURU.find(x=>x.id===slot.gid);const hadir=85+((rombelId*3+jpIdx*2)%13);const total=28+rombelId%5;const absen=total-Math.round(total*hadir/100);
+  document.getElementById('monTitle').textContent=`Kehadiran — ${r.nama}`;
+  document.getElementById('monMeta').textContent=`${JP[jpIdx][0]} · ${slot.mp} · ${g?g.nama:''}`;
+  document.getElementById('monBody').innerHTML=`<div class="statrow"><div class="statpill"><div class="n" style="color:var(--em700)">${hadir}%</div><div class="l">Kehadiran</div></div><div class="statpill"><div class="n">${total-absen}/${total}</div><div class="l">Hadir/Total</div></div><div class="statpill"><div class="n" style="color:var(--rose)">${absen}</div><div class="l">Absen</div></div><div class="statpill"><div class="n">${slot.ruang}</div><div class="l">Ruang</div></div></div><div class="field"><label>Mapel & Guru</label><div style="font-weight:700;color:var(--ink)">${slot.mp} — ${g?g.nama:''}</div></div><div class="field"><label>Sesi</label><div style="font-weight:600">${JP[jpIdx][0]} (${JP[jpIdx][1]})</div></div>${absen>0?`<button class="btn sm" style="width:100%;margin:6px 0" onclick="closeM('ovl-mon');openKehRombelDetailFromMon(${rombelId},${jpIdx})"><svg data-lucide="users"></svg>Lihat Daftar Siswa & Alasan Tidak Hadir</button>`:''}<p class="sub"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Data kehadiran otomatis dari absensi QR/kode kelas.</p>`;
+  openM('ovl-mon');lucide.createIcons();
+}
+function openKehRombelDetailFromMon(rombelId,jpIdx){
+  const r=ROMBEL.find(x=>x.id===rombelId);if(!r)return;
+  const dow=now.getDay()===0?1:now.getDay();const slot=SCHED_FULL[dow]&&SCHED_FULL[dow][rombelId]&&SCHED_FULL[dow][rombelId][jpIdx];
+  const hadirPct=85+((rombelId*3+jpIdx*2)%13);const total=28+rombelId%5;const hadirCount=Math.round(total*hadirPct/100);const absenCount=total-hadirCount;
+  const siswa=genSiswa(r.id);const g=slot?GURU.find(x=>x.id===slot.gid):null;
+  const izin=siswa.filter(s=>s.status==='Izin');const sakit=siswa.filter(s=>s.status==='Sakit');const alpha=siswa.filter(s=>s.status==='Alpha');
+  document.querySelector('#ovl-kehadiran .title').innerHTML='<svg data-lucide="users"></svg>Detail Absensi — '+r.nama;
+  document.getElementById('kehMeta').textContent=r.nama+' · '+(slot?slot.mp+' · '+JP[jpIdx][0]+' · ':'')+DOW[now.getDay()]+', '+now.getDate()+' '+MON[now.getMonth()];
+  let h='<button class="btn sec sm" style="margin-bottom:12px" onclick="closeM(\'ovl-kehadiran\');openKehRombel('+rombelId+','+jpIdx+')"><svg data-lucide="arrow-left"></svg> Kembali ke Monitoring</button>';
+  h+=`<div class="statrow"><div class="statpill"><div class="n" style="color:var(--em700)">${hadirPct}%</div><div class="l">Kehadiran</div></div><div class="statpill"><div class="n">${hadirCount}/${total}</div><div class="l">Hadir/Total</div></div><div class="statpill"><div class="n" style="color:var(--rose)">${absenCount}</div><div class="l">Tidak Hadir</div></div><div class="statpill"><div class="n">${slot?slot.mp:'—'}</div><div class="l">Mapel</div></div></div>`;
+  if(absenCount>0){
+    h+=`<div class="mod-sec"><div class="mod-sec-h"><svg data-lucide="user-x"></svg>Siswa Tidak Hadir (${absenCount})</div>`;
+    h+='<div style="display:flex;gap:8px;margin-bottom:8px">';
+    if(izin.length)h+=`<span class="badge b-info">Izin: ${izin.length}</span>`;
+    if(sakit.length)h+=`<span class="badge b-warn">Sakit: ${sakit.length}</span>`;
+    if(alpha.length)h+=`<span class="badge b-rose">Alpha: ${alpha.length}</span>`;
+    h+='</div><div class="abs-list">';
+    [...izin,...sakit,...alpha].forEach(s=>{const cls=s.status==='Izin'?'b-info':s.status==='Sakit'?'b-warn':'b-rose';h+=`<div class="abs-row"><div class="ava" style="background:${s.status==='Izin'?'#e0f2fe;color:#0369a1':s.status==='Sakit'?'var(--amberbg);color:var(--amber)':'var(--rosebg);color:var(--rose)'}">${s.name[0]}</div><div class="info"><b>${s.name}</b><small>NIS ${s.nis} · ${s.reason}</small></div><span class="badge ${cls}">${s.status}</span></div>`;});
+    h+='</div></div>';
+  }
+  h+=`<div class="mod-sec"><div class="mod-sec-h"><svg data-lucide="user-check"></svg>Siswa Hadir (${hadirCount})</div><div class="abs-list" style="max-height:220px">`;
+  siswa.filter(s=>s.status==='Hadir').forEach(s=>{h+=`<div class="abs-row"><div class="ava">${s.name[0]}</div><div class="info"><b>${s.name}</b><small>NIS ${s.nis}</small></div><span class="badge b-ok">Hadir</span></div>`;});
+  h+='</div></div><p class="sub"><svg data-lucide="info" width="13" style="vertical-align:-2px"></svg> Data absensi otomatis dari scan QR/kode kelas. Notifikasi WA otomatis untuk siswa Alpha.</p>';
+  document.getElementById('kehBody').innerHTML=h;openM('ovl-kehadiran');lucide.createIcons();
+}
+
+// ── TOAST ──
+function showToast(msg){const t=document.createElement('div');t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 20px;border-radius:12px;font-size:13px;font-weight:700;box-shadow:var(--shlift);z-index:100;animation:slideup .3s';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
+
+// ── INIT ──
+renderPapan();renderModul();renderSumatif();renderMonitor();renderMonKeh();renderRekap();renderKKTP();renderJadwal();renderTload();updCounts();lucide.createIcons();
+</script>
+</body>
+</html>
