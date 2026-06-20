@@ -28,7 +28,7 @@ export const ListLmsModuleQuerySchema = z.object({
   academicYear: z.string().regex(/^\d{4}\/\d{4}$/).optional(),
   semester: z.coerce.number().int().min(1).max(2).optional(),
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 export type ListLmsModuleQueryDto = z.infer<typeof ListLmsModuleQuerySchema>;
 

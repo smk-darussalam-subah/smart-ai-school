@@ -8,7 +8,7 @@ export const ListGradesQuerySchema = z.object({
   academicYear: z.string().regex(/^\d{4}\/\d{4}$/).optional(),
   type:         z.enum(['uts', 'uh', 'uas', 'praktik', 'sikap']).optional(),
   page:         z.coerce.number().int().positive().default(1),
-  limit:        z.coerce.number().int().positive().max(100).default(20),
+  limit:        z.coerce.number().int().positive().max(200).default(20),
 });
 
 export type ListGradesQuery = z.infer<typeof ListGradesQuerySchema>;
