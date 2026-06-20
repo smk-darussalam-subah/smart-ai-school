@@ -62,13 +62,18 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
       if (!res.success) setErr(res.error ?? 'Aksi Modul LMS gagal.');
     });
   };
-  const doLmsStatus = (m: LmsModuleItem, action: 'publish' | 'unpublish' | 'archive') => lmsAction(m.id, () => setLmsModuleStatus(m.id, action));
+  const doLmsStatus = (m: LmsModuleItem, action: 'publish' | 'unpublish' | 'archive') => {
+    if (action === 'publish' && !window.confirm(`Publikasikan modul "${m.title}" ke siswa kelas terkait?`)) return;
+    if (action === 'archive' && !window.confirm(`Arsipkan modul "${m.title}"? Modul tak lagi tampil aktif bagi siswa.`)) return;
+    lmsAction(m.id, () => setLmsModuleStatus(m.id, action));
+  };
   const doLmsDelete = (m: LmsModuleItem) => {
     if (!window.confirm(`Hapus Modul LMS "${m.title}"? Progres siswa untuk modul ini ikut terhapus.`)) return;
     lmsAction(m.id, () => deleteLmsModule(m.id));
   };
 
   const doSubmit = (r: RppItem) => {
+    if (!window.confirm(`Ajukan Modul Ajar "${r.title}" ke Wakakur untuk direview? Modul tak bisa diedit selama menunggu review.`)) return;
     setErr(null); setBusyId(r.id);
     startTransition(async () => {
       const res = await submitRpp(r.id);

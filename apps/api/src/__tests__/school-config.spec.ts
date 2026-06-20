@@ -4,7 +4,7 @@ jest.mock('@smk/logger', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { SchoolConfigService } from '../school-config/school-config.service';
 import { SchoolConfigController } from '../school-config/school-config.controller';
 import { PrismaService } from '../prisma/prisma.service';
@@ -22,14 +22,14 @@ describe('SchoolConfigService', () => {
   let service: SchoolConfigService;
   const mockProfile = { findFirst: jest.fn(), update: jest.fn() };
   const mockMajor = { findMany: jest.fn(), create: jest.fn(), update: jest.fn() };
-  const mockAY = { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() };
-  const mockSem = { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() };
+  const mockAY = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() };
+  const mockSem = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() };
   const mockCal = { findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() };
 
   beforeEach(async () => {
     [mockProfile.findFirst, mockProfile.update, mockMajor.findMany, mockMajor.create, mockMajor.update,
-      mockAY.findMany, mockAY.findFirst, mockAY.create, mockAY.update, mockAY.updateMany,
-      mockSem.findMany, mockSem.findFirst, mockSem.create, mockSem.update, mockSem.updateMany,
+      mockAY.findMany, mockAY.findFirst, mockAY.findUnique, mockAY.create, mockAY.update, mockAY.updateMany,
+      mockSem.findMany, mockSem.findFirst, mockSem.findUnique, mockSem.create, mockSem.update, mockSem.updateMany,
       mockCal.findMany, mockCal.create, mockCal.update, mockCal.delete].forEach(m => m.mockReset());
 
     const prisma = {
@@ -90,10 +90,28 @@ describe('SchoolConfigService', () => {
   });
 
   it('createAcademicYear with isActive → deactivate others first', async () => {
+    mockAY.findUnique.mockResolvedValue(null); // tak duplikat
     mockAY.updateMany.mockResolvedValue({ count: 1 });
     mockAY.create.mockResolvedValue(AY);
     await service.createAcademicYear({ code: '2026/2027', startDate: new Date(), endDate: new Date(), isActive: true });
     expect(mockAY.updateMany).toHaveBeenCalledWith({ data: { isActive: false } });
+  });
+
+  it('createAcademicYear duplikat → Conflict (tanpa menonaktifkan yg lain)', async () => {
+    mockAY.findUnique.mockResolvedValue({ id: 'ay1' }); // sudah ada
+    await expect(
+      service.createAcademicYear({ code: '2026/2027', startDate: new Date(), endDate: new Date(), isActive: true }),
+    ).rejects.toThrow(ConflictException);
+    expect(mockAY.updateMany).not.toHaveBeenCalled();
+    expect(mockAY.create).not.toHaveBeenCalled();
+  });
+
+  it('createSemester duplikat → Conflict', async () => {
+    mockSem.findUnique.mockResolvedValue({ id: 's1' });
+    await expect(
+      service.createSemester({ academicYearId: 'ay1', number: 1, startDate: new Date(), endDate: new Date(), isActive: true }),
+    ).rejects.toThrow(ConflictException);
+    expect(mockSem.create).not.toHaveBeenCalled();
   });
 
   it('getSemesters → filter by academicYearId', async () => {
