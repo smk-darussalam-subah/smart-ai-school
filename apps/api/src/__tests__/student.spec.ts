@@ -136,7 +136,7 @@ describe('StudentService', () => {
       prisma.student.findMany.mockResolvedValue([MOCK_STUDENT]);
       prisma.student.count.mockResolvedValue(1);
 
-      const result = await service.findAll({ page: 1, limit: 20 });
+      const result = await service.findAll({ page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' });
 
       expect(result.data).toHaveLength(1);
       expect(result.total).toBe(1);
@@ -151,7 +151,7 @@ describe('StudentService', () => {
       prisma.student.findMany.mockResolvedValue([]);
       prisma.student.count.mockResolvedValue(0);
 
-      await service.findAll({ classId: 'class-uuid-001', page: 1, limit: 20 });
+      await service.findAll({ classId: 'class-uuid-001', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' });
 
       expect(prisma.student.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { deletedAt: null, classId: 'class-uuid-001' } }),
@@ -162,7 +162,7 @@ describe('StudentService', () => {
       prisma.student.findMany.mockResolvedValue([]);
       prisma.student.count.mockResolvedValue(0);
 
-      await service.findAll({ status: 'active', page: 1, limit: 20 });
+      await service.findAll({ status: 'active', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' });
 
       expect(prisma.student.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { deletedAt: null, status: 'active' } }),
@@ -173,10 +173,28 @@ describe('StudentService', () => {
       prisma.student.findMany.mockResolvedValue([MOCK_STUDENT]);
       prisma.student.count.mockResolvedValue(1);
 
-      await service.findAll({ search: 'Budi', page: 1, limit: 20 });
+      await service.findAll({ search: 'Budi', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' });
 
       const callArg = prisma.student.findMany.mock.calls[0][0];
       expect(callArg.where.OR).toBeDefined();
+    });
+
+    it('sort by nis asc → orderBy { nis: asc }', async () => {
+      prisma.student.findMany.mockResolvedValue([]);
+      prisma.student.count.mockResolvedValue(0);
+      await service.findAll({ page: 1, limit: 20, sortBy: 'nis', sortOrder: 'asc' });
+      expect(prisma.student.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { nis: 'asc' } }),
+      );
+    });
+
+    it('sort by fullName → orderBy via relasi user', async () => {
+      prisma.student.findMany.mockResolvedValue([]);
+      prisma.student.count.mockResolvedValue(0);
+      await service.findAll({ page: 1, limit: 20, sortBy: 'fullName', sortOrder: 'desc' });
+      expect(prisma.student.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { user: { fullName: 'desc' } } }),
+      );
     });
   });
 
@@ -361,7 +379,7 @@ describe('StudentService', () => {
       // Langkah 2: findAll — DB mengembalikan kosong (soft-deleted tidak lolos filter)
       prisma.student.findMany.mockResolvedValue([]);
       prisma.student.count.mockResolvedValue(0);
-      const list = await service.findAll({ page: 1, limit: 20 });
+      const list = await service.findAll({ page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' });
 
       expect(list.data).toHaveLength(0);
       expect(list.total).toBe(0);
@@ -667,7 +685,7 @@ describe('StudentController', () => {
 
   it('findAll — delegasi ke service dengan query yang sudah di-parse', async () => {
     await controller.findAll({ page: '1', limit: '10' } as unknown, SA_USER);
-    expect(service.findAll).toHaveBeenCalledWith({ page: 1, limit: 10 });
+    expect(service.findAll).toHaveBeenCalledWith({ page: 1, limit: 10, sortBy: 'createdAt', sortOrder: 'desc' });
   });
 
   it('findAll — status tidak valid → BadRequestException (400)', async () => {
