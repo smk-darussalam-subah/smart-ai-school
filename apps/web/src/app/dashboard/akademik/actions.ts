@@ -3,21 +3,26 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
+import { apiErrorMessage } from '@/lib/api';
 
 const API_BASE = process.env.API_URL ?? 'http://localhost:3001';
 
 async function apiCall(path: string, method: string, body?: unknown) {
   const session = await getServerSession(authOptions);
-  if (!session?.accessToken) throw new Error('Unauthorized');
-  const res = await fetch(`${API_BASE}/api/v1${path}`, {
-    method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.accessToken}` },
-    body: body ? JSON.stringify(body) : undefined, cache: 'no-store',
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: 'Unknown error' }));
-    return { success: false, error: err.message };
+  if (!session?.accessToken) return { success: false, error: 'Sesi berakhir — silakan login ulang.' };
+  try {
+    const res = await fetch(`${API_BASE}/api/v1${path}`, {
+      method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.accessToken}` },
+      body: body ? JSON.stringify(body) : undefined, cache: 'no-store',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      return { success: false, error: apiErrorMessage(err) };
+    }
+    return { success: true, data: await res.json() };
+  } catch {
+    return { success: false, error: 'Koneksi ke server gagal. Coba lagi.' };
   }
-  return { success: true, data: await res.json() };
 }
 
 export async function createGrade(data: { studentId: string; assignmentId: string; semester: number; academicYear: string; score: number; type: string; notes?: string }) {

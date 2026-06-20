@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CalendarType } from '@prisma/client';
@@ -92,6 +92,9 @@ export class SchoolConfigService {
   }
 
   async createAcademicYear(data: { code: string; startDate: Date; endDate: Date; isActive?: boolean }) {
+    // Cek duplikat SEBELUM menonaktifkan yang lain (hindari efek samping bila gagal).
+    const exists = await this.prisma.academicYear.findUnique({ where: { code: data.code }, select: { id: true } });
+    if (exists) throw new ConflictException(`Tahun ajaran ${data.code} sudah terdaftar.`);
     if (data.isActive) {
       await this.prisma.academicYear.updateMany({ data: { isActive: false } });
     }
@@ -125,6 +128,11 @@ export class SchoolConfigService {
   }
 
   async createSemester(data: { academicYearId: string; number: number; startDate: Date; endDate: Date; isActive?: boolean }) {
+    const exists = await this.prisma.semester.findUnique({
+      where: { academicYearId_number: { academicYearId: data.academicYearId, number: data.number } },
+      select: { id: true },
+    });
+    if (exists) throw new ConflictException(`Semester ${data.number} sudah ada untuk tahun ajaran ini.`);
     if (data.isActive) {
       await this.prisma.semester.updateMany({ data: { isActive: false } });
     }

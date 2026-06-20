@@ -108,3 +108,29 @@ export async function apiFetch<T>(
     return null;
   }
 }
+
+/**
+ * Ekstrak pesan error API yang ramah dari body respons gagal.
+ * NestJS exception → { message: string }. ZodPipe (validasi) → { message: [{field,message}] }.
+ * Selalu kembalikan string yang bisa ditampilkan ke user.
+ */
+export function apiErrorMessage(body: unknown, fallback = 'Gagal memproses permintaan.'): string {
+  if (body && typeof body === 'object' && 'message' in body) {
+    const m = (body as { message: unknown }).message;
+    if (typeof m === 'string' && m.trim()) return m;
+    if (Array.isArray(m)) {
+      const parts = m
+        .map((x) => {
+          if (typeof x === 'string') return x;
+          if (x && typeof x === 'object' && 'message' in x) {
+            const field = 'field' in x && (x as { field: unknown }).field ? `${(x as { field: unknown }).field}: ` : '';
+            return `${field}${(x as { message: unknown }).message}`;
+          }
+          return '';
+        })
+        .filter(Boolean);
+      if (parts.length) return parts.join('; ');
+    }
+  }
+  return fallback;
+}
