@@ -3,15 +3,17 @@
 import { useMemo, useState } from 'react';
 import {
   LayoutDashboard, CalendarClock, BookOpenCheck, ClipboardPenLine, CalendarCheck,
-  ClipboardList, Award, ClipboardCheck, BookMarked, Calendar, UserCheck, FileText, GraduationCap, Users,
+  ClipboardList, Award, ClipboardCheck, BookMarked, Calendar, UserCheck, Users,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { GradeItem, AttendanceItem } from '@/lib/api';
-import type { ScheduleItem, ActivityItem, RppItem, TodayClass, ClassRef } from './guru-types';
+import type { ScheduleItem, ActivityItem, RppItem, TodayClass, ClassRef, LmsModuleItem } from './guru-types';
 import RingkasanGuru from './RingkasanGuru';
 import JadwalTimetable from './JadwalTimetable';
 import RekapPembelajaran from './RekapPembelajaran';
 import GradebookPenilaian from './GradebookPenilaian';
+import CapaianRapor from './CapaianRapor';
+import PembelajaranGuru from './PembelajaranGuru';
 import AbsenModal from './AbsenModal';
 import JurnalModal from './JurnalModal';
 import InputNilaiModal from './InputNilaiModal';
@@ -26,6 +28,7 @@ interface Props {
   schedules: ScheduleItem[];
   activities: ActivityItem[];
   rpp: RppItem[];
+  lmsModules: LmsModuleItem[];
   todayClasses: TodayClass[];
   academicYear: string;
   semester: number;
@@ -43,13 +46,8 @@ const NAV: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'capaian', label: 'Capaian & Rapor', icon: Award },
 ];
 
-const RPP_BADGE: Record<string, string> = {
-  approved: 'bg-emerald-50 text-emerald-700', submitted: 'bg-sky-50 text-sky-700', revision: 'bg-amber-50 text-amber-700', draft: 'bg-slate-100 text-slate-600',
-};
-const RPP_LABEL: Record<string, string> = { approved: 'Disetujui', submitted: 'Diajukan', revision: 'Revisi', draft: 'Draft' };
-
 export default function AkademikWorkspace({
-  grades, attendances, assignments, schedules, activities, rpp, todayClasses, academicYear, semester,
+  grades, attendances, assignments, schedules, activities, rpp, lmsModules, todayClasses, academicYear, semester,
 }: Props) {
   const approvedRpp = useMemo(() => rpp.filter((r) => r.status === 'approved'), [rpp]);
   const subjects = useMemo(() => {
@@ -146,25 +144,7 @@ export default function AkademikWorkspace({
         )}
 
         {screen === 'pembelajaran' && (
-          <Card title="Modul Ajar" icon={FileText}>
-            {rpp.length === 0 ? <Empty label="Belum ada Modul Ajar" /> : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-[12.5px]">
-                  <thead><tr className="border-b border-[#e6efea] text-left text-[11px] uppercase tracking-wide text-[#6b8079]"><th className="py-2 pr-3">Judul / TP</th><th className="py-2 pr-3">Mapel</th><th className="py-2">Status</th></tr></thead>
-                  <tbody>
-                    {rpp.map((r) => (
-                      <tr key={r.id} className="border-b border-[#f0f4f2]">
-                        <td className="py-2.5 pr-3 font-semibold text-[#0f2e25]">{r.title}</td>
-                        <td className="py-2.5 pr-3 text-[#355a4e]">{r.subject}</td>
-                        <td className="py-2.5"><span className={clsx('rounded-md px-2 py-0.5 text-[11px] font-bold', RPP_BADGE[r.status] ?? 'bg-slate-100 text-slate-600')}>{RPP_LABEL[r.status] ?? r.status}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-semibold text-amber-700">Pemetaan CP→TP→ATP terstruktur (Modul Ajar Kurikulum Merdeka penuh) — <b>menyusul</b> di modul Pembelajaran/ATP.</p>
-          </Card>
+          <PembelajaranGuru rpp={rpp} lmsModules={lmsModules} subjects={subjects} classes={guruClasses} academicYear={academicYear} semester={semester} />
         )}
 
         {screen === 'penilaian' && (
@@ -215,9 +195,7 @@ export default function AkademikWorkspace({
         )}
 
         {screen === 'capaian' && (
-          <Card title="Capaian & Rapor" icon={GraduationCap}>
-            <p className="text-[13px] text-[#355a4e]">Deskripsi capaian per TP (otomatis dari penilaian, dapat disunting) → diperiksa Kepala Sekolah → terbit ke orang tua. Terhubung ke modul <b>Rapor</b>.</p>
-          </Card>
+          <CapaianRapor grades={grades} className={selClassName} academicYear={academicYear} semester={semester} />
         )}
       </div>
 

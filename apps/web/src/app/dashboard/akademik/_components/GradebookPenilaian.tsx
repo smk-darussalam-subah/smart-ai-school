@@ -5,7 +5,13 @@ import { Target, Users, Download, Plus, GitBranch, ArrowRight } from 'lucide-rea
 import clsx from 'clsx';
 import type { GradeItem } from '@/lib/api';
 import { updateGrade } from '../actions';
-import { KKTP_DEFAULT } from './guru-types';
+import {
+  naOf as computeNa,
+  gradeStatus,
+  KKTP_DEFAULT,
+  type StudentGradeComponents,
+  type GradeNaStatus,
+} from '@/lib/academic';
 
 type Mode = 'rekap' | 'per-tp' | 'rubrik';
 const COLS = [
@@ -18,8 +24,14 @@ const COLS = [
 
 interface CellVal { id: string; score: number }
 
+// Warna sel per status ketuntasan (ambang via gradeStatus = identik perilaku lama).
+const CELL_TONE: Record<GradeNaStatus, string> = {
+  tuntas: 'bg-emerald-50 text-emerald-700',
+  mid: 'bg-orange-50 text-orange-700',
+  remedial: 'bg-rose-50 text-rose-600',
+};
 function cellColor(v: number) {
-  return v >= KKTP_DEFAULT ? 'bg-emerald-50 text-emerald-700' : v >= KKTP_DEFAULT - 8 ? 'bg-orange-50 text-orange-700' : 'bg-rose-50 text-rose-600';
+  return CELL_TONE[gradeStatus(v)];
 }
 
 export default function GradebookPenilaian({
@@ -42,9 +54,15 @@ export default function GradebookPenilaian({
   }, [grades]);
 
   const scoreOf = (c: CellVal | undefined) => (c ? (overrides[c.id] ?? c.score) : null);
-  const naOf = (cells: Map<string, CellVal>) => {
-    const vals = COLS.map((c) => scoreOf(cells.get(c.key))).filter((v): v is number => v !== null);
-    return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null;
+  // NA RESMI berbobot NA_WEIGHTS (lib/academic, keputusan Kang 2026-06-20). Komponen
+  // yg ada dipetakan dari sel (menghormati override edit) lalu dihitung via computeNa.
+  const naOf = (cells: Map<string, CellVal>): number | null => {
+    const comp: StudentGradeComponents = {};
+    for (const c of COLS) {
+      const s = scoreOf(cells.get(c.key));
+      if (s !== null) comp[c.key] = s;
+    }
+    return computeNa(comp);
   };
 
   const rows = base.map((r) => ({ ...r, na: naOf(r.cells) }));

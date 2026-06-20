@@ -6,7 +6,7 @@ import { apiFetch, PaginatedResponse, GradeItem, AttendanceItem } from '@/lib/ap
 import { scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-times';
 import AkademikClient from './_components/AkademikClient';
 import AkademikWorkspace from './_components/AkademikWorkspace';
-import type { ScheduleItem, ActivityItem, RppItem, TodayClass } from './_components/guru-types';
+import type { ScheduleItem, ActivityItem, RppItem, TodayClass, LmsModuleItem } from './_components/guru-types';
 
 interface Assignment { id: string; subject: string; class: { name: string } }
 interface ClassItem { id: string; name: string; }
@@ -35,10 +35,11 @@ export default async function AkademikPage() {
 
   // ── Dashboard Guru (IA baru). Role lain → tampilan lama (fallback). ─────────
   if (isGuru) {
-    const [schedulesRes, activitiesRes, rppRes, semRes] = await Promise.all([
+    const [schedulesRes, activitiesRes, rppRes, lmsRes, semRes] = await Promise.all([
       apiFetch<{ data: ScheduleItem[] }>('/schedules?limit=500', token),
       apiFetch<{ data: ActivityItem[] }>('/class-activities?limit=200', token),
       apiFetch<{ data: RppItem[] }>('/rpp?limit=100', token),
+      apiFetch<{ data: LmsModuleItem[] }>('/lms/modules?limit=200', token),
       apiFetch<ActiveSemester>('/school/semesters/active', token),
     ]);
 
@@ -73,6 +74,7 @@ export default async function AkademikPage() {
         schedules={schedules}
         activities={activitiesRes?.data ?? []}
         rpp={rppRes?.data ?? []}
+        lmsModules={lmsRes?.data ?? []}
         todayClasses={todayClasses}
         academicYear={academicYear}
         semester={semester}
