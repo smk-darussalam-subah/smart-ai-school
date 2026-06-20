@@ -88,3 +88,91 @@ export async function createJurnal(data: {
   revalidatePath('/dashboard/akademik');
   return r;
 }
+
+// ── Modul Ajar / RPP (pipeline guru → Wakakur) ─────────────────────────────────
+
+export interface RppFormData {
+  subject: string;
+  title: string;
+  content?: string | null;
+  fileUrl?: string | null;
+  classId?: string | null;
+  academicYear: string;
+  semester: number;
+  /** true = langsung diajukan ke Wakakur (status submitted). */
+  submit?: boolean;
+}
+
+/** Buat Modul Ajar (draft, atau langsung diajukan bila submit=true). */
+export async function createRpp(data: RppFormData) {
+  const r = await apiCall('/rpp', 'POST', data);
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+/** Edit Modul Ajar milik sendiri (hanya status draft/revision). */
+export async function updateRpp(id: string, data: Partial<Omit<RppFormData, 'submit'>>) {
+  const r = await apiCall(`/rpp/${id}`, 'PATCH', data);
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+/** Ajukan Modul Ajar (draft/revision → submitted) ke Wakakur. */
+export async function submitRpp(id: string) {
+  const r = await apiCall(`/rpp/${id}/submit`, 'PATCH');
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+/** Hapus Modul Ajar milik sendiri (hanya status draft). */
+export async function deleteRpp(id: string) {
+  const r = await apiCall(`/rpp/${id}`, 'DELETE');
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+// ── Modul LMS (materi belajar siswa) ───────────────────────────────────────────
+
+export interface LmsFormData {
+  subject: string;
+  title: string;
+  tp?: string | null;
+  jpAllocation?: number | null;
+  kktp?: number;
+  content?: string | null;
+  classId?: string | null;
+  rppId?: string | null;
+  orderIndex?: number;
+  academicYear: string;
+  semester: number;
+  /** true = langsung dipublikasikan ke siswa. */
+  publish?: boolean;
+}
+
+/** Buat Modul LMS (draft, atau langsung publish). */
+export async function createLmsModule(data: LmsFormData) {
+  const r = await apiCall('/lms/modules', 'POST', data);
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+/** Edit Modul LMS milik sendiri. */
+export async function updateLmsModule(id: string, data: Partial<Omit<LmsFormData, 'publish'>>) {
+  const r = await apiCall(`/lms/modules/${id}`, 'PATCH', data);
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+/** Publikasikan / tarik / arsipkan Modul LMS. */
+export async function setLmsModuleStatus(id: string, action: 'publish' | 'unpublish' | 'archive') {
+  const r = await apiCall(`/lms/modules/${id}/${action}`, 'PATCH');
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+/** Hapus Modul LMS milik sendiri. */
+export async function deleteLmsModule(id: string) {
+  const r = await apiCall(`/lms/modules/${id}`, 'DELETE');
+  revalidatePath('/dashboard/akademik');
+  return r;
+}

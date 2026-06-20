@@ -42,6 +42,7 @@ import { SubjectModule } from './subject/subject.module';
 import { PositionsModule } from './positions/positions.module';
 import { PublicKioskModule } from './public-kiosk/public-kiosk.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { LmsModule } from './lms/lms.module';
 
 @Module({
   imports: [
@@ -80,6 +81,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     PositionsModule,
     PublicKioskModule,
     AnalyticsModule,
+    LmsModule,
   ],
   providers: [
     UserStatusService,
