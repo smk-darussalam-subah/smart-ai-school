@@ -14,7 +14,7 @@ interface LoadErrorProps {
 
 export default function LoadError({
   title = 'Gagal memuat data',
-  message = 'Terjadi gangguan koneksi ke server. Periksa jaringan Anda lalu coba lagi.',
+  message = 'Gagal memuat data dari server. Coba muat ulang; bila tetap gagal, sesi mungkin berakhir — keluar lalu masuk lagi.',
 }: LoadErrorProps) {
   const router = useRouter();
   return (
