@@ -83,13 +83,13 @@ export class SchoolConfigController {
     return this.service.getActiveAcademicYear();
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
   @Post('academic-years')
   createAcademicYear(@Body(ZodPipe(CreateAcademicYearSchema)) dto: Record<string, unknown>) {
     return this.service.createAcademicYear(dto as { code: string; startDate: Date; endDate: Date; isActive?: boolean });
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
   @Patch('academic-years/:id')
   updateAcademicYear(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(UpdateAcademicYearSchema)) dto: Record<string, unknown>) {
     return this.service.updateAcademicYear(id, dto);
@@ -108,7 +108,7 @@ export class SchoolConfigController {
     return this.service.getActiveSemester();
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
   @Post('semesters')
   createSemester(@Body(ZodPipe(CreateSemesterSchema)) dto: Record<string, unknown>) {
     return this.service.createSemester(dto as {
@@ -116,7 +116,7 @@ export class SchoolConfigController {
     });
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
   @Patch('semesters/:id')
   updateSemester(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(UpdateSemesterSchema)) dto: Record<string, unknown>) {
     return this.service.updateSemester(id, dto);
