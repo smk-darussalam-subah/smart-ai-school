@@ -181,3 +181,22 @@ export async function deleteLmsModule(id: string) {
   revalidatePath('/dashboard/akademik');
   return r;
 }
+
+/** Ambil progres siswa untuk satu Modul LMS (monitor guru). */
+export async function fetchLmsProgress(id: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) return { success: false, error: 'Sesi berakhir — silakan login ulang.' };
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/lms/modules/${id}/progress`, {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      return { success: false, error: apiErrorMessage(err) };
+    }
+    return { success: true, data: await res.json() };
+  } catch {
+    return { success: false, error: 'Koneksi ke server gagal. Coba lagi.' };
+  }
+}

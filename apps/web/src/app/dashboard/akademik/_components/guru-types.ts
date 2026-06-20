@@ -42,6 +42,20 @@ export interface ClassRef {
   name: string;
 }
 
+export interface LmsProgressRow {
+  name: string;
+  nis: string;
+  progress: number; // 0–100
+  status: string; // locked | active | completed
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface LmsProgressResponse {
+  progress: LmsProgressRow[];
+  classStudentCount: number | null;
+}
+
 export interface LmsModuleItem {
   id: string;
   rppId: string | null;
