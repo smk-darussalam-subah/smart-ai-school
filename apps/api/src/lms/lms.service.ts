@@ -242,6 +242,43 @@ export class LmsService {
     });
   }
 
+  /** Progres siswa untuk satu modul (monitor guru). Guru PEMILIK / KS / SA. */
+  async getProgress(moduleId: string, user: AuthUser) {
+    const module = await this.prisma.lmsModule.findUnique({
+      where: { id: moduleId },
+      select: { id: true, title: true, subject: true, classId: true, teacherId: true },
+    });
+    if (!module) throw new NotFoundException('Modul LMS tidak ditemukan');
+    if (!this.isReviewer(user)) {
+      const teacherId = await this.resolveTeacherId(user.keycloakId);
+      if (module.teacherId !== teacherId) throw new ForbiddenException('Bukan modul Anda');
+    }
+
+    const [rows, classStudentCount] = await Promise.all([
+      this.prisma.lmsModuleProgress.findMany({
+        where: { moduleId },
+        orderBy: [{ status: 'asc' }, { progress: 'desc' }],
+        select: {
+          progress: true, status: true, startedAt: true, completedAt: true,
+          student: { select: { nis: true, user: { select: { fullName: true } } } },
+        },
+      }),
+      module.classId
+        ? this.prisma.student.count({ where: { classId: module.classId, deletedAt: null, status: 'active' } })
+        : Promise.resolve(null),
+    ]);
+
+    const progress = rows.map((r) => ({
+      name: r.student.user.fullName,
+      nis: r.student.nis,
+      progress: r.progress,
+      status: r.status,
+      startedAt: r.startedAt,
+      completedAt: r.completedAt,
+    }));
+    return { progress, classStudentCount };
+  }
+
   private async ensureOwned(id: string, teacherId: string): Promise<void> {
     const existing = await this.prisma.lmsModule.findFirst({ where: { id, teacherId }, select: { id: true } });
     if (!existing) throw new NotFoundException('Modul LMS tidak ditemukan');

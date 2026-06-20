@@ -6,12 +6,14 @@
 // Editor konten LMS interaktif = placeholder jujur (backend LMS dibangun berikutnya).
 
 import { useState, useTransition } from 'react';
-import { FileText, Plus, Pencil, Send, Trash2, AlertTriangle, BookOpen, Loader2, Eye, EyeOff, Archive, Users } from 'lucide-react';
+import { FileText, Plus, Pencil, Send, Trash2, AlertTriangle, BookOpen, Loader2, Eye, EyeOff, Archive, Users, Activity } from 'lucide-react';
 import clsx from 'clsx';
 import type { RppItem, LmsModuleItem } from './guru-types';
 import { submitRpp, deleteRpp, setLmsModuleStatus, deleteLmsModule } from '../actions';
 import ModulAjarForm from './ModulAjarForm';
 import ModulLmsForm from './ModulLmsForm';
+import LmsMonitorModal from './LmsMonitorModal';
+import LmsPreviewModal from './LmsPreviewModal';
 
 interface Props {
   rpp: RppItem[];
@@ -47,6 +49,8 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
 
   const [lmsFormOpen, setLmsFormOpen] = useState(false);
   const [lmsEditing, setLmsEditing] = useState<LmsModuleItem | null>(null);
+  const [monitorM, setMonitorM] = useState<LmsModuleItem | null>(null);
+  const [previewM, setPreviewM] = useState<LmsModuleItem | null>(null);
 
   const openCreate = () => { setEditing(null); setFormOpen(true); };
   const openEdit = (r: RppItem) => { setEditing(r); setFormOpen(true); };
@@ -233,6 +237,14 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
                       </td>
                       <td className="py-2.5">
                         <div className="flex items-center justify-end gap-1.5">
+                          <button type="button" onClick={() => setPreviewM(m)} disabled={rowBusy} title="Pratinjau (tampilan siswa)"
+                            className="inline-flex items-center gap-1 rounded-lg border border-[#e6efea] bg-white px-2 py-1.5 text-[11.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] disabled:opacity-50">
+                            <BookOpen className="h-3.5 w-3.5" />
+                          </button>
+                          <button type="button" onClick={() => setMonitorM(m)} disabled={rowBusy} title="Monitor progres siswa"
+                            className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5 text-[11.5px] font-bold text-sky-700 hover:bg-sky-100 disabled:opacity-50">
+                            <Activity className="h-3.5 w-3.5" />
+                          </button>
                           <button type="button" onClick={() => openLmsEdit(m)} disabled={rowBusy} title="Edit"
                             className="inline-flex items-center gap-1 rounded-lg border border-[#e6efea] bg-white px-2 py-1.5 text-[11.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] disabled:opacity-50">
                             <Pencil className="h-3.5 w-3.5" />
@@ -296,6 +308,8 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
           editing={lmsEditing}
         />
       )}
+      {monitorM && <LmsMonitorModal module={monitorM} onClose={() => setMonitorM(null)} />}
+      {previewM && <LmsPreviewModal module={previewM} onClose={() => setPreviewM(null)} />}
     </div>
   );
 }
