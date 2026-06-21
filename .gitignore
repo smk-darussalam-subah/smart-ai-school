@@ -68,6 +68,9 @@ infrastructure/nginx/certs/
 *.pem
 .vercel
 
+# Build artifacts (nested self-references)
+packages/auth/src/packages/
+
 # Coverage artifacts (semua varian nama, di mana pun)
 coverage*/
 *.lcov

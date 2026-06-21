@@ -17,6 +17,10 @@ import PembelajaranGuru from './PembelajaranGuru';
 import AbsenModal from './AbsenModal';
 import JurnalModal from './JurnalModal';
 import InputNilaiModal from './InputNilaiModal';
+import PenilaianSesiModal from './PenilaianSesiModal';
+import SessionFlowModal from './SessionFlowModal';
+import KehadiranGuru from './KehadiranGuru';
+import PenugasanGuru from './PenugasanGuru';
 
 interface Assignment { id: string; subject: string; class: { id: string; name: string } }
 
@@ -74,6 +78,8 @@ export default function AkademikWorkspace({
   const [absen, setAbsen] = useState<{ classId: string; className: string } | null>(null);
   const [jurnal, setJurnal] = useState<{ classId: string; className: string; subject: string; startLabel: string; jpStart: number } | null>(null);
   const [inputNilai, setInputNilai] = useState(false);
+  const [penilaian, setPenilaian] = useState<{ session: TodayClass; mode: 'preview' | 'monitor'; tab: 'diag' | 'form' | 'fb' } | null>(null);
+  const [sessFlow, setSessFlow] = useState<TodayClass | null>(null);
 
   const selClassName = selClass === 'all' ? '' : (guruClasses.find((c) => c.id === selClass)?.name ?? '');
 
@@ -143,7 +149,8 @@ export default function AkademikWorkspace({
         {screen === 'ringkasan' && (
           <RingkasanGuru
             grades={grades} attendances={attendances} activities={activities} rpp={rpp} todayClasses={todayClasses}
-            onAbsen={(c) => setAbsen(c)} onJurnal={(c) => setJurnal(c)}
+            onAbsen={(c) => setAbsen(c)} onJurnal={(c) => setJurnal(c)} onNavigate={(s) => setScreen(s as Screen)}
+            onStartSession={(c) => setSessFlow(c)} onPenilaian={(c) => setPenilaian({ session: c, mode: 'preview', tab: 'diag' })}
           />
         )}
 
@@ -168,43 +175,11 @@ export default function AkademikWorkspace({
         )}
 
         {screen === 'kehadiran' && (
-          <Card title={`Kehadiran${selClassName ? ` — ${selClassName}` : ''}`} icon={CalendarCheck}>
-            <p className="mb-3 text-[12px] text-[#6b8079]">Absensi cepat tersedia dari kartu kelas di <b>Ringkasan</b> (popup, default hadir). Rekap di bawah.</p>
-            <div className="overflow-x-auto rounded-2xl border border-[#e6efea]">
-              <table className="w-full text-[12.5px]">
-                <thead><tr className="border-b border-[#e6efea] bg-[#f9fbfa] text-left text-[11px] uppercase tracking-wide text-[#6b8079]">
-                  <th className="px-3 py-2">Siswa</th><th className="px-3 py-2">Kelas</th><th className="px-3 py-2">Tanggal</th><th className="px-3 py-2">Status</th></tr></thead>
-                <tbody>
-                  {sAtt.length === 0 ? (
-                    <tr><td colSpan={4} className="px-3 py-10 text-center text-[12.5px] font-medium text-[#9bb0a8]">Belum ada data absensi</td></tr>
-                  ) : sAtt.slice(0, 100).map((a) => (
-                    <tr key={a.id} className="border-b border-[#f0f4f2]">
-                      <td className="px-3 py-2.5 font-semibold text-[#0f2e25]">{a.student.user.fullName}</td>
-                      <td className="px-3 py-2.5 text-[#355a4e]">{a.class.name}</td>
-                      <td className="px-3 py-2.5 text-[#355a4e]">{new Date(a.date).toLocaleDateString('id')}</td>
-                      <td className="px-3 py-2.5"><StatusBadge status={a.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+          <KehadiranGuru attendances={attendances} className={selClassName} />
         )}
 
         {screen === 'penugasan' && (
-          <Card title="Penugasan Mengajar" icon={ClipboardList}>
-            {assignments.length === 0 ? <Empty label="Belum ada penugasan" /> : (
-              <ul className="divide-y divide-[#e6efea]">
-                {assignments.map((a) => (
-                  <li key={a.id} className="flex items-center justify-between py-2.5 text-[13px]">
-                    <span className="font-semibold text-[#0f2e25]">{a.subject}</span>
-                    <span className="text-[#6b8079]">{a.class?.name ?? '—'}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p className="mt-3 text-[11.5px] text-[#6b8079]">Pengumpulan tugas online (submission) menyusul.</p>
-          </Card>
+          <PenugasanGuru />
         )}
 
         {screen === 'capaian' && (
@@ -220,6 +195,24 @@ export default function AkademikWorkspace({
       {inputNilai && (
         <InputNilaiModal classId={selClass} className={selClassName || 'Semua Kelas'} subject={subject === 'all' ? '' : subject}
           assignmentId={inputAssignmentId} academicYear={academicYear} semester={semester} onClose={() => setInputNilai(false)} />
+      )}
+      {sessFlow && (
+        <SessionFlowModal
+          session={sessFlow}
+          onAbsen={(c) => setAbsen(c)}
+          onJurnal={(c) => setJurnal(c)}
+          onOpenPenilaian={(s, mode, tab) => setPenilaian({ session: s, mode, tab })}
+          onNavigate={(sc) => setScreen(sc as Screen)}
+          onClose={() => setSessFlow(null)}
+        />
+      )}
+      {penilaian && (
+        <PenilaianSesiModal
+          session={penilaian.session}
+          initialMode={penilaian.mode}
+          initialTab={penilaian.tab}
+          onClose={() => setPenilaian(null)}
+        />
       )}
     </div>
   );
