@@ -6,7 +6,7 @@
 // dikompilasi wali kelas / modul Rapor.
 
 import { useMemo, useState } from 'react';
-import { GraduationCap, FileText, Info, Users, Award, GitBranch, ArrowRight, Target, Brain, Hand, Heart } from 'lucide-react';
+import { GraduationCap, FileText, Info, Users, Award, GitBranch, ArrowRight } from 'lucide-react';
 import clsx from 'clsx';
 import type { GradeItem } from '@/lib/api';
 import { naOf, predikat, gradeStatus, KKTP_DEFAULT, NA_WEIGHTS, type StudentGradeComponents } from '@/lib/academic';

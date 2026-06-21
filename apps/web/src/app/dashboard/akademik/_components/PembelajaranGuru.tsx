@@ -6,7 +6,7 @@
 // Editor konten LMS interaktif = placeholder jujur (backend LMS dibangun berikutnya).
 
 import { useState, useTransition } from 'react';
-import { FileText, Plus, Pencil, Send, Trash2, AlertTriangle, BookOpen, Loader2, Eye, EyeOff, Archive, Users, Activity, TrendingUp, Info, Target } from 'lucide-react';
+import { FileText, Plus, Pencil, Send, Trash2, AlertTriangle, BookOpen, Loader2, Eye, EyeOff, Archive, Users, Activity, TrendingUp } from 'lucide-react';
 import clsx from 'clsx';
 import type { RppItem, LmsModuleItem } from './guru-types';
 import { submitRpp, deleteRpp, setLmsModuleStatus, deleteLmsModule } from '../actions';

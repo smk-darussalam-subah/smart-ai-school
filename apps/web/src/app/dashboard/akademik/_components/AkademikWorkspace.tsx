@@ -86,7 +86,6 @@ export default function AkademikWorkspace({
   const penilaianGrades = grades.filter((g) =>
     (subject === 'all' ? false : g.assignment.subject === subject) &&
     (selClass === 'all' ? true : g.assignment.class.name === selClassName));
-  const sAtt = attendances.filter((a) => selClass === 'all' ? true : a.class.name === selClassName);
   const inputAssignmentId = assignments.find((a) => a.subject === subject && a.class?.name === selClassName)?.id;
 
   return (
@@ -227,10 +226,4 @@ function Card({ title, icon: Icon, children }: { title: string; icon: typeof Lay
     </div>
   );
 }
-function Empty({ label }: { label: string }) {
-  return <div className="grid h-24 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">{label}</div>;
-}
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = { hadir: 'bg-emerald-50 text-emerald-700', izin: 'bg-sky-50 text-sky-700', sakit: 'bg-amber-50 text-amber-700', alpha: 'bg-rose-50 text-rose-600' };
-  return <span className={clsx('rounded-md px-2 py-0.5 text-[11px] font-bold capitalize', map[status] ?? 'bg-slate-100 text-slate-600')}>{status}</span>;
-}
+
