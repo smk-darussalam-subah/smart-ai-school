@@ -21,11 +21,39 @@ export interface ActivityItem {
   class?: { name: string };
 }
 
+export interface AtpItem { tpRef?: string; indikator?: string }
+export interface KegiatanItem { pertemuan?: string; deskripsi?: string }
+
+/** Modul Ajar terstruktur (Kurikulum Merdeka) — disimpan di Rpp.body. */
+export interface ModulAjarBody {
+  fase?: string;
+  pengembang?: string;
+  jpAllocation?: number | null;
+  kktp?: number | null;
+  cp?: string;
+  kompetensiAwal?: string;
+  tp?: string[];
+  atpUraian?: string;
+  atp?: AtpItem[];
+  profilDimensi?: string[];
+  profilUraian?: string;
+  sarana?: string;
+  target?: string;
+  model?: string;
+  kegiatan?: KegiatanItem[];
+  asesmen?: string;
+  pengayaan?: string;
+  remedial?: string;
+  refleksi?: string;
+  lampiran?: string;
+}
+
 export interface RppItem {
   id: string;
   subject: string;
   title: string;
   content: string | null;
+  body: ModulAjarBody | null;
   fileUrl: string | null;
   classId: string | null;
   class: { id: string; name: string } | null;

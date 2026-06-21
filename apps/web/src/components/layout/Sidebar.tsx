@@ -68,7 +68,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Nilai & Absensi', href: '/dashboard/nilai', icon: ClipboardCheck, roles: ['SISWA', 'ORANG_TUA'], permissions: ['grade.own.read', 'grade.child.read'] },
       { label: 'Rapor', href: '/dashboard/rapor', icon: GraduationCap, roles: ['SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'GURU'], permissions: ['report.read'] },
       { label: 'Kegiatan Kelas', href: '/dashboard/kegiatan', icon: Backpack, roles: ['GURU', 'SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA'], permissions: ['activity.read'] },
-      { label: 'RPP', href: '/dashboard/rpp', icon: FileText, roles: ['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN'], permissions: ['rpp.read'] },
+      { label: 'Review Modul Ajar', href: '/dashboard/rpp', icon: FileText, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN'], permissions: ['rpp.review'] },
     ],
   },
   {
