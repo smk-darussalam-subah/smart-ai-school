@@ -20,12 +20,15 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { createRpp, deleteRpp, reviewRpp, submitRpp, updateRpp } from '../actions';
+import ModulAjarView from '@/components/academic/ModulAjarView';
+import type { ModulAjarBody } from '@/app/dashboard/akademik/_components/guru-types';
 
 export interface RppItem {
   id: string;
   subject: string;
   title: string;
   content?: string | null;
+  body?: ModulAjarBody | null;
   fileUrl?: string | null;
   status: 'draft' | 'submitted' | 'approved' | 'revision';
   reviewerName?: string | null;
@@ -298,11 +301,13 @@ function ReviewDialog({ rpp, onClose, run, pending }: {
             {rpp?.subject} · {rpp?.teacher.user.fullName} · {rpp?.academicYear} Smt {rpp?.semester}
           </DialogDescription>
         </DialogHeader>
-        {rpp?.content && (
+        {rpp?.body ? (
+          <ModulAjarView body={rpp.body} />
+        ) : rpp?.content ? (
           <div className="rounded border bg-gray-50 px-3 py-2 text-sm whitespace-pre-wrap max-h-64 overflow-y-auto">
             {rpp.content}
           </div>
-        )}
+        ) : null}
         {rpp?.fileUrl && (
           <a className="text-sm text-primary underline" href={rpp.fileUrl} target="_blank" rel="noreferrer">
             📎 Buka lampiran
