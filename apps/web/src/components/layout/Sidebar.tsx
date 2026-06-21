@@ -7,7 +7,7 @@ import clsx from 'clsx';
 import ViewAsSwitcher from './ViewAsSwitcher';
 import { can } from '@/lib/permissions';
 import {
-  Home, BarChart3, BookOpen, CalendarDays, ClipboardCheck, GraduationCap,
+  Home, BarChart3, BookOpen, CalendarDays, CalendarRange, ClipboardCheck, GraduationCap,
   Backpack, FileText, Users, ClipboardList, Wallet, Briefcase, MapPin,
   Megaphone, Sparkles, Brain, UserCog, Activity, ShieldCheck, LogOut,
   type LucideIcon,
@@ -68,7 +68,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Nilai & Absensi', href: '/dashboard/nilai', icon: ClipboardCheck, roles: ['SISWA', 'ORANG_TUA'], permissions: ['grade.own.read', 'grade.child.read'] },
       { label: 'Rapor', href: '/dashboard/rapor', icon: GraduationCap, roles: ['SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'GURU'], permissions: ['report.read'] },
       { label: 'Kegiatan Kelas', href: '/dashboard/kegiatan', icon: Backpack, roles: ['GURU', 'SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA'], permissions: ['activity.read'] },
-      { label: 'RPP', href: '/dashboard/rpp', icon: FileText, roles: ['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN'], permissions: ['rpp.read'] },
+      { label: 'Review Modul Ajar', href: '/dashboard/rpp', icon: FileText, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN'], permissions: ['rpp.review'] },
     ],
   },
   {
@@ -105,6 +105,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Manajemen Pengguna', href: '/dashboard/users', icon: UserCog, roles: ['SUPER_ADMIN', 'TATA_USAHA'], permissions: ['user.read'] },
       { label: 'Struktur Organisasi', href: '/dashboard/struktur-organisasi', icon: Briefcase, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
       { label: 'Kalender & Agenda', href: '/dashboard/kalender', icon: CalendarDays, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
+      { label: 'Tahun Ajaran', href: '/dashboard/tahun-ajaran', icon: CalendarRange, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
       { label: 'Kesehatan Sistem', href: '/dashboard/health', icon: Activity, roles: ['SUPER_ADMIN'], permissions: ['audit.read'] },
       { label: 'Audit Log', href: '/dashboard/audit', icon: ShieldCheck, roles: ['SUPER_ADMIN'], permissions: ['audit.read'] },
     ],

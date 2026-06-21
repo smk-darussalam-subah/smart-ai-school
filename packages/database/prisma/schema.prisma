@@ -143,6 +143,7 @@ model Class {
   rpps                Rpp[]
   reportCards         ReportCard[]
   activities          ClassActivity[]
+  lmsModules          LmsModule[]
 
   @@unique([name, academicYear])
   @@map("classes")
@@ -173,6 +174,7 @@ model Student {
   attendance  Attendance[]
   reportCards ReportCard[]
   sppPayments SppPayment[]
+  lmsProgress LmsModuleProgress[]
 
   @@index([classId])   // StudentService.findAll(classId filter) + ownership SISWA/OT
   @@index([parentId])  // resolveChildStudentIds() — setiap request ORANG_TUA
@@ -209,6 +211,7 @@ model Teacher {
   attendances TeacherAttendance[]
   rpps        Rpp[]
   activities  ClassActivity[]
+  lmsModules  LmsModule[]
 
   @@map("teachers")
   @@schema("teacher")
@@ -442,7 +445,8 @@ model Rpp {
   classId      String?   @map("class_id") @db.Uuid
   subject      String    @db.VarChar(100)
   title        String    @db.VarChar(255)
-  content      String?   @db.Text
+  content      String?   @db.Text   // ringkasan/preview teks
+  body         Json?     @db.JsonB  // Modul Ajar terstruktur (Kurikulum Merdeka): CP/TP/ATP/profil/sarana/kegiatan/asesmen/dst
   fileUrl      String?   @map("file_url") @db.Text
   status       RppStatus @default(draft)
   reviewerId   String?   @map("reviewer_id") @db.VarChar(64)
@@ -455,8 +459,9 @@ model Rpp {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  teacher Teacher @relation(fields: [teacherId], references: [id])
-  class   Class?  @relation(fields: [classId], references: [id])
+  teacher    Teacher     @relation(fields: [teacherId], references: [id])
+  class      Class?      @relation(fields: [classId], references: [id])
+  lmsModules LmsModule[]
 
   @@index([status, submittedAt])
   @@index([teacherId, academicYear, semester])
@@ -469,6 +474,76 @@ enum RppStatus {
   submitted
   approved
   revision
+
+  @@schema("academic")
+}
+
+// =============================================================================
+// LMS (Learning Management) — modul belajar + progres siswa (2P-1).
+// Modul = materi terstruktur per mapel, opsional terkait Rpp sumber. Guru kelola
+// modul miliknya + publish; siswa baca modul published kelasnya + lapor progres.
+// Additive — tak mengubah tabel lain. Kuis/diagnostik = modul berikutnya.
+// =============================================================================
+model LmsModule {
+  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teacherId    String          @map("teacher_id") @db.Uuid
+  rppId        String?         @map("rpp_id") @db.Uuid   // Modul Ajar sumber bila diaktifkan dari RPP
+  classId      String?         @map("class_id") @db.Uuid // target kelas (opsional)
+  subject      String          @db.VarChar(100)
+  title        String          @db.VarChar(255)
+  tp           String?         @db.VarChar(50)            // Tujuan Pembelajaran, mis. 'TP 2.1'
+  jpAllocation Int?            @map("jp_allocation")
+  kktp         Int             @default(75)
+  content      String?         @db.Text                   // materi (markdown)
+  orderIndex   Int             @default(0) @map("order_index")
+  status       LmsModuleStatus @default(draft)
+  academicYear String          @map("academic_year") @db.VarChar(9)
+  semester     Int
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @default(now()) @updatedAt @map("updated_at")
+
+  teacher  Teacher             @relation(fields: [teacherId], references: [id])
+  rpp      Rpp?                @relation(fields: [rppId], references: [id])
+  class    Class?              @relation(fields: [classId], references: [id])
+  progress LmsModuleProgress[]
+
+  @@index([teacherId, subject])
+  @@index([classId, status])
+  @@map("lms_modules")
+  @@schema("academic")
+}
+
+model LmsModuleProgress {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  moduleId    String            @map("module_id") @db.Uuid
+  studentId   String            @map("student_id") @db.Uuid
+  progress    Int               @default(0) // 0–100
+  status      LmsProgressStatus @default(active)
+  startedAt   DateTime?         @map("started_at")
+  completedAt DateTime?         @map("completed_at")
+  updatedAt   DateTime          @default(now()) @updatedAt @map("updated_at")
+
+  module  LmsModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  student Student   @relation(fields: [studentId], references: [id])
+
+  @@unique([moduleId, studentId])
+  @@index([studentId])
+  @@map("lms_module_progress")
+  @@schema("academic")
+}
+
+enum LmsModuleStatus {
+  draft
+  published
+  archived
+
+  @@schema("academic")
+}
+
+enum LmsProgressStatus {
+  locked
+  active
+  completed
 
   @@schema("academic")
 }

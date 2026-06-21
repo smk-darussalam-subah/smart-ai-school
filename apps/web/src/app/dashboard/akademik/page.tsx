@@ -3,11 +3,16 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch, PaginatedResponse, GradeItem, AttendanceItem } from '@/lib/api';
+import { scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-times';
 import AkademikClient from './_components/AkademikClient';
+import AkademikWorkspace from './_components/AkademikWorkspace';
+import type { ScheduleItem, ActivityItem, RppItem, TodayClass, LmsModuleItem } from './_components/guru-types';
 
-interface Assignment { id: string; subject: string; class: { name: string } }
+interface Assignment { id: string; subject: string; class: { id: string; name: string } }
 interface ClassItem { id: string; name: string; }
 export interface SubjectItem { id: string; code: string; name: string; isActive: boolean; }
+
+interface ActiveSemester { number: number; academicYear: { code: string } }
 
 export default async function AkademikPage() {
   const session = await getServerSession(authOptions);
@@ -16,6 +21,7 @@ export default async function AkademikPage() {
   const roles: string[] = await getEffectiveRoles(session);
 
   if (roles.includes('INDUSTRI')) redirect('/dashboard');
+  const isGuru = roles.includes('GURU');
   const canManage = roles.includes('SUPER_ADMIN') || roles.includes('GURU');
   const canEditAssignment = roles.includes('SUPER_ADMIN') || roles.includes('TATA_USAHA');
 
@@ -26,6 +32,62 @@ export default async function AkademikPage() {
     apiFetch<{ data: Assignment[]; total: number }>('/teaching-assignments?limit=100', token),
     apiFetch<{ data: SubjectItem[] }>('/subjects?limit=200', token),
   ]);
+
+  // JANGAN blokir dashboard. apiFetch null = gagal-muat (bukan kosong). Bila ada
+  // sumber inti yang gagal → tampilkan peringatan NON-BLOK di workspace; guru tetap
+  // bisa memakai tab lain. (Hindari menutup seluruh halaman seperti regresi LoadError.)
+  const dataWarning = gradesData === null || attendanceData === null
+    || classesRes === null || assignmentsRes === null || subjectsRes === null;
+
+  // ── Dashboard Guru (IA baru). Role lain → tampilan lama (fallback). ─────────
+  if (isGuru) {
+    const [schedulesRes, activitiesRes, rppRes, lmsRes, semRes] = await Promise.all([
+      apiFetch<{ data: ScheduleItem[] }>('/schedules?limit=500', token),
+      apiFetch<{ data: ActivityItem[] }>('/class-activities?limit=200', token),
+      apiFetch<{ data: RppItem[] }>('/rpp?limit=100', token),
+      apiFetch<{ data: LmsModuleItem[] }>('/lms/modules?limit=200', token),
+      apiFetch<ActiveSemester>('/school/semesters/active', token),
+    ]);
+
+    const schedules = schedulesRes?.data ?? [];
+    const { minutes } = wibNow();
+    const dow = scheduleDayOfWeek();
+    const nowJp = currentJp(minutes);
+
+    const todayClasses: TodayClass[] = schedules
+      .filter((s) => s.dayOfWeek === dow)
+      .sort((a, b) => a.jpStart - b.jpStart)
+      .map((s) => ({
+        classId: s.classId,
+        className: s.class?.name ?? '—',
+        subject: s.teachingAssignment?.subject ?? '—',
+        room: s.room ?? null,
+        jpStart: s.jpStart,
+        jpEnd: s.jpEnd,
+        startLabel: jpStartLabel(s.jpStart),
+        isNow: nowJp >= s.jpStart && nowJp <= s.jpEnd,
+      }));
+
+    const academicYear = semRes?.academicYear?.code ?? '';
+    const semester = semRes?.number ?? 1;
+
+    return (
+      <AkademikWorkspace
+        grades={gradesData?.data ?? []}
+        attendances={attendanceData?.data ?? []}
+        classes={classesRes?.data ?? []}
+        assignments={assignmentsRes?.data ?? []}
+        schedules={schedules}
+        activities={activitiesRes?.data ?? []}
+        rpp={rppRes?.data ?? []}
+        lmsModules={lmsRes?.data ?? []}
+        todayClasses={todayClasses}
+        academicYear={academicYear}
+        semester={semester}
+        dataWarning={dataWarning}
+      />
+    );
+  }
 
   return (
     <AkademikClient

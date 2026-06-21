@@ -28,7 +28,7 @@ const EDITABLE_STATUSES = ['draft', 'revision'] as const;
 
 const RPP_SELECT = {
   id: true, teacherId: true, classId: true, subject: true, title: true,
-  content: true, fileUrl: true, status: true,
+  content: true, body: true, fileUrl: true, status: true,
   reviewerId: true, reviewerName: true, reviewNote: true,
   submittedAt: true, reviewedAt: true,
   academicYear: true, semester: true, createdAt: true, updatedAt: true,
@@ -98,8 +98,8 @@ export class RppService {
 
   async create(dto: CreateRppDto, user: AuthUser) {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
-    if (!dto.content && !dto.fileUrl) {
-      throw new BadRequestException('Isi RPP (content) atau lampiran (fileUrl) wajib salah satu');
+    if (!dto.content && !dto.fileUrl && !dto.body) {
+      throw new BadRequestException('Isi Modul Ajar (struktur/teks) atau lampiran wajib salah satu');
     }
     return this.prisma.rpp.create({
       data: {
@@ -108,6 +108,7 @@ export class RppService {
         subject: dto.subject,
         title: dto.title,
         content: dto.content ?? null,
+        body: dto.body ? (dto.body as Prisma.InputJsonValue) : Prisma.DbNull,
         fileUrl: dto.fileUrl ?? null,
         academicYear: dto.academicYear,
         semester: dto.semester,
@@ -135,6 +136,7 @@ export class RppService {
         ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
         ...(dto.title !== undefined ? { title: dto.title } : {}),
         ...(dto.content !== undefined ? { content: dto.content } : {}),
+        ...(dto.body !== undefined ? { body: dto.body ? (dto.body as Prisma.InputJsonValue) : Prisma.DbNull } : {}),
         ...(dto.fileUrl !== undefined ? { fileUrl: dto.fileUrl } : {}),
         ...(dto.classId !== undefined ? { classId: dto.classId } : {}),
         ...(dto.academicYear !== undefined ? { academicYear: dto.academicYear } : {}),
@@ -149,14 +151,14 @@ export class RppService {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
     const existing = await this.prisma.rpp.findFirst({
       where: { id, teacherId },
-      select: { id: true, status: true, content: true, fileUrl: true },
+      select: { id: true, status: true, content: true, body: true, fileUrl: true },
     });
     if (!existing) throw new NotFoundException('RPP tidak ditemukan');
     if (!(EDITABLE_STATUSES as readonly string[]).includes(existing.status)) {
       throw new ConflictException(`RPP berstatus '${existing.status}' tidak bisa di-submit`);
     }
-    if (!existing.content && !existing.fileUrl) {
-      throw new BadRequestException('RPP kosong — isi content atau fileUrl dulu');
+    if (!existing.content && !existing.fileUrl && !existing.body) {
+      throw new BadRequestException('Modul Ajar kosong — isi struktur/teks atau lampiran dulu');
     }
     return this.prisma.rpp.update({
       where: { id },
