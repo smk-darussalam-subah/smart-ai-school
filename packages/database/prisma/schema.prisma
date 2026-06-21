@@ -31,6 +31,9 @@ model User {
   email       String    @unique @db.VarChar(255)
   fullName    String    @map("full_name") @db.VarChar(255)
   phone       String?   @db.VarChar(20)
+  gender      Gender?                              // L / P — atribut personal (dipakai juga utk siswa)
+  birthDate   DateTime? @map("birth_date") @db.Date
+  address     String?   @db.Text
   role        UserRole
   isActive    Boolean   @default(true) @map("is_active")
   avatarUrl   String?   @map("avatar_url")
@@ -42,6 +45,7 @@ model User {
   // Relations
   student     Student?
   teacher     Teacher?
+  staff       Staff?                               // identitas kepegawaian (KS/Guru/TU) — 2J-4
   parent      Student[]  @relation("ParentStudent")
   leads       PpdbLead[] @relation("AssignedLeads")
 
@@ -60,6 +64,13 @@ enum UserRole {
   SISWA
   ORANG_TUA
   INDUSTRI      // Mitra industri: PKL/Prakerin, BKK, rekrutmen
+
+  @@schema("auth")
+}
+
+enum Gender {
+  L  // Laki-laki
+  P  // Perempuan
 
   @@schema("auth")
 }
@@ -132,6 +143,7 @@ model Class {
   rpps                Rpp[]
   reportCards         ReportCard[]
   activities          ClassActivity[]
+  lmsModules          LmsModule[]
 
   @@unique([name, academicYear])
   @@map("classes")
@@ -162,6 +174,7 @@ model Student {
   attendance  Attendance[]
   reportCards ReportCard[]
   sppPayments SppPayment[]
+  lmsProgress LmsModuleProgress[]
 
   @@index([classId])   // StudentService.findAll(classId filter) + ownership SISWA/OT
   @@index([parentId])  // resolveChildStudentIds() — setiap request ORANG_TUA
@@ -185,7 +198,7 @@ enum StudentStatus {
 model Teacher {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId      String    @unique @map("user_id") @db.Uuid
-  nip         String?   @unique @db.VarChar(20) // Nomor Induk Pegawai
+  // Identitas kepegawaian (NIY) pindah ke school.Staff (2J-4). Teacher = hal mengajar saja.
   isWaliKelas Boolean   @default(false) @map("is_wali_kelas")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
@@ -198,6 +211,7 @@ model Teacher {
   attendances TeacherAttendance[]
   rpps        Rpp[]
   activities  ClassActivity[]
+  lmsModules  LmsModule[]
 
   @@map("teachers")
   @@schema("teacher")
@@ -431,7 +445,8 @@ model Rpp {
   classId      String?   @map("class_id") @db.Uuid
   subject      String    @db.VarChar(100)
   title        String    @db.VarChar(255)
-  content      String?   @db.Text
+  content      String?   @db.Text   // ringkasan/preview teks
+  body         Json?     @db.JsonB  // Modul Ajar terstruktur (Kurikulum Merdeka): CP/TP/ATP/profil/sarana/kegiatan/asesmen/dst
   fileUrl      String?   @map("file_url") @db.Text
   status       RppStatus @default(draft)
   reviewerId   String?   @map("reviewer_id") @db.VarChar(64)
@@ -444,8 +459,9 @@ model Rpp {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  teacher Teacher @relation(fields: [teacherId], references: [id])
-  class   Class?  @relation(fields: [classId], references: [id])
+  teacher    Teacher     @relation(fields: [teacherId], references: [id])
+  class      Class?      @relation(fields: [classId], references: [id])
+  lmsModules LmsModule[]
 
   @@index([status, submittedAt])
   @@index([teacherId, academicYear, semester])
@@ -458,6 +474,76 @@ enum RppStatus {
   submitted
   approved
   revision
+
+  @@schema("academic")
+}
+
+// =============================================================================
+// LMS (Learning Management) — modul belajar + progres siswa (2P-1).
+// Modul = materi terstruktur per mapel, opsional terkait Rpp sumber. Guru kelola
+// modul miliknya + publish; siswa baca modul published kelasnya + lapor progres.
+// Additive — tak mengubah tabel lain. Kuis/diagnostik = modul berikutnya.
+// =============================================================================
+model LmsModule {
+  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teacherId    String          @map("teacher_id") @db.Uuid
+  rppId        String?         @map("rpp_id") @db.Uuid   // Modul Ajar sumber bila diaktifkan dari RPP
+  classId      String?         @map("class_id") @db.Uuid // target kelas (opsional)
+  subject      String          @db.VarChar(100)
+  title        String          @db.VarChar(255)
+  tp           String?         @db.VarChar(50)            // Tujuan Pembelajaran, mis. 'TP 2.1'
+  jpAllocation Int?            @map("jp_allocation")
+  kktp         Int             @default(75)
+  content      String?         @db.Text                   // materi (markdown)
+  orderIndex   Int             @default(0) @map("order_index")
+  status       LmsModuleStatus @default(draft)
+  academicYear String          @map("academic_year") @db.VarChar(9)
+  semester     Int
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @default(now()) @updatedAt @map("updated_at")
+
+  teacher  Teacher             @relation(fields: [teacherId], references: [id])
+  rpp      Rpp?                @relation(fields: [rppId], references: [id])
+  class    Class?              @relation(fields: [classId], references: [id])
+  progress LmsModuleProgress[]
+
+  @@index([teacherId, subject])
+  @@index([classId, status])
+  @@map("lms_modules")
+  @@schema("academic")
+}
+
+model LmsModuleProgress {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  moduleId    String            @map("module_id") @db.Uuid
+  studentId   String            @map("student_id") @db.Uuid
+  progress    Int               @default(0) // 0–100
+  status      LmsProgressStatus @default(active)
+  startedAt   DateTime?         @map("started_at")
+  completedAt DateTime?         @map("completed_at")
+  updatedAt   DateTime          @default(now()) @updatedAt @map("updated_at")
+
+  module  LmsModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  student Student   @relation(fields: [studentId], references: [id])
+
+  @@unique([moduleId, studentId])
+  @@index([studentId])
+  @@map("lms_module_progress")
+  @@schema("academic")
+}
+
+enum LmsModuleStatus {
+  draft
+  published
+  archived
+
+  @@schema("academic")
+}
+
+enum LmsProgressStatus {
+  locked
+  active
+  completed
 
   @@schema("academic")
 }
@@ -530,6 +616,22 @@ enum ActivityCategory {
   kegiatan
   lainnya
 
+  @@schema("academic")
+}
+
+// DEV-03 — Tabel referensi mapel (2K-4, 2026-06-13).
+// Additive: tidak ubah kolom subject String di teaching_assignments.
+// code = singkatan unik (MTK, BIN, dll); name = nama lengkap.
+// Soft-disable via isActive; tanpa DELETE di API.
+model Subject {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String   @unique @db.VarChar(20)
+  name      String   @unique @db.VarChar(100)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("subjects")
   @@schema("academic")
 }
 
@@ -750,6 +852,7 @@ model SchoolProfile {
   headmasterNip  String?  @map("headmaster_nip") @db.VarChar(30)
   logoUrl        String?  @map("logo_url")
   accreditation  String?  @db.VarChar(5)          // A, B, C
+  kioskToken     String?  @unique @map("kiosk_token") @db.VarChar(64) // token link publik Ruang Guru (rotatable)
   // 2F-2: geofence presensi guru (null = geofence nonaktif)
   latitude        Decimal? @db.Decimal(9, 6)
   longitude       Decimal? @db.Decimal(9, 6)
@@ -770,6 +873,8 @@ model Major {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  staffPositions StaffPosition[]
+
   @@map("majors")
   @@schema("school")
 }
@@ -785,6 +890,7 @@ model AcademicYear {
 
   semesters       Semester[]
   calendarEvents  AcademicCalendar[]
+  staffPositions  StaffPosition[]
 
   @@map("academic_years")
   @@schema("school")
@@ -833,6 +939,127 @@ enum CalendarType {
   event
   break
 
+  @@schema("school")
+}
+
+// =============================================================================
+// SCHOOL SCHEMA — Staff / Kepegawaian (2J-4)
+//
+// Identitas kepegawaian untuk SEMUA pegawai internal (KS / Guru / TU), 1:1 dgn
+// auth.users. NIY = Nomor Induk Yayasan (yayasan swasta; tanpa aturan digit khusus).
+// Guru = punya baris Staff (identitas) + Teacher (mengajar). TU/KS = Staff saja.
+// Jabatan struktural/fungsional (Wakasek/Kaprog/BK/Bendahara/dll) = sprint 2J-5
+// (school.position + staff_position), BUKAN di sini.
+// =============================================================================
+model Staff {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String           @unique @map("user_id") @db.Uuid
+  niy              String?          @unique @db.VarChar(50) // Nomor Induk Yayasan — unik bila terisi
+  employmentStatus EmploymentStatus @map("employment_status")
+  joinedAt         DateTime?        @map("joined_at") @db.Date
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  deletedAt        DateTime?        @map("deleted_at")
+
+  user      User            @relation(fields: [userId], references: [id])
+  positions StaffPosition[]
+
+  @@index([deletedAt])
+  @@map("staff")
+  @@schema("school")
+}
+
+enum EmploymentStatus {
+  GTY // Guru Tetap Yayasan
+  GTT // Guru Tidak Tetap
+  PTY // Pegawai Tetap Yayasan (tendik)
+  PTT // Pegawai Tidak Tetap (tendik)
+
+  @@schema("school")
+}
+
+// =============================================================================
+// SCHOOL SCHEMA — Struktur Organisasi / Jabatan (2J-5)
+//
+// Jabatan struktural/fungsional/tendik TERPISAH dari role RBAC (7 role tetap).
+// Position = katalog jabatan (hierarki via parentId). StaffPosition = penugasan
+// pegawai ke jabatan, TERIKAT tahun ajaran (rotasi). PositionPermission = izin
+// yang otomatis diberikan (UserPermissionOverride) selama penugasan aktif.
+// Wali kelas TETAP di academic.Class.teacherId (tidak diduplikasi di sini).
+// =============================================================================
+enum PositionCategory {
+  STRUKTURAL // KS, Wakasek, Kepala TU
+  FUNGSIONAL // Koor BKK/Hubin, Guru BK, Kaprog, dll
+  TENDIK     // Bendahara, Kepegawaian, Dapodik, dll
+
+  @@schema("school")
+}
+
+enum PositionScopeType {
+  NONE  // jabatan tunggal sekolah
+  MAJOR // terikat jurusan (mis. Kaprog per TKRO/TBSM/TJKT/AKL)
+
+  @@schema("school")
+}
+
+model Position {
+  id        String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String            @unique @db.VarChar(50) // WAKA_KURIKULUM, KAPROG, KOOR_BKK, ...
+  name      String            @db.VarChar(100)
+  category  PositionCategory
+  parentId  String?           @map("parent_id") @db.Uuid // hierarki (BKK di bawah Humas)
+  scopeType PositionScopeType @default(NONE) @map("scope_type")
+  isActive  Boolean           @default(true) @map("is_active")
+  sortOrder Int               @default(0) @map("sort_order")
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+
+  parent      Position?            @relation("PositionHierarchy", fields: [parentId], references: [id])
+  children    Position[]           @relation("PositionHierarchy")
+  permissions PositionPermission[]
+  assignments StaffPosition[]
+
+  @@index([parentId])
+  @@map("positions")
+  @@schema("school")
+}
+
+// Izin yang menempel pada jabatan. permissionId → auth.permissions (lintas-schema,
+// tanpa FK — pola sama seperti audit field). Diterapkan sebagai UserPermissionOverride
+// saat penugasan aktif, dicabut saat penugasan berakhir.
+model PositionPermission {
+  positionId   String @map("position_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  position Position @relation(fields: [positionId], references: [id], onDelete: Cascade)
+
+  @@id([positionId, permissionId])
+  @@map("position_permissions")
+  @@schema("school")
+}
+
+model StaffPosition {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  staffId        String    @map("staff_id") @db.Uuid
+  positionId     String    @map("position_id") @db.Uuid
+  academicYearId String    @map("academic_year_id") @db.Uuid
+  majorId        String?   @map("major_id") @db.Uuid // wajib bila position.scopeType=MAJOR
+  isActive       Boolean   @default(true) @map("is_active")
+  startDate      DateTime? @map("start_date") @db.Date
+  endDate        DateTime? @map("end_date") @db.Date
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  staff        Staff        @relation(fields: [staffId], references: [id])
+  position     Position     @relation(fields: [positionId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  major        Major?       @relation(fields: [majorId], references: [id])
+
+  // Satu pegawai tak boleh dobel di jabatan+jurusan+tahun yang sama.
+  @@unique([staffId, positionId, academicYearId, majorId])
+  @@index([positionId, academicYearId])
+  @@index([academicYearId])
+  @@map("staff_positions")
   @@schema("school")
 }
 

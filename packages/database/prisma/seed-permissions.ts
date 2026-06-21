@@ -57,6 +57,9 @@ const PERMISSIONS: PermissionDef[] = [
   { code: 'rpp.read', description: 'Melihat RPP', module: 'academic' },
   { code: 'rpp.own.manage', description: 'Membuat/mengubah/submit RPP sendiri (GURU)', module: 'academic' },
   { code: 'rpp.review', description: 'Mereview RPP (approve/revisi)', module: 'academic' },
+  { code: 'lms.read', description: 'Melihat modul LMS', module: 'academic' },
+  { code: 'lms.own.manage', description: 'Mengelola/publish modul LMS sendiri (GURU)', module: 'academic' },
+  { code: 'lms.progress.manage', description: 'Melapor progres modul LMS sendiri (SISWA)', module: 'academic' },
   { code: 'teacher.attendance.checkin', description: 'Check-in/out presensi guru (GURU)', module: 'teacher' },
   { code: 'teacher.attendance.read', description: 'Melihat rekap presensi guru', module: 'teacher' },
   { code: 'announcement.read', description: 'Melihat pengumuman sekolah', module: 'notification' },
@@ -81,6 +84,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'announcement.read', 'announcement.manage',
     'teacher.attendance.read',
     'rpp.read', 'rpp.review',
+    'lms.read',
     'report.read', 'report.review', 'activity.read',
   ],
   TATA_USAHA: [
@@ -101,12 +105,14 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'announcement.read',
     'teacher.attendance.checkin', 'teacher.attendance.read',
     'rpp.read', 'rpp.own.manage',
+    'lms.read', 'lms.own.manage',
     'report.read', 'activity.read', 'activity.manage',
   ],
   SISWA: [
     'student.own.read', 'grade.own.read', 'attendance.own.read',
     'finance.own.read', 'ai.chat',
     'announcement.read',
+    'lms.read', 'lms.progress.manage',
     'report.read', 'activity.read',
   ],
   ORANG_TUA: [

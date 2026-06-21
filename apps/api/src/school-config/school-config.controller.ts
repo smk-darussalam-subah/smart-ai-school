@@ -38,6 +38,19 @@ export class SchoolConfigController {
     return this.service.updateProfile(dto);
   }
 
+  // ═══ Kiosk link (token publik Ruang Guru) ══════════════════════════════════
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Get('kiosk-link')
+  getKioskLink() {
+    return this.service.getKioskToken();
+  }
+
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Post('kiosk-link/regenerate')
+  regenerateKioskLink() {
+    return this.service.regenerateKioskToken();
+  }
+
   // ═══ Majors ════════════════════════════════════════════════════════════════
 
   @Get('majors')
@@ -70,13 +83,13 @@ export class SchoolConfigController {
     return this.service.getActiveAcademicYear();
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
   @Post('academic-years')
   createAcademicYear(@Body(ZodPipe(CreateAcademicYearSchema)) dto: Record<string, unknown>) {
     return this.service.createAcademicYear(dto as { code: string; startDate: Date; endDate: Date; isActive?: boolean });
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
   @Patch('academic-years/:id')
   updateAcademicYear(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(UpdateAcademicYearSchema)) dto: Record<string, unknown>) {
     return this.service.updateAcademicYear(id, dto);
@@ -95,7 +108,7 @@ export class SchoolConfigController {
     return this.service.getActiveSemester();
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
   @Post('semesters')
   createSemester(@Body(ZodPipe(CreateSemesterSchema)) dto: Record<string, unknown>) {
     return this.service.createSemester(dto as {
@@ -103,7 +116,7 @@ export class SchoolConfigController {
     });
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
   @Patch('semesters/:id')
   updateSemester(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(UpdateSemesterSchema)) dto: Record<string, unknown>) {
     return this.service.updateSemester(id, dto);
@@ -116,7 +129,7 @@ export class SchoolConfigController {
     return this.service.getCalendarEvents(academicYearId, type);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
   @Post('calendar')
   createCalendarEvent(@Body(ZodPipe(CreateCalendarEventSchema)) dto: Record<string, unknown>) {
     return this.service.createCalendarEvent(dto as {
@@ -125,13 +138,13 @@ export class SchoolConfigController {
     });
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
   @Patch('calendar/:id')
   updateCalendarEvent(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(UpdateCalendarEventSchema)) dto: Record<string, unknown>) {
     return this.service.updateCalendarEvent(id, dto);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
   @Delete('calendar/:id')
   deleteCalendarEvent(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.deleteCalendarEvent(id);

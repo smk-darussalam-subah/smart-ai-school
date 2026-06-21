@@ -36,8 +36,7 @@ const ASSIGNMENT_SELECT = {
   teacher: {
     select: {
       id: true,
-      nip: true,
-      user: { select: { fullName: true, email: true } },
+      user: { select: { fullName: true, email: true, staff: { select: { niy: true } } } },
     },
   },
   class: { select: { id: true, name: true, majorCode: true, grade: true } },

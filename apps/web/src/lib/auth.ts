@@ -21,6 +21,7 @@ declare module 'next-auth/jwt' {
   interface JWT {
     accessToken?: string;
     refreshToken?: string;
+    idToken?: string; // untuk federated logout (id_token_hint ke Keycloak end-session)
     expiresAt?: number;
     roles?: string[];
     keycloakId?: string;
@@ -98,6 +99,7 @@ export const authOptions: NextAuthOptions = {
           ...token,
           accessToken: account.access_token,
           refreshToken: account.refresh_token,
+          idToken: account.id_token,
           expiresAt: account.expires_at,
           roles: extractKeycloakRoles(p),
           keycloakId: profile.sub,

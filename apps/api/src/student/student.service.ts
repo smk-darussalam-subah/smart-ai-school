@@ -130,7 +130,7 @@ export class StudentService {
   // ── CRUD ─────────────────────────────────────────────────────────────────────
 
   async findAll(query: ListStudentsQuery) {
-    const { classId, status, search, page, limit } = query;
+    const { classId, status, search, sortBy, sortOrder, page, limit } = query;
     const skip = (page - 1) * limit;
 
     const where = {
@@ -145,13 +145,20 @@ export class StudentService {
       }),
     };
 
+    // orderBy dari whitelist (fullName via relasi user).
+    const orderBy =
+      sortBy === 'fullName' ? { user: { fullName: sortOrder } }
+      : sortBy === 'nis' ? { nis: sortOrder }
+      : sortBy === 'status' ? { status: sortOrder }
+      : { createdAt: sortOrder };
+
     const [data, total] = await Promise.all([
       this.prisma.student.findMany({
         where,
         skip,
         take: limit,
         select: STUDENT_BASE_SELECT,
-        orderBy: { createdAt: 'desc' },
+        orderBy,
       }),
       this.prisma.student.count({ where }),
     ]);

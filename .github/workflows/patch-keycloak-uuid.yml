@@ -1,0 +1,28 @@
+name: Patch Keycloak UUID
+
+on:
+  workflow_dispatch:
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Patch SUPER_ADMIN keycloakId in production DB
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: appuser
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            set -euo pipefail
+            echo "🔧 Patching SUPER_ADMIN keycloak_id in production DB..."
+            docker exec smk-postgres psql -U smk_admin -d smk_db -c \
+              "UPDATE auth.users SET keycloak_id = '87ea6d9f-092d-4b74-940a-643961103a54' WHERE email = 'admin@smkdarussalamsubah.sch.id';"
+            echo "✅ Production DB patched"
+
+            echo "🔧 Patching SUPER_ADMIN keycloak_id in staging DB..."
+            docker exec smk-postgres psql -U smk_admin -d smk_staging_db -c \
+              "UPDATE auth.users SET keycloak_id = '87ea6d9f-092d-4b74-940a-643961103a54' WHERE email = 'admin@smkdarussalamsubah.sch.id';" 2>/dev/null || echo "⚠️ Staging DB skip (tidak ada)"
+            echo "✅ Done"

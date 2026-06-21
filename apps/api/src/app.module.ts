@@ -38,6 +38,11 @@ import { ReportCardsModule } from './report-cards/report-cards.module';
 import { ClassActivitiesModule } from './class-activities/class-activities.module';
 import { KeycloakAdminModule } from './keycloak-admin/keycloak-admin.module';
 import { ProvisioningModule } from './provisioning/provisioning.module';
+import { SubjectModule } from './subject/subject.module';
+import { PositionsModule } from './positions/positions.module';
+import { PublicKioskModule } from './public-kiosk/public-kiosk.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { LmsModule } from './lms/lms.module';
 
 @Module({
   imports: [
@@ -72,6 +77,11 @@ import { ProvisioningModule } from './provisioning/provisioning.module';
     SchoolConfigModule,
     KeycloakAdminModule,
     ProvisioningModule,
+    SubjectModule,
+    PositionsModule,
+    PublicKioskModule,
+    AnalyticsModule,
+    LmsModule,
   ],
   providers: [
     UserStatusService,

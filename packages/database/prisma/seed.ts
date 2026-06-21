@@ -27,11 +27,12 @@ async function main() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   // ── Super Admin ────────────────────────────────────────────────────────────
+  // keycloakId = UUID asli dari Keycloak realm 'diis' (bukan placeholder)
   await prisma.user.upsert({
     where: { email: 'admin@smkdarussalamsubah.sch.id' },
-    update: {},
+    update: { keycloakId: '87ea6d9f-092d-4b74-940a-643961103a54' },
     create: {
-      keycloakId: 'fb0f3a8e-7a8d-4c2f-89b1-3e4c5d6f7a8b',
+      keycloakId: '87ea6d9f-092d-4b74-940a-643961103a54',
       email: 'admin@smkdarussalamsubah.sch.id',
       fullName: 'Administrator Sistem',
       phone: '08123456780',
@@ -41,7 +42,7 @@ async function main() {
   });
 
   // ── Kepala Sekolah ─────────────────────────────────────────────────────────
-  await prisma.user.upsert({
+  const ksUser = await prisma.user.upsert({
     where: { email: 'kepala@smkdarussalamsubah.sch.id' },
     update: {},
     create: {
@@ -173,7 +174,6 @@ async function main() {
       update: {},
       create: {
         userId: guruUsers[i].id,
-        nip: `19${(75 + i).toString().padStart(2, '0')}0101${String(i + 1).padStart(6, '0')}`,
         isWaliKelas: true,
       },
     });
@@ -181,6 +181,32 @@ async function main() {
   }
 
   console.log('✓ 10 Teacher profiles — created');
+
+  // ── Staff (kepegawaian) — KS, TU, dan 10 guru (NIY + status) ────────────────
+  await prisma.staff.upsert({
+    where: { userId: ksUser.id },
+    update: {},
+    create: { userId: ksUser.id, niy: 'Y0001', employmentStatus: 'GTY', joinedAt: new Date('2010-07-01') },
+  });
+  await prisma.staff.upsert({
+    where: { userId: tuUser.id },
+    update: {},
+    create: { userId: tuUser.id, niy: 'Y0101', employmentStatus: 'PTY', joinedAt: new Date('2015-07-01') },
+  });
+  for (let i = 0; i < guruUsers.length; i++) {
+    await prisma.staff.upsert({
+      where: { userId: guruUsers[i].id },
+      update: {},
+      create: {
+        userId: guruUsers[i].id,
+        niy: `Y${(10 + i).toString().padStart(4, '0')}`,
+        employmentStatus: 'GTY',
+        joinedAt: new Date('2018-07-01'),
+      },
+    });
+  }
+
+  console.log('✓ Staff (kepegawaian) — KS + TU + 10 guru created');
 
   // ═══════════════════════════════════════════════════════════════════════════
   // ACADEMIC — KELAS

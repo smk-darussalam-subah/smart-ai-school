@@ -23,7 +23,7 @@ jest.mock('../common/helpers/phone', () => {
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { ProvisioningService, Actor } from '../provisioning/provisioning.service';
-import { ProvisionStudentSchema } from '../provisioning/dto/provision.dto';
+import { ProvisionStudentSchema, ProvisionUserSchema } from '../provisioning/dto/provision.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -64,6 +64,10 @@ interface PrismaMock {
     findUnique: jest.Mock;
     create: jest.Mock;
   };
+  staff: {
+    findUnique: jest.Mock;
+    create: jest.Mock;
+  };
   $transaction: jest.Mock;
 }
 
@@ -81,6 +85,10 @@ function mockPrisma(): PrismaMock {
       create: jest.fn(),
     },
     teacher: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+    },
+    staff: {
       findUnique: jest.fn(),
       create: jest.fn(),
     },
@@ -129,12 +137,21 @@ describe('ProvisioningService', () => {
       const result = await svc.provisionUser({
         role: 'GURU',
         fullName: 'Guru Baru',
+        gender: 'L',
         email: 'guru@smk.sch.id',
+        niy: 'Y0500',
+        employmentStatus: 'GTY',
       }, SA_ACTOR);
 
       expect(kc.createUser).toHaveBeenCalled();
       expect(kc.assignRealmRole).toHaveBeenCalledWith('kc-guru-1', 'GURU');
       expect(kc.setTempPassword).toHaveBeenCalled();
+
+      // Guru → baris staff (identitas) + teacher (mengajar) dibuat.
+      expect(prisma.staff.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ niy: 'Y0500', employmentStatus: 'GTY' }) }),
+      );
+      expect(prisma.teacher.create).toHaveBeenCalled();
 
       expect(result.tempCredentials).toHaveLength(1);
       expect(result.tempCredentials[0]!.tempPassword).toBeDefined();
@@ -149,6 +166,7 @@ describe('ProvisioningService', () => {
         svc.provisionUser({
           role: 'SUPER_ADMIN',
           fullName: 'Admin Baru',
+          gender: 'L',
           email: 'sa@smk.sch.id',
         }, TU_ACTOR),
       ).rejects.toThrow(ForbiddenException);
@@ -173,7 +191,10 @@ describe('ProvisioningService', () => {
         svc.provisionUser({
           role: 'GURU',
           fullName: 'G',
+          gender: 'L',
           email: 'g@smk.sch.id',
+          niy: 'Y0501',
+          employmentStatus: 'GTT',
         }, TU_ACTOR),
       ).resolves.toBeDefined();
     });
@@ -196,11 +217,68 @@ describe('ProvisioningService', () => {
         svc.provisionUser({
           role: 'GURU',
           fullName: 'Test',
+          gender: 'L',
           email: 't@smk.sch.id',
+          niy: 'Y0502',
+          employmentStatus: 'GTY',
         }, SA_ACTOR),
       ).rejects.toThrow('DB connection lost');
 
       expect(kc.deleteUser).toHaveBeenCalledWith('kc-db-fail');
+    });
+
+    it('NIY duplikat → 409 pre-flight (KC tidak dipanggil)', async () => {
+      const kc = mockKc();
+      kc.findByUsername.mockResolvedValue(null);
+
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue(null);
+      prisma.staff.findUnique.mockResolvedValue({ id: 'existing-staff' });
+
+      const svc = await buildService(kc, prisma);
+
+      await expect(
+        svc.provisionUser({
+          role: 'GURU',
+          fullName: 'Dup',
+          gender: 'L',
+          email: 'dup@smk.sch.id',
+          niy: 'Y0001',
+          employmentStatus: 'GTY',
+        }, SA_ACTOR),
+      ).rejects.toThrow(ConflictException);
+
+      expect(kc.createUser).not.toHaveBeenCalled();
+    });
+
+    it('TU sukses → baris staff dibuat, TANPA teacher', async () => {
+      const kc = mockKc();
+      kc.createUser.mockResolvedValue('kc-tu-1');
+      kc.findByUsername.mockResolvedValue(null);
+      kc.assignRealmRole.mockResolvedValue(undefined);
+      kc.setTempPassword.mockResolvedValue(undefined);
+
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue({
+        id: 'u-tu-1', keycloakId: 'kc-tu-1', email: 'tu@smk.sch.id', fullName: 'TU Baru', role: 'TATA_USAHA',
+      });
+
+      const svc = await buildService(kc, prisma);
+
+      await svc.provisionUser({
+        role: 'TATA_USAHA',
+        fullName: 'TU Baru',
+        gender: 'P',
+        email: 'tu@smk.sch.id',
+        niy: 'Y0700',
+        employmentStatus: 'PTY',
+      }, SA_ACTOR);
+
+      expect(prisma.staff.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ niy: 'Y0700', employmentStatus: 'PTY' }) }),
+      );
+      expect(prisma.teacher.create).not.toHaveBeenCalled();
     });
 
     it('SISWA via /provision/users → 400 (Zod refine)', async () => {
@@ -235,6 +313,7 @@ describe('ProvisioningService', () => {
       const result = await svc.provisionUser({
         role: 'ORANG_TUA',
         fullName: 'Ortu',
+        gender: 'P',
         phone: '+6281234567890',
       }, SA_ACTOR);
 
@@ -266,7 +345,10 @@ describe('ProvisioningService', () => {
       const result = await svc.provisionUser({
         role: 'GURU',
         fullName: 'Log Test',
+        gender: 'L',
         email: 'l@smk.sch.id',
+        niy: 'Y0503',
+        employmentStatus: 'GTY',
       }, SA_ACTOR);
 
       const pw = result.tempCredentials[0]!.tempPassword;
@@ -442,6 +524,77 @@ describe('ProvisioningService', () => {
         ortu: { name: 'Ortu', phone: '+6281234567890' },
       });
       expect(result.success).toBe(false);
+    });
+  });
+
+  // ── 2J-4: ProvisionUserSchema (gender + NIY/status per-role) ─────────────────
+
+  describe('ProvisionUserSchema — validasi 2J-4', () => {
+    const guru = {
+      role: 'GURU', fullName: 'X', gender: 'L', email: 'x@smk.sch.id',
+      niy: 'Y1', employmentStatus: 'GTY',
+    };
+
+    it('guru lengkap → valid', () => {
+      expect(ProvisionUserSchema.safeParse(guru).success).toBe(true);
+    });
+
+    it('gender hilang → invalid', () => {
+      const { gender: _gender, ...rest } = guru;
+      expect(ProvisionUserSchema.safeParse(rest).success).toBe(false);
+    });
+
+    it('pegawai tanpa status → invalid', () => {
+      const { employmentStatus: _es, ...rest } = guru;
+      expect(ProvisionUserSchema.safeParse(rest).success).toBe(false);
+    });
+
+    it('pegawai tanpa NIY (tapi ada status) → valid (NIY opsional)', () => {
+      const { niy: _niy, ...rest } = guru;
+      expect(ProvisionUserSchema.safeParse(rest).success).toBe(true);
+    });
+
+    it('industri dgn niy → invalid (non-pegawai tak boleh)', () => {
+      expect(ProvisionUserSchema.safeParse({
+        role: 'INDUSTRI', fullName: 'PT', gender: 'L', email: 'pt@x.id',
+        niy: 'Y2', employmentStatus: 'PTY',
+      }).success).toBe(false);
+    });
+
+    it('industri tanpa niy → valid', () => {
+      expect(ProvisionUserSchema.safeParse({
+        role: 'INDUSTRI', fullName: 'PT', gender: 'L', email: 'pt@x.id',
+      }).success).toBe(true);
+    });
+  });
+
+  // ── 2J-4: bulkProvisionUsers (skip baris invalid) ───────────────────────────
+
+  describe('bulkProvisionUsers', () => {
+    it('1 valid + 1 invalid → 1 ok, 1 error (skip-invalid)', async () => {
+      const kc = mockKc();
+      kc.createUser.mockResolvedValue('kc-bulk-1');
+      kc.findByUsername.mockResolvedValue(null);
+      kc.assignRealmRole.mockResolvedValue(undefined);
+      kc.setTempPassword.mockResolvedValue(undefined);
+
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue({
+        id: 'ub1', keycloakId: 'kc-bulk-1', email: 'b1@smk.sch.id', fullName: 'B1', role: 'GURU',
+      });
+
+      const svc = await buildService(kc, prisma);
+
+      const res = await svc.bulkProvisionUsers([
+        { role: 'GURU', fullName: 'B1', gender: 'L', email: 'b1@smk.sch.id', niy: 'Y0600', employmentStatus: 'GTY' },
+        { role: 'GURU', fullName: 'B2', gender: 'L' }, // invalid: email & niy & status hilang
+      ], SA_ACTOR);
+
+      expect(res.summary).toEqual({ ok: 1, fail: 1, total: 2 });
+      expect(res.results[0]!.status).toBe('ok');
+      expect(res.results[1]!.status).toBe('error');
+      expect(kc.createUser).toHaveBeenCalledTimes(1);
     });
   });
 });

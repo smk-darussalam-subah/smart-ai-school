@@ -48,20 +48,30 @@ export class AuthService {
       select: ME_SELECT,
     });
 
-    if (!user) {
-      throw new NotFoundException('User tidak ditemukan di database');
-    }
+    // Izin diturunkan dari ROLE di token — TIDAK bergantung pada ada/tidaknya
+    // baris DB. SUPER_ADMIN → wildcard '*' (kontrak dgn web lib/permissions.can()):
+    // getEffectivePermissions membaca DB; bila seed tertinggal daftar SA bisa
+    // bolong dan menu SA ikut hilang. Wildcard menghilangkan ketergantungan itu.
+    const permissions = roles.includes('SUPER_ADMIN')
+      ? ['*']
+      : Array.from(await this.permissionsService.getEffectivePermissions(keycloakId, roles)).sort();
 
-    // Resolve effective permissions.
-    // SUPER_ADMIN → wildcard '*' (kontrak dgn web lib/permissions.can()):
-    // hasPermission() backend memang bypass SA, tapi getEffectivePermissions
-    // membaca DB — bila seed tertinggal, daftar SA bisa bolong dan menu SA
-    // ikut hilang. Wildcard menghilangkan ketergantungan pada kelengkapan seed.
-    if (roles.includes('SUPER_ADMIN')) {
-      return { ...user, permissions: ['*'] };
+    if (!user) {
+      // Token sah tapi belum ada profil DB (mis. akun dibuat langsung di Keycloak,
+      // belum diprovisi — insiden inspector 2026-06-13). JANGAN 404: itu membuat
+      // /auth/me gagal → web menerima null → sidebar runtuh ke menu kosong.
+      // Kembalikan profil minimal + izin dari role agar UI tetap benar.
+      return {
+        id: '',
+        keycloakId,
+        email: '',
+        fullName: '',
+        role: (roles[0] ?? '') as string,
+        phone: null,
+        isActive: true,
+        permissions,
+      };
     }
-    const permSet = await this.permissionsService.getEffectivePermissions(keycloakId, roles);
-    const permissions = Array.from(permSet).sort();
 
     return { ...user, permissions };
   }

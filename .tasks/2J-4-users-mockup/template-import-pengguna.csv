@@ -1,0 +1,6 @@
+role,fullName,gender,birthDate,niy,employmentStatus,phone,address
+GURU,Ahmad Fauzi,L,1985-01-01,Y0012,GTY,081234567890,"Jl. Merdeka No. 1, Subah, Batang"
+GURU,Siti Nurhaliza,P,1990-03-15,Y0024,GTT,081298765432,"Dukuh Krajan RT 02/01, Subah"
+TATA_USAHA,Budi Santoso,L,1988-07-20,Y0101,PTY,081211112222,"Jl. Raya Subah No. 9"
+KEPALA_SEKOLAH,Drs Hasanuddin,L,1972-11-05,Y0001,GTY,081233334444,"Perum Griya Asri Blok C2"
+INDUSTRI,PT Maju Jaya - Rina,P,,,,081255556666,"Kawasan Industri Batang Kav. 12"

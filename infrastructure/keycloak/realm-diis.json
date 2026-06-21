@@ -30,10 +30,12 @@
       "adminUrl": "https://smkdarussalamsubah.sch.id",
       "baseUrl": "https://smkdarussalamsubah.sch.id",
       "redirectUris": [
-        "https://smkdarussalamsubah.sch.id/*"
+        "https://smkdarussalamsubah.sch.id/*",
+        "https://staging.smkdarussalamsubah.sch.id/*"
       ],
       "webOrigins": [
-        "https://smkdarussalamsubah.sch.id"
+        "https://smkdarussalamsubah.sch.id",
+        "https://staging.smkdarussalamsubah.sch.id"
       ],
       "enabled": true,
       "publicClient": false,
@@ -59,7 +61,7 @@
         "microprofile-jwt"
       ],
       "attributes": {
-        "post.logout.redirect.uris": "https://smkdarussalamsubah.sch.id/*",
+        "post.logout.redirect.uris": "https://smkdarussalamsubah.sch.id/* https://staging.smkdarussalamsubah.sch.id/*",
         "backchannel.logout.session.required": "true"
       },
       "protocolMappers": [

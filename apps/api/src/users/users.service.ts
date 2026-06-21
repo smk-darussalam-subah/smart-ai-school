@@ -76,7 +76,8 @@ export class UsersService {
       select: {
         ...USER_SELECT,
         student: { select: { id: true, nis: true } },
-        teacher: { select: { id: true, nip: true } },
+        teacher: { select: { id: true } },
+        staff: { select: { niy: true, employmentStatus: true } },
       },
     });
 

@@ -59,7 +59,7 @@ export interface Class {
 export interface Teacher {
   id: string;
   userId: string;
-  nip?: string;          // Nomor Induk Pegawai
+  niy?: string;          // Nomor Induk Yayasan (identitas kepegawaian di school.staff)
   subjects: string[];
   isWaliKelas: boolean;
   classId?: string;

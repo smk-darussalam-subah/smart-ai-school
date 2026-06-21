@@ -68,6 +68,14 @@ describe('RppService', () => {
     expect(data.submittedAt).toBeInstanceOf(Date);
   });
 
+  it('create dengan body (tanpa content) → tidak BadRequest + body tersimpan', async () => {
+    await service.create({
+      subject: 'MTK', title: 'Modul', academicYear: '2026/2027', semester: 1, submit: false,
+      body: { cp: 'CP X', tp: ['TP 1.1'] },
+    }, GURU);
+    expect(rppCreate.mock.calls[0][0].data.body).toEqual({ cp: 'CP X', tp: ['TP 1.1'] });
+  });
+
   it('findAll GURU → teacherId dipaksa milik sendiri DI QUERY (filter teacherId diabaikan)', async () => {
     rppFindMany.mockResolvedValue([]);
     rppCount.mockResolvedValue(0);

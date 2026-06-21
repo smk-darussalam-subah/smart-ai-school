@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CalendarType } from '@prisma/client';
 
@@ -18,8 +19,31 @@ export class SchoolConfigService {
     const profile = await this.prisma.schoolProfile.findFirst();
     if (!profile) throw new NotFoundException('School profile belum dikonfigurasi');
 
-    this.profileCache = { data: profile, expiresAt: Date.now() + this.PROFILE_TTL };
-    return profile;
+    // JANGAN ekspos kioskToken via endpoint profil (publik). Strip sebelum cache/return.
+    const { kioskToken: _kioskToken, ...safe } = profile;
+    this.profileCache = { data: safe, expiresAt: Date.now() + this.PROFILE_TTL };
+    return safe;
+  }
+
+  // ═══ Kiosk link (token publik Ruang Guru) ══════════════════════════════════
+  async getKioskToken() {
+    const profile = await this.prisma.schoolProfile.findFirst({ select: { kioskToken: true } });
+    return { token: profile?.kioskToken ?? null };
+  }
+
+  async regenerateKioskToken() {
+    const profile = await this.prisma.schoolProfile.findFirst({ select: { id: true } });
+    if (!profile) throw new NotFoundException('School profile belum dikonfigurasi');
+    const token = randomBytes(24).toString('base64url'); // ~32 char URL-safe, sulit ditebak
+    await this.prisma.schoolProfile.update({ where: { id: profile.id }, data: { kioskToken: token } });
+    this.profileCache = null;
+    return { token };
+  }
+
+  async validateKioskToken(token: string): Promise<boolean> {
+    if (!token || token.length < 16) return false;
+    const profile = await this.prisma.schoolProfile.findFirst({ select: { kioskToken: true } });
+    return !!profile?.kioskToken && profile.kioskToken === token;
   }
 
   async updateProfile(data: Record<string, unknown>) {
@@ -68,6 +92,9 @@ export class SchoolConfigService {
   }
 
   async createAcademicYear(data: { code: string; startDate: Date; endDate: Date; isActive?: boolean }) {
+    // Cek duplikat SEBELUM menonaktifkan yang lain (hindari efek samping bila gagal).
+    const exists = await this.prisma.academicYear.findUnique({ where: { code: data.code }, select: { id: true } });
+    if (exists) throw new ConflictException(`Tahun ajaran ${data.code} sudah terdaftar.`);
     if (data.isActive) {
       await this.prisma.academicYear.updateMany({ data: { isActive: false } });
     }
@@ -101,6 +128,11 @@ export class SchoolConfigService {
   }
 
   async createSemester(data: { academicYearId: string; number: number; startDate: Date; endDate: Date; isActive?: boolean }) {
+    const exists = await this.prisma.semester.findUnique({
+      where: { academicYearId_number: { academicYearId: data.academicYearId, number: data.number } },
+      select: { id: true },
+    });
+    if (exists) throw new ConflictException(`Semester ${data.number} sudah ada untuk tahun ajaran ini.`);
     if (data.isActive) {
       await this.prisma.semester.updateMany({ data: { isActive: false } });
     }
