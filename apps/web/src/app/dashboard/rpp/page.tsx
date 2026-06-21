@@ -12,9 +12,10 @@ export default async function RppPage() {
   if (!session) redirect('/login');
   const roles: string[] = await getEffectiveRoles(session);
 
-  const isGuru = roles.includes('GURU');
+  // Halaman ini = REVIEW Modul Ajar (KS/SA). Pembuatan/edit Modul Ajar oleh GURU
+  // sudah satu pintu di Akademik → Pembelajaran → Modul Ajar (hapus dualitas).
   const isReviewer = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'].some((r) => roles.includes(r));
-  if (!isGuru && !isReviewer) redirect('/dashboard');
+  if (!isReviewer) redirect('/dashboard/akademik');
 
   const token = session.accessToken ?? '';
   const res = await apiFetch<ListResponse>('/rpp?limit=100', token);
@@ -23,9 +24,9 @@ export default async function RppPage() {
     <RppBoard
       items={res?.data ?? []}
       total={res?.total ?? 0}
-      isGuru={isGuru}
-      isReviewer={isReviewer}
-      canDelete={roles.includes('SUPER_ADMIN') || isGuru}
+      isGuru={false}
+      isReviewer
+      canDelete={roles.includes('SUPER_ADMIN')}
     />
   );
 }

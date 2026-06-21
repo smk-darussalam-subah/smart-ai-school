@@ -445,7 +445,8 @@ model Rpp {
   classId      String?   @map("class_id") @db.Uuid
   subject      String    @db.VarChar(100)
   title        String    @db.VarChar(255)
-  content      String?   @db.Text
+  content      String?   @db.Text   // ringkasan/preview teks
+  body         Json?     @db.JsonB  // Modul Ajar terstruktur (Kurikulum Merdeka): CP/TP/ATP/profil/sarana/kegiatan/asesmen/dst
   fileUrl      String?   @map("file_url") @db.Text
   status       RppStatus @default(draft)
   reviewerId   String?   @map("reviewer_id") @db.VarChar(64)

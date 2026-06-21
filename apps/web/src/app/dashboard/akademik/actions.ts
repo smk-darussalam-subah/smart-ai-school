@@ -100,6 +100,7 @@ export interface RppFormData {
   subject: string;
   title: string;
   content?: string | null;
+  body?: import('./_components/guru-types').ModulAjarBody | null;
   fileUrl?: string | null;
   classId?: string | null;
   academicYear: string;
