@@ -22,7 +22,16 @@ export interface ActivityItem {
 }
 
 export interface AtpItem { tpRef?: string; indikator?: string }
-export interface KegiatanItem { pertemuan?: string; deskripsi?: string }
+
+/** Kegiatan per pertemuan — timeline Pendahuluan/Inti/Penutup (sesuai mockup). */
+export interface KegiatanItem {
+  pertemuan?: string;
+  deskripsi?: string;          // legacy: deskripsi bebas
+  pendahuluan?: string;         // kegiatan pendahuluan (15 menit)
+  inti?: string;                // kegiatan inti (60 menit)
+  penutup?: string;             // kegiatan penutup (15 menit)
+  diferensiasi?: string;        // strategi diferensiasi (opsional)
+}
 
 /** Modul Ajar terstruktur (Kurikulum Merdeka) — disimpan di Rpp.body. */
 export interface ModulAjarBody {
@@ -41,11 +50,18 @@ export interface ModulAjarBody {
   target?: string;
   model?: string;
   kegiatan?: KegiatanItem[];
-  asesmen?: string;
+  asesmen?: string;               // legacy: rencana asesmen bebas
+  asesmenDiagnostik?: string;      // jenis + deskripsi asesmen diagnostik
+  asesmenFormatif?: string;        // jenis + deskripsi asesmen formatif
+  asesmenSumatif?: string;         // jenis + deskripsi asesmen sumatif
   pengayaan?: string;
   remedial?: string;
-  refleksi?: string;
-  lampiran?: string;
+  refleksi?: string;               // legacy: refleksi gabungan
+  refleksiGuru?: string;           // pertanyaan refleksi guru
+  refleksiSiswa?: string;          // pertanyaan refleksi siswa
+  lampiran?: string;               // catatan lampiran (teks)
+  lampiranUrl?: string;            // URL eksternal (video/drive)
+  durasiMenit?: number | null;     // durasi per JP (menit)
 }
 
 export interface RppItem {
