@@ -6,7 +6,7 @@
 // Editor konten LMS interaktif = placeholder jujur (backend LMS dibangun berikutnya).
 
 import { useState, useTransition } from 'react';
-import { FileText, Plus, Pencil, Send, Trash2, AlertTriangle, BookOpen, Loader2, Eye, EyeOff, Archive, Users, Activity } from 'lucide-react';
+import { FileText, Plus, Pencil, Send, Trash2, AlertTriangle, BookOpen, Loader2, Eye, EyeOff, Archive, Users, Activity, TrendingUp } from 'lucide-react';
 import clsx from 'clsx';
 import type { RppItem, LmsModuleItem } from './guru-types';
 import { submitRpp, deleteRpp, setLmsModuleStatus, deleteLmsModule } from '../actions';
@@ -39,6 +39,21 @@ const LMS_BADGE: Record<string, string> = {
   published: 'bg-emerald-50 text-emerald-700', draft: 'bg-slate-100 text-slate-600', archived: 'bg-zinc-100 text-zinc-500',
 };
 const LMS_LABEL: Record<string, string> = { published: 'Terbit', draft: 'Draft', archived: 'Arsip' };
+
+// SIMULASI: Progres ketercapaian per mapel (backend /cp-progress belum tersedia)
+const MAPEL_PROG = [
+  { mapel: 'Pemrograman Web', progres: 64, tp: '5/8 TP' },
+  { mapel: 'Basis Data', progres: 48, tp: '3/7 TP' },
+  { mapel: 'PBO', progres: 72, tp: '6/9 TP' },
+];
+
+// SIMULASI: Ketercapaian per CP (Capaian Pembelajaran)
+const CP_DATA = [
+  { cp: 'CP 1', desc: 'Antarmuka web fungsional', progres: 88 },
+  { cp: 'CP 2', desc: 'Layout responsif', progres: 74 },
+  { cp: 'CP 3', desc: 'Form & validasi', progres: 35 },
+  { cp: 'CP 4', desc: 'Interaktivitas dasar', progres: 0 },
+];
 
 export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, academicYear, semester }: Props) {
   const [formOpen, setFormOpen] = useState(false);
@@ -282,6 +297,47 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
         <p className="mt-3 text-[11.5px] text-[#6b8079]">
           Modul yang <b>Terbit</b> tampil di LMS siswa kelas terkait; progres belajar terlacak otomatis. Kuis diagnostik &amp; bank soal menyusul.
         </p>
+      </div>
+
+      {/* Progres Ketercapaian — SIMULASI */}
+      <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
+        <h3 className="mb-1 flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
+          <TrendingUp className="h-[18px] w-[18px] text-emerald-600" />Progres Ketercapaian
+        </h3>
+        <div className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10.5px] font-bold text-amber-700">
+          <AlertTriangle className="h-3 w-3" /> SIMULASI — backend /cp-progress belum tersedia
+        </div>
+
+        {/* Per Mapel */}
+        <div className="space-y-2.5">
+          {MAPEL_PROG.map((m) => (
+            <div key={m.mapel} className="flex items-center gap-3">
+              <span className="w-32 shrink-0 text-[12px] font-semibold text-[#0f2e25]">{m.mapel}</span>
+              <div className="h-3 flex-1 overflow-hidden rounded-full bg-[#f0f4f2]">
+                <div className={`h-full rounded-full ${m.progres >= 60 ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${m.progres}%` }} />
+              </div>
+              <span className="w-10 text-right text-[12px] font-extrabold text-[#0f2e25]">{m.progres}%</span>
+              <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${m.progres >= 60 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{m.tp}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* CP Grid */}
+        <div className="mb-2 mt-4 text-[12px] font-extrabold text-[#355a4e]">Ketercapaian per CP</div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {CP_DATA.map((c) => (
+            <div key={c.cp} className="rounded-xl border border-[#e6efea] bg-[#f9fbfa] p-3">
+              <b className="text-[11px] text-[#0f2e25]">{c.cp}</b>
+              <div className="text-[10px] text-[#9bb0a8]">{c.desc}</div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#f0f4f2]">
+                <div className={`h-full rounded-full ${c.progres >= 75 ? 'bg-emerald-500' : c.progres > 0 ? 'bg-amber-400' : 'bg-slate-200'}`} style={{ width: `${c.progres}%` }} />
+              </div>
+              <small className={`mt-1 block text-[10px] font-bold ${c.progres >= 75 ? 'text-emerald-700' : 'text-amber-600'}`}>
+                {c.progres > 0 ? `${c.progres}%` : 'belum mulai'}
+              </small>
+            </div>
+          ))}
+        </div>
       </div>
 
       {formOpen && (

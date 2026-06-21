@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { ArrowLeft, ClipboardCheck, FileText, BookOpenCheck, Target, GraduationCap, PenLine } from 'lucide-react';
+import { ArrowLeft, ClipboardCheck, FileText, BookOpenCheck, Target, GraduationCap, PenLine, LayoutGrid } from 'lucide-react';
 import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ActivityItem, RppItem } from './guru-types';
 import { KKTP_DEFAULT } from './guru-types';
@@ -41,6 +41,29 @@ export default function RekapPembelajaran({ subject, grades, attendances, activi
     })).sort((a, b) => b.count - a.count);
   }, [grades, isAll]);
 
+  // Per Kelas×Mapel breakdown + Matriks Ketuntasan
+  const kelasMapel = useMemo(() => {
+    const m = new Map<string, { kelas: string; mapel: string; scores: number[] }>();
+    grades.forEach((g) => {
+      const key = `${g.assignment.class.name}|${g.assignment.subject}`;
+      let row = m.get(key);
+      if (!row) { row = { kelas: g.assignment.class.name, mapel: g.assignment.subject, scores: [] }; m.set(key, row); }
+      row.scores.push(Number(g.score));
+    });
+    return [...m.values()].map((r) => ({
+      ...r,
+      count: r.scores.length,
+      rata: Math.round((r.scores.reduce((a, b) => a + b, 0) / r.scores.length) * 10) / 10,
+      tuntasPct: Math.round((r.scores.filter((s) => s >= KKTP_DEFAULT).length / r.scores.length) * 100),
+    })).sort((a, b) => a.kelas.localeCompare(b.kelas) || a.mapel.localeCompare(b.mapel));
+  }, [grades]);
+
+  const kelasList = [...new Set(kelasMapel.map((r) => r.kelas))].sort();
+  const mapelList = [...new Set(kelasMapel.map((r) => r.mapel))].sort();
+
+  const tuntasColor = (pct: number) =>
+    pct >= 80 ? 'bg-emerald-100 text-emerald-800' : pct >= 65 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-700';
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -75,6 +98,71 @@ export default function RekapPembelajaran({ subject, grades, attendances, activi
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Rincian per Kelas × Mapel */}
+      {kelasMapel.length > 0 && (
+        <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
+          <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]">
+            <ClipboardCheck className="h-4 w-4 text-emerald-600" />Rincian per Kelas × Mapel
+            <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">{kelasMapel.length} baris</span>
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead><tr className="border-b border-[#e6efea] text-left text-[10.5px] uppercase tracking-wide text-[#6b8079]">
+                <th className="py-2 pr-3">Kelas</th><th className="py-2 pr-3">Mapel</th><th className="py-2 pr-3 text-right">Rata²</th><th className="py-2 pr-3 text-right">Entri</th><th className="py-2 text-right">Tuntas KKTP</th>
+              </tr></thead>
+              <tbody>
+                {kelasMapel.map((r, i) => (
+                  <tr key={i} className="border-b border-[#f0f4f2]">
+                    <td className="py-2.5 pr-3 font-bold text-[#0f2e25]">{r.kelas}</td>
+                    <td className="py-2.5 pr-3 text-[#355a4e]">{r.mapel}</td>
+                    <td className="py-2.5 pr-3 text-right font-bold text-[#0f2e25]">{r.rata}</td>
+                    <td className="py-2.5 pr-3 text-right text-[#355a4e]">{r.count}</td>
+                    <td className="py-2.5 text-right"><span className={`rounded-md px-2 py-0.5 text-[10.5px] font-bold ${tuntasColor(r.tuntasPct)}`}>{r.tuntasPct}%</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Matriks Ketuntasan KKTP */}
+      {kelasList.length > 0 && mapelList.length > 0 && (
+        <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
+          <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]">
+            <LayoutGrid className="h-4 w-4 text-emerald-600" />Matriks Ketuntasan KKTP
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px] border-separate" style={{ borderSpacing: 0 }}>
+              <thead>
+                <tr className="text-[10.5px] font-extrabold uppercase text-[#6b8079]">
+                  <th className="px-2 py-2 text-left">Kelas</th>
+                  {mapelList.map((m) => <th key={m} className="px-2 py-2 text-center">{m.length > 12 ? m.slice(0, 10) + '…' : m}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {kelasList.map((k) => (
+                  <tr key={k}>
+                    <td className="px-2 py-2 text-left font-bold text-[#0f2e25]">{k}</td>
+                    {mapelList.map((mp) => {
+                      const r = kelasMapel.find((x) => x.kelas === k && x.mapel === mp);
+                      return r ? (
+                        <td key={mp} className={`px-2 py-2 text-center font-bold ${tuntasColor(r.tuntasPct)}`} style={{ borderRadius: 4 }}>{r.tuntasPct}%</td>
+                      ) : <td key={mp} className="px-2 py-2 text-center text-[#cbd5e1]">–</td>;
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-[10.5px] font-semibold text-[#6b8079]">
+            <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-emerald-300 align-[-1px]" />≥ 80% tuntas</span>
+            <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-amber-300 align-[-1px]" />65–79%</span>
+            <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-rose-300 align-[-1px]" />&lt; 65%</span>
           </div>
         </div>
       )}
