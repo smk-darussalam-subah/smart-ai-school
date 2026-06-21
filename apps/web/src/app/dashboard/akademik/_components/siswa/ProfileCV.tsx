@@ -7,13 +7,12 @@ import type { SiswaScreen } from './SiswaWorkspace';
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  profile: any;
   showToast: (msg: string) => void;
   go: (screen: SiswaScreen) => void;
 }
 
-export default function ProfileCV({ isOpen, onClose, profile, showToast, go }: Props) {
-  const displayProfile = profile || SIM_PROFILE_CV;
+export default function ProfileCV({ isOpen, onClose, showToast: _showToast, go: _go }: Props) {
+  const displayProfile = SIM_PROFILE_CV as any;
   const displayBadges = SIM_BADGES.filter((b: any) => b.earned);
 
   if (!isOpen) return null;

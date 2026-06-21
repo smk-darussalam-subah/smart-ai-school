@@ -8,7 +8,7 @@ interface Props {
   onClose: () => void;
 }
 
-export default function ClassDetailModal({ subject, teacher, room, jpIndex, onClose }: Props) {
+export default function ClassDetailModal({ subject: _subject, teacher: _teacher, room: _room, jpIndex: _jpIndex, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div

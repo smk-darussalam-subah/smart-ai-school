@@ -6,7 +6,7 @@ interface Props {
   showToast: (msg: string) => void;
 }
 
-export default function TaskDetailModal({ task, onClose, showToast }: Props) {
+export default function TaskDetailModal({ task: _task, onClose, showToast: _showToast }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div

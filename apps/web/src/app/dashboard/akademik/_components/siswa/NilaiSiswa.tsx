@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { TrendingUp, Target, ChevronRight, BookOpen } from 'lucide-react';
+import { Target } from 'lucide-react';
 import { mpColor, mpIcon, SIM_NILAI } from './siswa-data';
 import { KKTP_DEFAULT } from '@/lib/academic';
 import type { SiswaScreen } from './SiswaWorkspace';
@@ -13,7 +13,7 @@ interface Props {
   setModal: (modal: any) => void;
 }
 
-export default function NilaiSiswa({ grades, showToast, go, setModal }: Props) {
+export default function NilaiSiswa({ grades, showToast: _showToast, go: _go, setModal: _setModal }: Props) {
   const [selectedMp, setSelectedMp] = useState<string | null>(null);
   
   const displayGrades = grades.length > 0 ? grades : SIM_NILAI;
@@ -61,7 +61,7 @@ export default function NilaiSiswa({ grades, showToast, go, setModal }: Props) {
                       className="flex h-10 w-10 items-center justify-center rounded-xl"
                       style={{ background: `${c}20`, color: c }}
                     >
-                      <span className="text-lg font-extrabold">{(mpIcon(n.mp) || 'book')[0].toUpperCase()}</span>
+                      <span className="text-lg font-extrabold">{(mpIcon(n.mp) || 'book').charAt(0).toUpperCase()}</span>
                     </div>
                     <div>
                       <div className="text-base font-bold">{n.mp}</div>

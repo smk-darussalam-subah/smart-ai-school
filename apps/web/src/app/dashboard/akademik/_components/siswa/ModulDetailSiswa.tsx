@@ -10,7 +10,7 @@ interface Props {
   showToast: (msg: string) => void;
 }
 
-export default function ModulDetailSiswa({ moduleId, go, setActiveModulId, setBadgeCelebration, showToast }: Props) {
+export default function ModulDetailSiswa({ moduleId: _moduleId, go: _go, setActiveModulId: _setActiveModulId, setBadgeCelebration: _setBadgeCelebration, showToast: _showToast }: Props) {
   return (
     <div className="px-5 py-4">
       <p className="text-sm text-[var(--muted)]">Modul Detail screen — Batch D</p>

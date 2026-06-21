@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Award, Trophy, Star, ChevronRight, Target } from 'lucide-react';
+import { Trophy, Star, ChevronRight, Target } from 'lucide-react';
 import { SIM_BADGES, SIM_LEADERBOARD, SIM_CPDATA, SIM_XP } from './siswa-data';
 import type { SiswaScreen } from './SiswaWorkspace';
 
@@ -13,10 +13,9 @@ interface Props {
   leaderboard: any[];
   cpData: any[];
   badges: any[];
-  profile: any;
 }
 
-export default function CapaianSiswa({ showToast, go, setModal, xp, leaderboard, cpData, badges, profile }: Props) {
+export default function CapaianSiswa({ setModal, xp, leaderboard, cpData, badges }: Props) {
   const [filter, setFilter] = useState<'all' | 'earned' | 'progress'>('all');
   
   const displayBadges = badges.length > 0 ? badges : SIM_BADGES;

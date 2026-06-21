@@ -5,7 +5,7 @@ interface Props {
   onClose: () => void;
 }
 
-export default function BadgeDetailModal({ badge, onClose }: Props) {
+export default function BadgeDetailModal({ badge: _badge, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div

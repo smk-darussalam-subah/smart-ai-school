@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import {
   Flame, UserCheck, TrendingUp, ClipboardList, Award, CalendarClock,
-  PlayCircle, ChevronRight, Target, BookOpen,
+  PlayCircle, ChevronRight, Target,
 } from 'lucide-react';
 import { wibNow, currentJp } from '@/lib/bell-times';
 import { mpColor, mpIcon } from './siswa-data';
@@ -37,7 +37,7 @@ const SCHED: Record<number, Record<number, { mp: string; g: string; ruang: strin
 const JP: [string, string][] = [['JP 1', '07.30–08.10'], ['JP 2', '08.10–08.50'], ['JP 3', '08.50–09.30'], ['Istirahat', '09.30–09.45'], ['JP 4', '09.45–10.25'], ['JP 5', '10.25–11.05'], ['JP 6', '11.05–11.45'], ['Ishoma', '11.45–12.25'], ['JP 7', '12.25–13.05'], ['JP 8', '13.05–13.45']];
 const JPN: [number, number][] = [[1, 0], [2, 1], [3, 2], [4, 4], [5, 5], [6, 6], [7, 8], [8, 9]];
 
-export default function BerandaSiswa({ showToast, go, setModal, setBadgeCelebration, setActiveModulId, grades, tasks, badges, modules, quest, xp, kehStats }: Props) {
+export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, quest, xp }: Props) {
   const now = wibNow();
   const dow = now.jsDay === 0 ? 6 : now.jsDay; // Convert Sunday=0 to Saturday=6
   const currentJpIdx = currentJp(now.minutes);
@@ -237,7 +237,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setBadgeCelebrat
           </div>
           <div className="space-y-2">
             {hasSched ? (
-              JPN.map(([jp, idx]) => {
+              JPN.map(([, idx]) => {
                 const slot = daySched[idx];
                 if (!slot) return null;
                 const isDone = idx < (currentJpIdx === 0 ? -1 : JPN.findIndex(([j]) => j === currentJpIdx));
@@ -254,7 +254,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setBadgeCelebrat
                   >
                     <div className="w-12 flex-shrink-0 text-right">
                       <div className="text-[11px] font-extrabold">{t[0]}</div>
-                      <div className="text-[9px] font-semibold text-[var(--muted)]">{JP[idx][0]}</div>
+                      <div className="text-[9px] font-semibold text-[var(--muted)]">{JP[idx]![0]}</div>
                     </div>
                     <div className={`mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full border-2 border-[var(--bg)] shadow-[0_0_0_2px_var(--em)] ${dotCls}`} />
                     <div className="flex-1 min-w-0">
@@ -312,11 +312,11 @@ export default function BerandaSiswa({ showToast, go, setModal, setBadgeCelebrat
                     className="flex w-full items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-left transition-all hover:border-[var(--border2)] hover:bg-[var(--surface2)]"
                   >
                     <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl" style={{ background: `${c}20`, color: c }}>
-                      <span className="text-lg">{mpIcon(t.mp)[0].toUpperCase()}</span>
+                      <span className="text-lg">{(mpIcon(t.mp) || 'book').charAt(0).toUpperCase()}</span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="truncate text-sm font-bold">{t.title}</div>
-                      <div className={`mt-0.5 text-[11px] font-semibold ${urgent ? 'text-rose-500' : 'text-[var(--muted)]'}`}>
+                      <div className="mt-0.5 text-[11px] font-semibold text-[var(--muted)]">
                         {t.mp} · {t.dlDays === 0 ? '⚠ Deadline hari ini!' : `${t.dlDays ?? 1} hari lagi`}
                       </div>
                     </div>
@@ -358,7 +358,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setBadgeCelebrat
                   className="flex w-full items-center gap-3 py-3 text-left first:pt-0 last:pb-0"
                 >
                   <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl" style={{ background: `${c}20`, color: c }}>
-                    <span className="text-sm font-extrabold">{mpIcon(n.mp)[0].toUpperCase()}</span>
+                    <span className="text-sm font-extrabold">{(mpIcon(n.mp) || 'book').charAt(0).toUpperCase()}</span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold">{n.mp}</div>
@@ -407,7 +407,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setBadgeCelebrat
                 >
                   <span className="text-2xl" style={{ color: b.color }}>🏅</span>
                 </div>
-                <div className="text-[10px] font-bold">{badge.name}</div>
+                <div className="text-[10px] font-bold">{b.name}</div>
                 {!b.earned && <div className="mt-0.5 text-[9px] font-semibold text-[var(--muted)]">{b.prog ?? 0}%</div>}
               </button>
             ))}

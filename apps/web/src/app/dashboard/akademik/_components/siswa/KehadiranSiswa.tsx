@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { UserCheck, ChevronLeft, ChevronRight, Calendar as CalendarIcon, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, AlertCircle } from 'lucide-react';
 import { generateCalendar } from '@/lib/academic';
 import type { SiswaScreen } from './SiswaWorkspace';
 
@@ -16,7 +16,7 @@ interface Props {
 const BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 const HARI = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 
-export default function KehadiranSiswa({ showToast, go, setModal, stats, attendance }: Props) {
+export default function KehadiranSiswa({ showToast: _showToast, go: _go, setModal, stats: _stats, attendance }: Props) {
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());

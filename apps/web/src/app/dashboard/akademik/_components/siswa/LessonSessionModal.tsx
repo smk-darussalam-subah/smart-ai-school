@@ -9,7 +9,7 @@ interface Props {
   openModulDetail: (id: number) => void;
 }
 
-export default function LessonSessionModal({ subject, teacher, room, jpIndex, onClose, openModulDetail }: Props) {
+export default function LessonSessionModal({ subject: _subject, teacher: _teacher, room: _room, jpIndex: _jpIndex, onClose, openModulDetail: _openModulDetail }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div

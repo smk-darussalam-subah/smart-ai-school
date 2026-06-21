@@ -3,7 +3,6 @@
 import { useState, useMemo } from 'react';
 import { CalendarClock, MapPin, Bell } from 'lucide-react';
 import { wibNow, currentJp } from '@/lib/bell-times';
-import { mpColor, mpIcon } from './siswa-data';
 import type { SiswaScreen } from './SiswaWorkspace';
 
 interface Props {
@@ -27,7 +26,7 @@ const WEEKLY_SCHED: Record<number, Record<number, { mp: string; g: string; ruang
   6: { 0: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 1: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 2: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 4: { mp: 'PJOK', g: 'Doni Kurniawan, S.Pd', ruang: 'Lapangan' }, 5: { mp: 'Fisika', g: 'Hendra Gunawan, S.Pd', ruang: 'R-107' }, 6: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 8: { mp: 'PKn', g: 'Nur Hidayah, S.Pd', ruang: 'R-107' }, 9: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' } },
 };
 
-export default function JadwalSiswa({ schedule, showToast, go, setModal, kalender }: Props) {
+export default function JadwalSiswa({ schedule: _schedule, showToast: _showToast, go: _go, setModal, kalender: _kalender }: Props) {
   const now = wibNow();
   const todayDow = now.jsDay === 0 ? 6 : now.jsDay;
   const currentJpIdx = currentJp(now.minutes);
@@ -96,7 +95,7 @@ export default function JadwalSiswa({ schedule, showToast, go, setModal, kalende
       {/* Schedule Grid */}
       <div className="px-5 py-4 space-y-2">
         {hasSched ? (
-          JPN.map(([jp, idx]) => {
+          JPN.map(([, idx]) => {
             const slot = daySched[idx];
             if (!slot) {
               const jpLabel = JP[idx]![0];

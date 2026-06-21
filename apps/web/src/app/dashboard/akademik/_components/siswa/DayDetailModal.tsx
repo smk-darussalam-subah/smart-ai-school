@@ -6,7 +6,7 @@ interface Props {
   onClose: () => void;
 }
 
-export default function DayDetailModal({ day, status, onClose }: Props) {
+export default function DayDetailModal({ day: _day, status: _status, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div

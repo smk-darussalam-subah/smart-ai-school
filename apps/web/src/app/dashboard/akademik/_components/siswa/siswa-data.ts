@@ -2,7 +2,7 @@
 // Semua data di file ini bertanda SIMULASI — backend menyusul
 // Import dari lib/academic.ts untuk konstanta resmi (KKTP, NA_WEIGHTS, dll.)
 
-import { KKTP_DEFAULT, NA_WEIGHTS, naOf } from '@/lib/academic';
+import { KKTP_DEFAULT, naOf } from '@/lib/academic';
 import type {
   SiswaModul, SiswaBadge, SiswaTugas, SiswaNilai, SiswaCP,
   SiswaLeaderboardEntry, SiswaProfileCV, SiswaQuest,
@@ -67,7 +67,6 @@ const CPS = [72, 68, 58, 82, 65, 48, 85, 72];
 
 export const SIM_NILAI: SiswaNilai[] = Object.keys(STUDENT_GRADES).map((mp, i) => {
   const sc = STUDENT_GRADES[mp]!;
-  const components = { uh: sc[0], praktik: sc[1], sikap: sc[2], uts: sc[3], uas: sc[4] };
   // Filter out 0 values for NA calculation (treat as not yet graded)
   const filteredComponents = {
     uh: sc[0] || undefined,

@@ -1,8 +1,6 @@
 // Types untuk Dashboard Siswa (W2)
 // SIMULASI data — backend menyusul untuk fitur LMS, gamifikasi, CV
 
-import type { GradeItem, AttendanceItem } from '@/lib/api';
-
 // ── Modul Ajar (LMS) ──────────────────────────────────────────────────────
 
 export interface SiswaModul {

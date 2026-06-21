@@ -1,9 +1,11 @@
 'use client';
 
+import type { SiswaScreen } from './SiswaWorkspace';
+
 interface Props {
   badgeName?: string;
   onClose: () => void;
-  go: (screen: any) => void;
+  go: (screen: SiswaScreen) => void;
 }
 
 export default function BadgeCelebration({ badgeName, onClose, go }: Props) {

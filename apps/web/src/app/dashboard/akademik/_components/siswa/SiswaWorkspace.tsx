@@ -6,7 +6,6 @@ import {
   UserCheck, Award, Sun, Moon, Bell, Settings, ChevronLeft,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { ThemeToggle } from '@/components/academic/shared';
 import BerandaSiswa from './BerandaSiswa';
 import JadwalSiswa from './JadwalSiswa';
 import ModulSiswa from './ModulSiswa';
@@ -25,12 +24,9 @@ import DayDetailModal from './DayDetailModal';
 import BadgeDetailModal from './BadgeDetailModal';
 import {
   SIM_PENGUMUMAN, SIM_NILAI, SIM_TUGAS, SIM_KEH_STATS,
-  SIM_BADGES, SIM_MODULS, SIM_CPDATA, SIM_PROFILE_CV,
+  SIM_BADGES, SIM_MODULS, SIM_CPDATA,
   SIM_DAILY_QUEST, SIM_KALENDER, SIM_XP, SIM_LEADERBOARD,
 } from './siswa-data';
-import type { AttendanceCellStatus } from '@/lib/academic';
-import { generateCalendar } from '@/lib/academic';
-import { wibNow, scheduleDayOfWeek } from '@/lib/bell-times';
 
 export type SiswaScreen = 'beranda' | 'jadwal' | 'modul' | 'nilai' | 'tugas' | 'kehadiran' | 'capaian';
 
@@ -46,7 +42,7 @@ interface SiswaWorkspaceProps {
   announcements?: unknown[];
 }
 
-export default function SiswaWorkspace({ grades, attendance, schedule, announcements }: SiswaWorkspaceProps) {
+export default function SiswaWorkspace({ grades: _grades, attendance, schedule: _schedule, announcements: _announcements }: SiswaWorkspaceProps) {
   const [activeScreen, setActiveScreen] = useState<SiswaScreen>('beranda');
   const [activeModulId, setActiveModulId] = useState<number | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -109,28 +105,6 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
     };
   }, [profileOpen]);
 
-  // Build attendance calendar data
-  const attendanceCalendar = useCallback(() => {
-    // SIMULASI: In production, map real attendance data to statusByDay
-    const now = wibNow();
-    const todayDate = new Date().getDate();
-    const statusByDay: Record<number, AttendanceCellStatus> = {};
-    
-    // Generate sample attendance pattern
-    const statuses: AttendanceCellStatus[] = ['hadir', 'hadir', 'hadir', 'hadir', 'hadir', 'hadir', 'hadir', 'hadir', 'izin', 'sakit', 'alpha', 'hadir', 'hadir', 'hadir'];
-    for (let d = 1; d <= todayDate; d++) {
-      const dow = (d + new Date(new Date().getFullYear(), new Date().getMonth(), 1).getDay() - 1) % 7;
-      if (dow !== 0) { // Skip Sundays
-        statusByDay[d] = statuses[(d * 3 + dow) % statuses.length]!;
-      }
-    }
-    
-    return generateCalendar(new Date().getFullYear(), new Date().getMonth(), {
-      todayDay: todayDate,
-      statusByDay,
-    });
-  }, []);
-
   const navItems: { key: SiswaScreen; label: string; icon: typeof Home }[] = [
     { key: 'beranda', label: 'Beranda', icon: Home },
     { key: 'jadwal', label: 'Jadwal', icon: CalendarClock },
@@ -168,7 +142,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
         return (
           <JadwalSiswa
             {...commonProps}
-            schedule={schedule || []}
+            schedule={_schedule || []}
             kalender={SIM_KALENDER}
           />
         );
@@ -214,7 +188,6 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             leaderboard={SIM_LEADERBOARD}
             cpData={SIM_CPDATA}
             badges={SIM_BADGES}
-            profile={SIM_PROFILE_CV}
           />
         );
       default:
@@ -383,7 +356,6 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
       <ProfileCV
         isOpen={profileOpen}
         onClose={() => setProfileOpen(false)}
-        profile={SIM_PROFILE_CV}
         showToast={showToast}
         go={go}
       />

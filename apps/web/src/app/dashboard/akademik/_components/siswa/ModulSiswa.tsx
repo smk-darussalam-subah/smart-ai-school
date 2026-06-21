@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { BookOpen, CheckCircle, Lock, Play, ChevronRight, Award } from 'lucide-react';
+import { BookOpen, CheckCircle, Lock, Award } from 'lucide-react';
 import { mpColor, mpIcon } from './siswa-data';
 import type { SiswaScreen } from './SiswaWorkspace';
 
@@ -15,7 +15,7 @@ interface Props {
   setActiveModulId: (id: number | null) => void;
 }
 
-export default function ModulSiswa({ modules, badges, showToast, go, setModal, setBadgeCelebration, setActiveModulId }: Props) {
+export default function ModulSiswa({ modules, badges: _badges, showToast: _showToast, go, setModal: _setModal, setBadgeCelebration: _setBadgeCelebration, setActiveModulId }: Props) {
   const [filter, setFilter] = useState<'all' | 'aktif' | 'selesai' | 'terkunci'>('all');
 
   const filtered = modules.filter((m: any) => {
@@ -90,7 +90,7 @@ export default function ModulSiswa({ modules, badges, showToast, go, setModal, s
                   {mod.tp}
                 </div>
                 <div className="ml-auto grid h-6 w-6 place-items-center rounded-lg bg-white/20 backdrop-blur">
-                  <span className="text-white text-xs font-bold">{(mpIcon(mod.mapel) || 'book')[0].toUpperCase()}</span>
+                  <span className="text-white text-xs font-bold">{(mpIcon(mod.mapel) || 'book').charAt(0).toUpperCase()}</span>
                 </div>
               </div>
               <div className="p-3">

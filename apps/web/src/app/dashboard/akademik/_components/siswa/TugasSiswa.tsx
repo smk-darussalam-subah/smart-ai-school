@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ClipboardList, Calendar, AlertCircle, CheckCircle, ChevronRight } from 'lucide-react';
+import { ClipboardList, Calendar, AlertCircle, CheckCircle } from 'lucide-react';
 import { mpColor, mpIcon, SIM_TUGAS } from './siswa-data';
 import type { SiswaScreen } from './SiswaWorkspace';
 
@@ -12,7 +12,7 @@ interface Props {
   setModal: (modal: any) => void;
 }
 
-export default function TugasSiswa({ tasks, showToast, go, setModal }: Props) {
+export default function TugasSiswa({ tasks, showToast: _showToast, go: _go, setModal }: Props) {
   const [filter, setFilter] = useState<'pending' | 'submitted' | 'graded'>('pending');
   
   const displayTasks = tasks.length > 0 ? tasks : SIM_TUGAS;
@@ -83,7 +83,7 @@ export default function TugasSiswa({ tasks, showToast, go, setModal }: Props) {
                         className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
                         style={{ background: `${c}20`, color: c }}
                       >
-                        <span className="text-lg font-extrabold">{(mpIcon(t.mp) || 'book')[0].toUpperCase()}</span>
+                        <span className="text-lg font-extrabold">{(mpIcon(t.mp) || 'book').charAt(0).toUpperCase()}</span>
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-base font-bold">{t.title}</div>
