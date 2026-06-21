@@ -6,7 +6,7 @@
 // Editor konten LMS interaktif = placeholder jujur (backend LMS dibangun berikutnya).
 
 import { useState, useTransition } from 'react';
-import { FileText, Plus, Pencil, Send, Trash2, AlertTriangle, BookOpen, Loader2, Eye, EyeOff, Archive, Users, Activity, TrendingUp } from 'lucide-react';
+import { FileText, Plus, Pencil, Send, Trash2, AlertTriangle, BookOpen, Loader2, Eye, EyeOff, Archive, Users, Activity, TrendingUp, GitBranch, ArrowRight } from 'lucide-react';
 import clsx from 'clsx';
 import type { RppItem, LmsModuleItem } from './guru-types';
 import { submitRpp, deleteRpp, setLmsModuleStatus, deleteLmsModule } from '../actions';
@@ -116,12 +116,28 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
-            <FileText className="h-[18px] w-[18px] text-emerald-600" />Modul Ajar
+            <FileText className="h-[18px] w-[18px] text-emerald-600" />Modul Ajar{subjects.length > 0 && <span className="text-[#6b8079]"> — {subjects[0]}</span>}
           </h3>
           <button type="button" onClick={openCreate}
             className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-[12.5px] font-bold text-white hover:bg-emerald-700">
             <Plus className="h-4 w-4" />Buat Modul Ajar
           </button>
+        </div>
+
+        {/* CP→TP→ATP flow bar */}
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11.5px] font-bold text-emerald-800">
+          <GitBranch className="h-3.5 w-3.5 text-emerald-600" /> Alur Kurikulum Merdeka:
+          <span className="rounded-lg border border-emerald-200 bg-white px-2 py-0.5">CP</span>
+          <ArrowRight className="h-3 w-3 text-emerald-500" />
+          <span className="rounded-lg border border-emerald-200 bg-white px-2 py-0.5">TP</span>
+          <ArrowRight className="h-3 w-3 text-emerald-500" />
+          <span className="rounded-lg border border-emerald-200 bg-white px-2 py-0.5">ATP</span>
+          <ArrowRight className="h-3 w-3 text-emerald-500" />
+          <span className="rounded-lg border border-emerald-200 bg-white px-2 py-0.5">Modul Ajar</span>
+          <ArrowRight className="h-3 w-3 text-emerald-500" />
+          <span className="rounded-lg border border-emerald-200 bg-white px-2 py-0.5">LMS</span>
+          <ArrowRight className="h-3 w-3 text-emerald-500" />
+          <span className="rounded-lg border border-emerald-200 bg-white px-2 py-0.5">Rapor</span>
         </div>
 
         {err && (
@@ -142,6 +158,8 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
                   <th className="py-2 pr-3">Judul / TP</th>
                   <th className="py-2 pr-3">Mapel</th>
                   <th className="py-2 pr-3">Kelas</th>
+                  <th className="py-2 pr-3 text-center">JP</th>
+                  <th className="py-2 pr-3 text-center">KKTP</th>
                   <th className="py-2 pr-3">Status</th>
                   <th className="py-2 text-right">Aksi</th>
                 </tr>
@@ -162,6 +180,8 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
                       </td>
                       <td className="py-2.5 pr-3 text-[#355a4e]">{r.subject}</td>
                       <td className="py-2.5 pr-3 text-[#355a4e]">{r.class?.name ?? '—'}</td>
+                      <td className="py-2.5 pr-3 text-center text-[#355a4e]">{r.body?.jpAllocation ?? '—'}</td>
+                      <td className="py-2.5 pr-3 text-center text-[#355a4e]">{r.body?.kktp ?? '—'}</td>
                       <td className="py-2.5 pr-3">
                         <span className={clsx('rounded-md px-2 py-0.5 text-[11px] font-bold', STATUS_BADGE[r.status] ?? 'bg-slate-100 text-slate-600')}>
                           {STATUS_LABEL[r.status] ?? r.status}
