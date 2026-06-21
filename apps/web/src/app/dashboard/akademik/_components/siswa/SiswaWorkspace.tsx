@@ -42,7 +42,7 @@ interface SiswaWorkspaceProps {
   announcements?: unknown[];
 }
 
-export default function SiswaWorkspace({ grades: _grades, attendance, schedule: _schedule, announcements: _announcements }: SiswaWorkspaceProps) {
+export default function SiswaWorkspace({ grades, attendance, schedule, announcements }: SiswaWorkspaceProps) {
   const [activeScreen, setActiveScreen] = useState<SiswaScreen>('beranda');
   const [activeModulId, setActiveModulId] = useState<number | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -129,7 +129,7 @@ export default function SiswaWorkspace({ grades: _grades, attendance, schedule: 
         return (
           <BerandaSiswa
             {...commonProps}
-            grades={SIM_NILAI}
+            grades={grades?.length ? grades : SIM_NILAI}
             tasks={SIM_TUGAS}
             badges={SIM_BADGES}
             modules={SIM_MODULS}
@@ -142,7 +142,7 @@ export default function SiswaWorkspace({ grades: _grades, attendance, schedule: 
         return (
           <JadwalSiswa
             {...commonProps}
-            schedule={_schedule || []}
+            schedule={schedule || []}
             kalender={SIM_KALENDER}
           />
         );
@@ -162,7 +162,7 @@ export default function SiswaWorkspace({ grades: _grades, attendance, schedule: 
         return (
           <NilaiSiswa
             {...commonProps}
-            grades={SIM_NILAI}
+            grades={grades?.length ? grades : SIM_NILAI}
           />
         );
       case 'tugas':
@@ -298,7 +298,7 @@ export default function SiswaWorkspace({ grades: _grades, attendance, schedule: 
       {/* Modals & Overlays */}
       {modal.type === 'pengumuman' && (
         <PengumumanModal
-          announcements={SIM_PENGUMUMAN}
+          announcements={announcements?.length ? announcements : SIM_PENGUMUMAN}
           onClose={() => setModal({ type: null })}
         />
       )}

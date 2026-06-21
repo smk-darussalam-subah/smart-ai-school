@@ -16,7 +16,7 @@ interface Props {
 const BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 const HARI = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 
-export default function KehadiranSiswa({ showToast: _showToast, go: _go, setModal, stats: _stats, attendance }: Props) {
+export default function KehadiranSiswa({ showToast: _showToast, go: _go, setModal, stats, attendance }: Props) {
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
@@ -61,14 +61,49 @@ export default function KehadiranSiswa({ showToast: _showToast, go: _go, setModa
       {/* Header Stats */}
       <div className="px-5 py-4">
         <h1 className="text-2xl font-extrabold tracking-tight">Kehadiran</h1>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-center">
-            <div className="text-3xl font-extrabold text-emerald-500">{persentase}%</div>
-            <div className="mt-1 text-[11px] font-bold text-[var(--muted)] uppercase tracking-wider">Persentase</div>
+
+        {/* Ring + Statpills */}
+        <div className="mt-4 flex items-center gap-4">
+          {/* SVG Ring (100px) */}
+          <div className="relative h-[100px] w-[100px] flex-shrink-0">
+            <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="42" fill="none" stroke="var(--bar-bg)" strokeWidth="8" />
+              <circle
+                cx="50"
+                cy="50"
+                r="42"
+                fill="none"
+                stroke="#10b981"
+                strokeWidth="8"
+                strokeLinecap="round"
+                strokeDasharray={2 * Math.PI * 42}
+                strokeDashoffset={2 * Math.PI * 42 * (1 - (stats?.pct ?? persentase) / 100)}
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-xl font-extrabold text-emerald-500">{stats?.pct ?? persentase}%</span>
+              <span className="text-[9px] font-bold text-[var(--muted)] uppercase tracking-wider">Kehadiran</span>
+            </div>
           </div>
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-center">
-            <div className="text-3xl font-extrabold text-violet-500">{hadirCount}</div>
-            <div className="mt-1 text-[11px] font-bold text-[var(--muted)] uppercase tracking-wider">Hari Hadir</div>
+
+          {/* 4 Statpills */}
+          <div className="grid flex-1 grid-cols-2 gap-2">
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+              <div className="text-lg font-extrabold text-emerald-500">{stats?.hadir ?? hadirCount}</div>
+              <div className="text-[10px] font-bold text-[var(--muted)] uppercase tracking-wider">Hadir</div>
+            </div>
+            <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2">
+              <div className="text-lg font-extrabold text-blue-500">{stats?.izin ?? izinCount}</div>
+              <div className="text-[10px] font-bold text-[var(--muted)] uppercase tracking-wider">Izin</div>
+            </div>
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+              <div className="text-lg font-extrabold text-amber-500">{stats?.sakit ?? sakitCount}</div>
+              <div className="text-[10px] font-bold text-[var(--muted)] uppercase tracking-wider">Sakit</div>
+            </div>
+            <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2">
+              <div className="text-lg font-extrabold text-rose-500">{stats?.alpha ?? alphaCount}</div>
+              <div className="text-[10px] font-bold text-[var(--muted)] uppercase tracking-wider">Alpha</div>
+            </div>
           </div>
         </div>
       </div>
