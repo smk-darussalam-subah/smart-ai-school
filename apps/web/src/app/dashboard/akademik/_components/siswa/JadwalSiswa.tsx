@@ -26,9 +26,9 @@ const WEEKLY_SCHED: Record<number, Record<number, { mp: string; g: string; ruang
   6: { 0: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 1: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 2: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 4: { mp: 'PJOK', g: 'Doni Kurniawan, S.Pd', ruang: 'Lapangan' }, 5: { mp: 'Fisika', g: 'Hendra Gunawan, S.Pd', ruang: 'R-107' }, 6: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 8: { mp: 'PKn', g: 'Nur Hidayah, S.Pd', ruang: 'R-107' }, 9: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' } },
 };
 
-export default function JadwalSiswa({ schedule: _schedule, showToast: _showToast, go: _go, setModal, kalender: _kalender }: Props) {
+export default function JadwalSiswa({ schedule: _schedule, showToast: _showToast, go: _go, setModal, kalender }: Props) {
   const now = wibNow();
-  const todayDow = now.jsDay === 0 ? 6 : now.jsDay;
+  const todayDow = now.jsDay; // 0=Sunday → no schedule → shows "Libur"
   const currentJpIdx = currentJp(now.minutes);
 
   const [selectedDay, setSelectedDay] = useState(todayDow);
@@ -190,6 +190,32 @@ export default function JadwalSiswa({ schedule: _schedule, showToast: _showToast
           <div>
             <div className="font-bold text-[var(--text)]">Notifikasi Otomatis</div>
             <div className="mt-1">Sistem akan mengingatkan 5 menit sebelum pelajaran dimulai dan saat sesi aktif.</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Kalender Akademik */}
+      <div className="mx-5 mb-4">
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+          <div className="mb-3 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted)]">
+            <CalendarClock className="h-3.5 w-3.5 text-emerald-500" />Kalender Akademik
+          </div>
+          <div className="space-y-2">
+            {kalender.length > 0 ? kalender.map((evt: any, idx: number) => (
+              <div key={idx} className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
+                <div className="flex-shrink-0 w-11 text-center">
+                  <div className="text-lg font-extrabold leading-none" style={{ color: evt.color }}>{evt.d}</div>
+                  <div className="text-[9px] font-bold uppercase text-[var(--muted)]">{evt.m}</div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold">{evt.title}</div>
+                  <div className="mt-0.5 text-[11px] font-semibold text-[var(--muted)]">{evt.desc}</div>
+                </div>
+                <div className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: evt.color }} />
+              </div>
+            )) : (
+              <div className="py-4 text-center text-[var(--dim)] text-sm">Tidak ada event mendatang</div>
+            )}
           </div>
         </div>
       </div>

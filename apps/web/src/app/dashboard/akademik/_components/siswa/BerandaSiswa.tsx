@@ -37,9 +37,9 @@ const SCHED: Record<number, Record<number, { mp: string; g: string; ruang: strin
 const JP: [string, string][] = [['JP 1', '07.30–08.10'], ['JP 2', '08.10–08.50'], ['JP 3', '08.50–09.30'], ['Istirahat', '09.30–09.45'], ['JP 4', '09.45–10.25'], ['JP 5', '10.25–11.05'], ['JP 6', '11.05–11.45'], ['Ishoma', '11.45–12.25'], ['JP 7', '12.25–13.05'], ['JP 8', '13.05–13.45']];
 const JPN: [number, number][] = [[1, 0], [2, 1], [3, 2], [4, 4], [5, 5], [6, 6], [7, 8], [8, 9]];
 
-export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, quest, xp }: Props) {
+export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, quest, xp, kehStats }: Props) {
   const now = wibNow();
-  const dow = now.jsDay === 0 ? 6 : now.jsDay; // Convert Sunday=0 to Saturday=6
+  const dow = now.jsDay; // 0=Sunday → SCHED[0] undefined → shows "Libur"
   const currentJpIdx = currentJp(now.minutes);
 
   // Derived stats
@@ -130,7 +130,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
             <UserCheck className="h-4 w-4" />
           </div>
           <div className="text-xl font-extrabold tracking-tight">
-            92.8<small className="text-sm font-bold text-[var(--muted)]">%</small>
+            {kehStats?.pct ?? 92.8}<small className="text-sm font-bold text-[var(--muted)]">%</small>
           </div>
           <div className="mt-0.5 text-[10.5px] font-bold text-[var(--muted)]">Kehadiran</div>
           <div className="mt-0.5 text-[10px] font-extrabold text-emerald-500">▲ 15 hari streak</div>
@@ -203,7 +203,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                   {activeModul.tp}
                 </div>
                 <div className="ml-auto grid h-7 w-7 place-items-center rounded-lg bg-white/20 backdrop-blur">
-                  <span className="text-white" data-lucide={mpIcon(activeModul.mapel)}>{(mpIcon(activeModul.mapel) ?? 'book').charAt(0).toUpperCase()}</span>
+                  <span className="text-sm font-extrabold text-white">{(mpIcon(activeModul.mapel) ?? 'book').charAt(0).toUpperCase()}</span>
                 </div>
               </div>
               <div className="p-3">
