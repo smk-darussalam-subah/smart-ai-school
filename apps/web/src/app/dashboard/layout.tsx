@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { authOptions } from '@/lib/auth';
 import AppShell from '@/components/layout/AppShell';
 import { DashboardProviders } from '@/components/providers/DashboardProviders';
-import { getActiveViewAs } from '@/lib/view-as';
+import { getActiveViewAs, getEffectiveRoles } from '@/lib/view-as';
 import { apiFetch } from '@/lib/api';
 
 export default async function DashboardLayout({
@@ -17,6 +17,15 @@ export default async function DashboardLayout({
   if (!session) redirect('/login');
 
   const viewAs = await getActiveViewAs(session);
+  const roles = await getEffectiveRoles(session);
+
+  // SISWA & ORANG_TUA dashboards are self-contained mobile-first apps with
+  // native bottom navigation. Hide AppShell chrome (sidebar, mobile nav, top bar)
+  // so only the workspace content is rendered.
+  const hideChrome =
+    (roles.includes('SISWA') || roles.includes('ORANG_TUA')) &&
+    !roles.includes('GURU') &&
+    !roles.includes('KEPALA_SEKOLAH');
 
   // Ambil effective permissions dari backend
   const token = session.accessToken ?? '';
@@ -29,7 +38,7 @@ export default async function DashboardLayout({
 
   return (
     <DashboardProviders session={session}>
-      <AppShell viewAs={viewAs} permissions={userPermissions} permError={permError}>
+      <AppShell viewAs={viewAs} permissions={userPermissions} permError={permError} hideChrome={hideChrome}>
         {children}
       </AppShell>
     </DashboardProviders>
