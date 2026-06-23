@@ -8,6 +8,7 @@ import AkademikClient from './_components/AkademikClient';
 import AkademikWorkspace from './_components/AkademikWorkspace';
 import SiswaWorkspace from './_components/siswa/SiswaWorkspace';
 import OrtuWorkspace from './_components/ortu/OrtuWorkspace';
+import KsWorkspace from './_components/KsWorkspace';
 import type { ScheduleItem, ActivityItem, RppItem, TodayClass, LmsModuleItem } from './_components/guru-types';
 
 interface Assignment { id: string; subject: string; class: { id: string; name: string } }
@@ -26,6 +27,7 @@ export default async function AkademikPage() {
   const isGuru = roles.includes('GURU');
   const isSiswa = roles.includes('SISWA') && !roles.includes('GURU') && !roles.includes('KEPALA_SEKOLAH');
   const isOrtu = roles.includes('ORANG_TUA') && !roles.includes('GURU') && !roles.includes('KEPALA_SEKOLAH');
+  const isKs = roles.includes('KEPALA_SEKOLAH') && !roles.includes('GURU');
   const canManage = roles.includes('SUPER_ADMIN') || roles.includes('GURU');
   const canEditAssignment = roles.includes('SUPER_ADMIN') || roles.includes('TATA_USAHA');
 
@@ -108,6 +110,36 @@ export default async function AkademikPage() {
         rpp={rppRes?.data ?? []}
         lmsModules={lmsRes?.data ?? []}
         todayClasses={todayClasses}
+        academicYear={academicYear}
+        semester={semester}
+        dataWarning={dataWarning}
+      />
+    );
+  }
+
+  // ── Dashboard KS / Waka Kurikulum (F4 — desktop-first, 7-screen workspace). ─
+  if (isKs) {
+    const [schedulesRes, activitiesRes, rppRes, lmsRes, semRes] = await Promise.all([
+      apiFetch<{ data: ScheduleItem[] }>('/schedules?limit=500', token),
+      apiFetch<{ data: ActivityItem[] }>('/class-activities?limit=200', token),
+      apiFetch<{ data: RppItem[] }>('/rpp?limit=100', token),
+      apiFetch<{ data: LmsModuleItem[] }>('/lms/modules?limit=200', token),
+      apiFetch<ActiveSemester>('/school/semesters/active', token),
+    ]);
+
+    const academicYear = semRes?.academicYear?.code ?? '';
+    const semester = semRes?.number ?? 1;
+
+    return (
+      <KsWorkspace
+        grades={gradesData?.data ?? []}
+        attendances={attendanceData?.data ?? []}
+        classes={classesRes?.data ?? []}
+        assignments={assignmentsRes?.data ?? []}
+        rpp={rppRes?.data ?? []}
+        schedules={schedulesRes?.data ?? []}
+        activities={activitiesRes?.data ?? []}
+        lmsModules={lmsRes?.data ?? []}
         academicYear={academicYear}
         semester={semester}
         dataWarning={dataWarning}
