@@ -60,3 +60,40 @@
 /* Beranda — animasi slide-in panel Agenda di kartu Papan Pembelajaran */
 @keyframes berandaSlideRight { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
 .anim-slide-right { animation: berandaSlideRight .32s cubic-bezier(0.16,1,0.3,1); }
+
+/* ── Siswa Dashboard CSS Variables (scoped to .siswa-app) ────────────── */
+:root[data-theme="dark"] .siswa-app {
+  --bg: #0a0f1a;
+  --bg2: #0f1623;
+  --surface: #141b2d;
+  --surface2: #1a2238;
+  --text: #e8eef5;
+  --muted: #8896a8;
+  --dim: #4a5568;
+  --border: #1e293b;
+  --border2: #334155;
+  --bar-bg: #1e293b;
+  --ring-bg: #1e293b;
+  --topbar-bg: rgba(10, 15, 26, 0.85);
+  --nav-bg: rgba(10, 15, 26, 0.95);
+  --em: #10b981;
+  --amber: #f59e0b;
+}
+
+:root[data-theme="light"] .siswa-app {
+  --bg: #f4f6fb;
+  --bg2: #ffffff;
+  --surface: #ffffff;
+  --surface2: #f1f5f9;
+  --text: #0f1e35;
+  --muted: #64748b;
+  --dim: #94a3b8;
+  --border: #e2e8f0;
+  --border2: #cbd5e1;
+  --bar-bg: #e2e8f0;
+  --ring-bg: #e2e8f0;
+  --topbar-bg: rgba(255, 255, 255, 0.85);
+  --nav-bg: rgba(255, 255, 255, 0.95);
+  --em: #059669;
+  --amber: #d97706;
+}

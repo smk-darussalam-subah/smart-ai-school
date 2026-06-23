@@ -14,12 +14,12 @@ import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import {
   Users, UserCheck, Presentation, AlarmClockOff, Target, Sparkles,
-  TrendingUp, TrendingDown, AlertTriangle, Lightbulb, MessageCircle, X, ArrowLeft,
-  Monitor, Minimize2, Calendar, CalendarDays, CalendarClock, Quote, Copy,
+  TrendingUp, TrendingDown, AlertTriangle, Lightbulb, X, ArrowLeft,
+  Monitor, Minimize2, Calendar, CalendarDays, CalendarClock, Quote, Copy, Send, Volume2,
 } from 'lucide-react';
-import PapanPembelajaran, { type PapanRow } from './PapanPembelajaran';
+import PapanPembelajaran, { type PapanRow, type PapanCell } from './PapanPembelajaran';
 import MonthCalendar from './MonthCalendar';
-import { wibNow, currentJp, jpStatusLabel, wibDateLabel, currentBreak, nextBreak, fmtMin } from '@/lib/bell-times';
+import { wibNow, currentJp, jpStatusLabel, jpStartLabel, wibDateLabel, currentBreak, nextBreak, fmtMin } from '@/lib/bell-times';
 import {
   fetchTodayStudentAttendance, type TodayStudentAttendance,
   fetchTodayTeacherAttendance, type TodayTeacherAttendance,
@@ -57,6 +57,16 @@ const STATUS_BADGE: Record<string, string> = {
 const DEFAULT_THEME = themeForDay(5); // emerald (brand) untuk SSR; disetel ke hari ini saat mount
 const REFRESH_MS = 60_000;
 function fmtPct(v: number | null): string { return v === null || v === undefined ? '—' : `${v.toFixed(1)}%`; }
+
+// SIMULASI: Absen per JP (Fase 2 — butuh modul KBM untuk data nyata)
+const SIM_ABSEN_PER_JP: (number | null)[] = [3, 1, 0, 5, 2, 4, 1, 0];
+const SIM_ABSEN_POOL = [
+  { name: 'Rangga Pratama', className: 'XI TJKT', status: 'izin', notes: 'Izin ke UKS' },
+  { name: 'Dewi Larasati', className: 'X TBSM', status: 'alpha', notes: 'Belum kembali dari istirahat' },
+  { name: 'Fajar Sidiq', className: 'XI AKL', status: 'alpha', notes: 'Tanpa keterangan' },
+  { name: 'Nadia Rahma', className: 'XII TKRO', status: 'sakit', notes: 'Sakit, izin pulang' },
+  { name: 'Yusuf Akbar', className: 'X TKRO', status: 'alpha', notes: 'Tanpa keterangan' },
+];
 
 export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda, health, canManageKiosk }: BerandaKioskProps) {
   const router = useRouter();
@@ -124,6 +134,9 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda,
 
   const [modal, setModal] = useState<null | 'siswa' | 'guru' | 'kbm' | 'kosong' | 'silabus'>(null);
   const [picker, setPicker] = useState<null | 'siswa' | 'guru'>(null);
+  const [sessionModal, setSessionModal] = useState<{ row: PapanRow; jp: number; cell: PapanCell } | null>(null);
+  const [absenJpModal, setAbsenJpModal] = useState<number | null>(null);
+  const [showAlert, setShowAlert] = useState(true);
 
   // Kalender akademik NYATA (school.AcademicCalendar). Libur tak dihitung hari aktif.
   const allEvents = agenda;
@@ -183,6 +196,16 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda,
         </div>
       </div>
 
+      {/* Alert bar (Fase 2 — SIMULASI) */}
+      {showAlert && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+          <AlarmClockOff className="h-4 w-4 text-red-600 shrink-0" />
+          <p className="text-[13px] font-semibold text-red-800 flex-1">XI TJKT · JP-3 belum ada absensi masuk (12 menit) — Pak Rizal / Jaringan <span className="ml-1 text-[9px] font-bold uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded align-middle">Fase 2</span></p>
+          <button onClick={() => { try { const u = new SpeechSynthesisUtterance('Perhatian. Kelas sebelas T J K T jam pelajaran ketiga belum ada absensi masuk. Mohon guru segera masuk kelas.'); u.lang = 'id-ID'; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* TTS not supported */ } }} className="text-xs font-semibold px-2.5 h-7 rounded-lg bg-red-600 text-white hover:bg-red-700 flex items-center gap-1"><Volume2 className="w-3 h-3" /> Umumkan</button>
+          <button onClick={() => setShowAlert(false)} className="text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
       {/* HEADER: sapaan+hadist | jam | skor kondisi sekolah */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-soft-sm p-4">
@@ -237,7 +260,10 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda,
           <PapanCard theme={theme} papanRows={papanRows} dayLabel={now.date.split(',')[0] ?? ''}
             cal={cal} navCal={navCal} onJump={jumpCal} calEvents={calEvents} todayStr={todayStr}
             selDate={selDate} onPickDate={setSelDate} agenda={agendaForSel} agendaTitle={agendaTitle}
-            upcoming={upcoming} selIsToday={selIsToday} nowMins={now.mins} />
+            upcoming={upcoming} selIsToday={selIsToday} nowMins={now.mins}
+            onCellClick={(row, jp, cell) => setSessionModal({ row, jp, cell })}
+            absenPerJp={SIM_ABSEN_PER_JP}
+            onAbsenClick={(jp) => setAbsenJpModal(jp)} />
         </div>
         <div className="flex flex-col gap-3">
           <TrenChart chart={chart} theme={theme} />
@@ -247,6 +273,8 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda,
 
       {modal && <KpiModal kind={modal} onClose={() => setModal(null)} papanRows={papanRows} currentJpNow={now.jp} />}
       {picker && <DatePickerRecap kind={picker} theme={theme} events={allEvents} onClose={() => setPicker(null)} />}
+      {sessionModal && <SessionModal data={sessionModal} onClose={() => setSessionModal(null)} />}
+      {absenJpModal !== null && <AbsenJpModal jp={absenJpModal} onClose={() => setAbsenJpModal(null)} />}
     </div>
   );
 }
@@ -258,7 +286,7 @@ function KpiCard({ theme, icon, label, value, sub, delta, fase2, onClick, onCale
 }) {
   return (
     <button type="button" onClick={onClick}
-      className={clsx('relative text-left bg-white rounded-2xl border p-4 shadow-soft-sm transition hover:-translate-y-0.5 hover:shadow-soft-md focus:outline-none', fase2 ? 'border-dashed border-amber-300 bg-amber-50/40' : 'border-emerald-900/10')}>
+      className={clsx('relative text-left bg-white rounded-2xl border p-3 shadow-soft-sm transition hover:-translate-y-0.5 hover:shadow-soft-md focus:outline-none', fase2 ? 'border-dashed border-amber-300 bg-amber-50/40' : 'border-emerald-900/10')}>
       {onCalendar && !fase2 && (
         <span role="button" tabIndex={0} title="Rekap per tanggal"
           onClick={(e) => { e.stopPropagation(); onCalendar(); }}
@@ -267,7 +295,7 @@ function KpiCard({ theme, icon, label, value, sub, delta, fase2, onClick, onCale
         </span>
       )}
       <div className="flex items-start justify-between">
-        <span className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: theme.soft, color: theme.ac }}>{icon}</span>
+        <span className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: theme.soft, color: theme.ac }}>{icon}</span>
         {fase2 && <span className="text-[9px] font-bold uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Fase 2</span>}
         {!fase2 && delta !== undefined && delta !== null && (
           <span className={clsx('inline-flex items-center gap-0.5 text-xs font-semibold mr-8', delta >= 0 ? 'text-emerald-600' : 'text-red-600')}>
@@ -275,18 +303,21 @@ function KpiCard({ theme, icon, label, value, sub, delta, fase2, onClick, onCale
           </span>
         )}
       </div>
-      <p className={clsx('text-2xl font-extrabold mt-3 leading-none', fase2 ? 'text-amber-400' : 'text-gray-900')}>{value}</p>
-      <p className="text-xs text-gray-500 mt-1">{label}{sub ? ` · ${sub}` : ''}</p>
+      <p className={clsx('text-xl font-extrabold mt-2 leading-none', fase2 ? 'text-amber-400' : 'text-gray-900')}>{value}</p>
+      <p className="text-[11px] text-gray-500 mt-0.5">{label}{sub ? ` · ${sub}` : ''}</p>
     </button>
   );
 }
 
 // ── Papan card: toggle Papan ⇄ Agenda&Kalender (agenda slide-in, papan meramping) ─
-function PapanCard({ theme, papanRows, dayLabel, cal, navCal, onJump, calEvents, todayStr, selDate, onPickDate, agenda, agendaTitle, upcoming, selIsToday, nowMins }: {
+function PapanCard({ theme, papanRows, dayLabel, cal, navCal, onJump, calEvents, todayStr, selDate, onPickDate, agenda, agendaTitle, upcoming, selIsToday, nowMins, onCellClick, absenPerJp, onAbsenClick }: {
   theme: KioskTheme; papanRows: PapanRow[]; dayLabel: string;
   cal: { y: number; m: number }; navCal: (d: number) => void; onJump: (y: number, m0: number) => void;
   calEvents: KaldikEvent[]; todayStr: string; selDate: string; onPickDate: (ds: string) => void;
   agenda: KaldikEvent[]; agendaTitle: string; upcoming: KaldikEvent[]; selIsToday: boolean; nowMins: number;
+  onCellClick?: (row: PapanRow, jp: number, cell: PapanCell) => void;
+  absenPerJp?: (number | null)[];
+  onAbsenClick?: (jp: number) => void;
 }) {
   const [tab, setTab] = useState<'papan' | 'agenda'>('papan');
   const tabBtn = (key: 'papan' | 'agenda', label: string, icon: React.ReactNode) => (
@@ -301,7 +332,7 @@ function PapanCard({ theme, papanRows, dayLabel, cal, navCal, onJump, calEvents,
         {tabBtn('agenda', 'Agenda & Kalender', <CalendarDays className="w-4 h-4" />)}
       </div>
       {tab === 'papan' ? (
-        <PapanPembelajaran rows={papanRows} dayLabel={dayLabel} />
+        <PapanPembelajaran rows={papanRows} dayLabel={dayLabel} onCellClick={onCellClick} absenPerJp={absenPerJp} onAbsenClick={onAbsenClick} />
       ) : (
         <div className="flex flex-col xl:flex-row gap-3 anim-slide-right items-stretch">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-soft-sm p-3.5 xl:basis-[300px] xl:shrink-0 w-full">
@@ -387,6 +418,7 @@ function TrenChart({ chart, theme }: { chart: BerandaKioskProps['chart']; theme:
 
 // ── Panel AI (Fase 1) ────────────────────────────────────────────────────────
 function AiPanel({ kpi, papanRows, currentJpNow, theme }: { kpi: BerandaKioskProps['kpi']; papanRows: PapanRow[]; currentJpNow: number; theme: KioskTheme }) {
+  const [question, setQuestion] = useState('');
   const insights: { icon: React.ReactNode; text: string }[] = [];
   if (currentJpNow > 0) {
     const noClass = papanRows.filter((r) => !r.cells[currentJpNow - 1]).length;
@@ -394,6 +426,11 @@ function AiPanel({ kpi, papanRows, currentJpNow, theme }: { kpi: BerandaKioskPro
   }
   if (kpi.studentDelta !== null && kpi.studentDelta < 0) insights.push({ icon: <TrendingDown className="w-3.5 h-3.5 text-red-500" />, text: `Kehadiran siswa turun ${Math.abs(kpi.studentDelta).toFixed(1)}% vs kemarin.` });
   if (insights.length === 0) insights.push({ icon: <Lightbulb className="w-3.5 h-3.5 text-emerald-600" />, text: 'Kondisi terpantau normal dari data hari ini.' });
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!question.trim()) return;
+    window.location.href = `/dashboard/ai?q=${encodeURIComponent(question)}`;
+  };
   return (
     <div className="rounded-2xl border shadow-soft-sm p-4 flex flex-col h-full" style={{ borderColor: theme.ring, background: `linear-gradient(180deg, ${theme.soft}, #fff)` }}>
       <div className="flex items-center justify-between mb-2">
@@ -403,9 +440,24 @@ function AiPanel({ kpi, papanRows, currentJpNow, theme }: { kpi: BerandaKioskPro
       <ul className="space-y-1.5 text-[12px] text-gray-700 flex-1">
         {insights.map((it, i) => <li key={i} className="flex gap-1.5"><span className="shrink-0 mt-0.5">{it.icon}</span>{it.text}</li>)}
       </ul>
-      <a href="/dashboard/ai" className="mt-2 flex items-center justify-center gap-1.5 text-xs font-medium text-white rounded-lg py-2" style={{ background: theme.ac }}>
-        <MessageCircle className="w-4 h-4" /> Tanya Asisten AI
-      </a>
+      <form onSubmit={handleSubmit} className="relative mt-2">
+        <input
+          type="text"
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          placeholder="Tanya kondisi hari ini…"
+          className="w-full text-[12px] rounded-lg border bg-white px-2.5 py-2 pr-9 focus:outline-none focus:ring-2"
+          style={{ borderColor: theme.ring }}
+        />
+        <button
+          type="submit"
+          className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 rounded-md text-white flex items-center justify-center"
+          style={{ background: theme.ac }}
+          aria-label="Kirim pertanyaan"
+        >
+          <Send className="w-3.5 h-3.5" />
+        </button>
+      </form>
     </div>
   );
 }
@@ -624,5 +676,74 @@ function StudentList({ items }: { items: { name: string; className: string; stat
         </li>
       ))}
     </ul>
+  );
+}
+
+// ── Session drill-down modal (cell click dari Papan Pembelajaran) ────────────────
+function SessionModal({ data, onClose }: { data: { row: PapanRow; jp: number; cell: PapanCell }; onClose: () => void }) {
+  const { row, jp, cell } = data;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={`Sesi ${row.className} JP-${jp}`}>
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl">
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
+          <h3 className="font-bold text-gray-900 flex-1">{row.className} · JP-{jp} ({jpStartLabel(jp)})</h3>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-gray-100 text-gray-400 flex items-center justify-center" aria-label="Tutup"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-5 text-sm text-gray-700 space-y-1.5">
+          <p><b>Mapel:</b> {cell.subject}</p>
+          <p><b>Guru:</b> {cell.teacher}</p>
+          <p><b>Ruang:</b> {cell.room ?? '—'}</p>
+          <p className="flex items-center gap-1.5"><b>Status:</b> <span className="font-semibold text-emerald-700 uppercase">Terjadwal</span> <span className="text-[10px] font-bold uppercase bg-amber-100 text-amber-700 px-1 rounded">Fase 2</span></p>
+          <div className="rounded-lg bg-gray-50 p-3 text-sm mt-3">
+            <b>Resume:</b> KBM terjadwal untuk kelas ini. Status eksekusi real-time (terisi/tugas/kosong) akan tersedia di modul KBM Fase 2.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Absen per JP drill-down modal (Fase 2 — SIMULASI) ────────────────────────────
+function AbsenJpModal({ jp, onClose }: { jp: number; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const count = SIM_ABSEN_PER_JP[jp - 1] ?? 0;
+  const students = SIM_ABSEN_POOL.slice(0, count);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={`Tidak hadir JP-${jp}`}>
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl">
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
+          <h3 className="font-bold text-gray-900 flex-1">Tidak Hadir · JP-{jp} ({jpStartLabel(jp)})</h3>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-gray-100 text-gray-400 flex items-center justify-center" aria-label="Tutup"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-5 text-sm text-gray-700">
+          <p className="text-xs text-gray-400 mb-3">Siswa tanpa kehadiran tercatat pada jam pelajaran ini. <span className="text-[10px] font-bold uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Fase 2</span></p>
+          {students.length === 0 ? (
+            <p className="py-6 text-center text-gray-400">Tidak ada data.</p>
+          ) : (
+            <ul className="divide-y divide-gray-50">
+              {students.map((s, i) => (
+                <li key={i} className="flex items-center gap-3 py-2.5">
+                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-[11px] font-semibold text-gray-500 shrink-0">{s.name.split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase()}</div>
+                  <div className="flex-1 min-w-0"><p className="font-medium text-gray-800 truncate">{s.name}</p><p className="text-xs text-gray-400">{s.className} · {s.notes}</p></div>
+                  <span className={clsx('text-[10px] font-bold uppercase px-2 py-0.5 rounded', STATUS_BADGE[s.status])}>{STATUS_LABEL[s.status]}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
