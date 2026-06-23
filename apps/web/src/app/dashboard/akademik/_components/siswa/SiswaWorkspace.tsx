@@ -196,7 +196,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
   };
 
   return (
-    <div className="relative min-h-screen bg-[var(--bg)] text-[var(--text)] transition-colors duration-300">
+    <div className="siswa-app relative min-h-screen bg-[var(--bg)] text-[var(--text)] transition-colors duration-300">
       {/* Topbar */}
       <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--topbar-bg)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-[560px] items-center justify-between px-5 py-4">
