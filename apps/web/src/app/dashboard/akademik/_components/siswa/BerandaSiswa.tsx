@@ -6,38 +6,27 @@ import {
   PlayCircle, ChevronRight, Target,
 } from 'lucide-react';
 import { wibNow, currentJp } from '@/lib/bell-times';
-import { mpColor, mpIcon } from './siswa-data';
-import type { SiswaScreen } from './SiswaWorkspace';
+import { mpColor, mpIcon, JP_LABELS, JP_MAP, resolveSchedule } from './siswa-data';
+import type { SiswaScreen, ModalState } from './SiswaWorkspace';
+import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaModul, SiswaQuest, SiswaXP, SiswaKehadiranStats } from './siswa-types';
 
 interface Props {
   showToast: (msg: string) => void;
   go: (screen: SiswaScreen) => void;
-  setModal: (modal: any) => void;
-  setBadgeCelebration: (data: any) => void;
+  setModal: (modal: ModalState) => void;
+  setBadgeCelebration: (data: { show: boolean; badgeName?: string }) => void;
   setActiveModulId: (id: number | null) => void;
-  grades: any[];
-  tasks: any[];
-  badges: any[];
-  modules: any[];
-  quest: any;
-  xp: any;
-  kehStats: any;
+  grades: SiswaNilai[];
+  tasks: SiswaTugas[];
+  badges: SiswaBadge[];
+  modules: SiswaModul[];
+  quest: SiswaQuest;
+  xp: SiswaXP;
+  kehStats: SiswaKehadiranStats;
+  schedule?: unknown[];
 }
 
-// Mockup schedule data (matching mockup structure)
-const SCHED: Record<number, Record<number, { mp: string; g: string; ruang: string }>> = {
-  1: { 0: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 1: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 2: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 4: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 5: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 6: { mp: 'PJOK', g: 'Doni Kurniawan, S.Pd', ruang: 'Lapangan' }, 8: { mp: 'PKn', g: 'Nur Hidayah, S.Pd', ruang: 'R-107' }, 9: { mp: 'PKn', g: 'Nur Hidayah, S.Pd', ruang: 'R-107' } },
-  2: { 0: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 1: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 2: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 4: { mp: 'Fisika', g: 'Hendra Gunawan, S.Pd', ruang: 'R-107' }, 5: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 6: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 8: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 9: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' } },
-  3: { 0: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 1: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 2: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 4: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 5: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 6: { mp: 'Fisika', g: 'Hendra Gunawan, S.Pd', ruang: 'R-107' }, 8: { mp: 'PJOK', g: 'Doni Kurniawan, S.Pd', ruang: 'Lapangan' }, 9: { mp: 'PJOK', g: 'Doni Kurniawan, S.Pd', ruang: 'Lapangan' } },
-  4: { 0: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 1: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 2: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 4: { mp: 'PKn', g: 'Nur Hidayah, S.Pd', ruang: 'R-107' }, 5: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 6: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 8: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 9: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' } },
-  5: { 0: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 1: { mp: 'Fisika', g: 'Hendra Gunawan, S.Pd', ruang: 'R-107' }, 2: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 4: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 5: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 6: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 8: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 9: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' } },
-  6: { 0: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 1: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 2: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 4: { mp: 'PJOK', g: 'Doni Kurniawan, S.Pd', ruang: 'Lapangan' }, 5: { mp: 'Fisika', g: 'Hendra Gunawan, S.Pd', ruang: 'R-107' }, 6: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 8: { mp: 'PKn', g: 'Nur Hidayah, S.Pd', ruang: 'R-107' }, 9: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' } },
-};
-
-const JP: [string, string][] = [['JP 1', '07.30–08.10'], ['JP 2', '08.10–08.50'], ['JP 3', '08.50–09.30'], ['Istirahat', '09.30–09.45'], ['JP 4', '09.45–10.25'], ['JP 5', '10.25–11.05'], ['JP 6', '11.05–11.45'], ['Ishoma', '11.45–12.25'], ['JP 7', '12.25–13.05'], ['JP 8', '13.05–13.45']];
-const JPN: [number, number][] = [[1, 0], [2, 1], [3, 2], [4, 4], [5, 5], [6, 6], [7, 8], [8, 9]];
-
-export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, quest, xp, kehStats }: Props) {
+export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, quest, xp, kehStats, schedule }: Props) {
   const now = wibNow();
   const dow = now.jsDay; // 0=Sunday → SCHED[0] undefined → shows "Libur"
   const currentJpIdx = currentJp(now.minutes);
@@ -45,26 +34,27 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
   // Derived stats
   const avgNilai = useMemo(() => {
     if (grades.length === 0) return 0;
-    return Math.round(grades.reduce((a: number, b: any) => a + b.rata, 0) / grades.length * 10) / 10;
+    return Math.round(grades.reduce((a: number, b) => a + b.rata, 0) / grades.length * 10) / 10;
   }, [grades]);
 
-  const pendingTasks = useMemo(() => tasks.filter((t: any) => t.status === 'pending'), [tasks]);
-  const tuntasCount = useMemo(() => grades.filter((g: any) => g.rata >= g.kktp).length, [grades]);
-  const earnedBadges = useMemo(() => badges.filter((b: any) => b.earned).length, [badges]);
-  const activeModul = useMemo(() => modules.find((m: any) => m.status === 'Aktif'), [modules]);
+  const pendingTasks = useMemo(() => tasks.filter((t) => t.status === 'pending'), [tasks]);
+  const tuntasCount = useMemo(() => grades.filter((g) => g.rata >= g.kktp).length, [grades]);
+  const earnedBadges = useMemo(() => badges.filter((b) => b.earned).length, [badges]);
+  const activeModul = useMemo(() => modules.find((m) => m.status === 'Aktif'), [modules]);
 
   // Daily quest progress
-  const qDone = quest.tasks.filter((t: any) => t.done).length;
+  const qDone = quest.tasks.filter((t) => t.done).length;
   const qPct = Math.round((qDone / quest.tasks.length) * 100);
   const qCirc = 2 * Math.PI * 22;
 
-  // Today's schedule
-  const daySched = SCHED[dow] || {};
+  // Today's schedule — resolveSchedule uses API data if available, falls back to SIM
+  const { schedule: schedData, isSim: isSimSchedule } = resolveSchedule(schedule);
+  const daySched = schedData[dow] || {};
   const hasSched = Object.keys(daySched).length > 0;
 
   // Urgent tasks (top 3)
   const urgentTasks = pendingTasks
-    .sort((a: any, b: any) => a.dlDays - b.dlDays)
+    .sort((a, b) => a.dlDays - b.dlDays)
     .slice(0, 3);
 
   // Recent grades (top 4)
@@ -230,6 +220,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted)]">
               <CalendarClock className="h-3.5 w-3.5 text-emerald-500" />Jadwal Hari Ini
+              {isSimSchedule && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] text-amber-500">Simulasi</span>}
             </div>
             <button onClick={() => go('jadwal')} className="flex items-center gap-0.5 text-[11px] font-bold text-emerald-400">
               Lihat semua <ChevronRight className="h-3 w-3" />
@@ -237,14 +228,14 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
           </div>
           <div className="space-y-2">
             {hasSched ? (
-              JPN.map(([, idx]) => {
+              JP_MAP.map(([, idx]) => {
                 const slot = daySched[idx];
                 if (!slot) return null;
-                const isDone = idx < (currentJpIdx === 0 ? -1 : JPN.findIndex(([j]) => j === currentJpIdx));
-                const isNow = currentJpIdx > 0 && JPN[currentJpIdx - 1]?.[1] === idx;
+                const isDone = idx < (currentJpIdx === 0 ? -1 : JP_MAP.findIndex(([j]) => j === currentJpIdx));
+                const isNow = currentJpIdx > 0 && JP_MAP[currentJpIdx - 1]?.[1] === idx;
                 const dotCls = isDone ? 'bg-emerald-500' : isNow ? 'bg-amber-500 animate-pulse' : 'bg-transparent border-2 border-[var(--dim)]';
-                const t = JP[idx]![1].split('–');
-                const guruShort = slot.g.split(',')[0];
+                const t = JP_LABELS[idx]![1].split('–');
+                const guruShort = slot.g.split(',')[0] ?? slot.g;
 
                 return (
                   <div
@@ -254,7 +245,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                   >
                     <div className="w-12 flex-shrink-0 text-right">
                       <div className="text-[11px] font-extrabold">{t[0]}</div>
-                      <div className="text-[9px] font-semibold text-[var(--muted)]">{JP[idx]![0]}</div>
+                      <div className="text-[9px] font-semibold text-[var(--muted)]">{JP_LABELS[idx]![0]}</div>
                     </div>
                     <div className={`mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full border-2 border-[var(--bg)] shadow-[0_0_0_2px_var(--em)] ${dotCls}`} />
                     <div className="flex-1 min-w-0">
@@ -302,7 +293,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
           </div>
           <div className="space-y-2">
             {urgentTasks.length > 0 ? (
-              urgentTasks.map((t: any) => {
+              urgentTasks.map((t) => {
                 const c = mpColor(t.mp);
                 const urgent = t.dlDays <= 1;
                 return (
@@ -348,7 +339,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
             </button>
           </div>
           <div className="divide-y divide-[var(--border)]">
-            {recentGrades.map((n: any) => {
+            {recentGrades.map((n) => {
               const c = mpColor(n.mp);
               const tuntas = n.rata >= n.kktp;
               return (
@@ -395,7 +386,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
             </button>
           </div>
           <div className="grid grid-cols-3 gap-2.5">
-            {badgePreview.map((b: any) => (
+            {badgePreview.map((b) => (
               <button
                 key={b.name}
                 onClick={() => go('capaian')}

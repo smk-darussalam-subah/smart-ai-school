@@ -97,3 +97,78 @@
   --em: #059669;
   --amber: #d97706;
 }
+
+/* ── Ortu Dashboard CSS Variables (scoped to .ortu-app) ─────────────── */
+:root[data-theme="dark"] .ortu-app {
+  --bg: #0a0f1a;
+  --bg2: #0f1626;
+  --surface: rgba(255, 255, 255, 0.035);
+  --surface2: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.08);
+  --border2: rgba(255, 255, 255, 0.12);
+  --text: #e8eef5;
+  --muted: #7a8ba0;
+  --dim: #4a5b70;
+  --pri: #3b82f6;
+  --pril: #60a5fa;
+  --prid: #2563eb;
+  --pridd: #1e40af;
+  --grad: linear-gradient(135deg, #3b82f6, #1e40af);
+  --grad-v: linear-gradient(135deg, #60a5fa, #3b82f6, #1d4ed8);
+  --amber: #f59e0b;
+  --rose: #ef4444;
+  --sky: #0ea5e9;
+  --violet: #a78bfa;
+  --pink: #ec4899;
+  --em: #10b981;
+  --sh: 0 4px 24px -8px rgba(0, 0, 0, 0.5);
+  --shlift: 0 8px 40px -12px rgba(0, 0, 0, 0.6);
+  --r: 16px;
+  --r-sm: 12px;
+  --r-lg: 20px;
+  --ring-bg: rgba(255, 255, 255, 0.06);
+  --bar-bg: rgba(255, 255, 255, 0.06);
+  --ovl-bg: rgba(0, 0, 0, 0.6);
+  --nav-bg: rgba(10, 15, 26, 0.9);
+  --topbar-bg: rgba(10, 15, 26, 0.8);
+  --glow-bd: rgba(59, 130, 246, 0.2);
+  --glow-sh: 0 0 0 1px rgba(59, 130, 246, 0.1), 0 4px 24px -8px rgba(59, 130, 246, 0.15);
+  --empty-cell: rgba(255, 255, 255, 0.02);
+}
+
+:root[data-theme="light"] .ortu-app {
+  --bg: #f4f6fb;
+  --bg2: #ffffff;
+  --surface: #ffffff;
+  --surface2: #eef2f9;
+  --border: #e2e8f0;
+  --border2: #cbd5e1;
+  --text: #0f1e35;
+  --muted: #64748b;
+  --dim: #94a3b8;
+  --pri: #2563eb;
+  --pril: #3b82f6;
+  --prid: #1d4ed8;
+  --pridd: #1e3a8a;
+  --grad: linear-gradient(135deg, #2563eb, #1e3a8a);
+  --grad-v: linear-gradient(135deg, #3b82f6, #2563eb, #1d4ed8);
+  --amber: #d97706;
+  --rose: #e11d48;
+  --sky: #0284c7;
+  --violet: #7c3aed;
+  --pink: #db2777;
+  --em: #059669;
+  --sh: 0 1px 2px rgba(15, 30, 53, 0.04), 0 8px 24px -14px rgba(15, 30, 53, 0.14);
+  --shlift: 0 2px 6px rgba(15, 30, 53, 0.06), 0 22px 40px -20px rgba(15, 30, 53, 0.28);
+  --r: 16px;
+  --r-sm: 12px;
+  --r-lg: 20px;
+  --ring-bg: #e2e8f0;
+  --bar-bg: #e2e8f0;
+  --ovl-bg: rgba(0, 0, 0, 0.4);
+  --nav-bg: rgba(255, 255, 255, 0.92);
+  --topbar-bg: rgba(244, 246, 251, 0.85);
+  --glow-bd: rgba(37, 99, 235, 0.15);
+  --glow-sh: 0 0 0 1px rgba(37, 99, 235, 0.08), 0 4px 24px -8px rgba(37, 99, 235, 0.1);
+  --empty-cell: rgba(0, 0, 0, 0.02);
+}

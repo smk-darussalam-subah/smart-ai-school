@@ -1,7 +1,8 @@
 'use client';
+import type { SiswaBadge } from './siswa-types';
 
 interface Props {
-  badge: any;
+  badge: SiswaBadge;
   onClose: () => void;
 }
 

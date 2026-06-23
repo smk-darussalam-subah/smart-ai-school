@@ -3,6 +3,7 @@
 // Import dari lib/academic.ts untuk konstanta resmi (KKTP, NA_WEIGHTS, dll.)
 
 import { KKTP_DEFAULT, naOf } from '@/lib/academic';
+import { BELL_SEGMENTS, JP_SLOTS, fmtMin } from '@/lib/bell-times';
 import type {
   SiswaModul, SiswaBadge, SiswaTugas, SiswaNilai, SiswaCP,
   SiswaLeaderboardEntry, SiswaProfileCV, SiswaQuest,
@@ -171,6 +172,20 @@ export const SIM_PROFILE_CV: SiswaProfileCV = {
   role: 'Siswa XI TJKT 1 · SMK Darussalam Subah',
   tags: ['TJKT', 'Web Dev', 'Database', 'Networking'],
   stats: [{ n: '82.1', l: 'Rata² Nilai' }, { n: '3.4K', l: 'Total XP' }, { n: '4', l: 'Badge' }],
+  // Flat fields for ProfileCV component
+  nis: '2024110042',
+  class: 'XI TJKT 1',
+  school: 'SMK Darussalam Subah',
+  email: 'rizky.pratama@smkdarussalam.sch.id',
+  phone: '0812-3456-7890',
+  address: 'Jl. Diponegoro No. 12, Subah, Batang',
+  enrollmentDate: '15 Jul 2024',
+  xp: 3450,
+  level: 12,
+  avgGrade: '82.1',
+  attendance: 92.8,
+  modulesCompleted: 7,
+  streak: 5,
   skills: [
     { ic: 'code-2', color: '#10b981', name: 'HTML & CSS', level: 'Advanced', pct: 88 },
     { ic: 'database', color: '#0ea5e9', name: 'SQL & Normalisasi', level: 'Intermediate', pct: 72 },
@@ -211,11 +226,11 @@ export const SIM_KALENDER: SiswaKalenderEvent[] = [
 // ── Pengumuman (SIMULASI) ───────────────────────────────────────────────
 
 export const SIM_PENGUMUMAN: SiswaPengumuman[] = [
-  { ic: 'alert-circle', color: '#ef4444', title: 'Ujian Tengah Semester (UTS)', from: 'Kesiswaan', time: '2 jam lalu', body: 'UTS Semester Genap akan dilaksanakan 23-27 Juni 2026. Jadwal lengkap dapat diunduh di portal sekolah.', tag: 'Penting', tagColor: '#ef4444' },
-  { ic: 'book-open', color: '#10b981', title: 'Modul Baru: Flexbox & Responsif', from: 'Budi Hartono, S.Kom · Pemrograman Web', time: '5 jam lalu', body: 'Modul TP 2.1 sudah tersedia. Kerjakan asesmen diagnostik sebelum membuka materi.', tag: 'Mapel', tagColor: '#10b981' },
-  { ic: 'calendar-clock', color: '#f59e0b', title: 'Libur Hari Raya Idul Adha', from: 'Kesiswaan', time: '1 hari lalu', body: 'Libur Idul Adha 1447 H pada 17 Juni 2026. Pembelajaran dimulai kembali 18 Juni.', tag: 'Info', tagColor: '#f59e0b' },
-  { ic: 'clipboard-list', color: '#0ea5e9', title: 'Deadline Tugas Praktikum', from: 'Budi Hartono, S.Kom', time: '1 hari lalu', body: 'Tugas Layout Flexbox — Web Profil Sekolah deadline 20 Juni. Upload di portal LMS.', tag: 'Tugas', tagColor: '#0ea5e9' },
-  { ic: 'award', color: '#a78bfa', title: 'Badge Baru Tersedia: Flex Master', from: 'Sistem', time: '2 hari lalu', body: 'Selesaikan modul Flexbox & Responsif dengan nilai ≥80 untuk mendapatkan badge Flex Master!', tag: 'Badge', tagColor: '#a78bfa' },
+  { id: '1', ic: 'alert-circle', color: '#ef4444', title: 'Ujian Tengah Semester (UTS)', from: 'Kesiswaan', time: '2 jam lalu', body: 'UTS Semester Genap akan dilaksanakan 23-27 Juni 2026. Jadwal lengkap dapat diunduh di portal sekolah.', tag: 'Penting', tagColor: '#ef4444', read: false },
+  { id: '2', ic: 'book-open', color: '#10b981', title: 'Modul Baru: Flexbox & Responsif', from: 'Budi Hartono, S.Kom · Pemrograman Web', time: '5 jam lalu', body: 'Modul TP 2.1 sudah tersedia. Kerjakan asesmen diagnostik sebelum membuka materi.', tag: 'Mapel', tagColor: '#10b981', read: false },
+  { id: '3', ic: 'calendar-clock', color: '#f59e0b', title: 'Libur Hari Raya Idul Adha', from: 'Kesiswaan', time: '1 hari lalu', body: 'Libur Idul Adha 1447 H pada 17 Juni 2026. Pembelajaran dimulai kembali 18 Juni.', tag: 'Info', tagColor: '#f59e0b', read: true },
+  { id: '4', ic: 'clipboard-list', color: '#0ea5e9', title: 'Deadline Tugas Praktikum', from: 'Budi Hartono, S.Kom', time: '1 hari lalu', body: 'Tugas Layout Flexbox — Web Profil Sekolah deadline 20 Juni. Upload di portal LMS.', tag: 'Tugas', tagColor: '#0ea5e9', read: true },
+  { id: '5', ic: 'award', color: '#a78bfa', title: 'Badge Baru Tersedia: Flex Master', from: 'Sistem', time: '2 hari lalu', body: 'Selesaikan modul Flexbox & Responsif dengan nilai ≥80 untuk mendapatkan badge Flex Master!', tag: 'Badge', tagColor: '#a78bfa', read: true },
 ];
 
 // ── XP / Level (SIMULASI) ───────────────────────────────────────────────
@@ -225,3 +240,98 @@ export const SIM_XP: SiswaXP = {
   current: 3450,
   next: 5000,
 };
+
+// ── Schedule Types ─────────────────────────────────────────────────────────
+
+export interface SimSchedSlot {
+  mp: string;
+  g: string;
+  ruang: string;
+}
+export type SimSchedule = Record<number, Record<number, SimSchedSlot>>;
+
+// ── JP Labels & Time Ranges (derived from BELL_SEGMENTS — sumber tunggal) ──
+// Filter out Briefing segment to match mockup index structure (0=JP1, 3=Istirahat)
+const SISWA_SEGMENTS = BELL_SEGMENTS.filter((s) => !s.label.includes('Briefing'));
+
+/** JP labels + time ranges, indexed same as mockup (0=JP1, 3=Istirahat, 7=Ishoma) */
+export const JP_LABELS: [string, string][] = SISWA_SEGMENTS.map((s) => {
+  const label = s.isJp
+    ? `JP ${s.label.replace('JP', '').trim()}`
+    : s.label.replace(' 1', '');
+  const range = `${fmtMin(s.startMin)}–${fmtMin(s.endMin)}`;
+  return [label, range];
+});
+
+/** JP number → segment index mapping (e.g., JP 1 → 0, JP 4 → 4, JP 7 → 8) */
+export const JP_MAP: [number, number][] = JP_SLOTS.map((slot) => [
+  slot.jp,
+  SISWA_SEGMENTS.findIndex((s) => s.label === `JP${slot.jp}`),
+]);
+
+// ── SIM Schedule (SIMULASI — backend schedule API menyusul) ────────────────
+export const SIM_SCHEDULE: SimSchedule = {
+  1: { 0: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 1: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 2: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 4: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 5: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 6: { mp: 'PJOK', g: 'Doni Kurniawan, S.Pd', ruang: 'Lapangan' }, 8: { mp: 'PKn', g: 'Nur Hidayah, S.Pd', ruang: 'R-107' }, 9: { mp: 'PKn', g: 'Nur Hidayah, S.Pd', ruang: 'R-107' } },
+  2: { 0: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 1: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 2: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 4: { mp: 'Fisika', g: 'Hendra Gunawan, S.Pd', ruang: 'R-107' }, 5: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 6: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 8: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 9: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' } },
+  3: { 0: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 1: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 2: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 4: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 5: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 6: { mp: 'Fisika', g: 'Hendra Gunawan, S.Pd', ruang: 'R-107' }, 8: { mp: 'PJOK', g: 'Doni Kurniawan, S.Pd', ruang: 'Lapangan' }, 9: { mp: 'PJOK', g: 'Doni Kurniawan, S.Pd', ruang: 'Lapangan' } },
+  4: { 0: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 1: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 2: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 4: { mp: 'PKn', g: 'Nur Hidayah, S.Pd', ruang: 'R-107' }, 5: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 6: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 8: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 9: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' } },
+  5: { 0: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 1: { mp: 'Fisika', g: 'Hendra Gunawan, S.Pd', ruang: 'R-107' }, 2: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 4: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 5: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 6: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 8: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 9: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' } },
+  6: { 0: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 1: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 2: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 4: { mp: 'PJOK', g: 'Doni Kurniawan, S.Pd', ruang: 'Lapangan' }, 5: { mp: 'Fisika', g: 'Hendra Gunawan, S.Pd', ruang: 'R-107' }, 6: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 8: { mp: 'PKn', g: 'Nur Hidayah, S.Pd', ruang: 'R-107' }, 9: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' } },
+};
+
+// ── API Announcements Normalize ────────────────────────────────────────────
+
+/** Transform API announcement to SiswaPengumuman format. */
+export function normalizeAnnouncements(
+  apiData: { id: string; title: string; createdAt: string }[],
+): SiswaPengumuman[] {
+  return apiData.map((a, i) => ({
+    id: a.id,
+    ic: 'bell',
+    color: '#10b981',
+    title: a.title,
+    from: 'Sekolah',
+    time: a.createdAt,
+    body: '',
+    tag: i === 0 ? 'Penting' : 'Info',
+    tagColor: i === 0 ? '#ef4444' : '#10b981',
+    read: false,
+  }));
+}
+
+// ── API Schedule Transform ─────────────────────────────────────────────────
+
+export interface ApiScheduleItem {
+  dayOfWeek: number;
+  jpStart: number;
+  jpEnd: number;
+  room: string | null;
+  teachingAssignment?: { subject: string };
+}
+
+/** Transform API ScheduleItem[] to component schedule format. */
+export function transformApiSchedule(items: ApiScheduleItem[]): SimSchedule {
+  const result: SimSchedule = {};
+  for (const item of items) {
+    if (!result[item.dayOfWeek]) result[item.dayOfWeek] = {};
+    for (let jp = item.jpStart; jp <= item.jpEnd; jp++) {
+      const idx = JP_MAP.find(([j]) => j === jp)?.[1];
+      if (idx != null) {
+        result[item.dayOfWeek]![idx] = {
+          mp: item.teachingAssignment?.subject ?? '—',
+          g: '—',
+          ruang: item.room ?? '—',
+        };
+      }
+    }
+  }
+  return result;
+}
+
+/** Resolve schedule: use API data if available, fall back to SIM. */
+export function resolveSchedule(apiSchedule?: unknown[]): { schedule: SimSchedule; isSim: boolean } {
+  if (apiSchedule && apiSchedule.length > 0) {
+    return { schedule: transformApiSchedule(apiSchedule as ApiScheduleItem[]), isSim: false };
+  }
+  return { schedule: SIM_SCHEDULE, isSim: true };
+}

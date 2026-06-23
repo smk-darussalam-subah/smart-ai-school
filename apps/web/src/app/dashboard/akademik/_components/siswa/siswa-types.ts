@@ -107,6 +107,20 @@ export interface SiswaProfileCV {
   stats: { n: string; l: string }[];
   skills: SiswaSkill[];
   timeline: SiswaTimeline[];
+  // Flat fields used by ProfileCV component
+  nis?: string;
+  class?: string;
+  school?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  enrollmentDate?: string;
+  xp?: number;
+  level?: number;
+  avgGrade?: string;
+  attendance?: number;
+  modulesCompleted?: number;
+  streak?: number;
 }
 
 // ── Quest ──────────────────────────────────────────────────────────────────
@@ -143,6 +157,8 @@ export interface SiswaPengumuman {
   body: string;
   tag: string;
   tagColor: string;
+  read?: boolean;
+  id?: string;
 }
 
 // ── Kehadiran Stats ────────────────────────────────────────────────────────
@@ -173,6 +189,13 @@ export interface SiswaScheduleSlot {
   room: string;
   jpStart: number;
   jpEnd: number;
+}
+
+// ── Badge Celebration ──────────────────────────────────────────────────────
+
+export interface BadgeCelebrationData {
+  show: boolean;
+  badgeName?: string;
 }
 
 // ── Mapel helpers ──────────────────────────────────────────────────────────

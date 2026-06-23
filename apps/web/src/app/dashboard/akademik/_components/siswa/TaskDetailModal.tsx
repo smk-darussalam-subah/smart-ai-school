@@ -1,7 +1,8 @@
 'use client';
+import type { SiswaTugas } from './siswa-types';
 
 interface Props {
-  task: any;
+  task: SiswaTugas;
   onClose: () => void;
   showToast: (msg: string) => void;
 }
