@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Target, Users, Download, Plus, GitBranch, ArrowRight } from 'lucide-react';
+import { Target, Users, Download, Plus, GitBranch, ArrowRight, Database, Printer, X, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import type { GradeItem } from '@/lib/api';
 import { updateGrade } from '../actions';
@@ -41,6 +41,7 @@ export default function GradebookPenilaian({
   const [remedialOnly, setRemedialOnly] = useState(false);
   const [overrides, setOverrides] = useState<Record<string, number>>({}); // key id → score
   const [editing, setEditing] = useState<string | null>(null); // cell key sid|col
+  const [pgBankOpen, setPgBankOpen] = useState(false);
 
   const base = useMemo(() => {
     const byStudent = new Map<string, { name: string; nis: string; cells: Map<string, CellVal> }>();
@@ -108,6 +109,8 @@ export default function GradebookPenilaian({
           </button>
           <button type="button" onClick={exportCsv} className="inline-flex items-center gap-1.5 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><Download className="h-4 w-4 text-emerald-600" />Ekspor</button>
           <button type="button" onClick={onInputNilai} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-[12.5px] font-bold text-white hover:bg-emerald-700"><Plus className="h-4 w-4" />Input Nilai</button>
+          <button type="button" onClick={() => setPgBankOpen(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><Database className="h-4 w-4 text-emerald-600" />Bank Soal PG</button>
+          <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-1.5 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><Printer className="h-4 w-4 text-emerald-600" />Cetak</button>
         </div>
       </div>
 
@@ -187,10 +190,33 @@ export default function GradebookPenilaian({
 
       <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-[12px] font-bold text-emerald-800">
         <GitBranch className="h-3.5 w-3.5 text-emerald-600" />Alur penilaian:
-        {['Pilih TP', 'Input formatif/sumatif', 'Bandingkan KKTP', 'Remedial / pengayaan', 'Nilai Akhir → Rapor'].map((s, i, arr) => (
+        {['Penilaian Sesi', 'Gradebook', 'Capaian CP', 'Rapor', 'Rekap Audit'].map((s, i, arr) => (
           <span key={s} className="inline-flex items-center gap-1.5"><span className="rounded-md border border-emerald-200 bg-white px-2 py-0.5">{s}</span>{i < arr.length - 1 && <ArrowRight className="h-3.5 w-3.5 text-emerald-600" />}</span>
         ))}
       </div>
+
+      {/* Bank Soal PG — SIMULASI */}
+      {pgBankOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setPgBankOpen(false)}>
+          <div className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-[16px] font-bold text-[#0f2e25]"><Database className="h-5 w-5 text-emerald-600" />Bank Soal PG</h3>
+              <button type="button" onClick={() => setPgBankOpen(false)} className="rounded-lg p-1.5 text-[#9bb0a8] hover:bg-[#f4f7f5]"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10.5px] font-bold text-amber-700">
+              <AlertTriangle className="h-3 w-3" /> SIMULASI — backend /question-bank belum tersedia
+            </div>
+            <p className="mt-3 text-[12.5px] text-[#6b8079]">Bank soal pilihan ganda dengan auto-grade. Soal tersinkron ke LMS siswa untuk kuis diagnostik/formatif.</p>
+            <div className="mt-4 grid h-40 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">
+              Belum ada soal. Klik "Tambah Soal" untuk memulai (Simulasi).
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setPgBankOpen(false)} className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>
+              <button type="button" onClick={() => alert('Tambah Soal — Simulasi')} className="rounded-xl bg-emerald-600 px-4 py-2 text-[12.5px] font-bold text-white hover:bg-emerald-700">+ Tambah Soal</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
