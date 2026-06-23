@@ -27,7 +27,7 @@ export interface PapanRow {
   cells: (PapanCell | null)[]; // panjang = JP_COUNT, index 0 = JP1
 }
 
-export default function PapanPembelajaran({ rows, dayLabel }: { rows: PapanRow[]; dayLabel: string }) {
+export default function PapanPembelajaran({ rows, dayLabel, onCellClick, absenPerJp, onAbsenClick }: { rows: PapanRow[]; dayLabel: string; onCellClick?: (row: PapanRow, jp: number, cell: PapanCell) => void; absenPerJp?: (number | null)[]; onAbsenClick?: (jp: number) => void }) {
   // JP berjalan dihitung di klien (WIB) agar konsisten & tak memicu mismatch SSR.
   const [nowJp, setNowJp] = useState(0);
   useEffect(() => {
@@ -87,28 +87,79 @@ export default function PapanPembelajaran({ rows, dayLabel }: { rows: PapanRow[]
                   {Array.from({ length: JP_COUNT }, (_, i) => {
                     const cell = row.cells[i] ?? null;
                     const jp = i + 1;
-                    const title = cell
+                    const tipText = cell
                       ? `JP${jp} (${jpStartLabel(jp)}) · ${cell.subject} · ${cell.teacher}${cell.room ? ` · ${cell.room}` : ''}`
                       : `JP${jp} · Tidak ada jadwal`;
+                    const clickable = cell && onCellClick;
                     return (
-                      <div
-                        key={jp}
-                        title={title}
-                        className={clsx(
-                          'flex-1 h-8 rounded-md flex items-center justify-center px-1 overflow-hidden',
-                          cell ? 'bg-emerald-500/90 text-white' : 'bg-gray-100',
-                          jp === nowJp && 'ring-2 ring-emerald-700 ring-offset-1',
-                        )}
-                      >
-                        {cell && (
-                          <span className="text-[9px] font-medium leading-none truncate">{cell.subject}</span>
-                        )}
+                      <div key={jp} className="group relative flex-1">
+                        <div
+                          title={tipText}
+                          onClick={clickable ? () => onCellClick!(row, jp, cell!) : undefined}
+                          role={clickable ? 'button' : undefined}
+                          tabIndex={clickable ? 0 : undefined}
+                          aria-label={tipText}
+                          onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onCellClick!(row, jp, cell!); } } : undefined}
+                          className={clsx(
+                            'h-8 rounded-md flex items-center justify-center px-1 overflow-hidden transition-colors',
+                            cell ? (clickable ? 'bg-emerald-500/90 text-white cursor-pointer hover:bg-emerald-600' : 'bg-emerald-500/90 text-white') : 'bg-gray-100',
+                            jp === nowJp && 'ring-2 ring-emerald-700 ring-offset-1',
+                          )}
+                        >
+                          {cell && (
+                            <span className="text-[9px] font-medium leading-none truncate">{cell.subject}</span>
+                          )}
+                        </div>
+                        {/* HTML Tooltip */}
+                        <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] leading-tight text-white opacity-0 shadow-lg transition-opacity duration-100 group-hover:opacity-100">
+                          {cell ? (
+                            <>
+                              <div className="font-semibold">JP{jp} · {jpStartLabel(jp)}</div>
+                              <div className="font-bold">{cell.subject}</div>
+                              <div className="text-slate-300">{cell.teacher}{cell.room ? ` · ${cell.room}` : ''}</div>
+                            </>
+                          ) : (
+                            <div>JP{jp} · Tidak ada jadwal</div>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Absen per JP strip (Fase 2 — SIMULASI) */}
+      {absenPerJp && rows.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <div className="flex items-center gap-1">
+            <div className="w-20 shrink-0 text-[9px] font-semibold uppercase text-amber-700 flex items-center gap-1">
+              Absen/JP
+              <span className="text-[8px] font-bold uppercase bg-amber-100 text-amber-700 px-1 rounded">F2</span>
+            </div>
+            {absenPerJp.map((n, i) => {
+              const jp = i + 1;
+              const hasData = n !== null && n > 0;
+              return (
+                <div key={jp} className="flex-1 px-0.5">
+                  <div
+                    onClick={hasData && onAbsenClick ? () => onAbsenClick(jp) : undefined}
+                    role={hasData && onAbsenClick ? 'button' : undefined}
+                    tabIndex={hasData && onAbsenClick ? 0 : undefined}
+                    className={clsx(
+                      'h-5 rounded flex items-center justify-center text-[11px] font-bold transition',
+                      !hasData ? 'bg-gray-50 text-gray-300' : (n! >= 4 ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-700'),
+                      hasData && onAbsenClick && 'cursor-pointer hover:brightness-95',
+                    )}
+                  >
+                    {n ?? 0}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
