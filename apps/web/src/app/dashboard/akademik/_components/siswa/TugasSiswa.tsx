@@ -3,25 +3,26 @@
 import { useState } from 'react';
 import { ClipboardList, Calendar, AlertCircle, CheckCircle } from 'lucide-react';
 import { mpColor, mpIcon, SIM_TUGAS } from './siswa-data';
-import type { SiswaScreen } from './SiswaWorkspace';
+import type { SiswaScreen, ModalState } from './SiswaWorkspace';
+import type { SiswaTugas } from './siswa-types';
 
 interface Props {
-  tasks: any[];
+  tasks: SiswaTugas[];
   showToast: (msg: string) => void;
   go: (screen: SiswaScreen) => void;
-  setModal: (modal: any) => void;
+  setModal: (modal: ModalState) => void;
 }
 
 export default function TugasSiswa({ tasks, showToast: _showToast, go: _go, setModal }: Props) {
   const [filter, setFilter] = useState<'pending' | 'submitted' | 'graded'>('pending');
   
   const displayTasks = tasks.length > 0 ? tasks : SIM_TUGAS;
-  const filtered = displayTasks.filter((t: any) => t.status === filter);
+  const filtered = displayTasks.filter((t) => t.status === filter);
 
   const stats = {
-    pending: displayTasks.filter((t: any) => t.status === 'pending').length,
-    submitted: displayTasks.filter((t: any) => t.status === 'submitted').length,
-    graded: displayTasks.filter((t: any) => t.status === 'graded').length,
+    pending: displayTasks.filter((t) => t.status === 'pending').length,
+    submitted: displayTasks.filter((t) => t.status === 'submitted').length,
+    graded: displayTasks.filter((t) => t.status === 'graded').length,
   };
 
   return (
@@ -62,11 +63,11 @@ export default function TugasSiswa({ tasks, showToast: _showToast, go: _go, setM
       <div className="px-5 py-4 space-y-3">
         {filtered.length > 0 ? (
           filtered
-            .sort((a: any, b: any) => {
+            .sort((a, b) => {
               if (filter === 'pending') return a.dlDays - b.dlDays;
               return 0;
             })
-            .map((t: any) => {
+            .map((t) => {
               const c = mpColor(t.mp);
               const urgent = t.dlDays <= 1 && t.status === 'pending';
               const overdue = t.dlDays < 0 && t.status === 'pending';

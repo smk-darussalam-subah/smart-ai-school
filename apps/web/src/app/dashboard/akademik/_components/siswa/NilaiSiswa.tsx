@@ -4,9 +4,10 @@ import { useState } from 'react';
 import { Target, FileText, X } from 'lucide-react';
 import { mpColor, mpIcon, SIM_NILAI } from './siswa-data';
 import { KKTP_DEFAULT } from '@/lib/academic';
+import type { SiswaNilai } from './siswa-types';
 
 interface Props {
-  grades: any[];
+  grades: SiswaNilai[];
   showToast: (msg: string) => void;
 }
 
@@ -14,17 +15,18 @@ type Filter = 'all' | 'tuntas' | 'remedial';
 
 export default function NilaiSiswa({ grades, showToast }: Props) {
   const [filter, setFilter] = useState<Filter>('all');
-  const [detailGrade, setDetailGrade] = useState<any | null>(null);
+  const [detailGrade, setDetailGrade] = useState<SiswaNilai | null>(null);
 
   const displayGrades = grades.length > 0 ? grades : SIM_NILAI;
-  const tuntasCount = displayGrades.filter((g: any) => g.rata >= g.kktp).length;
+  const isSimData = grades.length === 0;
+  const tuntasCount = displayGrades.filter((g) => g.rata >= g.kktp).length;
   const remedialCount = displayGrades.length - tuntasCount;
   const avgNilai =
     Math.round(
-      (displayGrades.reduce((a: number, b: any) => a + b.rata, 0) / displayGrades.length) * 10,
+      (displayGrades.reduce((a: number, b) => a + b.rata, 0) / displayGrades.length) * 10,
     ) / 10;
 
-  const filteredGrades = displayGrades.filter((g: any) => {
+  const filteredGrades = displayGrades.filter((g) => {
     const tuntas = g.rata >= g.kktp;
     if (filter === 'tuntas') return tuntas;
     if (filter === 'remedial') return !tuntas;
@@ -69,6 +71,13 @@ export default function NilaiSiswa({ grades, showToast }: Props) {
         </div>
       </div>
 
+      {/* Data Simulasi badge — shown when SIM fallback active */}
+      {isSimData && (
+        <div className="mx-5 mb-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-500">
+          <span>🧪</span> Data Simulasi — Nilai belum tersedia dari server
+        </div>
+      )}
+
       {/* Filter Tabs */}
       <div className="sticky top-[57px] z-10 border-b border-[var(--border)] bg-[var(--surface)] px-5 py-2">
         <div className="flex gap-2">
@@ -101,7 +110,7 @@ export default function NilaiSiswa({ grades, showToast }: Props) {
             Tidak ada mata pelajaran pada kategori ini.
           </div>
         ) : (
-          filteredGrades.map((n: any) => {
+          filteredGrades.map((n: SiswaNilai) => {
             const c = mpColor(n.mp);
             const tuntas = n.rata >= n.kktp;
 
@@ -200,7 +209,7 @@ export default function NilaiSiswa({ grades, showToast }: Props) {
 
 // ── GradeDetailModal ──────────────────────────────────────────────────────
 
-function GradeDetailModal({ grade, onClose }: { grade: any; onClose: () => void }) {
+function GradeDetailModal({ grade, onClose }: { grade: SiswaNilai; onClose: () => void }) {
   const c = mpColor(grade.mp);
   const tuntas = grade.rata >= grade.kktp;
   const radius = 42;

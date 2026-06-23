@@ -3,6 +3,7 @@
 import { Award, Mail, Phone, MapPin, Calendar, QrCode } from 'lucide-react';
 import { SIM_PROFILE_CV, SIM_BADGES } from './siswa-data';
 import type { SiswaScreen } from './SiswaWorkspace';
+import type { SiswaBadge } from './siswa-types';
 
 interface Props {
   isOpen: boolean;
@@ -12,8 +13,8 @@ interface Props {
 }
 
 export default function ProfileCV({ isOpen, onClose, showToast: _showToast, go: _go }: Props) {
-  const displayProfile = SIM_PROFILE_CV as any;
-  const displayBadges = SIM_BADGES.filter((b: any) => b.earned);
+  const displayProfile = SIM_PROFILE_CV;
+  const displayBadges = SIM_BADGES.filter((b: SiswaBadge) => b.earned);
 
   if (!isOpen) return null;
 
@@ -93,7 +94,7 @@ export default function ProfileCV({ isOpen, onClose, showToast: _showToast, go: 
             <Award className="h-3.5 w-3.5 text-emerald-500" />Badge Earned
           </h2>
           <div className="grid grid-cols-3 gap-2.5">
-            {displayBadges.map((badge: any) => (
+            {displayBadges.map((badge: SiswaBadge) => (
               <div key={badge.name} className="text-center">
                 <div
                   className="mx-auto mb-1.5 flex h-12 w-12 items-center justify-center rounded-full"

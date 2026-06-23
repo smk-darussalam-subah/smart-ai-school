@@ -1,12 +1,13 @@
 'use client';
 
 import type { SiswaScreen } from './SiswaWorkspace';
+import type { BadgeCelebrationData } from './siswa-types';
 
 interface Props {
   moduleId: number;
   go: (screen: SiswaScreen) => void;
   setActiveModulId: (id: number | null) => void;
-  setBadgeCelebration: (data: any) => void;
+  setBadgeCelebration: (data: BadgeCelebrationData) => void;
   showToast: (msg: string) => void;
 }
 
