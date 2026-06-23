@@ -7,6 +7,7 @@ import { scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-t
 import AkademikClient from './_components/AkademikClient';
 import AkademikWorkspace from './_components/AkademikWorkspace';
 import SiswaWorkspace from './_components/siswa/SiswaWorkspace';
+import OrtuWorkspace from './_components/ortu/OrtuWorkspace';
 import type { ScheduleItem, ActivityItem, RppItem, TodayClass, LmsModuleItem } from './_components/guru-types';
 
 interface Assignment { id: string; subject: string; class: { id: string; name: string } }
@@ -24,6 +25,7 @@ export default async function AkademikPage() {
   if (roles.includes('INDUSTRI')) redirect('/dashboard');
   const isGuru = roles.includes('GURU');
   const isSiswa = roles.includes('SISWA') && !roles.includes('GURU') && !roles.includes('KEPALA_SEKOLAH');
+  const isOrtu = roles.includes('ORANG_TUA') && !roles.includes('GURU') && !roles.includes('KEPALA_SEKOLAH');
   const canManage = roles.includes('SUPER_ADMIN') || roles.includes('GURU');
   const canEditAssignment = roles.includes('SUPER_ADMIN') || roles.includes('TATA_USAHA');
 
@@ -45,12 +47,12 @@ export default async function AkademikPage() {
   if (isSiswa) {
     // Fetch siswa-specific data
     // Note: studentId lookup from keycloakId — backend should resolve this
-    const studentId = (session as any).keycloakId ?? '';
+    const studentId = session.keycloakId ?? '';
     const [gradesRes, attendanceRes, scheduleRes, announcementsRes] = await Promise.all([
       apiFetch<PaginatedResponse<GradeItem>>(`/grades?studentId=${studentId}&limit=100`, token),
       apiFetch<PaginatedResponse<AttendanceItem>>(`/attendance?studentId=${studentId}&limit=200`, token),
       apiFetch<{ data: ScheduleItem[] }>(`/schedules?studentId=${studentId}&limit=100`, token),
-      apiFetch<{ data: any[] }>('/announcements?limit=5', token),
+      apiFetch<{ data: { id: string; title: string; createdAt: string }[] }>('/announcements?limit=5', token),
     ]);
 
     return (
@@ -109,6 +111,21 @@ export default async function AkademikPage() {
         academicYear={academicYear}
         semester={semester}
         dataWarning={dataWarning}
+      />
+    );
+  }
+
+  // ── Dashboard Orang Tua (TUGAS C — mobile-first, 5 bottom-nav tabs). ──────
+  // Data anak (grades/attendance/schedule) akan di-fetch via parent-child
+  // resolution endpoint saat backend siap. Sementara: SIM fallback (berbadge MOCKUP).
+  if (isOrtu) {
+    const [announcementsRes] = await Promise.all([
+      apiFetch<{ data: { id: string; title: string; createdAt: string }[] }>('/announcements?limit=5', token),
+    ]);
+
+    return (
+      <OrtuWorkspace
+        announcements={announcementsRes?.data ?? []}
       />
     );
   }

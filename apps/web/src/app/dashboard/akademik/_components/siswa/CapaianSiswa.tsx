@@ -6,16 +6,17 @@ import {
   Code2, Palette, Flame, Layout, CheckSquare, Calculator, Languages, Dumbbell,
 } from 'lucide-react';
 import { SIM_BADGES, SIM_LEADERBOARD, SIM_CPDATA, SIM_XP } from './siswa-data';
-import type { SiswaScreen } from './SiswaWorkspace';
+import type { SiswaScreen, ModalState } from './SiswaWorkspace';
+import type { SiswaXP, SiswaLeaderboardEntry, SiswaCP, SiswaCPTP, SiswaBadge } from './siswa-types';
 
 interface Props {
   showToast: (msg: string) => void;
   go: (screen: SiswaScreen) => void;
-  setModal: (modal: any) => void;
-  xp: any;
-  leaderboard: any[];
-  cpData: any[];
-  badges: any[];
+  setModal: (modal: ModalState) => void;
+  xp: SiswaXP;
+  leaderboard: SiswaLeaderboardEntry[];
+  cpData: SiswaCP[];
+  badges: SiswaBadge[];
 }
 
 // Map mockup icon names to lucide-react components
@@ -47,13 +48,13 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
   const displayXP = xp || SIM_XP;
   const displayCP = cpData.length > 0 ? cpData : SIM_CPDATA;
 
-  const filteredBadges = displayBadges.filter((b: any) => {
+  const filteredBadges = displayBadges.filter((b: SiswaBadge) => {
     if (filter === 'all') return true;
     if (filter === 'earned') return b.earned;
     return !b.earned;
   });
 
-  const earnedCount = displayBadges.filter((b: any) => b.earned).length;
+  const earnedCount = displayBadges.filter((b: SiswaBadge) => b.earned).length;
   const progressCount = displayBadges.length - earnedCount;
   const xpPct = Math.round((displayXP.current / displayXP.next) * 100);
 
@@ -100,7 +101,7 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
             </button>
           </div>
           <div className="space-y-1">
-            {displayLeaderboard.map((entry: any, idx: number) => {
+            {displayLeaderboard.map((entry: SiswaLeaderboardEntry, idx: number) => {
               const rankColors = ['#10b981', '#0ea5e9', '#a78bfa', '#ec4899', '#f59e0b', '#14b8a6'];
               const avColor = rankColors[idx % rankColors.length];
               const rankCls = idx === 0 ? 'bg-amber-500/15 text-amber-500' :
@@ -149,7 +150,7 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
             <Target className="h-3.5 w-3.5 text-emerald-500" />Progress CP per Mapel
           </div>
           <div className="space-y-2.5">
-            {displayCP.map((cp: any) => {
+            {displayCP.map((cp: SiswaCP) => {
               const ok = cp.progres >= 75;
               const StatusIcon = cp.progres >= 100 ? CheckCircle : cp.progres > 0 ? Loader : Circle;
               return (
@@ -194,7 +195,7 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
                   {/* TP breakdown */}
                   {cp.tps && cp.tps.length > 0 && (
                     <div className="mt-2">
-                      {cp.tps.map((tp: any, tpIdx: number) => (
+                      {cp.tps.map((tp: SiswaCPTP, tpIdx: number) => (
                         <div
                           key={tpIdx}
                           className={`flex items-center gap-2 border-b border-[var(--border)] py-1.5 text-xs font-semibold last:border-b-0 ${
@@ -263,7 +264,7 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
       {/* Badge Grid — colored lucide icons matching mockup */}
       <div className="px-5 py-4">
         <div className="grid grid-cols-3 gap-3">
-          {filteredBadges.map((badge: any) => {
+          {filteredBadges.map((badge: SiswaBadge) => {
             const Icon = getIcon(badge.icon);
             return (
               <button

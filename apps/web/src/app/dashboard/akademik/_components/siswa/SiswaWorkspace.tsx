@@ -26,14 +26,39 @@ import {
   SIM_PENGUMUMAN, SIM_NILAI, SIM_TUGAS, SIM_KEH_STATS,
   SIM_BADGES, SIM_MODULS, SIM_CPDATA,
   SIM_DAILY_QUEST, SIM_KALENDER, SIM_XP, SIM_LEADERBOARD,
+  normalizeAnnouncements,
 } from './siswa-data';
+import type { SiswaNilai, SiswaTugas, SiswaBadge, BadgeCelebrationData } from './siswa-types';
+import type { AttendanceEntry } from './KehadiranSiswa';
 
 export type SiswaScreen = 'beranda' | 'jadwal' | 'modul' | 'nilai' | 'tugas' | 'kehadiran' | 'capaian';
 
-interface ModalState {
-  type: 'lesson' | 'class' | 'task' | 'day' | 'badge' | 'pengumuman' | null;
-  data?: Record<string, unknown>;
+// ── Modal data types (discriminated union) ─────────────────────────────────
+export interface LessonModalData {
+  subject: string;
+  teacher: string;
+  room: string;
+  jpIndex: number;
 }
+export interface TaskModalData {
+  task: SiswaTugas;
+}
+export interface DayModalData {
+  day: number;
+  status: string;
+}
+export interface BadgeModalData {
+  badge: SiswaBadge;
+}
+
+export type ModalState =
+  | { type: 'lesson'; data: LessonModalData }
+  | { type: 'class'; data: LessonModalData }
+  | { type: 'task'; data: TaskModalData }
+  | { type: 'day'; data: DayModalData }
+  | { type: 'badge'; data: BadgeModalData }
+  | { type: 'pengumuman' }
+  | { type: null };
 
 interface SiswaWorkspaceProps {
   grades?: unknown[];
@@ -47,7 +72,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
   const [activeModulId, setActiveModulId] = useState<number | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [modal, setModal] = useState<ModalState>({ type: null });
-  const [badgeCelebration, setBadgeCelebration] = useState<{ show: boolean; badgeName?: string }>({ show: false });
+  const [badgeCelebration, setBadgeCelebration] = useState<BadgeCelebrationData>({ show: false });
   const [toast, setToast] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
@@ -129,13 +154,14 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
         return (
           <BerandaSiswa
             {...commonProps}
-            grades={grades?.length ? grades : SIM_NILAI}
+            grades={(grades?.length ? grades : SIM_NILAI) as SiswaNilai[]}
             tasks={SIM_TUGAS}
             badges={SIM_BADGES}
             modules={SIM_MODULS}
             quest={SIM_DAILY_QUEST}
             xp={SIM_XP}
             kehStats={SIM_KEH_STATS}
+            schedule={schedule || []}
           />
         );
       case 'jadwal':
@@ -162,7 +188,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
         return (
           <NilaiSiswa
             {...commonProps}
-            grades={grades?.length ? grades : SIM_NILAI}
+            grades={(grades ?? []) as SiswaNilai[]}
           />
         );
       case 'tugas':
@@ -177,7 +203,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
           <KehadiranSiswa
             {...commonProps}
             stats={SIM_KEH_STATS}
-            attendance={attendance || []}
+            attendance={(attendance || []) as AttendanceEntry[]}
           />
         );
       case 'capaian':
@@ -298,14 +324,19 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
       {/* Modals & Overlays */}
       {modal.type === 'pengumuman' && (
         <PengumumanModal
-          announcements={announcements?.length ? announcements : SIM_PENGUMUMAN}
+          announcements={announcements?.length
+            ? normalizeAnnouncements(announcements as { id: string; title: string; createdAt: string }[])
+            : SIM_PENGUMUMAN}
           onClose={() => setModal({ type: null })}
         />
       )}
 
       {modal.type === 'lesson' && (
         <LessonSessionModal
-          {...(modal.data as any)}
+          subject={modal.data.subject}
+          teacher={modal.data.teacher}
+          room={modal.data.room}
+          jpIndex={modal.data.jpIndex}
           onClose={() => setModal({ type: null })}
           openModulDetail={(id: number) => {
             setModal({ type: null });
@@ -317,14 +348,17 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
 
       {modal.type === 'class' && (
         <ClassDetailModal
-          {...(modal.data as any)}
+          subject={modal.data.subject}
+          teacher={modal.data.teacher}
+          room={modal.data.room}
+          jpIndex={modal.data.jpIndex}
           onClose={() => setModal({ type: null })}
         />
       )}
 
       {modal.type === 'task' && (
         <TaskDetailModal
-          {...(modal.data as any)}
+          task={modal.data.task}
           onClose={() => setModal({ type: null })}
           showToast={showToast}
         />
@@ -332,14 +366,15 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
 
       {modal.type === 'day' && (
         <DayDetailModal
-          {...(modal.data as any)}
+          day={modal.data.day}
+          status={modal.data.status}
           onClose={() => setModal({ type: null })}
         />
       )}
 
       {modal.type === 'badge' && (
         <BadgeDetailModal
-          {...(modal.data as any)}
+          badge={modal.data.badge}
           onClose={() => setModal({ type: null })}
         />
       )}

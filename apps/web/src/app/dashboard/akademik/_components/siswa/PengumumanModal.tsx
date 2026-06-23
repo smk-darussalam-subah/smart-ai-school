@@ -3,22 +3,23 @@
 import { useState } from 'react';
 import { Bell, Tag, Calendar } from 'lucide-react';
 import { SIM_PENGUMUMAN } from './siswa-data';
+import type { SiswaPengumuman } from './siswa-types';
 
 interface Props {
-  announcements: any[];
+  announcements: SiswaPengumuman[];
   onClose: () => void;
 }
 
 export default function PengumumanModal({ announcements, onClose }: Props) {
-  const [filter, setFilter] = useState<'all' | 'Penting' | 'Info' | 'Akademik'>('all');
+  const [filter, setFilter] = useState<'all' | 'Penting' | 'Info' | 'Mapel'>('all');
   
   const displayAnnouncements = announcements.length > 0 ? announcements : SIM_PENGUMUMAN;
-  const filtered = displayAnnouncements.filter((a: any) => {
+  const filtered = displayAnnouncements.filter((a: SiswaPengumuman) => {
     if (filter === 'all') return true;
     return a.tag === filter;
   });
 
-  const pentingCount = displayAnnouncements.filter((a: any) => a.tag === 'Penting').length;
+  const pentingCount = displayAnnouncements.filter((a: SiswaPengumuman) => a.tag === 'Penting').length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
@@ -47,7 +48,7 @@ export default function PengumumanModal({ announcements, onClose }: Props) {
               ['all', 'Semua'],
               ['Penting', 'Penting'],
               ['Info', 'Info'],
-              ['Akademik', 'Akademik'],
+              ['Mapel', 'Mapel'],
             ] as const).map(([key, label]) => (
               <button
                 key={key}
@@ -68,7 +69,7 @@ export default function PengumumanModal({ announcements, onClose }: Props) {
         {/* Announcements List */}
         <div className="max-h-[60vh] overflow-y-auto p-5 space-y-3">
           {filtered.length > 0 ? (
-            filtered.map((ann: any) => (
+            filtered.map((ann: SiswaPengumuman) => (
               <div
                 key={ann.id}
                 className={`rounded-xl border p-4 transition-all ${
@@ -93,10 +94,10 @@ export default function PengumumanModal({ announcements, onClose }: Props) {
                       )}
                     </div>
                     <h4 className="mt-2 text-sm font-bold">{ann.title}</h4>
-                    <p className="mt-1 text-xs font-semibold text-[var(--muted)] line-clamp-2">{ann.content}</p>
+                    <p className="mt-1 text-xs font-semibold text-[var(--muted)] line-clamp-2">{ann.body}</p>
                     <div className="mt-2 flex items-center gap-1.5 text-[10px] font-semibold text-[var(--muted)]">
                       <Calendar className="h-3 w-3" />
-                      {ann.date}
+                      {ann.time}
                     </div>
                   </div>
                 </div>

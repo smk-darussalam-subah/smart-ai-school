@@ -3,14 +3,21 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, AlertCircle } from 'lucide-react';
 import { generateCalendar } from '@/lib/academic';
-import type { SiswaScreen } from './SiswaWorkspace';
+import type { AttendanceCellStatus, CalendarCell } from '@/lib/academic';
+import type { SiswaScreen, ModalState } from './SiswaWorkspace';
+import type { SiswaKehadiranStats } from './siswa-types';
+
+export interface AttendanceEntry {
+  dayIndex: number;
+  status: string;
+}
 
 interface Props {
   showToast: (msg: string) => void;
   go: (screen: SiswaScreen) => void;
-  setModal: (modal: any) => void;
-  stats: any;
-  attendance: any[];
+  setModal: (modal: ModalState) => void;
+  stats: SiswaKehadiranStats;
+  attendance: AttendanceEntry[];
 }
 
 const BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
@@ -21,21 +28,24 @@ export default function KehadiranSiswa({ showToast: _showToast, go: _go, setModa
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
 
-  // Generate calendar grid
+  // Generate calendar grid — pass todayDay only for current month so future days are marked
+  const isCurrentMonth = viewYear === now.getFullYear() && viewMonth === now.getMonth();
   const calendar = generateCalendar(viewYear, viewMonth, {
-    statusByDay: attendance?.reduce((acc: any, a: any) => {
-      acc[a.dayIndex] = a.status;
+    todayDay: isCurrentMonth ? now.getDate() : undefined,
+    statusByDay: attendance?.reduce((acc: Record<number, AttendanceCellStatus>, a: AttendanceEntry) => {
+      acc[a.dayIndex] = a.status as AttendanceCellStatus;
       return acc;
-    }, {}) || {},
+    }, {} as Record<number, AttendanceCellStatus>) || {},
   });
 
   // Stats
-  const hadirCount = attendance?.filter((a: any) => a.status === 'hadir').length || 0;
-  const sakitCount = attendance?.filter((a: any) => a.status === 'sakit').length || 0;
-  const izinCount = attendance?.filter((a: any) => a.status === 'izin').length || 0;
-  const alphaCount = attendance?.filter((a: any) => a.status === 'alpha').length || 0;
+  const hadirCount = attendance?.filter((a) => a.status === 'hadir').length || 0;
+  const sakitCount = attendance?.filter((a) => a.status === 'sakit').length || 0;
+  const izinCount = attendance?.filter((a) => a.status === 'izin').length || 0;
+  const alphaCount = attendance?.filter((a) => a.status === 'alpha').length || 0;
   const totalDays = attendance?.length || 0;
   const persentase = totalDays > 0 ? Math.round((hadirCount / totalDays) * 1000) / 10 : 100;
+  const isSimData = totalDays === 0;
 
   // Navigate months
   const prevMonth = () => {
@@ -61,6 +71,13 @@ export default function KehadiranSiswa({ showToast: _showToast, go: _go, setModa
       {/* Header Stats */}
       <div className="px-5 py-4">
         <h1 className="text-2xl font-extrabold tracking-tight">Kehadiran</h1>
+
+        {/* Data Simulasi badge — shown when SIM fallback active */}
+        {isSimData && (
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-500">
+            <span>🧪</span> Data Simulasi — Kehadiran belum tersedia dari server
+          </div>
+        )}
 
         {/* Ring + Statpills */}
         <div className="mt-4 flex items-center gap-4">
@@ -136,10 +153,10 @@ export default function KehadiranSiswa({ showToast: _showToast, go: _go, setModa
 
         {/* Calendar cells */}
         <div className="grid grid-cols-7 gap-1">
-          {calendar.map((cell: any, idx: number) => {
-            const isToday = cell.isToday;
-            const isEmpty = cell.type === 'empty';
-            const isFuture = cell.type === 'future';
+          {calendar.map((cell: CalendarCell, idx: number) => {
+            const isToday = isCurrentMonth && cell.day === now.getDate();
+            const isEmpty = cell.status === 'empty';
+            const isFuture = cell.status === 'future';
             const status = cell.status;
 
             let statusColor = 'bg-[var(--surface)]';
@@ -173,8 +190,8 @@ export default function KehadiranSiswa({ showToast: _showToast, go: _go, setModa
                 key={idx}
                 disabled={isEmpty || isFuture || !status}
                 onClick={() => {
-                  if (status) {
-                    setModal({ type: 'day', data: { date: cell.date, status, cell } });
+                  if (status && status !== 'empty' && status !== 'future') {
+                    setModal({ type: 'day', data: { day: cell.day, status: cell.status } });
                   }
                 }}
                 className={`relative aspect-square rounded-lg border text-center transition-all ${

@@ -3,30 +3,31 @@
 import { useState } from 'react';
 import { BookOpen, CheckCircle, Lock, Award } from 'lucide-react';
 import { mpColor, mpIcon } from './siswa-data';
-import type { SiswaScreen } from './SiswaWorkspace';
+import type { SiswaScreen, ModalState } from './SiswaWorkspace';
+import type { SiswaModul, SiswaBadge, BadgeCelebrationData } from './siswa-types';
 
 interface Props {
-  modules: any[];
-  badges: any[];
+  modules: SiswaModul[];
+  badges: SiswaBadge[];
   showToast: (msg: string) => void;
   go: (screen: SiswaScreen) => void;
-  setModal: (modal: any) => void;
-  setBadgeCelebration: (data: any) => void;
+  setModal: (modal: ModalState) => void;
+  setBadgeCelebration: (data: BadgeCelebrationData) => void;
   setActiveModulId: (id: number | null) => void;
 }
 
 export default function ModulSiswa({ modules, badges: _badges, showToast: _showToast, go, setModal: _setModal, setBadgeCelebration: _setBadgeCelebration, setActiveModulId }: Props) {
   const [filter, setFilter] = useState<'all' | 'aktif' | 'selesai' | 'terkunci'>('all');
 
-  const filtered = modules.filter((m: any) => {
+  const filtered = modules.filter((m: SiswaModul) => {
     if (filter === 'all') return true;
     return m.status.toLowerCase() === filter;
   });
 
   const stats = {
-    selesai: modules.filter((m: any) => m.status === 'Selesai').length,
-    aktif: modules.filter((m: any) => m.status === 'Aktif').length,
-    terkunci: modules.filter((m: any) => m.status === 'Terkunci').length,
+    selesai: modules.filter((m: SiswaModul) => m.status === 'Selesai').length,
+    aktif: modules.filter((m: SiswaModul) => m.status === 'Aktif').length,
+    terkunci: modules.filter((m: SiswaModul) => m.status === 'Terkunci').length,
   };
 
   return (
@@ -61,7 +62,7 @@ export default function ModulSiswa({ modules, badges: _badges, showToast: _showT
 
       {/* Module List */}
       <div className="px-5 py-4 space-y-3">
-        {filtered.map((mod: any) => {
+        {filtered.map((mod: SiswaModul) => {
           const c = mpColor(mod.mapel);
           const isLocked = mod.status === 'Terkunci';
           const isSelesai = mod.status === 'Selesai';

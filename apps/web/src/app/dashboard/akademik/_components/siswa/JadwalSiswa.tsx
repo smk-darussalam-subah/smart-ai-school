@@ -3,45 +3,37 @@
 import { useState, useMemo } from 'react';
 import { CalendarClock, MapPin, Bell } from 'lucide-react';
 import { wibNow, currentJp } from '@/lib/bell-times';
-import type { SiswaScreen } from './SiswaWorkspace';
+import { JP_LABELS, JP_MAP, resolveSchedule } from './siswa-data';
+import type { SiswaScreen, ModalState } from './SiswaWorkspace';
+import type { SiswaKalenderEvent } from './siswa-types';
 
 interface Props {
-  schedule: any[];
+  schedule: unknown[];
   showToast: (msg: string) => void;
   go: (screen: SiswaScreen) => void;
-  setModal: (modal: any) => void;
-  kalender: any[];
+  setModal: (modal: ModalState) => void;
+  kalender: SiswaKalenderEvent[];
 }
 
 const HARI: [string, number][] = [['Senin', 1], ['Selasa', 2], ['Rabu', 3], ['Kamis', 4], ['Jumat', 5], ['Sabtu', 6]];
-const JP: [string, string][] = [['JP 1', '07.30–08.10'], ['JP 2', '08.10–08.50'], ['JP 3', '08.50–09.30'], ['Istirahat', '09.30–09.45'], ['JP 4', '09.45–10.25'], ['JP 5', '10.25–11.05'], ['JP 6', '11.05–11.45'], ['Ishoma', '11.45–12.25'], ['JP 7', '12.25–13.05'], ['JP 8', '13.05–13.45']];
-const JPN: [number, number][] = [[1, 0], [2, 1], [3, 2], [4, 4], [5, 5], [6, 6], [7, 8], [8, 9]];
 
-const WEEKLY_SCHED: Record<number, Record<number, { mp: string; g: string; ruang: string }>> = {
-  1: { 0: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 1: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 2: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 4: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 5: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 6: { mp: 'PJOK', g: 'Doni Kurniawan, S.Pd', ruang: 'Lapangan' }, 8: { mp: 'PKn', g: 'Nur Hidayah, S.Pd', ruang: 'R-107' }, 9: { mp: 'PKn', g: 'Nur Hidayah, S.Pd', ruang: 'R-107' } },
-  2: { 0: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 1: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 2: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 4: { mp: 'Fisika', g: 'Hendra Gunawan, S.Pd', ruang: 'R-107' }, 5: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 6: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 8: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 9: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' } },
-  3: { 0: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 1: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 2: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 4: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 5: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 6: { mp: 'Fisika', g: 'Hendra Gunawan, S.Pd', ruang: 'R-107' }, 8: { mp: 'PJOK', g: 'Doni Kurniawan, S.Pd', ruang: 'Lapangan' }, 9: { mp: 'PJOK', g: 'Doni Kurniawan, S.Pd', ruang: 'Lapangan' } },
-  4: { 0: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 1: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 2: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 4: { mp: 'PKn', g: 'Nur Hidayah, S.Pd', ruang: 'R-107' }, 5: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 6: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 8: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 9: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' } },
-  5: { 0: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 1: { mp: 'Fisika', g: 'Hendra Gunawan, S.Pd', ruang: 'R-107' }, 2: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 4: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 5: { mp: 'Pemrograman Web', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 6: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 8: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' }, 9: { mp: 'B.Indonesia', g: 'Dewi Lestari, S.Pd', ruang: 'R-107' } },
-  6: { 0: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' }, 1: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 2: { mp: 'Basis Data', g: 'Budi Hartono, S.Kom', ruang: 'Lab 1' }, 4: { mp: 'PJOK', g: 'Doni Kurniawan, S.Pd', ruang: 'Lapangan' }, 5: { mp: 'Fisika', g: 'Hendra Gunawan, S.Pd', ruang: 'R-107' }, 6: { mp: 'B.Inggris', g: 'Eko Prasetyo, S.Pd', ruang: 'R-107' }, 8: { mp: 'PKn', g: 'Nur Hidayah, S.Pd', ruang: 'R-107' }, 9: { mp: 'Matematika', g: 'Siti Aminah, S.Pd', ruang: 'R-107' } },
-};
-
-export default function JadwalSiswa({ schedule: _schedule, showToast: _showToast, go: _go, setModal, kalender }: Props) {
+export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, setModal, kalender }: Props) {
   const now = wibNow();
   const todayDow = now.jsDay; // 0=Sunday → no schedule → shows "Libur"
   const currentJpIdx = currentJp(now.minutes);
 
   const [selectedDay, setSelectedDay] = useState(todayDow);
-  const daySched = WEEKLY_SCHED[selectedDay] || {};
+  const { schedule: schedData, isSim: isSimSchedule } = resolveSchedule(schedule);
+  const daySched = schedData[selectedDay] || {};
   const hasSched = Object.keys(daySched).length > 0;
 
   const totalSched = useMemo(() => {
     let count = 0;
-    for (const day of Object.values(WEEKLY_SCHED)) {
+    for (const day of Object.values(schedData)) {
       count += Object.keys(day).length;
     }
     return count;
-  }, []);
+  }, [schedData]);
 
   const totalHours = Math.round((totalSched * 40) / 6) / 10;
 
@@ -55,6 +47,11 @@ export default function JadwalSiswa({ schedule: _schedule, showToast: _showToast
             {totalSched} JP · {totalHours} jam/minggu
           </span>
         </div>
+        {isSimSchedule && (
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-500">
+            <span>🧪</span> Data Simulasi — Jadwal belum tersedia dari server
+          </div>
+        )}
         <div className="mt-2 flex items-center gap-2 text-sm text-[var(--muted)]">
           <CalendarClock className="h-4 w-4" />
           <span>XI TJKT 1 · SMK Darussalam Subah</span>
@@ -67,7 +64,7 @@ export default function JadwalSiswa({ schedule: _schedule, showToast: _showToast
           {HARI.map(([label, dow]) => {
             const isActive = dow === selectedDay;
             const isToday = dow === todayDow;
-            const schedCount = Object.keys(WEEKLY_SCHED[dow] || {}).length;
+            const schedCount = Object.keys(schedData[dow] || {}).length;
 
             return (
               <button
@@ -95,10 +92,10 @@ export default function JadwalSiswa({ schedule: _schedule, showToast: _showToast
       {/* Schedule Grid */}
       <div className="px-5 py-4 space-y-2">
         {hasSched ? (
-          JPN.map(([, idx]) => {
+          JP_MAP.map(([, idx]) => {
             const slot = daySched[idx];
             if (!slot) {
-              const jpLabel = JP[idx]![0];
+              const jpLabel = JP_LABELS[idx]![0];
               const isBreak = jpLabel === 'Istirahat' || jpLabel === 'Ishoma';
               return (
                 <div
@@ -108,14 +105,14 @@ export default function JadwalSiswa({ schedule: _schedule, showToast: _showToast
                   }`}
                 >
                   <div className="text-sm font-bold">{jpLabel}</div>
-                  <div className="mt-0.5 text-xs opacity-75">{JP[idx]![1]}</div>
+                  <div className="mt-0.5 text-xs opacity-75">{JP_LABELS[idx]![1]}</div>
                 </div>
               );
             }
 
-            const isDone = idx < (currentJpIdx === 0 ? -1 : JPN.findIndex(([j]) => j === currentJpIdx));
-            const isNow = currentJpIdx > 0 && JPN[currentJpIdx - 1]?.[1] === idx;
-            const guruShort = slot.g.split(',')[0];
+            const isDone = idx < (currentJpIdx === 0 ? -1 : JP_MAP.findIndex(([j]) => j === currentJpIdx));
+            const isNow = currentJpIdx > 0 && JP_MAP[currentJpIdx - 1]?.[1] === idx;
+            const guruShort = slot.g.split(',')[0] ?? slot.g;
 
             return (
               <div
@@ -131,8 +128,8 @@ export default function JadwalSiswa({ schedule: _schedule, showToast: _showToast
               >
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0 text-right">
-                    <div className="text-sm font-extrabold">{JP[idx]![1].split('–')[0]}</div>
-                    <div className="text-xs font-semibold text-[var(--muted)]">{JP[idx]![0]}</div>
+                    <div className="text-sm font-extrabold">{JP_LABELS[idx]![1].split('–')[0]}</div>
+                    <div className="text-xs font-semibold text-[var(--muted)]">{JP_LABELS[idx]![0]}</div>
                   </div>
                   <div
                     className={`mt-0.5 h-3 w-3 flex-shrink-0 rounded-full border-2 border-[var(--bg)] ${
@@ -201,7 +198,7 @@ export default function JadwalSiswa({ schedule: _schedule, showToast: _showToast
             <CalendarClock className="h-3.5 w-3.5 text-emerald-500" />Kalender Akademik
           </div>
           <div className="space-y-2">
-            {kalender.length > 0 ? kalender.map((evt: any, idx: number) => (
+            {kalender.length > 0 ? kalender.map((evt, idx: number) => (
               <div key={idx} className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
                 <div className="flex-shrink-0 w-11 text-center">
                   <div className="text-lg font-extrabold leading-none" style={{ color: evt.color }}>{evt.d}</div>
