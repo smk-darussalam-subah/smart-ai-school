@@ -3,6 +3,7 @@
 import { Activity, BarChart3, ClipboardList } from 'lucide-react';
 import { Card, EmptyState, yScale } from './ui';
 import type { GradeAnalytics } from '../types';
+import { KKTP_DEFAULT } from '@/lib/academic';
 
 function passColor(p: number | null): string {
   if (p === null) return '#e2e8f0';
@@ -19,7 +20,7 @@ export function GradeBoxPlot({ grades }: { grades: GradeAnalytics | null }) {
   const W = 380;
   const H = 200;
   const y = yScale(50, 100, H - 30, 20);
-  const kkm = grades?.filters.kkm ?? 75;
+  const kkm = grades?.filters.kkm ?? KKTP_DEFAULT;
   return (
     <Card title="Distribusi Nilai per Jurusan" subtitle="Median, kuartil & sebaran" icon={BarChart3} level="soon" className="col-span-12 lg:col-span-5">
       {rows.length === 0 ? (
