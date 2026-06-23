@@ -286,7 +286,7 @@ function KpiCard({ theme, icon, label, value, sub, delta, fase2, onClick, onCale
 }) {
   return (
     <button type="button" onClick={onClick}
-      className={clsx('relative text-left bg-white rounded-2xl border p-4 shadow-soft-sm transition hover:-translate-y-0.5 hover:shadow-soft-md focus:outline-none', fase2 ? 'border-dashed border-amber-300 bg-amber-50/40' : 'border-emerald-900/10')}>
+      className={clsx('relative text-left bg-white rounded-2xl border p-3 shadow-soft-sm transition hover:-translate-y-0.5 hover:shadow-soft-md focus:outline-none', fase2 ? 'border-dashed border-amber-300 bg-amber-50/40' : 'border-emerald-900/10')}>
       {onCalendar && !fase2 && (
         <span role="button" tabIndex={0} title="Rekap per tanggal"
           onClick={(e) => { e.stopPropagation(); onCalendar(); }}
@@ -295,7 +295,7 @@ function KpiCard({ theme, icon, label, value, sub, delta, fase2, onClick, onCale
         </span>
       )}
       <div className="flex items-start justify-between">
-        <span className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: theme.soft, color: theme.ac }}>{icon}</span>
+        <span className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: theme.soft, color: theme.ac }}>{icon}</span>
         {fase2 && <span className="text-[9px] font-bold uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Fase 2</span>}
         {!fase2 && delta !== undefined && delta !== null && (
           <span className={clsx('inline-flex items-center gap-0.5 text-xs font-semibold mr-8', delta >= 0 ? 'text-emerald-600' : 'text-red-600')}>
@@ -303,8 +303,8 @@ function KpiCard({ theme, icon, label, value, sub, delta, fase2, onClick, onCale
           </span>
         )}
       </div>
-      <p className={clsx('text-2xl font-extrabold mt-3 leading-none', fase2 ? 'text-amber-400' : 'text-gray-900')}>{value}</p>
-      <p className="text-xs text-gray-500 mt-1">{label}{sub ? ` · ${sub}` : ''}</p>
+      <p className={clsx('text-xl font-extrabold mt-2 leading-none', fase2 ? 'text-amber-400' : 'text-gray-900')}>{value}</p>
+      <p className="text-[11px] text-gray-500 mt-0.5">{label}{sub ? ` · ${sub}` : ''}</p>
     </button>
   );
 }
