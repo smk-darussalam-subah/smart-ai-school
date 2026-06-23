@@ -63,7 +63,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: 'Akademik',
     items: [
-      { label: 'Akademik', href: '/dashboard/akademik', icon: BookOpen, roles: ['GURU', 'SISWA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN'], permissions: ['academic.grade.read'] },
+      { label: 'Akademik', href: '/dashboard/akademik', icon: BookOpen, roles: ['GURU', 'SISWA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'ORANG_TUA'], permissions: ['academic.grade.read'] },
       { label: 'Jadwal', href: '/dashboard/jadwal', icon: CalendarDays, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA'], permissions: ['academic.schedule.read'] },
       { label: 'Nilai & Absensi', href: '/dashboard/nilai', icon: ClipboardCheck, roles: ['SISWA', 'ORANG_TUA'], permissions: ['grade.own.read', 'grade.child.read'] },
       { label: 'Rapor', href: '/dashboard/rapor', icon: GraduationCap, roles: ['SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'GURU'], permissions: ['report.read'] },
