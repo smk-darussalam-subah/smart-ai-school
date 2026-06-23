@@ -137,6 +137,13 @@ export async function deleteRpp(id: string) {
   return r;
 }
 
+/** Review Modul Ajar (KS/SA: approve atau revise dengan catatan). */
+export async function reviewRpp(id: string, decision: 'approved' | 'revision', note?: string) {
+  const r = await apiCall(`/rpp/${id}/review`, 'PATCH', { decision, note: note ?? null });
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
 // ── Modul LMS (materi belajar siswa) ───────────────────────────────────────────
 
 export interface LmsFormData {
