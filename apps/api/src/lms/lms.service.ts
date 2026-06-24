@@ -139,9 +139,60 @@ export class LmsService {
       const student = await this.resolveStudent(user.keycloakId);
       const visible = module.status === 'published'
         && (module.class === null || module.class.id === student.classId);
-      if (visible) return module;
+      if (visible) {
+        // SISWA: sertakan progres sendiri (myProgress) — gap W1-2.
+        // Sebelumnya findOne hanya mengembalikan data modul tanpa progres siswa.
+        const myProgress = await this.prisma.lmsModuleProgress.findUnique({
+          where: { moduleId_studentId: { moduleId: id, studentId: student.id } },
+          select: { id: true, progress: true, status: true, startedAt: true, completedAt: true },
+        });
+        return { ...module, myProgress };
+      }
     }
     throw new ForbiddenException('Akses ditolak');
+  }
+
+  /**
+   * GET /lms/modules/my-learning — modul published untuk siswa + progres + ringkasan.
+   * Endpoint khusus SISWA (lebih bersih dari findAll yang bercabang per role).
+   * Mengembalikan modul kelas siswa (atau umum) + progres pribadi + statistik ringkas
+   * untuk konsumsi dashboard siswa.
+   */
+  async findMyLearning(user: AuthUser) {
+    const student = await this.resolveStudent(user.keycloakId);
+    const where: Prisma.LmsModuleWhereInput = this.studentVisibilityWhere(student.classId);
+
+    const modules = await this.prisma.lmsModule.findMany({
+      where,
+      orderBy: [{ subject: 'asc' }, { orderIndex: 'asc' }, { createdAt: 'asc' }],
+      select: {
+        ...LMS_SELECT,
+        progress: {
+          where: { studentId: student.id },
+          select: { progress: true, status: true, startedAt: true, completedAt: true },
+        },
+      },
+    });
+
+    // Ratakan progres siswa (0..1 baris) → myProgress (pola sama dengan findAll SISWA branch)
+    const shaped = modules.map(({ progress, ...m }) => ({
+      ...m,
+      myProgress: progress[0] ?? null,
+    }));
+
+    // Ringkasan progres untuk dashboard siswa
+    const total: number = shaped.length;
+    const completed: number = shaped.filter((m) => m.myProgress?.status === 'completed').length;
+    const inProgress: number = shaped.filter((m) => m.myProgress?.status === 'active').length;
+    const notStarted: number = total - completed - inProgress;
+    const avgProgress: number = total > 0
+      ? Math.round(shaped.reduce((sum, m) => sum + (m.myProgress?.progress ?? 0), 0) / total)
+      : 0;
+
+    return {
+      data: shaped,
+      stats: { total, completed, inProgress, notStarted, avgProgress },
+    };
   }
 
   async create(dto: CreateLmsModuleDto, user: AuthUser) {

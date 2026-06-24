@@ -20,6 +20,7 @@ import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvisioningService, Actor } from '../provisioning/provisioning.service';
 import { normalizeOrThrow } from '../common/helpers/phone';
+import { resolveUserId } from '../common/helpers/role-helpers';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 import { AssignParentDto } from './dto/assign-parent.dto';
@@ -95,21 +96,9 @@ export class StudentService {
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
   /**
-   * Resolve keycloakId → DB user id.
-   * Diperlukan untuk ownership check (Student.userId/parentId menyimpan auth.users.id).
-   */
-  private async resolveAuthUserId(keycloakId: string): Promise<string> {
-    const authUser = await this.prisma.user.findUnique({
-      where: { keycloakId },
-      select: { id: true },
-    });
-    if (!authUser) throw new ForbiddenException('User tidak ditemukan');
-    return authUser.id;
-  }
-
-  /**
    * Cek kepemilikan data: SISWA harus diri sendiri, ORANG_TUA harus anak sendiri.
    * Dipanggil setelah student record sudah di-fetch (avoid double query).
+   * keycloakId → auth.users.id via shared helper (role-helpers.ts).
    */
   private assertOwnership(
     student: { userId: string; parentId: string | null },
@@ -175,11 +164,28 @@ export class StudentService {
     if (!student) throw new NotFoundException('Student tidak ditemukan');
 
     if (needsOwnershipCheck(requestUser)) {
-      const authUserId = await this.resolveAuthUserId(requestUser.keycloakId);
+      const authUserId = await resolveUserId(this.prisma, requestUser.keycloakId);
       this.assertOwnership(student, authUserId, requestUser);
     }
 
     return student;
+  }
+
+  /**
+   * GET /students/my-children — daftar semua anak untuk ORANG_TUA.
+   * Resolve keycloakId → auth.users.id → students where parentId === userId.
+   * Mengembalikan array (orang tua bisa punya >1 anak terdaftar).
+   * Pola sama dengan resolveChildStudentIds() di grade/attendance/finance service,
+   * tapi mengembalikan record lengkap (bukan hanya id[]) untuk konsumsi dashboard ortu.
+   */
+  async findMyChildren(requestUser: AuthUser) {
+    const userId = await resolveUserId(this.prisma, requestUser.keycloakId);
+    const data = await this.prisma.student.findMany({
+      where: { parentId: userId, deletedAt: null },
+      select: STUDENT_BASE_SELECT,
+      orderBy: { joinedAt: 'asc' },
+    });
+    return { data };
   }
 
   async create(dto: CreateStudentDto) {
@@ -259,7 +265,7 @@ export class StudentService {
     if (!student) throw new NotFoundException('Student tidak ditemukan');
 
     if (needsOwnershipCheck(requestUser)) {
-      const authUserId = await this.resolveAuthUserId(requestUser.keycloakId);
+      const authUserId = await resolveUserId(this.prisma, requestUser.keycloakId);
       this.assertOwnership(student, authUserId, requestUser);
     }
 
@@ -279,7 +285,7 @@ export class StudentService {
     if (!student) throw new NotFoundException('Student tidak ditemukan');
 
     if (needsOwnershipCheck(requestUser)) {
-      const authUserId = await this.resolveAuthUserId(requestUser.keycloakId);
+      const authUserId = await resolveUserId(this.prisma, requestUser.keycloakId);
       this.assertOwnership(student, authUserId, requestUser);
     }
 
