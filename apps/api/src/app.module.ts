@@ -44,6 +44,7 @@ import { PublicKioskModule } from './public-kiosk/public-kiosk.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { LmsModule } from './lms/lms.module';
 import { AssessmentModule } from './assessment/assessment.module';
+import { StudentDashboardModule } from './student-dashboard/student-dashboard.module';
 
 @Module({
   imports: [
@@ -84,6 +85,7 @@ import { AssessmentModule } from './assessment/assessment.module';
     AnalyticsModule,
     LmsModule,
     AssessmentModule,
+    StudentDashboardModule,
   ],
   providers: [
     UserStatusService,
