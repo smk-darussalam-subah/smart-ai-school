@@ -12,7 +12,9 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
+import { AuthUser } from '@smk/auth';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { StudentAnalyticsService } from '../analytics/analytics.service';
 import { AnalyticsController } from '../analytics/analytics.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { SchoolConfigService } from '../school-config/school-config.service';
@@ -21,6 +23,7 @@ import {
   kkmPassRate,
   mean,
   median,
+  naOf,
   pearson,
   quantile,
   summarize,
@@ -66,6 +69,21 @@ describe('analytics.math', () => {
     expect(agingBucketIndex(45)).toBe(1);
     expect(agingBucketIndex(75)).toBe(2);
     expect(agingBucketIndex(400)).toBe(3);
+  });
+
+  it('naOf: semua komponen', () => {
+    // uh:0.20*80 + praktik:0.25*90 + sikap:0.15*88 + uts:0.20*82 + uas:0.20*84
+    // = 16 + 22.5 + 13.2 + 16.4 + 16.8 = 84.9 → round = 85
+    expect(naOf({ uh: 80, praktik: 90, sikap: 88, uts: 82, uas: 84 })).toBe(85);
+  });
+
+  it('naOf: komponen parsial (renormalisasi bobot)', () => {
+    // Hanya uh:0.20*80 + uts:0.20*90 → (16+18)/(0.20+0.20) = 34/0.40 = 85
+    expect(naOf({ uh: 80, uts: 90 })).toBe(85);
+  });
+
+  it('naOf: tidak ada komponen → null', () => {
+    expect(naOf({})).toBeNull();
   });
 });
 
@@ -260,11 +278,18 @@ describe('AnalyticsController', () => {
     financeAging: jest.fn().mockResolvedValue({}),
     teacherCompliance: jest.fn().mockResolvedValue({}),
   };
+  const mockStudentService = {
+    attendanceStats: jest.fn().mockResolvedValue({ data: [] }),
+    studentGrades: jest.fn().mockResolvedValue({ data: [] }),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AnalyticsController],
-      providers: [{ provide: AnalyticsService, useValue: mockService }],
+      providers: [
+        { provide: AnalyticsService, useValue: mockService },
+        { provide: StudentAnalyticsService, useValue: mockStudentService },
+      ],
     }).compile();
     controller = module.get(AnalyticsController);
     jest.clearAllMocks();
@@ -294,5 +319,150 @@ describe('AnalyticsController', () => {
     expect(mockService.financeAging).toHaveBeenCalled();
     expect(mockService.teacherCompliance).toHaveBeenCalled();
     expect(mockService.atRisk).toHaveBeenCalled();
+  });
+});
+
+// ── StudentAnalyticsService tests (W1-3 + W1-4) ──────────────────────────────
+
+function buildStudentPrisma() {
+  return {
+    user: { findUnique: jest.fn() },
+    student: { findMany: jest.fn(), findUnique: jest.fn() },
+    teacher: { findUnique: jest.fn() },
+    teachingAssignment: { findMany: jest.fn() },
+    attendance: { groupBy: jest.fn() },
+    grade: { findMany: jest.fn() },
+  };
+}
+
+const SA_USER: AuthUser = { keycloakId: 'kc-sa', username: 'admin', roles: ['SUPER_ADMIN'] } as AuthUser;
+const SISWA_USER: AuthUser = { keycloakId: 'kc-siswa', username: 'siswa1', roles: ['SISWA'] } as AuthUser;
+const ORTU_USER: AuthUser = { keycloakId: 'kc-ortu', username: 'ortu1', roles: ['ORANG_TUA'] } as AuthUser;
+
+describe('StudentAnalyticsService', () => {
+  let service: StudentAnalyticsService;
+  let prisma: ReturnType<typeof buildStudentPrisma>;
+
+  beforeEach(async () => {
+    prisma = buildStudentPrisma();
+    [prisma.user.findUnique, prisma.student.findMany, prisma.student.findUnique,
+     prisma.teacher.findUnique, prisma.teachingAssignment.findMany,
+     prisma.attendance.groupBy, prisma.grade.findMany]
+      .forEach((m) => m.mockReset());
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [StudentAnalyticsService, { provide: PrismaService, useValue: prisma }],
+    }).compile();
+    service = module.get(StudentAnalyticsService);
+  });
+
+  // ── W1-3: attendanceStats ──────────────────────────────────────────────────
+
+  it('SISWA → attendanceStats untuk diri sendiri', async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
+    prisma.student.findUnique.mockResolvedValue({ id: 'student-1' });
+    prisma.attendance.groupBy.mockResolvedValue([
+      { studentId: 'student-1', status: 'hadir', _count: { _all: 150 } },
+      { studentId: 'student-1', status: 'izin', _count: { _all: 5 } },
+      { studentId: 'student-1', status: 'sakit', _count: { _all: 4 } },
+      { studentId: 'student-1', status: 'alpha', _count: { _all: 2 } },
+    ]);
+    prisma.student.findMany.mockResolvedValue([
+      { id: 'student-1', nis: '001', user: { fullName: 'Budi' }, class: { name: 'X TKJ 1' } },
+    ]);
+
+    const res = await service.attendanceStats({}, SISWA_USER);
+    expect(res.data).toHaveLength(1);
+    expect(res.data[0]!.stats.hadir).toBe(150);
+    expect(res.data[0]!.stats.total).toBe(161);
+    expect(res.data[0]!.stats.pct).toBe(93.2);
+  });
+
+  it('ORANG_TUA tanpa anak → array kosong', async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: 'user-ortu' });
+    prisma.student.findMany.mockResolvedValue([]);
+
+    const res = await service.attendanceStats({}, ORTU_USER);
+    expect(res.data).toHaveLength(0);
+  });
+
+  it('SA → attendanceStats untuk semua siswa', async () => {
+    prisma.student.findMany
+      .mockResolvedValueOnce([{ id: 's1' }, { id: 's2' }])
+      .mockResolvedValueOnce([
+        { id: 's1', nis: '001', user: { fullName: 'A' }, class: { name: 'X' } },
+        { id: 's2', nis: '002', user: { fullName: 'B' }, class: { name: 'Y' } },
+      ]);
+    prisma.attendance.groupBy.mockResolvedValue([
+      { studentId: 's1', status: 'hadir', _count: { _all: 100 } },
+      { studentId: 's1', status: 'alpha', _count: { _all: 5 } },
+      { studentId: 's2', status: 'hadir', _count: { _all: 80 } },
+    ]);
+
+    const res = await service.attendanceStats({}, SA_USER);
+    expect(res.data).toHaveLength(2);
+    expect(res.data[0]!.stats.hadir).toBe(100);
+    expect(res.data[1]!.stats.pct).toBe(100);
+  });
+
+  // ── W1-4: studentGrades ────────────────────────────────────────────────────
+
+  it('SISWA → studentGrades dengan NA computation', async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
+    prisma.student.findUnique.mockResolvedValue({ id: 'student-1' });
+    prisma.student.findMany.mockResolvedValue([
+      { id: 'student-1', nis: '001', user: { fullName: 'Budi' }, class: { name: 'X TKJ 1' } },
+    ]);
+    prisma.grade.findMany.mockResolvedValue([
+      { studentId: 'student-1', score: 80, type: 'uh', assignment: { subject: 'Matematika' } },
+      { studentId: 'student-1', score: 85, type: 'uh', assignment: { subject: 'Matematika' } },
+      { studentId: 'student-1', score: 90, type: 'praktik', assignment: { subject: 'Matematika' } },
+      { studentId: 'student-1', score: 88, type: 'sikap', assignment: { subject: 'Matematika' } },
+      { studentId: 'student-1', score: 82, type: 'uts', assignment: { subject: 'Matematika' } },
+      { studentId: 'student-1', score: 84, type: 'uas', assignment: { subject: 'Matematika' } },
+    ]);
+
+    const res = await service.studentGrades({}, SISWA_USER);
+    expect(res.data).toHaveLength(1);
+    const subj = res.data[0]!.subjects[0]!;
+    expect(subj.subject).toBe('Matematika');
+    expect(subj.uh).toBe(83);
+    expect(subj.na).toBe(86);
+    expect(subj.status).toBe('tuntas');
+  });
+
+  it('NA dengan komponen parsial → renormalisasi', async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
+    prisma.student.findUnique.mockResolvedValue({ id: 'student-1' });
+    prisma.student.findMany.mockResolvedValue([
+      { id: 'student-1', nis: '001', user: { fullName: 'Budi' }, class: { name: 'X' } },
+    ]);
+    prisma.grade.findMany.mockResolvedValue([
+      { studentId: 'student-1', score: 80, type: 'uh', assignment: { subject: 'X' } },
+      { studentId: 'student-1', score: 90, type: 'uts', assignment: { subject: 'X' } },
+    ]);
+
+    const res = await service.studentGrades({}, SISWA_USER);
+    const subj = res.data[0]!.subjects[0]!;
+    expect(subj.uh).toBe(80);
+    expect(subj.uts).toBe(90);
+    expect(subj.praktik).toBeNull();
+    expect(subj.na).toBe(85);
+    expect(subj.status).toBe('tuntas');
+  });
+
+  it('NA remedial (< 75)', async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
+    prisma.student.findUnique.mockResolvedValue({ id: 'student-1' });
+    prisma.student.findMany.mockResolvedValue([
+      { id: 'student-1', nis: '001', user: { fullName: 'Budi' }, class: { name: 'X' } },
+    ]);
+    prisma.grade.findMany.mockResolvedValue([
+      { studentId: 'student-1', score: 60, type: 'uh', assignment: { subject: 'X' } },
+      { studentId: 'student-1', score: 65, type: 'uts', assignment: { subject: 'X' } },
+    ]);
+
+    const res = await service.studentGrades({}, SISWA_USER);
+    expect(res.data[0]!.subjects[0]!.na).toBe(63);
+    expect(res.data[0]!.subjects[0]!.status).toBe('remedial');
   });
 });

@@ -6,6 +6,32 @@
 /** Ambang ketuntasan minimal default (KKM). TODO: pindah ke pengaturan sekolah/per-mapel. */
 export const KKM_DEFAULT = 75;
 
+/** Bobot Nilai Akhir (NA) — konsisten dengan lib/academic.ts (frontend). */
+export const NA_WEIGHTS = { uh: 0.20, praktik: 0.25, sikap: 0.15, uts: 0.20, uas: 0.20 } as const;
+
+export interface NaComponents {
+  uh?: number;
+  praktik?: number;
+  sikap?: number;
+  uts?: number;
+  uas?: number;
+}
+
+/**
+ * Hitung Nilai Akhir (NA) dari komponen nilai.
+ * Hanya komponen yang terdefinisi (bukan undefined) yang diikutsertakan.
+ * Bobot direnormalisasi sehingga total = 1.
+ * Mengembalikan null bila tidak ada komponen terdefinisi.
+ */
+export function naOf(components: NaComponents): number | null {
+  const keys = Object.keys(NA_WEIGHTS) as (keyof typeof NA_WEIGHTS)[];
+  const defined = keys.filter((k) => components[k] !== undefined);
+  if (defined.length === 0) return null;
+  const totalWeight = defined.reduce((sum, k) => sum + NA_WEIGHTS[k], 0);
+  const weightedSum = defined.reduce((sum, k) => sum + (components[k] ?? 0) * NA_WEIGHTS[k], 0);
+  return Math.round(weightedSum / totalWeight);
+}
+
 /** Bucket umur tunggakan SPP (hari). */
 export const AGING_BUCKETS = [
   { key: '0-30', label: '0–30 hari', maxDays: 30 },
