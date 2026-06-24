@@ -1,11 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import {
   Home, CalendarClock, BookOpen, TrendingUp, ClipboardList,
-  UserCheck, Award, Sun, Moon, Bell, Settings, ChevronLeft,
+  UserCheck, Award, Sun, Moon, Bell, ChevronLeft,
+  LogOut, X, User as UserIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
+import ViewAsBanner from '@/components/layout/ViewAsBanner';
 import BerandaSiswa from './BerandaSiswa';
 import JadwalSiswa from './JadwalSiswa';
 import ModulSiswa from './ModulSiswa';
@@ -65,12 +68,20 @@ interface SiswaWorkspaceProps {
   attendance?: unknown[];
   schedule?: unknown[];
   announcements?: unknown[];
+  viewAs?: string | null;
 }
 
-export default function SiswaWorkspace({ grades, attendance, schedule, announcements }: SiswaWorkspaceProps) {
+function initials(name?: string | null): string {
+  if (!name) return 'U';
+  return name.split(' ').map((w) => w.charAt(0)).slice(0, 2).join('').toUpperCase();
+}
+
+export default function SiswaWorkspace({ grades, attendance, schedule, announcements, viewAs }: SiswaWorkspaceProps) {
+  const { data: session } = useSession();
   const [activeScreen, setActiveScreen] = useState<SiswaScreen>('beranda');
   const [activeModulId, setActiveModulId] = useState<number | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [modal, setModal] = useState<ModalState>({ type: null });
   const [badgeCelebration, setBadgeCelebration] = useState<BadgeCelebrationData>({ show: false });
   const [toast, setToast] = useState<string | null>(null);
@@ -252,15 +263,18 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
               <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-rose-500 ring-2 ring-[var(--bg)]" />
             </button>
             <button
-              onClick={() => showToast('Pengaturan (simulasi)')}
+              onClick={() => setAccountOpen(true)}
               className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
-              aria-label="Settings"
+              aria-label="Akun"
             >
-              <Settings className="h-4 w-4" />
+              <UserIcon className="h-4 w-4" />
             </button>
           </div>
         </div>
       </header>
+
+      {/* View-As Banner (when impersonating) */}
+      {viewAs && <ViewAsBanner viewAs={viewAs} />}
 
       {/* Mockup badge */}
       <div className="mx-auto max-w-[560px] px-5 py-2">
@@ -394,6 +408,63 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
         showToast={showToast}
         go={go}
       />
+
+      {/* Account Sheet */}
+      {accountOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center"
+          onClick={() => setAccountOpen(false)}
+        >
+          <div className="absolute inset-0 bg-black/50" />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Panel Akun"
+            className="relative w-full max-w-[560px] rounded-t-2xl border-t border-[var(--border)] bg-[var(--bg2)] p-5 pb-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setAccountOpen(false)}
+              aria-label="Tutup"
+              className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-[var(--surface2)]"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            {/* User info */}
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-emerald-800 text-lg font-extrabold text-white">
+                {initials(session?.user?.name)}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-[var(--text)]">{session?.user?.name ?? 'Pengguna'}</p>
+                <p className="truncate text-xs text-[var(--muted)]">{session?.user?.email ?? ''}</p>
+              </div>
+            </div>
+
+            {/* Theme toggle */}
+            <button
+              onClick={toggleTheme}
+              className="mb-2 flex w-full items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
+            >
+              <span className="flex items-center gap-2">
+                {theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                Tema {theme === 'dark' ? 'Gelap' : 'Terang'}
+              </span>
+              <span className="text-xs text-[var(--muted)]">Ketuk untuk ganti</span>
+            </button>
+
+            {/* Logout */}
+            <button
+              onClick={() => { window.location.href = '/api/auth/federated-logout'; }}
+              className="flex w-full items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-500 transition-colors hover:bg-red-500/20"
+            >
+              <LogOut className="h-4 w-4" />
+              Keluar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Toast */}
       {toast && (

@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getEffectiveRoles } from '@/lib/view-as';
+import { getEffectiveRoles, getActiveViewAs } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch, PaginatedResponse, GradeItem, AttendanceItem } from '@/lib/api';
 import { scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-times';
@@ -22,6 +22,7 @@ export default async function AkademikPage() {
   if (!session) redirect('/login');
   const token = session?.accessToken ?? '';
   const roles: string[] = await getEffectiveRoles(session);
+  const viewAs = await getActiveViewAs(session);
 
   if (roles.includes('INDUSTRI')) redirect('/dashboard');
   const isGuru = roles.includes('GURU');
@@ -63,6 +64,7 @@ export default async function AkademikPage() {
         attendance={attendanceRes?.data ?? []}
         schedule={scheduleRes?.data ?? []}
         announcements={announcementsRes?.data ?? []}
+        viewAs={viewAs}
       />
     );
   }
@@ -158,6 +160,7 @@ export default async function AkademikPage() {
     return (
       <OrtuWorkspace
         announcements={announcementsRes?.data ?? []}
+        viewAs={viewAs}
       />
     );
   }
