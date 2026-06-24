@@ -144,6 +144,7 @@ model Class {
   reportCards         ReportCard[]
   activities          ClassActivity[]
   lmsModules          LmsModule[]
+  assessmentSessions   AssessmentSession[]
 
   @@unique([name, academicYear])
   @@map("classes")
@@ -175,6 +176,7 @@ model Student {
   reportCards ReportCard[]
   sppPayments SppPayment[]
   lmsProgress LmsModuleProgress[]
+  assessmentResponses AssessmentResponse[]
 
   @@index([classId])   // StudentService.findAll(classId filter) + ownership SISWA/OT
   @@index([parentId])  // resolveChildStudentIds() — setiap request ORANG_TUA
@@ -212,7 +214,8 @@ model Teacher {
   rpps        Rpp[]
   activities  ClassActivity[]
   lmsModules  LmsModule[]
-
+    assessmentSessions AssessmentSession[]
+  
   @@map("teachers")
   @@schema("teacher")
 }
@@ -506,6 +509,7 @@ model LmsModule {
   rpp      Rpp?                @relation(fields: [rppId], references: [id])
   class    Class?              @relation(fields: [classId], references: [id])
   progress LmsModuleProgress[]
+  sessions  AssessmentSession[]
 
   @@index([teacherId, subject])
   @@index([classId, status])
@@ -542,6 +546,73 @@ enum LmsModuleStatus {
 
 enum LmsProgressStatus {
   locked
+  active
+  completed
+
+  @@schema("academic")
+}
+
+// =============================================================================
+// Assessment Sessions — sesi asesmen (diagnostik/formatif/sumatif) terkait LMS.
+// Guru membuat sesi dari modul LMS, siswa mengerjakan, sistem menilai otomatis.
+// =============================================================================
+model AssessmentSession {
+  id           String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  moduleId     String                @map("module_id") @db.Uuid
+  teacherId    String                @map("teacher_id") @db.Uuid
+  classId      String?               @map("class_id") @db.Uuid
+  title        String                @db.VarChar(255)
+  type         AssessmentType
+  status       AssessmentSessionStatus @default(draft)
+  questions    Json                  @db.JsonB
+  startedAt    DateTime?             @map("started_at")
+  completedAt  DateTime?             @map("completed_at")
+  academicYear String                @map("academic_year") @db.VarChar(9)
+  semester     Int
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at")
+
+  module     LmsModule           @relation(fields: [moduleId], references: [id])
+  teacher    Teacher             @relation(fields: [teacherId], references: [id])
+  class      Class?              @relation(fields: [classId], references: [id])
+  responses  AssessmentResponse[]
+
+  @@index([moduleId, status])
+  @@index([teacherId, academicYear, semester])
+  @@index([classId, status])
+  @@map("assessment_sessions")
+  @@schema("academic")
+}
+
+model AssessmentResponse {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId   String    @map("session_id") @db.Uuid
+  studentId   String    @map("student_id") @db.Uuid
+  answers     Json?     @db.JsonB
+  score       Int?
+  submittedAt DateTime? @map("submitted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  session  AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student  Student           @relation(fields: [studentId], references: [id])
+
+  @@unique([sessionId, studentId])
+  @@index([studentId])
+  @@map("assessment_responses")
+  @@schema("academic")
+}
+
+enum AssessmentType {
+  diagnostik
+  formatif
+  sumatif
+
+  @@schema("academic")
+}
+
+enum AssessmentSessionStatus {
+  draft
   active
   completed
 
