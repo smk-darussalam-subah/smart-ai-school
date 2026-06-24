@@ -57,6 +57,18 @@ export class StudentController {
   }
 
   /**
+   * GET /students/my-children — daftar semua anak untuk ORANG_TUA (parent-child resolution).
+   * Resolve keycloakId → auth.users.id → students where parentId === userId.
+   * Dideklarasikan SEBELUM :id agar tidak tertangkap sebagai route param.
+   */
+  @Roles('ORANG_TUA')
+  @RequirePermission('student.read')
+  @Get('my-children')
+  findMyChildren(@CurrentUser() user: AuthUser) {
+    return this.studentService.findMyChildren(user);
+  }
+
+  /**
    * GET /students/:id — ownership check (SISWA self, ORANG_TUA anak) di service
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')

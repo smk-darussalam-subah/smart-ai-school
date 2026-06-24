@@ -32,6 +32,17 @@ export class LmsController {
     return this.service.findAll(parsed.data, user);
   }
 
+  /**
+   * GET /lms/modules/my-learning — modul published + progres + ringkasan untuk SISWA.
+   * Dideklarasikan SEBELUM :id agar tidak tertangkap sebagai route param.
+   */
+  @Roles('SISWA')
+  @RequirePermission('lms.read')
+  @Get('my-learning')
+  findMyLearning(@CurrentUser() user: AuthUser) {
+    return this.service.findMyLearning(user);
+  }
+
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU', 'SISWA')
   @RequirePermission('lms.read')
   @Get(':id')
