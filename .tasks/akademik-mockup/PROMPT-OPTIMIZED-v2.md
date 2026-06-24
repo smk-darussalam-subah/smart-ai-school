@@ -408,30 +408,30 @@ PENGUMUMAN          read           read           create         create/approve
 ### TUGAS F4: KS Dashboard Mockup Adoption — ✅ COMPLETED (PR #226→#227)
 KsWorkspace.tsx (745 lines) implements 7 screens from `akademik-ks.html` (1,305 lines). Real data: RPP approval, grade aggregation, attendance, schedules. SIMULASI: health score, tren, sumatif audit, KKTP config. **18 gap items identified** — see F4-Config below.
 
-### TUGAS F4-Config: KS Dashboard Gap Closure — 18 items, 7 phases (P1-P7)
+### TUGAS F4-Config: KS Dashboard Gap Closure — 18 items, 7 phases (P1-P7) — ALL COMPLETED ✅
 Gap analysis antara `akademik-ks.html` mockup vs `KsWorkspace.tsx` production. Semua frontend-only, no backend.
 
 #### F4-Config Gap Items (referensi 2 file: mockup + production):
-| ID | Screen | Gap | Level |
-|----|--------|-----|-------|
-| G1 | All | Global filter bar (TA/Semester/Guru/Mapel) | L2 |
-| G2 | Beranda | KPI drill-down modals (Kehadiran, Guru Hadir, Kelas Berjalan) | L3 |
-| G3 | Beranda | Heatmap papan (rombel×JP grid, live indicator) | L3 |
-| G4 | Beranda | "Guru RPP turnaround > 7 hari" action item | L1 |
-| G5 | Beranda | Tren period selector (10H/1B/3B) | L1 |
-| G6 | Modul Ajar | RPP detail modal enrichment (Identitas, ATP, Profil Pelajar, Lampiran) | L3 |
-| G7 | Sumatif | Detail modal: pratinjau soal + approve/tolak footer | L2 |
-| G8 | Monitoring | Guru×Kelas matrix (currently kelas×mapel only) | L3 |
-| G9 | Monitoring | Rincian Progres per Guru progress bars | L2 |
-| G10 | Monitoring | Kehadiran Siswa per Sesi (JP) matrix | L3 |
-| G11 | Rekap | Rincian per Guru×Kelas×Mapel table | L2 |
-| G12 | Rekap | Per Guru — Rata² Tuntas progress bars | L2 |
-| G13 | KKTP | Per-mapel custom values + badges + slider onChange | L2 |
-| G14 | Jadwal | Konfigurasi Penjadwalan card (6 items) | L1 |
-| G15 | Jadwal | Conflict detection panel | L2 |
-| G16 | Jadwal | Beban Mengajar per Guru list | L2 |
-| G17 | Jadwal | Manual Schedule Edit modal | L3 |
-| G18 | All | Toast notifications after approve/reject | L1 |
+| ID | Screen | Gap | Level | Status |
+|----|--------|-----|-------|--------|
+| G1 | All | Global filter bar (TA/Semester/Guru/Mapel) | L2 | ✅ P2 |
+| G2 | Beranda | KPI drill-down modals (Kehadiran, Guru Hadir, Kelas Berjalan) | L3 | ✅ P3 |
+| G3 | Beranda | Heatmap papan (rombel×JP grid, live indicator) | L3 | ✅ P3 |
+| G4 | Beranda | "Guru RPP turnaround > 7 hari" action item | L1 | ✅ P1 |
+| G5 | Beranda | Tren period selector (10H/1B/3B) | L1 | ✅ P1 |
+| G6 | Modul Ajar | RPP detail modal enrichment (Identitas, ATP, Profil Pelajar, Lampiran) | L3 | ✅ P4 |
+| G7 | Sumatif | Detail modal: pratinjau soal + approve/tolak footer | L2 | ✅ P4 |
+| G8 | Monitoring | Guru×Kelas matrix (currently kelas×mapel only) | L3 | ✅ P5 |
+| G9 | Monitoring | Rincian Progres per Guru progress bars | L2 | ✅ P5 |
+| G10 | Monitoring | Kehadiran Siswa per Sesi (JP) matrix | L3 | ✅ P5 |
+| G11 | Rekap | Rincian per Guru×Kelas×Mapel table | L2 | ✅ P6 |
+| G12 | Rekap | Per Guru — Rata² Tuntas progress bars | L2 | ✅ P6 |
+| G13 | KKTP | Per-mapel custom values + badges + slider onChange | L2 | ✅ P2 |
+| G14 | Jadwal | Konfigurasi Penjadwalan card (6 items) | L1 | ✅ P7 |
+| G15 | Jadwal | Conflict detection panel | L2 | ✅ P7 |
+| G16 | Jadwal | Beban Mengajar per Guru list | L2 | ✅ P7 |
+| G17 | Jadwal | Manual Schedule Edit modal | L3 | ✅ P7 |
+| G18 | All | Toast notifications after approve/reject | L1 | ✅ P1 |
 
 ### TUGAS G: Dasbor Eksekutif Native (KS) — REVISED
 **Key finding:** Executive dashboard is ALREADY native Next.js (Metabase removed in 2N). 15 panels: 5 "real", 6 "soon", 6 "vision".
@@ -446,8 +446,8 @@ Gap analysis antara `akademik-ks.html` mockup vs `KsWorkspace.tsx` production. S
 ### F5: Session Flow Backend — PENDING (Wave 2)
 Assessment push, realtime monitor, auto-create LMS on RPP approval. → **Phase P12** (L4, depends on Wave 2 endpoints).
 
-### F6: Mobile Sidebar Hiding — PENDING
-SISWA & ORANG_TUA hide sidebar on mobile, show only content + native bottom nav. → **Phase P1** (L1, quick win).
+### F6: Mobile Sidebar Hiding — ✅ COMPLETED (Phase P1)
+SISWA & ORANG_TUA hide sidebar on mobile, show only content + native bottom nav. Implemented in `layout.tsx` (role detection) + `AppShell.tsx` (conditional chrome rendering).
 
 ---
 
@@ -618,9 +618,9 @@ Migrasi mockup dashboard akademik DIIS ke production: **sequential phase-based**
 | **P2** | G1 + G13 | L2×2 | `akademik-ks.html` (filterbar+kktp) + `KsWorkspace.tsx` | ~120k | ✅ |
 | **P3** | G2 + G3 | L3×2 | `akademik-ks.html` (beranda) + `KsWorkspace.tsx` | ~150k | ✅ |
 | **P4** | G6 + G7 | L3+L2 | `akademik-ks.html` (modul+sumatif) + `KsWorkspace.tsx` | ~120k | ✅ |
-| **P5** | G8 + G9 + G10 | L3+L2×2 | `akademik-ks.html` (monitor) + `KsWorkspace.tsx` | ~150k | ⬜ |
-| **P6** | G11 + G12 | L2×2 | `akademik-ks.html` (rekap) + `KsWorkspace.tsx` | ~100k | ⬜ |
-| **P7** | G14 + G15 + G16 + G17 | L1+L2×2+L3 | `akademik-ks.html` (jadwal) + `KsWorkspace.tsx` | ~150k | ⬜ |
+| **P5** | G8 + G9 + G10 | L3+L2×2 | `akademik-ks.html` (monitor) + `KsWorkspace.tsx` | ~150k | ✅ |
+| **P6** | G11 + G12 | L2×2 | `akademik-ks.html` (rekap) + `KsWorkspace.tsx` | ~100k | ✅ |
+| **P7** | G14 + G15 + G16 + G17 | L1+L2×2+L3 | `akademik-ks.html` (jadwal) + `KsWorkspace.tsx` | ~150k | ✅ |
 | **P8** | F3 | L3 | `akademik-guru-utuh.html` + AkademikWorkspace components | ~120k | ⬜ |
 | **P9** | W1-1 + W1-2 | L4×2 | API controller + Prisma schema | ~150k | ⬜ |
 | **P10** | W1-3 + W1-4 | L4×2 | API attendance/grades + Prisma schema | ~150k | ⬜ |
@@ -634,6 +634,31 @@ Migrasi mockup dashboard akademik DIIS ke production: **sequential phase-based**
 2. **Dependency** — P11 (Task G) butuh P10 (Wave 1B). P12 (F5) butuh P10. Sisanya berurutan.
 3. **1 prompt = 1 phase** — Jika context habis sebelum phase selesai, sisa task di-carry ke prompt berikutnya dengan note "Lanjut phase PX, task tersisa: ...".
 4. **Bisa merge** — Jika context cukup (estimasi <100k), 2 phase L1/L2 boleh digabung. TETAPI tetap verifikasi §10 per task.
+5. **ANTI-CIRCULAR-DEPENDENCY** (CRITICAL — added P7 closeout):
+   - **JANGAN** adapt dashboard A ke mockup B, lalu B ke C, lalu C kembali ke A. Ini adalah loop tak berujung.
+   - **P8 (F3)** uses `akademik-guru-utuh.html` as reference — NOT `akademik-guru-v2.html` (outdated).
+   - Guru dashboard is **already in production** with its own mockup. P8 is a parity CHECK, not a rebuild.
+   - Setiap dashboard punya mockup sendiri: Siswa→`akademik-siswa.html`, Guru→`akademik-guru-utuh.html`, KS→`akademik-ks.html`, Ortu→`akademik-ortu.html`.
+   - **JANGAN** salin fitur dari dashboard A ke B jika B sudah punya implementasi sendiri.
+
+### Completion Summary (P1-P7 — KS Dashboard Full Mockup Parity):
+**COMPLETED:** All 18 F4-Config gap items (G1-G18) closed across 7 phases.
+- **P1** (F6+G4+G5+G18): Mobile sidebar hiding, RPP turnaround action, tren period selector, toast notifications
+- **P2** (G1+G13): Global filter bar, KKTP per-mapel custom values
+- **P3** (G2+G3): KPI drill-down modals, heatmap papan with live JP indicator
+- **P4** (G6+G7): RPP detail modal enrichment, sumatif pratinjau soal + approve/tolak
+- **P5** (G8+G9+G10): Guru×Kelas matrix, per-guru progress bars, kehadiran per sesi JP matrix
+- **P6** (G11+G12): Rincian per Guru×Kelas×Mapel table, per-guru rata² tuntas progress bars
+- **P7** (G14+G15+G16+G17): Konfigurasi penjadwalan, conflict alerts, beban mengajar, schedule edit modal
+- **File modified:** `KsWorkspace.tsx` (745→~1540 lines), `layout.tsx`, `AppShell.tsx`
+- **Route size:** `/dashboard/akademik` 95.9 kB First Load JS
+
+**PENDING (P8-P14+):**
+- **P8** (F3): Guru dashboard parity check vs `akademik-guru-utuh.html` — NOT a rebuild, just gap audit
+- **P9-P10** (W1): Backend API endpoints (parent-child, student LMS, attendance agg, grade analytics)
+- **P11** (Task G): Executive dashboard native panel upgrades
+- **P12-P13** (W2): Backend API endpoints (SPP, submissions, CP, leaderboard, assessments, RPP→LMS)
+- **P14+** (W3): Future items (badges, question bank, gamification, WA log, AI generate)
 
 ### Template Prompt per Phase:
 ```

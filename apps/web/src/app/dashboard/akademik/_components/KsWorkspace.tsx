@@ -14,7 +14,7 @@ import {
   Target, CalendarClock, Users, BadgeCheck, Presentation, FileClock,
   AlertTriangle, Activity, TrendingUp, ListChecks, ChevronRight, X, UserX,
   Check, CheckCircle2, XCircle, Info, Save, Table2, LayoutGrid, SlidersHorizontal,
-  Route, Lightbulb, Paperclip, FileText,
+  Route, Lightbulb, Paperclip, FileText, RefreshCw,
   type LucideIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -83,6 +83,12 @@ const SIM_TREN_GURU_3B = [88, 90, 87, 91, 89, 92, 90, 93, 91, 94, 92, 95];
 // SIMULASI: Guru dengan RPP turnaround > 7 hari — backend aggregation belum ada
 const SIM_RPP_SLOW: number = 3;
 
+// SIMULASI: Scheduling config & conflicts — backend /scheduling belum tersedia
+const SIM_SCHED_CONFIG = { days: 6, jpPerDay: 8, maxJpGuru: 24 };
+const SIM_SCHED_CONFLICTS: { day: number; jp: number; rombel: string }[] = [
+  { day: 3, jp: 6, rombel: 'X TJKT 1' },
+];
+
 // SIMULASI: KKTP per-mapel custom values — backend /kktp-config belum tersedia
 const SIM_KKTP_DATA: Record<string, { kktp: number; affected: number }> = {
   'Matematika': { kktp: 70, affected: 4 },
@@ -95,6 +101,17 @@ const SIM_KKTP_DATA: Record<string, { kktp: number; affected: number }> = {
 };
 // SIMULASI: Guru list for filter — backend /teachers belum tersedia
 const SIM_GURU_LIST = ['Budi Hartono, S.Kom', 'Siti Aminah, S.Pd', 'Ahmad Rifai, S.T.', 'Dewi Lestari, S.Pd', 'Eko Prasetyo, S.Pd', 'Rina Wati, S.E.', 'Hendra Gunawan, S.Pd'];
+// SIMULASI: Monitoring KBM guru assignments — backend /monitoring/kbm belum tersedia
+const SIM_MON_GURUS = ['Budi Hartono', 'Siti Aminah', 'Ahmad Rifai', 'Dewi Lestari', 'Eko Prasetyo', 'Rina Wati'];
+
+// SIMULASI: Generate monitoring data from real kelasMapel — shared by MonitoringKbmKs & RekapAuditKs
+function genSimMonitor(km: { kelas: string; mapel: string; avg: number | null; tuntasPct: number | null; count: number }[]) {
+  return km.map((k, i) => {
+    const tp = k.tuntasPct ?? 75;
+    const status = tp >= 75 ? 'on' as const : tp >= 60 ? 'warn' as const : 'risk' as const;
+    return { guru: SIM_MON_GURUS[i % SIM_MON_GURUS.length]!, mapel: k.mapel, kelas: k.kelas, cp: tp, pert: 4 + (i % 4), rencana: 12 + (i % 5), jurnal: 3 + (i % 4), hadir: 85 + (i % 10), rata: k.avg, status };
+  });
+}
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -214,10 +231,10 @@ export default function KsWorkspace({
         {screen === 'beranda' && <BerandaKs hadirPct={hadirPct} todayAtt={todayAtt} pendingRpp={pendingRpp.length} pendingSumatif={pendingSumatif.length} belowKktp={belowKktp} schedules={schedules} classes={classes} onNavigate={setScreen} />}
         {screen === 'modul' && <ModulAjarKs rpp={rpp} onReview={setSelRpp} showToast={showToast} />}
         {screen === 'sumatif' && <AuditSumatifKs onOpenDetail={setSelSumatif} />}
-        {screen === 'monitor' && <MonitoringKbmKs kelasMapel={kelasMapel} attendances={attendances} schedules={schedules} />}
+        {screen === 'monitor' && <MonitoringKbmKs kelasMapel={kelasMapel} attendances={attendances} schedules={schedules} classes={classes} />}
         {screen === 'rekap' && <RekapAuditKs kelasMapel={kelasMapel} grades={grades} attendances={attendances} activities={activities} rpp={rpp} />}
         {screen === 'kktp' && <KktpKs kelasMapel={kelasMapel} showToast={showToast} />}
-        {screen === 'jadwal' && <JadwalTugasKs schedules={schedules} classes={classes} />}
+        {screen === 'jadwal' && <JadwalTugasKs schedules={schedules} classes={classes} showToast={showToast} pendingRpp={pendingRpp} pendingSumatif={pendingSumatif} />}
       </div>
 
       {/* Modul Ajar Detail Modal */}
@@ -728,15 +745,42 @@ function AuditSumatifKs({ onOpenDetail }: { onOpenDetail: (s: typeof SIM_SUMATIF
 
 // ═══ SCREEN 4: MONITORING KBM ═════════════════════════════════════════════════
 
-function MonitoringKbmKs({ kelasMapel, attendances: _attendances, schedules: _schedules }: {
+function MonitoringKbmKs({ kelasMapel, attendances: _attendances, schedules, classes }: {
   kelasMapel: { kelas: string; mapel: string; avg: number | null; tuntasPct: number | null; count: number }[];
-  attendances: AttendanceItem[]; schedules: ScheduleItem[];
+  attendances: AttendanceItem[]; schedules: ScheduleItem[]; classes: ClassRef[];
 }) {
   const onTrack = kelasMapel.filter((k) => k.tuntasPct !== null && k.tuntasPct >= 75).length;
   const perhatian = kelasMapel.filter((k) => k.tuntasPct !== null && k.tuntasPct >= 60 && k.tuntasPct < 75).length;
   const berisiko = kelasMapel.filter((k) => k.tuntasPct !== null && k.tuntasPct < 60).length;
 
   const cellTone = (pct: number | null) => pct === null ? 'bg-[#f9fbfa] text-[#cbd5e1]' : pct >= 75 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : pct >= 60 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-600 border-rose-200';
+
+  // SIMULASI: Generate monitoring data from real kelasMapel — backend /monitoring/kbm belum tersedia
+  const monData = useMemo(() => kelasMapel.map((k, i) => {
+    const tp = k.tuntasPct ?? 75;
+    const status = tp >= 75 ? 'on' as const : tp >= 60 ? 'warn' as const : 'risk' as const;
+    return { guru: SIM_MON_GURUS[i % SIM_MON_GURUS.length]!, mapel: k.mapel, kelas: k.kelas, cp: tp, pert: 4 + (i % 4), rencana: 12 + (i % 5), jurnal: 3 + (i % 4), hadir: 85 + (i % 10), rata: k.avg, status };
+  }), [kelasMapel]);
+
+  // G8: Guru × Kelas matrix data
+  const guruList = useMemo(() => [...new Set(monData.map((m) => m.guru))], [monData]);
+  const kelasList = useMemo(() => [...new Set(monData.map((m) => m.kelas))], [monData]);
+  const monCellCls = (s: string) => s === 'on' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : s === 'warn' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-rose-50 border-rose-200 text-rose-600';
+  const monCellCol = (s: string) => s === 'on' ? 'text-emerald-700' : s === 'warn' ? 'text-amber-600' : 'text-rose-600';
+
+  // G10: Kehadiran per Sesi (JP) matrix
+  const dow = scheduleDayOfWeek();
+  const todaySched = schedules.filter((s) => s.dayOfWeek === dow);
+  const classJpSched = useMemo(() => {
+    const m = new Map<string, Map<number, ScheduleItem>>();
+    for (const s of todaySched) {
+      if (!m.has(s.classId)) m.set(s.classId, new Map());
+      for (let jp = s.jpStart; jp <= s.jpEnd; jp++) m.get(s.classId)!.set(jp, s);
+    }
+    return m;
+  }, [todaySched]);
+  const { minutes } = wibNow();
+  const liveJp = currentJp(minutes);
 
   return (
     <div className="space-y-4">
@@ -749,7 +793,96 @@ function MonitoringKbmKs({ kelasMapel, attendances: _attendances, schedules: _sc
         <Kpi icon={XCircle} label="Berisiko" value={`${berisiko}`} valueClass="text-rose-600" />
       </div>
 
-      {/* Matriks Progres */}
+      {/* G8: Matriks Progres CP — Guru × Kelas (SIMULASI) */}
+      <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><LayoutGrid className="h-4 w-4 text-emerald-600" />Matriks Progres CP — Guru × Kelas</h4>
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> SIMULASI</span>
+        </div>
+        <p className="text-[11.5px] text-[#6b8079]">Persen ketercapaian CP/TP per guru × kelas</p>
+        {monData.length > 0 ? (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-[11.5px] border-separate" style={{ borderSpacing: 4 }}>
+              <thead><tr className="text-[10px] font-extrabold uppercase text-[#6b8079]"><th className="px-2 py-2 text-left">Guru \ Kelas</th>{kelasList.map((k) => <th key={k} className="px-2 py-2 text-center">{k}</th>)}</tr></thead>
+              <tbody>
+                {guruList.map((g) => (
+                  <tr key={g}>
+                    <td className="px-2 py-2 text-left font-bold text-[#0f2e25] whitespace-nowrap">{g.split(',')[0]}</td>
+                    {kelasList.map((k) => {
+                      const r = monData.find((m) => m.guru === g && m.kelas === k);
+                      return r ? (
+                        <td key={k} className={clsx('rounded-md border px-2 py-2 text-center', monCellCls(r.status))}>
+                          <b>{r.cp}%</b>
+                          <div className="text-[9.5px] font-medium opacity-80">{r.mapel.length > 10 ? r.mapel.slice(0, 9) + '…' : r.mapel}</div>
+                          <div className="text-[9.5px] opacity-60">{r.pert}/{r.rencana} pert</div>
+                        </td>
+                      ) : <td key={k} className="px-2 py-2 text-center text-[#cbd5e1]">–</td>;
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <div className="mt-3 grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] text-[#9bb0a8]">Belum ada data.</div>}
+      </div>
+
+      {/* G9: Rincian Progres per Guru (SIMULASI) */}
+      <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
+        <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><ListChecks className="h-4 w-4 text-emerald-600" />Rincian Progres per Guru</h4>
+        <div className="mt-3 space-y-1">
+          {monData.map((r, i) => (
+            <div key={i} className="grid grid-cols-[1fr_1fr_2fr_48px_56px] items-center gap-3 border-b border-[#f0f4f2] py-2 text-[12px] font-bold">
+              <span className="text-[#0f2e25]">{r.guru.split(',')[0]}</span>
+              <span className="text-[#6b8079]">{r.kelas}</span>
+              <div>
+                <div className="text-[11px] font-bold text-[#355a4e]">{r.mapel}</div>
+                <div className="mt-1 h-[9px] overflow-hidden rounded-md bg-[#eef3f0]"><span className="block h-full rounded-md" style={{ width: `${r.cp}%`, background: r.status === 'on' ? 'linear-gradient(90deg,#34d399,#059669)' : r.status === 'warn' ? 'linear-gradient(90deg,#fbbf24,#d97706)' : 'linear-gradient(90deg,#fb7185,#e11d48)' }} /></div>
+              </div>
+              <span className={clsx('text-right', monCellCol(r.status))}>{r.cp}%</span>
+              <span className="text-right text-[#6b8079]">{r.pert}/{r.rencana}</span>
+            </div>
+          ))}
+          {monData.length === 0 && <div className="grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] text-[#9bb0a8]">Belum ada data.</div>}
+        </div>
+      </div>
+
+      {/* G10: Kehadiran Siswa per Sesi (JP) */}
+      <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><Users className="h-4 w-4 text-emerald-600" />Kehadiran Siswa per Sesi (JP)</h4>
+          <span className="rounded-md bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">{wibDateLabel()}</span>
+        </div>
+        <p className="text-[11.5px] text-[#6b8079]">Persentase kehadiran siswa per rombel × sesi (JP) — hari ini · <span className="font-bold text-amber-700">SIMULASI</span></p>
+        {todaySched.length > 0 ? (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-[11.5px] border-separate" style={{ borderSpacing: 4 }}>
+              <thead><tr className="text-[10px] font-extrabold uppercase text-[#6b8079]"><th className="px-2 py-2 text-left">Rombel \ JP</th>{JP_SLOTS.map((slot) => <th key={slot.jp} className={clsx('px-2 py-2 text-center', slot.jp === liveJp ? 'text-emerald-700' : '')}>JP{slot.jp}</th>)}</tr></thead>
+              <tbody>
+                {classes.map((cls, ci) => {
+                  const jpMap = classJpSched.get(cls.id);
+                  return (
+                    <tr key={cls.id}>
+                      <td className="px-2 py-2 text-left font-bold text-[#0f2e25] whitespace-nowrap">{cls.name}</td>
+                      {JP_SLOTS.map((slot) => {
+                        const sched = jpMap?.get(slot.jp);
+                        if (sched) {
+                          const hadir = 85 + ((ci * 3 + slot.jp * 2) % 13);
+                          const cls2 = hadir >= 90 ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : hadir >= 85 ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-rose-50 border-rose-200 text-rose-600';
+                          const mp = sched.teachingAssignment?.subject ?? '—';
+                          return <td key={slot.jp} className={clsx('rounded-md border px-2 py-1.5 text-center', cls2)}><b>{hadir}%</b><div className="text-[9.5px] opacity-70">{mp.length > 10 ? mp.slice(0, 9) + '…' : mp}</div></td>;
+                        }
+                        return <td key={slot.jp} className="rounded-md border border-dashed border-[#e6efea] bg-[#f4f7f5] px-2 py-1.5 text-center text-[#9bb0a8]">—</td>;
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : <div className="mt-3 grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">Tidak ada jadwal mengajar hari ini.</div>}
+      </div>
+
+      {/* Rincian per Kelas × Mapel (real data) */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><Table2 className="h-4 w-4 text-emerald-600" />Rincian per Kelas × Mapel</h4>
         <p className="text-[11.5px] text-[#6b8079]">Rata² nilai & persentase ketuntasan KKTP dari data gradebook nyata</p>
@@ -794,6 +927,23 @@ function RekapAuditKs({ kelasMapel, grades, attendances, activities, rpp }: {
   const kelasList = [...new Set(kelasMapel.map((k) => k.kelas))].sort();
   const mapelList = [...new Set(kelasMapel.map((k) => k.mapel))].sort();
 
+  // SIMULASI: Monitoring data for G11 table & G12 progress bars
+  const monData = useMemo(() => genSimMonitor(kelasMapel), [kelasMapel]);
+  // G11: Sort by guru → kelas → mapel
+  const sortedMon = useMemo(() => [...monData].sort((a, b) =>
+    a.guru.localeCompare(b.guru) || a.kelas.localeCompare(b.kelas) || a.mapel.localeCompare(b.mapel)
+  ), [monData]);
+  // G12: Per-guru average CP
+  const guruAgg = useMemo(() => {
+    const m = new Map<string, { cp: number; count: number }>();
+    for (const r of monData) { const g = m.get(r.guru) ?? { cp: 0, count: 0 }; g.cp += r.cp; g.count++; m.set(r.guru, g); }
+    return [...m.entries()].map(([guru, v]) => ({ guru, avgCp: Math.round(v.cp / v.count) }));
+  }, [monData]);
+
+  const statusBadge = (s: string) => s === 'on' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : s === 'warn' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-600 border-rose-200';
+  const statusLabel = (s: string) => s === 'on' ? 'On Track' : s === 'warn' ? 'Perhatian' : 'Berisiko';
+  const cpBadge = (cp: number) => cp >= 75 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : cp >= 60 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-600 border-rose-200';
+
   return (
     <div className="space-y-4">
       <h3 className="flex items-center gap-2 text-[17px] font-bold text-[#0f2e25]"><ClipboardCheck className="h-5 w-5 text-emerald-600" />Rekap Audit Per Guru</h3>
@@ -807,33 +957,89 @@ function RekapAuditKs({ kelasMapel, grades, attendances, activities, rpp }: {
         <Kpi icon={Users} label="Kehadiran" value={hadirPct !== null ? `${hadirPct}%` : '—'} />
       </div>
 
-      {/* Matriks Ketuntasan */}
-      {kelasList.length > 0 && mapelList.length > 0 && (
+      {/* G11: Rincian per Guru × Kelas × Mapel (SIMULASI) */}
+      <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><Table2 className="h-4 w-4 text-emerald-600" />Rincian per Guru × Kelas × Mapel</h4>
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> SIMULASI</span>
+        </div>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-[12px]">
+            <thead><tr className="border-b border-[#e6efea] text-left text-[10.5px] uppercase tracking-wide text-[#6b8079]">
+              <th className="py-2 pr-3">Guru</th><th className="py-2 pr-3">Mapel</th><th className="py-2 pr-3">Kelas</th>
+              <th className="py-2 pr-3 text-right">Rata²</th><th className="py-2 pr-3 text-right">CP</th><th className="py-2 pr-3 text-right">Hadir</th>
+              <th className="py-2 pr-3 text-right">Pertemuan</th><th className="py-2 pr-3 text-right">Jurnal</th><th className="py-2">Status</th>
+            </tr></thead>
+            <tbody>
+              {sortedMon.map((r, i) => (
+                <tr key={i} className="border-b border-[#f0f4f2]">
+                  <td className="py-2.5 pr-3 font-bold text-[#0f2e25]">{r.guru.split(',')[0]}</td>
+                  <td className="py-2.5 pr-3 text-[#355a4e]">{r.mapel}</td>
+                  <td className="py-2.5 pr-3 text-[#355a4e]">{r.kelas}</td>
+                  <td className="py-2.5 pr-3 text-right font-bold text-[#0f2e25]">{r.rata ?? '—'}</td>
+                  <td className="py-2.5 pr-3 text-right"><span className={clsx('rounded-md border px-2 py-0.5 text-[10.5px] font-bold', cpBadge(r.cp))}>{r.cp}%</span></td>
+                  <td className="py-2.5 pr-3 text-right text-[#355a4e]">{r.hadir}%</td>
+                  <td className="py-2.5 pr-3 text-right text-[#355a4e]">{r.pert}/{r.rencana}</td>
+                  <td className="py-2.5 pr-3 text-right text-[#355a4e]">{r.jurnal}</td>
+                  <td className="py-2.5"><span className={clsx('rounded-md border px-2 py-0.5 text-[10.5px] font-bold', statusBadge(r.status))}>{statusLabel(r.status)}</span></td>
+                </tr>
+              ))}
+              {sortedMon.length === 0 && (<tr><td colSpan={9} className="py-6 text-center text-[#9bb0a8]">Belum ada data.</td></tr>)}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Matrix + Per Guru (2-column grid, matching mockup layout) */}
+      <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
+        {/* Matriks Ketuntasan */}
+        {kelasList.length > 0 && mapelList.length > 0 && (
+          <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
+            <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><LayoutGrid className="h-4 w-4 text-emerald-600" />Matriks Ketuntasan KKTP — Kelas × Mapel</h4>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-[11.5px] border-separate" style={{ borderSpacing: 4 }}>
+                <thead><tr className="text-[10px] font-extrabold uppercase text-[#6b8079]">
+                  <th className="px-2 py-2 text-left">Kelas</th>
+                  {mapelList.map((m) => <th key={m} className="px-2 py-2 text-center">{m.length > 10 ? m.slice(0, 8) + '…' : m}</th>)}
+                </tr></thead>
+                <tbody>
+                  {kelasList.map((k) => (
+                    <tr key={k}>
+                      <td className="px-2 py-2 text-left font-bold text-[#0f2e25]">{k}</td>
+                      {mapelList.map((mp) => {
+                        const r = kelasMapel.find((x) => x.kelas === k && x.mapel === mp);
+                        return r?.tuntasPct != null ? (
+                          <td key={mp} className={clsx('rounded-md px-2 py-2 text-center font-bold border', r.tuntasPct >= 75 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : r.tuntasPct >= 60 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-600 border-rose-200')} style={{ borderRadius: 4 }}>{r.tuntasPct}%</td>
+                        ) : <td key={mp} className="px-2 py-2 text-center text-[#cbd5e1]">–</td>;
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* G12: Per Guru — Rata² Tuntas (SIMULASI) */}
         <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
-          <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><LayoutGrid className="h-4 w-4 text-emerald-600" />Matriks Ketuntasan KKTP — Kelas × Mapel</h4>
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-[11.5px] border-separate" style={{ borderSpacing: 4 }}>
-              <thead><tr className="text-[10px] font-extrabold uppercase text-[#6b8079]">
-                <th className="px-2 py-2 text-left">Kelas</th>
-                {mapelList.map((m) => <th key={m} className="px-2 py-2 text-center">{m.length > 10 ? m.slice(0, 8) + '…' : m}</th>)}
-              </tr></thead>
-              <tbody>
-                {kelasList.map((k) => (
-                  <tr key={k}>
-                    <td className="px-2 py-2 text-left font-bold text-[#0f2e25]">{k}</td>
-                    {mapelList.map((mp) => {
-                      const r = kelasMapel.find((x) => x.kelas === k && x.mapel === mp);
-                      return r?.tuntasPct != null ? (
-                        <td key={mp} className={clsx('rounded-md px-2 py-2 text-center font-bold border', r.tuntasPct >= 75 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : r.tuntasPct >= 60 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-600 border-rose-200')} style={{ borderRadius: 4 }}>{r.tuntasPct}%</td>
-                      ) : <td key={mp} className="px-2 py-2 text-center text-[#cbd5e1]">–</td>;
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="flex items-center justify-between">
+            <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><TrendingUp className="h-4 w-4 text-emerald-600" />Per Guru — Rata² Tuntas</h4>
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> SIMULASI</span>
+          </div>
+          <div className="mt-3 space-y-3">
+            {guruAgg.map((g) => (
+              <div key={g.guru} className="flex items-center gap-3">
+                <span className="w-24 shrink-0 text-[12px] font-bold text-[#0f2e25]">{g.guru.split(',')[0]}</span>
+                <div className="h-[10px] flex-1 overflow-hidden rounded-md bg-[#eef3f0]">
+                  <span className="block h-full rounded-md" style={{ width: `${g.avgCp}%`, background: g.avgCp >= 75 ? 'linear-gradient(90deg,#34d399,#059669)' : g.avgCp >= 60 ? 'linear-gradient(90deg,#fbbf24,#d97706)' : 'linear-gradient(90deg,#fb7185,#e11d48)' }} />
+                </div>
+                <span className={clsx('w-9 shrink-0 text-right text-[12px] font-bold', g.avgCp >= 75 ? 'text-emerald-700' : g.avgCp >= 60 ? 'text-amber-600' : 'text-rose-600')}>{g.avgCp}%</span>
+              </div>
+            ))}
+            {guruAgg.length === 0 && <div className="grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] text-[#9bb0a8]">Belum ada data.</div>}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -896,9 +1102,19 @@ function KktpKs({ kelasMapel, showToast }: { kelasMapel: { mapel: string }[]; sh
 
 // ═══ SCREEN 7: JADWAL & TUGAS ═════════════════════════════════════════════════
 
-function JadwalTugasKs({ schedules, classes }: { schedules: ScheduleItem[]; classes: ClassRef[] }) {
+function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumatif }: {
+  schedules: ScheduleItem[]; classes: ClassRef[];
+  showToast: (msg: string) => void;
+  pendingRpp: RppItem[]; pendingSumatif: typeof SIM_SUMATIF[number][];
+}) {
   const [selClass, setSelClass] = useState<string>('all');
   const filtered = selClass === 'all' ? schedules : schedules.filter((s) => s.classId === selClass);
+
+  // G17: Schedule edit modal state
+  const [editCtx, setEditCtx] = useState<{ day: number; classId: string; jp: number; className: string } | null>(null);
+  const [editMapel, setEditMapel] = useState('');
+  const [editGuru, setEditGuru] = useState('');
+  const [editRuang, setEditRuang] = useState('');
 
   const matrixRows = JP_SLOTS.map((slot) => ({
     slot,
@@ -907,6 +1123,46 @@ function JadwalTugasKs({ schedules, classes }: { schedules: ScheduleItem[]; clas
 
   const totalJP = schedules.reduce((sum, s) => sum + (s.jpEnd - s.jpStart + 1), 0);
 
+  // Beban Mengajar per Guru
+  const guruLoad = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of schedules) {
+      const name = s.teachingAssignment.teacher?.user?.fullName ?? '—';
+      m.set(name, (m.get(name) ?? 0) + (s.jpEnd - s.jpStart + 1));
+    }
+    return [...m.entries()].map(([name, jp]) => ({ name, jp })).sort((a, b) => b.jp - a.jp);
+  }, [schedules]);
+  const over24 = guruLoad.filter((g) => g.jp > SIM_SCHED_CONFIG.maxJpGuru).length;
+
+  // G15: Tugas mendatang (pending RPP + sumatif)
+  const tugasMendatang = useMemo(() => [
+    ...pendingRpp.map((r, i) => ({ title: r.title, subject: r.subject, kelas: r.class?.name ?? '—', deadline: `${2 + i} hari`, status: 'Menunggu Review' })),
+    ...pendingSumatif.map((s, i) => ({ title: s.judul, subject: s.mapel, kelas: s.kelas, deadline: `${3 + i} hari`, status: 'Menunggu Audit' })),
+  ], [pendingRpp, pendingSumatif]);
+
+  // Unique mapel list for edit modal dropdown
+  const mapelList = useMemo(() => [...new Set(schedules.map((s) => s.teachingAssignment?.subject).filter(Boolean))].sort(), [schedules]);
+
+  // G17: Schedule edit handlers
+  const openSchedEdit = (day: number, classId: string, jp: number) => {
+    const cls = classes.find((c) => c.id === classId);
+    const existing = schedules.find((s) => s.classId === classId && s.dayOfWeek === day && jp >= s.jpStart && jp <= s.jpEnd);
+    setEditCtx({ day, classId, jp, className: cls?.name ?? '—' });
+    setEditMapel(existing?.teachingAssignment?.subject ?? mapelList[0] ?? '');
+    setEditGuru(existing?.teachingAssignment?.teacher?.user?.fullName ?? SIM_GURU_LIST[0] ?? '');
+    setEditRuang(existing?.room ?? '');
+  };
+  const saveSchedEdit = () => {
+    if (!editCtx) return;
+    showToast(`Jadwal manual disimpan · ${DOW[editCtx.day]} JP${editCtx.jp}`);
+    setEditCtx(null);
+  };
+  const clearSchedEdit = () => {
+    if (!editCtx) return;
+    showToast('Slot jadwal dikosongkan');
+    setEditCtx(null);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -914,6 +1170,7 @@ function JadwalTugasKs({ schedules, classes }: { schedules: ScheduleItem[]; clas
           <h3 className="flex items-center gap-2 text-[17px] font-bold text-[#0f2e25]"><CalendarClock className="h-5 w-5 text-emerald-600" />Jadwal & Pembagian Tugas Mengajar</h3>
           <p className="text-[12.5px] text-[#6b8079]">{classes.length} rombel · {totalJP} JP total · klik sel untuk detail</p>
         </div>
+        <button onClick={() => showToast('Jadwal digenerate ulang · SIMULASI')} className="inline-flex items-center gap-1.5 rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><RefreshCw className="h-3.5 w-3.5" />Generate Ulang</button>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -922,6 +1179,32 @@ function JadwalTugasKs({ schedules, classes }: { schedules: ScheduleItem[]; clas
         <Kpi icon={Users} label="Mapel" value={`${new Set(schedules.map((s) => s.teachingAssignment?.subject).filter(Boolean)).size}`} />
         <Kpi icon={Presentation} label="Sesi" value={`${schedules.length}`} />
       </div>
+
+      {/* G14: Konfigurasi Penjadwalan */}
+      <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
+        <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><SlidersHorizontal className="h-4 w-4 text-emerald-600" />Konfigurasi Penjadwalan</h4>
+        <div className="mt-3 grid grid-cols-3 gap-3 lg:grid-cols-6">
+          {[['Hari Aktif', `${SIM_SCHED_CONFIG.days}`], ['JP/Hari', `${SIM_SCHED_CONFIG.jpPerDay}`], ['Total JP/Minggu', `${SIM_SCHED_CONFIG.days * SIM_SCHED_CONFIG.jpPerDay}`], ['Rombel', `${classes.length}`], ['Guru', `${SIM_GURU_LIST.length}`], ['Max JP/Guru', `${SIM_SCHED_CONFIG.maxJpGuru}`]].map(([label, val]) => (
+            <div key={label} className="rounded-xl bg-[#f4f7f5] px-3 py-2.5 text-center"><div className="text-[20px] font-extrabold text-[#0f2e25]">{val}</div><div className="text-[10.5px] font-medium text-[#6b8079]">{label}</div></div>
+          ))}
+        </div>
+      </div>
+
+      {/* G16: Conflict Panel */}
+      {SIM_SCHED_CONFLICTS.length > 0 ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-5 shadow-sm">
+          <h4 className="flex items-center gap-2 text-[14px] font-bold text-rose-600"><AlertTriangle className="h-4 w-4" />{SIM_SCHED_CONFLICTS.length} Konflik Penjadwalan <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">SIMULASI</span></h4>
+          <p className="text-[11.5px] text-rose-600">Tidak ada guru tersedia untuk slot berikut:</p>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-[12px]"><thead><tr className="border-b border-rose-200 text-left text-[10.5px] uppercase text-rose-400"><th className="py-2 pr-3">Hari</th><th className="py-2 pr-3">JP</th><th className="py-2">Rombel</th></tr></thead><tbody>
+              {SIM_SCHED_CONFLICTS.map((c, i) => <tr key={i} className="border-b border-rose-100"><td className="py-2 pr-3 font-bold text-rose-700">{DOW[c.day]}</td><td className="py-2 pr-3 text-rose-600">JP{c.jp}</td><td className="py-2 text-rose-600">{c.rombel}</td></tr>)}
+            </tbody></table>
+          </div>
+          <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-medium text-amber-700"><Info className="mr-1 inline h-3 w-3" />Klik "Generate Ulang" untuk penjadwalan ulang, atau tambahkan guru untuk mapel yang bentrok.</div>
+        </div>
+      ) : (
+        <div className="rounded-lg bg-emerald-50 px-3 py-2 text-[11.5px] font-semibold text-emerald-700"><CheckCircle2 className="mr-1 inline h-3.5 w-3.5" /><b>Tanpa konflik!</b> Semua {SIM_SCHED_CONFIG.days * SIM_SCHED_CONFIG.jpPerDay} slot × {classes.length} rombel berhasil diisi.</div>
+      )}
 
       {/* Matriks Jadwal Mingguan */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
@@ -943,17 +1226,96 @@ function JadwalTugasKs({ schedules, classes }: { schedules: ScheduleItem[]; clas
                 <tr key={slot.jp}>
                   <td className="px-2 py-2 text-[10.5px] font-extrabold text-emerald-700">JP {slot.jp}<span className="block font-medium text-[#9bb0a8]">{fmtMin(slot.startMin)}</span></td>
                   {cells.map((c, i) => c ? (
-                    <td key={i} className="rounded-md border border-emerald-200 bg-emerald-50/40 px-2 py-1.5 text-center">
+                    <td key={i} onClick={() => openSchedEdit(i + 1, c.classId, slot.jp)} className="cursor-pointer rounded-md border border-emerald-200 bg-emerald-50/40 px-2 py-1.5 text-center hover:bg-emerald-50">
                       <b className="text-[10.5px] text-[#0f2e25]">{c.teachingAssignment?.subject?.slice(0, 8) ?? '—'}</b>
                       <div className="text-[9.5px] text-[#6b8079]">{c.class?.name ?? '—'}</div>
                     </td>
-                  ) : <td key={i} className="rounded-md border border-[#e6efea] bg-[#f9fbfa]" />)}
+                  ) : <td key={i} onClick={() => selClass !== 'all' && openSchedEdit(i + 1, selClass, slot.jp)} className="cursor-pointer rounded-md border border-[#e6efea] bg-[#f9fbfa] text-center text-[#9bb0a8] hover:bg-[#f0f4f2]">+</td>)}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Beban Mengajar per Guru */}
+      <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><Users className="h-4 w-4 text-emerald-600" />Beban Mengajar per Guru</h4>
+          <span className="rounded-md bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">{over24} guru &gt;{SIM_SCHED_CONFIG.maxJpGuru} JP</span>
+        </div>
+        <div className="mt-3 max-h-[460px] space-y-2.5 overflow-auto">
+          {guruLoad.map((g) => {
+            const over = g.jp > SIM_SCHED_CONFIG.maxJpGuru;
+            const pct = Math.min(100, (g.jp / SIM_SCHED_CONFIG.maxJpGuru) * 100);
+            return (
+              <div key={g.name} className="flex items-center gap-3">
+                <span className="w-28 shrink-0 truncate text-[12px] font-bold text-[#0f2e25]" title={g.name}>{g.name.split(',')[0]}</span>
+                <div className="h-[9px] flex-1 overflow-hidden rounded-md bg-[#eef3f0]"><span className="block h-full rounded-md" style={{ width: `${pct}%`, background: over ? 'linear-gradient(90deg,#fbbf24,#d97706)' : 'linear-gradient(90deg,#34d399,#059669)' }} /></div>
+                <span className={clsx('w-12 shrink-0 text-right text-[12px] font-bold', over ? 'text-amber-600' : 'text-[#355a4e]')}>{g.jp} JP</span>
+              </div>
+            );
+          })}
+          {guruLoad.length === 0 && <div className="grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] text-[#9bb0a8]">Belum ada data.</div>}
+        </div>
+      </div>
+
+      {/* G15: Tugas Mendatang */}
+      <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
+        <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><FileClock className="h-4 w-4 text-emerald-600" />Tugas Mendatang</h4>
+        <div className="mt-3 space-y-1">
+          {tugasMendatang.map((t, i) => (
+            <div key={i} className="grid grid-cols-[2fr_1fr_1fr_70px_110px] items-center gap-2 border-b border-[#f0f4f2] py-2.5 text-[12px]">
+              <span className="font-bold text-[#0f2e25]">{t.title}</span>
+              <span className="text-[#355a4e]">{t.subject}</span>
+              <span className="text-[#6b8079]">{t.kelas}</span>
+              <span className="text-right font-bold text-amber-600">{t.deadline}</span>
+              <span className="text-right"><span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">{t.status}</span></span>
+            </div>
+          ))}
+          {tugasMendatang.length === 0 && <div className="grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] text-[#9bb0a8]">Tidak ada tugas mendesak.</div>}
+        </div>
+      </div>
+
+      {/* G17: Schedule Edit Modal */}
+      {editCtx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEditCtx(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-[#e6efea] px-5 py-3.5">
+              <div>
+                <div className="text-[14px] font-bold text-[#0f2e25]">Edit Jadwal — {editCtx.className}</div>
+                <div className="text-[11.5px] text-[#6b8079]">{DOW[editCtx.day]} · JP{editCtx.jp} · <span className="font-bold text-amber-700">SIMULASI</span></div>
+              </div>
+              <button onClick={() => setEditCtx(null)} className="text-[#9bb0a8] hover:text-[#0f2e25]"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-3 px-5 py-4">
+              <div>
+                <label className="text-[11px] font-bold uppercase text-[#6b8079]">Mapel</label>
+                <select value={editMapel} onChange={(e) => setEditMapel(e.target.value)} className="mt-1 w-full rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-medium text-[#0f2e25]">
+                  {mapelList.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold uppercase text-[#6b8079]">Guru</label>
+                <select value={editGuru} onChange={(e) => setEditGuru(e.target.value)} className="mt-1 w-full rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-medium text-[#0f2e25]">
+                  {SIM_GURU_LIST.map((g) => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold uppercase text-[#6b8079]">Ruang</label>
+                <input value={editRuang} onChange={(e) => setEditRuang(e.target.value)} placeholder="cth. Lab Komputer 1" className="mt-1 w-full rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-medium text-[#0f2e25]" />
+              </div>
+            </div>
+            <div className="flex items-center justify-between border-t border-[#e6efea] px-5 py-3.5">
+              <button onClick={clearSchedEdit} className="text-[12px] font-bold text-rose-600 hover:underline">Kosongkan Slot</button>
+              <div className="flex gap-2">
+                <button onClick={() => setEditCtx(null)} className="rounded-lg border border-[#e6efea] px-4 py-2 text-[12px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Batal</button>
+                <button onClick={saveSchedEdit} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-[12px] font-bold text-white hover:bg-emerald-700"><Save className="h-3.5 w-3.5" />Simpan</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
