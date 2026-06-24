@@ -43,6 +43,7 @@ import { PositionsModule } from './positions/positions.module';
 import { PublicKioskModule } from './public-kiosk/public-kiosk.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { LmsModule } from './lms/lms.module';
+import { AssessmentModule } from './assessment/assessment.module';
 
 @Module({
   imports: [
@@ -82,6 +83,7 @@ import { LmsModule } from './lms/lms.module';
     PublicKioskModule,
     AnalyticsModule,
     LmsModule,
+    AssessmentModule,
   ],
   providers: [
     UserStatusService,
