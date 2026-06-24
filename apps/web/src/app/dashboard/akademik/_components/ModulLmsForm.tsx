@@ -7,6 +7,7 @@
 import { useState, useTransition } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Loader2, Save, Send, AlertTriangle } from 'lucide-react';
+import clsx from 'clsx';
 import type { LmsModuleItem } from './guru-types';
 import { createLmsModule, updateLmsModule } from '../actions';
 
@@ -62,7 +63,18 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
     <Dialog open={open} onOpenChange={(o: boolean) => !o && !pending && onClose()}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>{editing ? 'Edit Modul LMS' : 'Buat Modul LMS'}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            {editing ? 'Edit Modul LMS' : 'Buat Modul LMS'}
+            {editing && (
+              <span className={clsx('rounded-md px-2 py-0.5 text-[11px] font-bold',
+                editing.status === 'published' ? 'bg-emerald-50 text-emerald-700'
+                  : editing.status === 'archived' ? 'bg-zinc-100 text-zinc-500'
+                  : 'bg-slate-100 text-slate-600'
+              )}>
+                {editing.status === 'published' ? 'Terbit' : editing.status === 'archived' ? 'Arsip' : 'Draft'}
+              </span>
+            )}
+          </DialogTitle>
           <DialogDescription>
             TA {academicYear || '—'} · Semester {semester}. Materi yang dipublikasikan akan terlihat siswa kelas terkait.
           </DialogDescription>
