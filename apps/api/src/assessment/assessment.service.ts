@@ -6,7 +6,6 @@
 // =============================================================================
 
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
