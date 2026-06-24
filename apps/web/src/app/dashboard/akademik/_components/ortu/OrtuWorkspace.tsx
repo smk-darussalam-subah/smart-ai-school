@@ -1,11 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import {
   Home, CalendarCheck, TrendingUp, Wallet, Award,
   Sun, Moon, Bell, ChevronDown,
+  LogOut, X, User as UserIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
+import ViewAsBanner from '@/components/layout/ViewAsBanner';
 import BerandaOrtu from './BerandaOrtu';
 import KehadiranOrtu from './KehadiranOrtu';
 import NilaiOrtu from './NilaiOrtu';
@@ -36,15 +39,18 @@ interface OrtuWorkspaceProps {
   attendance?: unknown[];
   schedule?: unknown[];
   announcements?: unknown[];
+  viewAs?: string | null;
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function OrtuWorkspace({ grades, attendance: _attendance, schedule: _schedule, announcements }: OrtuWorkspaceProps) {
+export default function OrtuWorkspace({ grades, attendance: _attendance, schedule: _schedule, announcements, viewAs }: OrtuWorkspaceProps) {
+  const { data: session } = useSession();
   const [activeScreen, setActiveScreen] = useState<OrtuScreen>('beranda');
   const [modal, setModal] = useState<ModalState>({ type: null });
   const [toast, setToast] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [accountOpen, setAccountOpen] = useState(false);
 
   // Theme management — scoped to .ortu-app CSS variables (§6.4)
   useEffect(() => {
@@ -179,9 +185,21 @@ export default function OrtuWorkspace({ grades, attendance: _attendance, schedul
             >
               {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
             </button>
+
+            {/* Account */}
+            <button
+              onClick={() => setAccountOpen(true)}
+              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
+              aria-label="Akun"
+            >
+              <UserIcon className="h-[18px] w-[18px]" />
+            </button>
           </div>
         </div>
       </header>
+
+      {/* View-As Banner (when impersonating) */}
+      {viewAs && <ViewAsBanner viewAs={viewAs} />}
 
       {/* Mockup badge */}
       <div className="mx-auto max-w-[560px] px-4 py-2">
@@ -268,6 +286,63 @@ export default function OrtuWorkspace({ grades, attendance: _attendance, schedul
           onClose={() => setModal({ type: null })}
           showToast={showToast}
         />
+      )}
+
+      {/* Account Sheet */}
+      {accountOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center"
+          onClick={() => setAccountOpen(false)}
+        >
+          <div className="absolute inset-0 bg-black/50" />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Panel Akun"
+            className="relative w-full max-w-[560px] rounded-t-2xl border-t border-[var(--border)] bg-[var(--bg2)] p-5 pb-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setAccountOpen(false)}
+              aria-label="Tutup"
+              className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-[var(--surface2)]"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            {/* User info */}
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--grad)] text-lg font-extrabold text-white">
+                {initials(session?.user?.name ?? 'U')}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-[var(--text)]">{session?.user?.name ?? 'Pengguna'}</p>
+                <p className="truncate text-xs text-[var(--muted)]">{session?.user?.email ?? ''}</p>
+              </div>
+            </div>
+
+            {/* Theme toggle */}
+            <button
+              onClick={toggleTheme}
+              className="mb-2 flex w-full items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
+            >
+              <span className="flex items-center gap-2">
+                {theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                Tema {theme === 'dark' ? 'Gelap' : 'Terang'}
+              </span>
+              <span className="text-xs text-[var(--muted)]">Ketuk untuk ganti</span>
+            </button>
+
+            {/* Logout */}
+            <button
+              onClick={() => { window.location.href = '/api/auth/federated-logout'; }}
+              className="flex w-full items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-500 transition-colors hover:bg-red-500/20"
+            >
+              <LogOut className="h-4 w-4" />
+              Keluar
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Toast */}
