@@ -7,18 +7,29 @@
 
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { SchoolConfigService } from '../school-config/school-config.service';
-import { AnalyticsQuery } from './dto/analytics-query.dto';
+import {
+  isGuruOnly,
+  isSiswaOnly,
+  isOrangTuaOnly,
+  resolveSiswaId,
+  resolveGuruClassIds,
+  resolveUserId,
+} from '../common/helpers/role-helpers';
+import { AnalyticsQuery, StudentAnalyticsQuery } from './dto/analytics-query.dto';
 import {
   AGING_BUCKETS,
   AT_RISK_ALPHA_MIN,
   AT_RISK_WINDOW_DAYS,
   KKM_DEFAULT,
+  NaComponents,
   agingBucketIndex,
   diffDays,
   kkmPassRate,
   mean,
+  naOf,
   pearson,
   round1,
   summarize,
@@ -345,4 +356,209 @@ function pushTo(map: Map<string, number[]>, key: string, value: number): void {
   const arr = map.get(key);
   if (arr) arr.push(value);
   else map.set(key, [value]);
+}
+
+// ── W1-3 + W1-4: Student-level analytics (with ownership) ───────────────────
+// Per-student attendance stats + grade analytics for SiswaDashboard/OrtuDashboard.
+// Ownership: SISWA→own, ORANG_TUA→children, GURU→own classes, SA/KS/TU→all.
+// Berbeda dari endpoint exec (aggregate, no PII) — ini per-student dengan PII.
+// ────────────────────────────────────────────────────────────────────────────
+
+interface StudentBrief {
+  id: string;
+  nis: string;
+  user: { fullName: string };
+  class: { name: string } | null;
+}
+
+@Injectable()
+export class StudentAnalyticsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  /** Resolve studentIds berdasarkan role (ownership check di service layer). */
+  private async resolveStudentIds(query: StudentAnalyticsQuery, user: AuthUser): Promise<string[]> {
+    if (isSiswaOnly(user)) {
+      return [await resolveSiswaId(this.prisma, user.keycloakId)];
+    }
+    if (isOrangTuaOnly(user)) {
+      const userId = await resolveUserId(this.prisma, user.keycloakId);
+      const children = await this.prisma.student.findMany({
+        where: { parentId: userId, deletedAt: null },
+        select: { id: true },
+      });
+      return children.map((c) => c.id);
+    }
+    if (isGuruOnly(user)) {
+      const classIds = await resolveGuruClassIds(this.prisma, user.keycloakId);
+      if (classIds.length === 0) return [];
+      const students = await this.prisma.student.findMany({
+        where: { classId: { in: classIds }, deletedAt: null },
+        select: { id: true },
+      });
+      return students.map((s) => s.id);
+    }
+    // ELEVATED (SA/KS/TU): optional studentId or classId filter
+    if (query.studentId) return [query.studentId];
+    if (query.classId) {
+      const students = await this.prisma.student.findMany({
+        where: { classId: query.classId, deletedAt: null },
+        select: { id: true },
+      });
+      return students.map((s) => s.id);
+    }
+    const students = await this.prisma.student.findMany({
+      where: { deletedAt: null, status: 'active' },
+      select: { id: true },
+    });
+    return students.map((s) => s.id);
+  }
+
+  private async fetchStudentBriefs(studentIds: string[]): Promise<StudentBrief[]> {
+    if (studentIds.length === 0) return [];
+    return this.prisma.student.findMany({
+      where: { id: { in: studentIds }, deletedAt: null },
+      select: {
+        id: true, nis: true,
+        user: { select: { fullName: true } },
+        class: { select: { name: true } },
+      },
+    });
+  }
+
+  // ── W1-3: Attendance aggregation per student ──────────────────────────────
+
+  async attendanceStats(query: StudentAnalyticsQuery, user: AuthUser) {
+    const studentIds = await this.resolveStudentIds(query, user);
+    if (studentIds.length === 0) return { data: [] };
+
+    const dateFilter: Prisma.DateTimeFilter = {};
+    if (query.dateFrom) dateFilter.gte = new Date(query.dateFrom);
+    if (query.dateTo) dateFilter.lte = new Date(query.dateTo);
+    const hasDate = Object.keys(dateFilter).length > 0;
+
+    const grouped = await this.prisma.attendance.groupBy({
+      by: ['studentId', 'status'],
+      where: {
+        studentId: { in: studentIds },
+        ...(hasDate ? { date: dateFilter } : {}),
+      },
+      _count: { _all: true },
+    });
+
+    const statsMap = new Map<string, { hadir: number; izin: number; sakit: number; alpha: number; total: number }>();
+    for (const g of grouped) {
+      const cur = statsMap.get(g.studentId) ?? { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0 };
+      cur.total += g._count._all;
+      if (g.status === 'hadir') cur.hadir += g._count._all;
+      else if (g.status === 'izin') cur.izin += g._count._all;
+      else if (g.status === 'sakit') cur.sakit += g._count._all;
+      else if (g.status === 'alpha') cur.alpha += g._count._all;
+      statsMap.set(g.studentId, cur);
+    }
+
+    const students = await this.fetchStudentBriefs(studentIds);
+    const data = students.map((s) => {
+      const stats = statsMap.get(s.id) ?? { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0 };
+      const pct: number = stats.total > 0 ? Math.round((stats.hadir / stats.total) * 1000) / 10 : 0;
+      return {
+        studentId: s.id,
+        studentName: s.user.fullName,
+        nis: s.nis,
+        className: s.class?.name ?? null,
+        stats: { ...stats, pct },
+      };
+    });
+
+    return { data };
+  }
+
+  // ── W1-4: Grade analytics per student (NA computation) ────────────────────
+
+  async studentGrades(query: StudentAnalyticsQuery, user: AuthUser) {
+    const studentIds = await this.resolveStudentIds(query, user);
+    if (studentIds.length === 0) return { data: [] };
+
+    // Resolve period (academicYear + semester)
+    let academicYear: string;
+    let semester: number;
+    if (query.academicYear && query.semester) {
+      academicYear = query.academicYear;
+      semester = query.semester;
+    } else {
+      const now = new Date();
+      const y = now.getUTCFullYear();
+      academicYear = query.academicYear ?? (now.getUTCMonth() >= 6 ? `${y}/${y + 1}` : `${y - 1}/${y}`);
+      semester = query.semester ?? 1;
+    }
+
+    const grades = await this.prisma.grade.findMany({
+      where: {
+        studentId: { in: studentIds },
+        academicYear,
+        semester,
+      },
+      select: {
+        studentId: true,
+        score: true,
+        type: true,
+        assignment: { select: { subject: true } },
+      },
+    });
+
+    // Group by studentId → subject → type → scores[]
+    type CompArrays = { uh: number[]; praktik: number[]; sikap: number[]; uts: number[]; uas: number[] };
+    const map = new Map<string, Map<string, CompArrays>>();
+    for (const g of grades) {
+      if (!map.has(g.studentId)) map.set(g.studentId, new Map());
+      const subjectMap = map.get(g.studentId)!;
+      const subject = g.assignment.subject;
+      if (!subjectMap.has(subject)) {
+        subjectMap.set(subject, { uh: [], praktik: [], sikap: [], uts: [], uas: [] });
+      }
+      const comp = subjectMap.get(subject)!;
+      const score = Number(g.score);
+      if (g.type === 'uh') comp.uh.push(score);
+      else if (g.type === 'praktik') comp.praktik.push(score);
+      else if (g.type === 'sikap') comp.sikap.push(score);
+      else if (g.type === 'uts') comp.uts.push(score);
+      else if (g.type === 'uas') comp.uas.push(score);
+    }
+
+    const students = await this.fetchStudentBriefs(studentIds);
+    const data = students.map((s) => {
+      const subjectMap = map.get(s.id) ?? new Map<string, CompArrays>();
+      const subjects = [...subjectMap.entries()].map(([subject, comp]) => {
+        const avg = (arr: number[]): number | undefined =>
+          arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : undefined;
+        const naComponents: NaComponents = {
+          uh: avg(comp.uh),
+          praktik: avg(comp.praktik),
+          sikap: avg(comp.sikap),
+          uts: avg(comp.uts),
+          uas: avg(comp.uas),
+        };
+        const na = naOf(naComponents);
+        return {
+          subject,
+          uh: naComponents.uh ?? null,
+          praktik: naComponents.praktik ?? null,
+          sikap: naComponents.sikap ?? null,
+          uts: naComponents.uts ?? null,
+          uas: naComponents.uas ?? null,
+          na,
+          kktp: KKM_DEFAULT,
+          status: na !== null ? (na >= KKM_DEFAULT ? 'tuntas' : 'remedial') : null,
+        };
+      });
+      return {
+        studentId: s.id,
+        studentName: s.user.fullName,
+        nis: s.nis,
+        className: s.class?.name ?? null,
+        subjects,
+      };
+    });
+
+    return { data };
+  }
 }
