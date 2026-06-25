@@ -52,15 +52,20 @@ export default async function AkademikPage() {
     // Fetch siswa-specific data
     // Note: studentId lookup from keycloakId — backend should resolve this
     const studentId = session.keycloakId ?? '';
-    const [gradesRes, attendanceRes, scheduleRes, announcementsRes, badgesRes, xpRes, leaderboardRes] = await Promise.all([
+    const [gradesRes, attendanceRes, scheduleRes, announcementsRes, badgesRes, xpRes, leaderboardRes, assignmentsRes, modulesRes, cpRes, attStatsRes] = await Promise.all([
       apiFetch<PaginatedResponse<GradeItem>>(`/grades?studentId=${studentId}&limit=100`, token),
       apiFetch<PaginatedResponse<AttendanceItem>>(`/attendance?studentId=${studentId}&limit=200`, token),
       apiFetch<{ data: ScheduleItem[] }>(`/schedules?studentId=${studentId}&limit=100`, token),
       apiFetch<{ data: { id: string; title: string; createdAt: string }[] }>('/announcements?limit=5', token),
-      // Wave 3 API integration (P19) — fail-soft, SIM fallback if null
+      // Wave 3 API integration (P19) — fail-soft, empty if null
       apiFetch<Array<{ id: string; awardedAt: string; badge: { id: string; code: string; name: string; description: string; icon: string; tier: string } }>>('/badges/my', token),
       apiFetch<{ id: string; studentId: string; totalXp: number; level: number; streakDays: number; nextLevelXp: number | null; xpToNextLevel: number | null }>('/gamification/my-xp', token),
       apiFetch<Array<{ id: string; studentId: string; totalXp: number; level: number; rank: number; student: { nis: string; user: { fullName: string }; class: { id: string; name: string } | null } }>>('/gamification/leaderboard-xp?limit=10', token),
+      // P26: Wire pure SIM data sources to real APIs
+      apiFetch<{ data: Assignment[] }>('/student-dashboard/assignments?limit=20', token),
+      apiFetch<{ data: LmsModuleItem[] }>('/lms/modules/my-learning?limit=50', token),
+      apiFetch<{ data: unknown[] }>('/student-dashboard/cp', token),
+      apiFetch<{ hadir: number; izin: number; sakit: number; alpha: number; total: number }>('/analytics/attendance/stats', token),
     ]);
 
     // Transform badges API response → SiswaBadge[]
@@ -81,6 +86,11 @@ export default async function AkademikPage() {
     // Transform XP API response → SiswaXP
     const realXp: SiswaXP | null = xpRes
       ? { level: xpRes.level, current: xpRes.totalXp, next: xpRes.nextLevelXp ?? xpRes.totalXp }
+      : null;
+
+    // Transform attendance stats → add pct (P26)
+    const realAttStats = attStatsRes
+      ? { ...attStatsRes, pct: attStatsRes.total > 0 ? Math.round((attStatsRes.hadir / attStatsRes.total) * 100) : 0 }
       : null;
 
     // Transform leaderboard API response → SiswaLeaderboardEntry[]
@@ -104,6 +114,10 @@ export default async function AkademikPage() {
         realBadges={realBadges}
         realXp={realXp}
         realLeaderboard={realLeaderboard}
+        realAssignments={assignmentsRes?.data ?? null}
+        realModules={modulesRes?.data ?? null}
+        realCp={cpRes?.data ?? null}
+        realAttStats={realAttStats}
         viewAs={viewAs}
       />
     );
@@ -161,12 +175,14 @@ export default async function AkademikPage() {
 
   // ── Dashboard KS / Waka Kurikulum (F4 — desktop-first, 7-screen workspace). ─
   if (isKs) {
-    const [schedulesRes, activitiesRes, rppRes, lmsRes, semRes] = await Promise.all([
+    const [schedulesRes, activitiesRes, rppRes, lmsRes, semRes, assessmentRes] = await Promise.all([
       apiFetch<{ data: ScheduleItem[] }>('/schedules?limit=500', token),
       apiFetch<{ data: ActivityItem[] }>('/class-activities?limit=200', token),
       apiFetch<{ data: RppItem[] }>('/rpp?limit=100', token),
       apiFetch<{ data: LmsModuleItem[] }>('/lms/modules?limit=200', token),
       apiFetch<ActiveSemester>('/school/semesters/active', token),
+      // P29: Wire sumatif audit from real assessment sessions API
+      apiFetch<{ data: unknown[] }>('/assessment/sessions?limit=20', token),
     ]);
 
     const academicYear = semRes?.academicYear?.code ?? '';
@@ -182,6 +198,7 @@ export default async function AkademikPage() {
         schedules={schedulesRes?.data ?? []}
         activities={activitiesRes?.data ?? []}
         lmsModules={lmsRes?.data ?? []}
+        realSumatif={assessmentRes?.data ?? undefined}
         academicYear={academicYear}
         semester={semester}
         dataWarning={dataWarning}
@@ -189,17 +206,49 @@ export default async function AkademikPage() {
     );
   }
 
-  // ── Dashboard Orang Tua (TUGAS C — mobile-first, 5 bottom-nav tabs). ──────
-  // Data anak (grades/attendance/schedule) akan di-fetch via parent-child
-  // resolution endpoint saat backend siap. Sementara: SIM fallback (berbadge MOCKUP).
+  // ── Dashboard Orang Tua (P25 — wired to real APIs, mobile-first, 5 tabs). ────
   if (isOrtu) {
-    const [announcementsRes] = await Promise.all([
+    // Round 1: fetch announcements + children list
+    const [announcementsRes, childrenRes] = await Promise.all([
       apiFetch<{ data: { id: string; title: string; createdAt: string }[] }>('/announcements?limit=5', token),
+      apiFetch<{ data: Array<{ id: string; nis: string; user: { fullName: string }; class: { id: string; name: string } | null; parentId: string }> }>('/students/my-children', token),
     ]);
+
+    const children = childrenRes?.data ?? [];
+    const firstChild = children[0];
+    const childId = firstChild?.id ?? '';
+
+    // Round 2: fetch child-specific data (all in parallel, fail-soft → null)
+    const [gradesRes, attendanceRes, scheduleRes, sppRes, assignmentsRes, badgesRes, waLogRes] = await Promise.all([
+      childId ? apiFetch<PaginatedResponse<GradeItem>>(`/grades?studentId=${childId}&limit=100`, token) : Promise.resolve(null),
+      childId ? apiFetch<PaginatedResponse<AttendanceItem>>(`/attendance?studentId=${childId}&limit=200`, token) : Promise.resolve(null),
+      childId ? apiFetch<{ data: ScheduleItem[] }>(`/schedules?studentId=${childId}&limit=100`, token) : Promise.resolve(null),
+      childId ? apiFetch<{ data: Array<{ id: string; month: string; amount: number; status: string; dueDate: string | null }> }>(`/student-dashboard/spp`, token) : Promise.resolve(null),
+      childId ? apiFetch<{ data: Assignment[] }>(`/student-dashboard/assignments?studentId=${childId}&limit=20`, token) : Promise.resolve(null),
+      childId ? apiFetch<Array<{ id: string; awardedAt: string; badge: { id: string; code: string; name: string; description: string; icon: string; tier: string } }>>(`/badges/student/${childId}`, token) : Promise.resolve(null),
+      childId ? apiFetch<{ data: Array<{ id: string; studentId: string; recipient: string; message: string; eventType: string; createdAt: string }> }>(`/wa-log/student/${childId}?limit=20`, token) : Promise.resolve(null),
+    ]);
+
+    // Transform children for OrtuWorkspace
+    const ortuChildren = children.map((c) => ({
+      id: Number(c.id.replace(/\D/g, '').slice(0, 8)) || 0,
+      name: c.user?.fullName ?? 'Anak',
+      kelas: c.class?.name ?? '—',
+      active: true,
+      avg: 0, att: 0, wali: '—',
+    }));
 
     return (
       <OrtuWorkspace
+        children={ortuChildren}
+        grades={gradesRes?.data ?? []}
+        attendance={attendanceRes?.data ?? []}
+        schedule={scheduleRes?.data ?? []}
         announcements={announcementsRes?.data ?? []}
+        spp={sppRes?.data ?? []}
+        assignments={assignmentsRes?.data ?? []}
+        badges={badgesRes ?? []}
+        waLog={waLogRes?.data ?? []}
         viewAs={viewAs}
       />
     );
