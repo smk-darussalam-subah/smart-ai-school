@@ -31,7 +31,7 @@ import {
   SIM_DAILY_QUEST, SIM_KALENDER, SIM_XP, SIM_LEADERBOARD,
   normalizeAnnouncements,
 } from './siswa-data';
-import type { SiswaNilai, SiswaTugas, SiswaBadge, BadgeCelebrationData } from './siswa-types';
+import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaXP, SiswaLeaderboardEntry, BadgeCelebrationData } from './siswa-types';
 import type { AttendanceEntry } from './KehadiranSiswa';
 
 export type SiswaScreen = 'beranda' | 'jadwal' | 'modul' | 'nilai' | 'tugas' | 'kehadiran' | 'capaian';
@@ -68,6 +68,9 @@ interface SiswaWorkspaceProps {
   attendance?: unknown[];
   schedule?: unknown[];
   announcements?: unknown[];
+  realBadges?: SiswaBadge[] | null;
+  realXp?: SiswaXP | null;
+  realLeaderboard?: SiswaLeaderboardEntry[] | null;
   viewAs?: string | null;
 }
 
@@ -76,7 +79,7 @@ function initials(name?: string | null): string {
   return name.split(' ').map((w) => w.charAt(0)).slice(0, 2).join('').toUpperCase();
 }
 
-export default function SiswaWorkspace({ grades, attendance, schedule, announcements, viewAs }: SiswaWorkspaceProps) {
+export default function SiswaWorkspace({ grades, attendance, schedule, announcements, realBadges, realXp, realLeaderboard, viewAs }: SiswaWorkspaceProps) {
   const { data: session } = useSession();
   const [activeScreen, setActiveScreen] = useState<SiswaScreen>('beranda');
   const [activeModulId, setActiveModulId] = useState<number | null>(null);
@@ -167,10 +170,10 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             {...commonProps}
             grades={(grades?.length ? grades : SIM_NILAI) as SiswaNilai[]}
             tasks={SIM_TUGAS}
-            badges={SIM_BADGES}
+            badges={realBadges?.length ? realBadges : SIM_BADGES}
             modules={SIM_MODULS}
             quest={SIM_DAILY_QUEST}
-            xp={SIM_XP}
+            xp={realXp ?? SIM_XP}
             kehStats={SIM_KEH_STATS}
             schedule={schedule || []}
           />
@@ -191,7 +194,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
           <ModulSiswa
             {...commonProps}
             modules={SIM_MODULS}
-            badges={SIM_BADGES}
+            badges={realBadges?.length ? realBadges : SIM_BADGES}
             setActiveModulId={setActiveModulId}
           />
         );
@@ -221,10 +224,10 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
         return (
           <CapaianSiswa
             {...commonProps}
-            xp={SIM_XP}
-            leaderboard={SIM_LEADERBOARD}
+            xp={realXp ?? SIM_XP}
+            leaderboard={realLeaderboard?.length ? realLeaderboard : SIM_LEADERBOARD}
             cpData={SIM_CPDATA}
-            badges={SIM_BADGES}
+            badges={realBadges?.length ? realBadges : SIM_BADGES}
           />
         );
       default:

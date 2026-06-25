@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles, getActiveViewAs } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch, PaginatedResponse, GradeItem, AttendanceItem } from '@/lib/api';
+import type { SiswaBadge, SiswaXP, SiswaLeaderboardEntry } from './_components/siswa/siswa-types';
 import { scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-times';
 import AkademikClient from './_components/AkademikClient';
 import AkademikWorkspace from './_components/AkademikWorkspace';
@@ -51,12 +52,48 @@ export default async function AkademikPage() {
     // Fetch siswa-specific data
     // Note: studentId lookup from keycloakId — backend should resolve this
     const studentId = session.keycloakId ?? '';
-    const [gradesRes, attendanceRes, scheduleRes, announcementsRes] = await Promise.all([
+    const [gradesRes, attendanceRes, scheduleRes, announcementsRes, badgesRes, xpRes, leaderboardRes] = await Promise.all([
       apiFetch<PaginatedResponse<GradeItem>>(`/grades?studentId=${studentId}&limit=100`, token),
       apiFetch<PaginatedResponse<AttendanceItem>>(`/attendance?studentId=${studentId}&limit=200`, token),
       apiFetch<{ data: ScheduleItem[] }>(`/schedules?studentId=${studentId}&limit=100`, token),
       apiFetch<{ data: { id: string; title: string; createdAt: string }[] }>('/announcements?limit=5', token),
+      // Wave 3 API integration (P19) — fail-soft, SIM fallback if null
+      apiFetch<Array<{ id: string; awardedAt: string; badge: { id: string; code: string; name: string; description: string; icon: string; tier: string } }>>('/badges/my', token),
+      apiFetch<{ id: string; studentId: string; totalXp: number; level: number; streakDays: number; nextLevelXp: number | null; xpToNextLevel: number | null }>('/gamification/my-xp', token),
+      apiFetch<Array<{ id: string; studentId: string; totalXp: number; level: number; rank: number; student: { nis: string; user: { fullName: string }; class: { id: string; name: string } | null } }>>('/gamification/leaderboard-xp?limit=10', token),
     ]);
+
+    // Transform badges API response → SiswaBadge[]
+    const TIER_COLORS: Record<string, string> = { BRONZE: '#cd7f32', SILVER: '#c0c0c0', GOLD: '#ffd700', PLATINUM: '#e5e4e2' };
+    const realBadges: SiswaBadge[] | null = badgesRes
+      ? badgesRes.map((sb) => ({
+          name: sb.badge.name,
+          icon: sb.badge.icon || 'award',
+          color: TIER_COLORS[sb.badge.tier] ?? '#10b981',
+          earned: true,
+          cat: sb.badge.code,
+          score: null,
+          prog: null,
+          desc: sb.badge.description ?? '',
+        }))
+      : null;
+
+    // Transform XP API response → SiswaXP
+    const realXp: SiswaXP | null = xpRes
+      ? { level: xpRes.level, current: xpRes.totalXp, next: xpRes.nextLevelXp ?? xpRes.totalXp }
+      : null;
+
+    // Transform leaderboard API response → SiswaLeaderboardEntry[]
+    const realLeaderboard: SiswaLeaderboardEntry[] | null = leaderboardRes
+      ? leaderboardRes.map((entry) => ({
+          name: entry.student?.user?.fullName ?? 'Siswa',
+          kelas: entry.student?.class?.name ?? '—',
+          xp: entry.totalXp,
+          badges: 0, // Not available from XP leaderboard endpoint
+          avg: 0, // Not available from XP leaderboard endpoint
+          me: entry.studentId === studentId,
+        }))
+      : null;
 
     return (
       <SiswaWorkspace
@@ -64,6 +101,9 @@ export default async function AkademikPage() {
         attendance={attendanceRes?.data ?? []}
         schedule={scheduleRes?.data ?? []}
         announcements={announcementsRes?.data ?? []}
+        realBadges={realBadges}
+        realXp={realXp}
+        realLeaderboard={realLeaderboard}
         viewAs={viewAs}
       />
     );
