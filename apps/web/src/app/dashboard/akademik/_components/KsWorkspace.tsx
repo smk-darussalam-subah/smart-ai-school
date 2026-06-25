@@ -37,6 +37,7 @@ interface Props {
   schedules: ScheduleItem[];
   activities: ActivityItem[];
   lmsModules: LmsModuleItem[];
+  realSumatif?: unknown[];
   academicYear: string;
   semester: number;
   dataWarning?: boolean;
@@ -116,17 +117,19 @@ function genSimMonitor(km: { kelas: string; mapel: string; avg: number | null; t
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function KsWorkspace({
-  grades, attendances, classes, assignments, rpp, schedules, activities, lmsModules: _lmsModules, academicYear, semester, dataWarning,
+  grades, attendances, classes, assignments, rpp, schedules, activities, lmsModules: _lmsModules, realSumatif, academicYear, semester, dataWarning,
 }: Props) {
   const [screen, setScreen] = useState<Screen>('beranda');
   const [selRpp, setSelRpp] = useState<RppItem | null>(null);
+  // P29: Use real sumatif data if available, fall back to SIM_SUMATIF
+  const sumatifData = (realSumatif as typeof SIM_SUMATIF | undefined)?.length ? (realSumatif as typeof SIM_SUMATIF) : SIM_SUMATIF;
   const [selSumatif, setSelSumatif] = useState<typeof SIM_SUMATIF[number] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
   // Derived data
   const pendingRpp = useMemo(() => rpp.filter((r) => r.status === 'submitted'), [rpp]);
-  const pendingSumatif = SIM_SUMATIF.filter((s) => s.status === 'Menunggu');
+  const pendingSumatif = sumatifData.filter((s) => s.status === 'Menunggu');
 
   const navWithBadges = NAV.map((n) => {
     if (n.key === 'modul') return { ...n, badge: pendingRpp.length };
@@ -230,7 +233,7 @@ export default function KsWorkspace({
       <div className="pt-4">
         {screen === 'beranda' && <BerandaKs hadirPct={hadirPct} todayAtt={todayAtt} pendingRpp={pendingRpp.length} pendingSumatif={pendingSumatif.length} belowKktp={belowKktp} schedules={schedules} classes={classes} onNavigate={setScreen} />}
         {screen === 'modul' && <ModulAjarKs rpp={rpp} onReview={setSelRpp} showToast={showToast} />}
-        {screen === 'sumatif' && <AuditSumatifKs onOpenDetail={setSelSumatif} />}
+        {screen === 'sumatif' && <AuditSumatifKs onOpenDetail={setSelSumatif} data={sumatifData} />}
         {screen === 'monitor' && <MonitoringKbmKs kelasMapel={kelasMapel} attendances={attendances} schedules={schedules} classes={classes} />}
         {screen === 'rekap' && <RekapAuditKs kelasMapel={kelasMapel} grades={grades} attendances={attendances} activities={activities} rpp={rpp} />}
         {screen === 'kktp' && <KktpKs kelasMapel={kelasMapel} showToast={showToast} />}
@@ -709,9 +712,9 @@ function ModulAjarKs({ rpp, onReview, showToast }: { rpp: RppItem[]; onReview: (
 
 // ═══ SCREEN 3: AUDIT SUMATIF ═════════════════════════════════════════════════
 
-function AuditSumatifKs({ onOpenDetail }: { onOpenDetail: (s: typeof SIM_SUMATIF[number]) => void }) {
+function AuditSumatifKs({ onOpenDetail, data }: { onOpenDetail: (s: typeof SIM_SUMATIF[number]) => void; data: typeof SIM_SUMATIF }) {
   const [filter, setFilter] = useState<'Semua' | 'Menunggu' | 'Disetujui' | 'Ditolak'>('Semua');
-  const filtered = SIM_SUMATIF.filter((s) => filter === 'Semua' || s.status === filter);
+  const filtered = data.filter((s) => filter === 'Semua' || s.status === filter);
 
   return (
     <div className="space-y-4">

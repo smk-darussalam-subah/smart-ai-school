@@ -26,12 +26,10 @@ import TaskDetailModal from './TaskDetailModal';
 import DayDetailModal from './DayDetailModal';
 import BadgeDetailModal from './BadgeDetailModal';
 import {
-  SIM_PENGUMUMAN, SIM_NILAI, SIM_TUGAS, SIM_KEH_STATS,
-  SIM_BADGES, SIM_MODULS, SIM_CPDATA,
-  SIM_DAILY_QUEST, SIM_KALENDER, SIM_XP, SIM_LEADERBOARD,
+  SIM_DAILY_QUEST, SIM_KALENDER,
   normalizeAnnouncements,
 } from './siswa-data';
-import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaXP, SiswaLeaderboardEntry, BadgeCelebrationData } from './siswa-types';
+import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaXP, SiswaLeaderboardEntry, SiswaModul, SiswaCP, SiswaKehadiranStats, BadgeCelebrationData } from './siswa-types';
 import type { AttendanceEntry } from './KehadiranSiswa';
 
 export type SiswaScreen = 'beranda' | 'jadwal' | 'modul' | 'nilai' | 'tugas' | 'kehadiran' | 'capaian';
@@ -71,6 +69,10 @@ interface SiswaWorkspaceProps {
   realBadges?: SiswaBadge[] | null;
   realXp?: SiswaXP | null;
   realLeaderboard?: SiswaLeaderboardEntry[] | null;
+  realAssignments?: unknown[] | null;
+  realModules?: unknown[] | null;
+  realCp?: unknown[] | null;
+  realAttStats?: { hadir: number; izin: number; sakit: number; alpha: number; total: number; pct: number } | null;
   viewAs?: string | null;
 }
 
@@ -79,7 +81,7 @@ function initials(name?: string | null): string {
   return name.split(' ').map((w) => w.charAt(0)).slice(0, 2).join('').toUpperCase();
 }
 
-export default function SiswaWorkspace({ grades, attendance, schedule, announcements, realBadges, realXp, realLeaderboard, viewAs }: SiswaWorkspaceProps) {
+export default function SiswaWorkspace({ grades, attendance, schedule, announcements, realBadges, realXp, realLeaderboard, realAssignments, realModules, realCp, realAttStats, viewAs }: SiswaWorkspaceProps) {
   const { data: session } = useSession();
   const [activeScreen, setActiveScreen] = useState<SiswaScreen>('beranda');
   const [activeModulId, setActiveModulId] = useState<number | null>(null);
@@ -168,13 +170,13 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
         return (
           <BerandaSiswa
             {...commonProps}
-            grades={(grades?.length ? grades : SIM_NILAI) as SiswaNilai[]}
-            tasks={SIM_TUGAS}
-            badges={realBadges?.length ? realBadges : SIM_BADGES}
-            modules={SIM_MODULS}
+            grades={(grades ?? []) as SiswaNilai[]}
+            tasks={(realAssignments ?? []) as unknown as SiswaTugas[]}
+            badges={realBadges ?? []}
+            modules={(realModules ?? []) as unknown as SiswaModul[]}
             quest={SIM_DAILY_QUEST}
-            xp={realXp ?? SIM_XP}
-            kehStats={SIM_KEH_STATS}
+            xp={realXp ?? { level: 1, current: 0, next: 500 }}
+            kehStats={realAttStats ?? { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, pct: 0 }}
             schedule={schedule || []}
           />
         );
@@ -193,8 +195,8 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
         return (
           <ModulSiswa
             {...commonProps}
-            modules={SIM_MODULS}
-            badges={realBadges?.length ? realBadges : SIM_BADGES}
+            modules={(realModules ?? []) as unknown as SiswaModul[]}
+            badges={realBadges ?? []}
             setActiveModulId={setActiveModulId}
           />
         );
@@ -209,14 +211,14 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
         return (
           <TugasSiswa
             {...commonProps}
-            tasks={SIM_TUGAS}
+            tasks={(realAssignments ?? []) as unknown as SiswaTugas[]}
           />
         );
       case 'kehadiran':
         return (
           <KehadiranSiswa
             {...commonProps}
-            stats={SIM_KEH_STATS}
+            stats={(realAttStats ?? { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, pct: 0 }) as SiswaKehadiranStats}
             attendance={(attendance || []) as AttendanceEntry[]}
           />
         );
@@ -224,10 +226,10 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
         return (
           <CapaianSiswa
             {...commonProps}
-            xp={realXp ?? SIM_XP}
-            leaderboard={realLeaderboard?.length ? realLeaderboard : SIM_LEADERBOARD}
-            cpData={SIM_CPDATA}
-            badges={realBadges?.length ? realBadges : SIM_BADGES}
+            xp={realXp ?? { level: 1, current: 0, next: 500 }}
+            leaderboard={realLeaderboard ?? []}
+            cpData={(realCp ?? []) as unknown as SiswaCP[]}
+            badges={realBadges ?? []}
           />
         );
       default:
@@ -278,13 +280,6 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
 
       {/* View-As Banner (when impersonating) */}
       {viewAs && <ViewAsBanner viewAs={viewAs} />}
-
-      {/* Mockup badge */}
-      <div className="mx-auto max-w-[560px] px-5 py-2">
-        <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-500">
-          <span className="text-xs">🧪</span> MOCKUP — Data dummy untuk preview. Dashboard Siswa DIIS.
-        </div>
-      </div>
 
       {/* Screen content */}
       <main className="mx-auto max-w-[560px] pb-24">
@@ -343,7 +338,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
         <PengumumanModal
           announcements={announcements?.length
             ? normalizeAnnouncements(announcements as { id: string; title: string; createdAt: string }[])
-            : SIM_PENGUMUMAN}
+            : []}
           onClose={() => setModal({ type: null })}
         />
       )}
