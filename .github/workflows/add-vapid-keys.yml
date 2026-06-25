@@ -1,0 +1,72 @@
+name: Add VAPID Keys to VPS
+
+on:
+  workflow_dispatch:
+    description: "Add VAPID keys to production .env on VPS and restart API"
+
+jobs:
+  add-vapid:
+    name: Inject VAPID keys into production .env
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Deploy VAPID keys via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: appuser
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            set -euo pipefail
+
+            WORK_DIR=/home/appuser/smart-ai-school
+            ENV_FILE="$WORK_DIR/.env"
+            API_CONTAINER=smk-api
+
+            echo "🔑 Adding VAPID keys to $ENV_FILE..."
+
+            cd "$WORK_DIR"
+
+            # ── Helper: set or update a key=value in .env ──
+            set_env_var() {
+              local key="$1"
+              local value="$2"
+              if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+                sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+                echo "  ✅ Updated: $key"
+              else
+                printf '\n%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+                echo "  ✅ Added: $key"
+              fi
+            }
+
+            set_env_var "VAPID_PUBLIC_KEY"  "${{ secrets.VAPID_PUBLIC_KEY }}"
+            set_env_var "VAPID_PRIVATE_KEY" "${{ secrets.VAPID_PRIVATE_KEY }}"
+            set_env_var "VAPID_SUBJECT"     "${{ secrets.VAPID_SUBJECT }}"
+
+            echo ""
+            echo "📄 Verifying VAPID keys in .env:"
+            grep "^VAPID_" "$ENV_FILE" | sed 's/\(VAPID_PRIVATE_KEY=.\{10\}\).*/\1...REDACTED/'
+
+            # ── Restart API container to pick up new env vars ──
+            echo ""
+            echo "🔄 Restarting $API_CONTAINER..."
+            cd "$WORK_DIR/infrastructure/docker"
+            docker compose --env-file "$ENV_FILE" restart api
+            echo "✅ API container restarted"
+
+            # ── Wait for health ──
+            echo "⏳ Waiting for API to become healthy..."
+            timeout 150 sh -c \
+              "until [ \"\$(docker inspect ${API_CONTAINER} --format '{{.State.Health.Status}}' 2>/dev/null)\" = \"healthy\" ]; do
+                 echo \"  status: \$(docker inspect ${API_CONTAINER} --format '{{.State.Status}}' 2>/dev/null)\"
+                 sleep 10
+               done" \
+              || (
+                echo "❌ API not healthy after 150s. Logs:"
+                docker logs "${API_CONTAINER}" --tail 30 2>&1
+                exit 1
+              )
+            echo "✅ API healthy — VAPID keys active!"
