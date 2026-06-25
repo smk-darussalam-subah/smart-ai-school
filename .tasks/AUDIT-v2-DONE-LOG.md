@@ -118,6 +118,16 @@
 **Catatan:** `ProfileCV.tsx` masih pakai SIM_BADGES+SIM_PROFILE_CV (di-luar scope T1-04; Skenario A — dicatat follow-up T3-06).
 **Status:** ✅ DONE
 
+#### T1-04b — Sweep residual Skenario A (luput dari audit awal)
+**Selesai:** 2026-06-26 | **Durasi:** ~20 menit
+Final grep-sweep menemukan 3 komponen LAIN dengan pola SIM-fallback yang sama (tidak tercantum di audit v2 §3.1, tapi jelas beta-blocker yang sama). Diperbaiki demi konsistensi prinsip T1:
+- `ortu/NilaiOrtu.tsx` — hapus `: SIM_NILAI` fallback + `childRank(SIM_LEADERBOARD)`; ranking → "—" (belum di-fetch); banner "Data Simulasi" → empty-state
+- `siswa/PengumumanModal.tsx` — hapus `: SIM_PENGUMUMAN` fallback (sudah punya empty-state)
+- `siswa/TugasSiswa.tsx` — hapus `: SIM_TUGAS` fallback
+**Bukti Runtime:** tsc 0 · eslint 0 · next build OK (`/dashboard/akademik` 100 kB) · grep SIM_ runtime di 3 file = 0
+**Lesson untuk audit v3:** grep awal hanya cek file di audit A-list. Sweep runtime-SIM lintas **seluruh folder ortu/+siswa/** menemukan 3 tambahan. Audit berikutnya wajim lakukan sweep menyeluruh, bukan hanya file ter-list.
+**Status:** ✅ DONE
+
 #### T1-05 — KS sumatif: fallback → empty state
 **Mulai/Selesai:** 2026-06-26 | **Durasi:** ~15 menit
 **Files changed:**
