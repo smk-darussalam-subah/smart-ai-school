@@ -51,6 +51,12 @@ const EnvSchema = z.object({
   // SENTRY_RELEASE     : Identifikasi release, biasanya git SHA (di-set deploy.yml)
   SENTRY_DSN: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
+
+  // ── PWA Push Notifications (P16 — W3-6) — all optional, boot without = push disabled ──
+  // Generate: npx web-push generate-vapid-keys
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().default('mailto:admin@smkdarussalamsubah.sch.id'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

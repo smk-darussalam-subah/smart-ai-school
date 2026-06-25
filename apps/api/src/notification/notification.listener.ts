@@ -16,6 +16,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { logger } from '@smk/logger';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from './notification.service';
+import { WaLogService } from '../wa-log/wa-log.service';
 import {
   EVENTS,
   StudentEnrolledPayload,
@@ -33,6 +34,7 @@ export class NotificationListener {
   constructor(
     private readonly notificationService: NotificationService,
     private readonly prisma: PrismaService,
+    private readonly waLogService: WaLogService,
   ) {}
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -88,12 +90,20 @@ export class NotificationListener {
         ? await this.resolvePhone(payload.parentId)
         : null;
 
+      const body = `Selamat datang! Siswa ${payload.fullName} (NIS: ${payload.nis}) telah terdaftar di SMK Darussalam Subah. Informasi lebih lanjut dapat menghubungi Tata Usaha.`;
       await this.notificationService.notify({
         channel: 'whatsapp',
         to:      parentPhone ?? '',
-        body:    `Selamat datang! Siswa ${payload.fullName} (NIS: ${payload.nis}) telah terdaftar di SMK Darussalam Subah. Informasi lebih lanjut dapat menghubungi Tata Usaha.`,
+        body,
         refType: 'student',
         refId:   payload.studentId,
+      });
+      await this.waLogService.logWaNotification({
+        studentId: payload.studentId,
+        parentId: payload.parentId ?? undefined,
+        recipient: parentPhone ?? '',
+        message: body,
+        eventType: 'student.enrolled',
       });
     } catch (err: unknown) {
       logger.warn('[NotificationListener] handleStudentEnrolled error', {
@@ -145,6 +155,25 @@ export class NotificationListener {
       }
 
       await Promise.all(notifies);
+
+      // Audit log for each WA recipient
+      if (studentPhone !== null || payload.userId) {
+        await this.waLogService.logWaNotification({
+          studentId: payload.studentId,
+          recipient: studentPhone ?? '',
+          message: body,
+          eventType: 'student.status_changed',
+        });
+      }
+      if (parentPhone !== null || payload.parentId) {
+        await this.waLogService.logWaNotification({
+          studentId: payload.studentId,
+          parentId: payload.parentId ?? undefined,
+          recipient: parentPhone ?? '',
+          message: body,
+          eventType: 'student.status_changed',
+        });
+      }
     } catch (err: unknown) {
       logger.warn('[NotificationListener] handleStudentStatusChanged error', {
         studentId: payload.studentId,
@@ -162,12 +191,19 @@ export class NotificationListener {
     try {
       const { parentPhone } = await this.resolveStudentContacts(payload.studentId);
 
+      const body = `Nilai ${payload.type.toUpperCase()} ${payload.subject} semester ${payload.semester} (${payload.academicYear}): ${payload.score}. Informasi detail tersedia di portal siswa.`;
       await this.notificationService.notify({
         channel: 'whatsapp',
         to:      parentPhone ?? '',
-        body:    `Nilai ${payload.type.toUpperCase()} ${payload.subject} semester ${payload.semester} (${payload.academicYear}): ${payload.score}. Informasi detail tersedia di portal siswa.`,
+        body,
         refType: 'grade',
         refId:   payload.gradeId,
+      });
+      await this.waLogService.logWaNotification({
+        studentId: payload.studentId,
+        recipient: parentPhone ?? '',
+        message: body,
+        eventType: 'grade.submitted',
       });
     } catch (err: unknown) {
       logger.warn('[NotificationListener] handleGradeSubmitted error', {
@@ -187,12 +223,19 @@ export class NotificationListener {
       const { parentPhone, fullName } = await this.resolveStudentContacts(payload.studentId);
 
       const statusLabel = payload.status === 'alpha' ? 'tidak hadir (alpha)' : 'sakit';
+      const body = `Pemberitahuan absensi: ${fullName} pada ${payload.date} tercatat ${statusLabel}. Harap konfirmasi ke sekolah jika ada keperluan.`;
       await this.notificationService.notify({
         channel: 'whatsapp',
         to:      parentPhone ?? '',
-        body:    `Pemberitahuan absensi: ${fullName} pada ${payload.date} tercatat ${statusLabel}. Harap konfirmasi ke sekolah jika ada keperluan.`,
+        body,
         refType: 'attendance',
         refId:   payload.attendanceId,
+      });
+      await this.waLogService.logWaNotification({
+        studentId: payload.studentId,
+        recipient: parentPhone ?? '',
+        message: body,
+        eventType: 'attendance.recorded',
       });
     } catch (err: unknown) {
       logger.warn('[NotificationListener] handleAttendanceRecorded error', {
@@ -247,6 +290,23 @@ export class NotificationListener {
       }
 
       await Promise.all(notifies);
+
+      // Audit log for each WA recipient
+      await this.waLogService.logWaNotification({
+        studentId: payload.studentId,
+        recipient: studentPhone ?? '',
+        message: body,
+        eventType: 'payment.received',
+      });
+      if (parentPhone !== null || payload.studentId) {
+        await this.waLogService.logWaNotification({
+          studentId: payload.studentId,
+          parentId: undefined,
+          recipient: parentPhone ?? '',
+          message: body,
+          eventType: 'payment.received',
+        });
+      }
     } catch (err: unknown) {
       logger.warn('[NotificationListener] handlePaymentReceived error', {
         paymentId: payload.paymentId,
@@ -278,14 +338,20 @@ export class NotificationListener {
         payload.decision === 'approved'
           ? 'DISETUJUI ✅'
           : `PERLU REVISI ↩\nCatatan: ${payload.note ?? '-'}`;
+      const body =
+        `Halo ${teacher?.user?.fullName ?? 'Bapak/Ibu Guru'}, hasil review RPP ` +
+        `"${payload.title}": ${verdict}\n— DIIS SMK Darussalam Subah`;
       await this.notificationService.notify({
         channel: 'whatsapp',
         to: phone,
-        body:
-          `Halo ${teacher?.user?.fullName ?? 'Bapak/Ibu Guru'}, hasil review RPP ` +
-          `"${payload.title}": ${verdict}\n— DIIS SMK Darussalam Subah`,
+        body,
         refType: 'rpp-review',
         refId: `${payload.rppId}:${payload.reviewedAtIso}`,
+      });
+      await this.waLogService.logWaNotification({
+        recipient: phone,
+        message: body,
+        eventType: 'rpp.reviewed',
       });
     } catch (err) {
       logger.error('[NotificationListener] rpp.reviewed gagal (fail-soft)', {
@@ -331,6 +397,11 @@ export class NotificationListener {
           refType: 'announcement',
           refId: payload.announcementId,
         });
+        await this.waLogService.logWaNotification({
+          recipient: r.phone,
+          message: body,
+          eventType: 'announcement.published',
+        });
       }
       logger.info('[NotificationListener] broadcast pengumuman dienqueue', {
         announcementId: payload.announcementId,
@@ -357,15 +428,22 @@ export class NotificationListener {
         });
         return;
       }
+      const body =
+        `Yth. Orang Tua/Wali ${c.fullName}, rapor ${payload.academicYear} ` +
+        `Semester ${payload.semester} ananda telah DIBAGIKAN dan dapat dilihat ` +
+        `di DIIS.\n— SMK Darussalam Subah`;
       await this.notificationService.notify({
         channel: 'whatsapp',
         to: c.parentPhone,
-        body:
-          `Yth. Orang Tua/Wali ${c.fullName}, rapor ${payload.academicYear} ` +
-          `Semester ${payload.semester} ananda telah DIBAGIKAN dan dapat dilihat ` +
-          `di DIIS.\n— SMK Darussalam Subah`,
+        body,
         refType: 'report-card',
         refId: payload.reportCardId,
+      });
+      await this.waLogService.logWaNotification({
+        studentId: payload.studentId,
+        recipient: c.parentPhone,
+        message: body,
+        eventType: 'report.distributed',
       });
     } catch (err) {
       logger.error('[NotificationListener] report.distributed gagal (fail-soft)', {

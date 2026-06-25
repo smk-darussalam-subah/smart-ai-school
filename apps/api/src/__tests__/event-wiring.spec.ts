@@ -45,6 +45,7 @@ import { FinanceService } from '../finance/finance.service';
 import { NotificationListener } from '../notification/notification.listener';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { WaLogService } from '../wa-log/wa-log.service';
 import { AuthUser } from '@smk/auth';
 import { EVENTS } from '../events/events.types';
 
@@ -567,6 +568,7 @@ describe('NotificationListener — konsumer event', () => {
         NotificationListener,
         { provide: NotificationService, useValue: notifService },
         { provide: PrismaService,       useValue: prisma },
+        { provide: WaLogService, useValue: { logWaNotification: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 

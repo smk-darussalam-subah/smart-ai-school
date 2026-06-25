@@ -22,6 +22,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveSiswaId, resolveUserId, isElevated } from '../common/helpers/role-helpers';
 import { EVENTS, ReportDistributedPayload } from '../events/events.types';
 import {
   GenerateReportsDto,
@@ -273,5 +274,147 @@ export class ReportCardsService {
       data: { notes: dto.notes },
       select: REPORT_SELECT,
     });
+  }
+
+  // ── Rapor Section Endpoints (P23) ──────────────────────────────────────
+
+  /** Verify ownership: SISWA → own data, ORTU → child data */
+  private async verifyAccess(studentId: string, user: AuthUser): Promise<void> {
+    if (isElevated(user) || user.roles.includes('GURU')) return;
+    if (user.roles.includes('SISWA')) {
+      const ownId = await resolveSiswaId(this.prisma, user.keycloakId);
+      if (ownId !== studentId) throw new ForbiddenException('Akses ditolak — bukan data Anda');
+      return;
+    }
+    if (user.roles.includes('ORANG_TUA')) {
+      const userId = await resolveUserId(this.prisma, user.keycloakId);
+      const child = await this.prisma.student.findFirst({
+        where: { id: studentId, parentId: userId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!child) throw new ForbiddenException('Siswa ini bukan anak Anda');
+      return;
+    }
+  }
+
+  /** Section B — Muatan Lokal grades for a student */
+  async findMuatanLokal(studentId: string, year: string, semester: number, user: AuthUser) {
+    await this.verifyAccess(studentId, user);
+    const grades = await this.prisma.grade.findMany({
+      where: {
+        studentId,
+        academicYear: year,
+        semester,
+        assignment: { subject: { contains: 'Muatan Lokal', mode: 'insensitive' } },
+      },
+      select: { score: true, type: true, assignment: { select: { subject: true } } },
+    });
+    const bySubject = new Map<string, { scores: number[]; count: number }>();
+    for (const g of grades) {
+      const subjectName = g.assignment?.subject ?? 'Unknown';
+      const entry = bySubject.get(subjectName) ?? { scores: [], count: 0 };
+      entry.scores.push(Number(g.score));
+      entry.count++;
+      bySubject.set(subjectName, entry);
+    }
+    return {
+      subjects: Array.from(bySubject.entries()).map(([name, data]) => ({
+        name,
+        na: data.scores.length > 0 ? Math.round(data.scores.reduce((a: number, b: number) => a + b, 0) / data.scores.length) : 0,
+        kktp: 75,
+        predikat: data.scores.length > 0 && (data.scores.reduce((a: number, b: number) => a + b, 0) / data.scores.length) >= 75 ? 'Tuntas' : 'Belum Tuntas',
+      })),
+    };
+  }
+
+  /** Section D — Ketidakhadiran summary for a student */
+  async findAttendanceSummary(studentId: string, year: string, semester: number, user: AuthUser) {
+    await this.verifyAccess(studentId, user);
+    // Build date range from year + semester (semester 1 = Jul-Dec, semester 2 = Jan-Jun)
+    const startDate = semester === 1 ? `${year}-07-01` : `${year}-01-01`;
+    const endDate = semester === 1 ? `${year}-12-31` : `${year}-06-30`;
+    const records = await this.prisma.attendance.findMany({
+      where: {
+        studentId,
+        date: { gte: startDate, lte: endDate },
+      },
+      select: { status: true },
+    });
+    const summary = { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: records.length };
+    for (const r of records) {
+      if (r.status === 'hadir') summary.hadir++;
+      else if (r.status === 'izin') summary.izin++;
+      else if (r.status === 'sakit') summary.sakit++;
+      else if (r.status === 'alpha') summary.alpha++;
+    }
+    return summary;
+  }
+
+  /** Section F — Deskripsi Perkembangan (auto-generated from grade trends) */
+  async findDevelopmentDescription(studentId: string, year: string, semester: number, user: AuthUser) {
+    await this.verifyAccess(studentId, user);
+    const grades = await this.prisma.grade.findMany({
+      where: { studentId, academicYear: year, semester },
+      select: { score: true },
+    });
+    if (grades.length === 0) {
+      return { description: 'Belum ada data nilai untuk periode ini.', spiritual: '-', social: '-', academic: '-' };
+    }
+    const scores = grades.map((g) => Number(g.score));
+    const avg = scores.reduce((sum: number, s: number) => sum + s, 0) / scores.length;
+    const academicLevel = avg >= 85 ? 'Sangat Baik' : avg >= 75 ? 'Baik' : avg >= 60 ? 'Cukup' : 'Perlu Bimbingan';
+    const description = `Siswa menunjukkan perkembangan akademik ${academicLevel.toLowerCase()} dengan rata-rata nilai ${Math.round(avg)}. ` +
+      `Semangat belajar perlu dipertahankan dan ditingkatkan untuk mencapai hasil yang lebih optimal.`;
+    return {
+      description,
+      spiritual: 'Baik',
+      social: 'Baik',
+      academic: academicLevel,
+    };
+  }
+
+  /** Section G — Pengesahan (homeroom teacher + principal info) */
+  async findApproval(studentId: string, year: string, semester: number, user: AuthUser) {
+    await this.verifyAccess(studentId, user);
+    // Get student's class and homeroom teacher (wali kelas)
+    const student = await this.prisma.student.findUnique({
+      where: { id: studentId },
+      select: {
+        class: {
+          select: {
+            id: true, name: true,
+            // homeroom teacher via teaching assignment or class relation
+          },
+        },
+      },
+    });
+    // Find wali kelas: first teacher assigned to this class
+    let homeroomTeacher: string | null = null;
+    if (student?.class) {
+      const assignment = await this.prisma.teachingAssignment.findFirst({
+        where: { classId: student.class.id },
+        select: { teacherId: true },
+      });
+      if (assignment?.teacherId) {
+        const teacher = await this.prisma.teacher.findUnique({
+          where: { id: assignment.teacherId },
+          select: { user: { select: { fullName: true } } },
+        });
+        homeroomTeacher = teacher?.user?.fullName ?? null;
+      }
+    }
+    // Find principal (KEPALA_SEKOLAH user)
+    const principal = await this.prisma.user.findFirst({
+      where: { role: 'KEPALA_SEKOLAH', isActive: true, deletedAt: null },
+      select: { fullName: true },
+    });
+    return {
+      homeroomTeacher: homeroomTeacher ?? '-',
+      principal: principal?.fullName ?? '-',
+      approvedAt: null,
+      schoolYear: year,
+      semester,
+      className: student?.class?.name ?? '-',
+    };
   }
 }

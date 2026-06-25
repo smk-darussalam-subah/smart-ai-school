@@ -16,7 +16,10 @@ import { OllamaAdapter } from './adapters/ollama.adapter';
 import { ClaudeAdapter } from './adapters/claude.adapter';
 import { AiService } from './ai.service';
 import { AiController } from './ai.controller';
+import { AiGenerateService } from './ai-generate.service';
+import { AiGenerateController } from './ai-generate.controller';
 import { PrismaModule } from '../prisma/prisma.module';
+import { PermissionModule } from '../permissions/permissions.module';
 
 function buildAiGateway(): AIGateway {
   const baseUrl = process.env['OLLAMA_URL'] ?? 'http://ollama:11434';
@@ -38,8 +41,8 @@ function buildClaudeGateway(): AIGateway | null {
 }
 
 @Module({
-  imports: [PrismaModule],
-  controllers: [AiController],
+  imports: [PrismaModule, PermissionModule],
+  controllers: [AiController, AiGenerateController],
   providers: [
     {
       provide: 'AI_GATEWAY',
@@ -50,7 +53,8 @@ function buildClaudeGateway(): AIGateway | null {
       useFactory: buildClaudeGateway,
     },
     AiService,
+    AiGenerateService,
   ],
-  exports: ['AI_GATEWAY', 'CLAUDE_GATEWAY', AiService],
+  exports: ['AI_GATEWAY', 'CLAUDE_GATEWAY', AiService, AiGenerateService],
 })
 export class AiModule {}

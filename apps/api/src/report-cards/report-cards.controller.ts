@@ -23,6 +23,58 @@ import {
 export class ReportCardsController {
   constructor(private readonly service: ReportCardsService) {}
 
+  // ── Rapor section endpoints (P23 — dedicated routes before :id) ───────────
+
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @RequirePermission('report.read')
+  @Get(':studentId/muatan-lokal')
+  findMuatanLokal(
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+    @Query('year') year: string,
+    @Query('semester') semester: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.findMuatanLokal(studentId, year, Number(semester), user);
+  }
+
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @RequirePermission('report.read')
+  @Get(':studentId/attendance-summary')
+  findAttendanceSummary(
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+    @Query('year') year: string,
+    @Query('semester') semester: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.findAttendanceSummary(studentId, year, Number(semester), user);
+  }
+
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @RequirePermission('report.read')
+  @Get(':studentId/development-description')
+  findDevelopmentDescription(
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+    @Query('year') year: string,
+    @Query('semester') semester: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.findDevelopmentDescription(studentId, year, Number(semester), user);
+  }
+
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @RequirePermission('report.read')
+  @Get(':studentId/approval')
+  findApproval(
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+    @Query('year') year: string,
+    @Query('semester') semester: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.findApproval(studentId, year, Number(semester), user);
+  }
+
+  // ── General routes ────────────────────────────────────────────────────────
+
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
   @RequirePermission('report.read')
   @Get()

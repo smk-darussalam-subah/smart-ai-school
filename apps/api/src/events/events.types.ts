@@ -17,6 +17,8 @@ export const EVENTS = {
   RPP_REVIEWED:           'rpp.reviewed',
   ANNOUNCEMENT_PUBLISHED: 'announcement.published',
   REPORT_DISTRIBUTED:     'report.distributed',
+  BADGE_AWARDED:           'badge.awarded',
+  XP_AWARDED:              'xp.awarded',
 } as const;
 
 // ── Producer payloads ─────────────────────────────────────────────────────────
@@ -93,4 +95,21 @@ export interface ReportDistributedPayload {
   studentId:    string;
   academicYear: string;
   semester:     number;
+}
+
+export interface BadgeAwardedPayload {
+  badgeId:   string;
+  studentId: string;
+  badgeName: string;
+  badgeIcon: string;
+  /** null = auto-awarded by system; userId = manually awarded by teacher/KS */
+  awardedBy: string | null;
+}
+
+export interface XpAwardedPayload {
+  studentId: string;
+  amount:    number;
+  newTotal:  number;
+  newLevel:  number;
+  source:    string;
 }
