@@ -45,6 +45,11 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { LmsModule } from './lms/lms.module';
 import { AssessmentModule } from './assessment/assessment.module';
 import { StudentDashboardModule } from './student-dashboard/student-dashboard.module';
+import { QuestionBankModule } from './question-bank/question-bank.module';
+import { BadgesModule } from './badges/badges.module';
+import { WaLogModule } from './wa-log/wa-log.module';
+import { GamificationModule } from './gamification/gamification.module';
+import { PushModule } from './push/push.module';
 
 @Module({
   imports: [
@@ -86,6 +91,11 @@ import { StudentDashboardModule } from './student-dashboard/student-dashboard.mo
     LmsModule,
     AssessmentModule,
     StudentDashboardModule,
+    QuestionBankModule,
+    BadgesModule,
+    WaLogModule,
+    GamificationModule,
+    PushModule,
   ],
   providers: [
     UserStatusService,

@@ -11,6 +11,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationListener } from '../notification/notification.listener';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { WaLogService } from '../wa-log/wa-log.service';
 
 describe('NotificationListener 2G-3', () => {
   let listener: NotificationListener;
@@ -26,6 +27,7 @@ describe('NotificationListener 2G-3', () => {
       providers: [
         NotificationListener,
         { provide: NotificationService, useValue: { notify } },
+        { provide: WaLogService, useValue: { logWaNotification: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: PrismaService,
           useValue: {
