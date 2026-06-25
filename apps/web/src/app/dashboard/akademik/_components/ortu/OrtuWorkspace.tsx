@@ -19,9 +19,11 @@ import PengumumanModal from './PengumumanModal';
 import DayDetailModal from './DayDetailModal';
 import RaporModal from './RaporModal';
 import PayDetailModal from './PayDetailModal';
-import { SIM_PENGUMUMAN, SIM_CHILDREN, SIM_NILAI, SIM_PEMBAYARAN, initials } from './ortu-data';
-import type { OrtuNilai, OrtuPengumuman } from './ortu-types';
+import { initials } from './ortu-data';
+import type { OrtuChild, OrtuNilai, OrtuPengumuman } from './ortu-types';
 import type { AttendanceCellStatus, Pembayaran } from '@/lib/academic';
+import type { GradeItem, AttendanceItem } from '@/lib/api';
+import type { ScheduleItem } from '../guru-types';
 
 // ── Types (exported for child components) ───────────────────────────────────
 
@@ -35,16 +37,23 @@ export interface ModalState {
 // ── Props ───────────────────────────────────────────────────────────────────
 
 interface OrtuWorkspaceProps {
-  grades?: unknown[];
-  attendance?: unknown[];
-  schedule?: unknown[];
-  announcements?: unknown[];
+  children?: OrtuChild[];
+  grades?: GradeItem[];
+  attendance?: AttendanceItem[];
+  schedule?: ScheduleItem[];
+  announcements?: { id: string; title: string; createdAt: string }[];
+  spp?: Array<{ id: string; month: string; amount: number; status: string; dueDate: string | null }>;
+  assignments?: Array<{ id: string; subject: string; class: { id: string; name: string } }>;
+  badges?: Array<{ id: string; awardedAt: string; badge: { id: string; code: string; name: string; description: string; icon: string; tier: string } }>;
+  waLog?: Array<{ id: string; studentId: string; recipient: string; message: string; eventType: string; createdAt: string }>;
   viewAs?: string | null;
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function OrtuWorkspace({ grades, attendance: _attendance, schedule: _schedule, announcements, viewAs }: OrtuWorkspaceProps) {
+export default function OrtuWorkspace({
+  children: realChildren, grades, attendance: _attendance, schedule: _schedule, announcements, spp: realSpp, badges: _realBadges, waLog: _realWaLog, viewAs
+}: OrtuWorkspaceProps) {
   const { data: session } = useSession();
   const [activeScreen, setActiveScreen] = useState<OrtuScreen>('beranda');
   const [modal, setModal] = useState<ModalState>({ type: null });
@@ -79,11 +88,12 @@ export default function OrtuWorkspace({ grades, attendance: _attendance, schedul
     window.scrollTo(0, 0);
   }, []);
 
-  // Child selector
-  const child = SIM_CHILDREN[0]!;
+  // Child selector — use real data (P25) or empty
+  const childList = realChildren?.length ? realChildren : [];
+  const child = childList[0] ?? { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
 
-  // Dynamic unpaid payment count for nav badge
-  const unpaidCount = SIM_PEMBAYARAN.filter((p) => p.status === 'unpaid').length;
+  // Dynamic unpaid payment count for nav badge — use real SPP data (P25)
+  const unpaidCount = realSpp?.filter((p) => p.status === 'unpaid').length ?? 0;
 
   const navItems: { key: OrtuScreen; label: string; icon: typeof Home }[] = [
     { key: 'beranda', label: 'Beranda', icon: Home },
@@ -156,7 +166,7 @@ export default function OrtuWorkspace({ grades, attendance: _attendance, schedul
           <div className="flex items-center gap-1.5">
             {/* Child selector */}
             <button
-              onClick={() => showToast(`${SIM_CHILDREN.length} anak terdaftar: ${child.name}`)}
+              onClick={() => showToast(`${childList.length} anak terdaftar: ${childList.length > 0 ? child.name : 'belum ada data'}`)}
               className="flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 transition-colors hover:border-[var(--pri)]"
               aria-label="Pilih anak"
             >
@@ -200,13 +210,6 @@ export default function OrtuWorkspace({ grades, attendance: _attendance, schedul
 
       {/* View-As Banner (when impersonating) */}
       {viewAs && <ViewAsBanner viewAs={viewAs} />}
-
-      {/* Mockup badge */}
-      <div className="mx-auto max-w-[560px] px-4 py-2">
-        <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-500">
-          <span className="text-xs">🧪</span> MOCKUP — Data dummy untuk preview. Dashboard Orang Tua DIIS.
-        </div>
-      </div>
 
       {/* Screen content */}
       <main className="mx-auto max-w-[560px] pb-24">
@@ -257,7 +260,7 @@ export default function OrtuWorkspace({ grades, attendance: _attendance, schedul
 
       {modal.type === 'pengumuman' && (
         <PengumumanModal
-          announcements={(announcements?.length ? announcements : SIM_PENGUMUMAN) as OrtuPengumuman[]}
+          announcements={(announcements ?? []) as unknown as OrtuPengumuman[]}
           onClose={() => setModal({ type: null })}
         />
       )}
@@ -274,7 +277,7 @@ export default function OrtuWorkspace({ grades, attendance: _attendance, schedul
 
       {modal.type === 'rapor' && (
         <RaporModal
-          nilai={(grades?.length ? grades : SIM_NILAI) as OrtuNilai[]}
+          nilai={(grades ?? []) as unknown as OrtuNilai[]}
           onClose={() => setModal({ type: null })}
           showToast={showToast}
         />
