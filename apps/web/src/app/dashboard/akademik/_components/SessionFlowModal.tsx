@@ -12,6 +12,8 @@ interface Props {
   onJurnal: (c: { classId: string; className: string; subject: string; startLabel: string; jpStart: number }) => void;
   onOpenPenilaian: (session: TodayClass, mode: 'preview' | 'monitor', tab: 'diag' | 'form' | 'fb') => void;
   onNavigate: (screen: string) => void;
+  /** Step 4 "Buka Modul Ajar": tutup modal + arahkan ke pembelajaran + pre-select subject. */
+  onOpenModule?: (subject: string) => void;
   onClose: () => void;
 }
 
@@ -28,7 +30,7 @@ const SESSION_STEPS = [
   { n: 'Jurnal', icon: PenLine, d: 'Tulis jurnal mengajar & catat kendala' },
 ] as const;
 
-export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPenilaian, onNavigate, onClose }: Props) {
+export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPenilaian, onNavigate, onOpenModule, onClose }: Props) {
   const [step, setStep] = useState(1);
   const [done, setDone] = useState<Record<number, boolean>>({});
 
@@ -43,7 +45,12 @@ export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPen
     switch (step) {
       case 2: onAbsen({ classId: session.classId, className: session.className }); break;
       case 3: onOpenPenilaian(session, 'preview', 'diag'); break;
-      case 4: onNavigate('pembelajaran'); break;
+      // Step 4: tutup modal LALU arahkan ke pembelajaran dgn subject terpilih.
+      // Sebelumnya hanya onNavigate (modal tetap terbuka → navigasi di belakang popup).
+      case 4:
+        if (onOpenModule) onOpenModule(session.subject);
+        else { onNavigate('pembelajaran'); onClose(); }
+        break;
       case 5: onOpenPenilaian(session, 'preview', 'form'); break;
       case 6: onOpenPenilaian(session, 'monitor', 'form'); break;
       case 7: onOpenPenilaian(session, 'preview', 'fb'); break;

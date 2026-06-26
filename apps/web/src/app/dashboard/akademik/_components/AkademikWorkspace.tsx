@@ -225,7 +225,7 @@ export default function AkademikWorkspace({
         )}
 
         {screen === 'pembelajaran' && (
-          <PembelajaranGuru rpp={rpp} lmsModules={lmsModules} subjects={subjects} classes={guruClasses} academicYear={academicYear} semester={semester} />
+          <PembelajaranGuru rpp={rpp} lmsModules={lmsModules} subjects={subjects} classes={guruClasses} academicYear={academicYear} semester={semester} activeSubject={subject} onClearSubject={() => setSubject('all')} />
         )}
 
         {screen === 'penilaian' && (
@@ -264,6 +264,12 @@ export default function AkademikWorkspace({
           onJurnal={(c) => setJurnal(c)}
           onOpenPenilaian={(s, mode, tab) => setPenilaian({ session: s, mode, tab })}
           onNavigate={(sc) => setScreen(sc as Screen)}
+          onOpenModule={(subject) => {
+            // Tutup modal sesi, pre-select subject, arahkan ke tab Pembelajaran.
+            if (subject && subjects.includes(subject)) setSubject(subject);
+            setSessFlow(null);
+            setScreen('pembelajaran');
+          }}
           onClose={() => setSessFlow(null)}
         />
       )}

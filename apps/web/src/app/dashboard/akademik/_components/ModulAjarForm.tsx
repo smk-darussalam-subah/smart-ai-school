@@ -197,8 +197,8 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
           </div>
         )}
 
-        {/* Body: sidebar + content */}
-        <div className="flex min-h-0 flex-1">
+        {/* Body: sidebar + content. Mobile = column (stepper atas, konten bawah); desktop = row */}
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           {/* Step sidebar — desktop */}
           <nav className="hidden w-56 shrink-0 overflow-y-auto border-r border-[#e6efea] bg-[#f9fbfa] py-3 lg:block">
             {STEPS.map((s) => {
@@ -220,8 +220,8 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
             })}
           </nav>
 
-          {/* Mobile stepper */}
-          <div className="flex gap-1.5 overflow-x-auto border-b border-[#e6efea] px-4 py-2 lg:hidden" style={{ scrollbarWidth: 'none' }}>
+          {/* Mobile stepper — atas konten (column), horizontal scroll anti-wrap */}
+          <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-[#e6efea] px-4 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
             {STEPS.map((s) => (
               <button key={s.n} type="button" onClick={() => goStep(s.n)}
                 className={clsx('flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold',
