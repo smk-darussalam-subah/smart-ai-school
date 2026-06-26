@@ -11,9 +11,10 @@ interface Props {
   onAbsen: (c: { classId: string; className: string }) => void;
   onJurnal: (c: { classId: string; className: string; subject: string; startLabel: string; jpStart: number }) => void;
   onOpenPenilaian: (session: TodayClass, mode: 'preview' | 'monitor', tab: 'diag' | 'form' | 'fb') => void;
-  onNavigate: (screen: string) => void;
-  /** Step 4 "Buka Modul Ajar": tutup modal + arahkan ke pembelajaran + pre-select subject. */
-  onOpenModule?: (subject: string) => void;
+  /** Step 4 "Buka Modul Ajar": buka popup Modul Ajar DI ATAS modal sesi (z-50 > z-40),
+   *  pre-fill sesuai mapel/kelas sesi. Modal sesi TETAP TERBUKA agar flow tak terputus
+   *  (pola yang sama dgn step 3 → PenilaianSesiModal). */
+  onOpenModule?: (session: TodayClass) => void;
   onClose: () => void;
 }
 
@@ -30,7 +31,7 @@ const SESSION_STEPS = [
   { n: 'Jurnal', icon: PenLine, d: 'Tulis jurnal mengajar & catat kendala' },
 ] as const;
 
-export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPenilaian, onNavigate, onOpenModule, onClose }: Props) {
+export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPenilaian, onOpenModule, onClose }: Props) {
   const [step, setStep] = useState(1);
   const [done, setDone] = useState<Record<number, boolean>>({});
 
@@ -45,12 +46,10 @@ export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPen
     switch (step) {
       case 2: onAbsen({ classId: session.classId, className: session.className }); break;
       case 3: onOpenPenilaian(session, 'preview', 'diag'); break;
-      // Step 4: tutup modal LALU arahkan ke pembelajaran dgn subject terpilih.
-      // Sebelumnya hanya onNavigate (modal tetap terbuka → navigasi di belakang popup).
-      case 4:
-        if (onOpenModule) onOpenModule(session.subject);
-        else { onNavigate('pembelajaran'); onClose(); }
-        break;
+      // Step 4: buka popup Modul Ajar DI ATAS modal sesi (modal sesi tetap terbuka,
+      // flow tak terputus — sama seperti step 3). Sebelumnya: close+navigate = salah
+      // (memutus flow sesi).
+      case 4: onOpenModule?.(session); break;
       case 5: onOpenPenilaian(session, 'preview', 'form'); break;
       case 6: onOpenPenilaian(session, 'monitor', 'form'); break;
       case 7: onOpenPenilaian(session, 'preview', 'fb'); break;
