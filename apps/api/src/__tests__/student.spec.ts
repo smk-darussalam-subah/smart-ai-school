@@ -266,6 +266,46 @@ describe('StudentService', () => {
     });
   });
 
+  // ── findMyChildren (W1-1) ──────────────────────────────────────────────────
+
+  describe('findMyChildren', () => {
+    it('ORANG_TUA → daftar anak dengan parentId match', async () => {
+      prisma.user.findUnique.mockResolvedValue(MOCK_ORTU_DB_USER);
+      prisma.student.findMany.mockResolvedValue([MOCK_STUDENT]);
+
+      const result = await service.findMyChildren(ORANGTUA_USER);
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toEqual(MOCK_STUDENT);
+      expect(prisma.student.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { parentId: 'ortu-db-user-id', deletedAt: null },
+          orderBy: { joinedAt: 'asc' },
+        }),
+      );
+    });
+
+    it('ORANG_TUA tanpa anak → array kosong', async () => {
+      prisma.user.findUnique.mockResolvedValue(MOCK_ORTU_DB_USER);
+      prisma.student.findMany.mockResolvedValue([]);
+
+      const result = await service.findMyChildren(ORANGTUA_USER);
+
+      expect(result.data).toHaveLength(0);
+    });
+
+    it('resolveUserId via shared helper (user.findUnique dipanggil dengan keycloakId)', async () => {
+      prisma.user.findUnique.mockResolvedValue(MOCK_ORTU_DB_USER);
+      prisma.student.findMany.mockResolvedValue([]);
+
+      await service.findMyChildren(ORANGTUA_USER);
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { keycloakId: 'kc-ortu-uuid' } }),
+      );
+    });
+  });
+
   // ── create ───────────────────────────────────────────────────────────────
 
   describe('create', () => {

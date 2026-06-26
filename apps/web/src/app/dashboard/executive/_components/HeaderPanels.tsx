@@ -11,7 +11,7 @@ export function GaugeHealth({ health }: { health: KioskHealth }) {
   const label = score === null ? '—' : score >= 80 ? 'BAIK' : score >= 65 ? 'CUKUP' : 'PERLU PERHATIAN';
   const up = (health.delta ?? 0) >= 0;
   return (
-    <Card title="Indeks Kesehatan Sekolah" subtitle="Gabungan pilar tersedia" icon={Activity} level="soon" className="col-span-12 lg:col-span-4">
+    <Card title="Indeks Kesehatan Sekolah" subtitle="Gabungan pilar tersedia" icon={Activity} level="real" className="col-span-12 lg:col-span-4">
       <div className="flex items-center gap-5">
         <div>
           <div className="text-[52px] font-extrabold leading-none tracking-tighter text-[#0f2e25]">

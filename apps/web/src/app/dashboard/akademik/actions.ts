@@ -137,6 +137,13 @@ export async function deleteRpp(id: string) {
   return r;
 }
 
+/** Review Modul Ajar (KS/SA: approve atau revise dengan catatan). */
+export async function reviewRpp(id: string, decision: 'approved' | 'revision', note?: string) {
+  const r = await apiCall(`/rpp/${id}/review`, 'PATCH', { decision, note: note ?? null });
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
 // ── Modul LMS (materi belajar siswa) ───────────────────────────────────────────
 
 export interface LmsFormData {
@@ -200,4 +207,64 @@ export async function fetchLmsProgress(id: string) {
   } catch {
     return { success: false, error: 'Koneksi ke server gagal. Coba lagi.' };
   }
+}
+
+// ── Question Bank (P20 — W3-2) ─────────────────────────────────────────────
+
+export interface QuestionData {
+  subject: string;
+  type: 'multiple_choice' | 'essay' | 'true_false';
+  body: string;
+  options?: string[];
+  answer?: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  tags?: string[];
+}
+
+/** Fetch questions for a subject (or all if no subject). */
+export async function fetchQuestions(subject?: string) {
+  const path = subject ? `/questions?subject=${encodeURIComponent(subject)}&limit=200` : '/questions?limit=200';
+  const r = await apiCall(path, 'GET');
+  return r;
+}
+
+/** Create a new question in the bank. */
+export async function createQuestion(data: QuestionData) {
+  const r = await apiCall('/questions', 'POST', data);
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+/** Update an existing question. */
+export async function updateQuestion(id: string, data: Partial<QuestionData>) {
+  const r = await apiCall(`/questions/${id}`, 'PATCH', data);
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+/** Delete a question. */
+export async function deleteQuestion(id: string) {
+  const r = await apiCall(`/questions/${id}`, 'DELETE');
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+// ── AI Generate (P20 — W3-5) ───────────────────────────────────────────────
+
+/** Generate questions from RPP body via AI. */
+export async function aiGenerateQuestions(data: { rppBody: string; subject: string; count: number; type: string }) {
+  const r = await apiCall('/ai/generate-questions', 'POST', data);
+  return r;
+}
+
+/** Generate learning material from RPP body via AI. */
+export async function aiGenerateMaterial(data: { rppBody: string; subject: string }) {
+  const r = await apiCall('/ai/generate-material', 'POST', data);
+  return r;
+}
+
+/** Generate ATP from CP + TP via AI. */
+export async function aiGenerateAtp(data: { cp: string; tp: string[]; subject: string }) {
+  const r = await apiCall('/ai/generate-atp', 'POST', data);
+  return r;
 }

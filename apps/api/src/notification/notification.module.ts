@@ -22,6 +22,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { createNotificationQueue, NotifJob } from './queue.config';
 import { createNotificationWorker } from './notification-worker';
+import { WaLogModule } from '../wa-log/wa-log.module';
 
 function buildRedisConnection(): RedisOptions {
   const url = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -57,7 +58,7 @@ function buildAdapter(): NotificationAdapter {
 }
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, WaLogModule],
   providers: [
     { provide: 'NOTIFICATION_ADAPTER', useFactory: buildAdapter },
     { provide: 'REDIS_CONNECTION', useFactory: buildRedisConnection },

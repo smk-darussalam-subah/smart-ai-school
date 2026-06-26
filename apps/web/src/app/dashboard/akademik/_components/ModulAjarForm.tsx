@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { RppItem, ModulAjarBody, AtpItem, KegiatanItem } from './guru-types';
-import { createRpp, updateRpp, submitRpp } from '../actions';
+import { createRpp, updateRpp, submitRpp, aiGenerateAtp } from '../actions';
 
 interface Props {
   open: boolean;
@@ -95,8 +95,34 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
     contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const [, startAi] = useTransition();
+
   const aiGenerate = (stepNum: number) => {
-    showToast(`Bagian "${STEPS[stepNum - 1]?.label}" berhasil di-generate AI. Silakan sunting.`);
+    // Step 3 (ATP) → real API call. Other steps → SIMULASI (backend belum ada)
+    if (stepNum === 3) {
+      if (!subject) { showToast('Pilih mapel terlebih dahulu.'); return; }
+      const cpText = typeof body.cp === 'string' ? body.cp : '';
+      const tpList = Array.isArray(body.tp) ? body.tp.filter((t) => t.trim()) : [];
+      if (tpList.length === 0) { showToast('Tambahkan minimal 1 TP sebelum generate ATP.'); return; }
+      startAi(async () => {
+        const res = await aiGenerateAtp({ cp: cpText, tp: tpList, subject });
+        if (!res.success) {
+          const msg = res.error ?? 'Gagal generate AI.';
+          showToast(msg.includes('429') ? 'Rate limit tercapai (10/menit). Coba lagi nanti.' : msg);
+          return;
+        }
+        const data = res.data as { output?: AtpItem[] };
+        if (data?.output && Array.isArray(data.output)) {
+          set('atp', data.output);
+          showToast('ATP berhasil di-generate AI. Silakan sunting.');
+        } else {
+          showToast('AI tidak mengembalikan ATP. Coba lagi.');
+        }
+      });
+      return;
+    }
+    // Other steps — SIMULASI (backend belum tersedia)
+    showToast(`Bagian "${STEPS[stepNum - 1]?.label}" berhasil di-generate AI (SIMULASI). Silakan sunting.`);
   };
 
   const saveDraft = () => {

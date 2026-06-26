@@ -22,7 +22,7 @@ export function GradeBoxPlot({ grades }: { grades: GradeAnalytics | null }) {
   const y = yScale(50, 100, H - 30, 20);
   const kkm = grades?.filters.kkm ?? KKTP_DEFAULT;
   return (
-    <Card title="Distribusi Nilai per Jurusan" subtitle="Median, kuartil & sebaran" icon={BarChart3} level="soon" className="col-span-12 lg:col-span-5">
+    <Card title="Distribusi Nilai per Jurusan" subtitle="Median, kuartil & sebaran" icon={BarChart3} level="real" className="col-span-12 lg:col-span-5">
       {rows.length === 0 ? (
         <EmptyState label="Belum ada nilai pada periode ini" />
       ) : (
@@ -77,7 +77,7 @@ export function ScatterCorrelation({ grades }: { grades: GradeAnalytics | null }
     line = { x1: xv(60), y1: yv(slope * 60 + intercept), x2: xv(100), y2: yv(slope * 100 + intercept) };
   }
   return (
-    <Card title="Korelasi Kehadiran ↔ Nilai" subtitle={`r = ${r} · kehadiran prediktor prestasi`} icon={Activity} level="soon" className="col-span-12 lg:col-span-4">
+    <Card title="Korelasi Kehadiran ↔ Nilai" subtitle={`r = ${r} · kehadiran prediktor prestasi`} icon={Activity} level="real" className="col-span-12 lg:col-span-4">
       {pts.length === 0 ? (
         <EmptyState label="Data belum cukup untuk korelasi" />
       ) : (
@@ -87,9 +87,17 @@ export function ScatterCorrelation({ grades }: { grades: GradeAnalytics | null }
           <text x={40} y={H - 16} className="fill-[#6b8079] text-[10px] font-semibold">60%</text>
           <text x={W - 8} y={H - 16} textAnchor="end" className="fill-[#6b8079] text-[10px] font-semibold">100% hadir</text>
           {line && <line x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke="#059669" strokeWidth={2} strokeDasharray="5 4" opacity={0.8} />}
-          {pts.map((p, i) => (
-            <circle key={i} cx={xv(p.x)} cy={yv(p.y)} r={3.6} fill="#10b981" opacity={0.8} />
-          ))}
+          {pts.map((p, i) => {
+            const isOutlier = p.x < 80 && p.y < KKTP_DEFAULT;
+            return (
+              <circle key={i} cx={xv(p.x)} cy={yv(p.y)} r={isOutlier ? 4.5 : 3.6} fill={isOutlier ? '#e11d48' : '#10b981'} opacity={isOutlier ? 0.9 : 0.8}>
+                <title>{`Kehadiran ${p.x}%, Nilai ${p.y}${isOutlier ? ' (outlier risiko)' : ''}`}</title>
+              </circle>
+            );
+          })}
+          {pts.some((p) => p.x < 80 && p.y < KKTP_DEFAULT) && (
+            <text x={xv(72)} y={yv(58)} className="fill-[#e11d48] text-[9px] font-bold" textAnchor="middle">outlier risiko</text>
+          )}
         </svg>
       )}
     </Card>
@@ -102,10 +110,11 @@ export function KkmHeatmap({ grades }: { grades: GradeAnalytics | null }) {
   const get = (major: string, subject: string) =>
     matrix?.cells.find((c) => c.majorCode === major && c.subject === subject)?.passRate ?? null;
   return (
-    <Card title="Ketuntasan KKM" subtitle="% lulus · jurusan × mapel" icon={ClipboardList} level="soon" className="col-span-12 lg:col-span-3">
+    <Card title="Ketuntasan KKM" subtitle="% lulus · jurusan × mapel" icon={ClipboardList} level="real" className="col-span-12 lg:col-span-3">
       {!matrix || matrix.majors.length === 0 || matrix.subjects.length === 0 ? (
         <EmptyState label="Belum ada nilai" />
       ) : (
+        <>
         <table className="w-full border-separate" style={{ borderSpacing: 4 }}>
           <thead>
             <tr>
@@ -124,7 +133,7 @@ export function KkmHeatmap({ grades }: { grades: GradeAnalytics | null }) {
                 {matrix.subjects.map((s) => {
                   const p = get(m, s);
                   return (
-                    <td key={s} className="rounded-md px-1 py-2 text-center text-[10.5px] font-bold text-white" style={{ background: passColor(p) }}>
+                    <td key={s} className="rounded-md px-1 py-2 text-center text-[10.5px] font-bold text-white" style={{ background: passColor(p) }} aria-label={`${m} ${s}: ${p === null ? 'tidak ada data' : `${Math.round(p)}%`}`}>
                       {p === null ? '–' : Math.round(p)}
                     </td>
                   );
@@ -133,6 +142,14 @@ export function KkmHeatmap({ grades }: { grades: GradeAnalytics | null }) {
             ))}
           </tbody>
         </table>
+        <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-semibold text-[#6b8079]">
+          <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm" style={{ background: '#e11d48' }} />&lt;60</span>
+          <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm" style={{ background: '#d97706' }} />60–69</span>
+          <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm" style={{ background: '#f59e0b' }} />70–79</span>
+          <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm" style={{ background: '#10b981' }} />80–89</span>
+          <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm" style={{ background: '#059669' }} />90+</span>
+        </div>
+        </>
       )}
     </Card>
   );

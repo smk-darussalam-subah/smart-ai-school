@@ -43,7 +43,7 @@ export function TrendArea({ tren }: { tren: TrenSeries }) {
 // ── Siswa berisiko ────────────────────────────────────────────────────────────
 export function AtRiskCard({ atRisk }: { atRisk: AtRisk | null }) {
   return (
-    <Card title="Siswa Berisiko" subtitle="Alpha kronis ≥ 3× / 30 hari" icon={ShieldCheck} level="soon" className="col-span-12 lg:col-span-4">
+    <Card title="Siswa Berisiko" subtitle="Alpha kronis ≥ 3× / 30 hari" icon={ShieldCheck} level="real" className="col-span-12 lg:col-span-4">
       {!atRisk ? (
         <EmptyState />
       ) : (
@@ -86,7 +86,7 @@ function Bar({ label, pct, value }: { label: string; pct: number | null; value: 
 
 export function TeacherComplianceCard({ teacher }: { teacher: TeacherCompliance | null }) {
   return (
-    <Card title="Kepatuhan Guru" subtitle="Kehadiran GPS · RPP" icon={ClipboardCheck} level="soon" className="col-span-12 lg:col-span-5">
+    <Card title="Kepatuhan Guru" subtitle="Kehadiran GPS · RPP" icon={ClipboardCheck} level="real" className="col-span-12 lg:col-span-5">
       {!teacher ? (
         <EmptyState />
       ) : (
@@ -155,7 +155,7 @@ const AGING_COLORS = ['#10b981', '#f59e0b', '#d97706', '#e11d48'];
 export function AgingBar({ aging }: { aging: Aging | null }) {
   const total = aging?.totalAmount ?? 0;
   return (
-    <Card title="Aging Tunggakan" subtitle="Umur piutang SPP" icon={Wallet} level="soon" className="col-span-12 lg:col-span-4">
+    <Card title="Aging Tunggakan" subtitle="Umur piutang SPP" icon={Wallet} level="real" className="col-span-12 lg:col-span-4">
       {!aging || total === 0 ? (
         <EmptyState label="Tidak ada tunggakan 🎉" />
       ) : (

@@ -18,7 +18,7 @@ datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
   extensions = [vector, uuidOssp(map: "uuid-ossp"), pgTrgm(map: "pg_trgm")]
-  schemas    = ["auth", "academic", "student", "teacher", "ppdb", "finance", "notification", "ai_knowledge", "audit", "school"]
+  schemas    = ["auth", "academic", "student", "teacher", "ppdb", "finance", "notification", "ai_knowledge", "audit", "school", "gamification"]
 }
 
 // =============================================================================
@@ -144,6 +144,7 @@ model Class {
   reportCards         ReportCard[]
   activities          ClassActivity[]
   lmsModules          LmsModule[]
+  assessmentSessions   AssessmentSession[]
 
   @@unique([name, academicYear])
   @@map("classes")
@@ -175,6 +176,9 @@ model Student {
   reportCards ReportCard[]
   sppPayments SppPayment[]
   lmsProgress LmsModuleProgress[]
+  assessmentResponses AssessmentResponse[]
+  studentBadges       StudentBadge[]
+  studentXp           StudentXp?
 
   @@index([classId])   // StudentService.findAll(classId filter) + ownership SISWA/OT
   @@index([parentId])  // resolveChildStudentIds() — setiap request ORANG_TUA
@@ -211,7 +215,10 @@ model Teacher {
   attendances TeacherAttendance[]
   rpps        Rpp[]
   activities  ClassActivity[]
-  lmsModules  LmsModule[]
+  lmsModules         LmsModule[]
+  assessmentSessions  AssessmentSession[]
+  questions           Question[]
+  questionSets        QuestionSet[]
 
   @@map("teachers")
   @@schema("teacher")
@@ -506,6 +513,7 @@ model LmsModule {
   rpp      Rpp?                @relation(fields: [rppId], references: [id])
   class    Class?              @relation(fields: [classId], references: [id])
   progress LmsModuleProgress[]
+  sessions  AssessmentSession[]
 
   @@index([teacherId, subject])
   @@index([classId, status])
@@ -542,6 +550,73 @@ enum LmsModuleStatus {
 
 enum LmsProgressStatus {
   locked
+  active
+  completed
+
+  @@schema("academic")
+}
+
+// =============================================================================
+// Assessment Sessions — sesi asesmen (diagnostik/formatif/sumatif) terkait LMS.
+// Guru membuat sesi dari modul LMS, siswa mengerjakan, sistem menilai otomatis.
+// =============================================================================
+model AssessmentSession {
+  id           String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  moduleId     String                @map("module_id") @db.Uuid
+  teacherId    String                @map("teacher_id") @db.Uuid
+  classId      String?               @map("class_id") @db.Uuid
+  title        String                @db.VarChar(255)
+  type         AssessmentType
+  status       AssessmentSessionStatus @default(draft)
+  questions    Json                  @db.JsonB
+  startedAt    DateTime?             @map("started_at")
+  completedAt  DateTime?             @map("completed_at")
+  academicYear String                @map("academic_year") @db.VarChar(9)
+  semester     Int
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at")
+
+  module     LmsModule           @relation(fields: [moduleId], references: [id])
+  teacher    Teacher             @relation(fields: [teacherId], references: [id])
+  class      Class?              @relation(fields: [classId], references: [id])
+  responses  AssessmentResponse[]
+
+  @@index([moduleId, status])
+  @@index([teacherId, academicYear, semester])
+  @@index([classId, status])
+  @@map("assessment_sessions")
+  @@schema("academic")
+}
+
+model AssessmentResponse {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId   String    @map("session_id") @db.Uuid
+  studentId   String    @map("student_id") @db.Uuid
+  answers     Json?     @db.JsonB
+  score       Int?
+  submittedAt DateTime? @map("submitted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  session  AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student  Student           @relation(fields: [studentId], references: [id])
+
+  @@unique([sessionId, studentId])
+  @@index([studentId])
+  @@map("assessment_responses")
+  @@schema("academic")
+}
+
+enum AssessmentType {
+  diagnostik
+  formatif
+  sumatif
+
+  @@schema("academic")
+}
+
+enum AssessmentSessionStatus {
+  draft
   active
   completed
 
@@ -1092,4 +1167,228 @@ model AuditLog {
   @@index([resourceType, resourceId])
   @@map("audit_log")
   @@schema("audit")
+}
+
+// =============================================================================
+// ACADEMIC SCHEMA — Question Bank (P14 W3-2)
+// Repository soal yang reusable untuk assessment sessions.
+// Guru dapat membuat, menyimpan, dan menggunakan kembali soal.
+// =============================================================================
+
+enum QuestionType {
+  multiple_choice
+  essay
+  true_false
+  matching
+
+  @@schema("academic")
+}
+
+enum QuestionDifficulty {
+  easy
+  medium
+  hard
+
+  @@schema("academic")
+}
+
+model Question {
+  id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teacherId  String             @map("teacher_id") @db.Uuid
+  subject    String             @db.VarChar(100)
+  type       QuestionType
+  body       String             @db.Text
+  options    Json?              @db.JsonB
+  answer     String?            @db.Text
+  difficulty QuestionDifficulty @default(medium)
+  tags       String[]
+  createdAt  DateTime            @default(now()) @map("created_at")
+  updatedAt  DateTime            @updatedAt @map("updated_at")
+
+  teacher      Teacher       @relation(fields: [teacherId], references: [id])
+  questionSets QuestionSet[]
+
+  @@index([teacherId, subject])
+  @@index([subject, type])
+  @@map("questions")
+  @@schema("academic")
+}
+
+model QuestionSet {
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String     @db.VarChar(255)
+  teacherId String     @map("teacher_id") @db.Uuid
+  questions Question[]
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+
+  @@index([teacherId])
+  @@map("question_sets")
+  @@schema("academic")
+}
+
+// =============================================================================
+// ACADEMIC SCHEMA — Badges & Achievements (P14 W3-1)
+// Sistem badge untuk penghargaan prestasi siswa.
+// Criteria is JSONB: { type: 'grade_threshold', threshold: 90, subject: 'all' }
+// Auto-award via event listeners (grade.submitted, attendance.recorded).
+// =============================================================================
+
+enum BadgeTier {
+  bronze
+  silver
+  gold
+  platinum
+
+  @@schema("academic")
+}
+
+model Badge {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String    @unique @db.VarChar(100)
+  name        String    @db.VarChar(255)
+  description String?   @db.Text
+  icon        String    @db.VarChar(50)  // emoji or SVG name
+  criteria    Json      @db.JsonB
+  tier        BadgeTier @default(bronze)
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  studentBadges StudentBadge[]
+
+  @@index([isActive])
+  @@index([tier])
+  @@map("badges")
+  @@schema("academic")
+}
+
+model StudentBadge {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  badgeId   String   @map("badge_id") @db.Uuid
+  studentId String   @map("student_id") @db.Uuid
+  awardedBy String?  @map("awarded_by") @db.Uuid  // auth.users.id (audit, no FK)
+  awardedAt DateTime @default(now()) @map("awarded_at")
+
+  badge   Badge   @relation(fields: [badgeId], references: [id])
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@unique([badgeId, studentId])
+  @@index([studentId])
+  @@map("student_badges")
+  @@schema("academic")
+}
+
+// =============================================================================
+// NOTIFICATION SCHEMA — WhatsApp Notification Log (P15 W3-4)
+// Audit log for all WA notifications sent. Integrated with NotificationListener.
+// =============================================================================
+
+enum WaLogStatus {
+  pending
+  sent
+  delivered
+  read
+  failed
+
+  @@schema("notification")
+}
+
+model WaLog {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId         String?   @map("student_id") @db.Uuid    // audit ref (no FK)
+  parentId          String?   @map("parent_id") @db.Uuid     // audit ref (no FK)
+  recipient         String    @db.VarChar(100)               // phone number
+  message           String    @db.Text
+  status            WaLogStatus @default(pending)
+  eventType         String?   @map("event_type") @db.VarChar(50)  // alpha, sakit, rpp_reviewed, etc.
+  notificationLogId String?   @map("notification_log_id") @db.Uuid  // ref to notification.notification_logs (no FK)
+  sentAt            DateTime? @map("sent_at")
+  deliveredAt       DateTime? @map("delivered_at")
+  readAt            DateTime? @map("read_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  @@index([studentId, createdAt])
+  @@index([parentId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([status, createdAt])
+  @@map("wa_logs")
+  @@schema("notification")
+}
+
+// =============================================================================
+// GAMIFICATION SCHEMA — XP, Levels, Streaks (P15 W3-3)
+// Sistem XP dan level untuk siswa. XP dari: modul completed, assessment
+// submitted, attendance perfect. Level threshold determines rewards.
+// =============================================================================
+
+model StudentXp {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId  String   @unique @map("student_id") @db.Uuid
+  totalXp    Int      @default(0) @map("total_xp")
+  level      Int      @default(1)
+  streakDays Int      @default(0) @map("streak_days")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  student      Student        @relation(fields: [studentId], references: [id])
+  transactions XpTransaction[]
+
+  @@map("student_xp")
+  @@schema("gamification")
+}
+
+model XpTransaction {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentXpId String   @map("student_xp_id") @db.Uuid
+  amount      Int
+  reason      String   @db.VarChar(255)
+  source      String   @db.VarChar(50)  // 'lms_progress', 'grade_submitted', 'attendance', 'manual'
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  studentXp StudentXp @relation(fields: [studentXpId], references: [id], onDelete: Cascade)
+
+  @@index([studentXpId, createdAt])
+  @@map("xp_transactions")
+  @@schema("gamification")
+}
+
+// =============================================================================
+// AI KNOWLEDGE SCHEMA — AI Generation Audit Trail (P16 W3-5)
+// Audit trail for AI-powered content generation (questions, material, ATP).
+// =============================================================================
+
+model AiGeneration {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teacherId  String   @map("teacher_id") @db.Uuid  // audit ref (no FK)
+  type       String   @db.VarChar(50)  // 'questions', 'material', 'atp'
+  prompt     String   @db.Text
+  output     String   @db.Text
+  model      String   @db.VarChar(100)
+  tokensUsed Int?    @map("tokens_used")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([teacherId, createdAt])
+  @@index([type, createdAt])
+  @@map("ai_generations")
+  @@schema("ai_knowledge")
+}
+
+// =============================================================================
+// NOTIFICATION SCHEMA — Push Subscription (P16 W3-6)
+// PWA push notification subscriptions for web push API.
+// =============================================================================
+
+model PushSubscription {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  endpoint  String   @db.Text
+  keys      Json     @db.JsonB  // { p256dh: string, auth: string }
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, endpoint])
+  @@index([userId])
+  @@map("push_subscriptions")
+  @@schema("notification")
 }

@@ -4,23 +4,33 @@ import {
   CalendarCheck, CalendarClock, Wallet, TrendingUp, Megaphone,
   MessageCircle, ChevronRight, TrendingDown,
 } from 'lucide-react';
-import { KKTP_DEFAULT, fmtRupiahExact, daysUntil } from '@/lib/academic';
+import { KKTP_DEFAULT, fmtRupiahExact, daysUntil, fmtDateShort } from '@/lib/academic';
 import { scheduleDayOfWeek, wibNow } from '@/lib/bell-times';
+import type { AttendanceItem } from '@/lib/api';
 import type { OrtuScreen, ModalState } from './OrtuWorkspace';
-import type { OrtuNilai } from './ortu-types';
+import type { OrtuChild, OrtuNilai } from './ortu-types';
+import type { ScheduleItem } from '../guru-types';
 import {
-  SIM_CHILDREN, SIM_NILAI, SIM_KEH_STATS, SIM_WA_HISTORY,
-  SIM_PEMBAYARAN, SIM_PENGUMUMAN, SIM_SCHEDULE, SIM_LEADERBOARD,
-  mpColor, gradeCls, avgNa, childRank, initials,
-  jpTimeRange,
+  mpColor, gradeCls, avgNa, initials, jpTimeRange,
 } from './ortu-data';
+import {
+  mapSppToPembayaran, mapWaLog, mapTodaySchedule, computeAttStats,
+  type SppApiItem, type WaLogApiItem,
+} from './ortu-mappers';
 
 interface BerandaOrtuProps {
   showToast: (msg: string) => void;
   go: (screen: OrtuScreen) => void;
   setModal: (modal: ModalState) => void;
   grades?: unknown[];
-  announcements?: unknown[];
+  announcements?: { id: string; title: string; createdAt: string }[];
+  // T1-02 (audit v2): data real menggantikan SIM_*
+  children: OrtuChild[];
+  activeChildIndex: number;
+  schedule: ScheduleItem[];
+  spp: SppApiItem[];
+  waLog: WaLogApiItem[];
+  attendance: AttendanceItem[];
 }
 
 /** WIB-based greeting prefix. */
@@ -37,28 +47,38 @@ function greetPrefix(): string {
 const RING_R = 28;
 const RING_CIRC = 2 * Math.PI * RING_R;
 
-export default function BerandaOrtu({ showToast: _showToast, go, setModal, grades, announcements }: BerandaOrtuProps) {
-  const child = SIM_CHILDREN[0]!;
-  const nilai = grades?.length ? (grades as OrtuNilai[]) : SIM_NILAI;
-  const pengumuman = announcements?.length ? (announcements as typeof SIM_PENGUMUMAN) : SIM_PENGUMUMAN;
+const EMPTY_CHILD: OrtuChild = { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
 
+export default function BerandaOrtu({ showToast: _showToast, go, setModal, grades, announcements, children, activeChildIndex, schedule, spp, waLog, attendance }: BerandaOrtuProps) {
+  // T1-02: sumber data 100% real. Tidak ada lagi fallback ke SIM_*.
+  const child = children[activeChildIndex] ?? EMPTY_CHILD;
+  const nilai: OrtuNilai[] = grades?.length ? (grades as OrtuNilai[]) : [];
   const avg = avgNa(nilai);
-  const isSimGrades = !grades?.length;
-  const rank = childRank(SIM_LEADERBOARD);
+  const stats = computeAttStats(attendance);           // ganti SIM_KEH_STATS
   const dow = scheduleDayOfWeek();
-  const todaySched = SIM_SCHEDULE[dow] ?? [];
+  const todaySched = mapTodaySchedule(schedule, dow);   // ganti SIM_SCHEDULE
   const isLibur = dow === 0 || todaySched.length === 0;
 
-  // Payment summary
-  const unpaidItems = SIM_PEMBAYARAN.filter((p) => p.status === 'unpaid');
+  // Pembayaran real
+  const pembayaran = mapSppToPembayaran(spp);
+  const unpaidItems = pembayaran.filter((p) => p.status === 'unpaid');
   const totalUnpaid = unpaidItems.reduce((s, p) => s + p.amount, 0);
   const nextDue = unpaidItems.length > 0
     ? [...unpaidItems].sort((a, b) => new Date(a.due).getTime() - new Date(b.due).getTime())[0]
     : null;
   const dd = nextDue ? daysUntil(nextDue.due) : 0;
 
-  // WA notification (latest)
-  const recentWa = SIM_WA_HISTORY[0];
+  // WA notifikasi real
+  const recentWa = mapWaLog(waLog)[0] ?? null;
+
+  // Pengumuman real (API {id,title,createdAt} → display {id,title,tag,date})
+  const pengumuman = (announcements ?? []).map((a) => ({
+    id: a.id, title: a.title, tag: 'Info',
+    date: a.createdAt ? fmtDateShort(a.createdAt) : '—',
+  }));
+
+  // Ranking tidak tersedia (leaderboard ortu belum di-fetch). null = sembunyikan.
+  const rank: number | null = null;
 
   return (
     <div className="px-4 pb-4">
@@ -84,15 +104,15 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
         </div>
         <div className="relative z-10 mt-3.5 flex gap-3">
           <div className="flex-1 text-center">
-            <div className="text-[18px] font-extrabold">{avg}</div>
+            <div className="text-[18px] font-extrabold">{avg || '—'}</div>
             <div className="text-[9px] font-semibold uppercase tracking-wide opacity-75">Rata²</div>
           </div>
           <div className="flex-1 text-center">
-            <div className="text-[18px] font-extrabold">{child.att}%</div>
+            <div className="text-[18px] font-extrabold">{stats.total > 0 ? `${stats.pct}%` : '—'}</div>
             <div className="text-[9px] font-semibold uppercase tracking-wide opacity-75">Hadir</div>
           </div>
           <div className="flex-1 text-center">
-            <div className="text-[18px] font-extrabold">#{rank}</div>
+            <div className="text-[18px] font-extrabold">{rank != null ? `#${rank}` : '—'}</div>
             <div className="text-[9px] font-semibold uppercase tracking-wide opacity-75">Ranking</div>
           </div>
         </div>
@@ -103,8 +123,8 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
         <div className="mb-2.5 flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
             <CalendarCheck className="h-[15px] w-[15px] text-[var(--pri)]" />
-            Kehadiran Hari Ini
-            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] text-amber-500">Simulasi</span>
+            Kehadiran
+            {stats.total === 0 && <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[9px] text-sky-500">Belum ada data</span>}
           </div>
           <button
             onClick={() => go('kehadiran')}
@@ -122,13 +142,13 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
                 cx="35" cy="35" r={RING_R} strokeWidth="6" fill="none"
                 stroke="var(--pril)" strokeLinecap="round"
                 strokeDasharray={RING_CIRC}
-                strokeDashoffset={RING_CIRC - (RING_CIRC * SIM_KEH_STATS.pct / 100)}
+                strokeDashoffset={RING_CIRC - (RING_CIRC * (stats.total > 0 ? stats.pct : 0) / 100)}
                 transform="rotate(-90 35 35)"
                 style={{ transition: 'stroke-dashoffset 0.5s ease' }}
               />
             </svg>
             <div className="absolute inset-0 grid place-items-center text-center">
-              <div className="text-[14px] font-extrabold">{SIM_KEH_STATS.pct}%</div>
+              <div className="text-[14px] font-extrabold">{stats.total > 0 ? `${stats.pct}%` : '—'}</div>
             </div>
           </div>
           <div className="flex-1">
@@ -136,10 +156,10 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
               className="text-[13px]"
               style={{ color: isLibur ? 'var(--muted)' : 'var(--em)' }}
             >
-              {isLibur ? 'Libur' : 'Hadir hari ini ✓'}
+              {isLibur ? 'Libur' : stats.total > 0 ? 'Tercatat' : 'Belum ada data'}
             </b>
             <p className="mt-0.5 text-[10.5px] text-[var(--muted)]">
-              Bulan ini: {SIM_KEH_STATS.hadir} hadir · {SIM_KEH_STATS.izin} izin · {SIM_KEH_STATS.sakit} sakit · {SIM_KEH_STATS.alpha} alpha
+              Bulan ini: {stats.hadir} hadir · {stats.izin} izin · {stats.sakit} sakit · {stats.alpha} alpha
             </p>
           </div>
         </div>
@@ -179,7 +199,6 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
           <div className="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
             <CalendarClock className="h-[15px] w-[15px] text-[var(--pri)]" />
             Jadwal Hari Ini
-            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] text-amber-500">Simulasi</span>
           </div>
           <span className="text-[10px] font-semibold text-[var(--muted)]">
             {['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'][dow]}
@@ -220,7 +239,6 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
             <div className="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
               <Wallet className="h-[15px] w-[15px] text-[var(--pri)]" />
               Ringkasan Pembayaran
-              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] text-amber-500">Simulasi</span>
             </div>
             <button
               onClick={() => go('pembayaran')}
@@ -257,7 +275,7 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
           <div className="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
             <TrendingUp className="h-[15px] w-[15px] text-[var(--pri)]" />
             Nilai Terbaru
-            {isSimGrades && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] text-amber-500">Simulasi</span>}
+            {nilai.length === 0 && <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[9px] text-sky-500">Belum ada data</span>}
           </div>
           <button
             onClick={() => go('nilai')}
@@ -266,7 +284,12 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
             Detail <ChevronRight className="h-[13px] w-[13px]" />
           </button>
         </div>
-        {nilai.slice(0, 3).map((n) => {
+        {nilai.length === 0 ? (
+          <div className="py-5 text-center text-[12px] font-semibold text-[var(--dim)]">
+            Belum ada nilai yang diinput guru
+          </div>
+        ) : (
+          nilai.slice(0, 3).map((n) => {
           const c = mpColor(n.mp);
           const cls = gradeCls(n.na);
           return (
@@ -298,7 +321,8 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
               </div>
             </div>
           );
-        })}
+        })
+        )}
       </div>
 
       {/* 8. Announcements */}

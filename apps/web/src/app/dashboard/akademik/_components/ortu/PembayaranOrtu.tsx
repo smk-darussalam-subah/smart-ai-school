@@ -5,21 +5,25 @@ import { CheckCircle, Clock } from 'lucide-react';
 import { fmtRupiahExact, daysUntil, fmtDateShort } from '@/lib/academic';
 import type { Pembayaran } from '@/lib/academic';
 import type { ModalState } from './OrtuWorkspace';
-import { SIM_PEMBAYARAN } from './ortu-data';
+import { mapSppToPembayaran, type SppApiItem } from './ortu-mappers';
 
 interface PembayaranOrtuProps {
   setModal: (modal: ModalState) => void;
+  /** Data SPP real dari /student-dashboard/spp. Kosong = tampilkan empty state. */
+  spp?: SppApiItem[];
 }
 
 type PayTab = 'all' | 'unpaid' | 'paid';
 
-export default function PembayaranOrtu({ setModal }: PembayaranOrtuProps) {
+export default function PembayaranOrtu({ setModal, spp }: PembayaranOrtuProps) {
   const [payTab, setPayTab] = useState<PayTab>('all');
 
-  const unpaid = SIM_PEMBAYARAN.filter((p) => p.status === 'unpaid');
-  const paid = SIM_PEMBAYARAN.filter((p) => p.status === 'paid');
+  // T1-01 (audit v2): sumber data real (dipetakan ke view-model). JANGAN fallback ke SIM.
+  const payments: Pembayaran[] = mapSppToPembayaran(spp ?? []);
+  const unpaid = payments.filter((p) => p.status === 'unpaid');
+  const paid = payments.filter((p) => p.status === 'paid');
 
-  let filtered: Pembayaran[] = SIM_PEMBAYARAN;
+  let filtered: Pembayaran[] = payments;
   if (payTab === 'unpaid') filtered = unpaid;
   else if (payTab === 'paid') filtered = paid;
 

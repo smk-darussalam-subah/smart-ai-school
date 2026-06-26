@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { CheckCircle2, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Brain, Hand, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   naOf,
@@ -129,6 +129,113 @@ export function RaporModal({
           </div>
         )}
 
+        {/* SIMULASI: Sections B-G — backend data belum tersedia */}
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-bold text-amber-700">
+          SIMULASI — Bagian B-G menggunakan data demo. Backend rapor lengkap menyusul.
+        </div>
+
+        {/* B. Muatan Lokal */}
+        <RaporSection title="B. MUATAN LOKAL">
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-[9px] font-bold uppercase text-slate-400">
+                <th className="py-1.5 pr-2">Muatan Lokal</th>
+                <th className="px-2 text-center">Nilai</th>
+                <th className="px-2 text-center">Predikat</th>
+                <th className="pl-2">Deskripsi</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-slate-100">
+                <td className="py-1.5 pr-2 font-semibold text-slate-700">Bahasa Jawa Krama</td>
+                <td className="px-2 text-center font-bold text-slate-600">82</td>
+                <td className="px-2 text-center text-emerald-600">A</td>
+                <td className="pl-2 text-slate-500">Tampak antusias dalam mempelajari aksara Jawa</td>
+              </tr>
+              <tr className="border-b border-slate-100">
+                <td className="py-1.5 pr-2 font-semibold text-slate-700">Budaya Batik Jawa Tengah</td>
+                <td className="px-2 text-center font-bold text-slate-600">78</td>
+                <td className="px-2 text-center text-sky-600">B</td>
+                <td className="pl-2 text-slate-500">Mampu membatik pola dasar dengan baik</td>
+              </tr>
+            </tbody>
+          </table>
+        </RaporSection>
+
+        {/* C. Ekstrakurikuler */}
+        <RaporSection title="C. EKSTRAKURIKULER">
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-[9px] font-bold uppercase text-slate-400">
+                <th className="py-1.5 pr-2">Ekstrakurikuler</th>
+                <th className="px-2 text-center">Nilai</th>
+                <th className="px-2 text-center">Kehadiran</th>
+                <th className="pl-2">Catatan</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-slate-100">
+                <td className="py-1.5 pr-2 font-semibold text-slate-700">English Club</td>
+                <td className="px-2 text-center text-emerald-600">A</td>
+                <td className="px-2 text-center text-slate-600">14/16</td>
+                <td className="pl-2 text-slate-500">Aktif dalam conversational practice</td>
+              </tr>
+              <tr className="border-b border-slate-100">
+                <td className="py-1.5 pr-2 font-semibold text-slate-700">Robotik</td>
+                <td className="px-2 text-center text-sky-600">B</td>
+                <td className="px-2 text-center text-slate-600">10/16</td>
+                <td className="pl-2 text-slate-500">Mampu merakit sensor dasar</td>
+              </tr>
+            </tbody>
+          </table>
+        </RaporSection>
+
+        {/* D. Ketidakhadiran */}
+        <RaporSection title="D. KETIDAKHADIRAN">
+          <div className="grid grid-cols-4 gap-2">
+            <AttendanceStat label="Hadir" value="94" className="text-emerald-600" />
+            <AttendanceStat label="Izin" value="3" className="text-sky-600" />
+            <AttendanceStat label="Sakit" value="2" className="text-amber-600" />
+            <AttendanceStat label="Alpha" value="1" className="text-rose-600" />
+          </div>
+        </RaporSection>
+
+        {/* E. Catatan Guru Mapel */}
+        <RaporSection title="E. CATATAN GURU MAPEL">
+          <div className="space-y-1.5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-[11px] leading-relaxed text-slate-600">
+            <div><span className="font-semibold text-emerald-700">Pemrograman Web:</span> Progres baik dalam modul HTML & CSS. Mampu menyelesaikan tugas praktikum tepat waktu.</div>
+            <div><span className="font-semibold text-emerald-700">Basis Data:</span> Perlu motivasi ekstra pada materi join query. Mengikuti remedial.</div>
+            <div><span className="font-semibold text-emerald-700">Umum:</span> Siswa yang rajin dan sopan. Perlu meningkatkan keaktifan bertanya.</div>
+          </div>
+        </RaporSection>
+
+        {/* F. Deskripsi Perkembangan Kompetensi */}
+        <RaporSection title="F. DESKRIPSI PERKEMBANGAN KOMPETENSI">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <DevCard icon={Brain} title="Pengetahuan" desc="Pemahaman baik dalam konsep HTML semantik dan CSS layout. Perlu peningkatan dalam media query." />
+            <DevCard icon={Hand} title="Keterampilan" desc="Terampil dalam praktikum crimping dan instalasi jaringan. Mampu menerapkan flexbox dengan baik." />
+            <DevCard icon={Heart} title="Sikap" desc="Disiplin, bertanggung jawab, dan aktif dalam diskusi. Perlu meningkatkan rasa percaya diri." />
+          </div>
+        </RaporSection>
+
+        {/* G. Pengesahan */}
+        <RaporSection title="G. PENGESAHAN">
+          <div className="grid grid-cols-3 gap-4 text-center text-[10px]">
+            <div>
+              <div className="mb-8 font-semibold text-slate-600">Mengetahui,<br />Orang Tua/Wali</div>
+              <div className="mx-4 border-t border-slate-400 pt-1 text-slate-400">(..............................)</div>
+            </div>
+            <div>
+              <div className="mb-8 font-semibold text-slate-600">Wali Kelas<br />&nbsp;</div>
+              <div className="mx-4 border-t border-slate-400 pt-1 text-slate-600">Siti Aminah, S.Pd</div>
+            </div>
+            <div>
+              <div className="mb-8 font-semibold text-slate-600">Mengetahui,<br />Kepala Sekolah</div>
+              <div className="mx-4 border-t border-slate-400 pt-1 text-slate-600">Drs. H. Suparman, M.Pd</div>
+            </div>
+          </div>
+        </RaporSection>
+
         {catatan && (
           <div className="rounded-lg border border-slate-200 px-3 py-2 text-[12px] text-slate-600">
             <span className="font-semibold text-slate-700">Catatan wali kelas: </span>
@@ -145,6 +252,35 @@ function Stat({ label, value, tone }: { label: string; value: string | number; t
     <div className="rounded-xl bg-slate-50 px-4 py-3">
       <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
       <div className={cn('text-2xl font-extrabold tabular-nums', tone)}>{value}</div>
+    </div>
+  );
+}
+
+function RaporSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1.5 text-[12px] font-bold text-emerald-700">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function AttendanceStat({ label, value, className }: { label: string; value: string; className: string }) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-2 py-2 text-center">
+      <div className="text-[9px] font-semibold uppercase text-slate-400">{label}</div>
+      <div className={cn('text-lg font-extrabold', className)}>{value}</div>
+    </div>
+  );
+}
+
+function DevCard({ icon: Icon, title, desc }: { icon: typeof Brain; title: string; desc: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 p-2.5">
+      <div className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
+        <Icon className="h-3 w-3" />{title}
+      </div>
+      <div className="text-[10px] leading-relaxed text-slate-500">{desc}</div>
     </div>
   );
 }

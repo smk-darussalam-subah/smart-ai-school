@@ -34,10 +34,11 @@ describe('LmsService', () => {
   const del = jest.fn();
   const progressUpsert = jest.fn();
   const progressFindMany = jest.fn();
+  const progressFindUnique = jest.fn();
   const studentCount = jest.fn();
 
   beforeEach(async () => {
-    [teacherFindFirst, studentFindFirst, findFirst, findUnique, findMany, count, create, update, del, progressUpsert, progressFindMany, studentCount]
+    [teacherFindFirst, studentFindFirst, findFirst, findUnique, findMany, count, create, update, del, progressUpsert, progressFindMany, progressFindUnique, studentCount]
       .forEach((m) => m.mockReset());
     teacherFindFirst.mockResolvedValue({ id: 'teacher-1' });
     studentFindFirst.mockResolvedValue({ id: 'student-1', classId: 'class-1' });
@@ -47,13 +48,14 @@ describe('LmsService', () => {
     count.mockResolvedValue(0);
     findMany.mockResolvedValue([]);
     progressFindMany.mockResolvedValue([]);
+    progressFindUnique.mockResolvedValue(null);
     studentCount.mockResolvedValue(0);
 
     const prisma = {
       teacher: { findFirst: teacherFindFirst },
       student: { findFirst: studentFindFirst, count: studentCount },
       lmsModule: { findFirst, findUnique, findMany, count, create, update, delete: del },
-      lmsModuleProgress: { upsert: progressUpsert, findMany: progressFindMany },
+      lmsModuleProgress: { upsert: progressUpsert, findMany: progressFindMany, findUnique: progressFindUnique },
     };
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [LmsService, { provide: PrismaService, useValue: prisma }],
@@ -126,5 +128,45 @@ describe('LmsService', () => {
   it('getProgress modul bukan milik sendiri → Forbidden', async () => {
     findUnique.mockResolvedValue({ id: 'lms-1', title: 'M', subject: 'X', classId: null, teacherId: 'teacher-LAIN' });
     await expect(service.getProgress('lms-1', GURU)).rejects.toThrow(ForbiddenException);
+  });
+
+  // ── findMyLearning (W1-2) ─────────────────────────────────────────────────
+
+  it('findMyLearning SISWA → modul published + myProgress + stats', async () => {
+    findMany.mockResolvedValueOnce([
+      { id: 'lms-1', subject: 'X', status: 'published', classId: 'class-1', progress: [{ progress: 100, status: 'completed', startedAt: null, completedAt: null }] },
+      { id: 'lms-2', subject: 'Y', status: 'published', classId: 'class-1', progress: [{ progress: 50, status: 'active', startedAt: null, completedAt: null }] },
+      { id: 'lms-3', subject: 'Z', status: 'published', classId: 'class-1', progress: [] },
+    ]);
+    const res = await service.findMyLearning(SISWA);
+    expect(res.data).toHaveLength(3);
+    expect((res.data[0] as { myProgress: { progress: number } }).myProgress.progress).toBe(100);
+    expect((res.data[2] as { myProgress: unknown }).myProgress).toBeNull();
+    expect(res.stats).toEqual({ total: 3, completed: 1, inProgress: 1, notStarted: 1, avgProgress: 50 });
+  });
+
+  it('findMyLearning SISWA → visibilitas published + kelas sendiri', async () => {
+    findMany.mockResolvedValueOnce([]);
+    await service.findMyLearning(SISWA);
+    const where = findMany.mock.calls[0][0].where;
+    expect(where.status).toBe('published');
+    expect(where.OR).toBeDefined();
+  });
+
+  // ── findOne SISWA myProgress (W1-2) ────────────────────────────────────────
+
+  it('findOne SISWA published → sertakan myProgress', async () => {
+    findUnique.mockResolvedValue({ id: 'lms-1', status: 'published', classId: 'class-1', class: { id: 'class-1', name: 'X' }, teacherId: 't-1' });
+    progressFindUnique.mockResolvedValue({ id: 'prog-1', progress: 75, status: 'active', startedAt: new Date(), completedAt: null });
+    const res = await service.findOne('lms-1', SISWA) as { myProgress: { progress: number } };
+    expect(res.myProgress.progress).toBe(75);
+    expect(progressFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { moduleId_studentId: { moduleId: 'lms-1', studentId: 'student-1' } } }),
+    );
+  });
+
+  it('findOne SISWA draft → Forbidden (belum published)', async () => {
+    findUnique.mockResolvedValue({ id: 'lms-1', status: 'draft', classId: 'class-1', class: { id: 'class-1', name: 'X' }, teacherId: 't-1' });
+    await expect(service.findOne('lms-1', SISWA)).rejects.toThrow(ForbiddenException);
   });
 });
