@@ -23,6 +23,9 @@ interface Props {
   classes: { id: string; name: string }[];
   academicYear: string;
   semester: number;
+  /** Subject pre-select dari session flow (step "Buka Modul Ajar"). Filter rpp ke mapel ini. */
+  activeSubject?: string;
+  onClearSubject?: () => void;
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -56,12 +59,16 @@ const CP_DATA = [
   { cp: 'CP 4', desc: 'Interaktivitas dasar', progres: 0 },
 ];
 
-export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, academicYear, semester }: Props) {
+export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, academicYear, semester, activeSubject, onClearSubject }: Props) {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<RppItem | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  // Filter rpp by activeSubject (dari session flow "Buka Modul Ajar") bila ada.
+  const subjectFiltered = activeSubject && activeSubject !== 'all' ? activeSubject : null;
+  const shownRpp = subjectFiltered ? rpp.filter((r) => r.subject === subjectFiltered) : rpp;
 
   const [lmsFormOpen, setLmsFormOpen] = useState(false);
   const [lmsEditing, setLmsEditing] = useState<LmsModuleItem | null>(null);
@@ -118,7 +125,15 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
-            <FileText className="h-[18px] w-[18px] text-emerald-600" />Modul Ajar{subjects.length > 0 && <span className="text-[#6b8079]"> — {subjects[0]}</span>}
+            <FileText className="h-[18px] w-[18px] text-emerald-600" />Modul Ajar
+            {subjectFiltered ? (
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                {subjectFiltered}
+                {onClearSubject && (
+                  <button type="button" onClick={onClearSubject} className="rounded-full hover:bg-emerald-100 px-1" aria-label="Hapus filter mapel">×</button>
+                )}
+              </span>
+            ) : (subjects.length > 0 && <span className="text-[#6b8079]"> — {subjects[0]}</span>)}
           </h3>
           <button type="button" onClick={openCreate}
             className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-[12.5px] font-bold text-white hover:bg-emerald-700">
@@ -148,9 +163,11 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
           </div>
         )}
 
-        {rpp.length === 0 ? (
+        {shownRpp.length === 0 ? (
           <div className="mt-3 grid h-24 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">
-            Belum ada Modul Ajar. Klik <b className="mx-1">Buat Modul Ajar</b> untuk memulai.
+            {subjectFiltered
+              ? <>Belum ada Modul Ajar untuk <b className="mx-1">{subjectFiltered}</b>. Buat pertama untuk mapel ini.</>
+              : <>Belum ada Modul Ajar. Klik <b className="mx-1">Buat Modul Ajar</b> untuk memulai.</>}
           </div>
         ) : (
           <div className="mt-3 overflow-x-auto">
@@ -167,7 +184,7 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
                 </tr>
               </thead>
               <tbody>
-                {rpp.map((r) => {
+                {shownRpp.map((r) => {
                   const editable = EDITABLE.has(r.status);
                   const rowBusy = pending && busyId === r.id;
                   return (
