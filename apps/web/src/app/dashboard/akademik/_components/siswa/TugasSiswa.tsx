@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ClipboardList, Calendar, AlertCircle, CheckCircle } from 'lucide-react';
-import { mpColor, mpIcon, SIM_TUGAS } from './siswa-data';
+import { mpColor, mpIcon } from './siswa-data';
 import type { SiswaScreen, ModalState } from './SiswaWorkspace';
 import type { SiswaTugas } from './siswa-types';
 
@@ -15,8 +15,9 @@ interface Props {
 
 export default function TugasSiswa({ tasks, showToast: _showToast, go: _go, setModal }: Props) {
   const [filter, setFilter] = useState<'pending' | 'submitted' | 'graded'>('pending');
-  
-  const displayTasks = tasks.length > 0 ? tasks : SIM_TUGAS;
+
+  // T1-04 (audit v2): langsung dari props. Empty → empty state, BUKAN SIM_TUGAS.
+  const displayTasks = tasks;
   const filtered = displayTasks.filter((t) => t.status === filter);
 
   const stats = {

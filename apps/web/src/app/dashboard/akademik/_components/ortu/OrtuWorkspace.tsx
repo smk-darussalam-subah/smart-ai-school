@@ -52,7 +52,7 @@ interface OrtuWorkspaceProps {
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function OrtuWorkspace({
-  children: realChildren, grades, attendance: _attendance, schedule: _schedule, announcements, spp: realSpp, badges: _realBadges, waLog: _realWaLog, viewAs
+  children: realChildren, grades, attendance, schedule, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs
 }: OrtuWorkspaceProps) {
   const { data: session } = useSession();
   const [activeScreen, setActiveScreen] = useState<OrtuScreen>('beranda');
@@ -60,6 +60,9 @@ export default function OrtuWorkspace({
   const [toast, setToast] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [accountOpen, setAccountOpen] = useState(false);
+  // T1-02 (audit v2): active child state untuk multi-child selector (C1 fix).
+  const [activeChildIndex, setActiveChildIndex] = useState(0);
+  const [childSelectorOpen, setChildSelectorOpen] = useState(false);
 
   // Theme management — scoped to .ortu-app CSS variables (§6.4)
   useEffect(() => {
@@ -88,9 +91,14 @@ export default function OrtuWorkspace({
     window.scrollTo(0, 0);
   }, []);
 
-  // Child selector — use real data (P25) or empty
+  // Child selector — use real data (P25) or empty. T1-02: activeChildIndex untuk multi-child.
   const childList = realChildren?.length ? realChildren : [];
-  const child = childList[0] ?? { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
+  const child = childList[activeChildIndex] ?? childList[0] ?? { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
+  const selectChild = (i: number) => {
+    setActiveChildIndex(i);
+    setChildSelectorOpen(false);
+    window.scrollTo(0, 0);
+  };
 
   // Dynamic unpaid payment count for nav badge — use real SPP data (P25)
   const unpaidCount = realSpp?.filter((p) => p.status === 'unpaid').length ?? 0;
@@ -113,6 +121,12 @@ export default function OrtuWorkspace({
             setModal={setModal}
             grades={grades}
             announcements={announcements}
+            children={childList}
+            activeChildIndex={Math.min(activeChildIndex, Math.max(childList.length - 1, 0))}
+            schedule={schedule ?? []}
+            spp={realSpp ?? []}
+            waLog={realWaLog ?? []}
+            attendance={attendance ?? []}
           />
         );
       // Following screens implemented in subsequent batches
@@ -121,7 +135,8 @@ export default function OrtuWorkspace({
           <KehadiranOrtu
             go={go}
             setModal={setModal}
-            attendance={_attendance}
+            attendance={attendance ?? []}
+            waLog={realWaLog ?? []}
           />
         );
       case 'nilai':
@@ -135,6 +150,7 @@ export default function OrtuWorkspace({
         return (
           <PembayaranOrtu
             setModal={setModal}
+            spp={realSpp}
           />
         );
       case 'capaian':
@@ -142,6 +158,7 @@ export default function OrtuWorkspace({
           <CapaianOrtu
             setModal={setModal}
             showToast={showToast}
+            badges={realBadges ?? []}
           />
         );
       default:
@@ -164,18 +181,41 @@ export default function OrtuWorkspace({
 
           {/* Right buttons */}
           <div className="flex items-center gap-1.5">
-            {/* Child selector */}
-            <button
-              onClick={() => showToast(`${childList.length} anak terdaftar: ${childList.length > 0 ? child.name : 'belum ada data'}`)}
-              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 transition-colors hover:border-[var(--pri)]"
-              aria-label="Pilih anak"
-            >
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--grad)] text-[10px] font-extrabold text-white">
-                {initials(child.name)}
-              </div>
-              <span className="text-[12px] font-bold whitespace-nowrap">{child.name.split(' ')[0]}</span>
-              <ChevronDown className="h-[14px] w-[14px] text-[var(--muted)]" />
-            </button>
+            {/* Child selector — T1-02 (C1 fix): dropdown real, bukan toast */}
+            <div className="relative">
+              <button
+                onClick={() => childList.length > 0 && setChildSelectorOpen((o) => !o)}
+                className="flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 transition-colors hover:border-[var(--pri)]"
+                aria-label="Pilih anak"
+                aria-expanded={childSelectorOpen}
+                disabled={childList.length === 0}
+              >
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--grad)] text-[10px] font-extrabold text-white">
+                  {initials(child.name)}
+                </div>
+                <span className="text-[12px] font-bold whitespace-nowrap">{child.name.split(' ')[0]}</span>
+                <ChevronDown className="h-[14px] w-[14px] text-[var(--muted)]" />
+              </button>
+              {childSelectorOpen && childList.length > 0 && (
+                <div className="absolute right-0 top-full z-30 mt-1.5 min-w-[180px] overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--surface)] shadow-lg">
+                  {childList.map((c, i) => (
+                    <button
+                      key={c.id}
+                      onClick={() => selectChild(i)}
+                      className={`flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12px] font-bold transition-colors hover:bg-[var(--surface2)] ${i === activeChildIndex ? 'text-[var(--pri)]' : 'text-[var(--text)]'}`}
+                    >
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--grad)] text-[9px] font-extrabold text-white">
+                        {initials(c.name)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate">{c.name}</div>
+                        <div className="text-[9px] font-semibold text-[var(--muted)]">{c.kelas}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Bell / Pengumuman */}
             <button

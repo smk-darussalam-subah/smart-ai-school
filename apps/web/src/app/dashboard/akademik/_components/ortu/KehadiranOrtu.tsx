@@ -3,15 +3,22 @@
 import { Calendar, BarChart3, MessageCircle } from 'lucide-react';
 import type { OrtuScreen, ModalState } from './OrtuWorkspace';
 import type { AttendanceCellStatus } from '@/lib/academic';
+import type { AttendanceItem } from '@/lib/api';
 import {
-  SIM_KEH_STATS, SIM_ATT_TREND, SIM_WA_HISTORY,
-  simAttCalendar, currentMonthYear, ATT_STATUS_LABELS,
+  currentMonthYear, ATT_STATUS_LABELS,
 } from './ortu-data';
+import {
+  mapWaLog, computeAttStats, attCalendarFromApi,
+  type WaLogApiItem,
+} from './ortu-mappers';
 
 interface KehadiranOrtuProps {
-  go: (screen: OrtuScreen) => void;
+  go?: (screen: OrtuScreen) => void;
   setModal: (modal: ModalState) => void;
-  attendance?: unknown[];
+  /** T1-03b: data attendance real dari /attendance?studentId= */
+  attendance: AttendanceItem[];
+  /** T1-03b: data WA log real dari /wa-log/student/:id */
+  waLog: WaLogApiItem[];
 }
 
 /** Ring chart circumference (r=38 → 2πr ≈ 238.76). */
@@ -55,16 +62,19 @@ function waBg(status: string): string {
   return 'rgba(239,68,68,.15)';
 }
 
-export default function KehadiranOrtu({ setModal }: KehadiranOrtuProps) {
+export default function KehadiranOrtu({ setModal, attendance, waLog }: KehadiranOrtuProps) {
   const today = new Date().getDate();
   const { month, year } = currentMonthYear();
-  const calCells = simAttCalendar(today);
+  // T1-03b: kalender & stats dari data real (bukan simAttCalendar/SIM_KEH_STATS).
+  const calCells = attCalendarFromApi(attendance, today);
+  const stats = computeAttStats(attendance);
+  const waHistory = mapWaLog(waLog);
 
   const statBoxes = [
-    { label: 'Hadir', value: SIM_KEH_STATS.hadir, color: 'var(--em)' },
-    { label: 'Izin', value: SIM_KEH_STATS.izin, color: 'var(--sky)' },
-    { label: 'Sakit', value: SIM_KEH_STATS.sakit, color: 'var(--amber)' },
-    { label: 'Alpha', value: SIM_KEH_STATS.alpha, color: 'var(--rose)' },
+    { label: 'Hadir', value: stats.hadir, color: 'var(--em)' },
+    { label: 'Izin', value: stats.izin, color: 'var(--sky)' },
+    { label: 'Sakit', value: stats.sakit, color: 'var(--amber)' },
+    { label: 'Alpha', value: stats.alpha, color: 'var(--rose)' },
   ];
 
   return (
@@ -72,9 +82,11 @@ export default function KehadiranOrtu({ setModal }: KehadiranOrtuProps) {
       <div className="mb-3.5">
         <h1 className="text-xl font-extrabold">Kehadiran</h1>
         <p className="mt-0.5 text-[12px] font-medium text-[var(--muted)]">Rekap {month} {year}</p>
-        <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-500">
-          <span>🧪</span> Data Simulasi — Kehadiran belum tersedia dari server
-        </div>
+        {stats.total === 0 && (
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] font-bold text-sky-500">
+            <span>ℹ️</span> Belum ada data kehadiran dari sekolah
+          </div>
+        )}
       </div>
 
       {/* 1. Summary ring + 4 stat boxes */}
@@ -88,14 +100,14 @@ export default function KehadiranOrtu({ setModal }: KehadiranOrtuProps) {
                 cx="45" cy="45" r={RING_R} strokeWidth="7" fill="none"
                 stroke="var(--pril)" strokeLinecap="round"
                 strokeDasharray={RING_CIRC}
-                strokeDashoffset={RING_CIRC - (RING_CIRC * SIM_KEH_STATS.pct / 100)}
+                strokeDashoffset={RING_CIRC - (RING_CIRC * (stats.total > 0 ? stats.pct : 0) / 100)}
                 transform="rotate(-90 45 45)"
                 style={{ transition: 'stroke-dashoffset 0.5s ease' }}
               />
             </svg>
             <div className="absolute inset-0 grid place-items-center text-center">
               <div>
-                <div className="text-[20px] font-extrabold">{SIM_KEH_STATS.pct}%</div>
+                <div className="text-[20px] font-extrabold">{stats.total > 0 ? `${stats.pct}%` : '—'}</div>
                 <div className="text-[8px] font-bold uppercase tracking-wide text-[var(--muted)]">Hadir</div>
               </div>
             </div>
@@ -123,7 +135,7 @@ export default function KehadiranOrtu({ setModal }: KehadiranOrtuProps) {
             Kalender Kehadiran
           </div>
           <span className="text-[10px] font-semibold text-[var(--muted)]">
-            {SIM_KEH_STATS.total} hari recorded
+            {stats.total} hari recorded
           </span>
         </div>
         <div className="mb-2 flex items-center justify-between">
@@ -193,27 +205,11 @@ export default function KehadiranOrtu({ setModal }: KehadiranOrtuProps) {
         </div>
       </div>
 
-      {/* 3. 3-month trend */}
-      <div className="mb-3.5 rounded-[var(--r)] border border-[var(--border)] bg-[var(--surface)] p-3.5">
-        <div className="mb-2.5 flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
-          <BarChart3 className="h-[15px] w-[15px] text-[var(--pri)]" />
-          Tren 3 Bulan
-        </div>
-        {SIM_ATT_TREND.map((t) => (
-          <div key={t.month} className="mb-2 flex items-center gap-2.5 last:mb-0">
-            <span className="w-8 text-[11px] font-bold text-[var(--muted)]">{t.month}</span>
-            <div className="h-1.5 flex-1 overflow-hidden rounded bg-[var(--bar-bg)]">
-              <div
-                className="h-full rounded"
-                style={{
-                  width: `${t.pct}%`,
-                  background: t.pct >= 93 ? 'var(--em)' : 'var(--amber)',
-                }}
-              />
-            </div>
-            <span className="w-[42px] text-right text-[12px] font-extrabold">{t.pct}%</span>
-          </div>
-        ))}
+      {/* 3. 3-month trend — backend belum menyediakan agregasi bulanan; sembunyikan agar tidak menampilkan SIM */}
+      <div className="mb-3.5 rounded-[var(--r)] border border-dashed border-[var(--border)] bg-[var(--surface)] p-3.5 text-center">
+        <BarChart3 className="mx-auto h-5 w-5 text-[var(--dim)]" />
+        <p className="mt-1.5 text-[11.5px] font-bold text-[var(--muted)]">Tren bulanan akan tersedia menyusul</p>
+        <p className="text-[10px] text-[var(--dim)]">Backend sedang dikembangkan</p>
       </div>
 
       {/* 4. WA History */}
@@ -222,12 +218,12 @@ export default function KehadiranOrtu({ setModal }: KehadiranOrtuProps) {
           <MessageCircle className="h-[15px] w-[15px] text-[var(--pri)]" />
           Riwayat Notifikasi WA
         </div>
-        {SIM_WA_HISTORY.length === 0 ? (
+        {waHistory.length === 0 ? (
           <div className="py-6 text-center text-[12px] font-semibold text-[var(--dim)]">
             Tidak ada notifikasi absence
           </div>
         ) : (
-          SIM_WA_HISTORY.map((w, i) => {
+          waHistory.map((w, i) => {
             const ic = waIcon(w.status);
             const icC = waColor(w.status);
             const bgC = waBg(w.status);
