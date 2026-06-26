@@ -1,7 +1,7 @@
 'use client';
 
 import { Award, Mail, Phone, MapPin, Calendar, QrCode } from 'lucide-react';
-import { SIM_PROFILE_CV, SIM_BADGES } from './siswa-data';
+import { SIM_PROFILE_CV } from './siswa-data';
 import type { SiswaScreen } from './SiswaWorkspace';
 import type { SiswaBadge } from './siswa-types';
 
@@ -10,11 +10,15 @@ interface Props {
   onClose: () => void;
   showToast: (msg: string) => void;
   go: (screen: SiswaScreen) => void;
+  /** Badge real dari /badges/my (audit v2). Kosong = tampilkan pesan. */
+  badges?: SiswaBadge[];
 }
 
-export default function ProfileCV({ isOpen, onClose, showToast: _showToast, go: _go }: Props) {
+export default function ProfileCV({ isOpen, onClose, showToast: _showToast, go: _go, badges }: Props) {
+  // Profil identitas (nama/nis/email/dll) masih contoh — backend profil siswa lengkap
+  // (agregasi XP, level, avg, streak) belum tersedia. Badge sudah real (dari props).
   const displayProfile = SIM_PROFILE_CV;
-  const displayBadges = SIM_BADGES.filter((b: SiswaBadge) => b.earned);
+  const displayBadges = (badges ?? []).filter((b: SiswaBadge) => b.earned);
 
   if (!isOpen) return null;
 
@@ -88,28 +92,37 @@ export default function ProfileCV({ isOpen, onClose, showToast: _showToast, go: 
           </div>
         </div>
 
-        {/* Earned Badges */}
+        {/* Earned Badges — real dari /badges/my */}
         <div className="px-5 pb-4">
           <h2 className="mb-3 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted)]">
             <Award className="h-3.5 w-3.5 text-emerald-500" />Badge Earned
           </h2>
-          <div className="grid grid-cols-3 gap-2.5">
-            {displayBadges.map((badge: SiswaBadge) => (
-              <div key={badge.name} className="text-center">
-                <div
-                  className="mx-auto mb-1.5 flex h-12 w-12 items-center justify-center rounded-full"
-                  style={{ background: `${badge.color}20`, border: `2px solid ${badge.color}40` }}
-                >
-                  <span className="text-xl">🏅</span>
+          {displayBadges.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] px-3 py-5 text-center text-[11px] font-medium text-[var(--dim)]">
+              Belum ada badge yang diraih
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2.5">
+              {displayBadges.map((badge: SiswaBadge) => (
+                <div key={badge.name} className="text-center">
+                  <div
+                    className="mx-auto mb-1.5 flex h-12 w-12 items-center justify-center rounded-full"
+                    style={{ background: `${badge.color}20`, border: `2px solid ${badge.color}40` }}
+                  >
+                    <span className="text-xl">🏅</span>
+                  </div>
+                  <div className="text-[9px] font-bold">{badge.name}</div>
                 </div>
-                <div className="text-[9px] font-bold">{badge.name}</div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Academic Summary */}
+        {/* Academic Summary — identitas & agregasi masih contoh (backend profil lengkap menyusul) */}
         <div className="px-5 pb-4">
+          <div className="mb-2 inline-flex items-center gap-1.5 rounded-md bg-amber-500/15 px-2 py-0.5 text-[9px] font-bold text-amber-600">
+            Data identitas &amp; statistik masih contoh
+          </div>
           <h2 className="mb-3 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted)]">Ringkasan Akademik</h2>
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 space-y-3">
             <div className="flex items-center justify-between">

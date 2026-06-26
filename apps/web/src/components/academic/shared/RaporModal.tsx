@@ -129,92 +129,51 @@ export function RaporModal({
           </div>
         )}
 
-        {/* SIMULASI: Sections B-G — backend data belum tersedia */}
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-bold text-amber-700">
-          SIMULASI — Bagian B-G menggunakan data demo. Backend rapor lengkap menyusul.
+        {/* Bagian B-G — backend /report-cards/* sudah ada (muatan-lokal, attendance-summary,
+            development-description, approval) namun wiring fetch lintas-pemanggil belum
+            selesai (T2-01). Konten jujur "menyusul", BUKAN data demo palsu. Section A di
+            atas sudah data nyata. */}
+        <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-[10px] font-bold text-sky-700">
+          Bagian B-G sedang disiapkan — data akan terisi otomatis saat rapor diterbitkan.
         </div>
 
         {/* B. Muatan Lokal */}
         <RaporSection title="B. MUATAN LOKAL">
-          <table className="w-full text-[11px]">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-[9px] font-bold uppercase text-slate-400">
-                <th className="py-1.5 pr-2">Muatan Lokal</th>
-                <th className="px-2 text-center">Nilai</th>
-                <th className="px-2 text-center">Predikat</th>
-                <th className="pl-2">Deskripsi</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-b border-slate-100">
-                <td className="py-1.5 pr-2 font-semibold text-slate-700">Bahasa Jawa Krama</td>
-                <td className="px-2 text-center font-bold text-slate-600">82</td>
-                <td className="px-2 text-center text-emerald-600">A</td>
-                <td className="pl-2 text-slate-500">Tampak antusias dalam mempelajari aksara Jawa</td>
-              </tr>
-              <tr className="border-b border-slate-100">
-                <td className="py-1.5 pr-2 font-semibold text-slate-700">Budaya Batik Jawa Tengah</td>
-                <td className="px-2 text-center font-bold text-slate-600">78</td>
-                <td className="px-2 text-center text-sky-600">B</td>
-                <td className="pl-2 text-slate-500">Mampu membatik pola dasar dengan baik</td>
-              </tr>
-            </tbody>
-          </table>
+          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[11px] font-medium text-slate-400">
+            Data muatan lokal akan tersedia menyusul
+          </div>
         </RaporSection>
 
         {/* C. Ekstrakurikuler */}
         <RaporSection title="C. EKSTRAKURIKULER">
-          <table className="w-full text-[11px]">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-[9px] font-bold uppercase text-slate-400">
-                <th className="py-1.5 pr-2">Ekstrakurikuler</th>
-                <th className="px-2 text-center">Nilai</th>
-                <th className="px-2 text-center">Kehadiran</th>
-                <th className="pl-2">Catatan</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-b border-slate-100">
-                <td className="py-1.5 pr-2 font-semibold text-slate-700">English Club</td>
-                <td className="px-2 text-center text-emerald-600">A</td>
-                <td className="px-2 text-center text-slate-600">14/16</td>
-                <td className="pl-2 text-slate-500">Aktif dalam conversational practice</td>
-              </tr>
-              <tr className="border-b border-slate-100">
-                <td className="py-1.5 pr-2 font-semibold text-slate-700">Robotik</td>
-                <td className="px-2 text-center text-sky-600">B</td>
-                <td className="px-2 text-center text-slate-600">10/16</td>
-                <td className="pl-2 text-slate-500">Mampu merakit sensor dasar</td>
-              </tr>
-            </tbody>
-          </table>
+          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[11px] font-medium text-slate-400">
+            Data ekstrakurikuler akan tersedia menyusul
+          </div>
         </RaporSection>
 
         {/* D. Ketidakhadiran */}
         <RaporSection title="D. KETIDAKHADIRAN">
           <div className="grid grid-cols-4 gap-2">
-            <AttendanceStat label="Hadir" value="94" className="text-emerald-600" />
-            <AttendanceStat label="Izin" value="3" className="text-sky-600" />
-            <AttendanceStat label="Sakit" value="2" className="text-amber-600" />
-            <AttendanceStat label="Alpha" value="1" className="text-rose-600" />
+            <AttendanceStat label="Hadir" value="—" className="text-emerald-600" />
+            <AttendanceStat label="Izin" value="—" className="text-sky-600" />
+            <AttendanceStat label="Sakit" value="—" className="text-amber-600" />
+            <AttendanceStat label="Alpha" value="—" className="text-rose-600" />
           </div>
         </RaporSection>
 
         {/* E. Catatan Guru Mapel */}
         <RaporSection title="E. CATATAN GURU MAPEL">
-          <div className="space-y-1.5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-[11px] leading-relaxed text-slate-600">
-            <div><span className="font-semibold text-emerald-700">Pemrograman Web:</span> Progres baik dalam modul HTML & CSS. Mampu menyelesaikan tugas praktikum tepat waktu.</div>
-            <div><span className="font-semibold text-emerald-700">Basis Data:</span> Perlu motivasi ekstra pada materi join query. Mengikuti remedial.</div>
-            <div><span className="font-semibold text-emerald-700">Umum:</span> Siswa yang rajin dan sopan. Perlu meningkatkan keaktifan bertanya.</div>
+          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[11px] font-medium text-slate-400">
+            Catatan guru mapel akan diisi saat penerbitan rapor
           </div>
         </RaporSection>
 
         {/* F. Deskripsi Perkembangan Kompetensi */}
         <RaporSection title="F. DESKRIPSI PERKEMBANGAN KOMPETENSI">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <DevCard icon={Brain} title="Pengetahuan" desc="Pemahaman baik dalam konsep HTML semantik dan CSS layout. Perlu peningkatan dalam media query." />
-            <DevCard icon={Hand} title="Keterampilan" desc="Terampil dalam praktikum crimping dan instalasi jaringan. Mampu menerapkan flexbox dengan baik." />
-            <DevCard icon={Heart} title="Sikap" desc="Disiplin, bertanggung jawab, dan aktif dalam diskusi. Perlu meningkatkan rasa percaya diri." />
+            <DevCard icon={Brain} title="Pengetahuan" desc="Deskripsi akan tersedia saat rapor diterbitkan." />
+            <DevCard icon={Hand} title="Keterampilan" desc="Deskripsi akan tersedia saat rapor diterbitkan." />
+            <DevCard icon={Heart} title="Sikap" desc="Deskripsi akan tersedia saat rapor diterbitkan." />
           </div>
         </RaporSection>
 
@@ -227,11 +186,11 @@ export function RaporModal({
             </div>
             <div>
               <div className="mb-8 font-semibold text-slate-600">Wali Kelas<br />&nbsp;</div>
-              <div className="mx-4 border-t border-slate-400 pt-1 text-slate-600">Siti Aminah, S.Pd</div>
+              <div className="mx-4 border-t border-slate-400 pt-1 text-slate-400">(..............................)</div>
             </div>
             <div>
               <div className="mb-8 font-semibold text-slate-600">Mengetahui,<br />Kepala Sekolah</div>
-              <div className="mx-4 border-t border-slate-400 pt-1 text-slate-600">Drs. H. Suparman, M.Pd</div>
+              <div className="mx-4 border-t border-slate-400 pt-1 text-slate-400">(..............................)</div>
             </div>
           </div>
         </RaporSection>
