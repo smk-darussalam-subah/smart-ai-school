@@ -20,6 +20,7 @@ import JurnalModal from './JurnalModal';
 import InputNilaiModal from './InputNilaiModal';
 import PenilaianSesiModal from './PenilaianSesiModal';
 import SessionFlowModal from './SessionFlowModal';
+import ModulAjarForm from './ModulAjarForm';
 import KehadiranGuru from './KehadiranGuru';
 import PenugasanGuru from './PenugasanGuru';
 
@@ -82,6 +83,9 @@ export default function AkademikWorkspace({
   const [inputNilai, setInputNilai] = useState(false);
   const [penilaian, setPenilaian] = useState<{ session: TodayClass; mode: 'preview' | 'monitor'; tab: 'diag' | 'form' | 'fb' } | null>(null);
   const [sessFlow, setSessFlow] = useState<TodayClass | null>(null);
+  // Step "Buka Modul Ajar" dari session flow: buka ModulAjarForm DI ATAS modal sesi.
+  // RPP match dicari berdasarkan subject + class sesi; bila tak ada → create dgn subject pre-select.
+  const [modulFromSession, setModulFromSession] = useState<{ rpp: RppItem | null; subject: string; classId: string } | null>(null);
   // Opsi B (mobile nav): filter sheet collapsible + auto-center active tab.
   const [filterOpen, setFilterOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
@@ -263,12 +267,15 @@ export default function AkademikWorkspace({
           onAbsen={(c) => setAbsen(c)}
           onJurnal={(c) => setJurnal(c)}
           onOpenPenilaian={(s, mode, tab) => setPenilaian({ session: s, mode, tab })}
-          onNavigate={(sc) => setScreen(sc as Screen)}
-          onOpenModule={(subject) => {
-            // Tutup modal sesi, pre-select subject, arahkan ke tab Pembelajaran.
-            if (subject && subjects.includes(subject)) setSubject(subject);
-            setSessFlow(null);
-            setScreen('pembelajaran');
+          onOpenModule={(session) => {
+            // Buka popup Modul Ajar DI ATAS modal sesi (z-50 > z-40).
+            // Cari RPP match subject (+classId sesi); bila tak ada → create dgn subject pre-select.
+            // Modal sesi TETAP TERBUKA — flow tak terputus (pola sama dgn step 3).
+            const match =
+              rpp.find((r) => r.subject === session.subject && (r.classId ?? '') === session.classId) ??
+              rpp.find((r) => r.subject === session.subject) ??
+              null;
+            setModulFromSession({ rpp: match, subject: session.subject, classId: session.classId });
           }}
           onClose={() => setSessFlow(null)}
         />
@@ -279,6 +286,22 @@ export default function AkademikWorkspace({
           initialMode={penilaian.mode}
           initialTab={penilaian.tab}
           onClose={() => setPenilaian(null)}
+        />
+      )}
+
+      {/* Modul Ajar popup dari session flow (step "Buka Modul Ajar") — DI ATAS modal sesi.
+          z-50 (Dialog) > z-40 (SessionFlowModal). Modal sesi tetap terbuka di bawah. */}
+      {modulFromSession && (
+        <ModulAjarForm
+          key={modulFromSession.rpp?.id ?? 'session-modul'}
+          open={true}
+          onClose={() => setModulFromSession(null)}
+          subjects={subjects}
+          classes={guruClasses}
+          academicYear={academicYear}
+          semester={semester}
+          editing={modulFromSession.rpp}
+          defaultSubject={modulFromSession.subject}
         />
       )}
     </div>
