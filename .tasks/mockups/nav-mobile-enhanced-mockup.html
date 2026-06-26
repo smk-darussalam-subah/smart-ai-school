@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nav Mobile Enhanced — Guru/KS Akademik (Opsi B)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', sans-serif; }
+  /* Gold-standard refinements */
+  .scroll-tabs { scroll-behavior: smooth; -ms-overflow-style: none; scrollbar-width: none; }
+  .scroll-tabs::-webkit-scrollbar { display: none; }
+  /* Fade affordance di tepi kanan = sinyal "masih ada tab →" */
+  .fade-right {
+    background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,1) 80%);
+  }
+  .device { width: 375px; height: 760px; }
+  /* Simulasi konten scroll di belakang nav sticky */
+  .content-zone { background:
+    repeating-linear-gradient(0deg, #f4f7f5, #f4f7f5 12px, #eef3f0 12px, #eef3f0 24px); }
+</style>
+</head>
+<body class="bg-slate-200 p-8 flex gap-8 flex-wrap items-start">
+
+<!-- LEGEND -->
+<div class="w-72 text-sm text-slate-700 space-y-3 sticky top-8">
+  <h2 class="text-lg font-extrabold text-slate-900">Opsi B — Scroll Tabs + Affordance</h2>
+  <p class="text-slate-600">3 refinemen gold-standard yang membedakan dari horizontal-scroll biasa:</p>
+  <ol class="list-decimal pl-5 space-y-2">
+    <li><b class="text-emerald-700">Edge fade gradient</b> di tepi kanan — sinyal visual "masih ada tab →" (fix discoverability, pelanggaran Nielsen pada versi sebelumnya).</li>
+    <li><b class="text-emerald-700">Auto-scroll active</b> — tab aktif otomatis center saat ganti screen (lihat: Penilaian aktif & terlihat meski di tengah list).</li>
+    <li><b class="text-emerald-700">Sticky nav</b> — tetap visible saat scroll konten (konten demo bergaris di bawah).</li>
+    <li><b class="text-emerald-700">Filter pill kompak</b> — bukan 5 chip terpisah. 1 pill, tap = expand full filter sheet.</li>
+  </ol>
+  <p class="text-xs text-slate-500 mt-4">Bandingkan: device kiri = <b>SEBELUMNYA</b> (bar bertumpuk). Device kanan = <b>OPSI B</b> (enhanced).</p>
+  <p class="text-xs text-slate-400">Scroll konten di device kanan untuk lihat nav sticky bertahan.</p>
+</div>
+
+<!-- DEVICE KIRI: BEFORE (bar bertumpuk) -->
+<div class="device bg-white rounded-[2rem] shadow-2xl overflow-hidden border-8 border-slate-900 relative">
+  <div class="bg-slate-900 text-white text-center text-[10px] py-1.5 font-bold">SEBELUM — bar bertumpuk</div>
+  <div class="h-full overflow-hidden">
+    <div class="px-4 pt-3 pb-2">
+      <h1 class="text-lg font-bold text-slate-900">Akademik</h1>
+      <p class="text-[11px] text-slate-500">Dashboard Guru</p>
+    </div>
+    <!-- context bar wrap berantakan -->
+    <div class="px-4 flex flex-wrap gap-1.5">
+      <span class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700">📅 TA 2026 · Sem 2</span>
+      <span class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700">👥 Semua Kelas</span>
+      <span class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700">📖 Semua Mapel</span>
+      <span class="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white">✅ Rekap</span>
+      <span class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[9px] font-bold text-blue-700">👁 Tampilan guru</span>
+    </div>
+    <!-- nav wrap jadi 3 baris -->
+    <div class="px-4 mt-3 flex flex-wrap gap-1.5 border-b border-slate-200 pb-2">
+      <span class="inline-flex items-center gap-1 rounded-lg border border-emerald-600 bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white">📊 Ringkasan</span>
+      <span class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-700">🗓 Jadwal</span>
+      <span class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-700">📚 Pembelajaran</span>
+      <span class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-700">✏️ Penilaian</span>
+      <span class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-700">📅 Kehadiran</span>
+      <span class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-700">📋 Penugasan</span>
+      <span class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-700">🏆 Capaian & Rapor</span>
+    </div>
+    <!-- konten -->
+    <div class="px-4 py-3 space-y-2">
+      <div class="rounded-xl bg-slate-100 h-20"></div>
+      <div class="rounded-xl bg-slate-100 h-20"></div>
+    </div>
+    <div class="absolute top-[120px] right-1 bg-rose-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded rotate-3">❌ 3 baris nav tumpuk</div>
+    <div class="absolute top-[55px] right-1 bg-rose-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded -rotate-3">❌ 5 chip filter berantakan</div>
+  </div>
+</div>
+
+<!-- DEVICE KANAN: OPSI B (enhanced) -->
+<div class="device bg-white rounded-[2rem] shadow-2xl overflow-hidden border-8 border-slate-900 relative flex flex-col">
+  <div class="bg-emerald-700 text-white text-center text-[10px] py-1.5 font-bold">OPSI B — enhanced ✨</div>
+
+  <!-- STICKY ZONE: header + filter pill + nav (tetap saat scroll) -->
+  <div class="sticky top-0 z-20 bg-white">
+    <!-- Header kompak -->
+    <div class="px-4 pt-2.5 pb-2 flex items-center justify-between">
+      <div>
+        <h1 class="text-base font-bold text-slate-900 leading-tight">Akademik</h1>
+        <p class="text-[10px] text-slate-500">Dashboard Guru · Semester 2</p>
+      </div>
+      <!-- Single filter pill (tap = expand) -->
+      <button class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white pl-2.5 pr-2 py-1.5 text-[11px] font-bold text-slate-700 shadow-sm">
+        <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-width="2" d="M3 4h18M6 12h12M10 20h4"/></svg>
+        Filter
+        <span class="rounded-full bg-emerald-100 text-emerald-700 text-[9px] px-1.5 py-0.5 font-extrabold">2</span>
+      </button>
+    </div>
+
+    <!-- SCROLL TABS + fade affordance -->
+    <div class="relative">
+      <div id="tabs" class="scroll-tabs flex gap-1.5 overflow-x-auto px-4 pb-2 border-b border-slate-200">
+        <button class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700">📊 Ringkasan</button>
+        <button class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700">🗓 Jadwal</button>
+        <button class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700">📚 Pembelajaran</button>
+        <!-- ACTIVE — auto-scrolled ke posisi terlihat -->
+        <button class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-emerald-600 bg-emerald-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-md">✏️ Penilaian</button>
+        <button class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700">📅 Kehadiran</button>
+        <button class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700">📋 Penugasan</button>
+        <button class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700">🏆 Capaian</button>
+        <button class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700">📋 Rekap</button>
+      </div>
+      <!-- EDGE FADE GRADIENT = sinyal "masih ada →" -->
+      <div class="fade-right pointer-events-none absolute top-0 right-0 h-full w-10"></div>
+      <!-- indikator panah halus -->
+      <div class="absolute top-1.5 right-2 text-slate-400 text-[10px]">›</div>
+    </div>
+  </div>
+
+  <!-- KONTEN (scroll) — nav sticky bertahan -->
+  <div class="content-zone flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
+    <div class="rounded-xl bg-white shadow-sm p-3">
+      <div class="text-[10px] font-bold text-emerald-700 uppercase">Gradebook · Pemrograman Web</div>
+      <div class="mt-2 space-y-1.5">
+        <div class="flex justify-between text-[11px]"><span>Ahmad Fauzi</span><span class="font-bold text-emerald-600">88</span></div>
+        <div class="flex justify-between text-[11px]"><span>Siti Rahma</span><span class="font-bold text-emerald-600">92</span></div>
+        <div class="flex justify-between text-[11px]"><span>Rizky Pratama</span><span class="font-bold text-amber-600">72</span></div>
+        <div class="flex justify-between text-[11px]"><span>Dewi Anjani</span><span class="font-bold text-emerald-600">85</span></div>
+      </div>
+    </div>
+    <div class="rounded-xl bg-white shadow-sm p-3 h-24"></div>
+    <div class="rounded-xl bg-white shadow-sm p-3 h-24"></div>
+    <div class="rounded-xl bg-white shadow-sm p-3 h-20"></div>
+    <p class="text-center text-[9px] text-slate-400 pt-2">↑ scroll konten — nav tetap di atas (sticky)</p>
+  </div>
+
+  <!-- Badge penanda fitur -->
+  <div class="absolute top-[88px] right-1 bg-emerald-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded rotate-3 z-30">✓ 1 pill filter</div>
+  <div class="absolute top-[140px] right-1 bg-emerald-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded -rotate-3 z-30">✓ 1 baris scroll + fade</div>
+</div>
+
+<script>
+  // Auto-center active tab (refinement #2)
+  const tabs = document.getElementById('tabs');
+  if (tabs) {
+    const active = tabs.querySelector('.bg-emerald-600');
+    if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
+</script>
+
+</body>
+</html>
