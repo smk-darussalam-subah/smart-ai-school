@@ -50,6 +50,7 @@ const NAV: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'kehadiran', label: 'Kehadiran', icon: CalendarCheck },
   { key: 'penugasan', label: 'Penugasan', icon: ClipboardList },
   { key: 'capaian', label: 'Capaian & Rapor', icon: Award },
+  { key: 'rekap', label: 'Rekap', icon: ClipboardCheck },
 ];
 
 export default function AkademikWorkspace({
@@ -100,7 +101,7 @@ export default function AkademikWorkspace({
         </div>
       )}
 
-      {/* context bar */}
+      {/* context bar — compact di mobile, filter aktif tetap tampak */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center gap-2 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#355a4e] shadow-sm">
           <Calendar className="h-[15px] w-[15px] text-emerald-600" />TA {academicYear || '—'} · Semester {semester}
@@ -119,24 +120,19 @@ export default function AkademikWorkspace({
             {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </label>
-        <button type="button" onClick={() => setScreen('rekap')}
-          className={clsx('inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[12.5px] font-bold shadow-sm',
-            screen === 'rekap' ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white hover:bg-emerald-700')}>
-          <ClipboardCheck className="h-[15px] w-[15px]" />Rekap Pembelajaran
-        </button>
-        <span className="ml-auto inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11.5px] font-bold text-blue-700">
+        <span className="ml-auto hidden items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11.5px] font-bold text-blue-700 sm:inline-flex">
           <UserCheck className="h-3.5 w-3.5" />Tampilan guru · kelas yang diampu
         </span>
       </div>
 
-      {/* sub-nav */}
-      <nav className="mt-4 flex flex-wrap gap-2 border-b border-[#e6efea] pb-3">
+      {/* sub-nav — horizontal scroll di mobile (anti wrap/tumpuk), wrap di desktop */}
+      <nav className="mt-4 flex gap-2 overflow-x-auto border-b border-[#e6efea] pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-x-visible">
         {NAV.map((n) => {
           const Icon = n.icon;
           const on = screen === n.key;
           return (
             <button key={n.key} type="button" onClick={() => setScreen(n.key)}
-              className={clsx('inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-[13px] font-bold',
+              className={clsx('inline-flex shrink-0 items-center gap-2 rounded-xl border px-3.5 py-2 text-[13px] font-bold',
                 on ? 'border-emerald-600 bg-emerald-600 text-white shadow-[0_8px_18px_-8px_rgba(5,150,105,.5)]' : 'border-[#e6efea] bg-white text-[#355a4e] hover:border-emerald-200')}>
               <Icon className={clsx('h-4 w-4', on ? 'text-white' : 'text-[#6b8079]')} />{n.label}
             </button>
