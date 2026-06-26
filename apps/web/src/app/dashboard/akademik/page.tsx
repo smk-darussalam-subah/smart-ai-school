@@ -3,7 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles, getActiveViewAs } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch, PaginatedResponse, GradeItem, AttendanceItem } from '@/lib/api';
-import type { SiswaBadge, SiswaXP, SiswaLeaderboardEntry } from './_components/siswa/siswa-types';
+import type { SiswaBadge, SiswaXP, SiswaLeaderboardEntry, SiswaModul } from './_components/siswa/siswa-types';
 import { scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-times';
 import AkademikClient from './_components/AkademikClient';
 import AkademikWorkspace from './_components/AkademikWorkspace';
@@ -105,6 +105,29 @@ export default async function AkademikPage() {
         }))
       : null;
 
+    // Transform LMS modules API → SiswaModul[] (field-name mapping).
+    // Sebelumnya cast langsung LmsModuleItem→SiswaModul menyebabkan field mapel/judul
+    // undefined (modul tampil kosong). mapping ini benarkan agar judul+mapel real tampil.
+    // prog per-siswa butuh endpoint /lms/modules/:id/progress (D10) — sementara 0 bila published.
+    const realModules: SiswaModul[] | null = modulesRes
+      ? modulesRes.data.map((m, i) => {
+          const published = m.status === 'published';
+          const status: SiswaModul['status'] = !published ? 'Terkunci' : 'Aktif';
+          return {
+            id: i + 1,
+            tp: m.tp ?? '—',
+            judul: m.title,
+            alokasi: `${m.jpAllocation ?? 0} JP`,
+            kktp: m.kktp,
+            status,
+            lms: published,
+            prog: 0,
+            badge: null,
+            mapel: m.subject,
+          };
+        })
+      : null;
+
     return (
       <SiswaWorkspace
         grades={gradesRes?.data ?? []}
@@ -115,7 +138,7 @@ export default async function AkademikPage() {
         realXp={realXp}
         realLeaderboard={realLeaderboard}
         realAssignments={assignmentsRes?.data ?? null}
-        realModules={modulesRes?.data ?? null}
+        realModules={realModules}
         realCp={cpRes?.data ?? null}
         realAttStats={realAttStats}
         viewAs={viewAs}

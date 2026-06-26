@@ -405,6 +405,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
         onClose={() => setProfileOpen(false)}
         showToast={showToast}
         go={go}
+        badges={realBadges ?? []}
       />
 
       {/* Account Sheet */}
