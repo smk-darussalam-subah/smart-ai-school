@@ -8,7 +8,7 @@
 // Mockup ref: .tasks/akademik-mockup/akademik-ks.html (1,305 lines)
 // =============================================================================
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import {
   LayoutDashboard, FileCheck2, ClipboardPenLine, Monitor, ClipboardCheck,
   Target, CalendarClock, Users, BadgeCheck, Presentation, FileClock,
@@ -120,6 +120,14 @@ export default function KsWorkspace({
   grades, attendances, classes, assignments, rpp, schedules, activities, lmsModules: _lmsModules, realSumatif, academicYear, semester, dataWarning,
 }: Props) {
   const [screen, setScreen] = useState<Screen>('beranda');
+  // Opsi B (mobile nav): auto-center tab aktif saat ganti screen (anti hidden).
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const active = nav.querySelector<HTMLElement>('[data-active="true"]');
+    if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [screen]);
   const [selRpp, setSelRpp] = useState<RppItem | null>(null);
   // T1-05 (audit v2): gunakan data real dari /assessment/sessions; JANGAN fallback ke SIM_SUMATIF.
   // Saat kosong → array kosong → AuditSumatifKs menampilkan empty state (bukan data palsu).
@@ -206,30 +214,41 @@ export default function KsWorkspace({
           <option>Semua Mapel</option>
           {filterMapelOpts.map((m) => <option key={m}>{m}</option>)}
         </select>
-        <span className="ml-auto inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11.5px] font-bold text-blue-700">
+        <span className="ml-auto hidden items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11.5px] font-bold text-blue-700 sm:inline-flex">
           <Users className="h-3.5 w-3.5" />{classes.length} rombel · {assignments.length} penugasan
         </span>
-        <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11.5px] font-bold text-emerald-700">
+        <span className="hidden items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11.5px] font-bold text-emerald-700 sm:inline-flex">
           <BadgeCheck className="h-3.5 w-3.5" />Kepala Sekolah
         </span>
-        <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> Filter SIMULASI</span>
+        <span className="hidden items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700 sm:inline-flex"><AlertTriangle className="h-3 w-3" /> Filter SIMULASI</span>
       </div>
 
-      {/* Sub-nav */}
-      <nav className="mt-4 flex flex-wrap gap-2 border-b border-[#e6efea] pb-3">
-        {navWithBadges.map((n) => {
-          const Icon = n.icon;
-          const on = screen === n.key;
-          return (
-            <button key={n.key} type="button" onClick={() => setScreen(n.key)}
-              className={clsx('inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-[13px] font-bold',
-                on ? 'border-emerald-600 bg-emerald-600 text-white shadow-[0_8px_18px_-8px_rgba(5,150,105,.5)]' : 'border-[#e6efea] bg-white text-[#355a4e] hover:border-emerald-200')}>
-              <Icon className={clsx('h-4 w-4', on ? 'text-white' : 'text-[#6b8079]')} />{n.label}
-              {n.badge ? <span className={clsx('rounded-full px-1.5 py-0.5 text-[9px] font-extrabold', on ? 'bg-white/25 text-white' : 'bg-rose-500 text-white')}>{n.badge}</span> : null}
-            </button>
-          );
-        })}
-      </nav>
+      {/* Sub-nav — Opsi B: horizontal scroll + fade affordance + auto-center active (mobile), wrap (desktop) */}
+      <div className="relative">
+        <nav
+          ref={navRef}
+          className="mt-4 flex gap-2 overflow-x-auto border-b border-[#e6efea] pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-x-visible"
+        >
+          {navWithBadges.map((n) => {
+            const Icon = n.icon;
+            const on = screen === n.key;
+            return (
+              <button
+                key={n.key}
+                type="button"
+                data-active={on || undefined}
+                onClick={() => setScreen(n.key)}
+                className={clsx('inline-flex shrink-0 items-center gap-2 rounded-xl border px-3.5 py-2 text-[13px] font-bold',
+                  on ? 'border-emerald-600 bg-emerald-600 text-white shadow-[0_8px_18px_-8px_rgba(5,150,105,.5)]' : 'border-[#e6efea] bg-white text-[#355a4e] hover:border-emerald-200')}>
+                <Icon className={clsx('h-4 w-4', on ? 'text-white' : 'text-[#6b8079]')} />{n.label}
+                {n.badge ? <span className={clsx('rounded-full px-1.5 py-0.5 text-[9px] font-extrabold', on ? 'bg-white/25 text-white' : 'bg-rose-500 text-white')}>{n.badge}</span> : null}
+              </button>
+            );
+          })}
+        </nav>
+        {/* Edge fade gradient — sinyal "masih ada tab →" (mobile only, fix discoverability) */}
+        <div className="pointer-events-none absolute right-0 top-0 h-[calc(100%-0.75rem)] w-10 bg-gradient-to-r from-transparent to-gray-50 sm:hidden" />
+      </div>
 
       <div className="pt-4">
         {screen === 'beranda' && <BerandaKs hadirPct={hadirPct} todayAtt={todayAtt} pendingRpp={pendingRpp.length} pendingSumatif={pendingSumatif.length} belowKktp={belowKktp} schedules={schedules} classes={classes} onNavigate={setScreen} />}

@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutDashboard, CalendarClock, BookOpenCheck, ClipboardPenLine, CalendarCheck,
   ClipboardList, Award, ClipboardCheck, BookMarked, Calendar, UserCheck, Users, AlertTriangle,
+  SlidersHorizontal, ChevronDown,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { GradeItem, AttendanceItem } from '@/lib/api';
@@ -50,6 +51,7 @@ const NAV: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'kehadiran', label: 'Kehadiran', icon: CalendarCheck },
   { key: 'penugasan', label: 'Penugasan', icon: ClipboardList },
   { key: 'capaian', label: 'Capaian & Rapor', icon: Award },
+  { key: 'rekap', label: 'Rekap', icon: ClipboardCheck },
 ];
 
 export default function AkademikWorkspace({
@@ -80,6 +82,17 @@ export default function AkademikWorkspace({
   const [inputNilai, setInputNilai] = useState(false);
   const [penilaian, setPenilaian] = useState<{ session: TodayClass; mode: 'preview' | 'monitor'; tab: 'diag' | 'form' | 'fb' } | null>(null);
   const [sessFlow, setSessFlow] = useState<TodayClass | null>(null);
+  // Opsi B (mobile nav): filter sheet collapsible + auto-center active tab.
+  const [filterOpen, setFilterOpen] = useState(false);
+  const navRef = useRef<HTMLElement>(null);
+  const activeFilterCount = (selClass !== 'all' ? 1 : 0) + (subject !== 'all' ? 1 : 0);
+  useEffect(() => {
+    // Auto-scroll tab aktif ke posisi terlihat (anti hidden saat ganti screen).
+    const nav = navRef.current;
+    if (!nav) return;
+    const active = nav.querySelector<HTMLElement>('[data-active="true"]');
+    if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [screen]);
 
   const selClassName = selClass === 'all' ? '' : (guruClasses.find((c) => c.id === selClass)?.name ?? '');
 
@@ -90,8 +103,27 @@ export default function AkademikWorkspace({
 
   return (
     <div className="space-y-1">
-      <h1 className="text-2xl font-bold tracking-tight text-[#0f2e25]">Akademik</h1>
-      <p className="text-sm text-[#6b8079]">Dashboard Guru — pembelajaran, penilaian &amp; jadwal mengajar</p>
+      {/* Header + filter pill (mobile) */}
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-[#0f2e25]">Akademik</h1>
+          <p className="text-sm text-[#6b8079]">Dashboard Guru — pembelajaran, penilaian &amp; jadwal mengajar</p>
+        </div>
+        {/* Filter pill — mobile only. Desktop pakai context bar inline di bawah. */}
+        <button
+          type="button"
+          onClick={() => setFilterOpen((o) => !o)}
+          aria-expanded={filterOpen}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] shadow-sm sm:hidden"
+        >
+          <SlidersHorizontal className="h-4 w-4 text-emerald-600" />
+          Filter
+          {activeFilterCount > 0 && (
+            <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-extrabold text-emerald-700">{activeFilterCount}</span>
+          )}
+          <ChevronDown className={clsx('h-3.5 w-3.5 text-[#6b8079] transition-transform', filterOpen && 'rotate-180')} />
+        </button>
+      </div>
 
       {dataWarning && (
         <div className="mt-2 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[12.5px] font-semibold text-amber-700">
@@ -100,8 +132,31 @@ export default function AkademikWorkspace({
         </div>
       )}
 
-      {/* context bar */}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      {/* Mobile filter sheet — collapsible (Opsi B). Desktop bar di bawah. */}
+      {filterOpen && (
+        <div className="mt-2 flex flex-col gap-2 sm:hidden">
+          <span className="inline-flex items-center gap-2 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#355a4e] shadow-sm">
+            <Calendar className="h-[15px] w-[15px] text-emerald-600" />TA {academicYear || '—'} · Semester {semester}
+          </span>
+          <label className="inline-flex items-center gap-2 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#355a4e] shadow-sm">
+            <Users className="h-[15px] w-[15px] text-emerald-600" />
+            <select value={selClass} onChange={(e) => setSelClass(e.target.value)} className="w-full bg-transparent outline-none">
+              <option value="all">Semua Kelas</option>
+              {guruClasses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+          <label className="inline-flex items-center gap-2 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#355a4e] shadow-sm">
+            <BookMarked className="h-[15px] w-[15px] text-emerald-600" />
+            <select value={subject} onChange={(e) => setSubject(e.target.value)} className="w-full bg-transparent outline-none">
+              <option value="all">Semua Mapel</option>
+              {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+        </div>
+      )}
+
+      {/* Context bar — desktop only (sm:flex). Mobile pakai filter pill di atas. */}
+      <div className="mt-3 hidden flex-wrap items-center gap-2 sm:flex">
         <span className="inline-flex items-center gap-2 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#355a4e] shadow-sm">
           <Calendar className="h-[15px] w-[15px] text-emerald-600" />TA {academicYear || '—'} · Semester {semester}
         </span>
@@ -119,30 +174,37 @@ export default function AkademikWorkspace({
             {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </label>
-        <button type="button" onClick={() => setScreen('rekap')}
-          className={clsx('inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[12.5px] font-bold shadow-sm',
-            screen === 'rekap' ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white hover:bg-emerald-700')}>
-          <ClipboardCheck className="h-[15px] w-[15px]" />Rekap Pembelajaran
-        </button>
         <span className="ml-auto inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11.5px] font-bold text-blue-700">
           <UserCheck className="h-3.5 w-3.5" />Tampilan guru · kelas yang diampu
         </span>
       </div>
 
-      {/* sub-nav */}
-      <nav className="mt-4 flex flex-wrap gap-2 border-b border-[#e6efea] pb-3">
-        {NAV.map((n) => {
-          const Icon = n.icon;
-          const on = screen === n.key;
-          return (
-            <button key={n.key} type="button" onClick={() => setScreen(n.key)}
-              className={clsx('inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-[13px] font-bold',
-                on ? 'border-emerald-600 bg-emerald-600 text-white shadow-[0_8px_18px_-8px_rgba(5,150,105,.5)]' : 'border-[#e6efea] bg-white text-[#355a4e] hover:border-emerald-200')}>
-              <Icon className={clsx('h-4 w-4', on ? 'text-white' : 'text-[#6b8079]')} />{n.label}
-            </button>
-          );
-        })}
-      </nav>
+      {/* Sub-nav — Opsi B: horizontal scroll + fade affordance + auto-center active (mobile), wrap (desktop) */}
+      <div className="relative">
+        <nav
+          ref={navRef}
+          className="mt-4 flex gap-2 overflow-x-auto border-b border-[#e6efea] pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-x-visible"
+        >
+          {NAV.map((n) => {
+            const Icon = n.icon;
+            const on = screen === n.key;
+            return (
+              <button
+                key={n.key}
+                type="button"
+                data-active={on || undefined}
+                onClick={() => setScreen(n.key)}
+                className={clsx('inline-flex shrink-0 items-center gap-2 rounded-xl border px-3.5 py-2 text-[13px] font-bold',
+                  on ? 'border-emerald-600 bg-emerald-600 text-white shadow-[0_8px_18px_-8px_rgba(5,150,105,.5)]' : 'border-[#e6efea] bg-white text-[#355a4e] hover:border-emerald-200')}
+              >
+                <Icon className={clsx('h-4 w-4', on ? 'text-white' : 'text-[#6b8079]')} />{n.label}
+              </button>
+            );
+          })}
+        </nav>
+        {/* Edge fade gradient — sinyal visual "masih ada tab →" (mobile only, fix discoverability) */}
+        <div className="pointer-events-none absolute right-0 top-0 h-[calc(100%-0.75rem)] w-10 bg-gradient-to-r from-transparent to-gray-50 sm:hidden" />
+      </div>
 
       <div className="pt-4">
         {screen === 'ringkasan' && (
