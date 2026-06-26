@@ -24,6 +24,8 @@ interface Props {
   academicYear: string;
   semester: number;
   editing: RppItem | null;
+  /** Pre-select mapel saat create baru (dipakai session flow step "Buka Modul Ajar"). */
+  defaultSubject?: string;
 }
 
 const FIELD = 'w-full rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[13px] text-[#0f2e25] outline-none focus:border-emerald-400';
@@ -52,8 +54,8 @@ const STEPS = [
 
 const num = (s: string): number | null => (s.trim() === '' ? null : Number(s));
 
-export default function ModulAjarForm({ open, onClose, subjects, classes, academicYear, semester, editing }: Props) {
-  const [subject, setSubject] = useState(editing?.subject ?? '');
+export default function ModulAjarForm({ open, onClose, subjects, classes, academicYear, semester, editing, defaultSubject }: Props) {
+  const [subject, setSubject] = useState(editing?.subject ?? defaultSubject ?? '');
   const [classId, setClassId] = useState(editing?.classId ?? '');
   const [title, setTitle] = useState(editing?.title ?? '');
   const [body, setBody] = useState<ModulAjarBody>(editing?.body ?? {});
