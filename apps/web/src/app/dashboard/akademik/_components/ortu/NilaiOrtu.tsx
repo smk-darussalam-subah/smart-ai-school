@@ -5,7 +5,7 @@ import { KKTP_DEFAULT, NA_WEIGHTS } from '@/lib/academic';
 import type { ModalState } from './OrtuWorkspace';
 import type { OrtuNilai } from './ortu-types';
 import {
-  SIM_NILAI, SIM_LEADERBOARD, mpColor, gradeCls, avgNa, childRank, tuntasCount,
+  mpColor, gradeCls, avgNa, tuntasCount,
 } from './ortu-data';
 
 interface NilaiOrtuProps {
@@ -19,15 +19,17 @@ function avgArr(arr: number[]): number {
 }
 
 export default function NilaiOrtu({ setModal, grades }: NilaiOrtuProps) {
-  const nilai = grades?.length ? (grades as OrtuNilai[]) : SIM_NILAI;
+  // T1-04 (audit v2): nilai langsung dari props. Empty → empty state, BUKAN SIM_NILAI.
+  const nilai: OrtuNilai[] = grades?.length ? (grades as OrtuNilai[]) : [];
   const avg = avgNa(nilai);
-  const rank = childRank(SIM_LEADERBOARD);
+  // Leaderboard ortu belum di-fetch di page.tsx → ranking tidak tersedia (null = sembunyikan).
+  const rank: number | null = null;
   const tuntas = tuntasCount(nilai);
 
   const statCards = [
-    { n: avg, l: 'Rata²' },
-    { n: `#${rank}`, l: 'Ranking' },
-    { n: `${tuntas}/${nilai.length}`, l: 'Tuntas' },
+    { n: avg > 0 ? String(avg) : '—', l: 'Rata²' },
+    { n: rank != null ? `#${rank}` : '—', l: 'Ranking' },
+    { n: nilai.length > 0 ? `${tuntas}/${nilai.length}` : '—', l: 'Tuntas' },
   ];
 
   return (
@@ -35,9 +37,11 @@ export default function NilaiOrtu({ setModal, grades }: NilaiOrtuProps) {
       <div className="mb-3.5">
         <h1 className="text-xl font-extrabold">Nilai Akademik</h1>
         <p className="mt-0.5 text-[12px] font-medium text-[var(--muted)]">Progress nilai & rapor</p>
-        <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-500">
-          <span>🧪</span> Data Simulasi — Nilai belum tersedia dari server
-        </div>
+        {nilai.length === 0 && (
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] font-bold text-sky-500">
+            <span>ℹ️</span> Belum ada nilai — guru belum menginput nilai untuk anak Anda
+          </div>
+        )}
       </div>
 
       {/* 1. Stat grid */}

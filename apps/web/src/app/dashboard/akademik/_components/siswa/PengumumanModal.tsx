@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { Bell, Tag, Calendar } from 'lucide-react';
-import { SIM_PENGUMUMAN } from './siswa-data';
 import type { SiswaPengumuman } from './siswa-types';
 
 interface Props {
@@ -12,8 +11,9 @@ interface Props {
 
 export default function PengumumanModal({ announcements, onClose }: Props) {
   const [filter, setFilter] = useState<'all' | 'Penting' | 'Info' | 'Mapel'>('all');
-  
-  const displayAnnouncements = announcements.length > 0 ? announcements : SIM_PENGUMUMAN;
+
+  // T1-04 (audit v2): langsung dari props. Empty → empty state (baris bawah), BUKAN SIM_PENGUMUMAN.
+  const displayAnnouncements = announcements;
   const filtered = displayAnnouncements.filter((a: SiswaPengumuman) => {
     if (filter === 'all') return true;
     return a.tag === filter;

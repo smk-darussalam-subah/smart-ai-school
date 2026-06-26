@@ -121,8 +121,9 @@ export default function KsWorkspace({
 }: Props) {
   const [screen, setScreen] = useState<Screen>('beranda');
   const [selRpp, setSelRpp] = useState<RppItem | null>(null);
-  // P29: Use real sumatif data if available, fall back to SIM_SUMATIF
-  const sumatifData = (realSumatif as typeof SIM_SUMATIF | undefined)?.length ? (realSumatif as typeof SIM_SUMATIF) : SIM_SUMATIF;
+  // T1-05 (audit v2): gunakan data real dari /assessment/sessions; JANGAN fallback ke SIM_SUMATIF.
+  // Saat kosong → array kosong → AuditSumatifKs menampilkan empty state (bukan data palsu).
+  const sumatifData = (realSumatif as typeof SIM_SUMATIF | undefined) ?? [];
   const [selSumatif, setSelSumatif] = useState<typeof SIM_SUMATIF[number] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
@@ -715,6 +716,7 @@ function ModulAjarKs({ rpp, onReview, showToast }: { rpp: RppItem[]; onReview: (
 function AuditSumatifKs({ onOpenDetail, data }: { onOpenDetail: (s: typeof SIM_SUMATIF[number]) => void; data: typeof SIM_SUMATIF }) {
   const [filter, setFilter] = useState<'Semua' | 'Menunggu' | 'Disetujui' | 'Ditolak'>('Semua');
   const filtered = data.filter((s) => filter === 'Semua' || s.status === filter);
+  const sumatifDataPresent = data.length > 0;
 
   return (
     <div className="space-y-4">
@@ -729,18 +731,28 @@ function AuditSumatifKs({ onOpenDetail, data }: { onOpenDetail: (s: typeof SIM_S
           ))}
         </div>
       </div>
-      <div className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10.5px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> SIMULASI — backend /assessments/audit belum tersedia</div>
+      {sumatifDataPresent ? (
+        <div className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10.5px] font-bold text-sky-700"><ClipboardPenLine className="h-3 w-3" /> Data sesi dari /assessment/sessions</div>
+      ) : null}
       <div className="space-y-2.5">
-        {filtered.map((s) => {
-          const stBadge = s.status === 'Menunggu' ? 'bg-amber-50 text-amber-700' : s.status === 'Disetujui' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600';
-          return (
-            <button key={s.id} type="button" onClick={() => onOpenDetail(s)} className="flex w-full items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3.5 text-left transition hover:border-emerald-200 hover:shadow-sm">
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-100 text-[11px] font-bold text-emerald-700">{s.jenis}</div>
-              <div className="min-w-0 flex-1"><b className="text-[13px] text-[#0f2e25]">{s.judul}</b><div className="text-[11px] text-[#6b8079]">{s.guru} · {s.mapel} · {s.kelas} · {s.soal} soal · {s.tanggal}</div></div>
-              <span className={clsx('rounded-md px-2 py-0.5 text-[10.5px] font-bold', stBadge)}>{s.status}</span>
-            </button>
-          );
-        })}
+        {filtered.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-[#e6efea] bg-[#f9fbfa] px-4 py-8 text-center">
+            <ClipboardPenLine className="mx-auto h-7 w-7 text-[#cbd5e1]" />
+            <p className="mt-2 text-[13px] font-bold text-[#0f2e25]">Belum ada sesi sumatif</p>
+            <p className="text-[11.5px] text-[#6b8079]">Sesi assessment yang dibuat guru akan muncul di sini untuk diaudit.</p>
+          </div>
+        ) : (
+          filtered.map((s) => {
+            const stBadge = s.status === 'Menunggu' ? 'bg-amber-50 text-amber-700' : s.status === 'Disetujui' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600';
+            return (
+              <button key={s.id} type="button" onClick={() => onOpenDetail(s)} className="flex w-full items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3.5 text-left transition hover:border-emerald-200 hover:shadow-sm">
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-100 text-[11px] font-bold text-emerald-700">{s.jenis}</div>
+                <div className="min-w-0 flex-1"><b className="text-[13px] text-[#0f2e25]">{s.judul}</b><div className="text-[11px] text-[#6b8079]">{s.guru} · {s.mapel} · {s.kelas} · {s.soal} soal · {s.tanggal}</div></div>
+                <span className={clsx('rounded-md px-2 py-0.5 text-[10.5px] font-bold', stBadge)}>{s.status}</span>
+              </button>
+            );
+          })
+        )}
       </div>
     </div>
   );

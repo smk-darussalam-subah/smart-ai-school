@@ -2,24 +2,44 @@
 
 import { Trophy, Award, Target, History } from 'lucide-react';
 import type { ModalState } from './OrtuWorkspace';
-import {
-  SIM_XP, SIM_LEADERBOARD, SIM_BADGES, SIM_CPDATA, SIM_TIMELINE,
-  initials,
-} from './ortu-data';
+import { SIM_TIMELINE } from './ortu-data';
+import type { OrtuBadge } from './ortu-types';
+
+/** Shape badge dari API /badges/student/:id (lihat akademik/page.tsx ortu branch). */
+export interface BadgeApiItem {
+  id: string;
+  awardedAt: string;
+  badge: { id: string; code: string; name: string; description: string; icon: string; tier: string };
+}
+
+/** Emoji tier fallback bila badge.icon kosong/tidak valid. */
+const TIER_EMOJI: Record<string, string> = {
+  BRONZE: '\u{1F948}', SILVER: '\u{1F948}', GOLD: '\u{1F3C6}', PLATINUM: '\u{1F48E}',
+};
+
+/** Mapping badge API → OrtuBadge view-model. Semua badge ter-award dianggap earned=true. */
+function mapBadges(items: BadgeApiItem[]): OrtuBadge[] {
+  return items.map((b) => ({
+    emoji: b.badge?.icon || TIER_EMOJI[b.badge?.tier] || '\u{1F39F}',
+    name: b.badge?.name || 'Badge',
+    desc: b.badge?.description || '',
+    earned: true,
+  }));
+}
 
 interface CapaianOrtuProps {
   setModal: (modal: ModalState) => void;
   showToast: (msg: string) => void;
+  /** T1-03a: badge real dari /badges/student/:id. */
+  badges?: BadgeApiItem[];
 }
 
 /** Avatar colors for leaderboard (cycling). */
-const AVATAR_COLORS = ['#3b82f6', '#0ea5e9', '#a78bfa', '#ec4899', '#f59e0b', '#14b8a6'];
 
-export default function CapaianOrtu({ showToast }: CapaianOrtuProps) {
-  const { level, current, next } = SIM_XP;
-  const xpProgress = Math.round((current % 1000) / 1000 * 100);
-  const xpToNext = next - current;
-  const earnedBadges = SIM_BADGES.filter((b) => b.earned);
+export default function CapaianOrtu({ showToast, badges }: CapaianOrtuProps) {
+  // T1-03a: badges dari data real. XP/CP/leaderboard belum di-fetch untuk ortu
+  // (lihat page.tsx ortu branch) → tampilkan honest empty state, BUKAN SIM.
+  const earnedBadges = mapBadges(badges ?? []);
 
   return (
     <div className="px-4 pb-4">
@@ -28,92 +48,24 @@ export default function CapaianOrtu({ showToast }: CapaianOrtuProps) {
         <p className="mt-0.5 text-[12px] font-medium text-[var(--muted)]">Prestasi & kompetensi</p>
       </div>
 
-      {/* 1. XP card */}
+      {/* 1. XP card — T1-03a: ortu XP endpoint belum di-wire; honest empty state */}
       <div
-        className="mb-3.5 rounded-[var(--r)] border p-3.5"
-        style={{ borderColor: 'var(--glow-bd)', boxShadow: 'var(--glow-sh)' }}
+        className="mb-3.5 rounded-[var(--r)] border border-dashed border-[var(--border)] bg-[var(--surface)] p-3.5 text-center"
       >
-        <div className="flex items-center gap-3.5">
-          <div
-            className="flex h-14 w-14 items-center justify-center rounded-2xl text-[20px] font-extrabold text-white"
-            style={{ background: 'var(--grad)' }}
-          >
-            L{level}
-          </div>
-          <div className="flex-1">
-            <b className="text-[14px]">Level {level} · {current.toLocaleString()} XP</b>
-            <div className="mt-1.5 h-1.5 overflow-hidden rounded bg-[var(--bar-bg)]">
-              <div
-                className="h-full rounded"
-                style={{ width: `${xpProgress}%`, background: 'var(--grad-v)' }}
-              />
-            </div>
-            <small className="mt-1 block text-[10px] font-semibold text-[var(--muted)]">
-              {xpToNext} XP ke Level {level + 1}
-            </small>
-          </div>
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl text-[18px] font-extrabold text-white" style={{ background: 'var(--grad)' }}>
+          ?
         </div>
+        <p className="mt-2 text-[12.5px] font-bold text-[var(--text)]">XP & Level</p>
+        <p className="text-[10.5px] text-[var(--muted)]">Data gamifikasi anak akan tersedia menyusul</p>
       </div>
 
-      {/* 2. Ranking */}
-      <div className="mb-3.5 rounded-[var(--r)] border border-[var(--border)] bg-[var(--surface)] p-3.5">
-        <div className="mb-2.5 flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
-            <Trophy className="h-[15px] w-[15px] text-[var(--pri)]" />
-            Ranking Kelas TJKT
-          </div>
-          <span className="text-[10px] font-semibold text-[var(--muted)]">Sem Genap 25/26</span>
-        </div>
-        {SIM_LEADERBOARD.map((s, i) => {
-          const rc = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
-          const avC = AVATAR_COLORS[i % AVATAR_COLORS.length]!;
-          return (
-            <div
-              key={i}
-              className="mb-1 flex items-center gap-2.5 rounded-[10px] p-2 last:mb-0"
-              style={{
-                background: s.me ? 'rgba(59,130,246,.08)' : undefined,
-                border: s.me ? '1px solid rgba(59,130,246,.2)' : undefined,
-              }}
-            >
-              <div
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] font-extrabold"
-                style={{
-                  background: rc === 'gold' ? 'rgba(245,158,11,.15)'
-                    : rc === 'silver' ? 'rgba(155,163,175,.15)'
-                    : rc === 'bronze' ? 'rgba(180,83,9,.15)'
-                    : 'var(--surface2)',
-                  color: rc === 'gold' ? 'var(--amber)'
-                    : rc === 'silver' ? '#9ca3af'
-                    : rc === 'bronze' ? '#b45309'
-                    : 'var(--muted)',
-                }}
-              >
-                {i + 1}
-              </div>
-              <div
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold text-white"
-                style={{ background: avC }}
-              >
-                {initials(s.name)}
-              </div>
-              <div className="min-w-0 flex-1">
-                <b className="block text-[12px]">
-                  {s.name}{s.me ? ' (Putra Anda)' : ''}
-                </b>
-                <small className="text-[9.5px] font-semibold text-[var(--muted)]">
-                  {s.kelas} · {s.badges} badge · {s.avg} avg
-                </small>
-              </div>
-              <div className="shrink-0 text-[13px] font-extrabold text-[var(--pri)]">
-                {s.xp.toLocaleString()}
-              </div>
-            </div>
-          );
-        })}
+      {/* 2. Ranking — belum di-fetch untuk ortu; honest empty state */}
+      <div className="mb-3.5 rounded-[var(--r)] border border-dashed border-[var(--border)] bg-[var(--surface)] p-3.5 text-center">
+        <Trophy className="mx-auto h-5 w-5 text-[var(--dim)]" />
+        <p className="mt-1.5 text-[12px] font-bold text-[var(--muted)]">Ranking kelas belum tersedia</p>
       </div>
 
-      {/* 3. Badges grid */}
+      {/* 3. Badges grid — T1-03a: dari /badges/student/:id (real) */}
       <div className="mb-3.5 rounded-[var(--r)] border border-[var(--border)] bg-[var(--surface)] p-3.5">
         <div className="mb-2.5 flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
@@ -121,68 +73,46 @@ export default function CapaianOrtu({ showToast }: CapaianOrtuProps) {
             Badge & Prestasi
           </div>
           <span className="text-[10px] font-semibold text-[var(--muted)]">
-            {earnedBadges.length}/{SIM_BADGES.length} diraih
+            {earnedBadges.length} diraih
           </span>
         </div>
-        <div className="grid grid-cols-4 gap-2">
-          {SIM_BADGES.map((b) => (
-            <div
-              key={b.name}
-              onClick={() => showToast(`${b.name}: ${b.desc}`)}
-              className="cursor-pointer rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--surface)] p-2.5 text-center transition-transform hover:-translate-y-0.5"
-              style={b.earned ? undefined : { opacity: 0.4, filter: 'grayscale(1)' }}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showToast(`${b.name}: ${b.desc}`); } }}
-            >
-              <div className="mb-1 text-[22px] leading-none">{b.emoji}</div>
-              <div className="text-[9px] font-bold leading-tight">{b.name}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 4. CP progress */}
-      <div className="mb-3.5 rounded-[var(--r)] border border-[var(--border)] bg-[var(--surface)] p-3.5">
-        <div className="mb-2.5 flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
-          <Target className="h-[15px] w-[15px] text-[var(--pri)]" />
-          Progress Kompetensi
-        </div>
-        {SIM_CPDATA.map((cp) => (
-          <div key={cp.cp} className="mb-3 last:mb-0">
-            <div className="mb-1 flex items-center justify-between">
-              <b className="text-[12px]">{cp.cp}: {cp.desc}</b>
-              <span className="text-[12px] font-extrabold text-[var(--pril)]">{cp.progres}%</span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded bg-[var(--bar-bg)]">
-              <div
-                className="h-full rounded"
-                style={{ width: `${cp.progres}%`, background: 'var(--grad-v)' }}
-              />
-            </div>
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {cp.tps.map((tp) => (
-                <span
-                  key={tp.tp}
-                  className="rounded-md px-1.5 py-0.5 text-[9px] font-bold"
-                  style={{
-                    background: tp.done ? 'rgba(16,185,129,.12)' : 'var(--surface2)',
-                    color: tp.done ? 'var(--em)' : 'var(--muted)',
-                  }}
-                >
-                  {tp.done ? '✓ ' : ''}{tp.tp}
-                </span>
-              ))}
-            </div>
+        {earnedBadges.length === 0 ? (
+          <div className="py-5 text-center text-[12px] font-semibold text-[var(--dim)]">
+            Belum ada badge yang diraih anak
           </div>
-        ))}
+        ) : (
+          <div className="grid grid-cols-4 gap-2">
+            {earnedBadges.map((b) => (
+              <div
+                key={b.name}
+                onClick={() => showToast(`${b.name}: ${b.desc}`)}
+                className="cursor-pointer rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--surface)] p-2.5 text-center transition-transform hover:-translate-y-0.5"
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showToast(`${b.name}: ${b.desc}`); } }}
+              >
+                <div className="mb-1 text-[22px] leading-none">{b.emoji}</div>
+                <div className="text-[9px] font-bold leading-tight">{b.name}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* 5. Learning timeline */}
+      {/* 4. CP progress — backend /cp-progress belum ada (Skenario B); honest empty state */}
+      <div className="mb-3.5 rounded-[var(--r)] border border-dashed border-[var(--border)] bg-[var(--surface)] p-3.5 text-center">
+        <Target className="mx-auto h-5 w-5 text-[var(--dim)]" />
+        <p className="mt-1.5 text-[12px] font-bold text-[var(--muted)]">Progress kompetensi akan tersedia menyusul</p>
+      </div>
+
+      {/* 5. Learning timeline — Skenario B: backend belum ada, SIM dipertahankan DENGAN label jelas */}
       <div className="rounded-[var(--r)] border border-[var(--border)] bg-[var(--surface)] p-3.5">
-        <div className="mb-2.5 flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
-          <History className="h-[15px] w-[15px] text-[var(--pri)]" />
-          Timeline Pembelajaran
+        <div className="mb-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
+            <History className="h-[15px] w-[15px] text-[var(--pri)]" />
+            Timeline Pembelajaran
+          </div>
+          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">Contoh</span>
         </div>
         <div className="relative pl-[18px]">
           {/* Vertical line */}

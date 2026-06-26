@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Target, FileText, X } from 'lucide-react';
-import { mpColor, mpIcon, SIM_NILAI } from './siswa-data';
+import { mpColor, mpIcon } from './siswa-data';
 import { KKTP_DEFAULT } from '@/lib/academic';
 import type { SiswaNilai } from './siswa-types';
 
@@ -17,14 +17,16 @@ export default function NilaiSiswa({ grades, showToast }: Props) {
   const [filter, setFilter] = useState<Filter>('all');
   const [detailGrade, setDetailGrade] = useState<SiswaNilai | null>(null);
 
-  const displayGrades = grades.length > 0 ? grades : SIM_NILAI;
-  const isSimData = grades.length === 0;
+  // T1-04 (audit v2): grades langsung dari props. Empty → empty state, BUKAN SIM_NILAI.
+  const displayGrades = grades;
   const tuntasCount = displayGrades.filter((g) => g.rata >= g.kktp).length;
   const remedialCount = displayGrades.length - tuntasCount;
   const avgNilai =
-    Math.round(
-      (displayGrades.reduce((a: number, b) => a + b.rata, 0) / displayGrades.length) * 10,
-    ) / 10;
+    displayGrades.length > 0
+      ? Math.round(
+          (displayGrades.reduce((a: number, b) => a + b.rata, 0) / displayGrades.length) * 10,
+        ) / 10
+      : 0;
 
   const filteredGrades = displayGrades.filter((g) => {
     const tuntas = g.rata >= g.kktp;
@@ -71,10 +73,10 @@ export default function NilaiSiswa({ grades, showToast }: Props) {
         </div>
       </div>
 
-      {/* Data Simulasi badge — shown when SIM fallback active */}
-      {isSimData && (
-        <div className="mx-5 mb-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-500">
-          <span>🧪</span> Data Simulasi — Nilai belum tersedia dari server
+      {/* Empty state — T1-04: tampilkan saat belum ada nilai (bukan data SIM) */}
+      {displayGrades.length === 0 && (
+        <div className="mx-5 mb-2 flex items-center gap-2 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] font-bold text-sky-500">
+          <span>ℹ️</span> Belum ada nilai — guru belum menginput nilai untuk Anda
         </div>
       )}
 
