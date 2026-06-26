@@ -5,7 +5,6 @@ import {
   Award, Trophy, Target, Zap, CheckCircle, Loader, Circle,
   Code2, Palette, Flame, Layout, CheckSquare, Calculator, Languages, Dumbbell,
 } from 'lucide-react';
-import { SIM_BADGES, SIM_LEADERBOARD, SIM_CPDATA, SIM_XP } from './siswa-data';
 import type { SiswaScreen, ModalState } from './SiswaWorkspace';
 import type { SiswaXP, SiswaLeaderboardEntry, SiswaCP, SiswaCPTP, SiswaBadge } from './siswa-types';
 
@@ -43,10 +42,13 @@ function initials(name: string) {
 export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderboard, cpData, badges }: Props) {
   const [filter, setFilter] = useState<'all' | 'earned' | 'progress'>('all');
 
-  const displayBadges = badges.length > 0 ? badges : SIM_BADGES;
-  const displayLeaderboard = leaderboard.length > 0 ? leaderboard : SIM_LEADERBOARD;
-  const displayXP = xp || SIM_XP;
-  const displayCP = cpData.length > 0 ? cpData : SIM_CPDATA;
+  // T1-04 (audit v2): gunakan props langsung. SiswaWorkspace menjamin default
+  // (xp ?? {level:1,current:0,next:500}, array ?? []). Saat data kosong → tampilkan
+  // apa adanya (empty), JANGAN fallback ke SIM_ yang menampilkan data palsu.
+  const displayBadges = badges;
+  const displayLeaderboard = leaderboard;
+  const displayXP = xp;
+  const displayCP = cpData;
 
   const filteredBadges = displayBadges.filter((b: SiswaBadge) => {
     if (filter === 'all') return true;
@@ -56,7 +58,7 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
 
   const earnedCount = displayBadges.filter((b: SiswaBadge) => b.earned).length;
   const progressCount = displayBadges.length - earnedCount;
-  const xpPct = Math.round((displayXP.current / displayXP.next) * 100);
+  const xpPct = displayXP.next > 0 ? Math.round((displayXP.current / displayXP.next) * 100) : 0;
 
   return (
     <div>
