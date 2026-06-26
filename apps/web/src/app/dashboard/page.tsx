@@ -1,4 +1,5 @@
 import { getServerSession } from 'next-auth';
+import { redirect } from 'next/navigation';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
 import type { Metadata } from 'next';
@@ -184,6 +185,20 @@ export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
   const roles: string[] = await getEffectiveRoles(session);
   const primaryRole = roles[0] ?? '';
+
+  // Siswa & Orang Tua (role mobile-only) redirect ke workspace Akademik yang
+  // self-contained (punya bottom-nav + tombol Keluar di account sheet). Tanpa
+  // ini, mereka land di beranda kiosk yang hideChrome (tanpa sidebar/logout).
+  const isMobileOnlyRole =
+    (roles.includes('SISWA') || roles.includes('ORANG_TUA')) &&
+    !roles.includes('GURU') &&
+    !roles.includes('KEPALA_SEKOLAH') &&
+    !roles.includes('SUPER_ADMIN') &&
+    !roles.includes('TATA_USAHA');
+  if (isMobileOnlyRole) {
+    redirect('/dashboard/akademik');
+  }
+
   const greeting = ROLE_GREETING[primaryRole] ?? 'Selamat datang di DIIS.';
   const firstName = session?.user?.name?.split(' ')[0] ?? 'Pengguna';
 
