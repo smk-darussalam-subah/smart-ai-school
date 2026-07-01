@@ -18,8 +18,8 @@
 | T1-03b | KehadiranOrtu wire attendance/wa | 1 | ✅ DONE | feat/audit2-tier1-ortu-wiring | — | 2026-06-26 |
 | T1-04 | Siswa SIM fallback → empty state | 1 | ✅ DONE | feat/audit2-tier1-ortu-wiring | — | 2026-06-26 |
 | T1-05 | KS sumatif → empty state | 1 | ✅ DONE | feat/audit2-tier1-ortu-wiring | — | 2026-06-26 |
-| T2-01 | Rapor B-G wire endpoint ada | 2 | 🔲 TODO | — | — | — |
-| T2-02 | KS health & tren wire analytics | 2 | 🔲 TODO | — | — | — |
+| T2-01 | Rapor B-G wire endpoint ada | 2 | ✅ DONE | feat/audit2-t2-01-rapor-wire | — | 2026-07-01 |
+| T2-02 | KS health & tren wire analytics | 2 | ✅ DONE | feat/audit2-t2-02-ks-analytics | — | 2026-07-01 |
 | T2-03 | Guru badge catalog wire /badges | 2 | ✅ DONE | feat/audit2-t2-03-badge-catalog | — | 2026-07-01 |
 | T2-04 | Label SIM eksplisit (Skenario C) | 2 | ✅ DONE | feat/audit2-t2-04-sim-labels | — | 2026-07-01 |
 | T2-05 | apiFetch 401 → redirect login | 2 | 🔲 TODO | — | — | — |
@@ -30,7 +30,7 @@
 | T3-05 | Siswa celebration label | 3 | 🔲 TODO | — | — | — |
 | T3-06 | Orphan endpoint minor | 3 | 🔲 TODO | — | — | — |
 
-**Ringkasan:** 8/16 selesai (50%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 2/5 (T2-03, T2-04 DONE). TIER 3: 0/6.
+**Ringkasan:** 10/16 selesai (62.5%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 4/5 (T2-01, T2-02, T2-03, T2-04 DONE). TIER 3: 0/6.
 
 ---
 
@@ -136,6 +136,25 @@ Final grep-sweep menemukan 3 komponen LAIN dengan pola SIM-fallback yang sama (t
 **Status:** ✅ DONE
 
 ### TIER 2
+
+#### T2-01 — Rapor B-G: wire ke /report-cards/* endpoints
+**Mulai:** 2026-07-01 | **Branch:** `feat/audit2-t2-01-rapor-wire` | **Selesai:** 2026-07-01 | **Durasi:** ~35 menit
+**Files changed:**
+- `actions.ts` — tambah 4 server action: `fetchMuatanLokal()`, `fetchAttendanceSummary()`, `fetchDevelopmentDescription()`, `fetchApprovalInfo()`. Semua memanggil endpoint `/report-cards/:studentId/*` dengan query params `year` & `semester`.
+- `RaporModal.tsx` (shared) — tambah props optional: `studentId`, `academicYear`, `semester`; tambah `useEffect` untuk fetch 4 section saat modal dibuka; update Section B (muatan lokal) tampilkan real data dengan NA & predikat; Section D (ketidakhadiran) tampilkan real count; Section F (perkembangan kompetensi) tampilkan real deskripsi; Section G (pengesahan) tampilkan nama wali kelas & kepala sekolah real; tambah loading state ("Memuat data rapor..."); SIMULASI banner hanya muncul jika `studentId/academicYear/semester` tidak di-pass.
+- `CapaianRapor.tsx` — thread `studentId`, `academicYear`, `semester` ke RaporModal.
+**Bukti Runtime:** `tsc --noEmit` = 0 errors · `eslint` = 0 errors/warnings
+**Catatan:** Backend `verifyAccess()` method EXISTS di `report-cards.service.ts:282-298` (bertentangan dengan catatan audit B9 yang bilang "dihapus"). Semua 4 endpoint section fungsional. Section C (Ekstrakurikuler) & E (Catatan Guru Mapel) tetap placeholder jujur karena belum ada endpoint backend (Skenario B — pertahankan SIM). Section A (nilai mapel) sudah data nyata dari `/grades`.
+**Status:** ✅ DONE
+
+#### T2-02 — KS Health & Tren: wire ke /attendance/heatmap
+**Mulai:** 2026-07-01 | **Branch:** `feat/audit2-t2-02-ks-analytics` | **Selesai:** 2026-07-01 | **Durasi:** ~30 menit
+**Files changed:**
+- `actions.ts` — tambah `fetchAttendanceHeatmap(days)` server action yang memanggil `GET /attendance/heatmap?days=N`. Response: `{ dates, classes, overall }` dengan grid kehadiran kelas × hari.
+- `KsWorkspace.tsx` — import `fetchAttendanceHeatmap`; tambah state `trenData` & `trenLoading` di `BerandaKs`; tambah `useEffect` untuk fetch heatmap saat `trenPeriod` berubah (10H=10 days, 1B=30 days, 3B=90 days); compute daily overall pct dari heatmap data; update `TrenChart` untuk tampilkan real data siswa (guru tetap SIMULASI dengan catatan); update banner: "Data siswa nyata — data guru masih SIMULASI" saat data tersedia, fallback "SIMULASI" saat load.
+**Bukti Runtime:** `tsc --noEmit` = 0 errors · `eslint` = 0 errors/warnings
+**Catatan:** `/attendance/heatmap` endpoint EXISTS & fungsional (bukan orphan seperti catatan audit A16). Health score pillars (Akademik/Kehadiran/Keuangan/SDM) tetap SIMULASI karena butuh agregasi multi-source yang belum ada di backend (Skenario B — pertahankan SIM dengan banner "agregasi backend menyusul"). Tren kehadiran siswa kini real dari heatmap; guru approximate (+2% dari siswa) karena belum ada endpoint teacher heatmap terpisah.
+**Status:** ✅ DONE
 
 #### T2-04 — Label SIM eksplisit Skenario C (C2: ModulAjarForm, C3: BadgeCelebration)
 **Mulai:** 2026-07-01 | **Branch:** `feat/audit2-t2-04-sim-labels` | **Selesai:** 2026-07-01 | **Durasi:** ~20 menit

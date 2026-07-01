@@ -206,6 +206,64 @@ export async function fetchBadgeCatalog(): Promise<{
   return { success: true, data: body?.data ?? [] };
 }
 
+// ── Report Cards (T2-01 — Rapor sections B-G) ─────────────────────────────
+
+/** T2-01: Fetch muatan lokal (Section B) for a student. */
+export async function fetchMuatanLokal(studentId: string, year: string, semester: number) {
+  const r = await apiCall(
+    `/report-cards/${studentId}/muatan-lokal?year=${encodeURIComponent(year)}&semester=${semester}`,
+    'GET',
+  );
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { subjects: { name: string; na: number; kktp: number; predikat: string }[] } };
+}
+
+/** T2-01: Fetch attendance summary (Section D) for a student. */
+export async function fetchAttendanceSummary(studentId: string, year: string, semester: number) {
+  const r = await apiCall(
+    `/report-cards/${studentId}/attendance-summary?year=${encodeURIComponent(year)}&semester=${semester}`,
+    'GET',
+  );
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { hadir: number; izin: number; sakit: number; alpha: number; total: number } };
+}
+
+/** T2-01: Fetch development description (Section F) for a student. */
+export async function fetchDevelopmentDescription(studentId: string, year: string, semester: number) {
+  const r = await apiCall(
+    `/report-cards/${studentId}/development-description?year=${encodeURIComponent(year)}&semester=${semester}`,
+    'GET',
+  );
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { description: string; spiritual: string; social: string; academic: string } };
+}
+
+/** T2-01: Fetch approval info (Section G) for a student. */
+export async function fetchApprovalInfo(studentId: string, year: string, semester: number) {
+  const r = await apiCall(
+    `/report-cards/${studentId}/approval?year=${encodeURIComponent(year)}&semester=${semester}`,
+    'GET',
+  );
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { homeroomTeacher: string; principal: string; approvedAt: string | null; schoolYear: string; semester: number; className: string } };
+}
+
+// ── Analytics (T2-02 — KS health & tren) ───────────────────────────────────
+
+/** T2-02: Fetch attendance heatmap for trend analysis. */
+export async function fetchAttendanceHeatmap(days: number) {
+  const r = await apiCall(`/attendance/heatmap?days=${days}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return {
+    success: true,
+    data: r.data as {
+      dates: string[];
+      classes: Array<{ classId: string; className: string; grade: number; cells: Array<{ date: string; total: number; hadir: number; pct: number | null }> }>;
+      overall: { today: { pct: number | null }; yesterday?: { pct: number | null } };
+    },
+  };
+}
+
 /** Ambil progres siswa untuk satu Modul LMS (monitor guru). */
 export async function fetchLmsProgress(id: string) {
   const session = await getServerSession(authOptions);
