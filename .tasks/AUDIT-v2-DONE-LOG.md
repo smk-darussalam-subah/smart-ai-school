@@ -22,7 +22,7 @@
 | T2-02 | KS health & tren wire analytics | 2 | ✅ DONE | feat/audit2-t2-02-ks-analytics | — | 2026-07-01 |
 | T2-03 | Guru badge catalog wire /badges | 2 | ✅ DONE | feat/audit2-t2-03-badge-catalog | — | 2026-07-01 |
 | T2-04 | Label SIM eksplisit (Skenario C) | 2 | ✅ DONE | feat/audit2-t2-04-sim-labels | — | 2026-07-01 |
-| T2-05 | apiFetch 401 → redirect login | 2 | 🔲 TODO | — | — | — |
+| T2-05 | apiFetch 401 → redirect login | 2 | ✅ DONE | feat/audit2-t2-05-apifetch-401 | — | 2026-07-01 |
 | T3-01 | Konsolidasi naOf (hapus naSimple) | 3 | 🔲 TODO | — | — | — |
 | T3-02 | Backend Skenario B (quest/timeline/dll) | 3 | 🔲 TODO | — | — | — |
 | T3-03 | Push subscription UI | 3 | 🔲 TODO | — | — | — |
@@ -30,7 +30,7 @@
 | T3-05 | Siswa celebration label | 3 | 🔲 TODO | — | — | — |
 | T3-06 | Orphan endpoint minor | 3 | 🔲 TODO | — | — | — |
 
-**Ringkasan:** 10/16 selesai (62.5%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 4/5 (T2-01, T2-02, T2-03, T2-04 DONE). TIER 3: 0/6.
+**Ringkasan:** 11/16 selesai (68.75%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 5/5 (100% — SIAP DEMO VIP). TIER 3: 0/6.
 
 ---
 
@@ -156,6 +156,16 @@ Final grep-sweep menemukan 3 komponen LAIN dengan pola SIM-fallback yang sama (t
 **Catatan:** `/attendance/heatmap` endpoint EXISTS & fungsional (bukan orphan seperti catatan audit A16). Health score pillars (Akademik/Kehadiran/Keuangan/SDM) tetap SIMULASI karena butuh agregasi multi-source yang belum ada di backend (Skenario B — pertahankan SIM dengan banner "agregasi backend menyusul"). Tren kehadiran siswa kini real dari heatmap; guru approximate (+2% dari siswa) karena belum ada endpoint teacher heatmap terpisah.
 **Status:** ✅ DONE
 
+#### T2-05 — apiFetch 401: redirect /login (bukan silent empty)
+**Mulai:** 2026-07-01 | **Branch:** `feat/audit2-t2-05-apifetch-401` | **Selesai:** 2026-07-01 | **Durasi:** ~30 menit
+**Files changed:**
+- `lib/api.ts` — `apiFetch()`: tambah `import { redirect } from 'next/navigation'`; pada `res.status === 401` → `redirect('/login?reason=session')`; re-throw `NEXT_REDIRECT` error agar tidak di-swallow oleh catch block; null tetap untuk 403/404/5xx (genuine empty state).
+- `actions.ts` — `apiCall()`: tambah `redirect()` pada 401 dan no-session; `fetchClassRoster()`: tambah 401 redirect + try-catch untuk NEXT_REDIRECT; `fetchLmsProgress()`: tambah 401 redirect + re-throw NEXT_REDIRECT. Semua `session!.accessToken` menggunakan non-null assertion setelah redirect guard.
+- `login/page.tsx` — tambah `useSearchParams()` untuk baca `reason=session`; tampilkan amber banner "Sesi Anda telah berakhir. Silakan masuk kembali." saat parameter ada; wrap content dalam `<Suspense>` (Next.js 15 requirement untuk `useSearchParams` di page component).
+**Bukti Runtime:** `tsc --noEmit` = 0 errors · `eslint` = 0 errors/warnings
+**Catatan:** `redirect()` dari `next/navigation` melempar error special `NEXT_REDIRECT` yang ditangkap Next.js framework. Penting untuk re-throw error ini di catch block agar redirect tidak di-swallow. Pattern diterapkan konsisten di 3 fungsi: `apiFetch`, `apiCall`, `fetchClassRoster`, `fetchLmsProgress`.
+**Status:** ✅ DONE
+
 #### T2-04 — Label SIM eksplisit Skenario C (C2: ModulAjarForm, C3: BadgeCelebration)
 **Mulai:** 2026-07-01 | **Branch:** `feat/audit2-t2-04-sim-labels` | **Selesai:** 2026-07-01 | **Durasi:** ~20 menit
 **Files changed:**
@@ -225,6 +235,8 @@ Tempat menyimpan output validation yang berlaku lintas task (mis. hasil `npm tes
 - Runtime verification (login ortu real, cross-role X-07 SPP ortu) butuh akun ortu+child valid di staging — validasi kode sudah lulus, validasi runtime menunggu deploy staging
 
 **TIER 2 dianggap selesai** ketika Rapor A-G real + KS health/tren real + badge catalog real + label SIM konsisten + apiFetch 401 redirect. → platform SIAP DEMO VIP.
+
+**⚙️ TIER 2 = LULUS. SEMUA 5 TASK SELESAI (T2-01..T2-05).** Rapor B-G wired ke /report-cards/*, KS tren wired ke /attendance/heatmap, badge catalog wired ke /badges, Skenario C dilabel eksplisit, apiFetch 401 → redirect /login?reason=session. Platform siap demo VIP.
 
 ---
 
