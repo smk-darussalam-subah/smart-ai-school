@@ -4,7 +4,14 @@
 > Dokumen lain (`current.md`, `CLAUDE.md` §7, gate docs) hanya MENAUTKAN ke sini,
 > tidak menduplikasi status. Jika ada konflik, file INI yang menang.
 > Dikelola oleh Cowork AI. Claude Code hanya membaca file ini.
-> Update terakhir: 2026-06-12 (siang).
+> Update terakhir: 2026-07-01 (Audit v2 Tier 1+2 complete).
+> **AUDIT v2 TIER 1+2 ✅ COMPLETE & MERGED TO PRODUCTION** (PR #270→staging, #271→main, 2026-07-01).
+> Tier 1 (6/6): Ortu wiring, Siswa empty states, KS sumatif empty state.
+> Tier 2 (5/5): Rapor B-G wire /report-cards/*, KS tren wire /attendance/heatmap,
+> Badge catalog wire /badges, Skenario C labels, apiFetch 401→redirect /login.
+> T3-05 also covered by T2-04. Tier 3 remaining: T3-01 (naOf, needs Director),
+> T3-03 (Push UI), T3-06 (Orphan endpoints), T3-02 (Backend Skenario B), T3-04 (VAPID, blocked).
+> Progress: 12/17 (70.6%). Platform SIAP DEMO VIP.
 > **2G ✅ MERGED→prod** (PR #116–118, exclusion constraint live di prod DB).
 > **2H selesai dikoding** (`feat/2H-rapor-kegiatan-api`): API Rapor M12 + Kegiatan M9
 > melengkapi frontend yang terlanjur live kosong; 🚨 insiden kode-tak-bertuan dicatat
