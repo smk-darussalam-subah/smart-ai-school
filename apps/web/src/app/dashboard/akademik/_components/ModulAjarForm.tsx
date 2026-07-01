@@ -286,7 +286,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 2: Capaian & TP */}
-              <SectionCard step={2} activeStep={step} title="Capaian Pembelajaran (CP) & Tujuan Pembelajaran (TP)" desc="Definisikan CP berdasarkan fase, lalu turunkan ke TP yang terukur" req icon={Target} onAI={() => aiGenerate(2)}>
+              <SectionCard step={2} activeStep={step} title="Capaian Pembelajaran (CP) & Tujuan Pembelajaran (TP)" desc="Definisikan CP berdasarkan fase, lalu turunkan ke TP yang terukur" req icon={Target} onAI={() => aiGenerate(2)} simLabel="SIMULASI">
                 <Field label="Capaian Pembelajaran (CP)" req><textarea value={body.cp ?? ''} onChange={(e) => set('cp', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Tulis CP sesuai dokumen Kurikulum Merdeka..." /></Field>
                 <Field label="Kompetensi Awal" hint="Opsional"><textarea value={body.kompetensiAwal ?? ''} onChange={(e) => set('kompetensiAwal', e.target.value)} rows={2} className={`${FIELD} resize-y`} placeholder="Pengetahuan/keterampilan yang sudah dimiliki..." /></Field>
                 <Field label="Tujuan Pembelajaran (TP)" req>
@@ -319,7 +319,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 4: Profil Pelajar Pancasila */}
-              <SectionCard step={4} activeStep={step} title="Profil Pelajar Pancasila" desc="Pilih dimensi yang dikembangkan dalam modul ajar ini" icon={Users} onAI={() => aiGenerate(4)}>
+              <SectionCard step={4} activeStep={step} title="Profil Pelajar Pancasila" desc="Pilih dimensi yang dikembangkan dalam modul ajar ini" icon={Users} onAI={() => aiGenerate(4)} simLabel="SIMULASI">
                 <Field label="Dimensi Profil Pelajar Pancasila">
                   <p className="mb-2 text-[10.5px] text-[#6b8079]">Pilih minimal 1 dimensi yang menjadi fokus</p>
                   <div className="flex flex-wrap gap-2">
@@ -339,7 +339,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 5: Sarana & Target */}
-              <SectionCard step={5} activeStep={step} title="Sarana Prasarana & Target Peserta Didik" desc="Daftar alat, bahan, dan profil peserta didik target modul ini" icon={Package} onAI={() => aiGenerate(5)}>
+              <SectionCard step={5} activeStep={step} title="Sarana Prasarana & Target Peserta Didik" desc="Daftar alat, bahan, dan profil peserta didik target modul ini" icon={Package} onAI={() => aiGenerate(5)} simLabel="SIMULASI">
                 <Field label="Sarana & Prasarana"><textarea value={body.sarana ?? ''} onChange={(e) => set('sarana', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Alat, bahan, software, ruangan yang dibutuhkan..." /></Field>
                 <Field label="Target Peserta Didik"><textarea value={body.target ?? ''} onChange={(e) => set('target', e.target.value)} rows={2} className={`${FIELD} resize-y`} placeholder="Karakteristik peserta didik target modul ini..." /></Field>
                 <Field label="Model Pembelajaran">
@@ -351,7 +351,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 6: Kegiatan Pembelajaran — Timeline */}
-              <SectionCard step={6} activeStep={step} title="Kegiatan Pembelajaran" desc="Rincian kegiatan: Pendahuluan, Inti, dan Penutup untuk setiap pertemuan" req icon={Layers} onAI={() => aiGenerate(6)}>
+              <SectionCard step={6} activeStep={step} title="Kegiatan Pembelajaran" desc="Rincian kegiatan: Pendahuluan, Inti, dan Penutup untuk setiap pertemuan" req icon={Layers} onAI={() => aiGenerate(6)} simLabel="SIMULASI">
                 <ListAdd onAdd={addKeg} label="Tambah Pertemuan" />
                 {keg.length === 0 && <Empty>Belum ada pertemuan.</Empty>}
                 {keg.map((k, i) => (
@@ -383,7 +383,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 7: Asesmen — Diagnostik/Formatif/Sumatif */}
-              <SectionCard step={7} activeStep={step} title="Asesmen" desc="Rencana penilaian: diagnostik, formatif, dan sumatif" req icon={ClipboardCheck} onAI={() => aiGenerate(7)}>
+              <SectionCard step={7} activeStep={step} title="Asesmen" desc="Rencana penilaian: diagnostik, formatif, dan sumatif" req icon={ClipboardCheck} onAI={() => aiGenerate(7)} simLabel="SIMULASI">
                 {/* Diagnostik */}
                 <AssessCard type="diag" title="Asesmen Diagnostik" desc="Awal pembelajaran — petakan pengetahuan awal">
                   <textarea value={body.asesmenDiagnostik ?? ''} onChange={(e) => set('asesmenDiagnostik', e.target.value)} rows={2} className={`${FIELD} resize-y`} placeholder="Jenis & deskripsi asesmen diagnostik (mis. 3-5 PG atau essay)..." />
@@ -405,7 +405,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 8: Pengayaan & Remedial */}
-              <SectionCard step={8} activeStep={step} title="Pengayaan & Remedial" desc="Strategi untuk peserta didik yang sudah tuntas dan yang belum tuntas" icon={TrendingUp} onAI={() => aiGenerate(8)}>
+              <SectionCard step={8} activeStep={step} title="Pengayaan & Remedial" desc="Strategi untuk peserta didik yang sudah tuntas dan yang belum tuntas" icon={TrendingUp} onAI={() => aiGenerate(8)} simLabel="SIMULASI">
                 <FieldGrid cols={2}>
                   <Field label="Pengayaan" hint="Untuk siswa tuntas"><textarea value={body.pengayaan ?? ''} onChange={(e) => set('pengayaan', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Aktivitas tambahan untuk memperdalam..." /></Field>
                   <Field label="Remedial" hint="Untuk siswa belum tuntas"><textarea value={body.remedial ?? ''} onChange={(e) => set('remedial', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Strategi bantuan untuk mencapai ketuntasan..." /></Field>
@@ -413,13 +413,13 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 9: Refleksi */}
-              <SectionCard step={9} activeStep={step} title="Refleksi Guru & Peserta Didik" desc="Pertanyaan reflektif untuk evaluasi pembelajaran" icon={Lightbulb} onAI={() => aiGenerate(9)}>
+              <SectionCard step={9} activeStep={step} title="Refleksi Guru & Peserta Didik" desc="Pertanyaan reflektif untuk evaluasi pembelajaran" icon={Lightbulb} onAI={() => aiGenerate(9)} simLabel="SIMULASI">
                 <Field label="Refleksi Guru"><textarea value={body.refleksiGuru ?? body.refleksi ?? ''} onChange={(e) => set('refleksiGuru', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Pertanyaan refleksi untuk guru setelah pembelajaran..." /></Field>
                 <Field label="Refleksi Peserta Didik"><textarea value={body.refleksiSiswa ?? ''} onChange={(e) => set('refleksiSiswa', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Pertanyaan refleksi untuk siswa..." /></Field>
               </SectionCard>
 
               {/* STEP 10: Lampiran */}
-              <SectionCard step={10} activeStep={step} title="Lampiran" desc="Materi pendukung: handout, slide, video, lembar kerja" icon={Paperclip} onAI={() => aiGenerate(10)}>
+              <SectionCard step={10} activeStep={step} title="Lampiran" desc="Materi pendukung: handout, slide, video, lembar kerja" icon={Paperclip} onAI={() => aiGenerate(10)} simLabel="SIMULASI">
                 <button type="button" onClick={() => showToast('Fitur unggah lampiran akan tersedia di implementasi penuh')}
                   className="flex w-full flex-col items-center gap-1 rounded-xl border-2 border-dashed border-emerald-300 bg-emerald-50 px-4 py-6 text-center transition hover:bg-emerald-100">
                   <Paperclip className="h-7 w-7 text-emerald-600" />
@@ -524,9 +524,9 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
 
 // ── Helper Components ──────────────────────────────────────────────
 
-function SectionCard({ step, activeStep, title, desc, req, icon: Icon, onAI, children }: {
+function SectionCard({ step, activeStep, title, desc, req, icon: Icon, onAI, simLabel, children }: {
   step: number; activeStep: number; title: string; desc: string; req?: boolean;
-  icon: React.ComponentType<{ className?: string }>; onAI?: () => void; children: React.ReactNode;
+  icon: React.ComponentType<{ className?: string }>; onAI?: () => void; simLabel?: string; children: React.ReactNode;
 }) {
   return (
     <section className={clsx('rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm', activeStep !== step && 'hidden lg:block')}>
@@ -537,9 +537,14 @@ function SectionCard({ step, activeStep, title, desc, req, icon: Icon, onAI, chi
           <p className="text-[11.5px] font-semibold text-[#6b8079]">{desc}</p>
         </div>
         {onAI && (
-          <button type="button" onClick={onAI} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-violet-300 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100">
-            <Sparkles className="h-3.5 w-3.5" />Generate
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {simLabel && (
+              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">{simLabel}</span>
+            )}
+            <button type="button" onClick={onAI} className="inline-flex items-center gap-1 rounded-lg border border-violet-300 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100">
+              <Sparkles className="h-3.5 w-3.5" />Generate
+            </button>
+          </div>
         )}
         {req && <span className="shrink-0 rounded-md bg-rose-50 px-2 py-0.5 text-[9.5px] font-extrabold text-rose-600">Wajib</span>}
       </div>

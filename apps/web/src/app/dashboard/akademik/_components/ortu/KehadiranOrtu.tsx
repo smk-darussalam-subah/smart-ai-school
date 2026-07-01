@@ -205,11 +205,13 @@ export default function KehadiranOrtu({ setModal, attendance, waLog }: Kehadiran
         </div>
       </div>
 
-      {/* 3. 3-month trend — backend belum menyediakan agregasi bulanan; sembunyikan agar tidak menampilkan SIM */}
+      {/* 3. 3-month trend — backend /analytics/attendance/stats sudah ada, namun agregasi
+          bulanan belum tersedia. Data kehadiran per hari sudah real (lihat stats di atas).
+          Tren bulanan memerlukan endpoint agregasi terpisah — belum di-wire. */}
       <div className="mb-3.5 rounded-[var(--r)] border border-dashed border-[var(--border)] bg-[var(--surface)] p-3.5 text-center">
         <BarChart3 className="mx-auto h-5 w-5 text-[var(--dim)]" />
         <p className="mt-1.5 text-[11.5px] font-bold text-[var(--muted)]">Tren bulanan akan tersedia menyusul</p>
-        <p className="text-[10px] text-[var(--dim)]">Backend sedang dikembangkan</p>
+        <p className="text-[10px] text-[var(--dim)]">Agregasi bulanan belum dihubungkan</p>
       </div>
 
       {/* 4. WA History */}

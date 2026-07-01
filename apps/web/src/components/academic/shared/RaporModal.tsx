@@ -129,12 +129,12 @@ export function RaporModal({
           </div>
         )}
 
-        {/* Bagian B-G — backend /report-cards/* sudah ada (muatan-lokal, attendance-summary,
-            development-description, approval) namun wiring fetch lintas-pemanggil belum
-            selesai (T2-01). Konten jujur "menyusul", BUKAN data demo palsu. Section A di
-            atas sudah data nyata. */}
-        <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-[10px] font-bold text-sky-700">
-          Bagian B-G sedang disiapkan — data akan terisi otomatis saat rapor diterbitkan.
+        {/* Bagian B-G — SIMULASI: backend /report-cards/* controller ada (muatan-lokal,
+            attendance-summary, development-description, approval) namun service method
+            verifyAccess() telah dihapus, sehingga endpoint non-functional. Wiring frontend
+            belum dilakukan. Section A di atas sudah data nyata. */}
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-bold text-amber-700">
+          SIMULASI — Bagian B-G belum terhubung ke backend. Data akan tersedia saat rapor diterbitkan.
         </div>
 
         {/* B. Muatan Lokal */}

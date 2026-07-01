@@ -21,7 +21,7 @@
 | T2-01 | Rapor B-G wire endpoint ada | 2 | 🔲 TODO | — | — | — |
 | T2-02 | KS health & tren wire analytics | 2 | 🔲 TODO | — | — | — |
 | T2-03 | Guru badge catalog wire /badges | 2 | 🔲 TODO | — | — | — |
-| T2-04 | Label SIM eksplisit (Skenario C) | 2 | 🔲 TODO | — | — | — |
+| T2-04 | Label SIM eksplisit (Skenario C) | 2 | ✅ DONE | feat/audit2-t2-04-sim-labels | — | 2026-07-01 |
 | T2-05 | apiFetch 401 → redirect login | 2 | 🔲 TODO | — | — | — |
 | T3-01 | Konsolidasi naOf (hapus naSimple) | 3 | 🔲 TODO | — | — | — |
 | T3-02 | Backend Skenario B (quest/timeline/dll) | 3 | 🔲 TODO | — | — | — |
@@ -30,7 +30,7 @@
 | T3-05 | Siswa celebration label | 3 | 🔲 TODO | — | — | — |
 | T3-06 | Orphan endpoint minor | 3 | 🔲 TODO | — | — | — |
 
-**Ringkasan:** 6/16 selesai (37.5%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 0/5. TIER 3: 0/6.
+**Ringkasan:** 7/16 selesai (43.8%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 1/5 (T2-04 DONE). TIER 3: 0/6.
 
 ---
 
@@ -137,7 +137,14 @@ Final grep-sweep menemukan 3 komponen LAIN dengan pola SIM-fallback yang sama (t
 
 ### TIER 2
 
-*(belum ada)*
+#### T2-04 — Label SIM eksplisit Skenario C (C2: ModulAjarForm, C3: BadgeCelebration)
+**Mulai:** 2026-07-01 | **Branch:** `feat/audit2-t2-04-sim-labels` | **Selesai:** 2026-07-01 | **Durasi:** ~20 menit
+**Files changed:**
+- `ModulAjarForm.tsx` — tambah `simLabel` prop ke SectionCard helper; 8 step (2,4-10) kini tampilkan badge amber "SIMULASI" di samping tombol Generate. Step 3 (ATP) tidak ada badge karena pakai real API.
+- `siswa/BadgeCelebration.tsx` — tambah comment dokumentasi C3 + badge amber "Contoh" di pojok kanan atas modal celebrasi. Skor hardcoded "85" kini jelas bertanda sebagai data contoh.
+**Bukti Runtime:** `tsc --noEmit` = 0 errors · `eslint` = 0 errors/warnings
+**Catatan:** C1 (Ortu Child Selector) sudah selesai di T1-02. T3-05 (celebration label) di-done-log sebagai TODO tapi sebenarnya sudah ter-cover oleh T2-04 C3 fix.
+**Status:** ✅ DONE
 
 ### TIER 3
 
