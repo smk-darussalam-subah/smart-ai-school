@@ -1,5 +1,9 @@
 'use client';
 
+// BadgeCelebration — C3 (Skenario C): modal celebrasi saat badge tercapai.
+// Data skor (85) masih contoh — backend /gamification belum menyediakan trigger real.
+// Label "Contoh" ditambahkan agar user tahu ini SIMULASI, bukan data nyata.
+
 import type { SiswaScreen } from './SiswaWorkspace';
 
 interface Props {
@@ -12,6 +16,8 @@ export default function BadgeCelebration({ badgeName, onClose, go }: Props) {
   return (
     <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-md">
       <div className="relative w-[90%] max-w-[340px] animate-[slideUp_.4s_ease] rounded-[20px] border border-[var(--border)] bg-[var(--bg2)] p-6 text-center shadow-[0_8px_40px_-12px_rgba(0,0,0,.6)]">
+        {/* C3: Label "Contoh" — data skor & trigger badge masih SIMULASI */}
+        <span className="absolute top-3 right-3 rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">Contoh</span>
         <div className="absolute inset-0 overflow-hidden rounded-[20px] pointer-events-none">
           {/* Confetti */}
           {Array.from({ length: 20 }).map((_, i) => (

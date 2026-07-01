@@ -99,7 +99,8 @@ export default function CapaianOrtu({ showToast, badges }: CapaianOrtuProps) {
         )}
       </div>
 
-      {/* 4. CP progress — backend /cp-progress belum ada (Skenario B); honest empty state */}
+      {/* 4. CP progress — backend /student-dashboard/cp sudah ada (Skenario A),
+          namun belum di-wire ke komponen ortu di page.tsx; honest empty state */}
       <div className="mb-3.5 rounded-[var(--r)] border border-dashed border-[var(--border)] bg-[var(--surface)] p-3.5 text-center">
         <Target className="mx-auto h-5 w-5 text-[var(--dim)]" />
         <p className="mt-1.5 text-[12px] font-bold text-[var(--muted)]">Progress kompetensi akan tersedia menyusul</p>

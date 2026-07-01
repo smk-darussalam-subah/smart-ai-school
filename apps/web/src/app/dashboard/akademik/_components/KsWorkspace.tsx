@@ -22,7 +22,7 @@ import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem, ActivityItem, RppItem, ClassRef, LmsModuleItem } from './guru-types';
 import { KKTP_DEFAULT } from '@/lib/academic';
 import { JP_SLOTS, fmtMin, scheduleDayOfWeek, wibTodayISO, wibDateLabel, currentJp, wibNow } from '@/lib/bell-times';
-import { reviewRpp } from '../actions';
+import { reviewRpp, fetchAttendanceHeatmap } from '../actions';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -285,10 +285,34 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
 }) {
   const [trenPeriod, setTrenPeriod] = useState<'10H' | '1B' | '3B'>('10H');
   const [berandaModal, setBerandaModal] = useState<null | 'kehadiran' | 'guruHadir' | 'kelasBerjalan'>(null);
+  const [trenData, setTrenData] = useState<{ siswa: number[]; guru: number[] } | null>(null);
+  const [trenLoading, setTrenLoading] = useState(false);
   const dow = scheduleDayOfWeek();
   const todaySchedules = schedules.filter((s) => s.dayOfWeek === dow);
   const activeClasses = new Set(todaySchedules.map((s) => s.class?.name)).size;
   const todayHadirPct = todayAtt.length ? Math.round((todayAtt.filter((a) => a.status === 'hadir').length / todayAtt.length) * 100) : null;
+
+  // T2-02: Fetch heatmap data for trend chart
+  useEffect(() => {
+    const days = trenPeriod === '10H' ? 10 : trenPeriod === '1B' ? 30 : 90;
+    setTrenLoading(true);
+    fetchAttendanceHeatmap(days).then((res) => {
+      if (res.success && res.data) {
+        // Compute daily overall pct from heatmap
+        const pcts = res.data.dates.map((_, i) => {
+          let h = 0, t = 0;
+          for (const c of res.data!.classes) {
+            const cell = c.cells[i];
+            if (cell) { h += cell.hadir; t += cell.total; }
+          }
+          return t ? Math.round((h / t) * 1000) / 10 : 0;
+        });
+        // Split into siswa (first half) and guru (second half) — approximate
+        // Since heatmap is student attendance, use it for siswa; guru stays SIMULASI
+        setTrenData({ siswa: pcts, guru: pcts.map(p => Math.min(100, p + 2)) }); // Simulate guru slightly higher
+      }
+    }).finally(() => setTrenLoading(false));
+  }, [trenPeriod]);
 
   return (
     <div className="space-y-4">
@@ -383,8 +407,14 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
               ))}
             </div>
           </div>
-          <TrenChart siswa={trenPeriod === '10H' ? SIM_TREN_SISWA : trenPeriod === '1B' ? SIM_TREN_SISWA_1B : SIM_TREN_SISWA_3B} guru={trenPeriod === '10H' ? SIM_TREN_GURU : trenPeriod === '1B' ? SIM_TREN_GURU_1B : SIM_TREN_GURU_3B} />
-          <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> SIMULASI — agregasi backend menyusul</div>
+          {trenLoading ? (
+            <div className="flex h-32 items-center justify-center text-[12px] font-medium text-[#9bb0a8]">Memuat data tren...</div>
+          ) : trenData ? (
+            <TrenChart siswa={trenData.siswa} guru={trenData.guru} />
+          ) : (
+            <TrenChart siswa={trenPeriod === '10H' ? SIM_TREN_SISWA : trenPeriod === '1B' ? SIM_TREN_SISWA_1B : SIM_TREN_SISWA_3B} guru={trenPeriod === '10H' ? SIM_TREN_GURU : trenPeriod === '1B' ? SIM_TREN_GURU_1B : SIM_TREN_GURU_3B} />
+          )}
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> {trenData ? 'Data siswa nyata — data guru masih SIMULASI' : 'SIMULASI — agregasi backend menyusul'}</div>
         </div>
       </div>
 
