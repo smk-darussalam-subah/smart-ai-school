@@ -20,7 +20,7 @@
 | T1-05 | KS sumatif → empty state | 1 | ✅ DONE | feat/audit2-tier1-ortu-wiring | — | 2026-06-26 |
 | T2-01 | Rapor B-G wire endpoint ada | 2 | 🔲 TODO | — | — | — |
 | T2-02 | KS health & tren wire analytics | 2 | 🔲 TODO | — | — | — |
-| T2-03 | Guru badge catalog wire /badges | 2 | 🔲 TODO | — | — | — |
+| T2-03 | Guru badge catalog wire /badges | 2 | ✅ DONE | feat/audit2-t2-03-badge-catalog | — | 2026-07-01 |
 | T2-04 | Label SIM eksplisit (Skenario C) | 2 | ✅ DONE | feat/audit2-t2-04-sim-labels | — | 2026-07-01 |
 | T2-05 | apiFetch 401 → redirect login | 2 | 🔲 TODO | — | — | — |
 | T3-01 | Konsolidasi naOf (hapus naSimple) | 3 | 🔲 TODO | — | — | — |
@@ -30,7 +30,7 @@
 | T3-05 | Siswa celebration label | 3 | 🔲 TODO | — | — | — |
 | T3-06 | Orphan endpoint minor | 3 | 🔲 TODO | — | — | — |
 
-**Ringkasan:** 7/16 selesai (43.8%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 1/5 (T2-04 DONE). TIER 3: 0/6.
+**Ringkasan:** 8/16 selesai (50%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 2/5 (T2-03, T2-04 DONE). TIER 3: 0/6.
 
 ---
 
@@ -144,6 +144,15 @@ Final grep-sweep menemukan 3 komponen LAIN dengan pola SIM-fallback yang sama (t
 - `siswa/BadgeCelebration.tsx` — tambah comment dokumentasi C3 + badge amber "Contoh" di pojok kanan atas modal celebrasi. Skor hardcoded "85" kini jelas bertanda sebagai data contoh.
 **Bukti Runtime:** `tsc --noEmit` = 0 errors · `eslint` = 0 errors/warnings
 **Catatan:** C1 (Ortu Child Selector) sudah selesai di T1-02. T3-05 (celebration label) di-done-log sebagai TODO tapi sebenarnya sudah ter-cover oleh T2-04 C3 fix.
+**Status:** ✅ DONE
+
+#### T2-03 — Guru badge catalog wire ke /badges API
+**Mulai:** 2026-07-01 | **Branch:** `feat/audit2-t2-03-badge-catalog` | **Selesai:** 2026-07-01 | **Durasi:** ~25 menit
+**Files changed:**
+- `actions.ts` — tambah `fetchBadgeCatalog()` server action yang memanggil `GET /badges?limit=50` dan return `{ success, data: BadgeCatalogItem[] }`. Response shape: `{ data: [...], total, page, limit }` dari paginasi backend.
+- `ModulLmsForm.tsx` — hapus `SIM_BADGE_CATALOG` konstanta; tambah `useEffect` untuk fetch catalog saat Badge tab diaktifkan; tambah loading state ("Memuat katalog badge..."), error state (amber banner), dan empty state ("Belum ada badge tersedia"). Tier comparison diubah dari uppercase (`GOLD`) ke lowercase (`gold`) sesuai response dari Prisma enum.
+**Bukti Runtime:** `tsc --noEmit` = 0 errors · `eslint` = 0 errors/warnings
+**Catatan:** Backend `GET /badges` endpoint sudah ada sejak Wave 3 (P14). Badge tab di ModulLmsForm kini menampilkan data real dari database. Jika database belum punya badge, tampil empty state yang jujur.
 **Status:** ✅ DONE
 
 ### TIER 3

@@ -190,6 +190,22 @@ export async function deleteLmsModule(id: string) {
   return r;
 }
 
+/** T2-03: Ambil katalog badge dari /badges (untuk LMS Badge tab). */
+export async function fetchBadgeCatalog(): Promise<{
+  success: boolean;
+  data?: Array<{
+    id: string; code: string; name: string; description: string | null;
+    icon: string; tier: string;
+  }>;
+  error?: string;
+}> {
+  const r = await apiCall('/badges?limit=50', 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  // API returns { data: [...], total, page, limit }
+  const body = r.data as { data?: Array<{ id: string; code: string; name: string; description: string | null; icon: string; tier: string }> };
+  return { success: true, data: body?.data ?? [] };
+}
+
 /** Ambil progres siswa untuk satu Modul LMS (monitor guru). */
 export async function fetchLmsProgress(id: string) {
   const session = await getServerSession(authOptions);

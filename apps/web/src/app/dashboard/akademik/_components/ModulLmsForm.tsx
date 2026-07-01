@@ -5,14 +5,14 @@
 // Mockup ref: akademik-guru-utuh.html lines 1120-1170 (s-lms-editor).
 // Parent me-remount via key={editing?.id ?? 'new'}.
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import {
   Loader2, Save, Send, AlertTriangle, Sparkles, BookOpen, ClipboardList, Award,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { LmsModuleItem } from './guru-types';
-import { createLmsModule, updateLmsModule, aiGenerateMaterial, aiGenerateQuestions } from '../actions';
+import { createLmsModule, updateLmsModule, aiGenerateMaterial, aiGenerateQuestions, fetchBadgeCatalog } from '../actions';
 import QuestionBankEditor from './QuestionBankEditor';
 
 interface Props {
@@ -35,13 +35,11 @@ const TABS: { key: TabName; label: string; icon: typeof BookOpen }[] = [
   { key: 'badge', label: 'Badge', icon: Award },
 ];
 
-// Badge catalog (SIMULASI — backend /badges catalog integration pending deployment)
-const SIM_BADGE_CATALOG = [
-  { code: 'MOD_COMPLETE', name: 'Modul Selesai', tier: 'BRONZE', desc: 'Selesai modul dengan nilai >= KKTP' },
-  { code: 'MOD_EXCELLENT', name: 'Modul Excellence', tier: 'GOLD', desc: 'Selesai modul dengan nilai >= 90' },
-  { code: 'FIRST_SUBMIT', name: 'Submit Pertama', tier: 'SILVER', desc: 'Submit tugas pertama kali' },
-  { code: 'PERFECT_SCORE', name: 'Nilai Sempurna', tier: 'PLATINUM', desc: 'Mendapat nilai 100 di asesmen' },
-];
+// Badge catalog shape (T2-03: fetched from /badges API)
+type BadgeCatalogItem = {
+  id: string; code: string; name: string; description: string | null;
+  icon: string; tier: string;
+};
 
 export default function ModulLmsForm({ open, onClose, subjects, classes, academicYear, semester, editing }: Props) {
   const [activeTab, setActiveTab] = useState<TabName>('materi');
@@ -59,6 +57,26 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
   const [assessmentType, setAssessmentType] = useState<'formative' | 'summative'>('formative');
   const [selectedBadge, setSelectedBadge] = useState<string | null>(null);
   const [badgeThreshold, setBadgeThreshold] = useState('75');
+
+  // T2-03: Badge catalog dari /badges API (real data)
+  const [badgeCatalog, setBadgeCatalog] = useState<BadgeCatalogItem[]>([]);
+  const [badgeLoading, setBadgeLoading] = useState(false);
+  const [badgeError, setBadgeError] = useState<string | null>(null);
+
+  // Fetch badge catalog when Badge tab is activated
+  useEffect(() => {
+    if (activeTab === 'badge' && badgeCatalog.length === 0 && !badgeLoading) {
+      setBadgeLoading(true);
+      setBadgeError(null);
+      fetchBadgeCatalog().then((res) => {
+        if (res.success && res.data) {
+          setBadgeCatalog(res.data);
+        } else {
+          setBadgeError(res.error ?? 'Gagal memuat katalog badge');
+        }
+      }).finally(() => setBadgeLoading(false));
+    }
+  }, [activeTab, badgeCatalog.length, badgeLoading]);
 
   const save = (publish: boolean) => {
     setErr(null);
@@ -286,46 +304,65 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
           {/* ── BADGE TAB ── */}
           {activeTab === 'badge' && (
             <>
-              <div className="rounded-lg bg-amber-50 px-3 py-2 inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-700">
-                <AlertTriangle className="h-3 w-3" /> SIMULASI — katalog badge dari /badges API (butuh deployment migrasi)
-              </div>
-
               <div>
                 <span className="mb-2 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">Pilih Badge untuk Modul Ini</span>
-                <div className="space-y-2">
-                  {SIM_BADGE_CATALOG.map((badge) => (
-                    <button
-                      key={badge.code}
-                      type="button"
-                      onClick={() => setSelectedBadge(selectedBadge === badge.code ? null : badge.code)}
-                      className={clsx(
-                        'flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors',
-                        selectedBadge === badge.code
-                          ? 'border-emerald-300 bg-emerald-50'
-                          : 'border-[#e6efea] bg-white hover:bg-[#f4f7f5]'
-                      )}
-                    >
-                      <div className={clsx(
-                        'flex h-10 w-10 items-center justify-center rounded-full',
-                        badge.tier === 'GOLD' ? 'bg-yellow-100' :
-                        badge.tier === 'SILVER' ? 'bg-gray-100' :
-                        badge.tier === 'PLATINUM' ? 'bg-blue-100' : 'bg-orange-100'
-                      )}>
-                        <Award className={clsx(
-                          'h-5 w-5',
-                          badge.tier === 'GOLD' ? 'text-yellow-600' :
-                          badge.tier === 'SILVER' ? 'text-gray-500' :
-                          badge.tier === 'PLATINUM' ? 'text-blue-600' : 'text-orange-600'
-                        )} />
-                      </div>
-                      <div className="flex-1">
-                        <div className="text-[13px] font-bold text-[#0f2e25]">{badge.name}</div>
-                        <div className="text-[11px] text-[#6b8079]">{badge.desc}</div>
-                      </div>
-                      <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">{badge.tier}</span>
-                    </button>
-                  ))}
-                </div>
+
+                {badgeLoading && (
+                  <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-4 text-[12px] font-medium text-slate-500">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Memuat katalog badge...
+                  </div>
+                )}
+
+                {badgeError && (
+                  <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+                    <AlertTriangle className="h-3 w-3" /> {badgeError}
+                  </div>
+                )}
+
+                {!badgeLoading && !badgeError && badgeCatalog.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-[12px] font-medium text-slate-500">
+                    Belum ada badge tersedia. Hubungi admin untuk membuat badge.
+                  </div>
+                )}
+
+                {!badgeLoading && badgeCatalog.length > 0 && (
+                  <div className="space-y-2">
+                    {badgeCatalog.map((badge) => (
+                      <button
+                        key={badge.id}
+                        type="button"
+                        onClick={() => setSelectedBadge(selectedBadge === badge.code ? null : badge.code)}
+                        className={clsx(
+                          'flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors',
+                          selectedBadge === badge.code
+                            ? 'border-emerald-300 bg-emerald-50'
+                            : 'border-[#e6efea] bg-white hover:bg-[#f4f7f5]'
+                        )}
+                      >
+                        <div className={clsx(
+                          'flex h-10 w-10 items-center justify-center rounded-full text-lg',
+                          badge.tier === 'gold' ? 'bg-yellow-100' :
+                          badge.tier === 'silver' ? 'bg-gray-100' :
+                          badge.tier === 'platinum' ? 'bg-blue-100' : 'bg-orange-100'
+                        )}>
+                          {badge.icon || (
+                            <Award className={clsx(
+                              'h-5 w-5',
+                              badge.tier === 'gold' ? 'text-yellow-600' :
+                              badge.tier === 'silver' ? 'text-gray-500' :
+                              badge.tier === 'platinum' ? 'text-blue-600' : 'text-orange-600'
+                            )} />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-[13px] font-bold text-[#0f2e25]">{badge.name}</div>
+                          <div className="text-[11px] text-[#6b8079]">{badge.description || 'Tidak ada deskripsi'}</div>
+                        </div>
+                        <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 uppercase">{badge.tier}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {selectedBadge && (
