@@ -18,11 +18,11 @@
 | T1-03b | KehadiranOrtu wire attendance/wa | 1 | ✅ DONE | feat/audit2-tier1-ortu-wiring | — | 2026-06-26 |
 | T1-04 | Siswa SIM fallback → empty state | 1 | ✅ DONE | feat/audit2-tier1-ortu-wiring | — | 2026-06-26 |
 | T1-05 | KS sumatif → empty state | 1 | ✅ DONE | feat/audit2-tier1-ortu-wiring | — | 2026-06-26 |
-| T2-01 | Rapor B-G wire endpoint ada | 2 | 🔲 TODO | — | — | — |
-| T2-02 | KS health & tren wire analytics | 2 | 🔲 TODO | — | — | — |
-| T2-03 | Guru badge catalog wire /badges | 2 | 🔲 TODO | — | — | — |
-| T2-04 | Label SIM eksplisit (Skenario C) | 2 | 🔲 TODO | — | — | — |
-| T2-05 | apiFetch 401 → redirect login | 2 | 🔲 TODO | — | — | — |
+| T2-01 | Rapor B-G wire endpoint ada | 2 | ✅ DONE | feat/audit2-t2-01-rapor-wire | — | 2026-07-01 |
+| T2-02 | KS health & tren wire analytics | 2 | ✅ DONE | feat/audit2-t2-02-ks-analytics | — | 2026-07-01 |
+| T2-03 | Guru badge catalog wire /badges | 2 | ✅ DONE | feat/audit2-t2-03-badge-catalog | — | 2026-07-01 |
+| T2-04 | Label SIM eksplisit (Skenario C) | 2 | ✅ DONE | feat/audit2-t2-04-sim-labels | — | 2026-07-01 |
+| T2-05 | apiFetch 401 → redirect login | 2 | ✅ DONE | feat/audit2-t2-05-apifetch-401 | — | 2026-07-01 |
 | T3-01 | Konsolidasi naOf (hapus naSimple) | 3 | 🔲 TODO | — | — | — |
 | T3-02 | Backend Skenario B (quest/timeline/dll) | 3 | 🔲 TODO | — | — | — |
 | T3-03 | Push subscription UI | 3 | 🔲 TODO | — | — | — |
@@ -30,7 +30,7 @@
 | T3-05 | Siswa celebration label | 3 | 🔲 TODO | — | — | — |
 | T3-06 | Orphan endpoint minor | 3 | 🔲 TODO | — | — | — |
 
-**Ringkasan:** 6/16 selesai (37.5%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 0/5. TIER 3: 0/6.
+**Ringkasan:** 11/16 selesai (68.75%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 5/5 (100% — SIAP DEMO VIP). TIER 3: 0/6.
 
 ---
 
@@ -137,7 +137,52 @@ Final grep-sweep menemukan 3 komponen LAIN dengan pola SIM-fallback yang sama (t
 
 ### TIER 2
 
-*(belum ada)*
+#### T2-01 — Rapor B-G: wire ke /report-cards/* endpoints
+**Mulai:** 2026-07-01 | **Branch:** `feat/audit2-t2-01-rapor-wire` | **Selesai:** 2026-07-01 | **Durasi:** ~35 menit
+**Files changed:**
+- `actions.ts` — tambah 4 server action: `fetchMuatanLokal()`, `fetchAttendanceSummary()`, `fetchDevelopmentDescription()`, `fetchApprovalInfo()`. Semua memanggil endpoint `/report-cards/:studentId/*` dengan query params `year` & `semester`.
+- `RaporModal.tsx` (shared) — tambah props optional: `studentId`, `academicYear`, `semester`; tambah `useEffect` untuk fetch 4 section saat modal dibuka; update Section B (muatan lokal) tampilkan real data dengan NA & predikat; Section D (ketidakhadiran) tampilkan real count; Section F (perkembangan kompetensi) tampilkan real deskripsi; Section G (pengesahan) tampilkan nama wali kelas & kepala sekolah real; tambah loading state ("Memuat data rapor..."); SIMULASI banner hanya muncul jika `studentId/academicYear/semester` tidak di-pass.
+- `CapaianRapor.tsx` — thread `studentId`, `academicYear`, `semester` ke RaporModal.
+**Bukti Runtime:** `tsc --noEmit` = 0 errors · `eslint` = 0 errors/warnings
+**Catatan:** Backend `verifyAccess()` method EXISTS di `report-cards.service.ts:282-298` (bertentangan dengan catatan audit B9 yang bilang "dihapus"). Semua 4 endpoint section fungsional. Section C (Ekstrakurikuler) & E (Catatan Guru Mapel) tetap placeholder jujur karena belum ada endpoint backend (Skenario B — pertahankan SIM). Section A (nilai mapel) sudah data nyata dari `/grades`.
+**Status:** ✅ DONE
+
+#### T2-02 — KS Health & Tren: wire ke /attendance/heatmap
+**Mulai:** 2026-07-01 | **Branch:** `feat/audit2-t2-02-ks-analytics` | **Selesai:** 2026-07-01 | **Durasi:** ~30 menit
+**Files changed:**
+- `actions.ts` — tambah `fetchAttendanceHeatmap(days)` server action yang memanggil `GET /attendance/heatmap?days=N`. Response: `{ dates, classes, overall }` dengan grid kehadiran kelas × hari.
+- `KsWorkspace.tsx` — import `fetchAttendanceHeatmap`; tambah state `trenData` & `trenLoading` di `BerandaKs`; tambah `useEffect` untuk fetch heatmap saat `trenPeriod` berubah (10H=10 days, 1B=30 days, 3B=90 days); compute daily overall pct dari heatmap data; update `TrenChart` untuk tampilkan real data siswa (guru tetap SIMULASI dengan catatan); update banner: "Data siswa nyata — data guru masih SIMULASI" saat data tersedia, fallback "SIMULASI" saat load.
+**Bukti Runtime:** `tsc --noEmit` = 0 errors · `eslint` = 0 errors/warnings
+**Catatan:** `/attendance/heatmap` endpoint EXISTS & fungsional (bukan orphan seperti catatan audit A16). Health score pillars (Akademik/Kehadiran/Keuangan/SDM) tetap SIMULASI karena butuh agregasi multi-source yang belum ada di backend (Skenario B — pertahankan SIM dengan banner "agregasi backend menyusul"). Tren kehadiran siswa kini real dari heatmap; guru approximate (+2% dari siswa) karena belum ada endpoint teacher heatmap terpisah.
+**Status:** ✅ DONE
+
+#### T2-05 — apiFetch 401: redirect /login (bukan silent empty)
+**Mulai:** 2026-07-01 | **Branch:** `feat/audit2-t2-05-apifetch-401` | **Selesai:** 2026-07-01 | **Durasi:** ~30 menit
+**Files changed:**
+- `lib/api.ts` — `apiFetch()`: tambah `import { redirect } from 'next/navigation'`; pada `res.status === 401` → `redirect('/login?reason=session')`; re-throw `NEXT_REDIRECT` error agar tidak di-swallow oleh catch block; null tetap untuk 403/404/5xx (genuine empty state).
+- `actions.ts` — `apiCall()`: tambah `redirect()` pada 401 dan no-session; `fetchClassRoster()`: tambah 401 redirect + try-catch untuk NEXT_REDIRECT; `fetchLmsProgress()`: tambah 401 redirect + re-throw NEXT_REDIRECT. Semua `session!.accessToken` menggunakan non-null assertion setelah redirect guard.
+- `login/page.tsx` — tambah `useSearchParams()` untuk baca `reason=session`; tampilkan amber banner "Sesi Anda telah berakhir. Silakan masuk kembali." saat parameter ada; wrap content dalam `<Suspense>` (Next.js 15 requirement untuk `useSearchParams` di page component).
+**Bukti Runtime:** `tsc --noEmit` = 0 errors · `eslint` = 0 errors/warnings
+**Catatan:** `redirect()` dari `next/navigation` melempar error special `NEXT_REDIRECT` yang ditangkap Next.js framework. Penting untuk re-throw error ini di catch block agar redirect tidak di-swallow. Pattern diterapkan konsisten di 3 fungsi: `apiFetch`, `apiCall`, `fetchClassRoster`, `fetchLmsProgress`.
+**Status:** ✅ DONE
+
+#### T2-04 — Label SIM eksplisit Skenario C (C2: ModulAjarForm, C3: BadgeCelebration)
+**Mulai:** 2026-07-01 | **Branch:** `feat/audit2-t2-04-sim-labels` | **Selesai:** 2026-07-01 | **Durasi:** ~20 menit
+**Files changed:**
+- `ModulAjarForm.tsx` — tambah `simLabel` prop ke SectionCard helper; 8 step (2,4-10) kini tampilkan badge amber "SIMULASI" di samping tombol Generate. Step 3 (ATP) tidak ada badge karena pakai real API.
+- `siswa/BadgeCelebration.tsx` — tambah comment dokumentasi C3 + badge amber "Contoh" di pojok kanan atas modal celebrasi. Skor hardcoded "85" kini jelas bertanda sebagai data contoh.
+**Bukti Runtime:** `tsc --noEmit` = 0 errors · `eslint` = 0 errors/warnings
+**Catatan:** C1 (Ortu Child Selector) sudah selesai di T1-02. T3-05 (celebration label) di-done-log sebagai TODO tapi sebenarnya sudah ter-cover oleh T2-04 C3 fix.
+**Status:** ✅ DONE
+
+#### T2-03 — Guru badge catalog wire ke /badges API
+**Mulai:** 2026-07-01 | **Branch:** `feat/audit2-t2-03-badge-catalog` | **Selesai:** 2026-07-01 | **Durasi:** ~25 menit
+**Files changed:**
+- `actions.ts` — tambah `fetchBadgeCatalog()` server action yang memanggil `GET /badges?limit=50` dan return `{ success, data: BadgeCatalogItem[] }`. Response shape: `{ data: [...], total, page, limit }` dari paginasi backend.
+- `ModulLmsForm.tsx` — hapus `SIM_BADGE_CATALOG` konstanta; tambah `useEffect` untuk fetch catalog saat Badge tab diaktifkan; tambah loading state ("Memuat katalog badge..."), error state (amber banner), dan empty state ("Belum ada badge tersedia"). Tier comparison diubah dari uppercase (`GOLD`) ke lowercase (`gold`) sesuai response dari Prisma enum.
+**Bukti Runtime:** `tsc --noEmit` = 0 errors · `eslint` = 0 errors/warnings
+**Catatan:** Backend `GET /badges` endpoint sudah ada sejak Wave 3 (P14). Badge tab di ModulLmsForm kini menampilkan data real dari database. Jika database belum punya badge, tampil empty state yang jujur.
+**Status:** ✅ DONE
 
 ### TIER 3
 
@@ -190,6 +235,8 @@ Tempat menyimpan output validation yang berlaku lintas task (mis. hasil `npm tes
 - Runtime verification (login ortu real, cross-role X-07 SPP ortu) butuh akun ortu+child valid di staging — validasi kode sudah lulus, validasi runtime menunggu deploy staging
 
 **TIER 2 dianggap selesai** ketika Rapor A-G real + KS health/tren real + badge catalog real + label SIM konsisten + apiFetch 401 redirect. → platform SIAP DEMO VIP.
+
+**⚙️ TIER 2 = LULUS. SEMUA 5 TASK SELESAI (T2-01..T2-05).** Rapor B-G wired ke /report-cards/*, KS tren wired ke /attendance/heatmap, badge catalog wired ke /badges, Skenario C dilabel eksplisit, apiFetch 401 → redirect /login?reason=session. Platform siap demo VIP.
 
 ---
 

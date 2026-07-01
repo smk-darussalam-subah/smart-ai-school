@@ -4,6 +4,8 @@
 // Gunakan /api/backend/* rewrite untuk fetch dari client.
 // =============================================================================
 
+import { redirect } from 'next/navigation';
+
 const API_BASE = process.env.API_URL ?? 'http://localhost:3001';
 
 // ── Shared types ──────────────────────────────────────────────────────────────
@@ -79,7 +81,8 @@ export interface BackfillResult {
 
 /**
  * Server-side fetch ke API dengan Bearer token.
- * Mengembalikan null jika gagal (401, 403, 5xx, network error).
+ * T2-05: Pada 401 (token expired/invalid) → redirect ke /login?reason=session.
+ * Mengembalikan null jika gagal (403, 404, 5xx, network error).
  * Caller bertanggung jawab menangani null sebagai empty state.
  */
 export async function apiFetch<T>(
@@ -99,11 +102,17 @@ export async function apiFetch<T>(
     });
 
     if (!res.ok) {
+      // T2-05: 401 → redirect ke login (bukan silent empty state)
+      if (res.status === 401) {
+        redirect('/login?reason=session');
+      }
       if (process.env.NODE_ENV === 'development') console.error(`[apiFetch] ${res.status} ${path}`);
       return null;
     }
     return res.json() as Promise<T>;
   } catch (err) {
+    // redirect() throws a NEXT_REDIRECT error — re-throw it, jangan swallow
+    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err;
     if (process.env.NODE_ENV === 'development') console.error(`[apiFetch] network error ${path}:`, err);
     return null;
   }

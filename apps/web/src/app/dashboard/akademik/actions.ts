@@ -3,24 +3,34 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { apiErrorMessage } from '@/lib/api';
 
 const API_BASE = process.env.API_URL ?? 'http://localhost:3001';
 
 async function apiCall(path: string, method: string, body?: unknown) {
   const session = await getServerSession(authOptions);
-  if (!session?.accessToken) return { success: false, error: 'Sesi berakhir — silakan login ulang.' };
+  if (!session?.accessToken) {
+    // T2-05: No session → redirect ke login
+    redirect('/login?reason=session');
+  }
   try {
     const res = await fetch(`${API_BASE}/api/v1${path}`, {
-      method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.accessToken}` },
+      method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session!.accessToken}` },
       body: body ? JSON.stringify(body) : undefined, cache: 'no-store',
     });
     if (!res.ok) {
+      // T2-05: 401 → redirect ke login (bukan silent error)
+      if (res.status === 401) {
+        redirect('/login?reason=session');
+      }
       const err = await res.json().catch(() => null);
       return { success: false, error: apiErrorMessage(err) };
     }
     return { success: true, data: await res.json() };
-  } catch {
+  } catch (err) {
+    // redirect() throws a NEXT_REDIRECT error — re-throw it, jangan swallow
+    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err;
     return { success: false, error: 'Koneksi ke server gagal. Coba lagi.' };
   }
 }
@@ -65,14 +75,22 @@ export interface RosterStudent {
 /** Roster siswa aktif satu kelas (untuk modal Absen). */
 export async function fetchClassRoster(classId: string): Promise<RosterStudent[]> {
   const session = await getServerSession(authOptions);
-  if (!session?.accessToken) return [];
-  const res = await fetch(`${API_BASE}/api/v1/students?classId=${classId}&status=active&limit=100`, {
-    headers: { Authorization: `Bearer ${session.accessToken}` },
-    cache: 'no-store',
-  });
-  if (!res.ok) return [];
-  const json = (await res.json()) as { data?: { id: string; nis: string; user?: { fullName?: string } }[] };
-  return (json.data ?? []).map((s) => ({ id: s.id, nis: s.nis, name: s.user?.fullName ?? '—' }));
+  if (!session?.accessToken) { redirect('/login?reason=session'); }
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/students?classId=${classId}&status=active&limit=100`, {
+      headers: { Authorization: `Bearer ${session!.accessToken}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      if (res.status === 401) redirect('/login?reason=session');
+      return [];
+    }
+    const json = (await res.json()) as { data?: { id: string; nis: string; user?: { fullName?: string } }[] };
+    return (json.data ?? []).map((s) => ({ id: s.id, nis: s.nis, name: s.user?.fullName ?? '—' }));
+  } catch (err) {
+    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err;
+    return [];
+  }
 }
 
 /** Simpan Jurnal Mengajar (disimpan sebagai ClassActivity / Kegiatan Kelas). */
@@ -190,21 +208,97 @@ export async function deleteLmsModule(id: string) {
   return r;
 }
 
+/** T2-03: Ambil katalog badge dari /badges (untuk LMS Badge tab). */
+export async function fetchBadgeCatalog(): Promise<{
+  success: boolean;
+  data?: Array<{
+    id: string; code: string; name: string; description: string | null;
+    icon: string; tier: string;
+  }>;
+  error?: string;
+}> {
+  const r = await apiCall('/badges?limit=50', 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  // API returns { data: [...], total, page, limit }
+  const body = r.data as { data?: Array<{ id: string; code: string; name: string; description: string | null; icon: string; tier: string }> };
+  return { success: true, data: body?.data ?? [] };
+}
+
+// ── Report Cards (T2-01 — Rapor sections B-G) ─────────────────────────────
+
+/** T2-01: Fetch muatan lokal (Section B) for a student. */
+export async function fetchMuatanLokal(studentId: string, year: string, semester: number) {
+  const r = await apiCall(
+    `/report-cards/${studentId}/muatan-lokal?year=${encodeURIComponent(year)}&semester=${semester}`,
+    'GET',
+  );
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { subjects: { name: string; na: number; kktp: number; predikat: string }[] } };
+}
+
+/** T2-01: Fetch attendance summary (Section D) for a student. */
+export async function fetchAttendanceSummary(studentId: string, year: string, semester: number) {
+  const r = await apiCall(
+    `/report-cards/${studentId}/attendance-summary?year=${encodeURIComponent(year)}&semester=${semester}`,
+    'GET',
+  );
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { hadir: number; izin: number; sakit: number; alpha: number; total: number } };
+}
+
+/** T2-01: Fetch development description (Section F) for a student. */
+export async function fetchDevelopmentDescription(studentId: string, year: string, semester: number) {
+  const r = await apiCall(
+    `/report-cards/${studentId}/development-description?year=${encodeURIComponent(year)}&semester=${semester}`,
+    'GET',
+  );
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { description: string; spiritual: string; social: string; academic: string } };
+}
+
+/** T2-01: Fetch approval info (Section G) for a student. */
+export async function fetchApprovalInfo(studentId: string, year: string, semester: number) {
+  const r = await apiCall(
+    `/report-cards/${studentId}/approval?year=${encodeURIComponent(year)}&semester=${semester}`,
+    'GET',
+  );
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { homeroomTeacher: string; principal: string; approvedAt: string | null; schoolYear: string; semester: number; className: string } };
+}
+
+// ── Analytics (T2-02 — KS health & tren) ───────────────────────────────────
+
+/** T2-02: Fetch attendance heatmap for trend analysis. */
+export async function fetchAttendanceHeatmap(days: number) {
+  const r = await apiCall(`/attendance/heatmap?days=${days}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return {
+    success: true,
+    data: r.data as {
+      dates: string[];
+      classes: Array<{ classId: string; className: string; grade: number; cells: Array<{ date: string; total: number; hadir: number; pct: number | null }> }>;
+      overall: { today: { pct: number | null }; yesterday?: { pct: number | null } };
+    },
+  };
+}
+
 /** Ambil progres siswa untuk satu Modul LMS (monitor guru). */
 export async function fetchLmsProgress(id: string) {
   const session = await getServerSession(authOptions);
-  if (!session?.accessToken) return { success: false, error: 'Sesi berakhir — silakan login ulang.' };
+  if (!session?.accessToken) { redirect('/login?reason=session'); }
   try {
     const res = await fetch(`${API_BASE}/api/v1/lms/modules/${id}/progress`, {
-      headers: { Authorization: `Bearer ${session.accessToken}` },
+      headers: { Authorization: `Bearer ${session!.accessToken}` },
       cache: 'no-store',
     });
     if (!res.ok) {
+      if (res.status === 401) redirect('/login?reason=session');
       const err = await res.json().catch(() => null);
       return { success: false, error: apiErrorMessage(err) };
     }
     return { success: true, data: await res.json() };
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err;
     return { success: false, error: 'Koneksi ke server gagal. Coba lagi.' };
   }
 }

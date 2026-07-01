@@ -341,6 +341,9 @@ export default function CapaianRapor({ grades, className, academicYear, semester
         studentName={sel.name}
         subtitle={`${className} · Semester ${semester} · ${academicYear || '—'}`}
         rows={sel.rows}
+        studentId={sel.studentId}
+        academicYear={academicYear}
+        semester={semester}
       />
     )}
     </div>

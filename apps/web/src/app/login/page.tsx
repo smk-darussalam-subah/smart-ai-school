@@ -6,10 +6,13 @@
 // signIn() dari next-auth/react bisa dipanggil tanpa SessionProvider scope.
 
 import { signIn } from 'next-auth/react';
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 
-export default function LoginPage() {
+function LoginContent() {
   const [isLoading, setIsLoading] = useState(false);
+  const searchParams = useSearchParams();
+  const sessionExpired = searchParams.get('reason') === 'session';
 
   const handleLogin = async () => {
     setIsLoading(true);
@@ -31,6 +34,13 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold text-gray-900 mb-1">DIIS</h1>
           <p className="text-sm text-gray-500 mb-2">Digital Integrated Information System</p>
           <p className="text-xs text-gray-400 mb-8">SMK Darussalam Subah · Smart AI School 5.0</p>
+
+          {/* T2-05: Session expired banner */}
+          {sessionExpired && (
+            <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-center text-[13px] font-medium text-amber-700">
+              Sesi Anda telah berakhir. Silakan masuk kembali.
+            </div>
+          )}
 
           {/* Login button */}
           <button onClick={handleLogin} disabled={isLoading} className="btn-primary w-full py-3 text-base">
@@ -56,5 +66,13 @@ export default function LoginPage() {
         </p>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginContent />
+    </Suspense>
   );
 }
