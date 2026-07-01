@@ -27,10 +27,12 @@
 | T3-02 | Backend Skenario B (quest/timeline/dll) | 3 | 🔲 TODO | — | — | — |
 | T3-03 | Push subscription UI | 3 | 🔲 TODO | — | — | — |
 | T3-04 | VAPID runtime verify | 3 | 🔲 TODO | — | — | — |
-| T3-05 | Siswa celebration label | 3 | 🔲 TODO | — | — | — |
+| T3-05 | Siswa celebration label | 3 | ✅ DONE | feat/audit2-t2-04-sim-labels | #270 | 2026-07-01 |
 | T3-06 | Orphan endpoint minor | 3 | 🔲 TODO | — | — | — |
 
-**Ringkasan:** 11/16 selesai (68.75%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 5/5 (100% — SIAP DEMO VIP). TIER 3: 0/6.
+**Ringkasan:** 12/17 selesai (70.6%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 5/5 (100% — SIAP DEMO VIP). TIER 3: 1/6 (T3-05 covered by T2-04).
+
+**Merged to production:** PR #270 (staging) + PR #271 (main) — 2026-07-01.
 
 ---
 
@@ -186,7 +188,18 @@ Final grep-sweep menemukan 3 komponen LAIN dengan pola SIM-fallback yang sama (t
 
 ### TIER 3
 
-*(belum ada)*
+#### T3-05 — Siswa badge celebration label (already covered by T2-04)
+**Mulai/Selesai:** 2026-07-01 | **Branch:** `feat/audit2-t2-04-sim-labels` | **Durasi:** 0 (covered by T2-04)
+**Files changed:** (none — already done in T2-04)
+**Catatan:** T2-04 C3 fix already added amber "Contoh" badge to BadgeCelebration.tsx with documentation comment. This task was listed as TODO in the execution plan but was actually completed as part of T2-04. No additional work needed.
+**Status:** ✅ DONE (covered by T2-04)
+
+**Remaining Tier 3 tasks (priority order):**
+1. **T3-01** (Konsolidasi naOf) — HIGHEST IMPACT: fixes NA formula inconsistency between GradebookPenilaian (naSimple) and siswa/ortu dashboards (naOf). Risk: HIGH (grade values may shift). Needs Director sign-off before execution.
+2. **T3-03** (Push subscription UI) — GOOD NEXT: POST /push/subscribe endpoint already live but no UI. Add notification toggle in student/parent profiles. 2 hours, low risk.
+3. **T3-06** (Orphan endpoint minor) — Wire LMS progress action + optional WA log admin page. 1 hour, low risk.
+4. **T3-02** (Backend Skenario B) — Multi-sprint backend work for quest/timeline/kktp-config/monitoring/scheduling.
+5. **T3-04** (VAPID runtime verify) — Blocked: needs SSH Director access for end-to-end push test in production.
 
 ---
 
