@@ -24,13 +24,21 @@
 | T2-04 | Label SIM eksplisit (Skenario C) | 2 | ✅ DONE | feat/audit2-t2-04-sim-labels | — | 2026-07-01 |
 | T2-05 | apiFetch 401 → redirect login | 2 | ✅ DONE | feat/audit2-t2-05-apifetch-401 | — | 2026-07-01 |
 | T3-01 | Konsolidasi naOf (hapus naSimple) | 3 | ✅ DONE | feat/audit2-t3-01-naof-consolidation | — | 2026-07-01 |
-| T3-02 | Backend Skenario B (quest/timeline/dll) | 3 | 🔲 TODO | — | — | — |
+| T3-02 | Backend Skenario B (quest/timeline/dll) | 3 | 🔄 PARTIAL (B5 done) | feat/audit2-t3-02-kktp-t3-04-vapid | — | 2026-07-02 |
 | T3-03 | Push subscription UI | 3 | ✅ DONE | feat/audit2-t3-03-push-ui | — | 2026-07-02 |
-| T3-04 | VAPID runtime verify | 3 | 🔲 TODO | — | — | — |
+| T3-04 | VAPID runtime verify | 3 | ⏳ BLOCKED (needs Director SSH) | — | — | — |
 | T3-05 | Siswa celebration label | 3 | ✅ DONE | feat/audit2-t2-04-sim-labels | #270 | 2026-07-01 |
 | T3-06 | Orphan endpoint minor | 3 | ✅ DONE | feat/audit2-t3-03-fix-t3-06-lms-wa | — | 2026-07-02 |
 
-**Ringkasan:** 15/17 selesai (88.2%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 5/5 (100% — SIAP DEMO VIP). TIER 3: 4/6 (T3-01, T3-03, T3-05, T3-06 done).
+**Ringkasan:** 15/17 selesai (88.2%) + T3-02 partial (B5 kktp-config done). **TIER 1: 6/6 (100%).** TIER 2: 5/5 (100%). TIER 3: 4/6 done + T3-02 partial + T3-04 blocked.
+
+**T3-02 remaining Skenario B items (future sprints):** B1 (daily-quest), B2 (timeline ortu), B3 (teacher-by-student), B6 (monitoring KBM — needs KBM module), B7 (rekap audit aggregation), B8 (auto-scheduling).
+**T3-04 verification steps (Director to execute via SSH):**
+1. Ensure `NEXT_PUBLIC_VAPID_PUBLIC_KEY` is set in production env
+2. SSH to VPS: `docker exec smk-api npx prisma migrate deploy` (for kktp_configs table)
+3. Login as siswa/ortu → Account sheet → "Aktifkan Notifikasi" → grant permission
+4. Check DB: `SELECT * FROM auth.push_subscriptions` — should have new entry
+5. Trigger a test absence notification and verify push arrives on device
 
 **Merged to production:** PR #270 (staging) + PR #271 (main) — 2026-07-01.
 

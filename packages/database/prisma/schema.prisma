@@ -710,6 +710,23 @@ model Subject {
   @@schema("academic")
 }
 
+// T3-02 (B5): KKTP config per-subject per-academic-year per-semester.
+// KS/Wakakur sets custom KKTP threshold per mapel. Default 75 bila tidak ada entry.
+model KktpConfig {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subject      String   @db.VarChar(100)                         // "Matematika", "Pemrograman Web", dll (denormalized for flexibility)
+  kktp         Int                                               // 0-100, default 75
+  academicYear String   @map("academic_year") @db.VarChar(9)    // "2025/2026"
+  semester     Int                                               // 1 or 2
+  createdBy    String?  @map("created_by") @db.Uuid             // userId (audit)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([subject, academicYear, semester])
+  @@map("kktp_configs")
+  @@schema("academic")
+}
+
 // =============================================================================
 // FINANCE SCHEMA — minimal model (N-1)
 // =============================================================================

@@ -50,6 +50,7 @@ import { BadgesModule } from './badges/badges.module';
 import { WaLogModule } from './wa-log/wa-log.module';
 import { GamificationModule } from './gamification/gamification.module';
 import { PushModule } from './push/push.module';
+import { KktpConfigModule } from './kktp-config/kktp-config.module';
 
 @Module({
   imports: [
@@ -96,6 +97,7 @@ import { PushModule } from './push/push.module';
     WaLogModule,
     GamificationModule,
     PushModule,
+    KktpConfigModule,
   ],
   providers: [
     UserStatusService,
