@@ -362,3 +362,17 @@ export async function aiGenerateAtp(data: { cp: string; tp: string[]; subject: s
   const r = await apiCall('/ai/generate-atp', 'POST', data);
   return r;
 }
+
+// ── Push Notifications (T3-03 — PWA) ────────────────────────────────────────
+
+/** T3-03: Subscribe to push notifications via POST /push/subscribe. */
+export async function subscribePush(dto: { endpoint: string; keys: { p256dh: string; auth: string } }): Promise<boolean> {
+  const r = await apiCall('/push/subscribe', 'POST', dto);
+  return r.success;
+}
+
+/** T3-03: Unsubscribe from push notifications via POST /push/unsubscribe. */
+export async function unsubscribePush(endpoint: string): Promise<boolean> {
+  const r = await apiCall('/push/unsubscribe', 'POST', { endpoint });
+  return r.success;
+}
