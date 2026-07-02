@@ -23,14 +23,14 @@
 | T2-03 | Guru badge catalog wire /badges | 2 | ✅ DONE | feat/audit2-t2-03-badge-catalog | — | 2026-07-01 |
 | T2-04 | Label SIM eksplisit (Skenario C) | 2 | ✅ DONE | feat/audit2-t2-04-sim-labels | — | 2026-07-01 |
 | T2-05 | apiFetch 401 → redirect login | 2 | ✅ DONE | feat/audit2-t2-05-apifetch-401 | — | 2026-07-01 |
-| T3-01 | Konsolidasi naOf (hapus naSimple) | 3 | 🔲 TODO | — | — | — |
+| T3-01 | Konsolidasi naOf (hapus naSimple) | 3 | ✅ DONE | feat/audit2-t3-01-naof-consolidation | — | 2026-07-01 |
 | T3-02 | Backend Skenario B (quest/timeline/dll) | 3 | 🔲 TODO | — | — | — |
 | T3-03 | Push subscription UI | 3 | 🔲 TODO | — | — | — |
 | T3-04 | VAPID runtime verify | 3 | 🔲 TODO | — | — | — |
 | T3-05 | Siswa celebration label | 3 | ✅ DONE | feat/audit2-t2-04-sim-labels | #270 | 2026-07-01 |
 | T3-06 | Orphan endpoint minor | 3 | 🔲 TODO | — | — | — |
 
-**Ringkasan:** 12/17 selesai (70.6%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 5/5 (100% — SIAP DEMO VIP). TIER 3: 1/6 (T3-05 covered by T2-04).
+**Ringkasan:** 13/17 selesai (76.5%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 5/5 (100% — SIAP DEMO VIP). TIER 3: 2/6 (T3-01, T3-05 done).
 
 **Merged to production:** PR #270 (staging) + PR #271 (main) — 2026-07-01.
 
@@ -194,8 +194,17 @@ Final grep-sweep menemukan 3 komponen LAIN dengan pola SIM-fallback yang sama (t
 **Catatan:** T2-04 C3 fix already added amber "Contoh" badge to BadgeCelebration.tsx with documentation comment. This task was listed as TODO in the execution plan but was actually completed as part of T2-04. No additional work needed.
 **Status:** ✅ DONE (covered by T2-04)
 
+#### T3-01 — Konsolidasi formula NA: naOf saja (hapus naSimple)
+**Mulai:** 2026-07-01 | **Branch:** `feat/audit2-t3-01-naof-consolidation` | **Selesai:** 2026-07-01 | **Durasi:** ~25 menit
+**Files changed:**
+- `lib/academic.ts` — hapus fungsi `naSimple()` (lines 131-135) dan helper `presentScores()` (lines 106-110, hanya dipakai naSimple); update header comment: hapus referensi naSimple, tambah note "T3-01: naSimple telah dihapus — naOf satu-satunya NA"; tambah docstring pada naOf dengan note T3-01.
+- `__tests__/academic.test.ts` — hapus import `naSimple`; hapus seluruh describe block `naSimple` (6 test cases: rata-rata, partial, null, rounding, setara produksi, berbeda dari naOf); hapus helper `prodNaOf` (hanya dipakai test naSimple); update `aggregateStudentGrades` test: ganti `naSimple()` → `naOf()` dengan expected values disesuaikan (Ani: 95→95.6 karena bobot; Budi: 75 tetap); update header comment.
+**Bukti Runtime:** `tsc --noEmit` = 0 errors · `eslint --max-warnings=0` = 0 errors · `jest` = 22/22 pass · `next build` = 29/29 pages OK
+**Catatan:** GradebookPenilaian.tsx SUDAH menggunakan `naOf as computeNa` (di-rewire di sesi sebelumnya). Audit report T3-01 yang bilang "GradebookPenilaian pakai naSimple" sudah outdated. Fungsi naSimple sudah tidak dipakai di MANA PUN selain tests — penghapusan aman tanpa dampak fungsional. Tidak ada pergeseran nilai guru karena Gradebook sudah pakai naOf.
+**Status:** ✅ DONE
+
 **Remaining Tier 3 tasks (priority order):**
-1. **T3-01** (Konsolidasi naOf) — HIGHEST IMPACT: fixes NA formula inconsistency between GradebookPenilaian (naSimple) and siswa/ortu dashboards (naOf). Risk: HIGH (grade values may shift). Needs Director sign-off before execution.
+1. ~~**T3-01**~~ ✅ DONE
 2. **T3-03** (Push subscription UI) — GOOD NEXT: POST /push/subscribe endpoint already live but no UI. Add notification toggle in student/parent profiles. 2 hours, low risk.
 3. **T3-06** (Orphan endpoint minor) — Wire LMS progress action + optional WA log admin page. 1 hour, low risk.
 4. **T3-02** (Backend Skenario B) — Multi-sprint backend work for quest/timeline/kktp-config/monitoring/scheduling.
