@@ -77,4 +77,24 @@ export class ScheduleController {
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.remove(id);
   }
+
+  /** T3-02 B8: GET /schedules/auto-generate — preview auto-scheduling result.
+   *  Greedy constraint-based: fills day×JP slots avoiding conflicts.
+   *  Returns preview without persisting. */
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @RequirePermission('academic.schedule.manage')
+  @Get('auto-generate')
+  autoGenerate(
+    @Query('academicYear') academicYear: string,
+    @Query('semester') semester: string,
+    @Query('days') days?: string,
+    @Query('jpPerDay') jpPerDay?: string,
+    @Query('maxJpGuru') maxJpGuru?: string,
+  ) {
+    return this.service.autoGenerate(academicYear, Number(semester), {
+      days: days ? Number(days) : undefined,
+      jpPerDay: jpPerDay ? Number(jpPerDay) : undefined,
+      maxJpGuru: maxJpGuru ? Number(maxJpGuru) : undefined,
+    });
+  }
 }

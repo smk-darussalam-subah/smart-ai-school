@@ -414,6 +414,93 @@ export class AnalyticsService {
 
     return { data: result, kkm: KKM_DEFAULT };
   }
+
+  // ── T3-02 B6: Monitoring KBM (guru × kelas × mapel real-time status) ──────
+
+  /** B6: Build monitoring matrix from existing grades + attendance + jurnal.
+   *  No KBM session module needed — aggregates from current data. */
+  async monitoringKbm(query: AnalyticsQuery) {
+    const period = await this.resolvePeriod(query);
+
+    // Get all teaching assignments for the period
+    const assignments = await this.prisma.teachingAssignment.findMany({
+      where: { academicYear: period.academicYear },
+      select: {
+        id: true, subject: true, hoursPerWeek: true,
+        teacher: { select: { user: { select: { fullName: true } } } },
+        class: { select: { id: true, name: true } },
+        grades: {
+          where: { academicYear: period.academicYear, semester: period.semester },
+          select: { score: true, type: true },
+        },
+        schedules: { select: { dayOfWeek: true, jpStart: true, jpEnd: true } },
+      },
+    });
+
+    // Get class activities (jurnal) per assignment
+    const activities = await this.prisma.classActivity.findMany({
+      where: { date: { gte: new Date(period.academicYear.slice(0, 4) + '-' + (period.semester === 1 ? '07' : '01') + '-01') } },
+      select: { teacherId: true, classId: true, date: true, title: true, category: true },
+      orderBy: { date: 'desc' },
+      take: 200,
+    });
+
+    // Get today's attendance per class
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const todayAtt = await this.prisma.attendance.groupBy({
+      by: ['classId', 'status'],
+      where: { date: { gte: new Date(todayISO), lt: new Date(todayISO + 'T23:59:59Z') } },
+      _count: { _all: true },
+    });
+
+    // Build monitoring rows
+    const attByClass = new Map<string, { hadir: number; total: number }>();
+    for (const a of todayAtt) {
+      const entry = attByClass.get(a.classId) ?? { hadir: 0, total: 0 };
+      entry.total += a._count._all;
+      if (a.status === 'hadir') entry.hadir += a._count._all;
+      attByClass.set(a.classId, entry);
+    }
+
+    const activitiesByTeacherClass = new Map<string, number>();
+    for (const act of activities) {
+      const key = `${act.teacherId}|${act.classId}`;
+      activitiesByTeacherClass.set(key, (activitiesByTeacherClass.get(key) ?? 0) + 1);
+    }
+
+    const rows = assignments.map((a) => {
+      const scores = a.grades.map((g) => Number(g.score));
+      const avg = scores.length > 0 ? Math.round(scores.reduce((x, y) => x + y, 0) / scores.length * 100) / 100 : null;
+      const tuntas = scores.filter((s) => s >= KKM_DEFAULT).length;
+      const tuntasPct = scores.length > 0 ? Math.round((tuntas / scores.length) * 100) : null;
+
+      const att = attByClass.get(a.class?.id ?? '') ?? { hadir: 0, total: 0 };
+      const hadirPct = att.total > 0 ? Math.round((att.hadir / att.total) * 100) : null;
+
+      const jurnalCount = activitiesByTeacherClass.get(`${a.id}|${a.class?.id ?? ''}`) ?? 0;
+
+      // Status: 'on' if tuntasPct >= 75, 'warn' if >= 60, 'risk' otherwise
+      const status: 'on' | 'warn' | 'risk' =
+        tuntasPct !== null ? (tuntasPct >= 75 ? 'on' : tuntasPct >= 60 ? 'warn' : 'risk') : 'risk';
+
+      return {
+        guru: a.teacher?.user?.fullName ?? '-',
+        mapel: a.subject,
+        kelas: a.class?.name ?? '-',
+        jp: a.hoursPerWeek,
+        avg,
+        tuntasPct,
+        hadirPct,
+        jurnalCount,
+        gradeCount: scores.length,
+        status,
+      };
+    });
+
+    rows.sort((a, b) => a.kelas.localeCompare(b.kelas) || a.mapel.localeCompare(b.mapel));
+
+    return { data: rows, date: todayISO, kkm: KKM_DEFAULT };
+  }
 }
 
 function pushTo(map: Map<string, number[]>, key: string, value: number): void {
