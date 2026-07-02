@@ -108,20 +108,24 @@ export default async function AkademikPage() {
     // Transform LMS modules API → SiswaModul[] (field-name mapping).
     // Sebelumnya cast langsung LmsModuleItem→SiswaModul menyebabkan field mapel/judul
     // undefined (modul tampil kosong). mapping ini benarkan agar judul+mapel real tampil.
-    // prog per-siswa butuh endpoint /lms/modules/:id/progress (D10) — sementara 0 bila published.
+    // T3-06: uuid dipreserve agar PATCH /lms/modules/:id/progress bisa dipanggil dari UI.
     const realModules: SiswaModul[] | null = modulesRes
       ? modulesRes.data.map((m, i) => {
           const published = m.status === 'published';
-          const status: SiswaModul['status'] = !published ? 'Terkunci' : 'Aktif';
+          const myProg = m.myProgress as { progress?: number; status?: string } | null;
+          const prog = myProg?.progress ?? 0;
+          const status: SiswaModul['status'] =
+            myProg?.status === 'completed' ? 'Selesai' : !published ? 'Terkunci' : 'Aktif';
           return {
             id: i + 1,
+            uuid: m.id, // T3-06: preserve real UUID for progress endpoint
             tp: m.tp ?? '—',
             judul: m.title,
             alokasi: `${m.jpAllocation ?? 0} JP`,
             kktp: m.kktp,
             status,
             lms: published,
-            prog: 0,
+            prog,
             badge: null,
             mapel: m.subject,
           };
