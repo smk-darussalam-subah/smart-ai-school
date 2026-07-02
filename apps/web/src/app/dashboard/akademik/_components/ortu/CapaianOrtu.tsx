@@ -1,9 +1,11 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { Trophy, Award, Target, History } from 'lucide-react';
 import type { ModalState } from './OrtuWorkspace';
 import { SIM_TIMELINE } from './ortu-data';
 import type { OrtuBadge } from './ortu-types';
+import { fetchTimeline } from '../../actions';
 
 /** Shape badge dari API /badges/student/:id (lihat akademik/page.tsx ortu branch). */
 export interface BadgeApiItem {
@@ -40,6 +42,14 @@ export default function CapaianOrtu({ showToast, badges }: CapaianOrtuProps) {
   // T1-03a: badges dari data real. XP/CP/leaderboard belum di-fetch untuk ortu
   // (lihat page.tsx ortu branch) → tampilkan honest empty state, BUKAN SIM.
   const earnedBadges = mapBadges(badges ?? []);
+
+  // B3: Fetch real timeline from /student-dashboard/timeline
+  const [realTimeline, setRealTimeline] = useState<Array<{ date: string; type: string; title: string; description: string; subject?: string }>>([]);
+  useEffect(() => {
+    fetchTimeline().then((res) => {
+      if (res.success && res.data) setRealTimeline(res.data);
+    });
+  }, []);
 
   return (
     <div className="px-4 pb-4">
@@ -106,14 +116,14 @@ export default function CapaianOrtu({ showToast, badges }: CapaianOrtuProps) {
         <p className="mt-1.5 text-[12px] font-bold text-[var(--muted)]">Progress kompetensi akan tersedia menyusul</p>
       </div>
 
-      {/* 5. Learning timeline — Skenario B: backend belum ada, SIM dipertahankan DENGAN label jelas */}
+      {/* 5. Learning timeline — B3: wired to /student-dashboard/timeline */}
       <div className="rounded-[var(--r)] border border-[var(--border)] bg-[var(--surface)] p-3.5">
         <div className="mb-2.5 flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
             <History className="h-[15px] w-[15px] text-[var(--pri)]" />
             Timeline Pembelajaran
           </div>
-          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">Contoh</span>
+          {realTimeline.length === 0 && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">Contoh</span>}
         </div>
         <div className="relative pl-[18px]">
           {/* Vertical line */}
@@ -121,7 +131,7 @@ export default function CapaianOrtu({ showToast, badges }: CapaianOrtuProps) {
             className="absolute left-[5px] top-1 bottom-1 w-0.5"
             style={{ background: 'var(--border2)' }}
           />
-          {SIM_TIMELINE.map((t, i) => (
+          {(realTimeline.length > 0 ? realTimeline : SIM_TIMELINE.map(t => ({ date: t.date, type: 'module', title: t.title, description: t.desc }))).slice(0, 8).map((t, i) => (
             <div key={i} className="relative pb-3 last:pb-0">
               {/* Dot */}
               <div
@@ -130,7 +140,7 @@ export default function CapaianOrtu({ showToast, badges }: CapaianOrtuProps) {
               />
               <b className="block text-[12px]">{t.title}</b>
               <small className="text-[10px] font-semibold text-[var(--muted)]">{t.date}</small>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--muted)]">{t.desc}</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--muted)]">{t.description}</p>
             </div>
           ))}
         </div>

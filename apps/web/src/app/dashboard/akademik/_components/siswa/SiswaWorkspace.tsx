@@ -26,12 +26,12 @@ import TaskDetailModal from './TaskDetailModal';
 import DayDetailModal from './DayDetailModal';
 import BadgeDetailModal from './BadgeDetailModal';
 import PushNotificationToggle from '@/components/shared/PushNotificationToggle';
-import { subscribePush, unsubscribePush } from '../../actions';
+import { subscribePush, unsubscribePush, fetchDailyQuests } from '../../actions';
 import {
   SIM_DAILY_QUEST, SIM_KALENDER,
   normalizeAnnouncements,
 } from './siswa-data';
-import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaXP, SiswaLeaderboardEntry, SiswaModul, SiswaCP, SiswaKehadiranStats, BadgeCelebrationData } from './siswa-types';
+import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaXP, SiswaLeaderboardEntry, SiswaModul, SiswaCP, SiswaKehadiranStats, SiswaQuest, BadgeCelebrationData } from './siswa-types';
 import type { AttendanceEntry } from './KehadiranSiswa';
 
 export type SiswaScreen = 'beranda' | 'jadwal' | 'modul' | 'nilai' | 'tugas' | 'kehadiran' | 'capaian';
@@ -93,6 +93,19 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
   const [badgeCelebration, setBadgeCelebration] = useState<BadgeCelebrationData>({ show: false });
   const [toast, setToast] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [realQuests, setRealQuests] = useState<SiswaQuest | null>(null);
+
+  // B1: Fetch daily quests on mount
+  useEffect(() => {
+    fetchDailyQuests().then((res) => {
+      if (res.success && res.data) {
+        setRealQuests({
+          title: 'Daily Quest',
+          tasks: res.data.quests.map((q) => ({ ic: q.icon, label: q.title, done: q.completed })),
+        });
+      }
+    });
+  }, []);
 
   // Theme management
   useEffect(() => {
@@ -176,7 +189,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             tasks={(realAssignments ?? []) as unknown as SiswaTugas[]}
             badges={realBadges ?? []}
             modules={(realModules ?? []) as unknown as SiswaModul[]}
-            quest={SIM_DAILY_QUEST}
+            quest={realQuests ?? SIM_DAILY_QUEST}
             xp={realXp ?? { level: 1, current: 0, next: 500 }}
             kehStats={realAttStats ?? { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, pct: 0 }}
             schedule={schedule || []}

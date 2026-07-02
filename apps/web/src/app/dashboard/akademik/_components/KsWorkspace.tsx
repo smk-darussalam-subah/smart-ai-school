@@ -22,7 +22,7 @@ import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem, ActivityItem, RppItem, ClassRef, LmsModuleItem } from './guru-types';
 import { KKTP_DEFAULT } from '@/lib/academic';
 import { JP_SLOTS, fmtMin, scheduleDayOfWeek, wibTodayISO, wibDateLabel, currentJp, wibNow } from '@/lib/bell-times';
-import { reviewRpp, fetchAttendanceHeatmap } from '../actions';
+import { reviewRpp, fetchAttendanceHeatmap, fetchMonitoringKbm, fetchRekapAudit } from '../actions';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -819,8 +819,22 @@ function MonitoringKbmKs({ kelasMapel, attendances: _attendances, schedules, cla
 
   const cellTone = (pct: number | null) => pct === null ? 'bg-[#f9fbfa] text-[#cbd5e1]' : pct >= 75 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : pct >= 60 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-600 border-rose-200';
 
-  // SIMULASI: Generate monitoring data from real kelasMapel — backend /monitoring/kbm belum tersedia
-  const monData = useMemo(() => kelasMapel.map((k, i) => {
+  // B6: Fetch real monitoring data from /analytics/monitoring-kbm
+  const [realMonData, setRealMonData] = useState<Array<{ guru: string; mapel: string; kelas: string; jp: number; avg: number | null; tuntasPct: number | null; hadirPct: number | null; jurnalCount: number; gradeCount: number; status: string }>>([]);
+  useEffect(() => {
+    fetchMonitoringKbm().then((res) => {
+      if (res.success && res.data) {
+        const data = res.data as { data: Array<{ guru: string; mapel: string; kelas: string; jp: number; avg: number | null; tuntasPct: number | null; hadirPct: number | null; jurnalCount: number; gradeCount: number; status: string }> };
+        setRealMonData(data.data ?? []);
+      }
+    });
+  }, []);
+
+  // Use real data if available, otherwise fall back to SIMULASI from kelasMapel
+  const monData = realMonData.length > 0 ? realMonData.map((m) => ({
+    guru: m.guru, mapel: m.mapel, kelas: m.kelas, cp: m.tuntasPct ?? 0,
+    pert: 0, rencana: 0, jurnal: m.jurnalCount, hadir: m.hadirPct ?? 0, rata: m.avg, status: m.status as 'on' | 'warn' | 'risk',
+  })) : useMemo(() => kelasMapel.map((k, i) => {
     const tp = k.tuntasPct ?? 75;
     const status = tp >= 75 ? 'on' as const : tp >= 60 ? 'warn' as const : 'risk' as const;
     return { guru: SIM_MON_GURUS[i % SIM_MON_GURUS.length]!, mapel: k.mapel, kelas: k.kelas, cp: tp, pert: 4 + (i % 4), rencana: 12 + (i % 5), jurnal: 3 + (i % 4), hadir: 85 + (i % 10), rata: k.avg, status };
@@ -991,8 +1005,23 @@ function RekapAuditKs({ kelasMapel, grades, attendances, activities, rpp }: {
   const kelasList = [...new Set(kelasMapel.map((k) => k.kelas))].sort();
   const mapelList = [...new Set(kelasMapel.map((k) => k.mapel))].sort();
 
-  // SIMULASI: Monitoring data for G11 table & G12 progress bars
-  const monData = useMemo(() => genSimMonitor(kelasMapel), [kelasMapel]);
+  // B7: Fetch real rekap audit data from /analytics/rekap-audit
+  const [realRekap, setRealRekap] = useState<Array<{ teacher: string; className: string; subject: string; count: number; average: number; tuntasCount: number; tuntasPct: number | null }>>([]);
+  useEffect(() => {
+    fetchRekapAudit().then((res) => {
+      if (res.success && res.data) {
+        const data = res.data as { data: Array<{ teacher: string; className: string; subject: string; count: number; average: number; tuntasCount: number; tuntasPct: number | null }> };
+        setRealRekap(data.data ?? []);
+      }
+    });
+  }, []);
+
+  // Use real rekap data if available, otherwise fall back to SIMULASI
+  const monData = realRekap.length > 0 ? realRekap.map((r) => ({
+    guru: r.teacher, mapel: r.subject, kelas: r.className,
+    cp: r.tuntasPct ?? 0, pert: 0, rencana: 0, jurnal: 0, hadir: 0,
+    rata: r.average, status: (r.tuntasPct ?? 0) >= 75 ? 'on' as const : (r.tuntasPct ?? 0) >= 60 ? 'warn' as const : 'risk' as const,
+  })) : useMemo(() => genSimMonitor(kelasMapel), [kelasMapel]);
   // G11: Sort by guru → kelas → mapel
   const sortedMon = useMemo(() => [...monData].sort((a, b) =>
     a.guru.localeCompare(b.guru) || a.kelas.localeCompare(b.kelas) || a.mapel.localeCompare(b.mapel)
