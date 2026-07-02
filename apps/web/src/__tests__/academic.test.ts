@@ -1,11 +1,10 @@
-// Unit test fondasi akademik (W0). Mengunci: (1) naOf MATCH perilaku produksi
-// GradebookPenilaian; (2) naWeighted MATCH formula bobot mockup; (3) kalender
-// tak mengarang status; (4) format Rupiah/tanggal deterministik.
+// Unit test fondasi akademik (W0). Mengunci: (1) naOf MATCH formula bobot mockup;
+// (2) kalender tak mengarang status; (3) format Rupiah/tanggal deterministik.
+// T3-01: naSimple (formula lama tak-berbobot) telah dihapus — naOf satu-satunya NA.
 
 import type { GradeItem } from '@/lib/api';
 import {
   naOf,
-  naSimple,
   gradeStatus,
   predikat,
   aggregateStudentGrades,
@@ -19,12 +18,6 @@ import {
   type StudentGradeComponents,
 } from '@/lib/academic';
 
-// Replika persis formula produksi (GradebookPenilaian.naOf) untuk uji kesetaraan.
-function prodNaOf(scores: number[]): number | null {
-  return scores.length
-    ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10
-    : null;
-}
 // Replika persis formula mockup: Math.round(Σ score*NA_W[i] *10)/10 (5 komponen).
 function mockupNaWeighted(s: number[]): number {
   const w = [0.2, 0.25, 0.15, 0.2, 0.2];
@@ -50,47 +43,6 @@ describe('naOf — Nilai Akhir RESMI berbobot (keputusan Kang 2026-06-20)', () =
   it('bobot berjumlah 1', () => {
     const total = GRADE_COMPONENT_KEYS.reduce((a, k) => a + NA_WEIGHTS[k], 0);
     expect(total).toBeCloseTo(1, 10);
-  });
-});
-
-describe('naSimple — rata-rata sederhana (perilaku Gradebook live, transisi)', () => {
-  it('rata-rata semua komponen, 1 desimal', () => {
-    const c: StudentGradeComponents = { uh: 80, praktik: 90, sikap: 85, uts: 70, uas: 75 };
-    expect(naSimple(c)).toBe(80); // (80+90+85+70+75)/5 = 80
-  });
-
-  it('hanya komponen yang ada yang dirata-rata', () => {
-    const c: StudentGradeComponents = { uh: 80, uts: 70 };
-    expect(naSimple(c)).toBe(75);
-  });
-
-  it('null bila tak ada komponen', () => {
-    expect(naSimple({})).toBeNull();
-  });
-
-  it('membulatkan ke 1 desimal', () => {
-    expect(naSimple({ uh: 70, praktik: 75 })).toBe(72.5);
-  });
-
-  it('SETARA formula Gradebook produksi pada input acak', () => {
-    const samples: StudentGradeComponents[] = [
-      { uh: 88, praktik: 91, sikap: 80, uts: 76, uas: 84 },
-      { uh: 60, uts: 55 },
-      { sikap: 90 },
-      { uh: 73, praktik: 68, sikap: 77, uts: 81, uas: 79 },
-    ];
-    for (const c of samples) {
-      const present = GRADE_COMPONENT_KEYS
-        .map((k) => c[k])
-        .filter((v): v is number => typeof v === 'number');
-      expect(naSimple(c)).toBe(prodNaOf(present));
-    }
-  });
-
-  it('berbeda dari naOf berbobot (dua formula tak setara)', () => {
-    const c: StudentGradeComponents = { uh: 100, praktik: 100, sikap: 0, uts: 0, uas: 0 };
-    expect(naSimple(c)).toBe(40); // (100+100+0+0+0)/5
-    expect(naOf(c)).toBe(45); // 100*.2 + 100*.25
   });
 });
 
@@ -160,8 +112,8 @@ describe('aggregateStudentGrades — jembatan data produksi', () => {
     ];
     const agg = aggregateStudentGrades(rows);
     expect(agg.map((a) => a.name)).toEqual(['Ani', 'Budi']); // terurut nama
-    expect(naSimple(agg[0]!.components)).toBe(95); // Ani (90+100)/2
-    expect(naSimple(agg[1]!.components)).toBe(75); // Budi (80+70)/2
+    expect(naOf(agg[0]!.components)).toBe(95.6); // Ani: (90*.2+100*.25)/(.45)=95.56→95.6
+    expect(naOf(agg[1]!.components)).toBe(75);   // Budi: (80*.2+70*.2)/(.4)=75
   });
 
   it('skor terakhir menang per (siswa, komponen) — mirror produksi', () => {

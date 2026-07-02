@@ -468,12 +468,12 @@ Sesudah selesai:
 |------|-------|---------|-----|---------|-----------|
 | TIER 1 (beta) | 6 | 0 | 0 | 6 | 100% |
 | TIER 2 (demo) | 5 | 0 | 0 | 5 | 100% |
-| TIER 3 (later) | 6 | 5 | 0 | 1 | 17% |
-| **TOTAL** | **17** | **5** | **0** | **12** | **70.6%** |
+| TIER 3 (later) | 6 | 4 | 0 | 2 | 33% |
+| **TOTAL** | **17** | **4** | **0** | **13** | **76.5%** |
 
 > Update tabel ini tiap task selesai. Sumber kebenaran status = `AUDIT-v2-DONE-LOG.md`.
 > **Merged to production:** PR #270 (staging) + PR #271 (main) — 2026-07-01.
-> **Tier 3 remaining priority:** T3-01 (naOf consolidation, needs Director sign-off) → T3-03 (Push UI) → T3-06 (Orphan endpoints) → T3-02 (Backend Skenario B) → T3-04 (VAPID verify, blocked).
+> **Tier 3 remaining priority:** T3-03 (Push UI) → T3-06 (Orphan endpoints) → T3-02 (Backend Skenario B) → T3-04 (VAPID verify, blocked).
 
 ---
 

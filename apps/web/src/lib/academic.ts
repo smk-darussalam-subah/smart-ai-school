@@ -5,11 +5,9 @@
 //
 // PRINSIP UTAMA — SATU SUMBER KEBENARAN:
 //   • naOf()  = Nilai Akhir RESMI berbobot NA_WEIGHTS (keputusan Kang 2026-06-20,
-//               sesuai mockup & standar rapor). Inilah formula kanonik yang dipakai
-//               SEMUA dashboard (guru/siswa/ortu/KS).
-//   • naSimple() = rata-rata SEDERHANA komponen — perilaku Gradebook guru yang
-//               masih LIVE (GradebookPenilaian.tsx). Dipertahankan sbg rujukan;
-//               di W1 Gradebook guru DIREWIRE ke naOf agar seluruh dashboard setara.
+//               sesuai mockup & standar rapor). Inilah formula kanonik tunggal yang
+//               dipakai SEMUA dashboard (guru/siswa/ortu/KS). T3-01: naSimple
+//               (formula lama tak-berbobot) telah dihapus — naOf satu-satunya NA.
 //   • Status kehadiran TIDAK DIKARANG — generateCalendar() hanya membangun
 //               struktur; status diisi dari data NYATA (/attendance).
 //   • Hal waktu / JP / hari = pakai lib/bell-times.ts (sumber tunggal).
@@ -103,17 +101,12 @@ export interface Tugas {
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
-function presentScores(c: StudentGradeComponents): number[] {
-  return GRADE_COMPONENT_KEYS
-    .map((k) => c[k])
-    .filter((v): v is number => typeof v === 'number');
-}
-
 /**
  * Nilai Akhir RESMI = berbobot NA_WEIGHTS (UH20·Praktik25·Sikap15·UTS20·UAS20),
  * dibulatkan 1 desimal. Bobot dinormalisasi ulang atas komponen yang TERSEDIA
  * agar adil bila ada komponen kosong (mis. UAS belum diisi). Formula kanonik
- * yang dipakai semua dashboard. null bila tak ada komponen (tampilkan "—").
+ * tunggal yang dipakai semua dashboard. null bila tak ada komponen (tampilkan "—").
+ * T3-01: naSimple (formula lama tak-berbobot) telah dihapus — naOf satu-satunya NA.
  */
 export function naOf(c: StudentGradeComponents): number | null {
   const present = GRADE_COMPONENT_KEYS.filter((k) => typeof c[k] === 'number');
@@ -121,17 +114,6 @@ export function naOf(c: StudentGradeComponents): number | null {
   const weightSum = present.reduce((a, k) => a + NA_WEIGHTS[k], 0);
   const acc = present.reduce((a, k) => a + (c[k] as number) * NA_WEIGHTS[k], 0);
   return round1(acc / weightSum);
-}
-
-/**
- * Rata-rata SEDERHANA (tak berbobot) komponen yang tersedia, 1 desimal.
- * = perilaku Gradebook guru yang masih LIVE (GradebookPenilaian) — dipertahankan
- * sebagai rujukan transisi sampai W1 merewire Gradebook ke naOf. null bila kosong.
- */
-export function naSimple(c: StudentGradeComponents): number | null {
-  const v = presentScores(c);
-  if (v.length === 0) return null;
-  return round1(v.reduce((a, b) => a + b, 0) / v.length);
 }
 
 /**
