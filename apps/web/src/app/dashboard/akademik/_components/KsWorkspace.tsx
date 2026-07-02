@@ -831,14 +831,16 @@ function MonitoringKbmKs({ kelasMapel, attendances: _attendances, schedules, cla
   }, []);
 
   // Use real data if available, otherwise fall back to SIMULASI from kelasMapel
-  const monData = realMonData.length > 0 ? realMonData.map((m) => ({
-    guru: m.guru, mapel: m.mapel, kelas: m.kelas, cp: m.tuntasPct ?? 0,
-    pert: 0, rencana: 0, jurnal: m.jurnalCount, hadir: m.hadirPct ?? 0, rata: m.avg, status: m.status as 'on' | 'warn' | 'risk',
-  })) : useMemo(() => kelasMapel.map((k, i) => {
+  // Hooks must be called unconditionally — compute fallback inside useMemo, then select
+  const simMonData = useMemo(() => kelasMapel.map((k, i) => {
     const tp = k.tuntasPct ?? 75;
     const status = tp >= 75 ? 'on' as const : tp >= 60 ? 'warn' as const : 'risk' as const;
     return { guru: SIM_MON_GURUS[i % SIM_MON_GURUS.length]!, mapel: k.mapel, kelas: k.kelas, cp: tp, pert: 4 + (i % 4), rencana: 12 + (i % 5), jurnal: 3 + (i % 4), hadir: 85 + (i % 10), rata: k.avg, status };
   }), [kelasMapel]);
+  const monData = realMonData.length > 0 ? realMonData.map((m) => ({
+    guru: m.guru, mapel: m.mapel, kelas: m.kelas, cp: m.tuntasPct ?? 0,
+    pert: 0, rencana: 0, jurnal: m.jurnalCount, hadir: m.hadirPct ?? 0, rata: m.avg, status: m.status as 'on' | 'warn' | 'risk',
+  })) : simMonData;
 
   // G8: Guru × Kelas matrix data
   const guruList = useMemo(() => [...new Set(monData.map((m) => m.guru))], [monData]);
@@ -1017,11 +1019,13 @@ function RekapAuditKs({ kelasMapel, grades, attendances, activities, rpp }: {
   }, []);
 
   // Use real rekap data if available, otherwise fall back to SIMULASI
+  // Hooks must be called unconditionally
+  const simRekapData = useMemo(() => genSimMonitor(kelasMapel), [kelasMapel]);
   const monData = realRekap.length > 0 ? realRekap.map((r) => ({
     guru: r.teacher, mapel: r.subject, kelas: r.className,
     cp: r.tuntasPct ?? 0, pert: 0, rencana: 0, jurnal: 0, hadir: 0,
     rata: r.average, status: (r.tuntasPct ?? 0) >= 75 ? 'on' as const : (r.tuntasPct ?? 0) >= 60 ? 'warn' as const : 'risk' as const,
-  })) : useMemo(() => genSimMonitor(kelasMapel), [kelasMapel]);
+  })) : simRekapData;
   // G11: Sort by guru → kelas → mapel
   const sortedMon = useMemo(() => [...monData].sort((a, b) =>
     a.guru.localeCompare(b.guru) || a.kelas.localeCompare(b.kelas) || a.mapel.localeCompare(b.mapel)
