@@ -350,6 +350,70 @@ export class AnalyticsService {
       // Sub-metrik ketepatan input nilai/absen = Fase 2 (butuh modul KBM 2M).
     };
   }
+
+  // ── T3-02 B7: Rekap audit per guru×kelas×mapel ────────────────────────────
+
+  /** B7: Aggregate grades by teacher × class × subject for KS audit recap. */
+  async rekapAudit(query: AnalyticsQuery) {
+    const period = await this.resolvePeriod(query);
+    const where = {
+      academicYear: period.academicYear,
+      semester: period.semester,
+      ...(query.classId ? { assignment: { classId: query.classId } } : {}),
+    };
+
+    // Fetch all grades with assignment details (includes teacher + class + subject)
+    const grades = await this.prisma.grade.findMany({
+      where,
+      select: {
+        score: true, type: true,
+        assignment: {
+          select: {
+            subject: true,
+            teacher: {
+              select: { user: { select: { fullName: true } } },
+            },
+            class: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    // Group by teacher|class|subject
+    const key = (g: typeof grades[0]) =>
+      `${g.assignment.teacher?.user?.fullName ?? '-'}|${g.assignment.class?.name ?? '-'}|${g.assignment.subject}`;
+
+    const grouped = new Map<string, { scores: number[]; teacher: string; className: string; subject: string }>();
+    for (const g of grades) {
+      const k = key(g);
+      const entry = grouped.get(k) ?? {
+        scores: [] as number[],
+        teacher: g.assignment.teacher?.user?.fullName ?? '-',
+        className: g.assignment.class?.name ?? '-',
+        subject: g.assignment.subject,
+      };
+      entry.scores.push(Number(g.score));
+      grouped.set(k, entry);
+    }
+
+    const result = [...grouped.values()].map((e) => {
+      const avg = e.scores.length > 0
+        ? Math.round(e.scores.reduce((a, b) => a + b, 0) / e.scores.length * 100) / 100
+        : 0;
+      const tuntas = e.scores.filter((s) => s >= KKM_DEFAULT).length;
+      return {
+        teacher: e.teacher,
+        className: e.className,
+        subject: e.subject,
+        count: e.scores.length,
+        average: avg,
+        tuntasCount: tuntas,
+        tuntasPct: e.scores.length > 0 ? Math.round((tuntas / e.scores.length) * 100) : null,
+      };
+    }).sort((a, b) => a.teacher.localeCompare(b.teacher) || a.subject.localeCompare(b.subject));
+
+    return { data: result, kkm: KKM_DEFAULT };
+  }
 }
 
 function pushTo(map: Map<string, number[]>, key: string, value: number): void {

@@ -313,6 +313,124 @@ export class StudentDashboardService {
     );
     return { data };
   }
+
+  // ── T3-02 B4: Teacher-by-student (guru mapel + kontak untuk ortu) ───────────
+
+  /** B4: List guru mapel for student's class, with contact info for parents. */
+  async getTeachers(user: AuthUser) {
+    const students = await this.resolveStudents(user);
+    if (students.length === 0) return { data: [] };
+
+    // All students share the same class typically; use first student's classId
+    const classId = students[0]!.classId;
+    if (!classId) return { data: [] };
+
+    const assignments = await this.prisma.teachingAssignment.findMany({
+      where: { classId },
+      select: {
+        subject: true,
+        hoursPerWeek: true,
+        teacher: {
+          select: {
+            user: {
+              select: { fullName: true, phone: true, email: true },
+            },
+          },
+        },
+      },
+      orderBy: [{ subject: 'asc' }],
+    });
+
+    return {
+      data: assignments.map((a) => ({
+        subject: a.subject,
+        teacherName: a.teacher?.user?.fullName ?? '-',
+        phone: a.teacher?.user?.phone ?? null,
+        email: a.teacher?.user?.email ?? null,
+        hoursPerWeek: a.hoursPerWeek,
+      })),
+    };
+  }
+
+  // ── T3-02 B3: Learning timeline for parents/siswa ──────────────────────
+
+  /** B3: Build learning timeline from grades + attendance + LMS progress events. */
+  async getTimeline(user: AuthUser) {
+    const students = await this.resolveStudents(user);
+    if (students.length === 0) return { data: [] };
+    const s = students[0]!;
+
+    // Fetch recent grades, attendance anomalies, and LMS completions
+    const [grades, attendance, lmsProgress] = await Promise.all([
+      this.prisma.grade.findMany({
+        where: { studentId: s.id },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: {
+          id: true, score: true, type: true, createdAt: true,
+          assignment: { select: { subject: true } },
+        },
+      }),
+      this.prisma.attendance.findMany({
+        where: { studentId: s.id, status: { in: ['alpha', 'izin', 'sakit'] } },
+        orderBy: { date: 'desc' },
+        take: 10,
+        select: { id: true, date: true, status: true, notes: true,
+          class: { select: { name: true } } },
+      }),
+      this.prisma.lmsModuleProgress.findMany({
+        where: { studentId: s.id, status: 'completed' },
+        orderBy: { completedAt: 'desc' },
+        take: 10,
+        select: {
+          id: true, completedAt: true, progress: true,
+          module: { select: { title: true, subject: true } },
+        },
+      }),
+    ]);
+
+    type TimelineEvent = {
+      date: string; type: 'grade' | 'attendance' | 'module';
+      title: string; description: string; subject?: string;
+    };
+
+    const events: TimelineEvent[] = [];
+
+    for (const g of grades) {
+      events.push({
+        date: g.createdAt.toISOString(),
+        type: 'grade',
+        title: `Nilai ${g.type.toUpperCase()} masuk`,
+        description: `${g.assignment.subject}: skor ${Number(g.score)}`,
+        subject: g.assignment.subject,
+      });
+    }
+
+    for (const a of attendance) {
+      const statusLabel = a.status === 'alpha' ? 'Alpha' : a.status === 'izin' ? 'Izin' : 'Sakit';
+      events.push({
+        date: a.date.toISOString(),
+        type: 'attendance',
+        title: `Kehadiran: ${statusLabel}`,
+        description: a.notes ?? `${a.class?.name ?? 'Kelas'} — ${statusLabel}`,
+      });
+    }
+
+    for (const m of lmsProgress) {
+      events.push({
+        date: (m.completedAt ?? new Date()).toISOString(),
+        type: 'module',
+        title: `Modul selesai`,
+        description: `${m.module.subject}: ${m.module.title}`,
+        subject: m.module.subject,
+      });
+    }
+
+    // Sort by date descending
+    events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return { data: events.slice(0, 30) };
+  }
 }
 
 /** Helper: compute running average for a component (last value wins per type, then average within type). */

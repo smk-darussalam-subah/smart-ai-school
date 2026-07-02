@@ -46,4 +46,20 @@ export class StudentDashboardController {
   getLeaderboard(@CurrentUser() user: AuthUser) {
     return this.service.getLeaderboard(user);
   }
+
+  /** T3-02 B4: Guru mapel + kontak untuk SISWA atau ORANG_TUA. */
+  @Roles('SISWA', 'ORANG_TUA')
+  @RequirePermission('academic.grade.read')
+  @Get('teachers')
+  getTeachers(@CurrentUser() user: AuthUser) {
+    return this.service.getTeachers(user);
+  }
+
+  /** T3-02 B3: Timeline pembelajaran untuk SISWA atau ORANG_TUA. */
+  @Roles('SISWA', 'ORANG_TUA')
+  @RequirePermission('academic.grade.read')
+  @Get('timeline')
+  getTimeline(@CurrentUser() user: AuthUser) {
+    return this.service.getTimeline(user);
+  }
 }

@@ -64,6 +64,13 @@ export class AnalyticsController {
     return this.service.teacherCompliance(this.parse(rawQuery));
   }
 
+  /** T3-02 B7: Rekap audit per guru×kelas×mapel untuk KS/Wakakur. */
+  @RequirePermission('academic.grade.read')
+  @Get('rekap-audit')
+  rekapAudit(@Query() rawQuery: unknown) {
+    return this.service.rekapAudit(this.parse(rawQuery));
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // W1-3 + W1-4: Student-level analytics (per-student, with ownership).
   // Method-level @Roles overrides class-level — SISWA/ORANG_TUA/GURU/SA/KS/TU.
