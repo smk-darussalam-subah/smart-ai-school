@@ -25,12 +25,12 @@
 | T2-05 | apiFetch 401 → redirect login | 2 | ✅ DONE | feat/audit2-t2-05-apifetch-401 | — | 2026-07-01 |
 | T3-01 | Konsolidasi naOf (hapus naSimple) | 3 | ✅ DONE | feat/audit2-t3-01-naof-consolidation | — | 2026-07-01 |
 | T3-02 | Backend Skenario B (quest/timeline/dll) | 3 | 🔲 TODO | — | — | — |
-| T3-03 | Push subscription UI | 3 | 🔲 TODO | — | — | — |
+| T3-03 | Push subscription UI | 3 | ✅ DONE | feat/audit2-t3-03-push-ui | — | 2026-07-02 |
 | T3-04 | VAPID runtime verify | 3 | 🔲 TODO | — | — | — |
 | T3-05 | Siswa celebration label | 3 | ✅ DONE | feat/audit2-t2-04-sim-labels | #270 | 2026-07-01 |
 | T3-06 | Orphan endpoint minor | 3 | 🔲 TODO | — | — | — |
 
-**Ringkasan:** 13/17 selesai (76.5%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 5/5 (100% — SIAP DEMO VIP). TIER 3: 2/6 (T3-01, T3-05 done).
+**Ringkasan:** 14/17 selesai (82.4%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 5/5 (100% — SIAP DEMO VIP). TIER 3: 3/6 (T3-01, T3-03, T3-05 done).
 
 **Merged to production:** PR #270 (staging) + PR #271 (main) — 2026-07-01.
 
@@ -205,10 +205,22 @@ Final grep-sweep menemukan 3 komponen LAIN dengan pola SIM-fallback yang sama (t
 
 **Remaining Tier 3 tasks (priority order):**
 1. ~~**T3-01**~~ ✅ DONE
-2. **T3-03** (Push subscription UI) — GOOD NEXT: POST /push/subscribe endpoint already live but no UI. Add notification toggle in student/parent profiles. 2 hours, low risk.
+2. ~~**T3-03**~~ ✅ DONE
 3. **T3-06** (Orphan endpoint minor) — Wire LMS progress action + optional WA log admin page. 1 hour, low risk.
 4. **T3-02** (Backend Skenario B) — Multi-sprint backend work for quest/timeline/kktp-config/monitoring/scheduling.
-5. **T3-04** (VAPID runtime verify) — Blocked: needs SSH Director access for end-to-end push test in production.
+5. **T3-04** (VAPID runtime verify) — Needs SSH Director access for end-to-end push test in production. T3-03 UI is ready; T3-04 verifies the full pipeline.
+
+#### T3-03 — Push subscription UI (PWA)
+**Mulai:** 2026-07-02 | **Branch:** `feat/audit2-t3-03-push-ui` | **Selesai:** 2026-07-02 | **Durasi:** ~40 menit
+**Files changed:**
+- `lib/push.ts` (NEW) — Client-side Push API helpers: `isPushSupported()`, `ensureServiceWorker()`, `subscribeToPush()`, `unsubscribeFromPush()`, `getPushPermission()`, `subscriptionToDto()`. Reads `NEXT_PUBLIC_VAPID_PUBLIC_KEY` env var.
+- `components/shared/PushNotificationToggle.tsx` (NEW) — Reusable toggle component with 5 states: unsupported, loading, subscribed, unsubscribed, denied. Calls `onSubscribe`/`onUnsubscribe` callbacks that wire to server actions.
+- `actions.ts` — Added `subscribePush()` and `unsubscribePush()` server actions calling `POST /push/subscribe` and `POST /push/unsubscribe`.
+- `siswa/SiswaWorkspace.tsx` — Added PushNotificationToggle in account sheet between theme toggle and logout.
+- `ortu/OrtuWorkspace.tsx` — Same: PushNotificationToggle in account sheet.
+**Bukti Runtime:** `tsc --noEmit` = 0 errors · `eslint --max-warnings=0` = 0 errors · `next build` = 29/29 pages OK
+**Catatan:** Backend endpoints POST /push/subscribe and POST /push/unsubscribe already exist (P16 W3-6). Service worker (`public/sw.js`) already registered for offline caching. T3-03 adds the missing UI layer: user taps "Aktifkan Notifikasi" → browser prompts permission → PushSubscription created → sent to backend via server action. Unsubscribe also supported. States handle unsupported browsers and denied permissions gracefully. Requires `NEXT_PUBLIC_VAPID_PUBLIC_KEY` env var for full functionality (T3-04 verifies runtime).
+**Status:** ✅ DONE
 
 ---
 

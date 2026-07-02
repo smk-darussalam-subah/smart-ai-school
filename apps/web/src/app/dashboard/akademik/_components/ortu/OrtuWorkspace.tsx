@@ -19,6 +19,8 @@ import PengumumanModal from './PengumumanModal';
 import DayDetailModal from './DayDetailModal';
 import RaporModal from './RaporModal';
 import PayDetailModal from './PayDetailModal';
+import PushNotificationToggle from '@/components/shared/PushNotificationToggle';
+import { subscribePush, unsubscribePush } from '../../actions';
 import { initials } from './ortu-data';
 import type { OrtuChild, OrtuNilai, OrtuPengumuman } from './ortu-types';
 import type { AttendanceCellStatus, Pembayaran } from '@/lib/academic';
@@ -375,6 +377,9 @@ export default function OrtuWorkspace({
               </span>
               <span className="text-xs text-[var(--muted)]">Ketuk untuk ganti</span>
             </button>
+
+            {/* T3-03: Push notification toggle */}
+            <PushNotificationToggle onSubscribe={subscribePush} onUnsubscribe={unsubscribePush} />
 
             {/* Logout */}
             <button
