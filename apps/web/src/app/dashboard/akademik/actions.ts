@@ -376,3 +376,28 @@ export async function unsubscribePush(endpoint: string): Promise<boolean> {
   const r = await apiCall('/push/unsubscribe', 'POST', { endpoint });
   return r.success;
 }
+
+// ── LMS Progress + WA Log (T3-06 — Orphan endpoints) ───────────────────────
+
+/** T3-06: Update student LMS module progress via PATCH /lms/modules/:id/progress. */
+export async function updateLmsProgress(moduleId: string, progress: number): Promise<{ success: boolean; error?: string }> {
+  const r = await apiCall(`/lms/modules/${moduleId}/progress`, 'PATCH', { progress });
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true };
+}
+
+/** T3-06: Fetch WA notification logs for admin (KS/SA). */
+export async function fetchWaLogs(params?: { page?: number; limit?: number; studentId?: string }): Promise<{
+  success: boolean;
+  data?: unknown;
+  error?: string;
+}> {
+  const query = params
+    ? `?${Object.entries({ page: 1, limit: 50, ...params })
+        .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+        .join('&')}`
+    : '?page=1&limit=50';
+  const r = await apiCall(`/wa-log${query}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data };
+}
