@@ -28,9 +28,9 @@
 | T3-03 | Push subscription UI | 3 | ✅ DONE | feat/audit2-t3-03-push-ui | — | 2026-07-02 |
 | T3-04 | VAPID runtime verify | 3 | 🔲 TODO | — | — | — |
 | T3-05 | Siswa celebration label | 3 | ✅ DONE | feat/audit2-t2-04-sim-labels | #270 | 2026-07-01 |
-| T3-06 | Orphan endpoint minor | 3 | 🔲 TODO | — | — | — |
+| T3-06 | Orphan endpoint minor | 3 | ✅ DONE | feat/audit2-t3-03-fix-t3-06-lms-wa | — | 2026-07-02 |
 
-**Ringkasan:** 14/17 selesai (82.4%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 5/5 (100% — SIAP DEMO VIP). TIER 3: 3/6 (T3-01, T3-03, T3-05 done).
+**Ringkasan:** 15/17 selesai (88.2%). **TIER 1: 6/6 (100% — BETA BLOCKER TERBUKA).** TIER 2: 5/5 (100% — SIAP DEMO VIP). TIER 3: 4/6 (T3-01, T3-03, T3-05, T3-06 done).
 
 **Merged to production:** PR #270 (staging) + PR #271 (main) — 2026-07-01.
 

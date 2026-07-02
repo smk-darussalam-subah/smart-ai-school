@@ -5,6 +5,7 @@
 
 export interface SiswaModul {
   id: number;
+  uuid?: string; // T3-06: real module UUID for PATCH /lms/modules/:id/progress
   tp: string;
   judul: string;
   alokasi: string;

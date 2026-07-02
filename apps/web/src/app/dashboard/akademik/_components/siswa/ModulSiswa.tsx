@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import { BookOpen, CheckCircle, Lock, Award } from 'lucide-react';
+import { useState, useTransition } from 'react';
+import { BookOpen, CheckCircle, Lock, Award, Loader2 } from 'lucide-react';
 import { mpColor, mpIcon } from './siswa-data';
 import type { SiswaScreen, ModalState } from './SiswaWorkspace';
 import type { SiswaModul, SiswaBadge, BadgeCelebrationData } from './siswa-types';
+import { updateLmsProgress } from '../../actions';
 
 interface Props {
   modules: SiswaModul[];
@@ -16,8 +17,9 @@ interface Props {
   setActiveModulId: (id: number | null) => void;
 }
 
-export default function ModulSiswa({ modules, badges: _badges, showToast: _showToast, go, setModal: _setModal, setBadgeCelebration: _setBadgeCelebration, setActiveModulId }: Props) {
+export default function ModulSiswa({ modules, badges: _badges, showToast, go, setModal: _setModal, setBadgeCelebration: _setBadgeCelebration, setActiveModulId }: Props) {
   const [filter, setFilter] = useState<'all' | 'aktif' | 'selesai' | 'terkunci'>('all');
+  const [pendingModuleUuid, startTransition] = useTransition();
 
   const filtered = modules.filter((m: SiswaModul) => {
     if (filter === 'all') return true;
@@ -116,6 +118,25 @@ export default function ModulSiswa({ modules, badges: _badges, showToast: _showT
                     </div>
                     <span className="text-[11px] font-extrabold text-emerald-500">{mod.prog}%</span>
                   </div>
+                )}
+
+                {/* T3-06: Tandai Selesai button — calls PATCH /lms/modules/:id/progress */}
+                {!isLocked && mod.status === 'Aktif' && mod.uuid && mod.prog < 100 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      startTransition(async () => {
+                        const res = await updateLmsProgress(mod.uuid!, 100);
+                        if (res.success) showToast('Modul ditandai selesai!');
+                        else showToast(res.error ?? 'Gagal memperbarui progres');
+                      });
+                    }}
+                    disabled={pendingModuleUuid}
+                    className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold text-emerald-600 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
+                  >
+                    {pendingModuleUuid ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+                    Tandai Selesai
+                  </button>
                 )}
 
                 {mod.badge && (

@@ -116,6 +116,7 @@ export interface LmsModuleItem {
   semester: number;
   class: { id: string; name: string } | null;
   _count?: { progress: number };
+  myProgress?: { progress: number; status: string; startedAt: string | null; completedAt: string | null } | null; // T3-06: from /lms/modules/my-learning
 }
 
 export interface GradeRow {

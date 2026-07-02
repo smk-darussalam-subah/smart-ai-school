@@ -25,14 +25,16 @@ interface PushNotificationToggleProps {
   onUnsubscribe: (endpoint: string) => Promise<boolean>;
 }
 
-type SubState = 'unsupported' | 'loading' | 'subscribed' | 'unsubscribed' | 'denied';
+type SubState = 'checking' | 'unsupported' | 'loading' | 'subscribed' | 'unsubscribed' | 'denied';
 
 export default function PushNotificationToggle({ onSubscribe, onUnsubscribe }: PushNotificationToggleProps) {
-  const [state, setState] = useState<SubState>('loading');
-  const supported = isPushSupported();
+  // Start with 'checking' — don't call isPushSupported() during render
+  // to avoid SSR hydration mismatch (window undefined on server).
+  const [state, setState] = useState<SubState>('checking');
 
   useEffect(() => {
-    if (!supported) {
+    // Only run on client after mount
+    if (!isPushSupported()) {
       setState('unsupported');
       return;
     }
@@ -51,7 +53,7 @@ export default function PushNotificationToggle({ onSubscribe, onUnsubscribe }: P
         setState(sub ? 'subscribed' : 'unsubscribed');
       });
     });
-  }, [supported]);
+  }, []);
 
   const handleToggle = async () => {
     if (state === 'subscribed') {
@@ -69,7 +71,6 @@ export default function PushNotificationToggle({ onSubscribe, onUnsubscribe }: P
       setState('loading');
       const sub = await subscribeToPush();
       if (!sub) {
-        // User denied or error
         const perm = getPushPermission();
         setState(perm === 'denied' ? 'denied' : 'unsubscribed');
         return;
@@ -80,21 +81,34 @@ export default function PushNotificationToggle({ onSubscribe, onUnsubscribe }: P
     }
   };
 
+  // During SSR / before client mount: render placeholder skeleton
+  // This prevents hydration mismatch (server renders skeleton, client replaces)
+  if (state === 'checking') {
+    return (
+      <div className="mb-2 flex w-full items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 opacity-50">
+        <span className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin text-[var(--muted)]" />
+          <span className="text-sm font-medium text-[var(--muted)]">Notifikasi</span>
+        </span>
+      </div>
+    );
+  }
+
   if (state === 'unsupported') {
     return (
-      <div className="flex w-full items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm font-medium text-[var(--muted)] opacity-60">
+      <div className="mb-2 flex w-full items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm font-medium text-[var(--muted)] opacity-60">
         <span className="flex items-center gap-2">
           <BellOff className="h-4 w-4" />
           Notifikasi Push
         </span>
-        <span className="text-xs">Browser tidak mendukung</span>
+        <span className="text-xs">Belum dikonfigurasi</span>
       </div>
     );
   }
 
   if (state === 'denied') {
     return (
-      <div className="flex w-full items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm font-medium text-[var(--muted)]">
+      <div className="mb-2 flex w-full items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm font-medium text-[var(--muted)]">
         <span className="flex items-center gap-2">
           <BellOff className="h-4 w-4" />
           Notifikasi Diblokir
