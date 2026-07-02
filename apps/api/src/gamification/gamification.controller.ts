@@ -57,4 +57,18 @@ export class GamificationController {
   ) {
     return this.service.awardXp(dto as Parameters<typeof this.service.awardXp>[0], user);
   }
+
+  /** T3-02 B1: Daily Quest untuk siswa. */
+  @Roles('SISWA')
+  @Get('daily-quests')
+  getDailyQuests(@CurrentUser() user: AuthUser) {
+    return this.service.getDailyQuests(user);
+  }
+
+  /** T3-02 B2: Kalender akademik personal untuk siswa. */
+  @Roles('SISWA', 'ORANG_TUA')
+  @Get('personal-calendar')
+  getPersonalCalendar(@CurrentUser() user: AuthUser) {
+    return this.service.getPersonalCalendar(user);
+  }
 }
