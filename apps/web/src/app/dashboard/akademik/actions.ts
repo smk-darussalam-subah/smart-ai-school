@@ -401,3 +401,26 @@ export async function fetchWaLogs(params?: { page?: number; limit?: number; stud
   if (!r.success) return { success: false, error: r.error };
   return { success: true, data: r.data };
 }
+
+// ── KKTP Config (T3-02 / B5 — per-subject persistence) ──────────────────────
+
+/** T3-02: Fetch KKTP configs from backend. */
+export async function fetchKktpConfigs(academicYear?: string, semester?: number): Promise<{
+  success: boolean;
+  data?: Array<{ id: string; subject: string; kktp: number; academicYear: string; semester: number }>;
+  error?: string;
+}> {
+  const params = new URLSearchParams();
+  if (academicYear) params.set('academicYear', academicYear);
+  if (semester) params.set('semester', String(semester));
+  const r = await apiCall(`/kktp-config${params.toString() ? '?' + params.toString() : ''}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as Array<{ id: string; subject: string; kktp: number; academicYear: string; semester: number }> };
+}
+
+/** T3-02: Save (upsert) a KKTP config. */
+export async function saveKktpConfig(data: { subject: string; kktp: number; academicYear: string; semester: number }): Promise<{ success: boolean; error?: string }> {
+  const r = await apiCall('/kktp-config', 'POST', data);
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true };
+}
