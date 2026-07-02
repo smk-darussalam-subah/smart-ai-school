@@ -418,40 +418,42 @@ export class AnalyticsService {
   // ── T3-02 B6: Monitoring KBM (guru × kelas × mapel real-time status) ──────
 
   /** B6: Build monitoring matrix from existing grades + attendance + jurnal.
-   *  No KBM session module needed — aggregates from current data. */
+   *  No KBM session module needed — aggregates from current data.
+   *  Resilient: returns empty array if any sub-query fails. */
   async monitoringKbm(query: AnalyticsQuery) {
     const period = await this.resolvePeriod(query);
 
-    // Get all teaching assignments for the period
-    const assignments = await this.prisma.teachingAssignment.findMany({
-      where: { academicYear: period.academicYear },
-      select: {
-        id: true, subject: true, hoursPerWeek: true,
-        teacher: { select: { user: { select: { fullName: true } } } },
-        class: { select: { id: true, name: true } },
-        grades: {
-          where: { academicYear: period.academicYear, semester: period.semester },
-          select: { score: true, type: true },
+    try {
+      // Get all teaching assignments for the period
+      const assignments = await this.prisma.teachingAssignment.findMany({
+        where: { academicYear: period.academicYear },
+        select: {
+          id: true, subject: true, hoursPerWeek: true,
+          teacher: { select: { user: { select: { fullName: true } } } },
+          class: { select: { id: true, name: true } },
+          grades: {
+            where: { academicYear: period.academicYear, semester: period.semester },
+            select: { score: true, type: true },
+          },
+          schedules: { select: { dayOfWeek: true, jpStart: true, jpEnd: true } },
         },
-        schedules: { select: { dayOfWeek: true, jpStart: true, jpEnd: true } },
-      },
-    });
+      });
 
-    // Get class activities (jurnal) per assignment
-    const activities = await this.prisma.classActivity.findMany({
-      where: { date: { gte: new Date(period.academicYear.slice(0, 4) + '-' + (period.semester === 1 ? '07' : '01') + '-01') } },
-      select: { teacherId: true, classId: true, date: true, title: true, category: true },
-      orderBy: { date: 'desc' },
-      take: 200,
-    });
+      // Get today's attendance per class (resilient — may be empty)
+      const todayISO = new Date().toISOString().slice(0, 10);
+      const todayAtt = await this.prisma.attendance.groupBy({
+        by: ['classId', 'status'],
+        where: { date: { gte: new Date(todayISO), lt: new Date(todayISO + 'T23:59:59Z') } },
+        _count: { _all: true },
+      }).catch(() => []);
 
-    // Get today's attendance per class
-    const todayISO = new Date().toISOString().slice(0, 10);
-    const todayAtt = await this.prisma.attendance.groupBy({
-      by: ['classId', 'status'],
-      where: { date: { gte: new Date(todayISO), lt: new Date(todayISO + 'T23:59:59Z') } },
-      _count: { _all: true },
-    });
+      // Get class activities (jurnal) — resilient
+      const activities = await this.prisma.classActivity.findMany({
+        where: { date: { gte: new Date(period.academicYear.slice(0, 4) + '-' + (period.semester === 1 ? '07' : '01') + '-01') } },
+        select: { teacherId: true, classId: true, date: true, title: true, category: true },
+        orderBy: { date: 'desc' },
+        take: 200,
+      }).catch(() => []);
 
     // Build monitoring rows
     const attByClass = new Map<string, { hadir: number; total: number }>();
@@ -500,6 +502,10 @@ export class AnalyticsService {
     rows.sort((a, b) => a.kelas.localeCompare(b.kelas) || a.mapel.localeCompare(b.mapel));
 
     return { data: rows, date: todayISO, kkm: KKM_DEFAULT };
+    } catch {
+      // Resilient: return empty if any query fails
+      return { data: [], date: new Date().toISOString().slice(0, 10), kkm: KKM_DEFAULT };
+    }
   }
 }
 
