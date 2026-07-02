@@ -71,6 +71,13 @@ export class AnalyticsController {
     return this.service.rekapAudit(this.parse(rawQuery));
   }
 
+  /** T3-02 B6: Monitoring KBM real-time untuk KS/Wakakur. */
+  @RequirePermission('academic.grade.read')
+  @Get('monitoring-kbm')
+  monitoringKbm(@Query() rawQuery: unknown) {
+    return this.service.monitoringKbm(this.parse(rawQuery));
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // W1-3 + W1-4: Student-level analytics (per-student, with ownership).
   // Method-level @Roles overrides class-level — SISWA/ORANG_TUA/GURU/SA/KS/TU.

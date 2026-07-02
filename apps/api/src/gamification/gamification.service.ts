@@ -213,4 +213,119 @@ export class GamificationService {
       return { awarded: false, newTotal: 0, level: 1 };
     }
   }
+
+  // ── T3-02 B1: Daily Quest (deterministic daily missions for siswa) ──────────
+
+  /** B1: Generate deterministic daily quests based on date + student ID.
+   *  No DB table needed — quests are derived from existing data.
+   *  3 quest types: attend class, complete module progress, check grades. */
+  async getDailyQuests(user: AuthUser) {
+    const studentId = await resolveSiswaId(this.prisma, user.keycloakId);
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10);
+
+    // Deterministic quest selection based on date hash
+    const hash = (str: string): number => {
+      let h = 0;
+      for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+      return Math.abs(h);
+    };
+    const seed = hash(`${studentId}-${dateStr}`);
+
+    const allQuests = [
+      { id: 'q1', title: 'Hadiri semua pelajaran hari ini', desc: 'Tanpa alpha', xp: 50, icon: 'calendar-check', type: 'attendance' },
+      { id: 'q2', title: 'Selesaikan 1 modul LMS', desc: 'Tandai modul sebagai selesai', xp: 30, icon: 'book', type: 'module' },
+      { id: 'q3', title: 'Cek nilai terbaru', desc: 'Lihat hasil penilaian guru', xp: 10, icon: 'star', type: 'grade' },
+      { id: 'q4', title: 'Buka 3 materi pembelajaran', desc: 'Aktif belajar hari ini', xp: 20, icon: 'book-open', type: 'module' },
+      { id: 'q5', title: 'Capai kehadiran 5 hari beruntun', desc: 'Streak bonus', xp: 100, icon: 'flame', type: 'streak' },
+      { id: 'q6', title: 'Kumpulkan 1 tugas tepat waktu', desc: 'Disiplin dengan deadline', xp: 40, icon: 'clock', type: 'assignment' },
+    ];
+
+    // Pick 3 quests deterministically
+    const quests = [allQuests[seed % allQuests.length]!, allQuests[(seed + 2) % allQuests.length]!, allQuests[(seed + 4) % allQuests.length]!];
+
+    // Check completion status from existing data
+    const [todayAtt, lmsCompleted, recentGrades] = await Promise.all([
+      this.prisma.attendance.findFirst({
+        where: { studentId, date: { gte: new Date(dateStr), lt: new Date(dateStr + 'T23:59:59Z') }, status: 'alpha' },
+        select: { id: true },
+      }),
+      this.prisma.lmsModuleProgress.findFirst({
+        where: { studentId, status: 'completed', completedAt: { gte: new Date(dateStr) } },
+        select: { id: true },
+      }),
+      this.prisma.grade.findFirst({
+        where: { studentId, createdAt: { gte: new Date(dateStr) } },
+        select: { id: true },
+      }),
+    ]);
+
+    const completion: Record<string, boolean> = {
+      attendance: !todayAtt, // no alpha = completed
+      module: !!lmsCompleted,
+      grade: !!recentGrades,
+      streak: false, // simplified — real streak check would compute consecutive days
+      assignment: false, // would check assignment submission
+    };
+
+    return {
+      date: dateStr,
+      quests: quests.map((q) => ({ ...q, completed: completion[q.type] ?? false })),
+    };
+  }
+
+  // ── T3-02 B2: Personal academic calendar (siswa/ortu) ─────────────────────
+
+  /** B2: Build personal calendar from student's schedule + school calendar events. */
+  async getPersonalCalendar(user: AuthUser) {
+    const studentId = await resolveSiswaId(this.prisma, user.keycloakId);
+    const student = await this.prisma.student.findUnique({
+      where: { id: studentId },
+      select: { classId: true, class: { select: { id: true, name: true } } },
+    });
+    if (!student?.classId) return { schedule: [], events: [] };
+
+    // Student's weekly schedule (class-based)
+    const schedule = await this.prisma.schedule.findMany({
+      where: { classId: student.classId },
+      select: {
+        id: true, dayOfWeek: true, jpStart: true, jpEnd: true, room: true,
+        teachingAssignment: {
+          select: {
+            subject: true,
+            teacher: { select: { user: { select: { fullName: true } } } },
+          },
+        },
+      },
+      orderBy: [{ dayOfWeek: 'asc' }, { jpStart: 'asc' }],
+    });
+
+    // School-wide calendar events
+    const events = await this.prisma.academicCalendar.findMany({
+      orderBy: { startDate: 'asc' },
+      take: 20,
+      select: { id: true, name: true, startDate: true, endDate: true, type: true, description: true },
+    });
+
+    return {
+      className: student.class?.name ?? '-',
+      schedule: schedule.map((s) => ({
+        id: s.id,
+        dayOfWeek: s.dayOfWeek,
+        jpStart: s.jpStart,
+        jpEnd: s.jpEnd,
+        room: s.room,
+        subject: s.teachingAssignment?.subject ?? '-',
+        teacher: s.teachingAssignment?.teacher?.user?.fullName ?? '-',
+      })),
+      events: events.map((e) => ({
+        id: e.id,
+        name: e.name,
+        start: e.startDate.toISOString().slice(0, 10),
+        end: e.endDate.toISOString().slice(0, 10),
+        type: e.type,
+        description: e.description,
+      })),
+    };
+  }
 }
