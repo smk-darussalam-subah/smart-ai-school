@@ -25,6 +25,8 @@ import ClassDetailModal from './ClassDetailModal';
 import TaskDetailModal from './TaskDetailModal';
 import DayDetailModal from './DayDetailModal';
 import BadgeDetailModal from './BadgeDetailModal';
+import PushNotificationToggle from '@/components/shared/PushNotificationToggle';
+import { subscribePush, unsubscribePush } from '../../actions';
 import {
   SIM_DAILY_QUEST, SIM_KALENDER,
   normalizeAnnouncements,
@@ -452,6 +454,9 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
               </span>
               <span className="text-xs text-[var(--muted)]">Ketuk untuk ganti</span>
             </button>
+
+            {/* T3-03: Push notification toggle */}
+            <PushNotificationToggle onSubscribe={subscribePush} onUnsubscribe={unsubscribePush} />
 
             {/* Logout */}
             <button
