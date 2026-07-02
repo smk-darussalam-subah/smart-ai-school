@@ -424,3 +424,64 @@ export async function saveKktpConfig(data: { subject: string; kktp: number; acad
   if (!r.success) return { success: false, error: r.error };
   return { success: true };
 }
+
+// ── B1+B2+B3+B4+B6+B7 Frontend Server Actions (Skenario B wiring) ──────────
+
+/** B1: Fetch daily quests for siswa. */
+export async function fetchDailyQuests(): Promise<{ success: boolean; data?: { date: string; quests: Array<{ id: string; title: string; desc: string; xp: number; icon: string; type: string; completed: boolean }> }; error?: string }> {
+  const r = await apiCall('/gamification/daily-quests', 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { date: string; quests: Array<{ id: string; title: string; desc: string; xp: number; icon: string; type: string; completed: boolean }> } };
+}
+
+/** B2: Fetch personal calendar for siswa/ortu. */
+export async function fetchPersonalCalendar(): Promise<{ success: boolean; data?: { className: string; schedule: unknown[]; events: unknown[] }; error?: string }> {
+  const r = await apiCall('/gamification/personal-calendar', 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { className: string; schedule: unknown[]; events: unknown[] } };
+}
+
+/** B3: Fetch learning timeline for siswa/ortu. */
+export async function fetchTimeline(): Promise<{ success: boolean; data?: Array<{ date: string; type: string; title: string; description: string; subject?: string }>; error?: string }> {
+  const r = await apiCall('/student-dashboard/timeline', 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as Array<{ date: string; type: string; title: string; description: string; subject?: string }> };
+}
+
+/** B4: Fetch teachers for siswa/ortu. */
+export async function fetchTeachers(): Promise<{ success: boolean; data?: Array<{ subject: string; teacherName: string; phone: string | null; email: string | null; hoursPerWeek: number }>; error?: string }> {
+  const r = await apiCall('/student-dashboard/teachers', 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as Array<{ subject: string; teacherName: string; phone: string | null; email: string | null; hoursPerWeek: number }> };
+}
+
+/** B6: Fetch monitoring KBM for KS/SA. */
+export async function fetchMonitoringKbm(academicYear?: string, semester?: number): Promise<{ success: boolean; data?: unknown; error?: string }> {
+  const params = new URLSearchParams();
+  if (academicYear) params.set('academicYear', academicYear);
+  if (semester) params.set('semester', String(semester));
+  const r = await apiCall(`/analytics/monitoring-kbm${params.toString() ? '?' + params.toString() : ''}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data };
+}
+
+/** B7: Fetch rekap audit for KS/SA. */
+export async function fetchRekapAudit(academicYear?: string, semester?: number): Promise<{ success: boolean; data?: unknown; error?: string }> {
+  const params = new URLSearchParams();
+  if (academicYear) params.set('academicYear', academicYear);
+  if (semester) params.set('semester', String(semester));
+  const r = await apiCall(`/analytics/rekap-audit${params.toString() ? '?' + params.toString() : ''}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data };
+}
+
+/** B8: Preview auto-scheduling. */
+export async function fetchAutoSchedule(academicYear: string, semester: number, config?: { days?: number; jpPerDay?: number; maxJpGuru?: number }): Promise<{ success: boolean; data?: unknown; error?: string }> {
+  const params = new URLSearchParams({ academicYear, semester: String(semester) });
+  if (config?.days) params.set('days', String(config.days));
+  if (config?.jpPerDay) params.set('jpPerDay', String(config.jpPerDay));
+  if (config?.maxJpGuru) params.set('maxJpGuru', String(config.maxJpGuru));
+  const r = await apiCall(`/schedules/auto-generate?${params.toString()}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data };
+}
