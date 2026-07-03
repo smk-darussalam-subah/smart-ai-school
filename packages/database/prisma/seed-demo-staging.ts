@@ -256,6 +256,175 @@ async function main() {
   const sc = schedRows.length ? await prisma.schedule.createMany({ data: schedRows, skipDuplicates: true }) : { count: 0 };
   console.log(`✓ Schedule: +${sc.count} (assignment tanpa jadwal: ${toPlace.length})`);
 
+  // ── 9. LMS Modules (5 published per guru) ───────────────────────────────────
+  if ((await prisma.lmsModule.count()) > 0) {
+    console.log('• LMS Modules sudah ada → skip.');
+  } else {
+    const lmsRows = teachers.flatMap((t, ti) =>
+      [0, 1, 2, 3, 4].map((k) => {
+        const subject = SUBJECTS[(ti + k) % SUBJECTS.length]!;
+        const ay = classes[0]?.academicYear ?? academicYear;
+        return {
+          teacherId: t.id,
+          rppId: null,
+          classId: classes[(ti + k) % classes.length]?.id ?? null,
+          subject,
+          title: `Modul ${subject} - Pertemuan ${k + 1}`,
+          tp: `TP ${k + 1}: Memahami konsep ${subject}`,
+          jpAllocation: 2,
+          kktp: 75,
+          content: `## Materi ${subject}\n\nPenjelasan materi ${subject} pertemuan ${k + 1}.`,
+          orderIndex: k,
+          status: k < 3 ? 'published' as const : k === 3 ? 'draft' as const : 'archived' as const,
+          academicYear: ay,
+          semester,
+        };
+      })
+    );
+    const lms = await prisma.lmsModule.createMany({ data: lmsRows, skipDuplicates: true });
+    console.log(`✓ LMS Modules: +${lms.count} (published/draft/archived mix)`);
+  }
+
+  // ── 10. Badge Catalog + Student Badges ──────────────────────────────────────
+  if ((await prisma.badge.count()) > 0) {
+    console.log('• Badges sudah ada → skip.');
+  } else {
+    const badgeDefs = [
+      { code: 'first_module', name: 'Pelajar Pertama', description: 'Menyelesaikan modul pertama', icon: '🎓', tier: 'bronze' as const, criteria: 'complete_first_module' },
+      { code: 'perfect_score', name: 'Sempurna', description: 'Mendapat nilai 100', icon: '⭐', tier: 'gold' as const, criteria: 'score_100' },
+      { code: 'streak_5', name: 'Konsisten 5 Hari', description: 'Hadir 5 hari beruntun', icon: '🔥', tier: 'silver' as const, criteria: 'streak_5' },
+      { code: 'quiz_master', name: 'Jago Kuis', description: 'Menyelesaikan 10 kuis', icon: '🏆', tier: 'gold' as const, criteria: 'complete_10_quizzes' },
+      { code: 'helpful', name: 'Suka Membantu', description: 'Aktif di forum diskusi', icon: '🤝', tier: 'bronze' as const, criteria: 'forum_active' },
+      { code: 'fast_learner', name: 'Belajar Cepat', description: 'Selesai 3 modul dalam 1 minggu', icon: '⚡', tier: 'silver' as const, criteria: 'complete_3_modules_week' },
+      { code: 'excellence', name: 'Unggulan', description: 'Rata-rata nilai ≥90', icon: '💎', tier: 'platinum' as const, criteria: 'avg_grade_90' },
+      { code: 'attendance_pro', name: 'Rajin Hadir', description: 'Kehadiran 100% sebulan', icon: '📅', tier: 'gold' as const, criteria: 'attendance_100_month' },
+    ];
+    const bd = await prisma.badge.createMany({ data: badgeDefs, skipDuplicates: true });
+    console.log(`✓ Badge definitions: +${bd.count}`);
+
+    // Award 3 random badges per student
+    const badgeIds = (await prisma.badge.findMany({ select: { id: true } })).map((b) => b.id);
+    const allStudents = classes.flatMap((c) => c.students.map((s) => s.id));
+    const studentBadgeRows: { badgeId: string; studentId: string; awardedBy: string | null }[] = [];
+    allStudents.forEach((sid, i) => {
+      for (let k = 0; k < 3; k++) {
+        const bid = badgeIds[(i * 3 + k) % badgeIds.length]!;
+        studentBadgeRows.push({ badgeId: bid, studentId: sid, awardedBy: admin.id });
+      }
+    });
+    const sb = await prisma.studentBadge.createMany({ data: studentBadgeRows, skipDuplicates: true });
+    console.log(`✓ Student Badges: +${sb.count} (3 per siswa)`);
+  }
+
+  // ── 11. Student XP ──────────────────────────────────────────────────────────
+  if ((await prisma.studentXp.count()) > 0) {
+    console.log('• Student XP sudah ada → skip.');
+  } else {
+    const allStudents = classes.flatMap((c) => c.students.map((s) => s.id));
+    const xpRows = allStudents.map((sid, i) => ({
+      studentId: sid,
+      totalXp: 100 + (i % 20) * 100,
+      level: 1 + Math.floor((i % 20) / 5),
+      streakDays: i % 7,
+    }));
+    const xp = await prisma.studentXp.createMany({ data: xpRows, skipDuplicates: true });
+    console.log(`✓ Student XP: +${xp.count}`);
+  }
+
+  // ── 12. Announcements (5 published) ─────────────────────────────────────────
+  if ((await prisma.announcement.count()) >= 5) {
+    console.log('• Announcements sudah cukup → skip.');
+  } else {
+    const annRows = [
+      { title: 'Selamat Datang Tahun Ajaran Baru', content: 'Selamat datang siswa-siswi baru dan lama. Semoga tahun ini menjadi tahun yang produktif.', audience: 'all' as const, priority: 'normal' as const, status: 'published' as const, publishedAt: utcDate(7), publishedBy: admin.id },
+      { title: 'Jadwal Ulangan Tengah Semester', content: 'UTS akan dilaksanakan minggu ke-8. Mohon siapkan diri dengan belajar tekun.', audience: 'students' as const, priority: 'high' as const, status: 'published' as const, publishedAt: utcDate(5), publishedBy: admin.id },
+      { title: 'Pertemuan Wali Murid', content: 'Pertemuan wali murid akan diadakan pada hari Sabtu pukul 09:00 di aula.', audience: 'parents' as const, priority: 'normal' as const, status: 'published' as const, publishedAt: utcDate(3), publishedBy: admin.id },
+      { title: 'Ekstrakurikuler Pool 2026', content: 'Pendaftaran ekskul dibuka: Robotika, Futsal, English Club, Pramuka.', audience: 'students' as const, priority: 'normal' as const, status: 'published' as const, publishedAt: utcDate(2), publishedBy: admin.id },
+      { title: 'Libur Hari Raya', content: 'Libur Idul Fitri: tanggal 17-25. Kuliah dilanjutkan tanggal 26.', audience: 'all' as const, priority: 'urgent' as const, status: 'published' as const, publishedAt: utcDate(1), publishedBy: admin.id },
+    ];
+    const ann = await prisma.announcement.createMany({ data: annRows, skipDuplicates: true });
+    console.log(`✓ Announcements: +${ann.count} (5 published)`);
+  }
+
+  // ── 13. Class Activities (Jurnal) ───────────────────────────────────────────
+  if ((await prisma.classActivity.count()) > 0) {
+    console.log('• Class Activities sudah ada → skip.');
+  } else {
+    const actRows = teachers.flatMap((t, ti) =>
+      [0, 1, 2, 3, 4].map((k) => {
+        const c = classes[(ti + k) % classes.length]!;
+        const subj = SUBJECTS[(ti + k) % SUBJECTS.length]!;
+        return {
+          classId: c.id,
+          teacherId: t.id,
+          date: utcDate(k + 1),
+          title: `${subj} - Pertemuan ${k + 1}`,
+          description: `Materi: ${subj} bab ${k + 1}. Metode: ceramah + praktik. Hasil: siswa paham konsep dasar.`,
+          category: k % 3 === 0 ? 'pembelajaran' as const : k % 3 === 1 ? 'praktikum' as const : 'ulangan' as const,
+        };
+      })
+    );
+    const acts = await prisma.classActivity.createMany({ data: actRows, skipDuplicates: true });
+    console.log(`✓ Class Activities: +${acts.count} (5 per guru)`);
+  }
+
+  // ── 14. Academic Calendar Events ────────────────────────────────────────────
+  if ((await prisma.academicCalendar.count()) >= 5) {
+    console.log('• Calendar Events sudah cukup → skip.');
+  } else {
+    const ay = await prisma.academicYear.findFirst({ where: { isActive: true } });
+    if (ay) {
+      const evRows = [
+        { academicYearId: ay.id, name: 'Libur Semester Ganjil', startDate: new Date(`${academicYear.slice(0, 4)}-12-20`), endDate: new Date(`${academicYear.slice(0, 4)}-12-31`), type: 'holiday' as const, description: 'Libur akhir semester ganjil' },
+        { academicYearId: ay.id, name: 'Ujian Tengah Semester', startDate: new Date(`${academicYear.slice(0, 4)}-10-15`), endDate: new Date(`${academicYear.slice(0, 4)}-10-20`), type: 'exam' as const, description: 'UTS semester ganjil' },
+        { academicYearId: ay.id, name: 'Hari Pendidikan Nasional', startDate: new Date(`${academicYear.slice(0, 4)}-05-02`), endDate: new Date(`${academicYear.slice(0, 4)}-05-02`), type: 'event' as const, description: 'Peringatan Hardiknas' },
+        { academicYearId: ay.id, name: 'Libur Musim Panas', startDate: new Date(`${academicYear.slice(5, 9)}-06-15`), endDate: new Date(`${academicYear.slice(5, 9)}-07-15`), type: 'break' as const, description: 'Libur antar semester' },
+        { academicYearId: ay.id, name: 'Pentas Seni Sekolah', startDate: new Date(`${academicYear.slice(0, 4)}-11-25`), endDate: new Date(`${academicYear.slice(0, 4)}-11-25`), type: 'event' as const, description: 'Pentas seni tahunan' },
+      ];
+      const evs = await prisma.academicCalendar.createMany({ data: evRows, skipDuplicates: true });
+      console.log(`✓ Calendar Events: +${evs.count}`);
+    }
+  }
+
+  // ── 15. Notification Logs (WA) ──────────────────────────────────────────────
+  if ((await prisma.notificationLog.count()) >= 10) {
+    console.log('• Notification Logs sudah cukup → skip.');
+  } else {
+    const allStudents = classes.flatMap((c) => c.students);
+    const logRows: { recipient: string; channel: string; subject: string | null; body: string; status: string; sentAt: Date; refType: string }[] = [];
+    allStudents.slice(0, 15).forEach((st, i) => {
+      const phone = `0812${String(3456000 + i).slice(0, 7)}`;
+      const statuses = ['alpha', 'sakit', 'izin'] as const;
+      const status = statuses[i % 3]!;
+      logRows.push({
+        recipient: phone,
+        channel: 'whatsapp' as const,
+        subject: `Notifikasi Kehadiran`,
+        body: `Yth. Orang Tua/Wali, putra/putri Anda (${st.id}) hari ini tidak hadir dengan keterangan: ${status.toUpperCase()}. Mohon konfirmasi.`,
+        status: 'sent' as const,
+        sentAt: utcDate(i % 5),
+        refType: 'student',
+      });
+    });
+    const nls = await prisma.notificationLog.createMany({ data: logRows, skipDuplicates: true });
+    console.log(`✓ Notification Logs (WA): +${nls.count}`);
+  }
+
+  // ── 16. KKTP Configs (3-5 per mapel) ────────────────────────────────────────
+  if ((await prisma.kktpConfig.count()) > 0) {
+    console.log('• KKTP Configs sudah ada → skip.');
+  } else {
+    const kktpRows = SUBJECTS.map((subj, i) => ({
+      subject: subj,
+      kktp: subj.startsWith('Mate') ? 70 : subj.startsWith('Produktif') ? 78 : 75,
+      academicYear,
+      semester,
+      createdBy: admin.id,
+    }));
+    const kk = await prisma.kktpConfig.createMany({ data: kktpRows, skipDuplicates: true });
+    console.log(`✓ KKTP Configs: +${kk.count} (per mapel)`);
+  }
+
   console.log('🎉 Seed demo lengkap selesai.');
 }
 
