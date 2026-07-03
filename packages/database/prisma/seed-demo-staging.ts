@@ -336,11 +336,11 @@ async function main() {
     console.log('• Announcements sudah cukup → skip.');
   } else {
     const annRows = [
-      { title: 'Selamat Datang Tahun Ajaran Baru', content: 'Selamat datang siswa-siswi baru dan lama. Semoga tahun ini menjadi tahun yang produktif.', audience: 'all' as const, priority: 'normal' as const, status: 'published' as const, publishedAt: utcDate(7), publishedBy: admin.id },
-      { title: 'Jadwal Ulangan Tengah Semester', content: 'UTS akan dilaksanakan minggu ke-8. Mohon siapkan diri dengan belajar tekun.', audience: 'students' as const, priority: 'high' as const, status: 'published' as const, publishedAt: utcDate(5), publishedBy: admin.id },
-      { title: 'Pertemuan Wali Murid', content: 'Pertemuan wali murid akan diadakan pada hari Sabtu pukul 09:00 di aula.', audience: 'parents' as const, priority: 'normal' as const, status: 'published' as const, publishedAt: utcDate(3), publishedBy: admin.id },
-      { title: 'Ekstrakurikuler Pool 2026', content: 'Pendaftaran ekskul dibuka: Robotika, Futsal, English Club, Pramuka.', audience: 'students' as const, priority: 'normal' as const, status: 'published' as const, publishedAt: utcDate(2), publishedBy: admin.id },
-      { title: 'Libur Hari Raya', content: 'Libur Idul Fitri: tanggal 17-25. Kuliah dilanjutkan tanggal 26.', audience: 'all' as const, priority: 'urgent' as const, status: 'published' as const, publishedAt: utcDate(1), publishedBy: admin.id },
+      { title: 'Selamat Datang Tahun Ajaran Baru', content: 'Selamat datang siswa-siswi baru dan lama. Semoga tahun ini menjadi tahun yang produktif.', audience: JSON.stringify(['ALL']), priority: 'biasa' as const, status: 'published' as const, publishedAt: utcDate(7), publishedBy: admin.id },
+      { title: 'Jadwal Ulangan Tengah Semester', content: 'UTS akan dilaksanakan minggu ke-8. Mohon siapkan diri dengan belajar tekun.', audience: JSON.stringify(['SISWA']), priority: 'penting' as const, status: 'published' as const, publishedAt: utcDate(5), publishedBy: admin.id },
+      { title: 'Pertemuan Wali Murid', content: 'Pertemuan wali murid akan diadakan pada hari Sabtu pukul 09:00 di aula.', audience: JSON.stringify(['ORANG_TUA']), priority: 'biasa' as const, status: 'published' as const, publishedAt: utcDate(3), publishedBy: admin.id },
+      { title: 'Ekstrakurikuler Pool 2026', content: 'Pendaftaran ekskul dibuka: Robotika, Futsal, English Club, Pramuka.', audience: JSON.stringify(['SISWA']), priority: 'biasa' as const, status: 'published' as const, publishedAt: utcDate(2), publishedBy: admin.id },
+      { title: 'Libur Hari Raya', content: 'Libur Idul Fitri: tanggal 17-25. Kuliah dilanjutkan tanggal 26.', audience: JSON.stringify(['ALL']), priority: 'urgent' as const, status: 'published' as const, publishedAt: utcDate(1), publishedBy: admin.id },
     ];
     const ann = await prisma.announcement.createMany({ data: annRows, skipDuplicates: true });
     console.log(`✓ Announcements: +${ann.count} (5 published)`);
