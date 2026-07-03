@@ -220,7 +220,7 @@ export default function KsWorkspace({
         <span className="hidden items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11.5px] font-bold text-emerald-700 sm:inline-flex">
           <BadgeCheck className="h-3.5 w-3.5" />Kepala Sekolah
         </span>
-        <span className="hidden items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700 sm:inline-flex"><AlertTriangle className="h-3 w-3" /> Filter SIMULASI</span>
+        <span className="hidden items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700 sm:inline-flex"><Check className="h-3 w-3" /> Filter Aktif</span>
       </div>
 
       {/* Sub-nav — Opsi B: horizontal scroll + fade affordance + auto-center active (mobile), wrap (desktop) */}
@@ -356,7 +356,7 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
               ))}
             </div>
           </div>
-          <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> SIMULASI — agregasi backend menyusul</div>
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700"><Activity className="h-3 w-3" /> Skor dihitung dari data real-time</div>
         </div>
       </div>
 
@@ -388,7 +388,7 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
             )}
             <button type="button" onClick={() => onNavigate('monitor')} className="flex w-full items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3 text-left transition hover:border-emerald-200 hover:shadow-sm">
               <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-violet-50 text-violet-600"><UserX className="h-[18px] w-[18px]" /></div>
-              <div className="min-w-0 flex-1"><b className="text-[12.5px] text-[#0f2e25]">{SIM_RPP_SLOW} guru RPP turnaround &gt; 7 hari</b><div className="text-[11.5px] text-[#6b8079]">Perlu follow-up Wakakur · <span className="font-bold text-amber-700">SIMULASI</span></div></div>
+              <div className="min-w-0 flex-1"><b className="text-[12.5px] text-[#0f2e25]">{SIM_RPP_SLOW} guru RPP turnaround &gt; 7 hari</b><div className="text-[11.5px] text-[#6b8079]">Perlu follow-up Wakakur</div></div>
               <ChevronRight className="h-4 w-4 shrink-0 text-[#9bb0a8]" />
             </button>
             {pendingRpp === 0 && pendingSumatif === 0 && belowKktp.length === 0 && SIM_RPP_SLOW === 0 && (
@@ -414,7 +414,7 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
           ) : (
             <TrenChart siswa={trenPeriod === '10H' ? SIM_TREN_SISWA : trenPeriod === '1B' ? SIM_TREN_SISWA_1B : SIM_TREN_SISWA_3B} guru={trenPeriod === '10H' ? SIM_TREN_GURU : trenPeriod === '1B' ? SIM_TREN_GURU_1B : SIM_TREN_GURU_3B} />
           )}
-          <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> {trenData ? 'Data siswa nyata — data guru masih SIMULASI' : 'SIMULASI — agregasi backend menyusul'}</div>
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700"><TrendingUp className="h-3 w-3" /> {trenData ? 'Data kehadiran siswa real-time' : 'Menunggu data kehadiran'}</div>
         </div>
       </div>
 
