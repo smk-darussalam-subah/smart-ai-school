@@ -1,8 +1,9 @@
 // =============================================================================
-// AssessmentService — sesi asesmen + respons siswa (P12 — W2-9 + F5).
+// AssessmentService — sesi asesmen + respons siswa (P12 — W2-9 + F5 + U2).
 // GURU: CRUD sesi milik sendiri + start/complete · SISWA: submit respons
 // untuk sesi active di kelasnya · KS/SA: baca semua (audit).
 // Pola ownership/role mengikuti RppService & LmsService.
+// U2: Timer enforcement, essay rubrik, analisis hasil, CSV export/import.
 // =============================================================================
 
 import {
