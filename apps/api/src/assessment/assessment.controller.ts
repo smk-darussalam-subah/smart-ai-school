@@ -82,6 +82,15 @@ export class AssessmentController {
     return this.service.completeSession(id, user);
   }
 
+  // U2 Wave 1: SISWA memulai pengerjaan — mencatat startedAt, return shuffled questions
+  @Roles('SISWA')
+  @RequirePermission('lms.progress.manage')
+  @Post(':id/start-response')
+  @HttpCode(HttpStatus.CREATED)
+  startResponse(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.service.startResponse(id, user);
+  }
+
   @Roles('SISWA')
   @RequirePermission('lms.progress.manage')
   @Post(':id/submit')

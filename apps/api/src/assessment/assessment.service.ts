@@ -25,7 +25,9 @@ const REVIEWER_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] as const;
 
 const SESSION_SELECT = {
   id: true, moduleId: true, teacherId: true, classId: true, title: true,
-  type: true, status: true, questions: true, startedAt: true, completedAt: true,
+  type: true, status: true, questions: true,
+  durationMinutes: true, randomizeOrder: true, // U2 Wave 1
+  startedAt: true, completedAt: true,
   academicYear: true, semester: true, createdAt: true, updatedAt: true,
   module: { select: { id: true, title: true, subject: true } },
   teacher: { select: { id: true, user: { select: { fullName: true } } } },
@@ -82,6 +84,9 @@ export class AssessmentService {
         questions: dto.questions as Prisma.InputJsonValue,
         academicYear: dto.academicYear,
         semester: dto.semester,
+        // U2 Wave 1: timer + randomization
+        ...(dto.durationMinutes !== undefined ? { durationMinutes: dto.durationMinutes } : {}),
+        ...(dto.randomizeOrder !== undefined ? { randomizeOrder: dto.randomizeOrder } : {}),
       },
       select: SESSION_SELECT,
     });
@@ -179,6 +184,9 @@ export class AssessmentService {
         ...(dto.title !== undefined ? { title: dto.title } : {}),
         ...(dto.questions !== undefined ? { questions: dto.questions as Prisma.InputJsonValue } : {}),
         ...(dto.classId !== undefined ? { classId: dto.classId } : {}),
+        // U2 Wave 1: timer + randomization
+        ...(dto.durationMinutes !== undefined ? { durationMinutes: dto.durationMinutes } : {}),
+        ...(dto.randomizeOrder !== undefined ? { randomizeOrder: dto.randomizeOrder } : {}),
       },
       select: SESSION_SELECT,
     });
@@ -220,12 +228,81 @@ export class AssessmentService {
     });
   }
 
-  /** SISWA submit jawaban untuk sesi active di kelasnya. */
+  /** U2 Wave 1: SISWA memulai pengerjaan — mencatat startedAt, return shuffled questions jika randomizeOrder. */
+  async startResponse(sessionId: string, user: AuthUser) {
+    const student = await this.resolveStudent(user.keycloakId);
+    const session = await this.prisma.assessmentSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, status: true, classId: true, questions: true, durationMinutes: true, randomizeOrder: true },
+    });
+    if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
+    if (session.status !== 'active') {
+      throw new ConflictException('Sesi tidak aktif — tidak bisa dimulai');
+    }
+    const visible = session.classId === null || session.classId === student.classId;
+    if (!visible) throw new ForbiddenException('Sesi tidak tersedia untuk kelas Anda');
+
+    // Cek apakah sudah submit (submittedAt != null berarti sudah selesai)
+    const existing = await this.prisma.assessmentResponse.findUnique({
+      where: { sessionId_studentId: { sessionId, studentId: student.id } },
+      select: { id: true, startedAt: true, submittedAt: true },
+    });
+    if (existing?.submittedAt) {
+      throw new ConflictException('Anda sudah mengirimkan jawaban untuk sesi ini');
+    }
+
+    const now = new Date();
+
+    // Jika sudah ada record in-progress (startedAt != null, submittedAt null), kembalikan
+    if (existing && existing.startedAt && !existing.submittedAt) {
+      return {
+        responseId: existing.id,
+        startedAt: existing.startedAt,
+        durationMinutes: session.durationMinutes,
+        questions: session.questions, // urutan sama untuk siswa yang sudah mulai
+      };
+    }
+
+    // Buat record in-progress baru
+    const response = await this.prisma.assessmentResponse.create({
+      data: {
+        sessionId,
+        studentId: student.id,
+        startedAt: now,
+        submittedAt: null,
+      },
+      select: { id: true, startedAt: true },
+    });
+
+    // Jika randomizeOrder, acak urutan soal untuk siswa ini
+    let questionsForStudent = session.questions;
+    if (session.randomizeOrder) {
+      const arr: unknown[] = Array.isArray(session.questions) ? [...session.questions] : [];
+      // Fisher-Yates shuffle — urutan acak disimpan di answers JSON saat submit
+      // (dengan originalIndex untuk grading)
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const tmp = arr[i]!;
+        arr[i] = arr[j]!;
+        arr[j] = tmp;
+      }
+      questionsForStudent = arr as Prisma.JsonValue;
+    }
+
+    return {
+      responseId: response.id,
+      startedAt: response.startedAt,
+      durationMinutes: session.durationMinutes,
+      questions: questionsForStudent,
+    };
+  }
+
+  /** SISWA submit jawaban untuk sesi active di kelasnya. U2 Wave 1: timer enforcement. */
   async submitResponse(sessionId: string, dto: SubmitResponseDto, user: AuthUser) {
     const student = await this.resolveStudent(user.keycloakId);
     const session = await this.prisma.assessmentSession.findUnique({
       where: { id: sessionId },
-      select: { id: true, status: true, classId: true, questions: true },
+      select: { id: true, status: true, classId: true, questions: true, durationMinutes: true },
     });
     if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
     if (session.status !== 'active') {
@@ -234,13 +311,45 @@ export class AssessmentService {
     const visible = session.classId === null || session.classId === student.classId;
     if (!visible) throw new ForbiddenException('Sesi tidak tersedia untuk kelas Anda');
 
-    // Cek apakah sudah submit
+    // Cek apakah sudah submit atau punya record in-progress
     const existing = await this.prisma.assessmentResponse.findUnique({
       where: { sessionId_studentId: { sessionId, studentId: student.id } },
-      select: { id: true },
+      select: { id: true, startedAt: true, submittedAt: true },
     });
-    if (existing) {
+    if (existing?.submittedAt) {
       throw new ConflictException('Anda sudah mengirimkan jawaban untuk sesi ini');
+    }
+
+    // U2 Wave 1: Tentukan startedAt — dari dto, atau dari record in-progress, atau now
+    const startedAt = dto.startedAt
+      ? new Date(dto.startedAt)
+      : existing?.startedAt ?? new Date();
+    const now = new Date();
+
+    // U2 Wave 1: Timer enforcement — reject if elapsed > durationMinutes + 1min grace
+    if (session.durationMinutes) {
+      const elapsedMin = (now.getTime() - startedAt.getTime()) / 60_000;
+      if (elapsedMin > session.durationMinutes + 1) {
+        throw new ConflictException('Waktu pengerjaan telah habis');
+      }
+    }
+
+    const timeSpentSec = Math.round((now.getTime() - startedAt.getTime()) / 1000);
+
+    // Jika ada record in-progress, update; jika tidak, create baru
+    if (existing) {
+      return this.prisma.assessmentResponse.update({
+        where: { id: existing.id },
+        data: {
+          answers: dto.answers as Prisma.InputJsonValue,
+          submittedAt: now,
+          startedAt,
+          timeSpentSec,
+        },
+        select: {
+          id: true, sessionId: true, score: true, submittedAt: true, startedAt: true, timeSpentSec: true,
+        },
+      });
     }
 
     return this.prisma.assessmentResponse.create({
@@ -248,10 +357,12 @@ export class AssessmentService {
         sessionId,
         studentId: student.id,
         answers: dto.answers as Prisma.InputJsonValue,
-        submittedAt: new Date(),
+        startedAt,
+        timeSpentSec,
+        submittedAt: now,
       },
       select: {
-        id: true, sessionId: true, score: true, submittedAt: true,
+        id: true, sessionId: true, score: true, submittedAt: true, startedAt: true, timeSpentSec: true,
       },
     });
   }
@@ -275,6 +386,8 @@ export class AssessmentService {
         orderBy: [{ submittedAt: 'desc' }],
         select: {
           id: true, score: true, submittedAt: true,
+          startedAt: true, timeSpentSec: true, // U2 Wave 1
+          answers: true, // U2 Wave 3: needed for item analysis
           student: { select: { nis: true, user: { select: { fullName: true } } } },
         },
       }),
@@ -298,6 +411,8 @@ export class AssessmentService {
         nis: r.student.nis,
         score: r.score,
         submittedAt: r.submittedAt,
+        startedAt: r.startedAt, // U2 Wave 1
+        timeSpentSec: r.timeSpentSec, // U2 Wave 1
       })),
     };
   }

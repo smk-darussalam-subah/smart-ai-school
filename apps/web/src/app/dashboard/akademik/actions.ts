@@ -305,6 +305,15 @@ export async function fetchLmsProgress(id: string) {
 
 // ── Question Bank (P20 — W3-2) ─────────────────────────────────────────────
 
+// U2 Wave 2: Essay rubric criteria type
+export interface EssayRubricCriteria {
+  id: string;          // "c1", "c2", etc.
+  name: string;        // "Pemahaman konsep"
+  weight: number;      // 0.3 (30%)
+  maxScore: number;    // 100
+  description: string; // "Siswa menunjukkan pemahaman..."
+}
+
 export interface QuestionData {
   subject: string;
   type: 'multiple_choice' | 'essay' | 'true_false';
@@ -313,6 +322,7 @@ export interface QuestionData {
   answer?: string;
   difficulty: 'easy' | 'medium' | 'hard';
   tags?: string[];
+  rubric?: EssayRubricCriteria[]; // U2 Wave 2
 }
 
 /** Fetch questions for a subject (or all if no subject). */
@@ -360,6 +370,48 @@ export async function aiGenerateMaterial(data: { rppBody: string; subject: strin
 /** Generate ATP from CP + TP via AI. */
 export async function aiGenerateAtp(data: { cp: string; tp: string[]; subject: string }) {
   const r = await apiCall('/ai/generate-atp', 'POST', data);
+  return r;
+}
+
+// ── Assessment Sessions (U2 — comprehensive assessment) ────────────────────
+
+/** U2 Wave 1: SISWA memulai pengerjaan — mencatat startedAt, return shuffled questions. */
+export async function startAssessmentResponse(sessionId: string) {
+  const r = await apiCall(`/assessment/sessions/${sessionId}/start-response`, 'POST');
+  return r;
+}
+
+/** U2 Wave 1: SISWA submit jawaban dengan timer enforcement. */
+export async function submitAssessmentResponse(sessionId: string, answers: unknown, startedAt?: string) {
+  const r = await apiCall(`/assessment/sessions/${sessionId}/submit`, 'POST', { answers, startedAt });
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+/** U2 Wave 2: GURU menilai essay dengan rubrik (per-criteria scores). */
+export async function gradeEssayResponse(sessionId: string, responseId: string, data: { questionId: string; criteriaScores: Record<string, number> }) {
+  const r = await apiCall(`/assessment/sessions/${sessionId}/responses/${responseId}/grade-essay`, 'PATCH', data);
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+/** U2 Wave 3: Fetch session analysis (item analysis, score distribution, ketuntasan). */
+export async function fetchSessionAnalysis(sessionId: string) {
+  const r = await apiCall(`/assessment/sessions/${sessionId}/analysis`, 'GET');
+  return r;
+}
+
+/** U2 Wave 4: Export questions as CSV. */
+export async function exportQuestionsCsv(subject?: string) {
+  const path = subject ? `/questions/export?subject=${encodeURIComponent(subject)}` : '/questions/export';
+  const r = await apiCall(path, 'GET');
+  return r;
+}
+
+/** U2 Wave 4: Import questions from CSV rows. */
+export async function importQuestionsCsv(subject: string, rows: Array<{ type: string; body: string; options?: string; answer?: string; difficulty: string; tags?: string }>) {
+  const r = await apiCall('/questions/import', 'POST', { subject, rows });
+  revalidatePath('/dashboard/akademik');
   return r;
 }
 
