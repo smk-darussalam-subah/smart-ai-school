@@ -10,6 +10,8 @@ export const CreateQuestionSchema = z.object({
   answer: z.string().trim().max(5000).optional(),
   difficulty: z.enum(['easy', 'medium', 'hard']).default('medium'),
   tags: z.array(z.string().trim().min(1).max(50)).default([]),
+  // U2 Wave 2: essay rubrik — Array<{ id, name, weight, maxScore, description }>
+  rubric: z.any().optional(),
 });
 export type CreateQuestionDto = z.infer<typeof CreateQuestionSchema>;
 
@@ -21,6 +23,8 @@ export const UpdateQuestionSchema = z.object({
   answer: z.string().trim().max(5000).optional(),
   difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
   tags: z.array(z.string().trim().min(1).max(50)).optional(),
+  // U2 Wave 2: essay rubrik
+  rubric: z.any().optional(),
 });
 export type UpdateQuestionDto = z.infer<typeof UpdateQuestionSchema>;
 
@@ -45,3 +49,17 @@ export const ListQuestionSetSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 export type ListQuestionSetDto = z.infer<typeof ListQuestionSetSchema>;
+
+// U2 Wave 4: CSV Import schema
+export const ImportQuestionsSchema = z.object({
+  subject: z.string().trim().min(1).max(100),
+  rows: z.array(z.object({
+    type: z.enum(['multiple_choice', 'essay', 'true_false', 'matching']),
+    body: z.string().trim().min(3).max(5000),
+    options: z.string().optional(), // JSON-encoded string
+    answer: z.string().trim().max(5000).optional(),
+    difficulty: z.enum(['easy', 'medium', 'hard']),
+    tags: z.string().optional(), // JSON-encoded or comma-separated
+  })).min(1).max(500),
+});
+export type ImportQuestionsDto = z.infer<typeof ImportQuestionsSchema>;

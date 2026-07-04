@@ -83,7 +83,7 @@ export default function AkademikWorkspace({
   const [absen, setAbsen] = useState<{ classId: string; className: string } | null>(null);
   const [jurnal, setJurnal] = useState<{ classId: string; className: string; subject: string; startLabel: string; jpStart: number } | null>(null);
   const [inputNilai, setInputNilai] = useState(false);
-  const [penilaian, setPenilaian] = useState<{ session: TodayClass; mode: 'preview' | 'monitor'; tab: 'diag' | 'form' | 'fb' } | null>(null);
+  const [penilaian, setPenilaian] = useState<{ session: TodayClass; mode: 'preview' | 'monitor' | 'analysis'; tab: 'diag' | 'form' | 'fb' } | null>(null);
   const [sessFlow, setSessFlow] = useState<TodayClass | null>(null);
   // Step "Buka Modul Ajar" dari session flow: buka ModulAjarForm DI ATAS modal sesi.
   // RPP match dicari berdasarkan subject + class sesi; bila tak ada → create dgn subject pre-select.
