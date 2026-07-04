@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Trophy, Award, Target, History } from 'lucide-react';
 import type { ModalState } from './OrtuWorkspace';
-import { SIM_TIMELINE } from './ortu-data';
+// U6: SIM_TIMELINE import removed — replaced with honest empty state
 import type { OrtuBadge } from './ortu-types';
 import { fetchTimeline } from '../../actions';
 
@@ -123,27 +123,33 @@ export default function CapaianOrtu({ showToast, badges }: CapaianOrtuProps) {
             <History className="h-[15px] w-[15px] text-[var(--pri)]" />
             Timeline Pembelajaran
           </div>
-          {realTimeline.length === 0 && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">Contoh</span>}
         </div>
-        <div className="relative pl-[18px]">
-          {/* Vertical line */}
-          <div
-            className="absolute left-[5px] top-1 bottom-1 w-0.5"
-            style={{ background: 'var(--border2)' }}
-          />
-          {(realTimeline.length > 0 ? realTimeline : SIM_TIMELINE.map(t => ({ date: t.date, type: 'module', title: t.title, description: t.desc }))).slice(0, 8).map((t, i) => (
-            <div key={i} className="relative pb-3 last:pb-0">
-              {/* Dot */}
-              <div
-                className="absolute left-[-16px] top-1 h-2.5 w-2.5 rounded-full border-2"
-                style={{ background: 'var(--pri)', borderColor: 'var(--bg)' }}
-              />
-              <b className="block text-[12px]">{t.title}</b>
-              <small className="text-[10px] font-semibold text-[var(--muted)]">{t.date}</small>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--muted)]">{t.description}</p>
-            </div>
-          ))}
-        </div>
+        {/* U6: SIM_TIMELINE replaced with honest empty state */}
+        {realTimeline.length > 0 ? (
+          <div className="relative pl-[18px]">
+            {/* Vertical line */}
+            <div
+              className="absolute left-[5px] top-1 bottom-1 w-0.5"
+              style={{ background: 'var(--border2)' }}
+            />
+            {realTimeline.slice(0, 8).map((t, i) => (
+              <div key={i} className="relative pb-3 last:pb-0">
+                {/* Dot */}
+                <div
+                  className="absolute left-[-16px] top-1 h-2.5 w-2.5 rounded-full border-2"
+                  style={{ background: 'var(--pri)', borderColor: 'var(--bg)' }}
+                />
+                <b className="block text-[12px]">{t.title}</b>
+                <small className="text-[10px] font-semibold text-[var(--muted)]">{t.date}</small>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--muted)]">{t.description}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-5 text-center text-[12px] font-semibold text-[var(--dim)]">
+            Timeline pembelajaran akan tersedia menyusul
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,8 +1,9 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import {
   CalendarCheck, CalendarClock, Wallet, TrendingUp, Megaphone,
-  MessageCircle, ChevronRight, TrendingDown,
+  MessageCircle, ChevronRight, TrendingDown, UserCircle, Phone, Mail,
 } from 'lucide-react';
 import { KKTP_DEFAULT, fmtRupiahExact, daysUntil, fmtDateShort } from '@/lib/academic';
 import { scheduleDayOfWeek, wibNow } from '@/lib/bell-times';
@@ -17,6 +18,7 @@ import {
   mapSppToPembayaran, mapWaLog, mapTodaySchedule, computeAttStats,
   type SppApiItem, type WaLogApiItem,
 } from './ortu-mappers';
+import { fetchTeachers } from '../../actions';
 
 interface BerandaOrtuProps {
   showToast: (msg: string) => void;
@@ -50,6 +52,20 @@ const RING_CIRC = 2 * Math.PI * RING_R;
 const EMPTY_CHILD: OrtuChild = { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
 
 export default function BerandaOrtu({ showToast: _showToast, go, setModal, grades, announcements, children, activeChildIndex, schedule, spp, waLog, attendance }: BerandaOrtuProps) {
+  // U4: Fetch wali kelas / teachers for contact info
+  const [waliKelas, setWaliKelas] = useState<{ name: string; subject: string; phone: string | null; email: string | null } | null>(null);
+  useEffect(() => {
+    fetchTeachers().then((res) => {
+      if (res.success && res.data && res.data.length > 0) {
+        // U4 simplified: show first teacher (wali kelas is typically first in list)
+        const t = res.data[0];
+        if (t) {
+          setWaliKelas({ name: t.teacherName, subject: t.subject, phone: t.phone, email: t.email });
+        }
+      }
+    });
+  }, []);
+
   // T1-02: sumber data 100% real. Tidak ada lagi fallback ke SIM_*.
   const child = children[activeChildIndex] ?? EMPTY_CHILD;
   const nilai: OrtuNilai[] = grades?.length ? (grades as OrtuNilai[]) : [];
@@ -354,6 +370,39 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
             </div>
           </div>
         ))}
+      </div>
+
+      {/* 9. Wali Kelas Contact (U4) */}
+      <div className="mb-3.5 rounded-[var(--r)] border border-[var(--border)] bg-[var(--surface)] p-3.5">
+        <div className="mb-2.5 flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
+          <UserCircle className="h-[15px] w-[15px] text-[var(--pri)]" />
+          Wali Kelas
+        </div>
+        {waliKelas ? (
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--pri)] text-[14px] font-extrabold text-white">
+              {waliKelas.name.charAt(0)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <b className="block text-[13px]">{waliKelas.name}</b>
+              <small className="text-[10px] font-semibold text-[var(--muted)]">{waliKelas.subject}</small>
+              {waliKelas.phone && (
+                <a href={`tel:${waliKelas.phone}`} className="mt-1 flex items-center gap-1 text-[10px] font-bold text-[var(--pril)]">
+                  <Phone className="h-[10px] w-[10px]" /> {waliKelas.phone}
+                </a>
+              )}
+              {waliKelas.email && (
+                <a href={`mailto:${waliKelas.email}`} className="flex items-center gap-1 text-[10px] font-bold text-[var(--pril)]">
+                  <Mail className="h-[10px] w-[10px]" /> {waliKelas.email}
+                </a>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="py-3 text-center text-[11px] font-semibold text-[var(--dim)]">
+            Wali kelas akan tersedia menyusul
+          </div>
+        )}
       </div>
     </div>
   );
