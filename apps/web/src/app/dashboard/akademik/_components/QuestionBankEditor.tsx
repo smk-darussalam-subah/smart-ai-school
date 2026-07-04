@@ -5,11 +5,12 @@
 // AI Generate button calls /ai/generate-questions (rate-limited 10/min).
 
 import { useState, useTransition, useEffect } from 'react';
-import { Database, Plus, Trash2, Pencil, X, Sparkles, Loader2, Check, AlertTriangle } from 'lucide-react';
+import { Database, Plus, Trash2, Pencil, X, Sparkles, Loader2, Check, AlertTriangle, Download, Upload } from 'lucide-react';
 import clsx from 'clsx';
 import {
   fetchQuestions, createQuestion, updateQuestion, deleteQuestion,
-  aiGenerateQuestions, type QuestionData,
+  aiGenerateQuestions, exportQuestionsCsv, importQuestionsCsv,
+  type QuestionData, type EssayRubricCriteria,
 } from '../actions';
 
 interface Question extends QuestionData {
@@ -49,6 +50,11 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
   const [fOptions, setFOptions] = useState<string[]>(['', '', '', '']);
   const [fAnswer, setFAnswer] = useState('');
   const [fDifficulty, setFDifficulty] = useState<QuestionData['difficulty']>('medium');
+  // U2 Wave 2: essay rubrik state
+  const [fRubric, setFRubric] = useState<EssayRubricCriteria[]>([]);
+  // U2 Wave 4: CSV import state
+  const [csvResult, setCsvResult] = useState<{ imported: number; errors: Array<{ row: number; message: string }> } | null>(null);
+  const [csvLoading, startCsv] = useTransition();
 
   // Load questions on mount
   useEffect(() => {
@@ -70,6 +76,7 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
     setFOptions(['', '', '', '']);
     setFAnswer('');
     setFDifficulty('medium');
+    setFRubric([]); // U2 Wave 2
     setEditingId(null);
     setShowForm(false);
   };
@@ -81,6 +88,7 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
     setFOptions(q.options ?? ['', '', '', '']);
     setFAnswer(q.answer ?? '');
     setFDifficulty(q.difficulty);
+    setFRubric(q.rubric ?? []); // U2 Wave 2
     setShowForm(true);
   };
 
@@ -101,7 +109,7 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
       body: fBody.trim(),
       difficulty: fDifficulty,
       ...(fType === 'multiple_choice' ? { options: fOptions.filter((o) => o.trim()), answer: fAnswer } : {}),
-      ...(fType === 'essay' ? { answer: fAnswer } : {}),
+      ...(fType === 'essay' ? { answer: fAnswer, ...(fRubric.length > 0 ? { rubric: fRubric } : {}) } : {}),
       ...(fType === 'true_false' ? { answer: fAnswer || 'true' } : {}),
     };
 
@@ -148,6 +156,109 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
         setQuestions((prev) => [...prev, ...aiData.output.map((q) => ({ ...q, id: `ai-${Date.now()}-${Math.random()}` }))]);
       }
     });
+  };
+
+  // U2 Wave 4: Export CSV handler
+  const handleExportCsv = () => {
+    setErr(null);
+    startCsv(async () => {
+      const res = await exportQuestionsCsv(subject || undefined);
+      if (res.success && res.data) {
+        const csv = (res.data as { csv: string }).csv;
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `soal-${subject || 'all'}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        setErr(res.error ?? 'Gagal export CSV.');
+      }
+    });
+  };
+
+  // U2 Wave 4: Import CSV handler
+  const handleImportCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvResult(null);
+    setErr(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = (ev.target?.result as string) ?? '';
+      // Simple CSV parser — handles quoted fields
+      const lines: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i]!;
+        if (inQuotes) {
+          if (ch === '"' && text[i + 1] === '"') { current += '"'; i++; }
+          else if (ch === '"') { inQuotes = false; }
+          else { current += ch; }
+        } else {
+          if (ch === '"') { inQuotes = true; }
+          else if (ch === '\n') { lines.push(current); current = ''; }
+          else if (ch !== '\r') { current += ch; }
+        }
+      }
+      if (current) lines.push(current);
+
+      // Skip header row, parse data rows
+      const dataLines = lines.slice(1).filter((l) => l.trim());
+      const rows = dataLines.map((line) => {
+        const cells: string[] = [];
+        let cell = '';
+        let inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i]!;
+          if (inQ) {
+            if (ch === '"' && line[i + 1] === '"') { cell += '"'; i++; }
+            else if (ch === '"') { inQ = false; }
+            else { cell += ch; }
+          } else {
+            if (ch === '"') { inQ = true; }
+            else if (ch === ',') { cells.push(cell); cell = ''; }
+            else { cell += ch; }
+          }
+        }
+        cells.push(cell);
+        return {
+          type: cells[0]?.trim() ?? 'multiple_choice',
+          body: cells[1]?.trim() ?? '',
+          options: cells[2]?.trim() || undefined,
+          answer: cells[3]?.trim() || undefined,
+          difficulty: (cells[4]?.trim() || 'medium') as 'easy' | 'medium' | 'hard',
+          tags: cells[5]?.trim() || undefined,
+        };
+      }).filter((r) => r.body.length >= 3);
+
+      if (rows.length === 0) {
+        setErr('CSV tidak memiliki baris data yang valid.');
+        return;
+      }
+
+      startCsv(async () => {
+        const res = await importQuestionsCsv(subject, rows);
+        if (res.success && res.data) {
+ setCsvResult(res.data as { imported: number; errors: Array<{ row: number; message: string }> });
+          // Reload questions
+          const fetchRes = await fetchQuestions(subject);
+          if (fetchRes.success && fetchRes.data) {
+            const data = Array.isArray(fetchRes.data) ? fetchRes.data : (fetchRes.data as { data: Question[] }).data ?? [];
+            setQuestions(data);
+          }
+        } else {
+          setErr(res.error ?? 'Gagal import CSV.');
+        }
+      });
+    };
+    reader.readAsText(file);
+    // Reset input so the same file can be selected again
+    e.target.value = '';
   };
 
   return (
@@ -272,13 +383,72 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
                 </div>
               )}
               {fType === 'essay' && (
-                <input
-                  type="text"
-                  value={fAnswer}
-                  onChange={(e) => setFAnswer(e.target.value)}
-                  placeholder="Kunci jawaban (opsional untuk essay)"
-                  className={FIELD}
-                />
+                <>
+                  <input
+                    type="text"
+                    value={fAnswer}
+                    onChange={(e) => setFAnswer(e.target.value)}
+                    placeholder="Kunci jawaban (opsional untuk essay)"
+                    className={FIELD}
+                  />
+                  {/* U2 Wave 2: Rubric builder */}
+                  <div className="rounded-lg border border-[#e6efea] p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-[#6b8079]">Rubrik Penilaian (opsional)</span>
+                      {fRubric.length > 0 && (
+                        <span className={clsx('text-[10px] font-bold',
+                          Math.abs(fRubric.reduce((s, c) => s + c.weight, 0) - 1) < 0.01 ? 'text-emerald-600' : 'text-amber-600')}>
+                          Total bobot: {fRubric.reduce((s, c) => s + c.weight, 0).toFixed(2)}
+                          {Math.abs(fRubric.reduce((s, c) => s + c.weight, 0) - 1) < 0.01 ? ' ✓' : ' ⚠ idealnya 1.0'}
+                        </span>
+                      )}
+                    </div>
+                    {fRubric.map((c, ci) => (
+                      <div key={ci} className="mb-2 flex items-start gap-2">
+                        <input
+                          type="text"
+                          value={c.name}
+                          onChange={(e) => setFRubric((prev) => prev.map((x, i) => i === ci ? { ...x, name: e.target.value } : x))}
+                          placeholder="Nama kriteria"
+                          className={clsx(FIELD, 'flex-1')}
+                        />
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="1"
+                          value={c.weight}
+                          onChange={(e) => setFRubric((prev) => prev.map((x, i) => i === ci ? { ...x, weight: Number(e.target.value) } : x))}
+                          placeholder="Bobot"
+                          className={clsx(FIELD, 'w-16')}
+                        />
+                        <input
+                          type="number"
+                          min="1"
+                          value={c.maxScore}
+                          onChange={(e) => setFRubric((prev) => prev.map((x, i) => i === ci ? { ...x, maxScore: Number(e.target.value) } : x))}
+                          placeholder="Max"
+                          className={clsx(FIELD, 'w-16')}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setFRubric((prev) => prev.filter((_, i) => i !== ci))}
+                          className="rounded-lg p-1.5 text-rose-400 hover:bg-rose-50"
+                          aria-label="Hapus kriteria"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setFRubric((prev) => [...prev, { id: `c${prev.length + 1}`, name: '', weight: 0, maxScore: 100, description: '' }])}
+                      className="inline-flex items-center gap-1 rounded-lg border border-[#e6efea] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"
+                    >
+                      <Plus className="h-3 w-3" />Tambah Kriteria
+                    </button>
+                  </div>
+                </>
               )}
               {fType === 'true_false' && (
                 <select value={fAnswer} onChange={(e) => setFAnswer(e.target.value)} className={FIELD} style={{ maxWidth: '120px' }}>
@@ -299,15 +469,51 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
 
         {/* Footer buttons */}
         {!showForm && (
-          <div className="mt-4 flex justify-end gap-2">
-            <button type="button" onClick={onClose} className={clsx(BTN, 'border border-[#e6efea] bg-white text-[#355a4e] hover:bg-[#f4f7f5]')}>Tutup</button>
-            <button type="button" onClick={handleAiGenerate} disabled={aiLoading} className={clsx(BTN, 'border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-50')}>
-              {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              Generate AI
-            </button>
-            <button type="button" onClick={() => { resetForm(); setShowForm(true); }} className={clsx(BTN, 'bg-emerald-600 text-white hover:bg-emerald-700')}>
-              <Plus className="h-4 w-4" />Tambah Soal
-            </button>
+          <div className="mt-4">
+            {/* U2 Wave 4: CSV import result */}
+            {csvResult && (
+              <div className="mb-3 rounded-lg border border-[#e6efea] bg-[#f9fbfa] px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-[11.5px] font-bold text-emerald-700">
+                  <Check className="h-3.5 w-3.5" />Import berhasil: {csvResult.imported} soal ditambahkan
+                </div>
+                {csvResult.errors.length > 0 && (
+                  <div className="mt-1 space-y-0.5">
+                    {csvResult.errors.slice(0, 5).map((e, i) => (
+                      <div key={i} className="text-[10.5px] text-rose-600">Baris {e.row}: {e.message}</div>
+                    ))}
+                    {csvResult.errors.length > 5 && (
+                      <div className="text-[10.5px] text-[#9bb0a8]">+{csvResult.errors.length - 5} error lainnya...</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* U2 Wave 4: hidden file input for import */}
+            <input
+              type="file"
+              accept=".csv"
+              onChange={handleImportCsv}
+              className="hidden"
+              id="csv-import-input"
+            />
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={handleExportCsv} disabled={csvLoading || loading} className={clsx(BTN, 'border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 disabled:opacity-50')}>
+                {csvLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Export CSV
+              </button>
+              <button type="button" onClick={() => document.getElementById('csv-import-input')?.click()} disabled={csvLoading} className={clsx(BTN, 'border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50')}>
+                {csvLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                Import CSV
+              </button>
+              <button type="button" onClick={onClose} className={clsx(BTN, 'border border-[#e6efea] bg-white text-[#355a4e] hover:bg-[#f4f7f5]')}>Tutup</button>
+              <button type="button" onClick={handleAiGenerate} disabled={aiLoading} className={clsx(BTN, 'border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-50')}>
+                {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                Generate AI
+              </button>
+              <button type="button" onClick={() => { resetForm(); setShowForm(true); }} className={clsx(BTN, 'bg-emerald-600 text-white hover:bg-emerald-700')}>
+                <Plus className="h-4 w-4" />Tambah Soal
+              </button>
+            </div>
           </div>
         )}
       </div>

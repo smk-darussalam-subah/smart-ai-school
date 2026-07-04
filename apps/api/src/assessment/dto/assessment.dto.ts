@@ -10,6 +10,9 @@ export const CreateAssessmentSessionSchema = z.object({
   classId: z.string().uuid().nullish(),
   academicYear: z.string().regex(/^\d{4}\/\d{4}$/, 'Format: YYYY/YYYY'),
   semester: z.coerce.number().int().min(1).max(2),
+  // U2 Wave 1: timer + randomization
+  durationMinutes: z.number().int().min(1).max(300).optional(),
+  randomizeOrder: z.boolean().optional(),
 });
 export type CreateAssessmentSessionDto = z.infer<typeof CreateAssessmentSessionSchema>;
 
@@ -17,6 +20,9 @@ export const UpdateAssessmentSessionSchema = z.object({
   title: z.string().trim().min(3).max(255).optional(),
   questions: z.array(z.any()).min(1).max(100).optional(),
   classId: z.string().uuid().nullish(),
+  // U2 Wave 1: timer + randomization
+  durationMinutes: z.number().int().min(1).max(300).optional(),
+  randomizeOrder: z.boolean().optional(),
 });
 export type UpdateAssessmentSessionDto = z.infer<typeof UpdateAssessmentSessionSchema>;
 
@@ -34,5 +40,14 @@ export type ListAssessmentSessionDto = z.infer<typeof ListAssessmentSessionSchem
 
 export const SubmitResponseSchema = z.object({
   answers: z.any(),
+  // U2 Wave 1: client sends when siswa started (ISO string)
+  startedAt: z.string().datetime().optional(),
 });
 export type SubmitResponseDto = z.infer<typeof SubmitResponseSchema>;
+
+// U2 Wave 2: Essay rubrik grading
+export const GradeEssaySchema = z.object({
+  questionId: z.string().uuid(),
+  criteriaScores: z.record(z.string(), z.number().min(0)),
+});
+export type GradeEssayDto = z.infer<typeof GradeEssaySchema>;

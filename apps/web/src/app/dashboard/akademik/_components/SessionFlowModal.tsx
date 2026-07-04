@@ -10,7 +10,7 @@ interface Props {
   session: TodayClass | null;
   onAbsen: (c: { classId: string; className: string }) => void;
   onJurnal: (c: { classId: string; className: string; subject: string; startLabel: string; jpStart: number }) => void;
-  onOpenPenilaian: (session: TodayClass, mode: 'preview' | 'monitor', tab: 'diag' | 'form' | 'fb') => void;
+  onOpenPenilaian: (session: TodayClass, mode: 'preview' | 'monitor' | 'analysis', tab: 'diag' | 'form' | 'fb') => void;
   /** Step 4 "Buka Modul Ajar": buka popup Modul Ajar DI ATAS modal sesi (z-50 > z-40),
    *  pre-fill sesuai mapel/kelas sesi. Modal sesi TETAP TERBUKA agar flow tak terputus
    *  (pola yang sama dgn step 3 → PenilaianSesiModal). */
@@ -34,6 +34,9 @@ const SESSION_STEPS = [
 export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPenilaian, onOpenModule, onClose }: Props) {
   const [step, setStep] = useState(1);
   const [done, setDone] = useState<Record<number, boolean>>({});
+  // U2 Wave 1: timer + randomization config
+  const [durationMinutes, setDurationMinutes] = useState<number | null>(null);
+  const [randomizeOrder, setRandomizeOrder] = useState(false);
 
   if (!session) return null;
 
@@ -86,7 +89,44 @@ export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPen
       </div>
     );
   } else if (step === 5) {
-    extra = <div className="mb-2.5 flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-[11px] text-emerald-700"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>Formatif: <b>PG (auto-grade)</b>, <b>Essay (rubrik)</b>, <b>Praktikum (observasi)</b>. Nilai otomatis masuk Gradebook kolom UH.</span></div>;
+    extra = (
+      <div className="space-y-2.5">
+        <div className="flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-[11px] text-emerald-700"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>Formatif: <b>PG (auto-grade)</b>, <b>Essay (rubrik)</b>, <b>Praktikum (observasi)</b>. Nilai otomatis masuk Gradebook kolom UH.</span></div>
+        {/* U2 Wave 1: Timer + Randomization config */}
+        <div className="rounded-lg border border-[#e6efea] p-3">
+          <div className="mb-2 text-[11px] font-bold text-[#6b8079]">Pengaturan Asesmen (U2)</div>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] font-semibold text-[#355a4e]">Durasi (menit)</label>
+              <input
+                type="number"
+                min={1}
+                max={300}
+                value={durationMinutes ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setDurationMinutes(v === '' ? null : Math.max(1, Math.min(300, parseInt(v, 10) || 0)));
+                }}
+                placeholder="Tanpa timer"
+                className="w-24 rounded-lg border border-[#e6efea] px-2.5 py-1.5 text-[12px] text-[#0f2e25] outline-none focus:border-emerald-300"
+              />
+            </div>
+            <label className="flex items-center gap-1.5 text-[11px] font-semibold text-[#355a4e]">
+              <input
+                type="checkbox"
+                checked={randomizeOrder}
+                onChange={(e) => setRandomizeOrder(e.target.checked)}
+                className="h-3.5 w-3.5 accent-emerald-600"
+              />
+              Acak urutan soal (anti-cheating)
+            </label>
+          </div>
+          {durationMinutes && (
+            <p className="mt-1.5 text-[10px] text-[#9bb0a8]">Timer mulai saat siswa membuka soal. Auto-submit saat waktu habis (+1 menit grace).</p>
+          )}
+        </div>
+      </div>
+    );
   } else if (step === 6) {
     extra = <div className="mb-2.5 flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-[11px] text-emerald-700"><ClipboardPenLine className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span><b>Realtime Monitor</b> — pantau progres siswa. Nilai otomatis tersinkron ke Gradebook saat siswa selesai.</span></div>;
   } else if (step === 7) {

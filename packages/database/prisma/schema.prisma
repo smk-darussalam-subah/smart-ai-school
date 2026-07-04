@@ -569,6 +569,8 @@ model AssessmentSession {
   type         AssessmentType
   status       AssessmentSessionStatus @default(draft)
   questions    Json                  @db.JsonB
+  durationMinutes Int?               @map("duration_minutes") // U2: timer durasi pengerjaan (menit)
+  randomizeOrder Boolean   @default(false) @map("randomize_order") // U2: randomisasi urutan soal
   startedAt    DateTime?             @map("started_at")
   completedAt  DateTime?             @map("completed_at")
   academicYear String                @map("academic_year") @db.VarChar(9)
@@ -594,6 +596,8 @@ model AssessmentResponse {
   studentId   String    @map("student_id") @db.Uuid
   answers     Json?     @db.JsonB
   score       Int?
+  startedAt   DateTime? @map("started_at") // U2: kapan siswa mulai mengerjakan
+  timeSpentSec Int?     @map("time_spent_sec") // U2: total detik yang dihabiskan
   submittedAt DateTime? @map("submitted_at")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
@@ -1219,6 +1223,7 @@ model Question {
   answer     String?            @db.Text
   difficulty QuestionDifficulty @default(medium)
   tags       String[]
+  rubric     Json?              @db.JsonB // U2: essay rubrik — Array<{ id, name, weight, maxScore, description }>
   createdAt  DateTime            @default(now()) @map("created_at")
   updatedAt  DateTime            @updatedAt @map("updated_at")
 

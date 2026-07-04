@@ -15,7 +15,7 @@ import { RequirePermission } from '../permissions/decorators/require-permission.
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { AssessmentService } from './assessment.service';
 import {
-  CreateAssessmentSessionSchema, ListAssessmentSessionSchema,
+  CreateAssessmentSessionSchema, GradeEssaySchema, ListAssessmentSessionSchema,
   SubmitResponseSchema, UpdateAssessmentSessionSchema,
 } from './dto/assessment.dto';
 
@@ -44,6 +44,14 @@ export class AssessmentController {
   @Get(':id/results')
   getResults(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.service.getResults(id, user);
+  }
+
+  // U2 Wave 3: Analisis Hasil — item analysis, score distribution, ketuntasan
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU')
+  @RequirePermission('lms.read')
+  @Get(':id/analysis')
+  getSessionAnalysis(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.service.getSessionAnalysis(id, user);
   }
 
   @Roles('GURU')
@@ -80,6 +88,28 @@ export class AssessmentController {
   @Patch(':id/complete')
   completeSession(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.service.completeSession(id, user);
+  }
+
+  // U2 Wave 1: SISWA memulai pengerjaan — mencatat startedAt, return shuffled questions
+  @Roles('SISWA')
+  @RequirePermission('lms.progress.manage')
+  @Post(':id/start-response')
+  @HttpCode(HttpStatus.CREATED)
+  startResponse(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.service.startResponse(id, user);
+  }
+
+  // U2 Wave 2: GURU menilai essay dengan rubrik (per-criteria weighted scoring)
+  @Roles('GURU', 'KEPALA_SEKOLAH')
+  @RequirePermission('lms.own.manage')
+  @Patch(':id/responses/:responseId/grade-essay')
+  gradeEssayResponse(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('responseId', ParseUUIDPipe) responseId: string,
+    @Body(ZodPipe(GradeEssaySchema)) dto: unknown,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.gradeEssayResponse(id, responseId, dto as Parameters<typeof this.service.gradeEssayResponse>[2], user);
   }
 
   @Roles('SISWA')
