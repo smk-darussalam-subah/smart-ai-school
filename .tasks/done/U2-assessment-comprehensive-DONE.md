@@ -75,7 +75,7 @@ Web next lint → "No ESLint warnings or errors"
 next build → success: 29/29 pages generated
   Generating static pages (0/29) → (29/29) ✓
 
-API jest → 52 suites, 841 tests, all passed
+API jest → 53 suites, 854 tests, all passed (includes 13 U2 unit tests)
 Web jest → 3 suites, 39 tests, all passed
 ```
 
@@ -86,14 +86,14 @@ Web jest → 3 suites, 39 tests, all passed
 - [x] `tsc --noEmit` = 0 errors (both API and web)
 - [x] `eslint --max-warnings=0` = 0 errors (API), `next lint` clean (web)
 - [x] `next build` = 29/29 pages OK
-- [x] `jest` = all pass (API: 841/841, Web: 39/39)
+- [x] `jest` = all pass (API: 854/854, Web: 39/39)
 - [x] Schema: all new fields nullable/default (backward compatible)
 - [x] KKTP_DEFAULT: constant 75 in backend with comment referencing lib/academic.ts
 - [x] React Hooks: no conditional useMemo (error #300 avoided)
 - [x] 401 redirect: apiCall pattern with NEXT_REDIRECT re-throw
 - [x] Zod DTOs (not class-validator)
 - [x] Conventional commits: feat(assessment): U2 wave N — desc
-- [x] Gitflow: feat/ branch pushed → PR staging ready
+- [x] Gitflow: feat/ → PR #301 staging (CI 3/3 green, MERGED) → PR #302 staging→main (CI 4/4 green, pending review)
 
 ---
 
@@ -104,6 +104,11 @@ Web jest → 3 suites, 39 tests, all passed
 3. `f08ab57` feat(assessment): U2 wave 3 — analisis hasil (item analysis, score distribution, ketuntasan)
 4. `a4a798c` feat(assessment): U2 wave 4 — export/import CSV (bulk question management)
 5. `1b8fd01` fix(assessment): U2 tsc fix — cast essayScores to JsonValue for Prisma compatibility
+6. `b729b93` docs(assessment): U2 done-entry + U7 staging QA regression checklist
+7. `8f294a6` test(assessment): U2 unit tests — timer, weighted score, item analysis, CSV
+
+**PR #301** (feat → staging): MERGED, merge commit `59d1d17`, CI 3/3 green
+**PR #302** (staging → main): OPEN, CI 4/4 green, pending review approval (branch protection: REVIEW_REQUIRED)
 
 ---
 
@@ -127,7 +132,7 @@ Web jest → 3 suites, 39 tests, all passed
 - [x] tsc --noEmit = 0 errors (API + web)
 - [x] eslint = 0 errors (API + web)
 - [x] next build = 29/29 pages
-- [x] jest = 841 API + 39 web tests pass
+- [x] jest = 854 API + 39 web tests pass (includes 13 U2 unit tests)
 - [x] No new SIMULASI constants introduced in U2 code (analysis mode uses real backend)
 - [x] Schema migration backward compatible (all fields nullable/default)
 
@@ -145,4 +150,7 @@ Web jest → 3 suites, 39 tests, all passed
 
 ## Status: ✅ DONE
 
-Code complete, type-safe, lint-clean, build-green, all tests pass. Branch pushed to origin. Pending staging deployment for runtime verification with real data.
+Code complete, type-safe, lint-clean, build-green, all tests pass.
+- PR #301 (feat → staging): MERGED, CI 3/3 green
+- PR #302 (staging → main): CI 4/4 green, pending human review approval (branch protection)
+- All implementation, validation, and unit tests complete
