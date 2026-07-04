@@ -49,3 +49,17 @@ export const ListQuestionSetSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 export type ListQuestionSetDto = z.infer<typeof ListQuestionSetSchema>;
+
+// U2 Wave 4: CSV Import schema
+export const ImportQuestionsSchema = z.object({
+  subject: z.string().trim().min(1).max(100),
+  rows: z.array(z.object({
+    type: z.enum(['multiple_choice', 'essay', 'true_false', 'matching']),
+    body: z.string().trim().min(3).max(5000),
+    options: z.string().optional(), // JSON-encoded string
+    answer: z.string().trim().max(5000).optional(),
+    difficulty: z.enum(['easy', 'medium', 'hard']),
+    tags: z.string().optional(), // JSON-encoded or comma-separated
+  })).min(1).max(500),
+});
+export type ImportQuestionsDto = z.infer<typeof ImportQuestionsSchema>;

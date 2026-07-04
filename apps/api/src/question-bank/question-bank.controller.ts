@@ -14,8 +14,8 @@ import { RequirePermission } from '../permissions/decorators/require-permission.
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { QuestionBankService } from './question-bank.service';
 import {
-  CreateQuestionSchema, CreateQuestionSetSchema, ListQuestionSchema,
-  ListQuestionSetSchema, UpdateQuestionSchema,
+  CreateQuestionSchema, CreateQuestionSetSchema, ImportQuestionsSchema,
+  ListQuestionSchema, ListQuestionSetSchema, UpdateQuestionSchema,
 } from './dto/question.dto';
 
 @Controller('questions')
@@ -29,6 +29,26 @@ export class QuestionController {
     const parsed = ListQuestionSchema.safeParse(rawQuery);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors);
     return this.service.findAll(parsed.data, user);
+  }
+
+  // U2 Wave 4: Export CSV — must come before @Get(':id') to avoid route conflict
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU')
+  @RequirePermission('lms.read')
+  @Get('export')
+  exportCsv(@Query('subject') subject: string | undefined, @CurrentUser() user: AuthUser) {
+    return this.service.exportQuestionsCsv(subject, user);
+  }
+
+  // U2 Wave 4: Import CSV — accepts parsed CSV rows as JSON
+  @Roles('GURU')
+  @RequirePermission('lms.own.manage')
+  @Post('import')
+  @HttpCode(HttpStatus.OK)
+  importCsv(
+    @Body(ZodPipe(ImportQuestionsSchema)) dto: unknown,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.importQuestionsCsv(dto as Parameters<typeof this.service.importQuestionsCsv>[0], user);
   }
 
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU')

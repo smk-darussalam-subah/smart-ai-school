@@ -16,6 +16,7 @@ import { isElevated, resolveTeacherId } from '../common/helpers/role-helpers';
 import {
   CreateQuestionDto,
   CreateQuestionSetDto,
+  ImportQuestionsDto,
   ListQuestionDto,
   ListQuestionSetDto,
   UpdateQuestionDto,
@@ -212,5 +213,104 @@ export class QuestionBankService {
       this.prisma.questionSet.count({ where: filters }),
     ]);
     return { data, total, page: query.page, limit: query.limit };
+  }
+
+  // ── CSV Export / Import (U2 Wave 4) ────────────────────────────────────────
+
+  /** U2 Wave 4: Export questions as CSV string. */
+  async exportQuestionsCsv(subject: string | undefined, user: AuthUser) {
+    const filters: Prisma.QuestionWhereInput = {};
+    if (subject) filters.subject = subject;
+
+    if (!isElevated(user)) {
+      if (user.roles.includes('GURU')) {
+        const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+        filters.teacherId = teacherId;
+      } else {
+        throw new ForbiddenException('Akses ditolak');
+      }
+    }
+
+    const questions = await this.prisma.question.findMany({
+      where: filters,
+      orderBy: { createdAt: 'desc' },
+      select: { type: true, body: true, options: true, answer: true, difficulty: true, tags: true },
+    });
+
+    const escapeCell = (val: unknown): string => {
+      const str = typeof val === 'string' ? val : JSON.stringify(val ?? '');
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const header = 'type,body,options,answer,difficulty,tags';
+    const rows = questions.map((q) =>
+      [
+        escapeCell(q.type),
+        escapeCell(q.body),
+        escapeCell(q.options),
+        escapeCell(q.answer ?? ''),
+        escapeCell(q.difficulty),
+        escapeCell(q.tags),
+      ].join(','),
+    );
+
+    return { csv: [header, ...rows].join('\n'), count: questions.length };
+  }
+
+  /** U2 Wave 4: Import questions from parsed CSV rows. */
+  async importQuestionsCsv(dto: ImportQuestionsDto, user: AuthUser) {
+    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+    const errors: Array<{ row: number; message: string }> = [];
+    let imported = 0;
+
+    for (let i = 0; i < dto.rows.length; i++) {
+      const row = dto.rows[i]!;
+      try {
+        // Parse options from JSON string if present
+        let options: unknown = undefined;
+        if (row.options) {
+          try {
+            options = JSON.parse(row.options);
+          } catch {
+            options = row.options.split('|').map((s) => s.trim()).filter(Boolean);
+          }
+        }
+
+        // Parse tags from JSON string or comma-separated
+        let tags: string[] = [];
+        if (row.tags) {
+          try {
+            const parsed = JSON.parse(row.tags);
+            tags = Array.isArray(parsed) ? parsed.map(String) : [String(parsed)];
+          } catch {
+            tags = row.tags.split(',').map((s) => s.trim()).filter(Boolean);
+          }
+        }
+
+        await this.prisma.question.create({
+          data: {
+            teacherId,
+            subject: dto.subject,
+            type: row.type,
+            body: row.body,
+            options: options as Prisma.InputJsonValue | undefined,
+            answer: row.answer ?? null,
+            difficulty: row.difficulty,
+            tags,
+          },
+        });
+        imported++;
+      } catch (e) {
+        errors.push({
+          row: i + 1,
+          message: e instanceof Error ? e.message : 'Unknown error',
+        });
+      }
+    }
+
+    return { imported, errors };
   }
 }
