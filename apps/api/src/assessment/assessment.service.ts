@@ -475,7 +475,7 @@ export class AssessmentService {
     essayScores[dto.questionId] = {
       criteria: criteriaResults,
       total: totalScore,
-    } as Prisma.InputJsonValue;
+    } as unknown as Prisma.JsonValue;
 
     // Update response: set score (max of existing score and new essay score),
     // or if this is the only essay, set score directly
