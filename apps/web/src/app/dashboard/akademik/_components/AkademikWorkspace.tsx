@@ -23,6 +23,7 @@ import SessionFlowModal from './SessionFlowModal';
 import ModulAjarForm from './ModulAjarForm';
 import KehadiranGuru from './KehadiranGuru';
 import PenugasanGuru from './PenugasanGuru';
+import RaporWaliKelas from './guru/RaporWaliKelas';
 
 interface Assignment { id: string; subject: string; class: { id: string; name: string } }
 
@@ -42,7 +43,7 @@ interface Props {
   dataWarning?: boolean;
 }
 
-type Screen = 'ringkasan' | 'jadwal' | 'pembelajaran' | 'penilaian' | 'kehadiran' | 'penugasan' | 'capaian' | 'rekap';
+type Screen = 'ringkasan' | 'jadwal' | 'pembelajaran' | 'penilaian' | 'kehadiran' | 'penugasan' | 'capaian' | 'rekap' | 'rapor';
 
 const NAV: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'ringkasan', label: 'Ringkasan', icon: LayoutDashboard },
@@ -53,6 +54,7 @@ const NAV: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'penugasan', label: 'Penugasan', icon: ClipboardList },
   { key: 'capaian', label: 'Capaian & Rapor', icon: Award },
   { key: 'rekap', label: 'Rekap', icon: ClipboardCheck },
+  { key: 'rapor', label: 'Rapor Kelas', icon: Award },
 ];
 
 export default function AkademikWorkspace({
@@ -249,6 +251,10 @@ export default function AkademikWorkspace({
 
         {screen === 'capaian' && (
           <CapaianRapor grades={grades} className={selClassName} academicYear={academicYear} semester={semester} />
+        )}
+
+        {screen === 'rapor' && (
+          <RaporWaliKelas waliClasses={guruClasses} academicYear={academicYear} semester={semester} />
         )}
       </div>
 

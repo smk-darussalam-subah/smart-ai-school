@@ -22,7 +22,8 @@ import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem, ActivityItem, RppItem, ClassRef, LmsModuleItem } from './guru-types';
 import { KKTP_DEFAULT } from '@/lib/academic';
 import { JP_SLOTS, fmtMin, scheduleDayOfWeek, wibTodayISO, wibDateLabel, currentJp, wibNow } from '@/lib/bell-times';
-import { reviewRpp, fetchAttendanceHeatmap, fetchMonitoringKbm, fetchRekapAudit } from '../actions';
+import { reviewRpp, fetchAttendanceHeatmap, fetchMonitoringKbm, fetchRekapAudit, fetchKktpConfigs, saveKktpConfig } from '../actions';
+import RaporPipelineKs from './ks/RaporPipelineKs';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,7 +44,7 @@ interface Props {
   dataWarning?: boolean;
 }
 
-type Screen = 'beranda' | 'modul' | 'sumatif' | 'monitor' | 'rekap' | 'kktp' | 'jadwal';
+type Screen = 'beranda' | 'modul' | 'sumatif' | 'monitor' | 'rekap' | 'kktp' | 'jadwal' | 'rapor';
 
 const NAV: { key: Screen; label: string; icon: LucideIcon; badge?: number }[] = [
   { key: 'beranda', label: 'Beranda', icon: LayoutDashboard },
@@ -53,6 +54,7 @@ const NAV: { key: Screen; label: string; icon: LucideIcon; badge?: number }[] = 
   { key: 'rekap', label: 'Rekap Audit', icon: ClipboardCheck },
   { key: 'kktp', label: 'KKTP', icon: Target },
   { key: 'jadwal', label: 'Jadwal & Tugas', icon: CalendarClock },
+  { key: 'rapor', label: 'Rapor', icon: FileText },
 ];
 
 const DOW = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -66,23 +68,7 @@ const SIM_SUMATIF = [
   { id: 's3', guru: 'Dewi Lestari', mapel: 'B. Indonesia', kelas: 'XI TJKT 1', jenis: 'UH', judul: 'UH 2 — Teks Eksposisi', soal: 8, status: 'Disetujui', tanggal: '8 Jun', kkm: 75, deskripsi: '8 soal: 4 PG, 2 isian, 2 uraian. Durasi 40 menit.' },
 ];
 
-// SIMULASI: Health score pillars — now wired to /analytics endpoints (fallback)
-const SIM_HEALTH = { score: 82, delta: 3, pilars: [
-  { label: 'Akademik', pct: 80 }, { label: 'Kehadiran', pct: 94 },
-  { label: 'Keuangan', pct: 88 }, { label: 'SDM/Guru', pct: 68 },
-] };
-
-// SIMULASI: Tren kehadiran — now wired to /attendance/heatmap (fallback)
-const SIM_TREN_SISWA = [88, 90, 86, 92, 89, 93, 91, 94, 92, 93];
-const SIM_TREN_GURU = [90, 92, 88, 93, 91, 94, 92, 95, 93, 94];
-// SIMULASI: Tren kehadiran 1 bulan — wired to /attendance/heatmap (fallback)
-const SIM_TREN_SISWA_1B = [86, 88, 87, 90, 89, 91, 88, 92, 90, 93, 89, 91, 87, 90, 88, 92, 90, 94, 91, 93, 89, 90, 88, 92, 90, 93, 91, 94, 92, 93];
-const SIM_TREN_GURU_1B = [89, 91, 90, 93, 92, 94, 91, 95, 93, 95, 92, 94, 90, 93, 91, 95, 93, 96, 94, 95, 92, 93, 91, 95, 93, 96, 94, 96, 95, 94];
-// SIMULASI: Tren kehadiran 3 bulan — wired to /attendance/heatmap (fallback)
-const SIM_TREN_SISWA_3B = [85, 87, 84, 88, 86, 89, 87, 90, 88, 91, 89, 92];
-const SIM_TREN_GURU_3B = [88, 90, 87, 91, 89, 92, 90, 93, 91, 94, 92, 95];
-// SIMULASI: Guru RPP turnaround — can be derived from /rpp (fallback)
-const SIM_RPP_SLOW: number = 3;
+// U6: SIM_HEALTH, SIM_TREN_*, SIM_RPP_SLOW removed — refactored to honest empty states
 
 // SIMULASI: Scheduling config — now wired to /schedules/auto-generate (fallback)
 const SIM_SCHED_CONFIG = { days: 6, jpPerDay: 8, maxJpGuru: 24 };
@@ -256,8 +242,9 @@ export default function KsWorkspace({
         {screen === 'sumatif' && <AuditSumatifKs onOpenDetail={setSelSumatif} data={sumatifData} />}
         {screen === 'monitor' && <MonitoringKbmKs kelasMapel={kelasMapel} attendances={attendances} schedules={schedules} classes={classes} />}
         {screen === 'rekap' && <RekapAuditKs kelasMapel={kelasMapel} grades={grades} attendances={attendances} activities={activities} rpp={rpp} />}
-        {screen === 'kktp' && <KktpKs kelasMapel={kelasMapel} showToast={showToast} />}
+        {screen === 'kktp' && <KktpKs kelasMapel={kelasMapel} showToast={showToast} academicYear={academicYear} semester={semester} />}
         {screen === 'jadwal' && <JadwalTugasKs schedules={schedules} classes={classes} showToast={showToast} pendingRpp={pendingRpp} pendingSumatif={pendingSumatif} />}
+        {screen === 'rapor' && <RaporPipelineKs classes={classes} academicYear={academicYear} semester={semester} />}
       </div>
 
       {/* Modul Ajar Detail Modal */}
@@ -339,24 +326,12 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
         <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><Activity className="h-[18px] w-[18px] text-emerald-600" />Skor Kondisi Sekolah</h3>
-            <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">BAIK</span>
           </div>
-          <div className="mt-3 flex items-center gap-5">
-            <div>
-              <div className="text-[42px] font-extrabold leading-none tracking-tighter text-[#0f2e25]">{SIM_HEALTH.score}<span className="text-base text-[#6b8079]">/100</span></div>
-              <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">+{SIM_HEALTH.delta} pt</div>
-            </div>
-            <div className="flex flex-1 flex-col gap-2">
-              {SIM_HEALTH.pilars.map((p) => (
-                <div key={p.label} className="grid grid-cols-[80px_1fr_28px] items-center gap-2 text-[11px] font-semibold text-[#355a4e]">
-                  <span className="truncate">{p.label}</span>
-                  <span className="h-[7px] overflow-hidden rounded-md bg-[#eef3f0]"><span className="block h-full rounded-md" style={{ width: `${p.pct}%`, background: p.pct < 75 ? 'linear-gradient(90deg,#fbbf24,#d97706)' : 'linear-gradient(90deg,#6ee7b7,#059669)' }} /></span>
-                  <span className="text-right tabular-nums">{p.pct}</span>
-                </div>
-              ))}
-            </div>
+          {/* U6: SIM_HEALTH refactored to honest empty state */}
+          <div className="mt-4 flex flex-col items-center justify-center py-6">
+            <div className="text-[14px] font-bold text-[#9bb0a8]">Skor belum tersedia</div>
+            <div className="mt-1 text-[11.5px] text-[#6b8079]">Menunggu data nilai dan kehadiran yang cukup</div>
           </div>
-          <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700"><Activity className="h-3 w-3" /> Skor dihitung dari data real-time</div>
         </div>
       </div>
 
@@ -388,10 +363,10 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
             )}
             <button type="button" onClick={() => onNavigate('monitor')} className="flex w-full items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3 text-left transition hover:border-emerald-200 hover:shadow-sm">
               <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-violet-50 text-violet-600"><UserX className="h-[18px] w-[18px]" /></div>
-              <div className="min-w-0 flex-1"><b className="text-[12.5px] text-[#0f2e25]">{SIM_RPP_SLOW} guru RPP turnaround &gt; 7 hari</b><div className="text-[11.5px] text-[#6b8079]">Perlu follow-up Wakakur</div></div>
+              <div className="min-w-0 flex-1"><b className="text-[12.5px] text-[#0f2e25]">0 guru RPP turnaround &gt; 7 hari</b><div className="text-[11.5px] text-[#6b8079]">Perlu follow-up Wakakur</div></div>
               <ChevronRight className="h-4 w-4 shrink-0 text-[#9bb0a8]" />
             </button>
-            {pendingRpp === 0 && pendingSumatif === 0 && belowKktp.length === 0 && SIM_RPP_SLOW === 0 && (
+            {pendingRpp === 0 && pendingSumatif === 0 && belowKktp.length === 0 && (
               <div className="grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">Tidak ada tindakan tertunda.</div>
             )}
           </div>
@@ -412,7 +387,8 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
           ) : trenData ? (
             <TrenChart siswa={trenData.siswa} guru={trenData.guru} />
           ) : (
-            <TrenChart siswa={trenPeriod === '10H' ? SIM_TREN_SISWA : trenPeriod === '1B' ? SIM_TREN_SISWA_1B : SIM_TREN_SISWA_3B} guru={trenPeriod === '10H' ? SIM_TREN_GURU : trenPeriod === '1B' ? SIM_TREN_GURU_1B : SIM_TREN_GURU_3B} />
+            /* U6: SIM_TREN fallback replaced with honest empty state */
+            <div className="flex h-32 items-center justify-center text-[12px] font-medium text-[#9bb0a8]">Belum ada data tren kehadiran</div>
           )}
           <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700"><TrendingUp className="h-3 w-3" /> {trenData ? 'Data kehadiran siswa real-time' : 'Menunggu data kehadiran'}</div>
         </div>
@@ -1143,9 +1119,23 @@ function RekapAuditKs({ kelasMapel, grades, attendances, activities, rpp }: {
 
 // ═══ SCREEN 6: KKTP ═══════════════════════════════════════════════════════════
 
-function KktpKs({ kelasMapel, showToast }: { kelasMapel: { mapel: string }[]; showToast: (msg: string) => void }) {
+function KktpKs({ kelasMapel, showToast, academicYear, semester }: { kelasMapel: { mapel: string }[]; showToast: (msg: string) => void; academicYear: string; semester: number }) {
   const mapelList = useMemo(() => [...new Set(kelasMapel.map((k) => k.mapel))].sort(), [kelasMapel]);
   const [kktpValues, setKktpValues] = useState<Record<string, number>>({});
+  const [kktpLoaded, setKktpLoaded] = useState(false);
+  const [saving, startSaveTransition] = useTransition();
+
+  // U3: Fetch existing KKTP configs from backend on mount
+  useEffect(() => {
+    fetchKktpConfigs(academicYear, semester).then((res) => {
+      if (res.success && res.data) {
+        const configMap: Record<string, number> = {};
+        for (const c of res.data) configMap[c.subject] = c.kktp;
+        setKktpValues((prev) => ({ ...configMap, ...prev }));
+      }
+      setKktpLoaded(true);
+    });
+  }, [academicYear, semester]);
 
   const affectedCount = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -1153,8 +1143,19 @@ function KktpKs({ kelasMapel, showToast }: { kelasMapel: { mapel: string }[]; sh
     return counts;
   }, [kelasMapel]);
 
+  // U3: Wire to real saveKktpConfig server action
   const handleSave = () => {
-    showToast('Konfigurasi KKTP disimpan — SIMULASI (backend /kktp-config belum tersedia)');
+    startSaveTransition(async () => {
+      let saved = 0;
+      let failed = 0;
+      for (const [subject, kktp] of Object.entries(kktpValues)) {
+        const res = await saveKktpConfig({ subject, kktp, academicYear, semester });
+        if (res.success) saved++;
+        else failed++;
+      }
+      if (failed > 0) showToast(`${saved} mapel tersimpan, ${failed} gagal`);
+      else showToast(`${saved} konfigurasi KKTP tersimpan`);
+    });
   };
 
   return (
@@ -1164,11 +1165,11 @@ function KktpKs({ kelasMapel, showToast }: { kelasMapel: { mapel: string }[]; sh
           <h3 className="flex items-center gap-2 text-[17px] font-bold text-[#0f2e25]"><Target className="h-5 w-5 text-emerald-600" />Manajemen KKTP</h3>
           <p className="text-[12.5px] text-[#6b8079]">Threshold Kriteria Ketuntasan Tujuan Pembelajaran per mapel</p>
         </div>
-        <button type="button" onClick={handleSave} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-[12.5px] font-bold text-white hover:bg-emerald-700"><Save className="h-4 w-4" />Simpan Perubahan</button>
+        <button type="button" disabled={saving} onClick={handleSave} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-[12.5px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"><Save className="h-4 w-4" />{saving ? 'Menyimpan...' : 'Simpan Perubahan'}</button>
       </div>
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <div className="mb-3 rounded-lg bg-sky-50 px-3 py-2 text-[11.5px] font-semibold text-sky-700"><Info className="mr-1 inline h-3 w-3" />KKTP default {KKTP_DEFAULT}. Naikkan untuk mapel unggulan, turunkan untuk mapel yang masih adaptasi.</div>
-        <div className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10.5px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> SIMULASI — backend /kktp-config belum tersedia</div>
+        {!kktpLoaded && <div className="mb-3 text-[11px] font-medium text-[#9bb0a8]">Memuat konfigurasi KKTP...</div>}
         <div className="mt-4 space-y-3">
           {mapelList.map((mp) => {
             const val = kktpValues[mp] ?? SIM_KKTP_DATA[mp]?.kktp ?? KKTP_DEFAULT;

@@ -26,12 +26,11 @@ import TaskDetailModal from './TaskDetailModal';
 import DayDetailModal from './DayDetailModal';
 import BadgeDetailModal from './BadgeDetailModal';
 import PushNotificationToggle from '@/components/shared/PushNotificationToggle';
-import { subscribePush, unsubscribePush, fetchDailyQuests } from '../../actions';
+import { subscribePush, unsubscribePush, fetchDailyQuests, fetchPersonalCalendar } from '../../actions';
 import {
-  SIM_DAILY_QUEST, SIM_KALENDER,
   normalizeAnnouncements,
 } from './siswa-data';
-import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaXP, SiswaLeaderboardEntry, SiswaModul, SiswaCP, SiswaKehadiranStats, SiswaQuest, BadgeCelebrationData } from './siswa-types';
+import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaXP, SiswaLeaderboardEntry, SiswaModul, SiswaCP, SiswaKehadiranStats, SiswaQuest, SiswaKalenderEvent, BadgeCelebrationData } from './siswa-types';
 import type { AttendanceEntry } from './KehadiranSiswa';
 
 export type SiswaScreen = 'beranda' | 'jadwal' | 'modul' | 'nilai' | 'tugas' | 'kehadiran' | 'capaian';
@@ -94,6 +93,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
   const [toast, setToast] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [realQuests, setRealQuests] = useState<SiswaQuest | null>(null);
+  const [realCalendar, setRealCalendar] = useState<SiswaKalenderEvent[] | null>(null);
 
   // B1: Fetch daily quests on mount
   useEffect(() => {
@@ -103,6 +103,20 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
           title: 'Daily Quest',
           tasks: res.data.quests.map((q) => ({ ic: q.icon, label: q.title, done: q.completed })),
         });
+      }
+    });
+  }, []);
+
+  // U5/B2: Fetch personal calendar on mount
+  useEffect(() => {
+    fetchPersonalCalendar().then((res) => {
+      if (res.success && res.data) {
+        const data = res.data as { schedule: unknown[]; events: unknown[] };
+        // Map API calendar data to the kalender format expected by JadwalSiswa
+        // If API returns empty arrays, keep null so empty state is used
+        if (data.schedule && Array.isArray(data.schedule) && data.schedule.length > 0) {
+          setRealCalendar(data.schedule as SiswaKalenderEvent[]);
+        }
       }
     });
   }, []);
@@ -189,7 +203,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             tasks={(realAssignments ?? []) as unknown as SiswaTugas[]}
             badges={realBadges ?? []}
             modules={(realModules ?? []) as unknown as SiswaModul[]}
-            quest={realQuests ?? SIM_DAILY_QUEST}
+            quest={realQuests ?? { title: 'Daily Quest', tasks: [] }}
             xp={realXp ?? { level: 1, current: 0, next: 500 }}
             kehStats={realAttStats ?? { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, pct: 0 }}
             schedule={schedule || []}
@@ -200,7 +214,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
           <JadwalSiswa
             {...commonProps}
             schedule={schedule || []}
-            kalender={SIM_KALENDER}
+            kalender={realCalendar ?? []}
           />
         );
       case 'modul':

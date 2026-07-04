@@ -485,3 +485,73 @@ export async function fetchAutoSchedule(academicYear: string, semester: number, 
   if (!r.success) return { success: false, error: r.error };
   return { success: true, data: r.data };
 }
+
+// ── Rapor Pipeline (U1 — GAP-5: wali kelas compile → KS approve) ───────────────
+
+/** U1: Generate rapor massal untuk satu kelas (idempotent — skips existing). */
+export async function generateReportCards(classId: string, academicYear: string, semester: number): Promise<{
+  success: boolean;
+  data?: { generated: number; skipped: number; totalStudents: number };
+  error?: string;
+}> {
+  const r = await apiCall('/report-cards/generate', 'POST', { classId, academicYear, semester });
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { generated: number; skipped: number; totalStudents: number } };
+}
+
+/** U1: Transition rapor status (check → publish → distribute). */
+export async function transitionReportStatus(reportId: string, action: 'check' | 'return' | 'publish' | 'distribute'): Promise<{
+  success: boolean;
+  data?: ReportCardItem;
+  error?: string;
+}> {
+  const r = await apiCall(`/report-cards/${reportId}/status`, 'PATCH', { action });
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as ReportCardItem };
+}
+
+/** U1: Update catatan wali kelas (only when status = draft). */
+export async function updateReportNotes(reportId: string, notes: string | null): Promise<{
+  success: boolean;
+  data?: ReportCardItem;
+  error?: string;
+}> {
+  const r = await apiCall(`/report-cards/${reportId}/notes`, 'PATCH', { notes });
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as ReportCardItem };
+}
+
+/** U1: Fetch rapor by class with optional filters. */
+export async function fetchReportCardsByClass(classId?: string, academicYear?: string, semester?: number, status?: string): Promise<{
+  success: boolean;
+  data?: { data: ReportCardItem[]; total: number; page: number; limit: number };
+  error?: string;
+}> {
+  const params = new URLSearchParams();
+  if (classId) params.set('classId', classId);
+  if (academicYear) params.set('academicYear', academicYear);
+  if (semester) params.set('semester', String(semester));
+  if (status) params.set('status', status);
+  const r = await apiCall(`/report-cards${params.toString() ? '?' + params.toString() : ''}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { data: ReportCardItem[]; total: number; page: number; limit: number } };
+}
+
+/** U1: Type for report card items returned by backend. */
+export interface ReportCardItem {
+  id: string;
+  studentId: string;
+  classId: string;
+  academicYear: string;
+  semester: number;
+  status: 'draft' | 'checked' | 'published' | 'distributed';
+  grades: unknown;
+  attendance: { hadir: number; izin: number; sakit: number; alpha: number };
+  notes: string | null;
+  generatedAt: string | null;
+  checkedAt: string | null;
+  publishedAt: string | null;
+  distributedAt: string | null;
+  student: { id: string; nis: string; user: { fullName: string } };
+  class: { id: string; name: string };
+}
