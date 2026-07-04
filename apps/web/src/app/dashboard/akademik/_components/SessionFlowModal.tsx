@@ -10,7 +10,7 @@ interface Props {
   session: TodayClass | null;
   onAbsen: (c: { classId: string; className: string }) => void;
   onJurnal: (c: { classId: string; className: string; subject: string; startLabel: string; jpStart: number }) => void;
-  onOpenPenilaian: (session: TodayClass, mode: 'preview' | 'monitor', tab: 'diag' | 'form' | 'fb') => void;
+  onOpenPenilaian: (session: TodayClass, mode: 'preview' | 'monitor' | 'analysis', tab: 'diag' | 'form' | 'fb') => void;
   /** Step 4 "Buka Modul Ajar": buka popup Modul Ajar DI ATAS modal sesi (z-50 > z-40),
    *  pre-fill sesuai mapel/kelas sesi. Modal sesi TETAP TERBUKA agar flow tak terputus
    *  (pola yang sama dgn step 3 → PenilaianSesiModal). */

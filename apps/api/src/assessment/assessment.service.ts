@@ -494,4 +494,172 @@ export class AssessmentService {
       },
     });
   }
+
+  /** U2 Wave 3: Analisis Hasil — item analysis + score distribution + ketuntasan. */
+  async getSessionAnalysis(sessionId: string, user: AuthUser) {
+    // Verify ownership
+    const session = await this.prisma.assessmentSession.findUnique({
+      where: { id: sessionId },
+      select: {
+        id: true, title: true, type: true, status: true, teacherId: true,
+        questions: true, classId: true,
+      },
+    });
+    if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
+
+    if (!this.isReviewer(user)) {
+      const teacherId = await this.resolveTeacherId(user.keycloakId);
+      if (session.teacherId !== teacherId) throw new ForbiddenException('Bukan sesi Anda');
+    }
+
+    // Fetch all submitted responses
+    const responses = await this.prisma.assessmentResponse.findMany({
+      where: { sessionId, submittedAt: { not: null } },
+      select: { id: true, score: true, answers: true },
+    });
+
+    // KKTP_DEFAULT = 75 (ref: apps/web/src/lib/academic.ts — backend can't import from Next.js)
+    const KKTP_DEFAULT = 75;
+
+    const scores = responses.map((r) => r.score ?? 0);
+    const totalStudents = responses.length;
+
+    // Summary stats
+    const avgScore = totalStudents > 0
+      ? Math.round(scores.reduce((a, b) => a + b, 0) / totalStudents)
+      : 0;
+    const minScore = totalStudents > 0 ? Math.min(...scores) : 0;
+    const maxScore = totalStudents > 0 ? Math.max(...scores) : 0;
+    const sortedScores = [...scores].sort((a, b) => a - b);
+    const medianScore = totalStudents > 0
+      ? (totalStudents % 2 === 0
+        ? Math.round((sortedScores[totalStudents / 2 - 1]! + sortedScores[totalStudents / 2]!) / 2)
+        : sortedScores[Math.floor(totalStudents / 2)]!)
+      : 0;
+
+    // Ketuntasan
+    const tuntas = scores.filter((s) => s >= KKTP_DEFAULT).length;
+    const ketuntasanPct = totalStudents > 0
+      ? Math.round((tuntas / totalStudents) * 100)
+      : 0;
+
+    // Score distribution buckets
+    const buckets = [
+      { label: '0-50', min: 0, max: 50, count: 0 },
+      { label: '51-60', min: 51, max: 60, count: 0 },
+      { label: '61-70', min: 61, max: 70, count: 0 },
+      { label: '71-80', min: 71, max: 80, count: 0 },
+      { label: '81-90', min: 81, max: 90, count: 0 },
+      { label: '91-100', min: 91, max: 100, count: 0 },
+    ];
+    for (const s of scores) {
+      const bucket = buckets.find((b) => s >= b.min && s <= b.max);
+      if (bucket) bucket.count++;
+    }
+
+    // Per-question item analysis
+    const questions = (session.questions as Prisma.JsonArray) ?? [];
+    const itemAnalysis = questions.map((qRaw, idx) => {
+      const q = qRaw as Prisma.JsonObject;
+      const questionId = (q.id as string) ?? `q${idx}`;
+      const qType = (q.type as string) ?? 'multiple_choice';
+      const correctAnswer = (q.answer as string) ?? null;
+
+      let correctCount = 0;
+      let wrongCount = 0;
+      let blankCount = 0;
+
+      // For discrimination: arrays for point-biserial calculation
+      const perQuestionCorrect: number[] = [];
+      const totalScores: number[] = [];
+
+      for (const r of responses) {
+        const answers = (r.answers as Prisma.JsonObject) ?? {};
+        const studentAnswer = answers[questionId];
+        const totalScore = r.score ?? 0;
+        totalScores.push(totalScore);
+
+        if (studentAnswer == null || studentAnswer === '') {
+          blankCount++;
+          perQuestionCorrect.push(0);
+        } else if (
+          qType === 'multiple_choice' || qType === 'true_false'
+        ) {
+          // Auto-gradeable: compare answer
+          if (String(studentAnswer) === String(correctAnswer)) {
+            correctCount++;
+            perQuestionCorrect.push(1);
+          } else {
+            wrongCount++;
+            perQuestionCorrect.push(0);
+          }
+        } else {
+          // Essay: not auto-gradeable, skip
+          blankCount++;
+          perQuestionCorrect.push(0);
+        }
+      }
+
+      // Difficulty index = correctCount / totalResponses (0-1)
+      const difficultyIndex = totalStudents > 0
+        ? Math.round((correctCount / totalStudents) * 100) / 100
+        : 0;
+
+      // Discrimination index: point-biserial correlation
+      // r_pb = (M1 - M0) / Sy * sqrt(p * q)
+      const p = totalStudents > 0 ? correctCount / totalStudents : 0;
+      const qProp = 1 - p;
+      let discriminationIndex = 0;
+
+      if (p > 0 && p < 1 && totalStudents > 1) {
+        const correctScores = totalScores.filter((_, i) => perQuestionCorrect[i] === 1);
+        const wrongScores = totalScores.filter((_, i) => perQuestionCorrect[i] === 0);
+        const m1 = correctScores.length > 0
+          ? correctScores.reduce((a, b) => a + b, 0) / correctScores.length
+          : 0;
+        const m0 = wrongScores.length > 0
+          ? wrongScores.reduce((a, b) => a + b, 0) / wrongScores.length
+          : 0;
+
+        // Standard deviation of total scores
+        const meanY = totalScores.reduce((a, b) => a + b, 0) / totalStudents;
+        const variance = totalScores.reduce((sum, y) => sum + (y - meanY) ** 2, 0) / totalStudents;
+        const sy = Math.sqrt(variance);
+
+        if (sy > 0) {
+          discriminationIndex = Math.round(
+            ((m1 - m0) / sy) * Math.sqrt(p * qProp) * 100,
+          ) / 100;
+        }
+      }
+
+      return {
+        questionIndex: idx,
+        questionId,
+        type: qType,
+        body: ((q.body as string) ?? '').slice(0, 120),
+        difficultyIndex,
+        discriminationIndex,
+        correctCount,
+        wrongCount,
+        blankCount,
+      };
+    });
+
+    return {
+      session: { id: session.id, title: session.title, type: session.type, status: session.status },
+      summary: {
+        totalStudents,
+        avgScore,
+        minScore,
+        maxScore,
+        medianScore,
+        ketuntasanPct,
+        tuntasCount: tuntas,
+        belumTuntasCount: totalStudents - tuntas,
+      },
+      scoreDistribution: buckets.map((b) => ({ label: b.label, count: b.count })),
+      itemAnalysis,
+    };
+  }
 }

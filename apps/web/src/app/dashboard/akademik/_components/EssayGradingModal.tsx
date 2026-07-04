@@ -7,7 +7,7 @@
 import { useState, useTransition, useEffect } from 'react';
 import { ClipboardPenLine, X, Loader2, Check, AlertTriangle, GraduationCap } from 'lucide-react';
 import clsx from 'clsx';
-import { gradeEssayResponse, fetchSessionAnalysis, type EssayRubricCriteria } from '../actions';
+import { gradeEssayResponse, type EssayRubricCriteria } from '../actions';
 
 interface EssayQuestion {
   questionId: string;

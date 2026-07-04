@@ -3,13 +3,14 @@ import { useState } from 'react';
 import {
   ClipboardPenLine, X, Edit3, Activity, Info, Brain, ClipboardCheck, MessageCircle,
   AlertTriangle, Sparkles, Database, Cpu, Send, RefreshCw, Check, Users, Clock,
-  UserX, GraduationCap, TrendingUp, CheckCircle,
+  UserX, GraduationCap, TrendingUp, CheckCircle, BarChart3,
 } from 'lucide-react';
 import type { TodayClass } from './guru-types';
+import SessionAnalysisPanel from './SessionAnalysisPanel';
 
 interface Props {
   session: TodayClass | null;
-  initialMode?: 'preview' | 'monitor';
+  initialMode?: 'preview' | 'monitor' | 'analysis';
   initialTab?: 'diag' | 'form' | 'fb';
   onClose: () => void;
 }
@@ -32,7 +33,7 @@ const MONITOR_DATA = [
 ];
 
 export default function PenilaianSesiModal({ session, initialMode = 'preview', initialTab = 'diag', onClose }: Props) {
-  const [mode, setMode] = useState<'preview' | 'monitor'>(initialMode);
+  const [mode, setMode] = useState<'preview' | 'monitor' | 'analysis'>(initialMode);
   const [tab, setTab] = useState<'diag' | 'form' | 'fb'>(initialTab);
   const [fbVal, setFbVal] = useState(78);
   const [synced, setSynced] = useState(false);
@@ -68,6 +69,7 @@ export default function PenilaianSesiModal({ session, initialMode = 'preview', i
         <div className="mt-3 flex gap-1.5 rounded-xl bg-[#f4f7f5] p-1">
           <button type="button" onClick={() => setMode('preview')} className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-bold transition ${mode === 'preview' ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]'}`}><Edit3 className="h-3.5 w-3.5" />Preview & Edit</button>
           <button type="button" onClick={() => setMode('monitor')} className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-bold transition ${mode === 'monitor' ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]'}`}><Activity className="h-3.5 w-3.5" />Realtime Monitor</button>
+          <button type="button" onClick={() => setMode('analysis')} className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-bold transition ${mode === 'analysis' ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]'}`}><BarChart3 className="h-3.5 w-3.5" />Analisis</button>
         </div>
 
         {mode === 'preview' && (
@@ -212,6 +214,21 @@ export default function PenilaianSesiModal({ session, initialMode = 'preview', i
               <CheckCircle className="mt-0.5 h-3 w-3 shrink-0" />
               <span>Nilai formatif <b>otomatis tersinkron ke Gradebook</b> kolom UH saat siswa selesai.</span>
             </div>
+          </div>
+        )}
+
+        {/* ANALYSIS MODE — U2 Wave 3 */}
+        {mode === 'analysis' && (
+          <div className="mt-3">
+            {session.assessmentSessionId ? (
+              <SessionAnalysisPanel sessionId={session.assessmentSessionId} />
+            ) : (
+              <div className="rounded-xl border border-[#e6efea] bg-[#f9fbfa] p-6 text-center">
+                <BarChart3 className="mx-auto h-8 w-8 text-[#9bb0a8]" />
+                <p className="mt-2 text-[12.5px] font-medium text-[#6b8079]">Analisis hasil tersedia setelah sesi asesmen diselesaikan dan memiliki ID sesi yang terhubung.</p>
+                <p className="mt-1 text-[10.5px] font-bold text-amber-600">ⓘ Mode Analisis — backend /assessment/sessions/:id/analysis siap, menunggu sesi aktif</p>
+              </div>
+            )}
           </div>
         )}
 

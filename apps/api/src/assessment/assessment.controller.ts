@@ -46,6 +46,14 @@ export class AssessmentController {
     return this.service.getResults(id, user);
   }
 
+  // U2 Wave 3: Analisis Hasil — item analysis, score distribution, ketuntasan
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU')
+  @RequirePermission('lms.read')
+  @Get(':id/analysis')
+  getSessionAnalysis(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.service.getSessionAnalysis(id, user);
+  }
+
   @Roles('GURU')
   @RequirePermission('lms.own.manage')
   @Post()

@@ -145,6 +145,8 @@ export interface TodayClass {
   jpEnd: number;
   startLabel: string;
   isNow: boolean;
+  /** U2 Wave 3: assessment session ID for analisis hasil (optional, populated when session exists). */
+  assessmentSessionId?: string;
 }
 
 // Sumber tunggal KKTP ada di lib/academic (fondasi W0). Re-export agar konsumen
