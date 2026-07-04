@@ -9,7 +9,7 @@ import { Database, Plus, Trash2, Pencil, X, Sparkles, Loader2, Check, AlertTrian
 import clsx from 'clsx';
 import {
   fetchQuestions, createQuestion, updateQuestion, deleteQuestion,
-  aiGenerateQuestions, type QuestionData,
+  aiGenerateQuestions, type QuestionData, type EssayRubricCriteria,
 } from '../actions';
 
 interface Question extends QuestionData {
@@ -49,6 +49,8 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
   const [fOptions, setFOptions] = useState<string[]>(['', '', '', '']);
   const [fAnswer, setFAnswer] = useState('');
   const [fDifficulty, setFDifficulty] = useState<QuestionData['difficulty']>('medium');
+  // U2 Wave 2: essay rubrik state
+  const [fRubric, setFRubric] = useState<EssayRubricCriteria[]>([]);
 
   // Load questions on mount
   useEffect(() => {
@@ -70,6 +72,7 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
     setFOptions(['', '', '', '']);
     setFAnswer('');
     setFDifficulty('medium');
+    setFRubric([]); // U2 Wave 2
     setEditingId(null);
     setShowForm(false);
   };
@@ -81,6 +84,7 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
     setFOptions(q.options ?? ['', '', '', '']);
     setFAnswer(q.answer ?? '');
     setFDifficulty(q.difficulty);
+    setFRubric(q.rubric ?? []); // U2 Wave 2
     setShowForm(true);
   };
 
@@ -101,7 +105,7 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
       body: fBody.trim(),
       difficulty: fDifficulty,
       ...(fType === 'multiple_choice' ? { options: fOptions.filter((o) => o.trim()), answer: fAnswer } : {}),
-      ...(fType === 'essay' ? { answer: fAnswer } : {}),
+      ...(fType === 'essay' ? { answer: fAnswer, ...(fRubric.length > 0 ? { rubric: fRubric } : {}) } : {}),
       ...(fType === 'true_false' ? { answer: fAnswer || 'true' } : {}),
     };
 
@@ -272,13 +276,72 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
                 </div>
               )}
               {fType === 'essay' && (
-                <input
-                  type="text"
-                  value={fAnswer}
-                  onChange={(e) => setFAnswer(e.target.value)}
-                  placeholder="Kunci jawaban (opsional untuk essay)"
-                  className={FIELD}
-                />
+                <>
+                  <input
+                    type="text"
+                    value={fAnswer}
+                    onChange={(e) => setFAnswer(e.target.value)}
+                    placeholder="Kunci jawaban (opsional untuk essay)"
+                    className={FIELD}
+                  />
+                  {/* U2 Wave 2: Rubric builder */}
+                  <div className="rounded-lg border border-[#e6efea] p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-[#6b8079]">Rubrik Penilaian (opsional)</span>
+                      {fRubric.length > 0 && (
+                        <span className={clsx('text-[10px] font-bold',
+                          Math.abs(fRubric.reduce((s, c) => s + c.weight, 0) - 1) < 0.01 ? 'text-emerald-600' : 'text-amber-600')}>
+                          Total bobot: {fRubric.reduce((s, c) => s + c.weight, 0).toFixed(2)}
+                          {Math.abs(fRubric.reduce((s, c) => s + c.weight, 0) - 1) < 0.01 ? ' ✓' : ' ⚠ idealnya 1.0'}
+                        </span>
+                      )}
+                    </div>
+                    {fRubric.map((c, ci) => (
+                      <div key={ci} className="mb-2 flex items-start gap-2">
+                        <input
+                          type="text"
+                          value={c.name}
+                          onChange={(e) => setFRubric((prev) => prev.map((x, i) => i === ci ? { ...x, name: e.target.value } : x))}
+                          placeholder="Nama kriteria"
+                          className={clsx(FIELD, 'flex-1')}
+                        />
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="1"
+                          value={c.weight}
+                          onChange={(e) => setFRubric((prev) => prev.map((x, i) => i === ci ? { ...x, weight: Number(e.target.value) } : x))}
+                          placeholder="Bobot"
+                          className={clsx(FIELD, 'w-16')}
+                        />
+                        <input
+                          type="number"
+                          min="1"
+                          value={c.maxScore}
+                          onChange={(e) => setFRubric((prev) => prev.map((x, i) => i === ci ? { ...x, maxScore: Number(e.target.value) } : x))}
+                          placeholder="Max"
+                          className={clsx(FIELD, 'w-16')}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setFRubric((prev) => prev.filter((_, i) => i !== ci))}
+                          className="rounded-lg p-1.5 text-rose-400 hover:bg-rose-50"
+                          aria-label="Hapus kriteria"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setFRubric((prev) => [...prev, { id: `c${prev.length + 1}`, name: '', weight: 0, maxScore: 100, description: '' }])}
+                      className="inline-flex items-center gap-1 rounded-lg border border-[#e6efea] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"
+                    >
+                      <Plus className="h-3 w-3" />Tambah Kriteria
+                    </button>
+                  </div>
+                </>
               )}
               {fType === 'true_false' && (
                 <select value={fAnswer} onChange={(e) => setFAnswer(e.target.value)} className={FIELD} style={{ maxWidth: '120px' }}>

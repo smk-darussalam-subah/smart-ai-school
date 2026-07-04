@@ -31,6 +31,7 @@ const QUESTION_SELECT = {
   answer: true,
   difficulty: true,
   tags: true,
+  rubric: true, // U2 Wave 2: essay rubrik
   createdAt: true,
   updatedAt: true,
   teacher: { select: { id: true, user: { select: { fullName: true } } } },
@@ -64,6 +65,8 @@ export class QuestionBankService {
         answer: dto.answer ?? null,
         difficulty: dto.difficulty,
         tags: dto.tags,
+        // U2 Wave 2: essay rubrik
+        ...(dto.rubric !== undefined ? { rubric: dto.rubric as Prisma.InputJsonValue } : {}),
       },
       select: QUESTION_SELECT,
     });
@@ -136,6 +139,8 @@ export class QuestionBankService {
         ...(dto.answer !== undefined ? { answer: dto.answer } : {}),
         ...(dto.difficulty !== undefined ? { difficulty: dto.difficulty } : {}),
         ...(dto.tags !== undefined ? { tags: dto.tags } : {}),
+        // U2 Wave 2: essay rubrik
+        ...(dto.rubric !== undefined ? { rubric: dto.rubric as Prisma.InputJsonValue } : {}),
       },
       select: QUESTION_SELECT,
     });

@@ -44,3 +44,10 @@ export const SubmitResponseSchema = z.object({
   startedAt: z.string().datetime().optional(),
 });
 export type SubmitResponseDto = z.infer<typeof SubmitResponseSchema>;
+
+// U2 Wave 2: Essay rubrik grading
+export const GradeEssaySchema = z.object({
+  questionId: z.string().uuid(),
+  criteriaScores: z.record(z.string(), z.number().min(0)),
+});
+export type GradeEssayDto = z.infer<typeof GradeEssaySchema>;

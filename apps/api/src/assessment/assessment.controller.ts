@@ -15,7 +15,7 @@ import { RequirePermission } from '../permissions/decorators/require-permission.
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { AssessmentService } from './assessment.service';
 import {
-  CreateAssessmentSessionSchema, ListAssessmentSessionSchema,
+  CreateAssessmentSessionSchema, GradeEssaySchema, ListAssessmentSessionSchema,
   SubmitResponseSchema, UpdateAssessmentSessionSchema,
 } from './dto/assessment.dto';
 
@@ -89,6 +89,19 @@ export class AssessmentController {
   @HttpCode(HttpStatus.CREATED)
   startResponse(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.service.startResponse(id, user);
+  }
+
+  // U2 Wave 2: GURU menilai essay dengan rubrik (per-criteria weighted scoring)
+  @Roles('GURU', 'KEPALA_SEKOLAH')
+  @RequirePermission('lms.own.manage')
+  @Patch(':id/responses/:responseId/grade-essay')
+  gradeEssayResponse(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('responseId', ParseUUIDPipe) responseId: string,
+    @Body(ZodPipe(GradeEssaySchema)) dto: unknown,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.gradeEssayResponse(id, responseId, dto as Parameters<typeof this.service.gradeEssayResponse>[2], user);
   }
 
   @Roles('SISWA')

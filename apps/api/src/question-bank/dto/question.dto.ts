@@ -10,6 +10,8 @@ export const CreateQuestionSchema = z.object({
   answer: z.string().trim().max(5000).optional(),
   difficulty: z.enum(['easy', 'medium', 'hard']).default('medium'),
   tags: z.array(z.string().trim().min(1).max(50)).default([]),
+  // U2 Wave 2: essay rubrik — Array<{ id, name, weight, maxScore, description }>
+  rubric: z.any().optional(),
 });
 export type CreateQuestionDto = z.infer<typeof CreateQuestionSchema>;
 
@@ -21,6 +23,8 @@ export const UpdateQuestionSchema = z.object({
   answer: z.string().trim().max(5000).optional(),
   difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
   tags: z.array(z.string().trim().min(1).max(50)).optional(),
+  // U2 Wave 2: essay rubrik
+  rubric: z.any().optional(),
 });
 export type UpdateQuestionDto = z.infer<typeof UpdateQuestionSchema>;
 

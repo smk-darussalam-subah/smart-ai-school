@@ -16,6 +16,7 @@ import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateAssessmentSessionDto,
+  GradeEssayDto,
   ListAssessmentSessionDto,
   SubmitResponseDto,
   UpdateAssessmentSessionDto,
@@ -415,5 +416,82 @@ export class AssessmentService {
         timeSpentSec: r.timeSpentSec, // U2 Wave 1
       })),
     };
+  }
+
+  /** U2 Wave 2: GURU menilai essay dengan rubrik (per-criteria weighted scoring). */
+  async gradeEssayResponse(sessionId: string, responseId: string, dto: GradeEssayDto, user: AuthUser) {
+    // Verify session ownership
+    const session = await this.prisma.assessmentSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, teacherId: true },
+    });
+    if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
+
+    if (!this.isReviewer(user)) {
+      const teacherId = await this.resolveTeacherId(user.keycloakId);
+      if (session.teacherId !== teacherId) throw new ForbiddenException('Bukan sesi Anda');
+    }
+
+    // Fetch the response
+    const response = await this.prisma.assessmentResponse.findFirst({
+      where: { id: responseId, sessionId },
+      select: { id: true, answers: true, score: true },
+    });
+    if (!response) throw new NotFoundException('Respons tidak ditemukan');
+
+    // Fetch the question with rubric
+    const question = await this.prisma.question.findUnique({
+      where: { id: dto.questionId },
+      select: { id: true, rubric: true },
+    });
+    if (!question) throw new NotFoundException('Soal tidak ditemukan');
+
+    const rubric = question.rubric;
+    if (!rubric || !Array.isArray(rubric) || rubric.length === 0) {
+      throw new ConflictException('Soal ini tidak memiliki rubrik penilaian');
+    }
+
+    // Compute weighted total: sum(score * weight) / sum(maxScore * weight) * 100
+    let weightedSum = 0;
+    let maxWeightedSum = 0;
+    const criteriaResults: Record<string, { score: number; weight: number; maxScore: number }> = {};
+
+    for (const criteria of rubric as Array<{ id: string; weight: number; maxScore: number }>) {
+      const score = dto.criteriaScores[criteria.id] ?? 0;
+      const weight = criteria.weight ?? 0;
+      const maxScore = criteria.maxScore ?? 100;
+      weightedSum += score * weight;
+      maxWeightedSum += maxScore * weight;
+      criteriaResults[criteria.id] = { score, weight, maxScore };
+    }
+
+    const totalScore = maxWeightedSum > 0
+      ? Math.round((weightedSum / maxWeightedSum) * 100)
+      : 0;
+
+    // Merge essayScores into answers JSON
+    const existingAnswers = (response.answers as Prisma.JsonObject) ?? {};
+    const essayScores = (existingAnswers.essayScores as Prisma.JsonObject) ?? {};
+    essayScores[dto.questionId] = {
+      criteria: criteriaResults,
+      total: totalScore,
+    } as Prisma.InputJsonValue;
+
+    // Update response: set score (max of existing score and new essay score),
+    // or if this is the only essay, set score directly
+    const newScore = response.score != null
+      ? Math.max(response.score, totalScore)
+      : totalScore;
+
+    return this.prisma.assessmentResponse.update({
+      where: { id: responseId },
+      data: {
+        score: newScore,
+        answers: { ...existingAnswers, essayScores } as Prisma.InputJsonValue,
+      },
+      select: {
+        id: true, sessionId: true, score: true, submittedAt: true,
+      },
+    });
   }
 }
