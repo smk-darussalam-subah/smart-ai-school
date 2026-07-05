@@ -1,7 +1,9 @@
 'use client';
 
-import { Award, Mail, Phone, MapPin, Calendar, QrCode } from 'lucide-react';
-import { SIM_PROFILE_CV } from './siswa-data';
+import { useEffect, useState } from 'react';
+import { Award, Mail, Phone, Calendar, QrCode } from 'lucide-react';
+import type { ProfileCvData } from '../../actions';
+import { fetchProfileCv } from '../../actions';
 import type { SiswaScreen } from './SiswaWorkspace';
 import type { SiswaBadge } from './siswa-types';
 
@@ -15,9 +17,18 @@ interface Props {
 }
 
 export default function ProfileCV({ isOpen, onClose, showToast: _showToast, go: _go, badges }: Props) {
-  // Profil identitas (nama/nis/email/dll) masih contoh — backend profil siswa lengkap
-  // (agregasi XP, level, avg, streak) belum tersedia. Badge sudah real (dari props).
-  const displayProfile = SIM_PROFILE_CV;
+  // P1 (S-09): Profile identity + aggregates from GET /students/me/profile-cv
+  const [profile, setProfile] = useState<ProfileCvData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setLoading(true);
+    fetchProfileCv().then((res) => {
+      if (res.success && res.data) setProfile(res.data);
+    }).finally(() => setLoading(false));
+  }, [isOpen]);
+
   const displayBadges = (badges ?? []).filter((b: SiswaBadge) => b.earned);
 
   if (!isOpen) return null;
@@ -40,16 +51,22 @@ export default function ProfileCV({ isOpen, onClose, showToast: _showToast, go: 
             ← Kembali
           </button>
 
+          {loading ? (
+            <div className="relative z-10 py-8 text-center text-sm font-semibold text-white/60">Memuat profil...</div>
+          ) : profile ? (<>
           <div className="relative z-10 flex items-center gap-4">
             <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white/20 text-3xl font-extrabold backdrop-blur">
-              {displayProfile.name.charAt(0)}
+              {profile.name.charAt(0)}
             </div>
             <div>
-              <h1 className="text-2xl font-extrabold">{displayProfile.name}</h1>
-              <p className="mt-1 text-sm font-semibold text-white/80">{displayProfile.nis} · {displayProfile.class}</p>
-              <p className="mt-0.5 text-xs font-semibold text-white/60">{displayProfile.school}</p>
+              <h1 className="text-2xl font-extrabold">{profile.name}</h1>
+              <p className="mt-1 text-sm font-semibold text-white/80">{profile.nis} · {profile.class}</p>
+              <p className="mt-0.5 text-xs font-semibold text-white/60">{profile.school}</p>
             </div>
           </div>
+          </>) : (
+            <div className="relative z-10 py-8 text-center text-sm font-semibold text-white/60">Profil belum tersedia.</div>
+          )}
         </div>
 
         {/* Contact Info */}
@@ -57,19 +74,15 @@ export default function ProfileCV({ isOpen, onClose, showToast: _showToast, go: 
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 space-y-3">
             <div className="flex items-center gap-3">
               <Mail className="h-4 w-4 text-[var(--muted)]" />
-              <span className="text-sm font-semibold">{displayProfile.email}</span>
+              <span className="text-sm font-semibold">{profile?.email ?? '—'}</span>
             </div>
             <div className="flex items-center gap-3">
               <Phone className="h-4 w-4 text-[var(--muted)]" />
-              <span className="text-sm font-semibold">{displayProfile.phone}</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <MapPin className="h-4 w-4 text-[var(--muted)]" />
-              <span className="text-sm font-semibold">{displayProfile.address}</span>
+              <span className="text-sm font-semibold">{profile?.phone ?? '—'}</span>
             </div>
             <div className="flex items-center gap-3">
               <Calendar className="h-4 w-4 text-[var(--muted)]" />
-              <span className="text-sm font-semibold">TMT: {displayProfile.enrollmentDate}</span>
+              <span className="text-sm font-semibold">TMT: {profile?.enrollmentDate ?? '—'}</span>
             </div>
           </div>
         </div>
@@ -78,7 +91,7 @@ export default function ProfileCV({ isOpen, onClose, showToast: _showToast, go: 
         <div className="px-5 pb-4">
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-center">
-              <div className="text-2xl font-extrabold text-emerald-500">{displayProfile.xp}</div>
+              <div className="text-2xl font-extrabold text-emerald-500">{profile?.xp ?? 0}</div>
               <div className="mt-0.5 text-[10px] font-bold text-[var(--muted)] uppercase tracking-wider">Total XP</div>
             </div>
             <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-center">
@@ -86,7 +99,7 @@ export default function ProfileCV({ isOpen, onClose, showToast: _showToast, go: 
               <div className="mt-0.5 text-[10px] font-bold text-[var(--muted)] uppercase tracking-wider">Badges</div>
             </div>
             <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-center">
-              <div className="text-2xl font-extrabold text-violet-500">{displayProfile.level}</div>
+              <div className="text-2xl font-extrabold text-violet-500">{profile?.level ?? 1}</div>
               <div className="mt-0.5 text-[10px] font-bold text-[var(--muted)] uppercase tracking-wider">Level</div>
             </div>
           </div>
@@ -118,28 +131,25 @@ export default function ProfileCV({ isOpen, onClose, showToast: _showToast, go: 
           )}
         </div>
 
-        {/* Academic Summary — identitas & agregasi masih contoh (backend profil lengkap menyusul) */}
+        {/* Academic Summary — P1: real data from /students/me/profile-cv */}
         <div className="px-5 pb-4">
-          <div className="mb-2 inline-flex items-center gap-1.5 rounded-md bg-amber-500/15 px-2 py-0.5 text-[9px] font-bold text-amber-600">
-            Data identitas &amp; statistik masih contoh
-          </div>
           <h2 className="mb-3 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted)]">Ringkasan Akademik</h2>
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-[var(--muted)]">Rata-rata Nilai</span>
-              <span className="text-lg font-extrabold text-emerald-500">{displayProfile.avgGrade}</span>
+              <span className="text-lg font-extrabold text-emerald-500">{profile?.avgGrade ?? '—'}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-[var(--muted)]">Kehadiran</span>
-              <span className="text-lg font-extrabold text-violet-500">{displayProfile.attendance}%</span>
+              <span className="text-lg font-extrabold text-violet-500">{profile?.attendance != null ? `${profile.attendance}%` : '—'}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-[var(--muted)]">Modul Selesai</span>
-              <span className="text-lg font-extrabold text-amber-500">{displayProfile.modulesCompleted}</span>
+              <span className="text-lg font-extrabold text-amber-500">{profile?.modulesCompleted ?? 0}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-[var(--muted)]">Streak Kehadiran</span>
-              <span className="text-lg font-extrabold text-rose-500">{displayProfile.streak} hari</span>
+              <span className="text-lg font-extrabold text-rose-500">{profile?.streak ?? 0} hari</span>
             </div>
           </div>
         </div>
@@ -149,7 +159,7 @@ export default function ProfileCV({ isOpen, onClose, showToast: _showToast, go: 
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-center">
             <QrCode className="mx-auto mb-2 h-24 w-24 text-[var(--muted)]" />
             <div className="text-xs font-bold">Scan untuk Verifikasi Identitas</div>
-            <div className="mt-1 text-[10px] font-semibold text-[var(--muted)]">{displayProfile.nis}</div>
+            <div className="mt-1 text-[10px] font-semibold text-[var(--muted)]">{profile?.nis ?? '—'}</div>
           </div>
         </div>
       </div>

@@ -5,7 +5,7 @@
 // (backend /attendance/sessions belum tersedia).
 
 import { useMemo } from 'react';
-import { CalendarCheck, Users, Check, Info, UserX, TrendingUp, AlertTriangle } from 'lucide-react';
+import { CalendarCheck, Users, Check, Info, UserX, TrendingUp } from 'lucide-react';
 import type { AttendanceItem } from '@/lib/api';
 
 interface Props {
@@ -69,8 +69,8 @@ export default function KehadiranGuru({ attendances, className }: Props) {
         <h3 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
           <CalendarCheck className="h-[18px] w-[18px] text-emerald-600" />Rekap Kehadiran per Sesi
         </h3>
-        <div className="mb-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10.5px] font-bold text-amber-700">
-          <AlertTriangle className="h-3 w-3" /> SIMULASI — backend /attendance/sessions belum tersedia
+        <div className="mb-2 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10.5px] font-bold text-sky-700">
+          Rekap per-sesi akan tersedia menyusul
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-[12px]">

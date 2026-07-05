@@ -373,6 +373,13 @@ export async function aiGenerateAtp(data: { cp: string; tp: string[]; subject: s
   return r;
 }
 
+/** P4 (S-12): Generate RPP step content via AI gateway (8 steps). */
+export async function aiGenerateRppStep(data: { step: string; subject: string; context: string }): Promise<{ success: boolean; data?: { type: string; output: string }; error?: string }> {
+  const r = await apiCall('/ai/generate-rpp-step', 'POST', data);
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { type: string; output: string } };
+}
+
 // ── Assessment Sessions (U2 — comprehensive assessment) ────────────────────
 
 /** U2 Wave 1: SISWA memulai pengerjaan — mencatat startedAt, return shuffled questions. */
@@ -399,6 +406,41 @@ export async function gradeEssayResponse(sessionId: string, responseId: string, 
 export async function fetchSessionAnalysis(sessionId: string) {
   const r = await apiCall(`/assessment/sessions/${sessionId}/analysis`, 'GET');
   return r;
+}
+
+/** P2 (S-01): Fetch a single assessment session with its questions (for preview mode). */
+export async function fetchAssessmentSession(sessionId: string): Promise<{ success: boolean; data?: AssessmentSessionData; error?: string }> {
+  const r = await apiCall(`/assessment/sessions/${sessionId}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as AssessmentSessionData };
+}
+
+export interface AssessmentSessionData {
+  id: string;
+  title: string;
+  type: string;
+  status: string;
+  questions: unknown[];
+  durationMinutes: number | null;
+  randomizeOrder: boolean;
+  startedAt: string | null;
+  completedAt: string | null;
+  module?: { id: string; title: string; subject: string };
+  class?: { id: string; name: string };
+}
+
+/** P2 (S-03): GURU starts/activates a session (draft → active). */
+export async function startAssessmentSession(sessionId: string): Promise<{ success: boolean; data?: AssessmentSessionData; error?: string }> {
+  const r = await apiCall(`/assessment/sessions/${sessionId}/start`, 'PATCH');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as AssessmentSessionData };
+}
+
+/** P2 (S-03): GURU completes a session (active → completed). */
+export async function completeAssessmentSession(sessionId: string): Promise<{ success: boolean; data?: AssessmentSessionData; error?: string }> {
+  const r = await apiCall(`/assessment/sessions/${sessionId}/complete`, 'PATCH');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as AssessmentSessionData };
 }
 
 /** U2 Wave 4: Export questions as CSV. */
@@ -606,4 +648,41 @@ export interface ReportCardItem {
   distributedAt: string | null;
   student: { id: string; nis: string; user: { fullName: string } };
   class: { id: string; name: string };
+}
+
+// ── P1: Data-integrity endpoints (S-05 teacher attendance + S-09 profile CV) ─────
+
+/** P1 (S-05): Fetch today's teacher attendance summary for KS dashboard. */
+export async function fetchTeacherAttendanceToday(): Promise<{ success: boolean; data?: TeacherAttendanceSummary; error?: string }> {
+  const r = await apiCall('/teacher-attendance/today-summary', 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as TeacherAttendanceSummary };
+}
+
+export interface TeacherAttendanceSummary {
+  date: string;
+  total: number;
+  hadir: number;
+  selesai: number;
+  belum: number;
+  outsideGeofence: number;
+  roster: Array<{
+    teacherId: string; nama: string; inisial: string; mapel: string;
+    status: string; checkInAt: string | null; checkOutAt: string | null; outsideGeofence: boolean;
+  }>;
+}
+
+/** P1 (S-09): Fetch siswa profile CV aggregate (identity + academic stats). */
+export async function fetchProfileCv(): Promise<{ success: boolean; data?: ProfileCvData; error?: string }> {
+  const r = await apiCall('/students/me/profile-cv', 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as ProfileCvData };
+}
+
+export interface ProfileCvData {
+  name: string; nis: string; email: string; phone: string;
+  class: string; school: string; enrollmentDate: string;
+  xp: number; level: number;
+  avgGrade: number | null; attendance: number | null;
+  modulesCompleted: number; streak: number;
 }

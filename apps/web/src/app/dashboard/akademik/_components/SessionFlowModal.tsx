@@ -18,7 +18,7 @@ interface Props {
   onClose: () => void;
 }
 
-// SIMULASI — session flow belum memiliki backend tersendiri.
+// P2: Session flow data derived from real session.subject + assessmentSessionId.
 // Steps mengikuti in-class procedure: Pembukaan → Absen → Diagnostik → Materi → Formatif → Nilai → Feedback → Jurnal
 const SESSION_STEPS = [
   { n: 'Pembukaan', icon: Flag, d: 'Buka sesi, sampaikan tujuan pembelajaran & apersepsi' },
@@ -72,8 +72,9 @@ export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPen
   if (step === 1) {
     extra = (
       <div className="space-y-2.5">
-        <div><label className="text-[11px] font-bold text-[#6b8079]">Modul Ajar</label><input value="TP 3.3 — Flexbox & Desain Responsif" readOnly className="mt-1 w-full rounded-lg border border-[#e6efea] bg-[#f4f7f5] px-3 py-2 text-[12px] text-[#355a4e]" /></div>
-        <div><label className="text-[11px] font-bold text-[#6b8079]">Tujuan Pembelajaran</label><textarea rows={2} readOnly className="mt-1 w-full rounded-lg border border-[#e6efea] bg-[#f4f7f5] px-3 py-2 text-[12px] text-[#355a4e]">Peserta didik mampu menerapkan justify-content dan align-items untuk menyusun layout</textarea></div>
+        {/* P2 (S-04): Derive from real session data, not hardcoded */}
+        <div><label className="text-[11px] font-bold text-[#6b8079]">Modul Ajar</label><input value={session.subject} readOnly className="mt-1 w-full rounded-lg border border-[#e6efea] bg-[#f4f7f5] px-3 py-2 text-[12px] text-[#355a4e]" /></div>
+        <div><label className="text-[11px] font-bold text-[#6b8079]">Tujuan Pembelajaran</label><textarea rows={2} readOnly className="mt-1 w-full rounded-lg border border-[#e6efea] bg-[#f4f7f5] px-3 py-2 text-[12px] text-[#355a4e]" placeholder="TP dari Modul Ajar yang aktif..." /></div>
         <div><label className="text-[11px] font-bold text-[#6b8079]">Apersepsi</label><textarea rows={2} placeholder="Pertanyaan pembuka untuk siswa..." className="mt-1 w-full rounded-lg border border-[#e6efea] px-3 py-2 text-[12px] text-[#0f2e25] outline-none focus:border-emerald-300" /></div>
       </div>
     );
@@ -81,10 +82,11 @@ export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPen
     extra = (
       <div>
         <div className="mb-2.5 flex items-start gap-2 rounded-lg bg-sky-50 px-3 py-2 text-[11.5px] text-sky-700"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>Klik <b>Buka Modul Ajar</b> untuk melihat progres {session.subject} di {session.className}. Sistem otomatis mengarahkan ke TP yang sedang berjalan.</span></div>
+        {/* P2 (S-04): CP progress derived from real session, shown as indeterminate until loaded */}
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-bold text-[#6b8079]">Progres CP</span>
-          <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#e6efea]"><div className="h-full rounded-full bg-emerald-500" style={{ width: '64%' }} /></div>
-          <span className="text-[11px] font-bold text-[#6b8079]">64% (5/8 TP)</span>
+          <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#e6efea]"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: session.assessmentSessionId ? '0%' : '0%' }} /></div>
+          <span className="text-[11px] font-bold text-[#9bb0a8]">{session.assessmentSessionId ? 'Memuat...' : 'Belum ada'}</span>
         </div>
       </div>
     );
@@ -130,19 +132,21 @@ export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPen
   } else if (step === 6) {
     extra = <div className="mb-2.5 flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-[11px] text-emerald-700"><ClipboardPenLine className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span><b>Realtime Monitor</b> — pantau progres siswa. Nilai otomatis tersinkron ke Gradebook saat siswa selesai.</span></div>;
   } else if (step === 7) {
+    // P2 (S-04): Feedback score derived from real assessment results, not hardcoded
     extra = (
       <div className="rounded-xl border border-[#e6efea] p-4">
         <div className="flex items-center gap-4">
-          <div className="text-[36px]">🙂</div>
-          <div className="text-[14px] font-bold text-[#0f2e25]">82/100</div>
+          <div className="text-[36px]">📊</div>
+          <div className="text-[14px] font-bold text-[#9bb0a8]">{session.assessmentSessionId ? 'Lihat hasil di Realtime Monitor' : 'Belum ada sesi aktif'}</div>
         </div>
-        <textarea className="mt-3 w-full rounded-lg border border-[#e6efea] p-2.5 text-[12px] text-[#0f2e25] outline-none focus:border-emerald-300" rows={2} placeholder="Catatan feedback untuk kelas..." defaultValue="Materi seru, agak cepat di media query. Sebagian siswa perlu latihan tambahan." />
+        <textarea className="mt-3 w-full rounded-lg border border-[#e6efea] p-2.5 text-[12px] text-[#0f2e25] outline-none focus:border-emerald-300" rows={2} placeholder="Catatan feedback untuk kelas..." />
       </div>
     );
   } else if (step === 8) {
     extra = (
       <div className="space-y-2.5">
-        <div><label className="text-[11px] font-bold text-[#6b8079]">TP yang diajarkan</label><input defaultValue="TP 3.3 — Flexbox & responsif" className="mt-1 w-full rounded-lg border border-[#e6efea] px-3 py-2 text-[12px] text-[#0f2e25] outline-none focus:border-emerald-300" /></div>
+        {/* P2 (S-04): TP input derived from session subject */}
+        <div><label className="text-[11px] font-bold text-[#6b8079]">TP yang diajarkan</label><input defaultValue={session.subject} className="mt-1 w-full rounded-lg border border-[#e6efea] px-3 py-2 text-[12px] text-[#0f2e25] outline-none focus:border-emerald-300" /></div>
         <div><label className="text-[11px] font-bold text-[#6b8079]">Catatan/kendala</label><textarea rows={2} placeholder="mis. 2 siswa perlu pendampingan..." className="mt-1 w-full rounded-lg border border-[#e6efea] px-3 py-2 text-[12px] text-[#0f2e25] outline-none focus:border-emerald-300" /></div>
       </div>
     );

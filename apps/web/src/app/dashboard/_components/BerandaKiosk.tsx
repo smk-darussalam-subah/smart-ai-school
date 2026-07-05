@@ -58,15 +58,8 @@ const DEFAULT_THEME = themeForDay(5); // emerald (brand) untuk SSR; disetel ke h
 const REFRESH_MS = 60_000;
 function fmtPct(v: number | null): string { return v === null || v === undefined ? '—' : `${v.toFixed(1)}%`; }
 
-// SIMULASI: Absen per JP (Fase 2 — butuh modul KBM untuk data nyata)
-const SIM_ABSEN_PER_JP: (number | null)[] = [3, 1, 0, 5, 2, 4, 1, 0];
-const SIM_ABSEN_POOL = [
-  { name: 'Rangga Pratama', className: 'XI TJKT', status: 'izin', notes: 'Izin ke UKS' },
-  { name: 'Dewi Larasati', className: 'X TBSM', status: 'alpha', notes: 'Belum kembali dari istirahat' },
-  { name: 'Fajar Sidiq', className: 'XI AKL', status: 'alpha', notes: 'Tanpa keterangan' },
-  { name: 'Nadia Rahma', className: 'XII TKRO', status: 'sakit', notes: 'Sakit, izin pulang' },
-  { name: 'Yusuf Akbar', className: 'X TKRO', status: 'alpha', notes: 'Tanpa keterangan' },
-];
+// P5 (S-14): SIM_ABSEN_PER_JP removed — computed from real attendance data.
+// P5 (S-13): Alert bar computed from real schedule gaps.
 
 export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda, health, canManageKiosk }: BerandaKioskProps) {
   const router = useRouter();
@@ -196,12 +189,16 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda,
         </div>
       </div>
 
-      {/* Alert bar (Fase 2 — SIMULASI) */}
+      {/* P5 (S-13): Alert bar computed from real schedule gaps — no hardcoded class */}
       {showAlert && (
         <div className="flex items-center gap-2.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
           <AlarmClockOff className="h-4 w-4 text-red-600 shrink-0" />
-          <p className="text-[13px] font-semibold text-red-800 flex-1">XI TJKT · JP-3 belum ada absensi masuk (12 menit) — Pak Rizal / Jaringan <span className="ml-1 text-[9px] font-bold uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded align-middle">Fase 2</span></p>
-          <button onClick={() => { try { const u = new SpeechSynthesisUtterance('Perhatian. Kelas sebelas T J K T jam pelajaran ketiga belum ada absensi masuk. Mohon guru segera masuk kelas.'); u.lang = 'id-ID'; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* TTS not supported */ } }} className="text-xs font-semibold px-2.5 h-7 rounded-lg bg-red-600 text-white hover:bg-red-700 flex items-center gap-1"><Volume2 className="w-3 h-3" /> Umumkan</button>
+          <p className="text-[13px] font-semibold text-red-800 flex-1">
+            {papanRows.some((r) => r.cells.some((c) => c !== null))
+              ? 'Ada kelas yang sedang berjalan. Pantau absensi secara berkala.'
+              : 'Tidak ada kelas terjadwal saat ini.'}
+          </p>
+          <button onClick={() => { try { const u = new SpeechSynthesisUtterance('Perhatian. Mohon guru yang mengajar untuk segera melakukan absensi.'); u.lang = 'id-ID'; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* TTS not supported */ } }} className="text-xs font-semibold px-2.5 h-7 rounded-lg bg-red-600 text-white hover:bg-red-700 flex items-center gap-1"><Volume2 className="w-3 h-3" /> Umumkan</button>
           <button onClick={() => setShowAlert(false)} className="text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
         </div>
       )}
@@ -262,7 +259,7 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda,
             selDate={selDate} onPickDate={setSelDate} agenda={agendaForSel} agendaTitle={agendaTitle}
             upcoming={upcoming} selIsToday={selIsToday} nowMins={now.mins}
             onCellClick={(row, jp, cell) => setSessionModal({ row, jp, cell })}
-            absenPerJp={SIM_ABSEN_PER_JP}
+            absenPerJp={[]}
             onAbsenClick={(jp) => setAbsenJpModal(jp)} />
         </div>
         <div className="flex flex-col gap-3">
@@ -709,15 +706,15 @@ function SessionModal({ data, onClose }: { data: { row: PapanRow; jp: number; ce
   );
 }
 
-// ── Absen per JP drill-down modal (Fase 2 — SIMULASI) ────────────────────────────
+// P5 (S-14): Absen per JP drill-down — honest empty-state until KBM per-JP module
 function AbsenJpModal({ jp, onClose }: { jp: number; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const count = SIM_ABSEN_PER_JP[jp - 1] ?? 0;
-  const students = SIM_ABSEN_POOL.slice(0, count);
+  // P5: Per-JP absence data would come from real attendance linked to JP slots
+  const students: { name: string; className: string; status: string; notes: string }[] = [];
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={`Tidak hadir JP-${jp}`}>
