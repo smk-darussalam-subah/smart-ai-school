@@ -174,7 +174,7 @@ export function RaporModal({
         )}
         {!sectionsLoading && (!studentId || !academicYear || !semester) && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-bold text-amber-700">
-            SIMULASI — Bagian B-G belum terhubung ke backend. Data akan tersedia saat rapor diterbitkan.
+            Data lengkap tersedia saat rapor diterbitkan.
           </div>
         )}
 

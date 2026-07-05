@@ -4,7 +4,7 @@
 // KsWorkspace — Dashboard KS / Waka Kurikulum (F4 — mockup adoption).
 // 7 screens: Beranda · Modul Ajar (RPP approval) · Audit Sumatif ·
 // Monitoring KBM · Rekap Audit · KKTP · Jadwal & Tugas.
-// Desktop-first. Real data where APIs exist; SIMULASI bertanda for the rest.
+// Desktop-first. Real data where APIs exist.
 // Mockup ref: .tasks/akademik-mockup/akademik-ks.html (1,305 lines)
 // =============================================================================
 
@@ -22,7 +22,8 @@ import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem, ActivityItem, RppItem, ClassRef, LmsModuleItem } from './guru-types';
 import { KKTP_DEFAULT } from '@/lib/academic';
 import { JP_SLOTS, fmtMin, scheduleDayOfWeek, wibTodayISO, wibDateLabel, currentJp, wibNow } from '@/lib/bell-times';
-import { reviewRpp, fetchAttendanceHeatmap, fetchMonitoringKbm, fetchRekapAudit, fetchKktpConfigs, saveKktpConfig } from '../actions';
+import { reviewRpp, fetchAttendanceHeatmap, fetchMonitoringKbm, fetchRekapAudit, fetchKktpConfigs, saveKktpConfig, fetchTeacherAttendanceToday } from '../actions';
+import type { TeacherAttendanceSummary } from '../actions';
 import RaporPipelineKs from './ks/RaporPipelineKs';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -59,46 +60,22 @@ const NAV: { key: Screen; label: string; icon: LucideIcon; badge?: number }[] = 
 
 const DOW = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
-// ── SIMULASI data (bertanda) ─────────────────────────────────────────────────
+// ── Types & config ───────────────────────────────────────────────────────────
 
-// SIMULASI: Sumatif audit queue — now wired to real assessment sessions
-const SIM_SUMATIF = [
-  { id: 's1', guru: 'Siti Aminah', mapel: 'Matematika', kelas: 'X TKRO 1', jenis: 'UH', judul: 'UH 3 — Sistem Persamaan Linear', soal: 10, status: 'Menunggu', tanggal: '15 Jun', kkm: 75, deskripsi: '10 soal: 5 PG, 3 isian, 2 uraian. Durasi 45 menit.' },
-  { id: 's2', guru: 'Budi Hartono', mapel: 'Pemrograman Web', kelas: 'XI TJKT 1', jenis: 'UTS', judul: 'UTS Ganjil — HTML, CSS & Layout', soal: 15, status: 'Menunggu', tanggal: '13 Jun', kkm: 75, deskripsi: '15 soal: 8 PG, 4 isian, 3 praktik. Durasi 90 menit.' },
-  { id: 's3', guru: 'Dewi Lestari', mapel: 'B. Indonesia', kelas: 'XI TJKT 1', jenis: 'UH', judul: 'UH 2 — Teks Eksposisi', soal: 8, status: 'Disetujui', tanggal: '8 Jun', kkm: 75, deskripsi: '8 soal: 4 PG, 2 isian, 2 uraian. Durasi 40 menit.' },
-];
+// P0: All SIMULASI constants purged — type-only anchors or honest config.
+// Sumatif data comes from /assessment/sessions (T1-05). Below is the type only.
+interface SumatifItem {
+  id: string; guru: string; mapel: string; kelas: string; jenis: string;
+  judul: string; soal: number; status: string; tanggal: string; kkm: number; deskripsi: string;
+}
+
+// Scheduling structural config (NOT simulasi — these are real school parameters)
+const SCHED_CONFIG = { days: 6, jpPerDay: 8, maxJpGuru: 24 };
 
 // U6: SIM_HEALTH, SIM_TREN_*, SIM_RPP_SLOW removed — refactored to honest empty states
-
-// SIMULASI: Scheduling config — now wired to /schedules/auto-generate (fallback)
-const SIM_SCHED_CONFIG = { days: 6, jpPerDay: 8, maxJpGuru: 24 };
-const SIM_SCHED_CONFLICTS: { day: number; jp: number; rombel: string }[] = [
-  { day: 3, jp: 6, rombel: 'X TJKT 1' },
-];
-
-// SIMULASI: KKTP per-mapel — now wired to /kktp-config endpoint (fallback)
-const SIM_KKTP_DATA: Record<string, { kktp: number; affected: number }> = {
-  'Matematika': { kktp: 70, affected: 4 },
-  'Pemrograman Web': { kktp: 75, affected: 2 },
-  'Basis Data': { kktp: 75, affected: 1 },
-  'B. Indonesia': { kktp: 75, affected: 3 },
-  'B. Inggris': { kktp: 72, affected: 3 },
-  'TKRO Produktif': { kktp: 75, affected: 2 },
-  'Akuntansi': { kktp: 75, affected: 2 },
-};
-// SIMULASI: Guru list — now wired to /student-dashboard/teachers (fallback)
-const SIM_GURU_LIST = ['Budi Hartono, S.Kom', 'Siti Aminah, S.Pd', 'Ahmad Rifai, S.T.', 'Dewi Lestari, S.Pd', 'Eko Prasetyo, S.Pd', 'Rina Wati, S.E.', 'Hendra Gunawan, S.Pd'];
-// SIMULASI: Monitoring guru — now wired to /analytics/monitoring-kbm (fallback)
-const SIM_MON_GURUS = ['Budi Hartono', 'Siti Aminah', 'Ahmad Rifai', 'Dewi Lestari', 'Eko Prasetyo', 'Rina Wati'];
-
-// Fallback: Generate monitoring data from kelasMapel when API unavailable
-function genSimMonitor(km: { kelas: string; mapel: string; avg: number | null; tuntasPct: number | null; count: number }[]) {
-  return km.map((k, i) => {
-    const tp = k.tuntasPct ?? 75;
-    const status = tp >= 75 ? 'on' as const : tp >= 60 ? 'warn' as const : 'risk' as const;
-    return { guru: SIM_MON_GURUS[i % SIM_MON_GURUS.length]!, mapel: k.mapel, kelas: k.kelas, cp: tp, pert: 4 + (i % 4), rencana: 12 + (i % 5), jurnal: 3 + (i % 4), hadir: 85 + (i % 10), rata: k.avg, status };
-  });
-}
+// P0: SIM_SUMATIF fake array → type-only (SumatifItem). SIM_SCHED_CONFLICTS → empty.
+//      SIM_KKTP_DATA, SIM_GURU_LIST, SIM_MON_GURUS, genSimMonitor → deleted.
+//      Prod shows real data or honest empty-state, never fake fallback data.
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -115,10 +92,11 @@ export default function KsWorkspace({
     if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }, [screen]);
   const [selRpp, setSelRpp] = useState<RppItem | null>(null);
-  // T1-05 (audit v2): gunakan data real dari /assessment/sessions; JANGAN fallback ke SIM_SUMATIF.
+  // T1-05 (audit v2): gunakan data real dari /assessment/sessions; JANGAN fallback ke fake data.
   // Saat kosong → array kosong → AuditSumatifKs menampilkan empty state (bukan data palsu).
-  const sumatifData = (realSumatif as typeof SIM_SUMATIF | undefined) ?? [];
-  const [selSumatif, setSelSumatif] = useState<typeof SIM_SUMATIF[number] | null>(null);
+  // P0: typeof SIM_SUMATIF → SumatifItem interface.
+  const sumatifData = (realSumatif as SumatifItem[] | undefined) ?? [];
+  const [selSumatif, setSelSumatif] = useState<SumatifItem | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
@@ -193,7 +171,7 @@ export default function KsWorkspace({
         <select value={filterGuru} onChange={(e) => setFilterGuru(e.target.value)}
           className="rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] shadow-sm outline-none">
           <option>Semua Guru</option>
-          {SIM_GURU_LIST.map((g) => <option key={g}>{g}</option>)}
+          {/* P0: guru filter populated from real data when available (P1 will wire teacher endpoint) */}
         </select>
         <select value={filterMapel} onChange={(e) => setFilterMapel(e.target.value)}
           className="rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] shadow-sm outline-none">
@@ -274,10 +252,19 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
   const [berandaModal, setBerandaModal] = useState<null | 'kehadiran' | 'guruHadir' | 'kelasBerjalan'>(null);
   const [trenData, setTrenData] = useState<{ siswa: number[]; guru: number[] } | null>(null);
   const [trenLoading, setTrenLoading] = useState(false);
+  // P1 (S-05): Fetch real teacher attendance for KS dashboard
+  const [teacherAtt, setTeacherAtt] = useState<TeacherAttendanceSummary | null>(null);
   const dow = scheduleDayOfWeek();
   const todaySchedules = schedules.filter((s) => s.dayOfWeek === dow);
   const activeClasses = new Set(todaySchedules.map((s) => s.class?.name)).size;
   const todayHadirPct = todayAtt.length ? Math.round((todayAtt.filter((a) => a.status === 'hadir').length / todayAtt.length) * 100) : null;
+
+  // P1 (S-05): Fetch teacher attendance on mount
+  useEffect(() => {
+    fetchTeacherAttendanceToday().then((res) => {
+      if (res.success && res.data) setTeacherAtt(res.data);
+    });
+  }, []);
 
   // T2-02: Fetch heatmap data for trend chart
   useEffect(() => {
@@ -294,9 +281,9 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
           }
           return t ? Math.round((h / t) * 1000) / 10 : 0;
         });
-        // Split into siswa (first half) and guru (second half) — approximate
-        // Since heatmap is student attendance, use it for siswa; guru stays SIMULASI
-        setTrenData({ siswa: pcts, guru: pcts.map(p => Math.min(100, p + 2)) }); // Simulate guru slightly higher
+        // P0 (S-06): guru tren no longer approximated (p+2 removed).
+        // Siswa tren uses real heatmap data. Guru tren is null until P1 ships teacher-attendance.
+        setTrenData({ siswa: pcts, guru: [] });
       }
     }).finally(() => setTrenLoading(false));
   }, [trenPeriod]);
@@ -306,7 +293,7 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
       {/* KPI grid */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Kpi icon={Users} label="Kehadiran Siswa" value={todayHadirPct !== null ? `${todayHadirPct}%` : '—'} sub={todayAtt.length ? `${todayAtt.length} catatan hari ini` : undefined} onClick={() => setBerandaModal('kehadiran')} />
-        <Kpi icon={BadgeCheck} label="Guru Hadir" value="—" sub="SIMULASI" onClick={() => setBerandaModal('guruHadir')} />
+        <Kpi icon={BadgeCheck} label="Guru Hadir" value={teacherAtt ? `${teacherAtt.hadir}/${teacherAtt.total}` : '—'} sub={teacherAtt ? `${teacherAtt.belum} belum hadir` : 'Memuat...'} onClick={() => setBerandaModal('guruHadir')} />
         <Kpi icon={Presentation} label="Kelas Berjalan" value={`${activeClasses}`} sub={`${todaySchedules.length} sesi hari ini`} onClick={() => setBerandaModal('kelasBerjalan')} />
         <Kpi icon={FileClock} label="Modul Pending" value={`${pendingRpp}`} valueClass="text-amber-600" onClick={() => onNavigate('modul')} />
         <Kpi icon={ClipboardPenLine} label="Sumatif Pending" value={`${pendingSumatif}`} valueClass="text-amber-600" onClick={() => onNavigate('sumatif')} />
@@ -396,7 +383,7 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
 
       {/* Drill-down Modals */}
       {berandaModal === 'kehadiran' && <KehadiranDetailModal todayAtt={todayAtt} onClose={() => setBerandaModal(null)} />}
-      {berandaModal === 'guruHadir' && <GuruHadirModal onClose={() => setBerandaModal(null)} />}
+      {berandaModal === 'guruHadir' && <GuruHadirModal data={teacherAtt} onClose={() => setBerandaModal(null)} />}
       {berandaModal === 'kelasBerjalan' && <KelasBerjalanModal schedules={schedules} classes={classes} onClose={() => setBerandaModal(null)} />}
     </div>
   );
@@ -535,50 +522,55 @@ function KehadiranDetailModal({ todayAtt, onClose }: { todayAtt: AttendanceItem[
   );
 }
 
-function GuruHadirModal({ onClose }: { onClose: () => void }) {
-  const simGuru = SIM_GURU_LIST.map((nama, i) => ({
-    nama,
-    inisial: nama.split(' ').map((w) => w[0]).slice(0, 2).join(''),
-    mapel: ['Matematika', 'Pemrograman Web', 'TKRO Produktif', 'B. Indonesia', 'B. Inggris', 'Akuntansi', 'Fisika'][i] ?? '—',
-    jp: 20 + ((i * 3) % 12),
-    status: i === 4 ? 'Izin' : 'Hadir',
-  }));
-  const hadir = simGuru.filter((g) => g.status === 'Hadir').length;
-  const izin = simGuru.filter((g) => g.status !== 'Hadir');
+function GuruHadirModal({ data, onClose }: { data: TeacherAttendanceSummary | null; onClose: () => void }) {
+  // P1 (S-05): Real teacher attendance from GET /teacher-attendance/today-summary
+  const roster = data?.roster ?? [];
+  const hadir = data?.hadir ?? 0;
+  const belum = data?.belum ?? 0;
+  const total = data?.total ?? 0;
+  const outside = data?.outsideGeofence ?? 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="sticky top-0 flex items-center justify-between border-b border-[#e6efea] bg-white px-5 py-4">
-          <div><h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><BadgeCheck className="h-5 w-5 text-emerald-600" />Guru Hadir — {hadir}/{simGuru.length}</h3><p className="text-[11.5px] text-[#6b8079]">{hadir} hadir · {izin.length} tidak hadir · {wibDateLabel()}</p></div>
+          <div><h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><BadgeCheck className="h-5 w-5 text-emerald-600" />Guru Hadir — {hadir}/{total}</h3><p className="text-[11.5px] text-[#6b8079]">{hadir} hadir · {belum} belum · {wibDateLabel()}</p></div>
           <button type="button" onClick={onClose} className="rounded-lg p-1 text-[#9bb0a8] hover:bg-[#f4f7f5]" aria-label="Tutup"><X className="h-5 w-5" /></button>
         </div>
         <div className="space-y-4 p-5">
-          <div className="flex flex-wrap gap-2">
-            <StatPill n={`${hadir}`} l="Hadir" />
-            <StatPill n={`${izin.length}`} l="Izin/Sakit" />
-            <StatPill n={`${simGuru.length}`} l="Total Guru" />
-          </div>
-          <div className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10.5px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> SIMULASI — backend /teachers/attendance belum tersedia</div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12px]">
-              <thead><tr className="border-b border-[#e6efea] text-left text-[10.5px] uppercase tracking-wide text-[#6b8079]">
-                <th className="py-2 pr-3">Guru</th><th className="py-2 pr-3">Mapel</th><th className="py-2 pr-3 text-right">JP</th><th className="py-2 pr-3">Status</th><th className="py-2">Pengganti</th>
-              </tr></thead>
-              <tbody>
-                {simGuru.map((g) => (
-                  <tr key={g.nama} className="border-b border-[#f0f4f2]">
-                    <td className="py-2.5 pr-3"><span className="mr-1.5 inline-grid h-5 w-5 place-items-center rounded bg-emerald-100 text-[9px] font-bold text-emerald-700">{g.inisial}</span><b className="text-[#0f2e25]">{g.nama.split(',')[0]}</b></td>
-                    <td className="py-2.5 pr-3 text-[#355a4e]">{g.mapel}</td>
-                    <td className="py-2.5 pr-3 text-right text-[#355a4e]">{g.jp} JP</td>
-                    <td className="py-2.5 pr-3"><span className={clsx('rounded-md px-2 py-0.5 text-[10.5px] font-bold', g.status === 'Hadir' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>{g.status}</span></td>
-                    <td className="py-2.5 text-[#355a4e]">{g.status !== 'Hadir' ? <span className="rounded-md bg-sky-50 px-2 py-0.5 text-[10.5px] font-bold text-sky-700">Belajar Mandiri</span> : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {izin.length > 0 && <div className="rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-semibold text-amber-700"><AlertTriangle className="mr-1 inline h-3 w-3" />{izin.map((g) => `${g.nama.split(',')[0]} (${g.status})`).join(', ')} — kelas yang bersangkutan belajar mandiri atau digantikan rekan sejawat.</div>}
+          {roster.length > 0 ? (<>
+            <div className="flex flex-wrap gap-2">
+              <StatPill n={`${hadir}`} l="Hadir" />
+              <StatPill n={`${belum}`} l="Belum" />
+              <StatPill n={`${outside}`} l="Luar Area" />
+              <StatPill n={`${total}`} l="Total Guru" />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead><tr className="border-b border-[#e6efea] text-left text-[10.5px] uppercase tracking-wide text-[#6b8079]">
+                  <th className="py-2 pr-3">Guru</th><th className="py-2 pr-3">Mapel</th><th className="py-2 pr-3">Status</th><th className="py-2">Check-in</th>
+                </tr></thead>
+                <tbody>
+                  {roster.map((g) => (
+                    <tr key={g.teacherId} className="border-b border-[#f0f4f2]">
+                      <td className="py-2.5 pr-3"><span className="mr-1.5 inline-grid h-5 w-5 place-items-center rounded bg-emerald-100 text-[9px] font-bold text-emerald-700">{g.inisial}</span><b className="text-[#0f2e25]">{g.nama.split(',')[0]}</b></td>
+                      <td className="py-2.5 pr-3 text-[#355a4e]">{g.mapel}</td>
+                      <td className="py-2.5 pr-3"><span className={clsx('rounded-md px-2 py-0.5 text-[10.5px] font-bold', g.status === 'Hadir' || g.status === 'Selesai' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500')}>{g.status}</span>{g.outsideGeofence && <span className="ml-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">Luar Area</span>}</td>
+                      <td className="py-2.5 text-[11px] text-[#6b8079]">{g.checkInAt ? new Date(g.checkInAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>) : (
+            <div className="grid h-32 place-items-center rounded-xl border border-dashed border-[#e6efea] bg-[#f9fbfa] text-center">
+              <div>
+                <BadgeCheck className="mx-auto h-7 w-7 text-[#cbd5e1]" />
+                <p className="mt-2 text-[13px] font-bold text-[#0f2e25]">Belum ada presensi guru hari ini</p>
+                <p className="text-[11.5px] text-[#6b8079]">Data akan muncul saat guru melakukan check-in.</p>
+              </div>
+            </div>
+          )}
         </div>
         <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[#e6efea] bg-white px-5 py-3">
           <button type="button" onClick={onClose} className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>
@@ -738,7 +730,7 @@ function ModulAjarKs({ rpp, onReview, showToast }: { rpp: RppItem[]; onReview: (
 
 // ═══ SCREEN 3: AUDIT SUMATIF ═════════════════════════════════════════════════
 
-function AuditSumatifKs({ onOpenDetail, data }: { onOpenDetail: (s: typeof SIM_SUMATIF[number]) => void; data: typeof SIM_SUMATIF }) {
+function AuditSumatifKs({ onOpenDetail, data }: { onOpenDetail: (s: SumatifItem) => void; data: SumatifItem[] }) {
   const [filter, setFilter] = useState<'Semua' | 'Menunggu' | 'Disetujui' | 'Ditolak'>('Semua');
   const filtered = data.filter((s) => filter === 'Semua' || s.status === filter);
   const sumatifDataPresent = data.length > 0;
@@ -806,17 +798,13 @@ function MonitoringKbmKs({ kelasMapel, attendances: _attendances, schedules, cla
     });
   }, []);
 
-  // Use real data if available, otherwise fall back to SIMULASI from kelasMapel
-  // Hooks must be called unconditionally — compute fallback inside useMemo, then select
-  const simMonData = useMemo(() => kelasMapel.map((k, i) => {
-    const tp = k.tuntasPct ?? 75;
-    const status = tp >= 75 ? 'on' as const : tp >= 60 ? 'warn' as const : 'risk' as const;
-    return { guru: SIM_MON_GURUS[i % SIM_MON_GURUS.length]!, mapel: k.mapel, kelas: k.kelas, cp: tp, pert: 4 + (i % 4), rencana: 12 + (i % 5), jurnal: 3 + (i % 4), hadir: 85 + (i % 10), rata: k.avg, status };
-  }), [kelasMapel]);
+  // P0 (S-15): SIM_MON_GURUS fallback removed — show real data or empty-state, never fake.
+  // Hooks must be called unconditionally — compute empty fallback inside useMemo, then select
+  const emptyMonData = useMemo(() => [] as { guru: string; mapel: string; kelas: string; cp: number; pert: number; rencana: number; jurnal: number; hadir: number; rata: number | null; status: 'on' | 'warn' | 'risk' }[], [kelasMapel]);
   const monData = realMonData.length > 0 ? realMonData.map((m) => ({
     guru: m.guru, mapel: m.mapel, kelas: m.kelas, cp: m.tuntasPct ?? 0,
     pert: 0, rencana: 0, jurnal: m.jurnalCount, hadir: m.hadirPct ?? 0, rata: m.avg, status: m.status as 'on' | 'warn' | 'risk',
-  })) : simMonData;
+  })) : emptyMonData;
 
   // G8: Guru × Kelas matrix data
   const guruList = useMemo(() => [...new Set(monData.map((m) => m.guru))], [monData]);
@@ -849,11 +837,15 @@ function MonitoringKbmKs({ kelasMapel, attendances: _attendances, schedules, cla
         <Kpi icon={XCircle} label="Berisiko" value={`${berisiko}`} valueClass="text-rose-600" />
       </div>
 
-      {/* G8: Matriks Progres CP — Guru × Kelas (SIMULASI) */}
+      {/* G8: Matriks Progres CP — Guru × Kelas */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><LayoutGrid className="h-4 w-4 text-emerald-600" />Matriks Progres CP — Guru × Kelas</h4>
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> SIMULASI</span>
+          {/* P0 (S-08): conditional badge — real data shows "Real-time", empty shows honest state */}
+          {realMonData.length > 0
+            ? <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Real-time</span>
+            : null
+          }
         </div>
         <p className="text-[11.5px] text-[#6b8079]">Persen ketercapaian CP/TP per guru × kelas</p>
         {monData.length > 0 ? (
@@ -882,7 +874,7 @@ function MonitoringKbmKs({ kelasMapel, attendances: _attendances, schedules, cla
         ) : <div className="mt-3 grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] text-[#9bb0a8]">Belum ada data.</div>}
       </div>
 
-      {/* G9: Rincian Progres per Guru (SIMULASI) */}
+      {/* G9: Rincian Progres per Guru */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><ListChecks className="h-4 w-4 text-emerald-600" />Rincian Progres per Guru</h4>
         <div className="mt-3 space-y-1">
@@ -908,7 +900,7 @@ function MonitoringKbmKs({ kelasMapel, attendances: _attendances, schedules, cla
           <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><Users className="h-4 w-4 text-emerald-600" />Kehadiran Siswa per Sesi (JP)</h4>
           <span className="rounded-md bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">{wibDateLabel()}</span>
         </div>
-        <p className="text-[11.5px] text-[#6b8079]">Persentase kehadiran siswa per rombel × sesi (JP) — hari ini · <span className="font-bold text-amber-700">SIMULASI</span></p>
+        <p className="text-[11.5px] text-[#6b8079]">Persentase kehadiran siswa per rombel × sesi (JP) — hari ini</p>
         {todaySched.length > 0 ? (
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-[11.5px] border-separate" style={{ borderSpacing: 4 }}>
@@ -994,14 +986,14 @@ function RekapAuditKs({ kelasMapel, grades, attendances, activities, rpp }: {
     });
   }, []);
 
-  // Use real rekap data if available, otherwise fall back to SIMULASI
+  // P0 (S-15): genSimMonitor fallback removed — real data or empty-state only.
   // Hooks must be called unconditionally
-  const simRekapData = useMemo(() => genSimMonitor(kelasMapel), [kelasMapel]);
+  const emptyRekapData = useMemo(() => [] as { guru: string; mapel: string; kelas: string; cp: number; pert: number; rencana: number; jurnal: number; hadir: number; rata: number | null; status: 'on' | 'warn' | 'risk' }[], [kelasMapel]);
   const monData = realRekap.length > 0 ? realRekap.map((r) => ({
     guru: r.teacher, mapel: r.subject, kelas: r.className,
     cp: r.tuntasPct ?? 0, pert: 0, rencana: 0, jurnal: 0, hadir: 0,
     rata: r.average, status: (r.tuntasPct ?? 0) >= 75 ? 'on' as const : (r.tuntasPct ?? 0) >= 60 ? 'warn' as const : 'risk' as const,
-  })) : simRekapData;
+  })) : emptyRekapData;
   // G11: Sort by guru → kelas → mapel
   const sortedMon = useMemo(() => [...monData].sort((a, b) =>
     a.guru.localeCompare(b.guru) || a.kelas.localeCompare(b.kelas) || a.mapel.localeCompare(b.mapel)
@@ -1030,11 +1022,15 @@ function RekapAuditKs({ kelasMapel, grades, attendances, activities, rpp }: {
         <Kpi icon={Users} label="Kehadiran" value={hadirPct !== null ? `${hadirPct}%` : '—'} />
       </div>
 
-      {/* G11: Rincian per Guru × Kelas × Mapel (SIMULASI) */}
+      {/* G11: Rincian per Guru × Kelas × Mapel */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><Table2 className="h-4 w-4 text-emerald-600" />Rincian per Guru × Kelas × Mapel</h4>
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> SIMULASI</span>
+          {/* P0 (S-07): conditional badge — real data shows "Real-time", empty shows honest state */}
+          {realRekap.length > 0
+            ? <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Real-time</span>
+            : null
+          }
         </div>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-[12px]">
@@ -1093,11 +1089,12 @@ function RekapAuditKs({ kelasMapel, grades, attendances, activities, rpp }: {
           </div>
         )}
 
-        {/* G12: Per Guru — Rata² Tuntas (SIMULASI) */}
+        {/* G12: Per Guru — Rata² Tuntas */}
         <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><TrendingUp className="h-4 w-4 text-emerald-600" />Per Guru — Rata² Tuntas</h4>
-            <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> SIMULASI</span>
+            {/* P0: conditional badge — real data shows "Real-time" */}
+            {realRekap.length > 0 && <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Real-time</span>}
           </div>
           <div className="mt-3 space-y-3">
             {guruAgg.map((g) => (
@@ -1172,8 +1169,9 @@ function KktpKs({ kelasMapel, showToast, academicYear, semester }: { kelasMapel:
         {!kktpLoaded && <div className="mb-3 text-[11px] font-medium text-[#9bb0a8]">Memuat konfigurasi KKTP...</div>}
         <div className="mt-4 space-y-3">
           {mapelList.map((mp) => {
-            const val = kktpValues[mp] ?? SIM_KKTP_DATA[mp]?.kktp ?? KKTP_DEFAULT;
-            const affected = affectedCount[mp] ?? SIM_KKTP_DATA[mp]?.affected ?? 0;
+            // P0: SIM_KKTP_DATA removed — use KKTP_DEFAULT when no backend config
+            const val = kktpValues[mp] ?? KKTP_DEFAULT;
+            const affected = affectedCount[mp] ?? 0;
             const badge = val === KKTP_DEFAULT
               ? { text: 'Default', cls: 'bg-slate-100 text-slate-600' }
               : val > KKTP_DEFAULT
@@ -1203,7 +1201,7 @@ function KktpKs({ kelasMapel, showToast, academicYear, semester }: { kelasMapel:
 function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumatif }: {
   schedules: ScheduleItem[]; classes: ClassRef[];
   showToast: (msg: string) => void;
-  pendingRpp: RppItem[]; pendingSumatif: typeof SIM_SUMATIF[number][];
+  pendingRpp: RppItem[]; pendingSumatif: SumatifItem[];
 }) {
   const [selClass, setSelClass] = useState<string>('all');
   const filtered = selClass === 'all' ? schedules : schedules.filter((s) => s.classId === selClass);
@@ -1230,7 +1228,7 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
     }
     return [...m.entries()].map(([name, jp]) => ({ name, jp })).sort((a, b) => b.jp - a.jp);
   }, [schedules]);
-  const over24 = guruLoad.filter((g) => g.jp > SIM_SCHED_CONFIG.maxJpGuru).length;
+  const over24 = guruLoad.filter((g) => g.jp > SCHED_CONFIG.maxJpGuru).length;
 
   // G15: Tugas mendatang (pending RPP + sumatif)
   const tugasMendatang = useMemo(() => [
@@ -1247,7 +1245,7 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
     const existing = schedules.find((s) => s.classId === classId && s.dayOfWeek === day && jp >= s.jpStart && jp <= s.jpEnd);
     setEditCtx({ day, classId, jp, className: cls?.name ?? '—' });
     setEditMapel(existing?.teachingAssignment?.subject ?? mapelList[0] ?? '');
-    setEditGuru(existing?.teachingAssignment?.teacher?.user?.fullName ?? SIM_GURU_LIST[0] ?? '');
+    setEditGuru(existing?.teachingAssignment?.teacher?.user?.fullName ?? '');
     setEditRuang(existing?.room ?? '');
   };
   const saveSchedEdit = () => {
@@ -1268,7 +1266,7 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
           <h3 className="flex items-center gap-2 text-[17px] font-bold text-[#0f2e25]"><CalendarClock className="h-5 w-5 text-emerald-600" />Jadwal & Pembagian Tugas Mengajar</h3>
           <p className="text-[12.5px] text-[#6b8079]">{classes.length} rombel · {totalJP} JP total · klik sel untuk detail</p>
         </div>
-        <button onClick={() => showToast('Jadwal digenerate ulang · SIMULASI')} className="inline-flex items-center gap-1.5 rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><RefreshCw className="h-3.5 w-3.5" />Generate Ulang</button>
+        <button onClick={() => showToast('Generate Ulang dinonaktifkan — penjadwalan manual aktif')} className="inline-flex items-center gap-1.5 rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><RefreshCw className="h-3.5 w-3.5" />Generate Ulang</button>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -1282,27 +1280,41 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><SlidersHorizontal className="h-4 w-4 text-emerald-600" />Konfigurasi Penjadwalan</h4>
         <div className="mt-3 grid grid-cols-3 gap-3 lg:grid-cols-6">
-          {[['Hari Aktif', `${SIM_SCHED_CONFIG.days}`], ['JP/Hari', `${SIM_SCHED_CONFIG.jpPerDay}`], ['Total JP/Minggu', `${SIM_SCHED_CONFIG.days * SIM_SCHED_CONFIG.jpPerDay}`], ['Rombel', `${classes.length}`], ['Guru', `${SIM_GURU_LIST.length}`], ['Max JP/Guru', `${SIM_SCHED_CONFIG.maxJpGuru}`]].map(([label, val]) => (
+          {[['Hari Aktif', `${SCHED_CONFIG.days}`], ['JP/Hari', `${SCHED_CONFIG.jpPerDay}`], ['Total JP/Minggu', `${SCHED_CONFIG.days * SCHED_CONFIG.jpPerDay}`], ['Rombel', `${classes.length}`], ['Guru', `${guruLoad.length}`], ['Max JP/Guru', `${SCHED_CONFIG.maxJpGuru}`]].map(([label, val]) => (
             <div key={label} className="rounded-xl bg-[#f4f7f5] px-3 py-2.5 text-center"><div className="text-[20px] font-extrabold text-[#0f2e25]">{val}</div><div className="text-[10.5px] font-medium text-[#6b8079]">{label}</div></div>
           ))}
         </div>
       </div>
 
-      {/* G16: Conflict Panel */}
-      {SIM_SCHED_CONFLICTS.length > 0 ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-5 shadow-sm">
-          <h4 className="flex items-center gap-2 text-[14px] font-bold text-rose-600"><AlertTriangle className="h-4 w-4" />{SIM_SCHED_CONFLICTS.length} Konflik Penjadwalan <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">SIMULASI</span></h4>
-          <p className="text-[11.5px] text-rose-600">Tidak ada guru tersedia untuk slot berikut:</p>
-          <div className="mt-2 overflow-x-auto">
-            <table className="w-full text-[12px]"><thead><tr className="border-b border-rose-200 text-left text-[10.5px] uppercase text-rose-400"><th className="py-2 pr-3">Hari</th><th className="py-2 pr-3">JP</th><th className="py-2">Rombel</th></tr></thead><tbody>
-              {SIM_SCHED_CONFLICTS.map((c, i) => <tr key={i} className="border-b border-rose-100"><td className="py-2 pr-3 font-bold text-rose-700">{DOW[c.day]}</td><td className="py-2 pr-3 text-rose-600">JP{c.jp}</td><td className="py-2 text-rose-600">{c.rombel}</td></tr>)}
-            </tbody></table>
+      {/* G16: Conflict Panel — P0: SIM_SCHED_CONFLICTS removed. Real conflicts computed from schedule gaps. */}
+      {(() => {
+        // Detect real conflicts: classes with JP slots missing a teacher assignment
+        const conflictSlots: { day: number; jp: number; rombel: string }[] = [];
+        for (const cls of classes) {
+          for (let d = 1; d <= SCHED_CONFIG.days; d++) {
+            for (const slot of JP_SLOTS) {
+              const has = schedules.some((s) => s.classId === cls.id && s.dayOfWeek === d && slot.jp >= s.jpStart && slot.jp <= s.jpEnd);
+              if (!has) continue; // empty slot is not a conflict
+              const noTeacher = !schedules.some((s) => s.classId === cls.id && s.dayOfWeek === d && slot.jp >= s.jpStart && slot.jp <= s.jpEnd && s.teachingAssignment?.teacher);
+              if (noTeacher) conflictSlots.push({ day: d, jp: slot.jp, rombel: cls.name });
+            }
+          }
+        }
+        return conflictSlots.length > 0 ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-5 shadow-sm">
+            <h4 className="flex items-center gap-2 text-[14px] font-bold text-rose-600"><AlertTriangle className="h-4 w-4" />{conflictSlots.length} Slot tanpa Guru</h4>
+            <p className="text-[11.5px] text-rose-600">Tidak ada guru tersedia untuk slot berikut:</p>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-[12px]"><thead><tr className="border-b border-rose-200 text-left text-[10.5px] uppercase text-rose-400"><th className="py-2 pr-3">Hari</th><th className="py-2 pr-3">JP</th><th className="py-2">Rombel</th></tr></thead><tbody>
+                {conflictSlots.map((c, i) => <tr key={i} className="border-b border-rose-100"><td className="py-2 pr-3 font-bold text-rose-700">{DOW[c.day]}</td><td className="py-2 pr-3 text-rose-600">JP{c.jp}</td><td className="py-2 text-rose-600">{c.rombel}</td></tr>)}
+              </tbody></table>
+            </div>
+            <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-medium text-amber-700"><Info className="mr-1 inline h-3 w-3" />Tugaskan guru untuk slot yang kosong, atau klik sel di matriks untuk edit manual.</div>
           </div>
-          <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-medium text-amber-700"><Info className="mr-1 inline h-3 w-3" />Klik "Generate Ulang" untuk penjadwalan ulang, atau tambahkan guru untuk mapel yang bentrok.</div>
-        </div>
-      ) : (
-        <div className="rounded-lg bg-emerald-50 px-3 py-2 text-[11.5px] font-semibold text-emerald-700"><CheckCircle2 className="mr-1 inline h-3.5 w-3.5" /><b>Tanpa konflik!</b> Semua {SIM_SCHED_CONFIG.days * SIM_SCHED_CONFIG.jpPerDay} slot × {classes.length} rombel berhasil diisi.</div>
-      )}
+        ) : (
+          <div className="rounded-lg bg-emerald-50 px-3 py-2 text-[11.5px] font-semibold text-emerald-700"><CheckCircle2 className="mr-1 inline h-3.5 w-3.5" /><b>Tanpa konflik!</b> Semua {schedules.length} slot jadwal memiliki guru.</div>
+        );
+      })()}
 
       {/* Matriks Jadwal Mingguan */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
@@ -1340,12 +1352,12 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><Users className="h-4 w-4 text-emerald-600" />Beban Mengajar per Guru</h4>
-          <span className="rounded-md bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">{over24} guru &gt;{SIM_SCHED_CONFIG.maxJpGuru} JP</span>
+          <span className="rounded-md bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">{over24} guru &gt;{SCHED_CONFIG.maxJpGuru} JP</span>
         </div>
         <div className="mt-3 max-h-[460px] space-y-2.5 overflow-auto">
           {guruLoad.map((g) => {
-            const over = g.jp > SIM_SCHED_CONFIG.maxJpGuru;
-            const pct = Math.min(100, (g.jp / SIM_SCHED_CONFIG.maxJpGuru) * 100);
+            const over = g.jp > SCHED_CONFIG.maxJpGuru;
+            const pct = Math.min(100, (g.jp / SCHED_CONFIG.maxJpGuru) * 100);
             return (
               <div key={g.name} className="flex items-center gap-3">
                 <span className="w-28 shrink-0 truncate text-[12px] font-bold text-[#0f2e25]" title={g.name}>{g.name.split(',')[0]}</span>
@@ -1382,7 +1394,7 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
             <div className="flex items-center justify-between border-b border-[#e6efea] px-5 py-3.5">
               <div>
                 <div className="text-[14px] font-bold text-[#0f2e25]">Edit Jadwal — {editCtx.className}</div>
-                <div className="text-[11.5px] text-[#6b8079]">{DOW[editCtx.day]} · JP{editCtx.jp} · <span className="font-bold text-amber-700">SIMULASI</span></div>
+                <div className="text-[11.5px] text-[#6b8079]">{DOW[editCtx.day]} · JP{editCtx.jp}</div>
               </div>
               <button onClick={() => setEditCtx(null)} className="text-[#9bb0a8] hover:text-[#0f2e25]"><X className="h-4 w-4" /></button>
             </div>
@@ -1396,7 +1408,7 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
               <div>
                 <label className="text-[11px] font-bold uppercase text-[#6b8079]">Guru</label>
                 <select value={editGuru} onChange={(e) => setEditGuru(e.target.value)} className="mt-1 w-full rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-medium text-[#0f2e25]">
-                  {SIM_GURU_LIST.map((g) => <option key={g} value={g}>{g}</option>)}
+                  {guruLoad.map((g) => <option key={g.name} value={g.name}>{g.name}</option>)}
                 </select>
               </div>
               <div>
@@ -1534,7 +1546,7 @@ function RppDetailModal({ rpp, onClose, showToast }: { rpp: RppItem; onClose: ()
   );
 }
 
-function SumatifDetailModal({ item, onClose, showToast }: { item: typeof SIM_SUMATIF[number]; onClose: () => void; showToast: (msg: string) => void }) {
+function SumatifDetailModal({ item, onClose, showToast }: { item: SumatifItem; onClose: () => void; showToast: (msg: string) => void }) {
   const handleSumatifAction = (action: 'Disetujui' | 'Ditolak') => {
     if (action === 'Ditolak') window.prompt('Alasan penolakan (opsional):', '');
     showToast(action === 'Disetujui' ? 'Sumatif disetujui — siap dipublikasi ke siswa' : 'Sumatif ditolak — guru diberi notifikasi');
@@ -1555,27 +1567,12 @@ function SumatifDetailModal({ item, onClose, showToast }: { item: typeof SIM_SUM
             <StatPill n={item.status} l="Status" />
           </div>
           <div><b className="text-[11.5px] font-bold text-[#6b8079]">Deskripsi</b><p className="mt-1 text-[12.5px] text-[#355a4e]">{item.deskripsi}</p></div>
-          {/* Pratinjau Soal (SIMULASI) */}
+          {/* Pratinjau Soal */}
           <div>
-            <b className="text-[11.5px] font-bold text-[#6b8079]">Pratinjau Soal (contoh)</b>
-            <div className="mt-2 rounded-xl border border-[#e6efea] bg-[#f4f7f5] p-3">
-              <div className="text-[12px] font-bold text-emerald-700">Soal 1 (PG)</div>
-              <p className="mt-1 text-[13px] font-semibold text-[#0f2e25]">Diketahui sistem persamaan 2x + 3y = 12 dan x − y = 1. Nilai x + y = ...</p>
-              <div className="mt-2 grid grid-cols-2 gap-1.5 text-[12px] font-semibold text-[#355a4e]">
-                <div className="rounded-lg border border-[#e6efea] px-2.5 py-1.5">A. 3</div>
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-emerald-700">B. 4 ✓</div>
-                <div className="rounded-lg border border-[#e6efea] px-2.5 py-1.5">C. 5</div>
-                <div className="rounded-lg border border-[#e6efea] px-2.5 py-1.5">D. 6</div>
-              </div>
-            </div>
-            <div className="mt-2 rounded-xl border border-[#e6efea] bg-[#f4f7f5] p-3">
-              <div className="text-[12px] font-bold text-emerald-700">Soal 2 (Isian)</div>
-              <p className="mt-1 text-[13px] font-semibold text-[#0f2e25]">Faktor dari persamaan x² − 5x + 6 = 0 adalah (x−a)(x−b). Nilai a + b = ...</p>
-              <div className="mt-1.5 text-[12px] font-semibold text-[#6b8079]">Jawaban: 5</div>
-            </div>
-            <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> SIMULASI — soal lengkap tersedia setelah approval</div>
+            <b className="text-[11.5px] font-bold text-[#6b8079]">Pratinjau Soal</b>
+            <p className="mt-1 text-[12px] text-[#9bb0a8]">Soal lengkap tersedia setelah approval dari guru.</p>
           </div>
-          <p className="text-[11px] text-[#9bb0a8]"><Info className="mr-1 inline h-3 w-3" />Soal lengkap tersedia setelah approval. Sumatif yang disetujui otomatis muncul di LMS siswa sesuai jadwal.</p>
+          <p className="text-[11px] text-[#9bb0a8]"><Info className="mr-1 inline h-3 w-3" />Sumatif yang disetujui otomatis muncul di LMS siswa sesuai jadwal.</p>
         </div>
         <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[#e6efea] bg-white px-5 py-3">
           {item.status === 'Menunggu' ? (
@@ -1609,12 +1606,13 @@ function TrenChart({ siswa, guru }: { siswa: number[]; guru: number[] }) {
   const y = (v: number) => H - 10 - ((v - 80) / 20) * (H - 30);
   const x = (i: number, len: number) => 10 + (i * (W - 20)) / Math.max(1, len - 1);
   const polyS = siswa.map((v, i) => `${x(i, siswa.length)},${y(v)}`).join(' ');
-  const polyG = guru.map((v, i) => `${x(i, guru.length)},${y(v)}`).join(' ');
+  // P0 (S-06): guru line only rendered when real data exists (non-empty array)
+  const polyG = guru.length > 0 ? guru.map((v, i) => `${x(i, guru.length)},${y(v)}`).join(' ') : null;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 w-full">
       {[90, 85, 80].map((g) => <line key={g} x1={0} y1={y(g)} x2={W} y2={y(g)} stroke="#e6efea" />)}
       <polyline points={polyS} fill="none" stroke="#059669" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-      <polyline points={polyG} fill="none" stroke="#0284c7" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      {polyG && <polyline points={polyG} fill="none" stroke="#0284c7" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />}
     </svg>
   );
 }

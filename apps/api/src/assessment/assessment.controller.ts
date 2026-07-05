@@ -6,8 +6,9 @@
 
 import {
   BadRequestException, Body, Controller, Get, HttpCode, HttpStatus,
-  Param, ParseUUIDPipe, Patch, Post, Query,
+  Param, ParseUUIDPipe, Patch, Post, Query, Sse,
 } from '@nestjs/common';
+import { Observable } from 'rxjs';
 import { AuthUser } from '@smk/auth';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -52,6 +53,14 @@ export class AssessmentController {
   @Get(':id/analysis')
   getSessionAnalysis(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.service.getSessionAnalysis(id, user);
+  }
+
+  // P2 (S-02): SSE realtime monitor — emits student-progress events every 3s
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU')
+  @RequirePermission('lms.read')
+  @Sse(':id/stream')
+  streamResults(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser): Observable<MessageEvent> {
+    return this.service.streamResults(id, user);
   }
 
   @Roles('GURU')

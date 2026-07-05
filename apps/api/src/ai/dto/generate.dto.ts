@@ -22,3 +22,11 @@ export const GenerateAtpSchema = z.object({
   subject: z.string().min(1).max(100),
 });
 export type GenerateAtpDto = z.infer<typeof GenerateAtpSchema>;
+
+// P4 (S-12): Generic RPP step generation
+export const GenerateRppStepSchema = z.object({
+  step: z.enum(['cp_tp', 'profil', 'sarana', 'kegiatan', 'asesmen', 'remedial', 'refleksi', 'lampiran']),
+  subject: z.string().min(1).max(100),
+  context: z.string().min(5).max(5000), // Prior step content for context
+});
+export type GenerateRppStepDto = z.infer<typeof GenerateRppStepSchema>;

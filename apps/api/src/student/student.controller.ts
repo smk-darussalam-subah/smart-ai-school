@@ -69,6 +69,16 @@ export class StudentController {
   }
 
   /**
+   * P1 (S-09): GET /students/me/profile-cv — aggregated profile + stats for siswa.
+   */
+  @Roles('SISWA')
+  @RequirePermission('student.read')
+  @Get('me/profile-cv')
+  profileCv(@CurrentUser() user: AuthUser) {
+    return this.studentService.profileCv(user);
+  }
+
+  /**
    * GET /students/:id — ownership check (SISWA self, ORANG_TUA anak) di service
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')

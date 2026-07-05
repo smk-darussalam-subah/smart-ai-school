@@ -5,7 +5,7 @@
 // "Tugas Baru" → toast simulasi. "Nilai Manual" & "Observasi" → simulasi.
 
 import { useState } from 'react';
-import { ClipboardList, Plus, FolderGit2, CheckCircle, Inbox, Paperclip, Eye, ClipboardPenLine, Edit3, AlertTriangle } from 'lucide-react';
+import { ClipboardList, Plus, FolderGit2, CheckCircle, Inbox, Paperclip, Eye, ClipboardPenLine, Edit3 } from 'lucide-react';
 import clsx from 'clsx';
 
 interface Tugas {
@@ -68,8 +68,8 @@ export default function PenugasanGuru() {
           </button>
         </div>
 
-        <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10.5px] font-bold text-amber-700">
-          <AlertTriangle className="h-3 w-3" /> SIMULASI — backend /submissions belum tersedia
+        <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10.5px] font-bold text-sky-700">
+          Fitur penugasan akan tersedia menyusul
         </div>
 
         <div className="mt-3 space-y-3">

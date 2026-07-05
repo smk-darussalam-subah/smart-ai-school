@@ -187,4 +187,76 @@ export class TeacherAttendanceService {
 
     return { data, total, page: query.page, limit: query.limit };
   }
+
+  /**
+   * P1 (S-05): Today's teacher attendance summary for KS/SA dashboard.
+   * Returns counts + roster of all teachers with their check-in status for today.
+   * Reuses existing TeacherAttendance records (from 2F GPS presensi).
+   */
+  async todaySummary() {
+    const date = todayUtcDate();
+
+    // All active teachers
+    const teachers = await this.prisma.teacher.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true,
+        user: {
+          select: {
+            fullName: true,
+          },
+        },
+        assignments: {
+          where: {},
+          select: { subject: true },
+          take: 1,
+        },
+      },
+    });
+
+    // Today's attendance records
+    const records = await this.prisma.teacherAttendance.findMany({
+      where: { date },
+      select: {
+        teacherId: true,
+        checkInAt: true,
+        checkOutAt: true,
+        outsideGeofence: true,
+      },
+    });
+
+    const recordMap = new Map(records.map((r) => [r.teacherId, r]));
+
+    const roster = teachers.map((t) => {
+      const rec = recordMap.get(t.id);
+      const nama = t.user?.fullName ?? '—';
+      const inisial = nama.split(' ').map((w) => w[0]).slice(0, 2).join('');
+      const mapel = t.assignments[0]?.subject ?? '—';
+      return {
+        teacherId: t.id,
+        nama,
+        inisial,
+        mapel,
+        status: rec ? (rec.checkOutAt ? 'Selesai' : 'Hadir') : 'Belum',
+        checkInAt: rec?.checkInAt ?? null,
+        checkOutAt: rec?.checkOutAt ?? null,
+        outsideGeofence: rec?.outsideGeofence ?? false,
+      };
+    });
+
+    const hadir = roster.filter((r) => r.status === 'Hadir' || r.status === 'Selesai').length;
+    const selesai = roster.filter((r) => r.status === 'Selesai').length;
+    const belum = roster.filter((r) => r.status === 'Belum').length;
+    const outside = roster.filter((r) => r.outsideGeofence).length;
+
+    return {
+      date: date.toISOString().slice(0, 10),
+      total: teachers.length,
+      hadir,
+      selesai,
+      belum,
+      outsideGeofence: outside,
+      roster,
+    };
+  }
 }
