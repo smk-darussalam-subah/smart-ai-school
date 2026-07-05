@@ -26,6 +26,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { isGuruOnly, isSiswaOnly, isOrangTuaOnly, resolveUserId, resolveTeacherId, resolveGuruClassIds, resolveSiswaId } from '../common/helpers/role-helpers';
 import { CreateAttendanceDto } from './dto/create-attendance.dto';
 import { ListAttendanceQuery } from './dto/list-attendance.dto';
+import { AttendanceSessionsQuery } from './dto/attendance-sessions.dto';
 import { EVENTS, AttendanceRecordedPayload } from '../events/events.types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -295,6 +296,178 @@ export class AttendanceService {
         yesterday: yesterdayKey ? overallFor(yesterdayKey) : null,
       },
     };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // W2-A-1: Rekap kehadiran per sesi (group by date + class + subject).
+  // Absensi GURU sudah aktif (POST /attendance) — yang belum ada adalah agregasi
+  // per-sesi. Endpoint ini mengagregasi record Attendance yang sudah tersimpan
+  // menjadi: sessions (rekap), attention (siswa perlu perhatian), trend (10 hari).
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async sessions(query: AttendanceSessionsQuery, user: AuthUser) {
+    // Ownership filter: GURU hanya kelas yang diampu; ELEVATED semua.
+    const dateWhere: Prisma.AttendanceWhereInput['date'] = {};
+    if (query.from) dateWhere.gte = parseDateStr(query.from);
+    if (query.to) dateWhere.lte = parseDateStr(query.to);
+
+    let scopeClassIds: string[] | null = null;
+    if (isGuruOnly(user)) {
+      scopeClassIds = await resolveGuruClassIds(this.prisma, user.keycloakId);
+      if (scopeClassIds.length === 0) {
+        return { sessions: [], attention: [], trend: [] };
+      }
+    }
+
+    const where: Prisma.AttendanceWhereInput = {
+      ...(Object.keys(dateWhere).length ? { date: dateWhere } : {}),
+      ...(query.classId ? { classId: query.classId } : scopeClassIds ? { classId: { in: scopeClassIds } } : {}),
+    };
+
+    // Ambil record + class + recordedBy (trace ke subject via teacher assignment)
+    const records = await this.prisma.attendance.findMany({
+      where,
+      select: {
+        id: true,
+        studentId: true,
+        classId: true,
+        date: true,
+        status: true,
+        notes: true,
+        recordedBy: true,
+        student: { select: { id: true, nis: true, user: { select: { fullName: true } } } },
+        class: { select: { id: true, name: true } },
+      },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    // Resolve subject per (classId, recordedBy) via teacher → teaching-assignment.
+    // recordedBy = auth.users.id; teacher.userId = auth.users.id.
+    const teacherUserIds = [...new Set(records.map((r) => r.recordedBy))];
+    const classIdsInData = [...new Set(records.map((r) => r.classId))];
+    const subjectMap = new Map<string, string>(); // key: `${userId}|${classId}` → subject
+    if (teacherUserIds.length > 0 && classIdsInData.length > 0) {
+      const teachers = await this.prisma.teacher.findMany({
+        where: { userId: { in: teacherUserIds } },
+        select: { id: true, userId: true, assignments: { select: { classId: true, subject: true } } },
+      });
+      for (const t of teachers) {
+        for (const a of t.assignments) {
+          subjectMap.set(`${t.userId}|${a.classId}`, a.subject);
+        }
+      }
+    }
+
+    // ── Aggregate sessions: group by date + classId + recordedBy(subject) ──
+    interface SessionAgg {
+      date: Date; className: string; subject: string;
+      hadir: number; izin: number; sakit: number; alpha: number; total: number;
+      notesSet: Set<string>;
+    }
+    const sessionMap = new Map<string, SessionAgg>();
+    for (const r of records) {
+      const subject = subjectMap.get(`${r.recordedBy}|${r.classId}`) ?? '—';
+      // Bila filter subject diberikan, skip record yang tak cocok
+      if (query.subject && subject !== query.subject) continue;
+      const key = `${r.date.toISOString()}|${r.classId}|${subject}`;
+      let agg = sessionMap.get(key);
+      if (!agg) {
+        agg = { date: r.date, className: r.class.name, subject, hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, notesSet: new Set() };
+        sessionMap.set(key, agg);
+      }
+      agg.total++;
+      if (r.status === 'hadir') agg.hadir++;
+      else if (r.status === 'izin') agg.izin++;
+      else if (r.status === 'sakit') agg.sakit++;
+      else if (r.status === 'alpha') agg.alpha++;
+      if (r.notes) agg.notesSet.add(r.notes);
+    }
+
+    const sessions = [...sessionMap.values()]
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .map((s) => ({
+        date: s.date.toISOString().slice(0, 10),
+        subject: s.subject,
+        className: s.className,
+        hadir: s.hadir,
+        izin: s.izin,
+        sakit: s.sakit,
+        alpha: s.alpha,
+        total: s.total,
+        pct: s.total > 0 ? Math.round((s.hadir / s.total) * 100) : 0,
+        notes: [...s.notesSet].join('; ') || null,
+      }));
+
+    // ── Attention list: siswa dengan alpha berulang (≥2) dalam window ──
+    const alphaByStudent = new Map<string, { studentId: string; name: string; className: string; subject: string; alphaCount: number; sakitCount: number; izinCount: number }>();
+    for (const r of records) {
+      if (r.status !== 'alpha' && r.status !== 'sakit' && r.status !== 'izin') continue;
+      const subject = subjectMap.get(`${r.recordedBy}|${r.classId}`) ?? '—';
+      if (query.subject && subject !== query.subject) continue;
+      const key = r.studentId;
+      let entry = alphaByStudent.get(key);
+      if (!entry) {
+        entry = { studentId: r.studentId, name: r.student.user.fullName, className: r.class.name, subject, alphaCount: 0, sakitCount: 0, izinCount: 0 };
+        alphaByStudent.set(key, entry);
+      }
+      if (r.status === 'alpha') entry.alphaCount++;
+      if (r.status === 'sakit') entry.sakitCount++;
+      if (r.status === 'izin') entry.izinCount++;
+    }
+    const attention = [...alphaByStudent.values()]
+      .filter((a) => a.alphaCount >= 1 || (a.alphaCount + a.sakitCount + a.izinCount) >= 2)
+      .sort((a, b) => b.alphaCount - a.alphaCount || (b.alphaCount + b.sakitCount + b.izinCount) - (a.alphaCount + a.sakitCount + a.izinCount))
+      .slice(0, 12)
+      .map((a) => ({
+        studentName: a.name,
+        className: a.className,
+        subject: a.subject,
+        alphaCount: a.alphaCount,
+        reason: [
+          a.alphaCount > 0 ? `${a.alphaCount} alpha` : null,
+          a.sakitCount > 0 ? `${a.sakitCount} sakit` : null,
+          a.izinCount > 0 ? `${a.izinCount} izin` : null,
+        ].filter(Boolean).join(' · ') || 'Kehadiran rendah',
+      }));
+
+    // ── Trend: pct kehadiran harian N hari terakhir ──
+    const trendDays = query.trendDays;
+    const nowTrend = new Date();
+    const todayTrend = new Date(Date.UTC(nowTrend.getUTCFullYear(), nowTrend.getUTCMonth(), nowTrend.getUTCDate()));
+    const trendFrom = new Date(todayTrend);
+    trendFrom.setUTCDate(trendFrom.getUTCDate() - (trendDays - 1));
+
+    const trendDates: string[] = [];
+    for (let i = 0; i < trendDays; i++) {
+      const d = new Date(trendFrom);
+      d.setUTCDate(d.getUTCDate() + i);
+      trendDates.push(d.toISOString().slice(0, 10));
+    }
+
+    const trendWhere: Prisma.AttendanceWhereInput = {
+      date: { gte: trendFrom, lte: todayTrend },
+      ...(query.classId ? { classId: query.classId } : scopeClassIds ? { classId: { in: scopeClassIds } } : {}),
+      ...(query.subject ? {} : {}),
+    };
+    const trendRecords = await this.prisma.attendance.groupBy({
+      by: ['date', 'status'],
+      where: trendWhere,
+      _count: { _all: true },
+    });
+    const trendCellMap = new Map<string, { total: number; hadir: number }>();
+    for (const g of trendRecords) {
+      const dateKey = g.date.toISOString().slice(0, 10);
+      const cell = trendCellMap.get(dateKey) ?? { total: 0, hadir: 0 };
+      cell.total += g._count._all;
+      if (g.status === 'hadir') cell.hadir += g._count._all;
+      trendCellMap.set(dateKey, cell);
+    }
+    const trend = trendDates.map((date) => {
+      const cell = trendCellMap.get(date);
+      return { date, pct: cell && cell.total > 0 ? Math.round((cell.hadir / cell.total) * 100) : null };
+    });
+
+    return { sessions, attention, trend };
   }
 
 }

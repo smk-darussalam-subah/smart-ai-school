@@ -24,6 +24,7 @@ import ModulAjarForm from './ModulAjarForm';
 import KehadiranGuru from './KehadiranGuru';
 import PenugasanGuru from './PenugasanGuru';
 import RaporWaliKelas from './guru/RaporWaliKelas';
+import { fetchWaliClasses, type WaliClassItem } from '../actions';
 
 interface Assignment { id: string; subject: string; class: { id: string; name: string } }
 
@@ -45,7 +46,7 @@ interface Props {
 
 type Screen = 'ringkasan' | 'jadwal' | 'pembelajaran' | 'penilaian' | 'kehadiran' | 'penugasan' | 'capaian' | 'rekap' | 'rapor';
 
-const NAV: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = [
+const NAV_ALL: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'ringkasan', label: 'Ringkasan', icon: LayoutDashboard },
   { key: 'jadwal', label: 'Jadwal', icon: CalendarClock },
   { key: 'pembelajaran', label: 'Pembelajaran', icon: BookOpenCheck },
@@ -54,7 +55,7 @@ const NAV: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'penugasan', label: 'Penugasan', icon: ClipboardList },
   { key: 'capaian', label: 'Capaian & Rapor', icon: Award },
   { key: 'rekap', label: 'Rekap', icon: ClipboardCheck },
-  { key: 'rapor', label: 'Rapor Kelas', icon: Award },
+  { key: 'rapor', label: 'Rapor Kelas', icon: Award }, // W2-13: conditional on waliClasses
 ];
 
 export default function AkademikWorkspace({
@@ -78,6 +79,17 @@ export default function AkademikWorkspace({
   }, [assignments, schedules]);
 
   const [screen, setScreen] = useState<Screen>('ringkasan');
+  // W2-B-5: Wali kelas detection — fetch real wali classes from /teachers/me/wali-classes
+  const [waliClasses, setWaliClasses] = useState<WaliClassItem[]>([]);
+  useEffect(() => {
+    fetchWaliClasses().then((res) => {
+      if (res.success && res.data) setWaliClasses(res.data.classes);
+    });
+  }, []);
+  // W2-13: 'Rapor Kelas' tab only visible when guru is actually a wali kelas
+  const NAV = useMemo(() =>
+    waliClasses.length > 0 ? NAV_ALL : NAV_ALL.filter((n) => n.key !== 'rapor'),
+  [waliClasses.length]);
   const [subject, setSubject] = useState<string>('all');
   const [selClass, setSelClass] = useState<string>('all');
   const [absen, setAbsen] = useState<{ classId: string; className: string } | null>(null);
@@ -242,7 +254,7 @@ export default function AkademikWorkspace({
         )}
 
         {screen === 'kehadiran' && (
-          <KehadiranGuru attendances={attendances} className={selClassName} />
+          <KehadiranGuru attendances={attendances} className={selClassName} classId={selClass === 'all' ? undefined : selClass} />
         )}
 
         {screen === 'penugasan' && (
@@ -254,7 +266,7 @@ export default function AkademikWorkspace({
         )}
 
         {screen === 'rapor' && (
-          <RaporWaliKelas waliClasses={guruClasses} academicYear={academicYear} semester={semester} />
+          <RaporWaliKelas waliClasses={waliClasses.map((c) => ({ id: c.id, name: c.name }))} academicYear={academicYear} semester={semester} />
         )}
       </div>
 

@@ -5,13 +5,14 @@
 // JUJUR: hanya mencakup mapel yang diampu guru ini; rapor lengkap lintas mapel
 // dikompilasi wali kelas / modul Rapor.
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { GraduationCap, FileText, Info, Users, Award, GitBranch, ArrowRight, Download, TrendingUp, CheckCircle } from 'lucide-react';
 import clsx from 'clsx';
 import type { GradeItem } from '@/lib/api';
 import { naOf, predikat, gradeStatus, KKTP_DEFAULT, NA_WEIGHTS, type StudentGradeComponents } from '@/lib/academic';
 import { RaporModal, type RaporRow } from '@/components/academic/shared';
 import { STATUS_TEXT_CLASS } from '@/components/academic/shared/grade-meta';
+import { fetchCpProgress, type CpBreakdownItem } from '../actions';
 
 interface Props {
   grades: GradeItem[];
@@ -30,13 +31,7 @@ interface StudentRapor {
   total: number;
 }
 
-// SIMULASI: CP Progress per CP (backend /cp-progress belum tersedia)
-const CP_RAPOR = [
-  { cp: 'CP 1', desc: 'Antarmuka web fungsional', progres: 88, tuntas: 28, total: 32 },
-  { cp: 'CP 2', desc: 'Layout responsif', progres: 74, tuntas: 24, total: 32 },
-  { cp: 'CP 3', desc: 'Form & validasi', progres: 35, tuntas: 11, total: 32 },
-  { cp: 'CP 4', desc: 'Interaktivitas dasar', progres: 0, tuntas: 0, total: 32 },
-];
+// W2-B-4: CP_RAPOR hardcoded array dihapus — data dari /analytics/cp-progress
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
@@ -68,6 +63,13 @@ export default function CapaianRapor({ grades, className, academicYear, semester
 
   const [sel, setSel] = useState<StudentRapor | null>(null);
   const [tab, setTab] = useState<'ringkas' | 'rapor'>('ringkas');
+  // W2-B-4: Real CP progress from /analytics/cp-progress
+  const [cpRapor, setCpRapor] = useState<CpBreakdownItem[]>([]);
+  useEffect(() => {
+    fetchCpProgress({ classId: undefined, academicYear, semester }).then((res) => {
+      if (res.success && res.data) setCpRapor(res.data.cpBreakdown);
+    });
+  }, [academicYear, semester]);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2800); };
 
@@ -96,8 +98,9 @@ export default function CapaianRapor({ grades, className, academicYear, semester
   const allNas = students.map((s) => s.avg).filter((x): x is number => x !== null);
   const rataNa = allNas.length ? Math.round((allNas.reduce((a, b) => a + b, 0) / allNas.length) * 10) / 10 : null;
   const remedialCount = students.filter((s) => s.avg !== null && s.avg < KKTP_DEFAULT).length;
-  // SIMULASI: CP Tercapai (backend /cp-progress belum ada)
-  const cpTercapai = 3; const cpTotal = 4;
+  // W2-B-4: CP Tercapai dari data NYATA
+  const cpTercapai = cpRapor.filter((c) => c.progres >= 75).length;
+  const cpTotal = cpRapor.length;
 
   return (
     <div className="space-y-4">
@@ -296,20 +299,26 @@ export default function CapaianRapor({ grades, className, academicYear, semester
         <div className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10.5px] font-bold text-sky-700">
           <Info className="h-3 w-3" /> Data progres CP tersedia saat rapor diterbitkan
         </div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {CP_RAPOR.map((c) => (
-            <div key={c.cp} className="rounded-xl border border-[#e6efea] bg-[#f9fbfa] p-3">
-              <b className="text-[11px] text-[#0f2e25]">{c.cp}</b>
-              <div className="text-[10px] text-[#9bb0a8]">{c.desc}</div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#f0f4f2]">
-                <div className={`h-full rounded-full ${c.progres >= 75 ? 'bg-emerald-500' : c.progres > 0 ? 'bg-amber-400' : 'bg-slate-200'}`} style={{ width: `${c.progres}%` }} />
+        {cpRapor.length === 0 ? (
+          <div className="grid h-16 place-items-center rounded-xl bg-[#f4f7f5] text-[12px] font-medium text-[#9bb0a8]">
+            Data progres CP tersedia saat Modul Ajar berisi capaian pembelajaran (CP) dan nilai aktif.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {cpRapor.map((c) => (
+              <div key={c.cp} className="rounded-xl border border-[#e6efea] bg-[#f9fbfa] p-3">
+                <b className="text-[11px] text-[#0f2e25]">{c.cp}</b>
+                <div className="text-[10px] text-[#9bb0a8]">{c.desc}</div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#f0f4f2]">
+                  <div className={`h-full rounded-full ${c.progres >= 75 ? 'bg-emerald-500' : c.progres > 0 ? 'bg-amber-400' : 'bg-slate-200'}`} style={{ width: `${c.progres}%` }} />
+                </div>
+                <small className={`mt-1 block text-[10px] font-bold ${c.progres >= 75 ? 'text-emerald-700' : 'text-amber-600'}`}>
+                  {c.progres > 0 ? `${c.progres}% · ${c.tuntas}/${c.total} siswa` : 'belum mulai'}
+                </small>
               </div>
-              <small className={`mt-1 block text-[10px] font-bold ${c.progres >= 75 ? 'text-emerald-700' : 'text-amber-600'}`}>
-                {c.progres > 0 ? `${c.progres}% · ${c.tuntas}/${c.total} siswa` : 'belum mulai'}
-              </small>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Capaian → Rapor Publication Flow */}

@@ -171,4 +171,23 @@ export class TeachingAssignmentService {
     await this.prisma.teachingAssignment.delete({ where: { id } });
     return { id, deleted: true };
   }
+
+  // ── W2-A-4: Wali kelas detection ──────────────────────────────────────────
+  // Kelas tempat guru ini adalah wali kelas (Class.teacherId = teacher.id).
+  // Teacher.isWaliKelas flag juga dicek untuk konsistensi.
+  async findWaliClasses(user: AuthUser) {
+    const teacher = await this.prisma.teacher.findFirst({
+      where: { user: { keycloakId: user.keycloakId }, deletedAt: null },
+      select: { id: true, isWaliKelas: true },
+    });
+    if (!teacher) return { classes: [], isWaliKelas: false };
+
+    const classes = await this.prisma.class.findMany({
+      where: { teacherId: teacher.id, isActive: true },
+      select: { id: true, name: true, majorCode: true, grade: true, academicYear: true },
+      orderBy: [{ grade: 'asc' }, { name: 'asc' }],
+    });
+
+    return { classes, isWaliKelas: teacher.isWaliKelas || classes.length > 0 };
+  }
 }

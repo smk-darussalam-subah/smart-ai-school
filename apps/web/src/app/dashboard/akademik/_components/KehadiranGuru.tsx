@@ -1,34 +1,20 @@
 'use client';
 
 // KehadiranGuru — layar Kehadiran Dashboard Guru (W1).
-// KPI dari data NYATA /attendance. Rekap per-sesi, attention list & tren = SIMULASI
-// (backend /attendance/sessions belum tersedia).
+// KPI + Rekap per-sesi + Siswa Perlu Perhatian + Tren dari data NYATA
+// /attendance/sessions. W2-B-1: hardcoded arrays (SESI_REKAP, ATT_ATTENTION,
+// TREND_POINTS) dihapus — diganti realData ?? honest-empty-state.
 
-import { useMemo } from 'react';
-import { CalendarCheck, Users, Check, Info, UserX, TrendingUp } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { CalendarCheck, Users, Check, Info, UserX, TrendingUp, Loader2, AlertTriangle } from 'lucide-react';
 import type { AttendanceItem } from '@/lib/api';
+import { fetchAttendanceSessions, type AttendanceSessionItem, type AttendanceAttentionItem, type AttendanceTrendItem } from '../actions';
 
 interface Props {
   attendances: AttendanceItem[];
   className: string; // '' = semua kelas
+  classId?: string; // untuk query /attendance/sessions
 }
-
-// ── SIMULASI: Rekap kehadiran per sesi (backend /attendance/sessions belum ada) ──
-const SESI_REKAP: [string, string, string, string, number, number, number, number, number, string][] = [
-  ['16 Jun', 'Pemrograman Web', 'XI TJKT 1', 'Pert. 5 · TP 3.2', 30, 1, 1, 0, 94, 'Citra: izin keluarga; Joko: sakit demam'],
-  ['9 Jun', 'Pemrograman Web', 'XI TJKT 1', 'Pert. 4 · TP 3.2', 31, 1, 0, 0, 97, 'Fajar: izin acara'],
-  ['2 Jun', 'Pemrograman Web', 'XI TJKT 1', 'Pert. 3 · TP 3.1', 32, 0, 0, 0, 100, '—'],
-  ['26 Mei', 'Pemrograman Web', 'XI TJKT 1', 'Pert. 2 · TP 3.1', 29, 1, 1, 1, 91, 'Fajar: alpha; Eka: sakit; Dimas: izin'],
-  ['16 Jun', 'Basis Data', 'XI TJKT 1', 'Pert. 4 · TP 2.1', 30, 0, 2, 0, 94, 'Bunga & Indah: izin lomba'],
-  ['15 Jun', 'PBO', 'XII TJKT 1', 'Pert. 6 · TP 4.1', 28, 2, 1, 1, 90, 'Kartika: sakit; Lukman: izin; Hadi: alpha'],
-];
-
-const ATT_ATTENTION = [
-  { n: 'Fajar Nugroho', k: 'XI TJKT 1', m: 'Pemrograman Web', d: '2 alpha · 1 sakit', c: 'rose' },
-  { n: 'Citra Dewi', k: 'XI TJKT 1', m: 'Pemrograman Web', d: '3 izin — keperluan keluarga', c: 'sky' },
-  { n: 'Joko Widodo', k: 'XI TJKT 1', m: 'Pemrograman Web', d: '2 sakit berturut', c: 'amber' },
-  { n: 'Hadi Santoso', k: 'XII TJKT 1', m: 'PBO', d: '1 alpha tanpa keterangan', c: 'rose' },
-];
 
 const ATT_COLOR: Record<string, string> = {
   rose: 'bg-rose-50 text-rose-600',
@@ -36,10 +22,10 @@ const ATT_COLOR: Record<string, string> = {
   amber: 'bg-amber-50 text-amber-700',
 };
 
-// SVG sparkline untuk tren 10 hari (SIMULASI)
-const TREND_POINTS = '10,40 78,30 146,46 214,24 282,38 350,20 418,32 486,18 554,28 600,22';
+const ATTENTION_COLOR = (alphaCount: number) =>
+  alphaCount >= 2 ? 'rose' : alphaCount >= 1 ? 'amber' : 'sky';
 
-export default function KehadiranGuru({ attendances, className }: Props) {
+export default function KehadiranGuru({ attendances, className, classId }: Props) {
   // KPI dari data NYATA
   const kpi = useMemo(() => {
     const filtered = className ? attendances.filter((a) => a.class.name === className) : attendances;
@@ -54,6 +40,49 @@ export default function KehadiranGuru({ attendances, className }: Props) {
 
   const shownAtt = className ? attendances.filter((a) => a.class.name === className) : attendances;
 
+  // W2-B-1: Fetch real sessions/attention/trend data
+  const [sessions, setSessions] = useState<AttendanceSessionItem[]>([]);
+  const [attention, setAttention] = useState<AttendanceAttentionItem[]>([]);
+  const [trend, setTrend] = useState<AttendanceTrendItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    fetchAttendanceSessions({ classId: classId || undefined, trendDays: 10 })
+      .then((res) => {
+        if (res.success && res.data) {
+          setSessions(res.data.sessions);
+          setAttention(res.data.attention);
+          setTrend(res.data.trend);
+        } else {
+          setError(res.error ?? 'Gagal memuat rekap kehadiran');
+          setSessions([]);
+          setAttention([]);
+          setTrend([]);
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [classId]);
+
+  // Build SVG polyline from real trend data
+  const trendPoints = useMemo(() => {
+    const valid = trend.filter((t) => t.pct !== null);
+    if (valid.length === 0) return '';
+    const maxX = 620;
+    const maxY = 100;
+    const stepX = valid.length > 1 ? maxX / (valid.length - 1) : maxX;
+    return valid.map((t, i) => {
+      const x = i * stepX;
+      // pct 100 → top (y=10), pct 0 → bottom (y=90)
+      const y = maxY - ((t.pct ?? 0) / 100) * 80 - 10;
+      return `${Math.round(x * 10) / 10},${Math.round(y * 10) / 10}`;
+    }).join(' ');
+  }, [trend]);
+
+  const lastTrend = [...trend].reverse().find((t) => t.pct !== null);
+
   return (
     <div className="space-y-4">
       {/* KPIs */}
@@ -64,87 +93,118 @@ export default function KehadiranGuru({ attendances, className }: Props) {
         <Kpi icon={UserX} label="Alpha" value={`${kpi.alpha}`} valueClass="text-rose-600" />
       </div>
 
-      {/* Rekap per Sesi — SIMULASI */}
+      {/* Rekap per Sesi — REAL DATA */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <h3 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
           <CalendarCheck className="h-[18px] w-[18px] text-emerald-600" />Rekap Kehadiran per Sesi
         </h3>
-        <div className="mb-2 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10.5px] font-bold text-sky-700">
-          Rekap per-sesi akan tersedia menyusul
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-[12px]">
-            <thead>
-              <tr className="border-b border-[#e6efea] bg-[#f9fbfa] text-left text-[10.5px] uppercase tracking-wide text-[#6b8079]">
-                <th className="px-3 py-2">Tgl</th>
-                <th className="px-3 py-2">Mapel</th>
-                <th className="px-3 py-2">Kelas</th>
-                <th className="px-3 py-2">Pertemuan</th>
-                <th className="px-2 py-2 text-center">H</th>
-                <th className="px-2 py-2 text-center">I</th>
-                <th className="px-2 py-2 text-center">S</th>
-                <th className="px-2 py-2 text-center">A</th>
-                <th className="px-2 py-2 text-right">%</th>
-                <th className="px-3 py-2">Keterangan</th>
-              </tr>
-            </thead>
-            <tbody>
-              {SESI_REKAP.map((s, i) => (
-                <tr key={i} className="border-b border-[#f0f4f2] hover:bg-[#f9fbfa]">
-                  <td className="px-3 py-2 font-bold text-[#0f2e25]">{s[0]}</td>
-                  <td className="px-3 py-2 text-[#355a4e]">{s[1]}</td>
-                  <td className="px-3 py-2"><span className="rounded-md bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700">{s[2]}</span></td>
-                  <td className="px-3 py-2 text-[#355a4e]">{s[3]}</td>
-                  <td className="px-2 py-2 text-center font-bold text-emerald-700">{s[4]}</td>
-                  <td className="px-2 py-2 text-center text-sky-600">{s[5]}</td>
-                  <td className="px-2 py-2 text-center text-amber-600">{s[6]}</td>
-                  <td className="px-2 py-2 text-center text-rose-600">{s[7]}</td>
-                  <td className="px-2 py-2 text-right">
-                    <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${s[8] >= 95 ? 'bg-emerald-50 text-emerald-700' : s[8] >= 90 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-600'}`}>{s[8]}%</span>
-                  </td>
-                  <td className="px-3 py-2 text-[10px] font-medium text-[#9bb0a8]" style={{ maxWidth: 200 }}>{s[9]}</td>
+        {loading ? (
+          <div className="flex items-center gap-2 rounded-xl bg-[#f9fbfa] px-3 py-6 text-[12px] font-semibold text-[#6b8079]">
+            <Loader2 className="h-4 w-4 animate-spin text-emerald-600" /> Memuat rekap kehadiran...
+          </div>
+        ) : error ? (
+          <div className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-4 text-[12px] font-semibold text-rose-600">
+            <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+          </div>
+        ) : sessions.length === 0 ? (
+          <div className="grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">
+            Belum ada data kehadiran per sesi. Catat absensi dari sesi mengajar untuk mengisi rekap ini.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="border-b border-[#e6efea] bg-[#f9fbfa] text-left text-[10.5px] uppercase tracking-wide text-[#6b8079]">
+                  <th className="px-3 py-2">Tgl</th>
+                  <th className="px-3 py-2">Mapel</th>
+                  <th className="px-3 py-2">Kelas</th>
+                  <th className="px-2 py-2 text-center">H</th>
+                  <th className="px-2 py-2 text-center">I</th>
+                  <th className="px-2 py-2 text-center">S</th>
+                  <th className="px-2 py-2 text-center">A</th>
+                  <th className="px-2 py-2 text-right">%</th>
+                  <th className="px-3 py-2">Keterangan</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {sessions.map((s, i) => (
+                  <tr key={`${s.date}-${s.className}-${i}`} className="border-b border-[#f0f4f2] hover:bg-[#f9fbfa]">
+                    <td className="px-3 py-2 font-bold text-[#0f2e25]">{fmtShort(s.date)}</td>
+                    <td className="px-3 py-2 text-[#355a4e]">{s.subject}</td>
+                    <td className="px-3 py-2"><span className="rounded-md bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700">{s.className}</span></td>
+                    <td className="px-2 py-2 text-center font-bold text-emerald-700">{s.hadir}</td>
+                    <td className="px-2 py-2 text-center text-sky-600">{s.izin}</td>
+                    <td className="px-2 py-2 text-center text-amber-600">{s.sakit}</td>
+                    <td className="px-2 py-2 text-center text-rose-600">{s.alpha}</td>
+                    <td className="px-2 py-2 text-right">
+                      <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${s.pct >= 95 ? 'bg-emerald-50 text-emerald-700' : s.pct >= 90 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-600'}`}>{s.pct}%</span>
+                    </td>
+                    <td className="px-3 py-2 text-[10px] font-medium text-[#9bb0a8]" style={{ maxWidth: 200 }}>{s.notes ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* Siswa Perlu Perhatian — SIMULASI */}
+      {/* Siswa Perlu Perhatian — REAL DATA */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <h3 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
           <UserX className="h-[18px] w-[18px] text-emerald-600" />Siswa Perlu Perhatian
         </h3>
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          {ATT_ATTENTION.map((s, i) => (
-            <div key={i} className="flex items-center gap-3 rounded-xl border border-[#e6efea] bg-[#f9fbfa] p-3">
-              <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${ATT_COLOR[s.c] ?? 'bg-slate-100 text-slate-600'}`}>
-                <UserX className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <b className="text-[12.5px] text-[#0f2e25]">{s.n}</b>
-                <div className="text-[11px] text-[#6b8079]">
-                  <span className="mr-1 rounded bg-sky-50 px-1 py-0.5 text-[9px] font-bold text-sky-700">{s.k}</span>
-                  {s.m} · {s.d}
+        {!loading && attention.length === 0 ? (
+          <div className="grid h-16 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">
+            Tidak ada siswa yang perlu perhatian khusus. Semua dalam batas normal.
+          </div>
+        ) : (
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            {attention.map((s, i) => {
+              const colorKey = ATTENTION_COLOR(s.alphaCount);
+              return (
+                <div key={`${s.studentName}-${i}`} className="flex items-center gap-3 rounded-xl border border-[#e6efea] bg-[#f9fbfa] p-3">
+                  <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${ATT_COLOR[colorKey] ?? 'bg-slate-100 text-slate-600'}`}>
+                    <UserX className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <b className="text-[12.5px] text-[#0f2e25]">{s.studentName}</b>
+                    <div className="text-[11px] text-[#6b8079]">
+                      <span className="mr-1 rounded bg-sky-50 px-1 py-0.5 text-[9px] font-bold text-sky-700">{s.className}</span>
+                      {s.subject} · {s.reason}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Tren Kehadiran — SIMULASI */}
+      {/* Tren Kehadiran — REAL DATA */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <h3 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
           <TrendingUp className="h-[18px] w-[18px] text-emerald-600" />Tren Kehadiran (10 hari)
         </h3>
-        <svg viewBox="0 0 620 100" className="w-full" style={{ marginTop: 8 }}>
-          <polyline fill="none" stroke="#059669" strokeWidth={2.5} points={TREND_POINTS} />
-          <circle cx={600} cy={22} r={4} fill="#059669" />
-        </svg>
-        <div className="mt-2 flex justify-between text-[10px] font-semibold text-[#9bb0a8]">
-          <span>10 hari lalu</span><span>Hari ini</span>
-        </div>
+        {trendPoints ? (
+          <>
+            <svg viewBox="0 0 620 100" className="w-full" style={{ marginTop: 8 }}>
+              <polyline fill="none" stroke="#059669" strokeWidth={2.5} points={trendPoints} />
+              {(() => {
+                const pts = trendPoints.split(' ');
+                const last = pts[pts.length - 1]?.split(',');
+                return last && last.length === 2 ? <circle cx={Number(last[0])} cy={Number(last[1])} r={4} fill="#059669" /> : null;
+              })()}
+            </svg>
+            <div className="mt-2 flex justify-between text-[10px] font-semibold text-[#9bb0a8]">
+              <span>10 hari lalu</span>
+              {lastTrend && <span>Hari ini: {lastTrend.pct}%</span>}
+            </div>
+          </>
+        ) : (
+          <div className="grid h-16 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">
+            Belum ada data tren kehadiran. Tren terbentuk otomatis saat absensi tercatat.
+          </div>
+        )}
       </div>
 
       {/* Data NYATA: Raw attendance records */}
@@ -184,6 +244,11 @@ export default function KehadiranGuru({ attendances, className }: Props) {
       )}
     </div>
   );
+}
+
+function fmtShort(dateStr: string): string {
+  const d = new Date(dateStr);
+  return `${d.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'][d.getUTCMonth()]}`;
 }
 
 function Kpi({ icon: Icon, label, value, valueClass }: { icon: typeof Users; label: string; value: string; valueClass?: string }) {

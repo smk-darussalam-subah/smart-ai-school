@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import type { TodayClass } from './guru-types';
 import SessionAnalysisPanel from './SessionAnalysisPanel';
-import { fetchAssessmentSession, startAssessmentSession, completeAssessmentSession, type AssessmentSessionData } from '../actions';
+import { fetchAssessmentSession, startAssessmentSession, completeAssessmentSession, getSseToken, type AssessmentSessionData } from '../actions';
 
 // P2: API base for SSE EventSource (server actions can't be used with SSE)
 const SSE_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
@@ -55,28 +55,38 @@ export default function PenilaianSesiModal({ session, initialMode = 'preview', i
     }).finally(() => setSessionLoading(false));
   }, [session?.assessmentSessionId]);
 
-  // P2: Open SSE connection when monitor mode is active and session has assessmentSessionId
+  // W2-C: Open SSE connection when monitor mode is active and session has assessmentSessionId.
+  // EventSource can't send Authorization headers, so we pass the token via ?token=xxx query param.
+  // The KeycloakGuard validates this token server-side (same verifyKeycloakToken).
   useEffect(() => {
     if (mode !== 'monitor' || !session?.assessmentSessionId) return;
-    // P2: Remove unused token var
     setLiveError(false);
-    const eventSource = new EventSource(`${SSE_BASE}/api/v1/assessment/sessions/${session.assessmentSessionId}/stream`, {
-      // SSE doesn't support custom headers; pass token via query param fallback
+    let es: EventSource | null = null;
+    let cancelled = false;
+    // Fetch token first, then open SSE with token in query param
+    getSseToken().then((tokenRes) => {
+      if (cancelled || !tokenRes.success || !tokenRes.token) {
+        setLiveError(true);
+        return;
+      }
+      const url = `${SSE_BASE}/api/v1/assessment/sessions/${session.assessmentSessionId}/stream?token=${encodeURIComponent(tokenRes.token)}`;
+      es = new EventSource(url);
+      es.onmessage = (ev) => {
+        try {
+          const parsed = JSON.parse(ev.data) as LiveMonitorData;
+          setLiveData(parsed);
+        } catch { /* skip malformed */ }
+      };
+      es.onerror = () => {
+        setLiveError(true);
+        es?.close();
+      };
     });
-    // Note: For auth, the API gateway should support cookie-based session or the
-    // EventSource polyfill can pass Authorization header. For now, the SSE endpoint
-    // is behind the same KeycloakGuard — the browser session cookie will be sent.
-    eventSource.onmessage = (ev) => {
-      try {
-        const parsed = JSON.parse(ev.data) as LiveMonitorData;
-        setLiveData(parsed);
-      } catch { /* skip malformed */ }
+    // Cleanup: close EventSource on unmount or mode change
+    return () => {
+      cancelled = true;
+      es?.close();
     };
-    eventSource.onerror = () => {
-      setLiveError(true);
-      eventSource.close();
-    };
-    return () => eventSource.close();
   }, [mode, session?.assessmentSessionId]);
 
   if (!session) return null;

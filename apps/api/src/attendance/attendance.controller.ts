@@ -23,6 +23,7 @@ import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { AttendanceService } from './attendance.service';
 import { CreateAttendanceSchema, CreateAttendanceDto } from './dto/create-attendance.dto';
 import { ListAttendanceQuerySchema } from './dto/list-attendance.dto';
+import { AttendanceSessionsQuerySchema } from './dto/attendance-sessions.dto';
 import { HeatmapQuerySchema } from './dto/heatmap.dto';
 
 @Controller('attendance')
@@ -69,5 +70,19 @@ export class AttendanceController {
     const parsed = ListAttendanceQuerySchema.safeParse(rawQuery);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors);
     return this.service.findAll(parsed.data, user);
+  }
+
+  /**
+   * W2-A-1: GET /attendance/sessions — Rekap kehadiran per sesi (agregasi).
+   * Group by date + class + subject. Returns sessions + attention + trend.
+   * RBAC: GURU (own sessions), SUPER_ADMIN, KEPALA_SEKOLAH.
+   */
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU')
+  @RequirePermission('academic.attendance.read')
+  @Get('sessions')
+  sessions(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
+    const parsed = AttendanceSessionsQuerySchema.safeParse(rawQuery);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.service.sessions(parsed.data, user);
   }
 }
