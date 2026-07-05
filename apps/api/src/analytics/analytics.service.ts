@@ -16,6 +16,7 @@ import {
   isOrangTuaOnly,
   resolveSiswaId,
   resolveGuruClassIds,
+  resolveSiswaClassId,
   resolveUserId,
 } from '../common/helpers/role-helpers';
 import { AnalyticsQuery, StudentAnalyticsQuery } from './dto/analytics-query.dto';
@@ -506,6 +507,136 @@ export class AnalyticsService {
       // Resilient: return empty if any query fails
       return { data: [], date: new Date().toISOString().slice(0, 10), kkm: KKM_DEFAULT };
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // W2-A-3: CP Progress — progres ketercapaian per mapel + breakdown per CP.
+  // Diagregasi dari Grade (NA per subject) + LmsModuleProgress.
+  // Dipakai PembelajaranGuru + CapaianRapor untuk menggantikan MAPEL_PROG/CP_DATA/CP_RAPOR.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async cpProgress(query: AnalyticsQuery, user: AuthUser) {
+    const period = await this.resolvePeriod(query);
+
+    // Ownership: scope classIds per role
+    let scopeClassIds: string[] | null = null;
+    if (isGuruOnly(user)) {
+      scopeClassIds = await resolveGuruClassIds(this.prisma, user.keycloakId);
+      if (scopeClassIds.length === 0) return { mapelProgress: [], cpBreakdown: [] };
+    } else if (isSiswaOnly(user)) {
+      const cid = await resolveSiswaClassId(this.prisma, user.keycloakId);
+      scopeClassIds = cid ? [cid] : [];
+      if (scopeClassIds.length === 0) return { mapelProgress: [], cpBreakdown: [] };
+    }
+
+    const gradeWhere: Prisma.GradeWhereInput = {
+      academicYear: period.academicYear,
+      semester: period.semester,
+      ...(query.classId ? { assignment: { classId: query.classId } } : {}),
+      ...(scopeClassIds ? { assignment: { classId: { in: scopeClassIds } } } : {}),
+    };
+
+    const grades = await this.prisma.grade.findMany({
+      where: gradeWhere,
+      select: {
+        score: true, type: true, studentId: true,
+        assignment: { select: { subject: true, classId: true, class: { select: { name: true } } } },
+      },
+    });
+
+    // ── Per-mapel progress: group by subject, compute NA per student, tuntas rate ──
+    // Student-grade-components per subject (mirror lib/academic.ts naOf)
+    const subjectStudentMap = new Map<string, Map<string, { uh: number[]; praktik: number[]; sikap: number[]; uts: number[]; uas: number[] }>>();
+    const subjectTotalStudents = new Map<string, Set<string>>();
+
+    for (const g of grades) {
+      const subject = g.assignment.subject;
+      if (!subjectStudentMap.has(subject)) subjectStudentMap.set(subject, new Map());
+      if (!subjectTotalStudents.has(subject)) subjectTotalStudents.set(subject, new Set());
+      subjectTotalStudents.get(subject)!.add(g.studentId);
+
+      const studentMap = subjectStudentMap.get(subject)!;
+      if (!studentMap.has(g.studentId)) {
+        studentMap.set(g.studentId, { uh: [], praktik: [], sikap: [], uts: [], uas: [] });
+      }
+      const comp = studentMap.get(g.studentId)!;
+      const score = Number(g.score);
+      const t = String(g.type).toLowerCase();
+      if (t === 'uh' || t === 'formatif') comp.uh.push(score);
+      else if (t === 'praktik') comp.praktik.push(score);
+      else if (t === 'sikap') comp.sikap.push(score);
+      else if (t === 'uts') comp.uts.push(score);
+      else if (t === 'uas' || t === 'sumatif') comp.uas.push(score);
+    }
+
+    const W = { uh: 0.2, praktik: 0.25, sikap: 0.15, uts: 0.2, uas: 0.2 };
+    const computeNa = (c: { uh: number[]; praktik: number[]; sikap: number[]; uts: number[]; uas: number[] }): number | null => {
+      const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+      const parts: { val: number; w: number }[] = [];
+      const uh = avg(c.uh); if (uh !== null) parts.push({ val: uh, w: W.uh });
+      const praktik = avg(c.praktik); if (praktik !== null) parts.push({ val: praktik, w: W.praktik });
+      const sikap = avg(c.sikap); if (sikap !== null) parts.push({ val: sikap, w: W.sikap });
+      const uts = avg(c.uts); if (uts !== null) parts.push({ val: uts, w: W.uts });
+      const uas = avg(c.uas); if (uas !== null) parts.push({ val: uas, w: W.uas });
+      if (parts.length === 0) return null;
+      const wSum = parts.reduce((a, p) => a + p.w, 0);
+      return Math.round((parts.reduce((a, p) => a + p.val * p.w, 0) / wSum) * 10) / 10;
+    };
+
+    const mapelProgress = [...subjectStudentMap.entries()].map(([subject, studentMap]) => {
+      const nas: number[] = [];
+      for (const comps of studentMap.values()) {
+        const na = computeNa(comps);
+        if (na !== null) nas.push(na);
+      }
+      const total = subjectTotalStudents.get(subject)?.size ?? nas.length;
+      const tuntas = nas.filter((n) => n >= KKM_DEFAULT).length;
+      const avgNa = nas.length ? Math.round((nas.reduce((a, b) => a + b, 0) / nas.length) * 10) / 10 : 0;
+      const pct = nas.length ? Math.round((tuntas / nas.length) * 100) : 0;
+      return { mapel: subject, progres: pct, na: avgNa, tuntas, total: Math.max(total, nas.length), tp: `${tuntas}/${Math.max(total, nas.length)} tuntas` };
+    }).sort((a, b) => b.progres - a.progres);
+
+    // ── CP breakdown: derive CPs from RPP body untuk classId / subjects ──
+    // Ambil RPP untuk subject yang ada; CP info dari body.cpGoals / body.objectives
+    const subjectsInScope = mapelProgress.map((m) => m.mapel);
+    const scopeSubjects = subjectsInScope.length > 0 ? subjectsInScope : undefined;
+    const rppWhere: Prisma.RppWhereInput = {
+      status: 'approved',
+      academicYear: period.academicYear,
+      semester: period.semester,
+      ...(scopeClassIds ? { classId: { in: scopeClassIds } } : query.classId ? { classId: query.classId } : {}),
+      ...(scopeSubjects ? { subject: { in: scopeSubjects } } : {}),
+    };
+    const rpps = await this.prisma.rpp.findMany({
+      where: rppWhere,
+      select: { subject: true, body: true },
+    });
+
+    // Extract CP goals dari RPP body (JSON field — format bebas)
+    interface CpEntry { cp: string; desc: string; subject: string }
+    const cpList: CpEntry[] = [];
+    for (const r of rpps) {
+      const body = r.body as Record<string, unknown> | null;
+      if (!body) continue;
+      const cpGoals = (body.cpGoals ?? body.objectives ?? body.cp) as unknown;
+      if (Array.isArray(cpGoals)) {
+        cpGoals.forEach((cp, i) => {
+          const desc = typeof cp === 'string' ? cp : (cp as Record<string, unknown>)?.desc as string ?? (cp as Record<string, unknown>)?.description as string ?? '—';
+          cpList.push({ cp: `CP ${i + 1}`, desc, subject: r.subject });
+        });
+      }
+    }
+
+    // Bila tak ada CP dari RPP, turunkan dari grade types (sumatif → CP proxy)
+    const cpBreakdown = cpList.length > 0 ? cpList.map((c) => {
+      // Progres CP = avg tuntas rate untuk subject CP ini
+      const subjProgress = mapelProgress.find((m) => m.mapel === c.subject);
+      return { cp: c.cp, desc: c.desc, progres: subjProgress?.progres ?? 0, tuntas: subjProgress?.tuntas ?? 0, total: subjProgress?.total ?? 0 };
+    }) : mapelProgress.slice(0, 4).map((m, i) => ({
+      cp: `CP ${i + 1}`, desc: m.mapel, progres: m.progres, tuntas: m.tuntas, total: m.total,
+    }));
+
+    return { mapelProgress, cpBreakdown };
   }
 }
 

@@ -99,4 +99,16 @@ export class AnalyticsController {
   studentGrades(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     return this.studentService.studentGrades(this.parseStudentQuery(rawQuery), user);
   }
+
+  /**
+   * W2-A-3: GET /analytics/cp-progress — progres ketercapaian per mapel + CP breakdown.
+   * Dipakai PembelajaranGuru + CapaianRapor untuk menggantikan MAPEL_PROG/CP_DATA/CP_RAPOR.
+   * RBAC: GURU (own classes), SISWA (own class), SA/KS.
+   */
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU', 'SISWA')
+  @RequirePermission('academic.grade.read')
+  @Get('cp-progress')
+  cpProgress(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
+    return this.service.cpProgress(this.parse(rawQuery), user);
+  }
 }
