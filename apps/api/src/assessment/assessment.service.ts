@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
-import { Observable, interval, map } from 'rxjs';
+import { Observable } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateAssessmentSessionDto,
