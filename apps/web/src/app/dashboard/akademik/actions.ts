@@ -650,6 +650,115 @@ export interface ReportCardItem {
   class: { id: string; name: string };
 }
 
+// ── Wave 2: GURU live-data endpoints (W2-A-1 ~ W2-A-4) ────────────────────────
+
+/** W2-C: Get SSE stream token (EventSource can't send Authorization header).
+ * Returns the current session access token for ?token=xxx query param.
+ * Only used for SSE stream endpoints — validated server-side via KeycloakGuard.
+ */
+export async function getSseToken(): Promise<{ success: boolean; token?: string; error?: string }> {
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) { redirect('/login?reason=session'); }
+  try {
+    return { success: true, token: session.accessToken };
+  } catch (err) {
+    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err;
+    return { success: false, error: 'Gagal mendapatkan token SSE' };
+  }
+}
+
+/** W2-A-1: Fetch rekap kehadiran per sesi (agregasi). */
+export interface AttendanceSessionItem {
+  date: string; subject: string; className: string;
+  hadir: number; izin: number; sakit: number; alpha: number; total: number;
+  pct: number; notes: string | null;
+}
+export interface AttendanceAttentionItem {
+  studentName: string; className: string; subject: string;
+  alphaCount: number; reason: string;
+}
+export interface AttendanceTrendItem {
+  date: string; pct: number | null;
+}
+export async function fetchAttendanceSessions(params?: {
+  classId?: string; subject?: string; from?: string; to?: string; trendDays?: number;
+}): Promise<{ success: boolean; data?: { sessions: AttendanceSessionItem[]; attention: AttendanceAttentionItem[]; trend: AttendanceTrendItem[] }; error?: string }> {
+  const searchParams = new URLSearchParams();
+  if (params?.classId) searchParams.set('classId', params.classId);
+  if (params?.subject) searchParams.set('subject', params.subject);
+  if (params?.from) searchParams.set('from', params.from);
+  if (params?.to) searchParams.set('to', params.to);
+  if (params?.trendDays) searchParams.set('trendDays', String(params.trendDays));
+  const qs = searchParams.toString();
+  const r = await apiCall(`/attendance/sessions${qs ? '?' + qs : ''}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { sessions: AttendanceSessionItem[]; attention: AttendanceAttentionItem[]; trend: AttendanceTrendItem[] } };
+}
+
+/** W2-A-2: Fetch submissions (tugas list). */
+export interface SubmissionItem {
+  id: string; title: string; subject: string; className: string;
+  deadline: string; submitted: number; graded: number; total: number;
+  status: 'aktif' | 'selesai';
+}
+export interface SubmissionDetailStudent {
+  name: string; status: 'Terkumpul' | 'Terlambat' | 'Belum';
+  fileName: string | null; score: number | null;
+}
+export async function fetchSubmissions(params?: {
+  classId?: string; subject?: string; status?: string;
+}): Promise<{ success: boolean; data?: { data: SubmissionItem[]; total: number }; error?: string }> {
+  const searchParams = new URLSearchParams();
+  if (params?.classId) searchParams.set('classId', params.classId);
+  if (params?.subject) searchParams.set('subject', params.subject);
+  if (params?.status) searchParams.set('status', params.status);
+  const qs = searchParams.toString();
+  const r = await apiCall(`/submissions${qs ? '?' + qs : ''}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { data: SubmissionItem[]; total: number } };
+}
+
+/** W2-A-2: Fetch submission detail (per-student). */
+export async function fetchSubmissionDetails(sessionId: string): Promise<{
+  success: boolean;
+  data?: { id: string; title: string; subject: string; className: string; students: SubmissionDetailStudent[] };
+  error?: string;
+}> {
+  const r = await apiCall(`/submissions/${sessionId}/details`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { id: string; title: string; subject: string; className: string; students: SubmissionDetailStudent[] } };
+}
+
+/** W2-A-3: Fetch CP progress (mapel + CP breakdown). */
+export interface MapelProgressItem {
+  mapel: string; progres: number; na: number; tuntas: number; total: number; tp: string;
+}
+export interface CpBreakdownItem {
+  cp: string; desc: string; progres: number; tuntas: number; total: number;
+}
+export async function fetchCpProgress(params?: {
+  classId?: string; academicYear?: string; semester?: number;
+}): Promise<{ success: boolean; data?: { mapelProgress: MapelProgressItem[]; cpBreakdown: CpBreakdownItem[] }; error?: string }> {
+  const searchParams = new URLSearchParams();
+  if (params?.classId) searchParams.set('classId', params.classId);
+  if (params?.academicYear) searchParams.set('academicYear', params.academicYear);
+  if (params?.semester) searchParams.set('semester', String(params.semester));
+  const qs = searchParams.toString();
+  const r = await apiCall(`/analytics/cp-progress${qs ? '?' + qs : ''}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { mapelProgress: MapelProgressItem[]; cpBreakdown: CpBreakdownItem[] } };
+}
+
+/** W2-A-4: Fetch wali kelas classes (homeroom teacher). */
+export interface WaliClassItem {
+  id: string; name: string; majorCode: string; grade: number; academicYear: string;
+}
+export async function fetchWaliClasses(): Promise<{ success: boolean; data?: { classes: WaliClassItem[]; isWaliKelas: boolean }; error?: string }> {
+  const r = await apiCall('/teachers/me/wali-classes', 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { classes: WaliClassItem[]; isWaliKelas: boolean } };
+}
+
 // ── P1: Data-integrity endpoints (S-05 teacher attendance + S-09 profile CV) ─────
 
 /** P1 (S-05): Fetch today's teacher attendance summary for KS dashboard. */

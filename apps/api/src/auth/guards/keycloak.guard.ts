@@ -71,8 +71,20 @@ export class KeycloakGuard implements CanActivate {
   }
 
   private extractToken(request: FastifyRequest): string | null {
+    // 1. Priority: Authorization Bearer header
     const authHeader = request.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) return null;
-    return authHeader.substring(7);
+    if (authHeader?.startsWith('Bearer ')) return authHeader.substring(7);
+
+    // W2-C: SSE fallback — EventSource cannot send custom headers.
+    // Accept ?token=xxx query param for SSE stream endpoints only.
+    // The token is validated via the same verifyKeycloakToken() below,
+    // so no security degradation — just transport adaptation.
+    const url = request.url;
+    if (url && url.includes('/stream')) {
+      const queryToken = (request.query as Record<string, unknown> | null)?.token;
+      if (typeof queryToken === 'string' && queryToken.length > 0) return queryToken;
+    }
+
+    return null;
   }
 }

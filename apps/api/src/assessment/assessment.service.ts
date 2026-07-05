@@ -22,6 +22,7 @@ import {
   SubmitResponseDto,
   UpdateAssessmentSessionDto,
 } from './dto/assessment.dto';
+import { ListSubmissionsQuery } from './dto/submission.dto';
 
 const REVIEWER_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] as const;
 
@@ -767,5 +768,167 @@ export class AssessmentService {
       // Cleanup on unsubscribe
       return () => clearInterval(timer);
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // W2-A-2: Submissions (tugas siswa) — agregasi dari AssessmentSession + Response.
+  // Dipakai PenugasanGuru untuk menggantikan TUGAS_DATA + PENGUMPULAN hardcoded.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * List tugas (= AssessmentSession) milik guru dengan statistik pengumpulan.
+   * RBAC: GURU (own), SUPER_ADMIN, KEPALA_SEKOLAH.
+   */
+  async listSubmissions(query: ListSubmissionsQuery, user: AuthUser) {
+    const where: Prisma.AssessmentSessionWhereInput = {};
+
+    // Ownership: GURU hanya sesi sendiri; reviewer semua.
+    if (!this.isReviewer(user)) {
+      const teacherId = await this.resolveTeacherId(user.keycloakId);
+      where.teacherId = teacherId;
+    }
+
+    if (query.classId) where.classId = query.classId;
+    if (query.subject) where.module = { subject: query.subject };
+
+    if (query.status === 'aktif') {
+      where.status = { in: ['draft', 'active'] };
+    } else if (query.status === 'selesai') {
+      where.status = 'completed';
+    }
+
+    const sessions = await this.prisma.assessmentSession.findMany({
+      where,
+      select: {
+        id: true,
+        title: true,
+        type: true,
+        status: true,
+        classId: true,
+        completedAt: true,
+        createdAt: true,
+        module: { select: { subject: true } },
+        class: { select: { id: true, name: true } },
+        _count: { select: { responses: true } },
+      },
+      orderBy: [{ createdAt: 'desc' }],
+    });
+
+    // Ambil jumlah siswa aktif per kelas untuk menghitung total target
+    const classIds = [...new Set(sessions.map((s) => s.classId).filter((c): c is string => !!c))];
+    const classStudentCountMap = new Map<string, number>();
+    if (classIds.length > 0) {
+      const grouped = await this.prisma.student.groupBy({
+        by: ['classId'],
+        where: { classId: { in: classIds }, deletedAt: null, status: 'active' },
+        _count: { _all: true },
+      });
+      for (const g of grouped) {
+        if (g.classId) classStudentCountMap.set(g.classId, g._count._all);
+      }
+    }
+
+    // Hitung jumlah yang sudah dinilai (score !== null)
+    const sessionIds = sessions.map((s) => s.id);
+    const gradedCounts = sessionIds.length > 0
+      ? await this.prisma.assessmentResponse.groupBy({
+          by: ['sessionId'],
+          where: { sessionId: { in: sessionIds }, score: { not: null } },
+          _count: { _all: true },
+        })
+      : [];
+    const gradedMap = new Map<string, number>();
+    for (const g of gradedCounts) gradedMap.set(g.sessionId, g._count._all);
+
+    const data = sessions.map((s) => {
+      const total = s.classId ? (classStudentCountMap.get(s.classId) ?? 0) : s._count.responses;
+      const submitted = s._count.responses;
+      const graded = gradedMap.get(s.id) ?? 0;
+      const isActive = s.status === 'draft' || s.status === 'active';
+      return {
+        id: s.id,
+        title: s.title,
+        subject: s.module?.subject ?? '—',
+        className: s.class?.name ?? '—',
+        deadline: s.completedAt ?? s.createdAt,
+        submitted,
+        graded,
+        total: Math.max(total, submitted),
+        status: (isActive ? 'aktif' : 'selesai') as 'aktif' | 'selesai',
+      };
+    });
+
+    return { data, total: data.length };
+  }
+
+  /**
+   * Detail pengumpulan per-siswa untuk satu tugas (AssessmentSession).
+   * RBAC: GURU (own), SUPER_ADMIN, KEPALA_SEKOLAH.
+   */
+  async submissionDetails(sessionId: string, user: AuthUser) {
+    const session = await this.prisma.assessmentSession.findUnique({
+      where: { id: sessionId },
+      select: {
+        id: true, title: true, type: true, status: true,
+        teacherId: true, classId: true, completedAt: true,
+        module: { select: { subject: true } },
+        class: { select: { id: true, name: true } },
+      },
+    });
+    if (!session) throw new NotFoundException('Sesi tugas tidak ditemukan');
+
+    // Ownership check
+    if (!this.isReviewer(user)) {
+      const teacherId = await this.resolveTeacherId(user.keycloakId);
+      if (session.teacherId !== teacherId) throw new ForbiddenException('Bukan tugas Anda');
+    }
+
+    // Ambil roster kelas + respons yang sudah ada
+    const [classStudents, responses] = await Promise.all([
+      session.classId
+        ? this.prisma.student.findMany({
+            where: { classId: session.classId, deletedAt: null, status: 'active' },
+            select: { id: true, nis: true, user: { select: { fullName: true } } },
+            orderBy: { user: { fullName: 'asc' } },
+          })
+        : [],
+      this.prisma.assessmentResponse.findMany({
+          where: { sessionId },
+          select: {
+            id: true, studentId: true, score: true, submittedAt: true, startedAt: true,
+            student: { select: { id: true, nis: true, user: { select: { fullName: true } } } },
+          },
+        }),
+    ]);
+
+    const responseMap = new Map(responses.map((r) => [r.studentId, r]));
+    // Bila tak ada roster kelas, pakai siswa yang ada respons
+    const rosterSource = classStudents.length > 0
+      ? classStudents.map((s) => ({ id: s.id, nis: s.nis, user: { fullName: s.user.fullName } }))
+      : responses.map((r) => ({ id: r.student.id, nis: r.student.nis, user: { fullName: r.student.user.fullName } }));
+
+    const students = rosterSource.map((stu) => {
+      const resp = responseMap.get(stu.id);
+      let status: 'Terkumpul' | 'Terlambat' | 'Belum' = 'Belum';
+      if (resp?.submittedAt) {
+        // Terlambat bila ada deadline (completedAt) dan submit setelahnya
+        const deadline = session.completedAt ?? null;
+        status = deadline && new Date(resp.submittedAt) > new Date(deadline) ? 'Terlambat' : 'Terkumpul';
+      }
+      return {
+        name: stu.user.fullName,
+        status,
+        fileName: resp?.submittedAt ? `jawaban-${stu.nis}.json` : null,
+        score: resp?.score ?? null,
+      };
+    });
+
+    return {
+      id: session.id,
+      title: session.title,
+      subject: session.module?.subject ?? '—',
+      className: session.class?.name ?? '—',
+      students,
+    };
   }
 }

@@ -5,11 +5,11 @@
 // Aturan backend dihormati: edit hanya draft/revision, hapus hanya draft.
 // Editor konten LMS interaktif = placeholder jujur (backend LMS dibangun berikutnya).
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useEffect } from 'react';
 import { FileText, Plus, Pencil, Send, Trash2, AlertTriangle, BookOpen, Loader2, Eye, EyeOff, Archive, Users, Activity, TrendingUp, GitBranch, ArrowRight, Maximize2, Info } from 'lucide-react';
 import clsx from 'clsx';
 import type { RppItem, LmsModuleItem } from './guru-types';
-import { submitRpp, deleteRpp, setLmsModuleStatus, deleteLmsModule } from '../actions';
+import { submitRpp, deleteRpp, setLmsModuleStatus, deleteLmsModule, fetchCpProgress, type MapelProgressItem, type CpBreakdownItem } from '../actions';
 import ModulAjarForm from './ModulAjarForm';
 import ModulLmsForm from './ModulLmsForm';
 import LmsMonitorModal from './LmsMonitorModal';
@@ -44,20 +44,7 @@ const LMS_BADGE: Record<string, string> = {
 };
 const LMS_LABEL: Record<string, string> = { published: 'Terbit', draft: 'Draft', archived: 'Arsip' };
 
-// SIMULASI: Progres ketercapaian per mapel (backend /cp-progress belum tersedia)
-const MAPEL_PROG = [
-  { mapel: 'Pemrograman Web', progres: 64, tp: '5/8 TP' },
-  { mapel: 'Basis Data', progres: 48, tp: '3/7 TP' },
-  { mapel: 'PBO', progres: 72, tp: '6/9 TP' },
-];
-
-// SIMULASI: Ketercapaian per CP (Capaian Pembelajaran)
-const CP_DATA = [
-  { cp: 'CP 1', desc: 'Antarmuka web fungsional', progres: 88 },
-  { cp: 'CP 2', desc: 'Layout responsif', progres: 74 },
-  { cp: 'CP 3', desc: 'Form & validasi', progres: 35 },
-  { cp: 'CP 4', desc: 'Interaktivitas dasar', progres: 0 },
-];
+// W2-B-3: MAPEL_PROG + CP_DATA hardcoded arrays dihapus — data dari /analytics/cp-progress
 
 export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, academicYear, semester, activeSubject, onClearSubject }: Props) {
   const [formOpen, setFormOpen] = useState(false);
@@ -71,10 +58,27 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
   const shownRpp = subjectFiltered ? rpp.filter((r) => r.subject === subjectFiltered) : rpp;
 
   const [lmsFormOpen, setLmsFormOpen] = useState(false);
+  // W2-B-3: Real CP progress from /analytics/cp-progress
+  const [mapelProg, setMapelProg] = useState<MapelProgressItem[]>([]);
+  const [cpData, setCpData] = useState<CpBreakdownItem[]>([]);
+  const [cpLoading, setCpLoading] = useState(false);
   const [lmsEditing, setLmsEditing] = useState<LmsModuleItem | null>(null);
   const [monitorM, setMonitorM] = useState<LmsModuleItem | null>(null);
   const [previewM, setPreviewM] = useState<LmsModuleItem | null>(null);
   const [previewScreenM, setPreviewScreenM] = useState<LmsModuleItem | null>(null);
+
+  // W2-B-3: Fetch real CP progress data
+  useEffect(() => {
+    setCpLoading(true);
+    fetchCpProgress({ academicYear, semester })
+      .then((res) => {
+        if (res.success && res.data) {
+          setMapelProg(res.data.mapelProgress);
+          setCpData(res.data.cpBreakdown);
+        }
+      })
+      .finally(() => setCpLoading(false));
+  }, [academicYear, semester]);
 
   const openCreate = () => { setEditing(null); setFormOpen(true); };
   const openEdit = (r: RppItem) => { setEditing(r); setFormOpen(true); };
@@ -338,7 +342,7 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
           </div>
         )}
         <p className="mt-3 text-[11.5px] text-[#6b8079]">
-          Modul yang <b>Terbit</b> tampil di LMS siswa kelas terkait; progres belajar terlacak otomatis. Kuis diagnostik &amp; bank soal menyusul.
+          Modul yang <b>Terbit</b> tampil di LMS siswa kelas terkait; progres belajar terlacak otomatis. Buat sesi asesmen (diagnostik/formatif) dari modul untuk mengaktifkan kuis siswa.
         </p>
       </div>
 
@@ -351,36 +355,52 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
           <Info className="h-3 w-3" /> Data progres CP tersedia saat nilai dan LMS aktif
         </div>
 
-        {/* Per Mapel */}
-        <div className="space-y-2.5">
-          {MAPEL_PROG.map((m) => (
-            <div key={m.mapel} className="flex items-center gap-3">
-              <span className="w-32 shrink-0 text-[12px] font-semibold text-[#0f2e25]">{m.mapel}</span>
-              <div className="h-3 flex-1 overflow-hidden rounded-full bg-[#f0f4f2]">
-                <div className={`h-full rounded-full ${m.progres >= 60 ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${m.progres}%` }} />
+        {/* Per Mapel — REAL DATA from /analytics/cp-progress */}
+        {cpLoading ? (
+          <div className="flex items-center gap-2 rounded-xl bg-[#f9fbfa] px-3 py-4 text-[11.5px] font-semibold text-[#6b8079]">
+            <Loader2 className="h-4 w-4 animate-spin text-emerald-600" /> Memuat progres ketercapaian...
+          </div>
+        ) : mapelProg.length === 0 ? (
+          <div className="grid h-16 place-items-center rounded-xl bg-[#f4f7f5] text-[12px] font-medium text-[#9bb0a8]">
+            Belum ada data progres. Tuntas rate muncul saat nilai dan LMS aktif.
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {mapelProg.map((m) => (
+              <div key={m.mapel} className="flex items-center gap-3">
+                <span className="w-32 shrink-0 text-[12px] font-semibold text-[#0f2e25]">{m.mapel}</span>
+                <div className="h-3 flex-1 overflow-hidden rounded-full bg-[#f0f4f2]">
+                  <div className={`h-full rounded-full ${m.progres >= 60 ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${m.progres}%` }} />
+                </div>
+                <span className="w-10 text-right text-[12px] font-extrabold text-[#0f2e25]">{m.progres}%</span>
+                <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${m.progres >= 60 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{m.tp}</span>
               </div>
-              <span className="w-10 text-right text-[12px] font-extrabold text-[#0f2e25]">{m.progres}%</span>
-              <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${m.progres >= 60 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{m.tp}</span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
-        {/* CP Grid */}
+        {/* CP Grid — REAL DATA */}
         <div className="mb-2 mt-4 text-[12px] font-extrabold text-[#355a4e]">Ketercapaian per CP</div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {CP_DATA.map((c) => (
-            <div key={c.cp} className="rounded-xl border border-[#e6efea] bg-[#f9fbfa] p-3">
-              <b className="text-[11px] text-[#0f2e25]">{c.cp}</b>
-              <div className="text-[10px] text-[#9bb0a8]">{c.desc}</div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#f0f4f2]">
-                <div className={`h-full rounded-full ${c.progres >= 75 ? 'bg-emerald-500' : c.progres > 0 ? 'bg-amber-400' : 'bg-slate-200'}`} style={{ width: `${c.progres}%` }} />
+        {cpData.length === 0 ? (
+          <div className="grid h-16 place-items-center rounded-xl bg-[#f4f7f5] text-[12px] font-medium text-[#9bb0a8]">
+            Data CP tersedia saat Modul Ajar berisi capaian pembelajaran (CP).
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {cpData.map((c) => (
+              <div key={c.cp} className="rounded-xl border border-[#e6efea] bg-[#f9fbfa] p-3">
+                <b className="text-[11px] text-[#0f2e25]">{c.cp}</b>
+                <div className="text-[10px] text-[#9bb0a8]">{c.desc}</div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#f0f4f2]">
+                  <div className={`h-full rounded-full ${c.progres >= 75 ? 'bg-emerald-500' : c.progres > 0 ? 'bg-amber-400' : 'bg-slate-200'}`} style={{ width: `${c.progres}%` }} />
+                </div>
+                <small className={`mt-1 block text-[10px] font-bold ${c.progres >= 75 ? 'text-emerald-700' : 'text-amber-600'}`}>
+                  {c.progres > 0 ? `${c.progres}% · ${c.tuntas}/${c.total} siswa` : 'belum mulai'}
+                </small>
               </div>
-              <small className={`mt-1 block text-[10px] font-bold ${c.progres >= 75 ? 'text-emerald-700' : 'text-amber-600'}`}>
-                {c.progres > 0 ? `${c.progres}%` : 'belum mulai'}
-              </small>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {formOpen && (
