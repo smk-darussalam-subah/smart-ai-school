@@ -140,22 +140,40 @@
 
 ---
 
-## 4. DAFTAR SIMULASI — REGISTER TERKONSOLIDASI
+## 4. DAFTAR SIMULASI — REGISTER TERKONSOLIDASI (Zero-Simulasi Program, P0–P6)
 
-> Setelah purge data dummy, produksi menampilkan empty state untuk fitur yang wired. Tapi beberapa komponen masih menampilkan SIM constants sebagai fallback.
+> **Update 2026-07-04 (Zero-Simulasi Program):** Full codebase audit revealed 16 SIM surfaces
+> (not 10 as originally listed). All 16 resolved. Below is the verified register.
 
-| # | Komponen | SIM Constant | Backend Status | Action Needed | Merged Into |
+| # | Komponen | SIM Constant / Surface | Resolution | Phase | Runtime Proof |
 |---|---|---|---|---|---|
-| **SIM-1** | KS Health Score | `SIM_HEALTH` | Wired (analytics) | Refactor ke empty state | **U6** |
-| **SIM-2** | KS Tren Kehadiran fallback | `SIM_TREN_*` | Wired (heatmap) | Banner already cleaned ✅, data fallback masih SIM | **U6** |
-| **SIM-3** | KS RPP Turnaround | `SIM_RPP_SLOW` | Derivable from /rpp | Compute real atau empty | **U6** |
-| **SIM-4** | Siswa Daily Quest fallback | `SIM_DAILY_QUEST` | Wired (B1) | Refactor ke empty state | **U6** |
-| **SIM-5** | Siswa Personal Calendar fallback | `SIM_KALENDER` | Wired (B2) | Refactor ke empty state (GAP-4) | **U5** → **U6** |
-| **SIM-6** | Ortu Timeline fallback | `SIM_TIMELINE` | Wired (B3) | Already removes "Contoh" label ✅, data masih SIM fallback | **U6** |
-| **SIM-7** | Guru ModulAjarForm AI steps | SIM label | ATP only real | **KEEP** — genuinely needs AI per-step | — |
-| **SIM-8** | BadgeCelebration "Contoh" | SIM label | Trigger exists | **KEEP** — needs real badge trigger event | — |
-| **SIM-9** | Kiosk "Fase 2" TTS | SIM label | No backend | **KEEP** — genuinely Fase 2 | — |
-| **SIM-10** | Kiosk "Fase 2" Absen per JP | SIM label | No backend | **KEEP** — genuinely Fase 2 | — |
+| SIM-1 | KS Health Score | `SIM_HEALTH` | Empty state (U6) | U6 ✅ | grep SIM_HEALTH runtime = 0 |
+| SIM-2 | KS Tren Kehadiran | `SIM_TREN_*` | Empty state (U6) | U6 ✅ | grep SIM_TREN runtime = 0 |
+| SIM-3 | KS RPP Turnaround | `SIM_RPP_SLOW` | Hardcoded 0 (U6) | U6 ✅ | grep SIM_RPP_SLOW runtime = 0 |
+| SIM-4 | Siswa Daily Quest | `SIM_DAILY_QUEST` | Empty state (U6) | U6 ✅ | grep SIM_DAILY_QUEST runtime = 0 |
+| SIM-5 | Siswa Calendar | `SIM_KALENDER` | Empty state (U5→U6) | U6 ✅ | grep SIM_KALENDER runtime = 0 |
+| SIM-6 | Ortu Timeline | `SIM_TIMELINE` | Empty state (U6) | U6 ✅ | grep SIM_TIMELINE runtime = 0 |
+| **S-01** | PenilaianSesiModal preview | Hardcoded questions | SSE + real questions (P2) | P2 ✅ | tsc 0, build OK, SSE endpoint exists |
+| **S-02** | PenilaianSesiModal monitor | `MONITOR_DATA` (8 fake) | SSE stream (P2) | P2 ✅ | GET /assessment/sessions/:id/stream |
+| **S-03** | PenilaianSesiModal sync | setTimeout fake | Real startResponse (P2) | P2 ✅ | existing PATCH :id/start wired |
+| **S-04** | SessionFlowModal | Hardcoded TP/CP/feedback | Real session.subject (P2) | P2 ✅ | session.assessmentSessionId conditional |
+| **S-05** | KS GuruHadirModal + KPI | `SIM_GURU_LIST` | GET /teacher-attendance/today-summary (P1) | P1 ✅ | endpoint live, tsc 0 |
+| **S-06** | KS tren guru | `pcts.map(p=>p+2)` | Honest empty guru line (P0) | P0 ✅ | TrenChart conditional render |
+| **S-07** | KS Rekap badge | Always-on "SIMULASI" | Conditional: real→"Real-time" (P0) | P0 ✅ | realRekap.length > 0 check |
+| **S-08** | KS G8 Matriks badge | Always-on "SIMULASI" | Conditional: real→"Real-time" (P0) | P0 ✅ | realMonData.length > 0 check |
+| **S-09** | ProfileCV | `SIM_PROFILE_CV` | GET /students/me/profile-cv (P1) | P1 ✅ | endpoint live, tsc 0 |
+| **S-10** | KS constants | SIM_KKTP/SCHED/MON/GURU | Type-only or deleted (P0) | P0 ✅ | grep runtime = 0 |
+| **S-11** | BadgeCelebration | Hardcoded "85" | Accepts real badge.score (P3) | P3 ✅ | badge prop wired |
+| **S-12** | ModulAjarForm AI steps | toast "SIMULASI" | POST /ai/generate-rpp-step (P4) | P4 ✅ | endpoint live, simLabel removed |
+| **S-13** | Kiosk TTS alert | Hardcoded "XI TJKT JP-3" | Real papanRows check (P5) | P5 ✅ | alert derived from real data |
+| **S-14** | Kiosk absen-per-JP | `SIM_ABSEN_PER_JP` | Honest empty (P5) | P5 ✅ | SIM_ABSEN_PER_JP deleted |
+| **S-15** | KS genSimMonitor fallback | `SIM_MON_GURUS` | Empty-state fallback (P0) | P0 ✅ | emptyRekapData = [] |
+| **S-16** | ModulLmsForm | "(SIMULASI)" label | Label cleaned (P0) | P0 ✅ | grep SIMULASI in file = 0 |
+| **S-17** | LmsPreviewScreen | `SIM_STUDENTS` | Empty array (P6) | P6 ✅ | EMPTY_STUDENTS = [] |
+| **S-18** | siswa-data.ts resolveSchedule | `SIM_SCHEDULE` fallback | Empty schedule {} (P6) | P6 ✅ | return {} not SIM_SCHEDULE |
+
+**All 18 items resolved.** grep `const SIM_` in .tsx files = 0 runtime imports.
+Dead exports in siswa-data.ts/ortu-data.ts remain (historical) but no .tsx file imports them.
 
 ---
 

@@ -188,6 +188,90 @@ export class StudentService {
     return { data };
   }
 
+  /**
+   * P1 (S-09): Profile CV aggregate — identity + academic stats for siswa profile screen.
+   * Combines user identity, grade average, attendance pct, module progress, XP.
+   */
+  async profileCv(requestUser: AuthUser) {
+    const userId = await resolveUserId(this.prisma, requestUser.keycloakId);
+    const student = await this.prisma.student.findFirst({
+      where: { userId, deletedAt: null },
+      select: {
+        ...STUDENT_BASE_SELECT,
+        user: { select: { id: true, fullName: true, email: true, phone: true } },
+      },
+    });
+    if (!student) throw new NotFoundException('Profil siswa tidak ditemukan');
+
+    // Aggregate grades
+    const grades = await this.prisma.grade.findMany({
+      where: { studentId: student.id },
+      select: { score: true },
+    });
+    const scores = grades.map((g) => Number(g.score)).filter((n) => !Number.isNaN(n));
+    const avgGrade = scores.length
+      ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10
+      : null;
+
+    // Aggregate attendance
+    const attendances = await this.prisma.attendance.findMany({
+      where: { studentId: student.id },
+      select: { status: true },
+    });
+    const attTotal = attendances.length;
+    const attHadir = attendances.filter((a) => a.status === 'hadir').length;
+    const attendancePct = attTotal ? Math.round((attHadir / attTotal) * 100) : null;
+
+    // Modules completed
+    const modulesCompleted = await this.prisma.lmsModuleProgress.count({
+      where: { studentId: student.id, status: 'completed' },
+    });
+
+    // Streak: consecutive days with 'hadir' ending today or yesterday
+    const recentAtt = await this.prisma.attendance.findMany({
+      where: { studentId: student.id, status: 'hadir' },
+      select: { date: true },
+      orderBy: { date: 'desc' },
+      take: 30,
+    });
+    let streak = 0;
+    if (recentAtt.length > 0) {
+      const dayMs = 86400000;
+      let prev = new Date(recentAtt[0]!.date.getTime());
+      streak = 1;
+      for (let i = 1; i < recentAtt.length; i++) {
+        const diff = (prev.getTime() - new Date(recentAtt[i]!.date).getTime()) / dayMs;
+        if (diff > 1.5) break;
+        streak++;
+        prev = new Date(recentAtt[i]!.date.getTime());
+      }
+    }
+
+    // XP + level + streak from gamification.student_xp (P15 W3-3)
+    const xpRecord = await this.prisma.studentXp.findFirst({
+      where: { studentId: student.id },
+      select: { totalXp: true, level: true, streakDays: true },
+    });
+    const totalXP = xpRecord?.totalXp ?? 0;
+    const level = xpRecord?.level ?? 1;
+
+    return {
+      name: student.user?.fullName ?? '—',
+      nis: student.nis,
+      email: student.user?.email ?? '—',
+      phone: student.user?.phone ?? '—',
+      class: student.class?.name ?? '—',
+      school: 'SMK Darussalam Subah',
+      enrollmentDate: student.joinedAt?.toISOString().slice(0, 10) ?? '—',
+      xp: totalXP,
+      level,
+      avgGrade,
+      attendance: attendancePct,
+      modulesCompleted,
+      streak,
+    };
+  }
+
   async create(dto: CreateStudentDto) {
     const student = await this.prisma.student.create({
       data: dto,

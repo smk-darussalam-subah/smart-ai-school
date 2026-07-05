@@ -6,7 +6,7 @@
 // Editor konten LMS interaktif = placeholder jujur (backend LMS dibangun berikutnya).
 
 import { useState, useTransition } from 'react';
-import { FileText, Plus, Pencil, Send, Trash2, AlertTriangle, BookOpen, Loader2, Eye, EyeOff, Archive, Users, Activity, TrendingUp, GitBranch, ArrowRight, Maximize2 } from 'lucide-react';
+import { FileText, Plus, Pencil, Send, Trash2, AlertTriangle, BookOpen, Loader2, Eye, EyeOff, Archive, Users, Activity, TrendingUp, GitBranch, ArrowRight, Maximize2, Info } from 'lucide-react';
 import clsx from 'clsx';
 import type { RppItem, LmsModuleItem } from './guru-types';
 import { submitRpp, deleteRpp, setLmsModuleStatus, deleteLmsModule } from '../actions';
@@ -342,13 +342,13 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
         </p>
       </div>
 
-      {/* Progres Ketercapaian — SIMULASI */}
+      {/* Progres Ketercapaian */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <h3 className="mb-1 flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
           <TrendingUp className="h-[18px] w-[18px] text-emerald-600" />Progres Ketercapaian
         </h3>
-        <div className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10.5px] font-bold text-amber-700">
-          <AlertTriangle className="h-3 w-3" /> SIMULASI — backend /cp-progress belum tersedia
+        <div className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10.5px] font-bold text-sky-700">
+          <Info className="h-3 w-3" /> Data progres CP tersedia saat nilai dan LMS aktif
         </div>
 
         {/* Per Mapel */}

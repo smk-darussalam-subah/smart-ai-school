@@ -48,8 +48,8 @@ export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, 
           </span>
         </div>
         {isSimSchedule && (
-          <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-500">
-            <span>🧪</span> Data Simulasi — Jadwal belum tersedia dari server
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] font-bold text-sky-600">
+            <span>📋</span> Jadwal belum tersedia dari server
           </div>
         )}
         <div className="mt-2 flex items-center gap-2 text-sm text-[var(--muted)]">

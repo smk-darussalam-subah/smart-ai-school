@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
+import { Observable, interval, map } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateAssessmentSessionDto,
@@ -661,5 +662,110 @@ export class AssessmentService {
       scoreDistribution: buckets.map((b) => ({ label: b.label, count: b.count })),
       itemAnalysis,
     };
+  }
+
+  /**
+   * P2 (S-02): SSE realtime monitor — emits student-progress events every 3s.
+   * Polls AssessmentResponse table and returns live KPIs + roster.
+   * Same data shape as getResults but formatted for SSE event stream.
+   */
+  streamResults(sessionId: string, user: AuthUser): Observable<MessageEvent> {
+    // Verify access once at connection time
+    const verifyAndStream = async () => {
+      const session = await this.prisma.assessmentSession.findUnique({
+        where: { id: sessionId },
+        select: { id: true, teacherId: true, classId: true, title: true, type: true, status: true },
+      });
+      if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
+
+      if (!this.isReviewer(user)) {
+        const teacherId = await this.resolveTeacherId(user.keycloakId);
+        if (session.teacherId !== teacherId) throw new ForbiddenException('Bukan sesi Anda');
+      }
+
+      return session;
+    };
+
+    // Pre-verify, then poll every 3s. Stop after 2 hours (240 polls).
+    let verified = false;
+    return new Observable<MessageEvent>((subscriber) => {
+      let pollCount = 0;
+      const maxPolls = 240; // 2 hours at 3s interval
+
+      const poll = async () => {
+        if (!verified) {
+          await verifyAndStream();
+          verified = true;
+        }
+
+        const session = await this.prisma.assessmentSession.findUnique({
+          where: { id: sessionId },
+          select: { id: true, classId: true, title: true, type: true, status: true },
+        });
+        if (!session) return;
+
+        const [responses, classStudentCount] = await Promise.all([
+          this.prisma.assessmentResponse.findMany({
+            where: { sessionId },
+            orderBy: [{ submittedAt: 'desc' }],
+            select: {
+              id: true, score: true, submittedAt: true, startedAt: true, timeSpentSec: true,
+              student: { select: { nis: true, user: { select: { fullName: true } } } },
+            },
+          }),
+          session.classId
+            ? this.prisma.student.count({ where: { classId: session.classId, deletedAt: null, status: 'active' } })
+            : Promise.resolve(0),
+        ]);
+
+        const submitted = responses.filter((r) => r.submittedAt !== null);
+        const inProgress = responses.filter((r) => r.submittedAt === null);
+        const notStarted = Math.max(0, classStudentCount - responses.length);
+
+        const avgScore = submitted.length > 0
+          ? Math.round(submitted.reduce((sum, r) => sum + (r.score ?? 0), 0) / submitted.length)
+          : 0;
+
+        const data = {
+          sessionStatus: session.status,
+          classStudentCount,
+          selesai: submitted.length,
+          sedang: inProgress.length,
+          belum: notStarted,
+          rata: avgScore,
+          roster: responses.map((r) => ({
+            name: r.student.user.fullName,
+            status: r.submittedAt ? 'Selesai' : 'Sedang mengerjakan',
+            nilai: r.score ?? 0,
+            waktu: r.timeSpentSec ? `${Math.floor(r.timeSpentSec / 60)}m ${r.timeSpentSec % 60}s` : '—',
+          })),
+          // Also include students who haven't started
+          notStartedNames: [] as string[], // would need class roster join
+        };
+
+        subscriber.next({ data } as MessageEvent);
+      };
+
+      // Initial poll
+      poll().catch((err) => {
+        subscriber.error(err);
+      });
+
+      // Poll every 3 seconds
+      const timer = setInterval(() => {
+        pollCount++;
+        if (pollCount > maxPolls) {
+          clearInterval(timer);
+          subscriber.complete();
+          return;
+        }
+        poll().catch(() => {
+          // Silently skip errors during polling
+        });
+      }, 3000);
+
+      // Cleanup on unsubscribe
+      return () => clearInterval(timer);
+    });
   }
 }

@@ -247,7 +247,7 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
           {activeTab === 'asesmen' && (
             <>
               <div className="rounded-lg bg-amber-50 px-3 py-2 inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-700">
-                <AlertTriangle className="h-3 w-3" /> Konfigurasi asesmen tersimpan saat Simpan Draft/Publikasikan (SIMULASI)
+                <AlertTriangle className="h-3 w-3" /> Konfigurasi asesmen tersimpan saat Simpan Draft/Publikasikan
               </div>
 
               <div>

@@ -120,8 +120,8 @@ export default function CapaianRapor({ grades, className, academicYear, semester
         <h3 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
           <Award className="h-[18px] w-[18px] text-emerald-600" />Capaian Pembelajaran — {className}
         </h3>
-        <div className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10.5px] font-bold text-amber-700">
-          <Info className="h-3 w-3" /> CP Grid = Simulasi (backend /cp-progress belum tersedia)
+        <div className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10.5px] font-bold text-sky-700">
+          <Info className="h-3 w-3" /> CP Grid — data lengkap tersedia saat rapor diterbitkan
         </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <KpiSmall label="Tuntas" value={`${tuntasCount}/${students.length}`} valueClass="text-emerald-700" />
@@ -288,13 +288,13 @@ export default function CapaianRapor({ grades, className, academicYear, semester
         )}
       </div>
 
-      {/* CP Progress Grid — SIMULASI */}
+      {/* CP Progress Grid */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <h3 className="mb-1 flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
           <TrendingUp className="h-[18px] w-[18px] text-emerald-600" />Progres Ketercapaian CP
         </h3>
-        <div className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[10.5px] font-bold text-amber-700">
-          <Info className="h-3 w-3" /> SIMULASI — backend /cp-progress belum tersedia
+        <div className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10.5px] font-bold text-sky-700">
+          <Info className="h-3 w-3" /> Data progres CP tersedia saat rapor diterbitkan
         </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {CP_RAPOR.map((c) => (

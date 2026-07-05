@@ -1,7 +1,7 @@
 'use client';
 
 // ModulAjarForm — Modul Ajar Kurikulum Merdeka LENGKAP (sesuai mockup modul-ajar-form.html).
-// Wizard 11-langkah dengan sidebar navigation, AI Generate (SIMULASI), timeline
+// Wizard 11-langkah dengan sidebar navigation, AI Generate, timeline
 // Kegiatan (Pendahuluan/Inti/Penutup), asesmen terstruktur (Diagnostik/Formatif/Sumatif),
 // Lampiran, Rekap & Download. Data tersimpan di Rpp.body (JSON); identitas di kolom top-level.
 
@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { RppItem, ModulAjarBody, AtpItem, KegiatanItem } from './guru-types';
-import { createRpp, updateRpp, submitRpp, aiGenerateAtp } from '../actions';
+import { createRpp, updateRpp, submitRpp, aiGenerateAtp, aiGenerateRppStep } from '../actions';
 
 interface Props {
   open: boolean;
@@ -100,7 +100,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
   const [, startAi] = useTransition();
 
   const aiGenerate = (stepNum: number) => {
-    // Step 3 (ATP) → real API call. Other steps → SIMULASI (backend belum ada)
+    // Step 3 (ATP) → dedicated ATP endpoint.
     if (stepNum === 3) {
       if (!subject) { showToast('Pilih mapel terlebih dahulu.'); return; }
       const cpText = typeof body.cp === 'string' ? body.cp : '';
@@ -123,8 +123,30 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
       });
       return;
     }
-    // Other steps — SIMULASI (backend belum tersedia)
-    showToast(`Bagian "${STEPS[stepNum - 1]?.label}" berhasil di-generate AI (SIMULASI). Silakan sunting.`);
+    // P4 (S-12): Other steps — real AI gateway via /ai/generate-rpp-step
+    const stepMap: Record<number, string> = {
+      2: 'cp_tp', 4: 'profil', 5: 'sarana', 6: 'kegiatan',
+      7: 'asesmen', 8: 'remedial', 9: 'refleksi', 10: 'lampiran',
+    };
+    const stepKey = stepMap[stepNum];
+    if (!stepKey || !subject) {
+      showToast(subject ? 'Langkah tidak didukung.' : 'Pilih mapel terlebih dahulu.');
+      return;
+    }
+    const contextStr = JSON.stringify(body).slice(0, 4000);
+    startAi(async () => {
+      const res = await aiGenerateRppStep({ step: stepKey, subject, context: contextStr });
+      if (!res.success) {
+        const msg = res.error ?? 'Gagal generate AI.';
+        showToast(msg.includes('429') ? 'Rate limit tercapai (10/menit). Coba lagi nanti.' : msg);
+        return;
+      }
+      if (res.data?.output) {
+        showToast(`Bagian "${STEPS[stepNum - 1]?.label}" berhasil di-generate AI. Silakan sunting.`);
+      } else {
+        showToast('AI tidak mengembalikan konten. Coba lagi.');
+      }
+    });
   };
 
   const saveDraft = () => {
@@ -286,7 +308,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 2: Capaian & TP */}
-              <SectionCard step={2} activeStep={step} title="Capaian Pembelajaran (CP) & Tujuan Pembelajaran (TP)" desc="Definisikan CP berdasarkan fase, lalu turunkan ke TP yang terukur" req icon={Target} onAI={() => aiGenerate(2)} simLabel="SIMULASI">
+              <SectionCard step={2} activeStep={step} title="Capaian Pembelajaran (CP) & Tujuan Pembelajaran (TP)" desc="Definisikan CP berdasarkan fase, lalu turunkan ke TP yang terukur" req icon={Target} onAI={() => aiGenerate(2)} simLabel={undefined}>
                 <Field label="Capaian Pembelajaran (CP)" req><textarea value={body.cp ?? ''} onChange={(e) => set('cp', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Tulis CP sesuai dokumen Kurikulum Merdeka..." /></Field>
                 <Field label="Kompetensi Awal" hint="Opsional"><textarea value={body.kompetensiAwal ?? ''} onChange={(e) => set('kompetensiAwal', e.target.value)} rows={2} className={`${FIELD} resize-y`} placeholder="Pengetahuan/keterampilan yang sudah dimiliki..." /></Field>
                 <Field label="Tujuan Pembelajaran (TP)" req>
@@ -319,7 +341,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 4: Profil Pelajar Pancasila */}
-              <SectionCard step={4} activeStep={step} title="Profil Pelajar Pancasila" desc="Pilih dimensi yang dikembangkan dalam modul ajar ini" icon={Users} onAI={() => aiGenerate(4)} simLabel="SIMULASI">
+              <SectionCard step={4} activeStep={step} title="Profil Pelajar Pancasila" desc="Pilih dimensi yang dikembangkan dalam modul ajar ini" icon={Users} onAI={() => aiGenerate(4)} simLabel={undefined}>
                 <Field label="Dimensi Profil Pelajar Pancasila">
                   <p className="mb-2 text-[10.5px] text-[#6b8079]">Pilih minimal 1 dimensi yang menjadi fokus</p>
                   <div className="flex flex-wrap gap-2">
@@ -339,7 +361,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 5: Sarana & Target */}
-              <SectionCard step={5} activeStep={step} title="Sarana Prasarana & Target Peserta Didik" desc="Daftar alat, bahan, dan profil peserta didik target modul ini" icon={Package} onAI={() => aiGenerate(5)} simLabel="SIMULASI">
+              <SectionCard step={5} activeStep={step} title="Sarana Prasarana & Target Peserta Didik" desc="Daftar alat, bahan, dan profil peserta didik target modul ini" icon={Package} onAI={() => aiGenerate(5)} simLabel={undefined}>
                 <Field label="Sarana & Prasarana"><textarea value={body.sarana ?? ''} onChange={(e) => set('sarana', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Alat, bahan, software, ruangan yang dibutuhkan..." /></Field>
                 <Field label="Target Peserta Didik"><textarea value={body.target ?? ''} onChange={(e) => set('target', e.target.value)} rows={2} className={`${FIELD} resize-y`} placeholder="Karakteristik peserta didik target modul ini..." /></Field>
                 <Field label="Model Pembelajaran">
@@ -351,7 +373,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 6: Kegiatan Pembelajaran — Timeline */}
-              <SectionCard step={6} activeStep={step} title="Kegiatan Pembelajaran" desc="Rincian kegiatan: Pendahuluan, Inti, dan Penutup untuk setiap pertemuan" req icon={Layers} onAI={() => aiGenerate(6)} simLabel="SIMULASI">
+              <SectionCard step={6} activeStep={step} title="Kegiatan Pembelajaran" desc="Rincian kegiatan: Pendahuluan, Inti, dan Penutup untuk setiap pertemuan" req icon={Layers} onAI={() => aiGenerate(6)} simLabel={undefined}>
                 <ListAdd onAdd={addKeg} label="Tambah Pertemuan" />
                 {keg.length === 0 && <Empty>Belum ada pertemuan.</Empty>}
                 {keg.map((k, i) => (
@@ -383,7 +405,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 7: Asesmen — Diagnostik/Formatif/Sumatif */}
-              <SectionCard step={7} activeStep={step} title="Asesmen" desc="Rencana penilaian: diagnostik, formatif, dan sumatif" req icon={ClipboardCheck} onAI={() => aiGenerate(7)} simLabel="SIMULASI">
+              <SectionCard step={7} activeStep={step} title="Asesmen" desc="Rencana penilaian: diagnostik, formatif, dan sumatif" req icon={ClipboardCheck} onAI={() => aiGenerate(7)} simLabel={undefined}>
                 {/* Diagnostik */}
                 <AssessCard type="diag" title="Asesmen Diagnostik" desc="Awal pembelajaran — petakan pengetahuan awal">
                   <textarea value={body.asesmenDiagnostik ?? ''} onChange={(e) => set('asesmenDiagnostik', e.target.value)} rows={2} className={`${FIELD} resize-y`} placeholder="Jenis & deskripsi asesmen diagnostik (mis. 3-5 PG atau essay)..." />
@@ -405,7 +427,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 8: Pengayaan & Remedial */}
-              <SectionCard step={8} activeStep={step} title="Pengayaan & Remedial" desc="Strategi untuk peserta didik yang sudah tuntas dan yang belum tuntas" icon={TrendingUp} onAI={() => aiGenerate(8)} simLabel="SIMULASI">
+              <SectionCard step={8} activeStep={step} title="Pengayaan & Remedial" desc="Strategi untuk peserta didik yang sudah tuntas dan yang belum tuntas" icon={TrendingUp} onAI={() => aiGenerate(8)} simLabel={undefined}>
                 <FieldGrid cols={2}>
                   <Field label="Pengayaan" hint="Untuk siswa tuntas"><textarea value={body.pengayaan ?? ''} onChange={(e) => set('pengayaan', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Aktivitas tambahan untuk memperdalam..." /></Field>
                   <Field label="Remedial" hint="Untuk siswa belum tuntas"><textarea value={body.remedial ?? ''} onChange={(e) => set('remedial', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Strategi bantuan untuk mencapai ketuntasan..." /></Field>
@@ -413,13 +435,13 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 9: Refleksi */}
-              <SectionCard step={9} activeStep={step} title="Refleksi Guru & Peserta Didik" desc="Pertanyaan reflektif untuk evaluasi pembelajaran" icon={Lightbulb} onAI={() => aiGenerate(9)} simLabel="SIMULASI">
+              <SectionCard step={9} activeStep={step} title="Refleksi Guru & Peserta Didik" desc="Pertanyaan reflektif untuk evaluasi pembelajaran" icon={Lightbulb} onAI={() => aiGenerate(9)} simLabel={undefined}>
                 <Field label="Refleksi Guru"><textarea value={body.refleksiGuru ?? body.refleksi ?? ''} onChange={(e) => set('refleksiGuru', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Pertanyaan refleksi untuk guru setelah pembelajaran..." /></Field>
                 <Field label="Refleksi Peserta Didik"><textarea value={body.refleksiSiswa ?? ''} onChange={(e) => set('refleksiSiswa', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Pertanyaan refleksi untuk siswa..." /></Field>
               </SectionCard>
 
               {/* STEP 10: Lampiran */}
-              <SectionCard step={10} activeStep={step} title="Lampiran" desc="Materi pendukung: handout, slide, video, lembar kerja" icon={Paperclip} onAI={() => aiGenerate(10)} simLabel="SIMULASI">
+              <SectionCard step={10} activeStep={step} title="Lampiran" desc="Materi pendukung: handout, slide, video, lembar kerja" icon={Paperclip} onAI={() => aiGenerate(10)} simLabel={undefined}>
                 <button type="button" onClick={() => showToast('Fitur unggah lampiran akan tersedia di implementasi penuh')}
                   className="flex w-full flex-col items-center gap-1 rounded-xl border-2 border-dashed border-emerald-300 bg-emerald-50 px-4 py-6 text-center transition hover:bg-emerald-100">
                   <Paperclip className="h-7 w-7 text-emerald-600" />

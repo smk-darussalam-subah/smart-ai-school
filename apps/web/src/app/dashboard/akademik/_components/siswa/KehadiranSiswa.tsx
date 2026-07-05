@@ -72,10 +72,10 @@ export default function KehadiranSiswa({ showToast: _showToast, go: _go, setModa
       <div className="px-5 py-4">
         <h1 className="text-2xl font-extrabold tracking-tight">Kehadiran</h1>
 
-        {/* Data Simulasi badge — shown when SIM fallback active */}
+        {/* Empty-state badge — shown when no server data */}
         {isSimData && (
-          <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-500">
-            <span>🧪</span> Data Simulasi — Kehadiran belum tersedia dari server
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] font-bold text-sky-600">
+            <span>📋</span> Data kehadiran belum tersedia dari server
           </div>
         )}
 

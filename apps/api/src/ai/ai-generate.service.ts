@@ -15,6 +15,7 @@ import {
   GenerateAtpDto,
   GenerateMaterialDto,
   GenerateQuestionsDto,
+  GenerateRppStepDto,
 } from './dto/generate.dto';
 
 @Injectable()
@@ -49,6 +50,15 @@ export class AiGenerateService {
     const output = await this.callAi(prompt);
     await this.auditGeneration(teacherId, 'atp', prompt, output);
     return { type: 'atp', output: JSON.parse(output) };
+  }
+
+  /** P4 (S-12): Generate RPP step content (CP/TP, Profil, Sarana, etc.) */
+  async generateRppStep(dto: GenerateRppStepDto, user: AuthUser) {
+    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+    const prompt = this.buildRppStepPrompt(dto);
+    const output = await this.callAi(prompt);
+    await this.auditGeneration(teacherId, `rpp-${dto.step}`, prompt, output);
+    return { type: dto.step, output };
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
@@ -111,5 +121,24 @@ export class AiGenerateService {
       `Format output sebagai JSON array of objects.\n\n` +
       `CP: ${dto.cp}\n\nTP:\n${tpList}\n\n` +
       `Format: [{"code": "TP 1.1", "tp": "deskripsi", "atp": ["sub-tujuan 1", "sub-tujuan 2"]}]`;
+  }
+
+  // P4 (S-12): Generic RPP step prompt builder
+  private buildRppStepPrompt(dto: GenerateRppStepDto): string {
+    const stepLabels: Record<string, string> = {
+      cp_tp: 'Capaian Pembelajaran (CP) dan Tujuan Pembelajaran (TP)',
+      profil: 'Profil Pelajar Pancasila (dimensi yang dikembangkan)',
+      sarana: 'Sarana Prasarana dan profil peserta didik target',
+      kegiatan: 'Kegiatan Pembelajaran (Pendahuluan, Inti, Penutup per pertemuan)',
+      asesmen: 'Rencana penilaian (diagnostik, formatif, sumatif)',
+      remedial: 'Pengayaan dan Remedial',
+      refleksi: 'Refleksi Guru dan Peserta Didik',
+      lampiran: 'Lampiran (handout, slide, lembar kerja)',
+    };
+    const label = stepLabels[dto.step] ?? dto.step;
+    return `Sebagai guru ${dto.subject}, buatlah draf ${label} untuk Modul Ajar. ` +
+      `Format markdown yang informatif dan siap dipakai.\n\n` +
+      `Konteks dari langkah sebelumnya:\n${dto.context}\n\n` +
+      `Berikan output yang konkret dan relevan dengan mapel ${dto.subject}.`;
   }
 }

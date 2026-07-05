@@ -2,11 +2,9 @@
 
 // LmsPreviewScreen — standalone full-screen LMS preview (P22 — P8-2).
 // Left: phone-frame student view simulation.
-// Right: student progress matrix (per-student completion %, badge status).
-// Mockup ref: akademik-guru-utuh.html lines 836-844, 1932-1935.
-// Student progress data: SIMULASI (class-wide progress endpoint not yet available).
+// Right: student progress matrix — honest empty-state (class-wide progress endpoint not yet available).
 
-import { ArrowLeft, BookOpen, Smartphone, Users, AlertTriangle, Award } from 'lucide-react';
+import { ArrowLeft, BookOpen, Smartphone, Users, Award } from 'lucide-react';
 import clsx from 'clsx';
 import type { LmsModuleItem } from './guru-types';
 
@@ -15,15 +13,8 @@ interface Props {
   onClose: () => void;
 }
 
-// SIMULASI student progress data (class-wide endpoint not yet available)
-const SIM_STUDENTS = [
-  { name: 'Rizky Pratama', progress: 100, badge: true, lastAccess: '2 jam lalu' },
-  { name: 'Siti Nurhaliza', progress: 80, badge: false, lastAccess: '5 jam lalu' },
-  { name: 'Ahmad Fauzi', progress: 40, badge: false, lastAccess: '1 hari lalu' },
-  { name: 'Dewi Lestari', progress: 100, badge: true, lastAccess: '30 menit lalu' },
-  { name: 'Budi Santoso', progress: 60, badge: false, lastAccess: '3 jam lalu' },
-  { name: 'Nur Aini', progress: 20, badge: false, lastAccess: '2 hari lalu' },
-];
+// P6: EMPTY_STUDENTS removed — honest empty-state for progress matrix.
+const EMPTY_STUDENTS: { name: string; progress: number; badge: boolean; lastAccess: string }[] = [];
 
 function progressColor(pct: number): string {
   if (pct >= 100) return 'from-emerald-400 to-emerald-600';
@@ -123,23 +114,20 @@ export default function LmsPreviewScreen({ module, onClose }: Props) {
             <h3 className="flex items-center gap-1.5 text-[13px] font-bold text-[#0f2e25]">
               <Users className="h-4 w-4 text-emerald-600" /> Progres Siswa
             </h3>
-            <div className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">
-              <AlertTriangle className="h-3 w-3" /> SIMULASI
-            </div>
           </div>
 
           {/* Summary stats */}
           <div className="mb-3 grid grid-cols-3 gap-2">
             <div className="rounded-xl border border-[#e6efea] bg-white p-2.5 text-center">
-              <div className="text-lg font-extrabold text-emerald-600">{SIM_STUDENTS.filter((s) => s.progress >= 100).length}</div>
+              <div className="text-lg font-extrabold text-emerald-600">{EMPTY_STUDENTS.filter((s) => s.progress >= 100).length}</div>
               <div className="text-[9px] font-bold uppercase text-[#9bb0a8]">Selesai</div>
             </div>
             <div className="rounded-xl border border-[#e6efea] bg-white p-2.5 text-center">
-              <div className="text-lg font-extrabold text-amber-500">{SIM_STUDENTS.filter((s) => s.progress > 0 && s.progress < 100).length}</div>
+              <div className="text-lg font-extrabold text-amber-500">{EMPTY_STUDENTS.filter((s) => s.progress > 0 && s.progress < 100).length}</div>
               <div className="text-[9px] font-bold uppercase text-[#9bb0a8]">Progres</div>
             </div>
             <div className="rounded-xl border border-[#e6efea] bg-white p-2.5 text-center">
-              <div className="text-lg font-extrabold text-slate-400">{SIM_STUDENTS.filter((s) => s.progress === 0).length}</div>
+              <div className="text-lg font-extrabold text-slate-400">{EMPTY_STUDENTS.filter((s) => s.progress === 0).length}</div>
               <div className="text-[9px] font-bold uppercase text-[#9bb0a8]">Belum Mulai</div>
             </div>
           </div>
@@ -156,7 +144,7 @@ export default function LmsPreviewScreen({ module, onClose }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {SIM_STUDENTS.map((student) => (
+                {EMPTY_STUDENTS.map((student) => (
                   <tr key={student.name} className="border-b border-[#f0f4f2] last:border-0 hover:bg-[#f9fbfa]">
                     <td className="py-2.5 pl-3 pr-2">
                       <div className="flex items-center gap-2">
@@ -199,7 +187,7 @@ export default function LmsPreviewScreen({ module, onClose }: Props) {
           </div>
 
           <p className="mt-2 text-[10px] text-[#9bb0a8]">
-            Data progres siswa adalah SIMULASI. Endpoint progres kelas ({`/lms/modules/:id/progress`}) belum tersedia.
+            Data progres siswa belum tersedia. Endpoint progres kelas ({`/lms/modules/:id/progress`}) akan menyusul.
           </p>
         </div>
       </div>

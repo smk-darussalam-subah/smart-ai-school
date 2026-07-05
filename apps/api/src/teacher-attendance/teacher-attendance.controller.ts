@@ -60,6 +60,14 @@ export class TeacherAttendanceController {
     return this.service.myToday(user);
   }
 
+  /** P1 (S-05): Today's summary for KS/SA dashboard — counts + roster. */
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @RequirePermission('teacher.attendance.read')
+  @Get('today-summary')
+  todaySummary() {
+    return this.service.todaySummary();
+  }
+
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU')
   @RequirePermission('teacher.attendance.read')
   @Get()

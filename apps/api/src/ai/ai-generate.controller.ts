@@ -13,7 +13,7 @@ import { RequirePermission } from '../permissions/decorators/require-permission.
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { AiGenerateService } from './ai-generate.service';
 import {
-  GenerateAtpSchema, GenerateMaterialSchema, GenerateQuestionsSchema,
+  GenerateAtpSchema, GenerateMaterialSchema, GenerateQuestionsSchema, GenerateRppStepSchema,
 } from './dto/generate.dto';
 
 @Controller('ai')
@@ -54,5 +54,18 @@ export class AiGenerateController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.service.generateAtp(dto as Parameters<typeof this.service.generateAtp>[0], user);
+  }
+
+  // P4 (S-12): Generic RPP step generation (8 steps: CP/TP, Profil, Sarana, etc.)
+  @Roles('GURU', 'SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @RequirePermission('lms.own.manage')
+  @Throttle({ aichat: { ttl: 60_000, limit: 10 } })
+  @Post('generate-rpp-step')
+  @HttpCode(HttpStatus.CREATED)
+  generateRppStep(
+    @Body(ZodPipe(GenerateRppStepSchema)) dto: unknown,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.generateRppStep(dto as Parameters<typeof this.service.generateRppStep>[0], user);
   }
 }

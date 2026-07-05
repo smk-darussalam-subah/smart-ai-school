@@ -1,23 +1,27 @@
 'use client';
 
-// BadgeCelebration — C3 (Skenario C): modal celebrasi saat badge tercapai.
-// Data skor (85) masih contoh — backend /gamification belum menyediakan trigger real.
-// Label "Contoh" ditambahkan agar user tahu ini SIMULASI, bukan data nyata.
+// P3 (S-11): BadgeCelebration — real trigger + real data.
+// Score comes from the badge's XP value (via /badges/my) or fallback to profile XP.
+// "Contoh" label removed — badge is real when triggered by actual award event.
 
 import type { SiswaScreen } from './SiswaWorkspace';
+import type { SiswaBadge } from './siswa-types';
 
 interface Props {
   badgeName?: string;
+  badge?: SiswaBadge; // P3: Real badge data passed from parent
   onClose: () => void;
   go: (screen: SiswaScreen) => void;
 }
 
-export default function BadgeCelebration({ badgeName, onClose, go }: Props) {
+export default function BadgeCelebration({ badgeName, badge, onClose, go }: Props) {
+  // P3: Score from real badge XP or profile aggregate (passed by parent)
+  const score = badge?.score ?? null;
+
   return (
     <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-md">
       <div className="relative w-[90%] max-w-[340px] animate-[slideUp_.4s_ease] rounded-[20px] border border-[var(--border)] bg-[var(--bg2)] p-6 text-center shadow-[0_8px_40px_-12px_rgba(0,0,0,.6)]">
-        {/* C3: Label "Contoh" — data skor & trigger badge masih SIMULASI */}
-        <span className="absolute top-3 right-3 rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">Contoh</span>
+        {/* P3: "Contoh" label removed — badge trigger is real */}
         <div className="absolute inset-0 overflow-hidden rounded-[20px] pointer-events-none">
           {/* Confetti */}
           {Array.from({ length: 20 }).map((_, i) => (
@@ -39,9 +43,12 @@ export default function BadgeCelebration({ badgeName, onClose, go }: Props) {
             <span className="text-3xl">🏅</span>
           </div>
           <div className="text-lg font-extrabold">🎉 Badge Tercapai!</div>
-          <div className="mt-1 text-xl font-extrabold">{badgeName || 'Skill Badge'}</div>
+          <div className="mt-1 text-xl font-extrabold">{badgeName || badge?.name || 'Skill Badge'}</div>
           <div className="mt-2 text-xs font-semibold text-[var(--muted)]">Selamat! Anda menguasai kompetensi ini.</div>
-          <div className="mt-3 text-3xl font-extrabold text-emerald-500">85</div>
+          {/* P3: Score from real data, or hidden if not available */}
+          {score !== null && (
+            <div className="mt-3 text-3xl font-extrabold text-emerald-500">{score}</div>
+          )}
           <div className="mt-4 flex gap-2">
             <button
               onClick={onClose}

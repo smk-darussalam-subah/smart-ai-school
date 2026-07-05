@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 
-import { Target, GraduationCap, CalendarCheck, BookOpenCheck, Clock, PenLine, Info, Code, ListChecks, Users, FileText, ClipboardList, ChevronRight, UserCheck, CalendarClock, ClipboardPenLine, ClipboardCheck, GitBranch, Inbox, HelpCircle, AlertTriangle, X, PlayCircle } from 'lucide-react';
+import { Target, GraduationCap, CalendarCheck, BookOpenCheck, Clock, PenLine, Info, Code, ListChecks, Users, FileText, ClipboardList, ChevronRight, UserCheck, CalendarClock, ClipboardPenLine, ClipboardCheck, GitBranch, HelpCircle, X, PlayCircle } from 'lucide-react';
 import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ActivityItem, RppItem, TodayClass } from './guru-types';
 import { KKTP_DEFAULT } from './guru-types';
@@ -38,15 +38,12 @@ export default function RingkasanGuru({ grades, attendances, activities, rpp, to
   const today = wibTodayISO();
   const absentToday = new Set(attendances.filter((a) => a.date?.slice(0, 10) === today).map((a) => a.class.name));
   const kelasBelumAbsen = new Set(todayClasses.map((c) => c.className)).size - todayClasses.filter((c) => absentToday.has(c.className)).length;
-  // SIMULASI — backend submission belum ada, ganti dengan /submissions/* saat ready
-  const tugasBelumDinilai = 12;
+  // P6: tugasBelumDinilai removed — honest empty until /submissions/* ready
   const tindakan = [
     remedialSiswa > 0 && { icon: Users, color: 'bg-rose-50 text-rose-600', title: `${remedialSiswa} siswa di bawah KKTP`, sub: 'Perlu remedial', action: 'penilaian' },
     kelasBelumAbsen > 0 && { icon: ClipboardList, color: 'bg-amber-50 text-amber-600', title: `${kelasBelumAbsen} kelas hari ini belum diabsen`, sub: 'Catat kehadiran dari kartu kelas', action: 'ringkasan' },
     rppPending > 0 && { icon: FileText, color: 'bg-violet-50 text-violet-600', title: `${rppPending} Modul Ajar belum disetujui`, sub: 'Draft/revisi — ajukan ke Wakakur', action: 'pembelajaran' },
-    // SIMULASI — backend submission belum ada
-    { icon: Inbox, color: 'bg-sky-50 text-sky-600', title: `${tugasBelumDinilai} tugas belum dinilai`, sub: 'Proyek 1 — 6 sudah dinilai · Simulasi', action: 'penugasan', simulasi: true },
-  ].filter(Boolean) as { icon: typeof Users; color: string; title: string; sub: string; action: string; simulasi?: boolean }[];
+  ].filter(Boolean) as { icon: typeof Users; color: string; title: string; sub: string; action: string }[];
 
   return (
     <div className="space-y-4">
@@ -110,7 +107,6 @@ export default function RingkasanGuru({ grades, attendances, activities, rpp, to
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <b className="text-[12.5px] text-[#0f2e25]">{t.title}</b>
-                        {t.simulasi && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-extrabold text-amber-700">SIMULASI</span>}
                       </div>
                       <div className="text-[11.5px] text-[#6b8079]">{t.sub}</div>
                     </div>
@@ -206,31 +202,18 @@ function StatusHariIni({ todayClasses, attendances, activities }: { todayClasses
               </div>
               <StatusChip status={s.hasAbsen ? 'ok' : 'warn'} label="Absen" />
               <StatusChip status={s.hasJurnal ? 'ok' : 'warn'} label="Jurnal" />
-              <StatusChip status={s.hasPenilaian ? 'ok' : 'no'} label="Penilaian" simulasi />
-              <StatusChip status={s.hasFeedback ? 'ok' : 'no'} label="Feedback" simulasi />
+              <StatusChip status={s.hasPenilaian ? 'ok' : 'no'} label="Penilaian" />
+              <StatusChip status={s.hasFeedback ? 'ok' : 'no'} label="Feedback" />
             </button>
           ))
         )}
-        {/* SIMULASI — contoh sesi tidak terlaksana (guru tak masuk) */}
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-rose-100 bg-rose-50/50 p-3">
-          <div className="min-w-0 flex-1">
-            <b className="text-[12.5px] text-[#0f2e25]">Basis Data · XI TJKT 1</b>
-            <div className="text-[11.5px] text-[#6b8079]">JP 4 · 09.45–10.25 · Simulasi guru tak masuk</div>
-          </div>
-          <StatusChip status="miss" label="Tidak terlaksana" />
-          <StatusChip status="warn" label="CP carry-over" />
-        </div>
-      </div>
-      <div className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-semibold text-amber-700">
-        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        <span><b>Kasus khusus otomatis:</b> guru tak masuk → "Tidak terlaksana"; CP tak tercapai karena jam singkat → "CP carry-over".</span>
       </div>
       {selected && <SessionDetailModal session={selected} attendances={attendances} activities={activities} onClose={() => setSelected(null)} />}
     </div>
   );
 }
 
-function StatusChip({ status, label, simulasi }: { status: 'ok' | 'warn' | 'no' | 'miss'; label: string; simulasi?: boolean }) {
+function StatusChip({ status, label }: { status: 'ok' | 'warn' | 'no' | 'miss'; label: string }) {
   const styles: Record<string, string> = {
     ok: 'bg-emerald-50 text-emerald-700',
     warn: 'bg-amber-50 text-amber-600',
@@ -240,7 +223,7 @@ function StatusChip({ status, label, simulasi }: { status: 'ok' | 'warn' | 'no' 
   const icons: Record<string, string> = { ok: '✓', warn: '!', no: '—', miss: '✗' };
   return (
     <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold ${styles[status]}`}>
-      {label} {icons[status]}{simulasi && status === 'no' && <span className="ml-0.5 text-amber-500">ⓘ</span>}
+      {label} {icons[status]}
     </span>
   );
 }
@@ -281,22 +264,18 @@ function SessionDetailModal({ session, attendances, activities, onClose }: {
         <div className="mt-3 space-y-2">
           <div>
             <b className="text-[12px] text-[#0f2e25]">Diagnostik</b>
-            {/* SIMULASI — backend diagnostik per sesi belum ada */}
-            <div className="mt-1 flex items-center gap-2"><div className="h-2 flex-1 overflow-hidden rounded-full bg-[#e6efea]"><div className="h-full rounded-full bg-emerald-500" style={{ width: '88%' }} /></div><span className="text-[10.5px] font-bold text-[#6b8079]">88% selesai · 72% paham</span></div>
+            <div className="mt-1 text-[10.5px] text-[#9bb0a8]">Belum ada data diagnostik untuk sesi ini.</div>
           </div>
           <div>
             <b className="text-[12px] text-[#0f2e25]">Formatif</b>
-            {/* SIMULASI — backend formatif per sesi belum ada */}
-            <div className="mt-1 flex items-center gap-2"><div className="h-2 flex-1 overflow-hidden rounded-full bg-[#e6efea]"><div className="h-full rounded-full bg-emerald-500" style={{ width: '62%' }} /></div><span className="text-[10.5px] font-bold text-[#6b8079]">62% selesai · rata² 78</span></div>
+            <div className="mt-1 text-[10.5px] text-[#9bb0a8]">Belum ada data formatif untuk sesi ini.</div>
           </div>
           <div>
             <b className="text-[12px] text-[#0f2e25]">Feedback</b>
-            {/* SIMULASI — backend feedback per sesi belum ada */}
-            <div className="mt-1 rounded-lg bg-emerald-50 px-3 py-2 text-[11px] text-emerald-700">82 😊 — "Materinya seru, agak cepat di media query."</div>
+            <div className="mt-1 text-[10.5px] text-[#9bb0a8]">Belum ada feedback untuk sesi ini.</div>
           </div>
         </div>
         <div className="mt-3 flex items-center justify-between">
-          <span className="text-[10.5px] font-bold text-amber-600">ⓘ Diagnostik, Formatif & Feedback: Simulasi</span>
           {hasJurnal && <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Jurnal ✓</span>}
         </div>
       </div>
