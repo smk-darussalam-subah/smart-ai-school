@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import {
   Briefcase, Users, GraduationCap, Loader2, Check, X, ShieldCheck,
-  CalendarDays, UserPlus, Info,
+  CalendarDays, UserPlus, Info, RefreshCw, AlertCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,7 +15,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { assignPositionAction, unassignPositionAction } from '../actions';
+import { assignPositionAction, unassignPositionAction, syncRolesAction } from '../actions';
 import type { Position, Assignment, Major, StaffCandidate } from '../page';
 
 const CATEGORY_META: Record<string, { label: string; cls: string }> = {
@@ -31,9 +31,16 @@ interface Props {
   assignments: Assignment[];
   majors: Major[];
   staff: StaffCandidate[];
+  isSuperAdmin: boolean;
 }
 
-export default function StrukturClient({ positions, academicYear, assignments, majors, staff }: Props) {
+interface SyncResult {
+  created: string[];
+  existing: string[];
+  failed: { code: string; error: string }[];
+}
+
+export default function StrukturClient({ positions, academicYear, assignments, majors, staff, isSuperAdmin }: Props) {
   const router = useRouter();
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
@@ -43,6 +50,10 @@ export default function StrukturClient({ positions, academicYear, assignments, m
   const [target, setTarget] = useState<Position | null>(null);
   const [userId, setUserId] = useState('');
   const [majorId, setMajorId] = useState('');
+
+  // R-23: Sinkronisasi Keycloak roles
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
 
   const nameById = useMemo(() => new Map(positions.map((p) => [p.id, p.name])), [positions]);
   const byPosition = useMemo(() => {
@@ -82,6 +93,26 @@ export default function StrukturClient({ positions, academicYear, assignments, m
     setMsg('Penugasan dilepas.'); router.refresh();
   };
 
+  const handleSyncRoles = async () => {
+    setSyncing(true); setSyncResult(null); setMsg(''); setErr('');
+    const res = await syncRolesAction();
+    setSyncing(false);
+    if (res.error) {
+      setErr(`Sinkronisasi gagal: ${res.error}`);
+      return;
+    }
+    setSyncResult(res.data as SyncResult);
+    const totalCreated = (res.data as SyncResult)?.created?.length ?? 0;
+    const totalExisting = (res.data as SyncResult)?.existing?.length ?? 0;
+    const totalFailed = (res.data as SyncResult)?.failed?.length ?? 0;
+    if (totalFailed > 0) {
+      setMsg(`Sinkronisasi selesai dengan ${totalFailed} gagalan.`);
+    } else {
+      setMsg(`Sinkronisasi selesai: ${totalCreated} role baru, ${totalExisting} sudah ada.`);
+    }
+    router.refresh();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -92,9 +123,26 @@ export default function StrukturClient({ positions, academicYear, assignments, m
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">Tetapkan jabatan ke pegawai per tahun ajaran. Jabatan otomatis memberi akses modul terkait.</p>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
-          <CalendarDays className="h-4 w-4" /> Tahun Ajaran {academicYear?.code ?? '—'}
-        </span>
+        <div className="flex items-center gap-2">
+          {isSuperAdmin && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+              disabled={syncing}
+              onClick={handleSyncRoles}
+              title="Daftarkan 13 kode jabatan sebagai Keycloak realm roles (R-23)"
+            >
+              {syncing
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> Menyinkronkan…</>
+                : <><RefreshCw className="h-4 w-4" /> Sync Role Keycloak</>
+            }
+            </Button>
+          )}
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
+            <CalendarDays className="h-4 w-4" /> Tahun Ajaran {academicYear?.code ?? '—'}
+          </span>
+        </div>
       </div>
 
       {!academicYear && (
@@ -102,7 +150,37 @@ export default function StrukturClient({ positions, academicYear, assignments, m
           <Info className="mt-0.5 h-4 w-4 shrink-0" /> Belum ada tahun ajaran aktif. Penugasan tidak dapat dibuat sampai tahun ajaran aktif tersedia.
         </div>
       )}
-      {msg && <div className={clsx('rounded-lg px-4 py-2 text-sm', msg.startsWith('Gagal') ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700')}>{msg}</div>}
+      {msg && <div className={clsx('rounded-lg px-4 py-2 text-sm', msg.startsWith('Gagal') || msg.includes('gagal') ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700')}>{msg}</div>}
+      {err && <div className="flex items-start gap-2 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {err}</div>}
+
+      {/* R-23: Hasil sinkronisasi Keycloak roles */}
+      {syncResult && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 text-sm">
+          <div className="mb-2 flex items-center gap-1.5 font-semibold text-indigo-800">
+            <ShieldCheck className="h-4 w-4" /> Hasil Sinkronisasi Keycloak Realm Roles
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div>
+              <span className="font-medium text-indigo-700">Dibuat ({syncResult.created.length})</span>
+              {syncResult.created.length > 0
+                ? <ul className="mt-1 space-y-0.5 text-xs text-indigo-600">{syncResult.created.map((c) => <li key={c}>• {c}</li>)}</ul>
+                : <p className="mt-1 text-xs text-muted-foreground">Tidak ada</p>}
+            </div>
+            <div>
+              <span className="font-medium text-emerald-700">Sudah Ada ({syncResult.existing.length})</span>
+              {syncResult.existing.length > 0
+                ? <ul className="mt-1 space-y-0.5 text-xs text-emerald-600">{syncResult.existing.map((c) => <li key={c}>• {c}</li>)}</ul>
+                : <p className="mt-1 text-xs text-muted-foreground">Tidak ada</p>}
+            </div>
+            <div>
+              <span className="font-medium text-red-600">Gagal ({syncResult.failed.length})</span>
+              {syncResult.failed.length > 0
+                ? <ul className="mt-1 space-y-0.5 text-xs text-red-600">{syncResult.failed.map((f) => <li key={f.code}>• {f.code}: {f.error}</li>)}</ul>
+                : <p className="mt-1 text-xs text-muted-foreground">Tidak ada</p>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {CATEGORY_ORDER.map((cat) => {
         const items = positions.filter((p) => p.category === cat);

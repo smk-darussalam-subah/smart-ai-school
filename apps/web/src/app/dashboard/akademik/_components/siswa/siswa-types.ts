@@ -179,6 +179,7 @@ export interface SiswaXP {
   level: number;
   current: number;
   next: number;
+  streakDays?: number;
 }
 
 // ── Schedule (from API) ───────────────────────────────────────────────────

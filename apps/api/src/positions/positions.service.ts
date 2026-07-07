@@ -5,6 +5,9 @@
 // izin jabatan (position_permissions) diterapkan sebagai UserPermissionOverride
 // (grant=true); saat dilepas, override dicabut bila tak ada penugasan aktif lain
 // yang masih memberi izin tsb. Cache izin user di-invalidate tiap perubahan.
+//
+// R-23: Position code di-sync sebagai Keycloak realm role (fail-soft).
+// R-26: Cross-schema integrity check — orphan permission di-skip dengan warning.
 // =============================================================================
 
 import {
@@ -14,8 +17,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { logger } from '@smk/logger';
+import { POSITION_CODES, UserRole } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { AssignPositionDto } from './dto/position.dto';
 
 @Injectable()
@@ -23,6 +29,7 @@ export class PositionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
+    private readonly keycloakAdmin: KeycloakAdminService,
   ) {}
 
   // ── Katalog jabatan (UI bangun pohon dari parentId) ─────────────────────────
@@ -89,7 +96,7 @@ export class PositionsService {
 
     const position = await this.prisma.position.findUnique({
       where: { id: dto.positionId },
-      select: { id: true, scopeType: true, permissions: { select: { permissionId: true } } },
+      select: { id: true, code: true, scopeType: true, permissions: { select: { permissionId: true } } },
     });
     if (!position) throw new NotFoundException('Jabatan tidak ditemukan.');
 
@@ -121,14 +128,49 @@ export class PositionsService {
       throw err;
     }
 
-    // Terapkan izin jabatan sebagai override (grant=true).
-    for (const pp of position.permissions) {
+    // R-26: Cross-schema integrity check — validasi semua permission masih exist.
+    // PositionPermission (schema school) → Permission (schema auth) tanpa FK.
+    let validPermissions = position.permissions;
+    if (position.permissions.length > 0) {
+      const permIds = position.permissions.map((p) => p.permissionId);
+      const existingPerms = await this.prisma.permission.findMany({
+        where: { id: { in: permIds } },
+        select: { id: true },
+      });
+      const existingIds = new Set(existingPerms.map((p) => p.id));
+      const orphanIds = permIds.filter((id) => !existingIds.has(id));
+      if (orphanIds.length > 0) {
+        logger.warn('[Positions] Orphan permission detected — skipping', {
+          orphanIds,
+          positionCode: position.code,
+        });
+      }
+      validPermissions = position.permissions.filter((p) => existingIds.has(p.permissionId));
+    }
+
+    // Terapkan izin jabatan sebagai override (grant=true) — hanya yang valid.
+    for (const pp of validPermissions) {
       await this.prisma.userPermissionOverride.upsert({
         where: { userId_permissionId: { userId: dto.userId, permissionId: pp.permissionId } },
         update: { grant: true },
         create: { userId: dto.userId, permissionId: pp.permissionId, grant: true },
       });
     }
+
+    // R-23: Sync position code sebagai Keycloak realm role (fail-soft).
+    // Jika Keycloak down/unreachable, permission override di DB tetap benar (Layer 2).
+    // Admin bisa re-sync manual via POST /positions/sync-roles + re-assign.
+    try {
+      await this.keycloakAdmin.assignRealmRole(staff.user.keycloakId, position.code);
+      logger.info(`[Positions] Synced role ${position.code} ke Keycloak untuk user ${staff.user.keycloakId}`);
+    } catch (err) {
+      logger.warn('[Positions] Gagal sync role ke Keycloak (fail-soft)', {
+        keycloakId: staff.user.keycloakId,
+        positionCode: position.code,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     this.permissions.invalidateUser(staff.user.keycloakId);
 
     return { id: created.id };
@@ -136,22 +178,20 @@ export class PositionsService {
 
   // ── Lepas penugasan + cabut izin yg tak lagi didukung jabatan lain ─────────
   async unassign(id: string) {
+    // Refactored: include position.code + permissions in single query (eliminates redundant query)
     const sp = await this.prisma.staffPosition.findUnique({
       where: { id },
       select: {
         id: true,
         positionId: true,
+        position: { select: { code: true, permissions: { select: { permissionId: true } } } },
         staff: { select: { userId: true, user: { select: { keycloakId: true } } } },
       },
     });
     if (!sp) throw new NotFoundException('Penugasan tidak ditemukan.');
 
     const userId = sp.staff.userId;
-    const thisPos = await this.prisma.position.findUnique({
-      where: { id: sp.positionId },
-      select: { permissions: { select: { permissionId: true } } },
-    });
-    const permIds = thisPos?.permissions.map((p) => p.permissionId) ?? [];
+    const permIds = sp.position.permissions.map((p) => p.permissionId);
 
     await this.prisma.staffPosition.delete({ where: { id } });
 
@@ -171,8 +211,153 @@ export class PositionsService {
         });
       }
     }
+
+    // R-23: Remove Keycloak realm role jika tidak ada penugasan aktif lain
+    // dengan position code yang sama (fail-soft).
+    const otherAssignmentsWithSameCode = await this.prisma.staffPosition.findFirst({
+      where: {
+        staff: { userId },
+        position: { code: sp.position.code },
+        isActive: true,
+      },
+    });
+    if (!otherAssignmentsWithSameCode) {
+      try {
+        await this.keycloakAdmin.removeRealmRole(sp.staff.user.keycloakId, sp.position.code);
+        logger.info(`[Positions] Removed role ${sp.position.code} dari Keycloak untuk user ${sp.staff.user.keycloakId}`);
+      } catch (err) {
+        logger.warn('[Positions] Gagal remove role dari Keycloak (fail-soft)', {
+          keycloakId: sp.staff.user.keycloakId,
+          positionCode: sp.position.code,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     this.permissions.invalidateUser(sp.staff.user.keycloakId);
 
     return { id };
+  }
+
+  // ── Jabatan aktif user yang sedang login (R-24/R-25 support) ────────────────
+  async getMyPositions(keycloakId: string) {
+    const ay = await this.getActiveAcademicYear();
+    if (!ay) return { academicYear: null, positions: [] };
+
+    const positions = await this.prisma.staffPosition.findMany({
+      where: { staff: { user: { keycloakId } }, academicYearId: ay.id, isActive: true },
+      select: {
+        id: true,
+        position: { select: { code: true, name: true, category: true } },
+        major: { select: { code: true, name: true } },
+      },
+      orderBy: { position: { sortOrder: 'asc' } },
+    });
+    return { academicYear: ay, positions };
+  }
+
+  // ── Verifikasi effective access user (R-25) ─────────────────────────────────
+  async accessCheck(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, keycloakId: true, fullName: true, email: true, role: true },
+    });
+    if (!user) throw new NotFoundException('User tidak ditemukan.');
+
+    // Layer 1: Keycloak realm roles (dari JWT origin)
+    let keycloakRoles: string[] = [];
+    try {
+      keycloakRoles = await this.keycloakAdmin.getUserRealmRoles(user.keycloakId);
+    } catch (err) {
+      logger.warn('[Positions] Gagal mengambil Keycloak roles (fail-soft)', {
+        userId: user.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Layer 2: Active positions from DB
+    // PositionPermission.permissionId → auth.permissions adalah cross-schema tanpa FK,
+    // jadi kita fetch permissionId lalu resolve code-nya secara terpisah.
+    const ay = await this.getActiveAcademicYear();
+    const activePositions = ay
+      ? await this.prisma.staffPosition.findMany({
+          where: { staff: { userId: user.id }, academicYearId: ay.id, isActive: true },
+          select: {
+            position: {
+              select: {
+                code: true,
+                name: true,
+                permissions: { select: { permissionId: true } },
+              },
+            },
+            major: { select: { code: true, name: true } },
+          },
+        })
+      : [];
+
+    // Resolve position permission codes (cross-schema lookup)
+    const positionPermIds = activePositions.flatMap((ap) =>
+      ap.position.permissions.map((p) => p.permissionId),
+    );
+    const positionPermRecords = positionPermIds.length > 0
+      ? await this.prisma.permission.findMany({
+          where: { id: { in: positionPermIds } },
+          select: { code: true },
+        })
+      : [];
+    const positionPermissions = positionPermRecords.map((p) => p.code);
+
+    // Effective permissions (role_permissions ∪ user_permission_overrides)
+    const effectivePerms = await this.permissions.getEffectivePermissions(
+      user.keycloakId,
+      [user.role as UserRole],
+    );
+
+    return {
+      user: { id: user.id, fullName: user.fullName, email: user.email, dbRole: user.role },
+      keycloakRoles,
+      activePositions: activePositions.map((ap) => ({
+        code: ap.position.code,
+        name: ap.position.name,
+        major: ap.major,
+      })),
+      positionPermissions: [...new Set(positionPermissions)].sort(),
+      effectivePermissions: Array.from(effectivePerms).sort(),
+    };
+  }
+
+  // ── Seed 13 position codes sebagai Keycloak realm roles (R-23 prasyarat) ────
+  async syncKeycloakRoles() {
+    // Ambil nama jabatan dari DB untuk description
+    const positions = await this.prisma.position.findMany({
+      where: { code: { in: [...POSITION_CODES] } },
+      select: { code: true, name: true },
+    });
+    const nameMap = new Map(positions.map((p) => [p.code, p.name]));
+
+    const created: string[] = [];
+    const existing: string[] = [];
+    const failed: { code: string; error: string }[] = [];
+
+    for (const code of POSITION_CODES) {
+      const description = nameMap.get(code) ?? code;
+      try {
+        const result = await this.keycloakAdmin.createRealmRoleIfNotExists(code, description);
+        if (result === 'created') {
+          created.push(code);
+        } else {
+          existing.push(code);
+        }
+      } catch (err) {
+        logger.warn('[Positions] Gagal sync role ke Keycloak', {
+          code,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        failed.push({ code, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
+    logger.info('[Positions] syncKeycloakRoles selesai', { created: created.length, existing: existing.length, failed: failed.length });
+    return { created, existing, failed };
   }
 }

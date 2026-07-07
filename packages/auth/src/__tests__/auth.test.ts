@@ -80,19 +80,35 @@ function makeUser(overrides?: Partial<AuthUser>): AuthUser {
 
 describe('UserRole', () => {
   describe('struktur enum', () => {
-    it('memiliki tepat 7 role sistem', () => {
-      expect(UserRole.options).toHaveLength(7);
+    // 6 base roles + 13 position codes = 19 total
+    // (KEPALA_SEKOLAH is a position code, not a base role)
+    it('memiliki tepat 19 role (6 base + 13 position codes)', () => {
+      expect(UserRole.options).toHaveLength(19);
     });
 
     it('mengandung semua role yang diharapkan', () => {
       const expected: string[] = [
+        // Base roles
         'SUPER_ADMIN',
-        'KEPALA_SEKOLAH',
         'TATA_USAHA',
         'GURU',
         'SISWA',
         'ORANG_TUA',
         'INDUSTRI',
+        // Position codes
+        'KEPALA_SEKOLAH',
+        'WAKA_KURIKULUM',
+        'WAKA_KESISWAAN',
+        'WAKA_HUMAS',
+        'WAKA_SARPRAS',
+        'KEPALA_TU',
+        'KAPROG',
+        'KOOR_BKK',
+        'KOOR_HUBIN',
+        'GURU_BK',
+        'BENDAHARA',
+        'STAF_KEPEGAWAIAN',
+        'OPERATOR_DAPODIK',
       ];
       expect(UserRole.options).toEqual(expect.arrayContaining(expected));
     });

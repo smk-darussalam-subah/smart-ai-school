@@ -284,16 +284,69 @@ export class KeycloakAdminService {
 
   // ── Role resolution ─────────────────────────────────────────────────────────
 
+  /**
+   * Cari realm role berdasarkan nama. Return null jika tidak ada (404).
+   * Public method — digunakan oleh PositionsService untuk cek eksistensi role.
+   */
+  async findRealmRole(name: string): Promise<KcRoleRepresentation | null> {
+    try {
+      const { data } = await this.request<KcRoleRepresentation>(
+        `${ADMIN_URL}/roles/${encodeURIComponent(name)}`,
+        { method: 'GET', retryAttempt: 1 },
+      );
+      return data as unknown as KcRoleRepresentation;
+    } catch (err) {
+      if (err instanceof NotFoundException) return null;
+      throw err;
+    }
+  }
+
+  /**
+   * Buat realm role baru di Keycloak.
+   * @throws ConflictException jika role sudah ada (409).
+   */
+  async createRealmRole(name: string, description?: string): Promise<void> {
+    await this.request(`${ADMIN_URL}/roles`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description }),
+      retryAttempt: 1,
+    });
+    // Invalidate cache agar resolveRealmRole bisa menemukan role baru
+    this.roleCache.delete(name);
+  }
+
+  /**
+   * Buat realm role jika belum ada (idempotent).
+   * @returns 'created' jika role baru dibuat, 'existing' jika sudah ada.
+   */
+  async createRealmRoleIfNotExists(
+    name: string,
+    description?: string,
+  ): Promise<'created' | 'existing'> {
+    const existing = await this.findRealmRole(name);
+    if (existing) return 'existing';
+
+    await this.createRealmRole(name, description);
+    return 'created';
+  }
+
+  /**
+   * Resolve realm role untuk assign/remove — throw NotFoundException jika tidak ada.
+   * Menggunakan cache untuk menghindari round-trip berulang.
+   */
   private async resolveRealmRole(name: string): Promise<KcRoleRepresentation> {
     const cached = this.roleCache.get(name);
     if (cached) return cached;
 
-    const { data } = await this.request<KcRoleRepresentation>(
-      `${ADMIN_URL}/roles/${encodeURIComponent(name)}`,
-      { method: 'GET', retryAttempt: 1 },
-    );
+    const role = await this.findRealmRole(name);
+    if (!role) {
+      throw new NotFoundException(
+        `Role "${name}" tidak ditemukan di Keycloak. Jalankan POST /positions/sync-roles untuk seed role.`,
+      );
+    }
 
-    this.roleCache.set(name, data as unknown as KcRoleRepresentation);
-    return data as unknown as KcRoleRepresentation;
+    this.roleCache.set(name, role);
+    return role;
   }
 }

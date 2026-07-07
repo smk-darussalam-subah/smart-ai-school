@@ -13,11 +13,12 @@ interface Props {
   go: (screen: SiswaScreen) => void;
   setModal: (modal: ModalState) => void;
   kalender: SiswaKalenderEvent[];
+  studentClassName?: string | null;
 }
 
 const HARI: [string, number][] = [['Senin', 1], ['Selasa', 2], ['Rabu', 3], ['Kamis', 4], ['Jumat', 5], ['Sabtu', 6]];
 
-export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, setModal, kalender }: Props) {
+export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, setModal, kalender, studentClassName }: Props) {
   const now = wibNow();
   const todayDow = now.jsDay; // 0=Sunday → no schedule → shows "Libur"
   const currentJpIdx = currentJp(now.minutes);
@@ -54,7 +55,7 @@ export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, 
         )}
         <div className="mt-2 flex items-center gap-2 text-sm text-[var(--muted)]">
           <CalendarClock className="h-4 w-4" />
-          <span>XI TJKT 1 · SMK Darussalam Subah</span>
+          <span>{studentClassName || '—'} · SMK Darussalam Subah</span>
         </div>
       </div>
 

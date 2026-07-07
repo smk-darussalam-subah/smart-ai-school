@@ -5,6 +5,11 @@
 // Shows "Aktifkan Notifikasi" button in student/parent account sheets.
 // Uses browser Push API + service worker to subscribe, then sends to backend.
 // Backend: POST /push/subscribe, POST /push/unsubscribe
+//
+// TODO R-22: GET /push/my-notifications endpoint exists but is not consumed.
+// Future: display push notification history (absence alerts, etc.) in a
+// dedicated notification panel. Full implementation deferred to separate
+// session — see RESIDUAL-ISSUES-REGISTER.md R-22.
 // =============================================================================
 
 import { useState, useEffect } from 'react';

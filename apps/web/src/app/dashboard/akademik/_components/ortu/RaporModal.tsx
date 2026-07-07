@@ -9,9 +9,12 @@ interface RaporModalProps {
   nilai: OrtuNilai[];
   onClose: () => void;
   showToast: (msg: string) => void;
+  studentName?: string;
+  catatanWaliKelas?: string | null;
+  semesterLabel?: string;
 }
 
-export default function RaporModal({ nilai, onClose, showToast }: RaporModalProps) {
+export default function RaporModal({ nilai, onClose, showToast, studentName, catatanWaliKelas, semesterLabel }: RaporModalProps) {
   const avg = avgNa(nilai);
 
   return (
@@ -25,7 +28,7 @@ export default function RaporModal({ nilai, onClose, showToast }: RaporModalProp
       <div className="max-h-[85vh] w-full max-w-[560px] overflow-auto rounded-t-[var(--r-lg)] border border-[var(--border)] bg-[var(--bg2)] p-4 pb-8 animate-[slideUp_0.3s_cubic-bezier(0.22,0.61,0.36,1)]">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
-          <b className="text-[15px] font-extrabold">Rapor Semester Genap 2025/2026</b>
+          <b className="text-[15px] font-extrabold">{semesterLabel || 'Rapor Semester'}</b>
           <button
             onClick={onClose}
             className="flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)]"
@@ -86,7 +89,9 @@ export default function RaporModal({ nilai, onClose, showToast }: RaporModalProp
         <div className="mt-3 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] p-3 text-[11px] leading-relaxed text-[var(--muted)]">
           <b className="text-[var(--text)]">Catatan Wali Kelas:</b>
           <br />
-          Ananda Rizky menunjukkan progres yang baik. Perlu meningkatkan kedisiplinan dalam pengumpulan tugas tepat waktu. Pertahankan prestasi di Pemrograman Web dan B.Inggris.
+          {catatanWaliKelas
+            ? `Ananda ${studentName || ''} ${catatanWaliKelas}`
+            : 'Catatan wali kelas belum tersedia.'}
         </div>
 
         {/* Weight info */}
@@ -99,7 +104,7 @@ export default function RaporModal({ nilai, onClose, showToast }: RaporModalProp
 
         {/* Download button */}
         <button
-          onClick={() => showToast('Rapor diunduh (simulasi)')}
+          onClick={() => showToast('Rapor akan tersedia setelah akhir semester')}
           className="mt-3 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-[12px] bg-[var(--grad)] py-3 text-[13px] font-bold text-white"
         >
           <Download className="h-4 w-4" />

@@ -24,9 +24,11 @@ interface Props {
   xp: SiswaXP;
   kehStats: SiswaKehadiranStats;
   schedule?: unknown[];
+  userName?: string | null;
+  studentClassName?: string | null;
 }
 
-export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, quest, xp, kehStats, schedule }: Props) {
+export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, quest, xp, kehStats, schedule, userName, studentClassName }: Props) {
   const now = wibNow();
   const dow = now.jsDay; // 0=Sunday → SCHED[0] undefined → shows "Libur"
   const currentJpIdx = currentJp(now.minutes);
@@ -71,12 +73,14 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
         <div className="relative z-10 flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <h1 className="text-2xl font-extrabold tracking-tight">
-              Halo, Rizky! <span className="inline-block animate-[wave_1.5s_ease_infinite]">👋</span>
+              Halo, {userName || 'Siswa'}! <span className="inline-block animate-[wave_1.5s_ease_infinite]">👋</span>
             </h1>
-            <p className="mt-1 text-sm font-semibold text-[var(--muted)]">XI TJKT 1 · SMK Darussalam Subah</p>
-            <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-amber-500/25 bg-amber-500/12 px-3 py-1 text-[11px] font-extrabold text-amber-500">
-              <Flame className="h-3.5 w-3.5" />15 hari streak kehadiran!
-            </span>
+            <p className="mt-1 text-sm font-semibold text-[var(--muted)]">{studentClassName || '—'} · SMK Darussalam Subah</p>
+            {xp.streakDays != null && xp.streakDays > 0 && (
+              <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-amber-500/25 bg-amber-500/12 px-3 py-1 text-[11px] font-extrabold text-amber-500">
+                <Flame className="h-3.5 w-3.5" />{xp.streakDays} hari streak kehadiran!
+              </span>
+            )}
           </div>
           <button
             onClick={() => showToast('Daily Quest: Selesaikan 2 modul + 1 tugas hari ini!')}
@@ -123,7 +127,9 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
             {kehStats?.pct ?? 92.8}<small className="text-sm font-bold text-[var(--muted)]">%</small>
           </div>
           <div className="mt-0.5 text-[10.5px] font-bold text-[var(--muted)]">Kehadiran</div>
-          <div className="mt-0.5 text-[10px] font-extrabold text-emerald-500">▲ 15 hari streak</div>
+          <div className="mt-0.5 text-[10px] font-extrabold text-emerald-500">
+            {xp.streakDays != null && xp.streakDays > 0 ? `▲ ${xp.streakDays} hari streak` : '▲ tercatat'}
+          </div>
         </button>
 
         <button

@@ -65,6 +65,20 @@ enum UserRole {
   ORANG_TUA
   INDUSTRI      // Mitra industri: PKL/Prakerin, BKK, rekrutmen
 
+  // ── Position codes (R-23): di-sync sebagai Keycloak realm roles ──
+  WAKA_KURIKULUM
+  WAKA_KESISWAAN
+  WAKA_HUMAS
+  WAKA_SARPRAS
+  KEPALA_TU
+  KAPROG
+  KOOR_BKK
+  KOOR_HUBIN
+  GURU_BK
+  BENDAHARA
+  STAF_KEPEGAWAIAN
+  OPERATOR_DAPODIK
+
   @@schema("auth")
 }
 

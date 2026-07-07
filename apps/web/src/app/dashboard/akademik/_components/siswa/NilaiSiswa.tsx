@@ -14,6 +14,11 @@ interface Props {
 type Filter = 'all' | 'tuntas' | 'remedial';
 
 export default function NilaiSiswa({ grades, showToast }: Props) {
+  // TODO R-20: Wire GET /analytics/grades/student to show grade trend analytics
+  // (subject-wise trend, class average comparison, improvement suggestions).
+  // Current implementation shows raw grades from /grades endpoint.
+  // Full implementation deferred to separate session — see RESIDUAL-ISSUES-REGISTER.md R-20.
+
   const [filter, setFilter] = useState<Filter>('all');
   const [detailGrade, setDetailGrade] = useState<SiswaNilai | null>(null);
 
@@ -42,7 +47,7 @@ export default function NilaiSiswa({ grades, showToast }: Props) {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-extrabold tracking-tight">Nilai &amp; Capaian</h1>
           <button
-            onClick={() => showToast('Rapor akan tersedia di akhir semester (simulasi)')}
+            onClick={() => showToast('Rapor akan tersedia setelah akhir semester')}
             className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-bold text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
           >
             <FileText className="h-3.5 w-3.5" />
