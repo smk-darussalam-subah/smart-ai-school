@@ -23,12 +23,13 @@ import { UserStatusService } from './user-status.service';
 import { RolesGuard } from './guards/roles.guard';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { SseTokenService } from './sse-token.service';
 import { PermissionModule } from '../permissions/permissions.module';
 
 @Module({
   imports: [PermissionModule],
   controllers: [AuthController],
-  providers: [KeycloakGuard, RolesGuard, AuthService, UserStatusService],
-  exports: [KeycloakGuard, RolesGuard, UserStatusService],
+  providers: [KeycloakGuard, RolesGuard, AuthService, UserStatusService, SseTokenService],
+  exports: [KeycloakGuard, RolesGuard, UserStatusService, SseTokenService],
 })
 export class AuthModule {}

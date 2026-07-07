@@ -46,6 +46,8 @@ describe('PositionsService', () => {
         permissions: [{ permissionId: 'perm-a' }, { permissionId: 'perm-b' }],
       });
       prisma.staffPosition.create.mockResolvedValue({ id: 'sp-1' });
+      // R-27: SoD check — no other active positions
+      prisma.staffPosition.findMany.mockResolvedValue([]);
       // R-26: cross-schema integrity check — semua permission exist di DB
       prisma.permission.findMany.mockResolvedValue([{ id: 'perm-a' }, { id: 'perm-b' }]);
 

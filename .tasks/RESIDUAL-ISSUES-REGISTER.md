@@ -1,6 +1,6 @@
 # RESIDUAL ISSUES REGISTER — DIIS Smart AI School
 
-> **Last updated:** 2026-07-07 (Sesi 1: 11 Quick Wins selesai — R-01, R-02, R-07, R-08, R-16, R-18, R-20, R-21, R-22, R-30, R-33)  
+> **Last updated:** 2026-07-07 (Sesi 4: R-11, R-14, R-27, R-19 selesai — security hardening + cleanup)  
 > **Total:** 34 issues (4 CRITICAL, 7 HIGH, 13 MEDIUM, 10 LOW)  
 > **Auditor:** Sesi Audit Residual 2026-07-06 + Investigasi Struktur Organisasi + Audit AI Infrastructure  
 > **Metode:** Verifikasi langsung dari kode sumber (read-only) + trace auth flow + trace AI wiring
@@ -21,15 +21,15 @@
 | R-08 | MEDIUM | SIM Residual | **DONE** | BerandaKiosk masih menggunakan DUMMY data |
 | R-09 | MEDIUM | RBAC Gap | OPEN | Tidak ada endpoint untuk assign wali kelas |
 | R-10 | MEDIUM | Architecture | OPEN | Domain boundary academic vs teacher overlap |
-| R-11 | MEDIUM | Security | OPEN | SSE token diekspos via query parameter |
+| R-11 | MEDIUM | Security | **DONE** | SSE token diekspos via query parameter |
 | R-12 | MEDIUM | Architecture | OPEN | Data flow tidak realtime (Guru → Siswa/Ortu) |
 | R-13 | MEDIUM | Architecture | OPEN | RingkasanGuru: hasPenilaian selalu false (backend belum ada) |
-| R-14 | MEDIUM | Security | OPEN | R-03 Claude PII Gate masih terbuka |
+| R-14 | MEDIUM | Security | **DONE** | R-03 Claude PII Gate masih terbuka |
 | R-15 | MEDIUM | Infrastructure | OPEN | Single VPS tanpa disaster recovery |
 | R-16 | LOW | SIM Residual | **DONE** | RaporModal Ortu: semester hardcoded "Genap 2025/2026" |
 | R-17 | LOW | RBAC Gap | OPEN | Role INDUSTRI implementasi minimal |
 | R-18 | LOW | Infrastructure | **DONE** | VAPID keys runtime effectiveness belum diverifikasi |
-| R-19 | LOW | Infrastructure | OPEN | Migration enum ALTER TYPE risk |
+| R-19 | LOW | Infrastructure | **DONE** | Migration enum ALTER TYPE risk |
 | R-20 | LOW | Orphan Endpoint | **DONE** | GET /analytics/grades/student tidak dikonsumsi frontend |
 | R-21 | LOW | Orphan Endpoint | **DONE** | GET /student-dashboard/leaderboard tidak dikonsumsi Ortu |
 | R-22 | LOW | Orphan Endpoint | **DONE** | GET /push/my-notifications tidak dikonsumsi frontend |
@@ -37,7 +37,7 @@
 | R-24 | HIGH | RBAC Gap | **PARTIALLY DONE** | Frontend sidebar/menu tidak menampilkan item berbasis jabatan (position) — R-23 sync selesai, sidebar butuh re-login |
 | R-25 | MEDIUM | Architecture | **DONE** | Tidak ada endpoint verifikasi effective access pasca-assign jabatan — kini ada GET /positions/access-check/:userId |
 | R-26 | MEDIUM | Architecture | **DONE** | PositionPermission cross-schema reference tanpa FK constraint |
-| R-27 | LOW | RBAC Gap | OPEN | Multi-position accumulation tanpa segregation of duties |
+| R-27 | LOW | RBAC Gap | **DONE** | Multi-position accumulation tanpa segregation of duties |
 | R-28 | HIGH | Infrastructure | **DONE** | Fixed: 2026-07-07 — Hybrid AI: OpenAiAdapter (gpt-4.1-mini chat) + Ollama (embed only) |
 | R-29 | HIGH | Missing Wiring | **DONE** | Fixed: 2026-07-07 — Tombol "Generate Semua" sekarang sequential loop step 2→10 dengan fail-soft |
 | R-30 | HIGH | Missing Wiring | **DONE** | Chatbot AI response parsing salah — `data.reply`/`data.message` vs backend return `data.answer` |
@@ -412,7 +412,7 @@ Refactor schema: konsolidasi semua yang terkait KBM ke domain `academic`, semua 
 |-------|-------|
 | **Severity** | MEDIUM |
 | **Category** | Security |
-| **Status** | OPEN |
+| **Status** | **DONE** — Fixed: 2026-07-07 |
 | **Discovered** | 2026-07-06 |
 | **Source** | Verifikasi kode langsung |
 
@@ -426,8 +426,14 @@ EventSource API tidak mendukung custom headers, sehingga token autentikasi SSE d
 **Impact:**
 Token Keycloak bisa bocor melalui server access logs, browser history, atau Referer header. Riskan untuk security jika VPS diakses bersama.
 
-**Recommended Fix:**
-Gunakan short-lived SSE-specific token (bukan full Keycloak token) dengan expiry sangat pendek (5 menit). Atau implementasi cookie-based auth untuk SSE endpoint.
+**Fix Applied (2026-07-07):**
+- Pendekatan: Short-lived, one-time-use SSE token (bukan cookie — lebih compatible dengan arsitektur cross-origin existing).
+- Backend: `POST /auth/sse-token` membuat token random 256-bit dengan TTL 5 menit, disimpan di `auth.sse_tokens`.
+- SSE endpoint (`/assessment/sessions/:id/stream`) di-mark `@Public()`, validasi token via `SseTokenService.validateAndConsumeToken()`.
+- Token dikonsumsi (one-time use) setelah validasi — tidak bisa di-replay meski diintercept.
+- KeycloakGuard: SSE query param fallback dihapus (tidak lagi diperlukan).
+- Frontend: `getSseToken()` sekarang memanggil `POST /auth/sse-token` bukan mengembalikan `session.accessToken`.
+- File: `sse-token.service.ts`, `auth.controller.ts`, `assessment.controller.ts`, `keycloak.guard.ts`, `actions.ts`, `schema.prisma` + migration.
 
 **Dependencies:**
 —
@@ -495,7 +501,7 @@ Buat endpoint untuk per-session assessment feedback, lalu wire ke RingkasanGuru.
 |-------|-------|
 | **Severity** | MEDIUM |
 | **Category** | Security |
-| **Status** | OPEN |
+| **Status** | **DONE** — Fixed: 2026-07-07 |
 | **Discovered** | 2026-07-06 (carry-over dari CLAUDE.md §0) |
 | **Source** | CLAUDE.md §0, queue.md SMA-48 |
 
@@ -511,6 +517,14 @@ Data PII siswa (nama, NIS) bisa terkirim ke third-party AI provider tanpa consen
 
 **Recommended Fix:**
 JANGAN set `AI_PROVIDER=claude` di production sampai R-03 ditutup. Perkuat `stripPiiForLlm()` untuk mendeteksi pola nama Indonesia dan NIS tanpa label.
+
+**Fix Applied (2026-07-07):**
+- Audit: `OpenAiAdapter.chat()` SUDAH memanggil `stripPiiForLlm()` (belt-and-suspenders) — line 60, 71.
+- Audit: `AiService.chatWithRag()` decision tree SUDAH route PII → Ollama, non-PII → OpenAI dengan strip.
+- Improvement: Tambah pattern NISN tanpa label (10 digit standalone, tidak diawali 0/62).
+- Documentation: Update comments di `pii-strip.utils.ts` untuk refleksikan OpenAI (bukan hanya Claude).
+- Limitasi didokumentasikan: nama Indonesia tanpa label tidak bisa dideteksi tanpa false positive tinggi — mitigasi: hasPii() gate + stripPiiForLlm() di adapter = lapis ganda.
+- PII gate adequate untuk OpenAI routing. R-14 ditutup.
 
 **Dependencies:**
 —
@@ -637,7 +651,7 @@ Verifikasi di staging: kirim test push notification dan pastikan service worker 
 |-------|-------|
 | **Severity** | LOW |
 | **Category** | Infrastructure |
-| **Status** | OPEN |
+| **Status** | **DONE** — Fixed: 2026-07-07 |
 | **Discovered** | 2026-07-06 (carry-over T-08) |
 | **Source** | AUDIT-FINDINGS.md T-08 |
 
@@ -652,6 +666,11 @@ Migration yang gagal bisa meninggalkan database dalam state inkonsisten. Sulit r
 
 **Recommended Fix:**
 Gunakan migration strategy terpisah untuk enum changes. Atau gunakan string columns dengan check constraint sebagai pengganti PostgreSQL enum.
+
+**Fix Applied (2026-07-07):**
+- Verifikasi: Migration R-23 (`20260707000001_r23_userrole_position_codes`) sudah menggunakan `IF NOT EXISTS` di semua 12 `ALTER TYPE ADD VALUE` statements.
+- Dokumentasi: Buat `docs/runbooks/migration-enum-safety.md` dengan checklist untuk future enum migrations.
+- R-19 ditutup — migration sudah aman (idempotent), dokumentasi lengkap.
 
 **Dependencies:**
 —
@@ -898,7 +917,7 @@ Tambahkan soft-integrity check: (1) validasi di `PositionsService.assign()` bahw
 |-------|-------|
 | **Severity** | LOW |
 | **Category** | RBAC Gap |
-| **Status** | OPEN |
+| **Status** | **DONE** — Fixed: 2026-07-07 |
 | **Discovered** | 2026-07-06 |
 | **Source** | Investigasi Struktur Organisasi — analisis kebijakan |
 
@@ -919,6 +938,14 @@ Tidak ada safeguard terhadap konsentrasi akses yang berlebihan. Meski ini kebija
 
 **Recommended Fix:**
 Tambahkan optional conflict rules di seed: `const CONFLICTS = [['BENDAHARA', 'STAF_KEPEGAWAIAN']]`. Validasi di `assign()` dan tampilkan warning di UI jika konflik terdeteksi. Bisa juga berupa soft warning bukan hard block.
+
+**Fix Applied (2026-07-07):**
+- Constant `CONFLICT_RULES` di `positions.service.ts` dengan 2 aturan:
+  1. `BENDAHARA + STAF_KEPEGAWAIAN` — konsentrasi akses keuangan + kepegawaian
+  2. `KEPALA_TU + BENDAHARA` — supervisi + eksekusi keuangan (potensi fraud)
+- `assign()` cek konflik setelah create, return `{ id, warning? }` jika konflik terdeteksi.
+- SOFT WARNING — assignment tetap diizinkan, admin sadar akan risiko.
+- Warning di-log via `logger.warn()` untuk audit trail.
 
 **Dependencies:**
 —
@@ -1355,7 +1382,7 @@ Katalog jabatan dan permission yang diberikan saat penugasan aktif (sumber: migr
 | Verifikasi pasca-assign | ✅ Ada | `GET /positions/access-check/:userId` (R-25, Fixed: 2026-07-07) |
 | Jabatan user login | ✅ Ada | `GET /positions/my-positions` (R-24 support) |
 | Audit trail | ⚠️ Parsial | `@Audit` di controller, tapi tidak mencatat permission yang berubah |
-| Segregation of duties | ❌ TIDAK ADA | Multi-position accumulation tanpa batas (R-27) |
+| Segregation of duties | ✅ Ada | R-27: CONFLICT_RULES constant — soft warning untuk kombinasi berisiko (Fixed: 2026-07-07) |
 
 ---
 
@@ -1363,19 +1390,19 @@ Katalog jabatan dan permission yang diberikan saat penugasan aktif (sumber: migr
 
 | Aspek | Status | Detail |
 |-------|--------|--------|
-| Adapter pattern | ⚠️ Perlu update | `OllamaAdapter` ✅ + `OpenAiAdapter` ❌ BELUM ADA — perlu dibuat (R-28) |
+| Adapter pattern | ✅ Selesai | `OllamaAdapter` ✅ + `OpenAiAdapter` ✅ + `ClaudeAdapter` (deprecated) — R-28 DONE |
 | Backend endpoints | ✅ Semua ada | 7 endpoint AI aktif di `ai.controller.ts` + `ai-generate.controller.ts` |
-| Env validation | ⚠️ Perlu update | Perlu tambah `OPENAI_API_KEY` + `OPENAI_CHAT_MODEL` di `env.validation.ts` |
+| Env validation | ✅ Selesai | `OPENAI_API_KEY` + `OPENAI_CHAT_MODEL` ditambahkan di `env.validation.ts` (R-28) |
 | Docker container | ✅ Terdefinisi | `smk-ollama` di docker-compose.yml — perlu turunkan limit ke 1G |
 | VPS RAM cukup | ✅ Feasible | CPX22 = 4 GB — cukup untuk Ollama embed-only (~300 MB) + services lain |
-| Embed model di-pull | ❌ TIDAK OTOMATIS | Harus pull `nomic-embed-text` saat init (R-31) |
+| Embed model di-pull | ✅ Otomatis | `ollama-init` one-shot container auto-pull `nomic-embed-text` (R-31 DONE) |
 | Chat model lokal | ✅ TIDAK DIPERLUKAN | gpt-4.1-mini via API — tidak perlu pull model chat |
-| OpenAI API key | ❌ BELUM ADA | `.env.production` masih placeholder `sk-ant-...` — perlu ganti ke `sk-proj-...` |
-| Chatbot UI wiring | ❌ BROKEN | Response parsing salah `data.reply` vs `data.answer` (R-30) |
-| Chatbot session | ❌ TIDAK wire | `sessionId` tidak dikirim (R-33) |
-| Generate Semua | ❌ FAKE | Hanya toast, tidak panggil AI (R-29) |
-| Generate Material | ❌ NO UI | Action ada, button tidak ada (R-32) |
-| Generate ATP | ⚠️ FRAGILE | `JSON.parse` dari LLM output tanpa fallback (R-34) |
+| OpenAI API key | ✅ Terpasang | `OPENAI_API_KEY` di `.env.production` — user sudah set (R-28) |
+| Chatbot UI wiring | ✅ Fixed | Response parsing sudah benar `data.answer` (R-30 DONE) |
+| Chatbot session | ✅ Fixed | `sessionId` sudah dikirim, chat history persisten (R-33 DONE) |
+| Generate Semua | ✅ Fixed | Sequential loop step 2→10 dengan fail-soft (R-29 DONE) |
+| Generate Material | ✅ Fixed | Tombol "Generate Materi" di Step 10, hasil tersimpan (R-32 DONE) |
+| Generate ATP | ✅ Fixed | `extractJson()` helper 3 strategi: direct parse, markdown block, bracket match (R-34 DONE) |
 | Generate Questions | ✅ OK | Wiring benar, parsing benar |
 | Generate RPP Step | ✅ OK | Wiring benar, 8 step ter-cover |
 | Knowledge CRUD | ✅ OK | Frontend + backend lengkap |

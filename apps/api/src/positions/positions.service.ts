@@ -24,6 +24,42 @@ import { PermissionsService } from '../permissions/permissions.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { AssignPositionDto } from './dto/position.dto';
 
+// ── R-27: Segregation of Duties conflict rules ─────────────────────────────────
+// Pasangan jabatan yang berisiko jika dipegang oleh orang yang sama.
+// SOFT WARNING — assignment tetap diizinkan, tapi admin mendapat peringatan.
+// Kategori risiko: fraud (keuangan+supervisi), konsentrasi akses (keuangan+SDM).
+const CONFLICT_RULES: ReadonlyArray<{
+  readonly positions: readonly [string, string];
+  readonly risk: string;
+}> = [
+  {
+    positions: ['BENDAHARA', 'STAF_KEPEGAWAIAN'],
+    risk: 'Konsentrasi akses keuangan + kepegawaian — risiko penyalahgunaan data dan dana',
+  },
+  {
+    positions: ['KEPALA_TU', 'BENDAHARA'],
+    risk: 'Supervisi TU + eksekusi keuangan — konflik pengawasan dan pelaksanaan',
+  },
+];
+
+/** R-27: Cek apakah position baru konflik dengan jabatan aktif user. */
+function checkConflict(
+  newPositionCode: string,
+  activePositionCodes: string[],
+): string | undefined {
+  for (const rule of CONFLICT_RULES) {
+    const [a, b] = rule.positions;
+    // Cek kedua arah: newPositionCode=a & active=b, atau newPositionCode=b & active=a
+    if (
+      (newPositionCode === a && activePositionCodes.includes(b)) ||
+      (newPositionCode === b && activePositionCodes.includes(a))
+    ) {
+      return `Kombinasi jabatan ${a} + ${b} berisiko: ${rule.risk}`;
+    }
+  }
+  return undefined;
+}
+
 @Injectable()
 export class PositionsService {
   constructor(
@@ -128,6 +164,31 @@ export class PositionsService {
       throw err;
     }
 
+    // R-27: Segregation of Duties — check conflict with existing active positions.
+    // SOFT WARNING: assignment tetap diizinkan, tapi return warning untuk UI.
+    let warning: string | undefined;
+    if (position.scopeType !== 'MAJOR' || dto.majorId) {
+      const activePositions = await this.prisma.staffPosition.findMany({
+        where: {
+          staffId: staff.id,
+          academicYearId: dto.academicYearId,
+          isActive: true,
+          positionId: { not: dto.positionId }, // Exclude the one just created
+        },
+        select: { position: { select: { code: true } } },
+      });
+      const activeCodes = activePositions.map((ap) => ap.position.code);
+      warning = checkConflict(position.code, activeCodes);
+      if (warning) {
+        logger.warn('[Positions] Segregation of Duties warning', {
+          userId: dto.userId,
+          newPosition: position.code,
+          activePositions: activeCodes,
+          warning,
+        });
+      }
+    }
+
     // R-26: Cross-schema integrity check — validasi semua permission masih exist.
     // PositionPermission (schema school) → Permission (schema auth) tanpa FK.
     let validPermissions = position.permissions;
@@ -173,7 +234,8 @@ export class PositionsService {
 
     this.permissions.invalidateUser(staff.user.keycloakId);
 
-    return { id: created.id };
+    // R-27: Return warning if segregation of duties conflict detected
+    return warning ? { id: created.id, warning } : { id: created.id };
   }
 
   // ── Lepas penugasan + cabut izin yg tak lagi didukung jabatan lain ─────────
