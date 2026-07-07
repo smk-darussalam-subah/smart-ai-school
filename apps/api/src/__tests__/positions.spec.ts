@@ -17,6 +17,7 @@ function mockPrisma() {
     academicYear: { findFirst: jest.fn(), findUnique: jest.fn() },
     staffPosition: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), delete: jest.fn() },
     userPermissionOverride: { upsert: jest.fn(), deleteMany: jest.fn() },
+    permission: { findMany: jest.fn() },
   };
 }
 
@@ -45,6 +46,8 @@ describe('PositionsService', () => {
         permissions: [{ permissionId: 'perm-a' }, { permissionId: 'perm-b' }],
       });
       prisma.staffPosition.create.mockResolvedValue({ id: 'sp-1' });
+      // R-26: cross-schema integrity check — semua permission exist di DB
+      prisma.permission.findMany.mockResolvedValue([{ id: 'perm-a' }, { id: 'perm-b' }]);
 
       const svc = await build(prisma, perms);
       const res = await svc.assign({ userId: 'u-1', positionId: 'pos-waka', academicYearId: 'ay-1' });
@@ -103,10 +106,9 @@ describe('PositionsService', () => {
       const perms = { invalidateUser: jest.fn() };
       prisma.staffPosition.findUnique.mockResolvedValue({
         id: 'sp-1', positionId: 'pos-waka',
+        position: { permissions: [{ permissionId: 'perm-a' }, { permissionId: 'perm-b' }] },
         staff: { userId: 'u-1', user: { keycloakId: 'kc-1' } },
       });
-      // posisi yg dilepas punya perm-a, perm-b
-      prisma.position.findUnique.mockResolvedValue({ permissions: [{ permissionId: 'perm-a' }, { permissionId: 'perm-b' }] });
       prisma.staffPosition.delete.mockResolvedValue({});
       // penugasan tersisa masih memberi perm-b (tidak perm-a)
       prisma.staffPosition.findMany.mockResolvedValue([
