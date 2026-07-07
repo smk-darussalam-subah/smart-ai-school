@@ -1,6 +1,6 @@
 # RESIDUAL ISSUES REGISTER — DIIS Smart AI School
 
-> **Last updated:** 2026-07-07 (Sesi 4: R-11, R-14, R-27, R-19 selesai — security hardening + cleanup)  
+> **Last updated:** 2026-07-07 (Sesi 4: R-11, R-14, R-27, R-19 — security hardening; Sesi 5: R-03, R-09, R-13 — UI Manajemen Kelas + RingkasanGuru wiring)
 > **Total:** 34 issues (4 CRITICAL, 7 HIGH, 13 MEDIUM, 10 LOW)  
 > **Auditor:** Sesi Audit Residual 2026-07-06 + Investigasi Struktur Organisasi + Audit AI Infrastructure  
 > **Metode:** Verifikasi langsung dari kode sumber (read-only) + trace auth flow + trace AI wiring
@@ -13,17 +13,17 @@
 |----|----------|----------|--------|-------------------|
 | R-01 | CRITICAL | SIM Residual | **DONE** | Nama siswa hardcoded "Rizky" di BerandaSiswa & CapaianSiswa |
 | R-02 | CRITICAL | SIM Residual | **DONE** | Catatan wali kelas hardcoded di RaporModal Ortu |
-| R-03 | HIGH | Missing UI | OPEN | Tidak ada UI Manajemen Kelas / Wali Kelas |
+| R-03 | HIGH | Missing UI | **DONE** | Tidak ada UI Manajemen Kelas / Wali Kelas |
 | R-04 | HIGH | RBAC Gap | **DONE** | KEPALA_SEKOLAH tidak punya akses write ke classes |
 | R-05 | HIGH | Missing UI | OPEN | Tidak ada halaman admin WA log |
 | R-06 | HIGH | Architecture | OPEN | Tidak ada Admin Panel / Settings Page terpusat |
 | R-07 | MEDIUM | SIM Residual | **DONE** | Toast "simulasi" di 3 komponen Ortu/Siswa |
 | R-08 | MEDIUM | SIM Residual | **DONE** | BerandaKiosk masih menggunakan DUMMY data |
-| R-09 | MEDIUM | RBAC Gap | OPEN | Tidak ada endpoint untuk assign wali kelas |
+| R-09 | MEDIUM | RBAC Gap | **DONE** | Tidak ada endpoint untuk assign wali kelas |
 | R-10 | MEDIUM | Architecture | OPEN | Domain boundary academic vs teacher overlap |
 | R-11 | MEDIUM | Security | **DONE** | SSE token diekspos via query parameter |
 | R-12 | MEDIUM | Architecture | OPEN | Data flow tidak realtime (Guru → Siswa/Ortu) |
-| R-13 | MEDIUM | Architecture | OPEN | RingkasanGuru: hasPenilaian selalu false (backend belum ada) |
+| R-13 | MEDIUM | Architecture | **DONE** | RingkasanGuru: hasPenilaian selalu false (backend belum ada) |
 | R-14 | MEDIUM | Security | **DONE** | R-03 Claude PII Gate masih terbuka |
 | R-15 | MEDIUM | Infrastructure | OPEN | Single VPS tanpa disaster recovery |
 | R-16 | LOW | SIM Residual | **DONE** | RaporModal Ortu: semester hardcoded "Genap 2025/2026" |
@@ -131,7 +131,7 @@ R-01 (nama siswa juga perlu dinamis di modal ini)
 |-------|-------|
 | **Severity** | HIGH |
 | **Category** | Missing UI |
-| **Status** | OPEN |
+| **Status** | **DONE** — Fixed: 2026-07-07 |
 | **Discovered** | 2026-07-06 (carry-over dari prompt audit) |
 | **Source** | Audit v2 + verifikasi kode |
 
@@ -162,6 +162,13 @@ Tambahkan menu ke-7 di grup "Administrasi Sistem": **"Manajemen Kelas"** (`/dash
 
 **Dependencies:**
 R-04 (RBAC KS perlu ditambah), R-09 (wali kelas via `teacherId` di PATCH)
+
+**Fix Applied (2026-07-07, Sesi 5):**
+- Halaman `/dashboard/kelas` dibuat dengan pattern: server component (`page.tsx`) + client component (`KelasClient.tsx`) + server actions (`actions.ts`).
+- Fitur: tabel kelas, create/edit modal, dropdown wali kelas inline, toggle aktif/nonaktif, delete (SA only).
+- Sidebar: menu "Manajemen Kelas" ditambahkan di group "Administrasi Sistem" dengan roles `SUPER_ADMIN, KEPALA_SEKOLAH, TATA_USAHA`.
+- Backend tidak diubah — `PATCH /classes/:id` sudah menerima `teacherId` di DTO.
+- File: `page.tsx`, `KelasClient.tsx`, `actions.ts`, `Sidebar.tsx`, `permissions.ts`.
 
 ---
 
@@ -351,7 +358,7 @@ Wire ke endpoint agregasi attendance yang mendukung query rentang tanggal. Buat 
 |-------|-------|
 | **Severity** | MEDIUM |
 | **Category** | RBAC Gap |
-| **Status** | OPEN |
+| **Status** | **DONE** — Fixed: 2026-07-07 |
 | **Discovered** | 2026-07-06 |
 | **Source** | Audit v2 + verifikasi kode |
 
@@ -372,6 +379,12 @@ Endpoint `PATCH /classes/:id` sudah menerima `teacherId` di DTO (`class.dto.ts:1
 2. RBAC fix (R-04) agar KS bisa akses POST/PATCH
 
 Tidak perlu endpoint baru — cukup wire UI ke endpoint yang sudah ada.
+
+**Fix Applied (2026-07-07, Sesi 5):**
+- Tidak dibuat endpoint baru — sesuai rekomendasi register.
+- UI Manajemen Kelas (`/dashboard/kelas`) menggunakan `PATCH /classes/:id` dengan field `teacherId` untuk assign wali kelas.
+- Dropdown wali kelas tersedia di tabel (inline) dan di form create/edit.
+- RBAC: `SUPER_ADMIN, KEPALA_SEKOLAH, TATA_USAHA` (R-04 sudah fixed).
 
 **Dependencies:**
 R-03 (UI Manajemen Kelas), R-04 (RBAC KS)
@@ -435,6 +448,15 @@ Token Keycloak bisa bocor melalui server access logs, browser history, atau Refe
 - Frontend: `getSseToken()` sekarang memanggil `POST /auth/sse-token` bukan mengembalikan `session.accessToken`.
 - File: `sse-token.service.ts`, `auth.controller.ts`, `assessment.controller.ts`, `keycloak.guard.ts`, `actions.ts`, `schema.prisma` + migration.
 
+**Fix Applied (2026-07-07, Sesi 4):**
+- Pendekatan: Short-lived, one-time-use SSE token (bukan cookie — lebih compatible dengan arsitektur cross-origin existing).
+- Backend: `POST /auth/sse-token` membuat token random 256-bit dengan TTL 5 menit, disimpan di `auth.sse_tokens`.
+- SSE endpoint (`/assessment/sessions/:id/stream`) di-mark `@Public()`, validasi token via `SseTokenService.validateAndConsumeToken()`.
+- Token dikonsumsi (one-time use) setelah validasi — tidak bisa di-replay meski diintercept.
+- KeycloakGuard: SSE query param fallback dihapus (tidak lagi diperlukan).
+- Frontend: `getSseToken()` sekarang memanggil `POST /auth/sse-token` bukan mengembalikan `session.accessToken`.
+- File: `sse-token.service.ts`, `auth.controller.ts`, `assessment.controller.ts`, `keycloak.guard.ts`, `actions.ts`, `schema.prisma` + migration.
+
 **Dependencies:**
 —
 
@@ -474,7 +496,7 @@ Implementasi SSE atau WebSocket untuk notifikasi perubahan data. Atau minimal: t
 |-------|-------|
 | **Severity** | MEDIUM |
 | **Category** | SIM Residual |
-| **Status** | OPEN |
+| **Status** | **DONE** — Fixed: 2026-07-07 |
 | **Discovered** | 2026-07-06 |
 | **Source** | Verifikasi kode langsung |
 
@@ -489,6 +511,13 @@ Guru tidak mendapat feedback tentang sesi penilaian yang perlu ditindaklanjuti d
 
 **Recommended Fix:**
 Buat endpoint untuk per-session assessment feedback, lalu wire ke RingkasanGuru. Atau hapus section ini jika memang tidak akan diimplementasi.
+
+**Fix Applied (2026-07-07, Sesi 5):**
+- `page.tsx` guru branch sekarang fetch `/assessment/sessions?limit=100` dan map sessions ke `todayClasses` via `assessmentSessionId`.
+- `RingkasanGuru.tsx`: `hasPenilaian = !!tc.assessmentSessionId` (bukan hardcoded `false`).
+- `hasFeedback = !!tc.assessmentSessionId`.
+- "Perlu Tindakan": tambah item "X kelas belum punya sesi penilaian".
+- SessionDetailModal: tampilkan pesan real berdasarkan `assessmentSessionId`.
 
 **Dependencies:**
 —
@@ -518,7 +547,7 @@ Data PII siswa (nama, NIS) bisa terkirim ke third-party AI provider tanpa consen
 **Recommended Fix:**
 JANGAN set `AI_PROVIDER=claude` di production sampai R-03 ditutup. Perkuat `stripPiiForLlm()` untuk mendeteksi pola nama Indonesia dan NIS tanpa label.
 
-**Fix Applied (2026-07-07):**
+**Fix Applied (2026-07-07, Sesi 4):**
 - Audit: `OpenAiAdapter.chat()` SUDAH memanggil `stripPiiForLlm()` (belt-and-suspenders) — line 60, 71.
 - Audit: `AiService.chatWithRag()` decision tree SUDAH route PII → Ollama, non-PII → OpenAI dengan strip.
 - Improvement: Tambah pattern NISN tanpa label (10 digit standalone, tidak diawali 0/62).
@@ -667,7 +696,7 @@ Migration yang gagal bisa meninggalkan database dalam state inkonsisten. Sulit r
 **Recommended Fix:**
 Gunakan migration strategy terpisah untuk enum changes. Atau gunakan string columns dengan check constraint sebagai pengganti PostgreSQL enum.
 
-**Fix Applied (2026-07-07):**
+**Fix Applied (2026-07-07, Sesi 4):**
 - Verifikasi: Migration R-23 (`20260707000001_r23_userrole_position_codes`) sudah menggunakan `IF NOT EXISTS` di semua 12 `ALTER TYPE ADD VALUE` statements.
 - Dokumentasi: Buat `docs/runbooks/migration-enum-safety.md` dengan checklist untuk future enum migrations.
 - R-19 ditutup — migration sudah aman (idempotent), dokumentasi lengkap.
@@ -939,7 +968,7 @@ Tidak ada safeguard terhadap konsentrasi akses yang berlebihan. Meski ini kebija
 **Recommended Fix:**
 Tambahkan optional conflict rules di seed: `const CONFLICTS = [['BENDAHARA', 'STAF_KEPEGAWAIAN']]`. Validasi di `assign()` dan tampilkan warning di UI jika konflik terdeteksi. Bisa juga berupa soft warning bukan hard block.
 
-**Fix Applied (2026-07-07):**
+**Fix Applied (2026-07-07, Sesi 4):**
 - Constant `CONFLICT_RULES` di `positions.service.ts` dengan 2 aturan:
   1. `BENDAHARA + STAF_KEPEGAWAIAN` — konsentrasi akses keuangan + kepegawaian
   2. `KEPALA_TU + BENDAHARA` — supervisi + eksekusi keuangan (potensi fraud)

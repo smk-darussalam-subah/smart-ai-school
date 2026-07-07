@@ -152,18 +152,34 @@ export default async function AkademikPage() {
 
   // ── Dashboard Guru (IA baru). Role lain → tampilan lama (fallback). ─────────
   if (isGuru) {
-    const [schedulesRes, activitiesRes, rppRes, lmsRes, semRes] = await Promise.all([
+    const [schedulesRes, activitiesRes, rppRes, lmsRes, semRes, assessmentRes] = await Promise.all([
       apiFetch<{ data: ScheduleItem[] }>('/schedules?limit=500', token),
       apiFetch<{ data: ActivityItem[] }>('/class-activities?limit=200', token),
       apiFetch<{ data: RppItem[] }>('/rpp?limit=100', token),
       apiFetch<{ data: LmsModuleItem[] }>('/lms/modules?limit=200', token),
       apiFetch<ActiveSemester>('/school/semesters/active', token),
+      // R-13: Fetch assessment sessions for guru to wire hasPenilaian/hasFeedback
+      apiFetch<{ data: Array<{ id: string; classId: string | null; status: string; _count: { responses: number } }> }>('/assessment/sessions?limit=100', token),
     ]);
 
     const schedules = schedulesRes?.data ?? [];
     const { minutes } = wibNow();
     const dow = scheduleDayOfWeek();
     const nowJp = currentJp(minutes);
+
+    // R-13: Build a map of classId → latest assessment session for penilaian/feedback status.
+    // A session with status 'active' or 'completed' and responses > 0 means penilaian is available.
+    const assessmentSessions = assessmentRes?.data ?? [];
+    const sessionByClass = new Map<string, { id: string; status: string; hasResponses: boolean }>();
+    for (const s of assessmentSessions) {
+      if (s.classId) {
+        const existing = sessionByClass.get(s.classId);
+        // Prefer completed sessions with responses, then active, then draft
+        if (!existing || s.status === 'completed' || (s.status === 'active' && existing.status === 'draft')) {
+          sessionByClass.set(s.classId, { id: s.id, status: s.status, hasResponses: s._count?.responses > 0 });
+        }
+      }
+    }
 
     const todayClasses: TodayClass[] = schedules
       .filter((s) => s.dayOfWeek === dow)
@@ -177,6 +193,8 @@ export default async function AkademikPage() {
         jpEnd: s.jpEnd,
         startLabel: jpStartLabel(s.jpStart),
         isNow: nowJp >= s.jpStart && nowJp <= s.jpEnd,
+        // R-13: Link assessment session if exists for this class
+        assessmentSessionId: sessionByClass.get(s.classId)?.id,
       }));
 
     const academicYear = semRes?.academicYear?.code ?? '';

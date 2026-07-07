@@ -35,6 +35,7 @@ const ROUTE_PERMISSIONS: Record<string, string[]> = {
   '/dashboard/knowledge': ['ai.knowledge.read'],
   '/dashboard/ai': ['ai.chat'],
   '/dashboard/users': ['user.read'],
+  '/dashboard/kelas': ['academic.teaching.read'],
   '/dashboard/health': ['audit.read'],
 };
 
