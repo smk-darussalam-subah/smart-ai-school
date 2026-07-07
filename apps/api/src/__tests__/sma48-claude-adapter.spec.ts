@@ -93,6 +93,7 @@ async function buildModule(
       AiService,
       { provide: 'AI_GATEWAY', useValue: ollamaGw },
       { provide: 'CLAUDE_GATEWAY', useValue: claudeGw },
+      { provide: 'OPENAI_GATEWAY', useValue: null }, // R-28: default off in tests
       { provide: PrismaService, useValue: prisma },
     ],
   }).compile();

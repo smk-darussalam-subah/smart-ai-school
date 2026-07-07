@@ -85,7 +85,7 @@ export default async function AkademikPage() {
 
     // Transform XP API response → SiswaXP
     const realXp: SiswaXP | null = xpRes
-      ? { level: xpRes.level, current: xpRes.totalXp, next: xpRes.nextLevelXp ?? xpRes.totalXp }
+      ? { level: xpRes.level, current: xpRes.totalXp, next: xpRes.nextLevelXp ?? xpRes.totalXp, streakDays: xpRes.streakDays }
       : null;
 
     // Transform attendance stats → add pct (P26)
@@ -246,7 +246,7 @@ export default async function AkademikPage() {
     const childId = firstChild?.id ?? '';
 
     // Round 2: fetch child-specific data (all in parallel, fail-soft → null)
-    const [gradesRes, attendanceRes, scheduleRes, sppRes, assignmentsRes, badgesRes, waLogRes] = await Promise.all([
+    const [gradesRes, attendanceRes, scheduleRes, sppRes, assignmentsRes, badgesRes, waLogRes, semRes, leaderboardRes] = await Promise.all([
       childId ? apiFetch<PaginatedResponse<GradeItem>>(`/grades?studentId=${childId}&limit=100`, token) : Promise.resolve(null),
       childId ? apiFetch<PaginatedResponse<AttendanceItem>>(`/attendance?studentId=${childId}&limit=200`, token) : Promise.resolve(null),
       childId ? apiFetch<{ data: ScheduleItem[] }>(`/schedules?studentId=${childId}&limit=100`, token) : Promise.resolve(null),
@@ -254,7 +254,19 @@ export default async function AkademikPage() {
       childId ? apiFetch<{ data: Assignment[] }>(`/student-dashboard/assignments?studentId=${childId}&limit=20`, token) : Promise.resolve(null),
       childId ? apiFetch<Array<{ id: string; awardedAt: string; badge: { id: string; code: string; name: string; description: string; icon: string; tier: string } }>>(`/badges/student/${childId}`, token) : Promise.resolve(null),
       childId ? apiFetch<{ data: Array<{ id: string; studentId: string; recipient: string; message: string; eventType: string; createdAt: string }> }>(`/wa-log/student/${childId}?limit=20`, token) : Promise.resolve(null),
+      // R-16: Fetch active semester for rapor label
+      apiFetch<ActiveSemester>('/school/semesters/active', token),
+      // R-21: Fetch leaderboard to show child's rank
+      childId ? apiFetch<Array<{ id: string; studentId: string; totalXp: number; level: number; rank: number; student: { nis: string; user: { fullName: string }; class: { id: string; name: string } | null } }>>('/gamification/leaderboard-xp?limit=50', token) : Promise.resolve(null),
     ]);
+
+    // R-16: Compute semester label for RaporModal
+    const academicYearOrtu = semRes?.academicYear?.code ?? '';
+    const semesterOrtu = semRes?.number ?? 1;
+    const semesterLabel = semRes ? `Rapor Semester ${semesterOrtu === 1 ? 'Ganjil' : 'Genap'} ${academicYearOrtu}` : '';
+
+    // R-21: Find child's rank from leaderboard
+    const childRank = leaderboardRes?.find((e) => e.studentId === childId)?.rank ?? null;
 
     // Transform children for OrtuWorkspace
     const ortuChildren = children.map((c) => ({
@@ -277,6 +289,8 @@ export default async function AkademikPage() {
         badges={badgesRes ?? []}
         waLog={waLogRes?.data ?? []}
         viewAs={viewAs}
+        semesterLabel={semesterLabel}
+        childRank={childRank}
       />
     );
   }

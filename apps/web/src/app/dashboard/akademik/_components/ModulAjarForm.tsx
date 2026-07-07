@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { RppItem, ModulAjarBody, AtpItem, KegiatanItem } from './guru-types';
-import { createRpp, updateRpp, submitRpp, aiGenerateAtp, aiGenerateRppStep } from '../actions';
+import { createRpp, updateRpp, submitRpp, aiGenerateAtp, aiGenerateRppStep, aiGenerateMaterial } from '../actions';
 
 interface Props {
   open: boolean;
@@ -65,6 +65,9 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
   const [toast, setToast] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isGeneratingSemua, setIsGeneratingSemua] = useState(false);
+  const [isGeneratingMaterial, setIsGeneratingMaterial] = useState(false);
+  const [semuaProgress, setSemuaProgress] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2800); };
@@ -99,28 +102,26 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
 
   const [, startAi] = useTransition();
 
-  const aiGenerate = (stepNum: number) => {
+  /**
+   * R-29: Core async logic for AI generation of a single step.
+   * Extracted from aiGenerate() so it can be reused by "Generate Semua" sequential loop.
+   * Throws on error — caller handles fail-soft.
+   */
+  const aiGenerateStep = async (stepNum: number): Promise<void> => {
     // Step 3 (ATP) → dedicated ATP endpoint.
     if (stepNum === 3) {
-      if (!subject) { showToast('Pilih mapel terlebih dahulu.'); return; }
+      if (!subject) throw new Error('Pilih mapel terlebih dahulu.');
       const cpText = typeof body.cp === 'string' ? body.cp : '';
       const tpList = Array.isArray(body.tp) ? body.tp.filter((t) => t.trim()) : [];
-      if (tpList.length === 0) { showToast('Tambahkan minimal 1 TP sebelum generate ATP.'); return; }
-      startAi(async () => {
-        const res = await aiGenerateAtp({ cp: cpText, tp: tpList, subject });
-        if (!res.success) {
-          const msg = res.error ?? 'Gagal generate AI.';
-          showToast(msg.includes('429') ? 'Rate limit tercapai (10/menit). Coba lagi nanti.' : msg);
-          return;
-        }
-        const data = res.data as { output?: AtpItem[] };
-        if (data?.output && Array.isArray(data.output)) {
-          set('atp', data.output);
-          showToast('ATP berhasil di-generate AI. Silakan sunting.');
-        } else {
-          showToast('AI tidak mengembalikan ATP. Coba lagi.');
-        }
-      });
+      if (tpList.length === 0) throw new Error('Tambahkan minimal 1 TP sebelum generate ATP.');
+      const res = await aiGenerateAtp({ cp: cpText, tp: tpList, subject });
+      if (!res.success) throw new Error(res.error ?? 'Gagal generate AI.');
+      const data = res.data as { output?: AtpItem[] };
+      if (data?.output && Array.isArray(data.output)) {
+        set('atp', data.output);
+      } else {
+        throw new Error('AI tidak mengembalikan ATP.');
+      }
       return;
     }
     // P4 (S-12): Other steps — real AI gateway via /ai/generate-rpp-step
@@ -130,23 +131,84 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
     };
     const stepKey = stepMap[stepNum];
     if (!stepKey || !subject) {
-      showToast(subject ? 'Langkah tidak didukung.' : 'Pilih mapel terlebih dahulu.');
-      return;
+      throw new Error(subject ? 'Langkah tidak didukung.' : 'Pilih mapel terlebih dahulu.');
     }
     const contextStr = JSON.stringify(body).slice(0, 4000);
+    const res = await aiGenerateRppStep({ step: stepKey, subject, context: contextStr });
+    if (!res.success) throw new Error(res.error ?? 'Gagal generate AI.');
+    if (!res.data?.output) throw new Error('AI tidak mengembalikan konten.');
+  };
+
+  const aiGenerate = (stepNum: number) => {
     startAi(async () => {
-      const res = await aiGenerateRppStep({ step: stepKey, subject, context: contextStr });
-      if (!res.success) {
-        const msg = res.error ?? 'Gagal generate AI.';
-        showToast(msg.includes('429') ? 'Rate limit tercapai (10/menit). Coba lagi nanti.' : msg);
-        return;
-      }
-      if (res.data?.output) {
+      try {
+        await aiGenerateStep(stepNum);
         showToast(`Bagian "${STEPS[stepNum - 1]?.label}" berhasil di-generate AI. Silakan sunting.`);
-      } else {
-        showToast('AI tidak mengembalikan konten. Coba lagi.');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Gagal generate AI.';
+        showToast(msg.includes('429') ? 'Rate limit tercapai (10/menit). Coba lagi nanti.' : msg);
       }
     });
+  };
+
+  /**
+   * R-29: Generate Semua — sequential loop step 2→10 with fail-soft.
+   * Each step waits for the previous to complete (context dependency).
+   */
+  const handleGenerateSemua = async () => {
+    if (!subject) { showToast('Pilih mapel terlebih dahulu.'); return; }
+    setIsGeneratingSemua(true);
+    setSemuaProgress('Memulai generate...');
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let stepNum = 2; stepNum <= 10; stepNum++) {
+      const label = STEPS[stepNum - 1]?.label ?? `Step ${stepNum}`;
+      setSemuaProgress(`Generating: ${label} (${stepNum - 1}/9)...`);
+      try {
+        await aiGenerateStep(stepNum);
+        successCount++;
+      } catch (err) {
+        failCount++;
+        console.error(`Step ${stepNum} gagal:`, err);
+      }
+    }
+
+    setIsGeneratingSemua(false);
+    setSemuaProgress(null);
+    if (failCount === 0) {
+      showToast(`Semua ${successCount} bagian berhasil di-generate AI. Silakan sunting setiap bagian.`);
+    } else {
+      showToast(`Selesai: ${successCount} berhasil, ${failCount} gagal. Silakan sunting bagian yang berhasil.`);
+    }
+  };
+
+  /**
+   * R-32: Generate Materi pembelajaran via AI.
+   * Sends current form context to /ai/generate-material and stores result in lampiran field.
+   */
+  const handleGenerateMaterial = async () => {
+    if (!subject) { showToast('Pilih mapel terlebih dahulu.'); return; }
+    setIsGeneratingMaterial(true);
+    try {
+      const contextStr = JSON.stringify(body).slice(0, 4000);
+      const res = await aiGenerateMaterial({ rppBody: contextStr, subject });
+      if (!res.success) {
+        showToast('Gagal generate materi: ' + (res.error ?? 'Unknown error'));
+        return;
+      }
+      const data = res.data as { output?: string };
+      if (data?.output) {
+        set('lampiran', data.output);
+        showToast('Materi pembelajaran berhasil di-generate. Lihat di kolom Catatan Lampiran.');
+      } else {
+        showToast('AI tidak mengembalikan materi. Coba lagi.');
+      }
+    } catch (err) {
+      showToast('Gagal generate materi: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    } finally {
+      setIsGeneratingMaterial(false);
+    }
   };
 
   const saveDraft = () => {
@@ -262,11 +324,17 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               <Sparkles className="h-5 w-5 shrink-0 text-violet-600" />
               <div className="min-w-0 flex-1">
                 <b className="block text-[12.5px] font-extrabold text-[#0f2e25]">Asisten AI Modul Ajar</b>
-                <small className="text-[10.5px] font-semibold text-[#6b8079]">Generate isi setiap bagian otomatis dengan AI (kecuali Identitas). Hasil dapat disunting.</small>
+                <small className="text-[10.5px] font-semibold text-[#6b8079]">
+                  {isGeneratingSemua && semuaProgress
+                    ? semuaProgress
+                    : 'Generate isi setiap bagian otomatis dengan AI (kecuali Identitas). Hasil dapat disunting.'}
+                </small>
               </div>
-              <button type="button" onClick={() => showToast('Semua bagian berhasil di-generate AI. Silakan sunting setiap bagian.')}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-violet-700">
-                <Sparkles className="h-3.5 w-3.5" />Generate Semua
+              <button type="button" onClick={handleGenerateSemua} disabled={isGeneratingSemua}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-violet-700 disabled:opacity-60">
+                {isGeneratingSemua
+                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating...</>
+                  : <><Sparkles className="h-3.5 w-3.5" />Generate Semua</>}
               </button>
             </div>
 
@@ -448,7 +516,21 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
                   <b className="text-[12.5px] font-bold text-emerald-700">Unggah File Lampiran</b>
                   <small className="text-[11px] font-semibold text-[#6b8079]">PDF, DOCX, PPTX, MP4, ZIP — maks. 20MB per file</small>
                 </button>
-                <Field label="Catatan Lampiran" hint="Opsional"><textarea value={body.lampiran ?? ''} onChange={(e) => set('lampiran', e.target.value)} rows={2} className={`${FIELD} resize-y`} placeholder="Daftar lampiran (mis. Handout PDF, Slide PPTX)..." /></Field>
+                {/* R-32: Generate Materi pembelajaran via AI */}
+                <div className="flex items-center gap-3 rounded-xl border border-violet-200 bg-violet-50/50 px-3 py-2.5">
+                  <Sparkles className="h-4 w-4 shrink-0 text-violet-600" />
+                  <div className="min-w-0 flex-1">
+                    <b className="block text-[11.5px] font-bold text-[#0f2e25]">Generate Materi Pembelajaran</b>
+                    <small className="text-[10px] font-semibold text-[#6b8079]">AI membuat draf materi berdasarkan konteks modul ajar</small>
+                  </div>
+                  <button type="button" onClick={handleGenerateMaterial} disabled={isGeneratingMaterial}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-violet-300 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-60">
+                    {isGeneratingMaterial
+                      ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating...</>
+                      : <><Sparkles className="h-3.5 w-3.5" />Generate</>}
+                  </button>
+                </div>
+                <Field label="Catatan Lampiran" hint="Opsional"><textarea value={body.lampiran ?? ''} onChange={(e) => set('lampiran', e.target.value)} rows={6} className={`${FIELD} resize-y`} placeholder="Daftar lampiran (mis. Handout PDF, Slide PPTX)... atau hasil Generate Materi akan muncul di sini." /></Field>
                 <Field label="URL Eksternal" hint="Opsional"><input value={body.lampiranUrl ?? ''} onChange={(e) => set('lampiranUrl', e.target.value)} className={FIELD} type="url" placeholder="https://link-video-pembelajaran.com" /></Field>
               </SectionCard>
 

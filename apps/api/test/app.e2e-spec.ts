@@ -20,8 +20,19 @@ jest.mock('@smk/auth', () => {
     'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA',
     'GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI',
   ]);
+  const PRIMARY_ROLES = [
+    'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA',
+    'GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI',
+  ];
+  const POSITION_CODES = [
+    'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'WAKA_KESISWAAN', 'WAKA_HUMAS',
+    'WAKA_SARPRAS', 'KEPALA_TU', 'KAPROG', 'KOOR_BKK', 'KOOR_HUBIN',
+    'GURU_BK', 'BENDAHARA', 'STAF_KEPEGAWAIAN', 'OPERATOR_DAPODIK',
+  ];
   return {
     UserRole,
+    PRIMARY_ROLES,
+    POSITION_CODES,
     verifyKeycloakToken: jest.fn(),
     extractAuthUser: jest.fn(),
     hasRole: jest.fn(),

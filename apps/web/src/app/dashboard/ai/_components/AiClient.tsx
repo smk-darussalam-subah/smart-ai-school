@@ -5,15 +5,37 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 
-interface Message { role: 'user' | 'assistant'; content: string; }
+interface Message { role: 'user' | 'assistant'; content: string; sources?: { title: string }[]; }
 
 export default function AiClient() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
+
+  // R-33: Restore sessionId from localStorage on mount and fetch chat history
+  useEffect(() => {
+    const savedSessionId = localStorage.getItem('diis-ai-session-id');
+    if (savedSessionId) {
+      setSessionId(savedSessionId);
+      fetch(`/api/backend/ai/chat/${savedSessionId}/history`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (Array.isArray(data) && data.length > 0) {
+            setMessages(
+              data.map((m: { role: string; content: string }) => ({
+                role: m.role === 'user' ? 'user' as const : 'assistant' as const,
+                content: m.content,
+              })),
+            );
+          }
+        })
+        .catch(() => { /* session may have expired */ });
+    }
+  }, []);
 
   const send = async () => {
     if (!input.trim() || loading) return;
@@ -23,10 +45,19 @@ export default function AiClient() {
 
     try {
       const res = await fetch('/api/backend/ai/chat', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: input }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: input, ...(sessionId ? { sessionId } : {}) }),
       });
       const data = await res.json();
-      setMessages(prev => [...prev, { role: 'assistant', content: data.reply || data.message || 'Maaf, tidak ada respons.' }]);
+      // R-30: Backend returns { answer, sources, sessionId }
+      const answer: string = data.answer || 'Maaf, tidak ada respons.';
+      const sources: { title: string }[] | undefined = Array.isArray(data.sources) ? data.sources : undefined;
+      // R-33: Save sessionId for persistent chat history
+      if (data.sessionId) {
+        setSessionId(data.sessionId);
+        localStorage.setItem('diis-ai-session-id', data.sessionId);
+      }
+      setMessages(prev => [...prev, { role: 'assistant', content: answer, sources }]);
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Gagal menghubungi AI. Coba lagi.' }]);
     }
@@ -49,6 +80,14 @@ export default function AiClient() {
             <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[80%] rounded-xl px-4 py-2 text-sm ${m.role === 'user' ? 'bg-smk-blue text-white' : 'bg-gray-100 text-gray-900'}`}>
                 {m.content}
+                {m.sources && m.sources.length > 0 && (
+                  <div className="mt-2 border-t border-gray-200 pt-1.5 text-[11px] text-gray-500">
+                    <span className="font-semibold">Sumber: </span>
+                    {m.sources.map((s, si) => (
+                      <span key={si}>{si > 0 ? ', ' : ''}{s.title}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           ))}

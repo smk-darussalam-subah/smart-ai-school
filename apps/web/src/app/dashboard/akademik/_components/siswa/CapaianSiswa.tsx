@@ -16,6 +16,7 @@ interface Props {
   leaderboard: SiswaLeaderboardEntry[];
   cpData: SiswaCP[];
   badges: SiswaBadge[];
+  userName?: string | null;
 }
 
 // Map mockup icon names to lucide-react components
@@ -39,7 +40,7 @@ function initials(name: string) {
   return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 }
 
-export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderboard, cpData, badges }: Props) {
+export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderboard, cpData, badges, userName }: Props) {
   const [filter, setFilter] = useState<'all' | 'earned' | 'progress'>('all');
 
   // T1-04 (audit v2): gunakan props langsung. SiswaWorkspace menjamin default
@@ -70,7 +71,7 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xl font-extrabold">Level {displayXP.level}</div>
-                <div className="mt-0.5 text-[11px] font-semibold opacity-80">Rizky Pratama</div>
+                <div className="mt-0.5 text-[11px] font-semibold opacity-80">{userName || 'Siswa'}</div>
               </div>
               <Zap className="h-7 w-7 opacity-80" />
             </div>

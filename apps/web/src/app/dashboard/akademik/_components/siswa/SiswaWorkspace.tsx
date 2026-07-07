@@ -185,6 +185,10 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
     { key: 'capaian', label: 'Capaian', icon: Award },
   ];
 
+  // R-01: Derive user name and class name from session/leaderboard for child components
+  const userName = session?.user?.name ?? null;
+  const studentClassName = realLeaderboard?.find((e) => e.me)?.kelas ?? null;
+
   const renderScreen = () => {
     const commonProps = {
       showToast,
@@ -207,6 +211,8 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             xp={realXp ?? { level: 1, current: 0, next: 500 }}
             kehStats={realAttStats ?? { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, pct: 0 }}
             schedule={schedule || []}
+            userName={userName}
+            studentClassName={studentClassName}
           />
         );
       case 'jadwal':
@@ -215,6 +221,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             {...commonProps}
             schedule={schedule || []}
             kalender={realCalendar ?? []}
+            studentClassName={studentClassName}
           />
         );
       case 'modul':
@@ -259,6 +266,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             leaderboard={realLeaderboard ?? []}
             cpData={(realCp ?? []) as unknown as SiswaCP[]}
             badges={realBadges ?? []}
+            userName={userName}
           />
         );
       default:

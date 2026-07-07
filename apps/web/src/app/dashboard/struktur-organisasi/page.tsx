@@ -51,6 +51,8 @@ export default async function StrukturOrganisasiPage() {
     .filter((g) => STAFF_ROLES.includes(g.role))
     .flatMap((g) => g.users.map((u) => ({ ...u, role: g.role })));
 
+  const isSuperAdmin = roles.includes('SUPER_ADMIN');
+
   return (
     <StrukturClient
       positions={positions}
@@ -58,6 +60,7 @@ export default async function StrukturOrganisasiPage() {
       assignments={assignments}
       majors={majors}
       staff={staff}
+      isSuperAdmin={isSuperAdmin}
     />
   );
 }
