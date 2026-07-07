@@ -10,6 +10,8 @@ jest.mock('@smk/auth', () => ({
   extractAuthUser: jest.fn(),
 }));
 
+import { SseTokenService } from '../auth/sse-token.service';
+
 jest.mock('@smk/logger', () => ({
   auditLog: jest.fn(),
   logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
@@ -131,6 +133,10 @@ describe('Test 2 — GET /auth/me dengan token valid → 200 profil', () => {
             getMe: jest.fn().mockResolvedValue(mockProfile),
             updateMe: jest.fn(),
           },
+        },
+        {
+          provide: SseTokenService,
+          useValue: { generateToken: jest.fn(), validateToken: jest.fn() },
         },
       ],
     }).compile();
@@ -346,6 +352,10 @@ describe('AuthController — PATCH /auth/me (updateMe)', () => {
             getMe: jest.fn(),
             updateMe: jest.fn().mockResolvedValue({ id: 'x', phone: '08123456789' }),
           },
+        },
+        {
+          provide: SseTokenService,
+          useValue: { generateToken: jest.fn(), validateToken: jest.fn() },
         },
       ],
     }).compile();
