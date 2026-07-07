@@ -15,7 +15,7 @@ function mockPrisma() {
     position: { findUnique: jest.fn(), findMany: jest.fn() },
     staff: { findUnique: jest.fn() },
     academicYear: { findFirst: jest.fn(), findUnique: jest.fn() },
-    staffPosition: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), delete: jest.fn() },
+    staffPosition: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), delete: jest.fn() },
     userPermissionOverride: { upsert: jest.fn(), deleteMany: jest.fn() },
     permission: { findMany: jest.fn() },
   };
@@ -106,10 +106,13 @@ describe('PositionsService', () => {
       const perms = { invalidateUser: jest.fn() };
       prisma.staffPosition.findUnique.mockResolvedValue({
         id: 'sp-1', positionId: 'pos-waka',
-        position: { permissions: [{ permissionId: 'perm-a' }, { permissionId: 'perm-b' }] },
+        position: { code: 'WAKA_KURIKULUM', permissions: [{ permissionId: 'perm-a' }, { permissionId: 'perm-b' }] },
         staff: { userId: 'u-1', user: { keycloakId: 'kc-1' } },
       });
       prisma.staffPosition.delete.mockResolvedValue({});
+      // R-23: findFirst cek apakah ada penugasan aktif lain dg position code sama
+      // null = tidak ada → remove Keycloak role
+      prisma.staffPosition.findFirst.mockResolvedValue(null);
       // penugasan tersisa masih memberi perm-b (tidak perm-a)
       prisma.staffPosition.findMany.mockResolvedValue([
         { position: { permissions: [{ permissionId: 'perm-b' }] } },
