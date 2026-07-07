@@ -1390,19 +1390,19 @@ Katalog jabatan dan permission yang diberikan saat penugasan aktif (sumber: migr
 
 | Aspek | Status | Detail |
 |-------|--------|--------|
-| Adapter pattern | ⚠️ Perlu update | `OllamaAdapter` ✅ + `OpenAiAdapter` ❌ BELUM ADA — perlu dibuat (R-28) |
+| Adapter pattern | ✅ Selesai | `OllamaAdapter` ✅ + `OpenAiAdapter` ✅ + `ClaudeAdapter` (deprecated) — R-28 DONE |
 | Backend endpoints | ✅ Semua ada | 7 endpoint AI aktif di `ai.controller.ts` + `ai-generate.controller.ts` |
-| Env validation | ⚠️ Perlu update | Perlu tambah `OPENAI_API_KEY` + `OPENAI_CHAT_MODEL` di `env.validation.ts` |
+| Env validation | ✅ Selesai | `OPENAI_API_KEY` + `OPENAI_CHAT_MODEL` ditambahkan di `env.validation.ts` (R-28) |
 | Docker container | ✅ Terdefinisi | `smk-ollama` di docker-compose.yml — perlu turunkan limit ke 1G |
 | VPS RAM cukup | ✅ Feasible | CPX22 = 4 GB — cukup untuk Ollama embed-only (~300 MB) + services lain |
-| Embed model di-pull | ❌ TIDAK OTOMATIS | Harus pull `nomic-embed-text` saat init (R-31) |
+| Embed model di-pull | ✅ Otomatis | `ollama-init` one-shot container auto-pull `nomic-embed-text` (R-31 DONE) |
 | Chat model lokal | ✅ TIDAK DIPERLUKAN | gpt-4.1-mini via API — tidak perlu pull model chat |
-| OpenAI API key | ❌ BELUM ADA | `.env.production` masih placeholder `sk-ant-...` — perlu ganti ke `sk-proj-...` |
-| Chatbot UI wiring | ❌ BROKEN | Response parsing salah `data.reply` vs `data.answer` (R-30) |
-| Chatbot session | ❌ TIDAK wire | `sessionId` tidak dikirim (R-33) |
-| Generate Semua | ❌ FAKE | Hanya toast, tidak panggil AI (R-29) |
-| Generate Material | ❌ NO UI | Action ada, button tidak ada (R-32) |
-| Generate ATP | ⚠️ FRAGILE | `JSON.parse` dari LLM output tanpa fallback (R-34) |
+| OpenAI API key | ✅ Terpasang | `OPENAI_API_KEY` di `.env.production` — user sudah set (R-28) |
+| Chatbot UI wiring | ✅ Fixed | Response parsing sudah benar `data.answer` (R-30 DONE) |
+| Chatbot session | ✅ Fixed | `sessionId` sudah dikirim, chat history persisten (R-33 DONE) |
+| Generate Semua | ✅ Fixed | Sequential loop step 2→10 dengan fail-soft (R-29 DONE) |
+| Generate Material | ✅ Fixed | Tombol "Generate Materi" di Step 10, hasil tersimpan (R-32 DONE) |
+| Generate ATP | ✅ Fixed | `extractJson()` helper 3 strategi: direct parse, markdown block, bracket match (R-34 DONE) |
 | Generate Questions | ✅ OK | Wiring benar, parsing benar |
 | Generate RPP Step | ✅ OK | Wiring benar, 8 step ter-cover |
 | Knowledge CRUD | ✅ OK | Frontend + backend lengkap |
