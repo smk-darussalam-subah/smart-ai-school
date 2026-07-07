@@ -42,7 +42,7 @@ describe('PositionsService', () => {
       const perms = { invalidateUser: jest.fn() };
       prisma.staff.findUnique.mockResolvedValue(STAFF);
       prisma.position.findUnique.mockResolvedValue({
-        id: 'pos-waka', scopeType: 'NONE',
+        id: 'pos-waka', code: 'WAKA_KURIKULUM', scopeType: 'NONE',
         permissions: [{ permissionId: 'perm-a' }, { permissionId: 'perm-b' }],
       });
       prisma.staffPosition.create.mockResolvedValue({ id: 'sp-1' });
