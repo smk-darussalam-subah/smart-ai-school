@@ -8,7 +8,7 @@ import ViewAsSwitcher from './ViewAsSwitcher';
 import { can } from '@/lib/permissions';
 import {
   Home, BarChart3, BookOpen, CalendarDays, CalendarRange, ClipboardCheck, GraduationCap,
-  Backpack, FileText, Users, ClipboardList, Wallet, Briefcase, MapPin,
+  Backpack, FileText, Users, ClipboardList, Wallet, Briefcase, MapPin, School,
   Megaphone, Sparkles, Brain, UserCog, Activity, ShieldCheck, LogOut,
   type LucideIcon,
 } from 'lucide-react';
@@ -104,6 +104,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Manajemen Pengguna', href: '/dashboard/users', icon: UserCog, roles: ['SUPER_ADMIN', 'TATA_USAHA'], permissions: ['user.read'] },
       { label: 'Struktur Organisasi', href: '/dashboard/struktur-organisasi', icon: Briefcase, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
+      { label: 'Manajemen Kelas', href: '/dashboard/kelas', icon: School, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
       { label: 'Kalender & Agenda', href: '/dashboard/kalender', icon: CalendarDays, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
       { label: 'Tahun Ajaran', href: '/dashboard/tahun-ajaran', icon: CalendarRange, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
       { label: 'Kesehatan Sistem', href: '/dashboard/health', icon: Activity, roles: ['SUPER_ADMIN'], permissions: ['audit.read'] },
