@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import { PositionsService } from '../positions/positions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 
 function mockPrisma() {
   return {
@@ -25,6 +26,7 @@ async function build(prisma: ReturnType<typeof mockPrisma>, perms = { invalidate
       PositionsService,
       { provide: PrismaService, useValue: prisma },
       { provide: PermissionsService, useValue: perms },
+      { provide: KeycloakAdminService, useValue: { assignRealmRole: jest.fn(), removeRealmRole: jest.fn() } },
     ],
   }).compile();
   return mod.get(PositionsService);
