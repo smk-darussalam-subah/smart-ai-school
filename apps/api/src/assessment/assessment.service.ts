@@ -11,6 +11,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { Observable } from 'rxjs';
@@ -22,6 +23,7 @@ import {
   SubmitResponseDto,
   UpdateAssessmentSessionDto,
 } from './dto/assessment.dto';
+import { EVENTS, GradeSubmittedPayload, AssessmentCompletedPayload } from '../events/events.types';
 import { ListSubmissionsQuery } from './dto/submission.dto';
 
 const REVIEWER_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] as const;
@@ -40,7 +42,10 @@ const SESSION_SELECT = {
 
 @Injectable()
 export class AssessmentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   private isReviewer(user: AuthUser): boolean {
     return user.roles.some((r) => (REVIEWER_ROLES as readonly string[]).includes(r));
@@ -213,22 +218,285 @@ export class AssessmentService {
     });
   }
 
-  /** active → completed (GURU pemilik). Sesi selesai, tidak menerima respons lagi. */
+  /**
+   * active → completed (GURU pemilik). Sesi selesai, tidak menerima respons lagi.
+   *
+   * R-11 / GAP-G: Auto-grading pipeline triggered on session completion.
+   * Flow: completeSession → auto-grade MCQ → create Grade records →
+   *       emit grade.submitted (triggers XP + badge + notif) →
+   *       emit assessment.completed (audit / analytics hook).
+   */
   async completeSession(id: string, user: AuthUser) {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
     const existing = await this.prisma.assessmentSession.findFirst({
       where: { id, teacherId },
-      select: { id: true, status: true },
+      select: {
+        id: true, status: true, title: true, type: true,
+        moduleId: true, classId: true, academicYear: true, semester: true,
+        questions: true,
+        module: { select: { subject: true, teacherId: true } },
+      },
     });
     if (!existing) throw new NotFoundException('Sesi asesmen tidak ditemukan');
     if (existing.status !== 'active') {
       throw new ConflictException(`Hanya sesi 'active' yang bisa diselesaikan (sekarang '${existing.status}')`);
     }
-    return this.prisma.assessmentSession.update({
+
+    // 1. Mark session as completed
+    const session = await this.prisma.assessmentSession.update({
       where: { id },
       data: { status: 'completed', completedAt: new Date() },
       select: SESSION_SELECT,
     });
+
+    // 2. Auto-grade pipeline (fire-and-forget — failures do not block completion)
+    this.runAutoGradePipeline(existing).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      // Logging handled inside runAutoGradePipeline at detail level;
+      // this outer catch is a safety net for unexpected failures.
+      void message;
+    });
+
+    return session;
+  }
+
+  /**
+   * Auto-grade pipeline: grade all submitted MCQ/true_false responses.
+   *
+   * DIAGNOSTIC: scores are computed and saved to AssessmentResponse.score
+   * (teacher visibility for initial mapping), but NO Grade records are
+   * created and NO grade.submitted event is emitted.
+   *
+   * FORMATIF / SUMATIF: full pipeline — Grade records, grade.submitted
+   * (triggers XP + badge + notification), and assessment.completed.
+   *
+   * IDEMPOTENT: re-running on the same session won't double-create grades —
+   * Grade records use unique constraint on (studentId + assignmentId when UTS/UAS)
+   * and the method checks for existing grades before creating.
+   */
+  private async runAutoGradePipeline(session: {
+    id: string;
+    title: string;
+    type: string;
+    moduleId: string;
+    classId: string | null;
+    academicYear: string;
+    semester: number;
+    questions: Prisma.JsonValue;
+    module: { subject: string; teacherId: string };
+  }): Promise<void> {
+    const isDiagnostic = session.type === 'diagnostik';
+
+    // ── Resolve TeachingAssignment (needed for formatif/sumatif Grade records) ─
+    const assignment = isDiagnostic ? null : await this.prisma.teachingAssignment.findFirst({
+      where: {
+        teacherId: session.module.teacherId,
+        subject: session.module.subject,
+        ...(session.classId ? { classId: session.classId } : {}),
+      },
+      select: { id: true, subject: true, academicYear: true },
+    });
+    if (!assignment && !isDiagnostic) {
+      // Can't create Grade records without a TeachingAssignment.
+      // This is expected for school-wide assessments (classId=null) or
+      // when the teacher hasn't configured their TA yet.
+      this.eventEmitter.emit(EVENTS.ASSESSMENT_COMPLETED, {
+        sessionId:    session.id,
+        title:        session.title,
+        type:         session.type,
+        teacherId:    session.module.teacherId,
+        classId:      session.classId,
+        moduleId:     session.moduleId,
+        subject:      session.module.subject,
+        academicYear: session.academicYear,
+        semester:     session.semester,
+        gradedCount:  0,
+        skippedCount: 0,
+      } satisfies AssessmentCompletedPayload);
+      return;
+    }
+
+    // ── Fetch all submitted (not yet graded) responses ──────────────────
+    const responses = await this.prisma.assessmentResponse.findMany({
+      where: { sessionId: session.id, submittedAt: { not: null } },
+      select: { id: true, studentId: true, answers: true, score: true },
+    });
+    if (responses.length === 0) {
+      this.eventEmitter.emit(EVENTS.ASSESSMENT_COMPLETED, {
+        sessionId:    session.id,
+        title:        session.title,
+        type:         session.type,
+        teacherId:    session.module.teacherId,
+        classId:      session.classId,
+        moduleId:     session.moduleId,
+        subject:      session.module.subject,
+        academicYear: session.academicYear,
+        semester:     session.semester,
+        gradedCount:  0,
+        skippedCount: 0,
+      } satisfies AssessmentCompletedPayload);
+      return;
+    }
+
+    // ── Parse correct answers from session questions ────────────────────
+    const questions = (session.questions as Prisma.JsonArray) ?? [];
+    const answerKey = new Map<string, { correct: string; type: string }>();
+    for (const q of questions) {
+      const qObj = q as Prisma.JsonObject;
+      const qId = (qObj.id as string) ?? '';
+      const qType = (qObj.type as string) ?? 'multiple_choice';
+      const correct = (qObj.answer as string) ?? '';
+      if (qId && correct && (qType === 'multiple_choice' || qType === 'true_false')) {
+        answerKey.set(qId, { correct, type: qType });
+      }
+    }
+
+    if (answerKey.size === 0) {
+      // No auto-gradeable questions (all essay). Still emit assessment.completed.
+      this.eventEmitter.emit(EVENTS.ASSESSMENT_COMPLETED, {
+        sessionId:    session.id,
+        title:        session.title,
+        type:         session.type,
+        teacherId:    session.module.teacherId,
+        classId:      session.classId,
+        moduleId:     session.moduleId,
+        subject:      session.module.subject,
+        academicYear: session.academicYear,
+        semester:     session.semester,
+        gradedCount:  0,
+        skippedCount: responses.length,
+      } satisfies AssessmentCompletedPayload);
+      return;
+    }
+
+    // ── Auto-grade each response ────────────────────────────────────────
+    // Diagnostic assessments are pre-tests for initial mapping only —
+    // scores are computed and saved to AssessmentResponse.score so the
+    // teacher can see per-student results, but they do NOT create Grade
+    // records and do NOT emit grade.submitted (no rapor / XP / badge impact).
+    const gradeType: 'uh' | 'uas' = isDiagnostic ? 'uh' :
+                                     session.type === 'formatif' ? 'uh' : 'uas';
+    // assignment is guaranteed non-null for non-diagnostic (early return above)
+    const ta = assignment!;
+    let gradedCount = 0;
+    let skippedCount = 0;
+
+    for (const resp of responses) {
+      try {
+        const studentAnswers = (resp.answers as Prisma.JsonObject) ?? {};
+        let totalQuestions = 0;
+        let correctAnswers = 0;
+        let hasAutoGradeable = false;
+
+        for (const [qId, key] of answerKey) {
+          const studentAnswer = studentAnswers[qId];
+          if (studentAnswer === null || studentAnswer === undefined || studentAnswer === '') {
+            // Student didn't answer this question — count as wrong
+            totalQuestions++;
+            continue;
+          }
+          totalQuestions++;
+          hasAutoGradeable = true;
+          if (String(studentAnswer) === key.correct) {
+            correctAnswers++;
+          }
+        }
+
+        if (!hasAutoGradeable) {
+          skippedCount++;
+          continue;
+        }
+
+        const score = Math.round((correctAnswers / totalQuestions) * 100);
+
+        // Update AssessmentResponse.score (always — teacher needs visibility)
+        await this.prisma.assessmentResponse.update({
+          where: { id: resp.id },
+          data: { score },
+        });
+
+        // ── Diagnostic: skip Grade & grade.submitted —─────────────────
+        if (isDiagnostic) {
+          gradedCount++;
+          continue;
+        }
+
+        // ── Formatif / Sumatif: create/update Grade + emit ────────────
+        // Create Grade record (idempotent: skip if already exists for
+        // this student+assignment when type is UTS/UAS)
+        const existingGrade = await this.prisma.grade.findFirst({
+          where: {
+            studentId: resp.studentId,
+            assignmentId: ta.id,
+            semester: session.semester,
+            ...(gradeType === 'uas'
+              ? { type: gradeType }
+              : {}),
+          },
+          select: { id: true },
+        });
+
+        if (existingGrade) {
+          // Grade already exists — update score instead
+          await this.prisma.grade.update({
+            where: { id: existingGrade.id },
+            data: { score },
+          });
+        } else {
+          // Create new Grade record. submittedBy uses the teacher's userId
+          // (not keycloakId — consistent with GradeService.create convention).
+          const teacherUser = await this.prisma.teacher.findUnique({
+            where: { id: session.module.teacherId },
+            select: { userId: true },
+          });
+          const grade = await this.prisma.grade.create({
+            data: {
+              studentId:    resp.studentId,
+              assignmentId: ta.id,
+              semester:     session.semester,
+              academicYear: ta.academicYear,
+              score,
+              type:         gradeType as 'uh' | 'uts' | 'uas',
+              submittedBy:  teacherUser?.userId ?? '00000000-0000-0000-0000-000000000000',
+            },
+            select: { id: true, studentId: true, type: true },
+          });
+
+          // Emit grade.submitted → triggers GamificationListener (+XP),
+          // BadgesListener (check grade badges), and NotificationListener
+          // (WA to ortu). All three listeners are fail-soft (try/catch).
+          this.eventEmitter.emit(EVENTS.GRADE_SUBMITTED, {
+            gradeId:      grade.id,
+            studentId:    resp.studentId,
+            subject:      session.module.subject,
+            score:        String(score),
+            type:         grade.type,
+            semester:     session.semester,
+            academicYear: session.academicYear,
+          } satisfies GradeSubmittedPayload);
+        }
+
+        gradedCount++;
+      } catch {
+        // Fail-soft: skip this student, continue with others
+        skippedCount++;
+      }
+    }
+
+    // ── Emit assessment.completed (audit / analytics hook) ────────────
+    this.eventEmitter.emit(EVENTS.ASSESSMENT_COMPLETED, {
+      sessionId:    session.id,
+      title:        session.title,
+      type:         session.type,
+      teacherId:    session.module.teacherId,
+      classId:      session.classId,
+      moduleId:     session.moduleId,
+      subject:      session.module.subject,
+      academicYear: session.academicYear,
+      semester:     session.semester,
+      gradedCount,
+      skippedCount,
+    } satisfies AssessmentCompletedPayload);
   }
 
   /** U2 Wave 1: SISWA memulai pengerjaan — mencatat startedAt, return shuffled questions jika randomizeOrder. */
