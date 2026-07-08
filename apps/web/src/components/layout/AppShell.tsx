@@ -18,10 +18,11 @@ interface Props {
   permissions: string[];
   permError: boolean;
   hideChrome?: boolean;
+  positionRoles?: string[];
   children: React.ReactNode;
 }
 
-export default function AppShell({ viewAs, permissions, permError, hideChrome, children }: Props) {
+export default function AppShell({ viewAs, permissions, permError, hideChrome, positionRoles = [], children }: Props) {
   const [collapsed, setCollapsed] = useState(false);
 
   // SISWA & ORANG_TUA dashboards are self-contained mobile-first apps with
@@ -33,7 +34,7 @@ export default function AppShell({ viewAs, permissions, permError, hideChrome, c
   return (
     <div className="flex flex-col md:flex-row h-full min-h-screen">
       {/* Mobile: top bar + drawer (komponen sudah md:hidden) */}
-      <MobileNav viewAs={viewAs} permissions={permissions} permError={permError} />
+      <MobileNav viewAs={viewAs} permissions={permissions} permError={permError} positionRoles={positionRoles} />
 
       {/* Desktop sidebar — disembunyikan ke kiri saat collapsed */}
       <div
@@ -43,7 +44,7 @@ export default function AppShell({ viewAs, permissions, permError, hideChrome, c
         )}
         aria-hidden={collapsed}
       >
-        <Sidebar viewAs={viewAs} permissions={permissions} permError={permError} />
+        <Sidebar viewAs={viewAs} permissions={permissions} permError={permError} positionRoles={positionRoles} />
       </div>
 
       {/* Konten */}

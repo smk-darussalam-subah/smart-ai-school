@@ -29,7 +29,12 @@ export default async function DashboardLayout({
 
   // Ambil effective permissions dari backend
   const token = session.accessToken ?? '';
-  const meData = await apiFetch<{ permissions: string[] }>('/auth/me', token);
+  const [meData, posData] = await Promise.all([
+    apiFetch<{ permissions: string[] }>('/auth/me', token),
+    apiFetch<{ academicYear: unknown; positions: { position: { code: string; name: string } }[] }>('/positions/my-positions', token),
+  ]);
+  // R-24: Ekstrak kode jabatan aktif sebagai role tambahan untuk sidebar
+  const positionRoles: string[] = (posData?.positions ?? []).map((p) => p.position.code);
   // meData === null berarti /auth/me GAGAL (401/5xx/network) — BUKAN "tanpa izin".
   // Tanpa pembedaan ini, sidebar runtuh ke menu kosong (hanya Beranda) saat fetch gagal.
   // permError = true → Sidebar masuk mode terbatas (filter role saja) alih-alih menyembunyikan semua.
@@ -38,7 +43,7 @@ export default async function DashboardLayout({
 
   return (
     <DashboardProviders session={session}>
-      <AppShell viewAs={viewAs} permissions={userPermissions} permError={permError} hideChrome={hideChrome}>
+      <AppShell viewAs={viewAs} permissions={userPermissions} permError={permError} hideChrome={hideChrome} positionRoles={positionRoles}>
         {children}
       </AppShell>
     </DashboardProviders>
