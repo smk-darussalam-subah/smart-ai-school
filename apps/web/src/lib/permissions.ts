@@ -37,6 +37,8 @@ const ROUTE_PERMISSIONS: Record<string, string[]> = {
   '/dashboard/users': ['user.read'],
   '/dashboard/kelas': ['academic.teaching.read'],
   '/dashboard/health': ['audit.read'],
+  '/dashboard/wa-log': ['lms.read'],
+  '/dashboard/profil': [],
 };
 
 // ── Fungsi utilitas ───────────────────────────────────────────────────────────
