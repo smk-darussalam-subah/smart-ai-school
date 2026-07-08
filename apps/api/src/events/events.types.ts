@@ -19,6 +19,7 @@ export const EVENTS = {
   REPORT_DISTRIBUTED:     'report.distributed',
   BADGE_AWARDED:           'badge.awarded',
   XP_AWARDED:              'xp.awarded',
+  ASSESSMENT_COMPLETED:    'assessment.completed',
 } as const;
 
 // ── Producer payloads ─────────────────────────────────────────────────────────
@@ -112,4 +113,20 @@ export interface XpAwardedPayload {
   newTotal:  number;
   newLevel:  number;
   source:    string;
+}
+
+export interface AssessmentCompletedPayload {
+  sessionId:    string;
+  title:        string;
+  type:         string;   // 'diagnostik' | 'formatif' | 'sumatif'
+  teacherId:    string;
+  classId:      string | null;
+  moduleId:     string;
+  subject:      string;
+  academicYear: string;
+  semester:     number;
+  /** Count of auto-graded responses that generated Grade records */
+  gradedCount:  number;
+  /** Count of responses without auto-gradeable questions (essay-only) */
+  skippedCount: number;
 }
