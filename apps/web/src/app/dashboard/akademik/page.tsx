@@ -8,7 +8,9 @@ import { scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-t
 import AkademikClient from './_components/AkademikClient';
 import AkademikWorkspace from './_components/AkademikWorkspace';
 import SiswaWorkspace from './_components/siswa/SiswaWorkspace';
+import SiswaRefreshWrapper from './_components/siswa/SiswaRefreshWrapper';
 import OrtuWorkspace from './_components/ortu/OrtuWorkspace';
+import OrtuRefreshWrapper from './_components/ortu/OrtuRefreshWrapper';
 import KsWorkspace from './_components/KsWorkspace';
 import type { ScheduleItem, ActivityItem, RppItem, TodayClass, LmsModuleItem } from './_components/guru-types';
 
@@ -133,20 +135,22 @@ export default async function AkademikPage() {
       : null;
 
     return (
-      <SiswaWorkspace
-        grades={gradesRes?.data ?? []}
-        attendance={attendanceRes?.data ?? []}
-        schedule={scheduleRes?.data ?? []}
-        announcements={announcementsRes?.data ?? []}
-        realBadges={realBadges}
-        realXp={realXp}
-        realLeaderboard={realLeaderboard}
-        realAssignments={assignmentsRes?.data ?? null}
-        realModules={realModules}
-        realCp={cpRes?.data ?? null}
-        realAttStats={realAttStats}
-        viewAs={viewAs}
-      />
+      <SiswaRefreshWrapper>
+        <SiswaWorkspace
+          grades={gradesRes?.data ?? []}
+          attendance={attendanceRes?.data ?? []}
+          schedule={scheduleRes?.data ?? []}
+          announcements={announcementsRes?.data ?? []}
+          realBadges={realBadges}
+          realXp={realXp}
+          realLeaderboard={realLeaderboard}
+          realAssignments={assignmentsRes?.data ?? null}
+          realModules={realModules}
+          realCp={cpRes?.data ?? null}
+          realAttStats={realAttStats}
+          viewAs={viewAs}
+        />
+      </SiswaRefreshWrapper>
     );
   }
 
@@ -296,20 +300,22 @@ export default async function AkademikPage() {
     }));
 
     return (
-      <OrtuWorkspace
-        children={ortuChildren}
-        grades={gradesRes?.data ?? []}
-        attendance={attendanceRes?.data ?? []}
-        schedule={scheduleRes?.data ?? []}
-        announcements={announcementsRes?.data ?? []}
-        spp={sppRes?.data ?? []}
-        assignments={assignmentsRes?.data ?? []}
-        badges={badgesRes ?? []}
-        waLog={waLogRes?.data ?? []}
-        viewAs={viewAs}
-        semesterLabel={semesterLabel}
-        childRank={childRank}
-      />
+      <OrtuRefreshWrapper>
+        <OrtuWorkspace
+          children={ortuChildren}
+          grades={gradesRes?.data ?? []}
+          attendance={attendanceRes?.data ?? []}
+          schedule={scheduleRes?.data ?? []}
+          announcements={announcementsRes?.data ?? []}
+          spp={sppRes?.data ?? []}
+          assignments={assignmentsRes?.data ?? []}
+          badges={badgesRes ?? []}
+          waLog={waLogRes?.data ?? []}
+          viewAs={viewAs}
+          semesterLabel={semesterLabel}
+          childRank={childRank}
+        />
+      </OrtuRefreshWrapper>
     );
   }
 
