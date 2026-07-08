@@ -175,6 +175,38 @@ function RoleStats({ role, adminStats }: { role: string; adminStats?: AdminStats
     );
   }
 
+  // INDUSTRI: honest empty state — modul PKL belum dibangun (tahap selanjutnya)
+  if (role === 'INDUSTRI') {
+    return (
+      <>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
+          <StatCard icon="📋" label="Siswa PKL Aktif" value="—" sub="Tahap selanjutnya" color="bg-blue-50" />
+          <StatCard icon="🏢" label="Mitra Terdaftar" value="—" sub="Tahap selanjutnya" color="bg-purple-50" />
+          <StatCard icon="📅" label="Kegiatan BKK" value="—" sub="Tahap selanjutnya" color="bg-green-50" />
+        </div>
+        <Card className="mt-6 p-6 border-2 border-dashed border-gray-200 bg-gray-50/50">
+          <div className="flex items-start gap-4">
+            <div className="w-11 h-11 rounded-xl bg-orange-50 flex items-center justify-center text-xl shrink-0">🏗️</div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Modul Manajemen PKL & Prakerin</h3>
+              <p className="text-sm text-gray-500 mt-1 leading-relaxed">
+                Modul ini akan tersedia di tahap selanjutnya. Fitur yang direncanakan mencakup:
+                daftar siswa PKL, penilaian industri, kehadiran industri, dan bursa kerja khusus (BKK).
+              </p>
+              <p className="text-xs text-gray-400 mt-2">
+                Sementara itu, Anda dapat mengakses{' '}
+                <Link href="/dashboard/siswa" className="text-blue-600 underline hover:text-blue-800">Data Siswa</Link>
+                {' '}dan{' '}
+                <Link href="/dashboard/pengumuman" className="text-blue-600 underline hover:text-blue-800">Pengumuman</Link>
+                {' '}sekolah.
+              </p>
+            </div>
+          </div>
+        </Card>
+      </>
+    );
+  }
+
   return null;
 }
 

@@ -29,8 +29,6 @@ export default async function SiswaPage({ searchParams }: { searchParams: Search
   if (!session) redirect('/login');
   const roles: string[] = await getEffectiveRoles(session);
 
-  if (roles.includes('INDUSTRI')) redirect('/dashboard');
-
   const token = session.accessToken ?? '';
   const canEdit = roles.includes('SUPER_ADMIN') || roles.includes('TATA_USAHA');
 

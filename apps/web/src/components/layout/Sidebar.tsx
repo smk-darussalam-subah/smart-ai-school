@@ -74,7 +74,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: 'Kesiswaan',
     items: [
-      { label: 'Data Siswa', href: '/dashboard/siswa', icon: Users, roles: ['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_TU', 'WAKA_KESISWAAN', 'KAPROG', 'GURU_BK', 'OPERATOR_DAPODIK'], permissions: ['student.read'] },
+      { label: 'Data Siswa', href: '/dashboard/siswa', icon: Users, roles: ['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_TU', 'WAKA_KESISWAAN', 'KAPROG', 'GURU_BK', 'OPERATOR_DAPODIK', 'INDUSTRI'], permissions: ['student.read'] },
       { label: 'PPDB', href: '/dashboard/ppdb', icon: ClipboardList, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_TU', 'WAKA_HUMAS', 'KOOR_BKK', 'KOOR_HUBIN'], permissions: ['ppdb.read'] },
       { label: 'Lowongan', href: '/dashboard/lowongan', icon: Briefcase, roles: ['INDUSTRI', 'SISWA'], permissions: ['student.read', 'ai.chat'] },
     ],
@@ -94,7 +94,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: 'Komunikasi',
     items: [
-      { label: 'Pengumuman', href: '/dashboard/pengumuman', icon: Megaphone, roles: ['WAKA_KESISWAAN', 'WAKA_HUMAS', 'WAKA_SARPRAS', 'KOOR_BKK', 'KOOR_HUBIN'], permissions: ['announcement.read'] },
+      { label: 'Pengumuman', href: '/dashboard/pengumuman', icon: Megaphone, roles: ['WAKA_KESISWAAN', 'WAKA_HUMAS', 'WAKA_SARPRAS', 'KOOR_BKK', 'KOOR_HUBIN', 'INDUSTRI'], permissions: ['announcement.read'] },
       { label: 'Asisten AI', href: '/dashboard/ai', icon: Sparkles, permissions: ['ai.chat'] },
       { label: 'Basis Pengetahuan', href: '/dashboard/knowledge', icon: Brain, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'], permissions: ['ai.knowledge.read'] },
     ],

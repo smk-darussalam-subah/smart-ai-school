@@ -1,6 +1,6 @@
 # RESIDUAL ISSUES REGISTER — DIIS Smart AI School
 
-> **Last updated:** 2026-07-08 (Sesi 6: R-05, R-06, R-24 — WA Log UI, Profil Sekolah UI, Sidebar position-based refresh)
+> **Last updated:** 2026-07-08 (Sesi 7: R-12 — client-side data refresh polling for Siswa/Ortu)
 > **Total:** 34 issues (4 CRITICAL, 7 HIGH, 13 MEDIUM, 10 LOW)  
 > **Auditor:** Sesi Audit Residual 2026-07-06 + Investigasi Struktur Organisasi + Audit AI Infrastructure  
 > **Metode:** Verifikasi langsung dari kode sumber (read-only) + trace auth flow + trace AI wiring
@@ -22,7 +22,7 @@
 | R-09 | MEDIUM | RBAC Gap | **DONE** | Tidak ada endpoint untuk assign wali kelas |
 | R-10 | MEDIUM | Architecture | OPEN | Domain boundary academic vs teacher overlap |
 | R-11 | MEDIUM | Security | **DONE** | SSE token diekspos via query parameter |
-| R-12 | MEDIUM | Architecture | OPEN | Data flow tidak realtime (Guru → Siswa/Ortu) |
+| R-12 | MEDIUM | Architecture | **DONE** | Data flow tidak realtime (Guru → Siswa/Ortu) — client-side polling 30s/60s |
 | R-13 | MEDIUM | Architecture | **DONE** | RingkasanGuru: hasPenilaian selalu false (backend belum ada) |
 | R-14 | MEDIUM | Security | **DONE** | R-03 Claude PII Gate masih terbuka |
 | R-15 | MEDIUM | Infrastructure | OPEN | Single VPS tanpa disaster recovery |
@@ -649,7 +649,7 @@ Ambil tahun ajaran dan semester dari parent props atau context yang sudah di-fet
 |-------|-------|
 | **Severity** | LOW |
 | **Category** | RBAC Gap |
-| **Status** | OPEN |
+| **Status** | **DONE** — Fixed: 2026-07-08 (Sesi 8) |
 | **Discovered** | 2026-07-06 |
 | **Source** | Verifikasi kode langsung |
 
@@ -664,8 +664,12 @@ Role INDUSTRI didefinisikan di schema dan beberapa controller, tetapi implementa
 **Impact:**
 Role INDUSTRI tidak memiliki pengalaman dashboard yang berarti. Hanya bisa melihat lowongan.
 
-**Recommended Fix:**
-Buat dashboard INDUSTRI dengan fitur: daftar siswa PKL, penilaian industri, kehadiran industri. Atau hapus role jika belum diperlukan.
+**Fix Applied (Sesi 8, 2026-07-08):**
+1. **Dashboard Home** (`dashboard/page.tsx`): Tambah branch INDUSTRI di `RoleStats` — 3 stat cards honest empty ("—") untuk Siswa PKL Aktif, Mitra Terdaftar, Kegiatan BKK; info card menjelaskan modul PKL/Prakerin tahap selanjutnya dengan link ke Data Siswa & Pengumuman.
+2. **Sidebar** (`Sidebar.tsx`): Tambah `'INDUSTRI'` ke roles array Data Siswa (line 77) dan Pengumuman (line 97).
+3. **Akses Data Siswa** (`siswa/page.tsx`): Hapus redirect `if (roles.includes('INDUSTRI')) redirect('/dashboard')` — INDUSTRI sekarang bisa melihat daftar siswa (read-only via SiswaTable).
+4. **Halaman Lowongan** (`lowongan/page.tsx`): Ganti placeholder minimal dengan empty state informatif — deskripsi fitur BKK/PKL yang direncanakan, tombol "Hubungi Koordinator BKK" dan "Lihat Data Siswa".
+5. **Redirect tetap dipertahankan** dari: akademik, jadwal, rapor, kegiatan, keuangan (INDUSTRI tidak perlu akses).
 
 **Dependencies:**
 —
