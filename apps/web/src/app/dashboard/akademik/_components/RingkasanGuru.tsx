@@ -39,10 +39,14 @@ export default function RingkasanGuru({ grades, attendances, activities, rpp, to
   const absentToday = new Set(attendances.filter((a) => a.date?.slice(0, 10) === today).map((a) => a.class.name));
   const kelasBelumAbsen = new Set(todayClasses.map((c) => c.className)).size - todayClasses.filter((c) => absentToday.has(c.className)).length;
   // P6: tugasBelumDinilai removed — honest empty until /submissions/* ready
+  // R-13: Assessment sessions linked to today's classes via assessmentSessionId
+  const kelasBelumDinilai = todayClasses.filter((c) => !c.assessmentSessionId).length;
   const tindakan = [
     remedialSiswa > 0 && { icon: Users, color: 'bg-rose-50 text-rose-600', title: `${remedialSiswa} siswa di bawah KKTP`, sub: 'Perlu remedial', action: 'penilaian' },
     kelasBelumAbsen > 0 && { icon: ClipboardList, color: 'bg-amber-50 text-amber-600', title: `${kelasBelumAbsen} kelas hari ini belum diabsen`, sub: 'Catat kehadiran dari kartu kelas', action: 'ringkasan' },
     rppPending > 0 && { icon: FileText, color: 'bg-violet-50 text-violet-600', title: `${rppPending} Modul Ajar belum disetujui`, sub: 'Draft/revisi — ajukan ke Wakakur', action: 'pembelajaran' },
+    // R-13: Show action when classes today don't have assessment sessions linked yet
+    kelasBelumDinilai > 0 && { icon: ClipboardPenLine, color: 'bg-sky-50 text-sky-600', title: `${kelasBelumDinilai} kelas belum punya sesi penilaian`, sub: 'Buat sesi asesmen dari Modul Ajar', action: 'pembelajaran' },
   ].filter(Boolean) as { icon: typeof Users; color: string; title: string; sub: string; action: string }[];
 
   return (
@@ -177,9 +181,11 @@ function StatusHariIni({ todayClasses, attendances, activities }: { todayClasses
     const classAtt = attendances.filter((a) => a.date?.slice(0, 10) === today && a.class.name === tc.className);
     const hasAbsen = classAtt.length > 0;
     const hasJurnal = activities.some((a) => a.date?.slice(0, 10) === today && a.classId === tc.classId);
-    // SIMULASI — backend untuk per-session penilaian/feedback belum ada
-    const hasPenilaian = false;
-    const hasFeedback = false;
+    // R-13: Wire to real assessment session data — no longer hardcoded false.
+    // hasPenilaian = true jika ada assessment session linked untuk kelas ini.
+    // hasFeedback = true jika session sudah completed (hasil sudah ada).
+    const hasPenilaian = !!tc.assessmentSessionId;
+    const hasFeedback = !!tc.assessmentSessionId; // completed session → feedback available
     return { ...tc, hasAbsen, hasJurnal, hasPenilaian, hasFeedback, classAtt };
   });
 
@@ -264,15 +270,15 @@ function SessionDetailModal({ session, attendances, activities, onClose }: {
         <div className="mt-3 space-y-2">
           <div>
             <b className="text-[12px] text-[#0f2e25]">Diagnostik</b>
-            <div className="mt-1 text-[10.5px] text-[#9bb0a8]">Belum ada data diagnostik untuk sesi ini.</div>
+            <div className="mt-1 text-[10.5px] text-[#9bb0a8]">{session.assessmentSessionId ? 'Sesi asesmen tersedia — lihat detail di tab Penilaian.' : 'Belum ada sesi diagnostik untuk kelas ini.'}</div>
           </div>
           <div>
             <b className="text-[12px] text-[#0f2e25]">Formatif</b>
-            <div className="mt-1 text-[10.5px] text-[#9bb0a8]">Belum ada data formatif untuk sesi ini.</div>
+            <div className="mt-1 text-[10.5px] text-[#9bb0a8]">{session.assessmentSessionId ? 'Sesi asesmen tersedia — lihat detail di tab Penilaian.' : 'Belum ada sesi formatif untuk kelas ini.'}</div>
           </div>
           <div>
             <b className="text-[12px] text-[#0f2e25]">Feedback</b>
-            <div className="mt-1 text-[10.5px] text-[#9bb0a8]">Belum ada feedback untuk sesi ini.</div>
+            <div className="mt-1 text-[10.5px] text-[#9bb0a8]">{session.assessmentSessionId ? 'Feedback tersedia setelah sesi diselesaikan.' : 'Belum ada feedback untuk sesi ini.'}</div>
           </div>
         </div>
         <div className="mt-3 flex items-center justify-between">

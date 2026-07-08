@@ -33,6 +33,7 @@ interface BerandaOrtuProps {
   spp: SppApiItem[];
   waLog: WaLogApiItem[];
   attendance: AttendanceItem[];
+  rank?: number | null;
 }
 
 /** WIB-based greeting prefix. */
@@ -51,7 +52,7 @@ const RING_CIRC = 2 * Math.PI * RING_R;
 
 const EMPTY_CHILD: OrtuChild = { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
 
-export default function BerandaOrtu({ showToast: _showToast, go, setModal, grades, announcements, children, activeChildIndex, schedule, spp, waLog, attendance }: BerandaOrtuProps) {
+export default function BerandaOrtu({ showToast: _showToast, go, setModal, grades, announcements, children, activeChildIndex, schedule, spp, waLog, attendance, rank }: BerandaOrtuProps) {
   // U4: Fetch wali kelas / teachers for contact info
   const [waliKelas, setWaliKelas] = useState<{ name: string; subject: string; phone: string | null; email: string | null } | null>(null);
   useEffect(() => {
@@ -93,8 +94,8 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
     date: a.createdAt ? fmtDateShort(a.createdAt) : '—',
   }));
 
-  // Ranking tidak tersedia (leaderboard ortu belum di-fetch). null = sembunyikan.
-  const rank: number | null = null;
+  // R-21: Ranking dari leaderboard (dipass dari page.tsx via OrtuWorkspace)
+  const rankDisplay: number | null = rank ?? null;
 
   return (
     <div className="px-4 pb-4">
@@ -128,7 +129,7 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
             <div className="text-[9px] font-semibold uppercase tracking-wide opacity-75">Hadir</div>
           </div>
           <div className="flex-1 text-center">
-            <div className="text-[18px] font-extrabold">{rank != null ? `#${rank}` : '—'}</div>
+            <div className="text-[18px] font-extrabold">{rankDisplay != null ? `#${rankDisplay}` : '—'}</div>
             <div className="text-[9px] font-semibold uppercase tracking-wide opacity-75">Ranking</div>
           </div>
         </div>

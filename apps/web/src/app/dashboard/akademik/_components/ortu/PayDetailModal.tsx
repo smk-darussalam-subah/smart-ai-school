@@ -86,14 +86,14 @@ export default function PayDetailModal({ payment: p, onClose, showToast }: PayDe
         {!isPaid && (
           <>
             <button
-              onClick={() => showToast(`Pembayaran ${p.jenis} — simulasi VA: 8801${String(p.id).padStart(4, '0')}`)}
+              onClick={() => showToast('Fitur pembayaran online akan segera tersedia')}
               className="mt-2 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-[12px] bg-[var(--grad)] py-3 text-[13px] font-bold text-white"
             >
               <CreditCard className="h-4 w-4" />
               Bayar Sekarang
             </button>
             <button
-              onClick={() => showToast('Bukti pembayaran diunggah (simulasi)')}
+              onClick={() => showToast('Fitur unggah bukti akan segera tersedia')}
               className="mt-2 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] py-3 text-[13px] font-bold text-[var(--pri)]"
             >
               <Upload className="h-4 w-4" />

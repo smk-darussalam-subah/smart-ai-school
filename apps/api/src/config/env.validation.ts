@@ -31,12 +31,16 @@ const EnvSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
 
-  // ── AI / Ollama + Claude (SMA-48) ────────────────────────────────────────────
-  // AI_PROVIDER: 'ollama' (default, safe) | 'claude' (aktifkan ClaudeAdapter)
+  // ── AI / Ollama + Claude + OpenAI (SMA-48, R-28) ────────────────────────────
+  // AI_PROVIDER: 'ollama' (default, safe) | 'claude' (legacy) | 'openai' (R-28 hybrid)
   // ANTHROPIC_API_KEY: opsional — tanpa key → factory return null → Ollama-only
+  // OPENAI_API_KEY: opsional — tanpa key → factory return null → Ollama-only
   // OLLAMA_EMBED_DIMENSIONS: HARUS cocok dengan output model (gate §2.1)
-  AI_PROVIDER: z.enum(['ollama', 'claude']).default('ollama'),
+  // R-28: Hybrid strategy — Ollama (embed only) + OpenAI gpt-4.1-mini (chat/generate)
+  AI_PROVIDER: z.enum(['ollama', 'claude', 'openai']).default('ollama'),
   ANTHROPIC_API_KEY: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_CHAT_MODEL: z.string().default('gpt-4.1-mini'),
   OLLAMA_URL: z.string().url('OLLAMA_URL harus berupa URL valid').default('http://ollama:11434'),
   OLLAMA_CHAT_MODEL: z.string().default('qwen2.5:7b'),
   OLLAMA_EMBED_MODEL: z.string().default('nomic-embed-text'),

@@ -42,6 +42,7 @@ describe('AiGenerateService', () => {
         AiGenerateService,
         { provide: PrismaService, useValue: prisma },
         { provide: 'AI_GATEWAY', useValue: { chat: chatMock } },
+        { provide: 'OPENAI_GATEWAY', useValue: null }, // R-28: default off in tests
       ],
     }).compile();
     service = moduleRef.get(AiGenerateService);

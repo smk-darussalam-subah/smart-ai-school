@@ -23,6 +23,7 @@ export class AiGenerateService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject('AI_GATEWAY') private readonly gateway: AIGateway,
+    @Inject('OPENAI_GATEWAY') private readonly openaiGateway: AIGateway | null,
   ) {}
 
   /** Generate questions from RPP body */
@@ -31,7 +32,7 @@ export class AiGenerateService {
     const prompt = this.buildQuestionsPrompt(dto);
     const output = await this.callAi(prompt);
     await this.auditGeneration(teacherId, 'questions', prompt, output);
-    return { type: 'questions', output: JSON.parse(output) };
+    return { type: 'questions', output: this.extractJson(output) };
   }
 
   /** Generate learning material from RPP body */
@@ -49,7 +50,7 @@ export class AiGenerateService {
     const prompt = this.buildAtpPrompt(dto);
     const output = await this.callAi(prompt);
     await this.auditGeneration(teacherId, 'atp', prompt, output);
-    return { type: 'atp', output: JSON.parse(output) };
+    return { type: 'atp', output: this.extractJson(output) };
   }
 
   /** P4 (S-12): Generate RPP step content (CP/TP, Profil, Sarana, etc.) */
@@ -63,12 +64,65 @@ export class AiGenerateService {
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
+  /**
+   * R-28: Call AI gateway with OpenAI preferred, Ollama as fallback.
+   * Returns the raw text output from the LLM.
+   */
   private async callAi(prompt: string): Promise<string> {
-    const result = await this.gateway.chat(prompt);
+    const gw = this.openaiGateway ?? this.gateway;
+    const result = await gw.chat(prompt);
     if (!result || result.trim().length === 0) {
       throw new Error('AI mengembalikan respons kosong');
     }
     return result;
+  }
+
+  /**
+   * R-28: Returns the model name for audit trail — reflects which gateway was used.
+   */
+  private get activeModel(): string {
+    return this.openaiGateway ? 'gpt-4.1-mini' : 'ollama';
+  }
+
+  /**
+   * R-34: Robust JSON extraction from LLM output.
+   * Handles: raw JSON, markdown code blocks (```json ... ```), and text+JSON mix.
+   * Throws with an informative message if all strategies fail (no silent fallback).
+   */
+  private extractJson(output: string): unknown {
+    // Strategy 1: Direct parse (fast path — clean JSON)
+    try {
+      return JSON.parse(output);
+    } catch {
+      // continue to next strategy
+    }
+
+    // Strategy 2: Extract from markdown code block ```json ... ``` or ``` ... ```
+    const codeBlockMatch = output.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch?.[1]) {
+      try {
+        return JSON.parse(codeBlockMatch[1].trim());
+      } catch {
+        // continue to next strategy
+      }
+    }
+
+    // Strategy 3: Find first JSON array [...] or object {...} in the text
+    const bracketMatch = output.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
+    if (bracketMatch?.[1]) {
+      try {
+        return JSON.parse(bracketMatch[1]);
+      } catch {
+        // continue to next strategy
+      }
+    }
+
+    // All strategies failed — throw with informative message (R-34: no silent fallback)
+    throw new Error(
+      'AI output tidak bisa di-parse sebagai JSON. ' +
+        'Output (200 char pertama): ' +
+        output.slice(0, 200),
+    );
   }
 
   private async auditGeneration(
@@ -84,7 +138,7 @@ export class AiGenerateService {
           type,
           prompt,
           output,
-          model: 'ollama',
+          model: this.activeModel,
           tokensUsed: Math.ceil((prompt.length + output.length) / 4),
         },
       });

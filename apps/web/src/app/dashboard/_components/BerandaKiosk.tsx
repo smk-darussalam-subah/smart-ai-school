@@ -6,7 +6,7 @@
 // Header: sapaan+hadist | jam | Skor Kondisi Sekolah. KPI clickable (modal real
 // + ikon date-picker rekap). Papan + Tren(toggle rentang) + AI. Baris bawah:
 // Kalender | Agenda Hari Ini | Upcoming Event. Mode Ruang Guru (fullscreen
-// terang + bar auto-hide). Data baru = DUMMY dulu (lib/kiosk), data lama tetap.
+// terang + bar auto-hide). Data dari API nyata (lib/kiosk untuk tema/quote).
 // =============================================================================
 
 import { useEffect, useRef, useState, useTransition } from 'react';
@@ -350,7 +350,7 @@ function PapanCard({ theme, papanRows, dayLabel, cal, navCal, onJump, calEvents,
   );
 }
 
-// ── Tren kehadiran + toggle rentang (10H nyata; rentang panjang DUMMY) ───────
+// ── Tren kehadiran + toggle rentang (semua rentang: data nyata dari API) ───────
 const LINE_COLORS = ['#059669', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ec4899'];
 function TrenChart({ chart, theme }: { chart: BerandaKioskProps['chart']; theme: KioskTheme }) {
   const [range, setRange] = useState<TrendRangeKey>('10h');
@@ -524,7 +524,7 @@ function AgendaPanel({ title, icon, theme, events, empty, showDate = false, auto
   );
 }
 
-// ── Popup date-picker rekap kehadiran (poin 7) — DUMMY rekap, abaikan libur ──
+// ── Popup date-picker rekap kehadiran (poin 7) — data nyata dari API ──
 function DatePickerRecap({ kind, theme, events, onClose }: { kind: 'siswa' | 'guru'; theme: KioskTheme; events: KaldikEvent[]; onClose: () => void }) {
   const today = new Date();
   const [cal, setCal] = useState({ y: today.getFullYear(), m: today.getMonth() });

@@ -197,8 +197,10 @@ services:
       - smk-network
     deploy:
       resources:
-        limits: { cpus: '3', memory: '6G' }
-        reservations: { cpus: '1', memory: '2G' }
+        # R-28: Ollama sekarang embed-only (nomic-embed-text ~300 MB).
+        # Chat/generate via OpenAI gpt-4.1-mini (cloud). Turunkan limit drastis.
+        limits: { cpus: '1', memory: '1G' }
+        reservations: { cpus: '0.5', memory: '512M' }
     # Uncomment jika VPS punya GPU:
     # deploy:
     #   resources:
@@ -207,6 +209,30 @@ services:
     #         - driver: nvidia
     #           count: 1
     #           capabilities: [gpu]
+
+  # ─── AI LOKAL — INIT (R-31) ──────────────────────────────────────────────
+  # One-shot container: pull nomic-embed-text otomatis setelah Ollama ready.
+  # R-31: HANYA pull nomic-embed-text (embed model). qwen2.5:7b TIDAK dipakai lagi.
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: smk-ollama-init
+    depends_on:
+      - ollama
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "Waiting for Ollama to be ready..."
+        sleep 10
+        echo "Pulling nomic-embed-text (embed model, ~300 MB)..."
+        ollama pull nomic-embed-text
+        echo "Model pull complete. Ollama ready for embedding."
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: "no"
 
   # ─── ANALYTICS DASHBOARD ──────────────────────────────────────────────────
 
@@ -367,6 +393,12 @@ services:
       KEYCLOAK_CLIENT_ID: diis-api
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_API_CLIENT_SECRET}
       OLLAMA_URL: http://ollama:11434
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+      OLLAMA_EMBED_DIMENSIONS: ${OLLAMA_EMBED_DIMENSIONS:-768}
+      # R-28: Hybrid AI — OpenAI (chat/generate) + Ollama (embed only)
+      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4.1-mini}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       API_PORT: "3001"
       TZ: Asia/Jakarta

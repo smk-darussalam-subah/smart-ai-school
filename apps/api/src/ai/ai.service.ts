@@ -71,6 +71,7 @@ export class AiService {
     private readonly prisma: PrismaService,
     @Inject('AI_GATEWAY') private readonly gateway: AIGateway,
     @Inject('CLAUDE_GATEWAY') private readonly claudeGateway: AIGateway | null,
+    @Inject('OPENAI_GATEWAY') private readonly openaiGateway: AIGateway | null,
   ) {}
 
   // ── Private helpers ─────────────────────────────────────────────────────────
@@ -160,23 +161,32 @@ export class AiService {
         ? chunks.map((c) => ({ title: c.title, content: c.content }))
         : undefined;
 
-    // ── Decision tree R-03 (gate §6) ──────────────────────────────────────────
+    // ── Decision tree R-03 + R-28 (gate §6) ────────────────────────────────
     // hasPii pada message + seluruh context content → paksa Ollama (lokal, aman)
-    // non-PII + claudeGateway tersedia → ClaudeAdapter dengan strip (belt-and-suspenders)
+    // non-PII + openaiGateway tersedia → OpenAiAdapter dengan strip (R-28 hybrid)
+    // non-PII + claudeGateway tersedia → ClaudeAdapter (legacy) dengan strip
     // DEFAULT AMAN = Ollama. Bila ragu → Ollama.
+    //
+    // Priority: 1) OpenAI (R-28) → 2) Claude (legacy) → 3) Ollama (default/failsafe)
     const combinedInput =
       dto.message + (context ? ' ' + context.map((c) => c.content).join(' ') : '');
     const piiDetected = hasPii(combinedInput);
 
     let answer: string;
-    if (!piiDetected && this.claudeGateway) {
-      // Teks bersih + Claude dikonfigurasi → strip (belt-and-suspenders) lalu kirim ke Claude
+    if (!piiDetected && this.openaiGateway) {
+      // R-28: Teks bersih + OpenAI dikonfigurasi → strip (belt-and-suspenders) lalu kirim ke OpenAI
+      const safeMessage = stripPiiForLlm(dto.message);
+      const safeContext = context?.map((c) => ({ ...c, content: stripPiiForLlm(c.content) }));
+      logger.info('[AiService] Routing ke OpenAiAdapter (non-PII, R-28 hybrid)');
+      answer = await this.openaiGateway.chat(safeMessage, safeContext);
+    } else if (!piiDetected && this.claudeGateway) {
+      // Legacy: Teks bersih + Claude dikonfigurasi → strip lalu kirim ke Claude
       const safeMessage = stripPiiForLlm(dto.message);
       const safeContext = context?.map((c) => ({ ...c, content: stripPiiForLlm(c.content) }));
       logger.info('[AiService] Routing ke ClaudeAdapter (non-PII, R-03 strip aktif)');
       answer = await this.claudeGateway.chat(safeMessage, safeContext);
     } else {
-      // PII terdeteksi → paksa Ollama; atau Claude tidak dikonfigurasi → Ollama default
+      // PII terdeteksi → paksa Ollama; atau tidak ada cloud gateway → Ollama default
       if (piiDetected) {
         logger.info('[AiService] PII terdeteksi — routing ke Ollama (R-03 failsafe)');
       }

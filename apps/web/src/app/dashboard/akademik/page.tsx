@@ -8,7 +8,9 @@ import { scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-t
 import AkademikClient from './_components/AkademikClient';
 import AkademikWorkspace from './_components/AkademikWorkspace';
 import SiswaWorkspace from './_components/siswa/SiswaWorkspace';
+import SiswaRefreshWrapper from './_components/siswa/SiswaRefreshWrapper';
 import OrtuWorkspace from './_components/ortu/OrtuWorkspace';
+import OrtuRefreshWrapper from './_components/ortu/OrtuRefreshWrapper';
 import KsWorkspace from './_components/KsWorkspace';
 import type { ScheduleItem, ActivityItem, RppItem, TodayClass, LmsModuleItem } from './_components/guru-types';
 
@@ -85,7 +87,7 @@ export default async function AkademikPage() {
 
     // Transform XP API response → SiswaXP
     const realXp: SiswaXP | null = xpRes
-      ? { level: xpRes.level, current: xpRes.totalXp, next: xpRes.nextLevelXp ?? xpRes.totalXp }
+      ? { level: xpRes.level, current: xpRes.totalXp, next: xpRes.nextLevelXp ?? xpRes.totalXp, streakDays: xpRes.streakDays }
       : null;
 
     // Transform attendance stats → add pct (P26)
@@ -133,37 +135,55 @@ export default async function AkademikPage() {
       : null;
 
     return (
-      <SiswaWorkspace
-        grades={gradesRes?.data ?? []}
-        attendance={attendanceRes?.data ?? []}
-        schedule={scheduleRes?.data ?? []}
-        announcements={announcementsRes?.data ?? []}
-        realBadges={realBadges}
-        realXp={realXp}
-        realLeaderboard={realLeaderboard}
-        realAssignments={assignmentsRes?.data ?? null}
-        realModules={realModules}
-        realCp={cpRes?.data ?? null}
-        realAttStats={realAttStats}
-        viewAs={viewAs}
-      />
+      <SiswaRefreshWrapper>
+        <SiswaWorkspace
+          grades={gradesRes?.data ?? []}
+          attendance={attendanceRes?.data ?? []}
+          schedule={scheduleRes?.data ?? []}
+          announcements={announcementsRes?.data ?? []}
+          realBadges={realBadges}
+          realXp={realXp}
+          realLeaderboard={realLeaderboard}
+          realAssignments={assignmentsRes?.data ?? null}
+          realModules={realModules}
+          realCp={cpRes?.data ?? null}
+          realAttStats={realAttStats}
+          viewAs={viewAs}
+        />
+      </SiswaRefreshWrapper>
     );
   }
 
   // ── Dashboard Guru (IA baru). Role lain → tampilan lama (fallback). ─────────
   if (isGuru) {
-    const [schedulesRes, activitiesRes, rppRes, lmsRes, semRes] = await Promise.all([
+    const [schedulesRes, activitiesRes, rppRes, lmsRes, semRes, assessmentRes] = await Promise.all([
       apiFetch<{ data: ScheduleItem[] }>('/schedules?limit=500', token),
       apiFetch<{ data: ActivityItem[] }>('/class-activities?limit=200', token),
       apiFetch<{ data: RppItem[] }>('/rpp?limit=100', token),
       apiFetch<{ data: LmsModuleItem[] }>('/lms/modules?limit=200', token),
       apiFetch<ActiveSemester>('/school/semesters/active', token),
+      // R-13: Fetch assessment sessions for guru to wire hasPenilaian/hasFeedback
+      apiFetch<{ data: Array<{ id: string; classId: string | null; status: string; _count: { responses: number } }> }>('/assessment/sessions?limit=100', token),
     ]);
 
     const schedules = schedulesRes?.data ?? [];
     const { minutes } = wibNow();
     const dow = scheduleDayOfWeek();
     const nowJp = currentJp(minutes);
+
+    // R-13: Build a map of classId → latest assessment session for penilaian/feedback status.
+    // A session with status 'active' or 'completed' and responses > 0 means penilaian is available.
+    const assessmentSessions = assessmentRes?.data ?? [];
+    const sessionByClass = new Map<string, { id: string; status: string; hasResponses: boolean }>();
+    for (const s of assessmentSessions) {
+      if (s.classId) {
+        const existing = sessionByClass.get(s.classId);
+        // Prefer completed sessions with responses, then active, then draft
+        if (!existing || s.status === 'completed' || (s.status === 'active' && existing.status === 'draft')) {
+          sessionByClass.set(s.classId, { id: s.id, status: s.status, hasResponses: s._count?.responses > 0 });
+        }
+      }
+    }
 
     const todayClasses: TodayClass[] = schedules
       .filter((s) => s.dayOfWeek === dow)
@@ -177,6 +197,8 @@ export default async function AkademikPage() {
         jpEnd: s.jpEnd,
         startLabel: jpStartLabel(s.jpStart),
         isNow: nowJp >= s.jpStart && nowJp <= s.jpEnd,
+        // R-13: Link assessment session if exists for this class
+        assessmentSessionId: sessionByClass.get(s.classId)?.id,
       }));
 
     const academicYear = semRes?.academicYear?.code ?? '';
@@ -246,7 +268,7 @@ export default async function AkademikPage() {
     const childId = firstChild?.id ?? '';
 
     // Round 2: fetch child-specific data (all in parallel, fail-soft → null)
-    const [gradesRes, attendanceRes, scheduleRes, sppRes, assignmentsRes, badgesRes, waLogRes] = await Promise.all([
+    const [gradesRes, attendanceRes, scheduleRes, sppRes, assignmentsRes, badgesRes, waLogRes, semRes, leaderboardRes] = await Promise.all([
       childId ? apiFetch<PaginatedResponse<GradeItem>>(`/grades?studentId=${childId}&limit=100`, token) : Promise.resolve(null),
       childId ? apiFetch<PaginatedResponse<AttendanceItem>>(`/attendance?studentId=${childId}&limit=200`, token) : Promise.resolve(null),
       childId ? apiFetch<{ data: ScheduleItem[] }>(`/schedules?studentId=${childId}&limit=100`, token) : Promise.resolve(null),
@@ -254,7 +276,19 @@ export default async function AkademikPage() {
       childId ? apiFetch<{ data: Assignment[] }>(`/student-dashboard/assignments?studentId=${childId}&limit=20`, token) : Promise.resolve(null),
       childId ? apiFetch<Array<{ id: string; awardedAt: string; badge: { id: string; code: string; name: string; description: string; icon: string; tier: string } }>>(`/badges/student/${childId}`, token) : Promise.resolve(null),
       childId ? apiFetch<{ data: Array<{ id: string; studentId: string; recipient: string; message: string; eventType: string; createdAt: string }> }>(`/wa-log/student/${childId}?limit=20`, token) : Promise.resolve(null),
+      // R-16: Fetch active semester for rapor label
+      apiFetch<ActiveSemester>('/school/semesters/active', token),
+      // R-21: Fetch leaderboard to show child's rank
+      childId ? apiFetch<Array<{ id: string; studentId: string; totalXp: number; level: number; rank: number; student: { nis: string; user: { fullName: string }; class: { id: string; name: string } | null } }>>('/gamification/leaderboard-xp?limit=50', token) : Promise.resolve(null),
     ]);
+
+    // R-16: Compute semester label for RaporModal
+    const academicYearOrtu = semRes?.academicYear?.code ?? '';
+    const semesterOrtu = semRes?.number ?? 1;
+    const semesterLabel = semRes ? `Rapor Semester ${semesterOrtu === 1 ? 'Ganjil' : 'Genap'} ${academicYearOrtu}` : '';
+
+    // R-21: Find child's rank from leaderboard
+    const childRank = leaderboardRes?.find((e) => e.studentId === childId)?.rank ?? null;
 
     // Transform children for OrtuWorkspace
     const ortuChildren = children.map((c) => ({
@@ -266,18 +300,22 @@ export default async function AkademikPage() {
     }));
 
     return (
-      <OrtuWorkspace
-        children={ortuChildren}
-        grades={gradesRes?.data ?? []}
-        attendance={attendanceRes?.data ?? []}
-        schedule={scheduleRes?.data ?? []}
-        announcements={announcementsRes?.data ?? []}
-        spp={sppRes?.data ?? []}
-        assignments={assignmentsRes?.data ?? []}
-        badges={badgesRes ?? []}
-        waLog={waLogRes?.data ?? []}
-        viewAs={viewAs}
-      />
+      <OrtuRefreshWrapper>
+        <OrtuWorkspace
+          children={ortuChildren}
+          grades={gradesRes?.data ?? []}
+          attendance={attendanceRes?.data ?? []}
+          schedule={scheduleRes?.data ?? []}
+          announcements={announcementsRes?.data ?? []}
+          spp={sppRes?.data ?? []}
+          assignments={assignmentsRes?.data ?? []}
+          badges={badgesRes ?? []}
+          waLog={waLogRes?.data ?? []}
+          viewAs={viewAs}
+          semesterLabel={semesterLabel}
+          childRank={childRank}
+        />
+      </OrtuRefreshWrapper>
     );
   }
 

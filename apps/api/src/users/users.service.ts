@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UserStatusService } from '../auth/user-status.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
-import { UserRole } from '@smk/auth';
+import { UserRole, PRIMARY_ROLES } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { ListUsersQuery, GroupedUsersQuery } from './dto/list-users.dto';
 
@@ -87,12 +87,9 @@ export class UsersService {
 
   // ── findGrouped ──────────────────────────────────────────────────────────────
 
-  private readonly ROLE_ORDER: UserRole[] = [
-    'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA',
-    'GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI',
-  ];
+  private readonly ROLE_ORDER: readonly UserRole[] = PRIMARY_ROLES;
 
-  private readonly ROLE_LABELS: Record<UserRole, string> = {
+  private readonly ROLE_LABELS: Record<string, string> = {
     SUPER_ADMIN: 'Super Admin',
     KEPALA_SEKOLAH: 'Kepala Sekolah',
     TATA_USAHA: 'Tata Usaha',
@@ -192,10 +189,11 @@ export class UsersService {
     }
 
     // C3-(b): multi-role detection via KC
+    // Hanya cek primary roles — position codes (R-23 sync) tidak dihitung
     const kcRoles = await this.kc.getUserRealmRoles(user.keycloakId);
-    const validRoles = UserRole.options;
-    const kcRoleCount = kcRoles.filter((r) => validRoles.includes(r as UserRole)).length;
-    if (kcRoleCount > 1) {
+    const primaryRoleSet = PRIMARY_ROLES as readonly string[];
+    const primaryRoleCount = kcRoles.filter((r) => primaryRoleSet.includes(r)).length;
+    if (primaryRoleCount > 1) {
       throw new ConflictException(
         'Akun memiliki multiple role di Keycloak — kelola role melalui Keycloak Admin Console',
       );

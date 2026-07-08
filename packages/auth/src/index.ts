@@ -8,17 +8,75 @@ import jwksClient from 'jwks-rsa';
 import { z } from 'zod';
 
 // ── Roles DIIS ───────────────────────────────────────────────────────────────
+//
+// Base roles (7) — role primer yang diberikan saat pembuatan akun di Keycloak.
+// Position codes (13) — role turunan dari penugasan jabatan (Struktur Organisasi).
+//   KEPALA_SEKOLAH adalah base role SEKALIGUS position code.
+//   Saat PositionsService.assign() dijalankan, position code di-sync sebagai
+//   Keycloak realm role agar RolesGuard (yang membaca JWT realm_access.roles)
+//   dapat mengizinkan akses endpoint @Roles(positionCode).
+// ────────────────────────────────────────────────────────────────────────────
 
-export const UserRole = z.enum([
+/** 7 role identitas primer — disimpan di User.role, diberikan saat pembuatan akun. */
+export const PRIMARY_ROLES = [
   'SUPER_ADMIN',
-  'KEPALA_SEKOLAH',
-  'TATA_USAHA',   // Staf administrasi: keuangan, PPDB admin, data siswa
+  'KEPALA_SEKOLAH',   // Base role SEKALIGUS position code
+  'TATA_USAHA',       // Staf administrasi: keuangan, PPDB admin, data siswa
   'GURU',
   'SISWA',
   'ORANG_TUA',
-  'INDUSTRI',     // Mitra industri: PKL/Prakerin, BKK, rekrutmen
+  'INDUSTRI',         // Mitra industri: PKL/Prakerin, BKK, rekrutmen
+] as const;
+
+/** 13 kode jabatan dari Struktur Organisasi (2J-5). Harus exist sebagai Keycloak realm roles. */
+export const POSITION_CODES = [
+  'KEPALA_SEKOLAH',
+  'WAKA_KURIKULUM',
+  'WAKA_KESISWAAN',
+  'WAKA_HUMAS',
+  'WAKA_SARPRAS',
+  'KEPALA_TU',
+  'KAPROG',
+  'KOOR_BKK',
+  'KOOR_HUBIN',
+  'GURU_BK',
+  'BENDAHARA',
+  'STAF_KEPEGAWAIAN',
+  'OPERATOR_DAPODIK',
+] as const;
+
+export type PositionCode = typeof POSITION_CODES[number];
+
+// 19 unique values — KEPALA_SEKOLAH appears in both arrays but only once here.
+export const UserRole = z.enum([
+  // Primary roles (7)
+  'SUPER_ADMIN',
+  'KEPALA_SEKOLAH',
+  'TATA_USAHA',
+  'GURU',
+  'SISWA',
+  'ORANG_TUA',
+  'INDUSTRI',
+  // Position-only codes (12)
+  'WAKA_KURIKULUM',
+  'WAKA_KESISWAAN',
+  'WAKA_HUMAS',
+  'WAKA_SARPRAS',
+  'KEPALA_TU',
+  'KAPROG',
+  'KOOR_BKK',
+  'KOOR_HUBIN',
+  'GURU_BK',
+  'BENDAHARA',
+  'STAF_KEPEGAWAIAN',
+  'OPERATOR_DAPODIK',
 ]);
 export type UserRole = z.infer<typeof UserRole>;
+
+/** Cek apakah suatu role adalah position code (bukan base role). */
+export function isPositionCode(role: string): role is PositionCode {
+  return (POSITION_CODES as readonly string[]).includes(role);
+}
 
 // ── JWT Payload dari Keycloak ─────────────────────────────────────────────────
 

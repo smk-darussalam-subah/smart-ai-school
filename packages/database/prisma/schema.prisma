@@ -65,6 +65,20 @@ enum UserRole {
   ORANG_TUA
   INDUSTRI      // Mitra industri: PKL/Prakerin, BKK, rekrutmen
 
+  // ── Position codes (R-23): di-sync sebagai Keycloak realm roles ──
+  WAKA_KURIKULUM
+  WAKA_KESISWAAN
+  WAKA_HUMAS
+  WAKA_SARPRAS
+  KEPALA_TU
+  KAPROG
+  KOOR_BKK
+  KOOR_HUBIN
+  GURU_BK
+  BENDAHARA
+  STAF_KEPEGAWAIAN
+  OPERATOR_DAPODIK
+
   @@schema("auth")
 }
 
@@ -115,6 +129,32 @@ model UserPermissionOverride {
 
   @@unique([userId, permissionId])
   @@map("user_permission_overrides")
+  @@schema("auth")
+}
+
+// =============================================================================
+// AUTH SCHEMA — SSE Tokens (R-11)
+// Short-lived, one-time-use tokens for SSE (Server-Sent Events) authentication.
+// Replaces full Keycloak JWT in ?token=xxx query param to prevent token exposure
+// in browser history, server logs, and referrer headers.
+// =============================================================================
+
+model SseToken {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  token       String    @unique @db.VarChar(128)
+  keycloakId  String    @map("keycloak_id") @db.Uuid
+  roles       String[]
+  email       String    @default("") @db.VarChar(255)
+  username    String    @default("") @db.VarChar(255)
+  fullName    String    @default("") @map("full_name") @db.VarChar(255)
+  expiresAt   DateTime  @map("expires_at")
+  used        Boolean   @default(false)
+  consumedAt  DateTime? @map("consumed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([token, expiresAt])
+  @@index([expiresAt])
+  @@map("sse_tokens")
   @@schema("auth")
 }
 

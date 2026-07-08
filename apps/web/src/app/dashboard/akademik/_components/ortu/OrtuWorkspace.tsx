@@ -49,12 +49,14 @@ interface OrtuWorkspaceProps {
   badges?: Array<{ id: string; awardedAt: string; badge: { id: string; code: string; name: string; description: string; icon: string; tier: string } }>;
   waLog?: Array<{ id: string; studentId: string; recipient: string; message: string; eventType: string; createdAt: string }>;
   viewAs?: string | null;
+  semesterLabel?: string;
+  childRank?: number | null;
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function OrtuWorkspace({
-  children: realChildren, grades, attendance, schedule, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs
+  children: realChildren, grades, attendance, schedule, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, semesterLabel, childRank
 }: OrtuWorkspaceProps) {
   const { data: session } = useSession();
   const [activeScreen, setActiveScreen] = useState<OrtuScreen>('beranda');
@@ -129,6 +131,7 @@ export default function OrtuWorkspace({
             spp={realSpp ?? []}
             waLog={realWaLog ?? []}
             attendance={attendance ?? []}
+            rank={childRank}
           />
         );
       // Following screens implemented in subsequent batches
@@ -322,6 +325,9 @@ export default function OrtuWorkspace({
           nilai={(grades ?? []) as unknown as OrtuNilai[]}
           onClose={() => setModal({ type: null })}
           showToast={showToast}
+          studentName={child.name}
+          catatanWaliKelas={null}
+          semesterLabel={semesterLabel}
         />
       )}
 

@@ -652,19 +652,17 @@ export interface ReportCardItem {
 
 // ── Wave 2: GURU live-data endpoints (W2-A-1 ~ W2-A-4) ────────────────────────
 
-/** W2-C: Get SSE stream token (EventSource can't send Authorization header).
- * Returns the current session access token for ?token=xxx query param.
- * Only used for SSE stream endpoints — validated server-side via KeycloakGuard.
+/** R-11: Get SSE stream token (EventSource can't send Authorization header).
+ * Returns a short-lived, one-time-use token for ?token=xxx query param.
+ * This is NOT the full Keycloak JWT — it's a throwaway token that expires
+ * in 5 minutes and can only be used once. Prevents JWT exposure in URLs/logs.
  */
 export async function getSseToken(): Promise<{ success: boolean; token?: string; error?: string }> {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) { redirect('/login?reason=session'); }
-  try {
-    return { success: true, token: session.accessToken };
-  } catch (err) {
-    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err;
-    return { success: false, error: 'Gagal mendapatkan token SSE' };
+  const r = await apiCall('/auth/sse-token', 'POST');
+  if (r.success && r.data) {
+    return { success: true, token: (r.data as { token: string }).token };
   }
+  return { success: false, error: r.error ?? 'Gagal mendapatkan token SSE' };
 }
 
 /** W2-A-1: Fetch rekap kehadiran per sesi (agregasi). */

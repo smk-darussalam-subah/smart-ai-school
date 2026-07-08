@@ -8,8 +8,8 @@ import ViewAsSwitcher from './ViewAsSwitcher';
 import { can } from '@/lib/permissions';
 import {
   Home, BarChart3, BookOpen, CalendarDays, CalendarRange, ClipboardCheck, GraduationCap,
-  Backpack, FileText, Users, ClipboardList, Wallet, Briefcase, MapPin,
-  Megaphone, Sparkles, Brain, UserCog, Activity, ShieldCheck, LogOut,
+  Backpack, FileText, Users, ClipboardList, Wallet, Briefcase, MapPin, School,
+  Megaphone, Sparkles, Brain, UserCog, Activity, ShieldCheck, LogOut, MessageSquare, Building2,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -63,26 +63,26 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: 'Akademik',
     items: [
-      { label: 'Akademik', href: '/dashboard/akademik', icon: BookOpen, roles: ['GURU', 'SISWA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'ORANG_TUA'], permissions: ['academic.grade.read'] },
-      { label: 'Jadwal', href: '/dashboard/jadwal', icon: CalendarDays, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA'], permissions: ['academic.schedule.read'] },
+      { label: 'Akademik', href: '/dashboard/akademik', icon: BookOpen, roles: ['GURU', 'SISWA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'ORANG_TUA', 'WAKA_KURIKULUM', 'KAPROG'], permissions: ['academic.grade.read'] },
+      { label: 'Jadwal', href: '/dashboard/jadwal', icon: CalendarDays, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'WAKA_KURIKULUM', 'KAPROG'], permissions: ['academic.schedule.read'] },
       { label: 'Nilai & Absensi', href: '/dashboard/nilai', icon: ClipboardCheck, roles: ['SISWA', 'ORANG_TUA'], permissions: ['grade.own.read', 'grade.child.read'] },
       { label: 'Rapor', href: '/dashboard/rapor', icon: GraduationCap, roles: ['SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'GURU'], permissions: ['report.read'] },
-      { label: 'Kegiatan Kelas', href: '/dashboard/kegiatan', icon: Backpack, roles: ['GURU', 'SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA'], permissions: ['activity.read'] },
-      { label: 'Review Modul Ajar', href: '/dashboard/rpp', icon: FileText, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN'], permissions: ['rpp.review'] },
+      { label: 'Kegiatan Kelas', href: '/dashboard/kegiatan', icon: Backpack, roles: ['GURU', 'SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KESISWAAN'], permissions: ['activity.read'] },
+      { label: 'Review Modul Ajar', href: '/dashboard/rpp', icon: FileText, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'WAKA_KURIKULUM'], permissions: ['rpp.review'] },
     ],
   },
   {
     title: 'Kesiswaan',
     items: [
-      { label: 'Data Siswa', href: '/dashboard/siswa', icon: Users, roles: ['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA'], permissions: ['student.read'] },
-      { label: 'PPDB', href: '/dashboard/ppdb', icon: ClipboardList, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA'], permissions: ['ppdb.read'] },
+      { label: 'Data Siswa', href: '/dashboard/siswa', icon: Users, roles: ['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_TU', 'WAKA_KESISWAAN', 'KAPROG', 'GURU_BK', 'OPERATOR_DAPODIK', 'INDUSTRI'], permissions: ['student.read'] },
+      { label: 'PPDB', href: '/dashboard/ppdb', icon: ClipboardList, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_TU', 'WAKA_HUMAS', 'KOOR_BKK', 'KOOR_HUBIN'], permissions: ['ppdb.read'] },
       { label: 'Lowongan', href: '/dashboard/lowongan', icon: Briefcase, roles: ['INDUSTRI', 'SISWA'], permissions: ['student.read', 'ai.chat'] },
     ],
   },
   {
     title: 'Keuangan',
     items: [
-      { label: 'Keuangan', href: '/dashboard/keuangan', icon: Wallet, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'SISWA', 'ORANG_TUA'], permissions: ['finance.read', 'finance.own.read', 'finance.child.read'] },
+      { label: 'Keuangan', href: '/dashboard/keuangan', icon: Wallet, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'SISWA', 'ORANG_TUA', 'KEPALA_TU', 'BENDAHARA'], permissions: ['finance.read', 'finance.own.read', 'finance.child.read'] },
     ],
   },
   {
@@ -94,7 +94,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: 'Komunikasi',
     items: [
-      { label: 'Pengumuman', href: '/dashboard/pengumuman', icon: Megaphone, permissions: ['announcement.read'] },
+      { label: 'Pengumuman', href: '/dashboard/pengumuman', icon: Megaphone, roles: ['WAKA_KESISWAAN', 'WAKA_HUMAS', 'WAKA_SARPRAS', 'KOOR_BKK', 'KOOR_HUBIN', 'INDUSTRI'], permissions: ['announcement.read'] },
       { label: 'Asisten AI', href: '/dashboard/ai', icon: Sparkles, permissions: ['ai.chat'] },
       { label: 'Basis Pengetahuan', href: '/dashboard/knowledge', icon: Brain, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'], permissions: ['ai.knowledge.read'] },
     ],
@@ -102,11 +102,14 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: 'Administrasi Sistem',
     items: [
-      { label: 'Manajemen Pengguna', href: '/dashboard/users', icon: UserCog, roles: ['SUPER_ADMIN', 'TATA_USAHA'], permissions: ['user.read'] },
+      { label: 'Manajemen Pengguna', href: '/dashboard/users', icon: UserCog, roles: ['SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_TU', 'STAF_KEPEGAWAIAN'], permissions: ['user.read'] },
       { label: 'Struktur Organisasi', href: '/dashboard/struktur-organisasi', icon: Briefcase, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
+      { label: 'Manajemen Kelas', href: '/dashboard/kelas', icon: School, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
       { label: 'Kalender & Agenda', href: '/dashboard/kalender', icon: CalendarDays, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
       { label: 'Tahun Ajaran', href: '/dashboard/tahun-ajaran', icon: CalendarRange, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
       { label: 'Kesehatan Sistem', href: '/dashboard/health', icon: Activity, roles: ['SUPER_ADMIN'], permissions: ['audit.read'] },
+      { label: 'Log Notifikasi WA', href: '/dashboard/wa-log', icon: MessageSquare, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
+      { label: 'Profil Sekolah', href: '/dashboard/profil', icon: Building2, roles: ['SUPER_ADMIN'] },
       { label: 'Audit Log', href: '/dashboard/audit', icon: ShieldCheck, roles: ['SUPER_ADMIN'], permissions: ['audit.read'] },
     ],
   },
@@ -115,24 +118,29 @@ const NAV_GROUPS: NavGroup[] = [
 // =============================================================================
 // Sidebar Component
 // =============================================================================
-export function Sidebar({ viewAs = null, permissions = [], permError = false, className }: { viewAs?: string | null; permissions?: string[]; permError?: boolean; className?: string }) {
+export function Sidebar({ viewAs = null, permissions = [], permError = false, positionRoles = [], className }: { viewAs?: string | null; permissions?: string[]; permError?: boolean; positionRoles?: string[]; className?: string }) {
   const { data: session } = useSession();
   const pathname = usePathname();
   const realRoles: string[] = (session?.roles as string[]) ?? [];
   // Mode tinjau: sempitkan tampilan ke role terpilih (server sudah validasi cookie)
   const roles: string[] = viewAs && realRoles.includes(viewAs) ? [viewAs] : realRoles;
+  // R-24: Gabungkan session roles + position codes dari backend untuk sidebar filtering
+  const effectiveRoles: string[] = [...new Set([...roles, ...positionRoles])];
 
   const primaryRole = roles[0] ?? '';
   const roleLabel = ROLE_LABELS[primaryRole] ?? primaryRole;
   const roleBadgeColor = ROLE_COLORS[primaryRole] ?? 'bg-gray-100 text-gray-700';
 
+  // R-24: Tampilkan badge jabatan tambahan jika ada position roles di luar session
+  const extraPositionRoles = positionRoles.filter((r) => !roles.includes(r));
+
   // Kontrak izin: SUPER_ADMIN = wildcard '*' (lih. lib/permissions.can + auth.service.getMe).
   // Jaga wildcard secara LOKAL agar menu SA tidak hilang walau /auth/me sempat gagal/seed tertinggal.
-  const isSuperAdmin = roles.includes('SUPER_ADMIN');
+  const isSuperAdmin = effectiveRoles.includes('SUPER_ADMIN');
   const effectivePermissions = isSuperAdmin ? ['*'] : permissions;
 
   const isVisible = (item: NavItem): boolean => {
-    if (item.roles && !item.roles.some((r) => roles.includes(r))) return false;
+    if (item.roles && !item.roles.some((r) => effectiveRoles.includes(r))) return false;
     // Mode terbatas (permError = /auth/me gagal): lewati gate izin, andalkan filter role saja —
     // RBAC backend tetap menegakkan akses di setiap request, jadi ini aman dan mencegah menu kosong.
     if (!permError && item.permissions && !can(effectivePermissions, item.permissions)) return false;
@@ -167,6 +175,20 @@ export function Sidebar({ viewAs = null, permissions = [], permError = false, cl
           {roleLabel}
           {viewAs ? ' · tinjau' : ''}
         </span>
+        {/* R-24: Indikator jabatan tambahan yang belum tersinkron ke sesi */}
+        {extraPositionRoles.length > 0 && (
+          <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] leading-snug text-blue-700">
+            Jabatan tambahan tersedia: <span className="font-semibold">{extraPositionRoles.join(', ')}</span>.
+            {' '}
+            <button
+              type="button"
+              onClick={() => { window.location.href = '/api/auth/signin?callbackUrl=' + encodeURIComponent(window.location.pathname); }}
+              className="underline hover:text-blue-900 font-medium"
+            >
+              Segarkan sesi
+            </button>
+          </div>
+        )}
         <div className="mt-3">
           <ViewAsSwitcher realRoles={realRoles} viewAs={viewAs} />
         </div>

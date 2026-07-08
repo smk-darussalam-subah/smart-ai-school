@@ -285,6 +285,7 @@ describe('AiService.backfillEmbeddings()', () => {
         { provide: PrismaService, useValue: prismaMock },
         { provide: 'AI_GATEWAY', useValue: gatewayMock },
         { provide: 'CLAUDE_GATEWAY', useValue: null }, // SMA-48: default off
+        { provide: 'OPENAI_GATEWAY', useValue: null }, // R-28: default off
       ],
     }).compile();
     return mod.get(AiService);

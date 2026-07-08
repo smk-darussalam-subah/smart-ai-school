@@ -5,13 +5,15 @@
 // =============================================================================
 
 import {
-  BadRequestException, Body, Controller, Get, HttpCode, HttpStatus,
-  Param, ParseUUIDPipe, Patch, Post, Query, Sse,
+  BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, HttpStatus,
+  Param, ParseUUIDPipe, Patch, Post, Query, Sse, UnauthorizedException,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { AuthUser } from '@smk/auth';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
+import { SseTokenService } from '../auth/sse-token.service';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { AssessmentService } from './assessment.service';
@@ -22,7 +24,10 @@ import {
 
 @Controller('assessment/sessions')
 export class AssessmentController {
-  constructor(private readonly service: AssessmentService) {}
+  constructor(
+    private readonly service: AssessmentService,
+    private readonly sseTokenService: SseTokenService,
+  ) {}
 
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU', 'SISWA')
   @RequirePermission('lms.read')
@@ -55,11 +60,29 @@ export class AssessmentController {
     return this.service.getSessionAnalysis(id, user);
   }
 
-  // P2 (S-02): SSE realtime monitor — emits student-progress events every 3s
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU')
-  @RequirePermission('lms.read')
+  // R-11: SSE realtime monitor — uses short-lived SSE token (not Keycloak JWT).
+  // Marked @Public() to bypass KeycloakGuard; auth is handled via SseTokenService.
+  // The ?token=xxx query param contains a one-time-use, 5-minute-expiry token.
+  @Public()
   @Sse(':id/stream')
-  streamResults(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser): Observable<MessageEvent> {
+  async streamResults(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('token') token: string,
+  ): Promise<Observable<MessageEvent>> {
+    if (!token) {
+      throw new UnauthorizedException('SSE token tidak ditemukan');
+    }
+
+    // R-11: Validate short-lived SSE token — not a full Keycloak JWT.
+    // Token is consumed (one-time use) after validation.
+    const user = await this.sseTokenService.validateAndConsumeToken(token);
+
+    // Manual role check (since @Public() bypasses RolesGuard)
+    const allowedRoles: string[] = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU'];
+    if (!user.roles.some((r: string) => allowedRoles.includes(r))) {
+      throw new ForbiddenException('Akses ditolak: role tidak mencukupi untuk monitoring SSE');
+    }
+
     return this.service.streamResults(id, user);
   }
 
