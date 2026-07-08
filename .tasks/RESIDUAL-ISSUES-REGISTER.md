@@ -1,6 +1,6 @@
 # RESIDUAL ISSUES REGISTER — DIIS Smart AI School
 
-> **Last updated:** 2026-07-07 (Sesi 4: R-11, R-14, R-27, R-19 — security hardening; Sesi 5: R-03, R-09, R-13 — UI Manajemen Kelas + RingkasanGuru wiring)
+> **Last updated:** 2026-07-08 (Sesi 6: R-05, R-06, R-24 — WA Log UI, Profil Sekolah UI, Sidebar position-based refresh)
 > **Total:** 34 issues (4 CRITICAL, 7 HIGH, 13 MEDIUM, 10 LOW)  
 > **Auditor:** Sesi Audit Residual 2026-07-06 + Investigasi Struktur Organisasi + Audit AI Infrastructure  
 > **Metode:** Verifikasi langsung dari kode sumber (read-only) + trace auth flow + trace AI wiring
@@ -15,8 +15,8 @@
 | R-02 | CRITICAL | SIM Residual | **DONE** | Catatan wali kelas hardcoded di RaporModal Ortu |
 | R-03 | HIGH | Missing UI | **DONE** | Tidak ada UI Manajemen Kelas / Wali Kelas |
 | R-04 | HIGH | RBAC Gap | **DONE** | KEPALA_SEKOLAH tidak punya akses write ke classes |
-| R-05 | HIGH | Missing UI | OPEN | Tidak ada halaman admin WA log |
-| R-06 | HIGH | Architecture | OPEN | Tidak ada Admin Panel / Settings Page terpusat |
+| R-05 | HIGH | Missing UI | **DONE** | Tidak ada halaman admin WA log |
+| R-06 | HIGH | Architecture | **DONE** | Tidak ada Admin Panel / Settings Page terpusat |
 | R-07 | MEDIUM | SIM Residual | **DONE** | Toast "simulasi" di 3 komponen Ortu/Siswa |
 | R-08 | MEDIUM | SIM Residual | **DONE** | BerandaKiosk masih menggunakan DUMMY data |
 | R-09 | MEDIUM | RBAC Gap | **DONE** | Tidak ada endpoint untuk assign wali kelas |
@@ -34,7 +34,7 @@
 | R-21 | LOW | Orphan Endpoint | **DONE** | GET /student-dashboard/leaderboard tidak dikonsumsi Ortu |
 | R-22 | LOW | Orphan Endpoint | **DONE** | GET /push/my-notifications tidak dikonsumsi frontend |
 | R-23 | CRITICAL | RBAC Gap | **DONE** | Position assignment tidak sync role ke Keycloak — @Roles() blokir akses jabatan |
-| R-24 | HIGH | RBAC Gap | **PARTIALLY DONE** | Frontend sidebar/menu tidak menampilkan item berbasis jabatan (position) — R-23 sync selesai, sidebar butuh re-login |
+| R-24 | HIGH | RBAC Gap | **DONE** | Frontend sidebar/menu tidak menampilkan item berbasis jabatan (position) — R-23 sync selesai, sidebar butuh re-login |
 | R-25 | MEDIUM | Architecture | **DONE** | Tidak ada endpoint verifikasi effective access pasca-assign jabatan — kini ada GET /positions/access-check/:userId |
 | R-26 | MEDIUM | Architecture | **DONE** | PositionPermission cross-schema reference tanpa FK constraint |
 | R-27 | LOW | RBAC Gap | **DONE** | Multi-position accumulation tanpa segregation of duties |
@@ -234,6 +234,19 @@ Tambahkan menu **"Log Notifikasi WA"** di grup Administrasi Sistem (`/dashboard/
 **Dependencies:**
 —
 
+**Fix Applied (2026-07-08, Sesi 6):**
+- Halaman `/dashboard/wa-log` dibuat dengan pattern: server component (`page.tsx`) + client component (`WaLogClient.tsx`).
+- Fitur: tabel log WA dengan kolom timestamp, recipient, eventType, status, pesan.
+- Filter: eventType (dropdown), status (dropdown), studentId (input).
+- Pagination: halaman dengan navigasi Sebelumnya/Berikutnya.
+- Detail panel: slide-in dari kanan menampilkan pesan lengkap + metadata.
+- Color coding status: sent/delivered = hijau, failed = merah, pending = kuning.
+- Empty state: "Belum ada log notifikasi."
+- RBAC guard: SUPER_ADMIN, KEPALA_SEKOLAH (server component redirect).
+- Sidebar: menu "Log Notifikasi WA" di grup "Administrasi Sistem".
+- Permissions: route `/dashboard/wa-log` → `['lms.read']`.
+- File: `page.tsx`, `WaLogClient.tsx`, `Sidebar.tsx`, `permissions.ts`.
+
 ---
 
 ### R-06 — Tidak Ada Admin Panel / Settings Page Terpusat
@@ -242,7 +255,7 @@ Tambahkan menu **"Log Notifikasi WA"** di grup Administrasi Sistem (`/dashboard/
 |-------|-------|
 | **Severity** | HIGH |
 | **Category** | Architecture |
-| **Status** | OPEN |
+| **Status** | **DONE** — Fixed: 2026-07-08 (Sesi 6) |
 | **Discovered** | 2026-07-06 (carry-over T-12) |
 | **Source** | Audit v2 + AUDIT-FINDINGS.md |
 
@@ -287,6 +300,17 @@ Administrasi sistem bergantung pada akses API langsung atau database. Tidak sust
 R-03, R-04
 
 > **Lihat juga:** R-23 (Keycloak sync), R-24 (sidebar visibility) — admin panel terpusat harus memperhitungkan position-based roles.
+
+**Fix Applied (2026-07-08, Sesi 6 — P2 only):**
+- Halaman `/dashboard/profil` dibuat dengan pattern: server component (`page.tsx`) + client component (`ProfilClient.tsx`) + server actions (`actions.ts`).
+- **Section 1 — Profil Sekolah:** Form edit (nama, NPSN, alamat, telepon, email, website, nama KS, NIP KS, logo URL, akreditasi, geofence presensi).
+- **Section 2 — Manajemen Jurusan:** Tabel jurusan (kode, nama, deskripsi, status) + modal CRUD (create/edit) + toggle aktif/nonaktif inline.
+- RBAC: SUPER_ADMIN untuk write (form + CRUD), semua role read-only (tampil info + tabel).
+- Server actions: `updateProfileAction` (PUT), `createMajorAction` (POST), `updateMajorAction` (PATCH), `toggleMajorActiveAction` (PATCH).
+- Sidebar: menu "Profil Sekolah" di grup "Administrasi Sistem" dengan roles `['SUPER_ADMIN']`.
+- Permissions: route `/dashboard/profil` → `[]` (semua role bisa akses, RBAC write enforced di client + backend).
+- File: `page.tsx`, `ProfilClient.tsx`, `actions.ts`, `Sidebar.tsx`, `permissions.ts`.
+- Catatan: KKTP config TIDAK dipindah dari KsWorkspace — tetap domain pedagogis KS.
 
 ---
 
@@ -846,12 +870,12 @@ Seluruh akses berbasis role untuk jabatan Struktur Organisasi tidak berfungsi. G
 |-------|-------|
 | **Severity** | HIGH |
 | **Category** | RBAC Gap |
-| **Status** | PARTIALLY DONE — 2026-07-07 (R-23 sync selesai + endpoint my-positions ditambahkan; sidebar otomatis benar setelah re-login) |
+| **Status** | **DONE** — Fixed: 2026-07-08 (Sesi 6: sidebar merges position roles + refresh button) |
 | **Discovered** | 2026-07-06 |
 | **Source** | Investigasi Struktur Organisasi — analisis frontend |
 
 **Deskripsi:**
-Sidebar di dashboard menggunakan roles dari session (Keycloak JWT) untuk menentukan item menu yang tampil. Guru dengan jabatan tertentu (misal `BENDAHARA`) tidak melihat menu "Manajemen Keuangan" karena role Keycloak tetap `GURU`.
+Sidebar di dashboard menggunakan roles dari session (Keycloak JWT) untuk menentukan item menu yang tampil. Guru dengan jabatan tertentu (misal `BENDAHARA`) tidak melihat menu "Manajemen Keuangan" karena role Keycloak tetap `GURU`. Setelah R-23 sync ke Keycloak, JWT di browser tidak auto-refresh — user harus re-login.
 
 **Bukti Kode:**
 - `Sidebar.tsx` — filter menu berdasarkan `roles.includes('TATA_USAHA')` dll.
@@ -864,8 +888,20 @@ Meski backend permission sudah benar (dan R-23 diperbaiki), user tetap tidak bis
 **Recommended Fix:**
 Setelah R-23 diperbaiki (Keycloak sync), sidebar otomatis benar karena session roles akan mencakup position role. Sebagai pelengkap, tambahkan endpoint `GET /positions/my-positions` yang mengembalikan jabatan aktif user untuk ditampilkan di UI.
 
-**Dependencies:**
-R-23 (Keycloak sync) harus diselesaikan terlebih dahulu
+**Fix Applied (2026-07-08, Sesi 6):**
+- **Pendekatan hybrid:** Fetch active positions dari backend + refresh session button.
+- `dashboard/layout.tsx`: Fetch `GET /positions/my-positions` parallel dengan `/auth/me`, ekstrak position codes sebagai `positionRoles`.
+- `AppShell.tsx` & `MobileNav.tsx`: Terima dan teruskan prop `positionRoles` ke Sidebar.
+- `Sidebar.tsx`: Merge `session.roles` + `positionRoles` menjadi `effectiveRoles` untuk filter menu.
+- **NAV_GROUPS update:** Tambahkan position codes ke `roles` arrays di menu items:
+  - `WAKA_KURIKULUM`, `KAPROG` → Akademik, Jadwal, Review Modul Ajar
+  - `WAKA_KESISWAAN`, `GURU_BK`, `KEPALA_TU`, `KAPROG`, `OPERATOR_DAPODIK` → Data Siswa
+  - `WAKA_HUMAS`, `KOOR_BKK`, `KOOR_HUBIN`, `KEPALA_TU` → PPDB
+  - `KEPALA_TU`, `BENDAHARA` → Keuangan
+  - `WAKA_KESISWAAN`, `WAKA_HUMAS`, `WAKA_SARPRAS`, `KOOR_BKK`, `KOOR_HUBIN` → Pengumuman
+  - `KEPALA_TU`, `STAF_KEPEGAWAIAN` → Manajemen Pengguna
+- **Refresh button:** Indikator "Jabatan tambahan tersedia" muncul di sidebar saat position roles belum ada di session, dengan link "Segarkan sesi" yang redirect ke signin.
+- File: `layout.tsx`, `AppShell.tsx`, `MobileNav.tsx`, `Sidebar.tsx`.
 
 ---
 
