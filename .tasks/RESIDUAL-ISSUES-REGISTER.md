@@ -492,22 +492,24 @@ Token Keycloak bisa bocor melalui server access logs, browser history, atau Refe
 |-------|-------|
 | **Severity** | MEDIUM |
 | **Category** | Architecture |
-| **Status** | OPEN |
+| **Status** | **DONE** — Fixed: 2026-07-08 |
 | **Discovered** | 2026-07-06 (carry-over) |
 | **Source** | AUDIT-INTEGRASI-v2-REPORT.md §4.1 #4 |
 
 **Deskripsi:**
 Ketika guru menginput nilai, event `GRADE_SUBMITTED` fire tetapi halaman Siswa/Ortu tidak otomatis re-fetch data. Data baru hanya muncul setelah reload manual.
 
-**Bukti Kode:**
-- Reference: AUDIT-INTEGRASI-v2-REPORT.md §4.1 #4
-- Frontend page.tsx menggunakan `Promise.all` di server component — data hanya di-fetch saat page load awal
+**Fix Applied:**
+Client-side polling via `useDataRefresh` hook + `DataRefreshIndicator` komponen. 30s interval untuk Siswa, 60s interval untuk Ortu. Pause saat tab hidden atau user berinteraksi dengan form. SSE-ready architecture documented for future upgrade.
 
-**Impact:**
-Siswa/orang tua tidak melihat nilai yang baru diinput guru sampai mereka me-refresh halaman. UX terasa "lambat" dan tidak responsif.
+**Files:**
+- `apps/web/src/hooks/use-data-refresh.ts` — polling hook dengan visibility/form detection
+- `apps/web/src/components/ui/data-refresh-indicator.tsx` — indikator minimal, WCAG AA
+- `apps/web/src/app/dashboard/akademik/_components/siswa/SiswaRefreshWrapper.tsx` — wrapper Siswa (30s)
+- `apps/web/src/app/dashboard/akademik/_components/ortu/OrtuRefreshWrapper.tsx` — wrapper Ortu (60s)
+- `apps/web/src/app/dashboard/akademik/page.tsx` — wrap SiswaWorkspace & OrtuWorkspace
 
-**Recommended Fix:**
-Implementasi SSE atau WebSocket untuk notifikasi perubahan data. Atau minimal: tambahkan polling interval 30 detik di halaman Siswa/Ortu.
+**Backend changes:** 0 (frontend only, polling-first strategy)
 
 **Dependencies:**
 —
