@@ -16,6 +16,7 @@ import {
   EVENTS,
   GradeSubmittedPayload,
   AttendanceRecordedPayload,
+  AssessmentCompletedPayload,
 } from '../events/events.types';
 import { BadgesService } from './badges.service';
 
@@ -73,6 +74,37 @@ export class BadgesListener {
     } catch (err) {
       logger.warn('[BadgesListener] attendance.recorded error (fail-soft)', {
         attendanceId: payload.attendanceId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * assessment.completed → check assessment-completion badges.
+   * Per-student grade_threshold badges are already handled via grade.submitted
+   * (which fires for each auto-graded Grade record). This handler is a hook
+   * for future batch badges (e.g., "Completed all Semester 1 diagnostics").
+   */
+  @OnEvent(EVENTS.ASSESSMENT_COMPLETED)
+  async handleAssessmentCompleted(payload: AssessmentCompletedPayload): Promise<void> {
+    try {
+      // Per-grade badge checks are already handled by grade.submitted listener.
+      // This handler is reserved for future assessment-level badges:
+      //   - "Perfect Score in Sumatif" (all students with 100%)
+      //   - "First Assessment Completed"
+      //   - "Assessment Streak" (completed N assessments in a row)
+      if (payload.gradedCount === 0) return;
+
+      logger.debug('[BadgesListener] assessment.completed — badge check complete', {
+        sessionId: payload.sessionId,
+        title: payload.title,
+        type: payload.type,
+        gradedCount: payload.gradedCount,
+        skippedCount: payload.skippedCount,
+      });
+    } catch (err) {
+      logger.warn('[BadgesListener] assessment.completed error (fail-soft)', {
+        sessionId: payload.sessionId,
         error: err instanceof Error ? err.message : String(err),
       });
     }

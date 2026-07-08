@@ -13,6 +13,7 @@ jest.mock('@smk/logger', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AuthUser } from '@smk/auth';
 import { AssessmentService } from '../assessment/assessment.service';
 import { QuestionBankService } from '../question-bank/question-bank.service';
@@ -47,7 +48,11 @@ describe('U2 Wave 1 — Timer Enforcement', () => {
       assessmentResponse: { findUnique: responseFindUnique, update: responseUpdate, create: responseCreate },
     };
     const moduleRef: TestingModule = await Test.createTestingModule({
-      providers: [AssessmentService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        AssessmentService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+      ],
     }).compile();
     service = moduleRef.get(AssessmentService);
   });
@@ -121,7 +126,11 @@ describe('U2 Wave 2 — Weighted Score Calculation', () => {
       question: { findUnique: questionFindUnique },
     };
     const moduleRef: TestingModule = await Test.createTestingModule({
-      providers: [AssessmentService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        AssessmentService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+      ],
     }).compile();
     service = moduleRef.get(AssessmentService);
   });
@@ -204,7 +213,11 @@ describe('U2 Wave 3 — Item Analysis (Difficulty + Discrimination)', () => {
       assessmentResponse: { findMany: responseFindMany },
     };
     const moduleRef: TestingModule = await Test.createTestingModule({
-      providers: [AssessmentService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        AssessmentService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+      ],
     }).compile();
     service = moduleRef.get(AssessmentService);
   });
