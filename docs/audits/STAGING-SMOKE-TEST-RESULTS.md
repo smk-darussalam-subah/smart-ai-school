@@ -1,50 +1,93 @@
 # Staging Smoke Test — Analysis & Action Plan
 
-**Latest Test Date:** 2026-07-11T08:33:30Z (Post-PR #324 deploy)
+**Latest Test Date:** 2026-07-11T13:48:17Z (Post-PR #329 deploy)
 **Environment:** `https://staging-api.smkdarussalamsubah.sch.id` / `https://staging.smkdarussalamsubah.sch.id`
 **Script:** `scripts/smoke-test-staging.ts` (PR #322)
-**Deploy Fix:** PR #324 — recreate nginx from prod context + copy staging `nginx.conf`
 
 ---
 
 ## Executive Summary — Latest Run
 
-| Metric | Run 1 (Pre-fix) | Run 2 (Post-fix) | Delta |
-|--------|-----------------|------------------|-------|
-| Date | 2026-07-11T07:28:29Z | 2026-07-11T08:33:30Z | — |
+| Metric | Run 1 (Pre-fix) | Run 3 (Post W3 fix) | Delta |
+|--------|-----------------|---------------------|-------|
+| Date | 2026-07-11T07:28:29Z | 2026-07-11T13:48:17Z | — |
 | TOTAL | 25 | 25 | — |
-| PASS | 5 | **10** | **+5** |
-| FAIL | 6 | **1** | **-5** |
+| PASS | 5 | **11** | **+6** |
+| FAIL | 6 | **0** | **-6** |
 | SKIP | 14 | 14 | — |
-| Duration | 12.4s | 8.0s | -4.4s |
+| Duration | 12.4s | 8.9s | -3.5s |
 
-**Verdict:** P0 issue **RESOLVED**. Staging API is now publicly accessible. Remaining blockers: W3 (Docker network) and 14 SKIP (no Keycloak test user).
+**Verdict:** ALL non-auth tests PASS (11/11). Zero failures. 14 SKIPs require Keycloak test user provisioning on VPS.
 
 ---
 
 ## 1. Critical Issues — Current State
 
-### 1.1 RESOLVED: Nginx Staging-API Server Block (P1-P5 — was 5 FAIL, now 5 PASS)
+### 1.1 RESOLVED: Nginx Staging-API Server Block (P1-P5 — 5 PASS)
 
-| Test | Run 1 (Pre-fix) | Run 2 (Post-fix) |
-|------|-----------------|------------------|
-| P1 `GET /health` | FAIL — HTML, 1369ms | **PASS** — `status=ok`, 953ms |
-| P2 `GET /metrics` | FAIL — HTML, 2346ms | **PASS** — Prometheus format, 264ms |
-| P3 `GET /api/v1/school/profile` | FAIL — HTML, 1138ms | **PASS** — JSON, 299ms |
-| P4 `GET /api/v1/school/academic-years/active` | FAIL — HTML, 520ms | **PASS** — JSON, 260ms |
-| P5 `GET /api/v1/school/semesters/active` | FAIL — HTML, 558ms | **PASS** — JSON, 246ms |
+Fixed via PR #324 — nginx recreate from prod context + copy staging `nginx.conf`.
 
-**Resolution:** PR #324 fixed `deploy.yml` to copy `nginx.conf` from staging working dir to prod working dir, then recreate nginx from production compose context. Deploy succeeded at 2026-07-11T08:27:19Z.
+### 1.2 RESOLVED: SSR Proxy (W3 — now PASS)
 
-### 1.2 REMAINING: SSR Proxy Broken (W3 — 1 FAIL)
+**Root cause chain (3 issues discovered sequentially):**
 
-| Test | Run 1 | Run 2 | Detail |
-|------|-------|-------|--------|
-| W3 `GET /api/backend/school/profile` | FAIL — HTML, 661ms | FAIL — HTML, 598ms | `smk-staging-web` cannot reach `smk-staging-api` via Docker internal DNS |
+1. **Build-time freeze**: Next.js standalone mode freezes `rewrites()` destination into `routes-manifest.json` at build time. The Dockerfile `ARG API_URL=http://api:3001` (prod default) was baked in. PR #326 added `--build-arg` to deploy.yml; PR #327 added `build.args` to compose — but neither reached the Dockerfile.
+
+2. **Middleware redirect**: The real blocker was the Next.js middleware (`middleware.ts`) intercepting `/api/backend/*` requests and redirecting to `/login` (HTML 307) because `/api/backend` was not in `PUBLIC_PREFIXES`.
+
+**Final fix (PR #328 + #329):**
+- PR #328: Created runtime catch-all route handler at `app/api/backend/[...path]/route.ts` that reads `process.env.API_URL` at runtime (not build time)
+- PR #329: Added `/api/backend` to middleware `PUBLIC_PREFIXES` so the proxy route handler can process requests without auth redirect
 
 ### 1.3 REMAINING: 14 Auth Tests SKIP
 
 All tests A1, R0-R9, I1-I2, P6 are SKIP because `SMOKE_TEST_USERNAME` / `SMOKE_TEST_PASSWORD` environment variables are not set (no Keycloak test user provisioned).
+
+**Discovery:** `realm-diis.json` has `directAccessGrantsEnabled: false` for BOTH `diis-web` and `diis-api` clients — password grant won't work even with a test user. Solution: `scripts/provision-smoke-test.sh` creates dedicated `smoke-test` client with `directAccessGrantsEnabled=true`.
+
+---
+
+## 2. Next Steps — Unlock Authenticated Tests
+
+### 2.1 Provision Keycloak Test User (VPS Manual Step)
+
+SSH to VPS and run:
+```bash
+cd /opt/diis-staging/smart-ai-school
+./scripts/provision-smoke-test.sh
+```
+
+This creates:
+- Client `smoke-test` with `directAccessGrantsEnabled=true`
+- User `smoke-test` with `SUPER_ADMIN` realm role
+
+### 2.2 Re-run Smoke Test with Auth
+
+```bash
+export SMOKE_TEST_USERNAME=smoke-test
+export SMOKE_TEST_PASSWORD=<password dari step 2.1>
+export STAGING_API_URL=https://staging-api.smkdarussalamsubah.sch.id
+export STAGING_WEB_URL=https://staging.smkdarussalamsubah.sch.id
+export KEYCLOAK_URL=https://auth.smkdarussalamsubah.sch.id
+npx ts-node --project apps/api/tsconfig.json scripts/smoke-test-staging.ts
+```
+
+**Target: 22-25 PASS, 0 FAIL** (A1, R0-R9, I1-I2 should all PASS after provisioning).
+
+---
+
+## 3. PR Summary — Fixes Applied
+
+| PR | Title | Fix |
+|----|-------|-----|
+| #322 | feat: staging smoke test script | Initial smoke test script |
+| #323 | fix: deploy.yml nginx staging | Removed `if main` guard for nginx recreate |
+| #324 | fix: nginx recreate from prod context | Copy nginx.conf to prod dir + recreate from prod compose |
+| #325 | fix: smoke test client_id + provisioning | `client_id: 'smoke-test'` + `provision-smoke-test.sh` |
+| #326 | fix: deploy build-arg API_URL | `--build-arg API_URL` for staging (didn't work alone) |
+| #327 | fix: compose build.args API_URL | `build.args` in compose override (didn't work alone) |
+| #328 | fix: runtime API backend proxy | Route handler at `/api/backend/[...path]` |
+| #329 | fix: middleware PUBLIC_PREFIXES | Added `/api/backend` to bypass auth redirect |
 
 ---
 
