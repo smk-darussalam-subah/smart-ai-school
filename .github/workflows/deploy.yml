@@ -154,30 +154,34 @@ jobs:
               )
             echo "✅ ${API_CONTAINER} healthy!"
 
-            if [ "$BRANCH" = "main" ]; then
-              # ── Prod: recreate nginx ────────────────────────────────────────
-              # --force-recreate diperlukan karena git mengganti file nginx.conf
-              # dengan inode baru (bukan modifikasi in-place). Tanpa recreate,
-              # container nginx masih membaca inode lama → perubahan nginx.conf
-              # tidak aktif meski nginx -s reload berhasil.
-              docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
-                up -d --no-deps --force-recreate nginx
-              echo "✅ nginx recreated (fresh bind mount)"
+            # ── Recreate nginx (ALL branches) ─────────────────────────────
+            # --force-recreate diperlukan karena git mengganti file nginx.conf
+            # dengan inode baru (bukan modifikasi in-place). Tanpa recreate,
+            # container nginx masih membaca inode lama → perubahan nginx.conf
+            # tidak aktif meski nginx -s reload berhasil.
+            #
+            # FIX (2026-07-11): Sebelumnya hanya dijalankan untuk branch main.
+            # Staging deploy TIDAK pernah recreate nginx → server block staging-api
+            # tidak pernah di-load → staging-api.smkdarussalamsubah.sch.id falls
+            # through ke default server (prod web). Sekarang dijalankan untuk SEMUA
+            # branch agar perubahan nginx.conf selalu aktif.
+            docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
+              up -d --no-deps --force-recreate nginx
+            echo "✅ nginx recreated (fresh bind mount) — branch: ${BRANCH}"
 
-              # ── Re-heal staging: nginx ↔ smk-staging-net ────────────────────
-              # recreate nginx melepasnya dari smk-staging-net (jaringan staging
-              # SENGAJA di luar compose prod agar deploy main tak bergantung infra
-              # staging). Sambung ulang best-effort: || true agar deploy PROD tak
-              # pernah gagal walau staging-net belum ada. Idempoten.
-              if docker network inspect smk-staging-net >/dev/null 2>&1; then
-                docker network connect smk-staging-net smk-nginx 2>/dev/null \
-                  && echo "✅ nginx ↔ smk-staging-net reconnected" \
-                  || echo "ℹ️ nginx sudah tersambung ke smk-staging-net (atau dilewati)"
-                docker exec smk-nginx nginx -s reload 2>/dev/null \
-                  && echo "✅ nginx reloaded" || true
-              else
-                echo "ℹ️ smk-staging-net tidak ada — lewati re-heal staging"
-              fi
+            # ── Re-heal staging: nginx ↔ smk-staging-net ────────────────────
+            # recreate nginx melepasnya dari smk-staging-net (jaringan staging
+            # SENGAJA di luar compose prod agar deploy main tak bergantung infra
+            # staging). Sambung ulang best-effort: || true agar deploy tak
+            # pernah gagal walau staging-net belum ada. Idempoten.
+            if docker network inspect smk-staging-net >/dev/null 2>&1; then
+              docker network connect smk-staging-net smk-nginx 2>/dev/null \
+                && echo "✅ nginx ↔ smk-staging-net reconnected" \
+                || echo "ℹ️ nginx sudah tersambung ke smk-staging-net (atau dilewati)"
+              docker exec smk-nginx nginx -s reload 2>/dev/null \
+                && echo "✅ nginx reloaded" || true
+            else
+              echo "ℹ️ smk-staging-net tidak ada — lewati re-heal staging"
             fi
 
             echo "✅ Deploy berhasil! Branch: ${BRANCH} → ${API_CONTAINER} / ${WEB_CONTAINER}"
