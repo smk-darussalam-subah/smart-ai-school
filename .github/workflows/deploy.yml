@@ -162,12 +162,32 @@ jobs:
             #
             # FIX (2026-07-11): Sebelumnya hanya dijalankan untuk branch main.
             # Staging deploy TIDAK pernah recreate nginx → server block staging-api
-            # tidak pernah di-load → staging-api.smkdarussalamsubah.sch.id falls
-            # through ke default server (prod web). Sekarang dijalankan untuk SEMUA
-            # branch agar perubahan nginx.conf selalu aktif.
-            docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
+            # tidak pernah di-load.
+            #
+            # PENTING: nginx adalah container PRODUKSI (smk-nginx) yang di-share
+            # oleh staging via smk-staging-net. Bind mount nginx.conf berasal dari
+            # production working dir (/home/appuser/smart-ai-school/infrastructure/
+            # nginx/nginx.conf). Staging deploy menaruh code di /opt/diis-staging/
+            # sehingga nginx.conf staging TIDAK terlihat oleh container nginx prod.
+            #
+            # Solusi: copy nginx.conf dari staging working dir ke prod working dir,
+            # lalu recreate nginx dari prod compose context.
+            PROD_WORK_DIR=/home/appuser/smart-ai-school
+            PROD_DOCKER_DIR="$PROD_WORK_DIR/infrastructure/docker"
+            PROD_NGINX_DIR="$PROD_WORK_DIR/infrastructure/nginx"
+
+            if [ "$BRANCH" = "staging" ]; then
+              # Copy nginx.conf staging ke prod working dir agar bind mount picks it up
+              cp "$WORK_DIR/infrastructure/nginx/nginx.conf" "$PROD_NGINX_DIR/nginx.conf"
+              echo "✅ nginx.conf staging → prod working dir copied"
+            fi
+
+            # Recreate nginx dari PRODUCTION compose context (container name: smk-nginx)
+            cd "$PROD_DOCKER_DIR"
+            docker compose -f docker-compose.yml --env-file .env \
               up -d --no-deps --force-recreate nginx
-            echo "✅ nginx recreated (fresh bind mount) — branch: ${BRANCH}"
+            cd "$WORK_DIR/infrastructure/docker"
+            echo "✅ nginx recreated (prod context, fresh bind mount) — branch: ${BRANCH}"
 
             # ── Re-heal staging: nginx ↔ smk-staging-net ────────────────────
             # recreate nginx melepasnya dari smk-staging-net (jaringan staging
