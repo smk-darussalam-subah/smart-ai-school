@@ -393,7 +393,10 @@ async function main(): Promise<number> {
     const tokenUrl = `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`;
     const tokenBody = new URLSearchParams({
       grant_type: 'password',
-      client_id: 'diis-web',
+      // Use smoke-test client (directAccessGrantsEnabled=true).
+      // diis-web has directAccessGrantsEnabled=false — password grant won't work.
+      // Provision via scripts/provision-smoke-test.sh on VPS.
+      client_id: 'smoke-test',
       username: config.username!,
       password: config.password!,
     });
