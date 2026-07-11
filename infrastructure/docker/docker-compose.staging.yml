@@ -151,6 +151,12 @@ services:
   # Port host 3100 untuk staging frontend.
 
   web:
+    build:
+      # Next.js rewrites() resolve process.env.API_URL at build time (standalone
+      # mode freezes routes-manifest.json). Must point to staging API container
+      # so SSR proxy /api/backend/* forwards to the correct backend.
+      args:
+        API_URL: http://smk-staging-api:3001
     container_name: smk-staging-web
     environment:
       NODE_ENV: production
