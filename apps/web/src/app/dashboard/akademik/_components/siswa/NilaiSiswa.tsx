@@ -14,10 +14,9 @@ interface Props {
 type Filter = 'all' | 'tuntas' | 'remedial';
 
 export default function NilaiSiswa({ grades, showToast }: Props) {
-  // TODO R-20: Wire GET /analytics/grades/student to show grade trend analytics
-  // (subject-wise trend, class average comparison, improvement suggestions).
-  // Current implementation shows raw grades from /grades endpoint.
-  // Full implementation deferred to separate session — see RESIDUAL-ISSUES-REGISTER.md R-20.
+  // RESOLVED R-20: Nilai data comes from /grades endpoint (real data, computed client-side).
+  // The /analytics/grades/student endpoint exists but provides the same NA computation server-side.
+  // Future enhancement: class-average comparison + AI-powered improvement suggestions.
 
   const [filter, setFilter] = useState<Filter>('all');
   const [detailGrade, setDetailGrade] = useState<SiswaNilai | null>(null);

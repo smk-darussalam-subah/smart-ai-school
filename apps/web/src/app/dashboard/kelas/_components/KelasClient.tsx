@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  School, Plus, Edit3, Trash2, Power, AlertCircle, Loader2, Check,
+  School, Plus, Edit3, Trash2, Power, AlertCircle, Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -13,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { TablePagination } from '@/components/ui/table-pagination';
 import { createClassAction, updateClassAction, deleteClassAction } from '../actions';
 import type { ClassRow, Major, StaffCandidate } from '../page';
 
@@ -37,12 +39,12 @@ const EMPTY_FORM: ClassForm = {
 };
 
 const GRADES = [10, 11, 12];
+const PAGE_SIZE = 10;
 
 export default function KelasClient({ classes, majors, teachers, isSuperAdmin }: Props) {
-  const [msg, setMsg] = useState('');
-  const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [filterGrade, setFilterGrade] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ClassForm>(EMPTY_FORM);
@@ -51,6 +53,11 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
   const filtered = filterGrade === 'all'
     ? classes
     : classes.filter((c) => c.grade === Number(filterGrade));
+
+  // Reset ke halaman 1 saat filter berubah
+  useEffect(() => { setCurrentPage(1); }, [filterGrade]);
+
+  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const openCreate = () => {
     setEditingId(null);
@@ -73,7 +80,7 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErr(''); setMsg(''); setBusy(true);
+    setBusy(true);
     const body = {
       name: form.name.trim(),
       majorCode: form.majorCode.trim().toUpperCase(),
@@ -86,34 +93,34 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
       ? await updateClassAction(editingId, body)
       : await createClassAction(body);
     setBusy(false);
-    if (result.error) { setErr(result.error); return; }
-    setMsg(editingId ? 'Kelas berhasil diperbarui.' : 'Kelas berhasil dibuat.');
+    if (result.error) { toast.error(result.error); return; }
+    toast.success(editingId ? 'Kelas berhasil diperbarui.' : 'Kelas berhasil dibuat.');
     setShowForm(false);
   };
 
   const handleToggleActive = async (c: ClassRow) => {
-    setErr(''); setMsg(''); setBusy(true);
+    setBusy(true);
     const result = await updateClassAction(c.id, { isActive: !c.isActive });
     setBusy(false);
-    if (result.error) { setErr(result.error); return; }
-    setMsg(`Kelas ${c.name} ${!c.isActive ? 'diaktifkan' : 'dinonaktifkan'}.`);
+    if (result.error) { toast.error(result.error); return; }
+    toast.success(`Kelas ${c.name} ${!c.isActive ? 'diaktifkan' : 'dinonaktifkan'}.`);
   };
 
   const handleAssignAdvisor = async (classId: string, teacherId: string) => {
-    setErr(''); setMsg('');
     const result = await updateClassAction(classId, { teacherId: teacherId || null });
-    if (result.error) { setErr(result.error); return; }
-    setMsg('Wali kelas berhasil diperbarui.');
+    if (result.error) { toast.error(result.error); return; }
+    toast.success('Wali kelas berhasil diperbarui.');
   };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
-    setErr(''); setMsg(''); setBusy(true);
+    setBusy(true);
     const result = await deleteClassAction(deleteTarget.id);
     setBusy(false);
+    const deletedName = deleteTarget.name;
     setDeleteTarget(null);
-    if (result.error) { setErr(result.error); return; }
-    setMsg(`Kelas ${deleteTarget.name} dihapus.`);
+    if (result.error) { toast.error(result.error); return; }
+    toast.success(`Kelas ${deletedName} dihapus.`);
   };
 
   return (
@@ -130,18 +137,6 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
           <Plus className="h-4 w-4" />Tambah Kelas
         </Button>
       </div>
-
-      {/* Messages */}
-      {msg && (
-        <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">
-          <Check className="h-4 w-4" />{msg}
-        </div>
-      )}
-      {err && (
-        <div className="flex items-center gap-2 rounded-lg bg-rose-50 px-4 py-2.5 text-sm text-rose-700">
-          <AlertCircle className="h-4 w-4" />{err}
-        </div>
-      )}
 
       {/* Filter */}
       <div className="flex items-center gap-2">
@@ -179,7 +174,7 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
                 </td>
               </tr>
             ) : (
-              filtered.map((c) => (
+              paginated.map((c) => (
                 <tr key={c.id} className="border-b border-[#f0f4f2] hover:bg-[#f9fbfa]">
                   <td className="px-4 py-3 font-semibold text-[#0f2e25]">{c.name}</td>
                   <td className="px-4 py-3 text-[#355a4e]">{c.majorCode}</td>
@@ -228,6 +223,8 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
           </tbody>
         </table>
       </div>
+
+      <TablePagination page={currentPage} limit={PAGE_SIZE} total={filtered.length} onPage={setCurrentPage} />
 
       {/* Create/Edit Modal */}
       <Dialog open={showForm} onOpenChange={(v: boolean) => !v && setShowForm(false)}>
