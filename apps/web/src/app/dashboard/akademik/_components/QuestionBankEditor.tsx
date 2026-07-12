@@ -5,13 +5,15 @@
 // AI Generate button calls /ai/generate-questions (rate-limited 10/min).
 
 import { useState, useTransition, useEffect } from 'react';
-import { Database, Plus, Trash2, Pencil, X, Sparkles, Loader2, Check, AlertTriangle, Download, Upload } from 'lucide-react';
+import { Database, Plus, Trash2, Pencil, X, Sparkles, Loader2, Check, Download, Upload } from 'lucide-react';
 import clsx from 'clsx';
 import {
   fetchQuestions, createQuestion, updateQuestion, deleteQuestion,
   aiGenerateQuestions, exportQuestionsCsv, importQuestionsCsv,
   type QuestionData, type EssayRubricCriteria,
 } from '../actions';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { toast } from 'sonner';
 
 interface Question extends QuestionData {
   id: string;
@@ -40,7 +42,8 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
   const [loading, startLoad] = useTransition();
   const [saving, startSave] = useTransition();
   const [aiLoading, startAi] = useTransition();
-  const [err, setErr] = useState<string | null>(null);
+  // err state replaced by sonner toast — setErr(null) is no-op, setErr(msg) = toast.error(msg)
+  const setErr = (msg: string | null) => { if (msg) toast.error(msg); };
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
 
@@ -127,8 +130,15 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
     });
   };
 
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
   const handleDelete = (id: string) => {
-    if (!window.confirm('Hapus soal ini?')) return;
+    setDeleteTarget(id);
+  };
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return;
+    const id = deleteTarget;
     startSave(async () => {
       const res = await deleteQuestion(id);
       if (!res.success) { setErr(res.error ?? 'Gagal menghapus.'); return; }
@@ -273,13 +283,6 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
             <X className="h-5 w-5" />
           </button>
         </div>
-
-        {/* Error */}
-        {err && (
-          <div className="mt-3 flex items-center gap-1.5 rounded-lg bg-rose-50 px-3 py-2 text-[11px] font-bold text-rose-700">
-            <AlertTriangle className="h-3 w-3" />{err}
-          </div>
-        )}
 
         {/* Question list */}
         <div className="mt-4 space-y-2">
@@ -517,6 +520,15 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o: boolean) => !o && setDeleteTarget(null)}
+        title="Hapus Soal"
+        description="Hapus soal ini? Tindakan ini tidak bisa dibatalkan."
+        variant="danger"
+        confirmLabel="Hapus"
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

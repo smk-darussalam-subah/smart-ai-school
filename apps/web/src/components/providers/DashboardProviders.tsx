@@ -18,6 +18,7 @@
 
 import { SessionProvider as NextAuthSessionProvider } from 'next-auth/react';
 import type { Session } from 'next-auth';
+import { Toaster } from 'sonner';
 
 export function DashboardProviders({
   children,
@@ -29,6 +30,17 @@ export function DashboardProviders({
   return (
     <NextAuthSessionProvider session={session} refetchInterval={5 * 60}>
       {children}
+      <Toaster
+        position="top-right"
+        richColors
+        closeButton
+        toastOptions={{
+          style: {
+            fontSize: '13px',
+            borderRadius: '12px',
+          },
+        }}
+      />
     </NextAuthSessionProvider>
   );
 }

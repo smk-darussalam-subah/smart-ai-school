@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
+import LoadError from '@/components/LoadError';
 import KelasClient from './_components/KelasClient';
 
 export interface ClassRow {
@@ -47,6 +48,8 @@ export default async function KelasPage() {
     apiFetch<Major[]>('/school/majors?activeOnly=true', token),
     apiFetch<{ groups: { role: string; users: StaffCandidate[] }[] }>('/users/grouped?limit=200', token),
   ]);
+
+  if (classesRes === null) return <LoadError />;
 
   const classes = classesRes?.data ?? [];
   const majors = Array.isArray(majorsRes) ? majorsRes : [];
