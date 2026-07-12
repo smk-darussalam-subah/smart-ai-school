@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TablePagination } from '@/components/ui/table-pagination';
 import {
   Dialog,
   DialogContent,
@@ -70,6 +71,8 @@ const emptyProfileForm = (p: SchoolProfile | null): ProfileForm => ({
 
 const emptyMajorForm: MajorForm = { code: '', name: '', description: '' };
 
+const MAJOR_PAGE_SIZE = 8;
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
@@ -83,6 +86,7 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
   const [majorForm, setMajorForm] = useState<MajorForm>(emptyMajorForm);
   const [majorSaving, setMajorSaving] = useState(false);
   const [majorMsg, setMajorMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [majorPage, setMajorPage] = useState(1);
 
   // ── Profile handlers ──────────────────────────────────────────────────────
 
@@ -168,6 +172,11 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
   };
 
   const mf = (k: keyof MajorForm, v: string) => setMajorForm((p) => ({ ...p, [k]: v }));
+
+  // Reset ke halaman 1 saat majorsList berubah (setelah CRUD)
+  useEffect(() => { setMajorPage(1); }, [majorsList.length]);
+
+  const paginatedMajors = majorsList.slice((majorPage - 1) * MAJOR_PAGE_SIZE, majorPage * MAJOR_PAGE_SIZE);
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -300,7 +309,7 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {majorsList.map((m) => (
+                {paginatedMajors.map((m) => (
                   <TableRow key={m.id} className="hover:bg-gray-50">
                     <TableCell>
                       <span className="font-mono text-sm bg-gray-100 px-1.5 py-0.5 rounded">{m.code}</span>
@@ -340,6 +349,10 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
               </TableBody>
             </Table>
           </div>
+        )}
+
+        {majorsList.length > MAJOR_PAGE_SIZE && (
+          <TablePagination page={majorPage} limit={MAJOR_PAGE_SIZE} total={majorsList.length} onPage={setMajorPage} />
         )}
 
         {/* Major CRUD Modal */}

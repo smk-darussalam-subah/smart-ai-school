@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { TablePagination } from '@/components/ui/table-pagination';
 import { approveSpp, recordSpp } from '../actions';
 
 interface SppPayment {
@@ -34,6 +35,8 @@ const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondar
 
 const MONTHS = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
+const PAGE_SIZE = 10;
+
 export default function KeuanganTable({ payments, total, canRecord, canApprove }: Props) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -41,12 +44,18 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [approving, setApproving] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const filtered = payments.filter((p) => {
     const matchSearch = !search || p.student.nis.includes(search) || p.student.user.fullName.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === 'all' || p.status === statusFilter;
     return matchSearch && matchStatus;
   });
+
+  // Reset ke halaman 1 saat filter berubah
+  useEffect(() => { setCurrentPage(1); }, [search, statusFilter]);
+
+  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const handleRecord = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -85,7 +94,7 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
             {Object.entries(STATUS_MAP).map(([k, v]) => (<SelectItem key={k} value={k}>{v.label}</SelectItem>))}
           </SelectContent>
         </Select>
-        <span className="text-sm text-muted-foreground self-center">{total} transaksi</span>
+        <span className="text-sm text-muted-foreground self-center">{filtered.length} dari {total} transaksi</span>
       </div>
 
       <div className="rounded-xl border shadow-sm overflow-x-auto">
@@ -102,7 +111,7 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow><TableCell colSpan={canApprove ? 5 : 4} className="text-center h-24 text-muted-foreground">Belum ada data SPP</TableCell></TableRow>
-            ) : filtered.map((p) => (
+            ) : paginated.map((p) => (
               <TableRow key={p.id}>
                 <TableCell className="font-medium">{p.student.user.fullName} <span className="text-muted-foreground">({p.student.nis})</span></TableCell>
                 <TableCell>{MONTHS[p.month]} {p.year}</TableCell>
@@ -124,6 +133,8 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
           </TableBody>
         </Table>
       </div>
+
+      <TablePagination page={currentPage} limit={PAGE_SIZE} total={filtered.length} onPage={setCurrentPage} />
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="sm:max-w-sm">
