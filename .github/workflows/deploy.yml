@@ -198,9 +198,21 @@ jobs:
             fi
 
             # Recreate nginx dari PRODUCTION compose context (container name: smk-nginx)
+            # Retry loop: Docker terkadang error "removal of container is already in progress"
+            # saat --force-recreate dijalankan tepat setelah container sebelumnya dihapus.
+            # 3 percobaan dengan jeda 5 detik cukup untuk race condition resolution.
             cd "$PROD_DOCKER_DIR"
-            docker compose -f docker-compose.yml --env-file .env \
-              up -d --no-deps --force-recreate nginx
+            for ATTEMPT in 1 2 3; do
+              if docker compose -f docker-compose.yml --env-file .env \
+                up -d --no-deps --force-recreate nginx 2>&1; then
+                echo "✅ nginx recreated on attempt $ATTEMPT"
+                break
+              else
+                echo "⚠️ nginx recreate attempt $ATTEMPT failed, retrying in 5s..."
+                sleep 5
+                docker rm -f smk-nginx 2>/dev/null || true
+              fi
+            done
             cd "$WORK_DIR/infrastructure/docker"
             echo "✅ nginx recreated (prod context, fresh bind mount) — branch: ${BRANCH}"
 
