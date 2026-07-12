@@ -70,6 +70,7 @@ const PUBLIC_EXACT: readonly string[] = [
 const PUBLIC_PREFIXES = [
   '/login',
   '/api/auth',
+  '/api/backend', // SSR proxy → backend handles its own auth
   '/health',
   '/ruang-guru', // display publik Ruang Guru (token-gated di API, read-only)
   '/_next',

@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
+import LoadError from '@/components/LoadError';
 import type { Metadata } from 'next';
 import ProfilClient from './_components/ProfilClient';
 
@@ -48,6 +49,8 @@ export default async function ProfilPage() {
 
   const profile = profileRes;
   const majors = Array.isArray(majorsRes) ? majorsRes : [];
+
+  if (profile === null) return <LoadError />;
 
   return (
     <ProfilClient

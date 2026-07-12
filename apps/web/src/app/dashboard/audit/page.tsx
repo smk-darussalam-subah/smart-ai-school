@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
+import LoadError from '@/components/LoadError';
 import type { Metadata } from 'next';
 import AuditClient from './_components/AuditClient';
 
@@ -53,6 +54,8 @@ export default async function AuditPage({
 
   const token = session.accessToken ?? '';
   const data = await apiFetch<AuditResponse>(`/audit-logs?${params.toString()}`, token);
+
+  if (data === null) return <LoadError />;
 
   return (
     <AuditClient

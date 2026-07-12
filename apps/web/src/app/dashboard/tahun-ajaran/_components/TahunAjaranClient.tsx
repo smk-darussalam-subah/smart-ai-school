@@ -12,6 +12,8 @@ import { fmtDateShort } from '@/lib/academic';
 import {
   createAcademicYear, activateAcademicYear, createSemester, activateSemester,
 } from '../actions';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { toast } from 'sonner';
 
 export interface AcademicYearRow {
   id: string;
@@ -35,7 +37,6 @@ const FIELD = 'w-full rounded-xl border border-[#e6efea] bg-white px-3 py-2 text
 export default function TahunAjaranClient({ years, semesters }: { years: AcademicYearRow[]; semesters: SemesterRow[] }) {
   const [yearDialog, setYearDialog] = useState(false);
   const [semForYear, setSemForYear] = useState<AcademicYearRow | null>(null);
-  const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -44,21 +45,29 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
   const activeSem = semesters.find((s) => s.isActive);
 
   const run = (id: string, fn: () => Promise<{ success: boolean; error?: string }>) => {
-    setErr(null); setBusyId(id);
+    setBusyId(id);
     startTransition(async () => {
       const res = await fn();
       setBusyId(null);
-      if (!res.success) setErr(res.error ?? 'Aksi gagal.');
+      if (!res.success) toast.error(res.error ?? 'Aksi gagal.');
     });
   };
 
+  const [confirmState, setConfirmState] = useState<{ title: string; description: string; action: () => void } | null>(null);
+
   const doActivateYear = (y: AcademicYearRow) => {
-    if (!window.confirm(`Aktifkan Tahun Ajaran ${y.code}? Tahun ajaran aktif lainnya akan dinonaktifkan.`)) return;
-    run(y.id, () => activateAcademicYear(y.id));
+    setConfirmState({
+      title: 'Aktifkan Tahun Ajaran',
+      description: `Aktifkan Tahun Ajaran ${y.code}? Tahun ajaran aktif lainnya akan dinonaktifkan.`,
+      action: () => run(y.id, () => activateAcademicYear(y.id)),
+    });
   };
   const doActivateSem = (s: SemesterRow) => {
-    if (!window.confirm(`Aktifkan Semester ${s.number} (${s.academicYear?.code ?? ''})? Semester aktif lainnya akan dinonaktifkan.`)) return;
-    run(s.id, () => activateSemester(s.id));
+    setConfirmState({
+      title: 'Aktifkan Semester',
+      description: `Aktifkan Semester ${s.number} (${s.academicYear?.code ?? ''})? Semester aktif lainnya akan dinonaktifkan.`,
+      action: () => run(s.id, () => activateSemester(s.id)),
+    });
   };
 
   return (
@@ -70,7 +79,7 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
           </h1>
           <p className="text-sm text-[#6b8079]">Kelola periode akademik. Aktifkan TA &amp; semester saat memulai tahun ajaran baru.</p>
         </div>
-        <button type="button" onClick={() => { setErr(null); setYearDialog(true); }}
+        <button type="button" onClick={() => { setYearDialog(true); }}
           className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-[13px] font-bold text-white hover:bg-emerald-700">
           <Plus className="h-4 w-4" />Buat Tahun Ajaran
         </button>
@@ -84,12 +93,6 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
           {activeSem ? ` · Semester ${activeSem.number}` : ' · belum ada semester aktif'}
         </span>
       </div>
-
-      {err && (
-        <div className="flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-[12.5px] font-semibold text-rose-600">
-          <AlertTriangle className="h-4 w-4 shrink-0" />{err}
-        </div>
-      )}
 
       {sortedYears.length === 0 ? (
         <div className="grid h-32 place-items-center rounded-2xl border border-[#e6efea] bg-white text-[13px] font-medium text-[#9bb0a8]">
@@ -123,7 +126,7 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
                 <div className="mt-3 border-t border-[#f0f4f2] pt-3">
                   <div className="flex items-center justify-between">
                     <span className="text-[12px] font-bold uppercase tracking-wide text-[#6b8079]">Semester</span>
-                    <button type="button" onClick={() => { setErr(null); setSemForYear(y); }}
+                    <button type="button" onClick={() => { setSemForYear(y); }}
                       className="inline-flex items-center gap-1 rounded-lg border border-[#e6efea] bg-white px-2.5 py-1.5 text-[12px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">
                       <Plus className="h-3.5 w-3.5" />Tambah Semester
                     </button>
@@ -158,8 +161,17 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
         </div>
       )}
 
-      {yearDialog && <YearDialog onClose={() => setYearDialog(false)} onErr={setErr} />}
-      {semForYear && <SemesterDialog year={semForYear} onClose={() => setSemForYear(null)} onErr={setErr} />}
+      {yearDialog && <YearDialog onClose={() => setYearDialog(false)} onErr={(e: string | null) => e ? toast.error(e) : toast.success('Tahun ajaran dibuat.')} />}
+      {semForYear && <SemesterDialog year={semForYear} onClose={() => setSemForYear(null)} onErr={(e: string | null) => e ? toast.error(e) : toast.success('Semester dibuat.')} />}
+      <ConfirmDialog
+        open={!!confirmState}
+        onOpenChange={(o: boolean) => !o && setConfirmState(null)}
+        title={confirmState?.title ?? ''}
+        description={confirmState?.description ?? ''}
+        variant="warning"
+        confirmLabel="Aktifkan"
+        onConfirm={() => { confirmState?.action(); }}
+      />
     </div>
   );
 }

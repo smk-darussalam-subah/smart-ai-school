@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import {
   Briefcase, Users, GraduationCap, Loader2, Check, X, ShieldCheck,
-  CalendarDays, UserPlus, Info, RefreshCw, AlertCircle,
+  CalendarDays, UserPlus, Info, RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { assignPositionAction, unassignPositionAction, syncRolesAction } from '../actions';
+import { toast } from 'sonner';
 import type { Position, Assignment, Major, StaffCandidate } from '../page';
 
 const CATEGORY_META: Record<string, { label: string; cls: string }> = {
@@ -42,8 +43,6 @@ interface SyncResult {
 
 export default function StrukturClient({ positions, academicYear, assignments, majors, staff, isSuperAdmin }: Props) {
   const router = useRouter();
-  const [msg, setMsg] = useState('');
-  const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
   // dialog penugasan
@@ -67,14 +66,14 @@ export default function StrukturClient({ positions, academicYear, assignments, m
   }, [assignments]);
 
   const openAssign = (p: Position) => {
-    setTarget(p); setUserId(''); setMajorId(''); setErr('');
+    setTarget(p); setUserId(''); setMajorId('');
   };
 
   const submitAssign = async () => {
     if (!target || !academicYear) return;
-    if (!userId) { setErr('Pilih pegawai dulu.'); return; }
-    if (target.scopeType === 'MAJOR' && !majorId) { setErr('Pilih jurusan dulu.'); return; }
-    setBusy(true); setErr('');
+    if (!userId) { toast.error('Pilih pegawai dulu.'); return; }
+    if (target.scopeType === 'MAJOR' && !majorId) { toast.error('Pilih jurusan dulu.'); return; }
+    setBusy(true);
     const res = await assignPositionAction({
       userId,
       positionId: target.id,
@@ -82,23 +81,22 @@ export default function StrukturClient({ positions, academicYear, assignments, m
       ...(target.scopeType === 'MAJOR' ? { majorId } : {}),
     });
     setBusy(false);
-    if (res.error) { setErr(res.error); return; }
-    setTarget(null); setMsg('Penugasan berhasil disimpan.'); router.refresh();
+    if (res.error) { toast.error(res.error); return; }
+    setTarget(null); toast.success('Penugasan berhasil disimpan.'); router.refresh();
   };
 
   const removeAssign = async (a: Assignment) => {
-    setMsg(''); setErr('');
     const res = await unassignPositionAction(a.id);
-    if (res.error) { setMsg(`Gagal: ${res.error}`); return; }
-    setMsg('Penugasan dilepas.'); router.refresh();
+    if (res.error) { toast.error(`Gagal: ${res.error}`); return; }
+    toast.success('Penugasan dilepas.'); router.refresh();
   };
 
   const handleSyncRoles = async () => {
-    setSyncing(true); setSyncResult(null); setMsg(''); setErr('');
+    setSyncing(true); setSyncResult(null);
     const res = await syncRolesAction();
     setSyncing(false);
     if (res.error) {
-      setErr(`Sinkronisasi gagal: ${res.error}`);
+      toast.error(`Sinkronisasi gagal: ${res.error}`);
       return;
     }
     setSyncResult(res.data as SyncResult);
@@ -106,9 +104,9 @@ export default function StrukturClient({ positions, academicYear, assignments, m
     const totalExisting = (res.data as SyncResult)?.existing?.length ?? 0;
     const totalFailed = (res.data as SyncResult)?.failed?.length ?? 0;
     if (totalFailed > 0) {
-      setMsg(`Sinkronisasi selesai dengan ${totalFailed} gagalan.`);
+      toast.warning(`Sinkronisasi selesai dengan ${totalFailed} gagalan.`);
     } else {
-      setMsg(`Sinkronisasi selesai: ${totalCreated} role baru, ${totalExisting} sudah ada.`);
+      toast.success(`Sinkronisasi selesai: ${totalCreated} role baru, ${totalExisting} sudah ada.`);
     }
     router.refresh();
   };
@@ -150,9 +148,6 @@ export default function StrukturClient({ positions, academicYear, assignments, m
           <Info className="mt-0.5 h-4 w-4 shrink-0" /> Belum ada tahun ajaran aktif. Penugasan tidak dapat dibuat sampai tahun ajaran aktif tersedia.
         </div>
       )}
-      {msg && <div className={clsx('rounded-lg px-4 py-2 text-sm', msg.startsWith('Gagal') || msg.includes('gagal') ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700')}>{msg}</div>}
-      {err && <div className="flex items-start gap-2 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {err}</div>}
-
       {/* R-23: Hasil sinkronisasi Keycloak roles */}
       {syncResult && (
         <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 text-sm">
@@ -230,7 +225,6 @@ export default function StrukturClient({ positions, academicYear, assignments, m
       <Dialog open={!!target} onOpenChange={(o: boolean) => { if (!o) setTarget(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Tetapkan: {target?.name}</DialogTitle></DialogHeader>
-          {err && <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"><X className="mt-0.5 h-4 w-4 shrink-0" /> {err}</div>}
           <div className="space-y-4">
             <div>
               <Label>Pegawai</Label>

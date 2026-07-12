@@ -120,8 +120,18 @@ jobs:
 
             # ── Build image (api, web, api-migrate) ──────────────────────────
             # api-migrate harus ikut di-build agar migration files selalu up-to-date.
+            # BUILD_ARG_API_URL: Next.js rewrites() resolve process.env.API_URL at build
+            # time (frozen into routes-manifest.json in standalone mode). Staging MUST
+            # point to smk-staging-api:3001 (not prod api:3001) so SSR proxy works.
+            if [ "$BRANCH" = "staging" ]; then
+              BUILD_ARG_API="--build-arg API_URL=http://smk-staging-api:3001"
+            else
+              BUILD_ARG_API=""
+            fi
+
+            # shellcheck disable=SC2086
             docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
-              build --no-cache api web api-migrate
+              build --no-cache $BUILD_ARG_API api web api-migrate
 
             # ── Step 1: Jalankan Prisma migration (one-shot, DDL terpisah dari runtime) ──
             # api-migrate: service dengan profile migrate — jalankan prisma migrate deploy lalu exit.
@@ -154,30 +164,54 @@ jobs:
               )
             echo "✅ ${API_CONTAINER} healthy!"
 
-            if [ "$BRANCH" = "main" ]; then
-              # ── Prod: recreate nginx ────────────────────────────────────────
-              # --force-recreate diperlukan karena git mengganti file nginx.conf
-              # dengan inode baru (bukan modifikasi in-place). Tanpa recreate,
-              # container nginx masih membaca inode lama → perubahan nginx.conf
-              # tidak aktif meski nginx -s reload berhasil.
-              docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
-                up -d --no-deps --force-recreate nginx
-              echo "✅ nginx recreated (fresh bind mount)"
+            # ── Recreate nginx (ALL branches) ─────────────────────────────
+            # --force-recreate diperlukan karena git mengganti file nginx.conf
+            # dengan inode baru (bukan modifikasi in-place). Tanpa recreate,
+            # container nginx masih membaca inode lama → perubahan nginx.conf
+            # tidak aktif meski nginx -s reload berhasil.
+            #
+            # FIX (2026-07-11): Sebelumnya hanya dijalankan untuk branch main.
+            # Staging deploy TIDAK pernah recreate nginx → server block staging-api
+            # tidak pernah di-load.
+            #
+            # PENTING: nginx adalah container PRODUKSI (smk-nginx) yang di-share
+            # oleh staging via smk-staging-net. Bind mount nginx.conf berasal dari
+            # production working dir (/home/appuser/smart-ai-school/infrastructure/
+            # nginx/nginx.conf). Staging deploy menaruh code di /opt/diis-staging/
+            # sehingga nginx.conf staging TIDAK terlihat oleh container nginx prod.
+            #
+            # Solusi: copy nginx.conf dari staging working dir ke prod working dir,
+            # lalu recreate nginx dari prod compose context.
+            PROD_WORK_DIR=/home/appuser/smart-ai-school
+            PROD_DOCKER_DIR="$PROD_WORK_DIR/infrastructure/docker"
+            PROD_NGINX_DIR="$PROD_WORK_DIR/infrastructure/nginx"
 
-              # ── Re-heal staging: nginx ↔ smk-staging-net ────────────────────
-              # recreate nginx melepasnya dari smk-staging-net (jaringan staging
-              # SENGAJA di luar compose prod agar deploy main tak bergantung infra
-              # staging). Sambung ulang best-effort: || true agar deploy PROD tak
-              # pernah gagal walau staging-net belum ada. Idempoten.
-              if docker network inspect smk-staging-net >/dev/null 2>&1; then
-                docker network connect smk-staging-net smk-nginx 2>/dev/null \
-                  && echo "✅ nginx ↔ smk-staging-net reconnected" \
-                  || echo "ℹ️ nginx sudah tersambung ke smk-staging-net (atau dilewati)"
-                docker exec smk-nginx nginx -s reload 2>/dev/null \
-                  && echo "✅ nginx reloaded" || true
-              else
-                echo "ℹ️ smk-staging-net tidak ada — lewati re-heal staging"
-              fi
+            if [ "$BRANCH" = "staging" ]; then
+              # Copy nginx.conf staging ke prod working dir agar bind mount picks it up
+              cp "$WORK_DIR/infrastructure/nginx/nginx.conf" "$PROD_NGINX_DIR/nginx.conf"
+              echo "✅ nginx.conf staging → prod working dir copied"
+            fi
+
+            # Recreate nginx dari PRODUCTION compose context (container name: smk-nginx)
+            cd "$PROD_DOCKER_DIR"
+            docker compose -f docker-compose.yml --env-file .env \
+              up -d --no-deps --force-recreate nginx
+            cd "$WORK_DIR/infrastructure/docker"
+            echo "✅ nginx recreated (prod context, fresh bind mount) — branch: ${BRANCH}"
+
+            # ── Re-heal staging: nginx ↔ smk-staging-net ────────────────────
+            # recreate nginx melepasnya dari smk-staging-net (jaringan staging
+            # SENGAJA di luar compose prod agar deploy main tak bergantung infra
+            # staging). Sambung ulang best-effort: || true agar deploy tak
+            # pernah gagal walau staging-net belum ada. Idempoten.
+            if docker network inspect smk-staging-net >/dev/null 2>&1; then
+              docker network connect smk-staging-net smk-nginx 2>/dev/null \
+                && echo "✅ nginx ↔ smk-staging-net reconnected" \
+                || echo "ℹ️ nginx sudah tersambung ke smk-staging-net (atau dilewati)"
+              docker exec smk-nginx nginx -s reload 2>/dev/null \
+                && echo "✅ nginx reloaded" || true
+            else
+              echo "ℹ️ smk-staging-net tidak ada — lewati re-heal staging"
             fi
 
             echo "✅ Deploy berhasil! Branch: ${BRANCH} → ${API_CONTAINER} / ${WEB_CONTAINER}"
