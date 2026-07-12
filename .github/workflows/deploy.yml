@@ -54,9 +54,14 @@ jobs:
             # ── Pull kode terbaru di working-dir yang benar ───────────────────
             # PENTING: staging menggunakan direktori /opt/diis-staging/ terpisah
             # sehingga git checkout staging TIDAK menyentuh working-tree produksi.
+            #
+            # git stash: VPS working-tree mungkin punya perubahan lokal (mis:
+            # nginx.conf hasil copy dari staging deploy sebelumnya). Stash
+            # memastikan git pull selalu fast-forward tanpa conflict.
             cd "$WORK_DIR"
             git fetch origin
             git checkout "$BRANCH"
+            git stash --include-untracked 2>/dev/null || true
             git pull origin "$BRANCH"
 
             # Masuk ke direktori docker (relatif terhadap WORK_DIR)
