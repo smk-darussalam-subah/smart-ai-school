@@ -15,6 +15,16 @@ import ModulLmsForm from './ModulLmsForm';
 import LmsMonitorModal from './LmsMonitorModal';
 import LmsPreviewModal from './LmsPreviewModal';
 import LmsPreviewScreen from './LmsPreviewScreen';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { toast } from 'sonner';
+
+interface ConfirmState {
+  title: string;
+  description: string;
+  variant: 'danger' | 'warning' | 'info';
+  confirmLabel: string;
+  action: () => void | Promise<void>;
+}
 
 interface Props {
   rpp: RppItem[];
@@ -50,7 +60,6 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<RppItem | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   // Filter rpp by activeSubject (dari session flow "Buka Modul Ajar") bila ada.
@@ -66,6 +75,7 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
   const [monitorM, setMonitorM] = useState<LmsModuleItem | null>(null);
   const [previewM, setPreviewM] = useState<LmsModuleItem | null>(null);
   const [previewScreenM, setPreviewScreenM] = useState<LmsModuleItem | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   // W2-B-3: Fetch real CP progress data
   useEffect(() => {
@@ -87,40 +97,79 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
   const openLmsEdit = (m: LmsModuleItem) => { setLmsEditing(m); setLmsFormOpen(true); };
 
   const lmsAction = (id: string, fn: () => Promise<{ success: boolean; error?: string }>) => {
-    setErr(null); setBusyId(id);
+    setBusyId(id);
     startTransition(async () => {
       const res = await fn();
       setBusyId(null);
-      if (!res.success) setErr(res.error ?? 'Aksi Modul LMS gagal.');
+      if (!res.success) toast.error(res.error ?? 'Aksi Modul LMS gagal.');
     });
   };
   const doLmsStatus = (m: LmsModuleItem, action: 'publish' | 'unpublish' | 'archive') => {
-    if (action === 'publish' && !window.confirm(`Publikasikan modul "${m.title}" ke siswa kelas terkait?`)) return;
-    if (action === 'archive' && !window.confirm(`Arsipkan modul "${m.title}"? Modul tak lagi tampil aktif bagi siswa.`)) return;
+    if (action === 'publish') {
+      setConfirm({
+        title: 'Publikasikan Modul',
+        description: `Publikasikan modul "${m.title}" ke siswa kelas terkait?`,
+        variant: 'info',
+        confirmLabel: 'Publikasikan',
+        action: () => lmsAction(m.id, () => setLmsModuleStatus(m.id, action)),
+      });
+      return;
+    }
+    if (action === 'archive') {
+      setConfirm({
+        title: 'Arsipkan Modul',
+        description: `Arsipkan modul "${m.title}"? Modul tak lagi tampil aktif bagi siswa.`,
+        variant: 'warning',
+        confirmLabel: 'Arsipkan',
+        action: () => lmsAction(m.id, () => setLmsModuleStatus(m.id, action)),
+      });
+      return;
+    }
     lmsAction(m.id, () => setLmsModuleStatus(m.id, action));
   };
   const doLmsDelete = (m: LmsModuleItem) => {
-    if (!window.confirm(`Hapus Modul LMS "${m.title}"? Progres siswa untuk modul ini ikut terhapus.`)) return;
-    lmsAction(m.id, () => deleteLmsModule(m.id));
+    setConfirm({
+      title: 'Hapus Modul LMS',
+      description: `Hapus Modul LMS "${m.title}"? Progres siswa untuk modul ini ikut terhapus.`,
+      variant: 'danger',
+      confirmLabel: 'Hapus',
+      action: () => lmsAction(m.id, () => deleteLmsModule(m.id)),
+    });
   };
 
   const doSubmit = (r: RppItem) => {
-    if (!window.confirm(`Ajukan Modul Ajar "${r.title}" ke Wakakur untuk direview? Modul tak bisa diedit selama menunggu review.`)) return;
-    setErr(null); setBusyId(r.id);
-    startTransition(async () => {
-      const res = await submitRpp(r.id);
-      setBusyId(null);
-      if (!res.success) setErr(res.error ?? 'Gagal mengajukan Modul Ajar.');
+    setConfirm({
+      title: 'Ajukan Modul Ajar',
+      description: `Ajukan Modul Ajar "${r.title}" ke Wakakur untuk direview? Modul tak bisa diedit selama menunggu review.`,
+      variant: 'info',
+      confirmLabel: 'Ajukan',
+      action: () => {
+        setBusyId(r.id);
+        startTransition(async () => {
+          const res = await submitRpp(r.id);
+          setBusyId(null);
+          if (!res.success) toast.error(res.error ?? 'Gagal mengajukan Modul Ajar.');
+          else toast.success('Modul Ajar diajukan untuk review.');
+        });
+      },
     });
   };
 
   const doDelete = (r: RppItem) => {
-    if (!window.confirm(`Hapus Modul Ajar "${r.title}"? Tindakan ini tak bisa dibatalkan.`)) return;
-    setErr(null); setBusyId(r.id);
-    startTransition(async () => {
-      const res = await deleteRpp(r.id);
-      setBusyId(null);
-      if (!res.success) setErr(res.error ?? 'Gagal menghapus Modul Ajar.');
+    setConfirm({
+      title: 'Hapus Modul Ajar',
+      description: `Hapus Modul Ajar "${r.title}"? Tindakan ini tak bisa dibatalkan.`,
+      variant: 'danger',
+      confirmLabel: 'Hapus',
+      action: () => {
+        setBusyId(r.id);
+        startTransition(async () => {
+          const res = await deleteRpp(r.id);
+          setBusyId(null);
+          if (!res.success) toast.error(res.error ?? 'Gagal menghapus Modul Ajar.');
+          else toast.success('Modul Ajar dihapus.');
+        });
+      },
     });
   };
 
@@ -160,12 +209,6 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
           <ArrowRight className="h-3 w-3 text-emerald-500" />
           <span className="rounded-lg border border-emerald-200 bg-white px-2 py-0.5">Rapor</span>
         </div>
-
-        {err && (
-          <div className="mt-3 flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-600">
-            <AlertTriangle className="h-4 w-4 shrink-0" />{err}
-          </div>
-        )}
 
         {shownRpp.length === 0 ? (
           <div className="mt-3 grid h-24 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">
@@ -430,6 +473,15 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
       {monitorM && <LmsMonitorModal module={monitorM} onClose={() => setMonitorM(null)} />}
       {previewM && <LmsPreviewModal module={previewM} onClose={() => setPreviewM(null)} />}
       {previewScreenM && <LmsPreviewScreen module={previewScreenM} onClose={() => setPreviewScreenM(null)} />}
+      <ConfirmDialog
+        open={!!confirm}
+        onOpenChange={(o: boolean) => !o && setConfirm(null)}
+        title={confirm?.title ?? ''}
+        description={confirm?.description ?? ''}
+        variant={confirm?.variant}
+        confirmLabel={confirm?.confirmLabel}
+        onConfirm={() => { confirm?.action(); }}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
+import LoadError from '@/components/LoadError';
 import StrukturClient from './_components/StrukturClient';
 
 export interface Position {
@@ -42,6 +43,8 @@ export default async function StrukturOrganisasiPage() {
     apiFetch<Major[]>('/school/majors?activeOnly=true', token),
     apiFetch<{ groups: { role: string; users: StaffCandidate[] }[] }>('/users/grouped?limit=200', token),
   ]);
+
+  if (catalog === null && assignmentsRes === null) return <LoadError />;
 
   const positions = Array.isArray(catalog) ? catalog : [];
   const academicYear = assignmentsRes?.academicYear ?? null;
