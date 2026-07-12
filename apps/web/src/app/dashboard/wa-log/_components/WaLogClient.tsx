@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { TablePagination } from '@/components/ui/table-pagination';
 import type { WaLogEntry } from '../page';
 
 interface Filters {
@@ -118,8 +119,6 @@ export default function WaLogClient({ entries, total, page, limit, filters }: Pr
   };
 
   const uf = (k: keyof Filters, v: string) => setLocalFilters((p) => ({ ...p, [k]: v }));
-
-  const totalPages = Math.ceil(total / limit);
 
   return (
     <div className="space-y-4">
@@ -239,17 +238,7 @@ export default function WaLogClient({ entries, total, page, limit, filters }: Pr
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-gray-500">
-          <Button variant="outline" size="sm" disabled={page <= 1 || isPending} onClick={() => setPage(page - 1)}>
-            ← Sebelumnya
-          </Button>
-          <span>Halaman {page} / {totalPages}</span>
-          <Button variant="outline" size="sm" disabled={page >= totalPages || isPending} onClick={() => setPage(page + 1)}>
-            Berikutnya →
-          </Button>
-        </div>
-      )}
+      <TablePagination page={page} limit={limit} total={total} onPage={setPage} />
 
       {/* Detail panel */}
       {selected && <DetailPanel entry={selected} onClose={() => setSelected(null)} />}

@@ -5,7 +5,7 @@
 // Aturan backend dihormati: edit hanya draft/revision, hapus hanya draft.
 // Editor konten LMS interaktif = placeholder jujur (backend LMS dibangun berikutnya).
 
-import { useState, useTransition, useEffect } from 'react';
+import { useState, useTransition, useEffect, useMemo } from 'react';
 import { FileText, Plus, Pencil, Send, Trash2, AlertTriangle, BookOpen, Loader2, Eye, EyeOff, Archive, Users, Activity, TrendingUp, GitBranch, ArrowRight, Maximize2, Info } from 'lucide-react';
 import clsx from 'clsx';
 import type { RppItem, LmsModuleItem } from './guru-types';
@@ -16,6 +16,7 @@ import LmsMonitorModal from './LmsMonitorModal';
 import LmsPreviewModal from './LmsPreviewModal';
 import LmsPreviewScreen from './LmsPreviewScreen';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { TablePagination } from '@/components/ui/table-pagination';
 import { toast } from 'sonner';
 
 interface ConfirmState {
@@ -54,6 +55,9 @@ const LMS_BADGE: Record<string, string> = {
 };
 const LMS_LABEL: Record<string, string> = { published: 'Terbit', draft: 'Draft', archived: 'Arsip' };
 
+const RPP_PAGE_SIZE = 8;
+const LMS_PAGE_SIZE = 8;
+
 // W2-B-3: MAPEL_PROG + CP_DATA hardcoded arrays dihapus — data dari /analytics/cp-progress
 
 export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, academicYear, semester, activeSubject, onClearSubject }: Props) {
@@ -61,10 +65,24 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
   const [editing, setEditing] = useState<RppItem | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [rppPage, setRppPage] = useState(1);
+  const [lmsPage, setLmsPage] = useState(1);
 
   // Filter rpp by activeSubject (dari session flow "Buka Modul Ajar") bila ada.
   const subjectFiltered = activeSubject && activeSubject !== 'all' ? activeSubject : null;
   const shownRpp = subjectFiltered ? rpp.filter((r) => r.subject === subjectFiltered) : rpp;
+
+  // Reset halaman saat subject filter berubah
+  useEffect(() => { setRppPage(1); }, [activeSubject]);
+
+  const paginatedRpp = useMemo(
+    () => shownRpp.slice((rppPage - 1) * RPP_PAGE_SIZE, rppPage * RPP_PAGE_SIZE),
+    [shownRpp, rppPage],
+  );
+  const paginatedLms = useMemo(
+    () => lmsModules.slice((lmsPage - 1) * LMS_PAGE_SIZE, lmsPage * LMS_PAGE_SIZE),
+    [lmsModules, lmsPage],
+  );
 
   const [lmsFormOpen, setLmsFormOpen] = useState(false);
   // W2-B-3: Real CP progress from /analytics/cp-progress
@@ -217,6 +235,7 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
               : <>Belum ada Modul Ajar. Klik <b className="mx-1">Buat Modul Ajar</b> untuk memulai.</>}
           </div>
         ) : (
+          <>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-[12.5px]">
               <thead>
@@ -231,7 +250,7 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
                 </tr>
               </thead>
               <tbody>
-                {shownRpp.map((r) => {
+                {paginatedRpp.map((r) => {
                   const editable = EDITABLE.has(r.status);
                   const rowBusy = pending && busyId === r.id;
                   return (
@@ -284,6 +303,8 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
               </tbody>
             </table>
           </div>
+          <TablePagination page={rppPage} limit={RPP_PAGE_SIZE} total={shownRpp.length} onPage={setRppPage} />
+          </>
         )}
       </div>
 
@@ -305,6 +326,7 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
             Belum ada Modul LMS. Buat materi lalu <b className="mx-1">publikasikan</b> agar terlihat siswa.
           </div>
         ) : (
+          <>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-[12.5px]">
               <thead>
@@ -318,7 +340,7 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
                 </tr>
               </thead>
               <tbody>
-                {lmsModules.map((m) => {
+                {paginatedLms.map((m) => {
                   const rowBusy = pending && busyId === m.id;
                   return (
                     <tr key={m.id} className="border-b border-[#f0f4f2]">
@@ -383,6 +405,8 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
               </tbody>
             </table>
           </div>
+          <TablePagination page={lmsPage} limit={LMS_PAGE_SIZE} total={lmsModules.length} onPage={setLmsPage} />
+          </>
         )}
         <p className="mt-3 text-[11.5px] text-[#6b8079]">
           Modul yang <b>Terbit</b> tampil di LMS siswa kelas terkait; progres belajar terlacak otomatis. Buat sesi asesmen (diagnostik/formatif) dari modul untuk mengaktifkan kuis siswa.

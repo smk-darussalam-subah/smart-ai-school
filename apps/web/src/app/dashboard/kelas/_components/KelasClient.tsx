@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   School, Plus, Edit3, Trash2, Power, AlertCircle, Loader2,
 } from 'lucide-react';
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { TablePagination } from '@/components/ui/table-pagination';
 import { createClassAction, updateClassAction, deleteClassAction } from '../actions';
 import type { ClassRow, Major, StaffCandidate } from '../page';
 
@@ -38,10 +39,12 @@ const EMPTY_FORM: ClassForm = {
 };
 
 const GRADES = [10, 11, 12];
+const PAGE_SIZE = 10;
 
 export default function KelasClient({ classes, majors, teachers, isSuperAdmin }: Props) {
   const [busy, setBusy] = useState(false);
   const [filterGrade, setFilterGrade] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ClassForm>(EMPTY_FORM);
@@ -50,6 +53,11 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
   const filtered = filterGrade === 'all'
     ? classes
     : classes.filter((c) => c.grade === Number(filterGrade));
+
+  // Reset ke halaman 1 saat filter berubah
+  useEffect(() => { setCurrentPage(1); }, [filterGrade]);
+
+  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const openCreate = () => {
     setEditingId(null);
@@ -166,7 +174,7 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
                 </td>
               </tr>
             ) : (
-              filtered.map((c) => (
+              paginated.map((c) => (
                 <tr key={c.id} className="border-b border-[#f0f4f2] hover:bg-[#f9fbfa]">
                   <td className="px-4 py-3 font-semibold text-[#0f2e25]">{c.name}</td>
                   <td className="px-4 py-3 text-[#355a4e]">{c.majorCode}</td>
@@ -215,6 +223,8 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
           </tbody>
         </table>
       </div>
+
+      <TablePagination page={currentPage} limit={PAGE_SIZE} total={filtered.length} onPage={setCurrentPage} />
 
       {/* Create/Edit Modal */}
       <Dialog open={showForm} onOpenChange={(v: boolean) => !v && setShowForm(false)}>

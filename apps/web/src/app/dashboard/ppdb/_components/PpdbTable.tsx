@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { TablePagination } from '@/components/ui/table-pagination';
 import { updateLeadStatus } from '../actions';
 
 interface Lead {
@@ -31,16 +32,24 @@ const STATUS_FLOW: Record<string, { label: string; variant: 'default' | 'seconda
   cold: { label: 'Cold', variant: 'secondary', next: [] },
 };
 
+const PAGE_SIZE = 10;
+
 export default function PpdbTable({ leads, total, canEdit }: Props) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [updating, setUpdating] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const filtered = leads.filter(l => {
     const matchSearch = !search || l.fullName.toLowerCase().includes(search.toLowerCase()) || l.phone.includes(search);
     const matchStatus = statusFilter === 'all' || l.status === statusFilter;
     return matchSearch && matchStatus;
   });
+
+  // Reset ke halaman 1 saat filter berubah
+  useEffect(() => { setCurrentPage(1); }, [search, statusFilter]);
+
+  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const handleStatus = async (id: string, newStatus: string) => {
     setUpdating(id);
@@ -61,7 +70,7 @@ export default function PpdbTable({ leads, total, canEdit }: Props) {
             {Object.entries(STATUS_FLOW).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
           </SelectContent>
         </Select>
-        <span className="text-sm text-muted-foreground self-center">{total} leads</span>
+        <span className="text-sm text-muted-foreground self-center">{filtered.length} dari {total} leads</span>
       </div>
 
       <div className="rounded-xl border shadow-sm overflow-x-auto">
@@ -79,7 +88,7 @@ export default function PpdbTable({ leads, total, canEdit }: Props) {
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow><TableCell colSpan={canEdit ? 6 : 5} className="text-center h-24 text-muted-foreground">Belum ada data PPDB</TableCell></TableRow>
-            ) : filtered.map(l => (
+            ) : paginated.map(l => (
               <TableRow key={l.id}>
                 <TableCell className="font-medium">{l.fullName}</TableCell>
                 <TableCell className="hidden md:table-cell text-sm">{l.phone}</TableCell>
@@ -105,6 +114,8 @@ export default function PpdbTable({ leads, total, canEdit }: Props) {
           </TableBody>
         </Table>
       </div>
+
+      <TablePagination page={currentPage} limit={PAGE_SIZE} total={filtered.length} onPage={setCurrentPage} />
     </div>
   );
 }
