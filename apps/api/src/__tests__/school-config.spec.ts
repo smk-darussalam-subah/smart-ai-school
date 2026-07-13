@@ -8,6 +8,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { SchoolConfigService } from '../school-config/school-config.service';
 import { SchoolConfigController } from '../school-config/school-config.controller';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 
 const PROFILE = { id: 'p1', name: 'SMK Darussalam Subah', npsn: '20324567', address: 'Jl. Raya', phone: null, email: null, website: null, headmasterName: null, headmasterNip: null, logoUrl: null, accreditation: 'A', createdAt: new Date(), updatedAt: new Date() };
 const MAJOR_TKRO = { id: 'm1', code: 'TKRO', name: 'Teknik Kendaraan Ringan Otomotif', description: null, isActive: true, createdAt: new Date(), updatedAt: new Date() };
@@ -21,13 +22,13 @@ const SEM = { id: 's1', academicYearId: 'ay1', number: 1, startDate: new Date('2
 describe('SchoolConfigService', () => {
   let service: SchoolConfigService;
   const mockProfile = { findFirst: jest.fn(), update: jest.fn() };
-  const mockMajor = { findMany: jest.fn(), create: jest.fn(), update: jest.fn() };
+  const mockMajor = { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() };
   const mockAY = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() };
   const mockSem = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() };
   const mockCal = { findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() };
 
   beforeEach(async () => {
-    [mockProfile.findFirst, mockProfile.update, mockMajor.findMany, mockMajor.create, mockMajor.update,
+    [mockProfile.findFirst, mockProfile.update, mockMajor.findMany, mockMajor.findUnique, mockMajor.create, mockMajor.update,
       mockAY.findMany, mockAY.findFirst, mockAY.findUnique, mockAY.create, mockAY.update, mockAY.updateMany,
       mockSem.findMany, mockSem.findFirst, mockSem.findUnique, mockSem.create, mockSem.update, mockSem.updateMany,
       mockCal.findMany, mockCal.create, mockCal.update, mockCal.delete].forEach(m => m.mockReset());
@@ -73,9 +74,34 @@ describe('SchoolConfigService', () => {
   });
 
   it('createMajor → insert', async () => {
+    mockMajor.findUnique.mockResolvedValue(null);
     mockMajor.create.mockResolvedValue(MAJOR_TKRO);
     const result = await service.createMajor({ code: 'TKRO', name: 'TKRO' });
     expect(result.code).toBe('TKRO');
+  });
+
+  it('createMajor duplikat → Conflict', async () => {
+    mockMajor.findUnique.mockResolvedValue({ id: 'm1' });
+    await expect(
+      service.createMajor({ code: 'TKRO', name: 'TKRO' }),
+    ).rejects.toThrow(ConflictException);
+    expect(mockMajor.create).not.toHaveBeenCalled();
+  });
+
+  it('updateMajor → success', async () => {
+    mockMajor.update.mockResolvedValue({ ...MAJOR_TKRO, name: 'Updated' });
+    const result = await service.updateMajor('m1', { name: 'Updated' });
+    expect(result.name).toBe('Updated');
+  });
+
+  it('updateMajor → not found → NotFoundException', async () => {
+    mockMajor.update.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('test', { code: 'P2025', clientVersion: '5.0.0' }));
+    await expect(service.updateMajor('not-exist', { name: 'X' })).rejects.toThrow(NotFoundException);
+  });
+
+  it('updateMajor → duplicate code → ConflictException', async () => {
+    mockMajor.update.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('test', { code: 'P2002', clientVersion: '5.0.0' }));
+    await expect(service.updateMajor('m1', { code: 'DUP' })).rejects.toThrow(ConflictException);
   });
 
   it('getActiveAcademicYear → return active', async () => {

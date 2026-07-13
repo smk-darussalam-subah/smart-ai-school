@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CalendarType } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class SchoolConfigService {
@@ -55,7 +56,9 @@ export class SchoolConfigService {
       data,
     });
     this.profileCache = null;
-    return updated;
+    // JANGAN ekspos kioskToken — strip sebelum return (sama seperti getProfile).
+    const { kioskToken: _kioskToken, ...safe } = updated;
+    return safe;
   }
 
   // ═══ Majors ════════════════════════════════════════════════════════════════
@@ -68,11 +71,21 @@ export class SchoolConfigService {
   }
 
   async createMajor(data: { code: string; name: string; description?: string | null; isActive?: boolean }) {
+    const exists = await this.prisma.major.findUnique({ where: { code: data.code }, select: { id: true } });
+    if (exists) throw new ConflictException(`Kode jurusan ${data.code} sudah terdaftar.`);
     return this.prisma.major.create({ data });
   }
 
   async updateMajor(id: string, data: Record<string, unknown>) {
-    return this.prisma.major.update({ where: { id }, data });
+    try {
+      return await this.prisma.major.update({ where: { id }, data });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError) {
+        if (e.code === 'P2025') throw new NotFoundException('Jurusan tidak ditemukan.');
+        if (e.code === 'P2002') throw new ConflictException('Kode jurusan sudah digunakan.');
+      }
+      throw e;
+    }
   }
 
   // ═══ Academic Years ════════════════════════════════════════════════════════
