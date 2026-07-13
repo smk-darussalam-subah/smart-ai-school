@@ -7,7 +7,7 @@ import clsx from 'clsx';
 import ViewAsSwitcher from './ViewAsSwitcher';
 import { can } from '@/lib/permissions';
 import {
-  Home, BarChart3, BookOpen, CalendarDays, CalendarRange, ClipboardCheck, GraduationCap,
+  Home, BarChart3, BookOpen, BookMarked, CalendarDays, CalendarRange, ClipboardCheck, GraduationCap,
   Backpack, FileText, Users, ClipboardList, Wallet, Briefcase, MapPin, School,
   Megaphone, Sparkles, Brain, UserCog, Activity, ShieldCheck, LogOut, MessageSquare, Building2,
   type LucideIcon,
@@ -104,6 +104,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Manajemen Pengguna', href: '/dashboard/users', icon: UserCog, roles: ['SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_TU', 'STAF_KEPEGAWAIAN'], permissions: ['user.read'] },
       { label: 'Struktur Organisasi', href: '/dashboard/struktur-organisasi', icon: Briefcase, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
+      { label: 'Mata Pelajaran', href: '/dashboard/mapel', icon: BookMarked, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU'] },
       { label: 'Manajemen Kelas', href: '/dashboard/kelas', icon: School, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
       { label: 'Kalender & Agenda', href: '/dashboard/kalender', icon: CalendarDays, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
       { label: 'Tahun Ajaran', href: '/dashboard/tahun-ajaran', icon: CalendarRange, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
