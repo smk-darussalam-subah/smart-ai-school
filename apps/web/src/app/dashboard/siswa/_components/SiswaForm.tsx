@@ -22,11 +22,14 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   student: Student | null;
   classes: ClassItem[];
+  defaultAcademicYear?: string;
 }
 
 interface FormState { nis: string; userId: string; classId: string; status: string; joinedAt: string; }
 
-export default function SiswaFormDialog({ open, onOpenChange, student, classes: initialClasses }: Props) {
+export default function SiswaFormDialog({ open, onOpenChange, student, classes: initialClasses, defaultAcademicYear }: Props) {
+  // Compute active TA from date if not provided (Indonesian school year starts July).
+  const computedTA = (() => { const y = new Date().getUTCFullYear(); return new Date().getUTCMonth() >= 6 ? `${y}/${y+1}` : `${y-1}/${y}`; })();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [classes, setClasses] = useState<ClassItem[]>(initialClasses);
@@ -41,7 +44,7 @@ export default function SiswaFormDialog({ open, onOpenChange, student, classes: 
   const [kelasName, setKelasName] = useState('');
   const [kelasMajor, setKelasMajor] = useState('TKRO');
   const [kelasGrade, setKelasGrade] = useState('10');
-  const [kelasTA, setKelasTA] = useState('2026/2027');
+  const [kelasTA, setKelasTA] = useState(defaultAcademicYear || computedTA);
   const [kelasLoading, setKelasLoading] = useState(false);
   const [kelasError, setKelasError] = useState('');
 
