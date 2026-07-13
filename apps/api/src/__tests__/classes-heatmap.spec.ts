@@ -99,8 +99,8 @@ describe('Classes DTO', () => {
     expect(ok.capacity).toBe(36);
   });
 
-  it('list query: limit cap 100', () => {
-    expect(ListClassesQuerySchema.safeParse({ limit: '101' }).success).toBe(false);
+  it('list query: limit cap 200', () => {
+    expect(ListClassesQuerySchema.safeParse({ limit: '201' }).success).toBe(false);
   });
 });
 
