@@ -6,6 +6,7 @@ import { apiFetch } from '@/lib/api';
 import RppBoard, { RppItem } from './_components/RppBoard';
 
 interface ListResponse { data: RppItem[]; total: number; }
+interface ActiveSemester { number: number; academicYear: { code: string } }
 
 export default async function RppPage() {
   const session = await getServerSession(authOptions);
@@ -18,7 +19,10 @@ export default async function RppPage() {
   if (!isReviewer) redirect('/dashboard/akademik');
 
   const token = session.accessToken ?? '';
-  const res = await apiFetch<ListResponse>('/rpp?limit=100', token);
+  const [res, semRes] = await Promise.all([
+    apiFetch<ListResponse>('/rpp?limit=100', token),
+    apiFetch<ActiveSemester>('/school/semesters/active', token),
+  ]);
 
   return (
     <RppBoard
@@ -27,6 +31,8 @@ export default async function RppPage() {
       isGuru={false}
       isReviewer
       canDelete={roles.includes('SUPER_ADMIN')}
+      defaultAcademicYear={semRes?.academicYear?.code ?? ''}
+      defaultSemester={semRes?.number ?? 1}
     />
   );
 }

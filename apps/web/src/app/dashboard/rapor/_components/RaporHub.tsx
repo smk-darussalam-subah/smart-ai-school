@@ -55,6 +55,8 @@ interface Props {
   canReview: boolean;
   canDistribute: boolean;
   isStaf: boolean;
+  defaultAcademicYear?: string;
+  defaultSemester?: number;
 }
 
 const STATUS_BADGE: Record<ReportItem['status'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -64,7 +66,7 @@ const STATUS_BADGE: Record<ReportItem['status'], { label: string; variant: 'defa
   distributed: { label: '✓ Dibagikan', variant: 'default' },
 };
 
-export default function RaporHub({ items, total, classes, canGenerate, canReview, canDistribute, isStaf }: Props) {
+export default function RaporHub({ items, total, classes, canGenerate, canReview, canDistribute, isStaf, defaultAcademicYear, defaultSemester }: Props) {
   const [classFilter, setClassFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [detail, setDetail] = useState<ReportItem | null>(null);
@@ -191,7 +193,7 @@ export default function RaporHub({ items, total, classes, canGenerate, canReview
       <DetailDialog report={detail} onClose={() => setDetail(null)} canEditNotes={canGenerate} run={run} pending={pending} />
       {canGenerate && (
         <GenerateDialog open={genOpen} onOpenChange={setGenOpen} classes={classes}
-          onResult={(msg) => setInfo(msg)} />
+          onResult={(msg) => setInfo(msg)} defaultAcademicYear={defaultAcademicYear} defaultSemester={defaultSemester} />
       )}
     </div>
   );
@@ -274,15 +276,16 @@ function DetailDialog({ report, onClose, canEditNotes, run, pending }: {
 }
 
 // ── Generate massal ───────────────────────────────────────────────────────────
-function GenerateDialog({ open, onOpenChange, classes, onResult }: {
+function GenerateDialog({ open, onOpenChange, classes, onResult, defaultAcademicYear, defaultSemester }: {
   open: boolean; onOpenChange: (o: boolean) => void;
   classes: ClassItem[]; onResult: (msg: string) => void;
+  defaultAcademicYear?: string; defaultSemester?: number;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [classId, setClassId] = useState('');
-  const [academicYear, setAcademicYear] = useState('2026/2027');
-  const [semester, setSemester] = useState('1');
+  const [academicYear, setAcademicYear] = useState(defaultAcademicYear || '2026/2027');
+  const [semester, setSemester] = useState(String(defaultSemester ?? 1));
 
   useEffect(() => {
     if (open) { setError(''); setClassId(classes[0]?.id ?? ''); }

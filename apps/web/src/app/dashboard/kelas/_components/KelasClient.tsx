@@ -35,7 +35,7 @@ interface ClassForm {
 }
 
 const EMPTY_FORM: ClassForm = {
-  name: '', majorCode: '', grade: '10', academicYear: '', capacity: '36', teacherId: '',
+  name: '', majorCode: '', grade: '10', academicYear: (() => { const y = new Date().getUTCFullYear(); return new Date().getUTCMonth() >= 6 ? `${y}/${y+1}` : `${y-1}/${y}`; })(), capacity: '36', teacherId: '',
 };
 
 const GRADES = [10, 11, 12];
