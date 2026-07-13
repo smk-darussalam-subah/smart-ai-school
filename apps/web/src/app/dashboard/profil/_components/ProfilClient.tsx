@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -76,23 +78,39 @@ const MAJOR_PAGE_SIZE = 8;
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
+  const router = useRouter();
   const [profileForm, setProfileForm] = useState<ProfileForm>(emptyProfileForm(profile));
   const [profileSaving, setProfileSaving] = useState(false);
-  const [profileMsg, setProfileMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [majorsList, setMajorsList] = useState<MajorRow[]>(majors);
   const [majorModal, setMajorModal] = useState(false);
   const [majorEditing, setMajorEditing] = useState<MajorRow | null>(null);
   const [majorForm, setMajorForm] = useState<MajorForm>(emptyMajorForm);
   const [majorSaving, setMajorSaving] = useState(false);
-  const [majorMsg, setMajorMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [majorPage, setMajorPage] = useState(1);
+
+  // Toggle confirmation state
+  const [toggleTarget, setToggleTarget] = useState<MajorRow | null>(null);
+  const [toggleBusy, setToggleBusy] = useState(false);
 
   // ── Profile handlers ──────────────────────────────────────────────────────
 
   const handleSaveProfile = async () => {
+    // Frontend numeric validation for geofence fields
+    if (profileForm.latitude && isNaN(Number(profileForm.latitude))) {
+      toast.error('Latitude harus berupa angka desimal (contoh: -6.1234).');
+      return;
+    }
+    if (profileForm.longitude && isNaN(Number(profileForm.longitude))) {
+      toast.error('Longitude harus berupa angka desimal (contoh: 106.1234).');
+      return;
+    }
+    if (profileForm.geofenceRadiusM && isNaN(Number(profileForm.geofenceRadiusM))) {
+      toast.error('Radius geofence harus berupa angka (contoh: 300).');
+      return;
+    }
+
     setProfileSaving(true);
-    setProfileMsg(null);
     const body: Record<string, unknown> = {
       name: profileForm.name,
       npsn: profileForm.npsn || null,
@@ -111,9 +129,10 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
     const res = await updateProfileAction(body as Parameters<typeof updateProfileAction>[0]);
     setProfileSaving(false);
     if (res.error) {
-      setProfileMsg({ type: 'error', text: res.error });
+      toast.error(res.error);
     } else {
-      setProfileMsg({ type: 'success', text: 'Profil sekolah berhasil diperbarui.' });
+      toast.success('Profil sekolah berhasil diperbarui.');
+      router.refresh();
     }
   };
 
@@ -124,20 +143,17 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
   const openCreateMajor = () => {
     setMajorEditing(null);
     setMajorForm(emptyMajorForm);
-    setMajorMsg(null);
     setMajorModal(true);
   };
 
   const openEditMajor = (m: MajorRow) => {
     setMajorEditing(m);
     setMajorForm({ code: m.code, name: m.name, description: m.description ?? '' });
-    setMajorMsg(null);
     setMajorModal(true);
   };
 
   const handleSaveMajor = async () => {
     setMajorSaving(true);
-    setMajorMsg(null);
     let res;
     if (majorEditing) {
       res = await updateMajorAction(majorEditing.id, {
@@ -154,21 +170,27 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
     }
     setMajorSaving(false);
     if (res.error) {
-      setMajorMsg({ type: 'error', text: res.error });
+      toast.error(res.error);
     } else {
       setMajorModal(false);
-      // Refresh majors list by reloading — revalidatePath handles it
-      window.location.reload();
+      toast.success(majorEditing ? 'Jurusan berhasil diperbarui.' : 'Jurusan berhasil ditambahkan.');
+      router.refresh();
     }
   };
 
-  const handleToggleMajor = async (m: MajorRow) => {
-    const res = await toggleMajorActiveAction(m.id, !m.isActive);
-    if (!res.error) {
-      setMajorsList((prev) =>
-        prev.map((x) => (x.id === m.id ? { ...x, isActive: !x.isActive } : x)),
-      );
+  const handleConfirmToggle = async () => {
+    if (!toggleTarget) return;
+    const { id, name, isActive } = toggleTarget;
+    setToggleBusy(true);
+    const res = await toggleMajorActiveAction(id, !isActive);
+    setToggleBusy(false);
+    setToggleTarget(null);
+    if (res.error) {
+      toast.error(res.error);
+      return;
     }
+    setMajorsList((prev) => prev.map((x) => (x.id === id ? { ...x, isActive: !isActive } : x)));
+    toast.success(`Jurusan ${name} ${isActive ? 'dinonaktifkan' : 'diaktifkan'}.`);
   };
 
   const mf = (k: keyof MajorForm, v: string) => setMajorForm((p) => ({ ...p, [k]: v }));
@@ -250,25 +272,19 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div>
                     <Label htmlFor="pf-lat">Latitude</Label>
-                    <Input id="pf-lat" value={profileForm.latitude} onChange={(e) => pf('latitude', e.target.value)} disabled={!isSuperAdmin} placeholder="-6.1234" />
+                    <Input id="pf-lat" value={profileForm.latitude} onChange={(e) => pf('latitude', e.target.value)} disabled={!isSuperAdmin} placeholder="-6.1234" inputMode="decimal" />
                   </div>
                   <div>
                     <Label htmlFor="pf-lng">Longitude</Label>
-                    <Input id="pf-lng" value={profileForm.longitude} onChange={(e) => pf('longitude', e.target.value)} disabled={!isSuperAdmin} placeholder="106.1234" />
+                    <Input id="pf-lng" value={profileForm.longitude} onChange={(e) => pf('longitude', e.target.value)} disabled={!isSuperAdmin} placeholder="106.1234" inputMode="decimal" />
                   </div>
                   <div>
                     <Label htmlFor="pf-radius">Radius (meter)</Label>
-                    <Input id="pf-radius" value={profileForm.geofenceRadiusM} onChange={(e) => pf('geofenceRadiusM', e.target.value)} disabled={!isSuperAdmin} placeholder="100" />
+                    <Input id="pf-radius" value={profileForm.geofenceRadiusM} onChange={(e) => pf('geofenceRadiusM', e.target.value)} disabled={!isSuperAdmin} placeholder="100" inputMode="numeric" />
                   </div>
                 </div>
               </div>
             </div>
-
-            {profileMsg && (
-              <div className={`rounded-lg px-4 py-3 text-sm ${profileMsg.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                {profileMsg.text}
-              </div>
-            )}
 
             {isSuperAdmin && (
               <div className="flex gap-2 pt-2">
@@ -284,7 +300,12 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
       {/* Section 2: Manajemen Jurusan */}
       <section className="rounded-xl border bg-white p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-800">Daftar Jurusan</h2>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-800">Daftar Jurusan</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Jurusan tidak dapat dihapus, hanya dapat dinonaktifkan. Nonaktifkan jurusan yang tidak lagi menerima siswa baru.
+            </p>
+          </div>
           {isSuperAdmin && (
             <Button onClick={openCreateMajor} size="sm">
               + Tambah Jurusan
@@ -324,7 +345,7 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
                       {isSuperAdmin ? (
                         <button
                           type="button"
-                          onClick={() => handleToggleMajor(m)}
+                          onClick={() => setToggleTarget(m)}
                           className="cursor-pointer"
                         >
                           <Badge variant={m.isActive ? 'default' : 'secondary'} className={m.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}>
@@ -356,7 +377,7 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
         )}
 
         {/* Major CRUD Modal */}
-        <Dialog open={majorModal} onOpenChange={setMajorModal}>
+        <Dialog open={majorModal} onOpenChange={(v: boolean) => setMajorModal(v)}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{majorEditing ? 'Edit Jurusan' : 'Tambah Jurusan'}</DialogTitle>
@@ -396,12 +417,6 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
                   rows={3}
                 />
               </div>
-
-              {majorMsg && (
-                <div className={`rounded-lg px-4 py-3 text-sm ${majorMsg.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                  {majorMsg.text}
-                </div>
-              )}
             </div>
             <div className="flex justify-end gap-2 mt-4">
               <Button variant="outline" onClick={() => setMajorModal(false)}>Batal</Button>
@@ -411,6 +426,32 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
                 className="bg-smk-blue hover:bg-primary-700"
               >
                 {majorSaving ? 'Menyimpan…' : 'Simpan'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Toggle Confirmation Dialog */}
+        <Dialog open={!!toggleTarget} onOpenChange={(v: boolean) => !v && setToggleTarget(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="text-gray-800">
+                {toggleTarget?.isActive ? 'Nonaktifkan Jurusan' : 'Aktifkan Jurusan'}
+              </DialogTitle>
+              <DialogDescription>
+                {toggleTarget?.isActive
+                  ? `Jurusan "${toggleTarget?.name}" akan dinonaktifkan. Jurusan yang dinonaktifkan tidak akan muncul saat pembuatan kelas baru atau penugasan posisi KAPROG baru.`
+                  : `Jurusan "${toggleTarget?.name}" akan diaktifkan kembali dan dapat dipilih pada proses selanjutnya.`}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setToggleTarget(null)}>Batal</Button>
+              <Button
+                onClick={handleConfirmToggle}
+                disabled={toggleBusy}
+                variant={toggleTarget?.isActive ? 'destructive' : 'default'}
+              >
+                {toggleBusy ? 'Memproses…' : toggleTarget?.isActive ? 'Ya, Nonaktifkan' : 'Ya, Aktifkan'}
               </Button>
             </div>
           </DialogContent>
