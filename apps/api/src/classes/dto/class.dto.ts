@@ -21,12 +21,17 @@ export const UpdateClassSchema = CreateClassSchema.partial().extend({
 });
 export type UpdateClassDto = z.infer<typeof UpdateClassSchema>;
 
+// N2: z.coerce.boolean() parses "false" as true because Boolean("false") === true.
+// Use preprocess to correctly handle string query params.
+const stringToBool = z.preprocess((v) => v === 'true' || v === true, z.boolean());
+
 export const ListClassesQuerySchema = z.object({
   grade: z.coerce.number().int().min(10).max(12).optional(),
   majorCode: z.string().trim().max(10).optional(),
   academicYear: z.string().regex(/^\d{4}\/\d{4}$/).optional(),
-  includeInactive: z.coerce.boolean().default(false),
+  includeInactive: stringToBool.default(false),
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  // N1: Raised from 100 to 200 to match frontend management page requirements.
+  limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 export type ListClassesQueryDto = z.infer<typeof ListClassesQuerySchema>;
