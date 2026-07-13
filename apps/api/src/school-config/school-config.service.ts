@@ -108,17 +108,31 @@ export class SchoolConfigService {
     // Cek duplikat SEBELUM menonaktifkan yang lain (hindari efek samping bila gagal).
     const exists = await this.prisma.academicYear.findUnique({ where: { code: data.code }, select: { id: true } });
     if (exists) throw new ConflictException(`Tahun ajaran ${data.code} sudah terdaftar.`);
-    if (data.isActive) {
-      await this.prisma.academicYear.updateMany({ data: { isActive: false } });
-    }
-    return this.prisma.academicYear.create({ data });
+    // C1: Transactional — deactivate-all + create must be atomic.
+    return this.prisma.$transaction(async (tx) => {
+      if (data.isActive) {
+        await tx.academicYear.updateMany({ data: { isActive: false } });
+      }
+      return tx.academicYear.create({ data });
+    });
   }
 
   async updateAcademicYear(id: string, data: Record<string, unknown>) {
-    if (data.isActive === true) {
-      await this.prisma.academicYear.updateMany({ data: { isActive: false } });
+    // C1: Transactional — deactivate-all + activate-target must be atomic.
+    // H1: Map Prisma P2025 → NotFoundException.
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        if (data.isActive === true) {
+          await tx.academicYear.updateMany({ data: { isActive: false } });
+        }
+        return tx.academicYear.update({ where: { id }, data });
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+        throw new NotFoundException('Tahun ajaran tidak ditemukan.');
+      }
+      throw e;
     }
-    return this.prisma.academicYear.update({ where: { id }, data });
   }
 
   // ═══ Semesters ═════════════════════════════════════════════════════════════
@@ -146,17 +160,31 @@ export class SchoolConfigService {
       select: { id: true },
     });
     if (exists) throw new ConflictException(`Semester ${data.number} sudah ada untuk tahun ajaran ini.`);
-    if (data.isActive) {
-      await this.prisma.semester.updateMany({ data: { isActive: false } });
-    }
-    return this.prisma.semester.create({ data });
+    // C1: Transactional — deactivate-all + create must be atomic.
+    return this.prisma.$transaction(async (tx) => {
+      if (data.isActive) {
+        await tx.semester.updateMany({ data: { isActive: false } });
+      }
+      return tx.semester.create({ data });
+    });
   }
 
   async updateSemester(id: string, data: Record<string, unknown>) {
-    if (data.isActive === true) {
-      await this.prisma.semester.updateMany({ data: { isActive: false } });
+    // C1: Transactional — deactivate-all + activate-target must be atomic.
+    // H1: Map Prisma P2025 → NotFoundException.
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        if (data.isActive === true) {
+          await tx.semester.updateMany({ data: { isActive: false } });
+        }
+        return tx.semester.update({ where: { id }, data });
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+        throw new NotFoundException('Semester tidak ditemukan.');
+      }
+      throw e;
     }
-    return this.prisma.semester.update({ where: { id }, data });
   }
 
   // ═══ Academic Calendar ═════════════════════════════════════════════════════
