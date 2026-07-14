@@ -37,7 +37,9 @@ model User {
   role        UserRole
   isActive    Boolean   @default(true) @map("is_active")
   avatarUrl   String?   @map("avatar_url")
-  consentAt   DateTime? @map("consent_at") // R-05: timestamp saat operator konfirmasi persetujuan data
+  consentAt      DateTime?  @map("consent_at") // R-05: timestamp saat operator konfirmasi persetujuan data
+  consentVersion String?    @map("consent_version") @db.VarChar(20) // versi LoA yang disetujui (mis. v1.0)
+  lastSeenAt     DateTime?  @map("last_seen_at") // heartbeat timestamp — siapa yang sedang online
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at") // soft delete
@@ -1453,4 +1455,26 @@ model PushSubscription {
   @@index([userId])
   @@map("push_subscriptions")
   @@schema("notification")
+}
+
+// =============================================================================
+// LOGIN EVENT TRACKING — Audit trail for authentication events
+// Denormalized like AuditLog — no FK to users so history survives user deletion.
+// =============================================================================
+
+model LoginEvent {
+  id        String   @id @default(dbgenerated("gen_random_uuid()"))
+  userId    String   @map("user_id") @db.Uuid
+  userRole  String   @map("user_role") @db.VarChar(50)
+  userName  String   @map("user_name") @db.VarChar(255)
+  ipAddress String?  @map("ip_address") @db.VarChar(45) // IPv4 or IPv6
+  userAgent String?  @map("user_agent") @db.VarChar(500)
+  eventType String   @map("event_type") @db.VarChar(20) // 'login' | 'logout' | 'failed'
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([eventType])
+  @@map("login_events")
+  @@schema("auth")
 }

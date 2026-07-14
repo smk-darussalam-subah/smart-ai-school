@@ -10,6 +10,7 @@ import {
   Home, BarChart3, BookOpen, BookMarked, CalendarDays, CalendarRange, ClipboardCheck, GraduationCap,
   Backpack, FileText, Users, ClipboardList, Wallet, Briefcase, MapPin, School,
   Megaphone, Sparkles, Brain, UserCog, Activity, ShieldCheck, LogOut, MessageSquare, Building2,
+  FileCheck, LogIn, UserCheck,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -112,6 +113,9 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Log Notifikasi WA', href: '/dashboard/wa-log', icon: MessageSquare, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
       { label: 'Profil Sekolah', href: '/dashboard/profil', icon: Building2, roles: ['SUPER_ADMIN'] },
       { label: 'Audit Log', href: '/dashboard/audit', icon: ShieldCheck, roles: ['SUPER_ADMIN'], permissions: ['audit.read'] },
+      { label: 'Status PDP', href: '/dashboard/audit/consent', icon: FileCheck, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
+      { label: 'Login Events', href: '/dashboard/audit/login-events', icon: LogIn, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
+      { label: 'User Online', href: '/dashboard/audit/online-users', icon: UserCheck, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
     ],
   },
 ];
