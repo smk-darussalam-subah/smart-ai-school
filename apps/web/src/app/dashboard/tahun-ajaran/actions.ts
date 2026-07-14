@@ -60,3 +60,13 @@ export async function createSemester(data: SemesterInput) {
 export async function activateSemester(id: string) {
   return apiCall(`/school/semesters/${id}`, 'PATCH', { isActive: true });
 }
+
+/** Edit tanggal TA (PATCH startDate/endDate). */
+export async function updateAcademicYearAction(id: string, data: { startDate?: string; endDate?: string }) {
+  return apiCall(`/school/academic-years/${id}`, 'PATCH', data);
+}
+
+/** Edit tanggal semester (PATCH startDate/endDate). */
+export async function updateSemesterAction(id: string, data: { startDate?: string; endDate?: string }) {
+  return apiCall(`/school/semesters/${id}`, 'PATCH', data);
+}

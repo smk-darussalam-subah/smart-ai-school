@@ -40,6 +40,7 @@ interface Props {
   activities: ActivityItem[];
   lmsModules: LmsModuleItem[];
   realSumatif?: unknown[];
+  subjects?: { id: string; code: string; name: string; isActive: boolean }[];
   academicYear: string;
   semester: number;
   dataWarning?: boolean;
@@ -80,7 +81,7 @@ const SCHED_CONFIG = { days: 6, jpPerDay: 8, maxJpGuru: 24 };
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function KsWorkspace({
-  grades, attendances, classes, assignments, rpp, schedules, activities, lmsModules: _lmsModules, realSumatif, academicYear, semester, dataWarning,
+  grades, attendances, classes, assignments, rpp, schedules, activities, lmsModules: _lmsModules, realSumatif, subjects, academicYear, semester, dataWarning,
 }: Props) {
   const [screen, setScreen] = useState<Screen>('beranda');
   // Opsi B (mobile nav): auto-center tab aktif saat ganti screen (anti hidden).
@@ -220,7 +221,7 @@ export default function KsWorkspace({
         {screen === 'sumatif' && <AuditSumatifKs onOpenDetail={setSelSumatif} data={sumatifData} />}
         {screen === 'monitor' && <MonitoringKbmKs kelasMapel={kelasMapel} attendances={attendances} schedules={schedules} classes={classes} />}
         {screen === 'rekap' && <RekapAuditKs kelasMapel={kelasMapel} grades={grades} attendances={attendances} activities={activities} rpp={rpp} />}
-        {screen === 'kktp' && <KktpKs kelasMapel={kelasMapel} showToast={showToast} academicYear={academicYear} semester={semester} />}
+        {screen === 'kktp' && <KktpKs kelasMapel={kelasMapel} subjects={subjects ?? []} showToast={showToast} academicYear={academicYear} semester={semester} />}
         {screen === 'jadwal' && <JadwalTugasKs schedules={schedules} classes={classes} showToast={showToast} pendingRpp={pendingRpp} pendingSumatif={pendingSumatif} />}
         {screen === 'rapor' && <RaporPipelineKs classes={classes} academicYear={academicYear} semester={semester} />}
       </div>
@@ -1116,8 +1117,15 @@ function RekapAuditKs({ kelasMapel, grades, attendances, activities, rpp }: {
 
 // ═══ SCREEN 6: KKTP ═══════════════════════════════════════════════════════════
 
-function KktpKs({ kelasMapel, showToast, academicYear, semester }: { kelasMapel: { mapel: string }[]; showToast: (msg: string) => void; academicYear: string; semester: number }) {
-  const mapelList = useMemo(() => [...new Set(kelasMapel.map((k) => k.mapel))].sort(), [kelasMapel]);
+function KktpKs({ kelasMapel, subjects, showToast, academicYear, semester }: { kelasMapel: { mapel: string }[]; subjects: { id: string; code: string; name: string; isActive: boolean }[]; showToast: (msg: string) => void; academicYear: string; semester: number }) {
+  // BUG FIX: Use Subject catalog (active only) as the source of truth for mapel list.
+  // Previously derived from grade data — meaning new subjects wouldn't appear until graded.
+  const mapelList = useMemo(() => {
+    const activeSubjects = subjects.filter((s) => s.isActive).map((s) => s.name).sort();
+    // Merge any mapel from grade data that doesn't exist in catalog (legacy/orphan data)
+    const gradeMapels = [...new Set(kelasMapel.map((k) => k.mapel))].sort();
+    return [...new Set([...activeSubjects, ...gradeMapels])].sort();
+  }, [subjects, kelasMapel]);
   const [kktpValues, setKktpValues] = useState<Record<string, number>>({});
   const [kktpLoaded, setKktpLoaded] = useState(false);
   const [saving, startSaveTransition] = useTransition();

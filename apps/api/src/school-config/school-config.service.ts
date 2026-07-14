@@ -109,9 +109,11 @@ export class SchoolConfigService {
     const exists = await this.prisma.academicYear.findUnique({ where: { code: data.code }, select: { id: true } });
     if (exists) throw new ConflictException(`Tahun ajaran ${data.code} sudah terdaftar.`);
     // C1: Transactional — deactivate-all + create must be atomic.
+    // BUG FIX: Activating a new TA must also deactivate ALL semesters from the old TA.
     return this.prisma.$transaction(async (tx) => {
       if (data.isActive) {
         await tx.academicYear.updateMany({ data: { isActive: false } });
+        await tx.semester.updateMany({ data: { isActive: false } });
       }
       return tx.academicYear.create({ data });
     });
@@ -120,10 +122,12 @@ export class SchoolConfigService {
   async updateAcademicYear(id: string, data: Record<string, unknown>) {
     // C1: Transactional — deactivate-all + activate-target must be atomic.
     // H1: Map Prisma P2025 → NotFoundException.
+    // BUG FIX: Activating a TA must also deactivate ALL semesters from the old TA.
     try {
       return await this.prisma.$transaction(async (tx) => {
         if (data.isActive === true) {
           await tx.academicYear.updateMany({ data: { isActive: false } });
+          await tx.semester.updateMany({ data: { isActive: false } });
         }
         return tx.academicYear.update({ where: { id }, data });
       });
