@@ -5,7 +5,13 @@ import { PermissionsService } from '../permissions/permissions.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { UserRole, PRIMARY_ROLES } from '@smk/auth';
 import { logger } from '@smk/logger';
-import { ListUsersQuery, GroupedUsersQuery } from './dto/list-users.dto';
+import {
+  ListUsersQuery,
+  GroupedUsersQuery,
+  ListConsentQuery,
+  OnlineUsersQuery,
+  ListLoginEventsQuery,
+} from './dto/list-users.dto';
 
 const USER_SELECT = {
   id: true,
@@ -311,5 +317,126 @@ export class UsersService {
       }
       throw dbErr;
     }
+  }
+
+  // ── Consent Status (admin) ─────────────────────────────────────────────────
+
+  /**
+   * List users with their consent status for PDP compliance monitoring.
+   * Filters: role, consentStatus (given/pending/all).
+   */
+  async getConsentStatus(query: ListConsentQuery) {
+    const { role, consentStatus, limit, offset } = query;
+
+    const where: Record<string, unknown> = { deletedAt: null };
+    if (role) where.role = role;
+    if (consentStatus === 'given') where.consentAt = { not: null };
+    if (consentStatus === 'pending') where.consentAt = null;
+
+    const [data, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        skip: offset,
+        take: limit,
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          role: true,
+          consentAt: true,
+          consentVersion: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return { data, total, limit, offset };
+  }
+
+  /**
+   * Reset a user's consent (set consentAt = NULL) — forces re-consent on next login.
+   * Used by admin when LoA policy changes.
+   */
+  async resetConsent(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('User tidak ditemukan');
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { consentAt: null, consentVersion: null },
+    });
+
+    return { ok: true, userId };
+  }
+
+  // ── Online Users (admin) ───────────────────────────────────────────────────
+
+  /**
+   * Get users who have sent a heartbeat within the threshold window.
+   * Default threshold: 120 seconds (2 minutes).
+   */
+  async getOnlineUsers(query: OnlineUsersQuery) {
+    const { threshold, role } = query;
+    const thresholdDate = new Date(Date.now() - threshold * 1000);
+
+    const where: Record<string, unknown> = {
+      lastSeenAt: { gte: thresholdDate },
+      isActive: true,
+      deletedAt: null,
+    };
+    if (role) where.role = role;
+
+    const users = await this.prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        fullName: true,
+        role: true,
+        email: true,
+        lastSeenAt: true,
+        avatarUrl: true,
+      },
+      orderBy: { lastSeenAt: 'desc' },
+    });
+
+    return { users, threshold };
+  }
+
+  // ── Login Events (admin) ───────────────────────────────────────────────────
+
+  /**
+   * List login events with pagination and filters.
+   * Denormalized table — no FK join needed.
+   */
+  async getLoginEvents(query: ListLoginEventsQuery) {
+    const { userId, role, eventType, from, to, limit, offset } = query;
+
+    const where: Record<string, unknown> = {};
+    if (userId) where.userId = userId;
+    if (role) where.userRole = role;
+    if (eventType) where.eventType = eventType;
+    if (from || to) {
+      where.createdAt = {
+        ...(from ? { gte: new Date(from) } : {}),
+        ...(to ? { lte: new Date(to) } : {}),
+      };
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.loginEvent.findMany({
+        where,
+        skip: offset,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.loginEvent.count({ where }),
+    ]);
+
+    return { data, total, limit, offset };
   }
 }

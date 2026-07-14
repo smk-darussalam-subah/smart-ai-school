@@ -5,6 +5,9 @@ import AppShell from '@/components/layout/AppShell';
 import { DashboardProviders } from '@/components/providers/DashboardProviders';
 import { getActiveViewAs, getEffectiveRoles } from '@/lib/view-as';
 import { apiFetch } from '@/lib/api';
+import { HeartbeatProvider } from '@/components/HeartbeatProvider';
+import { LoginEventRecorder } from '@/components/LoginEventRecorder';
+import { CURRENT_CONSENT_VERSION } from '@/lib/constants';
 
 export default async function DashboardLayout({
   children,
@@ -41,11 +44,23 @@ export default async function DashboardLayout({
   const permError = meData === null;
   const userPermissions: string[] = meData?.permissions ?? [];
 
+  // ── PDP Consent check ─────────────────────────────────────────────────────
+  // Checked from DB (via /auth/me) — NOT from JWT — so it's always fresh.
+  // After user consents, the DB is updated, and the NEXT page load sees the
+  // new consentVersion immediately (no JWT stale-data problem).
+  const userConsentVersion = (meData as { consentVersion?: string | null } | null)?.consentVersion;
+  if (!permError && (!userConsentVersion || userConsentVersion !== CURRENT_CONSENT_VERSION)) {
+    redirect('/consent');
+  }
+
   return (
     <DashboardProviders session={session}>
-      <AppShell viewAs={viewAs} permissions={userPermissions} permError={permError} hideChrome={hideChrome} positionRoles={positionRoles}>
-        {children}
-      </AppShell>
+      <HeartbeatProvider>
+        <LoginEventRecorder />
+        <AppShell viewAs={viewAs} permissions={userPermissions} permError={permError} hideChrome={hideChrome} positionRoles={positionRoles}>
+          {children}
+        </AppShell>
+      </HeartbeatProvider>
     </DashboardProviders>
   );
 }
