@@ -69,6 +69,7 @@ const PUBLIC_EXACT: readonly string[] = [
 
 const PUBLIC_PREFIXES = [
   '/login',
+  '/auth',
   '/api/auth',
   '/api/backend', // SSR proxy → backend handles its own auth
   '/health',
@@ -89,6 +90,7 @@ function isPublicPath(pathname: string): boolean {
 const STATIC_INTERACTIVE: readonly string[] = [
   '/',          // landing — client components (MarqueeStrip, LandingNav, dll)
   '/login',     // 'use client', onClick → signIn Keycloak (N21a)
+  '/auth',      // 'use client', login form + animations (AuthShell)
   '/health',    // 'use client', useEffect + onClick (N21a)
 ];
 
@@ -113,7 +115,7 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  if (pathname === '/login' && token) {
+  if ((pathname === '/login' || pathname === '/auth') && token) {
     const res = NextResponse.redirect(new URL('/dashboard', request.url));
     res.headers.set('Content-Security-Policy', csp);
     return res;
