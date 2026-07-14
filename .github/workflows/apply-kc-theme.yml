@@ -1,0 +1,146 @@
+name: Apply DIIS Keycloak Theme
+
+on:
+  workflow_dispatch:
+
+jobs:
+  apply-theme:
+    name: Apply DIIS Keycloak Theme on Production
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Recreate Keycloak container and apply theme via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: appuser
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            set -euo pipefail
+
+            echo "══════════════════════════════════════════════════"
+            echo "  GERBANG T1: Pre-flight checks"
+            echo "══════════════════════════════════════════════════"
+
+            WORK_DIR=/home/appuser/smart-ai-school
+            DOCKER_DIR="$WORK_DIR/infrastructure/docker"
+
+            # Verify working dir exists and has latest code
+            cd "$WORK_DIR"
+            echo "Current branch: $(git branch --show-current)"
+            echo "Latest commit: $(git log --oneline -1)"
+
+            # Verify theme files exist on disk
+            if [ ! -f "$WORK_DIR/infrastructure/keycloak/themes/diis/login/theme.properties" ]; then
+              echo "FATAL: theme.properties not found. Theme files not deployed."
+              exit 1
+            fi
+            echo "PASS: Theme files present on VPS"
+
+            # Verify docker-compose.yml has theme volume mount
+            if ! grep -q "themes/diis:/opt/keycloak/themes/diis" "$DOCKER_DIR/docker-compose.yml"; then
+              echo "FATAL: Theme volume mount not in docker-compose.yml"
+              exit 1
+            fi
+            echo "PASS: Theme volume mount present in docker-compose.yml"
+
+            cd "$DOCKER_DIR"
+
+            echo ""
+            echo "══════════════════════════════════════════════════"
+            echo "  GERBANG T2: Recreate Keycloak container"
+            echo "══════════════════════════════════════════════════"
+
+            # Recreate keycloak to pick up new volume mount
+            docker compose -f docker-compose.yml --env-file .env \
+              up -d --no-deps --force-recreate keycloak
+            echo "PASS: Keycloak container recreated"
+
+            echo ""
+            echo "══════════════════════════════════════════════════"
+            echo "  GERBANG T3: Wait for Keycloak healthy"
+            echo "══════════════════════════════════════════════════"
+
+            # Wait for keycloak to become healthy (max 120s)
+            ATTEMPT=0
+            MAX_ATTEMPTS=24
+            while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+              HEALTH=$(docker inspect smk-keycloak --format '{{.State.Health.Status}}' 2>/dev/null || echo "unknown")
+              echo "  [$ATTEMPT] health: $HEALTH"
+              if [ "$HEALTH" = "healthy" ]; then
+                echo "PASS: Keycloak healthy!"
+                break
+              fi
+              ATTEMPT=$((ATTEMPT + 1))
+              sleep 5
+            done
+
+            if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
+              echo "FATAL: Keycloak not healthy after 120s"
+              docker logs smk-keycloak --tail 30
+              exit 1
+            fi
+
+            echo ""
+            echo "══════════════════════════════════════════════════"
+            echo "  GERBANG T4: Apply theme via Admin CLI"
+            echo "══════════════════════════════════════════════════"
+
+            # Read admin password from .env (same source Keycloak container uses)
+            KC_PASS=$(grep '^KC_ADMIN_PASSWORD=' "$DOCKER_DIR/.env" | head -1 | cut -d= -f2-)
+            if [ -z "$KC_PASS" ]; then
+              echo "FATAL: KC_ADMIN_PASSWORD not found in .env"
+              exit 1
+            fi
+            echo "PASS: Admin credentials loaded"
+
+            # Use Keycloak Admin CLI inside the container (no token needed)
+            # Step 1: Configure auth (non-interactive)
+            docker exec smk-keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+              --server http://localhost:8080 \
+              --realm master \
+              --user admin \
+              --password "$KC_PASS" 2>&1
+
+            # Step 2: Update diis realm loginTheme
+            docker exec smk-keycloak /opt/keycloak/bin/kcadm.sh update \
+              realms/diis \
+              -s 'loginTheme=diis' 2>&1
+
+            echo "PASS: loginTheme set to 'diis'"
+
+            echo ""
+            echo "══════════════════════════════════════════════════"
+            echo "  GERBANG T5: Verify theme applied"
+            echo "══════════════════════════════════════════════════"
+
+            # Verify the theme is set
+            THEME=$(docker exec smk-keycloak /opt/keycloak/bin/kcadm.sh get realms/diis --fields loginTheme 2>&1)
+            echo "Current loginTheme: $THEME"
+
+            if echo "$THEME" | grep -q "diis"; then
+              echo "PASS: Theme 'diis' confirmed active"
+            else
+              echo "WARN: Theme may not be applied correctly. Check manually."
+            fi
+
+            echo ""
+            echo "══════════════════════════════════════════════════"
+            echo "  DEPLOYMENT COMPLETE"
+            echo "══════════════════════════════════════════════════"
+            echo ""
+            echo "  Themed login page: https://auth.smkdarussalamsubah.sch.id/realms/diis/"
+            echo ""
+            echo "  ROLLBACK (if needed):"
+            echo "    docker exec smk-keycloak /opt/keycloak/bin/kcadm.sh update realms/diis -s 'loginTheme=keycloak'"
+            echo ""
+
+      - name: Notify success
+        if: success()
+        run: echo "DIIS Keycloak theme applied successfully"
+
+      - name: Notify failure
+        if: failure()
+        run: echo "DIIS Keycloak theme deployment FAILED — check logs above"
