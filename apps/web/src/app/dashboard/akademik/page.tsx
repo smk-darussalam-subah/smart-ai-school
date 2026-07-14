@@ -249,6 +249,7 @@ export default async function AkademikPage() {
         activities={activitiesRes?.data ?? []}
         lmsModules={lmsRes?.data ?? []}
         realSumatif={assessmentRes?.data ?? undefined}
+        subjects={subjectsRes?.data ?? []}
         academicYear={academicYear}
         semester={semester}
         dataWarning={dataWarning}
