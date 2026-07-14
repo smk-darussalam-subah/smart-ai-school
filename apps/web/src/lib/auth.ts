@@ -13,6 +13,7 @@ declare module 'next-auth' {
     accessToken?: string;
     roles?: string[];
     keycloakId?: string;
+    consentVersion?: string | null;
     error?: string;
   }
 }
@@ -25,6 +26,7 @@ declare module 'next-auth/jwt' {
     expiresAt?: number;
     roles?: string[];
     keycloakId?: string;
+    consentVersion?: string | null;
     error?: string;
   }
 }
@@ -95,6 +97,23 @@ export const authOptions: NextAuthOptions = {
       // Initial sign-in: persist tokens from Keycloak
       if (account && profile) {
         const p = profile as JWT & Record<string, unknown>;
+
+        // Fetch consentVersion from /auth/me to embed in JWT.
+        // This allows middleware to check consent without API calls.
+        let consentVersion: string | null = null;
+        try {
+          const apiBase = process.env.API_URL ?? 'http://localhost:3001';
+          const meRes = await fetch(`${apiBase}/auth/me`, {
+            headers: { Authorization: `Bearer ${account.access_token}` },
+          });
+          if (meRes.ok) {
+            const me = await meRes.json();
+            consentVersion = me.consentVersion ?? null;
+          }
+        } catch {
+          // Fail-soft: consent check will redirect to /consent if null
+        }
+
         return {
           ...token,
           accessToken: account.access_token,
@@ -103,6 +122,7 @@ export const authOptions: NextAuthOptions = {
           expiresAt: account.expires_at,
           roles: extractKeycloakRoles(p),
           keycloakId: profile.sub,
+          consentVersion,
         };
       }
 
@@ -124,6 +144,7 @@ export const authOptions: NextAuthOptions = {
         accessToken: token.accessToken,
         roles: token.roles,
         keycloakId: token.keycloakId,
+        consentVersion: token.consentVersion,
         error: token.error,
       };
     },

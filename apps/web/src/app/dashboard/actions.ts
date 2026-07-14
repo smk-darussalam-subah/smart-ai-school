@@ -223,3 +223,39 @@ export async function fetchTrenOverall(days: number): Promise<TrenSeries | null>
   }
   return { labels, pcts };
 }
+
+// =============================================================================
+// Heartbeat — update lastSeenAt for online user tracking.
+// Called every 60s from HeartbeatProvider. Fire-and-forget (fail-soft).
+// =============================================================================
+
+export async function heartbeatAction() {
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) return;
+  await apiFetch('/auth/heartbeat', session.accessToken, {
+    method: 'POST',
+  }).catch(() => {}); // silent fail
+}
+
+// =============================================================================
+// Login Event — record login event with IP and User-Agent from headers().
+// Called once per session from LoginEventRecorder. Fire-and-forget.
+// =============================================================================
+
+export async function recordLoginEventAction() {
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) return;
+
+  // Dynamic import to avoid edge runtime issues with next/headers
+  const { headers } = await import('next/headers');
+  const h = await headers();
+
+  await apiFetch('/auth/login-events', session.accessToken, {
+    method: 'POST',
+    body: JSON.stringify({
+      eventType: 'login',
+      ipAddress: h.get('x-forwarded-for') ?? h.get('x-real-ip') ?? null,
+      userAgent: h.get('user-agent') ?? null,
+    }),
+  }).catch(() => {}); // silent fail
+}

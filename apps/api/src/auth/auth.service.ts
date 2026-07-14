@@ -1,12 +1,14 @@
 // =============================================================================
-// AuthService — Logika /auth/me (read + update profil diri sendiri)
+// AuthService — /auth/me, consent, heartbeat, login-events
 // =============================================================================
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { UserRole } from '@smk/auth';
+import { logger } from '@smk/logger';
 import { UpdateMeDto } from './dto/update-me.dto';
+import { RecordLoginEventDto } from './dto/login-event.dto';
 
 // Select fields yang dikembalikan ke client — tidak ekspos data sensitif
 const ME_SELECT = {
@@ -17,6 +19,8 @@ const ME_SELECT = {
   role: true,
   phone: true,
   isActive: true,
+  consentAt: true,
+  consentVersion: true,
 } as const;
 
 export type MeResponse = {
@@ -27,6 +31,8 @@ export type MeResponse = {
   role: string;
   phone: string | null;
   isActive: boolean;
+  consentAt: Date | null;
+  consentVersion: string | null;
   permissions: string[];
 };
 
@@ -69,6 +75,8 @@ export class AuthService {
         role: (roles[0] ?? '') as string,
         phone: null,
         isActive: true,
+        consentAt: null,
+        consentVersion: null,
         permissions,
       };
     }
@@ -95,5 +103,75 @@ export class AuthService {
       data: dto,
       select: ME_SELECT,
     });
+  }
+
+  // ── PDP Consent (R-05) ──────────────────────────────────────────────────────
+
+  /**
+   * Record user's acceptance of the LoA (Letter of Agreement).
+   * Called when user clicks "Saya Menyetujui" on the consent page.
+   * Stores both timestamp and version for re-consent tracking.
+   */
+  async recordConsent(keycloakId: string, version: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { keycloakId },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('User tidak ditemukan di database');
+
+    return this.prisma.user.update({
+      where: { keycloakId },
+      data: { consentAt: new Date(), consentVersion: version },
+      select: { id: true, consentAt: true, consentVersion: true },
+    });
+  }
+
+  // ── Heartbeat (online user tracking) ────────────────────────────────────────
+
+  /**
+   * Update lastSeenAt for the authenticated user.
+   * Called every 60s from the dashboard HeartbeatProvider.
+   * Single-column UPDATE — negligible load even at 350 concurrent users.
+   */
+  async heartbeat(keycloakId: string) {
+    await this.prisma.user.update({
+      where: { keycloakId },
+      data: { lastSeenAt: new Date() },
+      select: { id: true },
+    });
+    return { ok: true };
+  }
+
+  // ── Login Event Tracking ────────────────────────────────────────────────────
+
+  /**
+   * Record a login/logout/failed event.
+   * userId, userName, userRole are resolved server-side from the authenticated
+   * user's DB record — the client only sends eventType, ipAddress, userAgent.
+   */
+  async recordLoginEvent(keycloakId: string, dto: RecordLoginEventDto) {
+    // Resolve user info from DB (fail-soft: if user not found, skip recording)
+    const user = await this.prisma.user.findUnique({
+      where: { keycloakId },
+      select: { id: true, fullName: true, role: true },
+    });
+
+    if (!user) {
+      logger.warn('[Auth] recordLoginEvent: user not found in DB', { keycloakId });
+      return { ok: false, reason: 'user_not_found' };
+    }
+
+    await this.prisma.loginEvent.create({
+      data: {
+        userId: user.id,
+        userRole: user.role,
+        userName: user.fullName,
+        eventType: dto.eventType,
+        ipAddress: dto.ipAddress ?? null,
+        userAgent: dto.userAgent ?? null,
+      },
+    });
+
+    return { ok: true };
   }
 }
