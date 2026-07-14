@@ -12,3 +12,10 @@ export const AssignPositionSchema = z.object({
 }).strict();
 
 export type AssignPositionDto = z.infer<typeof AssignPositionSchema>;
+
+// Step 0.10: Mapping permission codes ke position
+export const SetPositionPermissionsSchema = z.object({
+  permissionIds: z.array(z.string().uuid()),
+}).strict();
+
+export type SetPositionPermissionsDto = z.infer<typeof SetPositionPermissionsSchema>;

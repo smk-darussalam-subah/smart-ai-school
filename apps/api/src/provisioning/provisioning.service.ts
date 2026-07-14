@@ -157,6 +157,7 @@ export class ProvisioningService {
             phone: dto.phone ? normalizeOrThrow(dto.phone) : null,
             role: dto.role,
             isActive: true,
+            consentAt: new Date(), // R-05: PDP consent at provisioning time
           },
           select: { id: true, keycloakId: true, email: true, fullName: true, role: true },
         });
@@ -442,6 +443,7 @@ export class ProvisioningService {
           phone: ortuPhone,
           role: 'ORANG_TUA',
           isActive: true,
+          consentAt: new Date(), // R-05: PDP consent at provisioning time
         },
         select: { id: true, keycloakId: true },
       });

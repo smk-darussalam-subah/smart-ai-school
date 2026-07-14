@@ -27,6 +27,7 @@ export interface Assignment {
 
 export interface Major { id: string; code: string; name: string }
 export interface StaffCandidate { id: string; fullName: string; email: string; role: string }
+export interface PermissionItem { id: string; code: string; description: string; module: string }
 
 const STAFF_ROLES = ['GURU', 'TATA_USAHA', 'KEPALA_SEKOLAH'];
 
@@ -37,11 +38,12 @@ export default async function StrukturOrganisasiPage() {
 
   const token = session?.accessToken ?? '';
 
-  const [catalog, assignmentsRes, majorsRes, groupedRes] = await Promise.all([
+  const [catalog, assignmentsRes, majorsRes, groupedRes, permsRes] = await Promise.all([
     apiFetch<Position[]>('/positions', token),
     apiFetch<{ academicYear: { id: string; code: string } | null; assignments: Assignment[] }>('/positions/assignments', token),
     apiFetch<Major[]>('/school/majors?activeOnly=true', token),
     apiFetch<{ groups: { role: string; users: StaffCandidate[] }[] }>('/users/grouped?limit=200', token),
+    apiFetch<PermissionItem[]>('/permissions', token),
   ]);
 
   if (catalog === null && assignmentsRes === null) return <LoadError />;
@@ -50,6 +52,7 @@ export default async function StrukturOrganisasiPage() {
   const academicYear = assignmentsRes?.academicYear ?? null;
   const assignments = assignmentsRes?.assignments ?? [];
   const majors = Array.isArray(majorsRes) ? majorsRes : [];
+  const permissions: PermissionItem[] = Array.isArray(permsRes) ? permsRes : [];
   const staff: StaffCandidate[] = (groupedRes?.groups ?? [])
     .filter((g) => STAFF_ROLES.includes(g.role))
     .flatMap((g) => g.users.map((u) => ({ ...u, role: g.role })));
@@ -63,6 +66,7 @@ export default async function StrukturOrganisasiPage() {
       assignments={assignments}
       majors={majors}
       staff={staff}
+      permissions={permissions}
       isSuperAdmin={isSuperAdmin}
     />
   );

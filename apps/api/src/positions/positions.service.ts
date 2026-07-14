@@ -85,6 +85,72 @@ export class PositionsService {
     });
   }
 
+  // ── Step 0.10: Get/Set PositionPermission mapping ─────────────────────────
+  async getPositionPermissions(positionId: string) {
+    const position = await this.prisma.position.findUnique({
+      where: { id: positionId },
+      select: { id: true, code: true, name: true },
+    });
+    if (!position) throw new NotFoundException('Jabatan tidak ditemukan.');
+
+    const permissionMappings = await this.prisma.positionPermission.findMany({
+      where: { positionId },
+      select: { permissionId: true },
+    });
+
+    const permIds = permissionMappings.map((pm) => pm.permissionId);
+    const permissions = permIds.length > 0
+      ? await this.prisma.permission.findMany({
+          where: { id: { in: permIds } },
+          select: { id: true, code: true, description: true, module: true },
+        })
+      : [];
+
+    return { position, permissions };
+  }
+
+  async setPositionPermissions(positionId: string, permissionIds: string[]) {
+    const position = await this.prisma.position.findUnique({
+      where: { id: positionId },
+      select: { id: true, code: true },
+    });
+    if (!position) throw new NotFoundException('Jabatan tidak ditemukan.');
+
+    // Validate all permission IDs exist
+    if (permissionIds.length > 0) {
+      const existingPerms = await this.prisma.permission.findMany({
+        where: { id: { in: permissionIds } },
+        select: { id: true },
+      });
+      const existingIds = new Set(existingPerms.map((p) => p.id));
+      const invalidIds = permissionIds.filter((id) => !existingIds.has(id));
+      if (invalidIds.length > 0) {
+        throw new BadRequestException(`Permission IDs tidak valid: ${invalidIds.join(', ')}`);
+      }
+    }
+
+    // Delete existing mappings and create new ones
+    await this.prisma.positionPermission.deleteMany({
+      where: { positionId },
+    });
+
+    if (permissionIds.length > 0) {
+      await this.prisma.positionPermission.createMany({
+        data: permissionIds.map((permissionId) => ({
+          positionId,
+          permissionId,
+        })),
+      });
+    }
+
+    logger.info('[Positions] PositionPermission updated', {
+      positionCode: position.code,
+      permissionCount: permissionIds.length,
+    });
+
+    return { positionId, permissionCount: permissionIds.length };
+  }
+
   async getActiveAcademicYear() {
     return this.prisma.academicYear.findFirst({
       where: { isActive: true },
