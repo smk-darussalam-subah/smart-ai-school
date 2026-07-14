@@ -32,7 +32,7 @@ jobs:
             --max-time 15 \
             --retry 2 \
             --retry-delay 3 \
-            "https://api.smkdarussalamsubah.sch.id/api/v1/health"
+            "https://api.smkdarussalamsubah.sch.id/health"
           echo ""
           echo "API health: OK"
 

@@ -6,13 +6,17 @@
 
 import { useState, useTransition } from 'react';
 import {
-  CalendarRange, Plus, CheckCircle2, Power, AlertTriangle, Loader2, CalendarDays,
+  CalendarRange, Plus, CheckCircle2, Power, AlertTriangle, Loader2, CalendarDays, Pencil,
 } from 'lucide-react';
 import { fmtDateShort } from '@/lib/academic';
 import {
   createAcademicYear, activateAcademicYear, createSemester, activateSemester,
+  updateAcademicYearAction, updateSemesterAction,
 } from '../actions';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
 export interface AcademicYearRow {
@@ -39,17 +43,20 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
   const [semForYear, setSemForYear] = useState<AcademicYearRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [editTarget, setEditTarget] = useState<{ type: 'year' | 'semester'; id: string; code: string; startDate: string; endDate: string } | null>(null);
 
   const sortedYears = [...years].sort((a, b) => b.code.localeCompare(a.code));
   const activeYear = years.find((y) => y.isActive);
   const activeSem = semesters.find((s) => s.isActive);
 
-  const run = (id: string, fn: () => Promise<{ success: boolean; error?: string }>) => {
+  // M1: Now includes successMsg so user gets feedback on successful activation.
+  const run = (id: string, fn: () => Promise<{ success: boolean; error?: string }>, successMsg?: string) => {
     setBusyId(id);
     startTransition(async () => {
       const res = await fn();
       setBusyId(null);
       if (!res.success) toast.error(res.error ?? 'Aksi gagal.');
+      else if (successMsg) toast.success(successMsg);
     });
   };
 
@@ -59,14 +66,14 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
     setConfirmState({
       title: 'Aktifkan Tahun Ajaran',
       description: `Aktifkan Tahun Ajaran ${y.code}? Tahun ajaran aktif lainnya akan dinonaktifkan.`,
-      action: () => run(y.id, () => activateAcademicYear(y.id)),
+      action: () => run(y.id, () => activateAcademicYear(y.id), `Tahun ajaran ${y.code} diaktifkan.`),
     });
   };
   const doActivateSem = (s: SemesterRow) => {
     setConfirmState({
       title: 'Aktifkan Semester',
       description: `Aktifkan Semester ${s.number} (${s.academicYear?.code ?? ''})? Semester aktif lainnya akan dinonaktifkan.`,
-      action: () => run(s.id, () => activateSemester(s.id)),
+      action: () => run(s.id, () => activateSemester(s.id), `Semester ${s.number} diaktifkan.`),
     });
   };
 
@@ -115,12 +122,18 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
                       <div className="text-[12px] text-[#6b8079]">{fmtDateShort(y.startDate)} – {fmtDateShort(y.endDate)}</div>
                     </div>
                   </div>
-                  {!y.isActive && (
-                    <button type="button" onClick={() => doActivateYear(y)} disabled={pending && busyId === y.id}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12.5px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
-                      {pending && busyId === y.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Power className="h-3.5 w-3.5" />}Aktifkan TA
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setEditTarget({ type: 'year', id: y.id, code: y.code, startDate: y.startDate.slice(0, 10), endDate: y.endDate.slice(0, 10) })}
+                      className="inline-flex items-center gap-1 rounded-lg border border-[#e6efea] bg-white px-2.5 py-1.5 text-[12px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">
+                      <Pencil className="h-3.5 w-3.5" />Edit Tanggal
                     </button>
-                  )}
+                    {!y.isActive && (
+                      <button type="button" onClick={() => doActivateYear(y)} disabled={pending && busyId === y.id}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12.5px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
+                        {pending && busyId === y.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Power className="h-3.5 w-3.5" />}Aktifkan TA
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="mt-3 border-t border-[#f0f4f2] pt-3">
@@ -144,12 +157,18 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
                             </div>
                             <div className="text-[11px] text-[#6b8079]">{fmtDateShort(s.startDate)} – {fmtDateShort(s.endDate)}</div>
                           </div>
-                          {!s.isActive && (
-                            <button type="button" onClick={() => doActivateSem(s)} disabled={pending && busyId === s.id}
-                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11.5px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
-                              {pending && busyId === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Power className="h-3.5 w-3.5" />}Aktifkan
+                          <div className="flex items-center gap-1.5">
+                            <button type="button" onClick={() => setEditTarget({ type: 'semester', id: s.id, code: `Semester ${s.number}`, startDate: s.startDate.slice(0, 10), endDate: s.endDate.slice(0, 10) })}
+                              className="inline-flex items-center gap-1 rounded-lg border border-[#e6efea] bg-white px-2 py-1.5 text-[11px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">
+                              <Pencil className="h-3 w-3" />
                             </button>
-                          )}
+                            {!s.isActive && (
+                              <button type="button" onClick={() => doActivateSem(s)} disabled={pending && busyId === s.id}
+                                className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11.5px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
+                                {pending && busyId === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Power className="h-3.5 w-3.5" />}Aktifkan
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -163,6 +182,7 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
 
       {yearDialog && <YearDialog onClose={() => setYearDialog(false)} onErr={(e: string | null) => e ? toast.error(e) : toast.success('Tahun ajaran dibuat.')} />}
       {semForYear && <SemesterDialog year={semForYear} onClose={() => setSemForYear(null)} onErr={(e: string | null) => e ? toast.error(e) : toast.success('Semester dibuat.')} />}
+      {editTarget && <EditDateDialog target={editTarget} onClose={() => setEditTarget(null)} />}
       <ConfirmDialog
         open={!!confirmState}
         onOpenChange={(o: boolean) => !o && setConfirmState(null)}
@@ -176,13 +196,8 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
   );
 }
 
-function Overlay({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-2xl border border-[#e6efea] bg-white p-5 shadow-xl">{children}</div>
-    </div>
-  );
-}
+// M2: Replaced custom Overlay with shared Dialog component for WCAG 2.1 AA compliance
+// (focus trap, aria-modal, ESC-to-close, screen reader support).
 
 function YearDialog({ onClose, onErr }: { onClose: () => void; onErr: (e: string | null) => void }) {
   const [code, setCode] = useState('');
@@ -205,24 +220,29 @@ function YearDialog({ onClose, onErr }: { onClose: () => void; onErr: (e: string
   };
 
   return (
-    <Overlay>
-      <h3 className="text-[15px] font-bold text-[#0f2e25]">Buat Tahun Ajaran</h3>
-      <div className="mt-3 space-y-3">
-        <Labeled label="Kode (YYYY/YYYY)">
-          <input value={code} onChange={(e) => setCode(e.target.value)} className={FIELD} placeholder="2026/2027" />
-        </Labeled>
-        <div className="grid grid-cols-2 gap-3">
-          <Labeled label="Mulai"><input type="date" value={startDate} onChange={(e) => setStart(e.target.value)} className={FIELD} /></Labeled>
-          <Labeled label="Selesai"><input type="date" value={endDate} onChange={(e) => setEnd(e.target.value)} className={FIELD} /></Labeled>
+    <Dialog open onOpenChange={(o: boolean) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Buat Tahun Ajaran</DialogTitle>
+          <DialogDescription>Isi data tahun ajaran baru.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <Labeled label="Kode (YYYY/YYYY)">
+            <input value={code} onChange={(e) => setCode(e.target.value)} className={FIELD} placeholder="2026/2027" />
+          </Labeled>
+          <div className="grid grid-cols-2 gap-3">
+            <Labeled label="Mulai"><input type="date" value={startDate} onChange={(e) => setStart(e.target.value)} className={FIELD} /></Labeled>
+            <Labeled label="Selesai"><input type="date" value={endDate} onChange={(e) => setEnd(e.target.value)} className={FIELD} /></Labeled>
+          </div>
+          <label className="flex items-center gap-2 text-[12.5px] font-semibold text-[#355a4e]">
+            <input type="checkbox" checked={isActive} onChange={(e) => setActive(e.target.checked)} className="h-4 w-4 accent-emerald-600" />
+            Jadikan aktif (menonaktifkan TA aktif lainnya)
+          </label>
+          {local && <div className="flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-600"><AlertTriangle className="h-4 w-4 shrink-0" />{local}</div>}
         </div>
-        <label className="flex items-center gap-2 text-[12.5px] font-semibold text-[#355a4e]">
-          <input type="checkbox" checked={isActive} onChange={(e) => setActive(e.target.checked)} className="h-4 w-4 accent-emerald-600" />
-          Jadikan aktif (menonaktifkan TA aktif lainnya)
-        </label>
-        {local && <div className="flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-600"><AlertTriangle className="h-4 w-4 shrink-0" />{local}</div>}
-      </div>
-      <DialogButtons onClose={onClose} onSave={save} pending={pending} />
-    </Overlay>
+        <DialogButtons onClose={onClose} onSave={save} pending={pending} />
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -246,27 +266,76 @@ function SemesterDialog({ year, onClose, onErr }: { year: AcademicYearRow; onClo
   };
 
   return (
-    <Overlay>
-      <h3 className="text-[15px] font-bold text-[#0f2e25]">Tambah Semester — TA {year.code}</h3>
-      <div className="mt-3 space-y-3">
-        <Labeled label="Semester">
-          <select value={number} onChange={(e) => setNumber(e.target.value)} className={FIELD}>
-            <option value="1">Semester 1 (Ganjil)</option>
-            <option value="2">Semester 2 (Genap)</option>
-          </select>
-        </Labeled>
-        <div className="grid grid-cols-2 gap-3">
-          <Labeled label="Mulai"><input type="date" value={startDate} onChange={(e) => setStart(e.target.value)} className={FIELD} /></Labeled>
-          <Labeled label="Selesai"><input type="date" value={endDate} onChange={(e) => setEnd(e.target.value)} className={FIELD} /></Labeled>
+    <Dialog open onOpenChange={(o: boolean) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Tambah Semester — TA {year.code}</DialogTitle>
+          <DialogDescription>Isi data semester baru.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <Labeled label="Semester">
+            <select value={number} onChange={(e) => setNumber(e.target.value)} className={FIELD}>
+              <option value="1">Semester 1 (Ganjil)</option>
+              <option value="2">Semester 2 (Genap)</option>
+            </select>
+          </Labeled>
+          <div className="grid grid-cols-2 gap-3">
+            <Labeled label="Mulai"><input type="date" value={startDate} onChange={(e) => setStart(e.target.value)} className={FIELD} /></Labeled>
+            <Labeled label="Selesai"><input type="date" value={endDate} onChange={(e) => setEnd(e.target.value)} className={FIELD} /></Labeled>
+          </div>
+          <label className="flex items-center gap-2 text-[12.5px] font-semibold text-[#355a4e]">
+            <input type="checkbox" checked={isActive} onChange={(e) => setActive(e.target.checked)} className="h-4 w-4 accent-emerald-600" />
+            Jadikan aktif (menonaktifkan semester aktif lainnya)
+          </label>
+          {local && <div className="flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-600"><AlertTriangle className="h-4 w-4 shrink-0" />{local}</div>}
         </div>
-        <label className="flex items-center gap-2 text-[12.5px] font-semibold text-[#355a4e]">
-          <input type="checkbox" checked={isActive} onChange={(e) => setActive(e.target.checked)} className="h-4 w-4 accent-emerald-600" />
-          Jadikan aktif (menonaktifkan semester aktif lainnya)
-        </label>
-        {local && <div className="flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-600"><AlertTriangle className="h-4 w-4 shrink-0" />{local}</div>}
-      </div>
-      <DialogButtons onClose={onClose} onSave={save} pending={pending} />
-    </Overlay>
+        <DialogButtons onClose={onClose} onSave={save} pending={pending} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Edit Tanggal Dialog ──────────────────────────────────────────────────────
+
+function EditDateDialog({ target, onClose }: {
+  target: { type: 'year' | 'semester'; id: string; code: string; startDate: string; endDate: string };
+  onClose: () => void;
+}) {
+  const [startDate, setStart] = useState(target.startDate);
+  const [endDate, setEnd] = useState(target.endDate);
+  const [local, setLocal] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const save = () => {
+    setLocal(null);
+    if (!startDate || !endDate) return setLocal('Tanggal mulai & selesai wajib diisi.');
+    if (endDate <= startDate) return setLocal('Tanggal selesai harus setelah tanggal mulai.');
+    startTransition(async () => {
+      const action = target.type === 'year' ? updateAcademicYearAction : updateSemesterAction;
+      const res = await action(target.id, { startDate, endDate });
+      if (!res.success) return setLocal(res.error ?? 'Gagal menyimpan.');
+      toast.success(`Tanggal ${target.code} diperbarui.`);
+      onClose();
+    });
+  };
+
+  return (
+    <Dialog open onOpenChange={(o: boolean) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit Tanggal — {target.code}</DialogTitle>
+          <DialogDescription>Perbaiki tanggal mulai dan selesai.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <Labeled label="Mulai"><input type="date" value={startDate} onChange={(e) => setStart(e.target.value)} className={FIELD} /></Labeled>
+            <Labeled label="Selesai"><input type="date" value={endDate} onChange={(e) => setEnd(e.target.value)} className={FIELD} /></Labeled>
+          </div>
+          {local && <div className="flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-600"><AlertTriangle className="h-4 w-4 shrink-0" />{local}</div>}
+        </div>
+        <DialogButtons onClose={onClose} onSave={save} pending={pending} />
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
 } from '@nestjs/common';
 import { AuthUser, UserRole } from '@smk/auth';
@@ -14,7 +15,13 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { UsersService } from './users.service';
-import { ListUsersQuerySchema, GroupedUsersQuerySchema } from './dto/list-users.dto';
+import {
+  ListUsersQuerySchema,
+  GroupedUsersQuerySchema,
+  ListConsentQuerySchema,
+  OnlineUsersQuerySchema,
+  ListLoginEventsQuerySchema,
+} from './dto/list-users.dto';
 import { UpdateUserRoleSchema } from './dto/update-user.dto';
 import { UpdateUserActiveSchema } from './dto/update-user.dto';
 
@@ -32,6 +39,59 @@ export class UsersController {
     const parsed = GroupedUsersQuerySchema.safeParse(rawQuery);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors);
     return this.usersService.findGrouped(parsed.data);
+  }
+
+  // ── Admin: Consent Status ──────────────────────────────────────────────────
+
+  /**
+   * GET /users/consent-status — PDP consent compliance view.
+   * MUST be before :id route to avoid collision.
+   */
+  @Get('consent-status')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  async getConsentStatus(@Query() rawQuery: unknown) {
+    const parsed = ListConsentQuerySchema.safeParse(rawQuery);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.usersService.getConsentStatus(parsed.data);
+  }
+
+  // ── Admin: Online Users ─────────────────────────────────────────────────────
+
+  /**
+   * GET /users/online — users who sent heartbeat within threshold.
+   * MUST be before :id route to avoid collision.
+   */
+  @Get('online')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
+  async getOnlineUsers(@Query() rawQuery: unknown) {
+    const parsed = OnlineUsersQuerySchema.safeParse(rawQuery);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.usersService.getOnlineUsers(parsed.data);
+  }
+
+  // ── Admin: Login Events ─────────────────────────────────────────────────────
+
+  /**
+   * GET /users/login-events — audit trail of login/logout events.
+   * MUST be before :id route to avoid collision.
+   */
+  @Get('login-events')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  async getLoginEvents(@Query() rawQuery: unknown) {
+    const parsed = ListLoginEventsQuerySchema.safeParse(rawQuery);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.usersService.getLoginEvents(parsed.data);
+  }
+
+  // ── Admin: Reset Consent ───────────────────────────────────────────────────
+
+  /**
+   * POST /users/:id/reset-consent — force re-consent on next login.
+   */
+  @Post(':id/reset-consent')
+  @Roles('SUPER_ADMIN')
+  async resetConsent(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.resetConsent(id);
   }
 
   @Get()

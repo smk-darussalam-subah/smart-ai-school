@@ -48,6 +48,8 @@ interface Props {
   isGuru: boolean;
   isReviewer: boolean;
   canDelete: boolean;
+  defaultAcademicYear?: string;
+  defaultSemester?: number;
 }
 
 const STATUS_BADGE: Record<RppItem['status'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -57,7 +59,7 @@ const STATUS_BADGE: Record<RppItem['status'], { label: string; variant: 'default
   revision: { label: '↩ Perlu Revisi', variant: 'destructive' },
 };
 
-export default function RppBoard({ items, total, isGuru, isReviewer, canDelete }: Props) {
+export default function RppBoard({ items, total, isGuru, isReviewer, canDelete, defaultAcademicYear, defaultSemester }: Props) {
   const [statusFilter, setStatusFilter] = useState(isReviewer ? 'submitted' : 'all');
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<RppItem | null>(null);
@@ -162,7 +164,7 @@ export default function RppBoard({ items, total, isGuru, isReviewer, canDelete }
       )}
 
       {isGuru && (
-        <RppFormDialog open={formOpen} onOpenChange={setFormOpen} rpp={editing} />
+        <RppFormDialog open={formOpen} onOpenChange={setFormOpen} rpp={editing} defaultAcademicYear={defaultAcademicYear} defaultSemester={defaultSemester} />
       )}
       <ReviewDialog rpp={reviewing} onClose={() => setReviewing(null)} run={run} pending={pending} />
     </div>
@@ -170,8 +172,8 @@ export default function RppBoard({ items, total, isGuru, isReviewer, canDelete }
 }
 
 // ── Form Guru ─────────────────────────────────────────────────────────────────
-function RppFormDialog({ open, onOpenChange, rpp }: {
-  open: boolean; onOpenChange: (o: boolean) => void; rpp: RppItem | null;
+function RppFormDialog({ open, onOpenChange, rpp, defaultAcademicYear, defaultSemester }: {
+  open: boolean; onOpenChange: (o: boolean) => void; rpp: RppItem | null; defaultAcademicYear?: string; defaultSemester?: number;
 }) {
   const isEdit = !!rpp;
   const [loading, setLoading] = useState(false);
@@ -180,8 +182,8 @@ function RppFormDialog({ open, onOpenChange, rpp }: {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [fileUrl, setFileUrl] = useState('');
-  const [academicYear, setAcademicYear] = useState('2026/2027');
-  const [semester, setSemester] = useState('1');
+  const [academicYear, setAcademicYear] = useState(defaultAcademicYear || '2026/2027');
+  const [semester, setSemester] = useState(String(defaultSemester ?? 1));
 
   useEffect(() => {
     if (open) {
@@ -190,8 +192,8 @@ function RppFormDialog({ open, onOpenChange, rpp }: {
       setTitle(rpp?.title ?? '');
       setContent(rpp?.content ?? '');
       setFileUrl(rpp?.fileUrl ?? '');
-      setAcademicYear(rpp?.academicYear ?? '2026/2027');
-      setSemester(String(rpp?.semester ?? 1));
+      setAcademicYear(rpp?.academicYear ?? defaultAcademicYear ?? '2026/2027');
+      setSemester(String(rpp?.semester ?? defaultSemester ?? 1));
     }
   }, [open, rpp]);
 

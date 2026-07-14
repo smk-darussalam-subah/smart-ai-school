@@ -7,6 +7,7 @@ import RaporHub, { ReportItem } from './_components/RaporHub';
 
 interface ListResponse { data: ReportItem[]; total: number; }
 interface ClassItem { id: string; name: string; }
+interface ActiveSemester { number: number; academicYear: { code: string } }
 
 export default async function RaporPage() {
   const session = await getServerSession(authOptions);
@@ -17,9 +18,10 @@ export default async function RaporPage() {
   const token = session.accessToken ?? '';
   const isStaf = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'].some((r) => roles.includes(r));
 
-  const [listRes, classesRes] = await Promise.all([
+  const [listRes, classesRes, semRes] = await Promise.all([
     apiFetch<ListResponse>('/report-cards?limit=100', token),
     isStaf ? apiFetch<{ data: ClassItem[] }>('/classes?limit=100', token) : Promise.resolve(null),
+    apiFetch<ActiveSemester>('/school/semesters/active', token),
   ]);
 
   return (
@@ -31,6 +33,8 @@ export default async function RaporPage() {
       canReview={['SUPER_ADMIN', 'KEPALA_SEKOLAH'].some((r) => roles.includes(r))}
       canDistribute={isStaf}
       isStaf={isStaf}
+      defaultAcademicYear={semRes?.academicYear?.code ?? ''}
+      defaultSemester={semRes?.number ?? 1}
     />
   );
 }
