@@ -119,6 +119,51 @@ export async function apiFetch<T>(
 }
 
 /**
+ * Server-side POST/PUT/PATCH/DELETE ke API dengan Bearer token.
+ * apiFetch hanya mendukung GET (3rd param = query params).
+ * Gunakan apiMutate untuk mutation requests dengan body.
+ */
+export async function apiMutate<T>(
+  path: string,
+  token: string,
+  options: { method: 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown },
+): Promise<T | null> {
+  const url = `${API_BASE}/api/v1${path}`;
+
+  try {
+    const res = await fetch(url, {
+      method: options.method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        redirect('/login?reason=session');
+      }
+      if (process.env.NODE_ENV === 'development') {
+        const text = await res.text().catch(() => '');
+        console.error(`[apiMutate] ${options.method} ${path} → ${res.status}`, text);
+      }
+      return null;
+    }
+
+    // 204 No Content or empty body
+    const text = await res.text();
+    if (!text) return null;
+    return JSON.parse(text) as T;
+  } catch (err) {
+    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err;
+    if (process.env.NODE_ENV === 'development') console.error(`[apiMutate] network error ${options.method} ${path}:`, err);
+    return null;
+  }
+}
+
+/**
  * Ekstrak pesan error API yang ramah dari body respons gagal.
  * NestJS exception → { message: string }. ZodPipe (validasi) → { message: [{field,message}] }.
  * Selalu kembalikan string yang bisa ditampilkan ke user.

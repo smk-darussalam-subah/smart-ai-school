@@ -22,6 +22,7 @@ interface Props {
   subjects: SubjectItem[];
   canManage: boolean;
   canEditAssignment: boolean;
+  academicYear?: string;
 }
 
 const SCORE_COLOR = (s: number) => s >= 85 ? 'text-green-700' : s >= 70 ? 'text-blue-700' : 'text-red-600';
@@ -34,9 +35,9 @@ interface GradeForm { studentId: string; assignmentId: string; type: string; sco
 interface AttForm { classId: string; date: string; status: string; studentIds: string; }
 interface AsgForm { teacherId: string; classId: string; subject: string; hoursPerWeek: string; academicYear: string; }
 
-const emptyGrade: GradeForm = { studentId: '', assignmentId: '', type: 'uh', score: '', semester: '1', academicYear: '2026/2027', notes: '' };
+const makeEmptyGrade = (ay: string): GradeForm => ({ studentId: '', assignmentId: '', type: 'uh', score: '', semester: '1', academicYear: ay, notes: '' });
 const emptyAtt: AttForm = { classId: '', date: '', status: 'hadir', studentIds: '' };
-const emptyAsg: AsgForm = { teacherId: '', classId: '', subject: '', hoursPerWeek: '2', academicYear: '2026/2027' };
+const makeEmptyAsg = (ay: string): AsgForm => ({ teacherId: '', classId: '', subject: '', hoursPerWeek: '2', academicYear: ay });
 
 // ── SubjectCombobox ─────────────────────────────────────────────────────────
 // Dropdown + free-type. Bila teks tidak ada di list → prompt "Tambahkan?".
@@ -121,7 +122,10 @@ function SubjectCombobox({
   );
 }
 
-export default function AkademikClient({ grades, attendances, classes, assignments, subjects, canManage, canEditAssignment }: Props) {
+export default function AkademikClient({ grades, attendances, classes, assignments, subjects, canManage, canEditAssignment, academicYear }: Props) {
+  const ay = academicYear || '2026/2027';
+  const emptyGrade = makeEmptyGrade(ay);
+  const emptyAsg = makeEmptyAsg(ay);
   const [tab, setTab] = useState<'grades' | 'attendance' | 'penugasan'>('grades');
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('all');

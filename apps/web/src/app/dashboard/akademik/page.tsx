@@ -35,12 +35,13 @@ export default async function AkademikPage() {
   const canManage = roles.includes('SUPER_ADMIN') || roles.includes('GURU');
   const canEditAssignment = roles.includes('SUPER_ADMIN') || roles.includes('TATA_USAHA');
 
-  const [gradesData, attendanceData, classesRes, assignmentsRes, subjectsRes] = await Promise.all([
+  const [gradesData, attendanceData, classesRes, assignmentsRes, subjectsRes, fallbackSemRes] = await Promise.all([
     apiFetch<PaginatedResponse<GradeItem>>('/grades?limit=200', token),
     apiFetch<PaginatedResponse<AttendanceItem>>('/attendance?limit=200', token),
     apiFetch<{ data: ClassItem[] }>('/classes?limit=50', token),
     apiFetch<{ data: Assignment[]; total: number }>('/teaching-assignments?limit=100', token),
     apiFetch<{ data: SubjectItem[] }>('/subjects?limit=200', token),
+    apiFetch<ActiveSemester>('/school/semesters/active', token),
   ]);
 
   // JANGAN blokir dashboard. apiFetch null = gagal-muat (bukan kosong). Bila ada
@@ -248,6 +249,7 @@ export default async function AkademikPage() {
         activities={activitiesRes?.data ?? []}
         lmsModules={lmsRes?.data ?? []}
         realSumatif={assessmentRes?.data ?? undefined}
+        subjects={subjectsRes?.data ?? []}
         academicYear={academicYear}
         semester={semester}
         dataWarning={dataWarning}
@@ -328,6 +330,7 @@ export default async function AkademikPage() {
       subjects={subjectsRes?.data ?? []}
       canManage={canManage}
       canEditAssignment={canEditAssignment}
+      academicYear={fallbackSemRes?.academicYear?.code}
     />
   );
 }

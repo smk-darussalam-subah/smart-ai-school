@@ -8,6 +8,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { SchoolConfigService } from '../school-config/school-config.service';
 import { SchoolConfigController } from '../school-config/school-config.controller';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 
 const PROFILE = { id: 'p1', name: 'SMK Darussalam Subah', npsn: '20324567', address: 'Jl. Raya', phone: null, email: null, website: null, headmasterName: null, headmasterNip: null, logoUrl: null, accreditation: 'A', createdAt: new Date(), updatedAt: new Date() };
 const MAJOR_TKRO = { id: 'm1', code: 'TKRO', name: 'Teknik Kendaraan Ringan Otomotif', description: null, isActive: true, createdAt: new Date(), updatedAt: new Date() };
@@ -21,24 +22,26 @@ const SEM = { id: 's1', academicYearId: 'ay1', number: 1, startDate: new Date('2
 describe('SchoolConfigService', () => {
   let service: SchoolConfigService;
   const mockProfile = { findFirst: jest.fn(), update: jest.fn() };
-  const mockMajor = { findMany: jest.fn(), create: jest.fn(), update: jest.fn() };
+  const mockMajor = { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() };
   const mockAY = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() };
   const mockSem = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() };
   const mockCal = { findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() };
+  const mock$transaction = jest.fn();
+
+  const prisma = {
+    schoolProfile: mockProfile,
+    major: mockMajor,
+    academicYear: mockAY,
+    semester: mockSem,
+    academicCalendar: mockCal,
+    $transaction: mock$transaction,
+  };
 
   beforeEach(async () => {
-    [mockProfile.findFirst, mockProfile.update, mockMajor.findMany, mockMajor.create, mockMajor.update,
+    [mockProfile.findFirst, mockProfile.update, mockMajor.findMany, mockMajor.findUnique, mockMajor.create, mockMajor.update,
       mockAY.findMany, mockAY.findFirst, mockAY.findUnique, mockAY.create, mockAY.update, mockAY.updateMany,
       mockSem.findMany, mockSem.findFirst, mockSem.findUnique, mockSem.create, mockSem.update, mockSem.updateMany,
-      mockCal.findMany, mockCal.create, mockCal.update, mockCal.delete].forEach(m => m.mockReset());
-
-    const prisma = {
-      schoolProfile: mockProfile,
-      major: mockMajor,
-      academicYear: mockAY,
-      semester: mockSem,
-      academicCalendar: mockCal,
-    };
+      mockCal.findMany, mockCal.create, mockCal.update, mockCal.delete, mock$transaction].forEach(m => m.mockReset());
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [SchoolConfigService, { provide: PrismaService, useValue: prisma }],
@@ -73,9 +76,34 @@ describe('SchoolConfigService', () => {
   });
 
   it('createMajor → insert', async () => {
+    mockMajor.findUnique.mockResolvedValue(null);
     mockMajor.create.mockResolvedValue(MAJOR_TKRO);
     const result = await service.createMajor({ code: 'TKRO', name: 'TKRO' });
     expect(result.code).toBe('TKRO');
+  });
+
+  it('createMajor duplikat → Conflict', async () => {
+    mockMajor.findUnique.mockResolvedValue({ id: 'm1' });
+    await expect(
+      service.createMajor({ code: 'TKRO', name: 'TKRO' }),
+    ).rejects.toThrow(ConflictException);
+    expect(mockMajor.create).not.toHaveBeenCalled();
+  });
+
+  it('updateMajor → success', async () => {
+    mockMajor.update.mockResolvedValue({ ...MAJOR_TKRO, name: 'Updated' });
+    const result = await service.updateMajor('m1', { name: 'Updated' });
+    expect(result.name).toBe('Updated');
+  });
+
+  it('updateMajor → not found → NotFoundException', async () => {
+    mockMajor.update.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('test', { code: 'P2025', clientVersion: '5.0.0' }));
+    await expect(service.updateMajor('not-exist', { name: 'X' })).rejects.toThrow(NotFoundException);
+  });
+
+  it('updateMajor → duplicate code → ConflictException', async () => {
+    mockMajor.update.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('test', { code: 'P2002', clientVersion: '5.0.0' }));
+    await expect(service.updateMajor('m1', { code: 'DUP' })).rejects.toThrow(ConflictException);
   });
 
   it('getActiveAcademicYear → return active', async () => {
@@ -89,29 +117,74 @@ describe('SchoolConfigService', () => {
     await expect(service.getActiveAcademicYear()).rejects.toThrow(NotFoundException);
   });
 
-  it('createAcademicYear with isActive → deactivate others first', async () => {
+  it('createAcademicYear with isActive → deactivate others in transaction', async () => {
     mockAY.findUnique.mockResolvedValue(null); // tak duplikat
+    // Simulate $transaction: execute the callback immediately with the mock prisma
+    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
     mockAY.updateMany.mockResolvedValue({ count: 1 });
     mockAY.create.mockResolvedValue(AY);
-    await service.createAcademicYear({ code: '2026/2027', startDate: new Date(), endDate: new Date(), isActive: true });
+    await service.createAcademicYear({ code: '2026/2027', startDate: new Date('2026-07-13'), endDate: new Date('2027-06-26'), isActive: true });
+    void prisma;
+    expect(mock$transaction).toHaveBeenCalledTimes(1);
     expect(mockAY.updateMany).toHaveBeenCalledWith({ data: { isActive: false } });
   });
 
   it('createAcademicYear duplikat → Conflict (tanpa menonaktifkan yg lain)', async () => {
     mockAY.findUnique.mockResolvedValue({ id: 'ay1' }); // sudah ada
     await expect(
-      service.createAcademicYear({ code: '2026/2027', startDate: new Date(), endDate: new Date(), isActive: true }),
+      service.createAcademicYear({ code: '2026/2027', startDate: new Date('2026-07-13'), endDate: new Date('2027-06-26'), isActive: true }),
     ).rejects.toThrow(ConflictException);
-    expect(mockAY.updateMany).not.toHaveBeenCalled();
+    expect(mock$transaction).not.toHaveBeenCalled();
     expect(mockAY.create).not.toHaveBeenCalled();
+  });
+
+  it('updateAcademicYear with isActive → transactional activate', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mock$transaction.mockImplementation(async (cb: (tx: any) => Promise<unknown>) => cb(prisma));
+    mockAY.updateMany.mockResolvedValue({ count: 1 });
+    mockAY.update.mockResolvedValue({ ...AY, isActive: true });
+    const result = await service.updateAcademicYear('ay1', { isActive: true });
+    expect(mock$transaction).toHaveBeenCalledTimes(1);
+    expect(result).toBeDefined();
+  });
+
+  it('updateAcademicYear → not found → NotFoundException', async () => {
+    mock$transaction.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('test', { code: 'P2025', clientVersion: '5.0.0' }));
+    await expect(service.updateAcademicYear('not-exist', { isActive: true })).rejects.toThrow(NotFoundException);
   });
 
   it('createSemester duplikat → Conflict', async () => {
     mockSem.findUnique.mockResolvedValue({ id: 's1' });
     await expect(
-      service.createSemester({ academicYearId: 'ay1', number: 1, startDate: new Date(), endDate: new Date(), isActive: true }),
+      service.createSemester({ academicYearId: 'ay1', number: 1, startDate: new Date('2026-07-13'), endDate: new Date('2026-12-19'), isActive: true }),
     ).rejects.toThrow(ConflictException);
     expect(mockSem.create).not.toHaveBeenCalled();
+  });
+
+  it('createSemester with isActive → transactional create', async () => {
+    mockSem.findUnique.mockResolvedValue(null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mock$transaction.mockImplementation(async (cb: (tx: any) => Promise<unknown>) => cb(prisma));
+    mockSem.updateMany.mockResolvedValue({ count: 1 });
+    mockSem.create.mockResolvedValue(SEM);
+    await service.createSemester({ academicYearId: 'ay1', number: 1, startDate: new Date('2026-07-13'), endDate: new Date('2026-12-19'), isActive: true });
+    expect(mock$transaction).toHaveBeenCalledTimes(1);
+    expect(mockSem.updateMany).toHaveBeenCalledWith({ data: { isActive: false } });
+  });
+
+  it('updateSemester with isActive → transactional activate', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mock$transaction.mockImplementation(async (cb: (tx: any) => Promise<unknown>) => cb(prisma));
+    mockSem.updateMany.mockResolvedValue({ count: 1 });
+    mockSem.update.mockResolvedValue({ ...SEM, isActive: true });
+    const result = await service.updateSemester('s1', { isActive: true });
+    expect(mock$transaction).toHaveBeenCalledTimes(1);
+    expect(result).toBeDefined();
+  });
+
+  it('updateSemester → not found → NotFoundException', async () => {
+    mock$transaction.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('test', { code: 'P2025', clientVersion: '5.0.0' }));
+    await expect(service.updateSemester('not-exist', { isActive: true })).rejects.toThrow(NotFoundException);
   });
 
   it('getSemesters → filter by academicYearId', async () => {

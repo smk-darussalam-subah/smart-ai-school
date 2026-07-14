@@ -2,7 +2,7 @@
 
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { apiFetch, PaginatedResponse, AttendanceItem } from '@/lib/api';
+import { apiFetch, apiMutate, PaginatedResponse, AttendanceItem } from '@/lib/api';
 import { apiAction } from '@/lib/server-actions';
 import { wibTodayISO } from '@/lib/bell-times';
 
@@ -222,4 +222,40 @@ export async function fetchTrenOverall(days: number): Promise<TrenSeries | null>
     labels.push((data.dates[i] ?? '').slice(5));
   }
   return { labels, pcts };
+}
+
+// =============================================================================
+// Heartbeat — update lastSeenAt for online user tracking.
+// Called every 60s from HeartbeatProvider. Fire-and-forget (fail-soft).
+// =============================================================================
+
+export async function heartbeatAction() {
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) return;
+  await apiMutate('/auth/heartbeat', session.accessToken, {
+    method: 'POST',
+  }).catch(() => {}); // silent fail
+}
+
+// =============================================================================
+// Login Event — record login event with IP and User-Agent from headers().
+// Called once per session from LoginEventRecorder. Fire-and-forget.
+// =============================================================================
+
+export async function recordLoginEventAction() {
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) return;
+
+  // Dynamic import to avoid edge runtime issues with next/headers
+  const { headers } = await import('next/headers');
+  const h = await headers();
+
+  await apiMutate('/auth/login-events', session.accessToken, {
+    method: 'POST',
+    body: {
+      eventType: 'login',
+      ipAddress: h.get('x-forwarded-for') ?? h.get('x-real-ip') ?? null,
+      userAgent: h.get('user-agent') ?? null,
+    },
+  }).catch(() => {}); // silent fail
 }
