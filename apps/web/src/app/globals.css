@@ -55,6 +55,88 @@
   .badge {
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
   }
+
+  /* Auth glassmorphism card */
+  .glass-card {
+    @apply relative overflow-hidden rounded-2xl;
+    background: var(--auth-glass-bg);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    border: 1px solid var(--auth-glass-border);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.05),
+      0 8px 32px -8px rgba(0, 0, 0, 0.3);
+  }
+
+  [data-auth-theme="light"] .glass-card {
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.5),
+      0 8px 32px -8px rgba(6, 69, 52, 0.1);
+  }
+}
+
+/* ── Auth Experience CSS Variables ───────────────────────────────────── */
+[data-auth-theme="dark"] {
+  --auth-bg: #060d1a;
+  --auth-bg2: #0a1628;
+  --auth-surface: rgba(255, 255, 255, 0.04);
+  --auth-surface2: rgba(255, 255, 255, 0.07);
+  --auth-border: rgba(255, 255, 255, 0.08);
+  --auth-border2: rgba(255, 255, 255, 0.14);
+  --auth-text: #e8eef5;
+  --auth-muted: #7a8ba0;
+  --auth-dim: #4a5b70;
+  --auth-glow-blue: rgba(59, 130, 246, 0.25);
+  --auth-glow-em: rgba(16, 185, 129, 0.2);
+  --auth-glow-violet: rgba(139, 92, 246, 0.2);
+  --auth-node-blue: #3b82f6;
+  --auth-node-green: #10b981;
+  --auth-node-violet: #8b5cf6;
+  --auth-node-amber: #f59e0b;
+  --auth-glass-bg: rgba(255, 255, 255, 0.06);
+  --auth-glass-border: rgba(255, 255, 255, 0.1);
+  --auth-input-bg: rgba(255, 255, 255, 0.06);
+  --auth-input-border: rgba(255, 255, 255, 0.12);
+  --auth-input-focus: rgba(59, 130, 246, 0.4);
+  --auth-noise-opacity: 0.03;
+}
+
+[data-auth-theme="light"] {
+  --auth-bg: #f0f4f8;
+  --auth-bg2: #e8eef5;
+  --auth-surface: rgba(255, 255, 255, 0.8);
+  --auth-surface2: rgba(255, 255, 255, 0.9);
+  --auth-border: rgba(6, 69, 52, 0.08);
+  --auth-border2: rgba(6, 69, 52, 0.14);
+  --auth-text: #0c1f17;
+  --auth-muted: #3d544a;
+  --auth-dim: #64748b;
+  --auth-glow-blue: rgba(29, 78, 216, 0.12);
+  --auth-glow-em: rgba(11, 107, 79, 0.1);
+  --auth-glow-violet: rgba(124, 58, 237, 0.1);
+  --auth-node-blue: #2563eb;
+  --auth-node-green: #059669;
+  --auth-node-violet: #7c3aed;
+  --auth-node-amber: #d97706;
+  --auth-glass-bg: rgba(255, 255, 255, 0.72);
+  --auth-glass-border: rgba(255, 255, 255, 0.6);
+  --auth-input-bg: rgba(255, 255, 255, 0.8);
+  --auth-input-border: rgba(6, 69, 52, 0.15);
+  --auth-input-focus: rgba(29, 78, 216, 0.3);
+  --auth-noise-opacity: 0.015;
+}
+
+/* ── Reduced motion: disable auth animations for accessibility ───────── */
+@media (prefers-reduced-motion: reduce) {
+  .animate-aurora-shift,
+  .animate-float-orb,
+  .animate-pulse-glow,
+  .animate-breathe,
+  .animate-card-rotate,
+  .animate-particle-drift,
+  .animate-dash-flow {
+    animation: none !important;
+  }
 }
 
 /* Beranda — animasi slide-in panel Agenda di kartu Papan Pembelajaran */
