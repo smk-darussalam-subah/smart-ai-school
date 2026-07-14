@@ -131,6 +131,8 @@ services:
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ../keycloak:/opt/keycloak/data/import:ro
+      # Phase 2: Custom DIIS login theme (CSS-only, parent=keycloak)
+      - ../keycloak/themes/diis:/opt/keycloak/themes/diis:ro
     networks:
       - smk-network
     depends_on:
