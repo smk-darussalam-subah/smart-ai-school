@@ -1,0 +1,270 @@
+/*
+ * DIIS Keycloak Login Theme — login.css
+ *
+ * Targets VERIFIED PatternFly 4 selectors from live production DOM.
+ * Source: https://auth.smkdarussalamsubah.sch.id/realms/diis/ (saved 2026-07-14)
+ *
+ * Design tokens aligned with React auth page (globals.css [data-auth-theme="dark"]).
+ * No external @import — system font stack only.
+ *
+ * DOM structure (verified):
+ *   html.login-pf > body > div.login-pf-page
+ *     ├── div#kc-header.login-pf-page-header > div#kc-header-wrapper
+ *     └── div.card-pf
+ *         ├── header.login-pf-header > h1#kc-page-title
+ *         └── div#kc-content > div#kc-content-wrapper
+ *             └── div#kc-form > div#kc-form-wrapper > form#kc-form-login
+ *                 ├── input#username.pf-c-form-control
+ *                 ├── input#password.pf-c-form-control
+ *                 └── input#kc-login.pf-c-button.pf-m-primary.pf-m-block
+ */
+
+/* ── Base: dark background ─────────────────────────────────────────────── */
+html.login-pf,
+html.login-pf body {
+  background: #060d1a;
+}
+
+.login-pf-page {
+  background: linear-gradient(180deg, #060d1a 0%, #0a1628 100%);
+  min-height: 100vh;
+  padding: 2rem 1rem;
+}
+
+/* ── Header: DIIS branding ─────────────────────────────────────────────── */
+#kc-header-wrapper {
+  font-family: 'Fraunces', 'Georgia', 'Times New Roman', serif;
+  color: #e8eef5;
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 1.5rem 0;
+  text-shadow: 0 0 24px rgba(59, 130, 246, 0.3);
+  letter-spacing: -0.01em;
+}
+
+/* ── Card: glass-card effect ───────────────────────────────────────────── */
+.card-pf {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 8px 32px -8px rgba(0, 0, 0, 0.3);
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 2rem;
+  color: #e8eef5;
+}
+
+/* ── Page title ────────────────────────────────────────────────────────── */
+#kc-page-title {
+  color: #e8eef5;
+  font-family: 'Fraunces', 'Georgia', 'Times New Roman', serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+/* ── Form header ───────────────────────────────────────────────────────── */
+.login-pf-header {
+  margin-bottom: 0.5rem;
+}
+
+/* ── Form labels ───────────────────────────────────────────────────────── */
+.pf-c-form__label {
+  color: #7a8ba0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.375rem;
+}
+
+/* ── Form inputs ───────────────────────────────────────────────────────── */
+.pf-c-form-control {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e8eef5;
+  border-radius: 8px;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.pf-c-form-control::placeholder {
+  color: #4a5b70;
+}
+
+.pf-c-form-control:focus {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  outline: none;
+}
+
+/* ── Input group (password + toggle) ───────────────────────────────────── */
+.pf-c-input-group {
+  display: flex;
+  gap: 0;
+}
+
+.pf-c-input-group .pf-c-form-control {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* ── Password toggle button ────────────────────────────────────────────── */
+.pf-c-button.pf-m-control {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  color: #7a8ba0;
+  transition: color 0.2s;
+}
+
+.pf-c-button.pf-m-control:hover {
+  color: #e8eef5;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Primary button: gradient ──────────────────────────────────────────── */
+.pf-c-button.pf-m-primary {
+  background: linear-gradient(to right, #1d4ed8, #2563eb);
+  border: none;
+  border-radius: 12px;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.875rem;
+  letter-spacing: 0.025em;
+  padding: 0.75rem 1.5rem;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.pf-c-button.pf-m-primary:hover {
+  background: linear-gradient(to right, #2563eb, #1d4ed8);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.pf-c-button.pf-m-primary:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #060d1a, 0 0 0 4px rgba(59, 130, 246, 0.5);
+}
+
+.pf-c-button.pf-m-primary:active {
+  transform: scale(0.98);
+}
+
+/* ── Form buttons container ────────────────────────────────────────────── */
+#kc-form-buttons {
+  margin-top: 1.5rem;
+}
+
+/* ── Links ─────────────────────────────────────────────────────────────── */
+#kc-form a,
+.login-pf-settings a {
+  color: #60a5fa;
+  font-size: 0.8125rem;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+#kc-form a:hover,
+.login-pf-settings a:hover {
+  color: #93bbfd;
+  text-decoration: underline;
+}
+
+/* ── Locale dropdown ───────────────────────────────────────────────────── */
+#kc-locale {
+  text-align: right;
+  margin-bottom: 0.5rem;
+}
+
+#kc-locale button {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #7a8ba0;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+#kc-locale button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8eef5;
+}
+
+/* ── Locale dropdown menu ──────────────────────────────────────────────── */
+.pf-c-dropdown__menu {
+  background: rgba(10, 22, 40, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.pf-c-dropdown__menu-item {
+  color: #7a8ba0;
+  font-size: 0.8125rem;
+}
+
+.pf-c-dropdown__menu-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8eef5;
+}
+
+/* ── Error/alert messages ──────────────────────────────────────────────── */
+.pf-c-alert.pf-m-danger,
+.pf-c-alert.pf-m-warning {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  color: #fca5a5;
+  margin-bottom: 1rem;
+}
+
+.pf-c-alert.pf-m-warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.2);
+  color: #fcd34d;
+}
+
+/* ── Form group spacing ────────────────────────────────────────────────── */
+.form-group {
+  margin-bottom: 1rem;
+}
+
+/* ── Responsive: mobile ────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .login-pf-page {
+    padding: 1rem;
+  }
+
+  .card-pf {
+    margin: 0;
+    padding: 1.5rem;
+    border-radius: 12px;
+  }
+
+  #kc-header-wrapper {
+    font-size: 1.25rem;
+  }
+
+  #kc-page-title {
+    font-size: 1.125rem;
+  }
+}
+
+/* ── Reduced motion: accessibility ─────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .card-pf,
+  .pf-c-button,
+  .pf-c-form-control {
+    transition: none !important;
+  }
+}
