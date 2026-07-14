@@ -3,7 +3,7 @@
 import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { authOptions } from '@/lib/auth';
-import { apiFetch } from '@/lib/api';
+import { apiMutate } from '@/lib/api';
 import { CURRENT_CONSENT_VERSION } from '@/lib/constants';
 
 /**
@@ -17,10 +17,15 @@ export async function recordConsentAction() {
     throw new Error('Unauthorized — session expired');
   }
 
-  await apiFetch('/auth/consent', session.accessToken, {
-    method: 'POST',
-    body: JSON.stringify({ version: CURRENT_CONSENT_VERSION }),
-  });
+  const result = await apiMutate<{ id: string; consentVersion: string }>(
+    '/auth/consent',
+    session.accessToken,
+    { method: 'POST', body: { version: CURRENT_CONSENT_VERSION } },
+  );
+
+  if (!result) {
+    throw new Error('Failed to record consent');
+  }
 
   redirect('/dashboard');
 }
