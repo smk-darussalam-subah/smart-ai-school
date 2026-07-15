@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import {
   Briefcase, Users, GraduationCap, Loader2, Check, X, ShieldCheck,
-  CalendarDays, UserPlus, Info, RefreshCw,
+  CalendarDays, UserPlus, Info, RefreshCw, Settings2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,7 +15,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { assignPositionAction, unassignPositionAction, syncRolesAction } from '../actions';
+import { assignPositionAction, unassignPositionAction, syncRolesAction, getPositionPermissionsAction, setPositionPermissionsAction } from '../actions';
 import { toast } from 'sonner';
 import type { Position, Assignment, Major, StaffCandidate } from '../page';
 
@@ -32,6 +32,7 @@ interface Props {
   assignments: Assignment[];
   majors: Major[];
   staff: StaffCandidate[];
+  permissions: { id: string; code: string; description: string; module: string }[];
   isSuperAdmin: boolean;
 }
 
@@ -41,7 +42,7 @@ interface SyncResult {
   failed: { code: string; error: string }[];
 }
 
-export default function StrukturClient({ positions, academicYear, assignments, majors, staff, isSuperAdmin }: Props) {
+export default function StrukturClient({ positions, academicYear, assignments, majors, staff, permissions, isSuperAdmin }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 
@@ -53,6 +54,13 @@ export default function StrukturClient({ positions, academicYear, assignments, m
   // R-23: Sinkronisasi Keycloak roles
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+
+  // Step 0.10: Permission mapping dialog
+  const [permTarget, setPermTarget] = useState<Position | null>(null);
+  const [permSelected, setPermSelected] = useState<Set<string>>(new Set());
+  const [permLoading, setPermLoading] = useState(false);
+  const [permSaving, setPermSaving] = useState(false);
+  const [permModuleFilter, setPermModuleFilter] = useState<string>('all');
 
   const nameById = useMemo(() => new Map(positions.map((p) => [p.id, p.name])), [positions]);
   const byPosition = useMemo(() => {
@@ -110,6 +118,50 @@ export default function StrukturClient({ positions, academicYear, assignments, m
     }
     router.refresh();
   };
+
+  // Step 0.10: Permission mapping handlers
+  const openPermDialog = async (p: Position) => {
+    setPermTarget(p);
+    setPermLoading(true);
+    setPermModuleFilter('all');
+    const res = await getPositionPermissionsAction(p.id);
+    if (res.data && 'permissions' in (res.data as object)) {
+      const perms = (res.data as { permissions: { id: string }[] }).permissions;
+      setPermSelected(new Set(perms.map((pp) => pp.id)));
+    } else {
+      setPermSelected(new Set());
+    }
+    setPermLoading(false);
+  };
+
+  const togglePerm = (id: string) => {
+    setPermSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const savePermMapping = async () => {
+    if (!permTarget) return;
+    setPermSaving(true);
+    const res = await setPositionPermissionsAction(permTarget.id, [...permSelected]);
+    setPermSaving(false);
+    if (res.error) { toast.error(`Gagal: ${res.error}`); return; }
+    toast.success(`Izin ${permTarget.name} disimpan (${permSelected.size} modul).`);
+    setPermTarget(null);
+    router.refresh();
+  };
+
+  const permModules = useMemo(() => {
+    const modules = new Set(permissions.map((p) => p.module));
+    return ['all', ...Array.from(modules).sort()];
+  }, [permissions]);
+
+  const filteredPermissions = useMemo(() => {
+    if (permModuleFilter === 'all') return permissions;
+    return permissions.filter((p) => p.module === permModuleFilter);
+  }, [permissions, permModuleFilter]);
 
   return (
     <div className="space-y-6">
@@ -210,9 +262,16 @@ export default function StrukturClient({ positions, academicYear, assignments, m
                           ))}
                       </div>
                     </div>
-                    <Button size="sm" variant="outline" className="shrink-0 gap-1.5" disabled={!academicYear} onClick={() => openAssign(p)}>
-                      <UserPlus className="h-4 w-4" /> Tetapkan
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {isSuperAdmin && (
+                        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openPermDialog(p)}>
+                          <Settings2 className="h-4 w-4" /> Kelola Izin
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" className="shrink-0 gap-1.5" disabled={!academicYear} onClick={() => openAssign(p)}>
+                        <UserPlus className="h-4 w-4" /> Tetapkan
+                      </Button>
+                    </div>
                   </div>
                 );
               })}
@@ -256,6 +315,95 @@ export default function StrukturClient({ positions, academicYear, assignments, m
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Step 0.10: Dialog Kelola Izin per Position */}
+      <Dialog open={!!permTarget} onOpenChange={(o: boolean) => { if (!o) setPermTarget(null); }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-emerald-600" />
+              Kelola Izin: {permTarget?.name}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Pilih modul yang dapat diakses oleh pemegang jabatan ini. Izin diterapkan otomatis saat penugasan aktif.
+            </p>
+          </DialogHeader>
+
+          {permLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Module filter */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-muted-foreground">Filter modul:</span>
+                {permModules.map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setPermModuleFilter(m)}
+                    className={clsx(
+                      'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                      permModuleFilter === m
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    )}
+                  >
+                    {m === 'all' ? 'Semua' : m}
+                  </button>
+                ))}
+              </div>
+
+              {/* Permission list */}
+              <div className="rounded-lg border divide-y">
+                {filteredPermissions.length === 0 ? (
+                  <p className="p-4 text-sm text-muted-foreground text-center">Tidak ada izin untuk ditampilkan.</p>
+                ) : (
+                  filteredPermissions.map((perm) => (
+                    <label
+                      key={perm.id}
+                      className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-gray-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={permSelected.has(perm.id)}
+                        onChange={() => togglePerm(perm.id)}
+                        className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-gray-900">{perm.code}</div>
+                        <div className="text-xs text-muted-foreground">{perm.description}</div>
+                      </div>
+                      <span className="shrink-0 rounded bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+                        {perm.module}
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+
+              {/* Summary */}
+              <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-4 py-2.5 text-sm">
+                <span className="text-emerald-700">
+                  <b>{permSelected.size}</b> modul dipilih dari <b>{permissions.length}</b> total
+                </span>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPermTarget(null)}>Batal</Button>
+                <Button
+                  size="sm"
+                  className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                  disabled={permSaving}
+                  onClick={savePermMapping}
+                >
+                  {permSaving ? <><Loader2 className="h-4 w-4 animate-spin" /> Menyimpan…</> : <><Check className="h-4 w-4" /> Simpan Izin</>}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

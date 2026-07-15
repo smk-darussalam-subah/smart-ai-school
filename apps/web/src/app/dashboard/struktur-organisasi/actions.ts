@@ -31,3 +31,15 @@ export async function syncRolesAction() {
 export async function accessCheckAction(userId: string) {
   return apiAction(`/positions/access-check/${userId}`, 'GET');
 }
+
+/** Step 0.10: Ambil permission mapping untuk position. */
+export async function getPositionPermissionsAction(positionId: string) {
+  return apiAction(`/positions/${positionId}/permissions`, 'GET');
+}
+
+/** Step 0.10: Set permission mapping untuk position. */
+export async function setPositionPermissionsAction(positionId: string, permissionIds: string[]) {
+  const result = await apiAction(`/positions/${positionId}/permissions`, 'PUT', { permissionIds });
+  if (!result.error) revalidatePath('/dashboard/struktur-organisasi');
+  return result;
+}
