@@ -8,7 +8,10 @@ import { Reflector } from '@nestjs/core';
 import { FastifyRequest } from 'fastify';
 import { AuthUser } from '@smk/auth';
 import { IS_PUBLIC_KEY } from '../auth/decorators/public.decorator';
-import { REQUIRED_PERMISSION_KEY } from './decorators/require-permission.decorator';
+import {
+  REQUIRED_PERMISSION_KEY,
+  RequiredPermission,
+} from './decorators/require-permission.decorator';
 import { PermissionsService } from './permissions.service';
 
 @Injectable()
@@ -25,7 +28,7 @@ export class PermissionGuard implements CanActivate {
     ]);
     if (isPublic) return true;
 
-    const requiredPermission = this.reflector.getAllAndOverride<string>(
+    const requiredPermission = this.reflector.getAllAndOverride<RequiredPermission>(
       REQUIRED_PERMISSION_KEY,
       [context.getHandler(), context.getClass()],
     );
@@ -42,22 +45,38 @@ export class PermissionGuard implements CanActivate {
     // pada rute, urutan guard berubah, atau rute keliru di-@Public().)
     if (!user) {
       throw new ForbiddenException(
-        `Akses ditolak: permission '${requiredPermission}' membutuhkan autentikasi`,
+        `Akses ditolak: permission '${this.formatRequired(requiredPermission)}' membutuhkan autentikasi`,
       );
     }
 
-    const hasPermission = await this.permissionsService.hasPermission(
-      user.keycloakId,
-      user.roles,
-      requiredPermission,
+    const requiredPermissions = Array.isArray(requiredPermission)
+      ? requiredPermission
+      : [requiredPermission];
+
+    const checks = await Promise.all(
+      requiredPermissions.map((permission) =>
+        this.permissionsService.hasPermission(
+          user.keycloakId,
+          user.roles,
+          permission,
+        ),
+      ),
     );
+
+    const hasPermission = checks.some(Boolean);
 
     if (!hasPermission) {
       throw new ForbiddenException(
-        `Akses ditolak: membutuhkan permission '${requiredPermission}'`,
+        `Akses ditolak: membutuhkan salah satu permission '${this.formatRequired(requiredPermission)}'`,
       );
     }
 
     return true;
+  }
+
+  private formatRequired(requiredPermission: RequiredPermission): string {
+    return Array.isArray(requiredPermission)
+      ? requiredPermission.join("' atau '")
+      : requiredPermission;
   }
 }

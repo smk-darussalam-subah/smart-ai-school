@@ -1,12 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { provisionStudentAction } from '../actions';
+import {
+  type PpdbEnrollmentLead,
+  toWizardInitialValues,
+} from './ppdb-enrollment-handoff';
 
 interface ClassItem { id: string; name: string; }
 
@@ -19,11 +23,12 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   classes: ClassItem[];
+  initialLead?: PpdbEnrollmentLead | null;
 }
 
 type Step = 1 | 2 | 3 | 4;
 
-export default function SiswaWizard({ open, onOpenChange, classes }: Props) {
+export default function SiswaWizard({ open, onOpenChange, classes, initialLead }: Props) {
   const [step, setStep] = useState<Step>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -44,6 +49,16 @@ export default function SiswaWizard({ open, onOpenChange, classes }: Props) {
 
   // Langkah 4: Hasil
   const [credentials, setCredentials] = useState<TempCredential[]>([]);
+
+  useEffect(() => {
+    if (!open || !initialLead) return;
+    const initial = toWizardInitialValues(initialLead);
+    setStep(1);
+    setSiswaName(initial.siswaName);
+    setOrtuPhone(initial.ortuPhone);
+    setCredentials([]);
+    setError('');
+  }, [open, initialLead?.id]);
 
   const resetForm = () => {
     setStep(1);
@@ -118,6 +133,12 @@ export default function SiswaWizard({ open, onOpenChange, classes }: Props) {
             Langkah {step} dari 4 — {stepLabels[step]}
           </DialogDescription>
         </DialogHeader>
+
+        {initialLead && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+            Enrollment PPDB untuk {initialLead.fullName}. Data dasar diprefill dari lead; NIS, kelas, wali, dan consent tetap harus diverifikasi.
+          </div>
+        )}
 
         {/* Indikator langkah */}
         <div className="flex gap-1 mb-4">

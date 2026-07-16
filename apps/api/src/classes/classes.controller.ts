@@ -46,14 +46,14 @@ export class ClassesController {
     return this.service.findOne(id);
   }
 
-  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN', 'TATA_USAHA')
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(@Body(ZodPipe(CreateClassSchema)) dto: CreateClassDto) {
     return this.service.create(dto);
   }
 
-  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN', 'TATA_USAHA')
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,

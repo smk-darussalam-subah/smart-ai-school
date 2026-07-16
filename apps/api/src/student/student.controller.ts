@@ -50,10 +50,10 @@ export class StudentController {
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU')
   @RequirePermission('student.read')
   @Get()
-  findAll(@Query() rawQuery: unknown, @CurrentUser() _user: AuthUser) {
+  findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     const parsed = ListStudentsQuerySchema.safeParse(rawQuery);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors);
-    return this.studentService.findAll(parsed.data);
+    return this.studentService.findAll(parsed.data, user);
   }
 
   /**
@@ -62,7 +62,7 @@ export class StudentController {
    * Dideklarasikan SEBELUM :id agar tidak tertangkap sebagai route param.
    */
   @Roles('ORANG_TUA')
-  @RequirePermission('student.read')
+  @RequirePermission('student.child.read')
   @Get('my-children')
   findMyChildren(@CurrentUser() user: AuthUser) {
     return this.studentService.findMyChildren(user);
@@ -72,7 +72,7 @@ export class StudentController {
    * P1 (S-09): GET /students/me/profile-cv — aggregated profile + stats for siswa.
    */
   @Roles('SISWA')
-  @RequirePermission('student.read')
+  @RequirePermission('student.own.read')
   @Get('me/profile-cv')
   profileCv(@CurrentUser() user: AuthUser) {
     return this.studentService.profileCv(user);
@@ -82,7 +82,7 @@ export class StudentController {
    * GET /students/:id — ownership check (SISWA self, ORANG_TUA anak) di service
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
-  @RequirePermission('student.read')
+  @RequirePermission(['student.read', 'student.own.read', 'student.child.read'])
   @Get(':id')
   findById(
     @Param('id', ParseUUIDPipe) id: string,
@@ -146,7 +146,7 @@ export class StudentController {
    * Ownership: SISWA self, ORANG_TUA anak. GURU: TODO SMA-36 tambah filter kelas sendiri.
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
-  @RequirePermission('student.read')
+  @RequirePermission(['student.read', 'grade.own.read', 'grade.child.read'])
   @Get(':id/grades')
   findGrades(
     @Param('id', ParseUUIDPipe) id: string,
@@ -160,7 +160,7 @@ export class StudentController {
    * Ownership: SISWA self, ORANG_TUA anak. GURU: TODO SMA-36 tambah filter kelas sendiri.
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
-  @RequirePermission('student.read')
+  @RequirePermission(['student.read', 'attendance.own.read', 'attendance.child.read'])
   @Get(':id/attendance')
   findAttendance(
     @Param('id', ParseUUIDPipe) id: string,

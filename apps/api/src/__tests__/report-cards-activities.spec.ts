@@ -32,28 +32,34 @@ describe('ReportCardsService', () => {
   const rcCreate = jest.fn();
   const rcUpdate = jest.fn();
   const classFindUnique = jest.fn();
+  const classFindMany = jest.fn();
   const gradeFindMany = jest.fn();
   const attGroupBy = jest.fn();
   const teacherFindFirst = jest.fn();
+  const teacherFindUnique = jest.fn();
+  const teachingAssignmentFindMany = jest.fn();
   const studentFindFirst = jest.fn();
   const userFindUnique = jest.fn();
 
   beforeEach(async () => {
     [emit, rcFindMany, rcFindUnique, rcCount, rcCreate, rcUpdate, classFindUnique,
-      gradeFindMany, attGroupBy, teacherFindFirst, studentFindFirst, userFindUnique]
+      classFindMany, gradeFindMany, attGroupBy, teacherFindFirst, teacherFindUnique,
+      teachingAssignmentFindMany, studentFindFirst, userFindUnique]
       .forEach((m) => m.mockReset());
     rcUpdate.mockImplementation((a: { data: Record<string, unknown> }) =>
       Promise.resolve({ id: 'rc-1', ...a.data }));
+    classFindMany.mockResolvedValue([]);
 
     const prisma = {
       reportCard: {
         findMany: rcFindMany, findUnique: rcFindUnique, count: rcCount,
         create: rcCreate, update: rcUpdate,
       },
-      class: { findUnique: classFindUnique },
+      class: { findUnique: classFindUnique, findMany: classFindMany },
       grade: { findMany: gradeFindMany },
       attendance: { groupBy: attGroupBy },
-      teacher: { findFirst: teacherFindFirst },
+      teacher: { findFirst: teacherFindFirst, findUnique: teacherFindUnique },
+      teachingAssignment: { findMany: teachingAssignmentFindMany },
       student: { findFirst: studentFindFirst },
       user: { findUnique: userFindUnique },
     };
@@ -130,7 +136,7 @@ describe('ReportCardsService', () => {
     studentFindFirst.mockResolvedValue({ id: 'stu-1' });
     rcFindMany.mockResolvedValue([]);
     rcCount.mockResolvedValue(0);
-    await service.findAll({ page: 1, limit: 100 }, SISWA);
+    await service.findAll({ page: 1, limit: 100, status: 'draft' }, SISWA);
     const where = rcFindMany.mock.calls[0][0].where;
     expect(where.studentId).toBe('stu-1');
     expect(where.status).toBe('distributed');
@@ -145,7 +151,10 @@ describe('ReportCardsService', () => {
     expect(where.studentId).toEqual({ in: ['anak-1', 'anak-2'] });
     expect(where.status).toBe('distributed');
 
-    teacherFindFirst.mockResolvedValue({ assignments: [{ classId: 'c1' }, { classId: 'c1' }, { classId: 'c2' }] });
+    userFindUnique.mockResolvedValue({ id: 'guru-user-1' });
+    teacherFindUnique.mockResolvedValue({ id: 'teacher-1' });
+    teachingAssignmentFindMany.mockResolvedValue([{ classId: 'c1' }, { classId: 'c1' }]);
+    classFindMany.mockResolvedValue([{ id: 'c2' }]);
     await service.findAll({ page: 1, limit: 100 }, GURU);
     where = rcFindMany.mock.calls[1][0].where;
     expect(where.classId).toEqual({ in: ['c1', 'c2'] });
@@ -160,26 +169,45 @@ describe('ReportCardsService', () => {
 describe('ClassActivitiesService', () => {
   let service: ClassActivitiesService;
   const teacherFindFirst = jest.fn();
+  const teacherFindUnique = jest.fn();
+  const teachingAssignmentFindMany = jest.fn();
+  const userFindUnique = jest.fn();
   const actFindUnique = jest.fn();
   const actCreate = jest.fn();
   const actUpdate = jest.fn();
   const actDelete = jest.fn();
+  const actFindMany = jest.fn();
+  const actCount = jest.fn();
   const classFindUnique = jest.fn();
+  const classFindMany = jest.fn();
+  const studentFindMany = jest.fn();
+  const studentFindUnique = jest.fn();
 
   beforeEach(async () => {
-    [teacherFindFirst, actFindUnique, actCreate, actUpdate, actDelete, classFindUnique]
+    [teacherFindFirst, teacherFindUnique, teachingAssignmentFindMany, userFindUnique,
+      actFindUnique, actCreate, actUpdate, actDelete, actFindMany, actCount,
+      classFindUnique, classFindMany, studentFindMany, studentFindUnique]
       .forEach((m) => m.mockReset());
     teacherFindFirst.mockResolvedValue({ id: 'teacher-1' });
+    teacherFindUnique.mockResolvedValue({ id: 'teacher-1' });
+    teachingAssignmentFindMany.mockResolvedValue([{ classId: 'c1' }]);
+    userFindUnique.mockResolvedValue({ id: 'guru-user-1' });
     classFindUnique.mockResolvedValue({ id: 'c1' });
+    classFindMany.mockResolvedValue([]);
+    actFindMany.mockResolvedValue([]);
+    actCount.mockResolvedValue(0);
     actCreate.mockImplementation((a: { data: Record<string, unknown> }) =>
       Promise.resolve({ id: 'act-1', ...a.data }));
 
     const prisma = {
-      teacher: { findFirst: teacherFindFirst },
-      class: { findUnique: classFindUnique },
+      user: { findUnique: userFindUnique },
+      teacher: { findFirst: teacherFindFirst, findUnique: teacherFindUnique },
+      teachingAssignment: { findMany: teachingAssignmentFindMany },
+      class: { findUnique: classFindUnique, findMany: classFindMany },
+      student: { findMany: studentFindMany, findUnique: studentFindUnique },
       classActivity: {
-        findUnique: actFindUnique, findMany: jest.fn().mockResolvedValue([]),
-        count: jest.fn().mockResolvedValue(0), create: actCreate,
+        findUnique: actFindUnique, findMany: actFindMany,
+        count: actCount, create: actCreate,
         update: actUpdate, delete: actDelete,
       },
     };
@@ -194,6 +222,62 @@ describe('ClassActivitiesService', () => {
       classId: 'c1', date: '2026-06-12', title: 'Praktikum jaringan', category: 'praktikum',
     }, GURU);
     expect(actCreate.mock.calls[0][0].data.teacherId).toBe('teacher-1');
+  });
+
+  it('findAll: GURU boleh membaca kelas assignment atau wali', async () => {
+    teachingAssignmentFindMany.mockResolvedValue([{ classId: 'c1' }]);
+    classFindMany.mockResolvedValue([{ id: 'c-wali' }]);
+
+    await service.findAll({ classId: 'c-wali', page: 1, limit: 20 }, GURU);
+
+    expect(actFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ classId: 'c-wali' }),
+      }),
+    );
+  });
+
+  it('findAll: GURU forbidden classId fail closed', async () => {
+    teachingAssignmentFindMany.mockResolvedValue([{ classId: 'c1' }]);
+    classFindMany.mockResolvedValue([{ id: 'c-wali' }]);
+
+    await expect(
+      service.findAll({ classId: 'c-other', page: 1, limit: 20 }, GURU),
+    ).rejects.toThrow(ForbiddenException);
+    expect(actFindMany).not.toHaveBeenCalled();
+    expect(actCount).not.toHaveBeenCalled();
+  });
+
+  it('findAll: SISWA hanya membaca kelas sendiri dan forbidden classId ditolak', async () => {
+    userFindUnique.mockResolvedValue({ id: 'siswa-user-1' });
+    studentFindUnique.mockResolvedValue({ classId: 'c-siswa' });
+
+    await service.findAll({ page: 1, limit: 20 }, SISWA);
+
+    expect(actFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ classId: { in: ['c-siswa'] } }),
+      }),
+    );
+    await expect(
+      service.findAll({ classId: 'c-other', page: 1, limit: 20 }, SISWA),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('findAll: ORANG_TUA hanya membaca kelas anak-anaknya', async () => {
+    userFindUnique.mockResolvedValue({ id: 'ortu-user-1' });
+    studentFindMany.mockResolvedValue([{ classId: 'c-child' }, { classId: 'c-child' }]);
+
+    await service.findAll({ page: 1, limit: 20 }, ORTU);
+
+    expect(actFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ classId: { in: ['c-child'] } }),
+      }),
+    );
+    await expect(
+      service.findAll({ classId: 'c-other', page: 1, limit: 20 }, ORTU),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it('update guru lain → Forbidden; SA bebas', async () => {

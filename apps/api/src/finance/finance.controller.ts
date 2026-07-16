@@ -54,7 +54,7 @@ export class FinanceController {
    * Ownership difilter di service: SISWA=self, OT=anak, SA/KS/TU=semua.
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'SISWA', 'ORANG_TUA')
-  @RequirePermission('finance.read')
+  @RequirePermission(['finance.read', 'finance.own.read', 'finance.child.read'])
   @Get()
   findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     const parsed = ListSppQuerySchema.safeParse(rawQuery);
@@ -81,7 +81,7 @@ export class FinanceController {
    * KS ditambahkan (CLAUDE.md §6: KS 👁 Keuangan — konsisten dgn GET list + approve).
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'SISWA', 'ORANG_TUA')
-  @RequirePermission('finance.read')
+  @RequirePermission(['finance.read', 'finance.own.read', 'finance.child.read'])
   @Get(':studentId/history')
   findHistory(
     @Param('studentId', ParseUUIDPipe) studentId: string,

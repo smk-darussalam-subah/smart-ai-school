@@ -13,6 +13,15 @@ import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  isElevated,
+  isGuruOnly,
+  isOrangTuaOnly,
+  isSiswaOnly,
+  resolveGuruClassIds,
+  resolveSiswaClassId,
+  resolveUserId,
+} from '../common/helpers/role-helpers';
+import {
   CreateActivityDto,
   ListActivitiesQueryDto,
   UpdateActivityDto,
@@ -38,11 +47,47 @@ export class ClassActivitiesService {
     return teacher.id;
   }
 
-  async findAll(query: ListActivitiesQueryDto) {
+  private async resolveReadableClassIds(user: AuthUser): Promise<string[] | null> {
+    if (isElevated(user)) return null;
+    if (isGuruOnly(user)) {
+      return resolveGuruClassIds(this.prisma, user.keycloakId);
+    }
+    if (isSiswaOnly(user)) {
+      const classId = await resolveSiswaClassId(this.prisma, user.keycloakId);
+      return classId ? [classId] : [];
+    }
+    if (isOrangTuaOnly(user)) {
+      const userId = await resolveUserId(this.prisma, user.keycloakId);
+      const children = await this.prisma.student.findMany({
+        where: { parentId: userId, deletedAt: null, classId: { not: null } },
+        select: { classId: true },
+        distinct: ['classId'],
+      });
+      return [...new Set(children.flatMap((child) => child.classId ? [child.classId] : []))];
+    }
+    return [];
+  }
+
+  private async assertGuruCanManageClass(classId: string, user: AuthUser): Promise<void> {
+    if (user.roles.includes('SUPER_ADMIN')) return;
+    const classIds = await resolveGuruClassIds(this.prisma, user.keycloakId);
+    if (!classIds.includes(classId)) {
+      throw new ForbiddenException('Guru hanya bisa mencatat kegiatan untuk kelas yang diampu');
+    }
+  }
+
+  async findAll(query: ListActivitiesQueryDto, user: AuthUser) {
+    const readableClassIds = await this.resolveReadableClassIds(user);
     const where: Prisma.ClassActivityWhereInput = {
       ...(query.classId ? { classId: query.classId } : {}),
       ...(query.category ? { category: query.category } : {}),
     };
+    if (readableClassIds !== null) {
+      if (query.classId && !readableClassIds.includes(query.classId)) {
+        throw new ForbiddenException('Pengguna hanya bisa melihat kegiatan kelas dalam scope yang diizinkan');
+      }
+      where.classId = query.classId ?? { in: readableClassIds };
+    }
     if (query.from || query.to) {
       where.date = {
         ...(query.from ? { gte: new Date(`${query.from}T00:00:00Z`) } : {}),
@@ -66,6 +111,7 @@ export class ClassActivitiesService {
 
   async create(dto: CreateActivityDto, user: AuthUser) {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
+    await this.assertGuruCanManageClass(dto.classId, user);
     const kelas = await this.prisma.class.findUnique({
       where: { id: dto.classId },
       select: { id: true },
@@ -103,6 +149,9 @@ export class ClassActivitiesService {
 
   async update(id: string, dto: UpdateActivityDto, user: AuthUser) {
     await this.assertOwnership(id, user);
+    if (dto.classId) {
+      await this.assertGuruCanManageClass(dto.classId, user);
+    }
     return this.prisma.classActivity.update({
       where: { id },
       data: {

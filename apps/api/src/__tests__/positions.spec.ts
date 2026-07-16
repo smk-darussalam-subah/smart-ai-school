@@ -11,14 +11,17 @@ import { PermissionsService } from '../permissions/permissions.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 
 function mockPrisma() {
-  return {
+  const prisma = {
     position: { findUnique: jest.fn(), findMany: jest.fn() },
     staff: { findUnique: jest.fn() },
     academicYear: { findFirst: jest.fn(), findUnique: jest.fn() },
     staffPosition: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), delete: jest.fn() },
     userPermissionOverride: { upsert: jest.fn(), deleteMany: jest.fn() },
     permission: { findMany: jest.fn() },
+    $transaction: jest.fn(),
   };
+  prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(prisma));
+  return prisma;
 }
 
 async function build(prisma: ReturnType<typeof mockPrisma>, perms = { invalidateUser: jest.fn() }) {
@@ -93,6 +96,7 @@ describe('PositionsService', () => {
       const prisma = mockPrisma();
       prisma.staff.findUnique.mockResolvedValue(STAFF);
       prisma.position.findUnique.mockResolvedValue({ id: 'pos-waka', scopeType: 'NONE', permissions: [] });
+      prisma.staffPosition.findMany.mockResolvedValue([]);
       prisma.staffPosition.create.mockRejectedValue(
         new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: '5' }),
       );

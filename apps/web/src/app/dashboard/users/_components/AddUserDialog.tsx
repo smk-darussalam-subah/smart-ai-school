@@ -22,8 +22,17 @@ import {
   provisionUserAction, provisionUsersBulkAction,
   type ProvisionUserResult, type BulkResult,
 } from '../actions';
+import {
+  CSV_COLUMNS,
+  STAFF_ROLES,
+  TEMPLATE_BODY,
+  TEMPLATE_HEADER,
+  TEMPLATE_ROWS,
+  parseCsv,
+  toProvisionRow,
+  validateRaw,
+} from './add-user-csv';
 
-const STAFF_ROLES = ['GURU', 'TATA_USAHA', 'KEPALA_SEKOLAH'];
 const SA_ONLY_ROLES = ['TATA_USAHA', 'KEPALA_SEKOLAH'];
 
 const ROLE_OPTIONS = [
@@ -47,82 +56,17 @@ const AUTH_NOTE: Record<string, string> = {
   INDUSTRI: 'Dapat dibuat oleh Super Admin & Tata Usaha.',
 };
 
-const CSV_COLUMNS = ['role', 'fullName', 'gender', 'email', 'phone', 'birthDate', 'niy', 'employmentStatus', 'address'] as const;
-const TEMPLATE_HEADER = 'role,fullName,gender,birthDate,niy,employmentStatus,phone,address';
-const TEMPLATE_BODY = [
-  'GURU,Ahmad Fauzi,L,1985-01-01,Y0012,GTY,081234567890,"Jl. Merdeka No. 1, Subah"',
-  'TATA_USAHA,Budi Santoso,L,1988-07-20,Y0101,PTY,081211112222,"Jl. Raya Subah No. 9"',
-].join('\n');
-
-const TEMPLATE_ROWS = [
-  ['GURU', 'Ahmad Fauzi', 'L', '1985-01-01', 'Y0012', 'GTY', '081234567890', 'Jl. Merdeka No. 1, Subah'],
-  ['TATA_USAHA', 'Budi Santoso', 'L', '1988-07-20', 'Y0101', 'PTY', '081211112222', 'Jl. Raya Subah No. 9'],
-  ['KEPALA_SEKOLAH', 'Drs Hasanuddin', 'L', '1972-11-05', 'Y0001', 'GTY', '081233334444', 'Perum Griya Asri C2'],
-  ['INDUSTRI', 'PT Maju Jaya - Rina', 'P', '', '', '', '081255556666', 'Kawasan Industri Batang'],
-];
-
 const LEGEND: { icon: typeof Tag; name: string; desc: string }[] = [
   { icon: Tag, name: 'role', desc: 'Wajib. GURU, TATA_USAHA, KEPALA_SEKOLAH, INDUSTRI. Siswa tidak di sini.' },
   { icon: Users, name: 'fullName', desc: 'Wajib. Nama lengkap + gelar bila ada.' },
   { icon: IdCard, name: 'gender', desc: 'Wajib. L = laki-laki, P = perempuan.' },
+  { icon: Mail, name: 'email', desc: 'Wajib dan unik. Dipakai sebagai username login.' },
+  { icon: Phone, name: 'phone', desc: '08xx atau +62, dinormalkan otomatis.' },
   { icon: Cake, name: 'birthDate', desc: 'Format YYYY-MM-DD.' },
   { icon: IdCard, name: 'niy', desc: 'Nomor Induk Yayasan — pegawai, unik. Kosongkan untuk Industri.' },
   { icon: Briefcase, name: 'employmentStatus', desc: 'Pegawai wajib: GTY/GTT (guru), PTY/PTT (tendik). Kosong utk Industri.' },
-  { icon: Phone, name: 'phone', desc: '08xx atau +62, dinormalkan otomatis.' },
   { icon: MapPin, name: 'address', desc: 'Alamat domisili. Pakai tanda kutip bila ada koma.' },
 ];
-
-// ── CSV parser ringan (field ber-kutip dgn koma) ──────────────────────────────
-function parseCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = '';
-  let inQuote = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (inQuote) {
-      if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQuote = false; }
-      else cur += c;
-    } else if (c === ',') { out.push(cur); cur = ''; }
-    else if (c === '"') inQuote = true;
-    else cur += c;
-  }
-  out.push(cur);
-  return out;
-}
-
-function parseCsv(text: string): Record<string, string>[] {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length < 2) return [];
-  const headers = parseCsvLine(lines[0]!).map((h) => h.trim());
-  return lines.slice(1).map((line) => {
-    const cells = parseCsvLine(line);
-    const row: Record<string, string> = {};
-    headers.forEach((h, i) => { row[h] = (cells[i] ?? '').trim(); });
-    return row;
-  });
-}
-
-function toProvisionRow(r: Record<string, string>): Record<string, unknown> {
-  const o: Record<string, unknown> = {};
-  for (const k of CSV_COLUMNS) { const v = r[k]?.trim(); if (v) o[k] = v; }
-  return o;
-}
-
-// Validasi ringan klien (cermin aturan DTO) untuk preview sebelum impor.
-function validateRaw(r: Record<string, string>): string | null {
-  const role = (r.role || '').trim();
-  if (!role) return 'role kosong';
-  if (!ROLE_OPTIONS.some((o) => o.value === role)) return 'role tidak dikenal';
-  if (!(r.fullName || '').trim()) return 'nama kosong';
-  if (!['L', 'P'].includes((r.gender || '').trim())) return 'jenis kelamin harus L/P';
-  if (!(r.email || '').trim()) return 'email kosong';
-  const staff = STAFF_ROLES.includes(role);
-  const status = (r.employmentStatus || '').trim();
-  if (staff && !status) return 'status kepegawaian kosong';
-  if (staff && status && !['GTY', 'GTT', 'PTY', 'PTT'].includes(status)) return 'status tidak valid';
-  if (!staff && ((r.niy || '').trim() || status)) return 'Industri tidak boleh niy/status';
-  return null;
-}
 
 interface ParsedRow { raw: Record<string, string>; error: string | null }
 interface Props { isSuperAdmin: boolean }
@@ -501,7 +445,7 @@ export default function AddUserDialog({ isSuperAdmin }: Props) {
                 <tbody>
                   <tr>
                     <td className="w-9 border bg-gray-100 px-2 py-1 text-center font-semibold text-muted-foreground"> </td>
-                    {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((c) => <td key={c} className="border bg-emerald-700 px-3 py-1 text-center font-bold text-white">{c}</td>)}
+                    {CSV_COLUMNS.map((_c, i) => <td key={i} className="border bg-emerald-700 px-3 py-1 text-center font-bold text-white">{String.fromCharCode(65 + i)}</td>)}
                   </tr>
                   <tr>
                     <td className="border bg-gray-100 px-2 py-1 text-center font-semibold text-muted-foreground">1</td>
