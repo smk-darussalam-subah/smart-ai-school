@@ -1,6 +1,6 @@
 import Image from 'next/image';
 
-const SPMB_URL = 'https://taplink.cc/smkdarussalamsubah';
+const SPMB_URL = '/spmb';
 const WA_URL = 'https://wa.me/6287775564779';
 
 /**
@@ -60,9 +60,9 @@ export function CtaPPDB() {
 
             {/* Text + CTA */}
             <div className="flex-1 text-center md:text-left py-8 sm:py-10 px-6 sm:px-8 md:py-12 md:px-8 lg:py-14 lg:px-12 w-full">
-              {/* Urgency badge */}
+              {/* Status badge */}
               <span className="inline-flex items-center gap-1.5 bg-smk-lime/20 border border-smk-lime/30 text-smk-lime text-[11px] md:text-[12px] font-semibold px-3 py-1.5 rounded-full mb-4 tracking-wide">
-                ⏳ Terbatas 234 kursi · 26 siswa/kelas
+                Daftar awal SPMB 2027/2028 dibuka melalui DIIS
               </span>
 
               <h2 className="font-fraunces font-semibold text-[clamp(20px,3.5vw,40px)] leading-tight tracking-tight text-white mb-3 md:mb-4">
@@ -70,19 +70,17 @@ export function CtaPPDB() {
                 <br className="hidden sm:block" /> mulai dari sini.
               </h2>
               <p className="text-[#bfe6d4] text-[13px] sm:text-[14px] md:text-[16px] mb-6 md:mb-8 max-w-[42ch] mx-auto md:mx-0 leading-relaxed">
-                SPMB 2026/2027 sudah dibuka. Daftar online sekarang atau
-                kunjungi kami langsung di Jl. Lapangan Selatan No. 05, Subah, Batang.
+                Daftar awal SPMB 2027/2028 sudah tersedia melalui DIIS.
+                Panitia akan memverifikasi sebelum tahap daftar ulang.
               </p>
 
               {/* Buttons */}
               <div className="flex flex-col sm:flex-row gap-3 md:gap-4 items-stretch sm:items-center justify-center md:justify-start">
                 <a
                   href={SPMB_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="flex items-center justify-center gap-2 font-semibold text-[14px] md:text-[15px] px-5 md:px-6 py-3 md:py-3.5 rounded-full bg-smk-lime text-[#22330a] hover:bg-white transition-all hover:-translate-y-px shadow-lg shadow-smk-lime/25"
                 >
-                  Daftar Online <span aria-hidden>→</span>
+                  Daftar Awal <span aria-hidden>→</span>
                 </a>
                 <a
                   href={WA_URL}
