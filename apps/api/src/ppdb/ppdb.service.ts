@@ -11,7 +11,13 @@
 //   6. Response publik hanya { id, status } — TIDAK return data lead lain
 // =============================================================================
 
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { LeadStatus } from '@prisma/client';
 import { logger } from '@smk/logger';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubmitLeadDto } from './dto/submit-lead.dto';
@@ -35,9 +41,65 @@ const LEAD_LIST_SELECT = {
   assignedUser: { select: { id: true, fullName: true, email: true } },
 } as const;
 
+const TERMINAL_STATUSES = new Set<LeadStatus>([LeadStatus.accepted, LeadStatus.rejected]);
+
+const ALLOWED_TRANSITIONS: Record<LeadStatus, LeadStatus[]> = {
+  [LeadStatus.new]: [LeadStatus.contacted, LeadStatus.cold, LeadStatus.rejected],
+  [LeadStatus.contacted]: [LeadStatus.interested, LeadStatus.cold, LeadStatus.rejected],
+  [LeadStatus.interested]: [LeadStatus.registered, LeadStatus.cold, LeadStatus.rejected],
+  [LeadStatus.registered]: [LeadStatus.paid, LeadStatus.rejected],
+  [LeadStatus.paid]: [LeadStatus.accepted, LeadStatus.rejected],
+  [LeadStatus.accepted]: [],
+  [LeadStatus.rejected]: [],
+  [LeadStatus.cold]: [LeadStatus.contacted, LeadStatus.rejected],
+};
+
+type LeadListItem = {
+  id: string;
+  fullName: string;
+  phone: string;
+  interestMajor: string | null;
+  status: LeadStatus | string;
+};
+
+type EnrollmentAction = {
+  enrollmentRequired: true;
+  enrollmentAction: {
+    type: 'create_student';
+    href: string;
+    label: string;
+    reason: string;
+  };
+};
+
 @Injectable()
 export class PpdbService {
   constructor(private prisma: PrismaService) {}
+
+  private attachEnrollmentAction<T extends LeadListItem>(lead: T): T | (T & EnrollmentAction) {
+    if (lead.status !== LeadStatus.accepted) return lead;
+    const params = new URLSearchParams({ ppdbLeadId: lead.id });
+    return {
+      ...lead,
+      enrollmentRequired: true,
+      enrollmentAction: {
+        type: 'create_student',
+        href: `/dashboard/siswa?${params.toString()}`,
+        label: 'Daftarkan sebagai siswa',
+        reason: 'Lead PPDB accepted harus dibuat sebagai Student secara eksplisit agar consent, NIS, kelas, dan data wali tidak dikarang.',
+      },
+    };
+  }
+
+  private assertTransition(current: LeadStatus, next: LeadStatus) {
+    if (current === next) return;
+    if (TERMINAL_STATUSES.has(current)) {
+      throw new ConflictException('Lead sudah terminal dan tidak bisa diubah statusnya');
+    }
+    if (!ALLOWED_TRANSITIONS[current].includes(next)) {
+      throw new ConflictException(`Transisi status PPDB tidak valid: ${current} -> ${next}`);
+    }
+  }
 
   /**
    * Buat lead baru dari form publik.
@@ -98,7 +160,7 @@ export class PpdbService {
       this.prisma.ppdbLead.count({ where }),
     ]);
 
-    return { data, total, page, limit };
+    return { data: data.map((lead) => this.attachEnrollmentAction(lead)), total, page, limit };
   }
 
   async findById(id: string) {
@@ -107,20 +169,44 @@ export class PpdbService {
       select: LEAD_LIST_SELECT,
     });
     if (!lead) throw new NotFoundException('Lead tidak ditemukan');
-    return lead;
+    return this.attachEnrollmentAction(lead);
   }
 
   async updateStatus(id: string, dto: UpdateStatusDto) {
-    await this.findById(id); // ensure exists first
-    return this.prisma.ppdbLead.update({
+    const lead = await this.findById(id); // ensure exists first
+    this.assertTransition(lead.status as LeadStatus, dto.status as LeadStatus);
+    const updated = await this.prisma.ppdbLead.update({
       where: { id },
       data: dto,
       select: LEAD_LIST_SELECT,
     });
+    return this.attachEnrollmentAction(updated);
   }
 
   async assignLead(id: string, dto: AssignLeadDto) {
     await this.findById(id);
+    if (dto.assignedTo) {
+      const assignee = await this.prisma.user.findFirst({
+        where: {
+          id: dto.assignedTo,
+          isActive: true,
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          role: true,
+          staff: { select: { id: true, deletedAt: true } },
+        },
+      });
+      if (
+        !assignee ||
+        !assignee.staff ||
+        assignee.staff.deletedAt ||
+        !['SUPER_ADMIN', 'TATA_USAHA'].includes(assignee.role)
+      ) {
+        throw new BadRequestException('Assignee PPDB harus staff aktif dengan role SUPER_ADMIN atau TATA_USAHA');
+      }
+    }
     return this.prisma.ppdbLead.update({
       where: { id },
       data: { assignedTo: dto.assignedTo },

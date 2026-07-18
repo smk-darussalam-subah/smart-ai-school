@@ -109,7 +109,9 @@ describe('ClassesController RBAC wiring', () => {
     expect(Reflect.getMetadata('roles', ClassesController.prototype.remove))
       .toEqual(['SUPER_ADMIN']);
     expect(Reflect.getMetadata('roles', ClassesController.prototype.create))
-      .toEqual(['SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_SEKOLAH']);
+      .toEqual(['SUPER_ADMIN', 'TATA_USAHA']);
+    expect(Reflect.getMetadata('roles', ClassesController.prototype.update))
+      .toEqual(['SUPER_ADMIN', 'TATA_USAHA']);
     expect(Reflect.getMetadata('roles', ClassesController.prototype.findAll))
       .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU']);
   });

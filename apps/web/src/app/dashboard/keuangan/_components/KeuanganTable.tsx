@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import { TablePagination } from '@/components/ui/table-pagination';
 import { approveSpp, recordSpp } from '../actions';
+import { isSppApprovable } from './spp-ui';
 
 interface SppPayment {
   id: string; month: number; year: number;
@@ -77,7 +78,10 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">Keuangan SPP</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Keuangan SPP</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Setup tagihan berjalan manual per siswa/bulan; sistem menolak duplikat periode yang sama.</p>
+        </div>
         {canRecord && (
           <Button onClick={() => setFormOpen(true)} className="bg-smk-blue hover:bg-primary-700">
             + Catat Pembayaran
@@ -119,10 +123,10 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
                 <TableCell><Badge variant={STATUS_MAP[p.status]?.variant ?? 'secondary'}>{STATUS_MAP[p.status]?.label ?? p.status}</Badge></TableCell>
                 {canApprove && (
                   <TableCell>
-                    {p.status === 'paid' && !p.approvedAt && (
+                    {isSppApprovable(p) && (
                       <Button variant="outline" size="sm" className="text-green-700" disabled={approving === p.id}
                         onClick={() => handleApprove(p.id)}>
-                        {approving === p.id ? '...' : 'Approve'}
+                        {approving === p.id ? '...' : 'Terima'}
                       </Button>
                     )}
                     {p.approvedAt && <span className="text-xs text-green-600">✓ Approved</span>}

@@ -23,6 +23,7 @@ interface Props {
   majors: Major[];
   teachers: StaffCandidate[];
   isSuperAdmin: boolean;
+  canManage: boolean;
 }
 
 interface ClassForm {
@@ -41,7 +42,7 @@ const EMPTY_FORM: ClassForm = {
 const GRADES = [10, 11, 12];
 const PAGE_SIZE = 10;
 
-export default function KelasClient({ classes, majors, teachers, isSuperAdmin }: Props) {
+export default function KelasClient({ classes, majors, teachers, isSuperAdmin, canManage }: Props) {
   const [busy, setBusy] = useState(false);
   const [filterGrade, setFilterGrade] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
@@ -133,9 +134,11 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
           </h1>
           <p className="mt-1 text-sm text-[#6b8079]">Kelola kelas, wali kelas, dan kapasitas rombel.</p>
         </div>
-        <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700">
-          <Plus className="h-4 w-4" />Tambah Kelas
-        </Button>
+        {canManage && (
+          <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700">
+            <Plus className="h-4 w-4" />Tambah Kelas
+          </Button>
+        )}
       </div>
 
       {/* Filter */}
@@ -182,7 +185,8 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
                   <td className="px-4 py-3 text-[#6b8079]">{c.academicYear}</td>
                   <td className="px-4 py-3 text-center text-[#6b8079]">{c.studentCount}/{c.capacity}</td>
                   <td className="px-4 py-3">
-                    <Select
+                    {canManage ? (
+                      <Select
                       value={c.teacherId ?? ''}
                       onValueChange={(v: string) => handleAssignAdvisor(c.id, v)}
                     >
@@ -195,7 +199,10 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
                           <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>
                         ))}
                       </SelectContent>
-                    </Select>
+                      </Select>
+                    ) : (
+                      <span className="text-sm text-[#355a4e]">{c.waliKelas?.fullName ?? '-'}</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${c.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
@@ -204,12 +211,16 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-1">
-                      <button onClick={() => openEdit(c)} className="rounded-lg p-1.5 text-[#6b8079] hover:bg-[#f4f7f5] hover:text-emerald-600" title="Edit">
-                        <Edit3 className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => handleToggleActive(c)} className="rounded-lg p-1.5 text-[#6b8079] hover:bg-[#f4f7f5] hover:text-amber-600" title={c.isActive ? 'Nonaktifkan' : 'Aktifkan'}>
-                        <Power className="h-4 w-4" />
-                      </button>
+                      {canManage && (
+                        <>
+                          <button onClick={() => openEdit(c)} className="rounded-lg p-1.5 text-[#6b8079] hover:bg-[#f4f7f5] hover:text-emerald-600" title="Edit">
+                            <Edit3 className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => handleToggleActive(c)} className="rounded-lg p-1.5 text-[#6b8079] hover:bg-[#f4f7f5] hover:text-amber-600" title={c.isActive ? 'Nonaktifkan' : 'Aktifkan'}>
+                            <Power className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
                       {isSuperAdmin && (
                         <button onClick={() => setDeleteTarget(c)} className="rounded-lg p-1.5 text-[#6b8079] hover:bg-rose-50 hover:text-rose-600" title="Hapus">
                           <Trash2 className="h-4 w-4" />

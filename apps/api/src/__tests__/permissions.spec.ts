@@ -257,6 +257,20 @@ describe('PermissionGuard', () => {
     expect(await guard.canActivate(buildCtx())).toBe(true);
   });
 
+  it('punya salah satu permission alternatif → return true', async () => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) => {
+      if (key === REQUIRED_PERMISSION_KEY) return ['finance.read', 'finance.child.read'];
+      return undefined;
+    });
+    mockHasPermission
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+
+    expect(await guard.canActivate(buildCtx({ keycloakId: 'kc-ortu', roles: ['ORANG_TUA'] }))).toBe(true);
+    expect(mockHasPermission).toHaveBeenCalledWith('kc-ortu', ['ORANG_TUA'], 'finance.read');
+    expect(mockHasPermission).toHaveBeenCalledWith('kc-ortu', ['ORANG_TUA'], 'finance.child.read');
+  });
+
   it('TIDAK punya permission → ForbiddenException', async () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) => {
       if (key === REQUIRED_PERMISSION_KEY) return 'permissions.manage';
@@ -317,5 +331,12 @@ describe('PermissionsController', () => {
     mockSvc.grantUserPermission.mockResolvedValue({ id: 'o1', userId: 'u1', permissionId: 'p1', grant: true, createdAt: new Date() });
     await controller.grantUserPermission('u1', { permissionId: 'p1', grant: true });
     expect(mockSvc.grantUserPermission).toHaveBeenCalledWith('u1', 'p1');
+  });
+
+  it('grantUserPermission grant=false → service revoke dipanggil', async () => {
+    mockSvc.revokeUserPermission.mockResolvedValue({ id: 'o1', userId: 'u1', permissionId: 'p1', grant: false, createdAt: new Date() });
+    await controller.grantUserPermission('u1', { permissionId: 'p1', grant: false });
+    expect(mockSvc.revokeUserPermission).toHaveBeenCalledWith('u1', 'p1');
+    expect(mockSvc.grantUserPermission).not.toHaveBeenCalled();
   });
 });
