@@ -11,6 +11,7 @@ export const STAFF_ROLES = ['GURU', 'TATA_USAHA', 'KEPALA_SEKOLAH'] as const;
 
 const GenderSchema = z.enum(['L', 'P']);
 const EmploymentStatusSchema = z.enum(['GTY', 'GTT', 'PTY', 'PTT']);
+const StudentStatusSchema = z.enum(['active', 'inactive', 'graduated', 'dropped']);
 
 export const ProvisionUserSchema = z.object({
   role: UserRole,
@@ -76,6 +77,12 @@ export const ProvisionStudentSchema = z.object({
     fullName: z.string().min(1, 'fullName wajib diisi'),
     classId: z.string().uuid().optional(),
     email: z.string().email().optional(),
+    gender: GenderSchema.optional(),
+    joinedAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'joinedAt harus format YYYY-MM-DD')
+      .optional(),
+    status: StudentStatusSchema.optional(),
   }),
   ortu: z.object({
     name: z.string().min(1, 'nama ortu wajib diisi'),
@@ -89,3 +96,12 @@ export const ProvisionStudentSchema = z.object({
 }).strict();
 
 export type ProvisionStudentDto = z.infer<typeof ProvisionStudentSchema>;
+
+// Import siswa diproses per-baris agar baris valid tetap bisa lanjut.
+// Maksimum request dibuat lebih kecil dari import user karena provisioning siswa
+// membuat dua akun potensial (siswa + wali) dan perlu kompensasi Keycloak.
+export const ProvisionStudentsBulkSchema = z.object({
+  students: z.array(z.record(z.unknown())).min(1, 'Minimal 1 baris').max(100, 'Maksimal 100 baris per request'),
+}).strict();
+
+export type ProvisionStudentsBulkDto = z.infer<typeof ProvisionStudentsBulkSchema>;

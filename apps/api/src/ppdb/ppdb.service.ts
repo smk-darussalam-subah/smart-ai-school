@@ -133,12 +133,19 @@ export class PpdbService {
   }
 
   async findAll(query: ListLeadsQuery) {
-    const { status, source, dateFrom, dateTo, page, limit } = query;
+    const { status, source, search, dateFrom, dateTo, page, limit } = query;
     const skip = (page - 1) * limit;
 
     const where = {
       ...(status && { status }),
       ...(source && { source }),
+      ...(search && {
+        OR: [
+          { fullName: { contains: search, mode: 'insensitive' as const } },
+          { phone: { contains: search, mode: 'insensitive' as const } },
+          { schoolOrigin: { contains: search, mode: 'insensitive' as const } },
+        ],
+      }),
       ...(dateFrom || dateTo
         ? {
             createdAt: {

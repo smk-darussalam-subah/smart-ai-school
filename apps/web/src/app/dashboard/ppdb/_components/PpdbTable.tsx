@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TablePagination } from '@/components/ui/table-pagination';
+import { useQueryState } from '@/hooks/use-query-state';
 import { updateLeadStatus } from '../actions';
 
 interface Lead {
@@ -22,6 +23,12 @@ interface Props {
   leads: Lead[];
   total: number;
   canEdit: boolean;
+  query: {
+    page: number;
+    limit: number;
+    status: string;
+    search: string;
+  };
 }
 
 const STATUS_FLOW: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; next: string[] }> = {
@@ -35,24 +42,17 @@ const STATUS_FLOW: Record<string, { label: string; variant: 'default' | 'seconda
   cold: { label: 'Cold', variant: 'secondary', next: [] },
 };
 
-const PAGE_SIZE = 10;
-
-export default function PpdbTable({ leads, total, canEdit }: Props) {
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+export default function PpdbTable({ leads, total, canEdit, query }: Props) {
+  const { setParams, isPending } = useQueryState();
+  const [search, setSearch] = useState(query.search);
   const [updating, setUpdating] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
 
-  const filtered = leads.filter(l => {
-    const matchSearch = !search || l.fullName.toLowerCase().includes(search.toLowerCase()) || l.phone.includes(search);
-    const matchStatus = statusFilter === 'all' || l.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
-
-  // Reset ke halaman 1 saat filter berubah
-  useEffect(() => { setCurrentPage(1); }, [search, statusFilter]);
-
-  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  useEffect(() => { setSearch(query.search); }, [query.search]);
+  useEffect(() => {
+    if (search === query.search) return;
+    const t = setTimeout(() => setParams({ search: search || null }), 400);
+    return () => clearTimeout(t);
+  }, [search, query.search, setParams]);
 
   const handleStatus = async (id: string, newStatus: string) => {
     setUpdating(id);
@@ -66,17 +66,17 @@ export default function PpdbTable({ leads, total, canEdit }: Props) {
 
       <div className="flex flex-col sm:flex-row gap-3">
         <Input placeholder="Cari nama atau HP..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={query.status || 'all'} onValueChange={(value: string) => setParams({ status: value })}>
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua Status</SelectItem>
             {Object.entries(STATUS_FLOW).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
           </SelectContent>
         </Select>
-        <span className="text-sm text-muted-foreground self-center">{filtered.length} dari {total} leads</span>
+        <span className="text-sm text-muted-foreground self-center">{leads.length} dari {total} leads</span>
       </div>
 
-      <div className="rounded-xl border shadow-sm overflow-x-auto">
+      <div className={`rounded-xl border shadow-sm overflow-x-auto transition-opacity ${isPending ? 'opacity-60' : ''}`}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -89,9 +89,9 @@ export default function PpdbTable({ leads, total, canEdit }: Props) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {leads.length === 0 ? (
               <TableRow><TableCell colSpan={canEdit ? 6 : 5} className="text-center h-24 text-muted-foreground">Belum ada data PPDB</TableCell></TableRow>
-            ) : paginated.map(l => (
+            ) : leads.map(l => (
               <TableRow key={l.id}>
                 <TableCell className="font-medium">{l.fullName}</TableCell>
                 <TableCell className="hidden md:table-cell text-sm">{l.phone}</TableCell>
@@ -122,7 +122,7 @@ export default function PpdbTable({ leads, total, canEdit }: Props) {
         </Table>
       </div>
 
-      <TablePagination page={currentPage} limit={PAGE_SIZE} total={filtered.length} onPage={setCurrentPage} />
+      <TablePagination page={query.page} limit={query.limit} total={total} onPage={(page) => setParams({ page })} />
     </div>
   );
 }
