@@ -59,6 +59,12 @@ export async function provisionStudentAction(body: Record<string, unknown>) {
   return result;
 }
 
+export async function provisionStudentsBulkAction(rows: Record<string, unknown>[]) {
+  const result = await fetchApi('/provision/students/bulk', 'POST', { students: rows });
+  revalidatePath('/dashboard/siswa');
+  return result;
+}
+
 export async function assignParentAction(
   studentId: string,
   body: Record<string, unknown>,

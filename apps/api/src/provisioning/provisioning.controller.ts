@@ -14,11 +14,13 @@ import {
   ProvisionUserSchema,
   ProvisionStudentSchema,
   ProvisionUsersBulkSchema,
+  ProvisionStudentsBulkSchema,
 } from './dto/provision.dto';
 import type {
   ProvisionUserDto,
   ProvisionStudentDto,
   ProvisionUsersBulkDto,
+  ProvisionStudentsBulkDto,
 } from './dto/provision.dto';
 
 @Controller('provision')
@@ -63,5 +65,18 @@ export class ProvisioningController {
       keycloakId: actor.keycloakId,
       roles: actor.roles,
     });
+  }
+
+  @Post('students/bulk')
+  @RequirePermission('user.provision')
+  @Audit({ captureBody: false }) // payload import + kredensial sementara tidak boleh disimpan mentah
+  async provisionStudentsBulk(
+    @Body(ZodPipe(ProvisionStudentsBulkSchema)) dto: ProvisionStudentsBulkDto,
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.provisioning.bulkProvisionStudents(
+      dto.students as Array<Record<string, unknown>>,
+      { keycloakId: actor.keycloakId, roles: actor.roles },
+    );
   }
 }

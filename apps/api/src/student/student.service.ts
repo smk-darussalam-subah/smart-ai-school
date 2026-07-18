@@ -45,7 +45,8 @@ const STUDENT_BASE_SELECT = {
   deletedAt: true,
   createdAt: true,
   updatedAt: true,
-  user: { select: { id: true, fullName: true, email: true, phone: true } },
+  user: { select: { id: true, fullName: true, email: true, phone: true, gender: true, isActive: true, consentAt: true } },
+  parent: { select: { id: true, fullName: true } },
   class: { select: { id: true, name: true, majorCode: true, grade: true } },
 } as const;
 
@@ -131,17 +132,57 @@ export class StudentService {
   // ── CRUD ─────────────────────────────────────────────────────────────────────
 
   async findAll(query: ListStudentsQuery, requestUser: AuthUser) {
-    const { classId, status, search, sortBy, sortOrder, page, limit } = query;
+    const {
+      classId,
+      status,
+      grade,
+      majorCode,
+      joinedYear,
+      parentState,
+      classState,
+      accountStatus,
+      consentStatus,
+      search,
+      sortBy,
+      sortOrder,
+      page,
+      limit,
+    } = query;
     const skip = (page - 1) * limit;
+    const userWhere: Prisma.UserWhereInput = {};
+    const classWhere: Prisma.ClassWhereInput = {};
+    if (accountStatus) userWhere.isActive = accountStatus === 'active';
+    if (consentStatus === 'given') userWhere.consentAt = { not: null };
+    if (consentStatus === 'pending') userWhere.consentAt = null;
+    if (grade) classWhere.grade = grade;
+    if (majorCode) classWhere.majorCode = majorCode;
+    const joinedRange = joinedYear
+      ? {
+          gte: new Date(`${joinedYear}-01-01T00:00:00.000Z`),
+          lt: new Date(`${joinedYear + 1}-01-01T00:00:00.000Z`),
+        }
+      : undefined;
 
     const where: Prisma.StudentWhereInput = {
       deletedAt: null,
-      ...(classId && { classId }),
+      ...(classId
+        ? { classId }
+        : classState === 'without_class'
+          ? { classId: null }
+          : classState === 'with_class'
+            ? { classId: { not: null } }
+            : {}),
       ...(status && { status }),
+      ...(parentState === 'with_parent' && { parentId: { not: null } }),
+      ...(parentState === 'without_parent' && { parentId: null }),
+      ...(joinedRange && { joinedAt: joinedRange }),
+      ...(Object.keys(userWhere).length > 0 && { user: userWhere }),
+      ...(Object.keys(classWhere).length > 0 && { class: classWhere }),
       ...(search && {
         OR: [
           { nis: { contains: search, mode: 'insensitive' as const } },
           { user: { fullName: { contains: search, mode: 'insensitive' as const } } },
+          { user: { email: { contains: search, mode: 'insensitive' as const } } },
         ],
       }),
     };
