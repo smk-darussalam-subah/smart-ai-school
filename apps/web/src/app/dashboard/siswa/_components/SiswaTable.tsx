@@ -6,21 +6,27 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { SortableHeader } from '@/components/ui/sortable-header';
 import { TablePagination } from '@/components/ui/table-pagination';
 import { useQueryState } from '@/hooks/use-query-state';
 import { cn } from '@/lib/utils';
+import { ChevronDown, FileSpreadsheet, UserCheck, UserPlus } from 'lucide-react';
 import SiswaFormDialog from './SiswaForm';
 import SiswaDeleteDialog from './SiswaDelete';
 import SiswaWizard from './SiswaWizard';
 import AssignParentDialog from './AssignParentDialog';
+import StudentSingleEntrySheet from './StudentSingleEntrySheet';
+import StudentImportDialog from './StudentImportDialog';
 import type { WithoutParentItem } from '../page';
 import type { PpdbEnrollmentLead } from './ppdb-enrollment-handoff';
 
 interface Student {
   id: string; nis: string; status: string;
-  user: { fullName: string; email: string };
-  class?: { id: string; name: string } | null;
+  parentId?: string | null;
+  user: { fullName: string; email: string; isActive?: boolean; consentAt?: string | null };
+  parent?: { id: string; fullName: string } | null;
+  class?: { id: string; name: string; grade?: number; majorCode?: string } | null;
   joinedAt?: string; createdAt: string;
 }
 
@@ -30,6 +36,13 @@ interface SiswaQuery {
   search: string;
   classId: string;
   status: string;
+  grade: string;
+  majorCode: string;
+  joinedYear: string;
+  parentState: string;
+  classState: string;
+  accountStatus: string;
+  consentStatus: string;
   sortBy: string;
   sortOrder: 'asc' | 'desc';
 }
@@ -37,10 +50,16 @@ interface SiswaQuery {
 interface SiswaTableProps {
   students: Student[];
   total: number;
-  classes: { id: string; name: string }[];
+  classes: { id: string; name: string; grade?: number; majorCode?: string }[];
   canEdit: boolean;
   withoutParentStudents: WithoutParentItem[];
   withoutParentTotal: number;
+  readinessCounts: {
+    total: number;
+    withoutParent: number;
+    withoutClass: number;
+    pendingConsent: number;
+  };
   ppdbEnrollmentLead: PpdbEnrollmentLead | null;
   query: SiswaQuery;
 }
@@ -53,7 +72,7 @@ const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondar
 };
 
 export default function SiswaTable({
-  students, total, classes, canEdit, withoutParentStudents, withoutParentTotal, ppdbEnrollmentLead, query,
+  students, total, classes, canEdit, withoutParentStudents, withoutParentTotal, readinessCounts, ppdbEnrollmentLead, query,
 }: SiswaTableProps) {
   const { setParams, isPending } = useQueryState();
   const [activeTab, setActiveTab] = useState<'semua' | 'tanpa-wali'>('semua');
@@ -62,6 +81,8 @@ export default function SiswaTable({
   const [editStudent, setEditStudent] = useState<Student | null>(null);
   const [deleteStudent, setDeleteStudent] = useState<Student | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [singleEntryOpen, setSingleEntryOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [assignParentStudent, setAssignParentStudent] = useState<WithoutParentItem | null>(null);
 
   // Filter/sort/search/pagination = SERVER-SIDE via URL (useQueryState). `students`
@@ -76,13 +97,20 @@ export default function SiswaTable({
     return () => clearTimeout(t);
   }, [searchInput, query.search, setParams]);
 
-  const hasFilter = !!(query.search || query.classId || query.status);
+  const hasFilter = !!(
+    query.search || query.classId || query.status || query.grade || query.majorCode || query.joinedYear ||
+    query.parentState || query.classState || query.accountStatus || query.consentStatus
+  );
   const handleEdit = (student: Student) => { setEditStudent(student); setFormOpen(true); };
-  const handleNew = () => setWizardOpen(true);
+  const handleOpenPpdb = () => { window.location.href = '/dashboard/ppdb'; };
   const handleSort = (column: string) => {
     const order = query.sortBy === column && query.sortOrder === 'asc' ? 'desc' : 'asc';
     setParams({ sortBy: column, sortOrder: order });
   };
+  const gradeOptions = Array.from(new Set(classes.map((c) => c.grade).filter(Boolean))).sort();
+  const majorOptions = Array.from(new Set(classes.map((c) => c.majorCode).filter(Boolean))).sort();
+  const currentYear = new Date().getFullYear();
+  const joinedYearOptions = Array.from({ length: currentYear - 2015 + 1 }, (_, i) => String(currentYear - i));
 
   return (
     <div className="space-y-4">
@@ -96,11 +124,52 @@ export default function SiswaTable({
           )}
         </div>
         {canEdit && (
-          <Button onClick={handleNew} className="bg-smk-blue hover:bg-primary-700">
-            + Tambah Siswa
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button className="gap-2 bg-smk-blue hover:bg-primary-700">
+                <UserPlus className="h-4 w-4" />
+                Tambah Siswa
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-60">
+              <DropdownMenuItem onSelect={handleOpenPpdb} className="gap-2">
+                <UserCheck className="h-4 w-4" />
+                Tambah dari PPDB
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setSingleEntryOpen(true)} className="gap-2">
+                <UserPlus className="h-4 w-4" />
+                Input satuan
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setImportOpen(true)} className="gap-2">
+                <FileSpreadsheet className="h-4 w-4" />
+                Import kolektif
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
+
+      {canEdit && (
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { label: 'Registry', value: readinessCounts.total, action: () => setParams({ parentState: null, classState: null, consentStatus: null }) },
+            { label: 'Tanpa wali', value: readinessCounts.withoutParent, action: () => setParams({ parentState: 'without_parent' }) },
+            { label: 'Tanpa kelas', value: readinessCounts.withoutClass, action: () => setParams({ classState: 'without_class' }) },
+            { label: 'Consent pending', value: readinessCounts.pendingConsent, action: () => setParams({ consentStatus: 'pending' }) },
+          ].map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              onClick={item.action}
+              className="flex items-center justify-between rounded-md border bg-white px-3 py-2 text-left text-sm transition-colors hover:border-smk-blue hover:bg-blue-50"
+            >
+              <span className="font-medium text-slate-700">{item.label}</span>
+              <span className="font-mono text-base font-semibold text-slate-950">{item.value}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Tab navigation */}
       <div className="flex gap-1 border-b border-gray-200">
@@ -139,7 +208,8 @@ export default function SiswaTable({
       {/* === TAB: SEMUA SISWA === */}
       {activeTab === 'semua' && (
         <>
-          <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 lg:flex-row">
             <Input
               placeholder="Cari NIS atau nama..."
               value={searchInput}
@@ -168,6 +238,68 @@ export default function SiswaTable({
                 ))}
               </SelectContent>
             </Select>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Select value={query.grade || 'all'} onValueChange={(v: string) => setParams({ grade: v })}>
+                <SelectTrigger className="w-[130px]"><SelectValue placeholder="Tingkat" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Tingkat</SelectItem>
+                  {gradeOptions.map((grade) => (
+                    <SelectItem key={grade} value={String(grade)}>{grade}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={query.majorCode || 'all'} onValueChange={(v: string) => setParams({ majorCode: v })}>
+                <SelectTrigger className="w-[140px]"><SelectValue placeholder="Jurusan" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Jurusan</SelectItem>
+                  {majorOptions.map((major) => (
+                    <SelectItem key={major} value={String(major)}>{major}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={query.joinedYear || 'all'} onValueChange={(v: string) => setParams({ joinedYear: v })}>
+                <SelectTrigger className="w-[150px]"><SelectValue placeholder="Tahun Masuk" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Tahun</SelectItem>
+                  {joinedYearOptions.map((year) => (
+                    <SelectItem key={year} value={String(year)}>{year}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={query.parentState || 'all'} onValueChange={(v: string) => setParams({ parentState: v })}>
+                <SelectTrigger className="w-[150px]"><SelectValue placeholder="Wali" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Wali</SelectItem>
+                  <SelectItem value="with_parent">Ada wali</SelectItem>
+                  <SelectItem value="without_parent">Tanpa wali</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={query.classState || 'all'} onValueChange={(v: string) => setParams({ classState: v })}>
+                <SelectTrigger className="w-[150px]"><SelectValue placeholder="Kelas" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Kelas</SelectItem>
+                  <SelectItem value="with_class">Ada kelas</SelectItem>
+                  <SelectItem value="without_class">Tanpa kelas</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={query.accountStatus || 'all'} onValueChange={(v: string) => setParams({ accountStatus: v })}>
+                <SelectTrigger className="w-[140px]"><SelectValue placeholder="Akun" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Akun</SelectItem>
+                  <SelectItem value="active">Aktif</SelectItem>
+                  <SelectItem value="inactive">Nonaktif</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={query.consentStatus || 'all'} onValueChange={(v: string) => setParams({ consentStatus: v })}>
+                <SelectTrigger className="w-[150px]"><SelectValue placeholder="Consent" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Consent</SelectItem>
+                  <SelectItem value="given">Sudah consent</SelectItem>
+                  <SelectItem value="pending">Belum consent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className={cn('rounded-xl border shadow-sm overflow-x-auto transition-opacity', isPending && 'opacity-60')}>
@@ -177,6 +309,9 @@ export default function SiswaTable({
                   <SortableHeader label="NIS" column="nis" sortBy={query.sortBy} sortOrder={query.sortOrder} onSort={handleSort} />
                   <SortableHeader label="Nama" column="fullName" sortBy={query.sortBy} sortOrder={query.sortOrder} onSort={handleSort} />
                   <TableHead className="hidden md:table-cell">Kelas</TableHead>
+                  <TableHead className="hidden lg:table-cell">Wali</TableHead>
+                  <TableHead className="hidden xl:table-cell">Akun</TableHead>
+                  <TableHead className="hidden xl:table-cell">Consent</TableHead>
                   <SortableHeader label="Status" column="status" sortBy={query.sortBy} sortOrder={query.sortOrder} onSort={handleSort} className="hidden sm:table-cell" />
                   {canEdit && <TableHead className="w-24">Aksi</TableHead>}
                 </TableRow>
@@ -184,7 +319,7 @@ export default function SiswaTable({
               <TableBody>
                 {students.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={canEdit ? 5 : 4} className="text-center h-24 text-muted-foreground">
+                    <TableCell colSpan={canEdit ? 8 : 7} className="text-center h-24 text-muted-foreground">
                       {hasFilter ? 'Tidak ada siswa yang cocok dengan filter' : 'Belum ada data siswa'}
                     </TableCell>
                   </TableRow>
@@ -194,6 +329,17 @@ export default function SiswaTable({
                       <TableCell className="font-mono text-sm">{s.nis}</TableCell>
                       <TableCell className="font-medium">{s.user.fullName}</TableCell>
                       <TableCell className="hidden md:table-cell">{s.class?.name ?? '-'}</TableCell>
+                      <TableCell className="hidden lg:table-cell">{s.parent?.fullName ?? '-'}</TableCell>
+                      <TableCell className="hidden xl:table-cell">
+                        <Badge variant={s.user.isActive === false ? 'secondary' : 'outline'}>
+                          {s.user.isActive === false ? 'Nonaktif' : 'Aktif'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="hidden xl:table-cell">
+                        <Badge variant={s.user.consentAt ? 'default' : 'secondary'}>
+                          {s.user.consentAt ? 'Sudah' : 'Belum'}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="hidden sm:table-cell">
                         <Badge variant={STATUS_MAP[s.status]?.variant ?? 'secondary'}>
                           {STATUS_MAP[s.status]?.label ?? s.status}
@@ -275,6 +421,8 @@ export default function SiswaTable({
         classes={classes}
         initialLead={ppdbEnrollmentLead}
       />
+      <StudentSingleEntrySheet open={singleEntryOpen} onOpenChange={setSingleEntryOpen} classes={classes} />
+      <StudentImportDialog open={importOpen} onOpenChange={setImportOpen} classes={classes} />
       <SiswaDeleteDialog student={deleteStudent} onClose={() => setDeleteStudent(null)} />
       {assignParentStudent && (
         <AssignParentDialog

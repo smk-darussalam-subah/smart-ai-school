@@ -23,6 +23,7 @@ import {
   ProvisionUserDto,
   ProvisionStudentDto,
   ProvisionUserSchema,
+  ProvisionStudentSchema,
   STAFF_ROLES,
 } from './dto/provision.dto';
 
@@ -251,6 +252,59 @@ export class ProvisioningService {
     return { results, summary: { ok, fail: results.length - ok, total: results.length } };
   }
 
+  async bulkProvisionStudents(
+    rows: Array<Record<string, unknown>>,
+    actor: Actor,
+  ): Promise<{
+    results: Array<BulkRowResult>;
+    summary: { ok: number; fail: number; total: number };
+  }> {
+    const results: BulkRowResult[] = [];
+    const parsedRows = rows.map((row) => ProvisionStudentSchema.safeParse(row));
+    const nisCounts = new Map<string, number>();
+
+    parsedRows.forEach((parsed) => {
+      if (!parsed.success) return;
+      const nis = parsed.data.siswa.nis.trim();
+      nisCounts.set(nis, (nisCounts.get(nis) ?? 0) + 1);
+    });
+
+    for (let i = 0; i < parsedRows.length; i++) {
+      const parsed = parsedRows[i]!;
+      if (!parsed.success) {
+        results.push({
+          index: i,
+          status: 'error',
+          error: parsed.error.issues.map((x) => x.message).join('; '),
+        });
+        continue;
+      }
+
+      if ((nisCounts.get(parsed.data.siswa.nis.trim()) ?? 0) > 1) {
+        results.push({
+          index: i,
+          status: 'error',
+          error: `NIS "${parsed.data.siswa.nis}" duplikat dalam file import`,
+        });
+        continue;
+      }
+
+      try {
+        const r = await this.provisionStudent(parsed.data, actor);
+        results.push({ index: i, status: 'ok', user: r.user, tempCredentials: r.tempCredentials });
+      } catch (err: unknown) {
+        results.push({
+          index: i,
+          status: 'error',
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const ok = results.filter((r) => r.status === 'ok').length;
+    return { results, summary: { ok, fail: results.length - ok, total: results.length } };
+  }
+
   // ── provisionStudent ────────────────────────────────────────────────────────
 
   async provisionStudent(dto: ProvisionStudentDto, actor: Actor): Promise<ProvisionResult> {
@@ -337,6 +391,8 @@ export class ProvisioningService {
       const result = await this.prisma.$transaction(async (tx) => {
         let parentId: string | undefined = existingOrtuUser?.id;
 
+        const consentAt = new Date();
+
         if (ortuIsNew && ortuKcId) {
           const ortu = await tx.user.create({
             data: {
@@ -346,18 +402,23 @@ export class ProvisioningService {
               phone: ortuPhone,
               role: 'ORANG_TUA',
               isActive: true,
+              consentAt,
             },
           });
           parentId = ortu.id;
+        } else if (parentId) {
+          await tx.user.update({
+            where: { id: parentId },
+            data: { consentAt },
+          });
         }
-
-        const consentAt = new Date();
 
         const siswaUser = await tx.user.create({
           data: {
             keycloakId: siswaKcId,
             email: siswaEmail,
             fullName: dto.siswa.fullName,
+            gender: dto.siswa.gender ?? null,
             role: 'SISWA',
             isActive: true,
             consentAt,
@@ -370,7 +431,8 @@ export class ProvisioningService {
             nis: dto.siswa.nis,
             classId: dto.siswa.classId || null,
             parentId: parentId || null,
-            joinedAt: new Date(),
+            status: dto.siswa.status ?? 'active',
+            joinedAt: dto.siswa.joinedAt ? new Date(dto.siswa.joinedAt) : new Date(),
           },
         });
 

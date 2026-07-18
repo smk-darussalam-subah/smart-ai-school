@@ -42,3 +42,15 @@ export async function approveSpp(id: string) {
   revalidatePath('/dashboard/keuangan');
   return result;
 }
+
+export async function searchStudentsForSppAction(search: string) {
+  const query = new URLSearchParams({
+    limit: '20',
+    status: 'active',
+    sortBy: 'fullName',
+    sortOrder: 'asc',
+  });
+  const q = search.trim().slice(0, 100);
+  if (q) query.set('search', q);
+  return fetchApi(`/students?${query.toString()}`, 'GET');
+}
