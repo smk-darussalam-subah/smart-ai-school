@@ -8,6 +8,7 @@ import type { Pembayaran, Tugas } from '@/lib/academic';
 
 export interface OrtuChild {
   id: number;
+  studentId?: string;
   name: string;
   kelas: string;
   active: boolean;

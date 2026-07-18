@@ -26,6 +26,7 @@ import type { OrtuChild, OrtuNilai, OrtuPengumuman } from './ortu-types';
 import type { AttendanceCellStatus, Pembayaran } from '@/lib/academic';
 import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem } from '../guru-types';
+import { filterByStudentId, type OrtuAssignmentItem, type SppApiItem } from './ortu-mappers';
 
 // ── Types (exported for child components) ───────────────────────────────────
 
@@ -42,21 +43,21 @@ interface OrtuWorkspaceProps {
   children?: OrtuChild[];
   grades?: GradeItem[];
   attendance?: AttendanceItem[];
-  schedule?: ScheduleItem[];
+  schedule?: Array<ScheduleItem & { studentId?: string }>;
   announcements?: { id: string; title: string; createdAt: string }[];
-  spp?: Array<{ id: string; month: string; amount: number; status: string; dueDate: string | null }>;
-  assignments?: Array<{ id: string; subject: string; class: { id: string; name: string } }>;
-  badges?: Array<{ id: string; awardedAt: string; badge: { id: string; code: string; name: string; description: string; icon: string; tier: string } }>;
+  spp?: SppApiItem[];
+  assignments?: OrtuAssignmentItem[];
+  badges?: Array<{ id: string; studentId?: string; awardedAt: string; badge: { id: string; code: string; name: string; description: string; icon: string; tier: string } }>;
   waLog?: Array<{ id: string; studentId: string; recipient: string; message: string; eventType: string; createdAt: string }>;
   viewAs?: string | null;
   semesterLabel?: string;
-  childRank?: number | null;
+  childRanks?: Record<string, number | null>;
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function OrtuWorkspace({
-  children: realChildren, grades, attendance, schedule, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, semesterLabel, childRank
+  children: realChildren, grades, attendance, schedule, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, semesterLabel, childRanks
 }: OrtuWorkspaceProps) {
   const { data: session } = useSession();
   const [activeScreen, setActiveScreen] = useState<OrtuScreen>('beranda');
@@ -98,6 +99,14 @@ export default function OrtuWorkspace({
   // Child selector — use real data (P25) or empty. T1-02: activeChildIndex untuk multi-child.
   const childList = realChildren?.length ? realChildren : [];
   const child = childList[activeChildIndex] ?? childList[0] ?? { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
+  const activeStudentId = 'studentId' in child ? child.studentId : undefined;
+  const childGrades = filterByStudentId(grades, activeStudentId);
+  const childAttendance = filterByStudentId(attendance, activeStudentId);
+  const childSchedule = filterByStudentId(schedule, activeStudentId);
+  const childSpp = filterByStudentId(realSpp, activeStudentId);
+  const childBadges = filterByStudentId(realBadges, activeStudentId);
+  const childWaLog = filterByStudentId(realWaLog, activeStudentId);
+  const activeChildRank = activeStudentId ? childRanks?.[activeStudentId] ?? null : null;
   const selectChild = (i: number) => {
     setActiveChildIndex(i);
     setChildSelectorOpen(false);
@@ -105,7 +114,7 @@ export default function OrtuWorkspace({
   };
 
   // Dynamic unpaid payment count for nav badge — use real SPP data (P25)
-  const unpaidCount = realSpp?.filter((p) => p.status === 'unpaid').length ?? 0;
+  const unpaidCount = childSpp?.filter((p) => p.status === 'unpaid').length ?? 0;
 
   const navItems: { key: OrtuScreen; label: string; icon: typeof Home }[] = [
     { key: 'beranda', label: 'Beranda', icon: Home },
@@ -123,15 +132,15 @@ export default function OrtuWorkspace({
             showToast={showToast}
             go={go}
             setModal={setModal}
-            grades={grades}
+            grades={childGrades}
             announcements={announcements}
             children={childList}
             activeChildIndex={Math.min(activeChildIndex, Math.max(childList.length - 1, 0))}
-            schedule={schedule ?? []}
-            spp={realSpp ?? []}
-            waLog={realWaLog ?? []}
-            attendance={attendance ?? []}
-            rank={childRank}
+            schedule={childSchedule}
+            spp={childSpp ?? []}
+            waLog={childWaLog ?? []}
+            attendance={childAttendance ?? []}
+            rank={activeChildRank}
           />
         );
       // Following screens implemented in subsequent batches
@@ -140,22 +149,22 @@ export default function OrtuWorkspace({
           <KehadiranOrtu
             go={go}
             setModal={setModal}
-            attendance={attendance ?? []}
-            waLog={realWaLog ?? []}
+            attendance={childAttendance ?? []}
+            waLog={childWaLog ?? []}
           />
         );
       case 'nilai':
         return (
           <NilaiOrtu
             setModal={setModal}
-            grades={grades}
+            grades={childGrades}
           />
         );
       case 'pembayaran':
         return (
           <PembayaranOrtu
             setModal={setModal}
-            spp={realSpp}
+            spp={childSpp}
           />
         );
       case 'capaian':
@@ -163,7 +172,7 @@ export default function OrtuWorkspace({
           <CapaianOrtu
             setModal={setModal}
             showToast={showToast}
-            badges={realBadges ?? []}
+            badges={childBadges}
           />
         );
       default:
@@ -322,7 +331,7 @@ export default function OrtuWorkspace({
 
       {modal.type === 'rapor' && (
         <RaporModal
-          nilai={(grades ?? []) as unknown as OrtuNilai[]}
+          nilai={(childGrades ?? []) as unknown as OrtuNilai[]}
           onClose={() => setModal({ type: null })}
           showToast={showToast}
           studentName={child.name}

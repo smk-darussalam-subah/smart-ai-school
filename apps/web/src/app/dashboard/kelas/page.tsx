@@ -58,6 +58,7 @@ export default async function KelasPage() {
     .flatMap((g) => g.users.map((u) => ({ ...u, role: g.role })));
 
   const isSuperAdmin = roles.includes('SUPER_ADMIN');
+  const canManage = isSuperAdmin || roles.includes('TATA_USAHA');
 
   return (
     <KelasClient
@@ -65,6 +66,7 @@ export default async function KelasPage() {
       majors={majors}
       teachers={teachers}
       isSuperAdmin={isSuperAdmin}
+      canManage={canManage}
     />
   );
 }

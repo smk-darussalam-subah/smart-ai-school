@@ -90,9 +90,9 @@ export class FinanceService {
         month:      dto.month,
         year:       dto.year,
         amount:     dto.amount,
-        status:     dto.status as PaymentStatus,
+        status:     PaymentStatus.unpaid,
         receiptNo:  dto.receiptNo,
-        paidAt:     dto.status === 'paid' || dto.status === 'late' ? new Date() : null,
+        paidAt:     null,
         recordedBy: userId,
       },
       select: SPP_SELECT,
@@ -100,18 +100,6 @@ export class FinanceService {
 
     // Emit payment.received hanya jika pembayaran benar-benar diterima (paid/late)
     // N-10: TIDAK ada logika BOS di sini — TODO Tahap 2 saat model BOS tersedia
-    if (payment.status === 'paid' || payment.status === 'late') {
-      const payPayload: PaymentReceivedPayload = {
-        paymentId:  payment.id,
-        studentId:  payment.studentId,
-        month:      payment.month,
-        year:       payment.year,
-        amount:     payment.amount.toString(),
-        receiptNo:  payment.receiptNo ?? null,
-      };
-      this.eventEmitter.emit(EVENTS.PAYMENT_RECEIVED, payPayload);
-    }
-
     return payment;
   }
 
@@ -215,17 +203,34 @@ export class FinanceService {
 
     const payment = await this.prisma.sppPayment.findUnique({
       where:  { id },
-      select: { id: true, approvedBy: true, approvedAt: true },
+      select: { id: true, status: true, approvedBy: true, approvedAt: true },
     });
     if (!payment) throw new NotFoundException('Data pembayaran SPP tidak ditemukan');
-    if (payment.approvedBy) {
+    if (payment.approvedBy || payment.status === 'paid') {
       throw new ConflictException('Pembayaran ini sudah disetujui sebelumnya');
     }
 
-    return this.prisma.sppPayment.update({
+    const updated = await this.prisma.sppPayment.update({
       where: { id },
-      data:  { approvedBy: userId, approvedAt: new Date() },
+      data:  {
+        approvedBy: userId,
+        approvedAt: new Date(),
+        paidAt: new Date(),
+        status: PaymentStatus.paid,
+      },
       select: SPP_SELECT,
     });
+
+    const payPayload: PaymentReceivedPayload = {
+      paymentId:  updated.id,
+      studentId:  updated.studentId,
+      month:      updated.month,
+      year:       updated.year,
+      amount:     updated.amount.toString(),
+      receiptNo:  updated.receiptNo ?? null,
+    };
+    this.eventEmitter.emit(EVENTS.PAYMENT_RECEIVED, payPayload);
+
+    return updated;
   }
 }

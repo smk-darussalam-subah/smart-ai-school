@@ -97,6 +97,15 @@ function buildPrisma() {
       update: jest.fn(),
       count: jest.fn(),
     },
+    teacher: {
+      findUnique: jest.fn(),
+    },
+    teachingAssignment: {
+      findMany: jest.fn(),
+    },
+    class: {
+      findMany: jest.fn(),
+    },
     grade: {
       findMany: jest.fn(),
     },
@@ -127,6 +136,7 @@ describe('StudentService', () => {
 
     service = module.get(StudentService);
     jest.clearAllMocks();
+    prisma.class.findMany.mockResolvedValue([]);
   });
 
   // ── findAll ──────────────────────────────────────────────────────────────
@@ -136,7 +146,7 @@ describe('StudentService', () => {
       prisma.student.findMany.mockResolvedValue([MOCK_STUDENT]);
       prisma.student.count.mockResolvedValue(1);
 
-      const result = await service.findAll({ page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' });
+      const result = await service.findAll({ page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, SA_USER);
 
       expect(result.data).toHaveLength(1);
       expect(result.total).toBe(1);
@@ -151,7 +161,7 @@ describe('StudentService', () => {
       prisma.student.findMany.mockResolvedValue([]);
       prisma.student.count.mockResolvedValue(0);
 
-      await service.findAll({ classId: 'class-uuid-001', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' });
+      await service.findAll({ classId: 'class-uuid-001', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, SA_USER);
 
       expect(prisma.student.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { deletedAt: null, classId: 'class-uuid-001' } }),
@@ -162,7 +172,7 @@ describe('StudentService', () => {
       prisma.student.findMany.mockResolvedValue([]);
       prisma.student.count.mockResolvedValue(0);
 
-      await service.findAll({ status: 'active', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' });
+      await service.findAll({ status: 'active', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, SA_USER);
 
       expect(prisma.student.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { deletedAt: null, status: 'active' } }),
@@ -173,7 +183,7 @@ describe('StudentService', () => {
       prisma.student.findMany.mockResolvedValue([MOCK_STUDENT]);
       prisma.student.count.mockResolvedValue(1);
 
-      await service.findAll({ search: 'Budi', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' });
+      await service.findAll({ search: 'Budi', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, SA_USER);
 
       const callArg = prisma.student.findMany.mock.calls[0][0];
       expect(callArg.where.OR).toBeDefined();
@@ -182,7 +192,7 @@ describe('StudentService', () => {
     it('sort by nis asc → orderBy { nis: asc }', async () => {
       prisma.student.findMany.mockResolvedValue([]);
       prisma.student.count.mockResolvedValue(0);
-      await service.findAll({ page: 1, limit: 20, sortBy: 'nis', sortOrder: 'asc' });
+      await service.findAll({ page: 1, limit: 20, sortBy: 'nis', sortOrder: 'asc' }, SA_USER);
       expect(prisma.student.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ orderBy: { nis: 'asc' } }),
       );
@@ -191,10 +201,59 @@ describe('StudentService', () => {
     it('sort by fullName → orderBy via relasi user', async () => {
       prisma.student.findMany.mockResolvedValue([]);
       prisma.student.count.mockResolvedValue(0);
-      await service.findAll({ page: 1, limit: 20, sortBy: 'fullName', sortOrder: 'desc' });
+      await service.findAll({ page: 1, limit: 20, sortBy: 'fullName', sortOrder: 'desc' }, SA_USER);
       expect(prisma.student.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ orderBy: { user: { fullName: 'desc' } } }),
       );
+    });
+
+    it('GURU list dibatasi ke kelas assignment dan wali', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'guru-db-user-id' });
+      prisma.teacher.findUnique.mockResolvedValue({ id: 'teacher-uuid-001' });
+      prisma.teachingAssignment.findMany.mockResolvedValue([{ classId: 'class-uuid-001' }]);
+      prisma.class.findMany.mockResolvedValue([{ id: 'class-uuid-WALI' }]);
+      prisma.student.findMany.mockResolvedValue([MOCK_STUDENT]);
+      prisma.student.count.mockResolvedValue(1);
+
+      await service.findAll({ page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, GURU_USER);
+
+      expect(prisma.student.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            classId: { in: ['class-uuid-001', 'class-uuid-WALI'] },
+          }),
+        }),
+      );
+    });
+
+    it('GURU wali-only boleh list kelas walinya tanpa teaching assignment', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'guru-db-user-id' });
+      prisma.teacher.findUnique.mockResolvedValue({ id: 'teacher-uuid-001' });
+      prisma.teachingAssignment.findMany.mockResolvedValue([]);
+      prisma.class.findMany.mockResolvedValue([{ id: 'class-uuid-WALI' }]);
+      prisma.student.findMany.mockResolvedValue([]);
+      prisma.student.count.mockResolvedValue(0);
+
+      await service.findAll({ classId: 'class-uuid-WALI', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, GURU_USER);
+
+      expect(prisma.student.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ classId: 'class-uuid-WALI' }),
+        }),
+      );
+    });
+
+    it('GURU list dengan classId di luar scope fail closed', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'guru-db-user-id' });
+      prisma.teacher.findUnique.mockResolvedValue({ id: 'teacher-uuid-001' });
+      prisma.teachingAssignment.findMany.mockResolvedValue([{ classId: 'class-uuid-001' }]);
+      prisma.class.findMany.mockResolvedValue([{ id: 'class-uuid-WALI' }]);
+
+      await expect(
+        service.findAll({ classId: 'class-uuid-OTHER', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, GURU_USER),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.student.findMany).not.toHaveBeenCalled();
+      expect(prisma.student.count).not.toHaveBeenCalled();
     });
   });
 
@@ -210,13 +269,26 @@ describe('StudentService', () => {
       expect(prisma.user.findUnique).not.toHaveBeenCalled(); // no ownership check
     });
 
-    it('GURU bisa akses student manapun tanpa ownership check', async () => {
+    it('GURU hanya bisa akses student di kelas yang diampu', async () => {
       prisma.student.findFirst.mockResolvedValue(MOCK_STUDENT);
+      prisma.user.findUnique.mockResolvedValue({ id: 'guru-db-user-id' });
+      prisma.teacher.findUnique.mockResolvedValue({ id: 'teacher-uuid-001' });
+      prisma.teachingAssignment.findMany.mockResolvedValue([{ classId: 'class-uuid-001' }]);
 
       const result = await service.findById('student-uuid-001', GURU_USER);
 
       expect(result).toEqual(MOCK_STUDENT);
-      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('GURU tidak bisa akses student di luar kelas yang diampu', async () => {
+      prisma.student.findFirst.mockResolvedValue(MOCK_STUDENT);
+      prisma.user.findUnique.mockResolvedValue({ id: 'guru-db-user-id' });
+      prisma.teacher.findUnique.mockResolvedValue({ id: 'teacher-uuid-001' });
+      prisma.teachingAssignment.findMany.mockResolvedValue([{ classId: 'class-uuid-OTHER' }]);
+
+      await expect(service.findById('student-uuid-001', GURU_USER)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('SISWA bisa akses data diri sendiri', async () => {
@@ -419,7 +491,7 @@ describe('StudentService', () => {
       // Langkah 2: findAll — DB mengembalikan kosong (soft-deleted tidak lolos filter)
       prisma.student.findMany.mockResolvedValue([]);
       prisma.student.count.mockResolvedValue(0);
-      const list = await service.findAll({ page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' });
+      const list = await service.findAll({ page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, SA_USER);
 
       expect(list.data).toHaveLength(0);
       expect(list.total).toBe(0);
@@ -725,7 +797,10 @@ describe('StudentController', () => {
 
   it('findAll — delegasi ke service dengan query yang sudah di-parse', async () => {
     await controller.findAll({ page: '1', limit: '10' } as unknown, SA_USER);
-    expect(service.findAll).toHaveBeenCalledWith({ page: 1, limit: 10, sortBy: 'createdAt', sortOrder: 'desc' });
+    expect(service.findAll).toHaveBeenCalledWith(
+      { page: 1, limit: 10, sortBy: 'createdAt', sortOrder: 'desc' },
+      SA_USER,
+    );
   });
 
   it('findAll — status tidak valid → BadRequestException (400)', async () => {

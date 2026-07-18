@@ -70,12 +70,21 @@ export async function resolveSiswaId(prisma: PrismaService, keycloakId: string):
 /** keycloakId → semua classId yang diajar guru */
 export async function resolveGuruClassIds(prisma: PrismaService, keycloakId: string): Promise<string[]> {
   const teacherId = await resolveTeacherId(prisma, keycloakId);
-  const assignments = await prisma.teachingAssignment.findMany({
-    where: { teacherId },
-    select: { classId: true },
-    distinct: ['classId'],
-  });
-  return assignments.map((a) => a.classId);
+  const [assignments, waliClasses] = await Promise.all([
+    prisma.teachingAssignment.findMany({
+      where: { teacherId },
+      select: { classId: true },
+      distinct: ['classId'],
+    }),
+    prisma.class.findMany({
+      where: { teacherId, isActive: true },
+      select: { id: true },
+    }),
+  ]);
+  return [...new Set([
+    ...assignments.map((assignment) => assignment.classId),
+    ...waliClasses.map((kelas) => kelas.id),
+  ])];
 }
 
 /** keycloakId → classId siswa (untuk SISWA role) */

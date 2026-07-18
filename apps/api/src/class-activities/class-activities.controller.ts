@@ -24,10 +24,10 @@ export class ClassActivitiesController {
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
   @RequirePermission('activity.read')
   @Get()
-  findAll(@Query() rawQuery: unknown) {
+  findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     const parsed = ListActivitiesQuerySchema.safeParse(rawQuery);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors);
-    return this.service.findAll(parsed.data);
+    return this.service.findAll(parsed.data, user);
   }
 
   @Roles('GURU')
@@ -42,7 +42,7 @@ export class ClassActivitiesController {
   }
 
   @Roles('SUPER_ADMIN', 'GURU')
-  @RequirePermission('activity.read')
+  @RequirePermission('activity.manage')
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -53,7 +53,7 @@ export class ClassActivitiesController {
   }
 
   @Roles('SUPER_ADMIN', 'GURU')
-  @RequirePermission('activity.read')
+  @RequirePermission('activity.manage')
   @Delete(':id')
   remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.service.remove(id, user);

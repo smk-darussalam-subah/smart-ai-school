@@ -15,6 +15,7 @@ import SiswaDeleteDialog from './SiswaDelete';
 import SiswaWizard from './SiswaWizard';
 import AssignParentDialog from './AssignParentDialog';
 import type { WithoutParentItem } from '../page';
+import type { PpdbEnrollmentLead } from './ppdb-enrollment-handoff';
 
 interface Student {
   id: string; nis: string; status: string;
@@ -40,6 +41,7 @@ interface SiswaTableProps {
   canEdit: boolean;
   withoutParentStudents: WithoutParentItem[];
   withoutParentTotal: number;
+  ppdbEnrollmentLead: PpdbEnrollmentLead | null;
   query: SiswaQuery;
 }
 
@@ -51,7 +53,7 @@ const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondar
 };
 
 export default function SiswaTable({
-  students, total, classes, canEdit, withoutParentStudents, withoutParentTotal, query,
+  students, total, classes, canEdit, withoutParentStudents, withoutParentTotal, ppdbEnrollmentLead, query,
 }: SiswaTableProps) {
   const { setParams, isPending } = useQueryState();
   const [activeTab, setActiveTab] = useState<'semua' | 'tanpa-wali'>('semua');
@@ -65,6 +67,9 @@ export default function SiswaTable({
   // Filter/sort/search/pagination = SERVER-SIDE via URL (useQueryState). `students`
   // sudah hasil query server. Search di-debounce; sinkron bila URL berubah dari luar.
   useEffect(() => { setSearchInput(query.search); }, [query.search]);
+  useEffect(() => {
+    if (canEdit && ppdbEnrollmentLead) setWizardOpen(true);
+  }, [canEdit, ppdbEnrollmentLead?.id]);
   useEffect(() => {
     if (searchInput === query.search) return;
     const t = setTimeout(() => setParams({ search: searchInput || null }), 400);
@@ -82,7 +87,14 @@ export default function SiswaTable({
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">Data Siswa</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Data Siswa</h1>
+          {ppdbEnrollmentLead && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              Enrollment dari PPDB: {ppdbEnrollmentLead.fullName}. Lengkapi NIS, kelas, data wali, dan persetujuan.
+            </p>
+          )}
+        </div>
         {canEdit && (
           <Button onClick={handleNew} className="bg-smk-blue hover:bg-primary-700">
             + Tambah Siswa
@@ -257,7 +269,12 @@ export default function SiswaTable({
 
       {/* Dialogs */}
       <SiswaFormDialog open={formOpen} onOpenChange={setFormOpen} student={editStudent} classes={classes} />
-      <SiswaWizard open={wizardOpen} onOpenChange={setWizardOpen} classes={classes} />
+      <SiswaWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        classes={classes}
+        initialLead={ppdbEnrollmentLead}
+      />
       <SiswaDeleteDialog student={deleteStudent} onClose={() => setDeleteStudent(null)} />
       {assignParentStudent && (
         <AssignParentDialog

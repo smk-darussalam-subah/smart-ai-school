@@ -28,7 +28,7 @@ export class WaLogController {
   }
 
   @Roles('ORANG_TUA', 'SUPER_ADMIN', 'KEPALA_SEKOLAH')
-  @RequirePermission('lms.read')
+  @RequirePermission(['lms.read', 'student.child.read'])
   @Get('student/:studentId')
   findStudentLogs(
     @Param('studentId', ParseUUIDPipe) studentId: string,

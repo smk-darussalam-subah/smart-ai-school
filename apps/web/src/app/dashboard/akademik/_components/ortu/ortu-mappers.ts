@@ -16,10 +16,51 @@ import type { OrtuWAHistory, OrtuKehadiranStats } from './ortu-types';
 
 export interface SppApiItem {
   id: string;
+  studentId: string;
   month: string;
   amount: number;
   status: string;
   dueDate: string | null;
+  paidAt?: string | null;
+  receiptNo?: string | null;
+}
+
+export interface SppDashboardPayment {
+  id: string;
+  month: number;
+  year: number;
+  amount: number | string;
+  status: string;
+  paidAt?: string | null;
+  receiptNo?: string | null;
+  dueDate?: string | null;
+}
+
+export interface SppDashboardGroup {
+  studentId: string;
+  studentName: string;
+  payments: SppDashboardPayment[];
+}
+
+export interface StudentDashboardAssignment {
+  id: string;
+  type: string;
+  title: string;
+  subject: string;
+  guru: string | null;
+  status: string;
+  progress: number;
+  kktp: number;
+}
+
+export interface StudentDashboardAssignmentGroup {
+  studentId: string;
+  studentName: string;
+  assignments: StudentDashboardAssignment[];
+}
+
+export interface OrtuAssignmentItem extends StudentDashboardAssignment {
+  studentId: string;
 }
 
 export interface WaLogApiItem {
@@ -29,6 +70,39 @@ export interface WaLogApiItem {
   message: string;
   eventType: string;
   createdAt: string;
+}
+
+export function normalizeSppGroups(groups: SppDashboardGroup[]): SppApiItem[] {
+  return groups.flatMap((group) =>
+    group.payments.map((payment) => ({
+      id: payment.id,
+      studentId: group.studentId,
+      month: `${payment.month}/${payment.year}`,
+      amount: Number(payment.amount),
+      status: payment.status,
+      dueDate: payment.dueDate ?? null,
+      paidAt: payment.paidAt ?? null,
+      receiptNo: payment.receiptNo ?? null,
+    })),
+  );
+}
+
+export function normalizeAssignmentGroups(groups: StudentDashboardAssignmentGroup[]): OrtuAssignmentItem[] {
+  return groups.flatMap((group) =>
+    group.assignments.map((assignment) => ({
+      ...assignment,
+      studentId: group.studentId,
+    })),
+  );
+}
+
+export function filterByStudentId<T extends { studentId?: string }>(
+  items: T[] | undefined,
+  studentId: string | undefined,
+): T[] {
+  if (!items) return [];
+  if (!studentId) return items;
+  return items.filter((item) => item.studentId === studentId);
 }
 
 // ── SPP → Pembayaran ──────────────────────────────────────────────────────────
@@ -46,7 +120,7 @@ export function mapSppToPembayaran(items: SppApiItem[]): Pembayaran[] {
       amount: s.amount,
       due: s.dueDate ?? '',
       status: paid ? 'paid' : 'unpaid',
-      paidDate: paid ? s.month : undefined,
+      paidDate: paid ? s.paidAt ?? s.month : undefined,
       desc: s.month ? `SPP bulan ${s.month}` : undefined,
     };
   });

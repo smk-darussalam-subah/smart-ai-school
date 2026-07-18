@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,6 +14,8 @@ interface Lead {
   id: string; fullName: string; phone: string; schoolOrigin: string | null;
   interestMajor: string | null; source: string; status: string; notes: string | null;
   assignedTo: string | null; createdAt: string;
+  enrollmentRequired?: boolean;
+  enrollmentAction?: { href: string; label: string };
 }
 
 interface Props {
@@ -106,6 +109,10 @@ export default function PpdbTable({ leads, total, canEdit }: Props) {
                           </Button>
                         ))}
                       </div>
+                    ) : l.enrollmentRequired && l.enrollmentAction ? (
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={l.enrollmentAction.href}>{l.enrollmentAction.label}</Link>
+                      </Button>
                     ) : null; })()}
                   </TableCell>
                 )}

@@ -102,7 +102,7 @@ function buildPrisma() {
     teacher: { findUnique: jest.fn() },
     student: { findUnique: jest.fn(), findMany: jest.fn() },
     teachingAssignment: { findFirst: jest.fn(), findMany: jest.fn() },
-    class:   { findUnique: jest.fn() },
+    class:   { findUnique: jest.fn(), findMany: jest.fn() },
     attendance: {
       findMany:   jest.fn(),
       findUnique: jest.fn(),
@@ -129,6 +129,7 @@ describe('AttendanceService', () => {
     }).compile();
     service = module.get(AttendanceService);
     jest.clearAllMocks();
+    prisma.class.findMany.mockResolvedValue([]);
   });
 
   // ── bulkCreate ───────────────────────────────────────────────────────────────

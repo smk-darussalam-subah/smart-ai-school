@@ -4,6 +4,7 @@ import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch, PaginatedResponse } from '@/lib/api';
 import SiswaTable from './_components/SiswaTable';
+import type { PpdbEnrollmentLead } from './_components/ppdb-enrollment-handoff';
 
 interface StudentItem {
   id: string; nis: string; status: string;
@@ -20,6 +21,7 @@ export interface WithoutParentItem {
 
 const LIMIT = 20;
 const SORT_COLS = ['nis', 'fullName', 'status', 'createdAt'];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? (v[0] ?? '') : (v ?? ''));
@@ -38,6 +40,7 @@ export default async function SiswaPage({ searchParams }: { searchParams: Search
   const search = one(sp.search).slice(0, 100);
   const classId = one(sp.classId);
   const status = one(sp.status);
+  const ppdbLeadId = one(sp.ppdbLeadId);
   const sortBy = SORT_COLS.includes(one(sp.sortBy)) ? one(sp.sortBy) : 'createdAt';
   const sortOrder: 'asc' | 'desc' = one(sp.sortOrder) === 'asc' ? 'asc' : 'desc';
 
@@ -46,11 +49,15 @@ export default async function SiswaPage({ searchParams }: { searchParams: Search
   if (classId) qs.set('classId', classId);
   if (status) qs.set('status', status);
 
-  const [studentsData, classesData, withoutParentData] = await Promise.all([
+  const shouldLoadPpdbLead = canEdit && UUID_RE.test(ppdbLeadId);
+  const [studentsData, classesData, withoutParentData, ppdbLeadData] = await Promise.all([
     apiFetch<PaginatedResponse<StudentItem>>(`/students?${qs.toString()}`, token),
     apiFetch<{ data: { id: string; name: string }[] }>('/classes?limit=100', token),
     canEdit
       ? apiFetch<PaginatedResponse<WithoutParentItem>>('/students/without-parent?limit=100', token)
+      : Promise.resolve(null),
+    shouldLoadPpdbLead
+      ? apiFetch<PpdbEnrollmentLead>(`/ppdb/leads/${ppdbLeadId}`, token)
       : Promise.resolve(null),
   ]);
 
@@ -59,6 +66,7 @@ export default async function SiswaPage({ searchParams }: { searchParams: Search
   const classes = classesData?.data ?? [];
   const withoutParentStudents = withoutParentData?.data ?? [];
   const withoutParentTotal = withoutParentData?.total ?? 0;
+  const ppdbEnrollmentLead = ppdbLeadData?.status === 'accepted' ? ppdbLeadData : null;
 
   return (
     <SiswaTable
@@ -68,6 +76,7 @@ export default async function SiswaPage({ searchParams }: { searchParams: Search
       canEdit={canEdit}
       withoutParentStudents={withoutParentStudents}
       withoutParentTotal={withoutParentTotal}
+      ppdbEnrollmentLead={ppdbEnrollmentLead}
       query={{ page, limit: LIMIT, search, classId, status, sortBy, sortOrder }}
     />
   );
