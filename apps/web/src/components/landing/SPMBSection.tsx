@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { useEffect, useRef } from 'react';
 
-const SPMB_URL = 'https://taplink.cc/smkdarussalamsubah';
+const SPMB_URL = '/spmb';
 const WA_URL = 'https://wa.me/6287775564779';
 
 /**
@@ -16,7 +16,6 @@ const WA_URL = 'https://wa.me/6287775564779';
  */
 
 const REQUIREMENTS = [
-  { icon: '🪪', label: 'NISN' },
   { icon: '📋', label: 'Kartu Keluarga (KK)' },
   { icon: '🪪', label: 'KTP Orang Tua' },
   { icon: '📄', label: 'Akta Kelahiran' },
@@ -26,33 +25,33 @@ const REQUIREMENTS = [
 const STEPS = [
   {
     num: '01',
-    icon: '📂',
-    title: 'Siapkan Berkas',
-    desc: 'NISN, KK, KTP Ortu, Akta Kelahiran, dan Ijazah/SKL siap di tangan.',
+    icon: '✍️',
+    title: 'Daftar Awal',
+    desc: 'Isi data utama calon siswa, asal sekolah, jurusan minat, kontak wali, dan persetujuan data.',
   },
   {
     num: '02',
-    icon: '✍️',
-    title: 'Isi Biodata',
-    desc: 'Lengkap & benar sesuai data calon murid.',
+    icon: '📝',
+    title: 'Tinjau Data',
+    desc: 'Pastikan nama, gender, kontak WhatsApp, dan jurusan minat sudah benar sebelum dikirim.',
   },
   {
     num: '03',
-    icon: '📝',
-    title: '4 Bagian Formulir',
-    desc: '① Data Siswa → ② Program Studi → ③ Sekolah Asal → ④ Data Orang Tua. Klik Next tiap bagian.',
+    icon: '✅',
+    title: 'Kirim Formulir',
+    desc: 'Sistem membuat nomor pendaftaran awal. Simpan nomor ini untuk komunikasi dengan panitia.',
   },
   {
     num: '04',
-    icon: '✅',
-    title: 'Submit',
-    desc: 'Klik Submit setelah semua bagian terisi lengkap.',
+    icon: '📧',
+    title: 'Verifikasi Panitia',
+    desc: 'Panitia memeriksa daftar awal dan menghubungi WhatsApp utama bila perlu koreksi.',
   },
   {
     num: '05',
-    icon: '📧',
-    title: 'Bukti via Email',
-    desc: 'Formulir & Bukti Pendaftaran otomatis dikirim ke email pendaftar.',
+    icon: '📂',
+    title: 'Daftar Ulang',
+    desc: 'Dokumen seperti KK, KTP wali, Akta, dan Ijazah/SKL disiapkan setelah status diterima untuk daftar ulang.',
   },
 ] as const;
 
@@ -104,7 +103,7 @@ function useReveal() {
 }
 
 const spmbPhotos = [
-  { src: '/landing/spmb-1.png', alt: 'Preview seragam & suasana SPMB SMK Darussalam Subah 2026' },
+  { src: '/landing/spmb-1.png', alt: 'Preview seragam dan suasana SPMB SMK Darussalam Subah' },
   { src: '/landing/spmb-2.png', alt: 'Kegiatan pendaftaran SPMB SMK Darussalam Subah' },
  // { src: '/landing/spmb-3.png', alt: 'Siswa baru SMK Darussalam Subah' },
 ] as const;
@@ -120,22 +119,22 @@ export function SPMBSection() {
         {/* ── HEADER ── */}
         <div className="mb-10 text-center md:mb-14">
           <div className="mb-3 text-[12px] font-bold uppercase tracking-[0.12em] text-smk-emerald md:text-[13px]">
-            SPMB 2026/2027
+            SPMB 2027/2028
           </div>
           <h2 className="font-fraunces text-[clamp(26px,3.4vw,42px)] font-semibold leading-[1.1] tracking-tight text-smk-ink">
             Daftar sekarang, raih masa depanmu.
           </h2>
           <p className="mx-auto mt-3 max-w-[50ch] text-[14px] leading-relaxed text-smk-ink-soft md:text-[15px]">
-            Kuota terbatas 234 kursi — ikuti alur pendaftaran di bawah ini.
+            Daftar awal dibuka melalui DIIS. Dokumen disiapkan untuk tahap daftar ulang setelah verifikasi panitia.
           </p>
         </div>
 
-        {/* ── PERSYARATAN BERKAS ── */}
+        {/* ── BERKAS DAFTAR ULANG ── */}
         <div className="mb-12 md:mb-16">
           <h3 className="mb-5 text-center text-[13px] font-bold uppercase tracking-[0.1em] text-smk-emerald-deep md:text-[14px]">
-            Siapkan berkas ini terlebih dahulu
+            Berkas disiapkan untuk daftar ulang
           </h3>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 md:gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:gap-4">
             {REQUIREMENTS.map((req, i) => (
               <div
                 key={req.label}
@@ -211,50 +210,47 @@ export function SPMBSection() {
           </div>
         </div>
 
-        {/* ── BOTTOM: stats + CTA + foto SPMB ── */}
+        {/* ── BOTTOM: status + CTA + foto SPMB ── */}
         {/*
           P3: tata letak proporsional & seimbang.
-          Left: stat badges + tombol + persyaratan (konten padat).
+          Left: status badges + tombol + persyaratan (konten padat).
           Right: foto SPMB dalam grid 2-col, aspect konsisten, siap foto pengganti.
           Mobile: kol kanan di bawah kol kiri (default grid behavior).
         */}
         <div className="grid gap-8 md:grid-cols-[1.1fr_0.9fr] md:gap-12 lg:gap-16 items-start">
-          {/* Left: quota + CTA + persyaratan */}
+          {/* Left: status + CTA + persyaratan */}
           <div>
-            {/* Quota badges */}
             <div className="mb-6 flex flex-wrap gap-3">
               <div className="flex items-center gap-2.5 rounded-[14px] border border-smk-ink/10 bg-smk-sand px-4 py-3 md:rounded-[16px]">
-                <span className="text-2xl leading-none">🎓</span>
+                <span className="text-2xl leading-none">📝</span>
                 <div>
                   <b className="block font-fraunces text-[16px] font-semibold leading-none text-smk-ink md:text-[18px]">
-                    234 Kursi
+                    Daftar awal
                   </b>
-                  <small className="mt-0.5 block text-[11px] text-smk-ink-soft">Total kuota tersedia</small>
+                  <small className="mt-0.5 block text-[11px] text-smk-ink-soft">Data utama calon siswa</small>
                 </div>
               </div>
               <div className="flex items-center gap-2.5 rounded-[14px] border border-smk-ink/10 bg-smk-sand px-4 py-3 md:rounded-[16px]">
-                <span className="text-2xl leading-none">👥</span>
+                <span className="text-2xl leading-none">📲</span>
                 <div>
                   <b className="block font-fraunces text-[16px] font-semibold leading-none text-smk-ink md:text-[18px]">
-                    26 Siswa
+                    WhatsApp utama
                   </b>
-                  <small className="mt-0.5 block text-[11px] text-smk-ink-soft">Per kelas</small>
+                  <small className="mt-0.5 block text-[11px] text-smk-ink-soft">Panitia menghubungi wali</small>
                 </div>
               </div>
-              <div className="flex items-center gap-2 rounded-[14px] bg-smk-lime px-4 py-3">
-                <span className="text-xl leading-none">⏳</span>
-                <span className="text-[12px] font-bold text-[#22330a]">Terbatas!</span>
+              <div className="flex items-center gap-2.5 rounded-[14px] bg-smk-lime px-4 py-3">
+                <span className="text-xl leading-none">📂</span>
+                <span className="text-[12px] font-bold text-[#22330a]">Dokumen menyusul</span>
               </div>
             </div>
 
             <div className="flex flex-wrap gap-3">
               <a
                 href={SPMB_URL}
-                target="_blank"
-                rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 rounded-full bg-smk-emerald-deep px-5 py-3 text-[14px] font-semibold text-white shadow-sm shadow-smk-emerald-deep/30 transition-all hover:-translate-y-px hover:bg-smk-emerald md:px-6 md:py-3.5 md:text-[15px]"
               >
-                Daftar Online <span aria-hidden>→</span>
+                Daftar Awal <span aria-hidden>→</span>
               </a>
               <a
                 href={WA_URL}

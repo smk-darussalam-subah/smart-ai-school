@@ -41,6 +41,21 @@ const VALID_SUBMIT_DTO = {
   source: 'website' as const,
 };
 
+const VALID_SPMB_INTAKE_DTO = {
+  idempotencyKey: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
+  applicantRole: 'guardian' as const,
+  fullName: 'Alya Rahma Putri',
+  gender: 'P' as const,
+  nisn: '1234567890',
+  schoolOrigin: 'SMP Negeri 2 Subah',
+  interestMajor: 'TKJ' as const,
+  guardianName: 'Siti Aminah',
+  guardianRelation: 'Ibu',
+  phone: '6281234567890',
+  email: 'wali@example.sch.id',
+  consent: true,
+};
+
 const MOCK_LEAD = {
   id: 'lead-uuid-001',
   fullName: 'Ahmad Rizki Maulana',
@@ -60,9 +75,12 @@ const MOCK_LEAD = {
 // ── Mock PrismaService ────────────────────────────────────────────────────────
 
 function buildPrisma() {
-  return {
+  const prisma = {
+    $executeRaw: jest.fn(),
+    $transaction: jest.fn(),
     ppdbLead: {
       create: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -71,6 +89,8 @@ function buildPrisma() {
     },
     user: { findFirst: jest.fn() },
   };
+  prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => Promise<unknown> | unknown) => callback(prisma));
+  return prisma;
 }
 
 // ── PpdbService tests ─────────────────────────────────────────────────────────
@@ -102,29 +122,166 @@ describe('PpdbService', () => {
       expect(result).not.toHaveProperty('phone');
     });
 
-    it('_hp dan captchaToken TIDAK disimpan ke DB', async () => {
+    it('_hp TIDAK disimpan ke DB', async () => {
       prisma.ppdbLead.create.mockResolvedValue({ id: 'lead-uuid-001', status: 'new' });
 
-      await service.submitLead({ ...VALID_SUBMIT_DTO, _hp: '', captchaToken: undefined }, '1.2.3.4');
+      await service.submitLead({ ...VALID_SUBMIT_DTO, _hp: '' }, '1.2.3.4');
 
       const createArg = prisma.ppdbLead.create.mock.calls[0][0].data;
       expect(createArg).not.toHaveProperty('_hp');
-      expect(createArg).not.toHaveProperty('captchaToken');
-    });
-
-    it('captcha diperlukan jika PPDB_CAPTCHA_SECRET di-set', async () => {
-      process.env.PPDB_CAPTCHA_SECRET = 'test-secret';
-      try {
-        await expect(
-          service.submitLead(VALID_SUBMIT_DTO, '1.2.3.4'),
-        ).rejects.toThrow('Captcha token diperlukan');
-      } finally {
-        delete process.env.PPDB_CAPTCHA_SECRET;
-      }
     });
   });
 
   // ── findAll ──────────────────────────────────────────────────────────────────
+
+  describe('submitSpmbIntake', () => {
+    it('menyimpan intake 2027/2028 sebagai lead website + metadata V2 namespaced', async () => {
+      prisma.ppdbLead.findFirst.mockResolvedValue(null);
+      prisma.ppdbLead.create.mockResolvedValue({
+        id: '11111111-2222-4333-8444-555555555555',
+        status: 'new',
+        createdAt: new Date('2026-07-19T03:24:00.000Z'),
+      });
+
+      const result = await service.submitSpmbIntake(VALID_SPMB_INTAKE_DTO, '1.2.3.4');
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.$executeRaw).toHaveBeenCalled();
+      expect(prisma.ppdbLead.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            source: 'website',
+            notes: { contains: '"idempotencyKey":"aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"' },
+          }),
+          select: expect.objectContaining({ notes: true }),
+        }),
+      );
+      const createArg = prisma.ppdbLead.create.mock.calls[0][0].data;
+      expect(createArg).toMatchObject({
+        fullName: 'Alya Rahma Putri',
+        phone: '6281234567890',
+        schoolOrigin: 'SMP Negeri 2 Subah',
+        interestMajor: 'TKJ',
+        source: 'website',
+        status: 'new',
+      });
+      expect(createArg).not.toHaveProperty('_hp');
+
+      const notes = JSON.parse(createArg.notes);
+      expect(notes).toMatchObject({
+        kind: 'spmb_2027_2028_intake',
+        academicYear: '2027/2028',
+        idempotencyKey: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
+        payloadFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+        applicantRole: 'guardian',
+        gender: 'P',
+        guardianName: 'Siti Aminah',
+        guardianRelation: 'Ibu',
+        email: 'wali@example.sch.id',
+      });
+      expect(notes.consent.accepted).toBe(true);
+
+      expect(result).toEqual({
+        id: '11111111-2222-4333-8444-555555555555',
+        status: 'new',
+        registrationNo: 'SPMB-2027-11111111',
+        submittedAt: '2026-07-19T03:24:00.000Z',
+      });
+      expect(result).not.toHaveProperty('phone');
+      expect(result).not.toHaveProperty('email');
+    });
+
+    it('retry dengan idempotencyKey sama mengembalikan lead existing dan tidak create ulang', async () => {
+      prisma.ppdbLead.findFirst.mockResolvedValueOnce(null);
+      prisma.ppdbLead.create.mockResolvedValue({
+        id: '22222222-3333-4444-8555-666666666666',
+        status: 'new',
+        createdAt: new Date('2026-07-19T04:00:00.000Z'),
+      });
+      await service.submitSpmbIntake(VALID_SPMB_INTAKE_DTO, '1.2.3.4');
+      const existingNotes = prisma.ppdbLead.create.mock.calls[0][0].data.notes;
+      prisma.ppdbLead.create.mockClear();
+      prisma.ppdbLead.findFirst.mockResolvedValueOnce({
+        id: '22222222-3333-4444-8555-666666666666',
+        status: 'new',
+        createdAt: new Date('2026-07-19T04:00:00.000Z'),
+        notes: existingNotes,
+      });
+
+      const result = await service.submitSpmbIntake(VALID_SPMB_INTAKE_DTO, '1.2.3.4');
+
+      expect(prisma.ppdbLead.create).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        id: '22222222-3333-4444-8555-666666666666',
+        status: 'new',
+        registrationNo: 'SPMB-2027-22222222',
+        submittedAt: '2026-07-19T04:00:00.000Z',
+      });
+    });
+
+    it('retry dengan idempotencyKey sama tetapi payload berbeda ditolak 409', async () => {
+      prisma.ppdbLead.findFirst.mockResolvedValueOnce(null);
+      prisma.ppdbLead.create.mockResolvedValue({
+        id: '33333333-4444-4555-8666-777777777777',
+        status: 'new',
+        createdAt: new Date('2026-07-19T05:00:00.000Z'),
+      });
+      await service.submitSpmbIntake(VALID_SPMB_INTAKE_DTO, '1.2.3.4');
+      const existingNotes = prisma.ppdbLead.create.mock.calls[0][0].data.notes;
+      prisma.ppdbLead.create.mockClear();
+      prisma.ppdbLead.findFirst.mockResolvedValueOnce({
+        id: '33333333-4444-4555-8666-777777777777',
+        status: 'new',
+        createdAt: new Date('2026-07-19T05:00:00.000Z'),
+        notes: existingNotes,
+      });
+
+      await expect(
+        service.submitSpmbIntake(
+          {
+            ...VALID_SPMB_INTAKE_DTO,
+            fullName: 'Nama Berubah Setelah Timeout',
+          },
+          '1.2.3.4',
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.ppdbLead.create).not.toHaveBeenCalled();
+    });
+
+    it('concurrent retry dengan idempotencyKey sama membuat satu lead saat transaksi terserialisasi', async () => {
+      let storedLead: { id: string; status: string; createdAt: Date; notes: string } | null = null;
+      let transactionChain = Promise.resolve();
+      prisma.$transaction.mockImplementation((callback: (tx: typeof prisma) => Promise<unknown> | unknown) => {
+        const current = transactionChain.then(() => callback(prisma));
+        transactionChain = current.then(() => undefined, () => undefined);
+        return current;
+      });
+      prisma.ppdbLead.findFirst.mockImplementation(async () => storedLead);
+      prisma.ppdbLead.create.mockImplementation(async (args) => {
+        storedLead = {
+          id: '44444444-5555-4666-8777-888888888888',
+          status: 'new',
+          createdAt: new Date('2026-07-19T06:00:00.000Z'),
+          notes: args.data.notes,
+        };
+        return {
+          id: storedLead.id,
+          status: storedLead.status,
+          createdAt: storedLead.createdAt,
+        };
+      });
+
+      const [first, second] = await Promise.all([
+        service.submitSpmbIntake(VALID_SPMB_INTAKE_DTO, '1.2.3.4'),
+        service.submitSpmbIntake(VALID_SPMB_INTAKE_DTO, '1.2.3.4'),
+      ]);
+
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
+      expect(prisma.ppdbLead.create).toHaveBeenCalledTimes(1);
+      expect(first).toEqual(second);
+      expect(first.registrationNo).toBe('SPMB-2027-44444444');
+    });
+  });
 
   describe('findAll', () => {
     it('mengembalikan data + total dengan pagination default', async () => {
@@ -135,6 +292,7 @@ describe('PpdbService', () => {
 
       expect(result.data).toHaveLength(1);
       expect(result.total).toBe(1);
+      expect(prisma.ppdbLead.findMany.mock.calls[0][0].select).not.toHaveProperty('notes');
     });
 
     it('filter berdasarkan status', async () => {
@@ -184,6 +342,7 @@ describe('PpdbService', () => {
       const result = await service.findById('lead-uuid-001');
 
       expect(result).toEqual(MOCK_LEAD);
+      expect(prisma.ppdbLead.findUnique.mock.calls[0][0].select).toHaveProperty('notes', true);
     });
 
     it('lead tidak ditemukan → NotFoundException', async () => {
@@ -349,6 +508,12 @@ describe('PpdbController', () => {
           provide: PpdbService,
           useValue: {
             submitLead: jest.fn().mockResolvedValue({ id: 'lead-uuid-001', status: 'new' }),
+            submitSpmbIntake: jest.fn().mockResolvedValue({
+              id: 'lead-uuid-001',
+              status: 'new',
+              registrationNo: 'SPMB-2027-LEADUUID',
+              submittedAt: '2026-07-19T03:24:00.000Z',
+            }),
             findAll: jest.fn().mockResolvedValue({ data: [], total: 0, page: 1, limit: 20 }),
             findById: jest.fn().mockResolvedValue(MOCK_LEAD),
             updateStatus: jest.fn().mockResolvedValue(MOCK_LEAD),
@@ -414,6 +579,29 @@ describe('PpdbController', () => {
   });
 
   // ── GET /ppdb/leads ───────────────────────────────────────────────────────────
+
+  describe('submitSpmbIntake - POST /ppdb/spmb-2027/intake', () => {
+    it('valid payload didelegasikan ke service dengan IP yang sama', async () => {
+      const result = await controller.submitSpmbIntake(VALID_SPMB_INTAKE_DTO, MOCK_IP_REQUEST);
+
+      expect(service.submitSpmbIntake).toHaveBeenCalledWith(VALID_SPMB_INTAKE_DTO, '1.2.3.4');
+      expect(result).toHaveProperty('registrationNo');
+    });
+
+    it('honeypot intake terisi ditolak sebelum service', async () => {
+      let caught: unknown;
+      try {
+        await controller.submitSpmbIntake(
+          { ...VALID_SPMB_INTAKE_DTO, _hp: 'bot-filled-this' },
+          MOCK_IP_REQUEST,
+        );
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(BadRequestException);
+      expect(service.submitSpmbIntake).not.toHaveBeenCalled();
+    });
+  });
 
   describe('findAll', () => {
     it('delegasi ke service dengan query yang sudah di-parse', async () => {
@@ -541,6 +729,11 @@ describe('SubmitLeadSchema — hardening validasi', () => {
 
   it('field tidak dikenal (strict) → gagal validasi', () => {
     const result = schema.safeParse({ ...VALID_SUBMIT_DTO, badField: 'value' });
+    expect(result.success).toBe(false);
+  });
+
+  it('captchaToken ditolak karena provider CAPTCHA belum aktif di wave ini', () => {
+    const result = schema.safeParse({ ...VALID_SUBMIT_DTO, captchaToken: 'fake-token' });
     expect(result.success).toBe(false);
   });
 
