@@ -22,7 +22,12 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
-import { resolveSiswaId, resolveUserId, isElevated } from '../common/helpers/role-helpers';
+import {
+  resolveGuruClassIds,
+  resolveSiswaId,
+  resolveUserId,
+  isElevated,
+} from '../common/helpers/role-helpers';
 import { EVENTS, ReportDistributedPayload } from '../events/events.types';
 import {
   GenerateReportsDto,
@@ -75,11 +80,7 @@ export class ReportCardsService {
     if (this.isElevated(user)) return {};
 
     if (user.roles.includes('GURU')) {
-      const teacher = await this.prisma.teacher.findFirst({
-        where: { user: { keycloakId: user.keycloakId }, deletedAt: null },
-        select: { assignments: { select: { classId: true } } },
-      });
-      const classIds = [...new Set(teacher?.assignments.map((a) => a.classId) ?? [])];
+      const classIds = await resolveGuruClassIds(this.prisma, user.keycloakId);
       return { classId: { in: classIds } };
     }
     if (user.roles.includes('SISWA')) {
@@ -103,17 +104,20 @@ export class ReportCardsService {
 
   async findAll(query: ListReportsQueryDto, user: AuthUser) {
     const ownership = await this.ownershipWhere(user);
-    // SISWA juga hanya melihat yang sudah dibagikan
-    if (user.roles.includes('SISWA') && !this.isElevated(user)) {
-      (ownership as Record<string, unknown>)['status'] = 'distributed';
-    }
     const where: Prisma.ReportCardWhereInput = {
       ...ownership,
       ...(query.classId ? { classId: query.classId } : {}),
-      ...(query.status ? { status: query.status } : {}),
       ...(query.academicYear ? { academicYear: query.academicYear } : {}),
       ...(query.semester ? { semester: query.semester } : {}),
     };
+    if (
+      !this.isElevated(user) &&
+      (user.roles.includes('SISWA') || user.roles.includes('ORANG_TUA'))
+    ) {
+      where.status = 'distributed';
+    } else if (query.status) {
+      where.status = query.status;
+    }
 
     const skip = (query.page - 1) * query.limit;
     const [data, total] = await Promise.all([
@@ -279,8 +283,23 @@ export class ReportCardsService {
   // ── Rapor Section Endpoints (P23) ──────────────────────────────────────
 
   /** Verify ownership: SISWA → own data, ORTU → child data */
-  private async verifyAccess(studentId: string, user: AuthUser): Promise<void> {
-    if (isElevated(user) || user.roles.includes('GURU')) return;
+  private async verifyAccess(
+    studentId: string,
+    user: AuthUser,
+  ): Promise<void> {
+    if (isElevated(user)) return;
+    if (user.roles.includes('GURU')) {
+      const student = await this.prisma.student.findFirst({
+        where: { id: studentId, deletedAt: null },
+        select: { classId: true },
+      });
+      if (!student) throw new NotFoundException('Siswa tidak ditemukan');
+      const classIds = await resolveGuruClassIds(this.prisma, user.keycloakId);
+      if (!student.classId || !classIds.includes(student.classId)) {
+        throw new ForbiddenException('Guru hanya bisa mengakses rapor siswa pada kelas yang diampu');
+      }
+      return;
+    }
     if (user.roles.includes('SISWA')) {
       const ownId = await resolveSiswaId(this.prisma, user.keycloakId);
       if (ownId !== studentId) throw new ForbiddenException('Akses ditolak — bukan data Anda');
@@ -298,8 +317,36 @@ export class ReportCardsService {
   }
 
   /** Section B — Muatan Lokal grades for a student */
+  private async assertFamilyDistributedSection(
+    studentId: string,
+    year: string,
+    semester: number,
+    user: AuthUser,
+  ): Promise<void> {
+    if (
+      isElevated(user) ||
+      user.roles.includes('GURU') ||
+      (!user.roles.includes('SISWA') && !user.roles.includes('ORANG_TUA'))
+    ) {
+      return;
+    }
+    const distributed = await this.prisma.reportCard.findFirst({
+      where: {
+        studentId,
+        academicYear: year,
+        semester,
+        status: 'distributed',
+      },
+      select: { id: true },
+    });
+    if (!distributed) {
+      throw new ForbiddenException('Rapor belum dibagikan untuk periode ini');
+    }
+  }
+
   async findMuatanLokal(studentId: string, year: string, semester: number, user: AuthUser) {
     await this.verifyAccess(studentId, user);
+    await this.assertFamilyDistributedSection(studentId, year, semester, user);
     const grades = await this.prisma.grade.findMany({
       where: {
         studentId,
@@ -330,6 +377,7 @@ export class ReportCardsService {
   /** Section D — Ketidakhadiran summary for a student */
   async findAttendanceSummary(studentId: string, year: string, semester: number, user: AuthUser) {
     await this.verifyAccess(studentId, user);
+    await this.assertFamilyDistributedSection(studentId, year, semester, user);
     // Build date range from year + semester (semester 1 = Jul-Dec, semester 2 = Jan-Jun)
     const startDate = semester === 1 ? `${year}-07-01` : `${year}-01-01`;
     const endDate = semester === 1 ? `${year}-12-31` : `${year}-06-30`;
@@ -353,6 +401,7 @@ export class ReportCardsService {
   /** Section F — Deskripsi Perkembangan (auto-generated from grade trends) */
   async findDevelopmentDescription(studentId: string, year: string, semester: number, user: AuthUser) {
     await this.verifyAccess(studentId, user);
+    await this.assertFamilyDistributedSection(studentId, year, semester, user);
     const grades = await this.prisma.grade.findMany({
       where: { studentId, academicYear: year, semester },
       select: { score: true },
@@ -376,6 +425,7 @@ export class ReportCardsService {
   /** Section G — Pengesahan (homeroom teacher + principal info) */
   async findApproval(studentId: string, year: string, semester: number, user: AuthUser) {
     await this.verifyAccess(studentId, user);
+    await this.assertFamilyDistributedSection(studentId, year, semester, user);
     // Get student's class and homeroom teacher (wali kelas)
     const student = await this.prisma.student.findUnique({
       where: { id: studentId },

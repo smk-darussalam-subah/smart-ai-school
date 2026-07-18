@@ -8,7 +8,7 @@ import {
   BadRequestException, Body, Controller, Get, HttpCode, HttpStatus,
   Param, ParseUUIDPipe, Patch, Post, Query,
 } from '@nestjs/common';
-import { AuthUser } from '@smk/auth';
+import { AuthUser, UserRole } from '@smk/auth';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
@@ -98,18 +98,28 @@ export class ReportCardsController {
    * RolesGuard level handler memuat union; pemisahan presisi via service?
    * → TIDAK: dicek eksplisit di bawah agar fail-closed per aksi.
    */
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
-  @RequirePermission('report.read')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_KURIKULUM' as UserRole)
+  @RequirePermission(['report.read', 'report.review'])
   @Patch(':id/status')
   transition(
     @Param('id', ParseUUIDPipe) id: string,
     @Body(ZodPipe(TransitionSchema)) dto: TransitionDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const isReviewer = user.roles.some((r) => r === 'SUPER_ADMIN' || r === 'KEPALA_SEKOLAH');
+    const isReviewer = user.roles.some((r) =>
+      r === 'SUPER_ADMIN' || r === 'KEPALA_SEKOLAH' || r === 'WAKA_KURIKULUM'
+    );
+    const canDistribute = user.roles.some((r) =>
+      r === 'SUPER_ADMIN' || r === 'KEPALA_SEKOLAH' || r === 'TATA_USAHA'
+    );
+    if (dto.action === 'distribute' && !canDistribute) {
+      throw new BadRequestException(
+        `Aksi '${dto.action}' hanya untuk SUPER_ADMIN/KEPALA_SEKOLAH/TATA_USAHA`,
+      );
+    }
     if (dto.action !== 'distribute' && !isReviewer) {
       throw new BadRequestException(
-        `Aksi '${dto.action}' hanya untuk SUPER_ADMIN/KEPALA_SEKOLAH`,
+        `Aksi '${dto.action}' hanya untuk SUPER_ADMIN/KEPALA_SEKOLAH/WAKA_KURIKULUM`,
       );
     }
     return this.service.transition(id, dto, user);

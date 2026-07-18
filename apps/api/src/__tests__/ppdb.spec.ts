@@ -20,7 +20,7 @@ jest.mock('@smk/logger', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PpdbController } from '../ppdb/ppdb.controller';
 import { PpdbService } from '../ppdb/ppdb.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -69,6 +69,7 @@ function buildPrisma() {
       count: jest.fn(),
       groupBy: jest.fn(),
     },
+    user: { findFirst: jest.fn() },
   };
 }
 
@@ -216,15 +217,53 @@ describe('PpdbService', () => {
 
   // ── assignLead ────────────────────────────────────────────────────────────────
 
-  describe('assignLead', () => {
-    it('assign ke staff berhasil', async () => {
-      const updated = { ...MOCK_LEAD, assignedTo: 'staff-uuid-001' };
+  describe('updateStatus transitions', () => {
+    it('menolak lompat status new langsung accepted', async () => {
       prisma.ppdbLead.findUnique.mockResolvedValue(MOCK_LEAD);
+
+      await expect(
+        service.updateStatus('lead-uuid-001', { status: 'accepted' }),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.ppdbLead.update).not.toHaveBeenCalled();
+    });
+
+    it('paid ke accepted mengembalikan action enrollment eksplisit', async () => {
+      prisma.ppdbLead.findUnique.mockResolvedValue({ ...MOCK_LEAD, status: 'paid' });
+      prisma.ppdbLead.update.mockResolvedValue({ ...MOCK_LEAD, status: 'accepted' });
+
+      const result = await service.updateStatus('lead-uuid-001', { status: 'accepted' });
+
+      expect(result).toMatchObject({
+        status: 'accepted',
+        enrollmentRequired: true,
+        enrollmentAction: expect.objectContaining({ type: 'create_student' }),
+      });
+    });
+
+    it('status terminal accepted tidak bisa dikembalikan', async () => {
+      prisma.ppdbLead.findUnique.mockResolvedValue({ ...MOCK_LEAD, status: 'accepted' });
+
+      await expect(
+        service.updateStatus('lead-uuid-001', { status: 'contacted' }),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.ppdbLead.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('assignLead', () => {
+    it('assign ke staff TU aktif berhasil', async () => {
+      const updated = { ...MOCK_LEAD, assignedTo: 'user-uuid-tu' };
+      prisma.ppdbLead.findUnique.mockResolvedValue(MOCK_LEAD);
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'user-uuid-tu',
+        role: 'TATA_USAHA',
+        staff: { id: 'staff-uuid-001', deletedAt: null },
+      });
       prisma.ppdbLead.update.mockResolvedValue(updated);
 
-      const result = await service.assignLead('lead-uuid-001', { assignedTo: 'staff-uuid-001' });
+      const result = await service.assignLead('lead-uuid-001', { assignedTo: 'user-uuid-tu' });
 
-      expect(result.assignedTo).toBe('staff-uuid-001');
+      expect(result.assignedTo).toBe('user-uuid-tu');
     });
 
     it('un-assign (null) berhasil', async () => {
@@ -235,6 +274,34 @@ describe('PpdbService', () => {
       const result = await service.assignLead('lead-uuid-001', { assignedTo: null });
 
       expect(result.assignedTo).toBeNull();
+    });
+
+    it('assign ke guru ditolak meski user aktif', async () => {
+      prisma.ppdbLead.findUnique.mockResolvedValue(MOCK_LEAD);
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'user-uuid-guru',
+        role: 'GURU',
+        staff: { id: 'staff-uuid-guru', deletedAt: null },
+      });
+
+      await expect(
+        service.assignLead('lead-uuid-001', { assignedTo: 'user-uuid-guru' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.ppdbLead.update).not.toHaveBeenCalled();
+    });
+
+    it('assign ke user tanpa staff aktif ditolak', async () => {
+      prisma.ppdbLead.findUnique.mockResolvedValue(MOCK_LEAD);
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'user-uuid-tu',
+        role: 'TATA_USAHA',
+        staff: { id: 'staff-uuid-tu', deletedAt: new Date() },
+      });
+
+      await expect(
+        service.assignLead('lead-uuid-001', { assignedTo: 'user-uuid-tu' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.ppdbLead.update).not.toHaveBeenCalled();
     });
   });
 

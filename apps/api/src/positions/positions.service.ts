@@ -144,25 +144,6 @@ export class PositionsService {
     }
 
     let created: { id: string };
-    try {
-      created = await this.prisma.staffPosition.create({
-        data: {
-          staffId: staff.id,
-          positionId: dto.positionId,
-          academicYearId: dto.academicYearId,
-          majorId: dto.majorId ?? null,
-        },
-        select: { id: true },
-      });
-    } catch (err: unknown) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        throw new ConflictException('Penugasan ini sudah ada untuk tahun ajaran tersebut.');
-      }
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
-        throw new BadRequestException('Tahun ajaran atau jurusan tidak valid.');
-      }
-      throw err;
-    }
 
     // R-27: Segregation of Duties — check conflict with existing active positions.
     // SOFT WARNING: assignment tetap diizinkan, tapi return warning untuk UI.
@@ -173,7 +154,6 @@ export class PositionsService {
           staffId: staff.id,
           academicYearId: dto.academicYearId,
           isActive: true,
-          positionId: { not: dto.positionId }, // Exclude the one just created
         },
         select: { position: { select: { code: true } } },
       });
@@ -210,12 +190,36 @@ export class PositionsService {
     }
 
     // Terapkan izin jabatan sebagai override (grant=true) — hanya yang valid.
-    for (const pp of validPermissions) {
-      await this.prisma.userPermissionOverride.upsert({
-        where: { userId_permissionId: { userId: dto.userId, permissionId: pp.permissionId } },
-        update: { grant: true },
-        create: { userId: dto.userId, permissionId: pp.permissionId, grant: true },
+    try {
+      created = await this.prisma.$transaction(async (tx) => {
+        const assignment = await tx.staffPosition.create({
+          data: {
+            staffId: staff.id,
+            positionId: dto.positionId,
+            academicYearId: dto.academicYearId,
+            majorId: dto.majorId ?? null,
+          },
+          select: { id: true },
+        });
+
+        for (const pp of validPermissions) {
+          await tx.userPermissionOverride.upsert({
+            where: { userId_permissionId: { userId: dto.userId, permissionId: pp.permissionId } },
+            update: { grant: true },
+            create: { userId: dto.userId, permissionId: pp.permissionId, grant: true },
+          });
+        }
+
+        return assignment;
       });
+    } catch (err: unknown) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('Penugasan ini sudah ada untuk tahun ajaran tersebut.');
+      }
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
+        throw new BadRequestException('Tahun ajaran atau jurusan tidak valid.');
+      }
+      throw err;
     }
 
     // R-23: Sync position code sebagai Keycloak realm role (fail-soft).
@@ -255,24 +259,26 @@ export class PositionsService {
     const userId = sp.staff.userId;
     const permIds = sp.position.permissions.map((p) => p.permissionId);
 
-    await this.prisma.staffPosition.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.staffPosition.delete({ where: { id } });
 
-    if (permIds.length) {
-      // Izin yang masih diberikan oleh penugasan AKTIF lain milik user ini.
-      const remaining = await this.prisma.staffPosition.findMany({
-        where: { staff: { userId }, isActive: true },
-        select: { position: { select: { permissions: { select: { permissionId: true } } } } },
-      });
-      const stillGranted = new Set(
-        remaining.flatMap((r) => r.position.permissions.map((p) => p.permissionId)),
-      );
-      const toRemove = permIds.filter((pid) => !stillGranted.has(pid));
-      if (toRemove.length) {
-        await this.prisma.userPermissionOverride.deleteMany({
-          where: { userId, permissionId: { in: toRemove }, grant: true },
+      if (permIds.length) {
+        // Izin yang masih diberikan oleh penugasan AKTIF lain milik user ini.
+        const remaining = await tx.staffPosition.findMany({
+          where: { staff: { userId }, isActive: true },
+          select: { position: { select: { permissions: { select: { permissionId: true } } } } },
         });
+        const stillGranted = new Set(
+          remaining.flatMap((r) => r.position.permissions.map((p) => p.permissionId)),
+        );
+        const toRemove = permIds.filter((pid) => !stillGranted.has(pid));
+        if (toRemove.length) {
+          await tx.userPermissionOverride.deleteMany({
+            where: { userId, permissionId: { in: toRemove }, grant: true },
+          });
+        }
       }
-    }
+    });
 
     // R-23: Remove Keycloak realm role jika tidak ada penugasan aktif lain
     // dengan position code yang sama (fail-soft).

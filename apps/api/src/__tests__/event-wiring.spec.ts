@@ -502,10 +502,32 @@ describe('FinanceService — event producer (payment.received)', () => {
     prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-tu' });
   });
 
-  it('emit payment.received untuk status paid', async () => {
+  it('TIDAK emit saat setup manual dibuat meski DTO meminta status paid', async () => {
     prisma.sppPayment.create.mockResolvedValue(mockPayment('paid'));
 
     await service.createRecord(CREATE_DTO, TU_USER);
+
+    expect(prisma.sppPayment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'unpaid',
+          paidAt: null,
+        }),
+      }),
+    );
+    expect(emitter.emit).not.toHaveBeenCalled();
+  });
+
+  it('emit payment.received saat setup manual unpaid di-approve', async () => {
+    prisma.sppPayment.findUnique.mockResolvedValue({
+      id: PAY_UUID,
+      status: 'unpaid',
+      approvedBy: null,
+      approvedAt: null,
+    });
+    prisma.sppPayment.update.mockResolvedValue(mockPayment('paid'));
+
+    await service.approve(PAY_UUID, TU_USER);
 
     expect(emitter.emit).toHaveBeenCalledTimes(1);
     expect(emitter.emit).toHaveBeenCalledWith(
@@ -521,16 +543,12 @@ describe('FinanceService — event producer (payment.received)', () => {
     );
   });
 
-  it('emit payment.received untuk status late', async () => {
+  it('TIDAK emit untuk status late saat create karena pembayaran belum di-approve', async () => {
     prisma.sppPayment.create.mockResolvedValue(mockPayment('late'));
 
     await service.createRecord({ ...CREATE_DTO, status: 'late' as const }, TU_USER);
 
-    expect(emitter.emit).toHaveBeenCalledTimes(1);
-    expect(emitter.emit).toHaveBeenCalledWith(
-      EVENTS.PAYMENT_RECEIVED,
-      expect.objectContaining({ paymentId: PAY_UUID }),
-    );
+    expect(emitter.emit).not.toHaveBeenCalled();
   });
 
   it('TIDAK emit untuk status unpaid', async () => {

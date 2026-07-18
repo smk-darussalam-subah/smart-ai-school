@@ -8,7 +8,7 @@ export const CreateSppSchema = z
     month:     z.number().int().min(1).max(12),
     year:      z.number().int().min(2020).max(2100),
     amount:    z.number().positive(),
-    status:    z.enum(['unpaid', 'paid', 'late', 'waived']).optional().default('paid'),
+    status:    z.enum(['unpaid', 'paid', 'late', 'waived']).optional().default('unpaid'),
     receiptNo: z.string().max(50).optional(),
   })
   .strict();

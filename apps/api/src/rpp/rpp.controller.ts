@@ -7,7 +7,7 @@ import {
   BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus,
   Param, ParseUUIDPipe, Patch, Post, Query,
 } from '@nestjs/common';
-import { AuthUser } from '@smk/auth';
+import { AuthUser, UserRole } from '@smk/auth';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
@@ -64,7 +64,7 @@ export class RppController {
     return this.service.submit(id, user);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM' as UserRole)
   @RequirePermission('rpp.review')
   @Patch(':id/review')
   review(
