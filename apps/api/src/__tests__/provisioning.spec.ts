@@ -325,6 +325,10 @@ describe('ProvisioningService', () => {
         expect.objectContaining({ username: '+6281234567890' }),
       ]);
       expect(result.tempCredentials[0]!.tempPassword).toHaveLength(12);
+      expect(result.tempCredentials[0]!.tempPassword).toMatch(/[A-Z]/);
+      expect(result.tempCredentials[0]!.tempPassword).toMatch(/[a-z]/);
+      expect(result.tempCredentials[0]!.tempPassword).toMatch(/[2-9]/);
+      expect(result.tempCredentials[0]!.tempPassword).toMatch(/[!@#$%^&*?]/);
     });
 
     it('tempPassword tak pernah masuk argumen logger', async () => {

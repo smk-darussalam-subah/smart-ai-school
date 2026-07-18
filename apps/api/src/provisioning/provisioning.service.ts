@@ -38,13 +38,27 @@ function syntheticEmailOrtu(phoneE164: string): string {
 }
 
 function generateTempPassword(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  const bytes = randomBytes(12);
-  let result = '';
-  for (let i = 0; i < 12; i++) {
-    result += chars[bytes[i]! % chars.length];
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghjkmnpqrstuvwxyz';
+  const digit = '23456789';
+  const special = '!@#$%^&*?';
+  const all = upper + lower + digit + special;
+  const password = [
+    upper[randomBytes(1)[0]! % upper.length]!,
+    lower[randomBytes(1)[0]! % lower.length]!,
+    digit[randomBytes(1)[0]! % digit.length]!,
+    special[randomBytes(1)[0]! % special.length]!,
+  ];
+  const fillBytes = randomBytes(8);
+  for (let i = 0; i < fillBytes.length; i++) {
+    password.push(all[fillBytes[i]! % all.length]!);
   }
-  return result;
+  const shuffleBytes = randomBytes(password.length);
+  for (let i = password.length - 1; i > 0; i--) {
+    const j = shuffleBytes[i]! % (i + 1);
+    [password[i], password[j]] = [password[j]!, password[i]!];
+  }
+  return password.join('');
 }
 
 export interface TempCredential {
