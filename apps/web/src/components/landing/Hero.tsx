@@ -2,7 +2,7 @@
 import Image from 'next/image';
 import { ParallaxLayer } from './ParallaxLayer';
 
-const SPMB_URL = 'https://taplink.cc/smkdarussalamsubah';
+const SPMB_URL = '/spmb';
 const WA_URL = 'https://wa.me/6287775564779';
 
 /**
@@ -86,7 +86,7 @@ export function Hero() {
           {/* SPMB eyebrow pill */}
           <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[#e7f3ec] px-3.5 py-1.5 text-[12px] font-semibold text-smk-emerald-deep md:mb-6 md:text-[13px]">
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-smk-emerald-bright" />
-            SPMB 2026/2027 Telah Dibuka
+            SPMB 2027/2028 Daftar Awal Online
           </div>
 
           {/* H1 */}
@@ -108,11 +108,9 @@ export function Hero() {
           <div className="flex flex-wrap gap-3">
             <a
               href={SPMB_URL}
-              target="_blank"
-              rel="noopener noreferrer"
               className="inline-flex items-center gap-2 rounded-full bg-smk-emerald-deep px-5 py-3 text-[14px] font-semibold text-white shadow-sm shadow-smk-emerald-deep/30 transition-all hover:-translate-y-px hover:bg-smk-emerald md:px-6 md:py-3.5 md:text-[15px]"
             >
-              Daftar Sekarang <span aria-hidden>→</span>
+              Daftar Awal <span aria-hidden>→</span>
             </a>
             <a
               href={WA_URL}
