@@ -36,6 +36,7 @@ const STAFF_ROLES = ['GURU', 'TATA_USAHA', 'KEPALA_SEKOLAH'];
 
 export default async function KelasPage() {
   const session = await getServerSession(authOptions);
+  if (!session) redirect('/login');
   const roles: string[] = await getEffectiveRoles(session);
   if (!roles.includes('SUPER_ADMIN') && !roles.includes('KEPALA_SEKOLAH') && !roles.includes('TATA_USAHA')) {
     redirect('/dashboard');

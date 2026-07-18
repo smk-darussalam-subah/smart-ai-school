@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { TablePagination } from '@/components/ui/table-pagination';
 import { createClassAction, updateClassAction, deleteClassAction } from '../actions';
 import type { ClassRow, Major, StaffCandidate } from '../page';
+import { NO_WALI_KELAS_VALUE, waliKelasPayloadValue, waliKelasSelectValue } from '../kelas-ui';
 
 interface Props {
   classes: ClassRow[];
@@ -108,7 +109,7 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
   };
 
   const handleAssignAdvisor = async (classId: string, teacherId: string) => {
-    const result = await updateClassAction(classId, { teacherId: teacherId || null });
+    const result = await updateClassAction(classId, { teacherId: waliKelasPayloadValue(teacherId) });
     if (result.error) { toast.error(result.error); return; }
     toast.success('Wali kelas berhasil diperbarui.');
   };
@@ -187,14 +188,14 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
                   <td className="px-4 py-3">
                     {canManage ? (
                       <Select
-                      value={c.teacherId ?? ''}
+                      value={waliKelasSelectValue(c.teacherId)}
                       onValueChange={(v: string) => handleAssignAdvisor(c.id, v)}
                     >
                       <SelectTrigger className="h-8 w-44">
                         <SelectValue placeholder="— pilih wali —" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">— kosongkan —</SelectItem>
+                        <SelectItem value={NO_WALI_KELAS_VALUE}>— kosongkan —</SelectItem>
                         {teachers.map((t) => (
                           <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>
                         ))}
@@ -280,10 +281,13 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
             </div>
             <div>
               <Label htmlFor="teacherId">Wali Kelas (opsional)</Label>
-              <Select value={form.teacherId} onValueChange={(v: string) => setForm({ ...form, teacherId: v })}>
+              <Select
+                value={waliKelasSelectValue(form.teacherId)}
+                onValueChange={(v: string) => setForm({ ...form, teacherId: waliKelasPayloadValue(v) ?? '' })}
+              >
                 <SelectTrigger id="teacherId"><SelectValue placeholder="— pilih wali kelas —" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">— kosongkan —</SelectItem>
+                  <SelectItem value={NO_WALI_KELAS_VALUE}>— kosongkan —</SelectItem>
                   {teachers.map((t) => (<SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>))}
                 </SelectContent>
               </Select>

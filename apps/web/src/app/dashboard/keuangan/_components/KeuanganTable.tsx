@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { TablePagination } from '@/components/ui/table-pagination';
-import { approveSpp, recordSpp } from '../actions';
+import { approveSpp, recordSpp, searchStudentsForSppAction } from '../actions';
 import { isSppApprovable } from './spp-ui';
 
 interface SppPayment {
@@ -18,6 +18,13 @@ interface SppPayment {
   paidAt: string | null; receiptNo: string | null;
   approvedAt: string | null;
   student: { id: string; nis: string; user: { fullName: string } };
+}
+
+interface StudentOption {
+  id: string;
+  nis: string;
+  user: { fullName: string };
+  class?: { name: string } | null;
 }
 
 interface Props {
@@ -42,6 +49,12 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [formOpen, setFormOpen] = useState(false);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState<StudentOption | null>(null);
+  const [studentOptions, setStudentOptions] = useState<StudentOption[]>([]);
+  const [studentLoading, setStudentLoading] = useState(false);
+  const [studentError, setStudentError] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [approving, setApproving] = useState<string | null>(null);
@@ -55,6 +68,28 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
 
   // Reset ke halaman 1 saat filter berubah
   useEffect(() => { setCurrentPage(1); }, [search, statusFilter]);
+  useEffect(() => {
+    if (!formOpen) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setStudentLoading(true);
+      setStudentError('');
+      const result = await searchStudentsForSppAction(studentSearch);
+      if (cancelled) return;
+      setStudentLoading(false);
+      if (!result.success) {
+        setStudentOptions([]);
+        setStudentError(result.error ?? 'Gagal mencari siswa');
+        return;
+      }
+      const data = result.data as { data?: StudentOption[] } | undefined;
+      setStudentOptions(data?.data ?? []);
+    }, studentSearch.trim() ? 300 : 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [formOpen, studentSearch]);
 
   const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
@@ -65,7 +100,12 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
     const form = new FormData(e.currentTarget);
     const result = await recordSpp(form);
     setLoading(false);
-    if (result?.success) setFormOpen(false);
+    if (result?.success) {
+      setFormOpen(false);
+      setSelectedStudentId('');
+      setSelectedStudent(null);
+      setStudentSearch('');
+    }
     else setError(result?.error || 'Gagal');
   };
 
@@ -140,13 +180,59 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
 
       <TablePagination page={currentPage} limit={PAGE_SIZE} total={filtered.length} onPage={setCurrentPage} />
 
-      <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="sm:max-w-sm">
+      <Dialog open={formOpen} onOpenChange={(next: boolean) => { setFormOpen(next); if (!next) { setSelectedStudentId(''); setSelectedStudent(null); setStudentSearch(''); setStudentOptions([]); setStudentError(''); setError(''); } }}>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>Catat Pembayaran SPP</DialogTitle></DialogHeader>
           <form onSubmit={handleRecord} className="space-y-4">
             <div>
-              <Label htmlFor="studentId">Student ID</Label>
-              <Input id="studentId" name="studentId" placeholder="UUID siswa" required />
+              <Label htmlFor="student-search">Siswa</Label>
+              <Input
+                id="student-search"
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+                placeholder="Cari NIS, nama, atau kelas..."
+                className="mt-1"
+              />
+              <input type="hidden" name="studentId" value={selectedStudentId} />
+              {selectedStudent && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-smk-blue">
+                  <span className="font-semibold">{selectedStudent.user.fullName}</span>
+                  <span className="text-blue-700">({selectedStudent.nis})</span>
+                  <span className="text-xs text-blue-700">{selectedStudent.class?.name ?? 'Tanpa kelas'}</span>
+                  <button
+                    type="button"
+                    className="ml-auto text-xs font-semibold hover:underline"
+                    onClick={() => { setSelectedStudent(null); setSelectedStudentId(''); }}
+                  >
+                    Ganti
+                  </button>
+                </div>
+              )}
+              <div className="mt-2 max-h-48 overflow-y-auto rounded-md border">
+                {studentLoading ? (
+                  <div className="px-3 py-6 text-center text-sm text-muted-foreground">Mencari siswa...</div>
+                ) : studentError ? (
+                  <div className="px-3 py-6 text-center text-sm text-red-600">{studentError}</div>
+                ) : studentOptions.length === 0 ? (
+                  <div className="px-3 py-6 text-center text-sm text-muted-foreground">Tidak ada siswa yang cocok.</div>
+                ) : studentOptions.map((student) => (
+                  <button
+                    key={student.id}
+                    type="button"
+                    onClick={() => { setSelectedStudentId(student.id); setSelectedStudent(student); }}
+                    className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-blue-50 ${
+                      selectedStudentId === student.id ? 'bg-blue-50 text-smk-blue' : ''
+                    }`}
+                  >
+                    <span>
+                      <span className="font-semibold">{student.user.fullName}</span>
+                      <span className="ml-2 text-muted-foreground">({student.nis})</span>
+                    </span>
+                    <span className="text-xs text-muted-foreground">{student.class?.name ?? 'Tanpa kelas'}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">Menampilkan maksimal 20 hasil teratas per pencarian.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -165,7 +251,7 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
             {error && <p className="text-sm text-red-600">{error}</p>}
             <div className="flex justify-end gap-3 pt-2">
               <Button type="button" variant="outline" onClick={() => setFormOpen(false)}>Batal</Button>
-              <Button type="submit" disabled={loading} className="bg-smk-blue hover:bg-primary-700">{loading ? 'Menyimpan...' : 'Simpan'}</Button>
+              <Button type="submit" disabled={loading || !selectedStudentId} className="bg-smk-blue hover:bg-primary-700">{loading ? 'Menyimpan...' : 'Simpan'}</Button>
             </div>
           </form>
         </DialogContent>

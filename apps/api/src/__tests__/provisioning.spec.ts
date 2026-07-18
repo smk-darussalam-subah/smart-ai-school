@@ -23,7 +23,7 @@ jest.mock('../common/helpers/phone', () => {
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { ProvisioningService, Actor } from '../provisioning/provisioning.service';
-import { ProvisionStudentSchema, ProvisionUserSchema } from '../provisioning/dto/provision.dto';
+import { ProvisionStudentSchema, ProvisionStudentsBulkSchema, ProvisionUserSchema } from '../provisioning/dto/provision.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -325,6 +325,10 @@ describe('ProvisioningService', () => {
         expect.objectContaining({ username: '+6281234567890' }),
       ]);
       expect(result.tempCredentials[0]!.tempPassword).toHaveLength(12);
+      expect(result.tempCredentials[0]!.tempPassword).toMatch(/[A-Z]/);
+      expect(result.tempCredentials[0]!.tempPassword).toMatch(/[a-z]/);
+      expect(result.tempCredentials[0]!.tempPassword).toMatch(/[2-9]/);
+      expect(result.tempCredentials[0]!.tempPassword).toMatch(/[!@#$%^&*?]/);
     });
 
     it('tempPassword tak pernah masuk argumen logger', async () => {
@@ -528,6 +532,79 @@ describe('ProvisioningService', () => {
   });
 
   // ── 2J-4: ProvisionUserSchema (gender + NIY/status per-role) ─────────────────
+
+  describe('bulkProvisionStudents', () => {
+    it('baris valid sukses dan baris invalid gagal tanpa menghentikan import', async () => {
+      const kc = mockKc();
+      let createCount = 0;
+      kc.createUser.mockImplementation(() => Promise.resolve(`kc-bulk-${++createCount}`));
+      kc.findByUsername.mockResolvedValue(null);
+      kc.assignRealmRole.mockResolvedValue(undefined);
+      kc.setTempPassword.mockResolvedValue(undefined);
+
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue(null);
+      prisma.student.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockImplementation((args: { data: Record<string, unknown> }) =>
+        Promise.resolve({ ...args.data, id: `u-${args.data.keycloakId}`, keycloakId: args.data.keycloakId }),
+      );
+      prisma.student.create.mockResolvedValue({ id: 'st-bulk', nis: '2026001' });
+
+      const svc = await buildService(kc, prisma);
+      const result = await svc.bulkProvisionStudents([
+        {
+          siswa: { nis: '2026001', fullName: 'Siswa Bulk', gender: 'L', joinedAt: '2026-07-15', status: 'active' },
+          ortu: { name: 'Wali Bulk', phone: '+6281234567890' },
+          consent: true,
+        },
+        {
+          siswa: { nis: '2026002', fullName: 'Tanpa Consent' },
+          ortu: { name: 'Wali', phone: '+6289876543210' },
+        },
+      ], SA_ACTOR);
+
+      expect(result.summary).toEqual({ ok: 1, fail: 1, total: 2 });
+      expect(result.results[0]).toEqual(expect.objectContaining({ index: 0, status: 'ok' }));
+      expect(result.results[1]).toEqual(expect.objectContaining({ index: 1, status: 'error' }));
+      expect(kc.createUser).toHaveBeenCalledTimes(2);
+      expect(prisma.student.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            nis: '2026001',
+            joinedAt: new Date('2026-07-15'),
+            status: 'active',
+          }),
+        }),
+      );
+    });
+
+    it('NIS duplikat dalam request ditolak sebelum Keycloak dipanggil', async () => {
+      const kc = mockKc();
+      const prisma = mockPrisma();
+      const svc = await buildService(kc, prisma);
+
+      const row = {
+        siswa: { nis: '2026999', fullName: 'Duplikat Bulk' },
+        ortu: { name: 'Wali', phone: '+6281234567890' },
+        consent: true,
+      };
+      const result = await svc.bulkProvisionStudents([row, row], SA_ACTOR);
+
+      expect(result.summary).toEqual({ ok: 0, fail: 2, total: 2 });
+      expect(result.results.every((item) => item.error?.includes('duplikat'))).toBe(true);
+      expect(kc.createUser).not.toHaveBeenCalled();
+    });
+
+    it('schema bulk siswa membatasi 100 baris per request', () => {
+      const rows = Array.from({ length: 101 }, (_, i) => ({
+        siswa: { nis: `2026${i}`, fullName: `Siswa ${i}` },
+        ortu: { name: 'Wali', phone: '+6281234567890' },
+        consent: true,
+      }));
+
+      expect(ProvisionStudentsBulkSchema.safeParse({ students: rows }).success).toBe(false);
+    });
+  });
 
   describe('ProvisionUserSchema — validasi 2J-4', () => {
     const guru = {
