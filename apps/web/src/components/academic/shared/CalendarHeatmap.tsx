@@ -52,7 +52,7 @@ export function CalendarHeatmap({
           if (cell.status === 'empty') {
             return <div key={i} className="aspect-square rounded-[5px] bg-transparent" aria-hidden />;
           }
-          const isToday = todayDay != null && cell.day === todayDay;
+          const isToday = todayDay != null && cell.inMonth !== false && cell.day === todayDay;
           const interactive = clickable && REAL_ATTENDANCE_STATUSES.includes(cell.status);
           const label = `${cell.day} — ${ATTENDANCE_LABELS[cell.status]}`;
           return (

@@ -166,42 +166,77 @@ describe('generateCalendar — struktur, tanpa mengarang status', () => {
   const firstDow = new Date(Y, M, 1).getDay();
   const daysInMonth = new Date(Y, M + 1, 0).getDate();
 
-  it('padding awal = firstDow sel kosong', () => {
+  it('membangun grid minggu penuh dengan tanggal luar bulan', () => {
     const cells = generateCalendar(Y, M);
-    const lead = cells.slice(0, firstDow);
-    expect(lead).toHaveLength(firstDow);
-    expect(lead.every((c) => c.status === 'empty' && c.day === 0)).toBe(true);
-    expect(cells).toHaveLength(firstDow + daysInMonth);
+    const visibleCellCount = Math.ceil((firstDow + daysInMonth) / 7) * 7;
+    expect(cells).toHaveLength(visibleCellCount);
+    expect(cells.slice(0, firstDow).every((c) => c.status === 'outside' && !c.inMonth)).toBe(true);
+    expect(cells.filter((c) => c.inMonth)).toHaveLength(daysInMonth);
+    expect(cells[0]).toMatchObject({ day: 31, status: 'outside', date: '2026-05-31', inMonth: false });
   });
 
-  it('semua hari Minggu = empty (libur)', () => {
+  it('semua hari Minggu bulan berjalan = holiday, bukan sel kosong', () => {
     const cells = generateCalendar(Y, M);
     for (const c of cells) {
-      if (c.day === 0) continue;
-      const dow = (c.day + firstDow - 1) % 7;
-      if (dow === 0) expect(c.status).toBe('empty');
+      if (c.inMonth && c.dayOfWeek === 0) {
+        expect(c.status).toBe('holiday');
+        expect(c.holidayName).toBe('Minggu');
+      }
     }
   });
 
   it('tanggal > todayDay = future; hari sekolah tanpa data = none', () => {
     const cells = generateCalendar(Y, M, { todayDay: 15 });
-    const d20 = cells.find((c) => c.day === 20 && c.status !== 'empty');
+    const d20 = cells.find((c) => c.inMonth && c.day === 20);
     // 20 Juni 2026 adalah Sabtu (bukan Minggu) → future
     expect(d20?.status).toBe('future');
-    const d10 = cells.find((c) => c.day === 10);
-    const dow10 = (10 + firstDow - 1) % 7;
-    if (dow10 !== 0) expect(d10?.status).toBe('none');
+    const d10 = cells.find((c) => c.inMonth && c.day === 10);
+    expect(d10?.status).toBe('none');
   });
 
-  it('mengisi status NYATA dari statusByDay (tak mengarang)', () => {
-    const cells = generateCalendar(Y, M, { todayDay: 28, statusByDay: { 2: 'hadir', 3: 'alpha' } });
-    expect(cells.find((c) => c.day === 2)?.status).toBe('hadir');
-    expect(cells.find((c) => c.day === 3)?.status).toBe('alpha');
+  it('mengisi status NYATA dari statusByDate (tak mengarang)', () => {
+    const cells = generateCalendar(Y, M, {
+      todayDay: 28,
+      statusByDate: { '2026-06-02': 'hadir', '2026-06-03': 'alpha' },
+    });
+    expect(cells.find((c) => c.inMonth && c.day === 2)?.status).toBe('hadir');
+    expect(cells.find((c) => c.inMonth && c.day === 3)?.status).toBe('alpha');
   });
 
-  it('mendukung Map untuk statusByDay', () => {
-    const m = new Map<number, 'hadir' | 'izin'>([[4, 'izin']]);
-    const cells = generateCalendar(Y, M, { todayDay: 28, statusByDay: m });
-    expect(cells.find((c) => c.day === 4)?.status).toBe('izin');
+  it('mendukung Map untuk statusByDate', () => {
+    const m = new Map<string, 'hadir' | 'izin'>([['2026-06-04', 'izin']]);
+    const cells = generateCalendar(Y, M, { todayDay: 28, statusByDate: m });
+    expect(cells.find((c) => c.inMonth && c.day === 4)?.status).toBe('izin');
+  });
+
+  it('tidak menukar status antarbulan yang punya nomor hari sama', () => {
+    const cells = generateCalendar(Y, M, {
+      todayDay: 28,
+      statusByDate: {
+        '2026-05-02': 'alpha',
+        '2026-06-02': 'hadir',
+        '2026-07-02': 'sakit',
+      },
+    });
+    expect(cells.find((c) => c.inMonth && c.day === 2)?.status).toBe('hadir');
+    expect(cells.find((c) => c.date === '2026-07-02')).toMatchObject({
+      status: 'outside',
+      inMonth: false,
+    });
+  });
+
+  it('menandai rentang libur kalender sebagai holiday tanpa mengarang presensi', () => {
+    const cells = generateCalendar(Y, M, {
+      todayDay: 28,
+      holidays: [{ start: '2026-06-17', end: '2026-06-18', name: 'Libur Nasional' }],
+    });
+    expect(cells.find((c) => c.inMonth && c.day === 17)).toMatchObject({
+      status: 'holiday',
+      holidayName: 'Libur Nasional',
+    });
+    expect(cells.find((c) => c.inMonth && c.day === 18)).toMatchObject({
+      status: 'holiday',
+      holidayName: 'Libur Nasional',
+    });
   });
 });

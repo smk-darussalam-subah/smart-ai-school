@@ -35,7 +35,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
 
   // Derived stats
   const avgNilai = useMemo(() => {
-    if (grades.length === 0) return 0;
+    if (grades.length === 0) return null;
     return Math.round(grades.reduce((a: number, b) => a + b.rata, 0) / grades.length * 10) / 10;
   }, [grades]);
 
@@ -43,10 +43,12 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
   const tuntasCount = useMemo(() => grades.filter((g) => g.rata >= g.kktp).length, [grades]);
   const earnedBadges = useMemo(() => badges.filter((b) => b.earned).length, [badges]);
   const activeModul = useMemo(() => modules.find((m) => m.status === 'Aktif'), [modules]);
+  const hasAttendance = (kehStats?.total ?? 0) > 0;
 
   // Daily quest progress
   const qDone = quest.tasks.filter((t) => t.done).length;
-  const qPct = Math.round((qDone / quest.tasks.length) * 100);
+  const qTotal = quest.tasks.length;
+  const qPct = qTotal > 0 ? Math.round((qDone / qTotal) * 100) : 0;
   const qCirc = 2 * Math.PI * 22;
 
   // Today's schedule — resolveSchedule uses API data if available, falls back to SIM
@@ -83,7 +85,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
             )}
           </div>
           <button
-            onClick={() => showToast('Daily Quest: Selesaikan 2 modul + 1 tugas hari ini!')}
+            onClick={() => showToast(qTotal > 0 ? 'Daily Quest: Selesaikan quest hari ini!' : 'Daily Quest belum tersedia hari ini.')}
             className="relative z-10 flex-shrink-0 text-center"
             aria-label="Daily Quest"
           >
@@ -108,7 +110,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
               </div>
             </div>
             <div className="mt-1 text-[7.5px] font-extrabold uppercase tracking-wider text-[var(--muted)]">
-              {qDone}/{quest.tasks.length} Quest
+              {qDone}/{qTotal} Quest
             </div>
           </button>
         </div>
@@ -124,11 +126,17 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
             <UserCheck className="h-4 w-4" />
           </div>
           <div className="text-xl font-extrabold tracking-tight">
-            {kehStats?.pct ?? 92.8}<small className="text-sm font-bold text-[var(--muted)]">%</small>
+            {hasAttendance ? (
+              <>
+                {kehStats.pct}<small className="text-sm font-bold text-[var(--muted)]">%</small>
+              </>
+            ) : '—'}
           </div>
           <div className="mt-0.5 text-[10.5px] font-bold text-[var(--muted)]">Kehadiran</div>
-          <div className="mt-0.5 text-[10px] font-extrabold text-emerald-500">
-            {xp.streakDays != null && xp.streakDays > 0 ? `▲ ${xp.streakDays} hari streak` : '▲ tercatat'}
+          <div className={`mt-0.5 text-[10px] font-extrabold ${hasAttendance ? 'text-emerald-500' : 'text-[var(--muted)]'}`}>
+            {hasAttendance
+              ? xp.streakDays != null && xp.streakDays > 0 ? `+ ${xp.streakDays} hari streak` : 'tercatat'
+              : 'belum ada presensi'}
           </div>
         </button>
 
@@ -139,10 +147,10 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
           <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/12 text-violet-500">
             <TrendingUp className="h-4 w-4" />
           </div>
-          <div className="text-xl font-extrabold tracking-tight">{avgNilai}</div>
+          <div className="text-xl font-extrabold tracking-tight">{avgNilai !== null ? avgNilai : '—'}</div>
           <div className="mt-0.5 text-[10.5px] font-bold text-[var(--muted)]">Rata² Nilai</div>
-          <div className={`mt-0.5 text-[10px] font-extrabold ${avgNilai >= 75 ? 'text-emerald-500' : 'text-rose-500'}`}>
-            {tuntasCount}/{grades.length} tuntas
+          <div className={`mt-0.5 text-[10px] font-extrabold ${avgNilai === null ? 'text-[var(--muted)]' : avgNilai >= 75 ? 'text-emerald-500' : 'text-rose-500'}`}>
+            {grades.length > 0 ? `${tuntasCount}/${grades.length} tuntas` : 'belum ada nilai'}
           </div>
         </button>
 
@@ -155,7 +163,9 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
           </div>
           <div className="text-xl font-extrabold tracking-tight">{pendingTasks.length}</div>
           <div className="mt-0.5 text-[10.5px] font-bold text-[var(--muted)]">Tugas Pending</div>
-          <div className="mt-0.5 text-[10px] font-extrabold text-rose-500">▼ perlu dikerjakan</div>
+          <div className={`mt-0.5 text-[10px] font-extrabold ${pendingTasks.length > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+            {pendingTasks.length > 0 ? 'perlu dikerjakan' : 'tidak ada tugas'}
+          </div>
         </button>
 
         <button
@@ -167,7 +177,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
           </div>
           <div className="text-xl font-extrabold tracking-tight">{earnedBadges}</div>
           <div className="mt-0.5 text-[10.5px] font-bold text-[var(--muted)]">Badge Earned</div>
-          <div className="mt-0.5 text-[10px] font-extrabold text-emerald-500">▲ Level {xp.level}</div>
+          <div className="mt-0.5 text-[10px] font-extrabold text-emerald-500">Level {xp.level}</div>
         </button>
       </div>
 

@@ -236,14 +236,13 @@ export function attCalendarFromApi(attendance: AttendanceItem[], todayDay: numbe
   const year = now.getFullYear();
   const monthIndex0 = now.getMonth();
 
-  const statusByDay: Record<number, 'hadir' | 'izin' | 'sakit' | 'alpha'> = {};
+  const statusByDate: Record<string, 'hadir' | 'izin' | 'sakit' | 'alpha'> = {};
   for (const a of attendance) {
-    const d = new Date(a.date);
-    if (Number.isNaN(d.getTime())) continue;
-    const day = d.getUTCDate();
+    const date = a.date.slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
     // Entri terakhir per hari menang (asumsi array terurut waktu; bila tidak, tetap konsisten).
-    statusByDay[day] = a.status;
+    statusByDate[date] = a.status;
   }
 
-  return generateCalendar(year, monthIndex0, { todayDay, statusByDay });
+  return generateCalendar(year, monthIndex0, { todayDay, statusByDate });
 }

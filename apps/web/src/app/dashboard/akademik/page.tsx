@@ -26,6 +26,15 @@ export interface SubjectItem { id: string; code: string; name: string; isActive:
 
 interface ActiveSemester { number: number; academicYear: { code: string } }
 
+function monthBounds(year: number, monthIndex0: number): { dateFrom: string; dateTo: string } {
+  const month = String(monthIndex0 + 1).padStart(2, '0');
+  const lastDay = new Date(year, monthIndex0 + 1, 0).getDate();
+  return {
+    dateFrom: `${year}-${month}-01`,
+    dateTo: `${year}-${month}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
 export default async function AkademikPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
@@ -61,9 +70,14 @@ export default async function AkademikPage() {
     // Fetch siswa-specific data
     // Note: studentId lookup from keycloakId — backend should resolve this
     const studentId = session.keycloakId ?? '';
+    const now = new Date();
+    const attendanceMonth = monthBounds(now.getFullYear(), now.getMonth());
     const [gradesRes, attendanceRes, scheduleRes, announcementsRes, badgesRes, xpRes, leaderboardRes, assignmentsRes, modulesRes, cpRes, attStatsRes] = await Promise.all([
       apiFetch<PaginatedResponse<GradeItem>>(`/grades?studentId=${studentId}&limit=100`, token),
-      apiFetch<PaginatedResponse<AttendanceItem>>(`/attendance?studentId=${studentId}&limit=200`, token),
+      apiFetch<PaginatedResponse<AttendanceItem>>(
+        `/attendance?dateFrom=${attendanceMonth.dateFrom}&dateTo=${attendanceMonth.dateTo}&limit=200`,
+        token,
+      ),
       apiFetch<{ data: ScheduleItem[] }>(`/schedules?studentId=${studentId}&limit=100`, token),
       apiFetch<{ data: { id: string; title: string; createdAt: string }[] }>('/announcements?limit=5', token),
       // Wave 3 API integration (P19) — fail-soft, empty if null

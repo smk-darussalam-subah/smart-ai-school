@@ -535,6 +535,34 @@ export async function fetchPersonalCalendar(): Promise<{ success: boolean; data?
   return { success: true, data: r.data as { className: string; schedule: unknown[]; events: unknown[] } };
 }
 
+type StudentAttendanceMonthItem = {
+  id: string;
+  studentId: string;
+  classId: string;
+  date: string;
+  status: 'hadir' | 'izin' | 'sakit' | 'alpha';
+  notes: string | null;
+};
+
+/** Fetch attendance rows for the viewed month. SISWA ownership is enforced by API. */
+export async function fetchStudentAttendanceMonth(
+  year: number,
+  monthIndex0: number,
+): Promise<{ success: boolean; data?: StudentAttendanceMonthItem[]; error?: string }> {
+  if (!Number.isInteger(year) || !Number.isInteger(monthIndex0) || monthIndex0 < 0 || monthIndex0 > 11) {
+    return { success: false, error: 'Bulan kehadiran tidak valid.' };
+  }
+
+  const month = String(monthIndex0 + 1).padStart(2, '0');
+  const lastDay = new Date(year, monthIndex0 + 1, 0).getDate();
+  const dateFrom = `${year}-${month}-01`;
+  const dateTo = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+  const r = await apiCall(`/attendance?dateFrom=${dateFrom}&dateTo=${dateTo}&limit=200`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  const body = r.data as { data?: StudentAttendanceMonthItem[] };
+  return { success: true, data: body.data ?? [] };
+}
+
 /** B3: Fetch learning timeline for siswa/ortu. */
 export async function fetchTimeline(): Promise<{ success: boolean; data?: Array<{ date: string; type: string; title: string; description: string; subject?: string }>; error?: string }> {
   const r = await apiCall('/student-dashboard/timeline', 'GET');
