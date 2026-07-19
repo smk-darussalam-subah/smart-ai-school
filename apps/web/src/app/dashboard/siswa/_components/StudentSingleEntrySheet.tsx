@@ -72,9 +72,12 @@ export default function StudentSingleEntrySheet({ open, onOpenChange, classes }:
       setError('Konfirmasi persetujuan data wajib dicentang.');
       return;
     }
+    if (!classId) {
+      setError('Kelas wajib dipilih sebelum akun siswa dibuat.');
+      return;
+    }
     setSubmitting(true);
-    const siswa: Record<string, unknown> = { nis, fullName, gender, joinedAt, status };
-    if (classId) siswa.classId = classId;
+    const siswa: Record<string, unknown> = { nis, fullName, gender, classId, joinedAt, status };
     const body: Record<string, unknown> = {
       siswa,
       ortu: { name: parentName, phone: parentPhone, ...(parentEmail ? { email: parentEmail } : {}) },
@@ -148,11 +151,11 @@ export default function StudentSingleEntrySheet({ open, onOpenChange, classes }:
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Kelas</Label>
+                  <Label>Kelas <span className="text-red-600">*</span></Label>
                   <Select value={classId || 'none'} onValueChange={(value: string) => setClassId(value === 'none' ? '' : value)}>
                     <SelectTrigger><SelectValue placeholder="Pilih kelas" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Belum ditentukan</SelectItem>
+                      <SelectItem value="none" disabled>Pilih kelas</SelectItem>
                       {classes.map((kelas) => (
                         <SelectItem key={kelas.id} value={kelas.id}>{kelas.name}</SelectItem>
                       ))}
@@ -208,7 +211,7 @@ export default function StudentSingleEntrySheet({ open, onOpenChange, classes }:
         <SheetFooter className="mt-auto gap-2 pt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Tutup</Button>
           {credentials.length === 0 && (
-            <Button onClick={submit} disabled={submitting || !nis || !fullName || !parentName || !parentPhone || !consent} className="bg-smk-blue hover:bg-primary-700">
+            <Button onClick={submit} disabled={submitting || !nis || !fullName || !classId || !parentName || !parentPhone || !consent} className="bg-smk-blue hover:bg-primary-700">
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Simpan Siswa
             </Button>

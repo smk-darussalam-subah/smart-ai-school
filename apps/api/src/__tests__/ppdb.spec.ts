@@ -292,7 +292,22 @@ describe('PpdbService', () => {
 
       expect(result.data).toHaveLength(1);
       expect(result.total).toBe(1);
-      expect(prisma.ppdbLead.findMany.mock.calls[0][0].select).not.toHaveProperty('notes');
+      expect(prisma.ppdbLead.findMany.mock.calls[0][0].select).toHaveProperty('notes', true);
+      expect(result.data[0]).not.toHaveProperty('notes');
+    });
+
+    it('accepted lead yang sudah enrolled tidak mengirim CTA enrollment ulang', async () => {
+      prisma.ppdbLead.findMany.mockResolvedValue([{
+        ...MOCK_LEAD,
+        status: 'accepted',
+        notes: '{"enrollment":{"studentId":"student-1"}}',
+      }]);
+      prisma.ppdbLead.count.mockResolvedValue(1);
+
+      const result = await service.findAll({ page: 1, limit: 20 });
+
+      expect(result.data[0]).not.toHaveProperty('enrollmentAction');
+      expect(result.data[0]).not.toHaveProperty('notes');
     });
 
     it('filter berdasarkan status', async () => {

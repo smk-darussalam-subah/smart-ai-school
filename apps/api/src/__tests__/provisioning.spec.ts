@@ -33,6 +33,8 @@ import { logger } from '@smk/logger';
 
 const SA_ACTOR: Actor = { keycloakId: 'kc-sa', roles: ['SUPER_ADMIN'] as UserRole[] };
 const TU_ACTOR: Actor = { keycloakId: 'kc-tu', roles: ['TATA_USAHA'] as UserRole[] };
+const CLASS_ID = '11111111-1111-4111-8111-111111111111';
+const PPDB_LEAD_ID = '22222222-2222-4222-8222-222222222222';
 
 function mockKc() {
   return {
@@ -68,6 +70,10 @@ interface PrismaMock {
     findUnique: jest.Mock;
     create: jest.Mock;
   };
+  ppdbLead: {
+    findUnique: jest.Mock;
+    update: jest.Mock;
+  };
   $transaction: jest.Mock;
 }
 
@@ -91,6 +97,10 @@ function mockPrisma(): PrismaMock {
     staff: {
       findUnique: jest.fn(),
       create: jest.fn(),
+    },
+    ppdbLead: {
+      findUnique: jest.fn(),
+      update: jest.fn(),
     },
     $transaction: jest.fn(),
   };
@@ -384,7 +394,7 @@ describe('ProvisioningService', () => {
       const svc = await buildService(kc, prisma);
 
       const result = await svc.provisionStudent({
-        siswa: { nis: '12345', fullName: 'Siswa Baru' },
+        siswa: { nis: '12345', fullName: 'Siswa Baru', classId: CLASS_ID },
         ortu: { name: 'Ortu Baru', phone: '+6281234567890' },
         consent: true,
       }, SA_ACTOR);
@@ -413,7 +423,7 @@ describe('ProvisioningService', () => {
       const svc = await buildService(kc, prisma);
 
       const result = await svc.provisionStudent({
-        siswa: { nis: '54321', fullName: 'Siswa Exist' },
+        siswa: { nis: '54321', fullName: 'Siswa Exist', classId: CLASS_ID },
         ortu: { name: 'Ortu Exist', phone: '+6281234567890' },
         reuseParentByPhone: true,
         consent: true,
@@ -435,7 +445,7 @@ describe('ProvisioningService', () => {
 
       await expect(
         svc.provisionStudent({
-          siswa: { nis: '11111', fullName: 'Duplikat' },
+          siswa: { nis: '11111', fullName: 'Duplikat', classId: CLASS_ID },
           ortu: { name: 'Ortu', phone: '+6281234567890' },
           consent: true,
         }, SA_ACTOR),
@@ -462,7 +472,7 @@ describe('ProvisioningService', () => {
 
       await expect(
         svc.provisionStudent({
-          siswa: { nis: '99999', fullName: 'Fail' },
+          siswa: { nis: '99999', fullName: 'Fail', classId: CLASS_ID },
           ortu: { name: 'Ortu', phone: '+6281234567890' },
           consent: true,
         }, SA_ACTOR),
@@ -489,7 +499,7 @@ describe('ProvisioningService', () => {
       const svc = await buildService(kc, prisma);
 
       await svc.provisionStudent({
-        siswa: { nis: '2024001', fullName: 'Email Test' },
+        siswa: { nis: '2024001', fullName: 'Email Test', classId: CLASS_ID },
         ortu: { name: 'Ortu', phone: '+6281234567890' },
         consent: true,
       }, SA_ACTOR);
@@ -499,6 +509,67 @@ describe('ProvisioningService', () => {
       );
       expect(createUserCall).toBeDefined();
     });
+
+    it('ppdbLeadId accepted → lead ditandai enrolled setelah student dibuat', async () => {
+      const kc = mockKc();
+      let createCount = 0;
+      kc.createUser.mockImplementation(() => Promise.resolve(`kc-ppdb-${++createCount}`));
+      kc.findByUsername.mockResolvedValue(null);
+      kc.assignRealmRole.mockResolvedValue(undefined);
+      kc.setTempPassword.mockResolvedValue(undefined);
+
+      const prisma = mockPrisma();
+      prisma.ppdbLead.findUnique.mockResolvedValue({
+        id: PPDB_LEAD_ID,
+        status: 'accepted',
+        notes: '{"kind":"spmb_2027_2028_intake"}',
+      });
+      prisma.user.findFirst.mockResolvedValue(null);
+      prisma.student.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockImplementation((args: { data: Record<string, unknown> }) =>
+        Promise.resolve({ ...args.data, id: `u-${args.data.keycloakId}`, keycloakId: args.data.keycloakId }),
+      );
+      prisma.student.create.mockResolvedValue({ id: 'student-from-ppdb', nis: '2024002' });
+
+      const svc = await buildService(kc, prisma);
+
+      await svc.provisionStudent({
+        siswa: { nis: '2024002', fullName: 'PPDB Student', classId: CLASS_ID },
+        ppdbLeadId: PPDB_LEAD_ID,
+        ortu: { name: 'Ortu PPDB', phone: '+6281234567890' },
+        consent: true,
+      }, SA_ACTOR);
+
+      expect(prisma.ppdbLead.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: PPDB_LEAD_ID },
+        data: {
+          notes: expect.stringContaining('"studentId":"student-from-ppdb"'),
+        },
+      }));
+    });
+
+    it('ppdbLeadId yang sudah enrolled → 409 dan Keycloak tidak dipanggil', async () => {
+      const kc = mockKc();
+      const prisma = mockPrisma();
+      prisma.ppdbLead.findUnique.mockResolvedValue({
+        id: PPDB_LEAD_ID,
+        status: 'accepted',
+        notes: '{"enrollment":{"studentId":"existing-student"}}',
+      });
+
+      const svc = await buildService(kc, prisma);
+
+      await expect(
+        svc.provisionStudent({
+          siswa: { nis: '2024003', fullName: 'PPDB Duplicate', classId: CLASS_ID },
+          ppdbLeadId: PPDB_LEAD_ID,
+          ortu: { name: 'Ortu PPDB', phone: '+6281234567890' },
+          consent: true,
+        }, SA_ACTOR),
+      ).rejects.toThrow(ConflictException);
+
+      expect(kc.createUser).not.toHaveBeenCalled();
+    });
   });
 
   // ── 2J-3: ProvisionStudentSchema consent validation ─────────────────────────
@@ -506,16 +577,25 @@ describe('ProvisioningService', () => {
   describe('ProvisionStudentSchema — consent wajib true', () => {
     it('consent: true → valid (Zod parse sukses)', () => {
       const result = ProvisionStudentSchema.safeParse({
-        siswa: { nis: '12345', fullName: 'Siswa' },
+        siswa: { nis: '12345', fullName: 'Siswa', classId: CLASS_ID },
         ortu: { name: 'Ortu', phone: '+6281234567890' },
         consent: true,
       });
       expect(result.success).toBe(true);
     });
 
-    it('consent: false → invalid (Zod reject)', () => {
+    it('classId hilang → invalid agar siswa baru tidak tanpa kelas', () => {
       const result = ProvisionStudentSchema.safeParse({
         siswa: { nis: '12345', fullName: 'Siswa' },
+        ortu: { name: 'Ortu', phone: '+6281234567890' },
+        consent: true,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('consent: false → invalid (Zod reject)', () => {
+      const result = ProvisionStudentSchema.safeParse({
+        siswa: { nis: '12345', fullName: 'Siswa', classId: CLASS_ID },
         ortu: { name: 'Ortu', phone: '+6281234567890' },
         consent: false,
       });
@@ -524,7 +604,7 @@ describe('ProvisioningService', () => {
 
     it('consent absent → invalid (Zod reject)', () => {
       const result = ProvisionStudentSchema.safeParse({
-        siswa: { nis: '12345', fullName: 'Siswa' },
+        siswa: { nis: '12345', fullName: 'Siswa', classId: CLASS_ID },
         ortu: { name: 'Ortu', phone: '+6281234567890' },
       });
       expect(result.success).toBe(false);
@@ -553,12 +633,12 @@ describe('ProvisioningService', () => {
       const svc = await buildService(kc, prisma);
       const result = await svc.bulkProvisionStudents([
         {
-          siswa: { nis: '2026001', fullName: 'Siswa Bulk', gender: 'L', joinedAt: '2026-07-15', status: 'active' },
+          siswa: { nis: '2026001', fullName: 'Siswa Bulk', gender: 'L', classId: CLASS_ID, joinedAt: '2026-07-15', status: 'active' },
           ortu: { name: 'Wali Bulk', phone: '+6281234567890' },
           consent: true,
         },
         {
-          siswa: { nis: '2026002', fullName: 'Tanpa Consent' },
+          siswa: { nis: '2026002', fullName: 'Tanpa Consent', classId: CLASS_ID },
           ortu: { name: 'Wali', phone: '+6289876543210' },
         },
       ], SA_ACTOR);
@@ -584,7 +664,7 @@ describe('ProvisioningService', () => {
       const svc = await buildService(kc, prisma);
 
       const row = {
-        siswa: { nis: '2026999', fullName: 'Duplikat Bulk' },
+        siswa: { nis: '2026999', fullName: 'Duplikat Bulk', classId: CLASS_ID },
         ortu: { name: 'Wali', phone: '+6281234567890' },
         consent: true,
       };
@@ -597,7 +677,7 @@ describe('ProvisioningService', () => {
 
     it('schema bulk siswa membatasi 100 baris per request', () => {
       const rows = Array.from({ length: 101 }, (_, i) => ({
-        siswa: { nis: `2026${i}`, fullName: `Siswa ${i}` },
+        siswa: { nis: `2026${i}`, fullName: `Siswa ${i}`, classId: CLASS_ID },
         ortu: { name: 'Wali', phone: '+6281234567890' },
         consent: true,
       }));

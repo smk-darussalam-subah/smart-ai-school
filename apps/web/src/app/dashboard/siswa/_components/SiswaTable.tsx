@@ -24,7 +24,7 @@ import type { PpdbEnrollmentLead } from './ppdb-enrollment-handoff';
 interface Student {
   id: string; nis: string; status: string;
   parentId?: string | null;
-  user: { fullName: string; email: string; isActive?: boolean; consentAt?: string | null };
+  user: { id?: string; fullName: string; email: string; isActive?: boolean; consentAt?: string | null };
   parent?: { id: string; fullName: string } | null;
   class?: { id: string; name: string; grade?: number; majorCode?: string } | null;
   joinedAt?: string; createdAt: string;

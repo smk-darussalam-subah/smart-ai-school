@@ -5,12 +5,15 @@ import { redirect } from 'next/navigation';
 import { apiFetch, PaginatedResponse } from '@/lib/api';
 import LoadError from '@/components/LoadError';
 import SiswaTable from './_components/SiswaTable';
-import type { PpdbEnrollmentLead } from './_components/ppdb-enrollment-handoff';
+import {
+  toAcceptedPpdbEnrollmentLead,
+  type PpdbEnrollmentLeadApi,
+} from './_components/ppdb-enrollment-handoff';
 
 interface StudentItem {
   id: string; nis: string; status: string;
   parentId?: string | null;
-  user: { fullName: string; email: string; isActive?: boolean; consentAt?: string | null };
+  user: { id: string; fullName: string; email: string; isActive?: boolean; consentAt?: string | null };
   parent?: { id: string; fullName: string } | null;
   class?: { id: string; name: string; grade?: number; majorCode?: string } | null;
   joinedAt?: string; createdAt: string;
@@ -82,7 +85,7 @@ export default async function SiswaPage({ searchParams }: { searchParams: Search
       ? apiFetch<PaginatedResponse<WithoutParentItem>>('/students/without-parent?limit=100', token)
       : Promise.resolve(null),
     shouldLoadPpdbLead
-      ? apiFetch<PpdbEnrollmentLead>(`/ppdb/leads/${ppdbLeadId}`, token)
+      ? apiFetch<PpdbEnrollmentLeadApi>(`/ppdb/leads/${ppdbLeadId}`, token)
       : Promise.resolve(null),
     canEdit
       ? apiFetch<PaginatedResponse<StudentItem>>('/students?limit=1', token)
@@ -108,7 +111,7 @@ export default async function SiswaPage({ searchParams }: { searchParams: Search
   const classes = classesData?.data ?? [];
   const withoutParentStudents = withoutParentData?.data ?? [];
   const withoutParentTotal = withoutParentData?.total ?? 0;
-  const ppdbEnrollmentLead = ppdbLeadData?.status === 'accepted' ? ppdbLeadData : null;
+  const ppdbEnrollmentLead = toAcceptedPpdbEnrollmentLead(ppdbLeadData);
 
   return (
     <SiswaTable
