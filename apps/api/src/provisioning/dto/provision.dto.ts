@@ -75,7 +75,7 @@ export const ProvisionStudentSchema = z.object({
   siswa: z.object({
     nis: z.string().min(1, 'NIS wajib diisi').max(20),
     fullName: z.string().min(1, 'fullName wajib diisi'),
-    classId: z.string().uuid().optional(),
+    classId: z.string().uuid('classId wajib dipilih dan harus UUID kelas valid'),
     email: z.string().email().optional(),
     gender: GenderSchema.optional(),
     joinedAt: z
@@ -84,6 +84,7 @@ export const ProvisionStudentSchema = z.object({
       .optional(),
     status: StudentStatusSchema.optional(),
   }),
+  ppdbLeadId: z.string().uuid().optional(),
   ortu: z.object({
     name: z.string().min(1, 'nama ortu wajib diisi'),
     phone: phoneE164,

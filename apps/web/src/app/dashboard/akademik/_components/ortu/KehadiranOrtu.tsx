@@ -32,6 +32,8 @@ function statusBg(status: AttendanceCellStatus): string {
     case 'izin': return 'rgba(14,165,233,.2)';
     case 'sakit': return 'rgba(245,158,11,.2)';
     case 'alpha': return 'rgba(239,68,68,.2)';
+    case 'holiday': return 'rgba(239,68,68,.1)';
+    case 'outside': return 'rgba(148,163,184,.06)';
     default: return 'var(--empty-cell)';
   }
 }
@@ -41,6 +43,8 @@ function statusText(status: AttendanceCellStatus): string {
     case 'izin': return 'var(--sky)';
     case 'sakit': return 'var(--amber)';
     case 'alpha': return 'var(--rose)';
+    case 'holiday': return 'var(--rose)';
+    case 'outside': return 'var(--dim)';
     default: return 'var(--dim)';
   }
 }
@@ -146,11 +150,22 @@ export default function KehadiranOrtu({ setModal, attendance, waLog }: Kehadiran
           <div className="grid w-full gap-[3px]" style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}>
             {/* Headers */}
             {['M', 'S', 'S', 'R', 'K', 'J', 'S'].map((d, i) => (
-              <div key={i} className="py-0.5 text-center text-[10px] font-extrabold text-[var(--dim)]">{d}</div>
+              <div key={i} className={`py-0.5 text-center text-[10px] font-extrabold ${i === 0 ? 'text-[var(--rose)]' : 'text-[var(--dim)]'}`}>{d}</div>
             ))}
             {/* Cells */}
             {calCells.map((cell, i) => {
-              if (cell.day === 0) {
+              const isToday = cell.inMonth !== false && cell.day === today;
+              if (cell.status === 'outside') {
+                return (
+                  <div
+                    key={i}
+                    className="aspect-square grid place-items-center rounded-[5px] border border-[var(--border)] bg-[var(--empty-cell)] text-[11px] font-extrabold text-[var(--dim)] opacity-45"
+                  >
+                    {cell.day}
+                  </div>
+                );
+              }
+              if (cell.status === 'empty') {
                 return <div key={i} className="aspect-square rounded-[5px] border border-[var(--border)] bg-[var(--empty-cell)]" />;
               }
               if (cell.status === 'future') {
@@ -163,7 +178,21 @@ export default function KehadiranOrtu({ setModal, attendance, waLog }: Kehadiran
                   </div>
                 );
               }
-              const isToday = cell.day === today;
+              if (cell.status === 'holiday') {
+                return (
+                  <div
+                    key={i}
+                    title={cell.holidayName ?? 'Libur'}
+                    className="aspect-square grid place-items-center rounded-[5px] border border-rose-500/20 bg-rose-500/10 text-[11px] font-extrabold text-[var(--rose)]"
+                    style={{
+                      outline: isToday ? '2px solid var(--pri)' : undefined,
+                      outlineOffset: isToday ? '-3px' : undefined,
+                    }}
+                  >
+                    {cell.day}
+                  </div>
+                );
+              }
               const bg = statusBg(cell.status);
               const txt = statusText(cell.status);
               return (

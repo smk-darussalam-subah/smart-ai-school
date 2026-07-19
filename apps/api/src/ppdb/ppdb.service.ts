@@ -33,6 +33,11 @@ const LEAD_DETAIL_SELECT = {
   notes: true,
 } as const;
 
+const LEAD_LIST_INTERNAL_SELECT = {
+  ...LEAD_LIST_SELECT,
+  notes: true,
+} as const;
+
 const TERMINAL_STATUSES = new Set<LeadStatus>([LeadStatus.accepted, LeadStatus.rejected]);
 
 const ALLOWED_TRANSITIONS: Record<LeadStatus, LeadStatus[]> = {
@@ -52,6 +57,7 @@ type LeadListItem = {
   phone: string;
   interestMajor: string | null;
   status: LeadStatus | string;
+  notes?: string | null;
 };
 
 type EnrollmentAction = {
@@ -130,6 +136,21 @@ function readStoredPayloadFingerprint(notes: string | null): string | null {
   return null;
 }
 
+function readStoredEnrollmentStudentId(notes: string | null | undefined): string | null {
+  if (!notes) return null;
+  try {
+    const parsed: unknown = JSON.parse(notes);
+    if (!isRecord(parsed)) return null;
+    const enrollment = parsed.enrollment;
+    if (!isRecord(enrollment)) return null;
+    return typeof enrollment.studentId === 'string' && enrollment.studentId.trim()
+      ? enrollment.studentId
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 @Injectable()
 export class PpdbService {
   constructor(private prisma: PrismaService) {}
@@ -145,6 +166,7 @@ export class PpdbService {
 
   private attachEnrollmentAction<T extends LeadListItem>(lead: T): T | (T & EnrollmentAction) {
     if (lead.status !== LeadStatus.accepted) return lead;
+    if (readStoredEnrollmentStudentId(lead.notes)) return lead;
     const params = new URLSearchParams({ ppdbLeadId: lead.id });
     return {
       ...lead,
@@ -286,13 +308,23 @@ export class PpdbService {
         where,
         skip,
         take: limit,
-        select: LEAD_LIST_SELECT,
+        select: LEAD_LIST_INTERNAL_SELECT,
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.ppdbLead.count({ where }),
     ]);
 
-    return { data: data.map((lead) => this.attachEnrollmentAction(lead)), total, page, limit };
+    return {
+      data: data.map((lead) => {
+        const withAction = this.attachEnrollmentAction(lead);
+        const { notes, ...publicLead } = withAction;
+        void notes;
+        return publicLead;
+      }),
+      total,
+      page,
+      limit,
+    };
   }
 
   async findById(id: string) {

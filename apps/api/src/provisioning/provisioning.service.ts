@@ -10,6 +10,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
 import { UserRole } from '@smk/auth';
 import { logger } from '@smk/logger';
@@ -60,6 +61,42 @@ function generateTempPassword(): string {
     [password[i], password[j]] = [password[j]!, password[i]!];
   }
   return password.join('');
+}
+
+function parseJsonRecord(value: string | null | undefined): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function readEnrolledStudentId(notes: string | null | undefined): string | null {
+  const parsed = parseJsonRecord(notes);
+  const enrollment = parsed.enrollment;
+  if (typeof enrollment !== 'object' || enrollment === null || Array.isArray(enrollment)) return null;
+  const studentId = (enrollment as Record<string, unknown>).studentId;
+  return typeof studentId === 'string' && studentId.trim() ? studentId : null;
+}
+
+function withEnrollmentMetadata(
+  notes: string | null | undefined,
+  data: { studentId: string; studentUserId: string; enrolledAt: Date; enrolledBy: string },
+): string {
+  const parsed = parseJsonRecord(notes);
+  return JSON.stringify({
+    ...parsed,
+    enrollment: {
+      studentId: data.studentId,
+      studentUserId: data.studentUserId,
+      enrolledAt: data.enrolledAt.toISOString(),
+      enrolledBy: data.enrolledBy,
+    },
+  });
 }
 
 export interface TempCredential {
@@ -339,6 +376,20 @@ export class ProvisioningService {
       });
     }
 
+    const ppdbLead = dto.ppdbLeadId
+      ? await this.prisma.ppdbLead.findUnique({
+          where: { id: dto.ppdbLeadId },
+          select: { id: true, status: true, notes: true },
+        })
+      : null;
+    if (dto.ppdbLeadId && !ppdbLead) throw new NotFoundException('Lead PPDB tidak ditemukan');
+    if (ppdbLead && ppdbLead.status !== 'accepted') {
+      throw new ConflictException('Lead PPDB harus berstatus accepted sebelum didaftarkan sebagai siswa');
+    }
+    if (ppdbLead && readEnrolledStudentId(ppdbLead.notes)) {
+      throw new ConflictException('Lead PPDB sudah didaftarkan sebagai siswa');
+    }
+
     // Pre-flight: NIS + KC username
     const [nisExisting, kcSiswaExisting] = await Promise.all([
       this.prisma.student.findUnique({ where: { nis: dto.siswa.nis }, select: { id: true } }),
@@ -425,16 +476,30 @@ export class ProvisioningService {
           },
         });
 
-        await tx.student.create({
+        const student = await tx.student.create({
           data: {
             userId: siswaUser.id,
             nis: dto.siswa.nis,
-            classId: dto.siswa.classId || null,
+            classId: dto.siswa.classId,
             parentId: parentId || null,
             status: dto.siswa.status ?? 'active',
             joinedAt: dto.siswa.joinedAt ? new Date(dto.siswa.joinedAt) : new Date(),
           },
         });
+
+        if (ppdbLead) {
+          await tx.ppdbLead.update({
+            where: { id: ppdbLead.id },
+            data: {
+              notes: withEnrollmentMetadata(ppdbLead.notes, {
+                studentId: student.id,
+                studentUserId: siswaUser.id,
+                enrolledAt: consentAt,
+                enrolledBy: actor.keycloakId,
+              }),
+            },
+          });
+        }
 
         return { user: siswaUser };
       });
