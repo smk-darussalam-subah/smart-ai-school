@@ -18,12 +18,13 @@ const SISWA: AuthUser = { keycloakId: 'kc-siswa', username: 'siswa1', roles: ['S
 
 const baseCreate = {
   subject: 'Pemrograman Web', title: 'Struktur HTML', kktp: 75, orderIndex: 0,
-  academicYear: '2025/2026', semester: 1,
+  classId: 'class-1', academicYear: '2025/2026', semester: 1,
 };
 
 describe('LmsService', () => {
   let service: LmsService;
   const teacherFindFirst = jest.fn();
+  const teachingAssignmentFindFirst = jest.fn();
   const studentFindFirst = jest.fn();
   const findFirst = jest.fn();
   const findUnique = jest.fn();
@@ -36,11 +37,14 @@ describe('LmsService', () => {
   const progressFindMany = jest.fn();
   const progressFindUnique = jest.fn();
   const studentCount = jest.fn();
+  const rppFindUnique = jest.fn();
 
   beforeEach(async () => {
-    [teacherFindFirst, studentFindFirst, findFirst, findUnique, findMany, count, create, update, del, progressUpsert, progressFindMany, progressFindUnique, studentCount]
+    [teacherFindFirst, teachingAssignmentFindFirst, studentFindFirst, findFirst, findUnique, findMany, count, create, update, del, progressUpsert, progressFindMany, progressFindUnique, studentCount, rppFindUnique]
       .forEach((m) => m.mockReset());
     teacherFindFirst.mockResolvedValue({ id: 'teacher-1' });
+    // W3-6: default — GURU has matching assignment for any create call in legacy tests.
+    teachingAssignmentFindFirst.mockResolvedValue({ id: 'ta-1' });
     studentFindFirst.mockResolvedValue({ id: 'student-1', classId: 'class-1' });
     create.mockImplementation((a: { data: Record<string, unknown> }) => Promise.resolve({ id: 'lms-1', ...a.data }));
     update.mockImplementation((a: { data: Record<string, unknown> }) => Promise.resolve({ id: 'lms-1', ...a.data }));
@@ -53,7 +57,9 @@ describe('LmsService', () => {
 
     const prisma = {
       teacher: { findFirst: teacherFindFirst },
+      teachingAssignment: { findFirst: teachingAssignmentFindFirst },
       student: { findFirst: studentFindFirst, count: studentCount },
+      rpp: { findUnique: rppFindUnique },
       lmsModule: { findFirst, findUnique, findMany, count, create, update, delete: del },
       lmsModuleProgress: { upsert: progressUpsert, findMany: progressFindMany, findUnique: progressFindUnique },
     };
@@ -168,5 +174,47 @@ describe('LmsService', () => {
   it('findOne SISWA draft → Forbidden (belum published)', async () => {
     findUnique.mockResolvedValue({ id: 'lms-1', status: 'draft', classId: 'class-1', class: { id: 'class-1', name: 'X' }, teacherId: 't-1' });
     await expect(service.findOne('lms-1', SISWA)).rejects.toThrow(ForbiddenException);
+  });
+
+  // ── W3-6: RPP/LMS ownership validation ─────────────────────────────────
+  it('W3-6: GURU create tanpa rppId + classId di luar assignment → Forbidden', async () => {
+    teachingAssignmentFindFirst.mockResolvedValue(null);
+    await expect(service.create({
+      ...baseCreate, classId: 'class-lain', publish: false,
+    }, GURU)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('W3-6: GURU create tanpa rppId & tanpa classId → Forbidden (class wajib)', async () => {
+    await expect(service.create({
+      ...baseCreate, classId: undefined, publish: false,
+    }, GURU)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('W3-6: GURU create dengan rppId milik sendiri → sukses, derive dari RPP', async () => {
+    rppFindUnique.mockResolvedValue({
+      id: 'rpp-1', teacherId: 'teacher-1', classId: 'class-from-rpp',
+      subject: 'Subjek From RPP', academicYear: '2026/2027', status: 'approved',
+    });
+    await service.create({ ...baseCreate, rppId: 'rpp-1', publish: false }, GURU);
+    const data = create.mock.calls[0][0].data;
+    expect(data.rppId).toBe('rpp-1');
+    expect(data.classId).toBe('class-from-rpp'); // derived from RPP
+    expect(data.subject).toBe('Subjek From RPP');
+    expect(data.academicYear).toBe('2026/2027');
+  });
+
+  it('W3-6: GURU create dengan rppId milik guru lain → Forbidden', async () => {
+    rppFindUnique.mockResolvedValue({
+      id: 'rpp-1', teacherId: 'teacher-LAIN', classId: 'class-x',
+      subject: 'X', academicYear: '2026/2027', status: 'approved',
+    });
+    await expect(service.create({ ...baseCreate, rppId: 'rpp-1', publish: false }, GURU))
+      .rejects.toThrow(ForbiddenException);
+  });
+
+  it('W3-6: GURU create dengan rppId yang tidak ada → NotFound', async () => {
+    rppFindUnique.mockResolvedValue(null);
+    await expect(service.create({ ...baseCreate, rppId: 'rpp-fiktif', publish: false }, GURU))
+      .rejects.toThrow(NotFoundException);
   });
 });

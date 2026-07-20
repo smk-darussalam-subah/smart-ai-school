@@ -48,6 +48,13 @@ interface Props {
   isGuru: boolean;
   isReviewer: boolean;
   canDelete: boolean;
+  /**
+   * W3-4 P2: Role reviewer utama untuk kustomisasi label UI.
+   * 'KEPALA_SEKOLAH' / 'SUPER_ADMIN' → tombol 'Setujui' (final approval)
+   * 'WAKA_KURIKULUM' → tombol 'Review' / 'Setujui (delegasi KS)'
+   * Null/non-reviewer → label default.
+   */
+  userRole?: string | null;
   defaultAcademicYear?: string;
   defaultSemester?: number;
 }
@@ -59,13 +66,20 @@ const STATUS_BADGE: Record<RppItem['status'], { label: string; variant: 'default
   revision: { label: '↩ Perlu Revisi', variant: 'destructive' },
 };
 
-export default function RppBoard({ items, total, isGuru, isReviewer, canDelete, defaultAcademicYear, defaultSemester }: Props) {
+export default function RppBoard({ items, total, isGuru, isReviewer, canDelete, userRole, defaultAcademicYear, defaultSemester }: Props) {
   const [statusFilter, setStatusFilter] = useState(isReviewer ? 'submitted' : 'all');
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<RppItem | null>(null);
   const [reviewing, setReviewing] = useState<RppItem | null>(null);
   const [error, setError] = useState('');
   const [pending, startTransition] = useTransition();
+
+  // W3-4 P2: Role-aware UI labels.
+  // WAKA_KURIKULUM: primary action = Review (catatan + revisi), secondary = approve as KS delegate.
+  // KS/SA: primary action = Final Approval.
+  const isWaka = userRole === 'WAKA_KURIKULUM';
+  const isFinalApprover = userRole === 'KEPALA_SEKOLAH' || userRole === 'SUPER_ADMIN';
+  const reviewButtonLabel = isWaka ? 'Review Sekarang' : isFinalApprover ? 'Review & Approve' : 'Review Sekarang';
 
   const filtered = items.filter((r) => statusFilter === 'all' || r.status === statusFilter);
 
@@ -150,7 +164,7 @@ export default function RppBoard({ items, total, isGuru, isReviewer, canDelete, 
                 )}
                 {isReviewer && r.status === 'submitted' && (
                   <Button size="sm" disabled={pending} onClick={() => setReviewing(r)}>
-                    Review Sekarang
+                    {reviewButtonLabel}
                   </Button>
                 )}
                 {canDelete && (r.status === 'draft' || !isGuru) && (
@@ -166,7 +180,7 @@ export default function RppBoard({ items, total, isGuru, isReviewer, canDelete, 
       {isGuru && (
         <RppFormDialog open={formOpen} onOpenChange={setFormOpen} rpp={editing} defaultAcademicYear={defaultAcademicYear} defaultSemester={defaultSemester} />
       )}
-      <ReviewDialog rpp={reviewing} onClose={() => setReviewing(null)} run={run} pending={pending} />
+      <ReviewDialog rpp={reviewing} onClose={() => setReviewing(null)} run={run} pending={pending} userRole={userRole} />
     </div>
   );
 }
@@ -284,25 +298,45 @@ function RppFormDialog({ open, onOpenChange, rpp, defaultAcademicYear, defaultSe
   );
 }
 
-// ── Dialog Review (KS/SA) ─────────────────────────────────────────────────────
-function ReviewDialog({ rpp, onClose, run, pending }: {
+// ── Dialog Review (WAKA/KS/SA) ────────────────────────────────────────────────
+function ReviewDialog({ rpp, onClose, run, pending, userRole }: {
   rpp: RppItem | null;
   onClose: () => void;
   run: (fn: () => Promise<{ success: boolean; error?: string }>) => void;
   pending: boolean;
+  userRole?: string | null;
 }) {
   const [note, setNote] = useState('');
   useEffect(() => { if (rpp) setNote(''); }, [rpp]);
+
+  // W3-4 P2: Role-aware dialog title, button labels, dan hint.
+  const isWaka = userRole === 'WAKA_KURIKULUM';
+  const isFinalApprover = userRole === 'KEPALA_SEKOLAH' || userRole === 'SUPER_ADMIN';
+  const dialogTitle = isFinalApprover
+    ? `Final Approval: ${rpp?.title ?? ''}`
+    : `Review: ${rpp?.title ?? ''}`;
+  const approveLabel = isWaka ? '✓ Setujui (delegasi KS)' : '✓ Setujui';
+  const revisionLabel = '↩ Minta Revisi';
+  const roleHint = isWaka
+    ? 'Anda melakukan review sebagai WAKA_KURIKULUM. KS dapat mendisposisikan approval final kepada Anda.'
+    : isFinalApprover
+      ? 'Anda melakukan final approval sebagai KEPALA_SEKOLAH/SUPER_ADMIN.'
+      : '';
 
   return (
     <Dialog open={!!rpp} onOpenChange={(o: boolean) => !o && onClose()}>
       <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Review: {rpp?.title}</DialogTitle>
+          <DialogTitle>{dialogTitle}</DialogTitle>
           <DialogDescription>
             {rpp?.subject} · {rpp?.teacher.user.fullName} · {rpp?.academicYear} Smt {rpp?.semester}
           </DialogDescription>
         </DialogHeader>
+        {roleHint && (
+          <div className={`rounded-md px-3 py-2 text-xs ${isWaka ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`}>
+            {roleHint}
+          </div>
+        )}
         {rpp?.body ? (
           <ModulAjarView body={rpp.body} />
         ) : rpp?.content ? (
@@ -325,11 +359,11 @@ function ReviewDialog({ rpp, onClose, run, pending }: {
           <Button variant="outline" disabled={pending} onClick={onClose}>Batal</Button>
           <Button variant="destructive" disabled={pending || note.trim().length < 3}
             onClick={() => { if (rpp) { run(() => reviewRpp(rpp.id, 'revision', note.trim())); onClose(); } }}>
-            ↩ Minta Revisi
+            {revisionLabel}
           </Button>
           <Button disabled={pending}
             onClick={() => { if (rpp) { run(() => reviewRpp(rpp.id, 'approved', note.trim() || undefined)); onClose(); } }}>
-            ✓ Setujui
+            {approveLabel}
           </Button>
         </div>
       </DialogContent>

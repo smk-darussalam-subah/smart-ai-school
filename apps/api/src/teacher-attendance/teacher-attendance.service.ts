@@ -38,9 +38,25 @@ const ATTENDANCE_SELECT = {
   },
 } as const;
 
-function todayUtcDate(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+/**
+ * W3-7: School-local date in Asia/Jakarta (WIB, UTC+7).
+ *
+ * SMK Darussalam Subah operates in WIB. Between 00:00 and 06:59 WIB the UTC calendar
+ * day is still the previous day, which caused early-morning check-ins to be recorded
+ * against the wrong school date. We compute the local YYYY-MM-DD via
+ * Intl.DateTimeFormat (no extra dependency) and return it as UTC midnight so the
+ * existing `[teacherId, date]` unique constraint and `date gte/lte` query filters
+ * keep working against a stable day-aligned value.
+ */
+function todaySchoolLocalDate(now: Date = new Date()): Date {
+  // en-CA yields ISO 8601 YYYY-MM-DD. timeZone Asia/Jakarta converts correctly.
+  const localYmd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+  return new Date(`${localYmd}T00:00:00.000Z`);
 }
 
 @Injectable()
@@ -93,7 +109,7 @@ export class TeacherAttendanceService {
 
   async checkIn(dto: CheckInDto, user: AuthUser) {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
-    const date = todayUtcDate();
+    const date = todaySchoolLocalDate();
 
     const existing = await this.prisma.teacherAttendance.findUnique({
       where: { teacherId_date: { teacherId, date } },
@@ -123,7 +139,7 @@ export class TeacherAttendanceService {
 
   async checkOut(dto: CheckOutDto, user: AuthUser) {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
-    const date = todayUtcDate();
+    const date = todaySchoolLocalDate();
 
     const existing = await this.prisma.teacherAttendance.findUnique({
       where: { teacherId_date: { teacherId, date } },
@@ -146,11 +162,12 @@ export class TeacherAttendanceService {
   /** Status hari ini milik guru ybs (untuk state tombol UI). */
   async myToday(user: AuthUser) {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
+    const today = todaySchoolLocalDate();
     const record = await this.prisma.teacherAttendance.findUnique({
-      where: { teacherId_date: { teacherId, date: todayUtcDate() } },
+      where: { teacherId_date: { teacherId, date: today } },
       select: ATTENDANCE_SELECT,
     });
-    return { date: todayUtcDate().toISOString().slice(0, 10), record };
+    return { date: today.toISOString().slice(0, 10), record };
   }
 
   /** Rekap: staf bebas filter; GURU dipaksa miliknya sendiri DI QUERY. */
@@ -194,7 +211,7 @@ export class TeacherAttendanceService {
    * Reuses existing TeacherAttendance records (from 2F GPS presensi).
    */
   async todaySummary() {
-    const date = todayUtcDate();
+    const date = todaySchoolLocalDate();
 
     // All active teachers
     const teachers = await this.prisma.teacher.findMany({
