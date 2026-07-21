@@ -26,6 +26,20 @@ const CATEGORY_META: Record<string, { label: string; cls: string }> = {
 };
 const CATEGORY_ORDER = ['STRUKTURAL', 'FUNGSIONAL', 'TENDIK'];
 
+// TF-1: label peran untuk dropdown pegawai. Sebelumnya item hanya menampilkan
+// nama + email, tanpa konteks peran — admin harus menebak apakah user adalah
+// Guru, TU, atau Kepala Sekolah.
+const ROLE_LABELS: Record<string, string> = {
+  SUPER_ADMIN: 'Super Admin',
+  KEPALA_SEKOLAH: 'Kepala Sekolah',
+  TATA_USAHA: 'Tata Usaha',
+  GURU: 'Guru',
+  SISWA: 'Siswa',
+  ORANG_TUA: 'Orang Tua',
+  INDUSTRI: 'Industri',
+};
+const roleLabel = (role: string): string => ROLE_LABELS[role] ?? role;
+
 interface Props {
   positions: Position[];
   academicYear: { id: string; code: string } | null;
@@ -210,8 +224,12 @@ export default function StrukturClient({ positions, academicYear, assignments, m
                           ))}
                       </div>
                     </div>
-                    <Button size="sm" variant="outline" className="shrink-0 gap-1.5" disabled={!academicYear} onClick={() => openAssign(p)}>
-                      <UserPlus className="h-4 w-4" /> Tetapkan
+                    <Button size="sm" variant="outline" className="shrink-0 gap-1.5" disabled={!academicYear}
+                      onClick={() => openAssign(p)}
+                      // TF-3: Tooltip + label dinamis — jabatan bisa dipegang bersama.
+                      title="Jabatan bisa dipegang bersama oleh beberapa pegawai."
+                    >
+                      <UserPlus className="h-4 w-4" /> {list.length > 0 ? '+ Tambah Penanggung Jawab' : 'Tetapkan'}
                     </Button>
                   </div>
                 );
@@ -232,10 +250,35 @@ export default function StrukturClient({ positions, academicYear, assignments, m
                 <SelectTrigger><SelectValue placeholder="Pilih pegawai…" /></SelectTrigger>
                 <SelectContent>
                   {staff.length === 0
-                    ? <SelectItem value="__none" disabled>Belum ada pegawai</SelectItem>
-                    : staff.map((s) => <SelectItem key={s.id} value={s.id}>{s.fullName} · {s.email}</SelectItem>)}
+                    ? // TF-1: Actionable empty state. Sebelumnya hanya "Belum ada pegawai"
+                      // tanpa panduan recovery. Sekarang admin tahu syarat dan langkah.
+                      <SelectItem value="__none" disabled>
+                        Belum ada pegawai (Guru/TU/KS). Tambahkan di Manajemen Pengguna.
+                      </SelectItem>
+                    : staff.map((s) => (
+                      // TF-1: Tampilkan label peran, bukan hanya email.
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.fullName} · {roleLabel(s.role)}{s.email ? ` · ${s.email}` : ''}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
+              {/* TF-1: Actionable helper link ke Manajemen Pengguna. */}
+              {staff.length === 0 && (
+                <div className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <p className="mb-1.5">
+                    Hanya user dengan peran <strong>Guru</strong>, <strong>Tata Usaha</strong>, atau
+                    <strong> Kepala Sekolah</strong> yang muncul di daftar ini.
+                  </p>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 font-semibold text-amber-900 underline hover:text-amber-700"
+                    onClick={() => router.push('/dashboard/users')}
+                  >
+                    <UserPlus className="h-3 w-3" /> Kelola Pengguna →
+                  </button>
+                </div>
+              )}
             </div>
             {target?.scopeType === 'MAJOR' && (
               <div>
@@ -248,7 +291,13 @@ export default function StrukturClient({ positions, academicYear, assignments, m
                 </Select>
               </div>
             )}
-            <p className="flex items-start gap-1.5 text-xs text-muted-foreground"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Akses modul terkait jabatan diberikan otomatis selama penugasan aktif.</p>
+            {/* TF-2: Microcopy diklarifikasi — sebelumnya ambigu "selama penugasan aktif". */}
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              Izin modul terkait jabatan aktif segera setelah disimpan, dan dicabut otomatis
+              saat penugasan dilepas atau tahun ajaran berganti.
+              {academicYear && <> Berlaku di tahun ajaran {academicYear.code}.</>}
+            </p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setTarget(null)}>Batal</Button>
               <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700" disabled={busy} onClick={submitAssign}>
