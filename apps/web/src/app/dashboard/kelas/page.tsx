@@ -45,9 +45,9 @@ export default async function KelasPage() {
   const token = session?.accessToken ?? '';
 
   const [classesRes, majorsRes, groupedRes] = await Promise.all([
-    apiFetch<{ data: ClassRow[]; total: number }>('/classes?includeInactive=true&limit=200', token),
+    apiFetch<{ data: ClassRow[]; total: number }>('/classes?includeInactive=true&limit=100', token),
     apiFetch<Major[]>('/school/majors?activeOnly=true', token),
-    apiFetch<{ groups: { role: string; users: StaffCandidate[] }[] }>('/users/grouped?limit=200', token),
+    apiFetch<{ groups: { role: string; users: StaffCandidate[] }[] }>('/users/grouped?limit=100', token),
   ]);
 
   if (classesRes === null) return <LoadError />;

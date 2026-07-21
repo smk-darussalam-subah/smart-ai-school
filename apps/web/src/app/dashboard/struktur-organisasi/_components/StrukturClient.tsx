@@ -47,6 +47,8 @@ interface Props {
   majors: Major[];
   staff: StaffCandidate[];
   isSuperAdmin: boolean;
+  /** TF-1-FU-5: true ketika /users/grouped API gagal (null), bukan data kosong sah. */
+  staffLoadError?: boolean;
 }
 
 interface SyncResult {
@@ -55,7 +57,7 @@ interface SyncResult {
   failed: { code: string; error: string }[];
 }
 
-export default function StrukturClient({ positions, academicYear, assignments, majors, staff, isSuperAdmin }: Props) {
+export default function StrukturClient({ positions, academicYear, assignments, majors, staff, isSuperAdmin, staffLoadError }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 
@@ -249,22 +251,36 @@ export default function StrukturClient({ positions, academicYear, assignments, m
               <Select value={userId} onValueChange={setUserId}>
                 <SelectTrigger><SelectValue placeholder="Pilih pegawai…" /></SelectTrigger>
                 <SelectContent>
-                  {staff.length === 0
-                    ? // TF-1: Actionable empty state. Sebelumnya hanya "Belum ada pegawai"
-                      // tanpa panduan recovery. Sekarang admin tahu syarat dan langkah.
+                  {staff.length === 0 && staffLoadError
+                    ? // TF-1-FU-5: API error — jangan sesatkan admin ke "tambahkan user".
                       <SelectItem value="__none" disabled>
-                        Belum ada pegawai (Guru/TU/KS). Tambahkan di Manajemen Pengguna.
+                        Gagal memuat daftar pegawai. Coba refresh halaman.
                       </SelectItem>
-                    : staff.map((s) => (
-                      // TF-1: Tampilkan label peran, bukan hanya email.
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.fullName} · {roleLabel(s.role)}{s.email ? ` · ${s.email}` : ''}
-                      </SelectItem>
-                    ))}
+                    : staff.length === 0
+                      ? // TF-1: Actionable empty state — benar-benar tidak ada pegawai.
+                        <SelectItem value="__none" disabled>
+                          Belum ada pegawai (Guru/TU/KS). Tambahkan di Manajemen Pengguna.
+                        </SelectItem>
+                      : staff.map((s) => (
+                        // TF-1: Tampilkan label peran, bukan hanya email.
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.fullName} · {roleLabel(s.role)}{s.email ? ` · ${s.email}` : ''}
+                        </SelectItem>
+                      ))}
                 </SelectContent>
               </Select>
-              {/* TF-1: Actionable helper link ke Manajemen Pengguna. */}
-              {staff.length === 0 && (
+              {/* TF-1-FU-5: Warning banner saat API gagal muat staff. */}
+              {staff.length === 0 && staffLoadError && (
+                <div className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-800">
+                  <p className="mb-1.5 font-semibold">Daftar pegawai gagal dimuat.</p>
+                  <p>
+                    Ini bukan berarti tidak ada pegawai — kemungkinan ada masalah koneksi ke server.
+                    Coba refresh halaman. Jika masih kosong, hubungi teknisi.
+                  </p>
+                </div>
+              )}
+              {/* TF-1: Actionable helper link ke Manajemen Pengguna (hanya saat benar-benar kosong). */}
+              {staff.length === 0 && !staffLoadError && (
                 <div className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   <p className="mb-1.5">
                     Hanya user dengan peran <strong>Guru</strong>, <strong>Tata Usaha</strong>, atau

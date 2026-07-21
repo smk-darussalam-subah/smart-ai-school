@@ -327,7 +327,7 @@ export interface QuestionData {
 
 /** Fetch questions for a subject (or all if no subject). */
 export async function fetchQuestions(subject?: string) {
-  const path = subject ? `/questions?subject=${encodeURIComponent(subject)}&limit=200` : '/questions?limit=200';
+  const path = subject ? `/questions?subject=${encodeURIComponent(subject)}&limit=100` : '/questions?limit=100';
   const r = await apiCall(path, 'GET');
   return r;
 }
