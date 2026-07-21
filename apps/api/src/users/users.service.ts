@@ -157,6 +157,17 @@ export class UsersService {
     return Array.from(permSet).sort();
   }
 
+  /**
+   * TF-4 P1 fix: updateRole() sekarang DB-first + KC sync best-effort (fail-soft).
+   *
+   * Strategi lama: KC-first → bila KC throw, seluruh operasi gagal & DB tidak ter-update.
+   * Strategi baru: DB update dulu (single source of truth) → cache invalidate →
+   * KC sync best-effort. Bila KC gagal, operasi tetap sukses dengan flag
+   * `keycloakSyncPending: true` di response agar frontend bisa tampilkan toast warning.
+   *
+   * Fail-soft pattern mengikuti positions.service.ts:228-237, 293-303 (reference terbukti).
+   * Lihat academic-lifecycle.md §14.1 untuk prinsip fail-soft DIIS.
+   */
   async updateRole(id: string, role: UserRole, actor: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
@@ -174,7 +185,7 @@ export class UsersService {
       return existing!;
     }
 
-    // C3-(a): last-SA protection
+    // C3-(a): last-SA protection (DB-side, jalan pertama, tidak boleh di-skip)
     if (
       oldRole === 'SUPER_ADMIN' &&
       role !== 'SUPER_ADMIN'
@@ -194,63 +205,77 @@ export class UsersService {
       }
     }
 
-    // C3-(b): multi-role detection via KC
-    // Hanya cek primary roles — position codes (R-23 sync) tidak dihitung
-    const kcRoles = await this.kc.getUserRealmRoles(user.keycloakId);
-    const primaryRoleSet = PRIMARY_ROLES as readonly string[];
-    const primaryRoleCount = kcRoles.filter((r) => primaryRoleSet.includes(r)).length;
+    // C3-(b): multi-role detection via KC.
+    // TF-4: fail-soft — bila KC down untuk getUserRealmRoles, skip check dengan warning
+    // (pola positions.service.ts:337-344). Sebelumnya: throw ke caller, membatalkan operasi.
+    let primaryRoleCount = 0;
+    try {
+      const kcRoles = await this.kc.getUserRealmRoles(user.keycloakId);
+      const primaryRoleSet = PRIMARY_ROLES as readonly string[];
+      primaryRoleCount = kcRoles.filter((r) => primaryRoleSet.includes(r)).length;
+    } catch (kcErr) {
+      logger.warn('[UsersService] KC getUserRealmRoles gagal — multi-role check dilewati (fail-soft)', {
+        userId: id,
+        error: kcErr instanceof Error ? kcErr.message : String(kcErr),
+      });
+      // primaryRoleCount tetap 0 — check dilewati, operasi lanjut.
+    }
     if (primaryRoleCount > 1) {
       throw new ConflictException(
         'Akun memiliki multiple role di Keycloak — kelola role melalui Keycloak Admin Console',
       );
     }
 
-    // KC-first: replace role
+    // TF-4: DB-first update (single source of truth untuk status user).
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: { role },
+      select: USER_SELECT,
+    });
+
+    // Cache invalidation WAJIB setelah DB commit, sebelum KC sync.
+    // Memastikan permintaan berikutnya ditolak/izinkan berdasarkan status DB baru.
+    this.permissions.invalidateUser(user.keycloakId);
+    this.userStatus.invalidate(user.keycloakId);
+
+    logger.info(`User role updated: ${user.fullName} ${oldRole} → ${role}`, {
+      actor,
+      userId: id,
+      oldRole,
+      newRole: role,
+    });
+
+    // TF-4: KC sync best-effort (fail-soft). Bila gagal, return flag ke frontend.
+    let keycloakSyncPending = false;
     try {
       await this.kc.assignRealmRole(user.keycloakId, role);
       await this.kc.removeRealmRole(user.keycloakId, oldRole);
     } catch (kcErr) {
-      logger.error('[UsersService] KC role sync gagal', {
-        userId: id,
-        error: kcErr instanceof Error ? kcErr.message : String(kcErr),
-      });
-      throw kcErr;
-    }
-
-    // DB update with compensation
-    try {
-      const updated = await this.prisma.user.update({
-        where: { id },
-        data: { role },
-        select: USER_SELECT,
-      });
-
-      this.permissions.invalidateUser(user.keycloakId);
-      this.userStatus.invalidate(user.keycloakId);
-
-      logger.info(`User role updated: ${user.fullName} ${oldRole} → ${role}`, {
-        actor,
+      logger.warn('[UsersService] KC role sync gagal (fail-soft — DB sudah benar)', {
         userId: id,
         oldRole,
         newRole: role,
+        error: kcErr instanceof Error ? kcErr.message : String(kcErr),
       });
-
-      return updated;
-    } catch (dbErr) {
-      // Compensation: restore KC role
-      try {
-        await this.kc.assignRealmRole(user.keycloakId, oldRole);
-        await this.kc.removeRealmRole(user.keycloakId, role);
-      } catch (compErr) {
-        logger.error('[UsersService] kompensasi KC gagal — role mungkin inkonsisten', {
-          userId: id,
-          error: compErr instanceof Error ? compErr.message : String(compErr),
-        });
-      }
-      throw dbErr;
+      keycloakSyncPending = true;
     }
+
+    return { ...updated, keycloakSyncPending };
   }
 
+  /**
+   * TF-4 P1 fix: updateActive() sekarang DB-first + KC sync best-effort (fail-soft).
+   *
+   * Strategi lama: KC-first → bila KC throw, seluruh operasi gagal & DB tidak ter-update.
+   * Akibatnya: user tetap aktif di DB saat KC down, bisa login dengan token lama.
+   *
+   * Strategi baru: DB update dulu (single source of truth untuk status user) →
+   * cache invalidate → KC sync best-effort. Bila KC gagal, operasi tetap sukses dengan
+   * flag `keycloakSyncPending: true` di response.
+   *
+   * Fail-soft pattern mengikuti positions.service.ts:228-237 (reference terbukti).
+   * Lihat academic-lifecycle.md §14.1 untuk prinsip fail-soft DIIS.
+   */
   async updateActive(id: string, isActive: boolean, actor: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
@@ -258,7 +283,7 @@ export class UsersService {
     });
     if (!user) throw new NotFoundException('User tidak ditemukan');
 
-    // C3-(a): last-SA protection
+    // C3-(a): last-SA protection (DB-side, jalan pertama, tidak boleh di-skip)
     if (
       user.role === 'SUPER_ADMIN' &&
       !isActive
@@ -278,45 +303,36 @@ export class UsersService {
       }
     }
 
-    // KC-first
+    // TF-4: DB-first update (single source of truth untuk status user).
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: { isActive },
+      select: USER_SELECT,
+    });
+
+    // Cache invalidation WAJIB setelah DB commit, sebelum KC sync.
+    // Memastikan KeycloakGuard & permission checks berikutnya membaca status DB baru.
+    this.userStatus.invalidate(updated.keycloakId);
+
+    logger.info(`User ${isActive ? 'activated' : 'deactivated'}: ${user.fullName}`, {
+      actor,
+      userId: id,
+    });
+
+    // TF-4: KC sync best-effort (fail-soft). Bila gagal, return flag ke frontend.
+    let keycloakSyncPending = false;
     try {
       await this.kc.setEnabled(user.keycloakId, isActive);
     } catch (kcErr) {
-      logger.error('[UsersService] KC enabled sync gagal', {
+      logger.warn('[UsersService] KC enabled sync gagal (fail-soft — DB sudah benar)', {
         userId: id,
+        isActive,
         error: kcErr instanceof Error ? kcErr.message : String(kcErr),
       });
-      throw kcErr;
+      keycloakSyncPending = true;
     }
 
-    // DB update with compensation
-    try {
-      const updated = await this.prisma.user.update({
-        where: { id },
-        data: { isActive },
-        select: USER_SELECT,
-      });
-
-      this.userStatus.invalidate(updated.keycloakId);
-
-      logger.info(`User ${isActive ? 'activated' : 'deactivated'}: ${user.fullName}`, {
-        actor,
-        userId: id,
-      });
-
-      return updated;
-    } catch (dbErr) {
-      // Compensation: restore KC enabled state
-      try {
-        await this.kc.setEnabled(user.keycloakId, !isActive);
-      } catch (compErr) {
-        logger.error('[UsersService] kompensasi KC enabled gagal', {
-          userId: id,
-          error: compErr instanceof Error ? compErr.message : String(compErr),
-        });
-      }
-      throw dbErr;
-    }
+    return { ...updated, keycloakSyncPending };
   }
 
   // ── Consent Status (admin) ─────────────────────────────────────────────────
