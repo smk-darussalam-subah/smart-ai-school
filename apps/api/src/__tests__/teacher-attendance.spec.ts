@@ -137,4 +137,37 @@ describe('TeacherAttendanceService', () => {
     await expect(service.findAll({ outsideOnly: false, page: 1, limit: 31 }, siswa))
       .rejects.toThrow(ForbiddenException);
   });
+
+  // ── W3-7: Asia/Jakarta school-local date ────────────────────────────────────
+  // Early-morning WIB (00:30) is still the previous UTC day. The service must
+  // record the WIB calendar date so the unique [teacherId, date] constraint
+  // matches later that same school day.
+  it('W3-7: check-in 00:30 WIB (UTC-7 jam) → tanggal sekolah lokal WIB, bukan UTC kemarin', async () => {
+    // 2026-07-19 00:30:00 WIB = 2026-07-18 17:30:00 UTC → UTC day = 18, WIB day = 19
+    // Note: Intl is not in Jest's fakeable API list, so it stays real.
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-18T17:30:00.000Z'));
+    try {
+      taFindUnique.mockResolvedValue(null);
+      await service.checkIn({}, GURU);
+      const recordedDate = taCreate.mock.calls[0][0].data.date as Date;
+      expect(recordedDate.toISOString().slice(0, 10)).toBe('2026-07-19');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('W3-7: check-in 07:30 WIB → tanggal sekolah lokal yang sama', async () => {
+    // 2026-07-19 07:30:00 WIB = 2026-07-19 00:30:00 UTC → UTC day = 19, WIB day = 19
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-19T00:30:00.000Z'));
+    try {
+      taFindUnique.mockResolvedValue(null);
+      await service.checkIn({}, GURU);
+      const recordedDate = taCreate.mock.calls[0][0].data.date as Date;
+      expect(recordedDate.toISOString().slice(0, 10)).toBe('2026-07-19');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

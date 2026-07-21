@@ -64,14 +64,26 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
   const [step, setStep] = useState(1);
   const [toast, setToast] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // W3-3: Dirty/saved state kini jujur. State badge:
+  //   'dirty'  → belum tersimpan ke server (perubahan lokal)
+  //   'saving' → request server save sedang berjalan
+  //   'saved'  → server telah konfirmasi tersimpan
+  //   'error'  → upaya simpan gagal
   const [saving, setSaving] = useState(false);
+  const [savedVersion, setSavedVersion] = useState<'dirty' | 'saving' | 'saved' | 'error'>(
+    editing ? 'saved' : 'dirty',
+  );
   const [isGeneratingSemua, setIsGeneratingSemua] = useState(false);
   const [isGeneratingMaterial, setIsGeneratingMaterial] = useState(false);
   const [semuaProgress, setSemuaProgress] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2800); };
-  const set = <K extends keyof ModulAjarBody>(k: K, v: ModulAjarBody[K]) => setBody((b) => ({ ...b, [k]: v }));
+  const set = <K extends keyof ModulAjarBody>(k: K, v: ModulAjarBody[K]) => {
+    setBody((b) => ({ ...b, [k]: v }));
+    // W3-3: setiap perubahan lokal menandai state sebagai dirty (belum disimpan).
+    if (savedVersion !== 'saving') setSavedVersion('dirty');
+  };
   const toggleDimensi = (d: string) => {
     const cur = body.profilDimensi ?? [];
     set('profilDimensi', cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]);
@@ -106,8 +118,16 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
    * R-29: Core async logic for AI generation of a single step.
    * Extracted from aiGenerate() so it can be reused by "Generate Semua" sequential loop.
    * Throws on error — caller handles fail-soft.
+   *
+   * W3-2 P1 fix (reviewer): returns `Promise<boolean>` indicating whether the step
+   * actually mutated the body. Previously returned `Promise<void>` which forced
+   * `handleGenerateSemua` to compare `JSON.stringify(body)` captured from a stale
+   * React render closure — that always reported "no change" because `set()`
+   * schedules an async state update the closure cannot observe synchronously.
+   * Each `apply` function now tracks and returns whether at least one field was
+   * set with new content, so the counter is accurate.
    */
-  const aiGenerateStep = async (stepNum: number): Promise<void> => {
+  const aiGenerateStep = async (stepNum: number): Promise<boolean> => {
     // Step 3 (ATP) → dedicated ATP endpoint.
     if (stepNum === 3) {
       if (!subject) throw new Error('Pilih mapel terlebih dahulu.');
@@ -117,33 +137,185 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
       const res = await aiGenerateAtp({ cp: cpText, tp: tpList, subject });
       if (!res.success) throw new Error(res.error ?? 'Gagal generate AI.');
       const data = res.data as { output?: AtpItem[] };
-      if (data?.output && Array.isArray(data.output)) {
+      if (data?.output && Array.isArray(data.output) && data.output.length > 0) {
         set('atp', data.output);
-      } else {
-        throw new Error('AI tidak mengembalikan ATP.');
+        return true; // mutated
       }
-      return;
+      throw new Error('AI tidak mengembalikan ATP.');
     }
     // P4 (S-12): Other steps — real AI gateway via /ai/generate-rpp-step
-    const stepMap: Record<number, string> = {
-      2: 'cp_tp', 4: 'profil', 5: 'sarana', 6: 'kegiatan',
-      7: 'asesmen', 8: 'remedial', 9: 'refleksi', 10: 'lampiran',
+    // W3-2: Setiap output langkah kini di-apply ke field target yang spesifik.
+    // Sebelumnya, output dibuang secara diam-dian dan UI menampilkan toast sukses palsu.
+    // W3-2 P1 fix: apply mengembalikan boolean — true jika minimal satu field berubah.
+    const stepMap: Record<number, { key: string; apply: (output: string) => boolean }> = {
+      2: {
+        key: 'cp_tp',
+        apply: (output) => {
+          // Output markdown berisi CP + TP. Pisahkan baris yang dimulai dengan 'TP' ke list.
+          const lines = output.split('\n').map((l) => l.trim()).filter(Boolean);
+          const cpText: string[] = [];
+          const tpText: string[] = [];
+          let inTp = false;
+          for (const line of lines) {
+            const tpMatch = line.match(/^(?:TP\s*)?\d+[.):\- ]+(.*)$/i);
+            if (tpMatch && tpMatch[1]) { inTp = true; tpText.push(tpMatch[1].trim()); continue; }
+            if (inTp) tpText.push(line);
+            else cpText.push(line);
+          }
+          let mutated = false;
+          if (cpText.length) { set('cp', cpText.join('\n')); mutated = true; }
+          if (tpText.length) { set('tp', tpText); mutated = true; }
+          return mutated;
+        },
+      },
+      4: {
+        key: 'profil',
+        apply: (output) => {
+          // Dimensi: cari yang cocok dengan daftar DIMENSI; sisanya jadi uraian.
+          const dimensi = DIMENSI.filter((d) => output.toLowerCase().includes(d.toLowerCase()));
+          if (dimensi.length) set('profilDimensi', dimensi);
+          set('profilUraian', output);
+          return true; // output selalu mengisi profilUraian minimal.
+        },
+      },
+      5: {
+        key: 'sarana',
+        apply: (output) => {
+          // Pemisahan sederhana: paragraf pertama → sarana, paragraf sisanya → target.
+          const paragraphs = output.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+          if (paragraphs.length >= 2) {
+            set('sarana', paragraphs[0]);
+            set('target', paragraphs.slice(1).join('\n\n'));
+          } else {
+            set('sarana', output);
+          }
+          return true; // output selalu mengisi sarana minimal.
+        },
+      },
+      6: {
+        key: 'kegiatan',
+        apply: (output) => {
+          // Output dianggap deskripsi kegiatan inti untuk pertemuan pertama.
+          // Guru tetap perlu menambah pendahuluan/penutup manual. Kalau belum ada kegiatan, buat baru.
+          const existing = body.kegiatan ?? [];
+          if (existing.length === 0) {
+            set('kegiatan', [{ pertemuan: 'Pertemuan 1', inti: output }]);
+          } else {
+            set('kegiatan', existing.map((k, i) => (i === 0 ? { ...k, inti: output } : k)));
+          }
+          return true;
+        },
+      },
+      7: {
+        key: 'asesmen',
+        apply: (output) => {
+          // Pecah output ke tiga jenis asesmen bila terindikasi header.
+          const lower = output.toLowerCase();
+          const hasDiagnostik = lower.includes('diagnostik');
+          const hasFormatif = lower.includes('formatif');
+          const hasSumatif = lower.includes('sumatif');
+          let mutated = false;
+          if (hasDiagnostik || hasFormatif || hasSumatif) {
+            // Pemisahan kasar berbasis header.
+            const splitSection = (keyword: string): string => {
+              const re = new RegExp(`(?:^|\\n)\\s*#{0,6}\\s*${keyword}[^\\n]*\\n([\\s\\S]*?)(?=\\n\\s*#{0,6}\\s*(?:diagnostik|formatif|sumatif)|$)`, 'i');
+              const m = output.match(re);
+              return m?.[1]?.trim() ?? '';
+            };
+            if (hasDiagnostik) { set('asesmenDiagnostik', splitSection('diagnostik')); mutated = true; }
+            if (hasFormatif) { set('asesmenFormatif', splitSection('formatif')); mutated = true; }
+            if (hasSumatif) { set('asesmenSumatif', splitSection('sumatif')); mutated = true; }
+          } else {
+            // Tidak ada header eksplisit → tulis ke asesmen legacy.
+            set('asesmen', output);
+            mutated = true;
+          }
+          return mutated;
+        },
+      },
+      8: {
+        key: 'remedial',
+        apply: (output) => {
+          // Pecah ke pengayaan + remedial bila ada kedua header.
+          const lower = output.toLowerCase();
+          let mutated = false;
+          if (lower.includes('pengayaan') && lower.includes('remedial')) {
+            const splitSection = (keyword: string): string => {
+              const re = new RegExp(`(?:^|\\n)\\s*#{0,6}\\s*${keyword}[^\\n]*\\n([\\s\\S]*?)(?=\\n\\s*#{0,6}\\s*(?:pengayaan|remedial)|$)`, 'i');
+              const m = output.match(re);
+              return m?.[1]?.trim() ?? '';
+            };
+            set('pengayaan', splitSection('pengayaan'));
+            set('remedial', splitSection('remedial'));
+            mutated = true;
+          } else {
+            set('remedial', output);
+            mutated = true;
+          }
+          return mutated;
+        },
+      },
+      9: {
+        key: 'refleksi',
+        apply: (output) => {
+          // Pecah ke refleksiGuru + refleksiSiswa bila ada kedua header.
+          const lower = output.toLowerCase();
+          let mutated = false;
+          if (lower.includes('guru') && lower.includes('siswa')) {
+            const splitSection = (keyword: string): string => {
+              const re = new RegExp(`(?:^|\\n)\\s*#{0,6}\\s*${keyword}[^\\n]*\\n([\\s\\S]*?)(?=\\n\\s*#{0,6}\\s*(?:guru|siswa)|$)`, 'i');
+              const m = output.match(re);
+              return m?.[1]?.trim() ?? '';
+            };
+            set('refleksiGuru', splitSection('guru'));
+            set('refleksiSiswa', splitSection('siswa'));
+            mutated = true;
+          } else {
+            set('refleksiGuru', output);
+            mutated = true;
+          }
+          return mutated;
+        },
+      },
+      10: {
+        key: 'lampiran',
+        apply: (output) => { set('lampiran', output); return true; },
+      },
     };
-    const stepKey = stepMap[stepNum];
-    if (!stepKey || !subject) {
+    const stepConfig = stepMap[stepNum];
+    if (!stepConfig || !subject) {
       throw new Error(subject ? 'Langkah tidak didukung.' : 'Pilih mapel terlebih dahulu.');
     }
     const contextStr = JSON.stringify(body).slice(0, 4000);
-    const res = await aiGenerateRppStep({ step: stepKey, subject, context: contextStr });
+    const res = await aiGenerateRppStep({ step: stepConfig.key, subject, context: contextStr });
     if (!res.success) throw new Error(res.error ?? 'Gagal generate AI.');
     if (!res.data?.output) throw new Error('AI tidak mengembalikan konten.');
+    // W3-2: Apply output ke field target (sebelumnya dibuang).
+    // W3-2 P1 fix: kembalikan hasil apply ke pemanggil untuk penghitungan sukses yang akurat.
+    return stepConfig.apply(res.data.output);
   };
 
+  /**
+   * W3-2 P2 fix: single-step Generate kini membedakan tiga outcomes:
+   *   - mutated=true  → toast sukses (field terisi)
+   *   - mutated=false → toast 'tidak ada perubahan' (AI return output tapi parser
+   *                     heuristic tidak menemukan konten yang bisa di-apply ke field)
+   *   - thrown error  → toast error (gagal gateway / rate limit / ATP kosong)
+   * Sebelumnya: toast selalu 'berhasil' meskipun apply() return false.
+   */
   const aiGenerate = (stepNum: number) => {
     startAi(async () => {
       try {
-        await aiGenerateStep(stepNum);
-        showToast(`Bagian "${STEPS[stepNum - 1]?.label}" berhasil di-generate AI. Silakan sunting.`);
+        const mutated = await aiGenerateStep(stepNum);
+        if (mutated) {
+          showToast(`Bagian "${STEPS[stepNum - 1]?.label}" berhasil di-generate AI. Silakan sunting.`);
+        } else {
+          // AI sukses return output tapi parser heuristic tidak menemukan field yang cocok.
+          // Bisa terjadi bila AI return markdown tanpa header yang diharapkan (asesmen,
+          // remedial, refleksi) atau return string kosong setelah trim.
+          console.warn(`[ModulAjarForm] aiGenerateStep(${stepNum}) return false — output tidak ter-apply ke field manapun`);
+          showToast('AI tidak menghasilkan perubahan. Coba generate ulang atau sunting manual.');
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Gagal generate AI.';
         showToast(msg.includes('429') ? 'Rate limit tercapai (10/menit). Coba lagi nanti.' : msg);
@@ -154,6 +326,12 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
   /**
    * R-29: Generate Semua — sequential loop step 2→10 with fail-soft.
    * Each step waits for the previous to complete (context dependency).
+   *
+   * W3-2 P1 fix (reviewer): counter `successCount`/`failCount` kini mengunakan
+   * nilai kembalian `aiGenerateStep()` (`Promise<boolean>`) alih-alih membandingkan
+   * `JSON.stringify(body)` dari closure React yang tidak bisa mengamati update
+   * `set()` secara sinkron. Bug sebelumnya: counter selalu 0 berhasil / 9 gagal
+   * meskipun semua langkah berhasil mengisi field.
    */
   const handleGenerateSemua = async () => {
     if (!subject) { showToast('Pilih mapel terlebih dahulu.'); return; }
@@ -166,8 +344,10 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
       const label = STEPS[stepNum - 1]?.label ?? `Step ${stepNum}`;
       setSemuaProgress(`Generating: ${label} (${stepNum - 1}/9)...`);
       try {
-        await aiGenerateStep(stepNum);
-        successCount++;
+        // W3-2 P1 fix: langkah melaporkan sendiri apakah body berubah.
+        const mutated = await aiGenerateStep(stepNum);
+        if (mutated) successCount++;
+        else failCount++;
       } catch (err) {
         failCount++;
         console.error(`Step ${stepNum} gagal:`, err);
@@ -211,9 +391,56 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
     }
   };
 
+  // W3-3: Simpan Draft kini nyata — memanggil createRpp/updateRpp dengan submit=false.
+  // Sebelumnya berupa setTimeout(800) palsu yang tidak mempertahankan data setelah refresh.
+  // State badge: dirty → saving → saved|error.
   const saveDraft = () => {
+    setErr(null);
+    if (!subject) return setErr('Pilih mapel terlebih dahulu.');
+    if (title.trim().length < 3) return setErr('Judul minimal 3 karakter.');
+    if (!academicYear) return setErr('Tahun ajaran aktif belum tersedia — hubungi admin.');
+
+    const cleanTp = tp.map((x) => x.trim()).filter(Boolean);
+    const cleanAtp = atp.filter((x) => (x.tpRef ?? '').trim() || (x.indikator ?? '').trim());
+    const cleanKeg = keg.filter((x) =>
+      (x.pertemuan ?? '').trim() || (x.pendahuluan ?? '').trim() ||
+      (x.inti ?? '').trim() || (x.penutup ?? '').trim() || (x.deskripsi ?? '').trim(),
+    );
+    const cleaned: ModulAjarBody = {
+      ...body,
+      tp: cleanTp.length ? cleanTp : undefined,
+      atp: cleanAtp.length ? cleanAtp : undefined,
+      kegiatan: cleanKeg.length ? cleanKeg : undefined,
+      profilDimensi: body.profilDimensi?.length ? body.profilDimensi : undefined,
+    };
+
     setSaving(true);
-    setTimeout(() => { setSaving(false); showToast('Draft modul ajar tersimpan'); }, 800);
+    setSavedVersion('saving');
+    startTransition(async () => {
+      try {
+        let res;
+        if (editing) {
+          res = await updateRpp(editing.id, { subject, title, classId: classId || null, body: cleaned });
+        } else {
+          res = await createRpp({
+            subject, title, classId: classId || undefined, body: cleaned, academicYear, semester, submit: false,
+          });
+        }
+        if (!res.success) {
+          setSavedVersion('error');
+          setErr(res.error ?? 'Gagal menyimpan draft.');
+          showToast('Gagal menyimpan draft: ' + (res.error ?? 'Unknown error'));
+          return;
+        }
+        setSavedVersion('saved');
+        showToast('Draft modul ajar tersimpan');
+      } catch (e) {
+        setSavedVersion('error');
+        showToast('Gagal menyimpan draft: ' + (e instanceof Error ? e.message : 'Unknown error'));
+      } finally {
+        setSaving(false);
+      }
+    });
   };
 
   const save = (submitNow: boolean) => {
@@ -267,9 +494,31 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
         <DialogHeader className="border-b border-[#e6efea] px-6 py-4">
           <DialogTitle className="flex items-center gap-2 text-[18px]">
             {editing ? 'Edit Modul Ajar' : 'Buat Modul Ajar'}
-            <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-0.5 text-[10.5px] font-bold text-emerald-700">
-              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
-              {saving ? 'Menyimpan...' : 'Tersimpan'}
+            {/*
+             * W3-3: Badge status jujur. Sebelumnya selalu 'Tersimpan' meski belum pernah
+             * tersimpan ke server. Sekarang reflect state: Belum disimpan / Menyimpan /
+             * Tersimpan / Gagal menyimpan.
+             */}
+            <span
+              className={clsx(
+                'inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10.5px] font-bold',
+                savedVersion === 'saving' && 'bg-amber-50 text-amber-700',
+                savedVersion === 'saved' && 'bg-emerald-50 text-emerald-700',
+                savedVersion === 'dirty' && 'bg-gray-100 text-gray-600',
+                savedVersion === 'error' && 'bg-rose-50 text-rose-700',
+              )}
+            >
+              {savedVersion === 'saving' && <Loader2 className="h-3 w-3 animate-spin" />}
+              {savedVersion === 'saved' && <CheckCircle className="h-3 w-3" />}
+              {savedVersion === 'dirty' && <AlertTriangle className="h-3 w-3" />}
+              {savedVersion === 'error' && <AlertTriangle className="h-3 w-3" />}
+              {savedVersion === 'saving'
+                ? 'Menyimpan...'
+                : savedVersion === 'saved'
+                  ? 'Tersimpan'
+                  : savedVersion === 'dirty'
+                    ? 'Belum disimpan'
+                    : 'Gagal menyimpan'}
             </span>
           </DialogTitle>
           <DialogDescription>

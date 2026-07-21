@@ -23,8 +23,19 @@ import {
   UpdateRppDto,
 } from './dto/rpp.dto';
 
-const REVIEWER_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] as const;
+// W3-4: One-step consistent policy dengan role-aware audit trail.
+// - WAKA_KURIKULUM: dapat melakukan Review (catatan + minta revisi) dan Approval
+//   (bila KS mendisposisikan). Audit trail mencatat role reviewer.
+// - KEPALA_SEKOLAH: Final Approval + supervisi/audit penuh atas semua RPP.
+// - SUPER_ADMIN: setara KS untuk tujuan admin/audit.
+// Two-step workflow (WAKA check → KS approve) tetap ditangguhkan karena butuh
+// enum `RppStatus` baru (`reviewed`) — perubahan schema Prisma = ASK FIRST.
+// Lihat docs/audits/WAVE3-PHASE2-ACADEMIC-PREPARATION-REMEDIATION-2026-07-20.md.
+const REVIEWER_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'] as const;
 const EDITABLE_STATUSES = ['draft', 'revision'] as const;
+
+// Prioritas role untuk audit trail. Role yang lebih spesifik dicatat lebih dulu.
+const REVIEWER_ROLE_PRIORITY = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'] as const;
 
 const RPP_SELECT = {
   id: true, teacherId: true, classId: true, subject: true, title: true,
@@ -45,6 +56,20 @@ export class RppService {
 
   private isReviewer(user: AuthUser): boolean {
     return user.roles.some((r) => (REVIEWER_ROLES as readonly string[]).includes(r));
+  }
+
+  /**
+   * W3-4 P2: Ekstrak role reviewer utama dari user.roles.
+   * Prioritas: SUPER_ADMIN > KEPALA_SEKOLAH > WAKA_KURIKULUM.
+   * Dipakai untuk audit trail — reviewerName disimpan sebagai `username [ROLE]`
+   * agar supervisor/auditor dapat melihat siapa yang mengambil keputusan
+   * dan dalam kapasitas apa.
+   */
+  private extractReviewerRole(user: AuthUser): string | null {
+    for (const role of REVIEWER_ROLE_PRIORITY) {
+      if (user.roles.includes(role)) return role;
+    }
+    return null;
   }
 
   private async resolveTeacherId(keycloakId: string): Promise<string> {
@@ -101,6 +126,13 @@ export class RppService {
     if (!dto.content && !dto.fileUrl && !dto.body) {
       throw new BadRequestException('Isi Modul Ajar (struktur/teks) atau lampiran wajib salah satu');
     }
+    // W3-6: GURU harus memiliki TeachingAssignment yang cocok dengan
+    // classId + subject + academicYear. Mencegah guru membuat Modul Ajar
+    // untuk kelas/mapel yang bukan assignmennya dengan menebak UUID kelas.
+    // KS/SA (reviewer) dapat bypass untuk tujuan audit/admin.
+    if (!this.isReviewer(user)) {
+      await this.assertTeachingAssignment(teacherId, dto.classId, dto.subject, dto.academicYear);
+    }
     return this.prisma.rpp.create({
       data: {
         teacherId,
@@ -124,11 +156,18 @@ export class RppService {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
     const existing = await this.prisma.rpp.findFirst({
       where: { id, teacherId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, classId: true, subject: true, academicYear: true },
     });
     if (!existing) throw new NotFoundException('RPP tidak ditemukan');
     if (!(EDITABLE_STATUSES as readonly string[]).includes(existing.status)) {
       throw new ConflictException(`RPP berstatus '${existing.status}' tidak bisa diedit`);
+    }
+    // W3-6: jika update mengubah classId/subject/academicYear, validasi assignment baru.
+    if (!this.isReviewer(user)) {
+      const newClassId = dto.classId !== undefined ? dto.classId : existing.classId;
+      const newSubject = dto.subject !== undefined ? dto.subject : existing.subject;
+      const newYear = dto.academicYear !== undefined ? dto.academicYear : existing.academicYear;
+      await this.assertTeachingAssignment(teacherId, newClassId, newSubject, newYear);
     }
     return this.prisma.rpp.update({
       where: { id },
@@ -167,7 +206,7 @@ export class RppService {
     });
   }
 
-  /** submitted → approved|revision (KS/SA). Revisi wajib bercatatan (DTO). */
+  /** submitted → approved|revision (KS/SA/WAKA). Revisi wajib bercatatan (DTO). */
   async review(id: string, dto: ReviewRppDto, user: AuthUser) {
     const existing = await this.prisma.rpp.findUnique({
       where: { id },
@@ -179,13 +218,19 @@ export class RppService {
         `Hanya RPP berstatus 'submitted' yang bisa direview (sekarang '${existing.status}')`,
       );
     }
+    // W3-4 P2: Audit trail dengan role tag — reviewerName disimpan sebagai
+    // `username [ROLE]` agar jelas dalam kapasitas apa keputusan diambil.
+    const reviewerRole = this.extractReviewerRole(user);
+    const formattedReviewerName = reviewerRole
+      ? `${user.username} [${reviewerRole}]`
+      : user.username;
     const reviewed = await this.prisma.rpp.update({
       where: { id },
       data: {
         status: dto.decision,
         reviewNote: dto.note ?? null,
         reviewerId: user.keycloakId,
-        reviewerName: user.username,
+        reviewerName: formattedReviewerName,
         reviewedAt: new Date(),
       },
       select: RPP_SELECT,
@@ -223,5 +268,35 @@ export class RppService {
     }
     await this.prisma.rpp.delete({ where: { id } });
     return { deleted: true, id };
+  }
+
+  // ── W3-6: TeachingAssignment validation ─────────────────────────────────
+  /**
+   * Pastikan GURU memiliki TeachingAssignment yang cocok dengan triple
+   * (classId, subject, academicYear). Tidak cocok → ForbiddenException.
+   * Dipanggil di create/update RPP untuk mencegah guru membuat Modul Ajar
+   * untuk kelas/mapel di luar assignment-nya.
+   */
+  private async assertTeachingAssignment(
+    teacherId: string,
+    classId: string | null | undefined,
+    subject: string,
+    academicYear: string,
+  ): Promise<void> {
+    if (!classId) {
+      // Classless/general RPP tidak diizinkan untuk GURU saat ini. Bilamana
+      // produk mendefinisikan RPP umum secara eksplisit, kebijakan ini dapat
+      // diubah dengan parameter `allowClassless`.
+      throw new BadRequestException('Class wajib dipilih sesuai assignment mengajar Anda');
+    }
+    const assignment = await this.prisma.teachingAssignment.findFirst({
+      where: { teacherId, classId, subject, academicYear },
+      select: { id: true },
+    });
+    if (!assignment) {
+      throw new ForbiddenException(
+        'Anda tidak memiliki assignment mengajar untuk kombinasi class/subject/tahun ajaran ini',
+      );
+    }
   }
 }
