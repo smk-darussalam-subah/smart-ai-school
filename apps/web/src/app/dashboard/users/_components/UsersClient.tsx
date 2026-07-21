@@ -112,19 +112,35 @@ export default function UsersClient({ initialGroups, initialPermissions, isSuper
     router.push(`/dashboard/users?${params.toString()}`);
   };
 
+  // TF-4: handle keycloakSyncPending flag dari backend. Bila KC sync gagal
+  // (KC down/unreachable), DB tetap ter-update tapi user perlu diberi tahu
+  // bahwa sinkronisasi Keycloak tertunda. Sebelumnya: error fatal & DB tidak ter-update.
   const handleRoleChange = async (userId: string, newRole: string) => {
     setActionMsg('');
     const result = await updateUserRole(userId, newRole);
-    if (result.error) setActionMsg(`Gagal: ${result.error}`);
-    else setActionMsg('Peran berhasil diubah');
+    if (result.error) {
+      setActionMsg(`Gagal: ${result.error}`);
+    } else {
+      const syncPending = (result.data as { keycloakSyncPending?: boolean } | undefined)?.keycloakSyncPending === true;
+      setActionMsg(syncPending
+        ? 'Peran diubah di database. ⚠ Sinkronisasi Keycloak tertunda — coba sync ulang nanti atau hubungi teknisi.'
+        : 'Peran berhasil diubah');
+    }
     router.refresh();
   };
 
   const handleToggleActive = async (userId: string, current: boolean) => {
     setActionMsg('');
     const result = await updateUserActive(userId, !current);
-    if (result.error) setActionMsg(`Gagal: ${result.error}`);
-    else setActionMsg(current ? 'Pengguna dinonaktifkan' : 'Pengguna diaktifkan');
+    if (result.error) {
+      setActionMsg(`Gagal: ${result.error}`);
+    } else {
+      const syncPending = (result.data as { keycloakSyncPending?: boolean } | undefined)?.keycloakSyncPending === true;
+      const baseMsg = current ? 'Pengguna dinonaktifkan' : 'Pengguna diaktifkan';
+      setActionMsg(syncPending
+        ? `${baseMsg} di database. ⚠ Sinkronisasi Keycloak tertunda — coba sync ulang nanti atau hubungi teknisi.`
+        : baseMsg);
+    }
     router.refresh();
   };
 
