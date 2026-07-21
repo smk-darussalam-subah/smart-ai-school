@@ -41,10 +41,11 @@ export default async function StrukturOrganisasiPage() {
     apiFetch<Position[]>('/positions', token),
     apiFetch<{ academicYear: { id: string; code: string } | null; assignments: Assignment[] }>('/positions/assignments', token),
     apiFetch<Major[]>('/school/majors?activeOnly=true', token),
-    apiFetch<{ groups: { role: string; users: StaffCandidate[] }[] }>('/users/grouped?limit=200', token),
+    apiFetch<{ groups: { role: string; users: StaffCandidate[] }[] }>('/users/grouped?limit=100', token),
   ]);
 
-  if (catalog === null && assignmentsRes === null) return <LoadError />;
+  // TF-1-FU-3: Perketat LoadError — jika SALAH SATU API inti gagal, jangan render parsial.
+  if (catalog === null || assignmentsRes === null) return <LoadError />;
 
   const positions = Array.isArray(catalog) ? catalog : [];
   const academicYear = assignmentsRes?.academicYear ?? null;
@@ -54,6 +55,8 @@ export default async function StrukturOrganisasiPage() {
     .filter((g) => STAFF_ROLES.includes(g.role))
     .flatMap((g) => g.users.map((u) => ({ ...u, role: g.role })));
 
+  // TF-1-FU-5: Bedakan "API gagal" dari "benar-benar kosong" agar UI tidak menyesatkan.
+  const staffLoadError = groupedRes === null;
   const isSuperAdmin = roles.includes('SUPER_ADMIN');
 
   return (
@@ -64,6 +67,7 @@ export default async function StrukturOrganisasiPage() {
       majors={majors}
       staff={staff}
       isSuperAdmin={isSuperAdmin}
+      staffLoadError={staffLoadError}
     />
   );
 }

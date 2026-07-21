@@ -12,6 +12,7 @@ import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { UsersController } from '../users/users.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '@smk/auth';
+import { GroupedUsersQuerySchema } from '../users/dto/list-users.dto';
 
 const SA_USER: AuthUser = {
   keycloakId: 'kc-sa', email: 'sa@test.com', username: 'sa',
@@ -556,6 +557,17 @@ describe('UsersController', () => {
       await controller.findGrouped({ search: 'Agus' });
 
       expect(mockFindGrouped).toHaveBeenCalledWith(expect.objectContaining({ search: 'Agus' }));
+    });
+
+    // TF-1-FU-4: Contract regression test — frontend pernah kirim limit=200 yang
+    // ditolak Zod max(100) → HTTP 400 → dropdown kosong silent. Test ini memastikan
+    // kontrak DTO tidak berubah tanpa disadari.
+    it('TF-1-FU-4: GroupedUsersQuerySchema rejects limit > 100 (contract guard)', () => {
+      const overLimit = GroupedUsersQuerySchema.safeParse({ limit: 200 });
+      expect(overLimit.success).toBe(false);
+
+      const atLimit = GroupedUsersQuerySchema.safeParse({ limit: 100 });
+      expect(atLimit.success).toBe(true);
     });
   });
 
