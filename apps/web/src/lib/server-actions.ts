@@ -16,10 +16,9 @@ export async function apiAction<T = unknown>(
   try {
     const res = await fetch(`${API_BASE}/api/v1${path}`, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers: body
+        ? { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+        : { Authorization: `Bearer ${token}` },
       body: body ? JSON.stringify(body) : undefined,
     });
 
