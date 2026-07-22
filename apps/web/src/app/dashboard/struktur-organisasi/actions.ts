@@ -28,6 +28,18 @@ export async function syncRolesAction() {
 }
 
 /** R-25: Verifikasi effective access user (SUPER_ADMIN only). */
+export interface AccessCheckResult {
+  user: { id: string; fullName: string; email: string; dbRole: string };
+  keycloakRoles: string[];
+  activePositions: Array<{
+    code: string;
+    name: string;
+    major: { code: string; name: string } | null;
+  }>;
+  positionPermissions: string[];
+  effectivePermissions: string[];
+}
+
 export async function accessCheckAction(userId: string) {
-  return apiAction(`/positions/access-check/${userId}`, 'GET');
+  return apiAction<AccessCheckResult>(`/positions/access-check/${userId}`, 'GET');
 }
