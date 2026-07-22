@@ -11,10 +11,9 @@ async function fetchApi(path: string, method: string, body?: unknown) {
   if (!session?.accessToken) throw new Error('Unauthorized');
   const res = await fetch(`${API_BASE}/api/v1${path}`, {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.accessToken}`,
-    },
+    headers: body
+      ? { 'Content-Type': 'application/json', Authorization: `Bearer ${session.accessToken}` }
+      : { Authorization: `Bearer ${session.accessToken}` },
     body: body ? JSON.stringify(body) : undefined,
     cache: 'no-store',
   });

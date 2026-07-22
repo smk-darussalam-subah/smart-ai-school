@@ -133,10 +133,9 @@ export async function apiMutate<T>(
   try {
     const res = await fetch(url, {
       method: options.method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: options.body
+        ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+        : { Authorization: `Bearer ${token}` },
       body: options.body ? JSON.stringify(options.body) : undefined,
       cache: 'no-store',
     });
