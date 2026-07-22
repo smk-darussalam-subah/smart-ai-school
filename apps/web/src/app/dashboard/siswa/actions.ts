@@ -13,10 +13,9 @@ async function fetchApi(path: string, method: string, body?: unknown) {
   const url = `${API_BASE}/api/v1${path}`;
   const res = await fetch(url, {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.accessToken}`,
-    },
+    headers: body
+      ? { 'Content-Type': 'application/json', Authorization: `Bearer ${session.accessToken}` }
+      : { Authorization: `Bearer ${session.accessToken}` },
     body: body ? JSON.stringify(body) : undefined,
     cache: 'no-store',
   });

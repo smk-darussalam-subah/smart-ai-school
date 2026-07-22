@@ -16,7 +16,9 @@ async function apiCall(path: string, method: string, body?: unknown) {
   }
   try {
     const res = await fetch(`${API_BASE}/api/v1${path}`, {
-      method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session!.accessToken}` },
+      method, headers: body
+        ? { 'Content-Type': 'application/json', Authorization: `Bearer ${session!.accessToken}` }
+        : { Authorization: `Bearer ${session!.accessToken}` },
       body: body ? JSON.stringify(body) : undefined, cache: 'no-store',
     });
     if (!res.ok) {
