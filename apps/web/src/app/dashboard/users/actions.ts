@@ -3,6 +3,20 @@
 import { revalidatePath } from 'next/cache';
 import { apiAction } from '@/lib/server-actions';
 
+// TF2-P1-2: accessCheckAction sudah ada di struktur-organisasi/actions.ts.
+// Re-export type AccessCheckResult untuk dipakai component UsersClient.
+// Note: type-only import di file 'use server' tidak boleh di-re-export sebagai
+// runtime export (Next.js menolak). Component import type langsung dari sini.
+export type { AccessCheckResult } from '../struktur-organisasi/actions';
+
+// Re-export action secara runtime lewat proxy async wrapper agar tetap compliant
+// dengan aturan Next.js 'use server' (hanya async function yang boleh di-export).
+export async function accessCheckAction(userId: string) {
+  // Dynamic import menghindari cycle + menjaga 'use server' boundary.
+  const { accessCheckAction: original } = await import('../struktur-organisasi/actions');
+  return original(userId);
+}
+
 export async function updateUserRole(userId: string, role: string) {
   const result = await apiAction(`/users/${userId}/role`, 'PATCH', { role });
   if (!result.error) revalidatePath('/dashboard/users');

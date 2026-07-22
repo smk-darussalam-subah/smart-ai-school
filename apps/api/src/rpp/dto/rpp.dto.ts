@@ -2,13 +2,23 @@ import { z } from 'zod';
 
 // Modul Ajar terstruktur (Kurikulum Merdeka). Semua bagian opsional — guru mengisi
 // bertahap; field tak dikenal di-strip. Disimpan di Rpp.body (JSONB).
+//
+// W3-1: Skema kini mencerminkan SELURUH field frontend ModulAjarBody di
+// `apps/web/src/app/dashboard/akademik/_components/guru-types.ts`. Sebelumnya,
+// field kaya (kegiatan.pendahuluan/inti/penutup/diferensiasi, asesmen per jenis,
+// refleksi guru/siswa, lampiranUrl, durasiMenit) didiamkan di-strip secara diam-diam
+// saat POST/PATCH, sehingga wizard kehilangan data pelajaran penting setelah reload.
 const AtpItem = z.object({
   tpRef: z.string().max(500).optional(),
   indikator: z.string().max(2000).optional(),
 });
 const KegiatanItem = z.object({
   pertemuan: z.string().max(120).optional(),
-  deskripsi: z.string().max(20_000).optional(),
+  deskripsi: z.string().max(20_000).optional(),          // legacy: deskripsi bebas
+  pendahuluan: z.string().max(10_000).optional(),        // kegiatan pendahuluan
+  inti: z.string().max(20_000).optional(),               // kegiatan inti
+  penutup: z.string().max(10_000).optional(),            // kegiatan penutup
+  diferensiasi: z.string().max(10_000).optional(),       // strategi diferensiasi
 });
 export const ModulAjarBodySchema = z.object({
   fase: z.string().max(20).optional(),
@@ -26,11 +36,18 @@ export const ModulAjarBodySchema = z.object({
   target: z.string().max(2_000).optional(),
   model: z.string().max(200).optional(),
   kegiatan: z.array(KegiatanItem).max(40).optional(),
-  asesmen: z.string().max(20_000).optional(),
+  asesmen: z.string().max(20_000).optional(),            // legacy: rencana asesmen bebas
+  asesmenDiagnostik: z.string().max(10_000).optional(),  // jenis + deskripsi diagnostik
+  asesmenFormatif: z.string().max(10_000).optional(),    // jenis + deskripsi formatif
+  asesmenSumatif: z.string().max(10_000).optional(),     // jenis + deskripsi sumatif
   pengayaan: z.string().max(10_000).optional(),
   remedial: z.string().max(10_000).optional(),
-  refleksi: z.string().max(10_000).optional(),
-  lampiran: z.string().max(20_000).optional(),
+  refleksi: z.string().max(10_000).optional(),           // legacy: refleksi gabungan
+  refleksiGuru: z.string().max(10_000).optional(),       // pertanyaan refleksi guru
+  refleksiSiswa: z.string().max(10_000).optional(),      // pertanyaan refleksi siswa
+  lampiran: z.string().max(20_000).optional(),           // catatan lampiran (teks)
+  lampiranUrl: z.string().max(2000).optional(),          // URL eksternal (video/drive)
+  durasiMenit: z.coerce.number().int().min(1).max(600).nullish(), // durasi per JP (menit)
 });
 export type ModulAjarBody = z.infer<typeof ModulAjarBodySchema>;
 

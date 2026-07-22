@@ -1,6 +1,6 @@
 import Image from 'next/image';
 
-const SPMB_URL = 'https://taplink.cc/smkdarussalamsubah';
+const SPMB_URL = '/spmb';
 const WA_URL = 'https://wa.me/6287775564779';
 const IG_URL = 'https://instagram.com/smkdarussalamsubah';
 
@@ -61,7 +61,7 @@ export function Footer() {
               Tautan
             </h4>
             {[
-              { label: 'SPMB 2026/2027', href: SPMB_URL, ext: true },
+              { label: 'SPMB 2027/2028', href: SPMB_URL, ext: false },
               { label: 'Profil Sekolah', href: '#profil', ext: false },
               { label: 'Portal Siswa', href: '/login', ext: false },
               { label: 'Video Profil', href: '#video', ext: false },

@@ -10,6 +10,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
 import { UserRole } from '@smk/auth';
 import { logger } from '@smk/logger';
@@ -23,6 +24,7 @@ import {
   ProvisionUserDto,
   ProvisionStudentDto,
   ProvisionUserSchema,
+  ProvisionStudentSchema,
   STAFF_ROLES,
 } from './dto/provision.dto';
 
@@ -38,13 +40,63 @@ function syntheticEmailOrtu(phoneE164: string): string {
 }
 
 function generateTempPassword(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  const bytes = randomBytes(12);
-  let result = '';
-  for (let i = 0; i < 12; i++) {
-    result += chars[bytes[i]! % chars.length];
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghjkmnpqrstuvwxyz';
+  const digit = '23456789';
+  const special = '!@#$%^&*?';
+  const all = upper + lower + digit + special;
+  const password = [
+    upper[randomBytes(1)[0]! % upper.length]!,
+    lower[randomBytes(1)[0]! % lower.length]!,
+    digit[randomBytes(1)[0]! % digit.length]!,
+    special[randomBytes(1)[0]! % special.length]!,
+  ];
+  const fillBytes = randomBytes(8);
+  for (let i = 0; i < fillBytes.length; i++) {
+    password.push(all[fillBytes[i]! % all.length]!);
   }
-  return result;
+  const shuffleBytes = randomBytes(password.length);
+  for (let i = password.length - 1; i > 0; i--) {
+    const j = shuffleBytes[i]! % (i + 1);
+    [password[i], password[j]] = [password[j]!, password[i]!];
+  }
+  return password.join('');
+}
+
+function parseJsonRecord(value: string | null | undefined): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function readEnrolledStudentId(notes: string | null | undefined): string | null {
+  const parsed = parseJsonRecord(notes);
+  const enrollment = parsed.enrollment;
+  if (typeof enrollment !== 'object' || enrollment === null || Array.isArray(enrollment)) return null;
+  const studentId = (enrollment as Record<string, unknown>).studentId;
+  return typeof studentId === 'string' && studentId.trim() ? studentId : null;
+}
+
+function withEnrollmentMetadata(
+  notes: string | null | undefined,
+  data: { studentId: string; studentUserId: string; enrolledAt: Date; enrolledBy: string },
+): string {
+  const parsed = parseJsonRecord(notes);
+  return JSON.stringify({
+    ...parsed,
+    enrollment: {
+      studentId: data.studentId,
+      studentUserId: data.studentUserId,
+      enrolledAt: data.enrolledAt.toISOString(),
+      enrolledBy: data.enrolledBy,
+    },
+  });
 }
 
 export interface TempCredential {
@@ -237,6 +289,59 @@ export class ProvisioningService {
     return { results, summary: { ok, fail: results.length - ok, total: results.length } };
   }
 
+  async bulkProvisionStudents(
+    rows: Array<Record<string, unknown>>,
+    actor: Actor,
+  ): Promise<{
+    results: Array<BulkRowResult>;
+    summary: { ok: number; fail: number; total: number };
+  }> {
+    const results: BulkRowResult[] = [];
+    const parsedRows = rows.map((row) => ProvisionStudentSchema.safeParse(row));
+    const nisCounts = new Map<string, number>();
+
+    parsedRows.forEach((parsed) => {
+      if (!parsed.success) return;
+      const nis = parsed.data.siswa.nis.trim();
+      nisCounts.set(nis, (nisCounts.get(nis) ?? 0) + 1);
+    });
+
+    for (let i = 0; i < parsedRows.length; i++) {
+      const parsed = parsedRows[i]!;
+      if (!parsed.success) {
+        results.push({
+          index: i,
+          status: 'error',
+          error: parsed.error.issues.map((x) => x.message).join('; '),
+        });
+        continue;
+      }
+
+      if ((nisCounts.get(parsed.data.siswa.nis.trim()) ?? 0) > 1) {
+        results.push({
+          index: i,
+          status: 'error',
+          error: `NIS "${parsed.data.siswa.nis}" duplikat dalam file import`,
+        });
+        continue;
+      }
+
+      try {
+        const r = await this.provisionStudent(parsed.data, actor);
+        results.push({ index: i, status: 'ok', user: r.user, tempCredentials: r.tempCredentials });
+      } catch (err: unknown) {
+        results.push({
+          index: i,
+          status: 'error',
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const ok = results.filter((r) => r.status === 'ok').length;
+    return { results, summary: { ok, fail: results.length - ok, total: results.length } };
+  }
+
   // ── provisionStudent ────────────────────────────────────────────────────────
 
   async provisionStudent(dto: ProvisionStudentDto, actor: Actor): Promise<ProvisionResult> {
@@ -269,6 +374,20 @@ export class ProvisioningService {
         where: { phone: ortuPhone, role: 'ORANG_TUA', deletedAt: null },
         select: { id: true, keycloakId: true },
       });
+    }
+
+    const ppdbLead = dto.ppdbLeadId
+      ? await this.prisma.ppdbLead.findUnique({
+          where: { id: dto.ppdbLeadId },
+          select: { id: true, status: true, notes: true },
+        })
+      : null;
+    if (dto.ppdbLeadId && !ppdbLead) throw new NotFoundException('Lead PPDB tidak ditemukan');
+    if (ppdbLead && ppdbLead.status !== 'accepted') {
+      throw new ConflictException('Lead PPDB harus berstatus accepted sebelum didaftarkan sebagai siswa');
+    }
+    if (ppdbLead && readEnrolledStudentId(ppdbLead.notes)) {
+      throw new ConflictException('Lead PPDB sudah didaftarkan sebagai siswa');
     }
 
     // Pre-flight: NIS + KC username
@@ -323,6 +442,8 @@ export class ProvisioningService {
       const result = await this.prisma.$transaction(async (tx) => {
         let parentId: string | undefined = existingOrtuUser?.id;
 
+        const consentAt = new Date();
+
         if (ortuIsNew && ortuKcId) {
           const ortu = await tx.user.create({
             data: {
@@ -332,33 +453,53 @@ export class ProvisioningService {
               phone: ortuPhone,
               role: 'ORANG_TUA',
               isActive: true,
+              consentAt,
             },
           });
           parentId = ortu.id;
+        } else if (parentId) {
+          await tx.user.update({
+            where: { id: parentId },
+            data: { consentAt },
+          });
         }
-
-        const consentAt = new Date();
 
         const siswaUser = await tx.user.create({
           data: {
             keycloakId: siswaKcId,
             email: siswaEmail,
             fullName: dto.siswa.fullName,
+            gender: dto.siswa.gender ?? null,
             role: 'SISWA',
             isActive: true,
             consentAt,
           },
         });
 
-        await tx.student.create({
+        const student = await tx.student.create({
           data: {
             userId: siswaUser.id,
             nis: dto.siswa.nis,
-            classId: dto.siswa.classId || null,
+            classId: dto.siswa.classId,
             parentId: parentId || null,
-            joinedAt: new Date(),
+            status: dto.siswa.status ?? 'active',
+            joinedAt: dto.siswa.joinedAt ? new Date(dto.siswa.joinedAt) : new Date(),
           },
         });
+
+        if (ppdbLead) {
+          await tx.ppdbLead.update({
+            where: { id: ppdbLead.id },
+            data: {
+              notes: withEnrollmentMetadata(ppdbLead.notes, {
+                studentId: student.id,
+                studentUserId: siswaUser.id,
+                enrolledAt: consentAt,
+                enrolledBy: actor.keycloakId,
+              }),
+            },
+          });
+        }
 
         return { user: siswaUser };
       });

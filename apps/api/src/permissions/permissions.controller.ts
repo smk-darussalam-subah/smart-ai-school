@@ -88,7 +88,9 @@ export class PermissionsController {
     @Param('userId') userId: string,
     @Body(ZodPipe(UserPermissionOverrideSchema)) dto: { permissionId: string; grant: boolean },
   ) {
-    return this.permissionsService.grantUserPermission(userId, dto.permissionId);
+    return dto.grant
+      ? this.permissionsService.grantUserPermission(userId, dto.permissionId)
+      : this.permissionsService.revokeUserPermission(userId, dto.permissionId);
   }
 
   @Delete('users/:userId/revoke')

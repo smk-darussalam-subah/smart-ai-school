@@ -330,6 +330,7 @@ function buildStudentPrisma() {
     student: { findMany: jest.fn(), findUnique: jest.fn() },
     teacher: { findUnique: jest.fn() },
     teachingAssignment: { findMany: jest.fn() },
+    class: { findMany: jest.fn() },
     attendance: { groupBy: jest.fn() },
     grade: { findMany: jest.fn() },
   };
@@ -347,8 +348,9 @@ describe('StudentAnalyticsService', () => {
     prisma = buildStudentPrisma();
     [prisma.user.findUnique, prisma.student.findMany, prisma.student.findUnique,
      prisma.teacher.findUnique, prisma.teachingAssignment.findMany,
-     prisma.attendance.groupBy, prisma.grade.findMany]
+     prisma.class.findMany, prisma.attendance.groupBy, prisma.grade.findMany]
       .forEach((m) => m.mockReset());
+    prisma.class.findMany.mockResolvedValue([]);
     const module: TestingModule = await Test.createTestingModule({
       providers: [StudentAnalyticsService, { provide: PrismaService, useValue: prisma }],
     }).compile();

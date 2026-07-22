@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Briefcase } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,6 +30,7 @@ import {
   fetchEffectivePermissions,
 } from '../actions';
 import AddUserDialog from './AddUserDialog';
+import UserAccessDialog from './UserAccessDialog';
 
 const ROLES = [
   'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA',
@@ -104,6 +106,11 @@ export default function UsersClient({ initialGroups, initialPermissions, isSuper
   const [overrideLoading, setOverrideLoading] = useState(false);
   const [tab, setTab] = useState<'override' | 'effective'>('effective');
 
+  // TF2-P1-2: State untuk dialog korelasi Users ↔ Struktur (akses efektif).
+  // Hanya SUPER_ADMIN yang bisa membuka — backend @Roles('SUPER_ADMIN') di
+  // positions.controller.ts:40. Tombol di-render conditional saat isSuperAdmin.
+  const [accessCheckUser, setAccessCheckUser] = useState<string | null>(null);
+
   const [actionMsg, setActionMsg] = useState('');
 
   const handleSearch = (value: string) => {
@@ -112,19 +119,35 @@ export default function UsersClient({ initialGroups, initialPermissions, isSuper
     router.push(`/dashboard/users?${params.toString()}`);
   };
 
+  // TF-4: handle keycloakSyncPending flag dari backend. Bila KC sync gagal
+  // (KC down/unreachable), DB tetap ter-update tapi user perlu diberi tahu
+  // bahwa sinkronisasi Keycloak tertunda. Sebelumnya: error fatal & DB tidak ter-update.
   const handleRoleChange = async (userId: string, newRole: string) => {
     setActionMsg('');
     const result = await updateUserRole(userId, newRole);
-    if (result.error) setActionMsg(`Gagal: ${result.error}`);
-    else setActionMsg('Peran berhasil diubah');
+    if (result.error) {
+      setActionMsg(`Gagal: ${result.error}`);
+    } else {
+      const syncPending = (result.data as { keycloakSyncPending?: boolean } | undefined)?.keycloakSyncPending === true;
+      setActionMsg(syncPending
+        ? 'Peran diubah di database. ⚠ Sinkronisasi Keycloak tertunda — coba sync ulang nanti atau hubungi teknisi.'
+        : 'Peran berhasil diubah');
+    }
     router.refresh();
   };
 
   const handleToggleActive = async (userId: string, current: boolean) => {
     setActionMsg('');
     const result = await updateUserActive(userId, !current);
-    if (result.error) setActionMsg(`Gagal: ${result.error}`);
-    else setActionMsg(current ? 'Pengguna dinonaktifkan' : 'Pengguna diaktifkan');
+    if (result.error) {
+      setActionMsg(`Gagal: ${result.error}`);
+    } else {
+      const syncPending = (result.data as { keycloakSyncPending?: boolean } | undefined)?.keycloakSyncPending === true;
+      const baseMsg = current ? 'Pengguna dinonaktifkan' : 'Pengguna diaktifkan';
+      setActionMsg(syncPending
+        ? `${baseMsg} di database. ⚠ Sinkronisasi Keycloak tertunda — coba sync ulang nanti atau hubungi teknisi.`
+        : baseMsg);
+    }
     router.refresh();
   };
 
@@ -271,6 +294,18 @@ export default function UsersClient({ initialGroups, initialPermissions, isSuper
                             >
                               Izin
                             </Button>
+                            {/* TF2-P1-2: Buka dialog korelasi jabatan-izin (SA only). */}
+                            {isSuperAdmin && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1.5"
+                                onClick={() => setAccessCheckUser(u.id)}
+                                title="Lihat jabatan aktif + izin efektif (R-25)"
+                              >
+                                <Briefcase className="h-3.5 w-3.5" /> Jabatan
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant={u.isActive ? 'destructive' : 'default'}
@@ -289,6 +324,12 @@ export default function UsersClient({ initialGroups, initialPermissions, isSuper
           )}
         </Card>
       ))}
+
+      {/* TF2-P1-2: Dialog korelasi Users ↔ Struktur (akses efektif). */}
+      <UserAccessDialog
+        userId={accessCheckUser}
+        onClose={() => setAccessCheckUser(null)}
+      />
 
       {/* ── Panel Izin Pengguna ──────────────────────────────────────────────── */}
       {selectedUser && (

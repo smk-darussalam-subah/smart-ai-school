@@ -110,14 +110,16 @@ function buildPrisma() {
 describe('FinanceService', () => {
   let service: FinanceService;
   let prisma: ReturnType<typeof buildPrisma>;
+  let eventEmitter: { emit: jest.Mock };
 
   beforeEach(async () => {
     prisma = buildPrisma();
+    eventEmitter = { emit: jest.fn() };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FinanceService,
         { provide: PrismaService, useValue: prisma },
-        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        { provide: EventEmitter2, useValue: eventEmitter },
       ],
     }).compile();
     service = module.get(FinanceService);
@@ -178,14 +180,16 @@ describe('FinanceService', () => {
       );
     });
 
-    it('paidAt di-set untuk status paid', async () => {
+    it('create tidak langsung approve meski dto status paid', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-tu' });
       prisma.sppPayment.create.mockResolvedValue(MOCK_SPP);
 
       await service.createRecord(CREATE_DTO, TU_USER);
 
       const callData = prisma.sppPayment.create.mock.calls[0][0].data;
-      expect(callData.paidAt).toBeInstanceOf(Date);
+      expect(callData.status).toBe('unpaid');
+      expect(callData.paidAt).toBeNull();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
 
     it('paidAt null untuk status unpaid', async () => {
@@ -195,6 +199,7 @@ describe('FinanceService', () => {
       await service.createRecord({ ...CREATE_DTO, status: 'unpaid' as const }, TU_USER);
 
       const callData = prisma.sppPayment.create.mock.calls[0][0].data;
+      expect(callData.status).toBe('unpaid');
       expect(callData.paidAt).toBeNull();
     });
 
@@ -402,6 +407,7 @@ describe('FinanceService', () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-admin' });
       prisma.sppPayment.findUnique.mockResolvedValue({
         id: 'spp-uuid-001',
+        status: 'unpaid',
         approvedBy: null,
         approvedAt: null,
       });
@@ -419,12 +425,16 @@ describe('FinanceService', () => {
         }),
       );
       expect(result.approvedBy).toBe('user-uuid-admin');
+      expect(prisma.sppPayment.update.mock.calls[0][0].data).toMatchObject({ status: 'paid' });
+      expect(prisma.sppPayment.update.mock.calls[0][0].data.paidAt).toBeInstanceOf(Date);
+      expect(eventEmitter.emit).toHaveBeenCalled();
     });
 
     it('KS berhasil approve', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-ks' });
       prisma.sppPayment.findUnique.mockResolvedValue({
         id: 'spp-uuid-001',
+        status: 'unpaid',
         approvedBy: null,
         approvedAt: null,
       });
@@ -443,6 +453,7 @@ describe('FinanceService', () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-admin' });
       prisma.sppPayment.findUnique.mockResolvedValue({
         id: 'spp-uuid-001',
+        status: 'unpaid',
         approvedBy: 'user-uuid-ks', // sudah ada approvedBy
         approvedAt: new Date(),
       });
@@ -462,6 +473,7 @@ describe('FinanceService', () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-admin' });
       prisma.sppPayment.findUnique.mockResolvedValue({
         id: 'spp-uuid-001',
+        status: 'unpaid',
         approvedBy: null,
         approvedAt: null,
       });

@@ -64,13 +64,19 @@ export type GradeNaStatus = 'tuntas' | 'mid' | 'remedial';
 export type AttendanceCellStatus =
   | 'hadir' | 'izin' | 'sakit' | 'alpha' // status NYATA dari /attendance
   | 'none'   // hari sekolah tanpa catatan kehadiran
-  | 'empty'  // sel kosong (Minggu libur / padding awal bulan)
+  | 'holiday' // Minggu/libur kalender, bukan hari aktif
+  | 'outside' // tanggal bulan sebelumnya/berikutnya untuk melengkapi grid
+  | 'empty'  // status kompatibilitas lama: sel struktural tanpa data
   | 'future'; // tanggal belum tiba
 
-/** Satu sel pada grid kalender bulanan. day=0 berarti sel padding kosong. */
+/** Satu sel pada grid kalender bulanan. */
 export interface CalendarCell {
   day: number;
   status: AttendanceCellStatus;
+  date: string;
+  inMonth: boolean;
+  dayOfWeek: number;
+  holidayName?: string | null;
 }
 
 // Pembayaran & Tugas = view-model untuk gelombang Ortu/Siswa (backend menyusul).
@@ -202,42 +208,80 @@ export function fmtDateShort(dateStr: string): string {
 
 /**
  * Bangun STRUKTUR kalender bulanan: Sunday-first (kolom Minggu=0), sekolah 6 hari
- * (Senin–Sabtu), Minggu libur. Status sel diisi dari `statusByDay` (data NYATA
+ * (Senin–Sabtu), Minggu libur. Status sel diisi dari `statusByDate` (data NYATA
  * /attendance) — fungsi ini TIDAK pernah mengarang status kehadiran.
  *
  * @param year        tahun penuh (mis. 2026)
  * @param monthIndex0 indeks bulan 0–11 (0=Januari)
  * @param opts.todayDay   tanggal "hari ini"; tanggal > nilai ini → 'future'. Omit = tak ada penanda future.
- * @param opts.statusByDay peta tanggal→status kehadiran nyata. Tanggal sekolah tanpa entri → 'none'.
+ * @param opts.statusByDate peta YYYY-MM-DD→status kehadiran nyata. Tanggal sekolah tanpa entri → 'none'.
  */
 export function generateCalendar(
   year: number,
   monthIndex0: number,
   opts: {
     todayDay?: number;
-    statusByDay?: Record<number, AttendanceCellStatus> | Map<number, AttendanceCellStatus>;
+    statusByDate?: Record<string, AttendanceCellStatus> | Map<string, AttendanceCellStatus>;
+    holidays?: Array<{ start: string; end?: string | null; name?: string | null }>;
   } = {},
 ): CalendarCell[] {
-  const { todayDay, statusByDay } = opts;
-  const lookup = (d: number): AttendanceCellStatus | undefined =>
-    statusByDay instanceof Map ? statusByDay.get(d) : statusByDay?.[d];
+  const { todayDay, statusByDate, holidays = [] } = opts;
+  const lookup = (dateIso: string): AttendanceCellStatus | undefined =>
+    statusByDate instanceof Map ? statusByDate.get(dateIso) : statusByDate?.[dateIso];
+  const dateKey = (date: Date): string => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+  const holidayByDate = new Map<string, string | null>();
+  for (const holiday of holidays) {
+    const start = new Date(`${holiday.start.slice(0, 10)}T00:00:00`);
+    const end = new Date(`${(holiday.end ?? holiday.start).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+    for (const cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+      holidayByDate.set(dateKey(cursor), holiday.name ?? null);
+    }
+  }
 
   const firstDow = new Date(year, monthIndex0, 1).getDay(); // 0=Minggu … 6=Sabtu
   const daysInMonth = new Date(year, monthIndex0 + 1, 0).getDate();
+  const visibleCellCount = Math.ceil((firstDow + daysInMonth) / 7) * 7;
 
   const cells: CalendarCell[] = [];
-  for (let i = 0; i < firstDow; i++) cells.push({ day: 0, status: 'empty' }); // padding awal
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dow = (d + firstDow - 1) % 7; // 0=Minggu
-    if (dow === 0) {
-      cells.push({ day: d, status: 'empty' }); // Minggu libur
+  for (let i = 0; i < visibleCellCount; i++) {
+    const date = new Date(year, monthIndex0, 1 - firstDow + i);
+    const day = date.getDate();
+    const inMonth = date.getMonth() === monthIndex0;
+    const dayOfWeek = date.getDay();
+    const dateIso = dateKey(date);
+    const holidayName = holidayByDate.get(dateIso) ?? null;
+
+    if (!inMonth) {
+      cells.push({ day, status: 'outside', date: dateIso, inMonth, dayOfWeek, holidayName });
       continue;
     }
-    if (todayDay != null && d > todayDay) {
-      cells.push({ day: d, status: 'future' });
+
+    if (dayOfWeek === 0 || holidayName) {
+      cells.push({
+        day,
+        status: 'holiday',
+        date: dateIso,
+        inMonth,
+        dayOfWeek,
+        holidayName: holidayName ?? 'Minggu',
+      });
       continue;
     }
-    cells.push({ day: d, status: lookup(d) ?? 'none' });
+
+    cells.push({
+      day,
+      status: todayDay != null && day > todayDay ? 'future' : lookup(dateIso) ?? 'none',
+      date: dateIso,
+      inMonth,
+      dayOfWeek,
+      holidayName,
+    });
   }
   return cells;
 }

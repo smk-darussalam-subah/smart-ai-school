@@ -327,7 +327,7 @@ export interface QuestionData {
 
 /** Fetch questions for a subject (or all if no subject). */
 export async function fetchQuestions(subject?: string) {
-  const path = subject ? `/questions?subject=${encodeURIComponent(subject)}&limit=200` : '/questions?limit=200';
+  const path = subject ? `/questions?subject=${encodeURIComponent(subject)}&limit=100` : '/questions?limit=100';
   const r = await apiCall(path, 'GET');
   return r;
 }
@@ -533,6 +533,34 @@ export async function fetchPersonalCalendar(): Promise<{ success: boolean; data?
   const r = await apiCall('/gamification/personal-calendar', 'GET');
   if (!r.success) return { success: false, error: r.error };
   return { success: true, data: r.data as { className: string; schedule: unknown[]; events: unknown[] } };
+}
+
+type StudentAttendanceMonthItem = {
+  id: string;
+  studentId: string;
+  classId: string;
+  date: string;
+  status: 'hadir' | 'izin' | 'sakit' | 'alpha';
+  notes: string | null;
+};
+
+/** Fetch attendance rows for the viewed month. SISWA ownership is enforced by API. */
+export async function fetchStudentAttendanceMonth(
+  year: number,
+  monthIndex0: number,
+): Promise<{ success: boolean; data?: StudentAttendanceMonthItem[]; error?: string }> {
+  if (!Number.isInteger(year) || !Number.isInteger(monthIndex0) || monthIndex0 < 0 || monthIndex0 > 11) {
+    return { success: false, error: 'Bulan kehadiran tidak valid.' };
+  }
+
+  const month = String(monthIndex0 + 1).padStart(2, '0');
+  const lastDay = new Date(year, monthIndex0 + 1, 0).getDate();
+  const dateFrom = `${year}-${month}-01`;
+  const dateTo = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+  const r = await apiCall(`/attendance?dateFrom=${dateFrom}&dateTo=${dateTo}&limit=200`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  const body = r.data as { data?: StudentAttendanceMonthItem[] };
+  return { success: true, data: body.data ?? [] };
 }
 
 /** B3: Fetch learning timeline for siswa/ortu. */

@@ -197,12 +197,40 @@ export class LmsService {
 
   async create(dto: CreateLmsModuleDto, user: AuthUser) {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
+
+    // W3-6: Manual LMS create must validate ownership/consistency.
+    // - Jika rppId diberikan: load RPP → require ownership OR reviewer/admin →
+    //   derive class/subject/year dari RPP (ignore dto.classId/subject/year).
+    // - Jika tidak ada rppId: validate dto.classId + dto.subject + dto.academicYear
+    //   against TeachingAssignment (sama seperti RPP create).
+    const isReviewer = this.isReviewer(user);
+    let derivedClassId = dto.classId ?? null;
+    let derivedSubject = dto.subject;
+    let derivedYear = dto.academicYear;
+    if (dto.rppId) {
+      const rpp = await this.prisma.rpp.findUnique({
+        where: { id: dto.rppId },
+        select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true, status: true },
+      });
+      if (!rpp) throw new NotFoundException('RPP tidak ditemukan');
+      // GURU bukan pemilik RPP & bukan reviewer → ditolak (mencegah link ke RPP guru lain).
+      if (!isReviewer && rpp.teacherId !== teacherId) {
+        throw new ForbiddenException('RPP milik guru lain — tidak dapat ditautkan ke modul LMS Anda');
+      }
+      derivedClassId = rpp.classId;
+      derivedSubject = rpp.subject;
+      derivedYear = rpp.academicYear;
+    } else if (!isReviewer) {
+      // Tidak ada rppId → GURU harus memiliki assignment cocok.
+      await this.assertTeachingAssignment(teacherId, dto.classId, dto.subject, dto.academicYear);
+    }
+
     return this.prisma.lmsModule.create({
       data: {
         teacherId,
         rppId: dto.rppId ?? null,
-        classId: dto.classId ?? null,
-        subject: dto.subject,
+        classId: derivedClassId,
+        subject: derivedSubject,
         title: dto.title,
         tp: dto.tp ?? null,
         jpAllocation: dto.jpAllocation ?? null,
@@ -210,11 +238,32 @@ export class LmsService {
         content: dto.content ?? null,
         orderIndex: dto.orderIndex,
         status: dto.publish ? 'published' : 'draft',
-        academicYear: dto.academicYear,
+        academicYear: derivedYear,
         semester: dto.semester,
       },
       select: LMS_SELECT,
     });
+  }
+
+  // ── W3-6: TeachingAssignment validation (mirror RppService.assertTeachingAssignment) ──
+  private async assertTeachingAssignment(
+    teacherId: string,
+    classId: string | null | undefined,
+    subject: string,
+    academicYear: string,
+  ): Promise<void> {
+    if (!classId) {
+      throw new ForbiddenException('Class wajib dipilih sesuai assignment mengajar Anda');
+    }
+    const assignment = await this.prisma.teachingAssignment.findFirst({
+      where: { teacherId, classId, subject, academicYear },
+      select: { id: true },
+    });
+    if (!assignment) {
+      throw new ForbiddenException(
+        'Anda tidak memiliki assignment mengajar untuk kombinasi class/subject/tahun ajaran ini',
+      );
+    }
   }
 
   /** Edit modul milik sendiri (status apa pun — konten LMS bisa diperbarui kapan saja). */

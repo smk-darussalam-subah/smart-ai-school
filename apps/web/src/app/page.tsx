@@ -22,10 +22,10 @@ export const dynamic = 'force-static';
 export const metadata: Metadata = {
   title: 'SMK Darussalam Subah — Sekolah Industri Berbasis Pesantren',
   description:
-    'SMK Darussalam Subah, Batang Jawa Tengah. 3 program keahlian: TKRO, TJKT, AKL. Berbasis Pondok Pesantren Darussalam. Dekat kawasan industri KITB & PLTU Batang. SPMB 2026/2027 dibuka, terbatas 234 kursi.',
+    'SMK Darussalam Subah, Batang Jawa Tengah. Program keahlian TKRO, TBSM, TKJ, dan AKL. Daftar awal SPMB 2027/2028 tersedia melalui DIIS.',
   keywords: [
     'SMK Darussalam Subah',
-    'SPMB 2026',
+    'SPMB 2027',
     'sekolah vokasi pesantren Batang',
     'teknik otomotif Batang',
     'TJKT Subah',
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'SMK Darussalam Subah — Sekolah Industri Berbasis Pesantren',
     description:
-      'Memadukan pendidikan pesantren dengan keahlian vokasi terkini. Dekat KITB & PLTU Batang. SPMB 2026/2027 dibuka, terbatas 234 kursi.',
+      'Memadukan pendidikan pesantren dengan keahlian vokasi terkini. Daftar awal SPMB 2027/2028 tersedia melalui DIIS.',
     url: 'https://smkdarussalamsubah.sch.id',
     siteName: 'SMK Darussalam Subah',
     locale: 'id_ID',

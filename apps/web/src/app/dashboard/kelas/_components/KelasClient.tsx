@@ -17,12 +17,14 @@ import { Input } from '@/components/ui/input';
 import { TablePagination } from '@/components/ui/table-pagination';
 import { createClassAction, updateClassAction, deleteClassAction } from '../actions';
 import type { ClassRow, Major, StaffCandidate } from '../page';
+import { NO_WALI_KELAS_VALUE, waliKelasPayloadValue, waliKelasSelectValue } from '../kelas-ui';
 
 interface Props {
   classes: ClassRow[];
   majors: Major[];
   teachers: StaffCandidate[];
   isSuperAdmin: boolean;
+  canManage: boolean;
 }
 
 interface ClassForm {
@@ -41,7 +43,7 @@ const EMPTY_FORM: ClassForm = {
 const GRADES = [10, 11, 12];
 const PAGE_SIZE = 10;
 
-export default function KelasClient({ classes, majors, teachers, isSuperAdmin }: Props) {
+export default function KelasClient({ classes, majors, teachers, isSuperAdmin, canManage }: Props) {
   const [busy, setBusy] = useState(false);
   const [filterGrade, setFilterGrade] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
@@ -107,7 +109,7 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
   };
 
   const handleAssignAdvisor = async (classId: string, teacherId: string) => {
-    const result = await updateClassAction(classId, { teacherId: teacherId || null });
+    const result = await updateClassAction(classId, { teacherId: waliKelasPayloadValue(teacherId) });
     if (result.error) { toast.error(result.error); return; }
     toast.success('Wali kelas berhasil diperbarui.');
   };
@@ -133,9 +135,11 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
           </h1>
           <p className="mt-1 text-sm text-[#6b8079]">Kelola kelas, wali kelas, dan kapasitas rombel.</p>
         </div>
-        <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700">
-          <Plus className="h-4 w-4" />Tambah Kelas
-        </Button>
+        {canManage && (
+          <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700">
+            <Plus className="h-4 w-4" />Tambah Kelas
+          </Button>
+        )}
       </div>
 
       {/* Filter */}
@@ -182,20 +186,24 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
                   <td className="px-4 py-3 text-[#6b8079]">{c.academicYear}</td>
                   <td className="px-4 py-3 text-center text-[#6b8079]">{c.studentCount}/{c.capacity}</td>
                   <td className="px-4 py-3">
-                    <Select
-                      value={c.teacherId ?? ''}
+                    {canManage ? (
+                      <Select
+                      value={waliKelasSelectValue(c.teacherId)}
                       onValueChange={(v: string) => handleAssignAdvisor(c.id, v)}
                     >
                       <SelectTrigger className="h-8 w-44">
                         <SelectValue placeholder="— pilih wali —" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">— kosongkan —</SelectItem>
+                        <SelectItem value={NO_WALI_KELAS_VALUE}>— kosongkan —</SelectItem>
                         {teachers.map((t) => (
                           <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>
                         ))}
                       </SelectContent>
-                    </Select>
+                      </Select>
+                    ) : (
+                      <span className="text-sm text-[#355a4e]">{c.waliKelas?.fullName ?? '-'}</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${c.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
@@ -204,12 +212,16 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-1">
-                      <button onClick={() => openEdit(c)} className="rounded-lg p-1.5 text-[#6b8079] hover:bg-[#f4f7f5] hover:text-emerald-600" title="Edit">
-                        <Edit3 className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => handleToggleActive(c)} className="rounded-lg p-1.5 text-[#6b8079] hover:bg-[#f4f7f5] hover:text-amber-600" title={c.isActive ? 'Nonaktifkan' : 'Aktifkan'}>
-                        <Power className="h-4 w-4" />
-                      </button>
+                      {canManage && (
+                        <>
+                          <button onClick={() => openEdit(c)} className="rounded-lg p-1.5 text-[#6b8079] hover:bg-[#f4f7f5] hover:text-emerald-600" title="Edit">
+                            <Edit3 className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => handleToggleActive(c)} className="rounded-lg p-1.5 text-[#6b8079] hover:bg-[#f4f7f5] hover:text-amber-600" title={c.isActive ? 'Nonaktifkan' : 'Aktifkan'}>
+                            <Power className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
                       {isSuperAdmin && (
                         <button onClick={() => setDeleteTarget(c)} className="rounded-lg p-1.5 text-[#6b8079] hover:bg-rose-50 hover:text-rose-600" title="Hapus">
                           <Trash2 className="h-4 w-4" />
@@ -269,10 +281,13 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin }:
             </div>
             <div>
               <Label htmlFor="teacherId">Wali Kelas (opsional)</Label>
-              <Select value={form.teacherId} onValueChange={(v: string) => setForm({ ...form, teacherId: v })}>
+              <Select
+                value={waliKelasSelectValue(form.teacherId)}
+                onValueChange={(v: string) => setForm({ ...form, teacherId: waliKelasPayloadValue(v) ?? '' })}
+              >
                 <SelectTrigger id="teacherId"><SelectValue placeholder="— pilih wali kelas —" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">— kosongkan —</SelectItem>
+                  <SelectItem value={NO_WALI_KELAS_VALUE}>— kosongkan —</SelectItem>
                   {teachers.map((t) => (<SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>))}
                 </SelectContent>
               </Select>

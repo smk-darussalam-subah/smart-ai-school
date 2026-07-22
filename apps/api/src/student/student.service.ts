@@ -17,10 +17,11 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AuthUser } from '@smk/auth';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvisioningService, Actor } from '../provisioning/provisioning.service';
 import { normalizeOrThrow } from '../common/helpers/phone';
-import { resolveUserId } from '../common/helpers/role-helpers';
+import { isGuruOnly, resolveGuruClassIds, resolveUserId } from '../common/helpers/role-helpers';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 import { AssignParentDto } from './dto/assign-parent.dto';
@@ -44,7 +45,8 @@ const STUDENT_BASE_SELECT = {
   deletedAt: true,
   createdAt: true,
   updatedAt: true,
-  user: { select: { id: true, fullName: true, email: true, phone: true } },
+  user: { select: { id: true, fullName: true, email: true, phone: true, gender: true, isActive: true, consentAt: true } },
+  parent: { select: { id: true, fullName: true } },
   class: { select: { id: true, name: true, majorCode: true, grade: true } },
 } as const;
 
@@ -116,23 +118,82 @@ export class StudentService {
     }
   }
 
+  private async assertGuruCanReadStudent(
+    student: { classId: string | null },
+    requestUser: AuthUser,
+  ): Promise<void> {
+    if (!isGuruOnly(requestUser)) return;
+    const classIds = await resolveGuruClassIds(this.prisma, requestUser.keycloakId);
+    if (!student.classId || !classIds.includes(student.classId)) {
+      throw new ForbiddenException('Guru hanya bisa mengakses siswa pada kelas yang diampu');
+    }
+  }
+
   // ── CRUD ─────────────────────────────────────────────────────────────────────
 
-  async findAll(query: ListStudentsQuery) {
-    const { classId, status, search, sortBy, sortOrder, page, limit } = query;
+  async findAll(query: ListStudentsQuery, requestUser: AuthUser) {
+    const {
+      classId,
+      status,
+      grade,
+      majorCode,
+      joinedYear,
+      parentState,
+      classState,
+      accountStatus,
+      consentStatus,
+      search,
+      sortBy,
+      sortOrder,
+      page,
+      limit,
+    } = query;
     const skip = (page - 1) * limit;
+    const userWhere: Prisma.UserWhereInput = {};
+    const classWhere: Prisma.ClassWhereInput = {};
+    if (accountStatus) userWhere.isActive = accountStatus === 'active';
+    if (consentStatus === 'given') userWhere.consentAt = { not: null };
+    if (consentStatus === 'pending') userWhere.consentAt = null;
+    if (grade) classWhere.grade = grade;
+    if (majorCode) classWhere.majorCode = majorCode;
+    const joinedRange = joinedYear
+      ? {
+          gte: new Date(`${joinedYear}-01-01T00:00:00.000Z`),
+          lt: new Date(`${joinedYear + 1}-01-01T00:00:00.000Z`),
+        }
+      : undefined;
 
-    const where = {
+    const where: Prisma.StudentWhereInput = {
       deletedAt: null,
-      ...(classId && { classId }),
+      ...(classId
+        ? { classId }
+        : classState === 'without_class'
+          ? { classId: null }
+          : classState === 'with_class'
+            ? { classId: { not: null } }
+            : {}),
       ...(status && { status }),
+      ...(parentState === 'with_parent' && { parentId: { not: null } }),
+      ...(parentState === 'without_parent' && { parentId: null }),
+      ...(joinedRange && { joinedAt: joinedRange }),
+      ...(Object.keys(userWhere).length > 0 && { user: userWhere }),
+      ...(Object.keys(classWhere).length > 0 && { class: classWhere }),
       ...(search && {
         OR: [
           { nis: { contains: search, mode: 'insensitive' as const } },
           { user: { fullName: { contains: search, mode: 'insensitive' as const } } },
+          { user: { email: { contains: search, mode: 'insensitive' as const } } },
         ],
       }),
     };
+
+    if (isGuruOnly(requestUser)) {
+      const classIds = await resolveGuruClassIds(this.prisma, requestUser.keycloakId);
+      if (classId && !classIds.includes(classId)) {
+        throw new ForbiddenException('Guru hanya bisa melihat siswa pada kelas yang diampu');
+      }
+      where.classId = classId ?? { in: classIds };
+    }
 
     // orderBy dari whitelist (fullName via relasi user).
     const orderBy =
@@ -167,6 +228,7 @@ export class StudentService {
       const authUserId = await resolveUserId(this.prisma, requestUser.keycloakId);
       this.assertOwnership(student, authUserId, requestUser);
     }
+    await this.assertGuruCanReadStudent(student, requestUser);
 
     return student;
   }
@@ -344,7 +406,7 @@ export class StudentService {
   async findGrades(id: string, requestUser: AuthUser) {
     const student = await this.prisma.student.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, userId: true, parentId: true },
+      select: { id: true, userId: true, parentId: true, classId: true },
     });
     if (!student) throw new NotFoundException('Student tidak ditemukan');
 
@@ -352,8 +414,8 @@ export class StudentService {
       const authUserId = await resolveUserId(this.prisma, requestUser.keycloakId);
       this.assertOwnership(student, authUserId, requestUser);
     }
+    await this.assertGuruCanReadStudent(student, requestUser);
 
-    // TODO SMA-36: tambah filter "GURU hanya bisa akses kelas sendiri" via TeachingAssignment
     return this.prisma.grade.findMany({
       where: { studentId: id },
       select: GRADE_SELECT,
@@ -364,7 +426,7 @@ export class StudentService {
   async findAttendance(id: string, requestUser: AuthUser) {
     const student = await this.prisma.student.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, userId: true, parentId: true },
+      select: { id: true, userId: true, parentId: true, classId: true },
     });
     if (!student) throw new NotFoundException('Student tidak ditemukan');
 
@@ -372,8 +434,8 @@ export class StudentService {
       const authUserId = await resolveUserId(this.prisma, requestUser.keycloakId);
       this.assertOwnership(student, authUserId, requestUser);
     }
+    await this.assertGuruCanReadStudent(student, requestUser);
 
-    // TODO SMA-36: tambah filter "GURU hanya bisa akses kelas sendiri" via TeachingAssignment
     return this.prisma.attendance.findMany({
       where: { studentId: id },
       select: ATTENDANCE_SELECT,
@@ -429,6 +491,10 @@ export class StudentService {
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: student.userId },
+        data: { consentAt },
+      });
+      await tx.user.update({
+        where: { id: ortuResult.userId },
         data: { consentAt },
       });
 

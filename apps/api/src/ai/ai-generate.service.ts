@@ -17,6 +17,8 @@ import {
   GenerateQuestionsDto,
   GenerateRppStepDto,
 } from './dto/generate.dto';
+// W3-5: PII strip sebelum cloud egress + audit disimpan dalam bentuk redacted.
+import { stripPiiForLlm } from './adapters/pii-strip.utils';
 
 @Injectable()
 export class AiGenerateService {
@@ -29,7 +31,8 @@ export class AiGenerateService {
   /** Generate questions from RPP body */
   async generateQuestions(dto: GenerateQuestionsDto, user: AuthUser) {
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
-    const prompt = this.buildQuestionsPrompt(dto);
+    // W3-5: redact PII sebelum keluar server dan sebelum disimpan di audit.
+    const prompt = stripPiiForLlm(this.buildQuestionsPrompt(dto));
     const output = await this.callAi(prompt);
     await this.auditGeneration(teacherId, 'questions', prompt, output);
     return { type: 'questions', output: this.extractJson(output) };
@@ -38,7 +41,7 @@ export class AiGenerateService {
   /** Generate learning material from RPP body */
   async generateMaterial(dto: GenerateMaterialDto, user: AuthUser) {
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
-    const prompt = this.buildMaterialPrompt(dto);
+    const prompt = stripPiiForLlm(this.buildMaterialPrompt(dto));
     const output = await this.callAi(prompt);
     await this.auditGeneration(teacherId, 'material', prompt, output);
     return { type: 'material', output };
@@ -47,7 +50,7 @@ export class AiGenerateService {
   /** Generate ATP (Alur Tujuan Pembelajaran) from CP + TP */
   async generateAtp(dto: GenerateAtpDto, user: AuthUser) {
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
-    const prompt = this.buildAtpPrompt(dto);
+    const prompt = stripPiiForLlm(this.buildAtpPrompt(dto));
     const output = await this.callAi(prompt);
     await this.auditGeneration(teacherId, 'atp', prompt, output);
     return { type: 'atp', output: this.extractJson(output) };
@@ -56,7 +59,7 @@ export class AiGenerateService {
   /** P4 (S-12): Generate RPP step content (CP/TP, Profil, Sarana, etc.) */
   async generateRppStep(dto: GenerateRppStepDto, user: AuthUser) {
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
-    const prompt = this.buildRppStepPrompt(dto);
+    const prompt = stripPiiForLlm(this.buildRppStepPrompt(dto));
     const output = await this.callAi(prompt);
     await this.auditGeneration(teacherId, `rpp-${dto.step}`, prompt, output);
     return { type: dto.step, output };

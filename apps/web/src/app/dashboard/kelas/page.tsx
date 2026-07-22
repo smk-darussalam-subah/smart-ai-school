@@ -36,6 +36,7 @@ const STAFF_ROLES = ['GURU', 'TATA_USAHA', 'KEPALA_SEKOLAH'];
 
 export default async function KelasPage() {
   const session = await getServerSession(authOptions);
+  if (!session) redirect('/login');
   const roles: string[] = await getEffectiveRoles(session);
   if (!roles.includes('SUPER_ADMIN') && !roles.includes('KEPALA_SEKOLAH') && !roles.includes('TATA_USAHA')) {
     redirect('/dashboard');
@@ -44,9 +45,9 @@ export default async function KelasPage() {
   const token = session?.accessToken ?? '';
 
   const [classesRes, majorsRes, groupedRes] = await Promise.all([
-    apiFetch<{ data: ClassRow[]; total: number }>('/classes?includeInactive=true&limit=200', token),
+    apiFetch<{ data: ClassRow[]; total: number }>('/classes?includeInactive=true&limit=100', token),
     apiFetch<Major[]>('/school/majors?activeOnly=true', token),
-    apiFetch<{ groups: { role: string; users: StaffCandidate[] }[] }>('/users/grouped?limit=200', token),
+    apiFetch<{ groups: { role: string; users: StaffCandidate[] }[] }>('/users/grouped?limit=100', token),
   ]);
 
   if (classesRes === null) return <LoadError />;
@@ -58,6 +59,7 @@ export default async function KelasPage() {
     .flatMap((g) => g.users.map((u) => ({ ...u, role: g.role })));
 
   const isSuperAdmin = roles.includes('SUPER_ADMIN');
+  const canManage = isSuperAdmin || roles.includes('TATA_USAHA');
 
   return (
     <KelasClient
@@ -65,6 +67,7 @@ export default async function KelasPage() {
       majors={majors}
       teachers={teachers}
       isSuperAdmin={isSuperAdmin}
+      canManage={canManage}
     />
   );
 }

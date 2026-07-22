@@ -15,7 +15,7 @@ import ModulSiswa from './ModulSiswa';
 import ModulDetailSiswa from './ModulDetailSiswa';
 import NilaiSiswa from './NilaiSiswa';
 import TugasSiswa from './TugasSiswa';
-import KehadiranSiswa from './KehadiranSiswa';
+import KehadiranSiswa, { type SchoolCalendarEvent } from './KehadiranSiswa';
 import CapaianSiswa from './CapaianSiswa';
 import ProfileCV from './ProfileCV';
 import PengumumanModal from './PengumumanModal';
@@ -82,6 +82,59 @@ function initials(name?: string | null): string {
   return name.split(' ').map((w) => w.charAt(0)).slice(0, 2).join('').toUpperCase();
 }
 
+const MONTH_SHORT_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const ATTENDANCE_STATUS_VALUES = new Set(['hadir', 'izin', 'sakit', 'alpha']);
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function toAttendanceEntry(value: unknown): AttendanceEntry | null {
+  if (!isRecord(value)) return null;
+  const date = readString(value.date)?.slice(0, 10);
+  const status = readString(value.status);
+  if (!date || !DATE_KEY_RE.test(date) || !status || !ATTENDANCE_STATUS_VALUES.has(status)) return null;
+  return { date, status: status as AttendanceEntry['status'] };
+}
+
+function toSchoolCalendarEvent(value: unknown): SchoolCalendarEvent | null {
+  if (!isRecord(value)) return null;
+  const start = readString(value.start);
+  if (!start) return null;
+  return {
+    name: readString(value.name),
+    start,
+    end: readString(value.end) ?? start,
+    type: readString(value.type),
+    description: readString(value.description),
+  };
+}
+
+function eventColor(type?: string | null): string {
+  if (type === 'holiday' || type === 'break') return '#f43f5e';
+  if (type === 'exam') return '#f59e0b';
+  return '#10b981';
+}
+
+function toSiswaKalenderEvent(event: SchoolCalendarEvent): SiswaKalenderEvent {
+  const date = new Date(`${event.start}T00:00:00`);
+  const validDate = !Number.isNaN(date.getTime());
+  const start = event.start ?? '';
+  const end = event.end && event.end !== event.start ? ` - ${event.end}` : '';
+  return {
+    d: validDate ? date.getDate() : 0,
+    m: validDate ? MONTH_SHORT_ID[date.getMonth()] ?? '-' : '-',
+    title: event.name ?? 'Agenda sekolah',
+    desc: event.description ?? `${start}${end}`,
+    color: eventColor(event.type),
+  };
+}
+
 export default function SiswaWorkspace({ grades, attendance, schedule, announcements, realBadges, realXp, realLeaderboard, realAssignments, realModules, realCp, realAttStats, viewAs }: SiswaWorkspaceProps) {
   const { data: session } = useSession();
   const [activeScreen, setActiveScreen] = useState<SiswaScreen>('beranda');
@@ -94,6 +147,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [realQuests, setRealQuests] = useState<SiswaQuest | null>(null);
   const [realCalendar, setRealCalendar] = useState<SiswaKalenderEvent[] | null>(null);
+  const [schoolCalendarEvents, setSchoolCalendarEvents] = useState<SchoolCalendarEvent[]>([]);
 
   // B1: Fetch daily quests on mount
   useEffect(() => {
@@ -112,11 +166,11 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
     fetchPersonalCalendar().then((res) => {
       if (res.success && res.data) {
         const data = res.data as { schedule: unknown[]; events: unknown[] };
-        // Map API calendar data to the kalender format expected by JadwalSiswa
-        // If API returns empty arrays, keep null so empty state is used
-        if (data.schedule && Array.isArray(data.schedule) && data.schedule.length > 0) {
-          setRealCalendar(data.schedule as SiswaKalenderEvent[]);
-        }
+        const events = Array.isArray(data.events)
+          ? data.events.map(toSchoolCalendarEvent).filter((event): event is SchoolCalendarEvent => event !== null)
+          : [];
+        setSchoolCalendarEvents(events);
+        setRealCalendar(events.length > 0 ? events.map(toSiswaKalenderEvent) : null);
       }
     });
   }, []);
@@ -188,6 +242,9 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
   // R-01: Derive user name and class name from session/leaderboard for child components
   const userName = session?.user?.name ?? null;
   const studentClassName = realLeaderboard?.find((e) => e.me)?.kelas ?? null;
+  const attendanceEntries = (attendance ?? [])
+    .map(toAttendanceEntry)
+    .filter((entry): entry is AttendanceEntry => entry !== null);
 
   const renderScreen = () => {
     const commonProps = {
@@ -255,7 +312,8 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
           <KehadiranSiswa
             {...commonProps}
             stats={(realAttStats ?? { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, pct: 0 }) as SiswaKehadiranStats}
-            attendance={(attendance || []) as AttendanceEntry[]}
+            attendance={attendanceEntries}
+            calendarEvents={schoolCalendarEvents}
           />
         );
       case 'capaian':

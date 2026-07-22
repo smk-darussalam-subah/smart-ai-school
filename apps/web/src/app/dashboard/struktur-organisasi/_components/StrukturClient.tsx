@@ -26,6 +26,20 @@ const CATEGORY_META: Record<string, { label: string; cls: string }> = {
 };
 const CATEGORY_ORDER = ['STRUKTURAL', 'FUNGSIONAL', 'TENDIK'];
 
+// TF-1: label peran untuk dropdown pegawai. Sebelumnya item hanya menampilkan
+// nama + email, tanpa konteks peran — admin harus menebak apakah user adalah
+// Guru, TU, atau Kepala Sekolah.
+const ROLE_LABELS: Record<string, string> = {
+  SUPER_ADMIN: 'Super Admin',
+  KEPALA_SEKOLAH: 'Kepala Sekolah',
+  TATA_USAHA: 'Tata Usaha',
+  GURU: 'Guru',
+  SISWA: 'Siswa',
+  ORANG_TUA: 'Orang Tua',
+  INDUSTRI: 'Industri',
+};
+const roleLabel = (role: string): string => ROLE_LABELS[role] ?? role;
+
 interface Props {
   positions: Position[];
   academicYear: { id: string; code: string } | null;
@@ -33,6 +47,8 @@ interface Props {
   majors: Major[];
   staff: StaffCandidate[];
   isSuperAdmin: boolean;
+  /** TF-1-FU-5: true ketika /users/grouped API gagal (null), bukan data kosong sah. */
+  staffLoadError?: boolean;
 }
 
 interface SyncResult {
@@ -41,7 +57,7 @@ interface SyncResult {
   failed: { code: string; error: string }[];
 }
 
-export default function StrukturClient({ positions, academicYear, assignments, majors, staff, isSuperAdmin }: Props) {
+export default function StrukturClient({ positions, academicYear, assignments, majors, staff, isSuperAdmin, staffLoadError }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 
@@ -82,7 +98,17 @@ export default function StrukturClient({ positions, academicYear, assignments, m
     });
     setBusy(false);
     if (res.error) { toast.error(res.error); return; }
-    setTarget(null); toast.success('Penugasan berhasil disimpan.'); router.refresh();
+    // TF2-P2-8: Surface SoD warning from backend. Backend returns `{ id, warning }`
+    // bila konflik Segregation of Duties terdeteksi (positions.service.ts:240-242).
+    // Sebelumnya warning di-drop silently → admin tidak tahu kombinasi jabatan berisiko.
+    const warning = (res.data as { warning?: string } | undefined)?.warning;
+    if (warning) {
+      toast.warning(`Tetap disimpan, tapi ada konflik SoD: ${warning}`, { duration: 8000 });
+    } else {
+      toast.success('Penugasan berhasil disimpan.');
+    }
+    setTarget(null);
+    router.refresh();
   };
 
   const removeAssign = async (a: Assignment) => {
@@ -210,8 +236,12 @@ export default function StrukturClient({ positions, academicYear, assignments, m
                           ))}
                       </div>
                     </div>
-                    <Button size="sm" variant="outline" className="shrink-0 gap-1.5" disabled={!academicYear} onClick={() => openAssign(p)}>
-                      <UserPlus className="h-4 w-4" /> Tetapkan
+                    <Button size="sm" variant="outline" className="shrink-0 gap-1.5" disabled={!academicYear}
+                      onClick={() => openAssign(p)}
+                      // TF-3: Tooltip + label dinamis — jabatan bisa dipegang bersama.
+                      title="Jabatan bisa dipegang bersama oleh beberapa pegawai."
+                    >
+                      <UserPlus className="h-4 w-4" /> {list.length > 0 ? '+ Tambah Penanggung Jawab' : 'Tetapkan'}
                     </Button>
                   </div>
                 );
@@ -231,11 +261,50 @@ export default function StrukturClient({ positions, academicYear, assignments, m
               <Select value={userId} onValueChange={setUserId}>
                 <SelectTrigger><SelectValue placeholder="Pilih pegawai…" /></SelectTrigger>
                 <SelectContent>
-                  {staff.length === 0
-                    ? <SelectItem value="__none" disabled>Belum ada pegawai</SelectItem>
-                    : staff.map((s) => <SelectItem key={s.id} value={s.id}>{s.fullName} · {s.email}</SelectItem>)}
+                  {staff.length === 0 && staffLoadError
+                    ? // TF-1-FU-5: API error — jangan sesatkan admin ke "tambahkan user".
+                      <SelectItem value="__none" disabled>
+                        Gagal memuat daftar pegawai. Coba refresh halaman.
+                      </SelectItem>
+                    : staff.length === 0
+                      ? // TF-1: Actionable empty state — benar-benar tidak ada pegawai.
+                        <SelectItem value="__none" disabled>
+                          Belum ada pegawai (Guru/TU/KS). Tambahkan di Manajemen Pengguna.
+                        </SelectItem>
+                      : staff.map((s) => (
+                        // TF-1: Tampilkan label peran, bukan hanya email.
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.fullName} · {roleLabel(s.role)}{s.email ? ` · ${s.email}` : ''}
+                        </SelectItem>
+                      ))}
                 </SelectContent>
               </Select>
+              {/* TF-1-FU-5: Warning banner saat API gagal muat staff. */}
+              {staff.length === 0 && staffLoadError && (
+                <div className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-800">
+                  <p className="mb-1.5 font-semibold">Daftar pegawai gagal dimuat.</p>
+                  <p>
+                    Ini bukan berarti tidak ada pegawai — kemungkinan ada masalah koneksi ke server.
+                    Coba refresh halaman. Jika masih kosong, hubungi teknisi.
+                  </p>
+                </div>
+              )}
+              {/* TF-1: Actionable helper link ke Manajemen Pengguna (hanya saat benar-benar kosong). */}
+              {staff.length === 0 && !staffLoadError && (
+                <div className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <p className="mb-1.5">
+                    Hanya user dengan peran <strong>Guru</strong>, <strong>Tata Usaha</strong>, atau
+                    <strong> Kepala Sekolah</strong> yang muncul di daftar ini.
+                  </p>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 font-semibold text-amber-900 underline hover:text-amber-700"
+                    onClick={() => router.push('/dashboard/users')}
+                  >
+                    <UserPlus className="h-3 w-3" /> Kelola Pengguna →
+                  </button>
+                </div>
+              )}
             </div>
             {target?.scopeType === 'MAJOR' && (
               <div>
@@ -248,10 +317,21 @@ export default function StrukturClient({ positions, academicYear, assignments, m
                 </Select>
               </div>
             )}
-            <p className="flex items-start gap-1.5 text-xs text-muted-foreground"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Akses modul terkait jabatan diberikan otomatis selama penugasan aktif.</p>
+            {/* TF-2: Microcopy diklarifikasi — sebelumnya ambigu "selama penugasan aktif". */}
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              Izin modul terkait jabatan aktif segera setelah disimpan, dan dicabut otomatis
+              saat penugasan dilepas atau tahun ajaran berganti.
+              {academicYear && <> Berlaku di tahun ajaran {academicYear.code}.</>}
+            </p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setTarget(null)}>Batal</Button>
-              <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700" disabled={busy} onClick={submitAssign}>
+              <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                // TF2-P2-3: Sebelumnya hanya `disabled={busy}`. Tombol sekarang juga
+                // disabled saat form belum lengkap (pegawai wajib, jurusan wajib bila MAJOR).
+                disabled={busy || !userId || (target?.scopeType === 'MAJOR' && !majorId)}
+                onClick={submitAssign}
+              >
                 {busy ? <><Loader2 className="h-4 w-4 animate-spin" /> Menyimpan…</> : <><Check className="h-4 w-4" /> Simpan</>}
               </Button>
             </div>

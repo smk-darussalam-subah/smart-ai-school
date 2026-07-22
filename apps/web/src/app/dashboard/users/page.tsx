@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
+import LoadError from '@/components/LoadError';
 import UsersClient from './_components/UsersClient';
 
 interface UserItem {
@@ -35,6 +36,7 @@ interface Props {
 
 export default async function UsersPage({ searchParams }: Props) {
   const session = await getServerSession(authOptions);
+  if (!session) redirect('/login');
   const roles: string[] = await getEffectiveRoles(session);
   if (!roles.includes('SUPER_ADMIN') && !roles.includes('TATA_USAHA')) redirect('/dashboard');
 
@@ -49,6 +51,7 @@ export default async function UsersPage({ searchParams }: Props) {
     apiFetch<{ groups: UserGroup[] }>(`/users/grouped?${queryParams.toString()}`, token),
     apiFetch<PermissionItem[]>('/permissions', token),
   ]);
+  if (groupedData === null || permsData === null) return <LoadError />;
 
   const groups = groupedData?.groups ?? [];
   let permissions: PermissionItem[] = [];

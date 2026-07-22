@@ -13,12 +13,27 @@ import OrtuWorkspace from './_components/ortu/OrtuWorkspace';
 import OrtuRefreshWrapper from './_components/ortu/OrtuRefreshWrapper';
 import KsWorkspace from './_components/KsWorkspace';
 import type { ScheduleItem, ActivityItem, RppItem, TodayClass, LmsModuleItem } from './_components/guru-types';
+import {
+  normalizeAssignmentGroups,
+  normalizeSppGroups,
+  type SppDashboardGroup,
+  type StudentDashboardAssignmentGroup,
+} from './_components/ortu/ortu-mappers';
 
 interface Assignment { id: string; subject: string; class: { id: string; name: string } }
 interface ClassItem { id: string; name: string; }
 export interface SubjectItem { id: string; code: string; name: string; isActive: boolean; }
 
 interface ActiveSemester { number: number; academicYear: { code: string } }
+
+function monthBounds(year: number, monthIndex0: number): { dateFrom: string; dateTo: string } {
+  const month = String(monthIndex0 + 1).padStart(2, '0');
+  const lastDay = new Date(year, monthIndex0 + 1, 0).getDate();
+  return {
+    dateFrom: `${year}-${month}-01`,
+    dateTo: `${year}-${month}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
 
 export default async function AkademikPage() {
   const session = await getServerSession(authOptions);
@@ -55,9 +70,14 @@ export default async function AkademikPage() {
     // Fetch siswa-specific data
     // Note: studentId lookup from keycloakId — backend should resolve this
     const studentId = session.keycloakId ?? '';
+    const now = new Date();
+    const attendanceMonth = monthBounds(now.getFullYear(), now.getMonth());
     const [gradesRes, attendanceRes, scheduleRes, announcementsRes, badgesRes, xpRes, leaderboardRes, assignmentsRes, modulesRes, cpRes, attStatsRes] = await Promise.all([
       apiFetch<PaginatedResponse<GradeItem>>(`/grades?studentId=${studentId}&limit=100`, token),
-      apiFetch<PaginatedResponse<AttendanceItem>>(`/attendance?studentId=${studentId}&limit=200`, token),
+      apiFetch<PaginatedResponse<AttendanceItem>>(
+        `/attendance?dateFrom=${attendanceMonth.dateFrom}&dateTo=${attendanceMonth.dateTo}&limit=200`,
+        token,
+      ),
       apiFetch<{ data: ScheduleItem[] }>(`/schedules?studentId=${studentId}&limit=100`, token),
       apiFetch<{ data: { id: string; title: string; createdAt: string }[] }>('/announcements?limit=5', token),
       // Wave 3 API integration (P19) — fail-soft, empty if null
@@ -266,22 +286,36 @@ export default async function AkademikPage() {
     ]);
 
     const children = childrenRes?.data ?? [];
-    const firstChild = children[0];
-    const childId = firstChild?.id ?? '';
+    const childIds = children.map((child) => child.id);
+    type OrtuBadgeApiItem = { id: string; awardedAt: string; badge: { id: string; code: string; name: string; description: string; icon: string; tier: string } };
+    type LeaderboardEntry = { id: string; studentId: string; totalXp: number; level: number; rank: number; student: { nis: string; user: { fullName: string }; class: { id: string; name: string } | null } };
+    const tagWithStudentId = <T extends object>(items: T[] | undefined, studentId: string): Array<T & { studentId: string }> =>
+      (items ?? []).map((item) => ({ ...item, studentId }));
 
     // Round 2: fetch child-specific data (all in parallel, fail-soft → null)
-    const [gradesRes, attendanceRes, scheduleRes, sppRes, assignmentsRes, badgesRes, waLogRes, semRes, leaderboardRes] = await Promise.all([
-      childId ? apiFetch<PaginatedResponse<GradeItem>>(`/grades?studentId=${childId}&limit=100`, token) : Promise.resolve(null),
-      childId ? apiFetch<PaginatedResponse<AttendanceItem>>(`/attendance?studentId=${childId}&limit=200`, token) : Promise.resolve(null),
-      childId ? apiFetch<{ data: ScheduleItem[] }>(`/schedules?studentId=${childId}&limit=100`, token) : Promise.resolve(null),
-      childId ? apiFetch<{ data: Array<{ id: string; month: string; amount: number; status: string; dueDate: string | null }> }>(`/student-dashboard/spp`, token) : Promise.resolve(null),
-      childId ? apiFetch<{ data: Assignment[] }>(`/student-dashboard/assignments?studentId=${childId}&limit=20`, token) : Promise.resolve(null),
-      childId ? apiFetch<Array<{ id: string; awardedAt: string; badge: { id: string; code: string; name: string; description: string; icon: string; tier: string } }>>(`/badges/student/${childId}`, token) : Promise.resolve(null),
-      childId ? apiFetch<{ data: Array<{ id: string; studentId: string; recipient: string; message: string; eventType: string; createdAt: string }> }>(`/wa-log/student/${childId}?limit=20`, token) : Promise.resolve(null),
-      // R-16: Fetch active semester for rapor label
+    const childDataPromise = Promise.all(childIds.map(async (studentId) => {
+      const [gradesRes, attendanceRes, scheduleRes, badgesRes, waLogRes] = await Promise.all([
+        apiFetch<PaginatedResponse<GradeItem>>(`/grades?studentId=${studentId}&limit=100`, token),
+        apiFetch<PaginatedResponse<AttendanceItem>>(`/attendance?studentId=${studentId}&limit=200`, token),
+        apiFetch<{ data: ScheduleItem[] }>(`/schedules?studentId=${studentId}&limit=100`, token),
+        apiFetch<OrtuBadgeApiItem[]>(`/badges/student/${studentId}`, token),
+        apiFetch<{ data: Array<{ id: string; studentId: string; recipient: string; message: string; eventType: string; createdAt: string }> }>(`/wa-log/student/${studentId}?limit=20`, token),
+      ]);
+      return {
+        grades: tagWithStudentId(gradesRes?.data, studentId),
+        attendance: tagWithStudentId(attendanceRes?.data, studentId),
+        schedule: tagWithStudentId(scheduleRes?.data, studentId),
+        badges: tagWithStudentId(badgesRes ?? [], studentId),
+        waLog: tagWithStudentId(waLogRes?.data, studentId),
+      };
+    }));
+
+    const [childData, sppRes, assignmentsDashboardRes, semRes, leaderboardRes] = await Promise.all([
+      childDataPromise,
+      childIds.length ? apiFetch<{ data: SppDashboardGroup[] }>('/student-dashboard/spp', token) : Promise.resolve(null),
+      childIds.length ? apiFetch<{ data: StudentDashboardAssignmentGroup[] }>('/student-dashboard/assignments', token) : Promise.resolve(null),
       apiFetch<ActiveSemester>('/school/semesters/active', token),
-      // R-21: Fetch leaderboard to show child's rank
-      childId ? apiFetch<Array<{ id: string; studentId: string; totalXp: number; level: number; rank: number; student: { nis: string; user: { fullName: string }; class: { id: string; name: string } | null } }>>('/gamification/leaderboard-xp?limit=50', token) : Promise.resolve(null),
+      childIds.length ? apiFetch<LeaderboardEntry[]>('/gamification/leaderboard-xp?limit=50', token) : Promise.resolve(null),
     ]);
 
     // R-16: Compute semester label for RaporModal
@@ -289,12 +323,24 @@ export default async function AkademikPage() {
     const semesterOrtu = semRes?.number ?? 1;
     const semesterLabel = semRes ? `Rapor Semester ${semesterOrtu === 1 ? 'Ganjil' : 'Genap'} ${academicYearOrtu}` : '';
 
-    // R-21: Find child's rank from leaderboard
-    const childRank = leaderboardRes?.find((e) => e.studentId === childId)?.rank ?? null;
+    const childRanks = Object.fromEntries(
+      childIds.map((studentId) => [
+        studentId,
+        leaderboardRes?.find((entry) => entry.studentId === studentId)?.rank ?? null,
+      ]),
+    );
+    const gradesDataOrtu = childData.flatMap((item) => item.grades);
+    const attendanceDataOrtu = childData.flatMap((item) => item.attendance);
+    const scheduleDataOrtu = childData.flatMap((item) => item.schedule);
+    const badgesDataOrtu = childData.flatMap((item) => item.badges);
+    const waLogDataOrtu = childData.flatMap((item) => item.waLog);
+    const sppDataOrtu = normalizeSppGroups(sppRes?.data ?? []);
+    const assignmentsDataOrtu = normalizeAssignmentGroups(assignmentsDashboardRes?.data ?? []);
 
     // Transform children for OrtuWorkspace
     const ortuChildren = children.map((c) => ({
       id: Number(c.id.replace(/\D/g, '').slice(0, 8)) || 0,
+      studentId: c.id,
       name: c.user?.fullName ?? 'Anak',
       kelas: c.class?.name ?? '—',
       active: true,
@@ -305,17 +351,17 @@ export default async function AkademikPage() {
       <OrtuRefreshWrapper>
         <OrtuWorkspace
           children={ortuChildren}
-          grades={gradesRes?.data ?? []}
-          attendance={attendanceRes?.data ?? []}
-          schedule={scheduleRes?.data ?? []}
+          grades={gradesDataOrtu}
+          attendance={attendanceDataOrtu}
+          schedule={scheduleDataOrtu}
           announcements={announcementsRes?.data ?? []}
-          spp={sppRes?.data ?? []}
-          assignments={assignmentsRes?.data ?? []}
-          badges={badgesRes ?? []}
-          waLog={waLogRes?.data ?? []}
+          spp={sppDataOrtu}
+          assignments={assignmentsDataOrtu}
+          badges={badgesDataOrtu}
+          waLog={waLogDataOrtu}
           viewAs={viewAs}
           semesterLabel={semesterLabel}
-          childRank={childRank}
+          childRanks={childRanks}
         />
       </OrtuRefreshWrapper>
     );

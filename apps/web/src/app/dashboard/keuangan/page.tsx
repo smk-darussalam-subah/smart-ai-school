@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch, PaginatedResponse } from '@/lib/api';
+import LoadError from '@/components/LoadError';
 import KeuanganTable from './_components/KeuanganTable';
 
 interface SppPayment {
@@ -21,11 +22,12 @@ export default async function KeuanganPage() {
 
   if (roles.includes('INDUSTRI')) redirect('/dashboard');
 
-  const data = await apiFetch<PaginatedResponse<SppPayment>>('/finance/spp?limit=100', token);
-  const payments = data?.data ?? [];
-  const total = data?.total ?? 0;
   const canRecord = roles.includes('SUPER_ADMIN') || roles.includes('TATA_USAHA');
   const canApprove = roles.includes('SUPER_ADMIN') || roles.includes('KEPALA_SEKOLAH');
+  const data = await apiFetch<PaginatedResponse<SppPayment>>('/finance/spp?limit=100', token);
+  if (data === null) return <LoadError />;
+  const payments = data?.data ?? [];
+  const total = data?.total ?? 0;
 
   return (
     <KeuanganTable

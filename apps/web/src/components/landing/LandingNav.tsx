@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 
-const SPMB_URL = 'https://taplink.cc/smkdarussalamsubah';
+const SPMB_URL = '/spmb';
 
 const navLinks = [
   { href: '#jurusan', label: 'Jurusan' },
@@ -67,8 +67,6 @@ export function LandingNav() {
         {/* CTA */}
         <a
           href={SPMB_URL}
-          target="_blank"
-          rel="noopener noreferrer"
           className="hidden md:inline-flex items-center gap-1.5 font-semibold text-[14px] px-5 py-2.5 rounded-full bg-smk-emerald-deep text-white hover:bg-smk-emerald hover:-translate-y-px transition-all"
         >
           Daftar SPMB <span aria-hidden className="text-smk-lime">→</span>
@@ -100,8 +98,6 @@ export function LandingNav() {
           ))}
           <a
             href={SPMB_URL}
-            target="_blank"
-            rel="noopener noreferrer"
             onClick={() => setOpen(false)}
             className="mt-4 flex items-center justify-center gap-2 font-semibold text-[15px] px-5 py-3.5 rounded-full bg-smk-emerald-deep text-white"
           >

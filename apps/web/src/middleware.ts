@@ -1,10 +1,3 @@
-// =============================================================================
-// Next.js Middleware — Auth guard + CSP nonce generation
-// FIX-T05 (SMA-26): Hapus unsafe-eval, implementasi nonce-based CSP.
-// HOTFIX: Pisahkan CSP public (SSG) vs protected (SSR) — strict-dynamic
-//         mem-blokir semua JS di halaman force-static yang tidak bisa embed nonce.
-// =============================================================================
-
 import { getToken } from 'next-auth/jwt';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -14,19 +7,6 @@ function generateNonce(): string {
   return btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''));
 }
 
-/**
- * Membangun CSP header.
- *
- * Dev: nonce + unsafe-eval untuk HMR.
- *
- * Production public/SSG (/, /jurusan/*):
- *   'self' + 'unsafe-inline' — halaman force-static tidak bisa embed nonce
- *   per-request di HTML build-time. strict-dynamic akan memblokir semua
- *   /_next/static/ chunks → JS gagal → no blur, no click, no scroll-reveal.
- *
- * Production protected (/dashboard, dll):
- *   nonce + strict-dynamic — ketat, hanya script ber-nonce.
- */
 function buildCsp(nonce: string, isPublicStatic: boolean): string {
   const isDev = process.env.NODE_ENV === 'development';
 
@@ -62,6 +42,8 @@ function buildCsp(nonce: string, isPublicStatic: boolean): string {
 
 const PUBLIC_EXACT: readonly string[] = [
   '/',
+  '/spmb',
+  '/privacy',
   '/jurusan/tkro',
   '/jurusan/tjkt',
   '/jurusan/akl',
@@ -71,9 +53,9 @@ const PUBLIC_PREFIXES = [
   '/login',
   '/auth',
   '/api/auth',
-  '/api/backend', // SSR proxy → backend handles its own auth
+  '/api/backend',
   '/health',
-  '/ruang-guru', // display publik Ruang Guru (token-gated di API, read-only)
+  '/ruang-guru',
   '/_next',
   '/favicon',
 ] as const;
@@ -84,14 +66,12 @@ function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
-// Routes yang di-render STATIS (○ build) DAN punya client component interaktif
-// (useState/onClick) → tidak bisa embed nonce per-request → butuh 'unsafe-inline'.
-// Dynamic routes (/dashboard/*, /api/*) tetap pakai nonce + strict-dynamic (N21).
 const STATIC_INTERACTIVE: readonly string[] = [
-  '/',          // landing — client components (MarqueeStrip, LandingNav, dll)
-  '/login',     // 'use client', onClick → signIn Keycloak (N21a)
-  '/auth',      // 'use client', login form + animations (AuthShell)
-  '/health',    // 'use client', useEffect + onClick (N21a)
+  '/',
+  '/spmb',
+  '/login',
+  '/auth',
+  '/health',
 ];
 
 function isPublicStaticPage(pathname: string): boolean {
@@ -107,7 +87,6 @@ export async function middleware(request: NextRequest) {
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-nonce', nonce);
-  // Next.js 15 reads CSP from request headers to stamp nonce onto <script> tags.
   requestHeaders.set('Content-Security-Policy', csp);
 
   const token = await getToken({
@@ -134,7 +113,6 @@ export async function middleware(request: NextRequest) {
   return res;
 }
 
-// Exclude static assets dan gambar landing/ dari middleware
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico|landing/).*)'],
 };

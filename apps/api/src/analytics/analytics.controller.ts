@@ -86,7 +86,7 @@ export class AnalyticsController {
 
   /** W1-3: Agregasi kehadiran per siswa (hadir/izin/sakit/alpha/total/pct). */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
-  @RequirePermission('academic.attendance.read')
+  @RequirePermission(['academic.attendance.read', 'attendance.own.read', 'attendance.child.read'])
   @Get('attendance/stats')
   attendanceStats(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     return this.studentService.attendanceStats(this.parseStudentQuery(rawQuery), user);
@@ -94,7 +94,7 @@ export class AnalyticsController {
 
   /** W1-4: Analitik nilai per siswa (NA per mapel + status tuntas/remedial). */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
-  @RequirePermission('academic.grade.read')
+  @RequirePermission(['academic.grade.read', 'grade.own.read', 'grade.child.read'])
   @Get('grades/student')
   studentGrades(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     return this.studentService.studentGrades(this.parseStudentQuery(rawQuery), user);
@@ -106,7 +106,7 @@ export class AnalyticsController {
    * RBAC: GURU (own classes), SISWA (own class), SA/KS.
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU', 'SISWA')
-  @RequirePermission('academic.grade.read')
+  @RequirePermission(['academic.grade.read', 'grade.own.read'])
   @Get('cp-progress')
   cpProgress(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     return this.service.cpProgress(this.parse(rawQuery), user);
