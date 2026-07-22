@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Briefcase } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,6 +30,7 @@ import {
   fetchEffectivePermissions,
 } from '../actions';
 import AddUserDialog from './AddUserDialog';
+import UserAccessDialog from './UserAccessDialog';
 
 const ROLES = [
   'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA',
@@ -103,6 +105,11 @@ export default function UsersClient({ initialGroups, initialPermissions, isSuper
   const [effectivePerms, setEffectivePerms] = useState<string[]>([]);
   const [overrideLoading, setOverrideLoading] = useState(false);
   const [tab, setTab] = useState<'override' | 'effective'>('effective');
+
+  // TF2-P1-2: State untuk dialog korelasi Users ↔ Struktur (akses efektif).
+  // Hanya SUPER_ADMIN yang bisa membuka — backend @Roles('SUPER_ADMIN') di
+  // positions.controller.ts:40. Tombol di-render conditional saat isSuperAdmin.
+  const [accessCheckUser, setAccessCheckUser] = useState<string | null>(null);
 
   const [actionMsg, setActionMsg] = useState('');
 
@@ -287,6 +294,18 @@ export default function UsersClient({ initialGroups, initialPermissions, isSuper
                             >
                               Izin
                             </Button>
+                            {/* TF2-P1-2: Buka dialog korelasi jabatan-izin (SA only). */}
+                            {isSuperAdmin && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1.5"
+                                onClick={() => setAccessCheckUser(u.id)}
+                                title="Lihat jabatan aktif + izin efektif (R-25)"
+                              >
+                                <Briefcase className="h-3.5 w-3.5" /> Jabatan
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant={u.isActive ? 'destructive' : 'default'}
@@ -305,6 +324,12 @@ export default function UsersClient({ initialGroups, initialPermissions, isSuper
           )}
         </Card>
       ))}
+
+      {/* TF2-P1-2: Dialog korelasi Users ↔ Struktur (akses efektif). */}
+      <UserAccessDialog
+        userId={accessCheckUser}
+        onClose={() => setAccessCheckUser(null)}
+      />
 
       {/* ── Panel Izin Pengguna ──────────────────────────────────────────────── */}
       {selectedUser && (

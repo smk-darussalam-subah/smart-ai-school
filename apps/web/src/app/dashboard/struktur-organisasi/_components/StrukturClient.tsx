@@ -98,7 +98,17 @@ export default function StrukturClient({ positions, academicYear, assignments, m
     });
     setBusy(false);
     if (res.error) { toast.error(res.error); return; }
-    setTarget(null); toast.success('Penugasan berhasil disimpan.'); router.refresh();
+    // TF2-P2-8: Surface SoD warning from backend. Backend returns `{ id, warning }`
+    // bila konflik Segregation of Duties terdeteksi (positions.service.ts:240-242).
+    // Sebelumnya warning di-drop silently → admin tidak tahu kombinasi jabatan berisiko.
+    const warning = (res.data as { warning?: string } | undefined)?.warning;
+    if (warning) {
+      toast.warning(`Tetap disimpan, tapi ada konflik SoD: ${warning}`, { duration: 8000 });
+    } else {
+      toast.success('Penugasan berhasil disimpan.');
+    }
+    setTarget(null);
+    router.refresh();
   };
 
   const removeAssign = async (a: Assignment) => {
@@ -316,7 +326,12 @@ export default function StrukturClient({ positions, academicYear, assignments, m
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setTarget(null)}>Batal</Button>
-              <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700" disabled={busy} onClick={submitAssign}>
+              <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                // TF2-P2-3: Sebelumnya hanya `disabled={busy}`. Tombol sekarang juga
+                // disabled saat form belum lengkap (pegawai wajib, jurusan wajib bila MAJOR).
+                disabled={busy || !userId || (target?.scopeType === 'MAJOR' && !majorId)}
+                onClick={submitAssign}
+              >
                 {busy ? <><Loader2 className="h-4 w-4 animate-spin" /> Menyimpan…</> : <><Check className="h-4 w-4" /> Simpan</>}
               </Button>
             </div>
