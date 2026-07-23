@@ -3,7 +3,7 @@
 // Akses: SUPER_ADMIN & KEPALA_SEKOLAH untuk manajemen; semua role untuk my-positions.
 // =============================================================================
 
-import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { AuthUser, PRIMARY_ROLES } from '@smk/auth';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -37,9 +37,12 @@ export class PositionsController {
   }
 
   // R-25: Verifikasi effective access user (SA only)
+  // TF2-P1-SEC-1: Tambah ParseUUIDPipe untuk defense-in-depth. Sebelumnya
+  // userId mentah dikirim ke prisma → berisiko 500 pada input non-UUID
+  // dan inkonsisten dengan endpoint Users yang sudah pakai ParseUUIDPipe.
   @Roles('SUPER_ADMIN')
   @Get('access-check/:userId')
-  accessCheck(@Param('userId') userId: string) {
+  accessCheck(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.positions.accessCheck(userId);
   }
 
@@ -59,7 +62,10 @@ export class PositionsController {
 
   @Delete('assignments/:id')
   @Audit({ captureBody: false })
-  unassign(@Param('id') id: string) {
+  // TF2-P1-SEC-2: Tambah ParseUUIDPipe untuk defense-in-depth. Sebelumnya id
+  // mentah dikirim ke prisma.staffPosition.delete — inkonsisten dengan praktik
+  // defense-in-depth di modul lain.
+  unassign(@Param('id', ParseUUIDPipe) id: string) {
     return this.positions.unassign(id);
   }
 }

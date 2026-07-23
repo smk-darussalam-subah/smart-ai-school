@@ -9,6 +9,10 @@ import { apiAction } from '@/lib/server-actions';
 // runtime export (Next.js menolak). Component import type langsung dari sini.
 export type { AccessCheckResult } from '../struktur-organisasi/actions';
 
+// TF2-P0-NEW-1 (Opsi B): Import type PermissionItem dari page.tsx (sudah
+// di-export dari sana). Dipakai oleh fetchPermissionCatalog return type.
+import type { PermissionItem } from './page';
+
 // Re-export action secara runtime lewat proxy async wrapper agar tetap compliant
 // dengan aturan Next.js 'use server' (hanya async function yang boleh di-export).
 export async function accessCheckAction(userId: string) {
@@ -43,6 +47,14 @@ export async function fetchUserOverrides(userId: string) {
 
 export async function fetchEffectivePermissions(userId: string) {
   return apiAction<{ permissions: string[] }>(`/users/${userId}/effective-permissions`, 'GET');
+}
+
+// TF2-P0-NEW-1 (Opsi B): Fetch daftar permission catalog (SA-only). Dipanggil
+// lazy oleh UsersClient saat SUPER_ADMIN pertama kali klik tombol "Izin".
+// Sebelumnya fetch ini dilakukan di page-level (users/page.tsx) yang menyebabkan
+// TU LoadError karena endpoint /permissions di-guard @Roles('SUPER_ADMIN').
+export async function fetchPermissionCatalog() {
+  return apiAction<PermissionItem[]>('/permissions', 'GET');
 }
 
 // ── Provisioning (2J-4) ───────────────────────────────────────────────────────

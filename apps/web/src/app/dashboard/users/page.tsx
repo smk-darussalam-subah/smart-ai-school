@@ -23,7 +23,13 @@ interface UserGroup {
   users: UserItem[];
 }
 
-interface PermissionItem {
+// TF2-P0-NEW-1 (Opsi B): PermissionItem tetap didefinisikan di sini untuk type
+// compatibility, tapi fetch `/permissions` dihapus dari page-level Promise.all.
+// Alasan: TU diizinkan masuk page (users/page.tsx:41) tetapi `/permissions`
+// di-guard `@Roles('SUPER_ADMIN')` class-level (permissions.controller.ts:30).
+// Fetch SA-only di page-level menyebabkan TU selalu LoadError. Panel permission
+// dimuat lazy hanya saat SUPER_ADMIN klik "Izin" via fetchUserOverrides.
+export interface PermissionItem {
   id: string;
   code: string;
   description: string;
@@ -47,25 +53,18 @@ export default async function UsersPage({ searchParams }: Props) {
   queryParams.set('limit', '50');
   if (sp.search) queryParams.set('search', sp.search);
 
-  const [groupedData, permsData] = await Promise.all([
-    apiFetch<{ groups: UserGroup[] }>(`/users/grouped?${queryParams.toString()}`, token),
-    apiFetch<PermissionItem[]>('/permissions', token),
-  ]);
-  if (groupedData === null || permsData === null) return <LoadError />;
+  // TF2-P0-NEW-1 (Opsi B): Hanya fetch /users/grouped di page-level. Fetch
+  // /permissions dihapus karena SA-only — TU tidak punya akses dan akan
+  // menyebabkan LoadError. Panel permissions di-load lazy oleh SUPER_ADMIN
+  // saat klik tombol "Izin" (lihat UsersClient.tsx loadAllPermissions).
+  const groupedData = await apiFetch<{ groups: UserGroup[] }>(`/users/grouped?${queryParams.toString()}`, token);
+  if (groupedData === null) return <LoadError />;
 
   const groups = groupedData?.groups ?? [];
-  let permissions: PermissionItem[] = [];
-  if (Array.isArray(permsData)) {
-    permissions = permsData;
-  } else if (permsData && typeof permsData === 'object' && 'data' in permsData) {
-    const d = (permsData as { data: unknown }).data;
-    if (Array.isArray(d)) permissions = d as PermissionItem[];
-  }
 
   return (
     <UsersClient
       initialGroups={groups}
-      initialPermissions={permissions}
       isSuperAdmin={roles.includes('SUPER_ADMIN')}
     />
   );

@@ -9,6 +9,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -175,6 +176,15 @@ export class KeycloakAdminService {
 
     if (status === 400) {
       return new BadRequestException('Request tidak valid ke Keycloak Admin');
+    }
+    // TF2-P0-KS-2: Tambah handler 403 eksplisit. Sebelumnya 403 jatuh ke
+    // fallback generic `ServiceUnavailableException(error 403)` yang
+    // menyesatkan diagnosis — admin mengira Keycloak tidak tersedia padahal
+    // masalahnya izin service account (lihat P0-KS-1 di audit).
+    if (status === 403) {
+      return new ForbiddenException(
+        'Keycloak menolak akses — periksa izin service account (butuh realm-admin atau manage-realm) atau hubungi admin',
+      );
     }
     if (status === 404) {
       return new NotFoundException('Resource tidak ditemukan di Keycloak');
