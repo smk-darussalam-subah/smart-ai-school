@@ -1,12 +1,11 @@
 // =============================================================================
 // PositionsService — Struktur Organisasi / jabatan (2J-5)
 //
-// Penugasan pegawai ke jabatan terikat tahun ajaran. Saat penugasan dibuat,
-// izin jabatan (position_permissions) diterapkan sebagai UserPermissionOverride
-// (grant=true); saat dilepas, override dicabut bila tak ada penugasan aktif lain
-// yang masih memberi izin tsb. Cache izin user di-invalidate tiap perubahan.
+// Penugasan pegawai ke jabatan terikat tahun ajaran. Selama Appointment Wave A,
+// mutasi assign/unassign ditahan fail-closed agar StaffPosition dan permission
+// override tidak berubah sebelum lifecycle appointment Wave B tersedia.
 //
-// R-23: Position code di-sync sebagai Keycloak realm role (fail-soft).
+// Appointment Wave A: position code is stored in DIIS only, not synced to Keycloak.
 // R-26: Cross-schema integrity check — orphan permission di-skip dengan warning.
 // =============================================================================
 
@@ -18,7 +17,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { logger } from '@smk/logger';
-import { POSITION_CODES, UserRole } from '@smk/auth';
+import { POSITION_CODES, PRIMARY_ROLES, UserRole } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
@@ -41,6 +40,14 @@ const CONFLICT_RULES: ReadonlyArray<{
     risk: 'Supervisi TU + eksekusi keuangan — konflik pengawasan dan pelaksanaan',
   },
 ];
+
+const KEYCLOAK_POSITION_ROLE_SYNC_DISABLED = {
+  status: 'disabled' as const,
+  message:
+    'Sinkronisasi role jabatan ke Keycloak sudah dinonaktifkan. Penugasan tersimpan di DIIS dan akses jabatan ditahan sampai resolver appointment/permission aktif.',
+};
+const APPOINTMENT_TRANSITION_MUTATION_DISABLED_MESSAGE =
+  'Transisi appointment sedang berlangsung. Struktur organisasi sementara mode baca saja; penugasan jabatan baru atau pelepasan jabatan dilakukan setelah Appointment Governance Wave B aktif.';
 
 /** R-27: Cek apakah position baru konflik dengan jabatan aktif user. */
 function checkConflict(
@@ -67,6 +74,10 @@ export class PositionsService {
     private readonly permissions: PermissionsService,
     private readonly keycloakAdmin: KeycloakAdminService,
   ) {}
+
+  private isAppointmentMutationDisabled(): boolean {
+    return true;
+  }
 
   // ── Katalog jabatan (UI bangun pohon dari parentId) ─────────────────────────
   async getCatalog() {
@@ -122,6 +133,10 @@ export class PositionsService {
 
   // ── Tetapkan pegawai ke jabatan ─────────────────────────────────────────────
   async assign(dto: AssignPositionDto) {
+    if (this.isAppointmentMutationDisabled()) {
+      throw new ConflictException(APPOINTMENT_TRANSITION_MUTATION_DISABLED_MESSAGE);
+    }
+
     const staff = await this.prisma.staff.findUnique({
       where: { userId: dto.userId },
       select: { id: true, user: { select: { keycloakId: true } } },
@@ -222,28 +237,25 @@ export class PositionsService {
       throw err;
     }
 
-    // R-23: Sync position code sebagai Keycloak realm role (fail-soft).
-    // Jika Keycloak down/unreachable, permission override di DB tetap benar (Layer 2).
-    // Admin bisa re-sync manual via POST /positions/sync-roles + re-assign.
-    try {
-      await this.keycloakAdmin.assignRealmRole(staff.user.keycloakId, position.code);
-      logger.info(`[Positions] Synced role ${position.code} ke Keycloak untuk user ${staff.user.keycloakId}`);
-    } catch (err) {
-      logger.warn('[Positions] Gagal sync role ke Keycloak (fail-soft)', {
-        keycloakId: staff.user.keycloakId,
-        positionCode: position.code,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    logger.info('[Positions] Position role Keycloak sync skipped by Appointment Wave A containment', {
+      keycloakId: staff.user.keycloakId,
+      positionCode: position.code,
+    });
 
     this.permissions.invalidateUser(staff.user.keycloakId);
 
     // R-27: Return warning if segregation of duties conflict detected
-    return warning ? { id: created.id, warning } : { id: created.id };
+    return warning
+      ? { id: created.id, warning, keycloakPositionRoleSync: KEYCLOAK_POSITION_ROLE_SYNC_DISABLED }
+      : { id: created.id, keycloakPositionRoleSync: KEYCLOAK_POSITION_ROLE_SYNC_DISABLED };
   }
 
   // ── Lepas penugasan + cabut izin yg tak lagi didukung jabatan lain ─────────
   async unassign(id: string) {
+    if (this.isAppointmentMutationDisabled()) {
+      throw new ConflictException(APPOINTMENT_TRANSITION_MUTATION_DISABLED_MESSAGE);
+    }
+
     // Refactored: include position.code + permissions in single query (eliminates redundant query)
     const sp = await this.prisma.staffPosition.findUnique({
       where: { id },
@@ -280,31 +292,14 @@ export class PositionsService {
       }
     });
 
-    // R-23: Remove Keycloak realm role jika tidak ada penugasan aktif lain
-    // dengan position code yang sama (fail-soft).
-    const otherAssignmentsWithSameCode = await this.prisma.staffPosition.findFirst({
-      where: {
-        staff: { userId },
-        position: { code: sp.position.code },
-        isActive: true,
-      },
+    logger.info('[Positions] Position role Keycloak removal skipped by Appointment Wave A containment', {
+      keycloakId: sp.staff.user.keycloakId,
+      positionCode: sp.position.code,
     });
-    if (!otherAssignmentsWithSameCode) {
-      try {
-        await this.keycloakAdmin.removeRealmRole(sp.staff.user.keycloakId, sp.position.code);
-        logger.info(`[Positions] Removed role ${sp.position.code} dari Keycloak untuk user ${sp.staff.user.keycloakId}`);
-      } catch (err) {
-        logger.warn('[Positions] Gagal remove role dari Keycloak (fail-soft)', {
-          keycloakId: sp.staff.user.keycloakId,
-          positionCode: sp.position.code,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
 
     this.permissions.invalidateUser(sp.staff.user.keycloakId);
 
-    return { id };
+    return { id, keycloakPositionRoleSync: KEYCLOAK_POSITION_ROLE_SYNC_DISABLED };
   }
 
   // ── Jabatan aktif user yang sedang login (R-24/R-25 support) ────────────────
@@ -396,36 +391,12 @@ export class PositionsService {
 
   // ── Seed 13 position codes sebagai Keycloak realm roles (R-23 prasyarat) ────
   async syncKeycloakRoles() {
-    // Ambil nama jabatan dari DB untuk description
-    const positions = await this.prisma.position.findMany({
-      where: { code: { in: [...POSITION_CODES] } },
-      select: { code: true, name: true },
-    });
-    const nameMap = new Map(positions.map((p) => [p.code, p.name]));
-
-    const created: string[] = [];
-    const existing: string[] = [];
-    const failed: { code: string; error: string }[] = [];
-
-    for (const code of POSITION_CODES) {
-      const description = nameMap.get(code) ?? code;
-      try {
-        const result = await this.keycloakAdmin.createRealmRoleIfNotExists(code, description);
-        if (result === 'created') {
-          created.push(code);
-        } else {
-          existing.push(code);
-        }
-      } catch (err) {
-        logger.warn('[Positions] Gagal sync role ke Keycloak', {
-          code,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        failed.push({ code, error: err instanceof Error ? err.message : String(err) });
-      }
-    }
-
-    logger.info('[Positions] syncKeycloakRoles selesai', { created: created.length, existing: existing.length, failed: failed.length });
-    return { created, existing, failed };
+    logger.warn('[Positions] syncKeycloakRoles disabled by Appointment Wave A containment');
+    return {
+      ...KEYCLOAK_POSITION_ROLE_SYNC_DISABLED,
+      stableRoles: [...PRIMARY_ROLES],
+      blockedPositionCodes: [...POSITION_CODES],
+      operationRef: 'appointment-wave-a-keycloak-position-role-containment',
+    };
   }
 }

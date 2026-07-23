@@ -20,7 +20,7 @@ export async function unassignPositionAction(id: string) {
   return result;
 }
 
-/** R-23: Sinkronisasi 13 position code sebagai Keycloak realm roles. */
+/** Appointment Wave A: endpoint kept for compatibility; API returns disabled/no mutation. */
 export async function syncRolesAction() {
   const result = await apiAction('/positions/sync-roles', 'POST');
   if (!result.error) revalidatePath('/dashboard/struktur-organisasi');

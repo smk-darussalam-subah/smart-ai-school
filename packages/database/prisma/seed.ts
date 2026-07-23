@@ -647,8 +647,9 @@ async function main() {
   console.log('   Leads    : 5 (new→contacted→interested→registered→paid)');
   console.log('   Schedules: 4 dummy (TKJ, TA 2025/2026, Sem 1)');
   console.log('   RAG      : 11 chunks (1 curriculum + 4 faq + 3 jurusan + 2 peraturan + 1 faq-akademik)');
-  console.log('   Roles    : SUPER_ADMIN, KEPALA_SEKOLAH, TATA_USAHA, GURU,');
-  console.log('              SISWA, ORANG_TUA, INDUSTRI (7 total)');
+  console.log('   Stable roles: SUPER_ADMIN, TATA_USAHA, GURU, SISWA,');
+  console.log('                 ORANG_TUA, INDUSTRI (6 Keycloak identity roles)');
+  console.log('   Position code legacy data remains for appointment migration waves.');
   console.log('═══════════════════════════════════════════════');
 }
 
