@@ -5,7 +5,7 @@
 // Kegiatan (Pendahuluan/Inti/Penutup), asesmen terstruktur (Diagnostik/Formatif/Sumatif),
 // Lampiran, Rekap & Download. Data tersimpan di Rpp.body (JSON); identitas di kolom top-level.
 
-import { useState, useTransition, useRef } from 'react';
+import { useEffect, useState, useTransition, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import {
   Loader2, Save, Send, AlertTriangle, Plus, Trash2, Sparkles, Info, Target, Route,
@@ -15,6 +15,7 @@ import {
 import clsx from 'clsx';
 import type { RppItem, ModulAjarBody, AtpItem, KegiatanItem } from './guru-types';
 import { createRpp, updateRpp, submitRpp, aiGenerateAtp, aiGenerateRppStep, aiGenerateMaterial } from '../actions';
+import { getDraftWriteTarget, readCreatedRppId } from './modul-ajar-draft-state';
 
 interface Props {
   open: boolean;
@@ -55,6 +56,7 @@ const STEPS = [
 const num = (s: string): number | null => (s.trim() === '' ? null : Number(s));
 
 export default function ModulAjarForm({ open, onClose, subjects, classes, academicYear, semester, editing, defaultSubject }: Props) {
+  const [currentRppId, setCurrentRppId] = useState<string | null>(editing?.id ?? null);
   const [subject, setSubject] = useState(editing?.subject ?? defaultSubject ?? '');
   const [classId, setClassId] = useState(editing?.classId ?? '');
   const [title, setTitle] = useState(editing?.title ?? '');
@@ -77,6 +79,10 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
   const [isGeneratingMaterial, setIsGeneratingMaterial] = useState(false);
   const [semuaProgress, setSemuaProgress] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setCurrentRppId(editing?.id ?? null);
+  }, [editing?.id, open]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2800); };
   const set = <K extends keyof ModulAjarBody>(k: K, v: ModulAjarBody[K]) => {
@@ -419,12 +425,15 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
     startTransition(async () => {
       try {
         let res;
-        if (editing) {
-          res = await updateRpp(editing.id, { subject, title, classId: classId || null, body: cleaned });
+        const target = getDraftWriteTarget(currentRppId, editing?.id);
+        if (target.kind === 'update') {
+          res = await updateRpp(target.id, { subject, title, classId: classId || null, body: cleaned });
         } else {
           res = await createRpp({
             subject, title, classId: classId || undefined, body: cleaned, academicYear, semester, submit: false,
           });
+          const createdId = readCreatedRppId(res);
+          if (createdId) setCurrentRppId(createdId);
         }
         if (!res.success) {
           setSavedVersion('error');
@@ -473,9 +482,10 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
 
     startTransition(async () => {
       let res;
-      if (editing) {
-        res = await updateRpp(editing.id, { subject, title, classId: classId || null, body: cleaned, content });
-        if (res.success && submitNow) res = await submitRpp(editing.id);
+      const target = getDraftWriteTarget(currentRppId, editing?.id);
+      if (target.kind === 'update') {
+        res = await updateRpp(target.id, { subject, title, classId: classId || null, body: cleaned, content });
+        if (res.success && submitNow) res = await submitRpp(target.id);
       } else {
         res = await createRpp({ subject, title, classId: classId || undefined, body: cleaned, content, academicYear, semester, submit: submitNow });
       }
