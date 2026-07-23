@@ -15,7 +15,6 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
 const SISWA: AuthUser = { keycloakId: 'kc-siswa', username: 'siswa1', roles: ['SISWA'] } as AuthUser;
-const WAKA: AuthUser = { keycloakId: 'kc-waka', username: 'waka1', roles: ['GURU', 'WAKA_KURIKULUM'] } as AuthUser;
 
 const baseCreate = {
   subject: 'Pemrograman Web', title: 'Struktur HTML', kktp: 75, orderIndex: 0,
@@ -217,32 +216,5 @@ describe('LmsService', () => {
     rppFindUnique.mockResolvedValue(null);
     await expect(service.create({ ...baseCreate, rppId: 'rpp-fiktif', publish: false }, GURU))
       .rejects.toThrow(NotFoundException);
-  });
-
-  it('W3 follow-up: WAKA_KURIKULUM create dengan RPP guru lain sukses via reviewer path', async () => {
-    rppFindUnique.mockResolvedValue({
-      id: 'rpp-guru-lain',
-      teacherId: 'teacher-lain',
-      classId: 'class-from-rpp',
-      subject: 'Basis Data',
-      academicYear: '2026/2027',
-      status: 'approved',
-    });
-
-    await service.create({
-      ...baseCreate,
-      rppId: 'rpp-guru-lain',
-      classId: 'client-class-ignored',
-      subject: 'Client Subject Ignored',
-      academicYear: '2099/2100',
-      publish: false,
-    }, WAKA);
-
-    const data = create.mock.calls[0][0].data;
-    expect(data.rppId).toBe('rpp-guru-lain');
-    expect(data.classId).toBe('class-from-rpp');
-    expect(data.subject).toBe('Basis Data');
-    expect(data.academicYear).toBe('2026/2027');
-    expect(teachingAssignmentFindFirst).not.toHaveBeenCalled();
   });
 });

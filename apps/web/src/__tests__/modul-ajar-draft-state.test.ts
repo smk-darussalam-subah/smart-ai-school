@@ -17,6 +17,29 @@ describe('Modul Ajar draft id continuity', () => {
     expect(getDraftWriteTarget(currentRppId, null)).toEqual({ kind: 'update', id: 'rpp-1' });
   });
 
+  it('mewakili satu sesi dialog: create draft, update draft, lalu submit target id yang sama', () => {
+    const actions: Array<{ action: 'create' | 'update' | 'submit'; id?: string }> = [];
+    let currentRppId: string | null = null;
+
+    const firstTarget = getDraftWriteTarget(currentRppId, null);
+    if (firstTarget.kind === 'create') {
+      actions.push({ action: 'create' });
+      currentRppId = readCreatedRppId({ success: true, data: { id: 'rpp-1' } });
+    }
+
+    const secondTarget = getDraftWriteTarget(currentRppId, null);
+    if (secondTarget.kind === 'update') actions.push({ action: 'update', id: secondTarget.id });
+
+    const submitTarget = getDraftWriteTarget(currentRppId, null);
+    if (submitTarget.kind === 'update') actions.push({ action: 'submit', id: submitTarget.id });
+
+    expect(actions).toEqual([
+      { action: 'create' },
+      { action: 'update', id: 'rpp-1' },
+      { action: 'submit', id: 'rpp-1' },
+    ]);
+  });
+
   it('edit existing RPP langsung memakai update dan tidak create baru', () => {
     expect(getDraftWriteTarget(null, 'rpp-existing')).toEqual({ kind: 'update', id: 'rpp-existing' });
   });
