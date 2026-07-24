@@ -15,7 +15,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  PermissionOverrideSource,
+  PermissionOverrideStatus,
+  Prisma,
+} from '@prisma/client';
 import { logger } from '@smk/logger';
 import { POSITION_CODES, PRIMARY_ROLES, UserRole } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
@@ -218,10 +222,28 @@ export class PositionsService {
         });
 
         for (const pp of validPermissions) {
+          const overrideData = {
+            grant: true,
+            staffPositionId: assignment.id,
+            source: PermissionOverrideSource.POSITION_ASSIGNMENT,
+            status: PermissionOverrideStatus.ACTIVE,
+            reason: 'Granted by active staff position assignment',
+          };
           await tx.userPermissionOverride.upsert({
-            where: { userId_permissionId: { userId: dto.userId, permissionId: pp.permissionId } },
-            update: { grant: true },
-            create: { userId: dto.userId, permissionId: pp.permissionId, grant: true },
+            where: {
+              userId_permissionId_academicYearId: {
+                userId: dto.userId,
+                permissionId: pp.permissionId,
+                academicYearId: dto.academicYearId,
+              },
+            },
+            update: overrideData,
+            create: {
+              userId: dto.userId,
+              permissionId: pp.permissionId,
+              academicYearId: dto.academicYearId,
+              ...overrideData,
+            },
           });
         }
 
@@ -262,6 +284,7 @@ export class PositionsService {
       select: {
         id: true,
         positionId: true,
+        academicYearId: true,  // TF2-P1-1: scope override deletion by year
         position: { select: { code: true, permissions: { select: { permissionId: true } } } },
         staff: { select: { userId: true, user: { select: { keycloakId: true } } } },
       },
@@ -277,7 +300,7 @@ export class PositionsService {
       if (permIds.length) {
         // Izin yang masih diberikan oleh penugasan AKTIF lain milik user ini.
         const remaining = await tx.staffPosition.findMany({
-          where: { staff: { userId }, isActive: true },
+          where: { staff: { userId }, academicYearId: sp.academicYearId, isActive: true },
           select: { position: { select: { permissions: { select: { permissionId: true } } } } },
         });
         const stillGranted = new Set(
@@ -285,8 +308,17 @@ export class PositionsService {
         );
         const toRemove = permIds.filter((pid) => !stillGranted.has(pid));
         if (toRemove.length) {
+          // TF2-P1-1: Hanya hapus override untuk tahun penugasan ini.
+          // Override tahun lain (atau global) tetap utuh.
           await tx.userPermissionOverride.deleteMany({
-            where: { userId, permissionId: { in: toRemove }, grant: true },
+            where: {
+              userId,
+              permissionId: { in: toRemove },
+              grant: true,
+              academicYearId: sp.academicYearId,
+              source: PermissionOverrideSource.POSITION_ASSIGNMENT,
+              status: PermissionOverrideStatus.ACTIVE,
+            },
           });
         }
       }
