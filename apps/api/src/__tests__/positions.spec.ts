@@ -33,7 +33,12 @@ async function build(prisma: ReturnType<typeof mockPrisma>, perms = { invalidate
       { provide: KeycloakAdminService, useValue: { assignRealmRole: jest.fn(), removeRealmRole: jest.fn() } },
     ],
   }).compile();
-  return mod.get(PositionsService);
+  const service = mod.get(PositionsService);
+  // Wave A containment: isAppointmentMutationDisabled() returns true hardcoded.
+  // Override untuk tests agar assign/unassign dapat di-test.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  jest.spyOn(service as any, 'isAppointmentMutationDisabled').mockReturnValue(false);
+  return service;
 }
 
 const STAFF = { id: 'staff-1', user: { keycloakId: 'kc-1' } };
