@@ -6,6 +6,7 @@
 import { NextAuthOptions, Session } from 'next-auth';
 import { JWT } from 'next-auth/jwt';
 import KeycloakProvider from 'next-auth/providers/keycloak';
+import { PRIMARY_ROLES } from '@smk/auth';
 
 // Extend next-auth types to carry DIIS-specific fields
 declare module 'next-auth' {
@@ -36,7 +37,7 @@ declare module 'next-auth/jwt' {
 // =============================================================================
 function extractKeycloakRoles(token: JWT & Record<string, unknown>): string[] {
   const realmAccess = token['realm_access'] as { roles?: string[] } | undefined;
-  return realmAccess?.roles?.filter((r) => !r.startsWith('default-roles')) ?? [];
+  return realmAccess?.roles?.filter((r) => (PRIMARY_ROLES as readonly string[]).includes(r)) ?? [];
 }
 
 // =============================================================================

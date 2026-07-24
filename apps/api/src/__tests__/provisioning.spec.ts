@@ -694,6 +694,10 @@ describe('ProvisioningService', () => {
 
     it('guru lengkap → valid', () => {
       expect(ProvisionUserSchema.safeParse(guru).success).toBe(true);
+      expect(ProvisionUserSchema.safeParse({
+        ...guru,
+        role: 'KEPALA_SEKOLAH',
+      }).success).toBe(false);
     });
 
     it('gender hilang → invalid', () => {

@@ -32,11 +32,13 @@ jest.mock('jsonwebtoken', () => ({
 // ─── Imports (setelah mock) ───────────────────────────────────────────────────
 import {
   UserRole,
+  PRIMARY_ROLES,
   KeycloakTokenPayloadSchema,
   verifyKeycloakToken,
   extractAuthUser,
   hasRole,
   isAdmin,
+  isPrimaryRole,
   type KeycloakTokenPayload,
   type AuthUser,
 } from '../index';
@@ -111,6 +113,19 @@ describe('UserRole', () => {
         'OPERATOR_DAPODIK',
       ];
       expect(UserRole.options).toEqual(expect.arrayContaining(expected));
+    });
+
+    it('PRIMARY_ROLES hanya berisi 6 role identitas stabil', () => {
+      expect(PRIMARY_ROLES).toEqual([
+        'SUPER_ADMIN',
+        'TATA_USAHA',
+        'GURU',
+        'SISWA',
+        'ORANG_TUA',
+        'INDUSTRI',
+      ]);
+      expect(isPrimaryRole('KEPALA_SEKOLAH')).toBe(false);
+      expect(isPrimaryRole('WAKA_KURIKULUM')).toBe(false);
     });
   });
 
@@ -269,6 +284,16 @@ describe('extractAuthUser()', () => {
       expect(user.roles).toContain('TATA_USAHA');
       expect(user.roles).not.toContain('nonexistent-role');
     });
+
+    it('menghapus position code historis dari JWT Keycloak', () => {
+      const payload = makePayload({
+        realm_access: {
+          roles: ['GURU', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'],
+        },
+      });
+      const user = extractAuthUser(payload);
+      expect(user.roles).toEqual(['GURU']);
+    });
   });
 
   describe('fallback values', () => {
@@ -361,8 +386,8 @@ describe('isAdmin()', () => {
     expect(isAdmin(makeUser({ roles: ['SUPER_ADMIN'] }))).toBe(true);
   });
 
-  it('KEPALA_SEKOLAH → true', () => {
-    expect(isAdmin(makeUser({ roles: ['KEPALA_SEKOLAH'] }))).toBe(true);
+  it('KEPALA_SEKOLAH -> false karena jabatan bukan admin identity role', () => {
+    expect(isAdmin(makeUser({ roles: ['KEPALA_SEKOLAH'] }))).toBe(false);
   });
 
   it('GURU → false', () => {

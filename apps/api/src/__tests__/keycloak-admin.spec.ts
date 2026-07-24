@@ -8,7 +8,7 @@ jest.mock('@smk/logger', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { ServiceUnavailableException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ServiceUnavailableException, ConflictException } from '@nestjs/common';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { logger } from '@smk/logger';
 
@@ -220,6 +220,18 @@ describe('KeycloakAdminService', () => {
 
     expect(roleGETCalled).toBe(true);
     expect(mappingPOSTCalled).toBe(true);
+  });
+
+  it('assignRealmRole menolak position code sebelum memanggil Keycloak', async () => {
+    await expect(service.assignRealmRole('kc-1', 'WAKA_KURIKULUM')).rejects.toThrow(BadRequestException);
+
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it('createRealmRoleIfNotExists menolak KEPALA_SEKOLAH sebagai realm role', async () => {
+    await expect(service.createRealmRoleIfNotExists('KEPALA_SEKOLAH')).rejects.toThrow(BadRequestException);
+
+    expect(fetchMock()).not.toHaveBeenCalled();
   });
 
   // ── Password TIDAK muncul di argumen logger ────────────────────────────────

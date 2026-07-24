@@ -9,18 +9,16 @@ import { z } from 'zod';
 
 // ── Roles DIIS ───────────────────────────────────────────────────────────────
 //
-// Base roles (7) — role primer yang diberikan saat pembuatan akun di Keycloak.
-// Position codes (13) — role turunan dari penugasan jabatan (Struktur Organisasi).
-//   KEPALA_SEKOLAH adalah base role SEKALIGUS position code.
-//   Saat PositionsService.assign() dijalankan, position code di-sync sebagai
-//   Keycloak realm role agar RolesGuard (yang membaca JWT realm_access.roles)
-//   dapat mengizinkan akses endpoint @Roles(positionCode).
+// Stable identity roles (6) are the only roles assigned as Keycloak realm roles.
+// Position codes (13), including KEPALA_SEKOLAH, are period-bound DIIS catalog
+// values and must not be created, assigned, or removed through Keycloak roles.
 // ────────────────────────────────────────────────────────────────────────────
 
-/** 7 role identitas primer — disimpan di User.role, diberikan saat pembuatan akun. */
+/** Stable identity roles stored in User.role and assigned to accounts in Keycloak. */
+// Appointment Wave A: stable identity roles only. KEPALA_SEKOLAH is now a
+// period-bound position code and must not be assigned as a Keycloak realm role.
 export const PRIMARY_ROLES = [
   'SUPER_ADMIN',
-  'KEPALA_SEKOLAH',   // Base role SEKALIGUS position code
   'TATA_USAHA',       // Staf administrasi: keuangan, PPDB admin, data siswa
   'GURU',
   'SISWA',
@@ -28,7 +26,11 @@ export const PRIMARY_ROLES = [
   'INDUSTRI',         // Mitra industri: PKL/Prakerin, BKK, rekrutmen
 ] as const;
 
-/** 13 kode jabatan dari Struktur Organisasi (2J-5). Harus exist sebagai Keycloak realm roles. */
+export type PrimaryRole = typeof PRIMARY_ROLES[number];
+export const PrimaryRoleSchema = z.enum(PRIMARY_ROLES);
+
+/** Position codes from Struktur Organisasi. They are not Keycloak realm roles. */
+// Appointment Wave A: position codes remain DIIS catalog values only.
 export const POSITION_CODES = [
   'KEPALA_SEKOLAH',
   'WAKA_KURIKULUM',
@@ -47,17 +49,17 @@ export const POSITION_CODES = [
 
 export type PositionCode = typeof POSITION_CODES[number];
 
-// 19 unique values — KEPALA_SEKOLAH appears in both arrays but only once here.
+// 19 unique values: 6 identity roles + 13 position-only codes.
 export const UserRole = z.enum([
-  // Primary roles (7)
+  // Stable identity roles (6)
   'SUPER_ADMIN',
-  'KEPALA_SEKOLAH',
   'TATA_USAHA',
   'GURU',
   'SISWA',
   'ORANG_TUA',
   'INDUSTRI',
-  // Position-only codes (12)
+  // Position-only codes (13)
+  'KEPALA_SEKOLAH',
   'WAKA_KURIKULUM',
   'WAKA_KESISWAAN',
   'WAKA_HUMAS',
@@ -76,6 +78,11 @@ export type UserRole = z.infer<typeof UserRole>;
 /** Cek apakah suatu role adalah position code (bukan base role). */
 export function isPositionCode(role: string): role is PositionCode {
   return (POSITION_CODES as readonly string[]).includes(role);
+}
+
+/** Cek apakah suatu role adalah stable identity role Keycloak. */
+export function isPrimaryRole(role: string): role is PrimaryRole {
+  return (PRIMARY_ROLES as readonly string[]).includes(role);
 }
 
 // ── JWT Payload dari Keycloak ─────────────────────────────────────────────────
@@ -165,7 +172,7 @@ export async function verifyKeycloakToken(token: string): Promise<KeycloakTokenP
 export function extractAuthUser(payload: KeycloakTokenPayload): AuthUser {
   const realmRoles = payload.realm_access?.roles || [];
   const validRoles = realmRoles.filter((r): r is UserRole =>
-    UserRole.options.includes(r as UserRole)
+    isPrimaryRole(r)
   );
 
   return {
@@ -185,8 +192,9 @@ export function hasRole(user: AuthUser, ...roles: UserRole[]): boolean {
 }
 
 /**
- * Cek apakah user adalah admin (SUPER_ADMIN atau KEPALA_SEKOLAH)
+ * Cek apakah user adalah stable identity admin.
+ * KEPALA_SEKOLAH adalah jabatan period-bound dan tidak lagi dihitung dari JWT role.
  */
 export function isAdmin(user: AuthUser): boolean {
-  return hasRole(user, 'SUPER_ADMIN', 'KEPALA_SEKOLAH');
+  return hasRole(user, 'SUPER_ADMIN');
 }
