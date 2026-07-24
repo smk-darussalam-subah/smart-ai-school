@@ -1,4 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import {
+  PermissionOverrideSource,
+  PermissionOverrideStatus,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserRole } from '@smk/auth';
 import { logger } from '@smk/logger';
@@ -97,8 +102,20 @@ export class PermissionsService {
   }
 
   async getUserEffectivePermissions(userId: string) {
+    const activeYear = await this.prisma.academicYear.findFirst({
+      where: { isActive: true },
+      select: { id: true },
+    });
+    const activeYearId = activeYear?.id ?? null;
+
     const overrides = await this.prisma.userPermissionOverride.findMany({
-      where: { userId },
+      where: {
+        userId,
+        status: PermissionOverrideStatus.ACTIVE,
+        OR: activeYearId
+          ? [{ academicYearId: activeYearId }, { academicYearId: null }]
+          : [{ academicYearId: null }],
+      },
       include: { permission: true },
     });
 
@@ -109,25 +126,13 @@ export class PermissionsService {
   }
 
   async grantUserPermission(userId: string, permissionId: string) {
-    const result = await this.prisma.userPermissionOverride.upsert({
-      where: {
-        userId_permissionId: { userId, permissionId },
-      },
-      update: { grant: true },
-      create: { userId, permissionId, grant: true },
-    });
+    const result = await this.writeGlobalOverride(userId, permissionId, true);
     await this.invalidateByAuthUserId(userId);
     return result;
   }
 
   async revokeUserPermission(userId: string, permissionId: string) {
-    const result = await this.prisma.userPermissionOverride.upsert({
-      where: {
-        userId_permissionId: { userId, permissionId },
-      },
-      update: { grant: false },
-      create: { userId, permissionId, grant: false },
-    });
+    const result = await this.writeGlobalOverride(userId, permissionId, false);
     await this.invalidateByAuthUserId(userId);
     return result;
   }
@@ -139,11 +144,26 @@ export class PermissionsService {
    *      grant=false MENARIK permission meski diberikan oleh role
    *      (semantik "true = beri, false = tarik" sesuai schema).
    * Semua filter dilakukan di QUERY level (bukan di JS atas seluruh tabel).
+   *
+   * TF2-P1-1: Filter override by active academic year. Override dengan
+   * academicYearId = NULL (global/direct admin grant) tetap berlaku untuk
+   * semua tahun. Override dengan academicYearId non-NULL hanya berlaku untuk
+   * tahun yang cocok. Ini mencegah "zombie permissions" — izin bekas
+   * pejabat tahun lama yang tetap aktif setelah tahun berganti.
+   * Only ACTIVE rows are read; ambiguous historical grants are quarantined by
+   * migration and therefore fail-closed.
    */
   private async resolvePermissions(keycloakId: string, roles: UserRole[]): Promise<Set<string>> {
     const permSet = new Set<string>();
 
     const authUserId = await this.findAuthUserId(keycloakId);
+
+    // TF2-P1-1: Ambil active academic year untuk filter override.
+    const activeYear = await this.prisma.academicYear.findFirst({
+      where: { isActive: true },
+      select: { id: true },
+    });
+    const activeYearId = activeYear?.id ?? null;
 
     const [rolePermissions, userOverrides] = await Promise.all([
       this.prisma.rolePermission.findMany({
@@ -152,7 +172,13 @@ export class PermissionsService {
       }),
       authUserId
         ? this.prisma.userPermissionOverride.findMany({
-            where: { userId: authUserId },
+            where: {
+              userId: authUserId,
+              status: PermissionOverrideStatus.ACTIVE,
+              OR: activeYearId
+                ? [{ academicYearId: activeYearId }, { academicYearId: null }]
+                : [{ academicYearId: null }],
+            },
             select: { grant: true, permission: { select: { code: true } } },
           })
         : Promise.resolve([] as { grant: boolean; permission: { code: string } }[]),
@@ -162,15 +188,76 @@ export class PermissionsService {
       permSet.add(rp.permission.code);
     }
 
-    for (const override of userOverrides) {
-      if (override.grant) {
-        permSet.add(override.permission.code);
-      } else {
-        permSet.delete(override.permission.code);
-      }
+    for (const override of userOverrides.filter((item) => item.grant)) {
+      permSet.add(override.permission.code);
+    }
+
+    for (const override of userOverrides.filter((item) => !item.grant)) {
+      permSet.delete(override.permission.code);
     }
 
     return permSet;
+  }
+
+  private async writeGlobalOverride(userId: string, permissionId: string, grant: boolean) {
+    const data = {
+      grant,
+      academicYearId: null,
+      staffPositionId: null,
+      source: PermissionOverrideSource.MANUAL,
+      status: PermissionOverrideStatus.ACTIVE,
+      reason: grant ? 'Manual global grant via Users UI' : 'Manual global revoke via Users UI',
+    };
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.userPermissionOverride.findFirst({
+          where: {
+            userId,
+            permissionId,
+            academicYearId: null,
+            status: PermissionOverrideStatus.ACTIVE,
+          },
+          select: { id: true },
+        });
+
+        return existing
+          ? tx.userPermissionOverride.update({
+              where: { id: existing.id },
+              data,
+            })
+          : tx.userPermissionOverride.create({
+              data: { userId, permissionId, ...data },
+            });
+      });
+    } catch (err) {
+      if (!this.isUniqueConflict(err)) {
+        throw err;
+      }
+
+      const existing = await this.prisma.userPermissionOverride.findFirst({
+        where: {
+          userId,
+          permissionId,
+          academicYearId: null,
+          status: PermissionOverrideStatus.ACTIVE,
+        },
+        select: { id: true },
+      });
+
+      if (!existing) {
+        throw err;
+      }
+
+      return this.prisma.userPermissionOverride.update({
+        where: { id: existing.id },
+        data,
+      });
+    }
+  }
+
+  private isUniqueConflict(err: unknown): err is Prisma.PrismaClientKnownRequestError {
+    return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
   }
 
   /** Cache di-key dengan keycloakId; override memakai auth User.id → perlu reverse lookup. */

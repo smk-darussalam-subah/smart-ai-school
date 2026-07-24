@@ -8,6 +8,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { SchoolConfigService } from '../school-config/school-config.service';
 import { SchoolConfigController } from '../school-config/school-config.controller';
 import { PrismaService } from '../prisma/prisma.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { Prisma } from '@prisma/client';
 
 const PROFILE = { id: 'p1', name: 'SMK Darussalam Subah', npsn: '20324567', address: 'Jl. Raya', phone: null, email: null, website: null, headmasterName: null, headmasterNip: null, logoUrl: null, accreditation: 'A', createdAt: new Date(), updatedAt: new Date() };
@@ -26,7 +27,10 @@ describe('SchoolConfigService', () => {
   const mockAY = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() };
   const mockSem = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() };
   const mockCal = { findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() };
+  const mockStaffPosition = { updateMany: jest.fn() };
+  const mockUserPermissionOverride = { deleteMany: jest.fn() };
   const mock$transaction = jest.fn();
+  const mockPermissions = { invalidateAll: jest.fn() };
 
   const prisma = {
     schoolProfile: mockProfile,
@@ -34,6 +38,8 @@ describe('SchoolConfigService', () => {
     academicYear: mockAY,
     semester: mockSem,
     academicCalendar: mockCal,
+    staffPosition: mockStaffPosition,
+    userPermissionOverride: mockUserPermissionOverride,
     $transaction: mock$transaction,
   };
 
@@ -41,10 +47,16 @@ describe('SchoolConfigService', () => {
     [mockProfile.findFirst, mockProfile.update, mockMajor.findMany, mockMajor.findUnique, mockMajor.create, mockMajor.update,
       mockAY.findMany, mockAY.findFirst, mockAY.findUnique, mockAY.create, mockAY.update, mockAY.updateMany,
       mockSem.findMany, mockSem.findFirst, mockSem.findUnique, mockSem.create, mockSem.update, mockSem.updateMany,
-      mockCal.findMany, mockCal.create, mockCal.update, mockCal.delete, mock$transaction].forEach(m => m.mockReset());
+      mockCal.findMany, mockCal.create, mockCal.update, mockCal.delete,
+      mockStaffPosition.updateMany, mockUserPermissionOverride.deleteMany,
+      mock$transaction, mockPermissions.invalidateAll].forEach(m => m.mockReset());
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [SchoolConfigService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        SchoolConfigService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: PermissionsService, useValue: mockPermissions },
+      ],
     }).compile();
     service = module.get(SchoolConfigService);
   });
@@ -127,6 +139,51 @@ describe('SchoolConfigService', () => {
     void prisma;
     expect(mock$transaction).toHaveBeenCalledTimes(1);
     expect(mockAY.updateMany).toHaveBeenCalledWith({ data: { isActive: false } });
+  });
+
+  it('createAcademicYear active baru -> cleanup posisi dan override tahun lama', async () => {
+    mockAY.findUnique.mockResolvedValue(null);
+    mockAY.findFirst.mockResolvedValue({ id: 'ay-old' });
+    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+    mockAY.updateMany.mockResolvedValue({ count: 1 });
+    mockSem.updateMany.mockResolvedValue({ count: 2 });
+    mockAY.create.mockResolvedValue({ ...AY, id: 'ay-new' });
+    mockStaffPosition.updateMany.mockResolvedValue({ count: 3 });
+    mockUserPermissionOverride.deleteMany.mockResolvedValue({ count: 5 });
+
+    await service.createAcademicYear({
+      code: '2027/2028',
+      startDate: new Date('2027-07-12'),
+      endDate: new Date('2028-06-24'),
+      isActive: true,
+    });
+
+    expect(mockStaffPosition.updateMany).toHaveBeenCalledWith({
+      where: { academicYearId: 'ay-old', isActive: true },
+      data: { isActive: false },
+    });
+    expect(mockUserPermissionOverride.deleteMany).toHaveBeenCalledWith({
+      where: { academicYearId: 'ay-old' },
+    });
+    expect(mockPermissions.invalidateAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('cleanup gagal tetap invalidate cache agar resolver membaca active year baru', async () => {
+    mockAY.findUnique.mockResolvedValue(null);
+    mockAY.findFirst.mockResolvedValue({ id: 'ay-old' });
+    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+    mockAY.updateMany.mockResolvedValue({ count: 1 });
+    mockAY.create.mockResolvedValue({ ...AY, id: 'ay-new' });
+    mockStaffPosition.updateMany.mockRejectedValue(new Error('cleanup failed'));
+
+    await expect(service.createAcademicYear({
+      code: '2027/2028',
+      startDate: new Date('2027-07-12'),
+      endDate: new Date('2028-06-24'),
+      isActive: true,
+    })).resolves.toBeDefined();
+
+    expect(mockPermissions.invalidateAll).toHaveBeenCalledTimes(1);
   });
 
   it('createAcademicYear duplikat → Conflict (tanpa menonaktifkan yg lain)', async () => {

@@ -95,6 +95,21 @@ enum Gender {
 // 7 role = dasar (Keycloak realm roles). Permission = granular aksi.
 // Super Admin ubah izin role/user TANPA deploy.
 
+enum PermissionOverrideSource {
+  MANUAL
+  POSITION_ASSIGNMENT
+  MIGRATION_QUARANTINE
+
+  @@schema("auth")
+}
+
+enum PermissionOverrideStatus {
+  ACTIVE
+  QUARANTINED
+
+  @@schema("auth")
+}
+
 model Permission {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code        String   @unique @db.VarChar(100)  // 'student.create', 'spp.approve'
@@ -121,15 +136,22 @@ model RolePermission {
 }
 
 model UserPermissionOverride {
-  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId       String     @map("user_id") @db.Uuid  // FK ke auth.users
-  permissionId String     @map("permission_id") @db.Uuid
-  grant        Boolean                                 // true = beri, false = tarik
-  createdAt    DateTime   @default(now()) @map("created_at")
+  id              String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String                   @map("user_id") @db.Uuid  // FK ke auth.users
+  permissionId    String                   @map("permission_id") @db.Uuid
+  grant           Boolean                                          // true = beri, false = tarik
+  createdAt       DateTime                 @default(now()) @map("created_at")
+  academicYearId  String?                  @map("academic_year_id") @db.Uuid
+  staffPositionId String?                  @map("staff_position_id") @db.Uuid
+  source          PermissionOverrideSource @default(MANUAL)
+  status          PermissionOverrideStatus @default(ACTIVE)
+  reason          String?                  @db.VarChar(255)
 
   permission   Permission @relation(fields: [permissionId], references: [id])
 
-  @@unique([userId, permissionId])
+  @@unique([userId, permissionId, academicYearId])
+  @@index([userId, status, academicYearId])
+  @@index([status, source])
   @@map("user_permission_overrides")
   @@schema("auth")
 }
