@@ -169,7 +169,7 @@ BEGIN
 
   SELECT COUNT(*) INTO candidate_single_match_count
   FROM "_tf2_p1_1_override_inventory"
-  WHERE grant = TRUE
+  WHERE "grant" = TRUE
     AND matching_position_count = 1;
 
   RAISE NOTICE
