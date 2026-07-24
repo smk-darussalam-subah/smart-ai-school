@@ -9,8 +9,8 @@
 --   least-privilege and does not grant access.
 --
 -- The NOTICE block emits counts only and avoids identifying fields.
-
-BEGIN;
+-- Note: Prisma migration engine wraps each migration in its own transaction;
+-- do NOT add explicit BEGIN/COMMIT here (causes nested transaction abort).
 
 DO $$
 BEGIN
@@ -193,5 +193,3 @@ ON "auth"."user_permission_overrides" ("user_id", "status", "academic_year_id");
 
 CREATE INDEX "user_permission_overrides_status_source_idx"
 ON "auth"."user_permission_overrides" ("status", "source");
-
-COMMIT;
