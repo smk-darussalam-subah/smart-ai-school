@@ -18,6 +18,7 @@ import LmsPreviewScreen from './LmsPreviewScreen';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { TablePagination } from '@/components/ui/table-pagination';
 import { toast } from 'sonner';
+import { getPendingCreatedDraft } from './modul-ajar-draft-state';
 
 interface ConfirmState {
   title: string;
@@ -63,6 +64,7 @@ const LMS_PAGE_SIZE = 8;
 export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, academicYear, semester, activeSubject, onClearSubject }: Props) {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<RppItem | null>(null);
+  const [createdDraft, setCreatedDraft] = useState<RppItem | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [rppPage, setRppPage] = useState(1);
@@ -108,7 +110,14 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
       .finally(() => setCpLoading(false));
   }, [academicYear, semester]);
 
-  const openCreate = () => { setEditing(null); setFormOpen(true); };
+  useEffect(() => {
+    if (createdDraft && rpp.some((item) => item.id === createdDraft.id)) setCreatedDraft(null);
+  }, [createdDraft, rpp]);
+
+  const openCreate = () => {
+    setEditing(getPendingCreatedDraft(createdDraft, rpp));
+    setFormOpen(true);
+  };
   const openEdit = (r: RppItem) => { setEditing(r); setFormOpen(true); };
 
   const openLmsCreate = () => { setLmsEditing(null); setLmsFormOpen(true); };
@@ -480,6 +489,7 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
           academicYear={academicYear}
           semester={semester}
           editing={editing}
+          onDraftCreated={setCreatedDraft}
         />
       )}
       {lmsFormOpen && (
