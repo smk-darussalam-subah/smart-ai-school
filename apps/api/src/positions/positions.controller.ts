@@ -1,6 +1,6 @@
 // =============================================================================
 // PositionsController — katalog jabatan + penugasan (Struktur Organisasi, 2J-5)
-// Akses: SUPER_ADMIN & KEPALA_SEKOLAH untuk manajemen; semua role untuk my-positions.
+// Akses Wave A: SUPER_ADMIN untuk manajemen; semua stable role untuk my-positions.
 // =============================================================================
 
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
@@ -14,7 +14,7 @@ import { AssignPositionSchema } from './dto/position.dto';
 import type { AssignPositionDto } from './dto/position.dto';
 
 @Controller('positions')
-@Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+@Roles('SUPER_ADMIN')
 export class PositionsController {
   constructor(private readonly positions: PositionsService) {}
 

@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { UserRole } from '@smk/auth';
+import { PrimaryRoleSchema } from '@smk/auth';
 
 export const UpdateUserRoleSchema = z.object({
-  role: UserRole,
+  role: PrimaryRoleSchema,
 }).strict();
 
 export type UpdateUserRoleDto = z.infer<typeof UpdateUserRoleSchema>;

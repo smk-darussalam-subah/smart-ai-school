@@ -35,7 +35,7 @@ import UserAccessDialog from './UserAccessDialog';
 import type { PermissionItem } from '../page';
 
 const ROLES = [
-  'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA',
+  'SUPER_ADMIN', 'TATA_USAHA',
   'GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI',
 ] as const;
 

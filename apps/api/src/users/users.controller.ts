@@ -31,7 +31,7 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   /**
-   * GET /users/grouped — users grouped by 7 roles (accordion)
+   * GET /users/grouped - users grouped by stable identity roles.
    */
   @Get('grouped')
   @RequirePermission('user.read')
@@ -48,7 +48,7 @@ export class UsersController {
    * MUST be before :id route to avoid collision.
    */
   @Get('consent-status')
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN')
   async getConsentStatus(@Query() rawQuery: unknown) {
     const parsed = ListConsentQuerySchema.safeParse(rawQuery);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors);
@@ -62,7 +62,7 @@ export class UsersController {
    * MUST be before :id route to avoid collision.
    */
   @Get('online')
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
+  @Roles('SUPER_ADMIN', 'TATA_USAHA')
   async getOnlineUsers(@Query() rawQuery: unknown) {
     const parsed = OnlineUsersQuerySchema.safeParse(rawQuery);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors);
@@ -76,7 +76,7 @@ export class UsersController {
    * MUST be before :id route to avoid collision.
    */
   @Get('login-events')
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN')
   async getLoginEvents(@Query() rawQuery: unknown) {
     const parsed = ListLoginEventsQuerySchema.safeParse(rawQuery);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors);
