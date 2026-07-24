@@ -15,7 +15,7 @@ import {
 import clsx from 'clsx';
 import type { RppItem, ModulAjarBody, AtpItem, KegiatanItem } from './guru-types';
 import { createRpp, updateRpp, submitRpp, aiGenerateAtp, aiGenerateRppStep, aiGenerateMaterial } from '../actions';
-import { getDraftWriteTarget, readCreatedRppId } from './modul-ajar-draft-state';
+import { getDraftWriteTarget, readCreatedRpp } from './modul-ajar-draft-state';
 
 interface Props {
   open: boolean;
@@ -27,6 +27,7 @@ interface Props {
   editing: RppItem | null;
   /** Pre-select mapel saat create baru (dipakai session flow step "Buka Modul Ajar"). */
   defaultSubject?: string;
+  onDraftCreated?: (draft: RppItem) => void;
 }
 
 const FIELD = 'w-full rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[13px] text-[#0f2e25] outline-none focus:border-emerald-400';
@@ -55,7 +56,7 @@ const STEPS = [
 
 const num = (s: string): number | null => (s.trim() === '' ? null : Number(s));
 
-export default function ModulAjarForm({ open, onClose, subjects, classes, academicYear, semester, editing, defaultSubject }: Props) {
+export default function ModulAjarForm({ open, onClose, subjects, classes, academicYear, semester, editing, defaultSubject, onDraftCreated }: Props) {
   const [currentRppId, setCurrentRppId] = useState<string | null>(editing?.id ?? null);
   const [subject, setSubject] = useState(editing?.subject ?? defaultSubject ?? '');
   const [classId, setClassId] = useState(editing?.classId ?? '');
@@ -82,7 +83,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
 
   useEffect(() => {
     setCurrentRppId(editing?.id ?? null);
-  }, [editing?.id, open]);
+  }, [editing?.id]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2800); };
   const set = <K extends keyof ModulAjarBody>(k: K, v: ModulAjarBody[K]) => {
@@ -432,14 +433,19 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
           res = await createRpp({
             subject, title, classId: classId || undefined, body: cleaned, academicYear, semester, submit: false,
           });
-          const createdId = readCreatedRppId(res);
-          if (createdId) setCurrentRppId(createdId);
         }
         if (!res.success) {
           setSavedVersion('error');
           setErr(res.error ?? 'Gagal menyimpan draft.');
           showToast('Gagal menyimpan draft: ' + (res.error ?? 'Unknown error'));
           return;
+        }
+        if (target.kind === 'create') {
+          const createdDraft = readCreatedRpp<RppItem>(res);
+          if (createdDraft) {
+            setCurrentRppId(createdDraft.id);
+            onDraftCreated?.(createdDraft);
+          }
         }
         setSavedVersion('saved');
         showToast('Draft modul ajar tersimpan');
