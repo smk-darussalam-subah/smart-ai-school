@@ -82,10 +82,10 @@ function makeUser(overrides?: Partial<AuthUser>): AuthUser {
 
 describe('UserRole', () => {
   describe('struktur enum', () => {
-    // 6 base roles + 13 position codes = 19 total
+    // 6 base roles + 15 position codes = 21 total
     // (KEPALA_SEKOLAH is a position code, not a base role)
-    it('memiliki tepat 19 role (6 base + 13 position codes)', () => {
-      expect(UserRole.options).toHaveLength(19);
+    it('memiliki tepat 21 role (6 base + 15 position codes)', () => {
+      expect(UserRole.options).toHaveLength(21);
     });
 
     it('mengandung semua role yang diharapkan', () => {
@@ -107,6 +107,8 @@ describe('UserRole', () => {
         'KAPROG',
         'KOOR_BKK',
         'KOOR_HUBIN',
+        'WAKIL_KOOR_BKK',
+        'WAKIL_KOOR_HUBIN',
         'GURU_BK',
         'BENDAHARA',
         'STAF_KEPEGAWAIAN',
