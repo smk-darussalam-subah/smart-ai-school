@@ -43,14 +43,17 @@ describe('PermissionsService', () => {
   const mockUpoFindFirst = jest.fn();
   const mockUpoUpdate = jest.fn();
   const mockUpoCreate = jest.fn();
+  const mockAppointmentFindMany = jest.fn();
 
   beforeEach(async () => {
     [mockRpFindMany, mockUpoFindMany, mockUserFindUnique, mockPermFindMany,
       mockPermCreate, mockPermDelete, mockTransaction,
       mockAyFindFirst, mockUpoFindFirst, mockUpoUpdate, mockUpoCreate,
+      mockAppointmentFindMany,
     ].forEach(m => m.mockReset());
     // TF2-P1-1: Default academicYear.findFirst mengembalikan tahun aktif.
     mockAyFindFirst.mockResolvedValue({ id: 'ay-2026' });
+    mockAppointmentFindMany.mockResolvedValue([]);
 
     const prisma = {
       permission: { findMany: mockPermFindMany, findUnique: jest.fn(), create: mockPermCreate, delete: mockPermDelete },
@@ -65,6 +68,7 @@ describe('PermissionsService', () => {
       },
       user: { findUnique: mockUserFindUnique },
       academicYear: { findFirst: mockAyFindFirst },  // TF2-P1-1: active year lookup
+      appointment: { findMany: mockAppointmentFindMany },
       $transaction: mockTransaction,
     };
     mockTransaction.mockImplementation(async (input: unknown) => {
@@ -228,6 +232,75 @@ describe('PermissionsService', () => {
       expect(await service.hasPermission('kc-guru', ['GURU'], 'finance.approve')).toBe(false);
     });
 
+    it('appointment ACTIVE menambah permission jabatan secara dinamis', async () => {
+      mockRpFindMany.mockResolvedValue([]);
+      mockUpoFindMany.mockResolvedValue([]);
+      mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
+      mockAppointmentFindMany.mockResolvedValue([
+        { position: { permissions: [{ permissionId: 'perm-review' }] } },
+      ]);
+      mockPermFindMany.mockResolvedValue([{ code: 'report.review' }]);
+
+      expect(await service.hasPermission('kc-ks', ['TATA_USAHA'], 'report.review')).toBe(true);
+      expect(mockAppointmentFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: 'ACTIVE',
+            staff: { userId: 'auth-1' },
+            academicYear: { isActive: true },
+          }),
+        }),
+      );
+    });
+
+    it('appointment SUSPENDED tidak menambah permission jabatan', async () => {
+      mockRpFindMany.mockResolvedValue([]);
+      mockUpoFindMany.mockResolvedValue([]);
+      mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
+      mockAppointmentFindMany.mockResolvedValue([]);
+
+      expect(await service.hasPermission('kc-ks', ['TATA_USAHA'], 'report.review')).toBe(false);
+      expect(mockAppointmentFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: 'ACTIVE',
+            staff: { userId: 'auth-1' },
+            academicYear: { isActive: true },
+          }),
+        }),
+      );
+    });
+
+    it('override grant=false menarik permission dari appointment aktif', async () => {
+      mockRpFindMany.mockResolvedValue([]);
+      mockUpoFindMany.mockResolvedValue([
+        { grant: false, permission: { code: 'report.review' } },
+      ]);
+      mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
+      mockAppointmentFindMany.mockResolvedValue([
+        { position: { permissions: [{ permissionId: 'perm-review' }] } },
+      ]);
+      mockPermFindMany.mockResolvedValue([{ code: 'report.review' }]);
+
+      expect(await service.hasPermission('kc-ks', ['TATA_USAHA'], 'report.review')).toBe(false);
+    });
+
+    it('role position historis tidak membaca role_permissions langsung', async () => {
+      mockRpFindMany.mockImplementation(({ where }) =>
+        Promise.resolve(
+          where.role.in.includes('KEPALA_SEKOLAH')
+            ? [{ permission: { code: 'report.review' } }]
+            : [],
+        ),
+      );
+      mockUserFindUnique.mockResolvedValue(null);
+
+      expect(await service.hasPermission('kc-legacy', ['KEPALA_SEKOLAH'], 'report.review')).toBe(false);
+      expect(mockRpFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { role: { in: [] } } }),
+      );
+    });
+
     it('User tanpa baris auth.users → override TIDAK di-query, role tetap berlaku', async () => {
       mockRpFindMany.mockResolvedValue([{ permission: { code: 'student.read' } }]);
       mockUserFindUnique.mockResolvedValue(null);
@@ -269,6 +342,29 @@ describe('PermissionsService', () => {
       await service.hasPermission('kc-guru', ['GURU'], 'student.read');
 
       expect(mockRpFindMany).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('active position resolver', () => {
+    it('mengembalikan kode jabatan dari appointment ACTIVE saja', async () => {
+      mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
+      mockAppointmentFindMany.mockResolvedValue([
+        { position: { code: 'KEPALA_SEKOLAH' } },
+        { position: { code: 'WAKA_KURIKULUM' } },
+      ]);
+
+      await expect(service.getActivePositionCodes('kc-user')).resolves.toEqual(
+        new Set(['KEPALA_SEKOLAH', 'WAKA_KURIKULUM']),
+      );
+      expect(mockAppointmentFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: 'ACTIVE',
+            staff: { userId: 'auth-1' },
+            academicYear: { isActive: true },
+          }),
+        }),
+      );
     });
   });
 

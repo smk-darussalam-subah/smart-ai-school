@@ -12,6 +12,7 @@ import { AuthUser, UserRole } from '@smk/auth';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
+import { PermissionsService } from '../permissions/permissions.service';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { ReportCardsService } from './report-cards.service';
 import {
@@ -21,7 +22,10 @@ import {
 
 @Controller('report-cards')
 export class ReportCardsController {
-  constructor(private readonly service: ReportCardsService) {}
+  constructor(
+    private readonly service: ReportCardsService,
+    private readonly permissions: PermissionsService,
+  ) {}
 
   // ── Rapor section endpoints (P23 — dedicated routes before :id) ───────────
 
@@ -101,17 +105,20 @@ export class ReportCardsController {
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_KURIKULUM' as UserRole)
   @RequirePermission(['report.read', 'report.review'])
   @Patch(':id/status')
-  transition(
+  async transition(
     @Param('id', ParseUUIDPipe) id: string,
     @Body(ZodPipe(TransitionSchema)) dto: TransitionDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const isReviewer = user.roles.some((r) =>
-      r === 'SUPER_ADMIN' || r === 'KEPALA_SEKOLAH' || r === 'WAKA_KURIKULUM'
-    );
-    const canDistribute = user.roles.some((r) =>
-      r === 'SUPER_ADMIN' || r === 'KEPALA_SEKOLAH' || r === 'TATA_USAHA'
-    );
+    const activePositions = await this.permissions.getActivePositionCodes(user.keycloakId);
+    const isReviewer =
+      user.roles.includes('SUPER_ADMIN') ||
+      activePositions.has('KEPALA_SEKOLAH') ||
+      activePositions.has('WAKA_KURIKULUM');
+    const canDistribute =
+      user.roles.includes('SUPER_ADMIN') ||
+      user.roles.includes('TATA_USAHA') ||
+      activePositions.has('KEPALA_SEKOLAH');
     if (dto.action === 'distribute' && !canDistribute) {
       throw new BadRequestException(
         `Aksi '${dto.action}' hanya untuk SUPER_ADMIN/KEPALA_SEKOLAH/TATA_USAHA`,

@@ -5,13 +5,15 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { UserRole } from '@smk/auth';
+import { UserRole, isPrimaryRole } from '@smk/auth';
 import { logger } from '@smk/logger';
 
 interface CacheEntry {
   permissions: Set<string>;
   expiresAt: number;
 }
+
+const ACTIVE_APPOINTMENT_STATUS = 'ACTIVE' as const;
 
 @Injectable()
 export class PermissionsService {
@@ -54,6 +56,28 @@ export class PermissionsService {
 
     const permissions = await this.getEffectivePermissions(keycloakId, roles);
     return permissions.has(requiredPermission);
+  }
+
+  async getActivePositionCodes(keycloakId: string): Promise<Set<string>> {
+    const authUserId = await this.findAuthUserId(keycloakId);
+    if (!authUserId) return new Set();
+
+    const today = this.today();
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        status: ACTIVE_APPOINTMENT_STATUS,
+        staff: { userId: authUserId },
+        academicYear: { isActive: true },
+        effectiveFrom: { lte: today },
+        OR: [
+          { effectiveUntil: null },
+          { effectiveUntil: { gte: today } },
+        ],
+      },
+      select: { position: { select: { code: true } } },
+    });
+
+    return new Set(appointments.map((appointment) => appointment.position.code));
   }
 
   async getAllPermissions() {
@@ -155,6 +179,7 @@ export class PermissionsService {
    */
   private async resolvePermissions(keycloakId: string, roles: UserRole[]): Promise<Set<string>> {
     const permSet = new Set<string>();
+    const primaryRoles = roles.filter(isPrimaryRole);
 
     const authUserId = await this.findAuthUserId(keycloakId);
 
@@ -165,9 +190,9 @@ export class PermissionsService {
     });
     const activeYearId = activeYear?.id ?? null;
 
-    const [rolePermissions, userOverrides] = await Promise.all([
+    const [rolePermissions, userOverrides, appointmentPermissions] = await Promise.all([
       this.prisma.rolePermission.findMany({
-        where: { role: { in: roles } },
+        where: { role: { in: primaryRoles } },
         select: { permission: { select: { code: true } } },
       }),
       authUserId
@@ -182,12 +207,20 @@ export class PermissionsService {
             select: { grant: true, permission: { select: { code: true } } },
           })
         : Promise.resolve([] as { grant: boolean; permission: { code: string } }[]),
+      authUserId
+        ? this.resolveActiveAppointmentPermissionCodes(authUserId)
+        : Promise.resolve([] as string[]),
     ]);
 
     for (const rp of rolePermissions) {
       permSet.add(rp.permission.code);
     }
 
+    for (const code of appointmentPermissions) {
+      permSet.add(code);
+    }
+
+    // TF2-P1-1: Apply grants before revokes for deterministic least-privilege.
     for (const override of userOverrides.filter((item) => item.grant)) {
       permSet.add(override.permission.code);
     }
@@ -284,5 +317,46 @@ export class PermissionsService {
       select: { id: true },
     });
     return user?.id ?? null;
+  }
+
+  private async resolveActiveAppointmentPermissionCodes(userId: string): Promise<string[]> {
+    const today = this.today();
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        status: ACTIVE_APPOINTMENT_STATUS,
+        staff: { userId },
+        academicYear: { isActive: true },
+        effectiveFrom: { lte: today },
+        OR: [
+          { effectiveUntil: null },
+          { effectiveUntil: { gte: today } },
+        ],
+      },
+      select: {
+        position: {
+          select: {
+            permissions: { select: { permissionId: true } },
+          },
+        },
+      },
+    });
+
+    const permissionIds = Array.from(new Set(
+      appointments.flatMap((appointment) =>
+        appointment.position.permissions.map((permission) => permission.permissionId),
+      ),
+    ));
+    if (permissionIds.length === 0) return [];
+
+    const permissions = await this.prisma.permission.findMany({
+      where: { id: { in: permissionIds } },
+      select: { code: true },
+    });
+    return permissions.map((permission) => permission.code);
+  }
+
+  private today(): Date {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   }
 }

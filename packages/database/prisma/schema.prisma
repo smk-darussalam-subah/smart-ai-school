@@ -67,7 +67,8 @@ enum UserRole {
   ORANG_TUA
   INDUSTRI      // Mitra industri: PKL/Prakerin, BKK, rekrutmen
 
-  // ── Position codes (R-23): di-sync sebagai Keycloak realm roles ──
+  // Position codes legacy/catalog DIIS. Jangan dibuat atau disinkronkan sebagai
+  // Keycloak realm roles; otoritas jabatan dihitung dari Appointment aktif.
   WAKA_KURIKULUM
   WAKA_KESISWAAN
   WAKA_HUMAS
@@ -76,6 +77,8 @@ enum UserRole {
   KAPROG
   KOOR_BKK
   KOOR_HUBIN
+  WAKIL_KOOR_BKK
+  WAKIL_KOOR_HUBIN
   GURU_BK
   BENDAHARA
   STAF_KEPEGAWAIAN
@@ -92,7 +95,9 @@ enum Gender {
 }
 
 // ── Permission-Based RBAC ────────────────────────────────────────────────────
-// 7 role = dasar (Keycloak realm roles). Permission = granular aksi.
+// Stable identity roles = Keycloak realm roles. Position codes remain legacy DB
+// enum/catalog values and are resolved through Appointment, not Keycloak roles.
+// Permission = granular aksi.
 // Super Admin ubah izin role/user TANPA deploy.
 
 enum PermissionOverrideSource {
@@ -1034,6 +1039,7 @@ model Major {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   staffPositions StaffPosition[]
+  appointments   Appointment[]
 
   @@map("majors")
   @@schema("school")
@@ -1051,6 +1057,7 @@ model AcademicYear {
   semesters       Semester[]
   calendarEvents  AcademicCalendar[]
   staffPositions  StaffPosition[]
+  appointments     Appointment[]
 
   @@map("academic_years")
   @@schema("school")
@@ -1123,6 +1130,7 @@ model Staff {
 
   user      User            @relation(fields: [userId], references: [id])
   positions StaffPosition[]
+  appointments Appointment[]
 
   @@index([deletedAt])
   @@map("staff")
@@ -1141,10 +1149,10 @@ enum EmploymentStatus {
 // =============================================================================
 // SCHOOL SCHEMA — Struktur Organisasi / Jabatan (2J-5)
 //
-// Jabatan struktural/fungsional/tendik TERPISAH dari role RBAC (7 role tetap).
+// Jabatan struktural/fungsional/tendik TERPISAH dari role identitas stabil.
 // Position = katalog jabatan (hierarki via parentId). StaffPosition = penugasan
 // pegawai ke jabatan, TERIKAT tahun ajaran (rotasi). PositionPermission = izin
-// yang otomatis diberikan (UserPermissionOverride) selama penugasan aktif.
+// yang diberikan dinamis oleh Appointment aktif selama penugasan aktif.
 // Wali kelas TETAP di academic.Class.teacherId (tidak diduplikasi di sini).
 // =============================================================================
 enum PositionCategory {
@@ -1178,6 +1186,7 @@ model Position {
   children    Position[]           @relation("PositionHierarchy")
   permissions PositionPermission[]
   assignments StaffPosition[]
+  appointments Appointment[]
 
   @@index([parentId])
   @@map("positions")
@@ -1220,6 +1229,132 @@ model StaffPosition {
   @@index([positionId, academicYearId])
   @@index([academicYearId])
   @@map("staff_positions")
+  @@schema("school")
+}
+
+// =============================================================================
+// SCHOOL SCHEMA - Appointment Governance (Wave B)
+//
+// Jabatan period-bound dikelola oleh Appointment sebagai source of truth.
+// StaffPosition tetap dipertahankan sebagai legacy source untuk migration bridge.
+// Appointment permission dihitung dinamis dari active appointment + PositionPermission;
+// tidak ditulis sebagai UserPermissionOverride permanen.
+// =============================================================================
+enum AppointmentStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  ACTIVE
+  SUSPENDED
+  ENDED
+  REJECTED
+  CANCELLED
+  SUPERSEDED
+
+  @@schema("school")
+}
+
+enum AppointmentKind {
+  DEFINITIVE
+  PLT
+
+  @@schema("school")
+}
+
+enum AppointmentSource {
+  MANUAL
+  STAFF_POSITION_MIGRATION
+
+  @@schema("school")
+}
+
+enum AppointmentApprovalDecision {
+  APPROVED
+  REJECTED
+
+  @@schema("school")
+}
+
+enum AppointmentMigrationStatus {
+  MIGRATED
+  QUARANTINED
+  SKIPPED
+
+  @@schema("school")
+}
+
+model Appointment {
+  id                    String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  staffId               String            @map("staff_id") @db.Uuid
+  positionId            String            @map("position_id") @db.Uuid
+  academicYearId        String            @map("academic_year_id") @db.Uuid
+  majorId               String?           @map("major_id") @db.Uuid
+  kind                  AppointmentKind   @default(DEFINITIVE)
+  status                AppointmentStatus @default(DRAFT)
+  effectiveFrom         DateTime          @map("effective_from") @db.Date
+  effectiveUntil        DateTime?         @map("effective_until") @db.Date
+  reason                String?           @db.Text
+  requestedByUserId     String?           @map("requested_by_user_id") @db.Uuid
+  approvedAt            DateTime?         @map("approved_at")
+  activatedAt           DateTime?         @map("activated_at")
+  suspendedAt           DateTime?         @map("suspended_at")
+  suspensionUntil        DateTime?         @map("suspension_until") @db.Date
+  suspensionReason       String?           @map("suspension_reason") @db.Text
+  endedAt               DateTime?         @map("ended_at")
+  supersededById        String?           @map("superseded_by_id") @db.Uuid
+  replacesAppointmentId String?           @map("replaces_appointment_id") @db.Uuid
+  source                AppointmentSource @default(MANUAL)
+  sourceStaffPositionId String?           @map("source_staff_position_id") @db.Uuid
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  staff        Staff                 @relation(fields: [staffId], references: [id])
+  position     Position              @relation(fields: [positionId], references: [id])
+  academicYear AcademicYear          @relation(fields: [academicYearId], references: [id])
+  major        Major?                @relation(fields: [majorId], references: [id])
+  approvals    AppointmentApproval[]
+
+  @@index([staffId])
+  @@index([positionId, academicYearId])
+  @@index([academicYearId, status])
+  @@index([sourceStaffPositionId])
+  @@map("appointments")
+  @@schema("school")
+}
+
+model AppointmentApproval {
+  id             String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  appointmentId  String                      @map("appointment_id") @db.Uuid
+  approverUserId String                      @map("approver_user_id") @db.Uuid
+  decision       AppointmentApprovalDecision
+  note           String?                     @db.Text
+  createdAt      DateTime                    @default(now()) @map("created_at")
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([appointmentId])
+  @@index([approverUserId])
+  @@map("appointment_approvals")
+  @@schema("school")
+}
+
+model AppointmentMigrationReview {
+  id                    String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceStaffPositionId String?                    @map("source_staff_position_id") @db.Uuid
+  userId                String?                    @map("user_id") @db.Uuid
+  staffId               String?                    @map("staff_id") @db.Uuid
+  positionId            String?                    @map("position_id") @db.Uuid
+  academicYearId        String?                    @map("academic_year_id") @db.Uuid
+  majorId               String?                    @map("major_id") @db.Uuid
+  status                AppointmentMigrationStatus
+  reason                String                     @db.Text
+  createdAt             DateTime                   @default(now()) @map("created_at")
+  reviewedAt            DateTime?                  @map("reviewed_at")
+  reviewedByUserId      String?                    @map("reviewed_by_user_id") @db.Uuid
+
+  @@index([status])
+  @@index([sourceStaffPositionId])
+  @@map("appointment_migration_reviews")
   @@schema("school")
 }
 
