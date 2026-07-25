@@ -63,21 +63,30 @@ export class PermissionsService {
     if (!authUserId) return new Set();
 
     const today = this.today();
-    const appointments = await this.prisma.appointment.findMany({
-      where: {
-        status: ACTIVE_APPOINTMENT_STATUS,
-        staff: { userId: authUserId },
-        academicYear: { isActive: true },
-        effectiveFrom: { lte: today },
-        OR: [
-          { effectiveUntil: null },
-          { effectiveUntil: { gte: today } },
-        ],
-      },
-      select: { position: { select: { code: true } } },
-    });
+    try {
+      const appointments = await this.prisma.appointment.findMany({
+        where: {
+          status: ACTIVE_APPOINTMENT_STATUS,
+          staff: { userId: authUserId },
+          academicYear: { isActive: true },
+          effectiveFrom: { lte: today },
+          OR: [
+            { effectiveUntil: null },
+            { effectiveUntil: { gte: today } },
+          ],
+        },
+        select: { position: { select: { code: true } } },
+      });
 
-    return new Set(appointments.map((appointment) => appointment.position.code));
+      return new Set(appointments.map((appointment) => appointment.position.code));
+    } catch (err) {
+      // Fail-soft: jika tabel appointments tidak ada atau query error, kembalikan Set kosong.
+      // Guard gagal closed (user tidak dapat position-code access) tapi tidak 500.
+      logger.warn('[PermissionsService] getActivePositionCodes gagal (fail-soft)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return new Set();
+    }
   }
 
   async getAllPermissions() {
@@ -321,38 +330,47 @@ export class PermissionsService {
 
   private async resolveActiveAppointmentPermissionCodes(userId: string): Promise<string[]> {
     const today = this.today();
-    const appointments = await this.prisma.appointment.findMany({
-      where: {
-        status: ACTIVE_APPOINTMENT_STATUS,
-        staff: { userId },
-        academicYear: { isActive: true },
-        effectiveFrom: { lte: today },
-        OR: [
-          { effectiveUntil: null },
-          { effectiveUntil: { gte: today } },
-        ],
-      },
-      select: {
-        position: {
-          select: {
-            permissions: { select: { permissionId: true } },
+    try {
+      const appointments = await this.prisma.appointment.findMany({
+        where: {
+          status: ACTIVE_APPOINTMENT_STATUS,
+          staff: { userId },
+          academicYear: { isActive: true },
+          effectiveFrom: { lte: today },
+          OR: [
+            { effectiveUntil: null },
+            { effectiveUntil: { gte: today } },
+          ],
+        },
+        select: {
+          position: {
+            select: {
+              permissions: { select: { permissionId: true } },
+            },
           },
         },
-      },
-    });
+      });
 
-    const permissionIds = Array.from(new Set(
-      appointments.flatMap((appointment) =>
-        appointment.position.permissions.map((permission) => permission.permissionId),
-      ),
-    ));
-    if (permissionIds.length === 0) return [];
+      const permissionIds = Array.from(new Set(
+        appointments.flatMap((appointment) =>
+          appointment.position.permissions.map((permission) => permission.permissionId),
+        ),
+      ));
+      if (permissionIds.length === 0) return [];
 
-    const permissions = await this.prisma.permission.findMany({
-      where: { id: { in: permissionIds } },
-      select: { code: true },
-    });
-    return permissions.map((permission) => permission.code);
+      const permissions = await this.prisma.permission.findMany({
+        where: { id: { in: permissionIds } },
+        select: { code: true },
+      });
+      return permissions.map((permission) => permission.code);
+    } catch (err) {
+      // Fail-soft: jika tabel appointments tidak ada atau query error, kembalikan array kosong.
+      // Resolver tidak menambahkan appointment permissions, tapi tidak crash.
+      logger.warn('[PermissionsService] resolveActiveAppointmentPermissionCodes gagal (fail-soft)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return [];
+    }
   }
 
   private today(): Date {
