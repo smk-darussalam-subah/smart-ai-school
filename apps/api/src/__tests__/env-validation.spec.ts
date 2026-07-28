@@ -30,7 +30,7 @@ const VALID_ENV: Record<string, string> = {
   KEYCLOAK_CLIENT_SECRET: 'super-secret-client-secret',
 };
 
-const ENV_KEYS = Object.keys(VALID_ENV);
+const ENV_KEYS = [...Object.keys(VALID_ENV), 'APPOINTMENT_AUTOMATION_TOKEN'];
 
 describe('validateEnv() — Environment Variable Validation at Startup (Item 12)', () => {
   let savedEnv: Record<string, string | undefined>;
@@ -107,6 +107,22 @@ describe('validateEnv() — Environment Variable Validation at Startup (Item 12)
     const env = validateEnv();
 
     expect(env.NODE_ENV).toBe('production');
+  });
+
+  it('APPOINTMENT_AUTOMATION_TOKEN kosong dari compose dianggap tidak dikonfigurasi', () => {
+    Object.assign(process.env, { ...VALID_ENV, APPOINTMENT_AUTOMATION_TOKEN: '' });
+
+    const env = validateEnv();
+
+    expect(env.APPOINTMENT_AUTOMATION_TOKEN).toBeUndefined();
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('APPOINTMENT_AUTOMATION_TOKEN terlalu pendek memicu process.exit(1)', () => {
+    Object.assign(process.env, { ...VALID_ENV, APPOINTMENT_AUTOMATION_TOKEN: 'short' });
+
+    expect(() => validateEnv()).toThrow('process.exit(1) called');
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
   // ── INVALID CASES — process.exit(1) WAJIB DIPANGGIL ──────────────────────
