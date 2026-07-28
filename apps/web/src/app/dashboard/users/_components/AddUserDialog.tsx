@@ -33,12 +33,11 @@ import {
   validateRaw,
 } from './add-user-csv';
 
-const SA_ONLY_ROLES = ['TATA_USAHA', 'KEPALA_SEKOLAH'];
+const SA_ONLY_ROLES = ['TATA_USAHA'];
 
 const ROLE_OPTIONS = [
   { value: 'GURU', label: 'Guru' },
   { value: 'TATA_USAHA', label: 'Tata Usaha' },
-  { value: 'KEPALA_SEKOLAH', label: 'Kepala Sekolah' },
   { value: 'INDUSTRI', label: 'Industri' },
 ];
 
@@ -52,12 +51,11 @@ const EMPLOYMENT_OPTIONS = [
 const AUTH_NOTE: Record<string, string> = {
   GURU: 'Dapat dibuat oleh Super Admin & Tata Usaha.',
   TATA_USAHA: 'Hanya dapat dibuat oleh Super Admin.',
-  KEPALA_SEKOLAH: 'Hanya dapat dibuat oleh Super Admin.',
   INDUSTRI: 'Dapat dibuat oleh Super Admin & Tata Usaha.',
 };
 
 const LEGEND: { icon: typeof Tag; name: string; desc: string }[] = [
-  { icon: Tag, name: 'role', desc: 'Wajib. GURU, TATA_USAHA, KEPALA_SEKOLAH, INDUSTRI. Siswa tidak di sini.' },
+  { icon: Tag, name: 'role', desc: 'Wajib. GURU, TATA_USAHA, INDUSTRI. Siswa tidak di sini; Kepala Sekolah dikelola sebagai jabatan.' },
   { icon: Users, name: 'fullName', desc: 'Wajib. Nama lengkap + gelar bila ada.' },
   { icon: IdCard, name: 'gender', desc: 'Wajib. L = laki-laki, P = perempuan.' },
   { icon: Mail, name: 'email', desc: 'Wajib dan unik. Dipakai sebagai username login.' },
@@ -161,7 +159,7 @@ export default function AddUserDialog({ isSuperAdmin }: Props) {
   const roleChip = (r: string) => clsx('rounded px-1.5 py-0.5 text-[11px] font-semibold', {
     'bg-orange-100 text-orange-700': r === 'GURU',
     'bg-emerald-100 text-emerald-700': r === 'TATA_USAHA',
-    'bg-violet-100 text-violet-700': r === 'KEPALA_SEKOLAH',
+    'bg-violet-100 text-violet-700': r === 'SUPER_ADMIN',
     'bg-sky-100 text-sky-700': r === 'INDUSTRI',
   });
 
@@ -469,7 +467,7 @@ export default function AddUserDialog({ isSuperAdmin }: Props) {
               ))}
             </div>
             <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-800">
-              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" /> Baris TATA_USAHA & KEPALA_SEKOLAH hanya dapat diproses oleh Super Admin.
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" /> Baris TATA_USAHA hanya dapat diproses oleh Super Admin. Kepala Sekolah dikelola sebagai jabatan, bukan role akun baru.
             </div>
             <div className="flex justify-end">
               <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700" onClick={downloadTemplate}><Download className="h-4 w-4" /> Unduh Template (.csv)</Button>

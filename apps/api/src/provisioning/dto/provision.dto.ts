@@ -3,18 +3,18 @@
 // =============================================================================
 
 import { z } from 'zod';
-import { UserRole } from '@smk/auth';
+import { PrimaryRoleSchema } from '@smk/auth';
 import { phoneE164 } from '../../common/helpers/phone';
 
 // Role pegawai internal yayasan → wajib NIY + status kepegawaian (punya baris school.staff).
-export const STAFF_ROLES = ['GURU', 'TATA_USAHA', 'KEPALA_SEKOLAH'] as const;
+export const STAFF_ROLES = ['GURU', 'TATA_USAHA'] as const;
 
 const GenderSchema = z.enum(['L', 'P']);
 const EmploymentStatusSchema = z.enum(['GTY', 'GTT', 'PTY', 'PTT']);
 const StudentStatusSchema = z.enum(['active', 'inactive', 'graduated', 'dropped']);
 
 export const ProvisionUserSchema = z.object({
-  role: UserRole,
+  role: PrimaryRoleSchema,
   fullName: z.string().min(1, 'fullName wajib diisi'),
   gender: GenderSchema,
   email: z.string().email().optional(),
@@ -31,7 +31,7 @@ export const ProvisionUserSchema = z.object({
   .refine(
     (dto) => {
       if (dto.role === 'SISWA') return false;
-      const needsEmail = (['GURU', 'TATA_USAHA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'INDUSTRI'] as string[]).includes(dto.role);
+      const needsEmail = (['GURU', 'TATA_USAHA', 'SUPER_ADMIN', 'INDUSTRI'] as string[]).includes(dto.role);
       const needsPhone = dto.role === 'ORANG_TUA';
       if (needsEmail && !dto.email) return false;
       if (needsPhone && !dto.phone) return false;

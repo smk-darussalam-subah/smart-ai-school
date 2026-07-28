@@ -1,6 +1,6 @@
-export const STAFF_ROLES = ['GURU', 'TATA_USAHA', 'KEPALA_SEKOLAH'];
+export const STAFF_ROLES = ['GURU', 'TATA_USAHA'];
 
-export const ROLE_VALUES = ['GURU', 'TATA_USAHA', 'KEPALA_SEKOLAH', 'INDUSTRI'];
+export const ROLE_VALUES = ['GURU', 'TATA_USAHA', 'INDUSTRI'];
 
 export const CSV_COLUMNS = [
   'role',
@@ -17,7 +17,6 @@ export const CSV_COLUMNS = [
 export const TEMPLATE_ROWS = [
   ['GURU', 'Ahmad Fauzi', 'L', 'ahmad.fauzi@smkdarussalamsubah.sch.id', '081234567890', '1985-01-01', 'Y0012', 'GTY', 'Jl. Merdeka No. 1, Subah'],
   ['TATA_USAHA', 'Budi Santoso', 'L', 'budi.santoso@smkdarussalamsubah.sch.id', '081211112222', '1988-07-20', 'Y0101', 'PTY', 'Jl. Raya Subah No. 9'],
-  ['KEPALA_SEKOLAH', 'Drs Hasanuddin', 'L', 'kepsek@smkdarussalamsubah.sch.id', '081233334444', '1972-11-05', 'Y0001', 'GTY', 'Perum Griya Asri C2'],
   ['INDUSTRI', 'PT Maju Jaya - Rina', 'P', 'rina@majujaya.example', '081255556666', '', '', '', 'Kawasan Industri Batang'],
 ] as const;
 

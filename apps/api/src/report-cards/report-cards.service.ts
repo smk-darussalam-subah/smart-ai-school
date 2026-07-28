@@ -453,14 +453,25 @@ export class ReportCardsService {
         homeroomTeacher = teacher?.user?.fullName ?? null;
       }
     }
-    // Find principal (KEPALA_SEKOLAH user)
-    const principal = await this.prisma.user.findFirst({
-      where: { role: 'KEPALA_SEKOLAH', isActive: true, deletedAt: null },
-      select: { fullName: true },
+    const today = new Date();
+    const principal = await this.prisma.appointment.findFirst({
+      where: {
+        status: 'ACTIVE',
+        position: { code: 'KEPALA_SEKOLAH' },
+        academicYear: { code: year },
+        effectiveFrom: { lte: today },
+        OR: [
+          { effectiveUntil: null },
+          { effectiveUntil: { gte: today } },
+        ],
+      },
+      select: {
+        staff: { select: { user: { select: { fullName: true } } } },
+      },
     });
     return {
       homeroomTeacher: homeroomTeacher ?? '-',
-      principal: principal?.fullName ?? '-',
+      principal: principal?.staff.user.fullName ?? '-',
       approvedAt: null,
       schoolYear: year,
       semester,

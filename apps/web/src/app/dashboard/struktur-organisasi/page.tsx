@@ -12,6 +12,7 @@ export interface Position {
   name: string;
   category: 'STRUKTURAL' | 'FUNGSIONAL' | 'TENDIK';
   scopeType: 'NONE' | 'MAJOR';
+  maxActiveHolders: number;
   parentId: string | null;
   _count: { permissions: number };
 }
@@ -20,6 +21,11 @@ export interface Assignment {
   id: string;
   positionId: string;
   majorId: string | null;
+  kind: 'DEFINITIVE' | 'PLT';
+  status: 'PENDING_APPROVAL' | 'APPROVED' | 'ACTIVE' | 'SUSPENDED';
+  effectiveFrom: string;
+  effectiveUntil: string | null;
+  isEffectiveNow: boolean;
   position: { code: string; name: string; category: string };
   major: { code: string; name: string } | null;
   staff: { niy: string | null; user: { id: string; fullName: string; email: string } };
@@ -28,12 +34,12 @@ export interface Assignment {
 export interface Major { id: string; code: string; name: string }
 export interface StaffCandidate { id: string; fullName: string; email: string; role: string }
 
-const STAFF_ROLES = ['GURU', 'TATA_USAHA', 'KEPALA_SEKOLAH'];
+const STAFF_ROLES = ['GURU', 'TATA_USAHA'];
 
 export default async function StrukturOrganisasiPage() {
   const session = await getServerSession(authOptions);
   const roles: string[] = await getEffectiveRoles(session);
-  if (!roles.includes('SUPER_ADMIN') && !roles.includes('KEPALA_SEKOLAH')) redirect('/dashboard');
+  if (!roles.includes('SUPER_ADMIN')) redirect('/dashboard');
 
   const token = session?.accessToken ?? '';
 
@@ -57,8 +63,6 @@ export default async function StrukturOrganisasiPage() {
 
   // TF-1-FU-5: Bedakan "API gagal" dari "benar-benar kosong" agar UI tidak menyesatkan.
   const staffLoadError = groupedRes === null;
-  const isSuperAdmin = roles.includes('SUPER_ADMIN');
-
   return (
     <StrukturClient
       positions={positions}
@@ -66,7 +70,6 @@ export default async function StrukturOrganisasiPage() {
       assignments={assignments}
       majors={majors}
       staff={staff}
-      isSuperAdmin={isSuperAdmin}
       staffLoadError={staffLoadError}
     />
   );

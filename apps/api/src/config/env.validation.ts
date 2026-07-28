@@ -30,6 +30,7 @@ const EnvSchema = z.object({
   SMTP_PORT: z.string().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
+  APPOINTMENT_AUTOMATION_TOKEN: z.string().min(32).optional(),
 
   // ── AI / Ollama + Claude + OpenAI (SMA-48, R-28) ────────────────────────────
   // AI_PROVIDER: 'ollama' (default, safe) | 'claude' (legacy) | 'openai' (R-28 hybrid)

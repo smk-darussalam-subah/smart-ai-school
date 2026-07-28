@@ -206,7 +206,7 @@ describe('UsersService', () => {
       expect(result.teacher).toBeNull();
     });
 
-    it('user tidak ditemukan → NotFoundException', async () => {
+    it('role jabatan ditolak sebelum menyentuh DB update atau Keycloak', async () => {
       mockFindUnique.mockResolvedValue(null);
 
       await expect(service.findById('u-xxx')).rejects.toThrow(NotFoundException);
@@ -221,19 +221,19 @@ describe('UsersService', () => {
       mockKc.getUserRealmRoles.mockResolvedValue(['GURU']);
       mockKc.assignRealmRole.mockResolvedValue(undefined);
       mockKc.removeRealmRole.mockResolvedValue(undefined);
-      mockUpdate.mockResolvedValue(makeUser({ keycloakId: 'kc-001', role: 'KEPALA_SEKOLAH' }));
+      mockUpdate.mockResolvedValue(makeUser({ keycloakId: 'kc-001', role: 'TATA_USAHA' }));
 
-      const result = await service.updateRole('u-001', 'KEPALA_SEKOLAH', 'kc-sa') as { role: string; keycloakSyncPending?: boolean };
+      const result = await service.updateRole('u-001', 'TATA_USAHA', 'kc-sa') as { role: string; keycloakSyncPending?: boolean };
 
-      expect(result.role).toBe('KEPALA_SEKOLAH');
+      expect(result.role).toBe('TATA_USAHA');
       expect(result.keycloakSyncPending).toBeFalsy();
       // TF-4: DB-first → DB update dipanggil sebelum KC sync.
       expect(mockUpdate).toHaveBeenCalledWith({
         where: { id: 'u-001' },
-        data: { role: 'KEPALA_SEKOLAH' },
+        data: { role: 'TATA_USAHA' },
         select: expect.any(Object),
       });
-      expect(mockKc.assignRealmRole).toHaveBeenCalledWith('kc-001', 'KEPALA_SEKOLAH');
+      expect(mockKc.assignRealmRole).toHaveBeenCalledWith('kc-001', 'TATA_USAHA');
       expect(mockKc.removeRealmRole).toHaveBeenCalledWith('kc-001', 'GURU');
       expect(mockPerms.invalidateUser).toHaveBeenCalledWith('kc-001');
     });
@@ -256,14 +256,14 @@ describe('UsersService', () => {
       mockKc.getUserRealmRoles.mockResolvedValue(['GURU']);
       mockKc.assignRealmRole.mockRejectedValue(new Error('Keycloak Admin API tidak tersedia'));
       mockKc.removeRealmRole.mockResolvedValue(undefined);
-      mockUpdate.mockResolvedValue(makeUser({ keycloakId: 'kc-001', role: 'KEPALA_SEKOLAH' }));
+      mockUpdate.mockResolvedValue(makeUser({ keycloakId: 'kc-001', role: 'TATA_USAHA' }));
 
-      const result = await service.updateRole('u-001', 'KEPALA_SEKOLAH', 'kc-sa') as {
+      const result = await service.updateRole('u-001', 'TATA_USAHA', 'kc-sa') as {
         role: string; keycloakSyncPending?: boolean;
       };
 
       // DB tetap ter-update.
-      expect(result.role).toBe('KEPALA_SEKOLAH');
+      expect(result.role).toBe('TATA_USAHA');
       // Flag peringatan ke frontend.
       expect(result.keycloakSyncPending).toBe(true);
       // Cache invalidation tetap dipanggil.
@@ -276,14 +276,14 @@ describe('UsersService', () => {
       mockKc.getUserRealmRoles.mockRejectedValue(new Error('Keycloak down'));
       mockKc.assignRealmRole.mockResolvedValue(undefined);
       mockKc.removeRealmRole.mockResolvedValue(undefined);
-      mockUpdate.mockResolvedValue(makeUser({ keycloakId: 'kc-001', role: 'KEPALA_SEKOLAH' }));
+      mockUpdate.mockResolvedValue(makeUser({ keycloakId: 'kc-001', role: 'TATA_USAHA' }));
 
-      const result = await service.updateRole('u-001', 'KEPALA_SEKOLAH', 'kc-sa') as {
+      const result = await service.updateRole('u-001', 'TATA_USAHA', 'kc-sa') as {
         role: string; keycloakSyncPending?: boolean;
       };
 
       // Check tidak melempar — DB update tetap terjadi.
-      expect(result.role).toBe('KEPALA_SEKOLAH');
+      expect(result.role).toBe('TATA_USAHA');
       expect(result.keycloakSyncPending).toBe(false);
     });
 
@@ -304,7 +304,34 @@ describe('UsersService', () => {
       expect(mockUpdate).not.toHaveBeenCalled();
     });
 
-    it('user tidak ditemukan → NotFoundException', async () => {
+    it('role jabatan ditolak sebelum menyentuh DB update atau Keycloak', async () => {
+      mockFindUnique.mockResolvedValue(null);
+
+      await expect(service.updateRole('u-001', 'KEPALA_SEKOLAH', 'kc-sa')).rejects.toThrow(BadRequestException);
+
+      expect(mockFindUnique).not.toHaveBeenCalled();
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockKc.assignRealmRole).not.toHaveBeenCalled();
+      expect(mockKc.removeRealmRole).not.toHaveBeenCalled();
+    });
+
+    it('oldRole jabatan historis tidak dicabut dari Keycloak saat migrasi ke role stabil', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ keycloakId: 'kc-legacy-ks', role: 'KEPALA_SEKOLAH' }));
+      mockKc.getUserRealmRoles.mockResolvedValue([]);
+      mockKc.assignRealmRole.mockResolvedValue(undefined);
+      mockKc.removeRealmRole.mockResolvedValue(undefined);
+      mockUpdate.mockResolvedValue(makeUser({ keycloakId: 'kc-legacy-ks', role: 'GURU' }));
+
+      const result = await service.updateRole('u-legacy-ks', 'GURU', 'kc-sa') as {
+        role: string; keycloakSyncPending?: boolean;
+      };
+
+      expect(result.role).toBe('GURU');
+      expect(mockKc.assignRealmRole).toHaveBeenCalledWith('kc-legacy-ks', 'GURU');
+      expect(mockKc.removeRealmRole).not.toHaveBeenCalled();
+    });
+
+    it('user tidak ditemukan -> NotFoundException', async () => {
       mockFindUnique.mockResolvedValue(null);
 
       await expect(service.updateRole('u-xxx', 'GURU', 'kc-sa')).rejects.toThrow(NotFoundException);
@@ -383,19 +410,20 @@ describe('UsersService', () => {
   // ── findGrouped ────────────────────────────────────────────────────────────
 
   describe('findGrouped', () => {
-    it('mengembalikan 7 grup role dengan user dan count', async () => {
+    it('mengembalikan 6 grup role identitas stabil dengan user dan count', async () => {
       mockFindMany.mockResolvedValue([makeUser()]);
       mockCount.mockResolvedValue(1);
 
       const result = await service.findGrouped({ limit: 50 });
 
-      expect(result.groups).toHaveLength(7);
+      expect(result.groups).toHaveLength(6);
       expect(result.groups[0]).toMatchObject({
         role: 'SUPER_ADMIN',
         label: 'Super Admin',
         count: 1,
       });
-      expect(mockFindMany).toHaveBeenCalledTimes(7); // satu per role
+      expect(result.groups.map((group) => group.role)).not.toContain('KEPALA_SEKOLAH');
+      expect(mockFindMany).toHaveBeenCalledTimes(6); // satu per role stabil
     });
 
     it('filter search diterapkan ke semua grup', async () => {
@@ -405,7 +433,7 @@ describe('UsersService', () => {
       await service.findGrouped({ search: 'Agus', limit: 50 });
 
       // Setiap pemanggilan findMany harus menyertakan filter OR
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0; i < 6; i++) {
         expect(mockFindMany).toHaveBeenNthCalledWith(i + 1, expect.objectContaining({
           where: expect.objectContaining({
             OR: [

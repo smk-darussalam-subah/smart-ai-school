@@ -20,7 +20,7 @@ export async function unassignPositionAction(id: string) {
   return result;
 }
 
-/** R-23: Sinkronisasi 13 position code sebagai Keycloak realm roles. */
+/** Appointment Wave A: endpoint kept for compatibility; API returns disabled/no mutation. */
 export async function syncRolesAction() {
   const result = await apiAction('/positions/sync-roles', 'POST');
   if (!result.error) revalidatePath('/dashboard/struktur-organisasi');
@@ -31,12 +31,17 @@ export async function syncRolesAction() {
 export interface AccessCheckResult {
   user: { id: string; fullName: string; email: string; dbRole: string };
   keycloakRoles: string[];
-  activePositions: Array<{
+  activeAppointments: Array<{
+    id: string;
     code: string;
     name: string;
+    kind: 'DEFINITIVE' | 'PLT';
+    status: 'ACTIVE';
+    effectiveFrom: string;
+    effectiveUntil: string | null;
     major: { code: string; name: string } | null;
   }>;
-  positionPermissions: string[];
+  appointmentPermissions: string[];
   effectivePermissions: string[];
 }
 

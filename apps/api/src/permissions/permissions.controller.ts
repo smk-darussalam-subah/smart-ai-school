@@ -9,7 +9,7 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { UserRole } from '@smk/auth';
+import { UserRole, isPrimaryRole } from '@smk/auth';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { RequirePermission } from './decorators/require-permission.decorator';
@@ -108,11 +108,7 @@ export class PermissionsController {
   // ═══ Helper ════════════════════════════════════════════════════════════════
 
   private assertValidRole(role: string): void {
-    const validRoles = [
-      'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA',
-      'GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI',
-    ];
-    if (!validRoles.includes(role)) {
+    if (!isPrimaryRole(role)) {
       throw new BadRequestException(`Role '${role}' tidak valid`);
     }
   }
