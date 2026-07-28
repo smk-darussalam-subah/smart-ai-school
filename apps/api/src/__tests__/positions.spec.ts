@@ -1,124 +1,218 @@
-// =============================================================================
-// positions.spec.ts - Unit tests PositionsService (Appointment Wave A)
-// =============================================================================
-
-import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
 import { PositionsService } from '../positions/positions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 
 function mockPrisma() {
-  const prisma = {
-    position: { findUnique: jest.fn(), findMany: jest.fn() },
-    staff: { findUnique: jest.fn() },
+  return {
+    user: { findUnique: jest.fn() },
+    position: { findMany: jest.fn() },
     academicYear: { findFirst: jest.fn(), findUnique: jest.fn() },
+    appointment: {
+      findMany: jest.fn(),
+    },
     staffPosition: {
       create: jest.fn(),
-      findUnique: jest.fn(),
-      findMany: jest.fn(),
-      findFirst: jest.fn(),
       delete: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
     },
-    userPermissionOverride: { upsert: jest.fn(), deleteMany: jest.fn() },
+    userPermissionOverride: {
+      upsert: jest.fn(),
+      deleteMany: jest.fn(),
+    },
     permission: { findMany: jest.fn() },
-    $transaction: jest.fn(),
-  };
-  prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(prisma));
-  return prisma;
-}
-
-function mockKeycloakAdmin() {
-  return {
-    assignRealmRole: jest.fn(),
-    removeRealmRole: jest.fn(),
-    createRealmRoleIfNotExists: jest.fn(),
-    getUserRealmRoles: jest.fn(),
   };
 }
 
 async function build(
   prisma: ReturnType<typeof mockPrisma>,
-  perms = { invalidateUser: jest.fn(), getEffectivePermissions: jest.fn() },
-  kc = mockKeycloakAdmin(),
+  permissions = {
+    invalidateUser: jest.fn(),
+    getEffectivePermissions: jest.fn().mockResolvedValue(new Set<string>()),
+  },
+  keycloak = {
+    assignRealmRole: jest.fn(),
+    removeRealmRole: jest.fn(),
+    getUserRealmRoles: jest.fn(),
+  },
 ) {
   const mod: TestingModule = await Test.createTestingModule({
     providers: [
       PositionsService,
       { provide: PrismaService, useValue: prisma },
-      { provide: PermissionsService, useValue: perms },
-      { provide: KeycloakAdminService, useValue: kc },
+      { provide: PermissionsService, useValue: permissions },
+      { provide: KeycloakAdminService, useValue: keycloak },
     ],
   }).compile();
-  return mod.get(PositionsService);
+  return { service: mod.get(PositionsService), permissions, keycloak };
 }
 
-describe('PositionsService', () => {
-  describe('assign', () => {
-    it('fail-closed selama transisi appointment dan tidak menyentuh DB/Keycloak', async () => {
-      const prisma = mockPrisma();
-      const perms = { invalidateUser: jest.fn(), getEffectivePermissions: jest.fn() };
-      const kc = mockKeycloakAdmin();
-      const svc = await build(prisma, perms, kc);
+describe('PositionsService legacy mutation containment', () => {
+  it('assign fails closed and never creates effective position permission overrides', async () => {
+    const prisma = mockPrisma();
+    const { service, permissions, keycloak } = await build(prisma);
 
-      await expect(
-        svc.assign({ userId: 'u-1', positionId: 'pos-waka', academicYearId: 'ay-1' }),
-      ).rejects.toThrow(ConflictException);
-      await expect(
-        svc.assign({ userId: 'u-1', positionId: 'pos-waka', academicYearId: 'ay-1' }),
-      ).rejects.toThrow('Transisi appointment sedang berlangsung');
+    await expect(
+      service.assign({
+        userId: 'user-1',
+        positionId: 'position-1',
+        academicYearId: 'ay-1',
+      }),
+    ).rejects.toThrow(ConflictException);
 
-      expect(prisma.staff.findUnique).not.toHaveBeenCalled();
-      expect(prisma.position.findUnique).not.toHaveBeenCalled();
-      expect(prisma.staffPosition.create).not.toHaveBeenCalled();
-      expect(prisma.userPermissionOverride.upsert).not.toHaveBeenCalled();
-      expect(prisma.$transaction).not.toHaveBeenCalled();
-      expect(perms.invalidateUser).not.toHaveBeenCalled();
-      expect(kc.assignRealmRole).not.toHaveBeenCalled();
+    expect(prisma.staffPosition.create).not.toHaveBeenCalled();
+    expect(prisma.userPermissionOverride.upsert).not.toHaveBeenCalled();
+    expect(permissions.invalidateUser).not.toHaveBeenCalled();
+    expect(keycloak.assignRealmRole).not.toHaveBeenCalled();
+  });
+
+  it('unassign fails closed and never removes effective position permission overrides', async () => {
+    const prisma = mockPrisma();
+    const { service, permissions, keycloak } = await build(prisma);
+
+    await expect(service.unassign('staff-position-1')).rejects.toThrow(ConflictException);
+
+    expect(prisma.staffPosition.delete).not.toHaveBeenCalled();
+    expect(prisma.userPermissionOverride.deleteMany).not.toHaveBeenCalled();
+    expect(permissions.invalidateUser).not.toHaveBeenCalled();
+    expect(keycloak.removeRealmRole).not.toHaveBeenCalled();
+  });
+
+  it('syncKeycloakRoles remains a permanent no-op for position codes', async () => {
+    const prisma = mockPrisma();
+    const { service } = await build(prisma);
+
+    await expect(service.syncKeycloakRoles()).resolves.toMatchObject({
+      status: 'disabled',
+      operationRef: 'appointment-governance-permanent-skip',
+    });
+  });
+});
+
+describe('PositionsService appointment projections', () => {
+  it('getAssignments reads Appointment lifecycle rows, not legacy StaffPosition rows', async () => {
+    const prisma = mockPrisma();
+    prisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-active', code: '2026/2027' });
+    prisma.appointment.findMany.mockResolvedValue([
+      {
+        id: 'appt-active',
+        positionId: 'pos-ks',
+        majorId: null,
+        kind: 'DEFINITIVE',
+        status: 'ACTIVE',
+        effectiveFrom: new Date('2026-07-01T00:00:00.000Z'),
+        effectiveUntil: null,
+        position: { code: 'KEPALA_SEKOLAH', name: 'Kepala Sekolah', category: 'STRUKTURAL' },
+        major: null,
+        staff: {
+          niy: 'NIY-1',
+          user: { id: 'user-ks', fullName: 'Kepala Aktif', email: 'ks@example.test' },
+        },
+      },
+    ]);
+    const { service } = await build(prisma);
+
+    const result = await service.getAssignments();
+
+    expect(prisma.appointment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          academicYearId: 'ay-active',
+          status: { in: ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE', 'SUSPENDED'] },
+        },
+      }),
+    );
+    expect(prisma.staffPosition.findMany).not.toHaveBeenCalled();
+    expect(result.assignments).toHaveLength(1);
+    expect(result.assignments[0]!).toMatchObject({
+      id: 'appt-active',
+      status: 'ACTIVE',
+      isEffectiveNow: true,
     });
   });
 
-  describe('unassign', () => {
-    it('fail-closed selama transisi appointment dan tidak mencabut assignment/override', async () => {
-      const prisma = mockPrisma();
-      const perms = { invalidateUser: jest.fn(), getEffectivePermissions: jest.fn() };
-      const kc = mockKeycloakAdmin();
-      const svc = await build(prisma, perms, kc);
+  it('getMyPositions returns only active effective appointments for the sidebar', async () => {
+    const prisma = mockPrisma();
+    prisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-active', code: '2026/2027' });
+    prisma.appointment.findMany.mockResolvedValue([
+      {
+        id: 'appt-waka',
+        kind: 'DEFINITIVE',
+        status: 'ACTIVE',
+        effectiveFrom: new Date('2026-07-01T00:00:00.000Z'),
+        effectiveUntil: null,
+        position: { code: 'WAKA_KURIKULUM', name: 'Waka Kurikulum', category: 'STRUKTURAL' },
+        major: null,
+      },
+    ]);
+    const { service } = await build(prisma);
 
-      await expect(svc.unassign('sp-1')).rejects.toThrow(ConflictException);
-      await expect(svc.unassign('sp-1')).rejects.toThrow('Transisi appointment sedang berlangsung');
+    const result = await service.getMyPositions('kc-user');
 
-      expect(prisma.staffPosition.findUnique).not.toHaveBeenCalled();
-      expect(prisma.staffPosition.delete).not.toHaveBeenCalled();
-      expect(prisma.userPermissionOverride.deleteMany).not.toHaveBeenCalled();
-      expect(prisma.$transaction).not.toHaveBeenCalled();
-      expect(perms.invalidateUser).not.toHaveBeenCalled();
-      expect(kc.removeRealmRole).not.toHaveBeenCalled();
-    });
+    expect(prisma.appointment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          staff: { user: { keycloakId: 'kc-user' } },
+          academicYear: { isActive: true },
+          status: 'ACTIVE',
+        }),
+      }),
+    );
+    expect(result.positions[0]!.position.code).toBe('WAKA_KURIKULUM');
   });
 
-  describe('syncKeycloakRoles', () => {
-    it('mengembalikan notice disabled tanpa membuat role jabatan di Keycloak', async () => {
-      const prisma = mockPrisma();
-      const kc = mockKeycloakAdmin();
-      const svc = await build(prisma, { invalidateUser: jest.fn(), getEffectivePermissions: jest.fn() }, kc);
-
-      const res = await svc.syncKeycloakRoles();
-
-      expect(res.status).toBe('disabled');
-      expect(res.stableRoles).toEqual([
-        'SUPER_ADMIN',
-        'TATA_USAHA',
-        'GURU',
-        'SISWA',
-        'ORANG_TUA',
-        'INDUSTRI',
-      ]);
-      expect(res.blockedPositionCodes).toContain('KEPALA_SEKOLAH');
-      expect(res.blockedPositionCodes).toContain('WAKA_KURIKULUM');
-      expect(kc.createRealmRoleIfNotExists).not.toHaveBeenCalled();
-      expect(prisma.position.findMany).not.toHaveBeenCalled();
+  it('accessCheck reports active appointments and appointment permissions', async () => {
+    const prisma = mockPrisma();
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      keycloakId: 'kc-user',
+      fullName: 'Guru Appointment',
+      email: 'guru@example.test',
+      role: 'GURU',
     });
+    prisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-active', code: '2026/2027' });
+    prisma.appointment.findMany.mockResolvedValue([
+      {
+        id: 'appt-1',
+        kind: 'DEFINITIVE',
+        status: 'ACTIVE',
+        effectiveFrom: new Date('2026-07-01T00:00:00.000Z'),
+        effectiveUntil: null,
+        position: {
+          code: 'KEPALA_SEKOLAH',
+          name: 'Kepala Sekolah',
+          permissions: [{ permissionId: 'perm-1' }],
+        },
+        major: null,
+      },
+    ]);
+    prisma.permission.findMany.mockResolvedValue([{ code: 'school.manage' }]);
+    const permissions = {
+      invalidateUser: jest.fn(),
+      getEffectivePermissions: jest.fn().mockResolvedValue(new Set(['academic.read', 'school.manage'])),
+    };
+    const keycloak = {
+      assignRealmRole: jest.fn(),
+      removeRealmRole: jest.fn(),
+      getUserRealmRoles: jest.fn().mockResolvedValue(['GURU']),
+    };
+    const { service } = await build(prisma, permissions, keycloak);
+
+    const result = await service.accessCheck('user-1');
+
+    expect(result).toMatchObject({
+      keycloakRoles: ['GURU'],
+      activeAppointments: [
+        expect.objectContaining({ id: 'appt-1', code: 'KEPALA_SEKOLAH', status: 'ACTIVE' }),
+      ],
+      appointmentPermissions: ['school.manage'],
+      effectivePermissions: ['academic.read', 'school.manage'],
+    });
+    expect(result).not.toHaveProperty('activePositions');
+    expect(result).not.toHaveProperty('positionPermissions');
+    expect(prisma.staffPosition.findMany).not.toHaveBeenCalled();
   });
 });

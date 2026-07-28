@@ -34,9 +34,9 @@ export default async function DashboardLayout({
   const token = session.accessToken ?? '';
   const [meData, posData] = await Promise.all([
     apiFetch<{ permissions: string[] }>('/auth/me', token),
-    apiFetch<{ academicYear: unknown; positions: { position: { code: string; name: string } }[] }>('/positions/my-positions', token),
+    apiFetch<{ academicYear: unknown; positions: { status: 'ACTIVE'; position: { code: string; name: string } }[] }>('/positions/my-positions', token),
   ]);
-  // R-24: Ekstrak kode jabatan aktif sebagai role tambahan untuk sidebar
+  // R-24: Sidebar gets position codes only from active effective appointments.
   const positionRoles: string[] = (posData?.positions ?? []).map((p) => p.position.code);
   // meData === null berarti /auth/me GAGAL (401/5xx/network) — BUKAN "tanpa izin".
   // Tanpa pembedaan ini, sidebar runtuh ke menu kosong (hanya Beranda) saat fetch gagal.
