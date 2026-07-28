@@ -50,19 +50,25 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Akses ditolak: user tidak terautentikasi');
     }
 
-    const hasRequiredIdentityRole = requiredRoles.some((role) =>
+    const requestHasIdentityRole = requiredRoles.some((role) =>
       isPrimaryRole(role) && user.roles.includes(role),
     );
-    if (hasRequiredIdentityRole) return true;
-
     const requiredPositionCodes = requiredRoles.filter(isPositionCode);
+    let matchingPositionCodes: UserRole[] = [];
     if (requiredPositionCodes.length > 0) {
       const activePositionCodes = await this.permissions.getActivePositionCodes(user.keycloakId);
-      const hasRequiredPosition = requiredPositionCodes.some((role) =>
+      matchingPositionCodes = requiredPositionCodes.filter((role) =>
         activePositionCodes.has(role),
       );
-      if (hasRequiredPosition) return true;
+      if (matchingPositionCodes.length > 0) {
+        request.user = {
+          ...user,
+          roles: [...new Set([...user.roles, ...matchingPositionCodes])] as UserRole[],
+        };
+      }
     }
+
+    if (requestHasIdentityRole || matchingPositionCodes.length > 0) return true;
 
     throw new ForbiddenException('Akses ditolak: role atau appointment aktif tidak mencukupi');
   }

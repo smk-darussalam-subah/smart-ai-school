@@ -31,12 +31,17 @@ export async function syncRolesAction() {
 export interface AccessCheckResult {
   user: { id: string; fullName: string; email: string; dbRole: string };
   keycloakRoles: string[];
-  activePositions: Array<{
+  activeAppointments: Array<{
+    id: string;
     code: string;
     name: string;
+    kind: 'DEFINITIVE' | 'PLT';
+    status: 'ACTIVE';
+    effectiveFrom: string;
+    effectiveUntil: string | null;
     major: { code: string; name: string } | null;
   }>;
-  positionPermissions: string[];
+  appointmentPermissions: string[];
   effectivePermissions: string[];
 }
 

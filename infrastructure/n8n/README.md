@@ -56,6 +56,8 @@ ADMIN_PHONE_NUMBER=6281234567890
 
 Variabel ini diakses dalam workflow via ekspresi `={{ $env.NAMA_VARIABEL }}`.
 
+Appointment due activation tidak dijalankan oleh n8n. Gunakan systemd timer pada VPS sesuai `docs/runbooks/appointment-due-activation-systemd.md`.
+
 ---
 
 ## Konfigurasi Credential: MinIO (untuk backup-daily)

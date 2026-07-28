@@ -33,6 +33,15 @@ function buildContext(options: {
   requiredRoles?: string[];
   userRoles?: string[];
 }): ExecutionContext {
+  return buildContextWithRequest(options).context;
+}
+
+function buildContextWithRequest(options: {
+  reflector: Reflector;
+  isPublic?: boolean;
+  requiredRoles?: string[];
+  userRoles?: string[];
+}) {
   const { reflector, isPublic = false, requiredRoles, userRoles = [] } = options;
 
   jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) => {
@@ -45,12 +54,15 @@ function buildContext(options: {
     userRoles.length > 0
       ? { keycloakId: 'kc-user', roles: userRoles as AuthUser['roles'] }
       : undefined;
+  const request = { user, url: '/test' };
 
-  return {
-    switchToHttp: () => ({ getRequest: () => ({ user, url: '/test' }) }),
+  const context = {
+    switchToHttp: () => ({ getRequest: () => request }),
     getHandler: () => jest.fn(),
     getClass: () => jest.fn(),
   } as unknown as ExecutionContext;
+
+  return { context, request };
 }
 
 describe('RolesGuard', () => {
@@ -120,6 +132,19 @@ describe('RolesGuard', () => {
     });
 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(mockGetActivePositionCodes).toHaveBeenCalledWith('kc-user');
+  });
+
+  it('adds matching active position code to request user roles for downstream service checks', async () => {
+    mockGetActivePositionCodes.mockResolvedValue(new Set(['KEPALA_SEKOLAH']));
+    const { context, request } = buildContextWithRequest({
+      reflector,
+      requiredRoles: ['GURU', 'KEPALA_SEKOLAH'],
+      userRoles: ['GURU'],
+    });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(request.user?.roles).toEqual(expect.arrayContaining(['GURU', 'KEPALA_SEKOLAH']));
     expect(mockGetActivePositionCodes).toHaveBeenCalledWith('kc-user');
   });
 

@@ -120,6 +120,7 @@ File: `apps/api/.env`
 | `OLLAMA_URL` | Tidak | — | URL Ollama untuk AI inference | `http://ollama:11434` |
 | `ANTHROPIC_API_KEY` | Tidak | — | Anthropic API key (Claude AI) | `sk-ant-...` |
 | `LOG_LEVEL` | Tidak | `info` | Winston log level | `info` / `debug` |
+| `APPOINTMENT_AUTOMATION_TOKEN` | Ya untuk scheduler appointment | — | Token internal minimal 32 byte untuk `systemd` timer appointment due activation | `<openssl-rand-hex-32>` |
 | `TZ` | Ya | — | Timezone | `Asia/Jakarta` |
 
 > **Validasi fail-fast:** Semua variable mandatory divalidasi oleh `apps/api/src/config/env.validation.ts` (Zod) sebelum NestJS bootstrap. Server tidak akan start jika ada variable yang hilang/invalid.

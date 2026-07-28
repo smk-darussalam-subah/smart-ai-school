@@ -145,6 +145,7 @@ export class PermissionsService {
       where: {
         userId,
         status: PermissionOverrideStatus.ACTIVE,
+        source: PermissionOverrideSource.MANUAL,
         OR: activeYearId
           ? [{ academicYearId: activeYearId }, { academicYearId: null }]
           : [{ academicYearId: null }],
@@ -183,8 +184,9 @@ export class PermissionsService {
    * semua tahun. Override dengan academicYearId non-NULL hanya berlaku untuk
    * tahun yang cocok. Ini mencegah "zombie permissions" — izin bekas
    * pejabat tahun lama yang tetap aktif setelah tahun berganti.
-   * Only ACTIVE rows are read; ambiguous historical grants are quarantined by
-   * migration and therefore fail-closed.
+   * Wave C architectural remediation: only MANUAL overrides are applied as
+   * explicit exceptions. POSITION_ASSIGNMENT rows remain historical/TF2 data
+   * but no longer grant appointment-derived authority.
    */
   private async resolvePermissions(keycloakId: string, roles: UserRole[]): Promise<Set<string>> {
     const permSet = new Set<string>();
@@ -209,6 +211,7 @@ export class PermissionsService {
             where: {
               userId: authUserId,
               status: PermissionOverrideStatus.ACTIVE,
+              source: PermissionOverrideSource.MANUAL,
               OR: activeYearId
                 ? [{ academicYearId: activeYearId }, { academicYearId: null }]
                 : [{ academicYearId: null }],

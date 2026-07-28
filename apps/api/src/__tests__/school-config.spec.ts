@@ -9,6 +9,7 @@ import { SchoolConfigService } from '../school-config/school-config.service';
 import { SchoolConfigController } from '../school-config/school-config.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { AppointmentsService } from '../appointments/appointments.service';
 import { Prisma } from '@prisma/client';
 
 const PROFILE = { id: 'p1', name: 'SMK Darussalam Subah', npsn: '20324567', address: 'Jl. Raya', phone: null, email: null, website: null, headmasterName: null, headmasterNip: null, logoUrl: null, accreditation: 'A', createdAt: new Date(), updatedAt: new Date() };
@@ -30,7 +31,11 @@ describe('SchoolConfigService', () => {
   const mockStaffPosition = { updateMany: jest.fn() };
   const mockUserPermissionOverride = { deleteMany: jest.fn() };
   const mock$transaction = jest.fn();
-  const mockPermissions = { invalidateAll: jest.fn() };
+  const mockPermissions = { invalidateAll: jest.fn(), invalidateUser: jest.fn() };
+  const mockAppointments = {
+    acquireActivationLock: jest.fn(),
+    applyAcademicYearActivation: jest.fn(),
+  };
 
   const prisma = {
     schoolProfile: mockProfile,
@@ -49,13 +54,22 @@ describe('SchoolConfigService', () => {
       mockSem.findMany, mockSem.findFirst, mockSem.findUnique, mockSem.create, mockSem.update, mockSem.updateMany,
       mockCal.findMany, mockCal.create, mockCal.update, mockCal.delete,
       mockStaffPosition.updateMany, mockUserPermissionOverride.deleteMany,
-      mock$transaction, mockPermissions.invalidateAll].forEach(m => m.mockReset());
+      mock$transaction, mockPermissions.invalidateAll, mockPermissions.invalidateUser,
+      mockAppointments.acquireActivationLock, mockAppointments.applyAcademicYearActivation].forEach(m => m.mockReset());
+    mockAppointments.acquireActivationLock.mockResolvedValue(undefined);
+    mockAppointments.applyAcademicYearActivation.mockResolvedValue({
+      endedCount: 0,
+      cancelledCount: 0,
+      activatedCount: 0,
+      affectedKeycloakIds: [],
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SchoolConfigService,
         { provide: PrismaService, useValue: prisma },
         { provide: PermissionsService, useValue: mockPermissions },
+        { provide: AppointmentsService, useValue: mockAppointments },
       ],
     }).compile();
     service = module.get(SchoolConfigService);
@@ -163,9 +177,14 @@ describe('SchoolConfigService', () => {
       data: { isActive: false },
     });
     expect(mockUserPermissionOverride.deleteMany).toHaveBeenCalledWith({
-      where: { academicYearId: 'ay-old' },
+      where: { academicYearId: 'ay-old', source: 'POSITION_ASSIGNMENT' },
     });
-    expect(mockPermissions.invalidateAll).toHaveBeenCalledTimes(1);
+    expect(mockAppointments.applyAcademicYearActivation).toHaveBeenCalledWith(
+      prisma,
+      { yearId: 'ay-new', oldYearId: 'ay-old' },
+    );
+    expect(mockAppointments.acquireActivationLock).toHaveBeenCalledWith(prisma);
+    expect(mockPermissions.invalidateAll).toHaveBeenCalled();
   });
 
   it('cleanup gagal tetap invalidate cache agar resolver membaca active year baru', async () => {
@@ -183,7 +202,7 @@ describe('SchoolConfigService', () => {
       isActive: true,
     })).resolves.toBeDefined();
 
-    expect(mockPermissions.invalidateAll).toHaveBeenCalledTimes(1);
+    expect(mockPermissions.invalidateAll).toHaveBeenCalled();
   });
 
   it('createAcademicYear duplikat → Conflict (tanpa menonaktifkan yg lain)', async () => {
