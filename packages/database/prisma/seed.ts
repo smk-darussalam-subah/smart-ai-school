@@ -44,13 +44,13 @@ async function main() {
   // ── Kepala Sekolah ─────────────────────────────────────────────────────────
   const ksUser = await prisma.user.upsert({
     where: { email: 'kepala@smkdarussalamsubah.sch.id' },
-    update: {},
+    update: { role: 'TATA_USAHA' },
     create: {
       keycloakId: 'fc1f3a9e-7a8d-4c2f-89b1-3e4c5d6f7a8c',
       email: 'kepala@smkdarussalamsubah.sch.id',
       fullName: 'Drs. H. Abdul Karim, M.Pd',
       phone: '08198765430',
-      role: 'KEPALA_SEKOLAH',
+      role: 'TATA_USAHA',
       isActive: true,
     },
   });
@@ -183,7 +183,7 @@ async function main() {
   console.log('✓ 10 Teacher profiles — created');
 
   // ── Staff (kepegawaian) — KS, TU, dan 10 guru (NIY + status) ────────────────
-  await prisma.staff.upsert({
+  const ksStaff = await prisma.staff.upsert({
     where: { userId: ksUser.id },
     update: {},
     create: { userId: ksUser.id, niy: 'Y0001', employmentStatus: 'GTY', joinedAt: new Date('2010-07-01') },
@@ -213,6 +213,38 @@ async function main() {
   // Jurusan aktif: AKL, TKJ, TKRO
   // Jurusan baru (persiapan): TBSM (hanya kelas X)
   // ═══════════════════════════════════════════════════════════════════════════
+
+  const activeAppointmentYear = await prisma.academicYear.findFirst({
+    where: { isActive: true },
+    orderBy: { code: 'desc' },
+  });
+  const kepalaSekolahPosition = await prisma.position.findUnique({
+    where: { code: 'KEPALA_SEKOLAH' },
+  });
+  if (activeAppointmentYear && kepalaSekolahPosition) {
+    const existingKsAppointment = await prisma.appointment.findFirst({
+      where: {
+        staffId: ksStaff.id,
+        positionId: kepalaSekolahPosition.id,
+        academicYearId: activeAppointmentYear.id,
+        status: { in: ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE'] },
+      },
+      select: { id: true },
+    });
+
+    if (!existingKsAppointment) {
+      await prisma.appointment.create({
+        data: {
+          staffId: ksStaff.id,
+          positionId: kepalaSekolahPosition.id,
+          academicYearId: activeAppointmentYear.id,
+          status: 'ACTIVE',
+          effectiveFrom: activeAppointmentYear.startDate,
+          source: 'MANUAL',
+        },
+      });
+    }
+  }
 
   const kelasData = [
     // AKL — Akuntansi & Keuangan Lembaga

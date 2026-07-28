@@ -126,6 +126,7 @@ services:
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_API_CLIENT_SECRET}
       OLLAMA_URL: http://ollama:11434
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      APPOINTMENT_AUTOMATION_TOKEN: ${APPOINTMENT_AUTOMATION_TOKEN}
       API_PORT: "3001"
       TZ: Asia/Jakarta
       # Guardrail N-20: start.sh fail-hard jika STAGING_DATABASE_URL salah target

@@ -5,6 +5,23 @@
 
 ---
 
+## 2026-07-27 - Appointment due activation scheduler: systemd, not n8n
+
+**Keputusan:** n8n tidak menjadi caller `POST /appointments/activate-due`. n8n tetap boleh
+dipakai untuk workflow lain yang disetujui seperti health-check dan backup, tetapi appointment
+due activation dipicu oleh VPS `systemd timer` harian pukul 00:15 Asia/Jakarta.
+
+**Konteks:** appointment transition tetap domain NestJS dan dijaga `AppointmentAutomationGuard`,
+shared advisory lock, active academic year lookup, dan nginx public block. `systemd` hanya trigger
+eksternal. Token dibaca dari environment container API, tidak ditulis di unit, script, workflow,
+atau log.
+
+**Lesson learned:** scheduler operasional harus memiliki satu pemilik eksplisit. Jika keputusan
+Director membatalkan caller lama, source workflow, env wiring, runbook, dan komentar reverse proxy
+harus dibersihkan dalam batch yang sama.
+
+---
+
 ## 2026-06-12 — 2H: Insiden kode tak bertuan + API Rapor & Kegiatan
 
 **INSIDEN.** ~820 baris frontend rapor+kegiatan masuk commit 2G via `git add -A`

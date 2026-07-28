@@ -75,18 +75,6 @@ const PERMISSIONS: PermissionDef[] = [
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   SUPER_ADMIN: PERMISSIONS.map((p) => p.code),
-  KEPALA_SEKOLAH: [
-    'student.read', 'academic.grade.read', 'academic.attendance.read',
-    'academic.teaching.read', 'academic.schedule.read',
-    'finance.read', 'finance.approve',
-    'ppdb.read', 'ppdb.stats.read',
-    'ai.knowledge.read', 'notification.read', 'audit.read',
-    'announcement.read', 'announcement.manage',
-    'teacher.attendance.read',
-    'rpp.read', 'rpp.review',
-    'lms.read',
-    'report.read', 'report.review', 'activity.read',
-  ],
   TATA_USAHA: [
     'student.create', 'student.read', 'student.update', 'student.delete',
     'ppdb.create', 'ppdb.read', 'ppdb.update',

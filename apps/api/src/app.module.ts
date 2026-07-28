@@ -51,6 +51,7 @@ import { WaLogModule } from './wa-log/wa-log.module';
 import { GamificationModule } from './gamification/gamification.module';
 import { PushModule } from './push/push.module';
 import { KktpConfigModule } from './kktp-config/kktp-config.module';
+import { AppointmentsModule } from './appointments/appointments.module';
 
 @Module({
   imports: [
@@ -98,6 +99,7 @@ import { KktpConfigModule } from './kktp-config/kktp-config.module';
     GamificationModule,
     PushModule,
     KktpConfigModule,
+    AppointmentsModule,
   ],
   providers: [
     UserStatusService,

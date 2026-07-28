@@ -10,7 +10,7 @@ import { z } from 'zod';
 // ── Roles DIIS ───────────────────────────────────────────────────────────────
 //
 // Stable identity roles (6) are the only roles assigned as Keycloak realm roles.
-// Position codes (13), including KEPALA_SEKOLAH, are period-bound DIIS catalog
+// Position codes (15), including KEPALA_SEKOLAH, are period-bound DIIS catalog
 // values and must not be created, assigned, or removed through Keycloak roles.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -30,7 +30,7 @@ export type PrimaryRole = typeof PRIMARY_ROLES[number];
 export const PrimaryRoleSchema = z.enum(PRIMARY_ROLES);
 
 /** Position codes from Struktur Organisasi. They are not Keycloak realm roles. */
-// Appointment Wave A: position codes remain DIIS catalog values only.
+// Appointment Wave B: position codes remain DIIS catalog values only.
 export const POSITION_CODES = [
   'KEPALA_SEKOLAH',
   'WAKA_KURIKULUM',
@@ -41,6 +41,8 @@ export const POSITION_CODES = [
   'KAPROG',
   'KOOR_BKK',
   'KOOR_HUBIN',
+  'WAKIL_KOOR_BKK',
+  'WAKIL_KOOR_HUBIN',
   'GURU_BK',
   'BENDAHARA',
   'STAF_KEPEGAWAIAN',
@@ -49,7 +51,7 @@ export const POSITION_CODES = [
 
 export type PositionCode = typeof POSITION_CODES[number];
 
-// 19 unique values: 6 identity roles + 13 position-only codes.
+// 21 unique values: 6 identity roles + 15 position-only codes.
 export const UserRole = z.enum([
   // Stable identity roles (6)
   'SUPER_ADMIN',
@@ -58,7 +60,7 @@ export const UserRole = z.enum([
   'SISWA',
   'ORANG_TUA',
   'INDUSTRI',
-  // Position-only codes (13)
+  // Position-only codes (15)
   'KEPALA_SEKOLAH',
   'WAKA_KURIKULUM',
   'WAKA_KESISWAAN',
@@ -68,6 +70,8 @@ export const UserRole = z.enum([
   'KAPROG',
   'KOOR_BKK',
   'KOOR_HUBIN',
+  'WAKIL_KOOR_BKK',
+  'WAKIL_KOOR_HUBIN',
   'GURU_BK',
   'BENDAHARA',
   'STAF_KEPEGAWAIAN',
