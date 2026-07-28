@@ -2,7 +2,7 @@
 // LmsService — modul belajar + progres siswa (2P-1).
 // GURU: CRUD + publish modul MILIK SENDIRI (ownership ditegakkan di query).
 // SISWA: baca modul published kelasnya + lapor progres sendiri.
-// KS/SA: baca semua (audit). Pola ownership/role mengikuti RppService.
+// KS/SA/WAKA active appointment: baca semua (audit). Pola ownership/role mengikuti RppService.
 // =============================================================================
 
 import {
@@ -20,7 +20,7 @@ import {
   UpdateProgressDto,
 } from './dto/lms.dto';
 
-const REVIEWER_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] as const;
+const REVIEWER_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'] as const;
 
 const LMS_SELECT = {
   id: true, teacherId: true, rppId: true, classId: true, subject: true, title: true,

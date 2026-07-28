@@ -10,11 +10,17 @@ jest.mock('@smk/logger', () => ({
 import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AuthUser } from '@smk/auth';
+import { LmsController } from '../lms/lms.controller';
 import { LmsService } from '../lms/lms.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
 const SISWA: AuthUser = { keycloakId: 'kc-siswa', username: 'siswa1', roles: ['SISWA'] } as AuthUser;
+const WAKA: AuthUser = {
+  keycloakId: 'kc-waka',
+  username: 'waka',
+  roles: ['GURU', 'WAKA_KURIKULUM'],
+} as AuthUser;
 
 const baseCreate = {
   subject: 'Pemrograman Web', title: 'Struktur HTML', kktp: 75, orderIndex: 0,
@@ -84,6 +90,12 @@ describe('LmsService', () => {
     expect(findMany.mock.calls[0][0].where.teacherId).toBe('teacher-1');
   });
 
+  it('findAll WAKA_KURIKULUM hasil active appointment → reviewer, tidak di-scope teacher sendiri', async () => {
+    await service.findAll({ page: 1, limit: 50 } as never, WAKA);
+    expect(findMany.mock.calls[0][0].where.teacherId).toBeUndefined();
+    expect(teacherFindFirst).not.toHaveBeenCalled();
+  });
+
   it('findAll SISWA → hanya published + visibilitas kelas, ratakan myProgress', async () => {
     findMany.mockResolvedValueOnce([
       { id: 'lms-1', subject: 'X', progress: [{ progress: 50, status: 'active', startedAt: null, completedAt: null }] },
@@ -134,6 +146,15 @@ describe('LmsService', () => {
   it('getProgress modul bukan milik sendiri → Forbidden', async () => {
     findUnique.mockResolvedValue({ id: 'lms-1', title: 'M', subject: 'X', classId: null, teacherId: 'teacher-LAIN' });
     await expect(service.getProgress('lms-1', GURU)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('getProgress WAKA_KURIKULUM hasil active appointment → boleh monitor modul guru lain', async () => {
+    findUnique.mockResolvedValue({ id: 'lms-1', title: 'M', subject: 'X', classId: 'class-1', teacherId: 'teacher-LAIN' });
+    progressFindMany.mockResolvedValue([]);
+    studentCount.mockResolvedValue(31);
+    const res = await service.getProgress('lms-1', WAKA);
+    expect(res.classStudentCount).toBe(31);
+    expect(teacherFindFirst).not.toHaveBeenCalled();
   });
 
   // ── findMyLearning (W1-2) ─────────────────────────────────────────────────
@@ -216,5 +237,24 @@ describe('LmsService', () => {
     rppFindUnique.mockResolvedValue(null);
     await expect(service.create({ ...baseCreate, rppId: 'rpp-fiktif', publish: false }, GURU))
       .rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('LmsController appointment-aware reviewer metadata', () => {
+  it('GET reviewer paths request WAKA_KURIKULUM so RolesGuard can enrich from active Appointment', () => {
+    expect(Reflect.getMetadata('roles', LmsController.prototype.findAll))
+      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU', 'SISWA']);
+    expect(Reflect.getMetadata('roles', LmsController.prototype.findOne))
+      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU', 'SISWA']);
+    expect(Reflect.getMetadata('roles', LmsController.prototype.getProgress))
+      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU']);
+  });
+
+  it('write paths stay GURU-owned and do not grant WAKA broad LMS mutation', () => {
+    expect(Reflect.getMetadata('roles', LmsController.prototype.create)).toEqual(['GURU']);
+    expect(Reflect.getMetadata('roles', LmsController.prototype.update)).toEqual(['GURU']);
+    expect(Reflect.getMetadata('roles', LmsController.prototype.publish)).toEqual(['GURU']);
+    expect(Reflect.getMetadata('roles', LmsController.prototype.archive)).toEqual(['GURU']);
+    expect(Reflect.getMetadata('roles', LmsController.prototype.updateProgress)).toEqual(['SISWA']);
   });
 });
