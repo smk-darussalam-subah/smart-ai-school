@@ -7,6 +7,8 @@
 import { z } from 'zod';
 import { logger } from '@smk/logger';
 
+const emptyStringToUndefined = (value: unknown) => (value === '' ? undefined : value);
+
 /**
  * Schema untuk semua environment variable yang dibutuhkan API.
  * Jalankan di awal bootstrap() sebelum NestFactory.create().
@@ -30,7 +32,10 @@ const EnvSchema = z.object({
   SMTP_PORT: z.string().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
-  APPOINTMENT_AUTOMATION_TOKEN: z.string().min(32).optional(),
+  APPOINTMENT_AUTOMATION_TOKEN: z.preprocess(
+    emptyStringToUndefined,
+    z.string().min(32).optional(),
+  ),
 
   // ── AI / Ollama + Claude + OpenAI (SMA-48, R-28) ────────────────────────────
   // AI_PROVIDER: 'ollama' (default, safe) | 'claude' (legacy) | 'openai' (R-28 hybrid)
