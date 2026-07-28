@@ -46,7 +46,8 @@ export class PositionsController {
     return this.positions.accessCheck(userId);
   }
 
-  // R-23: Seed 13 position codes sebagai Keycloak realm roles (SA only)
+  // Appointment governance: compatibility endpoint kept as a no-op. Position
+  // codes are DIIS catalog values and must not be synced to Keycloak roles.
   @Roles('SUPER_ADMIN')
   @Post('sync-roles')
   @Audit({ captureBody: false })
@@ -62,9 +63,8 @@ export class PositionsController {
 
   @Delete('assignments/:id')
   @Audit({ captureBody: false })
-  // TF2-P1-SEC-2: Tambah ParseUUIDPipe untuk defense-in-depth. Sebelumnya id
-  // mentah dikirim ke prisma.staffPosition.delete — inkonsisten dengan praktik
-  // defense-in-depth di modul lain.
+  // TF2-P1-SEC-2: ParseUUIDPipe remains defense-in-depth. The legacy mutation
+  // is fail-closed while Appointment is the authority.
   unassign(@Param('id', ParseUUIDPipe) id: string) {
     return this.positions.unassign(id);
   }

@@ -23,7 +23,15 @@ export const CreateAppointmentSchema = z.object({
   effectiveUntil: z.coerce.date().optional(),
   reason: z.string().trim().min(3).max(1000).optional(),
   replacesAppointmentId: z.string().uuid().optional(),
-}).strict();
+}).strict().superRefine((value, ctx) => {
+  if (value.effectiveUntil && value.effectiveUntil < value.effectiveFrom) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['effectiveUntil'],
+      message: 'Tanggal akhir tidak boleh lebih awal dari tanggal mulai appointment.',
+    });
+  }
+});
 
 export const AppointmentDecisionSchema = z.object({
   note: z.string().trim().max(1000).optional(),

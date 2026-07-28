@@ -23,6 +23,7 @@ const OPEN_REPLACEMENT_STATUSES = ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE'] as 
 const PREPARED_STATUSES = ['PENDING_APPROVAL', 'APPROVED'] as const;
 const ACTIVE_CAPACITY_STATUS = 'ACTIVE' as const;
 const SUSPENDED_STATUS = 'SUSPENDED' as const;
+export const APPOINTMENT_ACTIVATION_LOCK_KEY = 'appointment_due_activation' as const;
 
 type AppointmentTransitionTarget = {
   id: string;
@@ -34,8 +35,22 @@ type AppointmentTransitionTarget = {
   effectiveUntil: Date | null;
   reason: string | null;
   replacesAppointmentId: string | null;
-  position: { id: string; code: string; scopeType: string };
-  staff: { user: { keycloakId: string } };
+  position: { id: string; code: string; scopeType: string; maxActiveHolders: number };
+  staff: { id: string; userId: string; user: { keycloakId: string } };
+};
+
+type AppointmentTx = Prisma.TransactionClient;
+type AppointmentActivationSummary = {
+  endedCount: number;
+  cancelledCount: number;
+  activatedCount: number;
+  affectedKeycloakIds: string[];
+};
+type AppointmentActivationSafeResponse = {
+  endedCount: number;
+  cancelledCount: number;
+  activatedCount: number;
+  affectedUserCount: number;
 };
 
 @Injectable()
@@ -84,7 +99,7 @@ export class AppointmentsService {
     const actorUser = await this.requireActor(actor);
     const context = await this.validateContext(dto);
     await this.assertCanPrepare(actor, context.position.code);
-    await this.assertReplacementPlan(dto);
+    await this.assertReplacementPlan(dto, context.position.maxActiveHolders);
 
     try {
       return await this.prisma.appointment.create({
@@ -188,10 +203,11 @@ export class AppointmentsService {
       throw new ConflictException('Appointment ini tidak dapat dibatalkan.');
     }
 
-    return this.updateStatus(id, appointment.staff.user.keycloakId, {
+    const result = await this.updateStatus(id, appointment.staff.user.keycloakId, {
       status: 'CANCELLED',
       endedAt: new Date(),
     });
+    return result;
   }
 
   async suspend(id: string, dto: AppointmentSuspendDto, actor: AuthUser) {
@@ -207,12 +223,13 @@ export class AppointmentsService {
       throw new BadRequestException('Tanggal kembali tidak boleh melewati tanggal akhir appointment.');
     }
 
-    return this.updateStatus(id, appointment.staff.user.keycloakId, {
+    const result = await this.updateStatus(id, appointment.staff.user.keycloakId, {
       status: SUSPENDED_STATUS,
       suspendedAt: new Date(),
       suspensionUntil: dto.expectedReturnDate,
       suspensionReason: dto.reason,
     });
+    return result;
   }
 
   async resume(id: string, actor: AuthUser) {
@@ -221,13 +238,14 @@ export class AppointmentsService {
     if (appointment.status !== SUSPENDED_STATUS || appointment.kind !== 'DEFINITIVE') {
       throw new ConflictException('Hanya appointment definitif SUSPENDED yang dapat dilanjutkan kembali.');
     }
-    await this.assertNoActiveScopeConflict(appointment);
+    await this.assertCanResumeWithinCapacity(appointment);
 
-    return this.updateStatus(id, appointment.staff.user.keycloakId, {
+    const result = await this.updateStatus(id, appointment.staff.user.keycloakId, {
       status: ACTIVE_CAPACITY_STATUS,
       suspensionUntil: null,
       suspensionReason: null,
     });
+    return result;
   }
 
   async end(id: string, dto: AppointmentEndDto, actor: AuthUser) {
@@ -241,12 +259,31 @@ export class AppointmentsService {
       throw new BadRequestException('Tanggal akhir tidak boleh lebih awal dari tanggal mulai appointment.');
     }
 
-    return this.updateStatus(id, appointment.staff.user.keycloakId, {
-      status: 'ENDED',
-      effectiveUntil,
-      endedAt: new Date(),
-      reason: dto.reason,
+    const affectedKeycloakIds = new Set<string>([appointment.staff.user.keycloakId]);
+    const result = await this.prisma.$transaction(async (tx) => {
+      const ended = await tx.appointment.update({
+        where: { id },
+        data: {
+          status: 'ENDED',
+          effectiveUntil,
+          endedAt: new Date(),
+          reason: dto.reason,
+        },
+        select: { id: true, status: true, endedAt: true },
+      });
+      const successor = await this.activateDueSuccessorInTransaction(tx, id);
+      if (successor?.staff.user.keycloakId) {
+        affectedKeycloakIds.add(successor.staff.user.keycloakId);
+      }
+      return ended;
+    }).catch((error) => {
+      this.rethrowConstraint(error);
+      throw error;
     });
+    for (const keycloakId of affectedKeycloakIds) {
+      this.permissions.invalidateUser(keycloakId);
+    }
+    return result;
   }
 
   async supersede(id: string, dto: AppointmentSupersedeDto, actor: AuthUser) {
@@ -282,6 +319,9 @@ export class AppointmentsService {
       if (!['ACTIVE', 'SUSPENDED'].includes(replaced.status)) {
         throw new ConflictException('Appointment yang digantikan harus ACTIVE atau SUSPENDED.');
       }
+      // Transaction order safety (Director Decision 2): UPDATE incumbent ke
+      // SUPERSEDED SEBELUM UPDATE successor ke ACTIVE. Jika urutan terbalik,
+      // partial unique index appointment_unique_*_live akan reject (P2002).
       await tx.appointment.update({
         where: { id: replaced.id },
         data: {
@@ -310,6 +350,248 @@ export class AppointmentsService {
     return result;
   }
 
+  async applyAcademicYearActivation(
+    tx: AppointmentTx,
+    params: { yearId: string; oldYearId: string | null },
+  ): Promise<AppointmentActivationSummary> {
+    const affectedKeycloakIds = new Set<string>();
+    const now = new Date();
+    const today = this.today();
+    let endedCount = 0;
+    let cancelledCount = 0;
+    let activatedCount = 0;
+
+    if (params.oldYearId) {
+      const oldOperationalAppointments = await tx.appointment.findMany({
+        where: {
+          academicYearId: params.oldYearId,
+          status: { in: [ACTIVE_CAPACITY_STATUS, SUSPENDED_STATUS] },
+        },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          staff: { select: { user: { select: { keycloakId: true } } } },
+        },
+      });
+      for (const appointment of oldOperationalAppointments) {
+        await tx.appointment.update({
+          where: { id: appointment.id },
+          data: {
+            status: 'ENDED',
+            endedAt: now,
+            reason: 'Tahun ajaran berganti',
+          },
+        });
+        affectedKeycloakIds.add(appointment.staff.user.keycloakId);
+        endedCount += 1;
+      }
+
+      const oldPreparedAppointments = await tx.appointment.findMany({
+        where: {
+          academicYearId: params.oldYearId,
+          status: { in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED'] },
+        },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          staff: { select: { user: { select: { keycloakId: true } } } },
+        },
+      });
+      for (const appointment of oldPreparedAppointments) {
+        await tx.appointment.update({
+          where: { id: appointment.id },
+          data: {
+            status: 'CANCELLED',
+            endedAt: now,
+            reason: 'Tahun ajaran berakhir sebelum appointment aktif',
+          },
+        });
+        affectedKeycloakIds.add(appointment.staff.user.keycloakId);
+        cancelledCount += 1;
+      }
+    }
+
+    const readyAppointments = await tx.appointment.findMany({
+      where: {
+        academicYearId: params.yearId,
+        status: 'APPROVED',
+        effectiveFrom: { lte: today },
+        OR: [
+          { effectiveUntil: null },
+          { effectiveUntil: { gte: today } },
+        ],
+      },
+      orderBy: [{ effectiveFrom: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        academicYearId: true,
+        replacesAppointmentId: true,
+        staff: { select: { user: { select: { keycloakId: true } } } },
+      },
+    });
+
+    for (const appointment of readyAppointments) {
+      const replacedKeycloakId = await this.supersedeCurrentYearIncumbentIfNeeded(tx, appointment, now);
+      if (replacedKeycloakId) affectedKeycloakIds.add(replacedKeycloakId);
+      await this.activateApprovedAppointmentInTransaction(tx, appointment.id, now);
+      affectedKeycloakIds.add(appointment.staff.user.keycloakId);
+      activatedCount += 1;
+    }
+
+    return {
+      endedCount,
+      cancelledCount,
+      activatedCount,
+      affectedKeycloakIds: Array.from(affectedKeycloakIds),
+    };
+  }
+
+  async acquireActivationLock(tx: AppointmentTx): Promise<void> {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${APPOINTMENT_ACTIVATION_LOCK_KEY}))`;
+  }
+
+  async activateDueAppointments(): Promise<AppointmentActivationSafeResponse> {
+    const summary = await this.prisma.$transaction(async (tx) => {
+      await this.acquireActivationLock(tx);
+      const year = await tx.academicYear.findFirst({
+        where: { isActive: true },
+        select: { id: true },
+      });
+      if (!year) throw new NotFoundException('Tahun ajaran aktif tidak ditemukan.');
+      return this.applyAcademicYearActivation(tx, { yearId: year.id, oldYearId: null });
+    }).catch((error) => {
+      this.rethrowConstraint(error);
+      throw error;
+    });
+
+    for (const keycloakId of summary.affectedKeycloakIds) {
+      this.permissions.invalidateUser(keycloakId);
+    }
+    return {
+      endedCount: summary.endedCount,
+      cancelledCount: summary.cancelledCount,
+      activatedCount: summary.activatedCount,
+      affectedUserCount: summary.affectedKeycloakIds.length,
+    };
+  }
+
+  private async activateDueSuccessorInTransaction(
+    tx: AppointmentTx,
+    endedAppointmentId: string,
+  ): Promise<{ staff: { user: { keycloakId: string } } } | null> {
+    const successor = await tx.appointment.findFirst({
+      where: {
+        replacesAppointmentId: endedAppointmentId,
+        status: 'APPROVED',
+        effectiveFrom: { lte: this.today() },
+      },
+      orderBy: [{ effectiveFrom: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        staff: { select: { user: { select: { keycloakId: true } } } },
+      },
+    });
+    if (!successor) return null;
+    await this.activateApprovedAppointmentInTransaction(tx, successor.id, new Date());
+    return successor;
+  }
+
+  private async supersedeCurrentYearIncumbentIfNeeded(
+    tx: AppointmentTx,
+    appointment: {
+      id: string;
+      academicYearId: string;
+      replacesAppointmentId: string | null;
+    },
+    now: Date,
+  ): Promise<string | null> {
+    if (!appointment.replacesAppointmentId) return null;
+    const replaced = await tx.appointment.findUnique({
+      where: { id: appointment.replacesAppointmentId },
+      select: {
+        id: true,
+        status: true,
+        academicYearId: true,
+        staff: { select: { user: { select: { keycloakId: true } } } },
+      },
+    });
+    if (!replaced || replaced.academicYearId !== appointment.academicYearId) return null;
+    if (!['ACTIVE', 'SUSPENDED'].includes(replaced.status)) return null;
+
+    await tx.appointment.update({
+      where: { id: replaced.id },
+      data: {
+        status: 'SUPERSEDED',
+        supersededById: appointment.id,
+        endedAt: now,
+      },
+    });
+    return replaced.staff.user.keycloakId;
+  }
+
+  private async activateApprovedAppointmentInTransaction(
+    tx: AppointmentTx,
+    appointmentId: string,
+    now: Date,
+  ): Promise<void> {
+    await tx.appointment.update({
+      where: { id: appointmentId },
+      data: {
+        status: ACTIVE_CAPACITY_STATUS,
+        activatedAt: now,
+      },
+    });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // Wave C: History endpoint
+  // ════════════════════════════════════════════════════════════════════════════
+
+  /** Riwayat bisnis appointment dari appointment dan approval records. */
+  async getHistory(id: string) {
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        effectiveFrom: true,
+        effectiveUntil: true,
+        approvedAt: true,
+        activatedAt: true,
+        suspendedAt: true,
+        endedAt: true,
+        reason: true,
+        position: { select: { code: true, name: true } },
+        academicYear: { select: { code: true } },
+      },
+    });
+    if (!appointment) throw new NotFoundException('Appointment tidak ditemukan.');
+
+    const approvals = await this.prisma.appointmentApproval.findMany({
+      where: { appointmentId: id },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        decision: true,
+        note: true,
+        createdAt: true,
+      },
+    });
+
+    return {
+      appointmentId: id,
+      appointment,
+      approvals: approvals.map((a) => ({
+        decision: a.decision,
+        note: a.note,
+        createdAt: a.createdAt,
+      })),
+    };
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // Validation helpers
+  // ════════════════════════════════════════════════════════════════════════════
+
   private async validateContext(dto: CreateAppointmentDto) {
     const [staff, position, academicYear] = await Promise.all([
       this.prisma.staff.findUnique({
@@ -330,7 +612,7 @@ export class AppointmentsService {
       }),
       this.prisma.position.findUnique({
         where: { id: dto.positionId },
-        select: { id: true, code: true, scopeType: true },
+        select: { id: true, code: true, scopeType: true, maxActiveHolders: true },
       }),
       this.prisma.academicYear.findUnique({
         where: { id: dto.academicYearId },
@@ -378,17 +660,33 @@ export class AppointmentsService {
     return { staff, position, academicYear };
   }
 
-  private async assertReplacementPlan(dto: CreateAppointmentDto): Promise<void> {
+  private async assertReplacementPlan(
+    dto: CreateAppointmentDto,
+    maxActiveHolders: number,
+  ): Promise<void> {
     const scopeWhere = this.scopeWhere(dto.positionId, dto.academicYearId, dto.majorId ?? null);
-    const currentHolder = await this.prisma.appointment.findFirst({
-      where: {
-        ...scopeWhere,
-        status: { in: [ACTIVE_CAPACITY_STATUS, SUSPENDED_STATUS] },
-      },
-      select: { id: true, status: true },
-    });
+    const [activeCount, currentHolder] = await Promise.all([
+      this.prisma.appointment.count({
+        where: {
+          ...scopeWhere,
+          status: ACTIVE_CAPACITY_STATUS,
+        },
+      }),
+      this.prisma.appointment.findFirst({
+        where: {
+          ...scopeWhere,
+          status: { in: [ACTIVE_CAPACITY_STATUS, SUSPENDED_STATUS] },
+        },
+        orderBy: { id: 'asc' },
+        select: { id: true, status: true },
+      }),
+    ]);
 
-    if (currentHolder && !dto.replacesAppointmentId) {
+    if (
+      currentHolder &&
+      !dto.replacesAppointmentId &&
+      (activeCount >= maxActiveHolders || currentHolder.status === SUSPENDED_STATUS || dto.kind === 'PLT')
+    ) {
       throw new ConflictException('Scope jabatan sudah memiliki pemangku. Tentukan replacesAppointmentId untuk successor atau PLT.');
     }
 
@@ -398,8 +696,9 @@ export class AppointmentsService {
         select: {
           id: true,
           status: true,
-          positionId: true,
+          staffId: true,
           academicYearId: true,
+          positionId: true,
           majorId: true,
         },
       });
@@ -408,10 +707,22 @@ export class AppointmentsService {
         throw new ConflictException('Appointment yang digantikan harus ACTIVE atau SUSPENDED.');
       }
       if (!this.sameScope(dto, replaced)) {
-        throw new BadRequestException('Appointment pengganti harus berada pada jabatan, tahun ajaran, dan scope yang sama.');
+        throw new BadRequestException('Appointment pengganti harus berada pada jabatan dan scope yang sama (tahun ajaran boleh berbeda untuk reappointment lintas tahun).');
       }
       if (currentHolder && currentHolder.id !== replaced.id) {
         throw new ConflictException('replacesAppointmentId tidak cocok dengan pemangku aktif/suspended saat ini.');
+      }
+
+      // Wave C (Director Decision 5): Reappointment same-person lintas tahun DIDUKUNG,
+      // same-person same-year DITOLAK (masa jabatan belum berakhir).
+      if (
+        replaced.staffId === dto.staffId &&
+        replaced.academicYearId === dto.academicYearId
+      ) {
+        throw new BadRequestException(
+          'Masa jabatan belum berakhir — tidak perlu reappointment di tahun yang sama. ' +
+          'Perpanjangan masa jabatan orang yang sama hanya berlaku lintas tahun ajaran.',
+        );
       }
 
       const duplicateReplacement = await this.prisma.appointment.findFirst({
@@ -431,29 +742,43 @@ export class AppointmentsService {
       where: {
         ...scopeWhere,
         status: { in: [...PREPARED_STATUSES] },
+        replacesAppointmentId: null,
       },
       select: { id: true },
     });
-    if (preparedCandidate) {
+    if (preparedCandidate && activeCount + 1 >= maxActiveHolders) {
       throw new ConflictException('Scope jabatan sudah memiliki kandidat appointment yang masih terbuka.');
     }
   }
 
-  private async assertNoActiveScopeConflict(appointment: AppointmentTransitionTarget): Promise<void> {
-    const conflict = await this.prisma.appointment.findFirst({
+  private async assertCanResumeWithinCapacity(appointment: AppointmentTransitionTarget): Promise<void> {
+    const scopeWhere = this.scopeWhere(
+      appointment.position.id,
+      appointment.academicYearId,
+      appointment.majorId,
+    );
+    const linkedActivePlt = await this.prisma.appointment.findFirst({
       where: {
-        ...this.scopeWhere(
-          appointment.position.id,
-          appointment.academicYearId,
-          appointment.majorId,
-        ),
+        ...scopeWhere,
+        replacesAppointmentId: appointment.id,
         status: ACTIVE_CAPACITY_STATUS,
-        id: { not: appointment.id },
+        kind: 'PLT',
       },
       select: { id: true },
     });
-    if (conflict) {
-      throw new ConflictException('Masih ada appointment ACTIVE pada jabatan/scope ini. Akhiri PLT atau pemangku aktif lain terlebih dahulu.');
+    if (linkedActivePlt) {
+      throw new ConflictException('Masih ada PLT aktif untuk appointment ini. Akhiri PLT sebelum pemangku definitif kembali.');
+    }
+
+    const otherActiveCount = await this.prisma.appointment.count({
+      where: {
+        ...scopeWhere,
+        status: ACTIVE_CAPACITY_STATUS,
+        id: { not: appointment.id },
+      },
+    });
+    if (otherActiveCount + 1 > appointment.position.maxActiveHolders) {
+      throw new ConflictException('Kapasitas jabatan penuh. Akhiri pemangku aktif lain sebelum appointment dilanjutkan kembali.');
     }
   }
 
@@ -462,20 +787,25 @@ export class AppointmentsService {
   ): Promise<void> {
     if (appointment.replacesAppointmentId) return;
 
-    const conflict = await this.prisma.appointment.findFirst({
-      where: {
-        ...this.scopeWhere(
-          appointment.position.id,
-          appointment.academicYearId,
-          appointment.majorId,
-        ),
-        status: { in: [...PREPARED_STATUSES] },
-        replacesAppointmentId: null,
-        id: { not: appointment.id },
-      },
-      select: { id: true },
-    });
-    if (conflict) {
+    const scopeWhere = this.scopeWhere(
+      appointment.position.id,
+      appointment.academicYearId,
+      appointment.majorId,
+    );
+    const [activeCount, preparedCount] = await Promise.all([
+      this.prisma.appointment.count({
+        where: { ...scopeWhere, status: ACTIVE_CAPACITY_STATUS },
+      }),
+      this.prisma.appointment.count({
+        where: {
+          ...scopeWhere,
+          status: { in: [...PREPARED_STATUSES] },
+          replacesAppointmentId: null,
+          id: { not: appointment.id },
+        },
+      }),
+    ]);
+    if (activeCount + preparedCount >= appointment.position.maxActiveHolders) {
       throw new ConflictException('Scope jabatan sudah memiliki kandidat appointment yang masih terbuka.');
     }
   }
@@ -493,13 +823,17 @@ export class AppointmentsService {
     }
   }
 
+  /**
+   * Scope match untuk replacement plan. Wave C (Director Decision 5):
+   * positionId + majorId harus cocok. academicYearId BOLEH berbeda untuk
+   * reappointment lintas tahun (mis. 2026/2027 → 2027/2028).
+   */
   private sameScope(
     dto: CreateAppointmentDto,
     appointment: { positionId: string; academicYearId: string; majorId: string | null },
   ): boolean {
     return (
       dto.positionId === appointment.positionId &&
-      dto.academicYearId === appointment.academicYearId &&
       (dto.majorId ?? null) === (appointment.majorId ?? null)
     );
   }
@@ -525,8 +859,8 @@ export class AppointmentsService {
         effectiveUntil: true,
         reason: true,
         replacesAppointmentId: true,
-        position: { select: { id: true, code: true, scopeType: true } },
-        staff: { select: { user: { select: { keycloakId: true } } } },
+        position: { select: { id: true, code: true, scopeType: true, maxActiveHolders: true } },
+        staff: { select: { id: true, userId: true, user: { select: { keycloakId: true } } } },
       },
     });
     if (!appointment) throw new NotFoundException('Appointment tidak ditemukan.');
@@ -592,7 +926,10 @@ export class AppointmentsService {
   }
 
   private rethrowConstraint(error: unknown): void {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === 'P2002' || error.message.includes('appointment active capacity exceeded'))
+    ) {
       throw new ConflictException('Appointment live untuk jabatan/scope ini sudah ada.');
     }
   }

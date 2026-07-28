@@ -8,11 +8,14 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { AuthUser } from '@smk/auth';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
+import { AppointmentAutomationGuard } from './appointment-automation.guard';
 import { AppointmentsService } from './appointments.service';
 import {
   AppointmentEndSchema,
@@ -40,6 +43,13 @@ export class AppointmentsController {
     const parsed = AppointmentListQuerySchema.safeParse(rawQuery ?? {});
     if (!parsed.success) throw new BadRequestException(parsed.error.errors);
     return this.appointments.list(parsed.data);
+  }
+
+  @Post('activate-due')
+  @Public()
+  @UseGuards(AppointmentAutomationGuard)
+  activateDue() {
+    return this.appointments.activateDueAppointments();
   }
 
   @Post()
@@ -108,5 +118,11 @@ export class AppointmentsController {
     @CurrentUser() actor: AuthUser,
   ) {
     return this.appointments.supersede(id, dto, actor);
+  }
+
+  /** Riwayat bisnis appointment. Tidak mengekspos outbox/retry payload teknis. */
+  @Get(':id/history')
+  history(@Param('id', ParseUUIDPipe) id: string) {
+    return this.appointments.getHistory(id);
   }
 }

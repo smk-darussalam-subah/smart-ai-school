@@ -12,6 +12,7 @@ export interface Position {
   name: string;
   category: 'STRUKTURAL' | 'FUNGSIONAL' | 'TENDIK';
   scopeType: 'NONE' | 'MAJOR';
+  maxActiveHolders: number;
   parentId: string | null;
   _count: { permissions: number };
 }
@@ -20,6 +21,11 @@ export interface Assignment {
   id: string;
   positionId: string;
   majorId: string | null;
+  kind: 'DEFINITIVE' | 'PLT';
+  status: 'PENDING_APPROVAL' | 'APPROVED' | 'ACTIVE' | 'SUSPENDED';
+  effectiveFrom: string;
+  effectiveUntil: string | null;
+  isEffectiveNow: boolean;
   position: { code: string; name: string; category: string };
   major: { code: string; name: string } | null;
   staff: { niy: string | null; user: { id: string; fullName: string; email: string } };

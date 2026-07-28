@@ -1177,6 +1177,7 @@ model Position {
   category  PositionCategory
   parentId  String?           @map("parent_id") @db.Uuid // hierarki (BKK di bawah Humas)
   scopeType PositionScopeType @default(NONE) @map("scope_type")
+  maxActiveHolders Int        @default(1) @map("max_active_holders")
   isActive  Boolean           @default(true) @map("is_active")
   sortOrder Int               @default(0) @map("sort_order")
   createdAt DateTime          @default(now()) @map("created_at")
@@ -1194,8 +1195,8 @@ model Position {
 }
 
 // Izin yang menempel pada jabatan. permissionId → auth.permissions (lintas-schema,
-// tanpa FK — pola sama seperti audit field). Diterapkan sebagai UserPermissionOverride
-// saat penugasan aktif, dicabut saat penugasan berakhir.
+// tanpa FK — pola sama seperti audit field). Diberikan secara dinamis hanya oleh
+// Appointment ACTIVE; StaffPosition legacy tidak boleh menulis override efektif.
 model PositionPermission {
   positionId   String @map("position_id") @db.Uuid
   permissionId String @map("permission_id") @db.Uuid

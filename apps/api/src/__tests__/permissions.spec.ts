@@ -129,6 +129,7 @@ describe('PermissionsService', () => {
           where: {
             userId: 'auth-1',
             status: 'ACTIVE',
+            source: 'MANUAL',
             OR: [{ academicYearId: 'ay-2026' }, { academicYearId: null }],
           },
         }),
@@ -201,7 +202,20 @@ describe('PermissionsService', () => {
 
       expect(mockUpoFindMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ status: 'ACTIVE' }),
+          where: expect.objectContaining({ status: 'ACTIVE', source: 'MANUAL' }),
+        }),
+      );
+    });
+
+    it('POSITION_ASSIGNMENT override historis tidak menjadi authority jabatan', async () => {
+      mockRpFindMany.mockResolvedValue([]);
+      mockUpoFindMany.mockResolvedValue([]);
+      mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
+
+      expect(await service.hasPermission('kc-guru', ['GURU'], 'finance.approve')).toBe(false);
+      expect(mockUpoFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ source: 'MANUAL' }),
         }),
       );
     });
@@ -414,6 +428,7 @@ describe('PermissionsService', () => {
           where: {
             userId: 'auth-1',
             status: 'ACTIVE',
+            source: 'MANUAL',
             OR: [{ academicYearId: 'ay-2026' }, { academicYearId: null }],
           },
         }),

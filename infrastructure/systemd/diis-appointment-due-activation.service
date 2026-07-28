@@ -1,0 +1,20 @@
+[Unit]
+Description=DIIS appointment due activation
+Documentation=file:/usr/local/share/doc/diis/appointment-due-activation-systemd.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=appuser
+Environment=DIIS_API_CONTAINER=smk-api
+Environment=DIIS_APPOINTMENT_ENDPOINT_PATH=/api/v1/appointments/activate-due
+Environment=DIIS_APPOINTMENT_REQUEST_TIMEOUT_MS=30000
+Environment=DIIS_APPOINTMENT_MAX_ATTEMPTS=3
+Environment=DIIS_APPOINTMENT_RETRY_DELAY_SECONDS=10
+ExecStart=/usr/bin/env bash /usr/local/bin/diis-appointment-due-activation.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict

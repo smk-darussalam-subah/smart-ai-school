@@ -10,6 +10,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import type { Position, Assignment, Major, StaffCandidate } from '../page';
+import { appointmentStatusLabel, formatAppointmentDate } from '../struktur-ui';
 
 const CATEGORY_META: Record<string, { label: string; cls: string }> = {
   STRUKTURAL: { label: 'Struktural', cls: 'bg-emerald-100 text-emerald-700' },
@@ -18,7 +19,14 @@ const CATEGORY_META: Record<string, { label: string; cls: string }> = {
 };
 const CATEGORY_ORDER = ['STRUKTURAL', 'FUNGSIONAL', 'TENDIK'];
 const APPOINTMENT_TRANSITION_MESSAGE =
-  'Transisi appointment sedang berlangsung. Struktur organisasi sementara mode baca saja; penugasan jabatan baru atau pelepasan jabatan dilakukan setelah Appointment Governance Wave B aktif.';
+  'Mutasi penugasan legacy ditutup. Otoritas jabatan dihitung dari Appointment ACTIVE pada tahun ajaran aktif dan tanggal berlaku hari ini.';
+
+const STATUS_META: Record<Assignment['status'], { label: string; cls: string }> = {
+  PENDING_APPROVAL: { label: 'Menunggu approval', cls: 'border-amber-200 bg-amber-50 text-amber-800' },
+  APPROVED: { label: 'Disetujui', cls: 'border-sky-200 bg-sky-50 text-sky-800' },
+  ACTIVE: { label: 'Aktif', cls: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
+  SUSPENDED: { label: 'Cuti/PLT', cls: 'border-slate-200 bg-slate-50 text-slate-700' },
+};
 
 interface Props {
   positions: Position[];
@@ -58,7 +66,7 @@ export default function StrukturClient({
             Struktur Organisasi
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Katalog dan riwayat penanggung jawab jabatan. Perubahan penugasan sementara ditahan sampai Appointment Governance aktif.
+            Katalog jabatan dan appointment berjalan. Otoritas efektif hanya berasal dari appointment aktif yang berlaku hari ini.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -81,7 +89,7 @@ export default function StrukturClient({
           <p className="font-medium">Mode baca saja selama transisi appointment.</p>
           <p className="mt-0.5 text-sky-700">
             Jabatan struktural bukan role akun Keycloak. Penetapan, pelepasan, kapasitas,
-            dan persetujuan jabatan akan dikelola di Wave B.
+            dan persetujuan diproses melalui Appointment Governance.
           </p>
         </div>
       </div>
@@ -120,17 +128,27 @@ export default function StrukturClient({
                             <ShieldCheck className="h-3 w-3" /> {p._count.permissions} izin terdaftar
                           </span>
                         )}
+                        <span className="inline-flex items-center gap-1 rounded bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-700">
+                          Kapasitas {p.maxActiveHolders}
+                        </span>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {list.length === 0 ? (
-                          <span className="text-sm text-muted-foreground">Belum ada penanggung jawab tercatat.</span>
+                          <span className="text-sm text-muted-foreground">Belum ada appointment berjalan atau disiapkan.</span>
                         ) : list.map((a) => (
                           <span
                             key={a.id}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-sm text-emerald-800"
+                            className={clsx(
+                              'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm',
+                              a.isEffectiveNow ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : STATUS_META[a.status].cls,
+                            )}
+                            title={`${appointmentStatusLabel(a.status, a.isEffectiveNow)}. Berlaku ${formatAppointmentDate(a.effectiveFrom)} sampai ${formatAppointmentDate(a.effectiveUntil)}.`}
                           >
                             <Users className="h-3.5 w-3.5" />
-                            {a.staff.user.fullName}{a.major ? ` - ${a.major.code}` : ''}
+                            <span>{a.staff.user.fullName}{a.major ? ` - ${a.major.code}` : ''}</span>
+                            <span className="rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold">
+                              {appointmentStatusLabel(a.status, a.isEffectiveNow)}
+                            </span>
                           </span>
                         ))}
                       </div>
@@ -141,7 +159,7 @@ export default function StrukturClient({
                       className="shrink-0 gap-1.5"
                       onClick={() => setTarget(p)}
                     >
-                      <UserPlus className="h-4 w-4" /> Lihat Status Transisi
+                      <UserPlus className="h-4 w-4" /> Detail Status
                     </Button>
                   </div>
                 );
@@ -161,8 +179,8 @@ export default function StrukturClient({
             <p>{APPOINTMENT_TRANSITION_MESSAGE}</p>
             <p>
               Kandidat pegawai untuk appointment berikutnya akan berasal dari role stabil
-              <strong> Guru</strong> dan <strong>Tata Usaha</strong>, dengan persetujuan dan eksklusivitas
-              yang ditetapkan di Wave B.
+              <strong> Guru</strong> dan <strong>Tata Usaha</strong>, dengan approval dan kapasitas
+              sesuai katalog jabatan.
             </p>
             <div className="flex justify-end">
               <Button size="sm" onClick={() => setTarget(null)}>Mengerti</Button>
