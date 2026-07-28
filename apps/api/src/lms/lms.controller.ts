@@ -8,7 +8,7 @@ import {
   BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus,
   Param, ParseUUIDPipe, Patch, Post, Query,
 } from '@nestjs/common';
-import { AuthUser } from '@smk/auth';
+import { AuthUser, UserRole } from '@smk/auth';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
@@ -23,7 +23,7 @@ import {
 export class LmsController {
   constructor(private readonly service: LmsService) {}
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU', 'SISWA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM' as UserRole, 'GURU', 'SISWA')
   @RequirePermission('lms.read')
   @Get()
   findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
@@ -43,14 +43,14 @@ export class LmsController {
     return this.service.findMyLearning(user);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU', 'SISWA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM' as UserRole, 'GURU', 'SISWA')
   @RequirePermission('lms.read')
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.service.findOne(id, user);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM' as UserRole, 'GURU')
   @RequirePermission('lms.read')
   @Get(':id/progress')
   getProgress(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
