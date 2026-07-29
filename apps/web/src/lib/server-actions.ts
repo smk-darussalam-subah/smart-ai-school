@@ -2,6 +2,7 @@
 
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { apiErrorMessage } from '@/lib/api';
 
 const API_BASE = process.env.API_URL || 'http://api:3001';
 
@@ -9,7 +10,7 @@ export async function apiAction<T = unknown>(
   path: string,
   method: string,
   body?: unknown,
-): Promise<{ data?: T; error?: string }> {
+): Promise<{ data?: T; error?: string; status?: number }> {
   const session = await getServerSession(authOptions);
   const token = session?.accessToken ?? '';
 
@@ -24,11 +25,15 @@ export async function apiAction<T = unknown>(
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
-      return { error: err.message || `HTTP ${res.status}` };
+      return {
+        error: apiErrorMessage(err, `HTTP ${res.status}`),
+        status: res.status,
+      };
     }
 
-    const data = await res.json();
-    return { data: data as T };
+    const text = await res.text();
+    const data = text ? JSON.parse(text) as T : undefined;
+    return { data, status: res.status };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Network error' };
   }
