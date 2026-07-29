@@ -1,3 +1,4 @@
+import React from 'react';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
@@ -7,6 +8,9 @@ import RppBoard, { RppItem } from './_components/RppBoard';
 
 interface ListResponse { data: RppItem[]; total: number; }
 interface ActiveSemester { number: number; academicYear: { code: string } }
+interface MyPositionsResponse {
+  positions: Array<{ status: 'ACTIVE'; position: { code: string; name: string } }>;
+}
 
 export default async function RppPage() {
   const session = await getServerSession(authOptions);
@@ -24,17 +28,23 @@ export default async function RppPage() {
   //   - KEPALA_SEKOLAH: label "Setujui" / "Final Approval" / "Minta Revisi"
   //   - SUPER_ADMIN: setara KS
   // Audit trail juga mencatat role reviewer di reviewerName (service layer).
-  const isReviewer = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'].some((r) => roles.includes(r));
+  const token = session.accessToken ?? '';
+  const directReviewer = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'].some((r) => roles.includes(r));
+  const myPositions = directReviewer
+    ? null
+    : await apiFetch<MyPositionsResponse>('/positions/my-positions', token);
+  const positionRoles = (myPositions?.positions ?? []).map((item) => item.position.code);
+  const effectiveReviewerRoles = [...new Set([...roles, ...positionRoles])];
+  const isReviewer = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'].some((r) => effectiveReviewerRoles.includes(r));
   if (!isReviewer) redirect('/dashboard/akademik');
 
   // W3-4 P2: Determine primary reviewer role for UI customization.
   // Priority: SUPER_ADMIN > KEPALA_SEKOLAH > WAKA_KURIKULUM (matches service priority).
-  const userRole = roles.find((r) => r === 'SUPER_ADMIN')
-    ?? roles.find((r) => r === 'KEPALA_SEKOLAH')
-    ?? roles.find((r) => r === 'WAKA_KURIKULUM')
+  const userRole = effectiveReviewerRoles.find((r) => r === 'SUPER_ADMIN')
+    ?? effectiveReviewerRoles.find((r) => r === 'KEPALA_SEKOLAH')
+    ?? effectiveReviewerRoles.find((r) => r === 'WAKA_KURIKULUM')
     ?? null;
 
-  const token = session.accessToken ?? '';
   const [res, semRes] = await Promise.all([
     apiFetch<ListResponse>('/rpp?limit=100', token),
     apiFetch<ActiveSemester>('/school/semesters/active', token),

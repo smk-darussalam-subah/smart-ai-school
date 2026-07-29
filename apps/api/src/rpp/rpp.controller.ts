@@ -22,7 +22,7 @@ import {
 export class RppController {
   constructor(private readonly service: RppService) {}
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM' as UserRole, 'GURU')
   @RequirePermission('rpp.read')
   @Get()
   findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
@@ -31,7 +31,7 @@ export class RppController {
     return this.service.findAll(parsed.data, user);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM' as UserRole, 'GURU')
   @RequirePermission('rpp.read')
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
