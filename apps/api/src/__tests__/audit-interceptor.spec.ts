@@ -356,6 +356,29 @@ describe('AuditInterceptor', () => {
     });
   });
 
+  it('PATCH failure keeps resourceId from params so item history can show the failed action', (done) => {
+    const ctx = buildContext({
+      method: 'PATCH',
+      url: '/api/v1/appointments/appt-1/resume',
+      params: { id: 'appt-1' },
+      user: { keycloakId: 'kc-ks', username: 'kepsek', roles: ['GURU', 'KEPALA_SEKOLAH'] },
+    });
+    const handler = buildErrorHandler(new NotFoundException('Appointment not found'));
+
+    interceptor.intercept(ctx, handler).subscribe({
+      error: () => {
+        expect(mockCreate).toHaveBeenCalledTimes(1);
+        const arg = mockCreate.mock.calls[0][0] as Record<string, unknown>;
+        expect(arg['outcome']).toBe('failure');
+        expect(arg['resourceType']).toBe('appointments');
+        expect(arg['resourceId']).toBe('appt-1');
+        expect(arg['statusCode']).toBe(404);
+        done();
+      },
+      complete: () => done.fail('Seharusnya error, bukan complete'),
+    });
+  });
+
   // Aktor anonim (request tanpa user, mis. endpoint public)
   it('request tanpa user (anonim) → actorId=null, actorRoles=[]', (done) => {
     const ctx = buildContext({

@@ -6,13 +6,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { AuthUser } from '@smk/auth';
+import { AuthUser, UserRole } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import {
+  AppointmentCandidateQueryDto,
   AppointmentEndDto,
   AppointmentDecisionDto,
   AppointmentListQueryDto,
+  AppointmentPermissionPreviewQueryDto,
   AppointmentSuspendDto,
   AppointmentSupersedeDto,
   CreateAppointmentDto,
@@ -20,10 +22,36 @@ import {
 
 const ELIGIBLE_APPOINTMENT_ROLES = new Set(['GURU', 'TATA_USAHA']);
 const OPEN_REPLACEMENT_STATUSES = ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE'] as const;
+const OPEN_PLT_BLOCKING_STATUSES = ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'ACTIVE'] as const;
 const PREPARED_STATUSES = ['PENDING_APPROVAL', 'APPROVED'] as const;
 const ACTIVE_CAPACITY_STATUS = 'ACTIVE' as const;
 const SUSPENDED_STATUS = 'SUSPENDED' as const;
+const TERMINAL_STATUSES = ['ENDED', 'REJECTED', 'CANCELLED', 'SUPERSEDED'] as const;
 export const APPOINTMENT_ACTIVATION_LOCK_KEY = 'appointment_due_activation' as const;
+export const APPOINTMENT_ALLOWED_ACTIONS = [
+  'SUBMIT',
+  'APPROVE',
+  'REJECT',
+  'CANCEL',
+  'SUSPEND',
+  'RESUME',
+  'END',
+  'SUPERSEDE',
+  'CREATE_SUCCESSOR',
+  'CREATE_PLT',
+  'VIEW_HISTORY',
+] as const;
+
+type AppointmentAllowedAction = typeof APPOINTMENT_ALLOWED_ACTIONS[number];
+type AppointmentSummaryKey =
+  | 'all'
+  | 'draft'
+  | 'pendingApproval'
+  | 'approved'
+  | 'active'
+  | 'suspended'
+  | 'terminal';
+type AppointmentRegistrySummary = Record<AppointmentSummaryKey, number>;
 
 type AppointmentTransitionTarget = {
   id: string;
@@ -53,6 +81,23 @@ type AppointmentActivationSafeResponse = {
   affectedUserCount: number;
 };
 
+type AppointmentPolicyShape = {
+  id: string;
+  status: string;
+  kind: string;
+  effectiveFrom: Date;
+  effectiveUntil: Date | null;
+  replacesAppointmentId: string | null;
+  position: { id: string; code: string; maxActiveHolders: number };
+};
+
+type AppointmentActorContext = {
+  isSuperAdmin: boolean;
+  isActiveKepalaSekolah: boolean;
+};
+
+type AppointmentLookupClient = Pick<AppointmentTx, 'appointment'>;
+
 @Injectable()
 export class AppointmentsService {
   constructor(
@@ -60,14 +105,111 @@ export class AppointmentsService {
     private readonly permissions: PermissionsService,
   ) {}
 
-  async list(query: AppointmentListQueryDto) {
-    const where: Prisma.AppointmentWhereInput = {};
-    if (query.academicYearId) where.academicYearId = query.academicYearId;
-    if (query.status) where.status = query.status;
+  async list(query: AppointmentListQueryDto, actor: AuthUser) {
+    const where = this.buildAppointmentWhere(query);
+    const summaryWhere = this.buildAppointmentWhere({ ...query, status: undefined });
+    const skip = (query.page - 1) * query.limit;
+    const actorContext = await this.getActorContext(actor);
 
-    return this.prisma.appointment.findMany({
-      where,
-      orderBy: [{ academicYear: { code: 'desc' } }, { position: { sortOrder: 'asc' } }],
+    const [data, total, summaryGroups] = await Promise.all([
+      this.prisma.appointment.findMany({
+        where,
+        orderBy: [
+          { academicYear: { code: 'desc' } },
+          { position: { sortOrder: 'asc' } },
+          { effectiveFrom: 'desc' },
+          { id: 'asc' },
+        ],
+        skip,
+        take: query.limit,
+        select: {
+          id: true,
+          kind: true,
+          status: true,
+          effectiveFrom: true,
+          effectiveUntil: true,
+          reason: true,
+          approvedAt: true,
+          activatedAt: true,
+          suspendedAt: true,
+          suspensionUntil: true,
+          suspensionReason: true,
+          endedAt: true,
+          replacesAppointmentId: true,
+          requestedByUserId: true,
+          createdAt: true,
+          staff: {
+            select: {
+              id: true,
+              niy: true,
+              employmentStatus: true,
+              user: { select: { id: true, fullName: true, role: true } },
+            },
+          },
+          position: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              category: true,
+              scopeType: true,
+              maxActiveHolders: true,
+            },
+          },
+          academicYear: { select: { id: true, code: true, isActive: true, startDate: true, endDate: true } },
+          major: { select: { id: true, code: true, name: true } },
+        },
+      }),
+      this.prisma.appointment.count({ where }),
+      this.prisma.appointment.groupBy({
+        by: ['status'],
+        where: summaryWhere,
+        _count: { _all: true },
+      }),
+    ]);
+
+    const occupancy = await this.buildOccupancySnapshot(
+      data.map((item) => ({
+        positionId: item.position.id,
+        academicYearId: item.academicYear.id,
+        majorId: item.major?.id ?? null,
+      })),
+    );
+
+    return {
+      data: await Promise.all(data.map(async (item) => {
+        const scopeKey = this.occupancyKey(item.position.id, item.academicYear.id, item.major?.id ?? null);
+        return {
+          ...item,
+          staff: {
+            id: item.staff.id,
+            niy: item.staff.niy,
+            employmentStatus: item.staff.employmentStatus,
+            user: {
+              id: item.staff.user.id,
+              fullName: item.staff.user.fullName,
+              role: item.staff.user.role,
+            },
+          },
+          isEffectiveNow: this.isEffectiveAppointment(item, this.today()),
+          occupancy: occupancy.get(scopeKey) ?? {
+            activeCount: 0,
+            preparedCount: 0,
+            capacity: item.position.maxActiveHolders,
+          },
+          allowedActions: this.resolveAllowedActions(item, actorContext),
+        };
+      })),
+      total,
+      page: query.page,
+      limit: query.limit,
+      summary: this.toRegistrySummary(summaryGroups),
+    };
+  }
+
+  async getDetail(id: string, actor: AuthUser) {
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id },
       select: {
         id: true,
         kind: true,
@@ -81,18 +223,200 @@ export class AppointmentsService {
         suspensionUntil: true,
         suspensionReason: true,
         endedAt: true,
+        supersededById: true,
+        replacesAppointmentId: true,
+        requestedByUserId: true,
+        createdAt: true,
+        updatedAt: true,
         staff: {
           select: {
             id: true,
             niy: true,
-            user: { select: { id: true, fullName: true, email: true, role: true } },
+            employmentStatus: true,
+            user: { select: { id: true, fullName: true, role: true } },
           },
         },
-        position: { select: { id: true, code: true, name: true, scopeType: true } },
-        academicYear: { select: { id: true, code: true, isActive: true } },
+        position: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            category: true,
+            scopeType: true,
+            maxActiveHolders: true,
+            permissions: { select: { permissionId: true } },
+          },
+        },
+        academicYear: { select: { id: true, code: true, isActive: true, startDate: true, endDate: true } },
         major: { select: { id: true, code: true, name: true } },
+        approvals: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            decision: true,
+            note: true,
+            createdAt: true,
+            approverUserId: true,
+          },
+        },
       },
     });
+    if (!appointment) throw new NotFoundException('Appointment tidak ditemukan.');
+
+    const actorContext = await this.getActorContext(actor);
+    const userIds = Array.from(new Set([
+      appointment.requestedByUserId,
+      ...appointment.approvals.map((approval) => approval.approverUserId),
+    ].filter((value): value is string => Boolean(value))));
+    const users = userIds.length > 0
+      ? await this.prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, fullName: true },
+        })
+      : [];
+    const userNameById = new Map(users.map((user) => [user.id, user.fullName]));
+    const permissionIds = appointment.position.permissions.map((permission) => permission.permissionId);
+    const permissions = permissionIds.length > 0
+      ? await this.prisma.permission.findMany({
+          where: { id: { in: permissionIds } },
+          orderBy: [{ module: 'asc' }, { code: 'asc' }],
+          select: { code: true, description: true, module: true },
+        })
+      : [];
+
+    const occupancy = await this.getOccupancyForScope(
+      appointment.position.id,
+      appointment.academicYear.id,
+      appointment.major?.id ?? null,
+      appointment.position.maxActiveHolders,
+    );
+
+    return {
+      ...appointment,
+      requestedBy: appointment.requestedByUserId
+        ? { id: appointment.requestedByUserId, fullName: userNameById.get(appointment.requestedByUserId) ?? null }
+        : null,
+      approvals: appointment.approvals.map((approval) => ({
+        decision: approval.decision,
+        note: approval.note,
+        createdAt: approval.createdAt,
+        actorName: userNameById.get(approval.approverUserId) ?? null,
+      })),
+      permissions,
+      occupancy,
+      isEffectiveNow: this.isEffectiveAppointment(appointment, this.today()),
+      allowedActions: this.resolveAllowedActions(appointment, actorContext),
+    };
+  }
+
+  async listEligibleCandidates(query: AppointmentCandidateQueryDto) {
+    const where: Prisma.StaffWhereInput = {
+      deletedAt: null,
+      user: {
+        deletedAt: null,
+        isActive: true,
+        role: query.role ?? { in: Array.from(ELIGIBLE_APPOINTMENT_ROLES) as UserRole[] },
+      },
+    };
+    if (query.search) {
+      where.OR = [
+        { niy: { contains: query.search, mode: 'insensitive' } },
+        { user: { fullName: { contains: query.search, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.staff.findMany({
+        where,
+        orderBy: [{ user: { fullName: 'asc' } }, { id: 'asc' }],
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        select: {
+          id: true,
+          niy: true,
+          employmentStatus: true,
+          user: { select: { id: true, fullName: true, role: true, isActive: true } },
+        },
+      }),
+      this.prisma.staff.count({ where }),
+    ]);
+
+    return {
+      data: data.map((staff) => ({
+        staffId: staff.id,
+        userId: staff.user.id,
+        fullName: staff.user.fullName,
+        niy: staff.niy,
+        stableRole: staff.user.role,
+        employmentStatus: staff.employmentStatus,
+        eligible: staff.user.isActive && ELIGIBLE_APPOINTMENT_ROLES.has(staff.user.role),
+      })),
+      total,
+      page: query.page,
+      limit: query.limit,
+    };
+  }
+
+  async getPositionPreview(positionId: string, query: AppointmentPermissionPreviewQueryDto) {
+    const position = await this.prisma.position.findUnique({
+      where: { id: positionId },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        category: true,
+        scopeType: true,
+        maxActiveHolders: true,
+        permissions: { select: { permissionId: true } },
+      },
+    });
+    if (!position) throw new NotFoundException('Jabatan tidak ditemukan.');
+    await this.assertPreviewScope(position, query);
+
+    const permissionIds = position.permissions.map((permission) => permission.permissionId);
+    const permissions = permissionIds.length > 0
+      ? await this.prisma.permission.findMany({
+          where: { id: { in: permissionIds } },
+          orderBy: [{ module: 'asc' }, { code: 'asc' }],
+          select: { code: true, description: true, module: true },
+        })
+      : [];
+    const occupancy = query.academicYearId
+      ? await this.getOccupancyForScope(
+          position.id,
+          query.academicYearId,
+          query.majorId ?? null,
+          position.maxActiveHolders,
+        )
+      : null;
+
+    return {
+      position: {
+        id: position.id,
+        code: position.code,
+        name: position.name,
+        category: position.category,
+        scopeType: position.scopeType,
+        maxActiveHolders: position.maxActiveHolders,
+      },
+      permissions,
+      occupancy,
+      effectiveOnlyWhenActive: true,
+    };
+  }
+
+  async getPositionCapabilities(actor: AuthUser) {
+    const actorContext = await this.getActorContext(actor);
+    const positions = await this.prisma.position.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' },
+      select: { id: true, code: true, name: true },
+    });
+    return positions.map((position) => ({
+      positionId: position.id,
+      code: position.code,
+      name: position.name,
+      canPrepare: this.canPreparePosition(actorContext, position.code),
+    }));
   }
 
   async createDraft(dto: CreateAppointmentDto, actor: AuthUser) {
@@ -130,6 +454,7 @@ export class AppointmentsService {
     if (appointment.status !== 'DRAFT') {
       throw new ConflictException('Hanya appointment DRAFT yang dapat diajukan.');
     }
+    await this.assertPltReplacementCanOperate(this.prisma, appointment);
     await this.assertSubmitDoesNotDuplicateOpenCandidate(appointment);
 
     return this.updateStatus(id, appointment.staff.user.keycloakId, {
@@ -144,6 +469,7 @@ export class AppointmentsService {
     if (appointment.status !== 'PENDING_APPROVAL') {
       throw new ConflictException('Hanya appointment PENDING_APPROVAL yang dapat disetujui.');
     }
+    await this.assertPltReplacementCanOperate(this.prisma, appointment);
 
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.appointmentApproval.create({
@@ -295,9 +621,15 @@ export class AppointmentsService {
     if (!successor.replacesAppointmentId) {
       throw new BadRequestException('Supersede memerlukan replacesAppointmentId.');
     }
+    if (successor.effectiveFrom > this.today()) {
+      throw new ConflictException('Appointment pengganti belum jatuh tempo. Aktivasi manual hanya boleh saat tanggal mulai sudah berlaku.');
+    }
+    if (successor.effectiveUntil && successor.effectiveUntil < this.today()) {
+      throw new ConflictException('Appointment pengganti sudah melewati tanggal akhir.');
+    }
 
     const replaced = await this.getTransitionTarget(successor.replacesAppointmentId);
-    this.assertSameScope(successor, replaced);
+    this.assertReplacementScope(successor, replaced);
 
     const now = new Date();
     const result = await this.prisma.$transaction(async (tx) => {
@@ -316,21 +648,25 @@ export class AppointmentsService {
         });
       }
 
-      if (!['ACTIVE', 'SUSPENDED'].includes(replaced.status)) {
-        throw new ConflictException('Appointment yang digantikan harus ACTIVE atau SUSPENDED.');
+      if (replaced.academicYearId === successor.academicYearId) {
+        if (!['ACTIVE', 'SUSPENDED'].includes(replaced.status)) {
+          throw new ConflictException('Appointment yang digantikan harus ACTIVE atau SUSPENDED.');
+        }
+        // Transaction order safety (Director Decision 2): UPDATE incumbent ke
+        // SUPERSEDED SEBELUM UPDATE successor ke ACTIVE. Jika urutan terbalik,
+        // partial unique index appointment_unique_*_live akan reject (P2002).
+        await tx.appointment.update({
+          where: { id: replaced.id },
+          data: {
+            status: 'SUPERSEDED',
+            supersededById: successor.id,
+            endedAt: now,
+            reason: dto.reason ?? replaced.reason,
+          },
+        });
+      } else if (!['ACTIVE', 'SUSPENDED', 'ENDED', 'SUPERSEDED'].includes(replaced.status)) {
+        throw new ConflictException('Appointment tahun sebelumnya belum berada pada status yang dapat digantikan.');
       }
-      // Transaction order safety (Director Decision 2): UPDATE incumbent ke
-      // SUPERSEDED SEBELUM UPDATE successor ke ACTIVE. Jika urutan terbalik,
-      // partial unique index appointment_unique_*_live akan reject (P2002).
-      await tx.appointment.update({
-        where: { id: replaced.id },
-        data: {
-          status: 'SUPERSEDED',
-          supersededById: successor.id,
-          endedAt: now,
-          reason: dto.reason ?? replaced.reason,
-        },
-      });
       return tx.appointment.update({
         where: { id },
         data: {
@@ -424,6 +760,7 @@ export class AppointmentsService {
       orderBy: [{ effectiveFrom: 'asc' }, { id: 'asc' }],
       select: {
         id: true,
+        kind: true,
         academicYearId: true,
         replacesAppointmentId: true,
         staff: { select: { user: { select: { keycloakId: true } } } },
@@ -483,6 +820,7 @@ export class AppointmentsService {
       where: {
         replacesAppointmentId: endedAppointmentId,
         status: 'APPROVED',
+        kind: 'DEFINITIVE',
         effectiveFrom: { lte: this.today() },
       },
       orderBy: [{ effectiveFrom: 'asc' }, { id: 'asc' }],
@@ -500,22 +838,39 @@ export class AppointmentsService {
     tx: AppointmentTx,
     appointment: {
       id: string;
+      kind: string;
       academicYearId: string;
       replacesAppointmentId: string | null;
     },
     now: Date,
   ): Promise<string | null> {
-    if (!appointment.replacesAppointmentId) return null;
+    if (!appointment.replacesAppointmentId) {
+      if (appointment.kind === 'PLT') {
+        throw new ConflictException('PLT memerlukan appointment definitif yang sedang ditangguhkan.');
+      }
+      return null;
+    }
     const replaced = await tx.appointment.findUnique({
       where: { id: appointment.replacesAppointmentId },
       select: {
         id: true,
         status: true,
+        kind: true,
         academicYearId: true,
         staff: { select: { user: { select: { keycloakId: true } } } },
       },
     });
-    if (!replaced || replaced.academicYearId !== appointment.academicYearId) return null;
+    if (!replaced) return null;
+    if (appointment.kind === 'PLT') {
+      if (replaced.academicYearId !== appointment.academicYearId) {
+        throw new ConflictException('PLT harus berada pada tahun ajaran yang sama dengan appointment definitif.');
+      }
+      if (replaced.kind !== 'DEFINITIVE' || replaced.status !== SUSPENDED_STATUS) {
+        throw new ConflictException('PLT hanya dapat aktif saat appointment definitif sedang SUSPENDED.');
+      }
+      return replaced.staff.user.keycloakId;
+    }
+    if (replaced.academicYearId !== appointment.academicYearId) return null;
     if (!['ACTIVE', 'SUSPENDED'].includes(replaced.status)) return null;
 
     await tx.appointment.update({
@@ -547,7 +902,7 @@ export class AppointmentsService {
   // Wave C: History endpoint
   // ════════════════════════════════════════════════════════════════════════════
 
-  /** Riwayat bisnis appointment dari appointment dan approval records. */
+  /** Riwayat bisnis appointment dari appointment, approval records, dan AuditLog aman. */
   async getHistory(id: string) {
     const appointment = await this.prisma.appointment.findUnique({
       where: { id },
@@ -556,13 +911,18 @@ export class AppointmentsService {
         status: true,
         effectiveFrom: true,
         effectiveUntil: true,
+        createdAt: true,
+        requestedByUserId: true,
         approvedAt: true,
         activatedAt: true,
         suspendedAt: true,
+        suspensionReason: true,
         endedAt: true,
         reason: true,
+        supersededById: true,
         position: { select: { code: true, name: true } },
         academicYear: { select: { code: true } },
+        staff: { select: { user: { select: { fullName: true } } } },
       },
     });
     if (!appointment) throw new NotFoundException('Appointment tidak ditemukan.');
@@ -574,16 +934,227 @@ export class AppointmentsService {
         decision: true,
         note: true,
         createdAt: true,
+        approverUserId: true,
       },
+    });
+
+    const auditLogs = await this.prisma.auditLog.findMany({
+      where: {
+        resourceType: 'appointment',
+        OR: [
+          { resourceId: id },
+          ...(appointment.supersededById
+            ? [{
+                action: 'appointment.supersede',
+                outcome: 'success',
+                resourceId: appointment.supersededById,
+              }]
+            : []),
+        ],
+      },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        createdAt: true,
+        action: true,
+        outcome: true,
+        actorId: true,
+        resourceId: true,
+      },
+    });
+
+    const actorUserIds = Array.from(new Set([
+      appointment.requestedByUserId,
+      ...approvals.map((approval) => approval.approverUserId),
+    ].filter((value): value is string => Boolean(value))));
+    const actorKeycloakIds = Array.from(new Set(
+      auditLogs.map((log) => log.actorId).filter((value): value is string => Boolean(value)),
+    ));
+    const actorUsers = actorUserIds.length > 0 || actorKeycloakIds.length > 0
+      ? await this.prisma.user.findMany({
+          where: {
+            OR: [
+              ...(actorUserIds.length > 0 ? [{ id: { in: actorUserIds } }] : []),
+              ...(actorKeycloakIds.length > 0 ? [{ keycloakId: { in: actorKeycloakIds } }] : []),
+            ],
+          },
+          select: { id: true, keycloakId: true, fullName: true },
+        })
+      : [];
+    const nameByUserId = new Map(actorUsers.map((user) => [user.id, user.fullName]));
+    const nameByKeycloakId = new Map(actorUsers.map((user) => [user.keycloakId, user.fullName]));
+    const successfulAudits = auditLogs.filter((log) => log.outcome === 'success');
+    const auditActorName = (log: { actorId: string | null } | null) =>
+      log?.actorId ? nameByKeycloakId.get(log.actorId) ?? null : null;
+    const hasSuccessfulAudit = (action: string) =>
+      successfulAudits.some((log) => log.action === action);
+    const latestSuspendAudit = [...successfulAudits]
+      .reverse()
+      .find((log) => log.action === 'appointment.suspend') ?? null;
+    const ownActivationAudit = successfulAudits.find((log) =>
+      log.action === 'appointment.supersede' && log.resourceId === id,
+    ) ?? null;
+    const supersedingAudit = appointment.supersededById
+      ? successfulAudits.find((log) =>
+          log.action === 'appointment.supersede' && log.resourceId === appointment.supersededById,
+        ) ?? null
+      : null;
+    const auditEvent = (log: typeof successfulAudits[number]) => {
+      switch (log.action) {
+        case 'appointment.submit':
+          return {
+            action: 'SUBMITTED',
+            label: 'Diajukan',
+            occurredAt: log.createdAt,
+            actorName: auditActorName(log),
+            outcome: 'success' as const,
+            note: null,
+          };
+        case 'appointment.suspend':
+          return {
+            action: 'SUSPENDED',
+            label: 'Ditangguhkan',
+            occurredAt: log.createdAt,
+            actorName: auditActorName(log),
+            outcome: 'success' as const,
+            note: appointment.status === SUSPENDED_STATUS && latestSuspendAudit === log
+              ? appointment.suspensionReason
+              : null,
+          };
+        case 'appointment.resume':
+          return {
+            action: 'RESUMED',
+            label: 'Dilanjutkan',
+            occurredAt: log.createdAt,
+            actorName: auditActorName(log),
+            outcome: 'success' as const,
+            note: null,
+          };
+        case 'appointment.cancel':
+          return {
+            action: 'CANCELLED',
+            label: 'Dibatalkan',
+            occurredAt: log.createdAt,
+            actorName: auditActorName(log),
+            outcome: 'success' as const,
+            note: null,
+          };
+        case 'appointment.end':
+          return {
+            action: 'ENDED',
+            label: 'Diakhiri',
+            occurredAt: log.createdAt,
+            actorName: auditActorName(log),
+            outcome: 'success' as const,
+            note: appointment.status === 'ENDED' ? appointment.reason : null,
+          };
+        default:
+          return null;
+      }
+    };
+    const lifecycleAuditTimeline = successfulAudits
+      .map(auditEvent)
+      .filter((item): item is NonNullable<ReturnType<typeof auditEvent>> => item !== null);
+
+    const timeline = [
+      {
+        action: 'CREATED',
+        label: 'Draft dibuat',
+        occurredAt: appointment.createdAt,
+        actorName: appointment.requestedByUserId
+          ? nameByUserId.get(appointment.requestedByUserId) ?? null
+          : null,
+        outcome: 'success' as const,
+        note: null,
+      },
+      ...lifecycleAuditTimeline,
+      ...approvals.map((approval) => ({
+        action: approval.decision,
+        label: approval.decision === 'APPROVED' ? 'Disetujui' : 'Ditolak',
+        occurredAt: approval.createdAt,
+        actorName: nameByUserId.get(approval.approverUserId) ?? null,
+        outcome: 'success' as const,
+        note: approval.note,
+      })),
+      ...(appointment.activatedAt
+        ? [{
+            action: 'ACTIVATED',
+            label: 'Diaktifkan',
+            occurredAt: appointment.activatedAt,
+            actorName: auditActorName(ownActivationAudit) ?? 'Sistem',
+            outcome: 'success' as const,
+            note: null,
+          }]
+        : []),
+      ...(appointment.suspendedAt && !hasSuccessfulAudit('appointment.suspend')
+        ? [{
+            action: 'SUSPENDED',
+            label: 'Ditangguhkan',
+            occurredAt: appointment.suspendedAt,
+            actorName: null,
+            outcome: 'success' as const,
+            note: appointment.suspensionReason,
+          }]
+        : []),
+      ...(appointment.endedAt && appointment.status === 'CANCELLED' && !hasSuccessfulAudit('appointment.cancel')
+        ? [{
+            action: 'CANCELLED',
+            label: 'Dibatalkan',
+            occurredAt: appointment.endedAt,
+            actorName: null,
+            outcome: 'success' as const,
+            note: null,
+          }]
+        : []),
+      ...(appointment.endedAt && appointment.status === 'ENDED' && !hasSuccessfulAudit('appointment.end')
+        ? [{
+            action: 'ENDED',
+            label: 'Diakhiri',
+            occurredAt: appointment.endedAt,
+            actorName: null,
+            outcome: 'success' as const,
+            note: appointment.reason,
+          }]
+        : []),
+      ...(appointment.endedAt && appointment.status === 'SUPERSEDED'
+        ? [{
+            action: 'SUPERSEDED',
+            label: 'Digantikan',
+            occurredAt: appointment.endedAt,
+            actorName: auditActorName(supersedingAudit) ?? 'Sistem',
+            outcome: 'success' as const,
+            note: appointment.reason,
+          }]
+        : []),
+      ...auditLogs
+        .filter((log) => log.outcome === 'failure')
+        .map((log) => ({
+          action: log.action,
+          label: this.historyAuditLabel(log.action),
+          occurredAt: log.createdAt,
+          actorName: log.actorId ? nameByKeycloakId.get(log.actorId) ?? null : null,
+          outcome: 'failure' as const,
+          note: 'Aksi tidak berhasil. Lihat status terkini sebelum mencoba lagi.',
+        })),
+    ].sort((a, b) => {
+      const byTime = a.occurredAt.getTime() - b.occurredAt.getTime();
+      return byTime === 0 ? a.action.localeCompare(b.action) : byTime;
     });
 
     return {
       appointmentId: id,
-      appointment,
-      approvals: approvals.map((a) => ({
-        decision: a.decision,
-        note: a.note,
-        createdAt: a.createdAt,
+      appointment: {
+        id: appointment.id,
+        status: appointment.status,
+        staffName: appointment.staff.user.fullName,
+        position: appointment.position,
+        academicYear: appointment.academicYear,
+        effectiveFrom: appointment.effectiveFrom,
+        effectiveUntil: appointment.effectiveUntil,
+      },
+      timeline: timeline.map((item) => ({
+        ...item,
+        actorName: item.actorName ?? null,
+        note: item.note ?? null,
       })),
     };
   }
@@ -591,6 +1162,240 @@ export class AppointmentsService {
   // ════════════════════════════════════════════════════════════════════════════
   // Validation helpers
   // ════════════════════════════════════════════════════════════════════════════
+
+  private buildAppointmentWhere(query: Partial<AppointmentListQueryDto>): Prisma.AppointmentWhereInput {
+    const where: Prisma.AppointmentWhereInput = {};
+    if (query.academicYearId) where.academicYearId = query.academicYearId;
+    if (query.status) where.status = { in: query.status };
+    if (query.positionId) where.positionId = query.positionId;
+    if (query.majorId) where.majorId = query.majorId;
+    if (query.kind) where.kind = query.kind;
+    if (query.search) {
+      where.OR = [
+        { staff: { niy: { contains: query.search, mode: 'insensitive' } } },
+        { staff: { user: { fullName: { contains: query.search, mode: 'insensitive' } } } },
+        { position: { code: { contains: query.search, mode: 'insensitive' } } },
+        { position: { name: { contains: query.search, mode: 'insensitive' } } },
+      ];
+    }
+    return where;
+  }
+
+  private toRegistrySummary(
+    groups: Array<{ status: string; _count: { _all: number } }>,
+  ): AppointmentRegistrySummary {
+    const summary: AppointmentRegistrySummary = {
+      all: 0,
+      draft: 0,
+      pendingApproval: 0,
+      approved: 0,
+      active: 0,
+      suspended: 0,
+      terminal: 0,
+    };
+    for (const group of groups) {
+      const count = group._count._all;
+      summary.all += count;
+      if (group.status === 'DRAFT') summary.draft += count;
+      if (group.status === 'PENDING_APPROVAL') summary.pendingApproval += count;
+      if (group.status === 'APPROVED') summary.approved += count;
+      if (group.status === ACTIVE_CAPACITY_STATUS) summary.active += count;
+      if (group.status === SUSPENDED_STATUS) summary.suspended += count;
+      if ((TERMINAL_STATUSES as readonly string[]).includes(group.status)) summary.terminal += count;
+    }
+    return summary;
+  }
+
+  private async buildOccupancySnapshot(
+    scopes: Array<{ positionId: string; academicYearId: string; majorId: string | null }>,
+  ): Promise<Map<string, { activeCount: number; preparedCount: number; capacity: number }>> {
+    const uniqueScopes = Array.from(new Map(scopes.map((scope) => [
+      this.occupancyKey(scope.positionId, scope.academicYearId, scope.majorId),
+      scope,
+    ])).values());
+    const map = new Map<string, { activeCount: number; preparedCount: number; capacity: number }>();
+    if (uniqueScopes.length === 0) return map;
+
+    const rows = await this.prisma.appointment.findMany({
+      where: {
+        OR: uniqueScopes.map((scope) => ({
+          positionId: scope.positionId,
+          academicYearId: scope.academicYearId,
+          majorId: scope.majorId,
+        })),
+        status: { in: ['PENDING_APPROVAL', 'APPROVED', ACTIVE_CAPACITY_STATUS] },
+      },
+      select: {
+        positionId: true,
+        academicYearId: true,
+        majorId: true,
+        status: true,
+        position: { select: { maxActiveHolders: true } },
+      },
+    });
+
+    for (const row of rows) {
+      const key = this.occupancyKey(row.positionId, row.academicYearId, row.majorId);
+      const current = map.get(key) ?? {
+        activeCount: 0,
+        preparedCount: 0,
+        capacity: row.position.maxActiveHolders,
+      };
+      if (row.status === ACTIVE_CAPACITY_STATUS) current.activeCount += 1;
+      if ((PREPARED_STATUSES as readonly string[]).includes(row.status)) current.preparedCount += 1;
+      current.capacity = row.position.maxActiveHolders;
+      map.set(key, current);
+    }
+    return map;
+  }
+
+  private async getOccupancyForScope(
+    positionId: string,
+    academicYearId: string,
+    majorId: string | null,
+    capacity: number,
+  ) {
+    const [activeCount, preparedCount] = await Promise.all([
+      this.prisma.appointment.count({
+        where: { positionId, academicYearId, majorId, status: ACTIVE_CAPACITY_STATUS },
+      }),
+      this.prisma.appointment.count({
+        where: {
+          positionId,
+          academicYearId,
+          majorId,
+          status: { in: [...PREPARED_STATUSES] },
+        },
+      }),
+    ]);
+    return { activeCount, preparedCount, capacity };
+  }
+
+  private async assertPreviewScope(
+    position: { id: string; scopeType: string },
+    query: AppointmentPermissionPreviewQueryDto,
+  ): Promise<void> {
+    if (!query.academicYearId) {
+      if (query.majorId) throw new BadRequestException('Preview jurusan memerlukan tahun ajaran.');
+      return;
+    }
+
+    const academicYear = await this.prisma.academicYear.findUnique({
+      where: { id: query.academicYearId },
+      select: { id: true },
+    });
+    if (!academicYear) throw new BadRequestException('Tahun ajaran tidak ditemukan.');
+
+    if (position.scopeType === 'MAJOR' && !query.majorId) {
+      throw new BadRequestException('Jabatan ini memerlukan jurusan untuk preview occupancy.');
+    }
+    if (position.scopeType !== 'MAJOR' && query.majorId) {
+      throw new BadRequestException('Jabatan ini tidak menggunakan jurusan.');
+    }
+    if (query.majorId) {
+      const major = await this.prisma.major.findUnique({
+        where: { id: query.majorId },
+        select: { id: true, isActive: true },
+      });
+      if (!major || !major.isActive) throw new BadRequestException('Jurusan tidak ditemukan atau tidak aktif.');
+    }
+  }
+
+  private occupancyKey(positionId: string, academicYearId: string, majorId: string | null): string {
+    return `${positionId}:${academicYearId}:${majorId ?? 'school'}`;
+  }
+
+  private async getActorContext(actor: AuthUser): Promise<AppointmentActorContext> {
+    const isSuperAdmin = actor.roles.includes('SUPER_ADMIN');
+    if (isSuperAdmin) return { isSuperAdmin: true, isActiveKepalaSekolah: false };
+    const isActiveKepalaSekolah =
+      actor.roles.includes('KEPALA_SEKOLAH' as UserRole) ||
+      (await this.actorHasActiveKepalaSekolah(actor));
+    return { isSuperAdmin: false, isActiveKepalaSekolah };
+  }
+
+  private canPreparePosition(
+    actorContext: AppointmentActorContext,
+    targetPositionCode: string,
+  ): boolean {
+    if (actorContext.isSuperAdmin) return true;
+    if (targetPositionCode === 'KEPALA_SEKOLAH') return false;
+    return actorContext.isActiveKepalaSekolah;
+  }
+
+  private canApprovePosition(
+    actorContext: AppointmentActorContext,
+    targetPositionCode: string,
+  ): boolean {
+    return this.canPreparePosition(actorContext, targetPositionCode);
+  }
+
+  private resolveAllowedActions(
+    appointment: AppointmentPolicyShape,
+    actorContext: AppointmentActorContext,
+  ): AppointmentAllowedAction[] {
+    const actions = new Set<AppointmentAllowedAction>(['VIEW_HISTORY']);
+    const canPrepare = this.canPreparePosition(actorContext, appointment.position.code);
+    const canApprove = this.canApprovePosition(actorContext, appointment.position.code);
+    const today = this.today();
+    const due = appointment.effectiveFrom <= today &&
+      (!appointment.effectiveUntil || appointment.effectiveUntil >= today);
+
+    if (appointment.status === 'DRAFT' && canPrepare) {
+      actions.add('SUBMIT');
+      actions.add('CANCEL');
+    }
+    if (appointment.status === 'PENDING_APPROVAL') {
+      if (canApprove) {
+        actions.add('APPROVE');
+        actions.add('REJECT');
+      }
+      if (canPrepare) actions.add('CANCEL');
+    }
+    if (appointment.status === 'APPROVED') {
+      if (canPrepare) actions.add('CANCEL');
+      if (canApprove && due && appointment.replacesAppointmentId) actions.add('SUPERSEDE');
+    }
+    if (appointment.status === ACTIVE_CAPACITY_STATUS && canApprove) {
+      actions.add('END');
+      if (appointment.kind === 'DEFINITIVE') {
+        actions.add('SUSPEND');
+        actions.add('CREATE_SUCCESSOR');
+      }
+    }
+    if (appointment.status === SUSPENDED_STATUS && canApprove && appointment.kind === 'DEFINITIVE') {
+      actions.add('RESUME');
+      actions.add('END');
+      actions.add('CREATE_PLT');
+    }
+    return Array.from(actions);
+  }
+
+  private isEffectiveAppointment(
+    appointment: { status: string; effectiveFrom: Date; effectiveUntil: Date | null },
+    today: Date,
+  ): boolean {
+    return (
+      appointment.status === ACTIVE_CAPACITY_STATUS &&
+      appointment.effectiveFrom <= today &&
+      (!appointment.effectiveUntil || appointment.effectiveUntil >= today)
+    );
+  }
+
+  private historyAuditLabel(action: string): string {
+    const labels: Record<string, string> = {
+      'appointment.createDraft': 'Membuat draft',
+      'appointment.submit': 'Mengajukan appointment',
+      'appointment.approve': 'Menyetujui appointment',
+      'appointment.reject': 'Menolak appointment',
+      'appointment.cancel': 'Membatalkan appointment',
+      'appointment.suspend': 'Menangguhkan appointment',
+      'appointment.resume': 'Melanjutkan appointment',
+      'appointment.end': 'Mengakhiri appointment',
+      'appointment.supersede': 'Mengaktifkan pengganti',
+    };
+    return labels[action] ?? 'Aksi appointment';
+  }
 
   private async validateContext(dto: CreateAppointmentDto) {
     const [staff, position, academicYear] = await Promise.all([
@@ -616,7 +1421,7 @@ export class AppointmentsService {
       }),
       this.prisma.academicYear.findUnique({
         where: { id: dto.academicYearId },
-        select: { id: true, startDate: true, endDate: true },
+        select: { id: true, startDate: true, endDate: true, isActive: true },
       }),
     ]);
 
@@ -647,14 +1452,22 @@ export class AppointmentsService {
     if (dto.effectiveFrom < academicYear.startDate || dto.effectiveFrom > academicYear.endDate) {
       throw new BadRequestException('Tanggal mulai appointment harus berada dalam tahun ajaran.');
     }
+    if (!academicYear.isActive && academicYear.endDate < this.today()) {
+      throw new BadRequestException('Appointment manual hanya dapat dibuat untuk tahun ajaran aktif atau mendatang.');
+    }
     if (dto.effectiveUntil && dto.effectiveUntil < dto.effectiveFrom) {
       throw new BadRequestException('Tanggal akhir appointment tidak boleh lebih awal dari tanggal mulai.');
     }
     if (dto.effectiveUntil && dto.effectiveUntil > academicYear.endDate) {
       throw new BadRequestException('Tanggal akhir appointment tidak boleh melewati tahun ajaran.');
     }
-    if (dto.kind === 'PLT' && (!dto.effectiveUntil || !dto.reason)) {
-      throw new BadRequestException('PLT memerlukan alasan dan tanggal akhir.');
+    if (dto.kind === 'PLT') {
+      if (!dto.replacesAppointmentId) {
+        throw new BadRequestException('PLT memerlukan appointment definitif yang ditangguhkan.');
+      }
+      if (!dto.effectiveUntil || !dto.reason) {
+        throw new BadRequestException('PLT memerlukan alasan dan tanggal akhir.');
+      }
     }
 
     return { staff, position, academicYear };
@@ -696,6 +1509,7 @@ export class AppointmentsService {
         select: {
           id: true,
           status: true,
+          kind: true,
           staffId: true,
           academicYearId: true,
           positionId: true,
@@ -703,7 +1517,11 @@ export class AppointmentsService {
         },
       });
       if (!replaced) throw new BadRequestException('Appointment pengganti tidak ditemukan.');
-      if (!['ACTIVE', 'SUSPENDED'].includes(replaced.status)) {
+      if (dto.kind === 'PLT') {
+        if (replaced.kind !== 'DEFINITIVE' || replaced.status !== SUSPENDED_STATUS) {
+          throw new ConflictException('PLT hanya dapat disiapkan untuk appointment definitif yang sedang SUSPENDED.');
+        }
+      } else if (!['ACTIVE', 'SUSPENDED'].includes(replaced.status)) {
         throw new ConflictException('Appointment yang digantikan harus ACTIVE atau SUSPENDED.');
       }
       if (!this.sameScope(dto, replaced)) {
@@ -757,17 +1575,17 @@ export class AppointmentsService {
       appointment.academicYearId,
       appointment.majorId,
     );
-    const linkedActivePlt = await this.prisma.appointment.findFirst({
+    const linkedOpenPlt = await this.prisma.appointment.findFirst({
       where: {
         ...scopeWhere,
         replacesAppointmentId: appointment.id,
-        status: ACTIVE_CAPACITY_STATUS,
+        status: { in: [...OPEN_PLT_BLOCKING_STATUSES] },
         kind: 'PLT',
       },
       select: { id: true },
     });
-    if (linkedActivePlt) {
-      throw new ConflictException('Masih ada PLT aktif untuk appointment ini. Akhiri PLT sebelum pemangku definitif kembali.');
+    if (linkedOpenPlt) {
+      throw new ConflictException('Masih ada PLT terbuka untuk appointment ini. Batalkan atau akhiri PLT sebelum pemangku definitif kembali.');
     }
 
     const otherActiveCount = await this.prisma.appointment.count({
@@ -779,6 +1597,23 @@ export class AppointmentsService {
     });
     if (otherActiveCount + 1 > appointment.position.maxActiveHolders) {
       throw new ConflictException('Kapasitas jabatan penuh. Akhiri pemangku aktif lain sebelum appointment dilanjutkan kembali.');
+    }
+  }
+
+  private async assertPltReplacementCanOperate(
+    client: AppointmentLookupClient,
+    appointment: Pick<AppointmentTransitionTarget, 'kind' | 'replacesAppointmentId'>,
+  ): Promise<void> {
+    if (appointment.kind !== 'PLT') return;
+    if (!appointment.replacesAppointmentId) {
+      throw new ConflictException('PLT memerlukan appointment definitif yang sedang ditangguhkan.');
+    }
+    const replaced = await client.appointment.findUnique({
+      where: { id: appointment.replacesAppointmentId },
+      select: { id: true, kind: true, status: true },
+    });
+    if (!replaced || replaced.kind !== 'DEFINITIVE' || replaced.status !== SUSPENDED_STATUS) {
+      throw new ConflictException('PLT hanya dapat berjalan saat appointment definitif sedang SUSPENDED.');
     }
   }
 
@@ -810,16 +1645,18 @@ export class AppointmentsService {
     }
   }
 
-  private assertSameScope(
+  private assertReplacementScope(
     successor: AppointmentTransitionTarget,
     replaced: AppointmentTransitionTarget,
   ): void {
     const same =
       successor.position.id === replaced.position.id &&
-      successor.academicYearId === replaced.academicYearId &&
       (successor.majorId ?? null) === (replaced.majorId ?? null);
     if (!same) {
       throw new BadRequestException('Successor dan appointment yang digantikan harus berada pada scope yang sama.');
+    }
+    if (successor.kind === 'PLT' && successor.academicYearId !== replaced.academicYearId) {
+      throw new BadRequestException('PLT harus berada pada tahun ajaran yang sama dengan appointment definitif.');
     }
   }
 
@@ -887,22 +1724,22 @@ export class AppointmentsService {
   }
 
   private async assertCanPrepare(actor: AuthUser, targetPositionCode: string): Promise<void> {
-    if (actor.roles.includes('SUPER_ADMIN')) return;
+    const actorContext = await this.getActorContext(actor);
+    if (this.canPreparePosition(actorContext, targetPositionCode)) return;
     if (targetPositionCode === 'KEPALA_SEKOLAH') {
       throw new ForbiddenException('Hanya SUPER_ADMIN yang dapat menyiapkan appointment Kepala Sekolah.');
     }
 
-    if (await this.actorHasActiveKepalaSekolah(actor)) return;
     throw new ForbiddenException('Appointment hanya dapat disiapkan oleh SUPER_ADMIN atau Kepala Sekolah aktif.');
   }
 
   private async assertCanApprove(actor: AuthUser, targetPositionCode: string): Promise<void> {
-    if (actor.roles.includes('SUPER_ADMIN')) return;
+    const actorContext = await this.getActorContext(actor);
+    if (this.canApprovePosition(actorContext, targetPositionCode)) return;
     if (targetPositionCode === 'KEPALA_SEKOLAH') {
       throw new ForbiddenException('Hanya SUPER_ADMIN yang dapat menyetujui appointment Kepala Sekolah.');
     }
 
-    if (await this.actorHasActiveKepalaSekolah(actor)) return;
     throw new ForbiddenException('Appointment hanya dapat disetujui oleh SUPER_ADMIN atau Kepala Sekolah aktif.');
   }
 

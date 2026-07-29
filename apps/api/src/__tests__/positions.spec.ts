@@ -1,5 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ROLES_KEY } from '../auth/decorators/roles.decorator';
+import { PositionsController } from '../positions/positions.controller';
 import { PositionsService } from '../positions/positions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -51,6 +53,11 @@ async function build(
 }
 
 describe('PositionsService legacy mutation containment', () => {
+  it('catalog route is limited to SUPER_ADMIN or active Kepala Sekolah authority', () => {
+    expect(Reflect.getMetadata(ROLES_KEY, PositionsController.prototype.catalog))
+      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH']);
+  });
+
   it('assign fails closed and never creates effective position permission overrides', async () => {
     const prisma = mockPrisma();
     const { service, permissions, keycloak } = await build(prisma);
