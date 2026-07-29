@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AuthUser } from '@smk/auth';
+import { RppController } from '../rpp/rpp.controller';
 import { RppService } from '../rpp/rpp.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReviewRppSchema, CreateRppSchema } from '../rpp/dto/rpp.dto';
@@ -290,5 +291,16 @@ describe('RppService', () => {
       classId: 'class-z', semester: 1, submit: false,
     }, WAKA);
     expect(teachingAssignmentFindFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe('RppController appointment-aware reviewer metadata', () => {
+  it('GET reviewer paths request WAKA_KURIKULUM so RolesGuard can enrich from active Appointment', () => {
+    expect(Reflect.getMetadata('roles', RppController.prototype.findAll))
+      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU']);
+    expect(Reflect.getMetadata('roles', RppController.prototype.findOne))
+      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU']);
+    expect(Reflect.getMetadata('roles', RppController.prototype.review))
+      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM']);
   });
 });
