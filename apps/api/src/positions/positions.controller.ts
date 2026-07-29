@@ -18,6 +18,10 @@ import type { AssignPositionDto } from './dto/position.dto';
 export class PositionsController {
   constructor(private readonly positions: PositionsService) {}
 
+  // Appointment Governance Wave D: catalog is read-only support data for
+  // SUPER_ADMIN and active Kepala Sekolah page routing. Legacy mutations below
+  // remain fail-closed and SA-gated by service/controller policy.
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
   @Get()
   catalog() {
     return this.positions.getCatalog();
