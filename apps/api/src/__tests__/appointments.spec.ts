@@ -28,9 +28,9 @@ function date(value: string) {
 
 function buildPrismaMock() {
   const prisma = {
-    user: { findUnique: jest.fn() },
-    staff: { findUnique: jest.fn() },
-    position: { findUnique: jest.fn() },
+    user: { findMany: jest.fn(), findUnique: jest.fn() },
+    staff: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn(), findUnique: jest.fn() },
+    position: { findMany: jest.fn(), findUnique: jest.fn() },
     academicYear: { findFirst: jest.fn(), findUnique: jest.fn() },
     major: { findUnique: jest.fn() },
     appointment: {
@@ -39,9 +39,12 @@ function buildPrismaMock() {
       findFirst: jest.fn(),
       findMany: jest.fn(),
       findUnique: jest.fn(),
+      groupBy: jest.fn(),
       update: jest.fn(),
     },
     appointmentApproval: { create: jest.fn(), findMany: jest.fn() },
+    auditLog: { findMany: jest.fn() },
+    permission: { findMany: jest.fn() },
     $executeRaw: jest.fn(),
     $transaction: jest.fn(),
   };
@@ -176,6 +179,36 @@ describe('AppointmentsService appointment authority', () => {
 
     await expect(service.createDraft(baseDto({ kind: 'PLT' }), superAdminActor))
       .rejects.toThrow(BadRequestException);
+    expect(prisma.appointment.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects PLT preparation against an ACTIVE definitive holder', async () => {
+    const prisma = buildPrismaMock();
+    primeValidContext(prisma);
+    prisma.appointment.count.mockResolvedValueOnce(1);
+    prisma.appointment.findFirst.mockResolvedValueOnce({ id: 'incumbent', status: 'ACTIVE' });
+    prisma.appointment.findUnique.mockResolvedValueOnce({
+      id: 'incumbent',
+      status: 'ACTIVE',
+      kind: 'DEFINITIVE',
+      staffId: 'old-staff',
+      academicYearId: '33333333-3333-3333-3333-333333333333',
+      positionId: '22222222-2222-2222-2222-222222222222',
+      majorId: null,
+    });
+    const { service } = await buildService(prisma);
+
+    await expect(
+      service.createDraft(
+        baseDto({
+          kind: 'PLT',
+          effectiveUntil: date('2026-08-31'),
+          reason: 'Cuti sementara',
+          replacesAppointmentId: 'incumbent',
+        }),
+        superAdminActor,
+      ),
+    ).rejects.toThrow(ConflictException);
     expect(prisma.appointment.create).not.toHaveBeenCalled();
   });
 
@@ -323,6 +356,24 @@ describe('AppointmentsService appointment authority', () => {
     expect(prisma.appointmentApproval.create).not.toHaveBeenCalled();
   });
 
+  it('active KEPALA_SEKOLAH capability hides KEPALA_SEKOLAH creation but allows subordinate positions', async () => {
+    const prisma = buildPrismaMock();
+    prisma.position.findMany.mockResolvedValue([
+      { id: 'pos-ks', code: 'KEPALA_SEKOLAH', name: 'Kepala Sekolah' },
+      { id: 'pos-waka', code: 'WAKA_KURIKULUM', name: 'Waka Kurikulum' },
+    ]);
+    const permissions = {
+      getActivePositionCodes: jest.fn().mockResolvedValue(new Set(['KEPALA_SEKOLAH'])),
+      invalidateUser: jest.fn(),
+    };
+    const { service } = await buildService(prisma, permissions);
+
+    await expect(service.getPositionCapabilities(ksActor)).resolves.toEqual([
+      { positionId: 'pos-ks', code: 'KEPALA_SEKOLAH', name: 'Kepala Sekolah', canPrepare: false },
+      { positionId: 'pos-waka', code: 'WAKA_KURIKULUM', name: 'Waka Kurikulum', canPrepare: true },
+    ]);
+  });
+
   it('submit translates database capacity race into ConflictException', async () => {
     const prisma = buildPrismaMock();
     prisma.appointment.findUnique.mockResolvedValue(
@@ -357,15 +408,24 @@ describe('AppointmentsService appointment authority', () => {
     expect(permissions.invalidateUser).toHaveBeenCalledWith('kc-target');
   });
 
-  it('resume blocks while a linked active PLT still replaces the suspended definitive holder', async () => {
+  it('resume blocks while any linked PLT is still open for the suspended definitive holder', async () => {
     const prisma = buildPrismaMock();
     prisma.appointment.findUnique.mockResolvedValue(
       transitionTarget({ id: 'definitive-1', status: 'SUSPENDED', kind: 'DEFINITIVE' }),
     );
-    prisma.appointment.findFirst.mockResolvedValue({ id: 'plt-active' });
+    prisma.appointment.findFirst.mockResolvedValue({ id: 'plt-approved' });
     const { service } = await buildService(prisma);
 
     await expect(service.resume('definitive-1', superAdminActor)).rejects.toThrow(ConflictException);
+    expect(prisma.appointment.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          replacesAppointmentId: 'definitive-1',
+          kind: 'PLT',
+          status: { in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'ACTIVE'] },
+        }),
+      }),
+    );
     expect(prisma.appointment.update).not.toHaveBeenCalled();
   });
 
@@ -422,6 +482,39 @@ describe('AppointmentsService appointment authority', () => {
     );
     expect(permissions.invalidateUser).toHaveBeenCalledWith('kc-target');
   });
+
+  it('activates cross-year reappointment without requiring the old-year incumbent in selected year', async () => {
+    const prisma = buildPrismaMock();
+    prisma.appointment.findUnique
+      .mockResolvedValueOnce(
+        transitionTarget({
+          id: 'successor-next-year',
+          status: 'APPROVED',
+          academicYearId: 'ay-2027',
+          replacesAppointmentId: 'old-year-incumbent',
+        }),
+      )
+      .mockResolvedValueOnce(
+        transitionTarget({
+          id: 'old-year-incumbent',
+          status: 'ENDED',
+          academicYearId: 'ay-2026',
+        }),
+      );
+    prisma.appointment.update.mockResolvedValueOnce({ id: 'successor-next-year', status: 'ACTIVE' });
+    const { service } = await buildService(prisma);
+
+    await expect(
+      service.supersede('successor-next-year', { reason: 'Perpanjangan tahun baru' }, superAdminActor),
+    ).resolves.toMatchObject({ status: 'ACTIVE' });
+    expect(prisma.appointment.update).toHaveBeenCalledTimes(1);
+    expect(prisma.appointment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'successor-next-year' },
+        data: expect.objectContaining({ status: 'ACTIVE' }),
+      }),
+    );
+  });
 });
 
 describe('AppointmentsService cutover and history', () => {
@@ -476,6 +569,36 @@ describe('AppointmentsService cutover and history', () => {
         data: expect.objectContaining({ status: 'ACTIVE' }),
       }),
     );
+  });
+
+  it('due activation rejects PLT while the replaced definitive holder is still ACTIVE', async () => {
+    const prisma = buildPrismaMock();
+    prisma.appointment.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'plt-approved',
+          kind: 'PLT',
+          academicYearId: 'ay-2026',
+          replacesAppointmentId: 'definitive-active',
+          staff: { user: { keycloakId: 'kc-plt' } },
+        },
+      ]);
+    prisma.appointment.findUnique.mockResolvedValue({
+      id: 'definitive-active',
+      status: 'ACTIVE',
+      kind: 'DEFINITIVE',
+      academicYearId: 'ay-2026',
+      staff: { user: { keycloakId: 'kc-definitive' } },
+    });
+    const { service } = await buildService(prisma);
+
+    await expect(
+      service.applyAcademicYearActivation(prisma as unknown as Prisma.TransactionClient, {
+        yearId: 'ay-2026',
+        oldYearId: null,
+      }),
+    ).rejects.toThrow(ConflictException);
+    expect(prisma.appointment.update).not.toHaveBeenCalled();
   });
 
   it('automation guard fails closed and accepts only the configured internal token', () => {
@@ -548,16 +671,25 @@ describe('AppointmentsService cutover and history', () => {
       status: 'APPROVED',
       effectiveFrom: date('2026-07-01'),
       effectiveUntil: null,
+      createdAt: date('2026-07-01'),
+      requestedByUserId: 'auth-requester',
       approvedAt: new Date(),
       activatedAt: null,
       suspendedAt: null,
+      suspensionReason: null,
       endedAt: null,
       reason: null,
       position: { code: 'WAKA_KURIKULUM', name: 'Waka Kurikulum' },
       academicYear: { code: '2026/2027' },
+      staff: { user: { fullName: 'Guru Waka' } },
     });
     prisma.appointmentApproval.findMany.mockResolvedValue([
-      { decision: 'APPROVED', note: null, createdAt: new Date() },
+      { decision: 'APPROVED', note: null, createdAt: new Date(), approverUserId: 'auth-approver' },
+    ]);
+    prisma.auditLog.findMany.mockResolvedValue([]);
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'auth-requester', keycloakId: 'kc-requester', fullName: 'Requester' },
+      { id: 'auth-approver', keycloakId: 'kc-approver', fullName: 'Approver' },
     ]);
     const { service } = await buildService(prisma);
 
@@ -565,7 +697,537 @@ describe('AppointmentsService cutover and history', () => {
 
     expect(result.appointmentId).toBe('appt-1');
     expect(result).not.toHaveProperty('outboxEvents');
-    expect(result.approvals[0]).not.toHaveProperty('approverUserId');
+    expect(result.timeline[1]).toMatchObject({ action: 'APPROVED', label: 'Disetujui' });
+    expect(result.timeline[1]).not.toHaveProperty('approverUserId');
+  });
+
+  it('history does not duplicate rejection terminal events', async () => {
+    const prisma = buildPrismaMock();
+    prisma.appointment.findUnique.mockResolvedValue({
+      id: 'appt-rejected',
+      status: 'REJECTED',
+      effectiveFrom: date('2026-07-01'),
+      effectiveUntil: null,
+      createdAt: date('2026-07-01'),
+      requestedByUserId: 'auth-requester',
+      approvedAt: null,
+      activatedAt: null,
+      suspendedAt: null,
+      suspensionReason: null,
+      endedAt: date('2026-07-03'),
+      reason: 'Alasan draft awal',
+      position: { code: 'WAKA_KURIKULUM', name: 'Waka Kurikulum' },
+      academicYear: { code: '2026/2027' },
+      staff: { user: { fullName: 'Guru Waka' } },
+    });
+    prisma.appointmentApproval.findMany.mockResolvedValue([
+      { decision: 'REJECTED', note: 'Belum lengkap', createdAt: date('2026-07-03'), approverUserId: 'auth-approver' },
+    ]);
+    prisma.auditLog.findMany.mockResolvedValue([
+      { action: 'appointment.reject', outcome: 'success', createdAt: date('2026-07-03'), actorId: 'kc-approver' },
+    ]);
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'auth-requester', keycloakId: 'kc-requester', fullName: 'Requester' },
+      { id: 'auth-approver', keycloakId: 'kc-approver', fullName: 'Approver' },
+    ]);
+    const { service } = await buildService(prisma);
+
+    const result = await service.getHistory('appt-rejected');
+
+    const rejectedEvents = result.timeline.filter((event) => event.action === 'REJECTED');
+    expect(rejectedEvents).toHaveLength(1);
+    expect(rejectedEvents[0]).toMatchObject({ note: 'Belum lengkap' });
+  });
+
+  it('history includes resume audit as a lifecycle event', async () => {
+    const prisma = buildPrismaMock();
+    prisma.appointment.findUnique.mockResolvedValue({
+      id: 'appt-resumed',
+      status: 'ACTIVE',
+      effectiveFrom: date('2026-07-01'),
+      effectiveUntil: null,
+      createdAt: date('2026-07-01'),
+      requestedByUserId: 'auth-requester',
+      approvedAt: date('2026-07-02'),
+      activatedAt: date('2026-07-03'),
+      suspendedAt: date('2026-07-10'),
+      suspensionReason: null,
+      endedAt: null,
+      reason: null,
+      position: { code: 'WAKA_KURIKULUM', name: 'Waka Kurikulum' },
+      academicYear: { code: '2026/2027' },
+      staff: { user: { fullName: 'Guru Waka' } },
+    });
+    prisma.appointmentApproval.findMany.mockResolvedValue([
+      { decision: 'APPROVED', note: null, createdAt: date('2026-07-02'), approverUserId: 'auth-approver' },
+    ]);
+    prisma.auditLog.findMany.mockResolvedValue([
+      { action: 'appointment.resume', outcome: 'success', createdAt: date('2026-07-20'), actorId: 'kc-approver' },
+    ]);
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'auth-requester', keycloakId: 'kc-requester', fullName: 'Requester' },
+      { id: 'auth-approver', keycloakId: 'kc-approver', fullName: 'Approver' },
+    ]);
+    const { service } = await buildService(prisma);
+
+    const result = await service.getHistory('appt-resumed');
+
+    expect(result.timeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ action: 'RESUMED', label: 'Dilanjutkan', actorName: 'Approver' }),
+      ]),
+    );
+  });
+
+  it('history keeps repeated suspend and resume audits paired with their own actors', async () => {
+    const prisma = buildPrismaMock();
+    prisma.appointment.findUnique.mockResolvedValue({
+      id: 'appt-cycled',
+      status: 'ACTIVE',
+      effectiveFrom: date('2026-07-01'),
+      effectiveUntil: null,
+      createdAt: date('2026-07-01'),
+      requestedByUserId: 'auth-requester',
+      approvedAt: date('2026-07-02'),
+      activatedAt: date('2026-07-03'),
+      suspendedAt: date('2026-07-20'),
+      suspensionReason: null,
+      endedAt: null,
+      reason: null,
+      position: { code: 'WAKA_KURIKULUM', name: 'Waka Kurikulum' },
+      academicYear: { code: '2026/2027' },
+      staff: { user: { fullName: 'Guru Waka' } },
+    });
+    prisma.appointmentApproval.findMany.mockResolvedValue([
+      { decision: 'APPROVED', note: null, createdAt: date('2026-07-02'), approverUserId: 'auth-approver' },
+    ]);
+    prisma.auditLog.findMany.mockResolvedValue([
+      { action: 'appointment.suspend', outcome: 'success', createdAt: date('2026-07-10'), actorId: 'kc-first-suspend' },
+      { action: 'appointment.resume', outcome: 'success', createdAt: date('2026-07-12'), actorId: 'kc-first-resume' },
+      { action: 'appointment.suspend', outcome: 'success', createdAt: date('2026-07-20'), actorId: 'kc-second-suspend' },
+      { action: 'appointment.resume', outcome: 'success', createdAt: date('2026-07-22'), actorId: 'kc-second-resume' },
+    ]);
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'auth-requester', keycloakId: 'kc-requester', fullName: 'Requester' },
+      { id: 'auth-approver', keycloakId: 'kc-approver', fullName: 'Approver' },
+      { id: 'user-first-suspend', keycloakId: 'kc-first-suspend', fullName: 'Suspend Pertama' },
+      { id: 'user-first-resume', keycloakId: 'kc-first-resume', fullName: 'Resume Pertama' },
+      { id: 'user-second-suspend', keycloakId: 'kc-second-suspend', fullName: 'Suspend Kedua' },
+      { id: 'user-second-resume', keycloakId: 'kc-second-resume', fullName: 'Resume Kedua' },
+    ]);
+    const { service } = await buildService(prisma);
+
+    const result = await service.getHistory('appt-cycled');
+
+    expect(result.timeline.filter((event) => event.action === 'SUSPENDED')).toEqual([
+      expect.objectContaining({ actorName: 'Suspend Pertama', occurredAt: date('2026-07-10') }),
+      expect.objectContaining({ actorName: 'Suspend Kedua', occurredAt: date('2026-07-20') }),
+    ]);
+    expect(result.timeline.filter((event) => event.action === 'RESUMED')).toEqual([
+      expect.objectContaining({ actorName: 'Resume Pertama', occurredAt: date('2026-07-12') }),
+      expect.objectContaining({ actorName: 'Resume Kedua', occurredAt: date('2026-07-22') }),
+    ]);
+  });
+
+  it('history attributes manual successor activation to the supersede actor', async () => {
+    const prisma = buildPrismaMock();
+    prisma.appointment.findUnique.mockResolvedValue({
+      id: 'appt-successor',
+      status: 'ACTIVE',
+      effectiveFrom: date('2026-07-01'),
+      effectiveUntil: null,
+      createdAt: date('2026-07-01'),
+      requestedByUserId: 'auth-requester',
+      approvedAt: date('2026-07-02'),
+      activatedAt: date('2026-07-15'),
+      suspendedAt: null,
+      suspensionReason: null,
+      endedAt: null,
+      reason: null,
+      position: { code: 'WAKA_KURIKULUM', name: 'Waka Kurikulum' },
+      academicYear: { code: '2026/2027' },
+      staff: { user: { fullName: 'Guru Waka' } },
+    });
+    prisma.appointmentApproval.findMany.mockResolvedValue([
+      { decision: 'APPROVED', note: null, createdAt: date('2026-07-02'), approverUserId: 'auth-approver' },
+    ]);
+    prisma.auditLog.findMany.mockResolvedValue([
+      {
+        action: 'appointment.supersede',
+        outcome: 'success',
+        createdAt: date('2026-07-15'),
+        actorId: 'kc-ks',
+        resourceId: 'appt-successor',
+      },
+    ]);
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'auth-requester', keycloakId: 'kc-requester', fullName: 'Requester' },
+      { id: 'auth-approver', keycloakId: 'kc-approver', fullName: 'Approver' },
+      { id: 'auth-ks', keycloakId: 'kc-ks', fullName: 'Kepala Sekolah' },
+    ]);
+    const { service } = await buildService(prisma);
+
+    const result = await service.getHistory('appt-successor');
+
+    expect(result.timeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: 'ACTIVATED',
+          label: 'Diaktifkan',
+          actorName: 'Kepala Sekolah',
+        }),
+      ]),
+    );
+  });
+
+  it('history shows failed appointment PATCH audits because resourceId is attached', async () => {
+    const prisma = buildPrismaMock();
+    prisma.appointment.findUnique.mockResolvedValue({
+      id: 'appt-failed',
+      status: 'SUSPENDED',
+      effectiveFrom: date('2026-07-01'),
+      effectiveUntil: null,
+      createdAt: date('2026-07-01'),
+      requestedByUserId: 'auth-requester',
+      approvedAt: date('2026-07-02'),
+      activatedAt: date('2026-07-03'),
+      suspendedAt: date('2026-07-10'),
+      suspensionReason: 'Cuti',
+      endedAt: null,
+      reason: null,
+      position: { code: 'WAKA_KURIKULUM', name: 'Waka Kurikulum' },
+      academicYear: { code: '2026/2027' },
+      staff: { user: { fullName: 'Guru Waka' } },
+    });
+    prisma.appointment.findMany.mockResolvedValue([]);
+    prisma.appointmentApproval.findMany.mockResolvedValue([]);
+    prisma.auditLog.findMany.mockResolvedValue([
+      {
+        action: 'appointment.resume',
+        outcome: 'failure',
+        createdAt: date('2026-07-15'),
+        actorId: 'kc-ks',
+        resourceId: 'appt-failed',
+      },
+    ]);
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'auth-requester', keycloakId: 'kc-requester', fullName: 'Requester' },
+      { id: 'auth-ks', keycloakId: 'kc-ks', fullName: 'Kepala Sekolah' },
+    ]);
+    const { service } = await buildService(prisma);
+
+    const result = await service.getHistory('appt-failed');
+
+    expect(result.timeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: 'appointment.resume',
+          outcome: 'failure',
+          actorName: 'Kepala Sekolah',
+        }),
+      ]),
+    );
+  });
+
+  it('history attributes incumbent superseded event to the successor supersede audit actor', async () => {
+    const prisma = buildPrismaMock();
+    prisma.appointment.findUnique.mockResolvedValue({
+      id: 'appt-incumbent',
+      status: 'SUPERSEDED',
+      effectiveFrom: date('2026-07-01'),
+      effectiveUntil: null,
+      createdAt: date('2026-07-01'),
+      requestedByUserId: 'auth-requester',
+      approvedAt: date('2026-07-02'),
+      activatedAt: date('2026-07-03'),
+      suspendedAt: null,
+      suspensionReason: null,
+      endedAt: date('2026-07-15'),
+      reason: 'Rotasi jabatan',
+      supersededById: 'appt-successor',
+      position: { code: 'WAKA_KURIKULUM', name: 'Waka Kurikulum' },
+      academicYear: { code: '2026/2027' },
+      staff: { user: { fullName: 'Guru Lama' } },
+    });
+    prisma.appointmentApproval.findMany.mockResolvedValue([]);
+    prisma.auditLog.findMany.mockResolvedValue([
+      {
+        action: 'appointment.supersede',
+        outcome: 'success',
+        createdAt: date('2026-07-03'),
+        actorId: 'kc-incumbent-activator',
+        resourceId: 'appt-incumbent',
+      },
+      {
+        action: 'appointment.supersede',
+        outcome: 'success',
+        createdAt: date('2026-07-10'),
+        actorId: 'kc-plt-activator',
+        resourceId: 'appt-plt',
+      },
+      {
+        action: 'appointment.supersede',
+        outcome: 'success',
+        createdAt: date('2026-07-15'),
+        actorId: 'kc-successor-activator',
+        resourceId: 'appt-successor',
+      },
+    ]);
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'auth-requester', keycloakId: 'kc-requester', fullName: 'Requester' },
+      { id: 'auth-x', keycloakId: 'kc-incumbent-activator', fullName: 'Aktivator Incumbent X' },
+      { id: 'auth-y', keycloakId: 'kc-plt-activator', fullName: 'Aktivator PLT Y' },
+      { id: 'auth-z', keycloakId: 'kc-successor-activator', fullName: 'Aktivator Successor Z' },
+    ]);
+    const { service } = await buildService(prisma);
+
+    const result = await service.getHistory('appt-incumbent');
+
+    expect(prisma.appointment.findMany).not.toHaveBeenCalled();
+    expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            { resourceId: 'appt-incumbent' },
+            expect.objectContaining({
+              action: 'appointment.supersede',
+              outcome: 'success',
+              resourceId: 'appt-successor',
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(result.timeline.find((event) => event.action === 'ACTIVATED')).toMatchObject({
+      actorName: 'Aktivator Incumbent X',
+    });
+    expect(result.timeline.find((event) => event.action === 'SUPERSEDED')).toMatchObject({
+      actorName: 'Aktivator Successor Z',
+    });
+    expect(result.timeline).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ actorName: 'Aktivator PLT Y' }),
+      ]),
+    );
+  });
+
+  it('history does not reuse terminal reason as the created event note', async () => {
+    const prisma = buildPrismaMock();
+    prisma.appointment.findUnique.mockResolvedValue({
+      id: 'appt-ended',
+      status: 'ENDED',
+      effectiveFrom: date('2026-07-01'),
+      effectiveUntil: date('2026-07-20'),
+      createdAt: date('2026-07-01'),
+      requestedByUserId: 'auth-requester',
+      approvedAt: date('2026-07-02'),
+      activatedAt: date('2026-07-03'),
+      suspendedAt: null,
+      suspensionReason: null,
+      endedAt: date('2026-07-20'),
+      reason: 'Selesai masa transisi',
+      position: { code: 'WAKA_KURIKULUM', name: 'Waka Kurikulum' },
+      academicYear: { code: '2026/2027' },
+      staff: { user: { fullName: 'Guru Waka' } },
+    });
+    prisma.appointment.findMany.mockResolvedValue([]);
+    prisma.appointmentApproval.findMany.mockResolvedValue([]);
+    prisma.auditLog.findMany.mockResolvedValue([]);
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'auth-requester', keycloakId: 'kc-requester', fullName: 'Requester' },
+    ]);
+    const { service } = await buildService(prisma);
+
+    const result = await service.getHistory('appt-ended');
+
+    expect(result.timeline.find((event) => event.action === 'CREATED')).toMatchObject({
+      note: null,
+    });
+    expect(result.timeline.find((event) => event.action === 'ENDED')).toMatchObject({
+      note: 'Selesai masa transisi',
+    });
+  });
+});
+
+describe('AppointmentsService Wave D read support', () => {
+  function registryRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'appt-reg-1',
+      kind: 'DEFINITIVE',
+      status: 'PENDING_APPROVAL',
+      effectiveFrom: date('2026-07-01'),
+      effectiveUntil: null,
+      reason: 'Rotasi',
+      approvedAt: null,
+      activatedAt: null,
+      suspendedAt: null,
+      suspensionUntil: null,
+      suspensionReason: null,
+      endedAt: null,
+      replacesAppointmentId: null,
+      requestedByUserId: 'auth-requester',
+      createdAt: date('2026-07-01'),
+      staff: {
+        id: 'staff-1',
+        niy: 'NIY-1',
+        employmentStatus: 'GTY',
+        user: { id: 'user-1', fullName: 'Guru Calon', role: 'GURU' },
+      },
+      position: {
+        id: 'pos-waka',
+        code: 'WAKA_KURIKULUM',
+        name: 'Waka Kurikulum',
+        category: 'STRUKTURAL',
+        scopeType: 'NONE',
+        maxActiveHolders: 1,
+      },
+      academicYear: {
+        id: 'ay-1',
+        code: '2026/2027',
+        isActive: true,
+        startDate: date('2026-07-01'),
+        endDate: date('2027-06-30'),
+      },
+      major: null,
+      ...overrides,
+    };
+  }
+
+  it('list returns paginated registry with summary, occupancy, and server allowed actions', async () => {
+    const prisma = buildPrismaMock();
+    prisma.appointment.findMany
+      .mockResolvedValueOnce([registryRow()])
+      .mockResolvedValueOnce([
+        {
+          positionId: 'pos-waka',
+          academicYearId: 'ay-1',
+          majorId: null,
+          status: 'PENDING_APPROVAL',
+          position: { maxActiveHolders: 1 },
+        },
+      ]);
+    prisma.appointment.count.mockResolvedValueOnce(1);
+    prisma.appointment.groupBy.mockResolvedValue([
+      { status: 'PENDING_APPROVAL', _count: { _all: 1 } },
+    ]);
+    const { service } = await buildService(prisma);
+
+    const result = await service.list({
+      academicYearId: '33333333-3333-3333-3333-333333333333',
+      status: ['PENDING_APPROVAL'],
+      search: 'waka',
+      page: 1,
+      limit: 20,
+    }, superAdminActor);
+
+    expect(result.total).toBe(1);
+    expect(result.summary.pendingApproval).toBe(1);
+    expect(result.data[0]!.allowedActions).toEqual(expect.arrayContaining(['APPROVE', 'REJECT']));
+    expect(result.data[0]!.occupancy).toMatchObject({ activeCount: 0, preparedCount: 1, capacity: 1 });
+    expect(prisma.appointment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 0, take: 20 }),
+    );
+  });
+
+  it('candidate search returns staffId and only eligible stable employee identities', async () => {
+    const prisma = buildPrismaMock();
+    prisma.staff.findMany.mockResolvedValue([
+      {
+        id: 'staff-1',
+        niy: 'NIY-1',
+        employmentStatus: 'GTY',
+        user: { id: 'user-1', fullName: 'Guru Calon', role: 'GURU', isActive: true },
+      },
+    ]);
+    prisma.staff.count.mockResolvedValue(1);
+    const { service } = await buildService(prisma);
+
+    const result = await service.listEligibleCandidates({ search: 'Guru', page: 1, limit: 20 });
+
+    expect(result.data[0]).toMatchObject({ staffId: 'staff-1', stableRole: 'GURU', eligible: true });
+    expect(prisma.staff.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          deletedAt: null,
+          user: expect.objectContaining({ isActive: true, deletedAt: null }),
+        }),
+      }),
+    );
+  });
+
+  it('position preview returns permission catalog and advisory occupancy', async () => {
+    const prisma = buildPrismaMock();
+    prisma.position.findUnique.mockResolvedValue({
+      id: 'pos-waka',
+      code: 'WAKA_KURIKULUM',
+      name: 'Waka Kurikulum',
+      category: 'STRUKTURAL',
+      scopeType: 'NONE',
+      maxActiveHolders: 1,
+      permissions: [{ permissionId: 'perm-1' }],
+    });
+    prisma.permission.findMany.mockResolvedValue([
+      { code: 'lms.read', description: 'Baca LMS', module: 'lms' },
+    ]);
+    prisma.academicYear.findUnique.mockResolvedValue({ id: 'ay-1' });
+    prisma.appointment.count.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const { service } = await buildService(prisma);
+
+    const result = await service.getPositionPreview('pos-waka', { academicYearId: 'ay-1' });
+
+    expect(result.permissions).toEqual([{ code: 'lms.read', description: 'Baca LMS', module: 'lms' }]);
+    expect(result.occupancy).toEqual({ activeCount: 1, preparedCount: 0, capacity: 1 });
+    expect(result.effectiveOnlyWhenActive).toBe(true);
+  });
+
+  it('position preview rejects invalid school and major scope combinations', async () => {
+    const prisma = buildPrismaMock();
+    prisma.academicYear.findUnique.mockResolvedValue({ id: 'ay-1' });
+    prisma.position.findUnique.mockResolvedValue({
+      id: 'pos-waka',
+      code: 'WAKA_KURIKULUM',
+      name: 'Waka Kurikulum',
+      category: 'STRUKTURAL',
+      scopeType: 'NONE',
+      maxActiveHolders: 1,
+      permissions: [],
+    });
+    const { service } = await buildService(prisma);
+
+    await expect(
+      service.getPositionPreview('pos-waka', { academicYearId: 'ay-1', majorId: 'major-1' }),
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.appointment.count).not.toHaveBeenCalled();
+
+    prisma.position.findUnique.mockResolvedValueOnce({
+      id: 'pos-kaprog',
+      code: 'KAPROG',
+      name: 'Kepala Program',
+      category: 'STRUKTURAL',
+      scopeType: 'MAJOR',
+      maxActiveHolders: 1,
+      permissions: [],
+    });
+
+    await expect(
+      service.getPositionPreview('pos-kaprog', { academicYearId: 'ay-1' }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('manual supersede rejects an approved successor before effectiveFrom is due', async () => {
+    const prisma = buildPrismaMock();
+    prisma.appointment.findUnique.mockResolvedValue(
+      transitionTarget({
+        id: 'future-successor',
+        status: 'APPROVED',
+        effectiveFrom: date('2999-01-01'),
+        replacesAppointmentId: 'old-active',
+      }),
+    );
+    const { service } = await buildService(prisma);
+
+    await expect(service.supersede('future-successor', {}, superAdminActor)).rejects.toThrow(ConflictException);
+    expect(prisma.appointment.update).not.toHaveBeenCalled();
   });
 });
 

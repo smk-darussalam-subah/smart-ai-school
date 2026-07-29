@@ -148,6 +148,22 @@ describe('RolesGuard', () => {
     expect(mockGetActivePositionCodes).toHaveBeenCalledWith('kc-user');
   });
 
+  it('@Roles("SUPER_ADMIN", "KEPALA_SEKOLAH") allows active Kepala Sekolah but rejects ordinary stable roles', async () => {
+    mockGetActivePositionCodes.mockResolvedValueOnce(new Set());
+    await expect(guard.canActivate(buildContext({
+      reflector,
+      requiredRoles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'],
+      userRoles: ['GURU'],
+    }))).rejects.toThrow(ForbiddenException);
+
+    mockGetActivePositionCodes.mockResolvedValueOnce(new Set(['KEPALA_SEKOLAH']));
+    await expect(guard.canActivate(buildContext({
+      reflector,
+      requiredRoles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'],
+      userRoles: ['GURU'],
+    }))).resolves.toBe(true);
+  });
+
   it('@Roles("WAKA_KURIKULUM") without active appointment rejects', async () => {
     mockGetActivePositionCodes.mockResolvedValue(new Set());
     const ctx = buildContext({
