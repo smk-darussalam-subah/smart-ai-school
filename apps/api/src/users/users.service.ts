@@ -1,9 +1,9 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserStatusService } from '../auth/user-status.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
-import { UserRole, PRIMARY_ROLES } from '@smk/auth';
+import { UserRole, PRIMARY_ROLES, isPrimaryRole, type PrimaryRole } from '@smk/auth';
 import { logger } from '@smk/logger';
 import {
   ListUsersQuery,
@@ -93,7 +93,7 @@ export class UsersService {
 
   // ── findGrouped ──────────────────────────────────────────────────────────────
 
-  private readonly ROLE_ORDER: readonly UserRole[] = PRIMARY_ROLES;
+  private readonly ROLE_ORDER: readonly PrimaryRole[] = PRIMARY_ROLES;
 
   private readonly ROLE_LABELS: Record<string, string> = {
     SUPER_ADMIN: 'Super Admin',
@@ -169,6 +169,12 @@ export class UsersService {
    * Lihat academic-lifecycle.md §14.1 untuk prinsip fail-soft DIIS.
    */
   async updateRole(id: string, role: UserRole, actor: string) {
+    if (!isPrimaryRole(role)) {
+      throw new BadRequestException(
+        `Role ${role} adalah jabatan period-bound. Kelola melalui appointment/Struktur Organisasi, bukan role identitas Keycloak.`,
+      );
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id },
       select: { id: true, keycloakId: true, fullName: true, role: true },
@@ -249,7 +255,9 @@ export class UsersService {
     let keycloakSyncPending = false;
     try {
       await this.kc.assignRealmRole(user.keycloakId, role);
-      await this.kc.removeRealmRole(user.keycloakId, oldRole);
+      if (isPrimaryRole(oldRole)) {
+        await this.kc.removeRealmRole(user.keycloakId, oldRole);
+      }
     } catch (kcErr) {
       logger.warn('[UsersService] KC role sync gagal (fail-soft — DB sudah benar)', {
         userId: id,

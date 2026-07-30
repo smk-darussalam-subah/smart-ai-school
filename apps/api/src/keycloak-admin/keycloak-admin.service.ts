@@ -9,11 +9,13 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { logger } from '@smk/logger';
+import { isPositionCode } from '@smk/auth';
 import {
   KcUserRepresentation,
   KcRoleRepresentation,
@@ -176,6 +178,15 @@ export class KeycloakAdminService {
     if (status === 400) {
       return new BadRequestException('Request tidak valid ke Keycloak Admin');
     }
+    // TF2-P0-KS-2: Tambah handler 403 eksplisit. Sebelumnya 403 jatuh ke
+    // fallback generic `ServiceUnavailableException(error 403)` yang
+    // menyesatkan diagnosis — admin mengira Keycloak tidak tersedia padahal
+    // masalahnya izin service account (lihat P0-KS-1 di audit).
+    if (status === 403) {
+      return new ForbiddenException(
+        'Keycloak menolak akses — periksa izin service account (butuh realm-admin atau manage-realm) atau hubungi admin',
+      );
+    }
     if (status === 404) {
       return new NotFoundException('Resource tidak ditemukan di Keycloak');
     }
@@ -191,6 +202,14 @@ export class KeycloakAdminService {
     return new ServiceUnavailableException(
       `Keycloak Admin API error ${status}`,
     );
+  }
+
+  private assertStableRealmRole(roleName: string): void {
+    if (isPositionCode(roleName)) {
+      throw new BadRequestException(
+        `Role jabatan "${roleName}" tidak boleh dikelola sebagai Keycloak realm role. Gunakan assignment jabatan DIIS dan resolver appointment/permission.`,
+      );
+    }
   }
 
   // ── User CRUD ───────────────────────────────────────────────────────────────
@@ -219,6 +238,7 @@ export class KeycloakAdminService {
   }
 
   async assignRealmRole(kcId: string, roleName: string): Promise<void> {
+    this.assertStableRealmRole(roleName);
     const role = await this.resolveRealmRole(roleName);
     await this.request(`${ADMIN_URL}/users/${kcId}/role-mappings/realm`, {
       method: 'POST',
@@ -229,6 +249,7 @@ export class KeycloakAdminService {
   }
 
   async removeRealmRole(kcId: string, roleName: string): Promise<void> {
+    this.assertStableRealmRole(roleName);
     const role = await this.resolveRealmRole(roleName);
     await this.request(`${ADMIN_URL}/users/${kcId}/role-mappings/realm`, {
       method: 'DELETE',
@@ -306,6 +327,7 @@ export class KeycloakAdminService {
    * @throws ConflictException jika role sudah ada (409).
    */
   async createRealmRole(name: string, description?: string): Promise<void> {
+    this.assertStableRealmRole(name);
     await this.request(`${ADMIN_URL}/roles`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -324,6 +346,7 @@ export class KeycloakAdminService {
     name: string,
     description?: string,
   ): Promise<'created' | 'existing'> {
+    this.assertStableRealmRole(name);
     const existing = await this.findRealmRole(name);
     if (existing) return 'existing';
 
@@ -342,7 +365,7 @@ export class KeycloakAdminService {
     const role = await this.findRealmRole(name);
     if (!role) {
       throw new NotFoundException(
-        `Role "${name}" tidak ditemukan di Keycloak. Jalankan POST /positions/sync-roles untuk seed role.`,
+        `Role "${name}" tidak ditemukan di Keycloak. Pastikan realm seed stable identity roles sudah diterapkan. Role jabatan tidak lagi dibuat melalui /positions/sync-roles.`,
       );
     }
 

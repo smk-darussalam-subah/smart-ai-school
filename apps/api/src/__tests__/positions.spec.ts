@@ -1,144 +1,225 @@
-// =============================================================================
-// positions.spec.ts — Unit tests PositionsService (2J-5)
-// =============================================================================
-
+import { ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { ROLES_KEY } from '../auth/decorators/roles.decorator';
+import { PositionsController } from '../positions/positions.controller';
 import { PositionsService } from '../positions/positions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 
 function mockPrisma() {
-  const prisma = {
-    position: { findUnique: jest.fn(), findMany: jest.fn() },
-    staff: { findUnique: jest.fn() },
+  return {
+    user: { findUnique: jest.fn() },
+    position: { findMany: jest.fn() },
     academicYear: { findFirst: jest.fn(), findUnique: jest.fn() },
-    staffPosition: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), delete: jest.fn() },
-    userPermissionOverride: { upsert: jest.fn(), deleteMany: jest.fn() },
+    appointment: {
+      findMany: jest.fn(),
+    },
+    staffPosition: {
+      create: jest.fn(),
+      delete: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+    },
+    userPermissionOverride: {
+      upsert: jest.fn(),
+      deleteMany: jest.fn(),
+    },
     permission: { findMany: jest.fn() },
-    $transaction: jest.fn(),
   };
-  prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(prisma));
-  return prisma;
 }
 
-async function build(prisma: ReturnType<typeof mockPrisma>, perms = { invalidateUser: jest.fn() }) {
+async function build(
+  prisma: ReturnType<typeof mockPrisma>,
+  permissions = {
+    invalidateUser: jest.fn(),
+    getEffectivePermissions: jest.fn().mockResolvedValue(new Set<string>()),
+  },
+  keycloak = {
+    assignRealmRole: jest.fn(),
+    removeRealmRole: jest.fn(),
+    getUserRealmRoles: jest.fn(),
+  },
+) {
   const mod: TestingModule = await Test.createTestingModule({
     providers: [
       PositionsService,
       { provide: PrismaService, useValue: prisma },
-      { provide: PermissionsService, useValue: perms },
-      { provide: KeycloakAdminService, useValue: { assignRealmRole: jest.fn(), removeRealmRole: jest.fn() } },
+      { provide: PermissionsService, useValue: permissions },
+      { provide: KeycloakAdminService, useValue: keycloak },
     ],
   }).compile();
-  return mod.get(PositionsService);
+  return { service: mod.get(PositionsService), permissions, keycloak };
 }
 
-const STAFF = { id: 'staff-1', user: { keycloakId: 'kc-1' } };
+describe('PositionsService legacy mutation containment', () => {
+  it('catalog route is limited to SUPER_ADMIN or active Kepala Sekolah authority', () => {
+    expect(Reflect.getMetadata(ROLES_KEY, PositionsController.prototype.catalog))
+      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH']);
+  });
 
-describe('PositionsService', () => {
-  describe('assign', () => {
-    it('jabatan NONE → buat staff_position + terapkan override izin + invalidate', async () => {
-      const prisma = mockPrisma();
-      const perms = { invalidateUser: jest.fn() };
-      prisma.staff.findUnique.mockResolvedValue(STAFF);
-      prisma.position.findUnique.mockResolvedValue({
-        id: 'pos-waka', code: 'WAKA_KURIKULUM', scopeType: 'NONE',
-        permissions: [{ permissionId: 'perm-a' }, { permissionId: 'perm-b' }],
-      });
-      prisma.staffPosition.create.mockResolvedValue({ id: 'sp-1' });
-      // R-27: SoD check — no other active positions
-      prisma.staffPosition.findMany.mockResolvedValue([]);
-      // R-26: cross-schema integrity check — semua permission exist di DB
-      prisma.permission.findMany.mockResolvedValue([{ id: 'perm-a' }, { id: 'perm-b' }]);
+  it('assign fails closed and never creates effective position permission overrides', async () => {
+    const prisma = mockPrisma();
+    const { service, permissions, keycloak } = await build(prisma);
 
-      const svc = await build(prisma, perms);
-      const res = await svc.assign({ userId: 'u-1', positionId: 'pos-waka', academicYearId: 'ay-1' });
+    await expect(
+      service.assign({
+        userId: 'user-1',
+        positionId: 'position-1',
+        academicYearId: 'ay-1',
+      }),
+    ).rejects.toThrow(ConflictException);
 
-      expect(res.id).toBe('sp-1');
-      expect(prisma.userPermissionOverride.upsert).toHaveBeenCalledTimes(2);
-      expect(prisma.userPermissionOverride.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ create: expect.objectContaining({ userId: 'u-1', permissionId: 'perm-a', grant: true }) }),
-      );
-      expect(perms.invalidateUser).toHaveBeenCalledWith('kc-1');
+    expect(prisma.staffPosition.create).not.toHaveBeenCalled();
+    expect(prisma.userPermissionOverride.upsert).not.toHaveBeenCalled();
+    expect(permissions.invalidateUser).not.toHaveBeenCalled();
+    expect(keycloak.assignRealmRole).not.toHaveBeenCalled();
+  });
+
+  it('unassign fails closed and never removes effective position permission overrides', async () => {
+    const prisma = mockPrisma();
+    const { service, permissions, keycloak } = await build(prisma);
+
+    await expect(service.unassign('staff-position-1')).rejects.toThrow(ConflictException);
+
+    expect(prisma.staffPosition.delete).not.toHaveBeenCalled();
+    expect(prisma.userPermissionOverride.deleteMany).not.toHaveBeenCalled();
+    expect(permissions.invalidateUser).not.toHaveBeenCalled();
+    expect(keycloak.removeRealmRole).not.toHaveBeenCalled();
+  });
+
+  it('syncKeycloakRoles remains a permanent no-op for position codes', async () => {
+    const prisma = mockPrisma();
+    const { service } = await build(prisma);
+
+    await expect(service.syncKeycloakRoles()).resolves.toMatchObject({
+      status: 'disabled',
+      operationRef: 'appointment-governance-permanent-skip',
     });
+  });
+});
 
-    it('jabatan MAJOR tanpa majorId → 400', async () => {
-      const prisma = mockPrisma();
-      prisma.staff.findUnique.mockResolvedValue(STAFF);
-      prisma.position.findUnique.mockResolvedValue({ id: 'pos-kaprog', scopeType: 'MAJOR', permissions: [] });
-      const svc = await build(prisma);
-      await expect(svc.assign({ userId: 'u-1', positionId: 'pos-kaprog', academicYearId: 'ay-1' }))
-        .rejects.toThrow(BadRequestException);
-      expect(prisma.staffPosition.create).not.toHaveBeenCalled();
-    });
+describe('PositionsService appointment projections', () => {
+  it('getAssignments reads Appointment lifecycle rows, not legacy StaffPosition rows', async () => {
+    const prisma = mockPrisma();
+    prisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-active', code: '2026/2027' });
+    prisma.appointment.findMany.mockResolvedValue([
+      {
+        id: 'appt-active',
+        positionId: 'pos-ks',
+        majorId: null,
+        kind: 'DEFINITIVE',
+        status: 'ACTIVE',
+        effectiveFrom: new Date('2026-07-01T00:00:00.000Z'),
+        effectiveUntil: null,
+        position: { code: 'KEPALA_SEKOLAH', name: 'Kepala Sekolah', category: 'STRUKTURAL' },
+        major: null,
+        staff: {
+          niy: 'NIY-1',
+          user: { id: 'user-ks', fullName: 'Kepala Aktif', email: 'ks@example.test' },
+        },
+      },
+    ]);
+    const { service } = await build(prisma);
 
-    it('jabatan NONE diberi majorId → 400', async () => {
-      const prisma = mockPrisma();
-      prisma.staff.findUnique.mockResolvedValue(STAFF);
-      prisma.position.findUnique.mockResolvedValue({ id: 'pos-waka', scopeType: 'NONE', permissions: [] });
-      const svc = await build(prisma);
-      await expect(svc.assign({ userId: 'u-1', positionId: 'pos-waka', academicYearId: 'ay-1', majorId: 'mj-1' }))
-        .rejects.toThrow(BadRequestException);
-    });
+    const result = await service.getAssignments();
 
-    it('user bukan pegawai → 400', async () => {
-      const prisma = mockPrisma();
-      prisma.staff.findUnique.mockResolvedValue(null);
-      const svc = await build(prisma);
-      await expect(svc.assign({ userId: 'u-x', positionId: 'pos-waka', academicYearId: 'ay-1' }))
-        .rejects.toThrow(BadRequestException);
-    });
-
-    it('penugasan duplikat (P2002) → 409', async () => {
-      const prisma = mockPrisma();
-      prisma.staff.findUnique.mockResolvedValue(STAFF);
-      prisma.position.findUnique.mockResolvedValue({ id: 'pos-waka', scopeType: 'NONE', permissions: [] });
-      prisma.staffPosition.findMany.mockResolvedValue([]);
-      prisma.staffPosition.create.mockRejectedValue(
-        new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: '5' }),
-      );
-      const svc = await build(prisma);
-      await expect(svc.assign({ userId: 'u-1', positionId: 'pos-waka', academicYearId: 'ay-1' }))
-        .rejects.toThrow(ConflictException);
+    expect(prisma.appointment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          academicYearId: 'ay-active',
+          status: { in: ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE', 'SUSPENDED'] },
+        },
+      }),
+    );
+    expect(prisma.staffPosition.findMany).not.toHaveBeenCalled();
+    expect(result.assignments).toHaveLength(1);
+    expect(result.assignments[0]!).toMatchObject({
+      id: 'appt-active',
+      status: 'ACTIVE',
+      isEffectiveNow: true,
     });
   });
 
-  describe('unassign', () => {
-    it('hapus penugasan + cabut override yg tak didukung jabatan lain', async () => {
-      const prisma = mockPrisma();
-      const perms = { invalidateUser: jest.fn() };
-      prisma.staffPosition.findUnique.mockResolvedValue({
-        id: 'sp-1', positionId: 'pos-waka',
-        position: { code: 'WAKA_KURIKULUM', permissions: [{ permissionId: 'perm-a' }, { permissionId: 'perm-b' }] },
-        staff: { userId: 'u-1', user: { keycloakId: 'kc-1' } },
-      });
-      prisma.staffPosition.delete.mockResolvedValue({});
-      // R-23: findFirst cek apakah ada penugasan aktif lain dg position code sama
-      // null = tidak ada → remove Keycloak role
-      prisma.staffPosition.findFirst.mockResolvedValue(null);
-      // penugasan tersisa masih memberi perm-b (tidak perm-a)
-      prisma.staffPosition.findMany.mockResolvedValue([
-        { position: { permissions: [{ permissionId: 'perm-b' }] } },
-      ]);
+  it('getMyPositions returns only active effective appointments for the sidebar', async () => {
+    const prisma = mockPrisma();
+    prisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-active', code: '2026/2027' });
+    prisma.appointment.findMany.mockResolvedValue([
+      {
+        id: 'appt-waka',
+        kind: 'DEFINITIVE',
+        status: 'ACTIVE',
+        effectiveFrom: new Date('2026-07-01T00:00:00.000Z'),
+        effectiveUntil: null,
+        position: { code: 'WAKA_KURIKULUM', name: 'Waka Kurikulum', category: 'STRUKTURAL' },
+        major: null,
+      },
+    ]);
+    const { service } = await build(prisma);
 
-      const svc = await build(prisma, perms);
-      await svc.unassign('sp-1');
+    const result = await service.getMyPositions('kc-user');
 
-      // hanya perm-a yang dicabut (perm-b masih didukung jabatan lain)
-      expect(prisma.userPermissionOverride.deleteMany).toHaveBeenCalledWith({
-        where: { userId: 'u-1', permissionId: { in: ['perm-a'] }, grant: true },
-      });
-      expect(perms.invalidateUser).toHaveBeenCalledWith('kc-1');
+    expect(prisma.appointment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          staff: { user: { keycloakId: 'kc-user' } },
+          academicYear: { isActive: true },
+          status: 'ACTIVE',
+        }),
+      }),
+    );
+    expect(result.positions[0]!.position.code).toBe('WAKA_KURIKULUM');
+  });
+
+  it('accessCheck reports active appointments and appointment permissions', async () => {
+    const prisma = mockPrisma();
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      keycloakId: 'kc-user',
+      fullName: 'Guru Appointment',
+      email: 'guru@example.test',
+      role: 'GURU',
     });
+    prisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-active', code: '2026/2027' });
+    prisma.appointment.findMany.mockResolvedValue([
+      {
+        id: 'appt-1',
+        kind: 'DEFINITIVE',
+        status: 'ACTIVE',
+        effectiveFrom: new Date('2026-07-01T00:00:00.000Z'),
+        effectiveUntil: null,
+        position: {
+          code: 'KEPALA_SEKOLAH',
+          name: 'Kepala Sekolah',
+          permissions: [{ permissionId: 'perm-1' }],
+        },
+        major: null,
+      },
+    ]);
+    prisma.permission.findMany.mockResolvedValue([{ code: 'school.manage' }]);
+    const permissions = {
+      invalidateUser: jest.fn(),
+      getEffectivePermissions: jest.fn().mockResolvedValue(new Set(['academic.read', 'school.manage'])),
+    };
+    const keycloak = {
+      assignRealmRole: jest.fn(),
+      removeRealmRole: jest.fn(),
+      getUserRealmRoles: jest.fn().mockResolvedValue(['GURU']),
+    };
+    const { service } = await build(prisma, permissions, keycloak);
 
-    it('penugasan tak ada → 404', async () => {
-      const prisma = mockPrisma();
-      prisma.staffPosition.findUnique.mockResolvedValue(null);
-      const svc = await build(prisma);
-      await expect(svc.unassign('nope')).rejects.toThrow(NotFoundException);
+    const result = await service.accessCheck('user-1');
+
+    expect(result).toMatchObject({
+      keycloakRoles: ['GURU'],
+      activeAppointments: [
+        expect.objectContaining({ id: 'appt-1', code: 'KEPALA_SEKOLAH', status: 'ACTIVE' }),
+      ],
+      appointmentPermissions: ['school.manage'],
+      effectivePermissions: ['academic.read', 'school.manage'],
     });
+    expect(result).not.toHaveProperty('activePositions');
+    expect(result).not.toHaveProperty('positionPermissions');
+    expect(prisma.staffPosition.findMany).not.toHaveBeenCalled();
   });
 });

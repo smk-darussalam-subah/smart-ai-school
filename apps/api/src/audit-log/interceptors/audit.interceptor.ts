@@ -154,6 +154,11 @@ export class AuditInterceptor implements NestInterceptor {
         error: (err: unknown) => {
           const action =
             auditOptions.action ?? this.deriveAction(resourceType, method);
+          const resourceId = this.extractResourceId(
+            method,
+            request,
+            null,
+          );
           const statusCode =
             err instanceof HttpException ? err.getStatus() : 500;
           const errorMsg = err instanceof Error ? err.message : String(err);
@@ -161,7 +166,7 @@ export class AuditInterceptor implements NestInterceptor {
           this.writeLog({
             ...baseData,
             action,
-            resourceId: null,
+            resourceId,
             statusCode,
             outcome: 'failure',
             metadata: { error: errorMsg } as Prisma.InputJsonValue,
