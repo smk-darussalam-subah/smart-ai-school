@@ -23,18 +23,35 @@ describe('AiGenerateService', () => {
   let service: AiGenerateService;
   const userFindUnique = jest.fn();
   const teacherFindUnique = jest.fn();
+  const rppFindFirst = jest.fn();
+  const teachingAssignmentFindFirst = jest.fn();
   const aiGenCreate = jest.fn();
   const chatMock = jest.fn();
 
   beforeEach(async () => {
-    [userFindUnique, teacherFindUnique, aiGenCreate, chatMock].forEach((m) => m.mockReset());
+    [userFindUnique, teacherFindUnique, rppFindFirst, teachingAssignmentFindFirst, aiGenCreate, chatMock].forEach((m) => m.mockReset());
     userFindUnique.mockResolvedValue({ id: 'user-1' });
     teacherFindUnique.mockResolvedValue({ id: 'teacher-1' });
+    rppFindFirst.mockResolvedValue({
+      id: '11111111-1111-4111-8111-111111111111',
+      teacherId: 'teacher-1',
+      classId: 'class-1',
+      subject: 'Matematika',
+      title: 'Fungsi Linear',
+      academicYear: '2026/2027',
+      semester: 1,
+      body: { cp: 'CP aman', tp: ['TP aman'] },
+      class: { id: 'class-1', name: 'X TKJ 1', grade: 10, majorCode: 'TKJ' },
+    });
+    teachingAssignmentFindFirst.mockResolvedValue({ id: 'ta-1' });
     aiGenCreate.mockResolvedValue({ id: 'gen-1' });
+    chatMock.mockResolvedValue('Draf kegiatan pembelajaran.');
 
     const prisma = {
       user: { findUnique: userFindUnique },
       teacher: { findUnique: teacherFindUnique },
+      rpp: { findFirst: rppFindFirst },
+      teachingAssignment: { findFirst: teachingAssignmentFindFirst },
       aiGeneration: { create: aiGenCreate },
     };
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -42,62 +59,45 @@ describe('AiGenerateService', () => {
         AiGenerateService,
         { provide: PrismaService, useValue: prisma },
         { provide: 'AI_GATEWAY', useValue: { chat: chatMock } },
-        { provide: 'OPENAI_GATEWAY', useValue: null }, // R-28: default off in tests
+        { provide: 'OPENAI_GATEWAY', useValue: null },
       ],
     }).compile();
     service = moduleRef.get(AiGenerateService);
   });
 
-  it('generateQuestions → calls AI and creates audit trail', async () => {
-    chatMock.mockResolvedValue('[{"body":"Q1","options":["A","B","C","D"],"answer":"A","difficulty":"medium"}]');
-    const res = await service.generateQuestions(
-      { rppBody: 'RPP content here', subject: 'Matematika', count: 1, type: 'multiple_choice' },
+  it('generateRppStep -> calls AI from saved RPP context and creates audit trail', async () => {
+    const res = await service.generateRppStep(
+      { rppId: '11111111-1111-4111-8111-111111111111', section: 'kegiatan' },
       GURU,
     );
-    expect(res.type).toBe('questions');
-    expect(Array.isArray(res.output)).toBe(true);
-    expect(chatMock).toHaveBeenCalled();
-    expect(aiGenCreate).toHaveBeenCalled();
+    expect(res.type).toBe('kegiatan');
+    expect(chatMock).toHaveBeenCalledTimes(1);
+    expect(aiGenCreate).toHaveBeenCalledTimes(1);
   });
 
-  it('generateMaterial → returns markdown text', async () => {
-    chatMock.mockResolvedValue('# Materi HTML\n\nIni adalah materi...');
-    const res = await service.generateMaterial(
-      { rppBody: 'RPP content', subject: 'Pemrograman Web' },
-      GURU,
-    );
-    expect(res.type).toBe('material');
-    expect(res.output).toContain('# Materi HTML');
-  });
-
-  it('generateAtp → returns JSON array', async () => {
-    chatMock.mockResolvedValue('[{"code":"TP 1.1","tp":"desc","atp":["sub1"]}]');
-    const res = await service.generateAtp(
-      { cp: 'CP content', tp: ['TP 1', 'TP 2'], subject: 'Matematika' },
-      GURU,
-    );
-    expect(res.type).toBe('atp');
-    expect(Array.isArray(res.output)).toBe(true);
-  });
-
-  it('generateQuestions with empty AI response → throws', async () => {
+  it('generateRppStep with empty AI response -> throws stable invalid-output error', async () => {
     chatMock.mockResolvedValue('');
-    await expect(service.generateQuestions(
-      { rppBody: 'RPP', subject: 'X', count: 1, type: 'multiple_choice' }, GURU,
-    )).rejects.toThrow('AI mengembalikan respons kosong');
+    await expect(service.generateRppStep(
+      { rppId: '11111111-1111-4111-8111-111111111111', section: 'kegiatan' },
+      GURU,
+    )).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
   });
 
-  it('audit trail failure → fail-soft (does not throw)', async () => {
-    chatMock.mockResolvedValue('[{"body":"Q1","options":["A"],"answer":"A","difficulty":"easy"}]');
+  it('legacy raw-context generation endpoints are disabled', () => {
+    expect(() => service.rejectLegacyGeneration()).toThrow();
+  });
+
+  it('audit trail failure -> fail-soft (does not throw)', async () => {
     aiGenCreate.mockRejectedValue(new Error('DB error'));
-    const res = await service.generateQuestions(
-      { rppBody: 'RPP', subject: 'X', count: 1, type: 'multiple_choice' }, GURU,
+    const res = await service.generateRppStep(
+      { rppId: '11111111-1111-4111-8111-111111111111', section: 'kegiatan' },
+      GURU,
     );
-    expect(res.type).toBe('questions'); // still returns result
+    expect(res.type).toBe('kegiatan');
   });
 });
 
-// ── PushService Tests ────────────────────────────────────────────────────────
+// ---- PushService Tests -----------------------------------------------------
 
 describe('PushService', () => {
   let service: PushService;

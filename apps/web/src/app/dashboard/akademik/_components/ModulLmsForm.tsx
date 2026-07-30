@@ -8,11 +8,11 @@
 import { useState, useTransition, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import {
-  Loader2, Save, Send, AlertTriangle, Sparkles, BookOpen, ClipboardList, Award,
+  Loader2, Save, Send, AlertTriangle, BookOpen, ClipboardList, Award,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { LmsModuleItem } from './guru-types';
-import { createLmsModule, updateLmsModule, aiGenerateMaterial, aiGenerateQuestions, fetchBadgeCatalog } from '../actions';
+import { createLmsModule, updateLmsModule, fetchBadgeCatalog } from '../actions';
 import QuestionBankEditor from './QuestionBankEditor';
 
 interface Props {
@@ -52,7 +52,6 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
   const [content, setContent] = useState(editing?.content ?? '');
   const [err, setErr] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const [aiLoading, startAi] = useTransition();
   const [qbOpen, setQbOpen] = useState(false);
   const [assessmentType, setAssessmentType] = useState<'formative' | 'summative'>('formative');
   const [selectedBadge, setSelectedBadge] = useState<string | null>(null);
@@ -100,36 +99,6 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
         : await createLmsModule({ ...payload, academicYear, semester, publish });
       if (!res.success) return setErr(res.error ?? 'Gagal menyimpan Modul LMS.');
       onClose();
-    });
-  };
-
-  const handleGenerateMaterial = () => {
-    if (!subject) { setErr('Pilih mapel sebelum generate AI.'); return; }
-    setErr(null);
-    startAi(async () => {
-      const res = await aiGenerateMaterial({ rppBody: content || title, subject });
-      if (!res.success) {
-        const msg = res.error ?? 'Gagal generate AI.';
-        setErr(msg.includes('429') ? 'Rate limit tercapai (10/menit). Coba lagi nanti.' : msg);
-        return;
-      }
-      const data = res.data as { output?: string };
-      if (data?.output) setContent(data.output);
-    });
-  };
-
-  const handleGenerateQuestions = () => {
-    if (!subject) { setErr('Pilih mapel sebelum generate AI.'); return; }
-    setErr(null);
-    startAi(async () => {
-      const res = await aiGenerateQuestions({ rppBody: content || title, subject, count: 5, type: 'multiple_choice' });
-      if (!res.success) {
-        const msg = res.error ?? 'Gagal generate AI.';
-        setErr(msg.includes('429') ? 'Rate limit tercapai (10/menit). Coba lagi nanti.' : msg);
-        return;
-      }
-      // AI generated questions — open question bank to review
-      setQbOpen(true);
     });
   };
 
@@ -227,15 +196,6 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
               <label className="block">
                 <div className="mb-1 flex items-center justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">Isi Materi</span>
-                  <button
-                    type="button"
-                    onClick={handleGenerateMaterial}
-                    disabled={aiLoading || !subject}
-                    className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[10.5px] font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50"
-                  >
-                    {aiLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                    Generate Materi AI
-                  </button>
                 </div>
                 <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={7}
                   className={`${FIELD} resize-y`} placeholder="Materi pembelajaran (teks/markdown)..." />
@@ -279,15 +239,6 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
                 >
                   <ClipboardList className="h-4 w-4 text-emerald-600" />
                   Pilih dari Bank Soal
-                </button>
-                <button
-                  type="button"
-                  onClick={handleGenerateQuestions}
-                  disabled={aiLoading || !subject}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-[12.5px] font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50"
-                >
-                  {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  Generate Soal AI
                 </button>
               </div>
 
