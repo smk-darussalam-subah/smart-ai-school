@@ -2,7 +2,7 @@
 
 Tanggal eksekusi: 2026-07-30
 
-Verdict executor: FOLLOW-UP REQUIRED
+Verdict executor: LOCAL FALLBACK OPERATIONAL; OPENAI CLOUD BLOCKED
 
 ## Authorization And Target
 
@@ -49,6 +49,18 @@ Follow-up after operator note:
 - Source follow-up now makes the staging compose override and staging env example explicit for `AI_PROVIDER`, `OPENAI_API_KEY`, and `OPENAI_CHAT_MODEL`.
 - To use OpenAI on staging, the controlled staging env must explicitly set `AI_PROVIDER=openai` and provide a staging OpenAI key in the deploy env file.
 
+Post-deploy runtime follow-up:
+
+- PR #407 deployed to staging at SHA `07e69097f335cb4e250da7d7028d0ebb94d47365`.
+- PR #409 deployed to staging at SHA `afa28a78171902422b04a8d60c929b2ea603821d`.
+- After env wiring, `smk-staging-api` reported `AI_PROVIDER=openai`, OpenAI key present, and local model env present.
+- Synthetic OpenAI non-PII smoke returned HTTP `401` with no output content printed.
+- A read-only production key smoke also returned HTTP `401`; production was not mutated by that smoke.
+- Because the effective OpenAI credential is rejected by the provider, staging was switched back to `AI_PROVIDER=ollama` as a safe operational fallback.
+- `qwen2.5:1.5b` was pulled into the existing Ollama runtime and configured as the local chat model for staging.
+- Final staging effective provider: `ollama`; final staging local chat model: `qwen2.5:1.5b`; staging health endpoint: HTTP 200.
+- API-container-to-Ollama synthetic smoke succeeded: HTTP 200, non-empty output, no response content printed.
+
 ## Provider Health
 
 Ollama tags and model inventory:
@@ -88,7 +100,7 @@ Relevant redacted Ollama log evidence:
 - `/api/generate` returned 500 after about 1m59s.
 - `docker inspect smk-ollama` showed `OOMKilled=true`.
 
-Conclusion: Ollama service and embedding are healthy, but the configured chat model cannot load on the current staging VPS memory profile. This directly blocks Modul Ajar generation when effective provider is `ollama`.
+Conclusion: Ollama service and embedding are healthy. The original `qwen2.5:7b` chat model could not load on the current staging VPS memory profile, but the follow-up `qwen2.5:1.5b` local chat model succeeded and is the safe fallback until OpenAI credentials are valid.
 
 ## Failure Drill
 
@@ -144,18 +156,10 @@ Actions not performed:
 
 ## Required Follow-Up Before Git Packaging Or Staging QA
 
-1. Decide provider mode for staging:
-   - Option A: local-only, replace `qwen2.5:7b` with a smaller proven chat model or increase VPS memory.
-   - Option B: cloud non-PII via OpenAI, with rotated staging-only key, staging compose wiring for `AI_PROVIDER`/`OPENAI_API_KEY`/`OPENAI_CHAT_MODEL`, and `AI_PROVIDER=openai`.
-2. Rotate/revoke credentials represented by ignored local `.env.production`, or provide operator proof that the old values are already dead.
-3. Recreate only staging API if environment changes are required.
-4. Rerun AI-0B:
-   - effective provider/model redacted;
-   - local PII-capable chat route;
-   - normal synthetic non-PII generation;
-   - stable failure code behavior where applicable;
-   - secret/log scan.
-5. Only after AI-0B passes: proceed to explicit Git packaging for AI-0A, deployment to staging, and integrated browser QA Wave 3.
+1. Rotate or replace the OpenAI key through the provider/operator path, then rerun OpenAI non-PII smoke before setting `AI_PROVIDER=openai` again.
+2. Keep `AI_PROVIDER=ollama` for staging and production until the OpenAI smoke returns HTTP 200 with non-empty output.
+3. Keep `OLLAMA_CHAT_MODEL=qwen2.5:1.5b` on the current VPS profile unless memory is increased and a larger model is proven healthy.
+4. Continue integrated browser QA Wave 3 against the local fallback provider.
 
 ## Source Follow-Up Prepared
 
