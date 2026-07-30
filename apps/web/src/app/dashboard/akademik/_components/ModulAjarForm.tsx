@@ -14,8 +14,16 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { RppItem, ModulAjarBody, AtpItem, KegiatanItem } from './guru-types';
-import { createRpp, updateRpp, submitRpp, aiGenerateAtp, aiGenerateRppStep, aiGenerateMaterial } from '../actions';
+import { createRpp, updateRpp, submitRpp, aiGenerateRppStep } from '../actions';
 import { getDraftWriteTarget, readCreatedRpp } from './modul-ajar-draft-state';
+import {
+  AI_STEP_SECTION,
+  createAiSingleFlightGuard,
+  deriveAiButtonState,
+  mapAiErrorToTeacherCopy,
+  runContainedAiSectionFlow,
+  type AiSection,
+} from './modul-ajar-ai-containment';
 
 interface Props {
   open: boolean;
@@ -51,7 +59,7 @@ const STEPS = [
   { n: 8, label: 'Pengayaan & Remedial', icon: TrendingUp, req: false },
   { n: 9, label: 'Refleksi', icon: Lightbulb, req: false },
   { n: 10, label: 'Lampiran', icon: Paperclip, req: false },
-  { n: 11, label: 'Rekap & Download', icon: FileCheck, req: false },
+  { n: 11, label: 'Rekap', icon: FileCheck, req: false },
 ];
 
 const num = (s: string): number | null => (s.trim() === '' ? null : Number(s));
@@ -76,20 +84,24 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
   const [savedVersion, setSavedVersion] = useState<'dirty' | 'saving' | 'saved' | 'error'>(
     editing ? 'saved' : 'dirty',
   );
-  const [isGeneratingSemua, setIsGeneratingSemua] = useState(false);
-  const [isGeneratingMaterial, setIsGeneratingMaterial] = useState(false);
-  const [semuaProgress, setSemuaProgress] = useState<string | null>(null);
+  const [activeAiStep, setActiveAiStep] = useState<number | null>(null);
+  const [aiPhase, setAiPhase] = useState<'idle' | 'saving' | 'preparing' | 'checking' | 'ready'>('idle');
+  const [aiMessage, setAiMessage] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const aiRequestGuard = useRef(createAiSingleFlightGuard()).current;
 
   useEffect(() => {
     setCurrentRppId(editing?.id ?? null);
   }, [editing?.id]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2800); };
+  const markDirty = () => {
+    if (savedVersion !== 'saving') setSavedVersion('dirty');
+  };
   const set = <K extends keyof ModulAjarBody>(k: K, v: ModulAjarBody[K]) => {
     setBody((b) => ({ ...b, [k]: v }));
     // W3-3: setiap perubahan lokal menandai state sebagai dirty (belum disimpan).
-    if (savedVersion !== 'saving') setSavedVersion('dirty');
+    markDirty();
   };
   const toggleDimensi = (d: string) => {
     const cur = body.profilDimensi ?? [];
@@ -119,283 +131,153 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
     contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const [, startAi] = useTransition();
-
-  /**
-   * R-29: Core async logic for AI generation of a single step.
-   * Extracted from aiGenerate() so it can be reused by "Generate Semua" sequential loop.
-   * Throws on error — caller handles fail-soft.
-   *
-   * W3-2 P1 fix (reviewer): returns `Promise<boolean>` indicating whether the step
-   * actually mutated the body. Previously returned `Promise<void>` which forced
-   * `handleGenerateSemua` to compare `JSON.stringify(body)` captured from a stale
-   * React render closure — that always reported "no change" because `set()`
-   * schedules an async state update the closure cannot observe synchronously.
-   * Each `apply` function now tracks and returns whether at least one field was
-   * set with new content, so the counter is accurate.
-   */
-  const aiGenerateStep = async (stepNum: number): Promise<boolean> => {
-    // Step 3 (ATP) → dedicated ATP endpoint.
-    if (stepNum === 3) {
-      if (!subject) throw new Error('Pilih mapel terlebih dahulu.');
-      const cpText = typeof body.cp === 'string' ? body.cp : '';
-      const tpList = Array.isArray(body.tp) ? body.tp.filter((t) => t.trim()) : [];
-      if (tpList.length === 0) throw new Error('Tambahkan minimal 1 TP sebelum generate ATP.');
-      const res = await aiGenerateAtp({ cp: cpText, tp: tpList, subject });
-      if (!res.success) throw new Error(res.error ?? 'Gagal generate AI.');
-      const data = res.data as { output?: AtpItem[] };
-      if (data?.output && Array.isArray(data.output) && data.output.length > 0) {
-        set('atp', data.output);
-        return true; // mutated
-      }
-      throw new Error('AI tidak mengembalikan ATP.');
-    }
-    // P4 (S-12): Other steps — real AI gateway via /ai/generate-rpp-step
-    // W3-2: Setiap output langkah kini di-apply ke field target yang spesifik.
-    // Sebelumnya, output dibuang secara diam-dian dan UI menampilkan toast sukses palsu.
-    // W3-2 P1 fix: apply mengembalikan boolean — true jika minimal satu field berubah.
-    const stepMap: Record<number, { key: string; apply: (output: string) => boolean }> = {
-      2: {
-        key: 'cp_tp',
-        apply: (output) => {
-          // Output markdown berisi CP + TP. Pisahkan baris yang dimulai dengan 'TP' ke list.
-          const lines = output.split('\n').map((l) => l.trim()).filter(Boolean);
-          const cpText: string[] = [];
-          const tpText: string[] = [];
-          let inTp = false;
-          for (const line of lines) {
-            const tpMatch = line.match(/^(?:TP\s*)?\d+[.):\- ]+(.*)$/i);
-            if (tpMatch && tpMatch[1]) { inTp = true; tpText.push(tpMatch[1].trim()); continue; }
-            if (inTp) tpText.push(line);
-            else cpText.push(line);
-          }
-          let mutated = false;
-          if (cpText.length) { set('cp', cpText.join('\n')); mutated = true; }
-          if (tpText.length) { set('tp', tpText); mutated = true; }
-          return mutated;
-        },
-      },
-      4: {
-        key: 'profil',
-        apply: (output) => {
-          // Dimensi: cari yang cocok dengan daftar DIMENSI; sisanya jadi uraian.
-          const dimensi = DIMENSI.filter((d) => output.toLowerCase().includes(d.toLowerCase()));
-          if (dimensi.length) set('profilDimensi', dimensi);
-          set('profilUraian', output);
-          return true; // output selalu mengisi profilUraian minimal.
-        },
-      },
-      5: {
-        key: 'sarana',
-        apply: (output) => {
-          // Pemisahan sederhana: paragraf pertama → sarana, paragraf sisanya → target.
-          const paragraphs = output.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
-          if (paragraphs.length >= 2) {
-            set('sarana', paragraphs[0]);
-            set('target', paragraphs.slice(1).join('\n\n'));
-          } else {
-            set('sarana', output);
-          }
-          return true; // output selalu mengisi sarana minimal.
-        },
-      },
-      6: {
-        key: 'kegiatan',
-        apply: (output) => {
-          // Output dianggap deskripsi kegiatan inti untuk pertemuan pertama.
-          // Guru tetap perlu menambah pendahuluan/penutup manual. Kalau belum ada kegiatan, buat baru.
-          const existing = body.kegiatan ?? [];
-          if (existing.length === 0) {
-            set('kegiatan', [{ pertemuan: 'Pertemuan 1', inti: output }]);
-          } else {
-            set('kegiatan', existing.map((k, i) => (i === 0 ? { ...k, inti: output } : k)));
-          }
-          return true;
-        },
-      },
-      7: {
-        key: 'asesmen',
-        apply: (output) => {
-          // Pecah output ke tiga jenis asesmen bila terindikasi header.
-          const lower = output.toLowerCase();
-          const hasDiagnostik = lower.includes('diagnostik');
-          const hasFormatif = lower.includes('formatif');
-          const hasSumatif = lower.includes('sumatif');
-          let mutated = false;
-          if (hasDiagnostik || hasFormatif || hasSumatif) {
-            // Pemisahan kasar berbasis header.
-            const splitSection = (keyword: string): string => {
-              const re = new RegExp(`(?:^|\\n)\\s*#{0,6}\\s*${keyword}[^\\n]*\\n([\\s\\S]*?)(?=\\n\\s*#{0,6}\\s*(?:diagnostik|formatif|sumatif)|$)`, 'i');
-              const m = output.match(re);
-              return m?.[1]?.trim() ?? '';
-            };
-            if (hasDiagnostik) { set('asesmenDiagnostik', splitSection('diagnostik')); mutated = true; }
-            if (hasFormatif) { set('asesmenFormatif', splitSection('formatif')); mutated = true; }
-            if (hasSumatif) { set('asesmenSumatif', splitSection('sumatif')); mutated = true; }
-          } else {
-            // Tidak ada header eksplisit → tulis ke asesmen legacy.
-            set('asesmen', output);
-            mutated = true;
-          }
-          return mutated;
-        },
-      },
-      8: {
-        key: 'remedial',
-        apply: (output) => {
-          // Pecah ke pengayaan + remedial bila ada kedua header.
-          const lower = output.toLowerCase();
-          let mutated = false;
-          if (lower.includes('pengayaan') && lower.includes('remedial')) {
-            const splitSection = (keyword: string): string => {
-              const re = new RegExp(`(?:^|\\n)\\s*#{0,6}\\s*${keyword}[^\\n]*\\n([\\s\\S]*?)(?=\\n\\s*#{0,6}\\s*(?:pengayaan|remedial)|$)`, 'i');
-              const m = output.match(re);
-              return m?.[1]?.trim() ?? '';
-            };
-            set('pengayaan', splitSection('pengayaan'));
-            set('remedial', splitSection('remedial'));
-            mutated = true;
-          } else {
-            set('remedial', output);
-            mutated = true;
-          }
-          return mutated;
-        },
-      },
-      9: {
-        key: 'refleksi',
-        apply: (output) => {
-          // Pecah ke refleksiGuru + refleksiSiswa bila ada kedua header.
-          const lower = output.toLowerCase();
-          let mutated = false;
-          if (lower.includes('guru') && lower.includes('siswa')) {
-            const splitSection = (keyword: string): string => {
-              const re = new RegExp(`(?:^|\\n)\\s*#{0,6}\\s*${keyword}[^\\n]*\\n([\\s\\S]*?)(?=\\n\\s*#{0,6}\\s*(?:guru|siswa)|$)`, 'i');
-              const m = output.match(re);
-              return m?.[1]?.trim() ?? '';
-            };
-            set('refleksiGuru', splitSection('guru'));
-            set('refleksiSiswa', splitSection('siswa'));
-            mutated = true;
-          } else {
-            set('refleksiGuru', output);
-            mutated = true;
-          }
-          return mutated;
-        },
-      },
-      10: {
-        key: 'lampiran',
-        apply: (output) => { set('lampiran', output); return true; },
-      },
+  const cleanedBody = (): ModulAjarBody => {
+    const cleanTp = tp.map((x) => x.trim()).filter(Boolean);
+    const cleanAtp = atp.filter((x) => (x.tpRef ?? '').trim() || (x.indikator ?? '').trim());
+    const cleanKeg = keg.filter((x) =>
+      (x.pertemuan ?? '').trim() || (x.pendahuluan ?? '').trim() ||
+      (x.inti ?? '').trim() || (x.penutup ?? '').trim() || (x.deskripsi ?? '').trim(),
+    );
+    return {
+      ...body,
+      tp: cleanTp.length ? cleanTp : undefined,
+      atp: cleanAtp.length ? cleanAtp : undefined,
+      kegiatan: cleanKeg.length ? cleanKeg : undefined,
+      profilDimensi: body.profilDimensi?.length ? body.profilDimensi : undefined,
     };
-    const stepConfig = stepMap[stepNum];
-    if (!stepConfig || !subject) {
-      throw new Error(subject ? 'Langkah tidak didukung.' : 'Pilih mapel terlebih dahulu.');
-    }
-    const contextStr = JSON.stringify(body).slice(0, 4000);
-    const res = await aiGenerateRppStep({ step: stepConfig.key, subject, context: contextStr });
-    if (!res.success) throw new Error(res.error ?? 'Gagal generate AI.');
-    if (!res.data?.output) throw new Error('AI tidak mengembalikan konten.');
-    // W3-2: Apply output ke field target (sebelumnya dibuang).
-    // W3-2 P1 fix: kembalikan hasil apply ke pemanggil untuk penghitungan sukses yang akurat.
-    return stepConfig.apply(res.data.output);
   };
 
-  /**
-   * W3-2 P2 fix: single-step Generate kini membedakan tiga outcomes:
-   *   - mutated=true  → toast sukses (field terisi)
-   *   - mutated=false → toast 'tidak ada perubahan' (AI return output tapi parser
-   *                     heuristic tidak menemukan konten yang bisa di-apply ke field)
-   *   - thrown error  → toast error (gagal gateway / rate limit / ATP kosong)
-   * Sebelumnya: toast selalu 'berhasil' meskipun apply() return false.
-   */
-  const aiGenerate = (stepNum: number) => {
-    startAi(async () => {
-      try {
-        const mutated = await aiGenerateStep(stepNum);
-        if (mutated) {
-          showToast(`Bagian "${STEPS[stepNum - 1]?.label}" berhasil di-generate AI. Silakan sunting.`);
-        } else {
-          // AI sukses return output tapi parser heuristic tidak menemukan field yang cocok.
-          // Bisa terjadi bila AI return markdown tanpa header yang diharapkan (asesmen,
-          // remedial, refleksi) atau return string kosong setelah trim.
-          console.warn(`[ModulAjarForm] aiGenerateStep(${stepNum}) return false — output tidak ter-apply ke field manapun`);
-          showToast('AI tidak menghasilkan perubahan. Coba generate ulang atau sunting manual.');
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Gagal generate AI.';
-        showToast(msg.includes('429') ? 'Rate limit tercapai (10/menit). Coba lagi nanti.' : msg);
-      }
-    });
-  };
+  const persistDraftForAi = async (): Promise<string> => {
+    setErr(null);
+    if (!subject) throw new Error('Pilih mapel terlebih dahulu.');
+    if (title.trim().length < 3) throw new Error('Judul minimal 3 karakter.');
+    if (!academicYear) throw new Error('Tahun ajaran aktif belum tersedia - hubungi admin.');
 
-  /**
-   * R-29: Generate Semua — sequential loop step 2→10 with fail-soft.
-   * Each step waits for the previous to complete (context dependency).
-   *
-   * W3-2 P1 fix (reviewer): counter `successCount`/`failCount` kini mengunakan
-   * nilai kembalian `aiGenerateStep()` (`Promise<boolean>`) alih-alih membandingkan
-   * `JSON.stringify(body)` dari closure React yang tidak bisa mengamati update
-   * `set()` secara sinkron. Bug sebelumnya: counter selalu 0 berhasil / 9 gagal
-   * meskipun semua langkah berhasil mengisi field.
-   */
-  const handleGenerateSemua = async () => {
-    if (!subject) { showToast('Pilih mapel terlebih dahulu.'); return; }
-    setIsGeneratingSemua(true);
-    setSemuaProgress('Memulai generate...');
-    let successCount = 0;
-    let failCount = 0;
-
-    for (let stepNum = 2; stepNum <= 10; stepNum++) {
-      const label = STEPS[stepNum - 1]?.label ?? `Step ${stepNum}`;
-      setSemuaProgress(`Generating: ${label} (${stepNum - 1}/9)...`);
-      try {
-        // W3-2 P1 fix: langkah melaporkan sendiri apakah body berubah.
-        const mutated = await aiGenerateStep(stepNum);
-        if (mutated) successCount++;
-        else failCount++;
-      } catch (err) {
-        failCount++;
-        console.error(`Step ${stepNum} gagal:`, err);
-      }
+    const target = getDraftWriteTarget(currentRppId, editing?.id);
+    if (target.kind === 'update' && savedVersion === 'saved') {
+      return target.id;
     }
 
-    setIsGeneratingSemua(false);
-    setSemuaProgress(null);
-    if (failCount === 0) {
-      showToast(`Semua ${successCount} bagian berhasil di-generate AI. Silakan sunting setiap bagian.`);
-    } else {
-      showToast(`Selesai: ${successCount} berhasil, ${failCount} gagal. Silakan sunting bagian yang berhasil.`);
-    }
-  };
-
-  /**
-   * R-32: Generate Materi pembelajaran via AI.
-   * Sends current form context to /ai/generate-material and stores result in lampiran field.
-   */
-  const handleGenerateMaterial = async () => {
-    if (!subject) { showToast('Pilih mapel terlebih dahulu.'); return; }
-    setIsGeneratingMaterial(true);
+    setSaving(true);
+    setSavedVersion('saving');
+    setAiPhase('saving');
     try {
-      const contextStr = JSON.stringify(body).slice(0, 4000);
-      const res = await aiGenerateMaterial({ rppBody: contextStr, subject });
+      const cleaned = cleanedBody();
+      const res = target.kind === 'update'
+        ? await updateRpp(target.id, { subject, title, classId: classId || null, body: cleaned })
+        : await createRpp({
+          subject,
+          title,
+          classId: classId || undefined,
+          body: cleaned,
+          academicYear,
+          semester,
+          submit: false,
+        });
+
       if (!res.success) {
-        showToast('Gagal generate materi: ' + (res.error ?? 'Unknown error'));
+        setSavedVersion('error');
+        throw new Error(res.error ?? 'Gagal menyimpan draft.');
+      }
+
+      if (target.kind === 'create') {
+        const createdDraft = readCreatedRpp<RppItem>(res);
+        if (!createdDraft) {
+          setSavedVersion('error');
+          throw new Error('Draft tersimpan, tetapi ID Modul Ajar tidak terbaca.');
+        }
+        setCurrentRppId(createdDraft.id);
+        onDraftCreated?.(createdDraft);
+        setSavedVersion('saved');
+        return createdDraft.id;
+      }
+
+      setSavedVersion('saved');
+      return target.id;
+    } catch (error) {
+      setSavedVersion('error');
+      throw error;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const applyAiPatch = (patch: Partial<ModulAjarBody>) => {
+    const entries = Object.entries(patch) as Array<[keyof ModulAjarBody, ModulAjarBody[keyof ModulAjarBody]]>;
+    for (const [key, value] of entries) {
+      set(key, value);
+    }
+  };
+
+  const aiGenerate = (stepNum: number) => {
+    const section = AI_STEP_SECTION[stepNum];
+    if (!section) {
+      showToast('Langkah ini belum didukung bantuan AI.');
+      return;
+    }
+    const buttonState = deriveAiButtonState({
+      section,
+      savedVersion,
+      rppId: currentRppId,
+      editingId: editing?.id,
+      body,
+      isGenerating: aiRequestGuard.isActive(),
+    });
+    if (buttonState.reason === 'missing_tp') {
+      goStep(2);
+      showToast('Isi dan simpan TP terlebih dahulu.');
+      return;
+    }
+
+    setActiveAiStep(stepNum);
+    setAiPhase('saving');
+    setAiMessage(null);
+    void (async () => {
+      const result = await runContainedAiSectionFlow({
+        section,
+        body,
+        guard: aiRequestGuard,
+        ensureSaved: async () => {
+          const rppId = await persistDraftForAi();
+          setAiPhase('preparing');
+          return rppId;
+        },
+        generate: async (request) => {
+          const response = await aiGenerateRppStep(request);
+          setAiPhase('checking');
+          return response;
+        },
+      });
+
+      if (result.status === 'duplicate') {
+        setActiveAiStep(null);
         return;
       }
-      const data = res.data as { output?: string };
-      if (data?.output) {
-        set('lampiran', data.output);
-        showToast('Materi pembelajaran berhasil di-generate. Lihat di kolom Catatan Lampiran.');
-      } else {
-        showToast('AI tidak mengembalikan materi. Coba lagi.');
+      if (result.status === 'missing_foundation') {
+        goStep(2);
+        const msg = mapAiErrorToTeacherCopy(result.code);
+        setAiMessage(msg);
+        showToast(msg);
+        setActiveAiStep(null);
+        setAiPhase('idle');
+        return;
       }
-    } catch (err) {
-      showToast('Gagal generate materi: ' + (err instanceof Error ? err.message : 'Unknown error'));
-    } finally {
-      setIsGeneratingMaterial(false);
-    }
+      if (result.status === 'applied') {
+        applyAiPatch(result.patch);
+        setAiPhase('ready');
+        setAiMessage('Usulan AI sudah masuk. Tinjau dan simpan kembali bila sesuai.');
+        showToast(`Bagian "${STEPS[stepNum - 1]?.label}" siap ditinjau.`);
+        setActiveAiStep(null);
+        setAiPhase('idle');
+        return;
+      }
+
+      const msg = mapAiErrorToTeacherCopy(result.codeOrMessage);
+      setAiMessage(msg);
+      showToast(msg);
+      setActiveAiStep(null);
+      setAiPhase('idle');
+    })();
   };
 
   // W3-3: Simpan Draft kini nyata — memanggil createRpp/updateRpp dengan submit=false.
@@ -502,9 +384,35 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
 
   const submitReview = () => setConfirmOpen(true);
   const confirmSubmit = () => { setConfirmOpen(false); save(true); };
+  const aiStatusText =
+    aiPhase === 'saving' ? 'Menyimpan draf'
+      : aiPhase === 'preparing' ? 'Menyiapkan bantuan'
+        : aiPhase === 'checking' ? 'Memeriksa hasil'
+          : aiPhase === 'ready' ? 'Siap ditinjau'
+            : 'Simpan draf, lalu minta bantuan untuk satu bagian.';
+
+  const aiButtonProps = (stepNum: number) => {
+    const section = AI_STEP_SECTION[stepNum] as AiSection | undefined;
+    const state = section
+      ? deriveAiButtonState({
+        section,
+        savedVersion,
+        rppId: currentRppId,
+        editingId: editing?.id,
+        body,
+        isGenerating: activeAiStep !== null,
+      })
+      : { label: 'Bantu isi bagian ini', disabled: true };
+    return {
+      onAI: () => aiGenerate(stepNum),
+      aiLabel: state.label,
+      aiDisabled: state.disabled || pending,
+      aiBusy: activeAiStep === stepNum,
+    };
+  };
 
   return (
-    <Dialog open={open} onOpenChange={(o: boolean) => !o && !pending && onClose()}>
+    <Dialog open={open} onOpenChange={(o: boolean) => !o && !pending && activeAiStep === null && onClose()}>
       <DialogContent className="flex max-h-[92vh] max-w-5xl flex-col overflow-hidden p-0">
         {/* Header */}
         <DialogHeader className="border-b border-[#e6efea] px-6 py-4">
@@ -589,18 +497,10 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               <Sparkles className="h-5 w-5 shrink-0 text-violet-600" />
               <div className="min-w-0 flex-1">
                 <b className="block text-[12.5px] font-extrabold text-[#0f2e25]">Asisten AI Modul Ajar</b>
-                <small className="text-[10.5px] font-semibold text-[#6b8079]">
-                  {isGeneratingSemua && semuaProgress
-                    ? semuaProgress
-                    : 'Generate isi setiap bagian otomatis dengan AI (kecuali Identitas). Hasil dapat disunting.'}
+                <small aria-live="polite" className="text-[10.5px] font-semibold text-[#6b8079]">
+                  {aiMessage ?? aiStatusText}
                 </small>
               </div>
-              <button type="button" onClick={handleGenerateSemua} disabled={isGeneratingSemua}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-violet-700 disabled:opacity-60">
-                {isGeneratingSemua
-                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating...</>
-                  : <><Sparkles className="h-3.5 w-3.5" />Generate Semua</>}
-              </button>
             </div>
 
             <div className="space-y-4">
@@ -608,12 +508,12 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               <SectionCard step={1} activeStep={step} title="Identitas Modul Ajar" desc="Informasi dasar modul ajar — mata pelajaran, kelas, dan periode" req icon={Info}>
                 <FieldGrid>
                   <Field label="Judul Modul Ajar" req>
-                    <input value={title} onChange={(e) => setTitle(e.target.value)} className={FIELD} placeholder="cth: Merancang Jaringan LAN Sederhana" />
+                    <input value={title} onChange={(e) => { setTitle(e.target.value); markDirty(); }} className={FIELD} placeholder="cth: Merancang Jaringan LAN Sederhana" />
                   </Field>
                 </FieldGrid>
                 <FieldGrid cols={2}>
                   <Field label="Mata Pelajaran" req hint="Dari Penugasan">
-                    <select value={subject} onChange={(e) => setSubject(e.target.value)} className={FIELD}><option value="">— pilih —</option>{subjects.map((s) => <option key={s} value={s}>{s}</option>)}</select>
+                    <select value={subject} onChange={(e) => { setSubject(e.target.value); markDirty(); }} className={FIELD}><option value="">— pilih —</option>{subjects.map((s) => <option key={s} value={s}>{s}</option>)}</select>
                   </Field>
                   <Field label="Fase" req>
                     <select value={body.fase ?? ''} onChange={(e) => set('fase', e.target.value)} className={FIELD}><option value="">— pilih —</option><option value="E">Fase E (Kelas X)</option><option value="F">Fase F (Kelas XI-XII)</option></select>
@@ -621,7 +521,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
                 </FieldGrid>
                 <FieldGrid cols={2}>
                   <Field label="Kelas" hint="Dari Penugasan">
-                    <select value={classId} onChange={(e) => setClassId(e.target.value)} className={FIELD}><option value="">— umum —</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                    <select value={classId} onChange={(e) => { setClassId(e.target.value); markDirty(); }} className={FIELD}><option value="">— pilih kelas —</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
                   </Field>
                   <Field label="Semester">
                     <select value={String(semester)} disabled className={`${FIELD} bg-[#f4f7f5] text-[#6b8079]`}><option>{semester === 1 ? 'Ganjil' : 'Genap'}</option></select>
@@ -641,7 +541,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 2: Capaian & TP */}
-              <SectionCard step={2} activeStep={step} title="Capaian Pembelajaran (CP) & Tujuan Pembelajaran (TP)" desc="Definisikan CP berdasarkan fase, lalu turunkan ke TP yang terukur" req icon={Target} onAI={() => aiGenerate(2)} simLabel={undefined}>
+              <SectionCard step={2} activeStep={step} title="Capaian Pembelajaran (CP) & Tujuan Pembelajaran (TP)" desc="Definisikan CP berdasarkan fase, lalu turunkan ke TP yang terukur" req icon={Target} {...aiButtonProps(2)}>
                 <Field label="Capaian Pembelajaran (CP)" req><textarea value={body.cp ?? ''} onChange={(e) => set('cp', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Tulis CP sesuai dokumen Kurikulum Merdeka..." /></Field>
                 <Field label="Kompetensi Awal" hint="Opsional"><textarea value={body.kompetensiAwal ?? ''} onChange={(e) => set('kompetensiAwal', e.target.value)} rows={2} className={`${FIELD} resize-y`} placeholder="Pengetahuan/keterampilan yang sudah dimiliki..." /></Field>
                 <Field label="Tujuan Pembelajaran (TP)" req>
@@ -657,7 +557,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 3: ATP */}
-              <SectionCard step={3} activeStep={step} title="Alur Tujuan Pembelajaran (ATP)" desc="Urutan logis TP yang membentuk alur pembelajaran berjenjang" icon={Route} onAI={() => aiGenerate(3)}>
+              <SectionCard step={3} activeStep={step} title="Alur Tujuan Pembelajaran (ATP)" desc="Urutan logis TP yang membentuk alur pembelajaran berjenjang" icon={Route} {...aiButtonProps(3)}>
                 <Field label="Uraian Alur"><textarea value={body.atpUraian ?? ''} onChange={(e) => set('atpUraian', e.target.value)} rows={2} className={`${FIELD} resize-y`} placeholder="Susun urutan TP dari yang paling dasar ke paling kompleks..." /></Field>
                 <Field label="Indikator per TP">
                   <ListAdd onAdd={addAtp} label="Tambah Alur TP" />
@@ -674,7 +574,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 4: Profil Pelajar Pancasila */}
-              <SectionCard step={4} activeStep={step} title="Profil Pelajar Pancasila" desc="Pilih dimensi yang dikembangkan dalam modul ajar ini" icon={Users} onAI={() => aiGenerate(4)} simLabel={undefined}>
+              <SectionCard step={4} activeStep={step} title="Profil Pelajar Pancasila" desc="Pilih dimensi yang dikembangkan dalam modul ajar ini" icon={Users} {...aiButtonProps(4)}>
                 <Field label="Dimensi Profil Pelajar Pancasila">
                   <p className="mb-2 text-[10.5px] text-[#6b8079]">Pilih minimal 1 dimensi yang menjadi fokus</p>
                   <div className="flex flex-wrap gap-2">
@@ -694,7 +594,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 5: Sarana & Target */}
-              <SectionCard step={5} activeStep={step} title="Sarana Prasarana & Target Peserta Didik" desc="Daftar alat, bahan, dan profil peserta didik target modul ini" icon={Package} onAI={() => aiGenerate(5)} simLabel={undefined}>
+              <SectionCard step={5} activeStep={step} title="Sarana Prasarana & Target Peserta Didik" desc="Daftar alat, bahan, dan profil peserta didik target modul ini" icon={Package} {...aiButtonProps(5)}>
                 <Field label="Sarana & Prasarana"><textarea value={body.sarana ?? ''} onChange={(e) => set('sarana', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Alat, bahan, software, ruangan yang dibutuhkan..." /></Field>
                 <Field label="Target Peserta Didik"><textarea value={body.target ?? ''} onChange={(e) => set('target', e.target.value)} rows={2} className={`${FIELD} resize-y`} placeholder="Karakteristik peserta didik target modul ini..." /></Field>
                 <Field label="Model Pembelajaran">
@@ -706,7 +606,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 6: Kegiatan Pembelajaran — Timeline */}
-              <SectionCard step={6} activeStep={step} title="Kegiatan Pembelajaran" desc="Rincian kegiatan: Pendahuluan, Inti, dan Penutup untuk setiap pertemuan" req icon={Layers} onAI={() => aiGenerate(6)} simLabel={undefined}>
+              <SectionCard step={6} activeStep={step} title="Kegiatan Pembelajaran" desc="Rincian kegiatan: Pendahuluan, Inti, dan Penutup untuk setiap pertemuan" req icon={Layers} {...aiButtonProps(6)}>
                 <ListAdd onAdd={addKeg} label="Tambah Pertemuan" />
                 {keg.length === 0 && <Empty>Belum ada pertemuan.</Empty>}
                 {keg.map((k, i) => (
@@ -738,7 +638,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 7: Asesmen — Diagnostik/Formatif/Sumatif */}
-              <SectionCard step={7} activeStep={step} title="Asesmen" desc="Rencana penilaian: diagnostik, formatif, dan sumatif" req icon={ClipboardCheck} onAI={() => aiGenerate(7)} simLabel={undefined}>
+              <SectionCard step={7} activeStep={step} title="Asesmen" desc="Rencana penilaian: diagnostik, formatif, dan sumatif" req icon={ClipboardCheck} {...aiButtonProps(7)}>
                 {/* Diagnostik */}
                 <AssessCard type="diag" title="Asesmen Diagnostik" desc="Awal pembelajaran — petakan pengetahuan awal">
                   <textarea value={body.asesmenDiagnostik ?? ''} onChange={(e) => set('asesmenDiagnostik', e.target.value)} rows={2} className={`${FIELD} resize-y`} placeholder="Jenis & deskripsi asesmen diagnostik (mis. 3-5 PG atau essay)..." />
@@ -760,7 +660,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 8: Pengayaan & Remedial */}
-              <SectionCard step={8} activeStep={step} title="Pengayaan & Remedial" desc="Strategi untuk peserta didik yang sudah tuntas dan yang belum tuntas" icon={TrendingUp} onAI={() => aiGenerate(8)} simLabel={undefined}>
+              <SectionCard step={8} activeStep={step} title="Pengayaan & Remedial" desc="Strategi untuk peserta didik yang sudah tuntas dan yang belum tuntas" icon={TrendingUp} {...aiButtonProps(8)}>
                 <FieldGrid cols={2}>
                   <Field label="Pengayaan" hint="Untuk siswa tuntas"><textarea value={body.pengayaan ?? ''} onChange={(e) => set('pengayaan', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Aktivitas tambahan untuk memperdalam..." /></Field>
                   <Field label="Remedial" hint="Untuk siswa belum tuntas"><textarea value={body.remedial ?? ''} onChange={(e) => set('remedial', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Strategi bantuan untuk mencapai ketuntasan..." /></Field>
@@ -768,39 +668,19 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
               </SectionCard>
 
               {/* STEP 9: Refleksi */}
-              <SectionCard step={9} activeStep={step} title="Refleksi Guru & Peserta Didik" desc="Pertanyaan reflektif untuk evaluasi pembelajaran" icon={Lightbulb} onAI={() => aiGenerate(9)} simLabel={undefined}>
+              <SectionCard step={9} activeStep={step} title="Refleksi Guru & Peserta Didik" desc="Pertanyaan reflektif untuk evaluasi pembelajaran" icon={Lightbulb} {...aiButtonProps(9)}>
                 <Field label="Refleksi Guru"><textarea value={body.refleksiGuru ?? body.refleksi ?? ''} onChange={(e) => set('refleksiGuru', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Pertanyaan refleksi untuk guru setelah pembelajaran..." /></Field>
                 <Field label="Refleksi Peserta Didik"><textarea value={body.refleksiSiswa ?? ''} onChange={(e) => set('refleksiSiswa', e.target.value)} rows={3} className={`${FIELD} resize-y`} placeholder="Pertanyaan refleksi untuk siswa..." /></Field>
               </SectionCard>
 
               {/* STEP 10: Lampiran */}
-              <SectionCard step={10} activeStep={step} title="Lampiran" desc="Materi pendukung: handout, slide, video, lembar kerja" icon={Paperclip} onAI={() => aiGenerate(10)} simLabel={undefined}>
-                <button type="button" onClick={() => showToast('Fitur unggah lampiran akan tersedia di implementasi penuh')}
-                  className="flex w-full flex-col items-center gap-1 rounded-xl border-2 border-dashed border-emerald-300 bg-emerald-50 px-4 py-6 text-center transition hover:bg-emerald-100">
-                  <Paperclip className="h-7 w-7 text-emerald-600" />
-                  <b className="text-[12.5px] font-bold text-emerald-700">Unggah File Lampiran</b>
-                  <small className="text-[11px] font-semibold text-[#6b8079]">PDF, DOCX, PPTX, MP4, ZIP — maks. 20MB per file</small>
-                </button>
-                {/* R-32: Generate Materi pembelajaran via AI */}
-                <div className="flex items-center gap-3 rounded-xl border border-violet-200 bg-violet-50/50 px-3 py-2.5">
-                  <Sparkles className="h-4 w-4 shrink-0 text-violet-600" />
-                  <div className="min-w-0 flex-1">
-                    <b className="block text-[11.5px] font-bold text-[#0f2e25]">Generate Materi Pembelajaran</b>
-                    <small className="text-[10px] font-semibold text-[#6b8079]">AI membuat draf materi berdasarkan konteks modul ajar</small>
-                  </div>
-                  <button type="button" onClick={handleGenerateMaterial} disabled={isGeneratingMaterial}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-violet-300 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-60">
-                    {isGeneratingMaterial
-                      ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating...</>
-                      : <><Sparkles className="h-3.5 w-3.5" />Generate</>}
-                  </button>
-                </div>
-                <Field label="Catatan Lampiran" hint="Opsional"><textarea value={body.lampiran ?? ''} onChange={(e) => set('lampiran', e.target.value)} rows={6} className={`${FIELD} resize-y`} placeholder="Daftar lampiran (mis. Handout PDF, Slide PPTX)... atau hasil Generate Materi akan muncul di sini." /></Field>
+              <SectionCard step={10} activeStep={step} title="Lampiran" desc="Materi pendukung: handout, slide, video, lembar kerja" icon={Paperclip} {...aiButtonProps(10)}>
+                <Field label="Catatan Lampiran" hint="Opsional"><textarea value={body.lampiran ?? ''} onChange={(e) => set('lampiran', e.target.value)} rows={6} className={`${FIELD} resize-y`} placeholder="Daftar lampiran pendukung, lembar kerja, handout, atau tautan belajar yang sudah diverifikasi." /></Field>
                 <Field label="URL Eksternal" hint="Opsional"><input value={body.lampiranUrl ?? ''} onChange={(e) => set('lampiranUrl', e.target.value)} className={FIELD} type="url" placeholder="https://link-video-pembelajaran.com" /></Field>
               </SectionCard>
 
-              {/* STEP 11: Rekap & Download */}
-              <SectionCard step={11} activeStep={step} title="Rekap & Download Modul Ajar" desc="Rangkuman seluruh isian modul ajar — dapat diunduh sebagai PDF" icon={FileCheck}>
+              {/* STEP 11: Rekap */}
+              <SectionCard step={11} activeStep={step} title="Rekap Modul Ajar" desc="Rangkuman seluruh isian modul ajar untuk ditinjau sebelum diajukan" icon={FileCheck}>
                 <div className="rounded-xl border border-[#e6efea] bg-white p-5 shadow-sm">
                   <div className="mb-4 border-b-2 border-emerald-600 pb-3 text-center">
                     <h2 className="text-[16px] font-extrabold tracking-tight text-[#0f2e25]">MODUL AJAR</h2>
@@ -825,10 +705,6 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
                     {keg.length > 0 ? keg.map((k, i) => <div key={i} className="mb-1"><b>{k.pertemuan ?? `Pertemuan ${i + 1}`}:</b> {k.pendahuluan ? 'Pendahuluan ✓' : ''} {k.inti ? 'Inti ✓' : ''} {k.penutup ? 'Penutup ✓' : ''}</div>) : <em className="text-[#9bb0a8]">Belum diisi</em>}
                   </RekapBlock>
                   <RekapBlock label="Asesmen">{body.asesmenDiagnostik || body.asesmenFormatif || body.asesmenSumatif ? `${body.asesmenDiagnostik ? 'Diagnostik ✓ ' : ''}${body.asesmenFormatif ? 'Formatif ✓ ' : ''}${body.asesmenSumatif ? 'Sumatif ✓' : ''}` : <em className="text-[#9bb0a8]">Belum diisi</em>}</RekapBlock>
-                  <div className="mt-4 flex justify-center gap-3">
-                    <button type="button" onClick={() => showToast('Mempersiapkan dokumen PDF...')} className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-5 py-2.5 text-[13px] font-bold text-white hover:bg-rose-700"><Paperclip className="h-4 w-4" />Download PDF</button>
-                    <button type="button" onClick={() => showToast('Ekspor DOCX akan tersedia di implementasi penuh')} className="inline-flex items-center gap-1.5 rounded-xl border border-[#e6efea] bg-white px-5 py-2.5 text-[13px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><FileCheck className="h-4 w-4" />Ekspor DOCX</button>
-                  </div>
                 </div>
               </SectionCard>
             </div>
@@ -853,12 +729,12 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
             </button>
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={onClose} disabled={pending} className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[13px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] disabled:opacity-50">Batal</button>
-            <button type="button" onClick={saveDraft} disabled={pending}
+            <button type="button" onClick={onClose} disabled={pending || activeAiStep !== null} className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[13px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] disabled:opacity-50">Batal</button>
+            <button type="button" onClick={saveDraft} disabled={pending || activeAiStep !== null}
               className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-[13px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Simpan Draft
             </button>
-            <button type="button" onClick={submitReview} disabled={pending}
+            <button type="button" onClick={submitReview} disabled={pending || activeAiStep !== null}
               className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-[13px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
               {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Ajukan
             </button>
@@ -871,7 +747,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
             <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-2xl">
               <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-emerald-50 text-emerald-600"><Send className="h-7 w-7" /></div>
               <h3 className="mb-1.5 text-[16px] font-extrabold text-[#0f2e25]">Ajukan Modul Ajar?</h3>
-              <p className="mb-4 text-[13px] font-semibold text-[#6b8079]">Modul ajar akan dikirim ke Kepala Sekolah untuk direview. Anda tidak dapat mengubah modul setelah diajukan sampai direview.</p>
+              <p className="mb-4 text-[13px] font-semibold text-[#6b8079]">Modul ajar akan dikirim ke reviewer akademik. Anda tidak dapat mengubah modul setelah diajukan sampai direview.</p>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setConfirmOpen(false)} className="flex-1 rounded-xl bg-[#f4f7f5] px-4 py-2.5 text-[13px] font-bold text-[#355a4e] hover:bg-[#e6efea]">Batal</button>
                 <button type="button" onClick={confirmSubmit} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-[13px] font-bold text-white hover:bg-emerald-700">Ya, Ajukan</button>
@@ -893,9 +769,15 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
 
 // ── Helper Components ──────────────────────────────────────────────
 
-function SectionCard({ step, activeStep, title, desc, req, icon: Icon, onAI, simLabel, children }: {
+function SectionCard({ step, activeStep, title, desc, req, icon: Icon, onAI, aiLabel, aiDisabled, aiBusy, simLabel, children }: {
   step: number; activeStep: number; title: string; desc: string; req?: boolean;
-  icon: React.ComponentType<{ className?: string }>; onAI?: () => void; simLabel?: string; children: React.ReactNode;
+  icon: React.ComponentType<{ className?: string }>;
+  onAI?: () => void;
+  aiLabel?: string;
+  aiDisabled?: boolean;
+  aiBusy?: boolean;
+  simLabel?: string;
+  children: React.ReactNode;
 }) {
   return (
     <section className={clsx('rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm', activeStep !== step && 'hidden lg:block')}>
@@ -910,8 +792,9 @@ function SectionCard({ step, activeStep, title, desc, req, icon: Icon, onAI, sim
             {simLabel && (
               <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">{simLabel}</span>
             )}
-            <button type="button" onClick={onAI} className="inline-flex items-center gap-1 rounded-lg border border-violet-300 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100">
-              <Sparkles className="h-3.5 w-3.5" />Generate
+            <button type="button" onClick={onAI} disabled={aiDisabled} className="inline-flex items-center gap-1 rounded-lg border border-violet-300 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-60">
+              {aiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              {aiLabel ?? 'Bantu isi bagian ini'}
             </button>
           </div>
         )}

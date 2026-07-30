@@ -27,7 +27,7 @@ async function apiCall(path: string, method: string, body?: unknown) {
         redirect('/login?reason=session');
       }
       const err = await res.json().catch(() => null);
-      return { success: false, error: apiErrorMessage(err) };
+      return { success: false, error: apiErrorMessage(err), errorCode: apiErrorCode(err) };
     }
     return { success: true, data: await res.json() };
   } catch (err) {
@@ -35,6 +35,12 @@ async function apiCall(path: string, method: string, body?: unknown) {
     if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err;
     return { success: false, error: 'Koneksi ke server gagal. Coba lagi.' };
   }
+}
+
+function apiErrorCode(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object' || !('error' in body)) return undefined;
+  const value = (body as { error?: unknown }).error;
+  return typeof value === 'string' && value.startsWith('AI_') ? value : undefined;
 }
 
 export async function createGrade(data: { studentId: string; assignmentId: string; semester: number; academicYear: string; score: number; type: string; notes?: string }) {
@@ -357,29 +363,16 @@ export async function deleteQuestion(id: string) {
 
 // ── AI Generate (P20 — W3-5) ───────────────────────────────────────────────
 
-/** Generate questions from RPP body via AI. */
-export async function aiGenerateQuestions(data: { rppBody: string; subject: string; count: number; type: string }) {
-  const r = await apiCall('/ai/generate-questions', 'POST', data);
-  return r;
-}
-
-/** Generate learning material from RPP body via AI. */
-export async function aiGenerateMaterial(data: { rppBody: string; subject: string }) {
-  const r = await apiCall('/ai/generate-material', 'POST', data);
-  return r;
-}
-
-/** Generate ATP from CP + TP via AI. */
-export async function aiGenerateAtp(data: { cp: string; tp: string[]; subject: string }) {
-  const r = await apiCall('/ai/generate-atp', 'POST', data);
-  return r;
-}
-
-/** P4 (S-12): Generate RPP step content via AI gateway (8 steps). */
-export async function aiGenerateRppStep(data: { step: string; subject: string; context: string }): Promise<{ success: boolean; data?: { type: string; output: string }; error?: string }> {
+/** AI-0A: Generate one saved Modul Ajar section from authoritative server context. */
+export async function aiGenerateRppStep(data: { rppId: string; section: string }): Promise<{
+  success: boolean;
+  data?: { type: string; output: unknown };
+  error?: string;
+  errorCode?: string;
+}> {
   const r = await apiCall('/ai/generate-rpp-step', 'POST', data);
-  if (!r.success) return { success: false, error: r.error };
-  return { success: true, data: r.data as { type: string; output: string } };
+  if (!r.success) return { success: false, error: r.error, errorCode: r.errorCode };
+  return { success: true, data: r.data as { type: string; output: unknown } };
 }
 
 // ── Assessment Sessions (U2 — comprehensive assessment) ────────────────────
