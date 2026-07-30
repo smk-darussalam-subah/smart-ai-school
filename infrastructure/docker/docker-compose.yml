@@ -395,6 +395,7 @@ services:
       KEYCLOAK_CLIENT_ID: diis-api
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_API_CLIENT_SECRET}
       OLLAMA_URL: http://ollama:11434
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen2.5:1.5b}
       OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
       OLLAMA_EMBED_DIMENSIONS: ${OLLAMA_EMBED_DIMENSIONS:-768}
       # R-28: Hybrid AI — OpenAI (chat/generate) + Ollama (embed only)
