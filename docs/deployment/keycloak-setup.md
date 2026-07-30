@@ -109,11 +109,15 @@ Realm `diis` memiliki 6 roles yang sudah di-import:
 | Role | Deskripsi |
 |------|-----------|
 | `SUPER_ADMIN` | Akses penuh semua modul |
-| `KEPALA_SEKOLAH` | Dashboard eksekutif, laporan, approval |
+| `TATA_USAHA` | Staf administrasi: keuangan, PPDB, data siswa |
 | `GURU` | Manajemen kelas, nilai, absensi |
 | `SISWA` | Portal siswa — nilai, jadwal |
 | `ORANG_TUA` | Pantau perkembangan anak |
 | `INDUSTRI` | Akses profil siswa dan lowongan |
+
+`KEPALA_SEKOLAH` dan kode jabatan lain adalah appointment/position code DIIS,
+bukan realm role Keycloak. Jangan buat atau assign kode jabatan sebagai role
+Keycloak; gunakan modul appointment/Struktur Organisasi sesuai fase transisi.
 
 Untuk assign role ke user: **Users** → pilih user → tab **Role mapping** → **Assign role**.
 

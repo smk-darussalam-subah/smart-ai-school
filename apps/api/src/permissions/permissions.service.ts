@@ -1,12 +1,19 @@
 import { Injectable } from '@nestjs/common';
+import {
+  PermissionOverrideSource,
+  PermissionOverrideStatus,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { UserRole } from '@smk/auth';
+import { UserRole, isPrimaryRole } from '@smk/auth';
 import { logger } from '@smk/logger';
 
 interface CacheEntry {
   permissions: Set<string>;
   expiresAt: number;
 }
+
+const ACTIVE_APPOINTMENT_STATUS = 'ACTIVE' as const;
 
 @Injectable()
 export class PermissionsService {
@@ -49,6 +56,37 @@ export class PermissionsService {
 
     const permissions = await this.getEffectivePermissions(keycloakId, roles);
     return permissions.has(requiredPermission);
+  }
+
+  async getActivePositionCodes(keycloakId: string): Promise<Set<string>> {
+    const authUserId = await this.findAuthUserId(keycloakId);
+    if (!authUserId) return new Set();
+
+    const today = this.today();
+    try {
+      const appointments = await this.prisma.appointment.findMany({
+        where: {
+          status: ACTIVE_APPOINTMENT_STATUS,
+          staff: { userId: authUserId },
+          academicYear: { isActive: true },
+          effectiveFrom: { lte: today },
+          OR: [
+            { effectiveUntil: null },
+            { effectiveUntil: { gte: today } },
+          ],
+        },
+        select: { position: { select: { code: true } } },
+      });
+
+      return new Set(appointments.map((appointment) => appointment.position.code));
+    } catch (err) {
+      // Fail-soft: jika tabel appointments tidak ada atau query error, kembalikan Set kosong.
+      // Guard gagal closed (user tidak dapat position-code access) tapi tidak 500.
+      logger.warn('[PermissionsService] getActivePositionCodes gagal (fail-soft)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return new Set();
+    }
   }
 
   async getAllPermissions() {
@@ -97,8 +135,21 @@ export class PermissionsService {
   }
 
   async getUserEffectivePermissions(userId: string) {
+    const activeYear = await this.prisma.academicYear.findFirst({
+      where: { isActive: true },
+      select: { id: true },
+    });
+    const activeYearId = activeYear?.id ?? null;
+
     const overrides = await this.prisma.userPermissionOverride.findMany({
-      where: { userId },
+      where: {
+        userId,
+        status: PermissionOverrideStatus.ACTIVE,
+        source: PermissionOverrideSource.MANUAL,
+        OR: activeYearId
+          ? [{ academicYearId: activeYearId }, { academicYearId: null }]
+          : [{ academicYearId: null }],
+      },
       include: { permission: true },
     });
 
@@ -109,25 +160,13 @@ export class PermissionsService {
   }
 
   async grantUserPermission(userId: string, permissionId: string) {
-    const result = await this.prisma.userPermissionOverride.upsert({
-      where: {
-        userId_permissionId: { userId, permissionId },
-      },
-      update: { grant: true },
-      create: { userId, permissionId, grant: true },
-    });
+    const result = await this.writeGlobalOverride(userId, permissionId, true);
     await this.invalidateByAuthUserId(userId);
     return result;
   }
 
   async revokeUserPermission(userId: string, permissionId: string) {
-    const result = await this.prisma.userPermissionOverride.upsert({
-      where: {
-        userId_permissionId: { userId, permissionId },
-      },
-      update: { grant: false },
-      create: { userId, permissionId, grant: false },
-    });
+    const result = await this.writeGlobalOverride(userId, permissionId, false);
     await this.invalidateByAuthUserId(userId);
     return result;
   }
@@ -139,38 +178,131 @@ export class PermissionsService {
    *      grant=false MENARIK permission meski diberikan oleh role
    *      (semantik "true = beri, false = tarik" sesuai schema).
    * Semua filter dilakukan di QUERY level (bukan di JS atas seluruh tabel).
+   *
+   * TF2-P1-1: Filter override by active academic year. Override dengan
+   * academicYearId = NULL (global/direct admin grant) tetap berlaku untuk
+   * semua tahun. Override dengan academicYearId non-NULL hanya berlaku untuk
+   * tahun yang cocok. Ini mencegah "zombie permissions" — izin bekas
+   * pejabat tahun lama yang tetap aktif setelah tahun berganti.
+   * Wave C architectural remediation: only MANUAL overrides are applied as
+   * explicit exceptions. POSITION_ASSIGNMENT rows remain historical/TF2 data
+   * but no longer grant appointment-derived authority.
    */
   private async resolvePermissions(keycloakId: string, roles: UserRole[]): Promise<Set<string>> {
     const permSet = new Set<string>();
+    const primaryRoles = roles.filter(isPrimaryRole);
 
     const authUserId = await this.findAuthUserId(keycloakId);
 
-    const [rolePermissions, userOverrides] = await Promise.all([
+    // TF2-P1-1: Ambil active academic year untuk filter override.
+    const activeYear = await this.prisma.academicYear.findFirst({
+      where: { isActive: true },
+      select: { id: true },
+    });
+    const activeYearId = activeYear?.id ?? null;
+
+    const [rolePermissions, userOverrides, appointmentPermissions] = await Promise.all([
       this.prisma.rolePermission.findMany({
-        where: { role: { in: roles } },
+        where: { role: { in: primaryRoles } },
         select: { permission: { select: { code: true } } },
       }),
       authUserId
         ? this.prisma.userPermissionOverride.findMany({
-            where: { userId: authUserId },
+            where: {
+              userId: authUserId,
+              status: PermissionOverrideStatus.ACTIVE,
+              source: PermissionOverrideSource.MANUAL,
+              OR: activeYearId
+                ? [{ academicYearId: activeYearId }, { academicYearId: null }]
+                : [{ academicYearId: null }],
+            },
             select: { grant: true, permission: { select: { code: true } } },
           })
         : Promise.resolve([] as { grant: boolean; permission: { code: string } }[]),
+      authUserId
+        ? this.resolveActiveAppointmentPermissionCodes(authUserId)
+        : Promise.resolve([] as string[]),
     ]);
 
     for (const rp of rolePermissions) {
       permSet.add(rp.permission.code);
     }
 
-    for (const override of userOverrides) {
-      if (override.grant) {
-        permSet.add(override.permission.code);
-      } else {
-        permSet.delete(override.permission.code);
-      }
+    for (const code of appointmentPermissions) {
+      permSet.add(code);
+    }
+
+    // TF2-P1-1: Apply grants before revokes for deterministic least-privilege.
+    for (const override of userOverrides.filter((item) => item.grant)) {
+      permSet.add(override.permission.code);
+    }
+
+    for (const override of userOverrides.filter((item) => !item.grant)) {
+      permSet.delete(override.permission.code);
     }
 
     return permSet;
+  }
+
+  private async writeGlobalOverride(userId: string, permissionId: string, grant: boolean) {
+    const data = {
+      grant,
+      academicYearId: null,
+      staffPositionId: null,
+      source: PermissionOverrideSource.MANUAL,
+      status: PermissionOverrideStatus.ACTIVE,
+      reason: grant ? 'Manual global grant via Users UI' : 'Manual global revoke via Users UI',
+    };
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.userPermissionOverride.findFirst({
+          where: {
+            userId,
+            permissionId,
+            academicYearId: null,
+            status: PermissionOverrideStatus.ACTIVE,
+          },
+          select: { id: true },
+        });
+
+        return existing
+          ? tx.userPermissionOverride.update({
+              where: { id: existing.id },
+              data,
+            })
+          : tx.userPermissionOverride.create({
+              data: { userId, permissionId, ...data },
+            });
+      });
+    } catch (err) {
+      if (!this.isUniqueConflict(err)) {
+        throw err;
+      }
+
+      const existing = await this.prisma.userPermissionOverride.findFirst({
+        where: {
+          userId,
+          permissionId,
+          academicYearId: null,
+          status: PermissionOverrideStatus.ACTIVE,
+        },
+        select: { id: true },
+      });
+
+      if (!existing) {
+        throw err;
+      }
+
+      return this.prisma.userPermissionOverride.update({
+        where: { id: existing.id },
+        data,
+      });
+    }
+  }
+
+  private isUniqueConflict(err: unknown): err is Prisma.PrismaClientKnownRequestError {
+    return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
   }
 
   /** Cache di-key dengan keycloakId; override memakai auth User.id → perlu reverse lookup. */
@@ -197,5 +329,55 @@ export class PermissionsService {
       select: { id: true },
     });
     return user?.id ?? null;
+  }
+
+  private async resolveActiveAppointmentPermissionCodes(userId: string): Promise<string[]> {
+    const today = this.today();
+    try {
+      const appointments = await this.prisma.appointment.findMany({
+        where: {
+          status: ACTIVE_APPOINTMENT_STATUS,
+          staff: { userId },
+          academicYear: { isActive: true },
+          effectiveFrom: { lte: today },
+          OR: [
+            { effectiveUntil: null },
+            { effectiveUntil: { gte: today } },
+          ],
+        },
+        select: {
+          position: {
+            select: {
+              permissions: { select: { permissionId: true } },
+            },
+          },
+        },
+      });
+
+      const permissionIds = Array.from(new Set(
+        appointments.flatMap((appointment) =>
+          appointment.position.permissions.map((permission) => permission.permissionId),
+        ),
+      ));
+      if (permissionIds.length === 0) return [];
+
+      const permissions = await this.prisma.permission.findMany({
+        where: { id: { in: permissionIds } },
+        select: { code: true },
+      });
+      return permissions.map((permission) => permission.code);
+    } catch (err) {
+      // Fail-soft: jika tabel appointments tidak ada atau query error, kembalikan array kosong.
+      // Resolver tidak menambahkan appointment permissions, tapi tidak crash.
+      logger.warn('[PermissionsService] resolveActiveAppointmentPermissionCodes gagal (fail-soft)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return [];
+    }
+  }
+
+  private today(): Date {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   }
 }

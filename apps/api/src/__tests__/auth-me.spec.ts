@@ -5,10 +5,14 @@
 //   Test 3: endpoint @Roles('SUPER_ADMIN') diakses GURU → 403
 // =============================================================================
 
-jest.mock('@smk/auth', () => ({
-  verifyKeycloakToken: jest.fn(),
-  extractAuthUser: jest.fn(),
-}));
+jest.mock('@smk/auth', () => {
+  const actual = jest.requireActual('@smk/auth');
+  return {
+    ...actual,
+    verifyKeycloakToken: jest.fn(),
+    extractAuthUser: jest.fn(),
+  };
+});
 
 import { SseTokenService } from '../auth/sse-token.service';
 
@@ -70,7 +74,16 @@ function buildRolesContext(options: {
     return undefined;
   });
 
-  const mockRequest = { user: { roles: userRoles }, url: '/test' };
+  const mockRequest = {
+    user: {
+      keycloakId: 'kc-test',
+      email: 'test@smk.sch.id',
+      username: 'test',
+      fullName: 'Test User',
+      roles: userRoles,
+    },
+    url: '/test',
+  };
 
   return {
     switchToHttp: () => ({ getRequest: () => mockRequest }),
@@ -172,10 +185,17 @@ describe('Test 2 — GET /auth/me dengan token valid → 200 profil', () => {
 describe('Test 3 — @Roles("SUPER_ADMIN") diakses GURU → ForbiddenException (403)', () => {
   let rolesGuard: RolesGuard;
   let reflector: Reflector;
+  const mockGetActivePositionCodes = jest.fn();
 
   beforeEach(async () => {
+    mockGetActivePositionCodes.mockReset();
+    mockGetActivePositionCodes.mockResolvedValue(new Set());
     const module: TestingModule = await Test.createTestingModule({
-      providers: [RolesGuard, Reflector],
+      providers: [
+        RolesGuard,
+        Reflector,
+        { provide: PermissionsService, useValue: { getActivePositionCodes: mockGetActivePositionCodes } },
+      ],
     }).compile();
 
     rolesGuard = module.get(RolesGuard);
@@ -189,7 +209,7 @@ describe('Test 3 — @Roles("SUPER_ADMIN") diakses GURU → ForbiddenException (
       requiredRoles: ['SUPER_ADMIN'],
       userRoles: ['GURU'],
     });
-    expect(() => rolesGuard.canActivate(ctx)).toThrow(ForbiddenException);
+    return expect(rolesGuard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
 
   it('SUPER_ADMIN mengakses endpoint @Roles("SUPER_ADMIN") → lolos', () => {
@@ -198,7 +218,7 @@ describe('Test 3 — @Roles("SUPER_ADMIN") diakses GURU → ForbiddenException (
       requiredRoles: ['SUPER_ADMIN'],
       userRoles: ['SUPER_ADMIN'],
     });
-    expect(rolesGuard.canActivate(ctx)).toBe(true);
+    return expect(rolesGuard.canActivate(ctx)).resolves.toBe(true);
   });
 
   it('ORANG_TUA mengakses endpoint @Roles("GURU", "TATA_USAHA") → throws ForbiddenException (403)', () => {
@@ -207,7 +227,7 @@ describe('Test 3 — @Roles("SUPER_ADMIN") diakses GURU → ForbiddenException (
       requiredRoles: ['GURU', 'TATA_USAHA'],
       userRoles: ['ORANG_TUA'],
     });
-    expect(() => rolesGuard.canActivate(ctx)).toThrow(ForbiddenException);
+    return expect(rolesGuard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
 });
 

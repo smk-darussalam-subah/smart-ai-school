@@ -116,10 +116,6 @@
         "description": "Akses penuh semua modul sistem DIIS"
       },
       {
-        "name": "KEPALA_SEKOLAH",
-        "description": "Dashboard eksekutif, laporan, approval"
-      },
-      {
         "name": "GURU",
         "description": "Manajemen kelas, nilai, absensi"
       },

@@ -1,15 +1,21 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { CalendarType } from '@prisma/client';
-import { Prisma } from '@prisma/client';
+import { PermissionsService } from '../permissions/permissions.service';
+import { AppointmentsService } from '../appointments/appointments.service';
+import { CalendarType, PermissionOverrideSource, Prisma } from '@prisma/client';
+import { logger } from '@smk/logger';
 
 @Injectable()
 export class SchoolConfigService {
   private profileCache: { data: unknown; expiresAt: number } | null = null;
   private readonly PROFILE_TTL = 60 * 60 * 1000;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissionsService: PermissionsService,
+    private readonly appointmentsService: AppointmentsService,
+  ) {}
 
   // ═══ Profile (singleton) ═══════════════════════════════════════════════════
 
@@ -108,34 +114,140 @@ export class SchoolConfigService {
     // Cek duplikat SEBELUM menonaktifkan yang lain (hindari efek samping bila gagal).
     const exists = await this.prisma.academicYear.findUnique({ where: { code: data.code }, select: { id: true } });
     if (exists) throw new ConflictException(`Tahun ajaran ${data.code} sudah terdaftar.`);
+    // TF2-P1-1: Capture oldActiveYear SEBELUM transaction mengubah isActive.
+    const oldActiveYear = data.isActive
+      ? await this.prisma.academicYear.findFirst({ where: { isActive: true }, select: { id: true } })
+      : null;
     // C1: Transactional — deactivate-all + create must be atomic.
     // BUG FIX: Activating a new TA must also deactivate ALL semesters from the old TA.
-    return this.prisma.$transaction(async (tx) => {
+    let affectedAppointmentUsers: string[] = [];
+    const result = await this.prisma.$transaction(async (tx) => {
       if (data.isActive) {
         await tx.academicYear.updateMany({ data: { isActive: false } });
         await tx.semester.updateMany({ data: { isActive: false } });
       }
-      return tx.academicYear.create({ data });
+      const created = await tx.academicYear.create({ data });
+      if (data.isActive) {
+        await this.appointmentsService.acquireActivationLock(tx);
+        const summary = await this.appointmentsService.applyAcademicYearActivation(tx, {
+          yearId: created.id,
+          oldYearId: oldActiveYear?.id ?? null,
+        });
+        affectedAppointmentUsers = summary.affectedKeycloakIds;
+        logger.info('[SchoolConfig] appointment cutover applied in academic-year create transaction', {
+          yearId: created.id,
+          oldYearId: oldActiveYear?.id ?? null,
+          endedAppointments: summary.endedCount,
+          cancelledAppointments: summary.cancelledCount,
+          activatedAppointments: summary.activatedCount,
+        });
+      }
+      return created;
     });
+    // TF2-P1-1: Cascade cleanup tahun lama setelah commit berhasil.
+    if (oldActiveYear && oldActiveYear.id !== result.id) {
+      await this.cleanupOldYearPermissions(oldActiveYear.id);
+    }
+    if (data.isActive) {
+      this.invalidateAppointmentUsers(affectedAppointmentUsers);
+    }
+    return result;
   }
 
   async updateAcademicYear(id: string, data: Record<string, unknown>) {
     // C1: Transactional — deactivate-all + activate-target must be atomic.
     // H1: Map Prisma P2025 → NotFoundException.
     // BUG FIX: Activating a TA must also deactivate ALL semesters from the old TA.
+    // TF2-P1-1: Capture oldActiveYear SEBELUM transaction mengubah isActive.
+    const oldActiveYear = data.isActive === true
+      ? await this.prisma.academicYear.findFirst({ where: { isActive: true }, select: { id: true } })
+      : null;
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      let affectedAppointmentUsers: string[] = [];
+      const result = await this.prisma.$transaction(async (tx) => {
         if (data.isActive === true) {
           await tx.academicYear.updateMany({ data: { isActive: false } });
           await tx.semester.updateMany({ data: { isActive: false } });
         }
-        return tx.academicYear.update({ where: { id }, data });
+        const updated = await tx.academicYear.update({ where: { id }, data });
+        if (data.isActive === true) {
+          await this.appointmentsService.acquireActivationLock(tx);
+          const summary = await this.appointmentsService.applyAcademicYearActivation(tx, {
+            yearId: id,
+            oldYearId: oldActiveYear && oldActiveYear.id !== id ? oldActiveYear.id : null,
+          });
+          affectedAppointmentUsers = summary.affectedKeycloakIds;
+          logger.info('[SchoolConfig] appointment cutover applied in academic-year update transaction', {
+            yearId: id,
+            oldYearId: oldActiveYear?.id ?? null,
+            endedAppointments: summary.endedCount,
+            cancelledAppointments: summary.cancelledCount,
+            activatedAppointments: summary.activatedCount,
+          });
+        }
+        return updated;
       });
+      // TF2-P1-1: Cascade cleanup tahun lama setelah commit berhasil.
+      if (oldActiveYear && oldActiveYear.id !== id) {
+        await this.cleanupOldYearPermissions(oldActiveYear.id);
+      }
+      if (data.isActive === true) {
+        this.invalidateAppointmentUsers(affectedAppointmentUsers);
+      }
+      return result;
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
         throw new NotFoundException('Tahun ajaran tidak ditemukan.');
       }
       throw e;
+    }
+  }
+
+  private invalidateAppointmentUsers(keycloakIds: string[]): void {
+    const uniqueIds = [...new Set(keycloakIds)];
+    for (const keycloakId of uniqueIds) {
+      this.permissionsService.invalidateUser(keycloakId);
+    }
+    if (uniqueIds.length === 0) {
+      this.permissionsService.invalidateAll();
+    }
+  }
+
+  // ── TF2-P1-1: Zombie Permissions cleanup ─────────────────────────────────────
+  // Saat tahun ajaran berganti, nonaktifkan semua StaffPosition tahun lama dan
+  // hapus UserPermissionOverride yang terikat tahun tersebut. Ini mencegah
+  // "zombie permissions" — izin bekas pejabat yang tetap aktif setelah tahun
+  // berganti. resolvePermissions juga memfilter by activeYearId, jadi cleanup
+  // ini adalah housekeeping fisik untuk integritas data.
+  // Wave C: retain MANUAL exceptions; cleanup only legacy POSITION_ASSIGNMENT rows.
+  private async cleanupOldYearPermissions(oldYearId: string): Promise<void> {
+    try {
+      const spResult = await this.prisma.staffPosition.updateMany({
+        where: { academicYearId: oldYearId, isActive: true },
+        data: { isActive: false },
+      });
+      const upoResult = await this.prisma.userPermissionOverride.deleteMany({
+        where: {
+          academicYearId: oldYearId,
+          source: PermissionOverrideSource.POSITION_ASSIGNMENT,
+        },
+      });
+      logger.info('[SchoolConfig] TF2-P1-1 zombie cleanup', {
+        oldYearId,
+        staffPositionsDeactivated: spResult.count,
+        overridesDeleted: upoResult.count,
+      });
+    } catch (err) {
+      // Fail-soft: cleanup gagal tidak harus memblokir aktivasi tahun baru.
+      // resolvePermissions filter tetap melindungi dari zombie access.
+      logger.warn('[SchoolConfig] TF2-P1-1 zombie cleanup failed (non-blocking)', {
+        oldYearId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      // Active-year changes affect permission resolution even if physical
+      // cleanup fails, so stale cached permissions must always be discarded.
+      this.permissionsService.invalidateAll();
     }
   }
 

@@ -33,6 +33,8 @@ jest.mock('@smk/auth', () => {
     UserRole,
     PRIMARY_ROLES,
     POSITION_CODES,
+    isPositionCode: (role: string) => POSITION_CODES.includes(role),
+    isPrimaryRole: (role: string) => PRIMARY_ROLES.includes(role),
     verifyKeycloakToken: jest.fn(),
     extractAuthUser: jest.fn(),
     hasRole: jest.fn(),
@@ -56,6 +58,7 @@ jest.mock('../src/permissions/permissions.service', () => ({
   PermissionsService: jest.fn().mockImplementation(() => ({
     hasPermission: jest.fn().mockResolvedValue(true),
     getEffectivePermissions: jest.fn().mockResolvedValue(new Set()),
+    getActivePositionCodes: jest.fn().mockResolvedValue(new Set()),
   })),
 }));
 

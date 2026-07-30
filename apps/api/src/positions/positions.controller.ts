@@ -1,9 +1,9 @@
 // =============================================================================
 // PositionsController — katalog jabatan + penugasan (Struktur Organisasi, 2J-5)
-// Akses: SUPER_ADMIN & KEPALA_SEKOLAH untuk manajemen; semua role untuk my-positions.
+// Akses Wave A: SUPER_ADMIN untuk manajemen; semua stable role untuk my-positions.
 // =============================================================================
 
-import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { AuthUser, PRIMARY_ROLES } from '@smk/auth';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -14,10 +14,14 @@ import { AssignPositionSchema } from './dto/position.dto';
 import type { AssignPositionDto } from './dto/position.dto';
 
 @Controller('positions')
-@Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+@Roles('SUPER_ADMIN')
 export class PositionsController {
   constructor(private readonly positions: PositionsService) {}
 
+  // Appointment Governance Wave D: catalog is read-only support data for
+  // SUPER_ADMIN and active Kepala Sekolah page routing. Legacy mutations below
+  // remain fail-closed and SA-gated by service/controller policy.
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
   @Get()
   catalog() {
     return this.positions.getCatalog();
@@ -37,13 +41,17 @@ export class PositionsController {
   }
 
   // R-25: Verifikasi effective access user (SA only)
+  // TF2-P1-SEC-1: Tambah ParseUUIDPipe untuk defense-in-depth. Sebelumnya
+  // userId mentah dikirim ke prisma → berisiko 500 pada input non-UUID
+  // dan inkonsisten dengan endpoint Users yang sudah pakai ParseUUIDPipe.
   @Roles('SUPER_ADMIN')
   @Get('access-check/:userId')
-  accessCheck(@Param('userId') userId: string) {
+  accessCheck(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.positions.accessCheck(userId);
   }
 
-  // R-23: Seed 13 position codes sebagai Keycloak realm roles (SA only)
+  // Appointment governance: compatibility endpoint kept as a no-op. Position
+  // codes are DIIS catalog values and must not be synced to Keycloak roles.
   @Roles('SUPER_ADMIN')
   @Post('sync-roles')
   @Audit({ captureBody: false })
@@ -59,7 +67,9 @@ export class PositionsController {
 
   @Delete('assignments/:id')
   @Audit({ captureBody: false })
-  unassign(@Param('id') id: string) {
+  // TF2-P1-SEC-2: ParseUUIDPipe remains defense-in-depth. The legacy mutation
+  // is fail-closed while Appointment is the authority.
+  unassign(@Param('id', ParseUUIDPipe) id: string) {
     return this.positions.unassign(id);
   }
 }

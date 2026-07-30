@@ -1,0 +1,10 @@
+[Unit]
+Description=Run DIIS appointment due activation daily
+
+[Timer]
+OnCalendar=*-*-* 00:15:00 Asia/Jakarta
+Persistent=true
+Unit=diis-appointment-due-activation.service
+
+[Install]
+WantedBy=timers.target

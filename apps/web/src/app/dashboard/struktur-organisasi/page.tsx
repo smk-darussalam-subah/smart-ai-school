@@ -1,73 +1,146 @@
+import React from 'react';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
+import { authOptions } from '@/lib/auth';
 import { apiFetch } from '@/lib/api';
+import { getEffectiveRoles } from '@/lib/view-as';
 import LoadError from '@/components/LoadError';
 import StrukturClient from './_components/StrukturClient';
+import {
+  type AcademicYear,
+  type AppointmentRegistryResponse,
+  type AppointmentStatus,
+  type Major,
+  type Position,
+  type PositionCapability,
+  normalizeStrukturTab,
+} from './struktur-ui';
 
-export interface Position {
-  id: string;
-  code: string;
-  name: string;
-  category: 'STRUKTURAL' | 'FUNGSIONAL' | 'TENDIK';
-  scopeType: 'NONE' | 'MAJOR';
-  parentId: string | null;
-  _count: { permissions: number };
+type SearchParams = Promise<Record<string, string | undefined>>;
+
+interface MyPositionsResponse {
+  academicYear: { id: string; code: string } | null;
+  positions: Array<{
+    id: string;
+    position: { code: string; name: string };
+  }>;
 }
 
-export interface Assignment {
-  id: string;
-  positionId: string;
-  majorId: string | null;
-  position: { code: string; name: string; category: string };
-  major: { code: string; name: string } | null;
-  staff: { niy: string | null; user: { id: string; fullName: string; email: string } };
+function queryStatus(value: string | undefined): AppointmentStatus | undefined {
+  const allowed: AppointmentStatus[] = [
+    'DRAFT',
+    'PENDING_APPROVAL',
+    'APPROVED',
+    'ACTIVE',
+    'SUSPENDED',
+    'ENDED',
+    'REJECTED',
+    'CANCELLED',
+    'SUPERSEDED',
+  ];
+  return allowed.includes(value as AppointmentStatus) ? value as AppointmentStatus : undefined;
 }
 
-export interface Major { id: string; code: string; name: string }
-export interface StaffCandidate { id: string; fullName: string; email: string; role: string }
+function queryPage(value: string | undefined) {
+  const page = Number(value ?? '1');
+  return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+}
 
-const STAFF_ROLES = ['GURU', 'TATA_USAHA', 'KEPALA_SEKOLAH'];
-
-export default async function StrukturOrganisasiPage() {
+export default async function StrukturOrganisasiPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await getServerSession(authOptions);
-  const roles: string[] = await getEffectiveRoles(session);
-  if (!roles.includes('SUPER_ADMIN') && !roles.includes('KEPALA_SEKOLAH')) redirect('/dashboard');
-
+  const roles = await getEffectiveRoles(session);
   const token = session?.accessToken ?? '';
+  if (!token) redirect('/login');
 
-  const [catalog, assignmentsRes, majorsRes, groupedRes] = await Promise.all([
+  const sp = await searchParams;
+  const tab = normalizeStrukturTab(sp.tab);
+
+  const myPositionsRes = await apiFetch<MyPositionsResponse>('/positions/my-positions', token);
+  if (myPositionsRes === null) {
+    return <LoadError />;
+  }
+
+  const hasActiveKepalaSekolah = myPositionsRes.positions.some((item) =>
+    item.position.code === 'KEPALA_SEKOLAH',
+  );
+  if (!roles.includes('SUPER_ADMIN') && !hasActiveKepalaSekolah) redirect('/dashboard');
+
+  const [positionsRes, yearsRes, majorsRes] = await Promise.all([
     apiFetch<Position[]>('/positions', token),
-    apiFetch<{ academicYear: { id: string; code: string } | null; assignments: Assignment[] }>('/positions/assignments', token),
+    apiFetch<AcademicYear[]>('/school/academic-years', token),
     apiFetch<Major[]>('/school/majors?activeOnly=true', token),
-    apiFetch<{ groups: { role: string; users: StaffCandidate[] }[] }>('/users/grouped?limit=100', token),
   ]);
 
-  // TF-1-FU-3: Perketat LoadError — jika SALAH SATU API inti gagal, jangan render parsial.
-  if (catalog === null || assignmentsRes === null) return <LoadError />;
+  if (positionsRes === null || yearsRes === null || majorsRes === null) {
+    return <LoadError />;
+  }
 
-  const positions = Array.isArray(catalog) ? catalog : [];
-  const academicYear = assignmentsRes?.academicYear ?? null;
-  const assignments = assignmentsRes?.assignments ?? [];
-  const majors = Array.isArray(majorsRes) ? majorsRes : [];
-  const staff: StaffCandidate[] = (groupedRes?.groups ?? [])
-    .filter((g) => STAFF_ROLES.includes(g.role))
-    .flatMap((g) => g.users.map((u) => ({ ...u, role: g.role })));
+  const activeYear = yearsRes.find((year) => year.isActive) ?? yearsRes[0] ?? null;
+  const selectedYearId = sp.yearId && yearsRes.some((year) => year.id === sp.yearId)
+    ? sp.yearId
+    : activeYear?.id;
+  const page = queryPage(sp.page);
+  const status = queryStatus(sp.status);
 
-  // TF-1-FU-5: Bedakan "API gagal" dari "benar-benar kosong" agar UI tidak menyesatkan.
-  const staffLoadError = groupedRes === null;
-  const isSuperAdmin = roles.includes('SUPER_ADMIN');
+  const appointmentParams: Record<string, string> = {
+    page: String(page),
+    limit: '20',
+  };
+  if (selectedYearId) appointmentParams.academicYearId = selectedYearId;
+  if (status) appointmentParams.status = status;
+  if (sp.q) appointmentParams.search = sp.q;
+  if (sp.positionId) appointmentParams.positionId = sp.positionId;
+  if (sp.majorId) appointmentParams.majorId = sp.majorId;
+  if (sp.kind === 'DEFINITIVE' || sp.kind === 'PLT') appointmentParams.kind = sp.kind;
+
+  const structureParams: Record<string, string> = { limit: '100' };
+  if (selectedYearId) structureParams.academicYearId = selectedYearId;
+
+  const replacementSourceParams: Record<string, string> = {
+    limit: '100',
+    status: 'ACTIVE,SUSPENDED',
+  };
+  if (activeYear?.id) replacementSourceParams.academicYearId = activeYear.id;
+
+  const [
+    appointmentsRes,
+    structureAppointmentsRes,
+    replacementSourceAppointmentsRes,
+    positionCapabilitiesRes,
+  ] = await Promise.all([
+    apiFetch<AppointmentRegistryResponse>('/appointments', token, appointmentParams),
+    apiFetch<AppointmentRegistryResponse>('/appointments', token, structureParams),
+    apiFetch<AppointmentRegistryResponse>('/appointments', token, replacementSourceParams),
+    apiFetch<PositionCapability[]>('/appointments/position-capabilities', token),
+  ]);
+
+  if (
+    appointmentsRes === null ||
+    structureAppointmentsRes === null ||
+    replacementSourceAppointmentsRes === null ||
+    positionCapabilitiesRes === null
+  ) return <LoadError />;
 
   return (
     <StrukturClient
-      positions={positions}
-      academicYear={academicYear}
-      assignments={assignments}
-      majors={majors}
-      staff={staff}
-      isSuperAdmin={isSuperAdmin}
-      staffLoadError={staffLoadError}
+      tab={tab}
+      roles={roles}
+      positions={positionsRes}
+      positionCapabilities={positionCapabilitiesRes}
+      years={yearsRes}
+      majors={majorsRes}
+      selectedYearId={selectedYearId ?? ''}
+      appointments={appointmentsRes}
+      structureAppointments={structureAppointmentsRes.data}
+      replacementAppointments={replacementSourceAppointmentsRes.data}
+      filters={{
+        q: sp.q ?? '',
+        status: status ?? '',
+        positionId: sp.positionId ?? '',
+        majorId: sp.majorId ?? '',
+        kind: sp.kind === 'DEFINITIVE' || sp.kind === 'PLT' ? sp.kind : '',
+        page,
+      }}
     />
   );
 }

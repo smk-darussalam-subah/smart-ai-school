@@ -28,12 +28,14 @@ import {
   revokeUserPermission,
   fetchUserOverrides,
   fetchEffectivePermissions,
+  fetchPermissionCatalog,
 } from '../actions';
 import AddUserDialog from './AddUserDialog';
 import UserAccessDialog from './UserAccessDialog';
+import type { PermissionItem } from '../page';
 
 const ROLES = [
-  'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA',
+  'SUPER_ADMIN', 'TATA_USAHA',
   'GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI',
 ] as const;
 
@@ -74,13 +76,8 @@ interface UserGroup {
   users: UserItem[];
 }
 
-interface PermissionItem {
-  id: string;
-  code: string;
-  description: string;
-  module: string;
-}
-
+// TF2-P0-NEW-1: PermissionItem type di-import dari page.tsx (single source
+// of truth). Hindari duplikasi type definition.
 interface UserPermission {
   permission: PermissionItem;
   grant: boolean;
@@ -88,15 +85,19 @@ interface UserPermission {
 
 interface Props {
   initialGroups: UserGroup[];
-  initialPermissions: PermissionItem[];
   isSuperAdmin: boolean;
 }
 
-export default function UsersClient({ initialGroups, initialPermissions, isSuperAdmin }: Props) {
+export default function UsersClient({ initialGroups, isSuperAdmin }: Props) {
   const router = useRouter();
 
   const [groups] = useState<UserGroup[]>(initialGroups);
-  const [permissions] = useState<PermissionItem[]>(initialPermissions);
+  // TF2-P0-NEW-1 (Opsi B): permissions tidak lagi di-pass dari page-level
+  // (initialPermissions prop dihapus). Lazy-load saat SUPER_ADMIN pertama kali
+  // klik tombol "Izin". Tujuannya: TU tidak memicu fetch /permissions yang
+  // akan 403 dan menyebabkan LoadError di page-level.
+  const [permissions, setPermissions] = useState<PermissionItem[]>([]);
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
   const [search, setSearch] = useState('');
 
   const [expandedRole, setExpandedRole] = useState<string | null>(null);
@@ -105,6 +106,10 @@ export default function UsersClient({ initialGroups, initialPermissions, isSuper
   const [effectivePerms, setEffectivePerms] = useState<string[]>([]);
   const [overrideLoading, setOverrideLoading] = useState(false);
   const [tab, setTab] = useState<'override' | 'effective'>('effective');
+  // TF2-P1-NEW-2: Error state untuk loadUserPermissions. Sebelumnya error
+  // di-swallow menjadi empty array → admin tidak bisa bedakan "user tidak
+  // punya izin" dari "API error".
+  const [permissionError, setPermissionError] = useState<string | null>(null);
 
   // TF2-P1-2: State untuk dialog korelasi Users ↔ Struktur (akses efektif).
   // Hanya SUPER_ADMIN yang bisa membuka — backend @Roles('SUPER_ADMIN') di
@@ -154,17 +159,44 @@ export default function UsersClient({ initialGroups, initialPermissions, isSuper
   const loadUserPermissions = async (userId: string) => {
     setSelectedUser(userId);
     setOverrideLoading(true);
+    // TF2-P1-NEW-2: Reset error state setiap kali load baru dimulai.
+    setPermissionError(null);
+
+    // TF2-P0-NEW-1 (Opsi B): Lazy-load permission catalog saat SUPER_ADMIN
+    // pertama kali buka panel izin. TU tidak pernah memanggil ini (tombol
+    // "Izin" hanya render saat isSuperAdmin).
+    if (isSuperAdmin && !permissionsLoaded) {
+      const catalogResult = await fetchPermissionCatalog();
+      if (catalogResult.error) {
+        // Catalog error tidak fatal — panel override akan tampil kosong tapi
+        // effectivePerms tetap bisa dimuat dari endpoint lain.
+        setPermissions([]);
+      } else if (Array.isArray(catalogResult.data)) {
+        setPermissions(catalogResult.data);
+      }
+      setPermissionsLoaded(true);
+    }
+
     const [overrideResult, effectiveResult] = await Promise.all([
       fetchUserOverrides(userId),
       fetchEffectivePermissions(userId),
     ]);
-    if (overrideResult.data) setUserPermissions(Array.isArray(overrideResult.data) ? overrideResult.data : []);
-    else setUserPermissions([]);
-    if (effectiveResult.data) {
-      const d = effectiveResult.data as { permissions: string[] };
-      setEffectivePerms(d.permissions ?? []);
-    } else {
+    // TF2-P1-NEW-2: Surface error eksplisit, jangan swallow sebagai empty.
+    if (overrideResult.error || effectiveResult.error) {
+      const msg = overrideResult.error || effectiveResult.error || 'Gagal memuat izin';
+      setPermissionError(msg);
+      setUserPermissions([]);
       setEffectivePerms([]);
+    } else {
+      setPermissionError(null);
+      if (overrideResult.data) setUserPermissions(Array.isArray(overrideResult.data) ? overrideResult.data : []);
+      else setUserPermissions([]);
+      if (effectiveResult.data) {
+        const d = effectiveResult.data as { permissions: string[] };
+        setEffectivePerms(d.permissions ?? []);
+      } else {
+        setEffectivePerms([]);
+      }
     }
     setOverrideLoading(false);
   };
@@ -355,6 +387,14 @@ export default function UsersClient({ initialGroups, initialPermissions, isSuper
             </div>
           </CardHeader>
           <CardContent>
+            {/* TF2-P1-NEW-2: Error banner saat API izin gagal. Sebelumnya error */}
+            {/* di-swallow jadi empty state → admin mengira user tak punya izin. */}
+            {permissionError && !overrideLoading && (
+              <div className="mb-3 rounded-md bg-red-50 border border-red-300 px-3 py-2 text-sm text-red-800">
+                <p className="font-semibold">Gagal memuat izin: {permissionError}</p>
+                <p className="mt-1 text-xs">Ini bukan berarti user tidak punya izin — kemungkinan ada masalah koneksi ke server. Coba tutup dan buka panel ini lagi.</p>
+              </div>
+            )}
             {overrideLoading ? (
               <p className="text-sm text-muted-foreground">Memuat data izin...</p>
             ) : tab === 'effective' ? (

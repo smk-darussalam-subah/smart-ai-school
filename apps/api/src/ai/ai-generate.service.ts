@@ -1,24 +1,65 @@
-// =============================================================================
-// AiGenerateService — AI-powered content generation (P16 — W3-5).
-// Generates questions, material, and ATP from RPP/CP/TP input.
-// Uses AIGateway (Ollama or Claude) for generation.
-// Audit trail: every generation is logged in AiGeneration table.
-// =============================================================================
-
-import { Inject, Injectable } from '@nestjs/common';
-import { AIGateway } from '@smk/types';
+import {
+  ForbiddenException,
+  GoneException,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { logger } from '@smk/logger';
+import { AIGateway } from '@smk/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveTeacherId } from '../common/helpers/role-helpers';
-import {
-  GenerateAtpDto,
-  GenerateMaterialDto,
-  GenerateQuestionsDto,
-  GenerateRppStepDto,
-} from './dto/generate.dto';
-// W3-5: PII strip sebelum cloud egress + audit disimpan dalam bentuk redacted.
-import { stripPiiForLlm } from './adapters/pii-strip.utils';
+import { AiRppSection, GenerateRppStepDto } from './dto/generate.dto';
+import { hasPii, stripPiiForLlm } from './adapters/pii-strip.utils';
+
+type AiErrorCode =
+  | 'AI_ENDPOINT_DISABLED'
+  | 'AI_FOUNDATION_INCOMPLETE'
+  | 'AI_CONTEXT_PII_BLOCKED'
+  | 'AI_PROVIDER_RATE_LIMITED'
+  | 'AI_PROVIDER_TIMEOUT'
+  | 'AI_PROVIDER_AUTH_FAILED'
+  | 'AI_PROVIDER_UNAVAILABLE'
+  | 'AI_OUTPUT_INVALID';
+
+type RppForAi = {
+  id: string;
+  teacherId: string;
+  classId: string | null;
+  subject: string;
+  title: string;
+  body: Prisma.JsonValue | null;
+  academicYear: string;
+  semester: number;
+  class: { id: string; name: string; grade: number; majorCode: string } | null;
+};
+
+type ResolvedRppContext = {
+  teacherId: string;
+  rpp: RppForAi;
+  body: Record<string, unknown>;
+};
+
+type AiCallResult = {
+  output: string;
+  model: 'ollama' | 'gpt-4.1-mini';
+  promptForAudit: string;
+};
+
+const SECTION_LABELS: Record<AiRppSection, string> = {
+  cp_tp: 'Capaian Pembelajaran (CP) dan Tujuan Pembelajaran (TP)',
+  atp: 'Alur Tujuan Pembelajaran (ATP)',
+  profil: 'Profil Pelajar Pancasila',
+  sarana: 'Sarana prasarana dan target peserta didik',
+  kegiatan: 'Kegiatan pembelajaran',
+  asesmen: 'Rencana asesmen',
+  remedial: 'Pengayaan dan remedial',
+  refleksi: 'Refleksi guru dan peserta didik',
+  lampiran: 'Catatan lampiran pembelajaran',
+};
 
 @Injectable()
 export class AiGenerateService {
@@ -28,174 +69,278 @@ export class AiGenerateService {
     @Inject('OPENAI_GATEWAY') private readonly openaiGateway: AIGateway | null,
   ) {}
 
-  /** Generate questions from RPP body */
-  async generateQuestions(dto: GenerateQuestionsDto, user: AuthUser) {
-    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
-    // W3-5: redact PII sebelum keluar server dan sebelum disimpan di audit.
-    const prompt = stripPiiForLlm(this.buildQuestionsPrompt(dto));
-    const output = await this.callAi(prompt);
-    await this.auditGeneration(teacherId, 'questions', prompt, output);
-    return { type: 'questions', output: this.extractJson(output) };
+  rejectLegacyGeneration(): never {
+    throw new GoneException({
+      message: 'AI_ENDPOINT_DISABLED',
+      error: 'AI_ENDPOINT_DISABLED',
+    });
   }
 
-  /** Generate learning material from RPP body */
-  async generateMaterial(dto: GenerateMaterialDto, user: AuthUser) {
-    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
-    const prompt = stripPiiForLlm(this.buildMaterialPrompt(dto));
-    const output = await this.callAi(prompt);
-    await this.auditGeneration(teacherId, 'material', prompt, output);
-    return { type: 'material', output };
-  }
-
-  /** Generate ATP (Alur Tujuan Pembelajaran) from CP + TP */
-  async generateAtp(dto: GenerateAtpDto, user: AuthUser) {
-    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
-    const prompt = stripPiiForLlm(this.buildAtpPrompt(dto));
-    const output = await this.callAi(prompt);
-    await this.auditGeneration(teacherId, 'atp', prompt, output);
-    return { type: 'atp', output: this.extractJson(output) };
-  }
-
-  /** P4 (S-12): Generate RPP step content (CP/TP, Profil, Sarana, etc.) */
   async generateRppStep(dto: GenerateRppStepDto, user: AuthUser) {
+    const resolved = await this.loadOwnedRppContext(dto.rppId, user);
+    this.assertSectionFoundation(dto.section, resolved.body);
+
+    const prompt = this.buildRppSectionPrompt(dto.section, resolved.rpp, resolved.body);
+    const ai = await this.callAi(prompt);
+    const output = this.normalizeSectionOutput(dto.section, ai.output);
+
+    await this.auditGeneration({
+      teacherId: resolved.teacherId,
+      type: `rpp-${dto.section}`,
+      prompt: ai.promptForAudit,
+      output: typeof output === 'string' ? output : JSON.stringify(output),
+      model: ai.model,
+    });
+
+    return { type: dto.section, output };
+  }
+
+  private async loadOwnedRppContext(rppId: string, user: AuthUser): Promise<ResolvedRppContext> {
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
-    const prompt = stripPiiForLlm(this.buildRppStepPrompt(dto));
-    const output = await this.callAi(prompt);
-    await this.auditGeneration(teacherId, `rpp-${dto.step}`, prompt, output);
-    return { type: dto.step, output };
-  }
+    const rpp = await this.prisma.rpp.findFirst({
+      where: { id: rppId, teacherId },
+      select: {
+        id: true,
+        teacherId: true,
+        classId: true,
+        subject: true,
+        title: true,
+        body: true,
+        academicYear: true,
+        semester: true,
+        class: { select: { id: true, name: true, grade: true, majorCode: true } },
+      },
+    });
 
-  // ── Private helpers ───────────────────────────────────────────────────────
-
-  /**
-   * R-28: Call AI gateway with OpenAI preferred, Ollama as fallback.
-   * Returns the raw text output from the LLM.
-   */
-  private async callAi(prompt: string): Promise<string> {
-    const gw = this.openaiGateway ?? this.gateway;
-    const result = await gw.chat(prompt);
-    if (!result || result.trim().length === 0) {
-      throw new Error('AI mengembalikan respons kosong');
+    if (!rpp) {
+      throw new ForbiddenException('Akses Modul Ajar ditolak');
     }
-    return result;
+    if (!rpp.classId) {
+      throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
+    }
+
+    const assignment = await this.prisma.teachingAssignment.findFirst({
+      where: {
+        teacherId,
+        classId: rpp.classId,
+        subject: rpp.subject,
+        academicYear: rpp.academicYear,
+      },
+      select: { id: true },
+    });
+    if (!assignment) {
+      throw new ForbiddenException('Assignment mengajar untuk Modul Ajar ini tidak aktif');
+    }
+
+    return { teacherId, rpp, body: this.toBodyRecord(rpp.body) };
   }
 
-  /**
-   * R-28: Returns the model name for audit trail — reflects which gateway was used.
-   */
-  private get activeModel(): string {
-    return this.openaiGateway ? 'gpt-4.1-mini' : 'ollama';
+  private assertSectionFoundation(section: AiRppSection, body: Record<string, unknown>): void {
+    if (section !== 'atp') return;
+    const cp = this.asText(body['cp']);
+    const tp = this.asStringArray(body['tp']);
+    if (!cp || tp.length === 0) {
+      throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
+    }
   }
 
-  /**
-   * R-34: Robust JSON extraction from LLM output.
-   * Handles: raw JSON, markdown code blocks (```json ... ```), and text+JSON mix.
-   * Throws with an informative message if all strategies fail (no silent fallback).
-   */
-  private extractJson(output: string): unknown {
-    // Strategy 1: Direct parse (fast path — clean JSON)
+  private async callAi(prompt: string): Promise<AiCallResult> {
+    const piiDetected = hasPii(prompt);
+    const promptForProvider = stripPiiForLlm(prompt);
+    const gateway = !piiDetected && this.openaiGateway ? this.openaiGateway : this.gateway;
+    const model = !piiDetected && this.openaiGateway ? 'gpt-4.1-mini' : 'ollama';
+
     try {
-      return JSON.parse(output);
-    } catch {
-      // continue to next strategy
-    }
-
-    // Strategy 2: Extract from markdown code block ```json ... ``` or ``` ... ```
-    const codeBlockMatch = output.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (codeBlockMatch?.[1]) {
-      try {
-        return JSON.parse(codeBlockMatch[1].trim());
-      } catch {
-        // continue to next strategy
+      const output = await gateway.chat(promptForProvider);
+      if (!output || output.trim().length === 0) {
+        throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
       }
+      return { output, model, promptForAudit: promptForProvider };
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      throw this.mapProviderError(err, piiDetected);
     }
-
-    // Strategy 3: Find first JSON array [...] or object {...} in the text
-    const bracketMatch = output.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
-    if (bracketMatch?.[1]) {
-      try {
-        return JSON.parse(bracketMatch[1]);
-      } catch {
-        // continue to next strategy
-      }
-    }
-
-    // All strategies failed — throw with informative message (R-34: no silent fallback)
-    throw new Error(
-      'AI output tidak bisa di-parse sebagai JSON. ' +
-        'Output (200 char pertama): ' +
-        output.slice(0, 200),
-    );
   }
 
-  private async auditGeneration(
-    teacherId: string,
-    type: string,
-    prompt: string,
-    output: string,
-  ): Promise<void> {
+  private mapProviderError(err: unknown, piiDetected: boolean): HttpException {
+    if (piiDetected) {
+      return this.aiException('AI_CONTEXT_PII_BLOCKED', HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+    if (message.includes('429') || message.includes('rate')) {
+      return this.aiException('AI_PROVIDER_RATE_LIMITED', HttpStatus.TOO_MANY_REQUESTS);
+    }
+    if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) {
+      return this.aiException('AI_PROVIDER_TIMEOUT', HttpStatus.GATEWAY_TIMEOUT);
+    }
+    if (message.includes('401') || message.includes('403') || message.includes('auth')) {
+      return this.aiException('AI_PROVIDER_AUTH_FAILED', HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    return this.aiException('AI_PROVIDER_UNAVAILABLE', HttpStatus.SERVICE_UNAVAILABLE);
+  }
+
+  private normalizeSectionOutput(section: AiRppSection, output: string): unknown {
+    if (section !== 'atp') return output.trim();
+    const parsed = this.extractJson(output);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    return parsed;
+  }
+
+  private extractJson(output: string): unknown {
+    const candidates = [
+      output,
+      output.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1],
+      output.match(/(\[[\s\S]*\]|\{[\s\S]*\})/)?.[1],
+    ].filter((candidate): candidate is string => typeof candidate === 'string');
+
+    for (const candidate of candidates) {
+      try {
+        return JSON.parse(candidate.trim());
+      } catch {
+        // Try the next candidate.
+      }
+    }
+    throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+  }
+
+  private async auditGeneration(input: {
+    teacherId: string;
+    type: string;
+    prompt: string;
+    output: string;
+    model: string;
+  }): Promise<void> {
+    const prompt = stripPiiForLlm(input.prompt).slice(0, 2000);
+    const output = stripPiiForLlm(input.output).slice(0, 4000);
     try {
       await this.prisma.aiGeneration.create({
         data: {
-          teacherId,
-          type,
+          teacherId: input.teacherId,
+          type: input.type,
           prompt,
           output,
-          model: this.activeModel,
+          model: input.model,
           tokensUsed: Math.ceil((prompt.length + output.length) / 4),
         },
       });
     } catch (err) {
       logger.warn('[AiGenerateService] Failed to create audit trail (fail-soft)', {
-        teacherId, type,
+        teacherId: input.teacherId,
+        type: input.type,
         error: err instanceof Error ? err.message : String(err),
       });
     }
   }
 
-  private buildQuestionsPrompt(dto: GenerateQuestionsDto): string {
-    const typeMap: Record<string, string> = {
-      multiple_choice: 'pilihan ganda (dengan 4 opsi A-D dan kunci jawaban)',
-      essay: 'uraian/esai',
-      true_false: 'benar/salah',
-    };
-    return `Sebagai guru ${dto.subject}, buatlah ${dto.count} soal ${typeMap[dto.type] ?? 'pilihan ganda'} ` +
-      `berdasarkan Rencana Pembelajaran berikut. Format output sebagai JSON array.\n\n` +
-      `RPP:\n${dto.rppBody}\n\n` +
-      `Format: [{"body": "pertanyaan", "options": ["A","B","C","D"], "answer": "A", "difficulty": "medium"}]`;
+  private buildRppSectionPrompt(
+    section: AiRppSection,
+    rpp: RppForAi,
+    body: Record<string, unknown>,
+  ): string {
+    const base = [
+      'Anda membantu guru menyusun satu bagian Modul Ajar Kurikulum Merdeka.',
+      'Gunakan hanya konteks tersimpan berikut. Jangan menambah data pribadi siswa/guru.',
+      `Target bagian: ${SECTION_LABELS[section]}.`,
+      `Mapel: ${rpp.subject}.`,
+      `Judul: ${rpp.title}.`,
+      `Tahun ajaran: ${rpp.academicYear}.`,
+      `Semester: ${rpp.semester}.`,
+      rpp.class ? `Kelas: ${rpp.class.name} (kelas ${rpp.class.grade}, jurusan ${rpp.class.majorCode}).` : '',
+      this.asText(body['fase']) ? `Fase: ${this.asText(body['fase'])}.` : '',
+      this.asText(body['model']) ? `Model pembelajaran: ${this.asText(body['model'])}.` : '',
+      this.asNumberText(body['jpAllocation']) ? `Alokasi JP: ${this.asNumberText(body['jpAllocation'])}.` : '',
+      this.asNumberText(body['durasiMenit']) ? `Durasi per JP: ${this.asNumberText(body['durasiMenit'])} menit.` : '',
+    ].filter(Boolean);
+
+    const foundation = [
+      this.asText(body['cp']) ? `CP tersimpan:\n${this.asText(body['cp'])}` : '',
+      this.asStringArray(body['tp']).length
+        ? `TP tersimpan:\n${this.asStringArray(body['tp']).map((tp, index) => `${index + 1}. ${tp}`).join('\n')}`
+        : '',
+      this.asText(body['kompetensiAwal']) ? `Kompetensi awal:\n${this.asText(body['kompetensiAwal'])}` : '',
+    ].filter(Boolean);
+
+    const sectionContext = this.sectionSpecificContext(section, body);
+    const outputRule = section === 'atp'
+      ? 'Kembalikan JSON array saja dengan bentuk [{"tpRef":"TP 1","indikator":"indikator singkat"}].'
+      : 'Kembalikan markdown singkat yang langsung dapat disunting guru.';
+
+    return [
+      ...base,
+      foundation.length ? foundation.join('\n\n') : 'CP/TP belum tersimpan.',
+      sectionContext,
+      outputRule,
+    ].filter(Boolean).join('\n\n').slice(0, 10000);
   }
 
-  private buildMaterialPrompt(dto: GenerateMaterialDto): string {
-    return `Sebagai guru ${dto.subject}, buatlah materi pembelajaran yang informatif ` +
-      `dan mudah dipahami berdasarkan RPP berikut. Gunakan format markdown.\n\n` +
-      `RPP:\n${dto.rppBody}`;
+  private sectionSpecificContext(section: AiRppSection, body: Record<string, unknown>): string {
+    switch (section) {
+      case 'cp_tp':
+        return [
+          this.asText(body['kompetensiAwal']) ? `Kompetensi awal: ${this.asText(body['kompetensiAwal'])}` : '',
+          'Bantu rumuskan CP dan TP terukur. Jangan membuat ATP di bagian ini.',
+        ].filter(Boolean).join('\n');
+      case 'atp':
+        return 'Susun urutan alur dari TP tersimpan. Jangan membuat TP baru.';
+      case 'profil':
+        return [
+          this.asStringArray(body['profilDimensi']).length
+            ? `Dimensi terpilih: ${this.asStringArray(body['profilDimensi']).join(', ')}.`
+            : 'Dimensi belum dipilih; usulkan dimensi yang relevan dari daftar Profil Pelajar Pancasila.',
+          this.asText(body['profilUraian']) ? `Uraian saat ini:\n${this.asText(body['profilUraian'])}` : '',
+        ].filter(Boolean).join('\n\n');
+      case 'sarana':
+        return [
+          this.asText(body['sarana']) ? `Sarana saat ini:\n${this.asText(body['sarana'])}` : '',
+          this.asText(body['target']) ? `Target peserta didik saat ini:\n${this.asText(body['target'])}` : '',
+        ].filter(Boolean).join('\n\n');
+      case 'kegiatan':
+        return [
+          'Buat kegiatan pendahuluan, inti, dan penutup untuk pertemuan pertama.',
+          this.asText(body['model']) ? `Model pembelajaran: ${this.asText(body['model'])}` : '',
+        ].filter(Boolean).join('\n');
+      case 'asesmen':
+        return 'Buat asesmen diagnostik, formatif, dan sumatif yang selaras dengan TP tersimpan.';
+      case 'remedial':
+        return [
+          this.asText(body['kktp']) ? `KKTP: ${this.asText(body['kktp'])}.` : '',
+          'Buat pengayaan untuk siswa tuntas dan remedial untuk siswa belum tuntas.',
+        ].filter(Boolean).join('\n');
+      case 'refleksi':
+        return 'Buat pertanyaan refleksi untuk guru dan peserta didik.';
+      case 'lampiran':
+        return 'Usulkan daftar lampiran belajar berupa teks/catatan. Jangan membuat tautan palsu.';
+    }
   }
 
-  private buildAtpPrompt(dto: GenerateAtpDto): string {
-    const tpList = dto.tp.map((t, i) => `${i + 1}. ${t}`).join('\n');
-    return `Sebagai guru ${dto.subject}, susun Alur Tujuan Pembelajaran (ATP) ` +
-      `berdasarkan Capaian Pembelajaran (CP) dan Tujuan Pembelajaran (TP) berikut. ` +
-      `Format output sebagai JSON array of objects.\n\n` +
-      `CP: ${dto.cp}\n\nTP:\n${tpList}\n\n` +
-      `Format: [{"code": "TP 1.1", "tp": "deskripsi", "atp": ["sub-tujuan 1", "sub-tujuan 2"]}]`;
+  private toBodyRecord(value: Prisma.JsonValue | null): Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
   }
 
-  // P4 (S-12): Generic RPP step prompt builder
-  private buildRppStepPrompt(dto: GenerateRppStepDto): string {
-    const stepLabels: Record<string, string> = {
-      cp_tp: 'Capaian Pembelajaran (CP) dan Tujuan Pembelajaran (TP)',
-      profil: 'Profil Pelajar Pancasila (dimensi yang dikembangkan)',
-      sarana: 'Sarana Prasarana dan profil peserta didik target',
-      kegiatan: 'Kegiatan Pembelajaran (Pendahuluan, Inti, Penutup per pertemuan)',
-      asesmen: 'Rencana penilaian (diagnostik, formatif, sumatif)',
-      remedial: 'Pengayaan dan Remedial',
-      refleksi: 'Refleksi Guru dan Peserta Didik',
-      lampiran: 'Lampiran (handout, slide, lembar kerja)',
-    };
-    const label = stepLabels[dto.step] ?? dto.step;
-    return `Sebagai guru ${dto.subject}, buatlah draf ${label} untuk Modul Ajar. ` +
-      `Format markdown yang informatif dan siap dipakai.\n\n` +
-      `Konteks dari langkah sebelumnya:\n${dto.context}\n\n` +
-      `Berikan output yang konkret dan relevan dengan mapel ${dto.subject}.`;
+  private asText(value: unknown): string {
+    if (typeof value === 'string') return value.trim().slice(0, 3000);
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    return '';
+  }
+
+  private asNumberText(value: unknown): string {
+    return typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
+  }
+
+  private asStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 50);
+  }
+
+  private aiException(code: AiErrorCode, status: HttpStatus): HttpException {
+    return new HttpException({ message: code, error: code }, status);
   }
 }
