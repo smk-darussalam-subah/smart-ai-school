@@ -164,6 +164,7 @@ After operator confirmation that OpenAI is the intended chat/generate provider, 
 - `.env.example` now documents `AI_PROVIDER`, `OPENAI_API_KEY`, and `OPENAI_CHAT_MODEL`.
 - `infrastructure/docker/.env.staging.example` now documents the same staging AI provider keys.
 - `infrastructure/docker/docker-compose.staging.yml` now explicitly passes the OpenAI provider variables to `smk-staging-api`.
+- A staging runtime follow-up found `OLLAMA_CHAT_MODEL` was also absent from the effective `smk-staging-api` environment. The staging override now explicitly passes `OLLAMA_CHAT_MODEL`, `OLLAMA_EMBED_MODEL`, and `OLLAMA_EMBED_DIMENSIONS`; staging defaults the local chat model to `qwen2.5:1.5b` to avoid the observed `qwen2.5:7b` memory failure on the current VPS profile.
 
 Local verification after this source follow-up:
 
