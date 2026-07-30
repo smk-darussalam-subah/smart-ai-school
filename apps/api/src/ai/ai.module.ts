@@ -1,13 +1,13 @@
 // =============================================================================
 // AiModule — Provider AI_GATEWAY (Ollama, selalu) + CLAUDE_GATEWAY (legacy) + OPENAI_GATEWAY (R-28)
 //
-// AI_GATEWAY    = OllamaAdapter — selalu aktif; dipakai untuk embed() + chat fallback.
+// AI_GATEWAY    = OllamaAdapter — selalu aktif; dipakai untuk embed() + rute lokal.
 // OPENAI_GATEWAY = OpenAiAdapter | null — aktif hanya jika:
 //   AI_PROVIDER=openai DAN OPENAI_API_KEY tersedia.
 //   R-28: Hybrid strategy — Ollama (embed only) + OpenAI gpt-4.1-mini (chat/generate).
 // CLAUDE_GATEWAY = ClaudeAdapter | null — legacy; aktif hanya jika:
 //   AI_PROVIDER=claude DAN ANTHROPIC_API_KEY tersedia.
-//   Tanpa key → null → service fallback ke Ollama.
+//   Tanpa key → null.
 //
 // Decision tree PII (R-03) ada di AiService.chatWithRag(), bukan di sini.
 // Pola identik NotificationModule (useFactory buildAdapter).
@@ -36,7 +36,7 @@ function buildAiGateway(): AIGateway {
 
 /** Kembalikan ClaudeAdapter jika AI_PROVIDER=claude + ANTHROPIC_API_KEY tersedia; null jika tidak. */
 function buildClaudeGateway(): AIGateway | null {
-  const provider = process.env['AI_PROVIDER'] ?? 'ollama';
+  const provider = process.env['AI_PROVIDER'] ?? 'openai';
   const apiKey = process.env['ANTHROPIC_API_KEY'];
 
   if (provider !== 'claude' || !apiKey) return null;
@@ -46,7 +46,7 @@ function buildClaudeGateway(): AIGateway | null {
 
 /** R-28: Kembalikan OpenAiAdapter jika AI_PROVIDER=openai + OPENAI_API_KEY tersedia; null jika tidak. */
 function buildOpenAiGateway(): AIGateway | null {
-  const provider = process.env['AI_PROVIDER'] ?? 'ollama';
+  const provider = process.env['AI_PROVIDER'] ?? 'openai';
   const apiKey = process.env['OPENAI_API_KEY'];
 
   if (provider !== 'openai' || !apiKey) return null;
