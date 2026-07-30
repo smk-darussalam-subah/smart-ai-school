@@ -2,14 +2,13 @@
 
 // QuestionBankEditor — CRUD soal via /questions API (P20 — W3-2).
 // Supports: multiple_choice, essay, true_false.
-// AI Generate button calls /ai/generate-questions (rate-limited 10/min).
 
 import { useState, useTransition, useEffect } from 'react';
-import { Database, Plus, Trash2, Pencil, X, Sparkles, Loader2, Check, Download, Upload } from 'lucide-react';
+import { Database, Plus, Trash2, Pencil, X, Loader2, Check, Download, Upload } from 'lucide-react';
 import clsx from 'clsx';
 import {
   fetchQuestions, createQuestion, updateQuestion, deleteQuestion,
-  aiGenerateQuestions, exportQuestionsCsv, importQuestionsCsv,
+  exportQuestionsCsv, importQuestionsCsv,
   type QuestionData, type EssayRubricCriteria,
 } from '../actions';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -41,7 +40,6 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, startLoad] = useTransition();
   const [saving, startSave] = useTransition();
-  const [aiLoading, startAi] = useTransition();
   // err state replaced by sonner toast — setErr(null) is no-op, setErr(msg) = toast.error(msg)
   const setErr = (msg: string | null) => { if (msg) toast.error(msg); };
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -143,28 +141,6 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
       const res = await deleteQuestion(id);
       if (!res.success) { setErr(res.error ?? 'Gagal menghapus.'); return; }
       setQuestions((prev) => prev.filter((q) => q.id !== id));
-    });
-  };
-
-  const handleAiGenerate = () => {
-    setErr(null);
-    startAi(async () => {
-      const res = await aiGenerateQuestions({
-        rppBody: fBody || subject,
-        subject,
-        count: 5,
-        type: fType,
-      });
-      if (!res.success) {
-        const msg = res.error ?? 'Gagal generate AI.';
-        setErr(msg.includes('429') ? 'Rate limit tercapai (10/menit). Coba lagi nanti.' : msg);
-        return;
-      }
-      // AI returns generated questions — add to list as draft
-      const aiData = res.data as { output: Question[] };
-      if (aiData?.output && Array.isArray(aiData.output)) {
-        setQuestions((prev) => [...prev, ...aiData.output.map((q) => ({ ...q, id: `ai-${Date.now()}-${Math.random()}` }))]);
-      }
     });
   };
 
@@ -292,7 +268,7 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
             </div>
           ) : questions.length === 0 ? (
             <div className="grid h-32 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">
-              Belum ada soal. Klik &quot;Tambah Soal&quot; atau &quot;Generate AI&quot; untuk memulai.
+              Belum ada soal. Klik &quot;Tambah Soal&quot; untuk memulai.
             </div>
           ) : (
             questions.map((q, idx) => (
@@ -509,10 +485,6 @@ export default function QuestionBankEditor({ subject, onClose }: Props) {
                 Import CSV
               </button>
               <button type="button" onClick={onClose} className={clsx(BTN, 'border border-[#e6efea] bg-white text-[#355a4e] hover:bg-[#f4f7f5]')}>Tutup</button>
-              <button type="button" onClick={handleAiGenerate} disabled={aiLoading} className={clsx(BTN, 'border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-50')}>
-                {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                Generate AI
-              </button>
               <button type="button" onClick={() => { resetForm(); setShowForm(true); }} className={clsx(BTN, 'bg-emerald-600 text-white hover:bg-emerald-700')}>
                 <Plus className="h-4 w-4" />Tambah Soal
               </button>
