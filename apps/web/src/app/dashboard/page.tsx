@@ -11,6 +11,7 @@ import { type PapanRow, type PapanCell } from './_components/PapanPembelajaran';
 import BerandaKiosk, { type KioskChartClass, type KioskHealth } from './_components/BerandaKiosk';
 import type { KaldikEvent } from '@/lib/kiosk';
 import { scheduleDayOfWeek, JP_COUNT, currentJp, wibNow, wibTodayISO } from '@/lib/bell-times';
+import { isMobileOnlyDashboardRoleSet } from '@/lib/dashboard-routing';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -221,12 +222,7 @@ export default async function DashboardPage() {
   // Siswa & Orang Tua (role mobile-only) redirect ke workspace Akademik yang
   // self-contained (punya bottom-nav + tombol Keluar di account sheet). Tanpa
   // ini, mereka land di beranda kiosk yang hideChrome (tanpa sidebar/logout).
-  const isMobileOnlyRole =
-    (roles.includes('SISWA') || roles.includes('ORANG_TUA')) &&
-    !roles.includes('GURU') &&
-    !roles.includes('KEPALA_SEKOLAH') &&
-    !roles.includes('SUPER_ADMIN') &&
-    !roles.includes('TATA_USAHA');
+  const isMobileOnlyRole = isMobileOnlyDashboardRoleSet(roles);
   if (isMobileOnlyRole) {
     redirect('/dashboard/akademik');
   }
