@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import {
   Home, CalendarClock, BookOpen, TrendingUp, ClipboardList,
@@ -30,6 +30,7 @@ import { subscribePush, unsubscribePush, fetchDailyQuests, fetchPersonalCalendar
 import {
   normalizeAnnouncements,
 } from './siswa-data';
+import { withCompletedModuleProgress } from './siswa-modul-progress';
 import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaXP, SiswaLeaderboardEntry, SiswaModul, SiswaCP, SiswaKehadiranStats, SiswaQuest, SiswaKalenderEvent, BadgeCelebrationData } from './siswa-types';
 import type { AttendanceEntry } from './KehadiranSiswa';
 
@@ -148,6 +149,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
   const [realQuests, setRealQuests] = useState<SiswaQuest | null>(null);
   const [realCalendar, setRealCalendar] = useState<SiswaKalenderEvent[] | null>(null);
   const [schoolCalendarEvents, setSchoolCalendarEvents] = useState<SchoolCalendarEvent[]>([]);
+  const [completedModuleUuids, setCompletedModuleUuids] = useState<ReadonlySet<string>>(new Set());
 
   // B1: Fetch daily quests on mount
   useEffect(() => {
@@ -194,6 +196,27 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  const displayedModules = useMemo(
+    () => withCompletedModuleProgress((realModules ?? []) as unknown as SiswaModul[], completedModuleUuids),
+    [realModules, completedModuleUuids],
+  );
+
+  const recentlyCompletedModule = useMemo(() => {
+    const completed = Array.from(completedModuleUuids);
+    const latestModuleUuid = completed[completed.length - 1];
+
+    return latestModuleUuid
+      ? displayedModules.find((module) => module.uuid === latestModuleUuid) ?? null
+      : null;
+  }, [completedModuleUuids, displayedModules]);
+
+  const onModuleCompleted = useCallback((moduleUuid: string) => {
+    setCompletedModuleUuids((current) => {
+      if (current.has(moduleUuid)) return current;
+      return new Set([...current, moduleUuid]);
+    });
   }, []);
 
   // Navigation
@@ -263,7 +286,8 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             grades={(grades ?? []) as SiswaNilai[]}
             tasks={(realAssignments ?? []) as unknown as SiswaTugas[]}
             badges={realBadges ?? []}
-            modules={(realModules ?? []) as unknown as SiswaModul[]}
+            modules={displayedModules}
+            recentlyCompletedModule={recentlyCompletedModule}
             quest={realQuests ?? { title: 'Daily Quest', tasks: [] }}
             xp={realXp ?? { level: 1, current: 0, next: 500 }}
             kehStats={realAttStats ?? { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, pct: 0 }}
@@ -288,9 +312,10 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
         return (
           <ModulSiswa
             {...commonProps}
-            modules={(realModules ?? []) as unknown as SiswaModul[]}
+            modules={displayedModules}
             badges={realBadges ?? []}
             setActiveModulId={setActiveModulId}
+            onModuleCompleted={onModuleCompleted}
           />
         );
       case 'nilai':
