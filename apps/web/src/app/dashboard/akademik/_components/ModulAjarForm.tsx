@@ -24,6 +24,7 @@ import {
   runContainedAiSectionFlow,
   type AiSection,
 } from './modul-ajar-ai-containment';
+import { profileOptionsWithSavedValues, resolveProfileFramework } from './modul-ajar-profile';
 
 interface Props {
   open: boolean;
@@ -41,18 +42,13 @@ interface Props {
 const FIELD = 'w-full rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[13px] text-[#0f2e25] outline-none focus:border-emerald-400';
 const LBL = 'mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]';
 
-const DIMENSI = [
-  'Beriman & Berakhlak Mulia', 'Berkebinekaan Global', 'Bergotong Royong',
-  'Mandiri', 'Bernalar Kritis', 'Kreatif',
-];
-
 const MODELS = ['Project-Based Learning (PjBL)', 'Problem-Based Learning (PBL)', 'Discovery Learning', 'Inquiry Learning', 'Diferensiasi'];
 
-const STEPS = [
+const makeSteps = (profileLabel: string) => [
   { n: 1, label: 'Identitas Modul', icon: Info, req: true },
   { n: 2, label: 'Capaian & Tujuan', icon: Target, req: true },
   { n: 3, label: 'Alur Tujuan (ATP)', icon: Route, req: false },
-  { n: 4, label: 'Profil Pelajar Pancasila', icon: Users, req: false },
+  { n: 4, label: profileLabel, icon: Users, req: false },
   { n: 5, label: 'Sarana & Target Siswa', icon: Package, req: false },
   { n: 6, label: 'Kegiatan Pembelajaran', icon: Layers, req: true },
   { n: 7, label: 'Asesmen', icon: ClipboardCheck, req: true },
@@ -89,6 +85,9 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
   const [aiMessage, setAiMessage] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const aiRequestGuard = useRef(createAiSingleFlightGuard()).current;
+  const profileFramework = resolveProfileFramework(academicYear);
+  const profileOptions = profileOptionsWithSavedValues(academicYear, body.profilDimensi);
+  const steps = makeSteps(profileFramework.label);
 
   useEffect(() => {
     setCurrentRppId(editing?.id ?? null);
@@ -223,9 +222,9 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
       body,
       isGenerating: aiRequestGuard.isActive(),
     });
-    if (buttonState.reason === 'missing_tp') {
+    if (buttonState.reason === 'missing_foundation') {
       goStep(2);
-      showToast('Isi dan simpan TP terlebih dahulu.');
+      showToast(mapAiErrorToTeacherCopy('AI_FOUNDATION_INCOMPLETE'));
       return;
     }
 
@@ -266,7 +265,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
         applyAiPatch(result.patch);
         setAiPhase('ready');
         setAiMessage('Usulan AI sudah masuk. Tinjau dan simpan kembali bila sesuai.');
-        showToast(`Bagian "${STEPS[stepNum - 1]?.label}" siap ditinjau.`);
+        showToast(`Bagian "${steps[stepNum - 1]?.label}" siap ditinjau.`);
         setActiveAiStep(null);
         setAiPhase('idle');
         return;
@@ -408,6 +407,8 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
       aiLabel: state.label,
       aiDisabled: state.disabled || pending,
       aiBusy: activeAiStep === stepNum,
+      aiTestId: step === stepNum ? 'modul-ajar-ai-active-cta' : undefined,
+      aiSection: section,
     };
   };
 
@@ -460,7 +461,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           {/* Step sidebar — desktop */}
           <nav className="hidden w-56 shrink-0 overflow-y-auto border-r border-[#e6efea] bg-[#f9fbfa] py-3 lg:block">
-            {STEPS.map((s) => {
+            {steps.map((s) => {
               const Icon = s.icon;
               const active = step === s.n;
               return (
@@ -481,7 +482,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
 
           {/* Mobile stepper — atas konten (column), horizontal scroll anti-wrap */}
           <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-[#e6efea] px-4 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
-            {STEPS.map((s) => (
+            {steps.map((s) => (
               <button key={s.n} type="button" onClick={() => goStep(s.n)}
                 className={clsx('flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold',
                   step === s.n ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-[#e6efea] bg-white text-[#6b8079]')}>
@@ -573,12 +574,12 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
                 </Field>
               </SectionCard>
 
-              {/* STEP 4: Profil Pelajar Pancasila */}
-              <SectionCard step={4} activeStep={step} title="Profil Pelajar Pancasila" desc="Pilih dimensi yang dikembangkan dalam modul ajar ini" icon={Users} {...aiButtonProps(4)}>
-                <Field label="Dimensi Profil Pelajar Pancasila">
+              {/* STEP 4: Profil */}
+              <SectionCard step={4} activeStep={step} title={profileFramework.label} desc="Pilih dimensi yang dikembangkan dalam modul ajar ini" icon={Users} {...aiButtonProps(4)}>
+                <Field label={profileFramework.label}>
                   <p className="mb-2 text-[10.5px] text-[#6b8079]">Pilih minimal 1 dimensi yang menjadi fokus</p>
                   <div className="flex flex-wrap gap-2">
-                    {DIMENSI.map((d) => {
+                    {profileOptions.map((d) => {
                       const on = (body.profilDimensi ?? []).includes(d);
                       return (
                         <button type="button" key={d} onClick={() => toggleDimensi(d)}
@@ -590,7 +591,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
                     })}
                   </div>
                 </Field>
-                <Field label="Uraian Aktivitas Profil Pelajar"><textarea value={body.profilUraian ?? ''} onChange={(e) => set('profilUraian', e.target.value)} rows={2} className={`${FIELD} resize-y`} placeholder="Jelaskan bagaimana dimensi yang dipilih dikembangkan..." /></Field>
+                <Field label={profileFramework.activityLabel}><textarea value={body.profilUraian ?? ''} onChange={(e) => set('profilUraian', e.target.value)} rows={2} className={`${FIELD} resize-y`} placeholder="Jelaskan bagaimana dimensi yang dipilih dikembangkan..." /></Field>
               </SectionCard>
 
               {/* STEP 5: Sarana & Target */}
@@ -700,7 +701,7 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
                   <RekapBlock label="Tujuan Pembelajaran (TP)">
                     {tp.filter((t) => t.trim()).length > 0 ? <ul className="list-disc pl-4">{tp.filter((t) => t.trim()).map((t, i) => <li key={i}>{t}</li>)}</ul> : <em className="text-[#9bb0a8]">Belum diisi</em>}
                   </RekapBlock>
-                  <RekapBlock label="Profil Pelajar Pancasila">{body.profilDimensi?.length ? body.profilDimensi.join(', ') : <em className="text-[#9bb0a8]">Belum dipilih</em>}</RekapBlock>
+                  <RekapBlock label={profileFramework.label}>{body.profilDimensi?.length ? body.profilDimensi.join(', ') : <em className="text-[#9bb0a8]">Belum dipilih</em>}</RekapBlock>
                   <RekapBlock label="Kegiatan Pembelajaran">
                     {keg.length > 0 ? keg.map((k, i) => <div key={i} className="mb-1"><b>{k.pertemuan ?? `Pertemuan ${i + 1}`}:</b> {k.pendahuluan ? 'Pendahuluan ✓' : ''} {k.inti ? 'Inti ✓' : ''} {k.penutup ? 'Penutup ✓' : ''}</div>) : <em className="text-[#9bb0a8]">Belum diisi</em>}
                   </RekapBlock>
@@ -769,13 +770,15 @@ export default function ModulAjarForm({ open, onClose, subjects, classes, academ
 
 // ── Helper Components ──────────────────────────────────────────────
 
-function SectionCard({ step, activeStep, title, desc, req, icon: Icon, onAI, aiLabel, aiDisabled, aiBusy, simLabel, children }: {
+function SectionCard({ step, activeStep, title, desc, req, icon: Icon, onAI, aiLabel, aiDisabled, aiBusy, aiTestId, aiSection, simLabel, children }: {
   step: number; activeStep: number; title: string; desc: string; req?: boolean;
   icon: React.ComponentType<{ className?: string }>;
   onAI?: () => void;
   aiLabel?: string;
   aiDisabled?: boolean;
   aiBusy?: boolean;
+  aiTestId?: string;
+  aiSection?: AiSection;
   simLabel?: string;
   children: React.ReactNode;
 }) {
@@ -792,7 +795,14 @@ function SectionCard({ step, activeStep, title, desc, req, icon: Icon, onAI, aiL
             {simLabel && (
               <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">{simLabel}</span>
             )}
-            <button type="button" onClick={onAI} disabled={aiDisabled} className="inline-flex items-center gap-1 rounded-lg border border-violet-300 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-60">
+            <button
+              type="button"
+              onClick={onAI}
+              disabled={aiDisabled}
+              data-testid={aiTestId}
+              data-ai-section={aiSection}
+              className="inline-flex items-center gap-1 rounded-lg border border-violet-300 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-60"
+            >
               {aiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
               {aiLabel ?? 'Bantu isi bagian ini'}
             </button>

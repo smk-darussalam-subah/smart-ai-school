@@ -5,7 +5,7 @@
 // Aturan backend dihormati: edit hanya draft/revision, hapus hanya draft.
 // Editor konten LMS interaktif = placeholder jujur (backend LMS dibangun berikutnya).
 
-import { useState, useTransition, useEffect, useMemo } from 'react';
+import { useState, useTransition, useEffect, useMemo, useRef } from 'react';
 import { FileText, Plus, Pencil, Send, Trash2, AlertTriangle, BookOpen, Loader2, Eye, EyeOff, Archive, Users, Activity, TrendingUp, GitBranch, ArrowRight, Maximize2, Info } from 'lucide-react';
 import clsx from 'clsx';
 import type { RppItem, LmsModuleItem } from './guru-types';
@@ -19,6 +19,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { TablePagination } from '@/components/ui/table-pagination';
 import { toast } from 'sonner';
 import { getPendingCreatedDraft } from './modul-ajar-draft-state';
+import { createLmsActionGuard, LMS_STATUS_AFTER_ACTION, runLmsActionLifecycle, updateLmsBusyIds, withLmsStatusOverrides } from './lms-status-optimistic';
 
 interface ConfirmState {
   title: string;
@@ -55,7 +56,6 @@ const LMS_BADGE: Record<string, string> = {
   published: 'bg-emerald-50 text-emerald-700', draft: 'bg-slate-100 text-slate-600', archived: 'bg-zinc-100 text-zinc-500',
 };
 const LMS_LABEL: Record<string, string> = { published: 'Terbit', draft: 'Draft', archived: 'Arsip' };
-
 const RPP_PAGE_SIZE = 8;
 const LMS_PAGE_SIZE = 8;
 
@@ -66,9 +66,12 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
   const [editing, setEditing] = useState<RppItem | null>(null);
   const [createdDraft, setCreatedDraft] = useState<RppItem | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [lmsBusyIds, setLmsBusyIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [lmsStatusOverrides, setLmsStatusOverrides] = useState<Record<string, LmsModuleItem['status']>>({});
   const [pending, startTransition] = useTransition();
   const [rppPage, setRppPage] = useState(1);
   const [lmsPage, setLmsPage] = useState(1);
+  const lmsActionGuard = useRef(createLmsActionGuard()).current;
 
   // Filter rpp by activeSubject (dari session flow "Buka Modul Ajar") bila ada.
   const subjectFiltered = activeSubject && activeSubject !== 'all' ? activeSubject : null;
@@ -81,9 +84,13 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
     () => shownRpp.slice((rppPage - 1) * RPP_PAGE_SIZE, rppPage * RPP_PAGE_SIZE),
     [shownRpp, rppPage],
   );
+  const effectiveLmsModules = useMemo(
+    () => withLmsStatusOverrides(lmsModules, lmsStatusOverrides),
+    [lmsModules, lmsStatusOverrides],
+  );
   const paginatedLms = useMemo(
-    () => lmsModules.slice((lmsPage - 1) * LMS_PAGE_SIZE, lmsPage * LMS_PAGE_SIZE),
-    [lmsModules, lmsPage],
+    () => effectiveLmsModules.slice((lmsPage - 1) * LMS_PAGE_SIZE, lmsPage * LMS_PAGE_SIZE),
+    [effectiveLmsModules, lmsPage],
   );
 
   const [lmsFormOpen, setLmsFormOpen] = useState(false);
@@ -123,12 +130,19 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
   const openLmsCreate = () => { setLmsEditing(null); setLmsFormOpen(true); };
   const openLmsEdit = (m: LmsModuleItem) => { setLmsEditing(m); setLmsFormOpen(true); };
 
-  const lmsAction = (id: string, fn: () => Promise<{ success: boolean; error?: string }>) => {
-    setBusyId(id);
+  const lmsAction = (id: string, fn: () => Promise<{ success: boolean; error?: string }>, nextStatus?: LmsModuleItem['status']) => {
     startTransition(async () => {
-      const res = await fn();
-      setBusyId(null);
-      if (!res.success) toast.error(res.error ?? 'Aksi Modul LMS gagal.');
+      await runLmsActionLifecycle({
+        id,
+        guard: lmsActionGuard,
+        action: fn,
+        nextStatus,
+        setBusyId: (value) => {
+          setLmsBusyIds((prev) => updateLmsBusyIds(prev, id, Boolean(value)));
+        },
+        applyStatus: (moduleId, status) => setLmsStatusOverrides((prev) => ({ ...prev, [moduleId]: status })),
+        notifyError: (message) => toast.error(message),
+      });
     });
   };
   const doLmsStatus = (m: LmsModuleItem, action: 'publish' | 'unpublish' | 'archive') => {
@@ -138,7 +152,7 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
         description: `Publikasikan modul "${m.title}" ke siswa kelas terkait?`,
         variant: 'info',
         confirmLabel: 'Publikasikan',
-        action: () => lmsAction(m.id, () => setLmsModuleStatus(m.id, action)),
+        action: () => lmsAction(m.id, () => setLmsModuleStatus(m.id, action), LMS_STATUS_AFTER_ACTION[action]),
       });
       return;
     }
@@ -148,11 +162,11 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
         description: `Arsipkan modul "${m.title}"? Modul tak lagi tampil aktif bagi siswa.`,
         variant: 'warning',
         confirmLabel: 'Arsipkan',
-        action: () => lmsAction(m.id, () => setLmsModuleStatus(m.id, action)),
+        action: () => lmsAction(m.id, () => setLmsModuleStatus(m.id, action), LMS_STATUS_AFTER_ACTION[action]),
       });
       return;
     }
-    lmsAction(m.id, () => setLmsModuleStatus(m.id, action));
+    lmsAction(m.id, () => setLmsModuleStatus(m.id, action), LMS_STATUS_AFTER_ACTION[action]);
   };
   const doLmsDelete = (m: LmsModuleItem) => {
     setConfirm({
@@ -330,7 +344,7 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
           </button>
         </div>
 
-        {lmsModules.length === 0 ? (
+        {effectiveLmsModules.length === 0 ? (
           <div className="mt-3 grid h-24 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">
             Belum ada Modul LMS. Buat materi lalu <b className="mx-1">publikasikan</b> agar terlihat siswa.
           </div>
@@ -350,7 +364,7 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
               </thead>
               <tbody>
                 {paginatedLms.map((m) => {
-                  const rowBusy = pending && busyId === m.id;
+                  const rowBusy = lmsBusyIds.has(m.id);
                   return (
                     <tr key={m.id} className="border-b border-[#f0f4f2]">
                       <td className="py-2.5 pr-3">
@@ -414,7 +428,7 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
               </tbody>
             </table>
           </div>
-          <TablePagination page={lmsPage} limit={LMS_PAGE_SIZE} total={lmsModules.length} onPage={setLmsPage} />
+          <TablePagination page={lmsPage} limit={LMS_PAGE_SIZE} total={effectiveLmsModules.length} onPage={setLmsPage} />
           </>
         )}
         <p className="mt-3 text-[11.5px] text-[#6b8079]">
