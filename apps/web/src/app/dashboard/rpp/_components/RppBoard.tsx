@@ -338,7 +338,7 @@ function ReviewDialog({ rpp, onClose, run, pending, userRole }: {
           </div>
         )}
         {rpp?.body ? (
-          <ModulAjarView body={rpp.body} />
+          <ModulAjarView body={rpp.body} academicYear={rpp.academicYear} />
         ) : rpp?.content ? (
           <div className="rounded border bg-gray-50 px-3 py-2 text-sm whitespace-pre-wrap max-h-64 overflow-y-auto">
             {rpp.content}

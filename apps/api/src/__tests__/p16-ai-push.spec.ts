@@ -16,6 +16,14 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
 const SISWA: AuthUser = { keycloakId: 'kc-siswa', username: 'siswa1', roles: ['SISWA'] } as AuthUser;
+const KEGIATAN_PATCH = JSON.stringify({
+  kegiatan: [{
+    pertemuan: 'Pertemuan 1',
+    pendahuluan: 'Apersepsi singkat.',
+    inti: 'Siswa berdiskusi memecahkan masalah.',
+    penutup: 'Refleksi dan tindak lanjut.',
+  }],
+});
 
 // ── AiGenerateService Tests ─────────────────────────────────────────────────
 
@@ -45,7 +53,7 @@ describe('AiGenerateService', () => {
     });
     teachingAssignmentFindFirst.mockResolvedValue({ id: 'ta-1' });
     aiGenCreate.mockResolvedValue({ id: 'gen-1' });
-    chatMock.mockResolvedValue('Draf kegiatan pembelajaran.');
+    chatMock.mockResolvedValue(KEGIATAN_PATCH);
 
     const prisma = {
       user: { findUnique: userFindUnique },
