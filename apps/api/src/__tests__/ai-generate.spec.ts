@@ -12,6 +12,25 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const RPP_ID = '11111111-1111-4111-8111-111111111111';
 const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
+const KEGIATAN_PATCH = JSON.stringify({
+  kegiatan: [{
+    pertemuan: 'Pertemuan 1',
+    pendahuluan: 'Menyampaikan tujuan pembelajaran.',
+    inti: 'Menganalisis grafik fungsi linear.',
+    penutup: 'Refleksi dan umpan balik.',
+  }],
+});
+const ATP_PATCH = JSON.stringify({
+  atp: [{ tpRef: 'TP 1', indikator: 'Menjelaskan grafik fungsi linear dengan benar.' }],
+});
+const kegiatanPatchWithInti = (inti: string) => JSON.stringify({
+  kegiatan: [{
+    pertemuan: 'Pertemuan 1',
+    pendahuluan: 'Apersepsi pembelajaran.',
+    inti,
+    penutup: 'Refleksi pembelajaran.',
+  }],
+});
 
 describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   let service: AiGenerateService;
@@ -49,8 +68,8 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     rppFindFirst.mockResolvedValue(baseRpp);
     teachingAssignmentFindFirst.mockResolvedValue({ id: 'ta-1' });
     aiGenerationCreate.mockResolvedValue({});
-    localChat.mockResolvedValue('Kegiatan inti tersimpan.');
-    cloudChat.mockResolvedValue('Kegiatan inti dari cloud.');
+    localChat.mockResolvedValue(KEGIATAN_PATCH);
+    cloudChat.mockResolvedValue(KEGIATAN_PATCH);
 
     const prisma = {
       user: { findUnique: userFindUnique },
@@ -142,7 +161,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
         tp: ['Menjelaskan jaringan lokal.'],
       },
     });
-    localChat.mockResolvedValue('Kegiatan aman.');
+    localChat.mockResolvedValue(KEGIATAN_PATCH);
 
     await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
 
@@ -180,6 +199,29 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(cloudChat).not.toHaveBeenCalled();
   });
 
+  it('stops kegiatan and asesmen generation with missing TP before save/provider/audit', async () => {
+    rppFindFirst.mockResolvedValue({ ...baseRpp, body: { cp: 'CP tersimpan', tp: [] } });
+
+    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
+      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_FOUNDATION_INCOMPLETE' }) });
+    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'asesmen' }, GURU))
+      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_FOUNDATION_INCOMPLETE' }) });
+
+    expect(localChat).not.toHaveBeenCalled();
+    expect(cloudChat).not.toHaveBeenCalled();
+    expect(aiGenerationCreate).not.toHaveBeenCalled();
+  });
+
+  it('stops CP/TP generation with missing CP before provider call', async () => {
+    rppFindFirst.mockResolvedValue({ ...baseRpp, body: { tp: ['TP browser'] } });
+
+    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'cp_tp' }, GURU))
+      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_FOUNDATION_INCOMPLETE' }) });
+
+    expect(localChat).not.toHaveBeenCalled();
+    expect(cloudChat).not.toHaveBeenCalled();
+  });
+
   it('rejects invalid ATP output before audit success', async () => {
     cloudChat.mockResolvedValue('ini bukan JSON');
 
@@ -189,10 +231,107 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(aiGenerationCreate).not.toHaveBeenCalled();
   });
 
+  it('rejects markdown/code-fence and legacy KI/KD output before audit success', async () => {
+    cloudChat.mockResolvedValue('```json\n{"kegiatan":[{"inti":"Kompetensi Dasar lama"}]}\n```');
+
+    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
+      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+
+    expect(aiGenerationCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects an outer code fence around otherwise valid JSON before audit success', async () => {
+    cloudChat.mockResolvedValue(`\`\`\`json\n${KEGIATAN_PATCH}\n\`\`\``);
+
+    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
+      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+
+    expect(aiGenerationCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a nested code fence inside otherwise valid JSON before audit success', async () => {
+    cloudChat.mockResolvedValue(kegiatanPatchWithInti('Siswa membandingkan contoh ```teks``` dan menjelaskan hasilnya.'));
+
+    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
+      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+
+    expect(aiGenerationCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects incomplete kegiatan patches before audit success', async () => {
+    cloudChat.mockResolvedValue(JSON.stringify({
+      kegiatan: [{ pertemuan: 'Pertemuan 1', inti: 'Hanya kegiatan inti.' }],
+    }));
+
+    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
+      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+
+    expect(aiGenerationCreate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['KD mandiri', 'Gunakan KD 3.1 sebagai acuan.'],
+    ['Kompetensi Dasar', 'Mengacu pada Kompetensi Dasar kelas X.'],
+    ['Kompetensi Inti', 'Mengacu pada Kompetensi Inti kelas X.'],
+    ['KI/KD', 'Mengacu pada KI/KD kelas X.'],
+    ['KI-KD', 'Mengacu pada KI-KD kelas X.'],
+    ['KI dan KD', 'Mengacu pada KI dan KD kelas X.'],
+    ['heading markdown generik', '# Tujuan Pembelajaran\nSiswa memahami grafik.'],
+  ])('rejects legacy curriculum or markdown heading output without code fence: %s', async (_case, badText) => {
+    cloudChat.mockResolvedValue(kegiatanPatchWithInti(badText));
+
+    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
+      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+
+    expect(aiGenerationCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects extra fields and CP overwrite in CP/TP patch', async () => {
+    cloudChat.mockResolvedValue(JSON.stringify({
+      cp: 'CP buatan AI',
+      tp: ['Menjelaskan grafik fungsi linear.'],
+    }));
+
+    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'cp_tp' }, GURU))
+      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+
+    expect(aiGenerationCreate).not.toHaveBeenCalled();
+  });
+
+  it('returns a structured patch for ATP and validates TP refs against saved TP', async () => {
+    cloudChat.mockResolvedValue(ATP_PATCH);
+
+    const res = await service.generateRppStep({ rppId: RPP_ID, section: 'atp' }, GURU);
+
+    expect(res).toEqual({
+      type: 'atp',
+      output: { atp: [{ tpRef: 'TP 1', indikator: 'Menjelaskan grafik fungsi linear dengan benar.' }] },
+    });
+  });
+
+  it('rejects ATP refs that invent unsaved TP', async () => {
+    cloudChat.mockResolvedValue(JSON.stringify({
+      atp: [{ tpRef: 'TP 2', indikator: 'Indikator palsu.' }],
+    }));
+
+    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'atp' }, GURU))
+      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+  });
+
   it('uses a single configured provider attempt for non-PII prompts', async () => {
     const res = await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
 
-    expect(res).toEqual({ type: 'kegiatan', output: 'Kegiatan inti dari cloud.' });
+    expect(res).toEqual({
+      type: 'kegiatan',
+      output: {
+        kegiatan: [{
+          pertemuan: 'Pertemuan 1',
+          pendahuluan: 'Menyampaikan tujuan pembelajaran.',
+          inti: 'Menganalisis grafik fungsi linear.',
+          penutup: 'Refleksi dan umpan balik.',
+        }],
+      },
+    });
     expect(cloudChat).toHaveBeenCalledTimes(1);
     expect(localChat).not.toHaveBeenCalled();
   });
