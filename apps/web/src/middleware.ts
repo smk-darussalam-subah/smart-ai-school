@@ -1,5 +1,6 @@
 import { getToken } from 'next-auth/jwt';
 import { NextRequest, NextResponse } from 'next/server';
+import { isMobileOnlyDashboardRoleSet } from './lib/dashboard-routing';
 
 function generateNonce(): string {
   const bytes = new Uint8Array(16);
@@ -96,6 +97,18 @@ export async function middleware(request: NextRequest) {
 
   if ((pathname === '/login' || pathname === '/auth') && token) {
     const res = NextResponse.redirect(new URL('/dashboard', request.url));
+    res.headers.set('Content-Security-Policy', csp);
+    return res;
+  }
+
+  // Resolve learner landing at the HTTP boundary. Redirecting from the
+  // Dashboard Server Component after a fresh OAuth callback can enter the
+  // App Router MPA-navigation path while client providers are mounting.
+  const roles = Array.isArray(token?.roles)
+    ? token.roles.filter((role): role is string => typeof role === 'string')
+    : [];
+  if (pathname === '/dashboard' && isMobileOnlyDashboardRoleSet(roles)) {
+    const res = NextResponse.redirect(new URL('/dashboard/akademik', request.url));
     res.headers.set('Content-Security-Policy', csp);
     return res;
   }
