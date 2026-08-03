@@ -20,6 +20,7 @@ import {
 import clsx from 'clsx';
 import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem, ActivityItem, RppItem, ClassRef, LmsModuleItem } from './guru-types';
+import { resolveProfileFramework } from './modul-ajar-profile';
 import { KKTP_DEFAULT } from '@/lib/academic';
 import { JP_SLOTS, fmtMin, scheduleDayOfWeek, wibTodayISO, wibDateLabel, currentJp, wibNow } from '@/lib/bell-times';
 import { reviewRpp, fetchAttendanceHeatmap, fetchMonitoringKbm, fetchRekapAudit, fetchKktpConfigs, saveKktpConfig, fetchTeacherAttendanceToday } from '../actions';
@@ -1443,7 +1444,8 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
 function RppDetailModal({ rpp, onClose, showToast }: { rpp: RppItem; onClose: () => void; showToast: (msg: string) => void }) {
   const [pending, startTransition] = useTransition();
   const body = rpp.body;
-  const fase = body?.fase ?? (rpp.class?.name?.startsWith('X') ? 'E (Kelas X)' : 'F (XI-XII)');
+  const fase = body?.fase ?? '—';
+  const profileFramework = resolveProfileFramework(rpp.academicYear);
 
   const handleReview = (decision: 'approved' | 'revision') => {
     const note = decision === 'revision' ? window.prompt('Alasan revisi (opsional):', '') : undefined;
@@ -1491,24 +1493,27 @@ function RppDetailModal({ rpp, onClose, showToast }: { rpp: RppItem; onClose: ()
           {body?.tp && body.tp.length > 0 && <DetailSection icon={ListChecks} title="Tujuan Pembelajaran (TP)"><ul className="space-y-1">{body.tp.map((tp, i) => <li key={i} className="flex gap-2 text-[12.5px] text-[#355a4e]"><span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-emerald-100 text-[10px] font-bold text-emerald-700">{i + 1}</span>{tp}</li>)}</ul></DetailSection>}
 
           {/* ATP */}
-          {body?.tp && body.tp.length > 0 && (
+          {body?.atp && body.atp.length > 0 && (
             <DetailSection icon={Route} title="Alur Tujuan Pembelajaran (ATP)">
               <table className="w-full text-[12px]"><thead><tr className="border-b border-[#e6efea] text-left text-[10.5px] uppercase text-[#6b8079]"><th className="py-2 pr-3">TP</th><th className="py-2 pr-3">Pertemuan</th><th className="py-2">Indikator Ketercapaian</th></tr></thead><tbody>
-                {body.tp.map((tp, i) => <tr key={i} className="border-b border-[#f0f4f2]"><td className="py-2 pr-3 font-bold text-[#0f2e25]">TP {i + 1}</td><td className="py-2 pr-3 text-[#355a4e]">Pert. {i * 2 + 1}-{i * 2 + 2}</td><td className="py-2 text-[#355a4e]">{tp}</td></tr>)}
+                {body.atp.map((item, i) => <tr key={i} className="border-b border-[#f0f4f2]"><td className="py-2 pr-3 font-bold text-[#0f2e25]">{item.tpRef ?? `ATP ${i + 1}`}</td><td className="py-2 pr-3 text-[#355a4e]">{item.tpRef ? '—' : ''}</td><td className="py-2 text-[#355a4e]">{item.indikator ?? '—'}</td></tr>)}
               </tbody></table>
             </DetailSection>
           )}
 
-          {/* Profil Pelajar Pancasila */}
-          <DetailSection icon={Users} title="Profil Pelajar Pancasila">
-            <div className="flex flex-wrap gap-2">
-              {(body?.profilDimensi ?? ['Bernalar Kritis', 'Mandiri', 'Bergotong Royong']).map((d) => <span key={d} className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11.5px] font-bold text-emerald-700">{d}</span>)}
-            </div>
-            <p className="mt-2 text-[12px] text-[#355a4e]">{body?.profilUraian ?? 'Melalui praktik dan diskusi kelompok, peserta didik mengembangkan kreativitas dan kemandirian dalam menyelesaikan tugas.'}</p>
-          </DetailSection>
+          {(body?.profilDimensi?.length || body?.profilUraian) && (
+            <DetailSection icon={Users} title={profileFramework.label}>
+              {body?.profilDimensi?.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {body.profilDimensi.map((d) => <span key={d} className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11.5px] font-bold text-emerald-700">{d}</span>)}
+                </div>
+              ) : null}
+              {body?.profilUraian && <p className="mt-2 text-[12px] text-[#355a4e]">{body.profilUraian}</p>}
+            </DetailSection>
+          )}
 
           {/* Kegiatan */}
-          {body?.kegiatan && body.kegiatan.length > 0 && <DetailSection icon={LayoutGrid} title="Kegiatan Pembelajaran"><div className="space-y-2">{body.kegiatan.map((k, i) => <div key={i} className="rounded-lg border border-[#e6efea] p-3"><b className="text-[11px] text-emerald-700">{k.pendahuluan ? 'Pendahuluan' : k.penutup ? 'Penutup' : 'Inti'}</b><p className="mt-1 text-[12px] text-[#355a4e]">{k.pendahuluan ?? k.inti ?? k.penutup ?? k.deskripsi ?? '—'}</p>{k.diferensiasi && <p className="mt-1 text-[11px] text-[#9bb0a8]">Diferensiasi: {k.diferensiasi}</p>}</div>)}</div></DetailSection>}
+          {body?.kegiatan && body.kegiatan.length > 0 && <DetailSection icon={LayoutGrid} title="Kegiatan Pembelajaran"><div className="space-y-2">{body.kegiatan.map((k, i) => <div key={i} className="rounded-lg border border-[#e6efea] p-3"><b className="text-[11px] text-emerald-700">{k.pertemuan ?? `Pertemuan ${i + 1}`}</b>{k.pendahuluan && <p className="mt-1 text-[12px] text-[#355a4e]"><b>Pendahuluan:</b> {k.pendahuluan}</p>}{(k.inti || k.deskripsi) && <p className="mt-1 text-[12px] text-[#355a4e]"><b>Inti:</b> {k.inti ?? k.deskripsi}</p>}{k.penutup && <p className="mt-1 text-[12px] text-[#355a4e]"><b>Penutup:</b> {k.penutup}</p>}{k.diferensiasi && <p className="mt-1 text-[11px] text-[#9bb0a8]">Diferensiasi: {k.diferensiasi}</p>}</div>)}</div></DetailSection>}
 
           {/* Asesmen */}
           {body?.asesmen && <DetailSection icon={ClipboardCheck} title="Asesmen"><p className="text-[12.5px] text-[#355a4e]">{body.asesmen}</p></DetailSection>}
@@ -1524,20 +1529,19 @@ function RppDetailModal({ rpp, onClose, showToast }: { rpp: RppItem; onClose: ()
           {body?.sarana && <DetailSection icon={Info} title="Sarana & Target"><p className="text-[12.5px] text-[#355a4e]">{body.sarana}</p></DetailSection>}
 
           {/* Pengayaan & Refleksi */}
-          <DetailSection icon={Lightbulb} title="Pengayaan & Refleksi">
-            {body?.pengayaan ? <p className="text-[12.5px] text-[#355a4e]">{body.pengayaan}</p> : <p className="text-[12.5px] text-[#9bb0a8]">Pengayaan untuk siswa tuntas: topik lanjutan. Remedial untuk siswa di bawah KKTP: pembelajaran ulang + asesmen susulan.</p>}
+          {(body?.pengayaan || body?.remedial || body?.refleksiGuru || body?.refleksiSiswa || body?.refleksi) && <DetailSection icon={Lightbulb} title="Pengayaan & Refleksi">
+            {body?.pengayaan && <p className="text-[12.5px] text-[#355a4e]">{body.pengayaan}</p>}
             {body?.remedial && <p className="mt-1 text-[12px] text-[#355a4e]">{body.remedial}</p>}
+            {body?.refleksi && <p className="mt-2 text-[12px] text-[#355a4e]">{body.refleksi}</p>}
             {body?.refleksiGuru && <div className="mt-2"><b className="text-[11px] font-bold text-[#6b8079]">Refleksi Guru</b><p className="mt-1 text-[12px] text-[#355a4e]">{body.refleksiGuru}</p></div>}
-          </DetailSection>
+            {body?.refleksiSiswa && <div className="mt-2"><b className="text-[11px] font-bold text-[#6b8079]">Refleksi Peserta Didik</b><p className="mt-1 text-[12px] text-[#355a4e]">{body.refleksiSiswa}</p></div>}
+          </DetailSection>}
 
           {/* Lampiran */}
-          <DetailSection icon={Paperclip} title="Lampiran">
+          {(body?.lampiran || body?.lampiranUrl) && <DetailSection icon={Paperclip} title="Lampiran">
             {body?.lampiran && <p className="text-[12.5px] text-[#355a4e]">{body.lampiran}</p>}
-            <div className="mt-2 flex flex-wrap gap-2">
-              {['Slide presentasi', 'Modul/bahan bacaan', 'Rubrik penilaian', 'Soal latihan'].map((l) => <span key={l} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11.5px] font-bold text-emerald-700"><FileText className="h-3 w-3" />{l}</span>)}
-            </div>
             {body?.lampiranUrl && <a href={body.lampiranUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-[12px] font-bold text-emerald-600 hover:underline">{body.lampiranUrl}</a>}
-          </DetailSection>
+          </DetailSection>}
 
           <p className="text-[11px] text-[#9bb0a8]"><Info className="mr-1 inline h-3 w-3" />Modul ajar yang disetujui otomatis tersinkron ke dashboard guru dan LMS siswa.</p>
         </div>

@@ -1,4 +1,4 @@
-import type { AtpItem, ModulAjarBody } from './guru-types';
+import type { AtpItem, KegiatanItem, ModulAjarBody } from './guru-types';
 
 export type AiSection =
   | 'cp_tp'
@@ -29,6 +29,18 @@ export function hasTeacherConfirmedTp(body: ModulAjarBody): boolean {
   return (body.tp ?? []).some((item) => item.trim().length > 0);
 }
 
+export function hasTeacherConfirmedCp(body: ModulAjarBody): boolean {
+  return Boolean(body.cp?.trim());
+}
+
+function missingFoundation(section: AiSection, body: ModulAjarBody): boolean {
+  if (section === 'cp_tp') return !hasTeacherConfirmedCp(body);
+  if (section === 'atp' || section === 'kegiatan' || section === 'asesmen') {
+    return !hasTeacherConfirmedCp(body) || !hasTeacherConfirmedTp(body);
+  }
+  return false;
+}
+
 export function deriveAiButtonState(input: {
   section: AiSection;
   savedVersion: AiSaveState;
@@ -36,12 +48,12 @@ export function deriveAiButtonState(input: {
   editingId?: string | null;
   body: ModulAjarBody;
   isGenerating: boolean;
-}): { label: string; disabled: boolean; reason: 'ready' | 'saving' | 'missing_tp' } {
+}): { label: string; disabled: boolean; reason: 'ready' | 'saving' | 'missing_foundation' } {
   if (input.isGenerating) {
     return { label: 'Menyiapkan bantuan...', disabled: true, reason: 'saving' };
   }
-  if (input.section === 'atp' && !hasTeacherConfirmedTp(input.body)) {
-    return { label: 'Isi dan simpan TP', disabled: false, reason: 'missing_tp' };
+  if (missingFoundation(input.section, input.body)) {
+    return { label: input.section === 'cp_tp' ? 'Isi dan simpan CP' : 'Isi dan simpan CP/TP', disabled: false, reason: 'missing_foundation' };
   }
 
   const hasSavedId = Boolean(input.rppId ?? input.editingId);
@@ -108,7 +120,7 @@ export async function runContainedAiSectionFlow(input: {
     errorCode?: string;
   }>;
 }): Promise<ContainedAiFlowResult> {
-  if (input.section === 'atp' && !hasTeacherConfirmedTp(input.body)) {
+  if (missingFoundation(input.section, input.body)) {
     return { status: 'missing_foundation', code: 'AI_FOUNDATION_INCOMPLETE' };
   }
   if (!input.guard.tryStart()) return { status: 'duplicate' };
@@ -145,151 +157,120 @@ export function parseAiSectionOutput(
   output: unknown,
   currentBody: ModulAjarBody,
 ): { ok: true; patch: Partial<ModulAjarBody> } | { ok: false; code: 'AI_OUTPUT_INVALID' } {
-  if (section === 'atp') {
-    const parsed = parseAtpOutput(output);
-    return parsed.length > 0 ? { ok: true, patch: { atp: parsed } } : { ok: false, code: 'AI_OUTPUT_INVALID' };
-  }
-
-  if (typeof output !== 'string' || output.trim().length < 3) {
-    return { ok: false, code: 'AI_OUTPUT_INVALID' };
-  }
-  const text = output.trim();
+  if (!isRecord(output)) return { ok: false, code: 'AI_OUTPUT_INVALID' };
 
   switch (section) {
-    case 'cp_tp':
-      return { ok: true, patch: parseCpTp(text) };
-    case 'profil':
-      return { ok: true, patch: { profilUraian: text } };
+    case 'cp_tp': {
+      if (!hasOnlyKeys(output, ['tp'])) return { ok: false, code: 'AI_OUTPUT_INVALID' };
+      const tp = readStringArray(output['tp']);
+      return tp.length > 0 ? { ok: true, patch: { tp } } : { ok: false, code: 'AI_OUTPUT_INVALID' };
+    }
+    case 'atp': {
+      if (!hasOnlyKeys(output, ['atp'])) return { ok: false, code: 'AI_OUTPUT_INVALID' };
+      const atp = readAtpArray(output['atp']);
+      return atp.length > 0 ? { ok: true, patch: { atp } } : { ok: false, code: 'AI_OUTPUT_INVALID' };
+    }
+    case 'profil': {
+      if (!hasOnlyKeys(output, ['profilDimensi', 'profilUraian'])) return { ok: false, code: 'AI_OUTPUT_INVALID' };
+      const profilDimensi = readStringArray(output['profilDimensi']);
+      const profilUraian = readString(output['profilUraian']);
+      if (!profilUraian || profilDimensi.length === 0) return { ok: false, code: 'AI_OUTPUT_INVALID' };
+      return { ok: true, patch: { profilDimensi, profilUraian } };
+    }
     case 'sarana': {
-      const paragraphs = text.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean);
-      return {
-        ok: true,
-        patch: paragraphs.length >= 2
-          ? { sarana: paragraphs[0], target: paragraphs.slice(1).join('\n\n') }
-          : { sarana: text },
-      };
+      if (!hasOnlyKeys(output, ['sarana', 'target'])) return { ok: false, code: 'AI_OUTPUT_INVALID' };
+      const sarana = readString(output['sarana']);
+      const target = readString(output['target']);
+      return sarana && target ? { ok: true, patch: { sarana, target } } : { ok: false, code: 'AI_OUTPUT_INVALID' };
     }
-    case 'kegiatan':
-      return {
-        ok: true,
-        patch: {
-          kegiatan: currentBody.kegiatan?.length
-            ? currentBody.kegiatan.map((item, index) => (index === 0 ? { ...item, inti: text } : item))
-            : [{ pertemuan: 'Pertemuan 1', inti: text }],
-        },
-      };
-    case 'asesmen':
-      return { ok: true, patch: parseAsesmen(text) };
-    case 'remedial':
-      return { ok: true, patch: parseDualSection(text, 'pengayaan', 'remedial', { remedial: text }) };
-    case 'refleksi':
-      return { ok: true, patch: parseDualSection(text, 'guru', 'siswa', { refleksiGuru: text }) };
-    case 'lampiran':
-      return { ok: true, patch: { lampiran: text } };
-  }
-}
-
-function parseAtpOutput(output: unknown): AtpItem[] {
-  const rawItems = Array.isArray(output) ? output : tryParseArray(output);
-  const parsed: AtpItem[] = [];
-  for (const item of rawItems) {
-    if (!item || typeof item !== 'object') continue;
-      const record = item as Record<string, unknown>;
-      const tpRef = firstString(record['tpRef'], record['code'], record['tp']);
-      const indikator = firstString(record['indikator'], record['indicator'], record['atp']);
-    if (!tpRef && !indikator) continue;
-    parsed.push({ tpRef, indikator });
-  }
-  return parsed;
-}
-
-function tryParseArray(output: unknown): unknown[] {
-  if (typeof output !== 'string') return [];
-  try {
-    const parsed = JSON.parse(output);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function firstString(...values: unknown[]): string | undefined {
-  for (const value of values) {
-    if (typeof value === 'string' && value.trim()) return value.trim();
-    if (Array.isArray(value)) {
-      const joined = value.filter((item): item is string => typeof item === 'string').join('; ').trim();
-      if (joined) return joined;
+    case 'kegiatan': {
+      if (!hasOnlyKeys(output, ['kegiatan'])) return { ok: false, code: 'AI_OUTPUT_INVALID' };
+      const kegiatan = readKegiatanArray(output['kegiatan']);
+      return kegiatan.length > 0
+        ? { ok: true, patch: { kegiatan: mergeKegiatanPatch(currentBody.kegiatan ?? [], kegiatan) } }
+        : { ok: false, code: 'AI_OUTPUT_INVALID' };
+    }
+    case 'asesmen': {
+      if (!hasOnlyKeys(output, ['asesmenDiagnostik', 'asesmenFormatif', 'asesmenSumatif'])) return { ok: false, code: 'AI_OUTPUT_INVALID' };
+      const asesmenDiagnostik = readString(output['asesmenDiagnostik']);
+      const asesmenFormatif = readString(output['asesmenFormatif']);
+      const asesmenSumatif = readString(output['asesmenSumatif']);
+      return asesmenDiagnostik && asesmenFormatif && asesmenSumatif
+        ? { ok: true, patch: { asesmenDiagnostik, asesmenFormatif, asesmenSumatif } }
+        : { ok: false, code: 'AI_OUTPUT_INVALID' };
+    }
+    case 'remedial': {
+      if (!hasOnlyKeys(output, ['pengayaan', 'remedial'])) return { ok: false, code: 'AI_OUTPUT_INVALID' };
+      const pengayaan = readString(output['pengayaan']);
+      const remedial = readString(output['remedial']);
+      return pengayaan && remedial ? { ok: true, patch: { pengayaan, remedial } } : { ok: false, code: 'AI_OUTPUT_INVALID' };
+    }
+    case 'refleksi': {
+      if (!hasOnlyKeys(output, ['refleksiGuru', 'refleksiSiswa'])) return { ok: false, code: 'AI_OUTPUT_INVALID' };
+      const refleksiGuru = readString(output['refleksiGuru']);
+      const refleksiSiswa = readString(output['refleksiSiswa']);
+      return refleksiGuru && refleksiSiswa ? { ok: true, patch: { refleksiGuru, refleksiSiswa } } : { ok: false, code: 'AI_OUTPUT_INVALID' };
+    }
+    case 'lampiran': {
+      if (!hasOnlyKeys(output, ['lampiran'])) return { ok: false, code: 'AI_OUTPUT_INVALID' };
+      const lampiran = readString(output['lampiran']);
+      return lampiran ? { ok: true, patch: { lampiran } } : { ok: false, code: 'AI_OUTPUT_INVALID' };
     }
   }
-  return undefined;
 }
 
-function parseCpTp(output: string): Partial<ModulAjarBody> {
-  const lines = output.split('\n').map((line) => line.trim()).filter(Boolean);
-  const cpText: string[] = [];
-  const tpText: string[] = [];
-  let inTp = false;
-  for (const line of lines) {
-    const tpMatch = line.match(/^(?:[-*]\s*)?(?:TP\s*)?\d+[.):\- ]+(.*)$/i);
-    if (tpMatch?.[1]) {
-      inTp = true;
-      tpText.push(tpMatch[1].trim());
-      continue;
-    }
-    if (/tujuan pembelajaran|^tp\b/i.test(line)) {
-      inTp = true;
-      continue;
-    }
-    if (/capaian pembelajaran|^cp\b/i.test(line)) continue;
-    if (inTp) tpText.push(line);
-    else cpText.push(line);
-  }
-  return {
-    cp: cpText.length ? cpText.join('\n') : output,
-    ...(tpText.length ? { tp: tpText } : {}),
-  };
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function parseAsesmen(output: string): Partial<ModulAjarBody> {
-  const diagnostik = splitNamedSection(output, 'diagnostik', ['formatif', 'sumatif']);
-  const formatif = splitNamedSection(output, 'formatif', ['diagnostik', 'sumatif']);
-  const sumatif = splitNamedSection(output, 'sumatif', ['diagnostik', 'formatif']);
-  if (diagnostik || formatif || sumatif) {
-    return {
-      ...(diagnostik ? { asesmenDiagnostik: diagnostik } : {}),
-      ...(formatif ? { asesmenFormatif: formatif } : {}),
-      ...(sumatif ? { asesmenSumatif: sumatif } : {}),
-    };
-  }
-  return { asesmen: output };
+function hasOnlyKeys(record: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(record).every((key) => allowed.includes(key));
 }
 
-function parseDualSection(
-  output: string,
-  first: string,
-  second: string,
-  fallback: Partial<ModulAjarBody>,
-): Partial<ModulAjarBody> {
-  const firstText = splitNamedSection(output, first, [second]);
-  const secondText = splitNamedSection(output, second, [first]);
-  if (!firstText && !secondText) return fallback;
-  if (first === 'pengayaan') {
-    return {
-      ...(firstText ? { pengayaan: firstText } : {}),
-      ...(secondText ? { remedial: secondText } : {}),
-    };
-  }
-  return {
-    ...(firstText ? { refleksiGuru: firstText } : {}),
-    ...(secondText ? { refleksiSiswa: secondText } : {}),
-  };
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
-function splitNamedSection(output: string, keyword: string, stopKeywords: string[]): string {
-  const stop = stopKeywords.join('|');
-  const re = new RegExp(
-    `(?:^|\\n)\\s*(?:#{1,6}\\s*)?${keyword}[^\\n]*\\n([\\s\\S]*?)(?=\\n\\s*(?:#{1,6}\\s*)?(?:${stop})|$)`,
-    'i',
-  );
-  return output.match(re)?.[1]?.trim() ?? '';
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(readString).filter((item): item is string => Boolean(item));
+}
+
+function readAtpArray(value: unknown): AtpItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item) || !hasOnlyKeys(item, ['tpRef', 'indikator'])) return [];
+    const tpRef = readString(item['tpRef']);
+    const indikator = readString(item['indikator']);
+    return tpRef && indikator ? [{ tpRef, indikator }] : [];
+  });
+}
+
+function readKegiatanArray(value: unknown): KegiatanItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item) || !hasOnlyKeys(item, ['pertemuan', 'pendahuluan', 'inti', 'penutup', 'diferensiasi'])) return [];
+    const row: KegiatanItem = {};
+    const pertemuan = readString(item['pertemuan']);
+    const pendahuluan = readString(item['pendahuluan']);
+    const inti = readString(item['inti']);
+    const penutup = readString(item['penutup']);
+    const diferensiasi = readString(item['diferensiasi']);
+    if (!pertemuan || !pendahuluan || !inti || !penutup) return [];
+    if (pertemuan) row.pertemuan = pertemuan;
+    if (pendahuluan) row.pendahuluan = pendahuluan;
+    if (inti) row.inti = inti;
+    if (penutup) row.penutup = penutup;
+    if (diferensiasi) row.diferensiasi = diferensiasi;
+    return [row];
+  });
+}
+
+function mergeKegiatanPatch(current: KegiatanItem[], generated: KegiatanItem[]): KegiatanItem[] {
+  if (current.length === 0) return generated;
+  const next = [...current];
+  generated.forEach((row, index) => {
+    next[index] = { ...(next[index] ?? {}), ...row };
+  });
+  return next;
 }

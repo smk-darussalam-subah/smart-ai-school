@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { AIGateway } from '@smk/types';
+import { z } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveTeacherId } from '../common/helpers/role-helpers';
 import { AiRppSection, GenerateRppStepDto } from './dto/generate.dto';
@@ -52,7 +53,7 @@ type AiCallResult = {
 const SECTION_LABELS: Record<AiRppSection, string> = {
   cp_tp: 'Capaian Pembelajaran (CP) dan Tujuan Pembelajaran (TP)',
   atp: 'Alur Tujuan Pembelajaran (ATP)',
-  profil: 'Profil Pelajar Pancasila',
+  profil: 'Dimensi Profil Lulusan',
   sarana: 'Sarana prasarana dan target peserta didik',
   kegiatan: 'Kegiatan pembelajaran',
   asesmen: 'Rencana asesmen',
@@ -60,6 +61,86 @@ const SECTION_LABELS: Record<AiRppSection, string> = {
   refleksi: 'Refleksi guru dan peserta didik',
   lampiran: 'Catatan lampiran pembelajaran',
 };
+
+const GRADUATE_PROFILE_DIMENSIONS = [
+  'Keimanan dan ketakwaan terhadap Tuhan Yang Maha Esa',
+  'Kewargaan',
+  'Penalaran kritis',
+  'Kreativitas',
+  'Kolaborasi',
+  'Kemandirian',
+  'Kesehatan',
+  'Komunikasi',
+] as const;
+
+const LEGACY_PANCASILA_DIMENSIONS = [
+  'Beriman & Berakhlak Mulia',
+  'Berkebinekaan Global',
+  'Bergotong Royong',
+  'Mandiri',
+  'Bernalar Kritis',
+  'Kreatif',
+] as const;
+
+const FORBIDDEN_OUTPUT_PATTERNS = [
+  /```/,
+  /(?:^|\n)\s*#{1,6}\s+\S+/,
+  /\bkompetensi\s+dasar\b/i,
+  /\bkompetensi\s+inti\b/i,
+  /\bki\s+(?:dan|\/|-|&)\s*kd\b/i,
+  /\bki\s*\/\s*kd\b/i,
+  /\bki\s*-\s*kd\b/i,
+  /\bkd\b/i,
+] as const;
+
+const TextField = z.string().trim().min(3).max(3000);
+const ShortTextField = z.string().trim().min(1).max(160);
+const TpRefField = z.string().trim().regex(/^TP\s+\d+$/i);
+
+const AtpItemSchema = z.object({
+  tpRef: TpRefField,
+  indikator: TextField,
+}).strict();
+
+const KegiatanItemSchema = z.object({
+  pertemuan: ShortTextField,
+  pendahuluan: TextField,
+  inti: TextField,
+  penutup: TextField,
+  diferensiasi: TextField.optional(),
+}).strict();
+
+const PatchSchemas = {
+  cp_tp: z.object({
+    tp: z.array(TextField).min(1).max(12),
+  }).strict(),
+  atp: z.object({
+    atp: z.array(AtpItemSchema).min(1).max(24),
+  }).strict(),
+  sarana: z.object({
+    sarana: TextField,
+    target: TextField,
+  }).strict(),
+  kegiatan: z.object({
+    kegiatan: z.array(KegiatanItemSchema).min(1).max(12),
+  }).strict(),
+  asesmen: z.object({
+    asesmenDiagnostik: TextField,
+    asesmenFormatif: TextField,
+    asesmenSumatif: TextField,
+  }).strict(),
+  remedial: z.object({
+    pengayaan: TextField,
+    remedial: TextField,
+  }).strict(),
+  refleksi: z.object({
+    refleksiGuru: TextField,
+    refleksiSiswa: TextField,
+  }).strict(),
+  lampiran: z.object({
+    lampiran: TextField,
+  }).strict(),
+} as const;
 
 @Injectable()
 export class AiGenerateService {
@@ -82,7 +163,7 @@ export class AiGenerateService {
 
     const prompt = this.buildRppSectionPrompt(dto.section, resolved.rpp, resolved.body);
     const ai = await this.callAi(prompt);
-    const output = this.normalizeSectionOutput(dto.section, ai.output);
+    const output = this.normalizeSectionOutput(dto.section, ai.output, resolved.rpp, resolved.body);
 
     await this.auditGeneration({
       teacherId: resolved.teacherId,
@@ -136,10 +217,12 @@ export class AiGenerateService {
   }
 
   private assertSectionFoundation(section: AiRppSection, body: Record<string, unknown>): void {
-    if (section !== 'atp') return;
     const cp = this.asText(body['cp']);
     const tp = this.asStringArray(body['tp']);
-    if (!cp || tp.length === 0) {
+    if (section === 'cp_tp' && !cp) {
+      throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
+    }
+    if ((section === 'atp' || section === 'kegiatan' || section === 'asesmen') && (!cp || tp.length === 0)) {
       throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
     }
   }
@@ -180,30 +263,82 @@ export class AiGenerateService {
     return this.aiException('AI_PROVIDER_UNAVAILABLE', HttpStatus.SERVICE_UNAVAILABLE);
   }
 
-  private normalizeSectionOutput(section: AiRppSection, output: string): unknown {
-    if (section !== 'atp') return output.trim();
-    const parsed = this.extractJson(output);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
+  private normalizeSectionOutput(
+    section: AiRppSection,
+    output: string,
+    rpp: RppForAi,
+    body: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const parsed = this.parseJsonObject(output);
+    const schema = this.patchSchemaFor(section, rpp.academicYear);
+    const result = schema.safeParse(parsed);
+    if (!result.success) {
       throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
-    return parsed;
+
+    const patch = result.data as Record<string, unknown>;
+    this.assertNoForbiddenOutput(patch);
+    if (section === 'atp') this.assertAtpRefsMatchSavedTp(patch, body);
+    return patch;
   }
 
-  private extractJson(output: string): unknown {
-    const candidates = [
-      output,
-      output.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1],
-      output.match(/(\[[\s\S]*\]|\{[\s\S]*\})/)?.[1],
-    ].filter((candidate): candidate is string => typeof candidate === 'string');
+  private parseJsonObject(output: string): unknown {
+    const text = output.trim();
+    if (!text.startsWith('{') || !text.endsWith('}') || text.includes('```')) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+      }
+      return parsed;
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+  }
 
-    for (const candidate of candidates) {
-      try {
-        return JSON.parse(candidate.trim());
-      } catch {
-        // Try the next candidate.
+  private patchSchemaFor(section: AiRppSection, academicYear: string): z.ZodType<unknown> {
+    if (section === 'profil') {
+      const dimensions = this.profileDimensionsFor(academicYear);
+      return z.object({
+        profilDimensi: z.array(z.enum(dimensions)).min(1).max(dimensions.length),
+        profilUraian: TextField,
+      }).strict();
+    }
+    return PatchSchemas[section];
+  }
+
+  private assertAtpRefsMatchSavedTp(patch: Record<string, unknown>, body: Record<string, unknown>): void {
+    const tpCount = this.asStringArray(body['tp']).length;
+    const allowed = new Set(Array.from({ length: tpCount }, (_, index) => `TP ${index + 1}`));
+    const rows = patch['atp'];
+    if (!Array.isArray(rows) || rows.some((row) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) return true;
+      const tpRef = String((row as Record<string, unknown>)['tpRef'] ?? '').trim().toUpperCase();
+      return !allowed.has(tpRef.replace(/\s+/, ' '));
+    })) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+  }
+
+  private assertNoForbiddenOutput(value: unknown): void {
+    if (typeof value === 'string') {
+      if (FORBIDDEN_OUTPUT_PATTERNS.some((pattern) => pattern.test(value))) {
+        throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) this.assertNoForbiddenOutput(item);
+      return;
+    }
+    if (value && typeof value === 'object') {
+      for (const item of Object.values(value as Record<string, unknown>)) {
+        this.assertNoForbiddenOutput(item);
       }
     }
-    throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
   }
 
   private async auditGeneration(input: {
@@ -263,33 +398,35 @@ export class AiGenerateService {
       this.asText(body['kompetensiAwal']) ? `Kompetensi awal:\n${this.asText(body['kompetensiAwal'])}` : '',
     ].filter(Boolean);
 
-    const sectionContext = this.sectionSpecificContext(section, body);
-    const outputRule = section === 'atp'
-      ? 'Kembalikan JSON array saja dengan bentuk [{"tpRef":"TP 1","indikator":"indikator singkat"}].'
-      : 'Kembalikan markdown singkat yang langsung dapat disunting guru.';
+    const sectionContext = this.sectionSpecificContext(section, body, rpp.academicYear);
+    const outputRule = this.sectionOutputRule(section, rpp.academicYear);
 
     return [
       ...base,
       foundation.length ? foundation.join('\n\n') : 'CP/TP belum tersimpan.',
       sectionContext,
+      'Aturan keluaran wajib: kembalikan tepat satu JSON object valid. Tanpa markdown, tanpa code fence, tanpa heading dokumen penuh, tanpa teks pembuka/penutup.',
+      'Dilarang memakai istilah Kompetensi Dasar, KI/KD, atau format Kurikulum 2013. Gunakan CP, TP, ATP, langkah pembelajaran, dan asesmen.',
+      'Jangan membuat identitas personal, tautan palsu, nomor telepon, atau surel.',
       outputRule,
     ].filter(Boolean).join('\n\n').slice(0, 10000);
   }
 
-  private sectionSpecificContext(section: AiRppSection, body: Record<string, unknown>): string {
+  private sectionSpecificContext(section: AiRppSection, body: Record<string, unknown>, academicYear: string): string {
     switch (section) {
       case 'cp_tp':
         return [
           this.asText(body['kompetensiAwal']) ? `Kompetensi awal: ${this.asText(body['kompetensiAwal'])}` : '',
-          'Bantu rumuskan CP dan TP terukur. Jangan membuat ATP di bagian ini.',
+          'CP tersimpan adalah otoritatif. Usulkan TP terukur dari CP tersebut. Jangan mengubah atau menulis ulang CP. Jangan membuat ATP di bagian ini.',
         ].filter(Boolean).join('\n');
       case 'atp':
         return 'Susun urutan alur dari TP tersimpan. Jangan membuat TP baru.';
       case 'profil':
         return [
+          `Gunakan hanya dimensi berikut untuk tahun ajaran ${academicYear}: ${this.profileDimensionsFor(academicYear).join('; ')}.`,
           this.asStringArray(body['profilDimensi']).length
             ? `Dimensi terpilih: ${this.asStringArray(body['profilDimensi']).join(', ')}.`
-            : 'Dimensi belum dipilih; usulkan dimensi yang relevan dari daftar Profil Pelajar Pancasila.',
+            : 'Dimensi belum dipilih; usulkan dimensi yang paling relevan dari daftar resmi di atas.',
           this.asText(body['profilUraian']) ? `Uraian saat ini:\n${this.asText(body['profilUraian'])}` : '',
         ].filter(Boolean).join('\n\n');
       case 'sarana':
@@ -314,6 +451,34 @@ export class AiGenerateService {
       case 'lampiran':
         return 'Usulkan daftar lampiran belajar berupa teks/catatan. Jangan membuat tautan palsu.';
     }
+  }
+
+  private sectionOutputRule(section: AiRppSection, academicYear: string): string {
+    switch (section) {
+      case 'cp_tp':
+        return 'Schema JSON: {"tp":["TP operasional pertama","TP operasional kedua"]}. Field "cp" tidak boleh ada.';
+      case 'atp':
+        return 'Schema JSON: {"atp":[{"tpRef":"TP 1","indikator":"indikator ketercapaian singkat"}]}. tpRef wajib memakai TP 1, TP 2, dst sesuai TP tersimpan.';
+      case 'profil':
+        return `Schema JSON: {"profilDimensi":["${this.profileDimensionsFor(academicYear)[0]}"],"profilUraian":"uraian aktivitas singkat dan kontekstual"}.`;
+      case 'sarana':
+        return 'Schema JSON: {"sarana":"alat, bahan, ruang, atau perangkat yang dibutuhkan","target":"karakteristik peserta didik target"}.';
+      case 'kegiatan':
+        return 'Schema JSON: {"kegiatan":[{"pertemuan":"Pertemuan 1","pendahuluan":"aktivitas pembuka","inti":"aktivitas inti","penutup":"aktivitas penutup","diferensiasi":"strategi diferensiasi bila relevan"}]}.';
+      case 'asesmen':
+        return 'Schema JSON: {"asesmenDiagnostik":"rencana diagnostik","asesmenFormatif":"rencana formatif","asesmenSumatif":"rencana sumatif"}.';
+      case 'remedial':
+        return 'Schema JSON: {"pengayaan":"aktivitas untuk peserta didik tuntas","remedial":"aktivitas bantuan untuk peserta didik belum tuntas"}.';
+      case 'refleksi':
+        return 'Schema JSON: {"refleksiGuru":"pertanyaan refleksi guru","refleksiSiswa":"pertanyaan refleksi peserta didik"}.';
+      case 'lampiran':
+        return 'Schema JSON: {"lampiran":"daftar lampiran belajar yang perlu disiapkan guru"}.';
+    }
+  }
+
+  private profileDimensionsFor(academicYear: string): typeof GRADUATE_PROFILE_DIMENSIONS | typeof LEGACY_PANCASILA_DIMENSIONS {
+    const startYear = Number(academicYear.match(/^(\d{4})\/\d{4}$/)?.[1] ?? 0);
+    return startYear >= 2025 ? GRADUATE_PROFILE_DIMENSIONS : LEGACY_PANCASILA_DIMENSIONS;
   }
 
   private toBodyRecord(value: Prisma.JsonValue | null): Record<string, unknown> {
