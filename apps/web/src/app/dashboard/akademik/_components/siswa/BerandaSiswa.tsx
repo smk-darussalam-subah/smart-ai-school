@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import {
   Flame, UserCheck, TrendingUp, ClipboardList, Award, CalendarClock,
-  PlayCircle, ChevronRight, Target,
+  PlayCircle, ChevronRight, Target, CheckCircle,
 } from 'lucide-react';
 import { wibNow, currentJp } from '@/lib/bell-times';
 import { mpColor, mpIcon, JP_LABELS, JP_MAP, resolveSchedule } from './siswa-data';
@@ -20,6 +20,7 @@ interface Props {
   tasks: SiswaTugas[];
   badges: SiswaBadge[];
   modules: SiswaModul[];
+  recentlyCompletedModule?: SiswaModul | null;
   quest: SiswaQuest;
   xp: SiswaXP;
   kehStats: SiswaKehadiranStats;
@@ -28,7 +29,7 @@ interface Props {
   studentClassName?: string | null;
 }
 
-export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, quest, xp, kehStats, schedule, userName, studentClassName }: Props) {
+export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, recentlyCompletedModule, quest, xp, kehStats, schedule, userName, studentClassName }: Props) {
   const now = wibNow();
   const dow = now.jsDay; // 0=Sunday → SCHED[0] undefined → shows "Libur"
   const currentJpIdx = currentJp(now.minutes);
@@ -183,6 +184,19 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
 
       {/* Content Area */}
       <div className="px-5 pt-0 space-y-3">
+        {recentlyCompletedModule && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2.5" role="status">
+            <div className="flex min-w-0 items-center gap-2">
+              <CheckCircle className="h-4 w-4 flex-shrink-0 text-emerald-500" aria-hidden="true" />
+              <div className="min-w-0">
+                <div className="text-[11px] font-extrabold text-emerald-500">Selesai</div>
+                <div className="truncate text-[11px] font-semibold text-[var(--muted)]">{recentlyCompletedModule.judul}</div>
+              </div>
+            </div>
+            <span className="flex-shrink-0 text-[11px] font-extrabold text-emerald-500">100%</span>
+          </div>
+        )}
+
         {/* Continue Learning */}
         {activeModul && (
           <div className="rounded-2xl border border-emerald-500/20 bg-[var(--surface)] p-4 shadow-[0_0_0_1px_rgba(16,185,129,.1),0_4px_24px_-8px_rgba(16,185,129,.15)]">
