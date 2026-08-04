@@ -28,6 +28,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AIGateway } from '@smk/types';
 import { AuthUser } from '@smk/auth';
 import { ClaudeAdapter } from '../ai/adapters/claude.adapter';
+import { AiProviderStatusService } from '../ai/ai-provider-status.service';
 import { stripPiiForLlm, hasPii } from '../ai/adapters/pii-strip.utils';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -94,6 +95,7 @@ async function buildModule(
       { provide: 'AI_GATEWAY', useValue: ollamaGw },
       { provide: 'CLAUDE_GATEWAY', useValue: claudeGw },
       { provide: 'OPENAI_GATEWAY', useValue: null }, // R-28: default off in tests
+      { provide: AiProviderStatusService, useValue: { getStatus: jest.fn() } },
       { provide: PrismaService, useValue: prisma },
     ],
   }).compile();
