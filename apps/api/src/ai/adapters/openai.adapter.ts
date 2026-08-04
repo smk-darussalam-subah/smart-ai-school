@@ -133,7 +133,7 @@ export class OpenAiAdapter implements AIGateway {
       }
 
       throw new OpenAiProviderError(
-        parsed?.error?.message ?? `OpenAI chat gagal: HTTP ${response.status}`,
+        sanitizeOpenAiErrorMessage(parsed?.error?.message ?? `OpenAI chat gagal: HTTP ${response.status}`),
         response.status,
         parsed?.error?.code ?? null,
         parsed?.error?.type ?? null,
@@ -161,4 +161,10 @@ function parseRetryAfter(value: string | null): number | null {
     return Math.max(0, Math.ceil((dateMs - Date.now()) / 1000));
   }
   return null;
+}
+
+function sanitizeOpenAiErrorMessage(message: string): string {
+  return message
+    .replace(/\bsk-[A-Za-z0-9_-]+\b/g, '[REDACTED_OPENAI_KEY]')
+    .replace(/\bBearer\s+[A-Za-z0-9._-]+\b/g, 'Bearer [REDACTED]');
 }

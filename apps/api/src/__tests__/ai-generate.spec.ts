@@ -541,6 +541,63 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     ]);
   });
 
+  it('keeps quota notice throttle when at least one admin recipient succeeds', async () => {
+    userFindMany.mockResolvedValue([{
+      id: 'admin-1',
+      fullName: 'Super Admin 1',
+      email: 'admin1@example.sch.id',
+      phone: null,
+    }, {
+      id: 'admin-2',
+      fullName: 'Super Admin 2',
+      email: 'admin2@example.sch.id',
+      phone: null,
+    }]);
+    notificationNotify
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('email unavailable'));
+    cloudChat.mockRejectedValue(new OpenAiProviderError(
+      'Project spend limit exceeded',
+      429,
+      'project_spend_limit_exceeded',
+      'insufficient_quota',
+      null,
+    ));
+    localChat.mockResolvedValue(KEGIATAN_PATCH);
+
+    await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
+    await flushPromises();
+    await flushPromises();
+
+    expect(notificationNotify).toHaveBeenCalledTimes(2);
+    expect(releaseOpenAiQuotaNoticeIncident).not.toHaveBeenCalled();
+  });
+
+  it('releases quota notice throttle when every recipient delivery fails', async () => {
+    userFindMany.mockResolvedValue([{
+      id: 'admin-1',
+      fullName: 'Super Admin 1',
+      email: 'admin1@example.sch.id',
+      phone: null,
+    }]);
+    notificationNotify.mockRejectedValue(new Error('email unavailable'));
+    cloudChat.mockRejectedValue(new OpenAiProviderError(
+      'Project spend limit exceeded',
+      429,
+      'project_spend_limit_exceeded',
+      'insufficient_quota',
+      null,
+    ));
+    localChat.mockResolvedValue(KEGIATAN_PATCH);
+
+    await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
+    await flushPromises();
+    await flushPromises();
+
+    expect(notificationNotify).toHaveBeenCalledTimes(1);
+    expect(releaseOpenAiQuotaNoticeIncident).toHaveBeenCalledWith('incident-1');
+  });
+
   it('uses unique notification refIds for separate quota incidents', async () => {
     claimOpenAiQuotaNoticeIncident
       .mockResolvedValueOnce('incident-1')

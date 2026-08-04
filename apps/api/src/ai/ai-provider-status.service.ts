@@ -117,10 +117,12 @@ export class AiProviderStatusService implements OnModuleDestroy {
     }
 
     try {
-      const current = await redis.get(OPENAI_QUOTA_NOTICE_KEY);
-      if (current === incidentId) {
-        await redis.del(OPENAI_QUOTA_NOTICE_KEY);
-      }
+      await redis.eval(
+        "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+        1,
+        OPENAI_QUOTA_NOTICE_KEY,
+        incidentId,
+      );
     } catch (err) {
       logger.warn('[AiProviderStatusService] Failed to release quota notice incident', {
         error: err instanceof Error ? err.message : String(err),

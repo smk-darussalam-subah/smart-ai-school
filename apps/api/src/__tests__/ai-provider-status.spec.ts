@@ -18,6 +18,13 @@ const mockRedisInstance = {
   del: jest.fn().mockImplementation(async (key: string) => {
     mockRedisStore.delete(key);
   }),
+  eval: jest.fn().mockImplementation(async (_script: string, _keyCount: number, key: string, incidentId: string) => {
+    if (mockRedisStore.get(key) === incidentId) {
+      mockRedisStore.delete(key);
+      return 1;
+    }
+    return 0;
+  }),
   quit: jest.fn().mockResolvedValue(undefined),
 };
 
@@ -145,6 +152,12 @@ describe('AiProviderStatusService', () => {
     expect(mockRedisStore.has('diis:ai:openai:quota-notice')).toBe(true);
 
     await service.releaseOpenAiQuotaNoticeIncident(incidentId as string);
+    expect(mockRedisInstance.eval).toHaveBeenCalledWith(
+      expect.stringContaining("redis.call('get', KEYS[1])"),
+      1,
+      'diis:ai:openai:quota-notice',
+      incidentId,
+    );
     expect(mockRedisStore.has('diis:ai:openai:quota-notice')).toBe(false);
   });
 

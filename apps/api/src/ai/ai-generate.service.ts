@@ -372,6 +372,7 @@ export class AiGenerateService {
         'Sistem otomatis memakai Ollama lokal agar Generate Modul Ajar tetap berjalan. ' +
         'Mohon periksa billing/usage OpenAI, lalu lakukan rotasi OPENAI_API_KEY hanya melalui prosedur secret-management resmi bila diperlukan.';
 
+      let sentCount = 0;
       for (const admin of admins) {
         const phone = admin.phone?.trim();
         const email = admin.email?.trim();
@@ -379,14 +380,26 @@ export class AiGenerateService {
         const to = phone || email;
         if (!to) continue;
 
-        await this.notificationService.notify({
-          channel,
-          to,
-          subject: 'OpenAI fallback aktif',
-          body,
-          refType: 'ai_openai_quota',
-          refId: incidentId,
-        });
+        try {
+          await this.notificationService.notify({
+            channel,
+            to,
+            subject: 'OpenAI fallback aktif',
+            body,
+            refType: 'ai_openai_quota',
+            refId: incidentId,
+          });
+          sentCount++;
+        } catch (err) {
+          logger.warn('[AiGenerateService] OpenAI quota notice recipient failed (fail-soft)', {
+            adminId: admin.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      if (sentCount === 0) {
+        await this.providerStatus.releaseOpenAiQuotaNoticeIncident(incidentId);
       }
     } catch (err) {
       await this.providerStatus.releaseOpenAiQuotaNoticeIncident(incidentId);
