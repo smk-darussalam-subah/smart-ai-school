@@ -8,7 +8,12 @@ import { z } from 'zod';
 import { logger } from '@smk/logger';
 import { DEFAULT_AI_PROVIDER } from './ai.config';
 
-const emptyStringToUndefined = (value: unknown) => (value === '' ? undefined : value);
+const blankStringToUndefined = (value: unknown) => {
+  if (typeof value !== 'string') return value;
+
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+};
 
 /**
  * Schema untuk semua environment variable yang dibutuhkan API.
@@ -34,7 +39,7 @@ const EnvSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   APPOINTMENT_AUTOMATION_TOKEN: z.preprocess(
-    emptyStringToUndefined,
+    blankStringToUndefined,
     z.string().min(32).optional(),
   ),
 
@@ -46,7 +51,7 @@ const EnvSchema = z.object({
   // R-28: Hybrid strategy — Ollama (embed only) + OpenAI gpt-4.1-mini (chat/generate)
   AI_PROVIDER: z.enum(['ollama', 'claude', 'openai']).default(DEFAULT_AI_PROVIDER),
   ANTHROPIC_API_KEY: z.string().optional(),
-  OPENAI_API_KEY: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+  OPENAI_API_KEY: z.preprocess(blankStringToUndefined, z.string().min(1).optional()),
   OPENAI_CHAT_MODEL: z.string().default('gpt-4.1-mini'),
   OLLAMA_URL: z.string().url('OLLAMA_URL harus berupa URL valid').default('http://ollama:11434'),
   OLLAMA_CHAT_MODEL: z.string().default('qwen2.5:7b'),
@@ -69,7 +74,7 @@ const EnvSchema = z.object({
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().default('mailto:admin@smkdarussalamsubah.sch.id'),
 }).superRefine((env, ctx) => {
-  if (env.AI_PROVIDER === DEFAULT_AI_PROVIDER && !env.OPENAI_API_KEY) {
+  if (env.AI_PROVIDER === 'openai' && !env.OPENAI_API_KEY) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['OPENAI_API_KEY'],

@@ -122,9 +122,26 @@ describe('validateEnv() — Environment Variable Validation at Startup (Item 12)
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
+  it('AI_PROVIDER=openai dengan key whitespace → fail-fast', () => {
+    Object.assign(process.env, { ...VALID_ENV, AI_PROVIDER: 'openai', OPENAI_API_KEY: '   ' });
+
+    expect(() => validateEnv()).toThrow('process.exit(1) called');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
   it('AI_PROVIDER=ollama tanpa OpenAI key → valid untuk mode local/embedding', () => {
     const { OPENAI_API_KEY: _unused, ...envWithoutOpenAiKey } = VALID_ENV;
     Object.assign(process.env, { ...envWithoutOpenAiKey, AI_PROVIDER: 'ollama' });
+
+    const env = validateEnv();
+
+    expect(env.AI_PROVIDER).toBe('ollama');
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('AI_PROVIDER=ollama dengan key whitespace → key dianggap tidak dikonfigurasi dan tetap valid', () => {
+    Object.assign(process.env, { ...VALID_ENV, AI_PROVIDER: 'ollama', OPENAI_API_KEY: '   ' });
 
     const env = validateEnv();
 

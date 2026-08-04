@@ -282,6 +282,18 @@ describe('AiModule factory (AI_PROVIDER env)', () => {
     expect(mod.get<AIGateway | null>('OPENAI_GATEWAY')).toBeNull();
   });
 
+  it('AI_PROVIDER=openai dengan OPENAI_API_KEY whitespace → OPENAI_GATEWAY null', async () => {
+    process.env['AI_PROVIDER'] = 'openai';
+    process.env['OPENAI_API_KEY'] = '   ';
+
+    const mod = await Test.createTestingModule({ imports: [AiModule] })
+      .overrideProvider(PrismaService)
+      .useValue(buildPrismaMock())
+      .compile();
+
+    expect(mod.get<AIGateway | null>('OPENAI_GATEWAY')).toBeNull();
+  });
+
   it('AI_PROVIDER=claude tanpa ANTHROPIC_API_KEY → CLAUDE_GATEWAY null, AI_GATEWAY tetap Ollama', async () => {
     process.env['AI_PROVIDER'] = 'claude';
     delete process.env['ANTHROPIC_API_KEY'];

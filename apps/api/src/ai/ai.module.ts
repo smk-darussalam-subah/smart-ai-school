@@ -48,7 +48,7 @@ function buildClaudeGateway(): AIGateway | null {
 /** R-28: Kembalikan OpenAiAdapter jika AI_PROVIDER=openai + OPENAI_API_KEY tersedia; null jika tidak. */
 function buildOpenAiGateway(): AIGateway | null {
   const provider = process.env['AI_PROVIDER'] ?? DEFAULT_AI_PROVIDER;
-  const apiKey = process.env['OPENAI_API_KEY'];
+  const apiKey = process.env['OPENAI_API_KEY']?.trim();
 
   if (provider !== 'openai' || !apiKey) return null;
 
