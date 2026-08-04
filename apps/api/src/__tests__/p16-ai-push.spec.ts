@@ -11,6 +11,7 @@ jest.mock('@smk/logger', () => ({
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthUser } from '@smk/auth';
 import { AiGenerateService } from '../ai/ai-generate.service';
+import { AiProviderStatusService } from '../ai/ai-provider-status.service';
 import { PushService } from '../push/push.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -68,6 +69,14 @@ describe('AiGenerateService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: 'AI_GATEWAY', useValue: { chat: chatMock } },
         { provide: 'OPENAI_GATEWAY', useValue: null },
+        {
+          provide: AiProviderStatusService,
+          useValue: {
+            shouldAttemptOpenAiProbe: jest.fn().mockResolvedValue(true),
+            markOpenAiQuotaExhausted: jest.fn().mockResolvedValue(undefined),
+            markOpenAiRecovered: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
     service = moduleRef.get(AiGenerateService);
