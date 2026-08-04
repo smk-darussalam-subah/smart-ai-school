@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
@@ -15,6 +16,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { resolveTeacherId } from '../common/helpers/role-helpers';
 import { AiRppSection, GenerateRppStepDto } from './dto/generate.dto';
 import { hasPii, stripPiiForLlm } from './adapters/pii-strip.utils';
+import { NotificationService } from '../notification/notification.service';
+import { OpenAiProviderError } from './adapters/openai.adapter';
+import { AiProviderStatusService } from './ai-provider-status.service';
 
 type AiErrorCode =
   | 'AI_ENDPOINT_DISABLED'
@@ -49,6 +53,23 @@ type AiCallResult = {
   model: 'ollama' | 'gpt-4.1-mini';
   promptForAudit: string;
 };
+
+const OPENAI_RATE_LIMIT_MAX_ATTEMPTS = 2;
+const OPENAI_RATE_LIMIT_MAX_DELAY_MS = 2_000;
+
+const OPENAI_QUOTA_ERROR_CODES = new Set([
+  'credit_balance_exhausted',
+  'insufficient_quota',
+  'organization_usage_limit_exceeded',
+  'organization_spend_limit_exceeded',
+  'project_spend_limit_exceeded',
+]);
+
+const OPENAI_RATE_LIMIT_ERROR_CODES = new Set([
+  'rate_limit_exceeded',
+  'tokens_rate_limit_exceeded',
+  'requests_rate_limit_exceeded',
+]);
 
 const SECTION_LABELS: Record<AiRppSection, string> = {
   cp_tp: 'Capaian Pembelajaran (CP) dan Tujuan Pembelajaran (TP)',
@@ -148,6 +169,8 @@ export class AiGenerateService {
     private readonly prisma: PrismaService,
     @Inject('AI_GATEWAY') private readonly gateway: AIGateway,
     @Inject('OPENAI_GATEWAY') private readonly openaiGateway: AIGateway | null,
+    private readonly providerStatus: AiProviderStatusService,
+    @Optional() private readonly notificationService?: NotificationService,
   ) {}
 
   rejectLegacyGeneration(): never {
@@ -230,18 +253,159 @@ export class AiGenerateService {
   private async callAi(prompt: string): Promise<AiCallResult> {
     const piiDetected = hasPii(prompt);
     const promptForProvider = stripPiiForLlm(prompt);
-    const gateway = !piiDetected && this.openaiGateway ? this.openaiGateway : this.gateway;
-    const model = !piiDetected && this.openaiGateway ? 'gpt-4.1-mini' : 'ollama';
+
+    if (!piiDetected && this.openaiGateway && await this.providerStatus.shouldAttemptOpenAiProbe()) {
+      try {
+        const result = await this.callOpenAiWithRateLimitRetry(promptForProvider);
+        await this.providerStatus.markOpenAiRecovered();
+        return result;
+      } catch (err) {
+        if (err instanceof HttpException) throw err;
+        if (this.isOpenAiQuotaExhausted(err)) {
+          const detailCode = err instanceof OpenAiProviderError ? err.code : null;
+          await this.providerStatus.markOpenAiQuotaExhausted(detailCode);
+          this.scheduleAdminOpenAiQuotaNotice();
+          logger.warn('[AiGenerateService] OpenAI quota exhausted; falling back to Ollama');
+          return this.callFallbackProvider(promptForProvider);
+        }
+        throw this.mapProviderError(err, false);
+      }
+    }
 
     try {
-      const output = await gateway.chat(promptForProvider);
-      if (!output || output.trim().length === 0) {
-        throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
-      }
-      return { output, model, promptForAudit: promptForProvider };
+      return await this.callProvider(this.gateway, promptForProvider, 'ollama');
     } catch (err) {
       if (err instanceof HttpException) throw err;
       throw this.mapProviderError(err, piiDetected);
+    }
+  }
+
+  private async callOpenAiWithRateLimitRetry(promptForProvider: string): Promise<AiCallResult> {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= OPENAI_RATE_LIMIT_MAX_ATTEMPTS; attempt++) {
+      try {
+        return await this.callProvider(this.openaiGateway as AIGateway, promptForProvider, 'gpt-4.1-mini');
+      } catch (err) {
+        lastErr = err;
+        if (
+          !(err instanceof OpenAiProviderError) ||
+          this.isOpenAiQuotaExhausted(err) ||
+          !this.isOpenAiTemporaryRateLimit(err) ||
+          attempt >= OPENAI_RATE_LIMIT_MAX_ATTEMPTS
+        ) {
+          throw err;
+        }
+        const retryDelayMs = this.openAiRetryDelayMs(err, attempt);
+        if (retryDelayMs === null) throw err;
+        await this.sleep(retryDelayMs);
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+  }
+
+  private async callFallbackProvider(promptForProvider: string): Promise<AiCallResult> {
+    try {
+      return await this.callProvider(this.gateway, promptForProvider, 'ollama');
+    } catch (fallbackErr) {
+      if (fallbackErr instanceof HttpException) throw fallbackErr;
+      throw this.mapProviderError(fallbackErr, false);
+    }
+  }
+
+  private async callProvider(
+    gateway: AIGateway,
+    promptForProvider: string,
+    model: AiCallResult['model'],
+  ): Promise<AiCallResult> {
+    const output = await gateway.chat(promptForProvider);
+    if (!output || output.trim().length === 0) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    return { output, model, promptForAudit: promptForProvider };
+  }
+
+  private isOpenAiQuotaExhausted(err: unknown): boolean {
+    if (!(err instanceof OpenAiProviderError)) return false;
+    return !!err.code && OPENAI_QUOTA_ERROR_CODES.has(err.code);
+  }
+
+  private isOpenAiTemporaryRateLimit(err: OpenAiProviderError): boolean {
+    if (err.status !== 429) return false;
+    if (err.code && OPENAI_QUOTA_ERROR_CODES.has(err.code)) return false;
+    return !err.code || OPENAI_RATE_LIMIT_ERROR_CODES.has(err.code) || err.type === 'rate_limit_exceeded';
+  }
+
+  private openAiRetryDelayMs(err: OpenAiProviderError, attempt: number): number | null {
+    const retryAfterMs = err.retryAfterSeconds !== null ? err.retryAfterSeconds * 1000 : null;
+    if (retryAfterMs !== null && retryAfterMs > OPENAI_RATE_LIMIT_MAX_DELAY_MS) return null;
+    const fallbackMs = 250 * (2 ** (attempt - 1));
+    return retryAfterMs ?? Math.min(fallbackMs, OPENAI_RATE_LIMIT_MAX_DELAY_MS);
+  }
+
+  private sleep(ms: number): Promise<void> {
+    if (ms <= 0) return Promise.resolve();
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private scheduleAdminOpenAiQuotaNotice(): void {
+    void this.notifyAdminsOpenAiQuotaFallback();
+  }
+
+  private async notifyAdminsOpenAiQuotaFallback(): Promise<void> {
+    if (!this.notificationService) {
+      logger.warn('[AiGenerateService] OpenAI quota notice skipped: NotificationService unavailable');
+      return;
+    }
+
+    const incidentId = await this.providerStatus.claimOpenAiQuotaNoticeIncident();
+    if (!incidentId) return;
+
+    try {
+      const admins = await this.prisma.user.findMany({
+        where: { role: 'SUPER_ADMIN', isActive: true },
+        select: { id: true, fullName: true, email: true, phone: true },
+        take: 10,
+      });
+
+      const body =
+        'Kuota/kredit atau batas penggunaan OpenAI DIIS telah tercapai. ' +
+        'Sistem otomatis memakai Ollama lokal agar Generate Modul Ajar tetap berjalan. ' +
+        'Mohon periksa billing/usage OpenAI, lalu lakukan rotasi OPENAI_API_KEY hanya melalui prosedur secret-management resmi bila diperlukan.';
+
+      let sentCount = 0;
+      for (const admin of admins) {
+        const phone = admin.phone?.trim();
+        const email = admin.email?.trim();
+        const channel = phone ? 'whatsapp' : 'email';
+        const to = phone || email;
+        if (!to) continue;
+
+        try {
+          await this.notificationService.notify({
+            channel,
+            to,
+            subject: 'OpenAI fallback aktif',
+            body,
+            refType: 'ai_openai_quota',
+            refId: incidentId,
+          });
+          sentCount++;
+        } catch (err) {
+          logger.warn('[AiGenerateService] OpenAI quota notice recipient failed (fail-soft)', {
+            adminId: admin.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      if (sentCount === 0) {
+        await this.providerStatus.releaseOpenAiQuotaNoticeIncident(incidentId);
+      }
+    } catch (err) {
+      await this.providerStatus.releaseOpenAiQuotaNoticeIncident(incidentId);
+      logger.warn('[AiGenerateService] OpenAI quota notice failed (fail-soft)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -250,8 +414,20 @@ export class AiGenerateService {
       return this.aiException('AI_CONTEXT_PII_BLOCKED', HttpStatus.SERVICE_UNAVAILABLE);
     }
 
+    if (err instanceof OpenAiProviderError) {
+      if (this.isOpenAiTemporaryRateLimit(err)) {
+        return this.aiException('AI_PROVIDER_RATE_LIMITED', HttpStatus.TOO_MANY_REQUESTS);
+      }
+      if (err.status === 401 || err.status === 403 || err.code === 'invalid_api_key') {
+        return this.aiException('AI_PROVIDER_AUTH_FAILED', HttpStatus.SERVICE_UNAVAILABLE);
+      }
+      if (err.status >= 500) {
+        return this.aiException('AI_PROVIDER_UNAVAILABLE', HttpStatus.SERVICE_UNAVAILABLE);
+      }
+    }
+
     const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
-    if (message.includes('429') || message.includes('rate')) {
+    if (message.includes('rate_limit_exceeded')) {
       return this.aiException('AI_PROVIDER_RATE_LIMITED', HttpStatus.TOO_MANY_REQUESTS);
     }
     if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) {
