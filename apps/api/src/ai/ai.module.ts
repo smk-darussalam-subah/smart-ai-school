@@ -24,6 +24,9 @@ import { AiGenerateService } from './ai-generate.service';
 import { AiGenerateController } from './ai-generate.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PermissionModule } from '../permissions/permissions.module';
+import { DEFAULT_AI_PROVIDER } from '../config/ai.config';
+import { NotificationModule } from '../notification/notification.module';
+import { AiProviderStatusService } from './ai-provider-status.service';
 
 function buildAiGateway(): AIGateway {
   const baseUrl = process.env['OLLAMA_URL'] ?? 'http://ollama:11434';
@@ -36,7 +39,7 @@ function buildAiGateway(): AIGateway {
 
 /** Kembalikan ClaudeAdapter jika AI_PROVIDER=claude + ANTHROPIC_API_KEY tersedia; null jika tidak. */
 function buildClaudeGateway(): AIGateway | null {
-  const provider = process.env['AI_PROVIDER'] ?? 'openai';
+  const provider = process.env['AI_PROVIDER'] ?? DEFAULT_AI_PROVIDER;
   const apiKey = process.env['ANTHROPIC_API_KEY'];
 
   if (provider !== 'claude' || !apiKey) return null;
@@ -46,8 +49,8 @@ function buildClaudeGateway(): AIGateway | null {
 
 /** R-28: Kembalikan OpenAiAdapter jika AI_PROVIDER=openai + OPENAI_API_KEY tersedia; null jika tidak. */
 function buildOpenAiGateway(): AIGateway | null {
-  const provider = process.env['AI_PROVIDER'] ?? 'openai';
-  const apiKey = process.env['OPENAI_API_KEY'];
+  const provider = process.env['AI_PROVIDER'] ?? DEFAULT_AI_PROVIDER;
+  const apiKey = process.env['OPENAI_API_KEY']?.trim();
 
   if (provider !== 'openai' || !apiKey) return null;
 
@@ -56,7 +59,7 @@ function buildOpenAiGateway(): AIGateway | null {
 }
 
 @Module({
-  imports: [PrismaModule, PermissionModule],
+  imports: [PrismaModule, PermissionModule, NotificationModule],
   controllers: [AiController, AiGenerateController],
   providers: [
     {
@@ -73,7 +76,8 @@ function buildOpenAiGateway(): AIGateway | null {
     },
     AiService,
     AiGenerateService,
+    AiProviderStatusService,
   ],
-  exports: ['AI_GATEWAY', 'CLAUDE_GATEWAY', 'OPENAI_GATEWAY', AiService, AiGenerateService],
+  exports: ['AI_GATEWAY', 'CLAUDE_GATEWAY', 'OPENAI_GATEWAY', AiService, AiGenerateService, AiProviderStatusService],
 })
 export class AiModule {}

@@ -34,10 +34,14 @@ import { RequirePermission } from '../permissions/decorators/require-permission.
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { AuthUser } from '@smk/auth';
+import { AiProviderStatusService } from './ai-provider-status.service';
 
 @Controller('ai')
 export class AiController {
-  constructor(private readonly aiService: AiService) {}
+  constructor(
+    private readonly aiService: AiService,
+    private readonly providerStatus: AiProviderStatusService,
+  ) {}
 
   // ── Chatbot ─────────────────────────────────────────────────────────────────
 
@@ -74,6 +78,17 @@ export class AiController {
   }
 
   // ── Knowledge — collection ──────────────────────────────────────────────────
+
+  /**
+   * GET /ai/provider-status - status provider AI untuk banner Super Admin.
+   * Tidak mengekspos secret, token, atau detail konfigurasi sensitif.
+   */
+  @Get('provider-status')
+  @Roles('SUPER_ADMIN')
+  @HttpCode(HttpStatus.OK)
+  providerStatusBanner() {
+    return this.providerStatus.getStatus();
+  }
 
   /**
    * GET /ai/knowledge — List semua chunk (draft + published) untuk manajemen.
