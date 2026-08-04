@@ -57,7 +57,7 @@ Residual cleanup note: the synthetic fixture is intentionally PII-safe. If the
 reviewer requires cleanup before main merge, deactivate or remove it through the
 official user-management/Keycloak mechanism; do not use SQL.
 
-### LMS failure drill: BLOCKED BY BROWSER-CONTROL CAPABILITY
+### LMS failure drill: PROVEN
 
 The failure drill must use browser network interception or offline mode only.
 It must prove that a failed completion request does not show `Selesai` or
@@ -65,20 +65,34 @@ It must prove that a failed completion request does not show `Selesai` or
 server state, and that a retry succeeds once. No database fixture or direct
 server mutation is required.
 
-Staging browser access was restored and the student LMS fixture was prepared:
+Because Codex in-app browser did not expose network interception/offline
+controls, the drill was executed with local Playwright against staging using
+Chrome and `route.abort()` for the LMS completion server action. This was still
+a browser-level interception drill; no SQL write or direct API mutation was used
+to induce failure.
 
-- A PII-safe existing student fixture with published modules and no LMS progress
-  was identified on staging.
-- Its password was rotated through Keycloak admin tooling, not SQL.
-- The fixture logged in successfully and opened `/dashboard/akademik`.
-- The student dashboard showed an active LMS module at `0%`.
+Evidence:
 
-The drill itself is still not complete because the available in-app browser
-wrapper supports navigation, screenshot, DOM snapshot, locator clicks, and dev
-logs, but it does not expose browser network routing or offline controls. The
-wrapper also did not provide page-context `fetch`/`XMLHttpRequest` access for a
-zero-server-mutation monkeypatch. Because the reviewer explicitly asked for
-network interception/offline proof, no pass claim is made for this item.
+1. A PII-safe existing student fixture with published modules and no LMS
+   progress was identified on staging.
+2. Its password was rotated through Keycloak admin tooling, not SQL.
+3. The fixture logged in through the staging OAuth/Keycloak flow and opened
+   `/dashboard/akademik`.
+4. The student LMS view showed active modules with `Tandai Selesai`; preflight
+   progress was `none|none|0`.
+5. Playwright intercepted one Server Action POST to `/dashboard/akademik` with
+   a `next-action` header and aborted it.
+6. After the failed request, the UI did not show `100%`, the completion button
+   remained/recovered, and database progress remained `none|none|0`.
+7. After reload, the module was still incomplete and `Tandai Selesai` was still
+   available.
+8. Retrying without interception completed exactly one progress row:
+   `100|completed|1`.
+
+Console note: the expected forced failure produced `net::ERR_FAILED` and
+`TypeError: Failed to fetch` during the aborted request. A pre-existing
+Cloudflare beacon CSP error was also observed. No React #310 error was observed
+in this drill.
 
 ### AI provider contract: SOURCE FIX IN PR #426
 
@@ -113,7 +127,7 @@ git diff --quiet origin/staging <final-head> -- . \
 
 ## Gate decision
 
-PR #425 remains open and must not merge to `main` until the LMS failure drill is
-completed with a browser surface that supports interception/offline mode, and PR
-#426 has passed its normal develop/staging gates. The consent-incomplete P1 is
-now closed by staging browser evidence in this report.
+PR #425 remains open and must not merge to `main` until PR #426 has passed its
+normal develop/staging gates and the resulting staging provider smoke/browser AI
+regression has been recorded. The consent-incomplete P1 and LMS failure drill
+are now closed by staging/browser evidence in this report.
