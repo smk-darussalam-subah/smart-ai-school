@@ -12,7 +12,7 @@ describe('Modul Ajar AI containment helpers', () => {
       section: 'kegiatan',
       savedVersion: 'dirty',
       rppId: null,
-      body: {},
+      body: { cp: 'CP tersimpan', tp: ['TP tersimpan'] },
       isGenerating: false,
     }).label).toBe('Simpan & bantu isi bagian ini');
 
@@ -20,7 +20,7 @@ describe('Modul Ajar AI containment helpers', () => {
       section: 'kegiatan',
       savedVersion: 'saved',
       rppId: 'rpp-1',
-      body: {},
+      body: { cp: 'CP tersimpan', tp: ['TP tersimpan'] },
       isGenerating: false,
     }).label).toBe('Bantu isi bagian ini');
   });
@@ -34,12 +34,24 @@ describe('Modul Ajar AI containment helpers', () => {
     });
     const generate = jest.fn(async (request: { rppId: string }) => {
       calls.push(`generate:${request.rppId}`);
-      return { success: true, data: { output: 'Kegiatan inti hasil AI.' } };
+      return {
+        success: true,
+        data: {
+          output: {
+            kegiatan: [{
+              pertemuan: 'Pertemuan 1',
+              pendahuluan: 'Apersepsi singkat.',
+              inti: 'Kegiatan inti hasil AI.',
+              penutup: 'Refleksi singkat.',
+            }],
+          },
+        },
+      };
     });
 
     const result = await runContainedAiSectionFlow({
       section: 'kegiatan',
-      body: {},
+      body: { cp: 'CP tersimpan', tp: ['TP tersimpan'] },
       guard,
       ensureSaved,
       generate,
@@ -62,7 +74,7 @@ describe('Modul Ajar AI containment helpers', () => {
       },
       generate: async (request) => {
         calls.push(`generate:${request.rppId}`);
-        return { success: true, data: { output: 'Profil baru.' } };
+        return { success: true, data: { output: { profilDimensi: ['Kreativitas'], profilUraian: 'Profil baru.' } } };
       },
     });
 
@@ -73,7 +85,7 @@ describe('Modul Ajar AI containment helpers', () => {
   it('save success plus AI failure keeps the saved rppId in result', async () => {
     const result = await runContainedAiSectionFlow({
       section: 'kegiatan',
-      body: {},
+      body: { cp: 'CP tersimpan', tp: ['TP tersimpan'] },
       guard: createAiSingleFlightGuard(),
       ensureSaved: async () => 'rpp-saved',
       generate: async () => ({ success: false, errorCode: 'AI_PROVIDER_TIMEOUT' }),
@@ -91,7 +103,7 @@ describe('Modul Ajar AI containment helpers', () => {
     const guard = createAiSingleFlightGuard();
     const result = await runContainedAiSectionFlow({
       section: 'kegiatan',
-      body: {},
+      body: { cp: 'CP tersimpan', tp: ['TP tersimpan'] },
       guard,
       ensureSaved: async () => { throw new Error('Gagal menyimpan draft.'); },
       generate: jest.fn(),
@@ -111,10 +123,23 @@ describe('Modul Ajar AI containment helpers', () => {
     const ensureSaved = jest.fn(() => new Promise<string>((resolve) => {
       resolveSave = resolve;
     }));
-    const generate = jest.fn(async () => ({ success: true, data: { output: 'Kegiatan.' } }));
+    const generate = jest.fn(async () => ({
+      success: true,
+      data: {
+        output: {
+          kegiatan: [{
+            pertemuan: 'Pertemuan 1',
+            pendahuluan: 'Pembuka.',
+            inti: 'Kegiatan.',
+            penutup: 'Penutup.',
+          }],
+        },
+      },
+    }));
 
-    const first = runContainedAiSectionFlow({ section: 'kegiatan', body: {}, guard, ensureSaved, generate });
-    const second = await runContainedAiSectionFlow({ section: 'kegiatan', body: {}, guard, ensureSaved, generate });
+    const body = { cp: 'CP tersimpan', tp: ['TP tersimpan'] };
+    const first = runContainedAiSectionFlow({ section: 'kegiatan', body, guard, ensureSaved, generate });
+    const second = await runContainedAiSectionFlow({ section: 'kegiatan', body, guard, ensureSaved, generate });
     resolveSave('rpp-once');
     const firstResult = await first;
 
@@ -140,8 +165,94 @@ describe('Modul Ajar AI containment helpers', () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
+  it('missing TP for kegiatan returns foundation state with zero save/provider call', async () => {
+    const ensureSaved = jest.fn();
+    const generate = jest.fn();
+
+    const result = await runContainedAiSectionFlow({
+      section: 'kegiatan',
+      body: { cp: 'CP ada', tp: [] },
+      guard: createAiSingleFlightGuard(),
+      ensureSaved,
+      generate,
+    });
+
+    expect(result).toEqual({ status: 'missing_foundation', code: 'AI_FOUNDATION_INCOMPLETE' });
+    expect(ensureSaved).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
   it('invalid output does not produce a patch', () => {
     expect(parseAiSectionOutput('atp', 'bukan json', { tp: ['TP 1'] }))
       .toEqual({ ok: false, code: 'AI_OUTPUT_INVALID' });
+  });
+
+  it('rejects kegiatan patches without a complete first meeting structure', () => {
+    expect(parseAiSectionOutput('kegiatan', {
+      kegiatan: [{ pertemuan: 'Pertemuan 1', inti: 'Hanya inti.' }],
+    }, { cp: 'CP tersimpan', tp: ['TP tersimpan'] })).toEqual({
+      ok: false,
+      code: 'AI_OUTPUT_INVALID',
+    });
+  });
+
+  it('applies structured patches without browser markdown guessing', () => {
+    expect(parseAiSectionOutput('cp_tp', {
+      tp: ['Menjelaskan konsep jaringan lokal.', 'Menganalisis kebutuhan perangkat.'],
+    }, { cp: 'CP otoritatif lama' })).toEqual({
+      ok: true,
+      patch: {
+        tp: ['Menjelaskan konsep jaringan lokal.', 'Menganalisis kebutuhan perangkat.'],
+      },
+    });
+
+    expect(parseAiSectionOutput('asesmen', {
+      asesmenDiagnostik: 'Pertanyaan awal tentang pengalaman jaringan.',
+      asesmenFormatif: 'Observasi diskusi dan kuis singkat.',
+      asesmenSumatif: 'Proyek konfigurasi jaringan sederhana.',
+    }, {})).toEqual({
+      ok: true,
+      patch: {
+        asesmenDiagnostik: 'Pertanyaan awal tentang pengalaman jaringan.',
+        asesmenFormatif: 'Observasi diskusi dan kuis singkat.',
+        asesmenSumatif: 'Proyek konfigurasi jaringan sederhana.',
+      },
+    });
+  });
+
+  it('rejects CP overwrite and extra browser-side patch keys', () => {
+    expect(parseAiSectionOutput('cp_tp', {
+      cp: 'CP buatan AI',
+      tp: ['TP valid'],
+    }, { cp: 'CP tersimpan' })).toEqual({ ok: false, code: 'AI_OUTPUT_INVALID' });
+  });
+
+  it('merges generated kegiatan rows without erasing later manual meetings', () => {
+    expect(parseAiSectionOutput('kegiatan', {
+      kegiatan: [{
+        pertemuan: 'Pertemuan 1',
+        pendahuluan: 'Pembuka baru',
+        inti: 'Inti baru',
+        penutup: 'Penutup baru',
+      }],
+    }, {
+      kegiatan: [
+        { pertemuan: 'Pertemuan 1', pendahuluan: 'Pembuka manual' },
+        { pertemuan: 'Pertemuan 2', inti: 'Manual tetap' },
+      ],
+    })).toEqual({
+      ok: true,
+      patch: {
+        kegiatan: [
+          {
+            pertemuan: 'Pertemuan 1',
+            pendahuluan: 'Pembuka baru',
+            inti: 'Inti baru',
+            penutup: 'Penutup baru',
+          },
+          { pertemuan: 'Pertemuan 2', inti: 'Manual tetap' },
+        ],
+      },
+    });
   });
 });
