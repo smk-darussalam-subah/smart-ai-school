@@ -1,4 +1,5 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import Redis from 'ioredis';
 import { logger } from '@smk/logger';
 
@@ -22,13 +23,20 @@ export type AiProviderStatus = {
 };
 
 const OPENAI_CIRCUIT_KEY = 'diis:ai:openai:circuit';
+const OPENAI_PROBE_LEASE_KEY = 'diis:ai:openai:probe-lease';
+const OPENAI_QUOTA_NOTICE_KEY = 'diis:ai:openai:quota-notice';
 const OPENAI_CIRCUIT_TTL_SECONDS = 7 * 24 * 60 * 60;
+const OPENAI_QUOTA_NOTICE_THROTTLE_SECONDS = 6 * 60 * 60;
+const DEFAULT_PROBE_LEASE_SECONDS = 60;
 const DEFAULT_PROBE_AFTER_SECONDS = 30 * 60;
 
 @Injectable()
 export class AiProviderStatusService implements OnModuleDestroy {
   private readonly redis: Redis | null;
   private memoryState: OpenAiCircuitState | null = null;
+  private memoryProbeLeaseUntil = 0;
+  private memoryNoticeUntil = 0;
+  private memoryNoticeIncidentId: string | null = null;
 
   constructor() {
     const redisUrl = process.env['REDIS_URL'];
@@ -56,7 +64,8 @@ export class AiProviderStatusService implements OnModuleDestroy {
   async shouldAttemptOpenAiProbe(): Promise<boolean> {
     const state = await this.readState();
     if (!state) return true;
-    return Date.now() >= Date.parse(state.nextProbeAt);
+    if (Date.now() < Date.parse(state.nextProbeAt)) return false;
+    return this.claimProbeLease();
   }
 
   async markOpenAiQuotaExhausted(detailCode: string | null): Promise<void> {
@@ -73,6 +82,50 @@ export class AiProviderStatusService implements OnModuleDestroy {
 
   async markOpenAiRecovered(): Promise<void> {
     await this.clearState();
+  }
+
+  async claimOpenAiQuotaNoticeIncident(): Promise<string | null> {
+    const incidentId = randomUUID();
+    const redis = await this.redisClient();
+    if (!redis) return this.claimMemoryQuotaNoticeIncident(incidentId);
+
+    try {
+      const result = await redis.set(
+        OPENAI_QUOTA_NOTICE_KEY,
+        incidentId,
+        'EX',
+        OPENAI_QUOTA_NOTICE_THROTTLE_SECONDS,
+        'NX',
+      );
+      return result === 'OK' ? incidentId : null;
+    } catch (err) {
+      logger.warn('[AiProviderStatusService] Falling back to memory quota notice throttle', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return this.claimMemoryQuotaNoticeIncident(incidentId);
+    }
+  }
+
+  async releaseOpenAiQuotaNoticeIncident(incidentId: string): Promise<void> {
+    const redis = await this.redisClient();
+    if (!redis) {
+      if (this.memoryNoticeIncidentId === incidentId) {
+        this.memoryNoticeUntil = 0;
+        this.memoryNoticeIncidentId = null;
+      }
+      return;
+    }
+
+    try {
+      const current = await redis.get(OPENAI_QUOTA_NOTICE_KEY);
+      if (current === incidentId) {
+        await redis.del(OPENAI_QUOTA_NOTICE_KEY);
+      }
+    } catch (err) {
+      logger.warn('[AiProviderStatusService] Failed to release quota notice incident', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   async getStatus(): Promise<AiProviderStatus> {
@@ -107,6 +160,48 @@ export class AiProviderStatusService implements OnModuleDestroy {
     const raw = Number(process.env['OPENAI_CIRCUIT_PROBE_AFTER_SECONDS'] ?? DEFAULT_PROBE_AFTER_SECONDS);
     if (!Number.isFinite(raw)) return DEFAULT_PROBE_AFTER_SECONDS;
     return Math.min(Math.max(Math.floor(raw), 60), 24 * 60 * 60);
+  }
+
+  private probeLeaseSeconds(): number {
+    const raw = Number(process.env['OPENAI_CIRCUIT_PROBE_LEASE_SECONDS'] ?? DEFAULT_PROBE_LEASE_SECONDS);
+    if (!Number.isFinite(raw)) return DEFAULT_PROBE_LEASE_SECONDS;
+    return Math.min(Math.max(Math.floor(raw), 10), 5 * 60);
+  }
+
+  private async claimProbeLease(): Promise<boolean> {
+    const redis = await this.redisClient();
+    if (!redis) return this.claimMemoryProbeLease();
+
+    try {
+      const result = await redis.set(
+        OPENAI_PROBE_LEASE_KEY,
+        randomUUID(),
+        'EX',
+        this.probeLeaseSeconds(),
+        'NX',
+      );
+      return result === 'OK';
+    } catch (err) {
+      logger.warn('[AiProviderStatusService] Falling back to memory probe lease', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return this.claimMemoryProbeLease();
+    }
+  }
+
+  private claimMemoryProbeLease(): boolean {
+    const now = Date.now();
+    if (now < this.memoryProbeLeaseUntil) return false;
+    this.memoryProbeLeaseUntil = now + this.probeLeaseSeconds() * 1000;
+    return true;
+  }
+
+  private claimMemoryQuotaNoticeIncident(incidentId: string): string | null {
+    const now = Date.now();
+    if (now < this.memoryNoticeUntil) return null;
+    this.memoryNoticeUntil = now + OPENAI_QUOTA_NOTICE_THROTTLE_SECONDS * 1000;
+    this.memoryNoticeIncidentId = incidentId;
+    return incidentId;
   }
 
   private async readState(): Promise<OpenAiCircuitState | null> {

@@ -50,6 +50,8 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   const shouldAttemptOpenAiProbe = jest.fn();
   const markOpenAiQuotaExhausted = jest.fn();
   const markOpenAiRecovered = jest.fn();
+  const claimOpenAiQuotaNoticeIncident = jest.fn();
+  const releaseOpenAiQuotaNoticeIncident = jest.fn();
 
   const baseRpp = {
     id: RPP_ID,
@@ -69,7 +71,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   };
 
   beforeEach(async () => {
-    [userFindUnique, userFindMany, teacherFindUnique, rppFindFirst, teachingAssignmentFindFirst, aiGenerationCreate, localChat, cloudChat, notificationNotify, shouldAttemptOpenAiProbe, markOpenAiQuotaExhausted, markOpenAiRecovered]
+    [userFindUnique, userFindMany, teacherFindUnique, rppFindFirst, teachingAssignmentFindFirst, aiGenerationCreate, localChat, cloudChat, notificationNotify, shouldAttemptOpenAiProbe, markOpenAiQuotaExhausted, markOpenAiRecovered, claimOpenAiQuotaNoticeIncident, releaseOpenAiQuotaNoticeIncident]
       .forEach((mock) => mock.mockReset());
 
     userFindUnique.mockResolvedValue({ id: 'user-1' });
@@ -89,6 +91,8 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     shouldAttemptOpenAiProbe.mockResolvedValue(true);
     markOpenAiQuotaExhausted.mockResolvedValue(undefined);
     markOpenAiRecovered.mockResolvedValue(undefined);
+    claimOpenAiQuotaNoticeIncident.mockResolvedValue('incident-1');
+    releaseOpenAiQuotaNoticeIncident.mockResolvedValue(undefined);
 
     const prisma = {
       user: { findUnique: userFindUnique, findMany: userFindMany },
@@ -108,6 +112,8 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
           shouldAttemptOpenAiProbe,
           markOpenAiQuotaExhausted,
           markOpenAiRecovered,
+          claimOpenAiQuotaNoticeIncident,
+          releaseOpenAiQuotaNoticeIncident,
         } },
         { provide: NotificationService, useValue: { notify: notificationNotify } },
       ],
@@ -391,6 +397,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       to: 'admin@example.sch.id',
       subject: 'OpenAI fallback aktif',
       refType: 'ai_openai_quota',
+      refId: 'incident-1',
     }));
     expect((notificationNotify.mock.calls[0][0] as { body: string }).body).toContain('Ollama lokal');
     expect((notificationNotify.mock.calls[0][0] as { body: string }).body).toContain('billing/usage OpenAI');
@@ -399,7 +406,35 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     }));
   });
 
+  it.each([
+    'credit_balance_exhausted',
+    'organization_usage_limit_exceeded',
+  ])('opens circuit and falls back for official OpenAI quota code %s', async (code) => {
+    cloudChat.mockRejectedValue(new OpenAiProviderError(
+      'OpenAI usage is not available',
+      429,
+      code,
+      'insufficient_quota',
+      null,
+    ));
+    localChat.mockResolvedValue(KEGIATAN_PATCH);
+
+    await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
+    await flushPromises();
+    await flushPromises();
+
+    expect(cloudChat).toHaveBeenCalledTimes(1);
+    expect(localChat).toHaveBeenCalledTimes(1);
+    expect(markOpenAiQuotaExhausted).toHaveBeenCalledWith(code);
+    expect(aiGenerationCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ model: 'ollama' }),
+    }));
+  });
+
   it('throttles repeated OpenAI quota admin notifications while continuing fallback', async () => {
+    claimOpenAiQuotaNoticeIncident
+      .mockResolvedValueOnce('incident-1')
+      .mockResolvedValueOnce(null);
     cloudChat.mockRejectedValue(new OpenAiProviderError(
       'You exceeded your current quota',
       429,
@@ -417,6 +452,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(cloudChat).toHaveBeenCalledTimes(2);
     expect(localChat).toHaveBeenCalledTimes(2);
     expect(notificationNotify).toHaveBeenCalledTimes(1);
+    expect(claimOpenAiQuotaNoticeIncident).toHaveBeenCalledTimes(2);
   });
 
   it('bypasses OpenAI while Redis circuit is open and uses Ollama directly', async () => {
@@ -455,7 +491,36 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     }));
   });
 
-  it('uses unique notification refIds for separate quota incidents', async () => {
+  it('does not retry before a long Retry-After budget and returns rate-limited response', async () => {
+    cloudChat.mockRejectedValue(new OpenAiProviderError(
+      'Rate limit reached',
+      429,
+      'rate_limit_exceeded',
+      'rate_limit_exceeded',
+      5,
+    ));
+
+    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
+      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_PROVIDER_RATE_LIMITED' }) });
+
+    expect(cloudChat).toHaveBeenCalledTimes(1);
+    expect(localChat).not.toHaveBeenCalled();
+    expect(markOpenAiQuotaExhausted).not.toHaveBeenCalled();
+    expect(notificationNotify).not.toHaveBeenCalled();
+  });
+
+  it('uses one incident refId for all admin recipients in the same quota notice', async () => {
+    userFindMany.mockResolvedValue([{
+      id: 'admin-1',
+      fullName: 'Super Admin 1',
+      email: 'admin1@example.sch.id',
+      phone: null,
+    }, {
+      id: 'admin-2',
+      fullName: 'Super Admin 2',
+      email: null,
+      phone: '628100000001',
+    }]);
     cloudChat.mockRejectedValue(new OpenAiProviderError(
       'Project spend limit exceeded',
       429,
@@ -469,11 +534,32 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     await flushPromises();
     await flushPromises();
 
-    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + (6 * 60 * 60 * 1000) + 1);
+    expect(notificationNotify).toHaveBeenCalledTimes(2);
+    expect(notificationNotify.mock.calls.map((call) => call[0])).toEqual([
+      expect.objectContaining({ channel: 'email', to: 'admin1@example.sch.id', refId: 'incident-1' }),
+      expect.objectContaining({ channel: 'whatsapp', to: '628100000001', refId: 'incident-1' }),
+    ]);
+  });
+
+  it('uses unique notification refIds for separate quota incidents', async () => {
+    claimOpenAiQuotaNoticeIncident
+      .mockResolvedValueOnce('incident-1')
+      .mockResolvedValueOnce('incident-2');
+    cloudChat.mockRejectedValue(new OpenAiProviderError(
+      'Project spend limit exceeded',
+      429,
+      'project_spend_limit_exceeded',
+      'insufficient_quota',
+      null,
+    ));
+    localChat.mockResolvedValue(KEGIATAN_PATCH);
+
     await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
     await flushPromises();
     await flushPromises();
-    dateNowSpy.mockRestore();
+    await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
+    await flushPromises();
+    await flushPromises();
 
     const first = notificationNotify.mock.calls[0][0] as { refId: string };
     const second = notificationNotify.mock.calls[1][0] as { refId: string };

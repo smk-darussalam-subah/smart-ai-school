@@ -7,7 +7,6 @@ import {
   Injectable,
   Optional,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { logger } from '@smk/logger';
@@ -55,12 +54,13 @@ type AiCallResult = {
   promptForAudit: string;
 };
 
-const OPENAI_QUOTA_NOTICE_THROTTLE_MS = 6 * 60 * 60 * 1000;
 const OPENAI_RATE_LIMIT_MAX_ATTEMPTS = 2;
 const OPENAI_RATE_LIMIT_MAX_DELAY_MS = 2_000;
 
 const OPENAI_QUOTA_ERROR_CODES = new Set([
+  'credit_balance_exhausted',
   'insufficient_quota',
+  'organization_usage_limit_exceeded',
   'organization_spend_limit_exceeded',
   'project_spend_limit_exceeded',
 ]);
@@ -165,8 +165,6 @@ const PatchSchemas = {
 
 @Injectable()
 export class AiGenerateService {
-  private lastOpenAiQuotaNoticeAt = 0;
-
   constructor(
     private readonly prisma: PrismaService,
     @Inject('AI_GATEWAY') private readonly gateway: AIGateway,
@@ -297,7 +295,9 @@ export class AiGenerateService {
         ) {
           throw err;
         }
-        await this.sleep(this.openAiRetryDelayMs(err, attempt));
+        const retryDelayMs = this.openAiRetryDelayMs(err, attempt);
+        if (retryDelayMs === null) throw err;
+        await this.sleep(retryDelayMs);
       }
     }
     throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
@@ -335,10 +335,11 @@ export class AiGenerateService {
     return !err.code || OPENAI_RATE_LIMIT_ERROR_CODES.has(err.code) || err.type === 'rate_limit_exceeded';
   }
 
-  private openAiRetryDelayMs(err: OpenAiProviderError, attempt: number): number {
+  private openAiRetryDelayMs(err: OpenAiProviderError, attempt: number): number | null {
     const retryAfterMs = err.retryAfterSeconds !== null ? err.retryAfterSeconds * 1000 : null;
+    if (retryAfterMs !== null && retryAfterMs > OPENAI_RATE_LIMIT_MAX_DELAY_MS) return null;
     const fallbackMs = 250 * (2 ** (attempt - 1));
-    return Math.min(retryAfterMs ?? fallbackMs, OPENAI_RATE_LIMIT_MAX_DELAY_MS);
+    return retryAfterMs ?? Math.min(fallbackMs, OPENAI_RATE_LIMIT_MAX_DELAY_MS);
   }
 
   private sleep(ms: number): Promise<void> {
@@ -351,14 +352,13 @@ export class AiGenerateService {
   }
 
   private async notifyAdminsOpenAiQuotaFallback(): Promise<void> {
-    const now = Date.now();
-    if (now - this.lastOpenAiQuotaNoticeAt < OPENAI_QUOTA_NOTICE_THROTTLE_MS) return;
-    this.lastOpenAiQuotaNoticeAt = now;
-
     if (!this.notificationService) {
       logger.warn('[AiGenerateService] OpenAI quota notice skipped: NotificationService unavailable');
       return;
     }
+
+    const incidentId = await this.providerStatus.claimOpenAiQuotaNoticeIncident();
+    if (!incidentId) return;
 
     try {
       const admins = await this.prisma.user.findMany({
@@ -385,11 +385,11 @@ export class AiGenerateService {
           subject: 'OpenAI fallback aktif',
           body,
           refType: 'ai_openai_quota',
-          refId: randomUUID(),
+          refId: incidentId,
         });
       }
     } catch (err) {
-      this.lastOpenAiQuotaNoticeAt = 0;
+      await this.providerStatus.releaseOpenAiQuotaNoticeIncident(incidentId);
       logger.warn('[AiGenerateService] OpenAI quota notice failed (fail-soft)', {
         error: err instanceof Error ? err.message : String(err),
       });
