@@ -10,6 +10,8 @@ import { AiGenerateService } from '../ai/ai-generate.service';
 import { GenerateRppStepSchema } from '../ai/dto/generate.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
+import { OpenAiProviderError } from '../ai/adapters/openai.adapter';
+import { AiProviderStatusService } from '../ai/ai-provider-status.service';
 
 const RPP_ID = '11111111-1111-4111-8111-111111111111';
 const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
@@ -32,6 +34,7 @@ const kegiatanPatchWithInti = (inti: string) => JSON.stringify({
     penutup: 'Refleksi pembelajaran.',
   }],
 });
+const flushPromises = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   let service: AiGenerateService;
@@ -44,6 +47,9 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   const localChat = jest.fn();
   const cloudChat = jest.fn();
   const notificationNotify = jest.fn();
+  const shouldAttemptOpenAiProbe = jest.fn();
+  const markOpenAiQuotaExhausted = jest.fn();
+  const markOpenAiRecovered = jest.fn();
 
   const baseRpp = {
     id: RPP_ID,
@@ -63,7 +69,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   };
 
   beforeEach(async () => {
-    [userFindUnique, userFindMany, teacherFindUnique, rppFindFirst, teachingAssignmentFindFirst, aiGenerationCreate, localChat, cloudChat, notificationNotify]
+    [userFindUnique, userFindMany, teacherFindUnique, rppFindFirst, teachingAssignmentFindFirst, aiGenerationCreate, localChat, cloudChat, notificationNotify, shouldAttemptOpenAiProbe, markOpenAiQuotaExhausted, markOpenAiRecovered]
       .forEach((mock) => mock.mockReset());
 
     userFindUnique.mockResolvedValue({ id: 'user-1' });
@@ -80,6 +86,9 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     localChat.mockResolvedValue(KEGIATAN_PATCH);
     cloudChat.mockResolvedValue(KEGIATAN_PATCH);
     notificationNotify.mockResolvedValue(undefined);
+    shouldAttemptOpenAiProbe.mockResolvedValue(true);
+    markOpenAiQuotaExhausted.mockResolvedValue(undefined);
+    markOpenAiRecovered.mockResolvedValue(undefined);
 
     const prisma = {
       user: { findUnique: userFindUnique, findMany: userFindMany },
@@ -95,6 +104,11 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: 'AI_GATEWAY', useValue: { chat: localChat } },
         { provide: 'OPENAI_GATEWAY', useValue: { chat: cloudChat } },
+        { provide: AiProviderStatusService, useValue: {
+          shouldAttemptOpenAiProbe,
+          markOpenAiQuotaExhausted,
+          markOpenAiRecovered,
+        } },
         { provide: NotificationService, useValue: { notify: notificationNotify } },
       ],
     }).compile();
@@ -347,11 +361,19 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(localChat).not.toHaveBeenCalled();
   });
 
-  it('falls back to Ollama and notifies admin when OpenAI quota is exhausted', async () => {
-    cloudChat.mockRejectedValue(new Error('OpenAI chat gagal: HTTP 429 — {"error":{"code":"insufficient_quota","message":"You exceeded your current quota"}}'));
+  it('opens circuit, falls back to Ollama, and notifies admin when OpenAI quota is exhausted', async () => {
     localChat.mockResolvedValue(KEGIATAN_PATCH);
+    cloudChat.mockRejectedValue(new OpenAiProviderError(
+      'You exceeded your current quota',
+      429,
+      'organization_spend_limit_exceeded',
+      'insufficient_quota',
+      null,
+    ));
 
     const res = await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
+    await flushPromises();
+    await flushPromises();
 
     expect(res.output).toEqual({
       kegiatan: [{
@@ -363,6 +385,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     });
     expect(cloudChat).toHaveBeenCalledTimes(1);
     expect(localChat).toHaveBeenCalledTimes(1);
+    expect(markOpenAiQuotaExhausted).toHaveBeenCalledWith('organization_spend_limit_exceeded');
     expect(notificationNotify).toHaveBeenCalledWith(expect.objectContaining({
       channel: 'email',
       to: 'admin@example.sch.id',
@@ -370,21 +393,92 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       refType: 'ai_openai_quota',
     }));
     expect((notificationNotify.mock.calls[0][0] as { body: string }).body).toContain('Ollama lokal');
+    expect((notificationNotify.mock.calls[0][0] as { body: string }).body).toContain('billing/usage OpenAI');
     expect(aiGenerationCreate).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ model: 'ollama' }),
     }));
   });
 
   it('throttles repeated OpenAI quota admin notifications while continuing fallback', async () => {
-    cloudChat.mockRejectedValue(new Error('OpenAI chat gagal: HTTP 429 — insufficient_quota'));
+    cloudChat.mockRejectedValue(new OpenAiProviderError(
+      'You exceeded your current quota',
+      429,
+      'insufficient_quota',
+      'insufficient_quota',
+      null,
+    ));
     localChat.mockResolvedValue(KEGIATAN_PATCH);
 
     await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
     await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
+    await flushPromises();
+    await flushPromises();
 
     expect(cloudChat).toHaveBeenCalledTimes(2);
     expect(localChat).toHaveBeenCalledTimes(2);
     expect(notificationNotify).toHaveBeenCalledTimes(1);
+  });
+
+  it('bypasses OpenAI while Redis circuit is open and uses Ollama directly', async () => {
+    shouldAttemptOpenAiProbe.mockResolvedValue(false);
+    localChat.mockResolvedValue(KEGIATAN_PATCH);
+
+    await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
+
+    expect(cloudChat).not.toHaveBeenCalled();
+    expect(localChat).toHaveBeenCalledTimes(1);
+    expect(notificationNotify).not.toHaveBeenCalled();
+    expect(aiGenerationCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ model: 'ollama' }),
+    }));
+  });
+
+  it('retries temporary OpenAI rate limit once without opening circuit or falling back', async () => {
+    cloudChat
+      .mockRejectedValueOnce(new OpenAiProviderError(
+        'Rate limit reached',
+        429,
+        'rate_limit_exceeded',
+        'rate_limit_exceeded',
+        0,
+      ))
+      .mockResolvedValueOnce(KEGIATAN_PATCH);
+
+    await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
+
+    expect(cloudChat).toHaveBeenCalledTimes(2);
+    expect(localChat).not.toHaveBeenCalled();
+    expect(markOpenAiQuotaExhausted).not.toHaveBeenCalled();
+    expect(notificationNotify).not.toHaveBeenCalled();
+    expect(aiGenerationCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ model: 'gpt-4.1-mini' }),
+    }));
+  });
+
+  it('uses unique notification refIds for separate quota incidents', async () => {
+    cloudChat.mockRejectedValue(new OpenAiProviderError(
+      'Project spend limit exceeded',
+      429,
+      'project_spend_limit_exceeded',
+      'insufficient_quota',
+      null,
+    ));
+    localChat.mockResolvedValue(KEGIATAN_PATCH);
+
+    await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
+    await flushPromises();
+    await flushPromises();
+
+    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + (6 * 60 * 60 * 1000) + 1);
+    await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
+    await flushPromises();
+    await flushPromises();
+    dateNowSpy.mockRestore();
+
+    const first = notificationNotify.mock.calls[0][0] as { refId: string };
+    const second = notificationNotify.mock.calls[1][0] as { refId: string };
+    expect(notificationNotify).toHaveBeenCalledTimes(2);
+    expect(first.refId).not.toBe(second.refId);
   });
 
   it('legacy raw-context endpoints are disabled explicitly', () => {

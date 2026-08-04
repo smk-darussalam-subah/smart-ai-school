@@ -31,6 +31,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { AiService } from '../ai/ai.service';
 import { AiController } from '../ai/ai.controller';
+import { AiProviderStatusService } from '../ai/ai-provider-status.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AIGateway } from '@smk/types';
 import { AuthUser } from '@smk/auth';
@@ -102,6 +103,7 @@ async function buildModule(gateway: AIGateway, prisma: PrismaService): Promise<T
       { provide: 'AI_GATEWAY', useValue: gateway },
       { provide: 'CLAUDE_GATEWAY', useValue: null }, // SMA-48: default off in tests
       { provide: 'OPENAI_GATEWAY', useValue: null }, // R-28: default off in tests
+      { provide: AiProviderStatusService, useValue: { getStatus: jest.fn() } },
       { provide: PrismaService, useValue: prisma },
     ],
   }).compile();
