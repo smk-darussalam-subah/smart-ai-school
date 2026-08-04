@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
@@ -15,6 +16,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { resolveTeacherId } from '../common/helpers/role-helpers';
 import { AiRppSection, GenerateRppStepDto } from './dto/generate.dto';
 import { hasPii, stripPiiForLlm } from './adapters/pii-strip.utils';
+import { NotificationService } from '../notification/notification.service';
 
 type AiErrorCode =
   | 'AI_ENDPOINT_DISABLED'
@@ -49,6 +51,9 @@ type AiCallResult = {
   model: 'ollama' | 'gpt-4.1-mini';
   promptForAudit: string;
 };
+
+const OPENAI_QUOTA_NOTICE_THROTTLE_MS = 6 * 60 * 60 * 1000;
+const OPENAI_QUOTA_NOTICE_REF_ID = '00000000-0000-4000-8000-0000000000a1';
 
 const SECTION_LABELS: Record<AiRppSection, string> = {
   cp_tp: 'Capaian Pembelajaran (CP) dan Tujuan Pembelajaran (TP)',
@@ -144,10 +149,13 @@ const PatchSchemas = {
 
 @Injectable()
 export class AiGenerateService {
+  private lastOpenAiQuotaNoticeAt = 0;
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject('AI_GATEWAY') private readonly gateway: AIGateway,
     @Inject('OPENAI_GATEWAY') private readonly openaiGateway: AIGateway | null,
+    @Optional() private readonly notificationService?: NotificationService,
   ) {}
 
   rejectLegacyGeneration(): never {
@@ -230,18 +238,104 @@ export class AiGenerateService {
   private async callAi(prompt: string): Promise<AiCallResult> {
     const piiDetected = hasPii(prompt);
     const promptForProvider = stripPiiForLlm(prompt);
-    const gateway = !piiDetected && this.openaiGateway ? this.openaiGateway : this.gateway;
-    const model = !piiDetected && this.openaiGateway ? 'gpt-4.1-mini' : 'ollama';
+
+    if (!piiDetected && this.openaiGateway) {
+      try {
+        return await this.callProvider(this.openaiGateway, promptForProvider, 'gpt-4.1-mini');
+      } catch (err) {
+        if (err instanceof HttpException) throw err;
+        if (this.isOpenAiQuotaExhausted(err)) {
+          await this.notifyAdminsOpenAiQuotaFallback();
+          logger.warn('[AiGenerateService] OpenAI quota exhausted; falling back to Ollama');
+          return this.callFallbackProvider(promptForProvider);
+        }
+        throw this.mapProviderError(err, false);
+      }
+    }
 
     try {
-      const output = await gateway.chat(promptForProvider);
-      if (!output || output.trim().length === 0) {
-        throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
-      }
-      return { output, model, promptForAudit: promptForProvider };
+      return await this.callProvider(this.gateway, promptForProvider, 'ollama');
     } catch (err) {
       if (err instanceof HttpException) throw err;
       throw this.mapProviderError(err, piiDetected);
+    }
+  }
+
+  private async callFallbackProvider(promptForProvider: string): Promise<AiCallResult> {
+    try {
+      return await this.callProvider(this.gateway, promptForProvider, 'ollama');
+    } catch (fallbackErr) {
+      if (fallbackErr instanceof HttpException) throw fallbackErr;
+      throw this.mapProviderError(fallbackErr, false);
+    }
+  }
+
+  private async callProvider(
+    gateway: AIGateway,
+    promptForProvider: string,
+    model: AiCallResult['model'],
+  ): Promise<AiCallResult> {
+    const output = await gateway.chat(promptForProvider);
+    if (!output || output.trim().length === 0) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    return { output, model, promptForAudit: promptForProvider };
+  }
+
+  private isOpenAiQuotaExhausted(err: unknown): boolean {
+    const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+    return (
+      message.includes('insufficient_quota') ||
+      message.includes('exceeded your current quota') ||
+      message.includes('quota') ||
+      message.includes('billing') ||
+      message.includes('credit')
+    );
+  }
+
+  private async notifyAdminsOpenAiQuotaFallback(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastOpenAiQuotaNoticeAt < OPENAI_QUOTA_NOTICE_THROTTLE_MS) return;
+    this.lastOpenAiQuotaNoticeAt = now;
+
+    if (!this.notificationService) {
+      logger.warn('[AiGenerateService] OpenAI quota notice skipped: NotificationService unavailable');
+      return;
+    }
+
+    try {
+      const admins = await this.prisma.user.findMany({
+        where: { role: 'SUPER_ADMIN', isActive: true },
+        select: { id: true, fullName: true, email: true, phone: true },
+        take: 10,
+      });
+
+      const body =
+        'Kuota/token OpenAI DIIS habis atau ditolak provider. ' +
+        'Sistem otomatis memakai Ollama lokal agar Generate Modul Ajar tetap berjalan. ' +
+        'Mohon isi ulang kuota OpenAI atau rotasi OPENAI_API_KEY staging/production sesuai prosedur rahasia.';
+
+      for (const admin of admins) {
+        const phone = admin.phone?.trim();
+        const email = admin.email?.trim();
+        const channel = phone ? 'whatsapp' : 'email';
+        const to = phone || email;
+        if (!to) continue;
+
+        await this.notificationService.notify({
+          channel,
+          to,
+          subject: 'OpenAI fallback aktif',
+          body,
+          refType: 'ai_openai_quota',
+          refId: OPENAI_QUOTA_NOTICE_REF_ID,
+        });
+      }
+    } catch (err) {
+      this.lastOpenAiQuotaNoticeAt = 0;
+      logger.warn('[AiGenerateService] OpenAI quota notice failed (fail-soft)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

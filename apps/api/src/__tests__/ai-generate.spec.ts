@@ -9,6 +9,7 @@ import { AuthUser } from '@smk/auth';
 import { AiGenerateService } from '../ai/ai-generate.service';
 import { GenerateRppStepSchema } from '../ai/dto/generate.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationService } from '../notification/notification.service';
 
 const RPP_ID = '11111111-1111-4111-8111-111111111111';
 const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
@@ -35,12 +36,14 @@ const kegiatanPatchWithInti = (inti: string) => JSON.stringify({
 describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   let service: AiGenerateService;
   const userFindUnique = jest.fn();
+  const userFindMany = jest.fn();
   const teacherFindUnique = jest.fn();
   const rppFindFirst = jest.fn();
   const teachingAssignmentFindFirst = jest.fn();
   const aiGenerationCreate = jest.fn();
   const localChat = jest.fn();
   const cloudChat = jest.fn();
+  const notificationNotify = jest.fn();
 
   const baseRpp = {
     id: RPP_ID,
@@ -60,19 +63,26 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   };
 
   beforeEach(async () => {
-    [userFindUnique, teacherFindUnique, rppFindFirst, teachingAssignmentFindFirst, aiGenerationCreate, localChat, cloudChat]
+    [userFindUnique, userFindMany, teacherFindUnique, rppFindFirst, teachingAssignmentFindFirst, aiGenerationCreate, localChat, cloudChat, notificationNotify]
       .forEach((mock) => mock.mockReset());
 
     userFindUnique.mockResolvedValue({ id: 'user-1' });
+    userFindMany.mockResolvedValue([{
+      id: 'admin-1',
+      fullName: 'Super Admin',
+      email: 'admin@example.sch.id',
+      phone: null,
+    }]);
     teacherFindUnique.mockResolvedValue({ id: 'teacher-1' });
     rppFindFirst.mockResolvedValue(baseRpp);
     teachingAssignmentFindFirst.mockResolvedValue({ id: 'ta-1' });
     aiGenerationCreate.mockResolvedValue({});
     localChat.mockResolvedValue(KEGIATAN_PATCH);
     cloudChat.mockResolvedValue(KEGIATAN_PATCH);
+    notificationNotify.mockResolvedValue(undefined);
 
     const prisma = {
-      user: { findUnique: userFindUnique },
+      user: { findUnique: userFindUnique, findMany: userFindMany },
       teacher: { findUnique: teacherFindUnique },
       rpp: { findFirst: rppFindFirst },
       teachingAssignment: { findFirst: teachingAssignmentFindFirst },
@@ -85,6 +95,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: 'AI_GATEWAY', useValue: { chat: localChat } },
         { provide: 'OPENAI_GATEWAY', useValue: { chat: cloudChat } },
+        { provide: NotificationService, useValue: { notify: notificationNotify } },
       ],
     }).compile();
     service = module.get(AiGenerateService);
@@ -334,6 +345,46 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     });
     expect(cloudChat).toHaveBeenCalledTimes(1);
     expect(localChat).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Ollama and notifies admin when OpenAI quota is exhausted', async () => {
+    cloudChat.mockRejectedValue(new Error('OpenAI chat gagal: HTTP 429 — {"error":{"code":"insufficient_quota","message":"You exceeded your current quota"}}'));
+    localChat.mockResolvedValue(KEGIATAN_PATCH);
+
+    const res = await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
+
+    expect(res.output).toEqual({
+      kegiatan: [{
+        pertemuan: 'Pertemuan 1',
+        pendahuluan: 'Menyampaikan tujuan pembelajaran.',
+        inti: 'Menganalisis grafik fungsi linear.',
+        penutup: 'Refleksi dan umpan balik.',
+      }],
+    });
+    expect(cloudChat).toHaveBeenCalledTimes(1);
+    expect(localChat).toHaveBeenCalledTimes(1);
+    expect(notificationNotify).toHaveBeenCalledWith(expect.objectContaining({
+      channel: 'email',
+      to: 'admin@example.sch.id',
+      subject: 'OpenAI fallback aktif',
+      refType: 'ai_openai_quota',
+    }));
+    expect((notificationNotify.mock.calls[0][0] as { body: string }).body).toContain('Ollama lokal');
+    expect(aiGenerationCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ model: 'ollama' }),
+    }));
+  });
+
+  it('throttles repeated OpenAI quota admin notifications while continuing fallback', async () => {
+    cloudChat.mockRejectedValue(new Error('OpenAI chat gagal: HTTP 429 — insufficient_quota'));
+    localChat.mockResolvedValue(KEGIATAN_PATCH);
+
+    await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
+    await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
+
+    expect(cloudChat).toHaveBeenCalledTimes(2);
+    expect(localChat).toHaveBeenCalledTimes(2);
+    expect(notificationNotify).toHaveBeenCalledTimes(1);
   });
 
   it('legacy raw-context endpoints are disabled explicitly', () => {

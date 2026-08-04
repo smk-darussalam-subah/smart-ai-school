@@ -25,6 +25,7 @@ import { AiGenerateController } from './ai-generate.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PermissionModule } from '../permissions/permissions.module';
 import { DEFAULT_AI_PROVIDER } from '../config/ai.config';
+import { NotificationModule } from '../notification/notification.module';
 
 function buildAiGateway(): AIGateway {
   const baseUrl = process.env['OLLAMA_URL'] ?? 'http://ollama:11434';
@@ -57,7 +58,7 @@ function buildOpenAiGateway(): AIGateway | null {
 }
 
 @Module({
-  imports: [PrismaModule, PermissionModule],
+  imports: [PrismaModule, PermissionModule, NotificationModule],
   controllers: [AiController, AiGenerateController],
   providers: [
     {
