@@ -8,7 +8,7 @@
 //   ✓ OllamaAdapter.chat() tanpa context → return string
 //   ✓ OllamaAdapter.embed() Ollama error HTTP non-200 → throw
 //   ✓ OllamaAdapter.chat() Ollama error HTTP non-200 → throw
-//   ✓ Factory AI_PROVIDER unset → OllamaAdapter (default)
+//   ✓ Factory AI_PROVIDER unset → OpenAI gateway (default) + Ollama embed gateway
 //   ✓ Factory AI_PROVIDER=ollama → OllamaAdapter
 //   ✓ Factory AI_PROVIDER=claude → throw (Sprint 4 belum tersedia)
 //   ✓ AiService.backfillEmbeddings() panggil embed per chunk NULL + $queryRaw UPDATE
@@ -29,6 +29,7 @@ jest.mock('@smk/logger', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { OllamaAdapter } from '../ai/adapters/ollama.adapter';
+import { OpenAiAdapter } from '../ai/adapters/openai.adapter';
 import { AiModule } from '../ai/ai.module';
 import { AiService } from '../ai/ai.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -243,6 +244,54 @@ describe('AiModule factory (AI_PROVIDER env)', () => {
 
     const gateway = mod.get<AIGateway>('AI_GATEWAY');
     expect(gateway).toBeInstanceOf(OllamaAdapter);
+  });
+
+  it('AI_PROVIDER unset + OPENAI_API_KEY → OPENAI_GATEWAY OpenAiAdapter', async () => {
+    delete process.env['AI_PROVIDER'];
+    process.env['OPENAI_API_KEY'] = 'test-openai-key';
+
+    const mod = await Test.createTestingModule({ imports: [AiModule] })
+      .overrideProvider(PrismaService)
+      .useValue(buildPrismaMock())
+      .compile();
+
+    expect(mod.get<AIGateway | null>('OPENAI_GATEWAY')).toBeInstanceOf(OpenAiAdapter);
+  });
+
+  it('AI_PROVIDER=openai + OPENAI_API_KEY → OPENAI_GATEWAY OpenAiAdapter', async () => {
+    process.env['AI_PROVIDER'] = 'openai';
+    process.env['OPENAI_API_KEY'] = 'test-openai-key';
+
+    const mod = await Test.createTestingModule({ imports: [AiModule] })
+      .overrideProvider(PrismaService)
+      .useValue(buildPrismaMock())
+      .compile();
+
+    expect(mod.get<AIGateway | null>('OPENAI_GATEWAY')).toBeInstanceOf(OpenAiAdapter);
+  });
+
+  it('AI_PROVIDER=openai tanpa OPENAI_API_KEY → OPENAI_GATEWAY null', async () => {
+    process.env['AI_PROVIDER'] = 'openai';
+    delete process.env['OPENAI_API_KEY'];
+
+    const mod = await Test.createTestingModule({ imports: [AiModule] })
+      .overrideProvider(PrismaService)
+      .useValue(buildPrismaMock())
+      .compile();
+
+    expect(mod.get<AIGateway | null>('OPENAI_GATEWAY')).toBeNull();
+  });
+
+  it('AI_PROVIDER=openai dengan OPENAI_API_KEY whitespace → OPENAI_GATEWAY null', async () => {
+    process.env['AI_PROVIDER'] = 'openai';
+    process.env['OPENAI_API_KEY'] = '   ';
+
+    const mod = await Test.createTestingModule({ imports: [AiModule] })
+      .overrideProvider(PrismaService)
+      .useValue(buildPrismaMock())
+      .compile();
+
+    expect(mod.get<AIGateway | null>('OPENAI_GATEWAY')).toBeNull();
   });
 
   it('AI_PROVIDER=claude tanpa ANTHROPIC_API_KEY → CLAUDE_GATEWAY null, AI_GATEWAY tetap Ollama', async () => {
