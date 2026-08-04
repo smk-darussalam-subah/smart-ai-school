@@ -29,25 +29,35 @@ modified during this follow-up.
 - No production deployment, production timer, database mutation, or secret
   disclosure was performed in this follow-up.
 
-### Consent-incomplete flow: NOT PROVEN
+### Consent-incomplete flow: PROVEN
 
-An official staging provisioning flow created a synthetic fixture without
-exposing credentials or personal data in evidence. The official provisioning
-contract requires operator consent, and the browser session was blocked by the
-browser security policy before the consent reset and clean OAuth verification
-could be completed.
+Browser QA was rerun on staging with a synthetic, PII-safe user created through
+the official `Tambah Pengguna` UI. No SQL was used. Temporary credentials were
+used only in the browser session and are not recorded in this report.
 
-Required closure evidence remains:
+Evidence:
 
-1. Reset the synthetic fixture through the official `reset-consent` API/UI
-   mechanism, never through SQL.
-2. Start a clean OAuth session and verify redirect to `/consent`.
-3. Verify no protected dashboard data is available before consent.
-4. Accept consent once, verify persistence and the correct student workspace,
-   and confirm no redirect loop or React #310 error.
-5. Remove or deactivate the fixture through an official mechanism.
+1. Super Admin opened `Manajemen Pengguna` and created a synthetic `GURU`
+   fixture through the official single-user provisioning dialog.
+2. The new user completed the Keycloak first-login `UPDATE_PASSWORD` required
+   action.
+3. Immediately after the password update, the application redirected the user
+   to `https://staging.smkdarussalamsubah.sch.id/consent`.
+4. A direct attempt to open `/dashboard` before consent was redirected back to
+   `/consent`, proving protected dashboard data was not available before
+   consent.
+5. After accepting consent once, the user landed on `/dashboard`.
+6. A fresh navigation to `/dashboard/akademik` stayed on the protected page and
+   did not return to `/consent`, proving consent persistence.
+7. Browser console inspection after the flow showed no React #310 error. One
+   existing Radix dialog description warning was observed during the earlier
+   user-management dialog interaction; it did not affect the consent gate.
 
-### LMS failure drill: NOT RUN
+Residual cleanup note: the synthetic fixture is intentionally PII-safe. If the
+reviewer requires cleanup before main merge, deactivate or remove it through the
+official user-management/Keycloak mechanism; do not use SQL.
+
+### LMS failure drill: BLOCKED BY BROWSER-CONTROL CAPABILITY
 
 The failure drill must use browser network interception or offline mode only.
 It must prove that a failed completion request does not show `Selesai` or
@@ -55,8 +65,20 @@ It must prove that a failed completion request does not show `Selesai` or
 server state, and that a retry succeeds once. No database fixture or direct
 server mutation is required.
 
-The staging browser policy blocked the session before this drill could be
-performed, so no pass claim is made.
+Staging browser access was restored and the student LMS fixture was prepared:
+
+- A PII-safe existing student fixture with published modules and no LMS progress
+  was identified on staging.
+- Its password was rotated through Keycloak admin tooling, not SQL.
+- The fixture logged in successfully and opened `/dashboard/akademik`.
+- The student dashboard showed an active LMS module at `0%`.
+
+The drill itself is still not complete because the available in-app browser
+wrapper supports navigation, screenshot, DOM snapshot, locator clicks, and dev
+logs, but it does not expose browser network routing or offline controls. The
+wrapper also did not provide page-context `fetch`/`XMLHttpRequest` access for a
+zero-server-mutation monkeypatch. Because the reviewer explicitly asked for
+network interception/offline proof, no pass claim is made for this item.
 
 ### AI provider contract: SOURCE FIX IN PR #426
 
@@ -70,6 +92,9 @@ factories:
 
 The change still requires the normal `develop -> staging` promotion, staging
 provider smoke, and browser AI regression before it can affect main.
+
+Current CI status for PR #426: Build Check, Lint & Type Check, and Unit Tests
+are green. The PR remains blocked by the normal review/merge gate.
 
 ## Git tree integrity
 
@@ -88,7 +113,7 @@ git diff --quiet origin/staging <final-head> -- . \
 
 ## Gate decision
 
-PR #425 remains open and must not merge to `main` until the consent-incomplete
-proof and LMS failure drill are completed, and PR #426 has passed its normal
-develop/staging gates. This report intentionally records the remaining gates
-instead of treating unavailable browser access as successful QA.
+PR #425 remains open and must not merge to `main` until the LMS failure drill is
+completed with a browser surface that supports interception/offline mode, and PR
+#426 has passed its normal develop/staging gates. The consent-incomplete P1 is
+now closed by staging browser evidence in this report.
