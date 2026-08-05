@@ -24,6 +24,12 @@ const EnvSchema = z.object({
   API_PORT: z.string().default('3001'),
   DATABASE_URL: z.string().url('DATABASE_URL harus berupa URL valid (postgresql://...)'),
   REDIS_URL: z.string().url('REDIS_URL harus berupa URL valid (redis://...)'),
+  REDIS_QUEUE_NAMESPACE: z.preprocess(
+    blankStringToUndefined,
+    z.string()
+      .regex(/^[a-z0-9][a-z0-9_-]{1,31}$/, 'REDIS_QUEUE_NAMESPACE hanya boleh huruf kecil, angka, underscore, atau dash')
+      .optional(),
+  ),
   KEYCLOAK_URL: z.string().url('KEYCLOAK_URL harus berupa URL valid (http://...)'),
   KEYCLOAK_REALM: z.string().min(1, 'KEYCLOAK_REALM tidak boleh kosong'),
   KEYCLOAK_CLIENT_ID: z.string().min(1, 'KEYCLOAK_CLIENT_ID tidak boleh kosong'),
@@ -74,6 +80,13 @@ const EnvSchema = z.object({
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().default('mailto:admin@smkdarussalamsubah.sch.id'),
 }).superRefine((env, ctx) => {
+  if (env.NODE_ENV === 'production' && !env.REDIS_QUEUE_NAMESPACE) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['REDIS_QUEUE_NAMESPACE'],
+      message: 'REDIS_QUEUE_NAMESPACE wajib diset saat NODE_ENV=production',
+    });
+  }
   if (env.AI_PROVIDER === 'openai' && !env.OPENAI_API_KEY) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

@@ -20,7 +20,7 @@ import { FonnteAdapter } from './adapters/fonnte.adapter';
 import { SmtpAdapter } from './adapters/smtp.adapter';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PrismaService } from '../prisma/prisma.service';
-import { createNotificationQueue, NotifJob } from './queue.config';
+import { createNotificationQueue, NotifJob, resolveNotificationQueuePrefix } from './queue.config';
 import { createNotificationWorker } from './notification-worker';
 import { WaLogModule } from '../wa-log/wa-log.module';
 
@@ -62,16 +62,17 @@ function buildAdapter(): NotificationAdapter {
   providers: [
     { provide: 'NOTIFICATION_ADAPTER', useFactory: buildAdapter },
     { provide: 'REDIS_CONNECTION', useFactory: buildRedisConnection },
+    { provide: 'NOTIFICATION_QUEUE_PREFIX', useFactory: () => resolveNotificationQueuePrefix() },
     {
       provide: 'NOTIFICATION_QUEUE',
-      useFactory: (conn: RedisOptions) => createNotificationQueue(conn as unknown as Record<string, unknown>),
-      inject: ['REDIS_CONNECTION'],
+      useFactory: (conn: RedisOptions, prefix: string) => createNotificationQueue(conn as unknown as Record<string, unknown>, prefix),
+      inject: ['REDIS_CONNECTION', 'NOTIFICATION_QUEUE_PREFIX'],
     },
     {
       provide: 'NOTIFICATION_WORKER',
-      useFactory: (conn: RedisOptions, adapter: NotificationAdapter, prisma: PrismaService) =>
-        createNotificationWorker(conn as unknown as Record<string, unknown>, adapter, prisma),
-      inject: ['REDIS_CONNECTION', 'NOTIFICATION_ADAPTER', PrismaService],
+      useFactory: (conn: RedisOptions, adapter: NotificationAdapter, prisma: PrismaService, prefix: string) =>
+        createNotificationWorker(conn as unknown as Record<string, unknown>, adapter, prisma, prefix),
+      inject: ['REDIS_CONNECTION', 'NOTIFICATION_ADAPTER', PrismaService, 'NOTIFICATION_QUEUE_PREFIX'],
     },
     {
       provide: NotificationService,

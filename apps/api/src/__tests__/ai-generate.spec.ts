@@ -21,6 +21,7 @@ const KEGIATAN_PATCH = JSON.stringify({
     pendahuluan: 'Menyampaikan tujuan pembelajaran.',
     inti: 'Menganalisis grafik fungsi linear.',
     penutup: 'Refleksi dan umpan balik.',
+    diferensiasi: 'Menyiapkan dukungan bertahap dan tantangan lanjutan sesuai kesiapan siswa.',
   }],
 });
 const ATP_PATCH = JSON.stringify({
@@ -32,6 +33,7 @@ const kegiatanPatchWithInti = (inti: string) => JSON.stringify({
     pendahuluan: 'Apersepsi pembelajaran.',
     inti,
     penutup: 'Refleksi pembelajaran.',
+    diferensiasi: 'Pendampingan kelompok kecil dan pilihan produk belajar.',
   }],
 });
 const flushPromises = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -360,6 +362,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
           pendahuluan: 'Menyampaikan tujuan pembelajaran.',
           inti: 'Menganalisis grafik fungsi linear.',
           penutup: 'Refleksi dan umpan balik.',
+          diferensiasi: 'Menyiapkan dukungan bertahap dan tantangan lanjutan sesuai kesiapan siswa.',
         }],
       },
     });
@@ -377,7 +380,9 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       }) },
     );
     const options = cloudChat.mock.calls[0][2] as { responseFormat: { schema: Record<string, unknown> } };
-    expect(JSON.stringify(options.responseFormat.schema)).not.toMatch(/minLength|maxLength|minItems|maxItems|pattern|diferensiasi/);
+    const schemaText = JSON.stringify(options.responseFormat.schema);
+    expect(schemaText).not.toMatch(/minLength|maxLength|minItems|maxItems|pattern/);
+    expect(schemaText).toContain('diferensiasi');
     expect(localChat).not.toHaveBeenCalled();
   });
 
@@ -401,6 +406,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
         pendahuluan: 'Menyampaikan tujuan pembelajaran.',
         inti: 'Menganalisis grafik fungsi linear.',
         penutup: 'Refleksi dan umpan balik.',
+        diferensiasi: 'Menyiapkan dukungan bertahap dan tantangan lanjutan sesuai kesiapan siswa.',
       }],
     });
     expect(cloudChat).toHaveBeenCalledTimes(1);
@@ -417,7 +423,9 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       }) },
     );
     const options = localChat.mock.calls[0][2] as { responseFormat: { schema: Record<string, unknown> } };
-    expect(JSON.stringify(options.responseFormat.schema)).not.toMatch(/minLength|maxLength|minItems|maxItems|pattern|diferensiasi/);
+    const schemaText = JSON.stringify(options.responseFormat.schema);
+    expect(schemaText).not.toMatch(/minLength|maxLength|minItems|maxItems|pattern/);
+    expect(schemaText).toContain('diferensiasi');
     expect(markOpenAiQuotaExhausted).toHaveBeenCalledWith('organization_spend_limit_exceeded');
     expect(notificationNotify).toHaveBeenCalledWith(expect.objectContaining({
       channel: 'email',

@@ -23,6 +23,7 @@ const KEGIATAN_PATCH = JSON.stringify({
     pendahuluan: 'Apersepsi singkat.',
     inti: 'Siswa berdiskusi memecahkan masalah.',
     penutup: 'Refleksi dan tindak lanjut.',
+    diferensiasi: 'Guru memberi dukungan bertahap dan tantangan tambahan sesuai kesiapan siswa.',
   }],
 });
 
