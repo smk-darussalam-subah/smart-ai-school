@@ -156,6 +156,38 @@ describe('OllamaAdapter.chat()', () => {
     expect(result).toContain('SMK Darussalam');
   });
 
+  it('does not use JSON mode for normal Ollama chat', async () => {
+    const receivedBodies: unknown[] = [];
+    global.fetch = jest.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      receivedBodies.push(JSON.parse(init.body as string));
+      return {
+        ok: true,
+        json: async () => ({ message: { content: 'Jawaban naratif.' } }),
+        text: async () => '',
+      } as unknown as Response;
+    });
+
+    await makeAdapter().chat('Jelaskan PPDB.');
+
+    expect(receivedBodies[0]).toEqual(expect.not.objectContaining({ format: 'json' }));
+  });
+
+  it('uses JSON mode for structured Ollama chat', async () => {
+    const receivedBodies: unknown[] = [];
+    global.fetch = jest.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      receivedBodies.push(JSON.parse(init.body as string));
+      return {
+        ok: true,
+        json: async () => ({ message: { content: '{"sarana":"Laptop","target":"Kelas X"}' } }),
+        text: async () => '',
+      } as unknown as Response;
+    });
+
+    await makeAdapter().chat('Kembalikan JSON.', undefined, { responseFormat: 'json_object' });
+
+    expect(receivedBodies[0]).toEqual(expect.objectContaining({ format: 'json' }));
+  });
+
   it('dengan context chunk → susun context + return string', async () => {
     const receivedBodies: unknown[] = [];
     global.fetch = jest.fn().mockImplementation(async (_url: string, init: RequestInit) => {
@@ -228,6 +260,37 @@ describe('OpenAiAdapter.chat() provider errors', () => {
       text: async () => body,
     } as unknown as Response);
   }
+
+  function mockOpenAiSuccess(content = 'Jawaban naratif.'): unknown[] {
+    const receivedBodies: unknown[] = [];
+    global.fetch = jest.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      receivedBodies.push(JSON.parse(init.body as string));
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content } }] }),
+        text: async () => '',
+      } as unknown as Response;
+    });
+    return receivedBodies;
+  }
+
+  it('does not request JSON mode for normal OpenAI chat', async () => {
+    const receivedBodies = mockOpenAiSuccess();
+
+    await new OpenAiAdapter('test-key').chat('Jelaskan PPDB.');
+
+    expect(receivedBodies[0]).toEqual(expect.not.objectContaining({ response_format: expect.anything() }));
+  });
+
+  it('requests JSON object mode when structured output is required', async () => {
+    const receivedBodies = mockOpenAiSuccess('{"sarana":"Laptop","target":"Kelas X"}');
+
+    await new OpenAiAdapter('test-key').chat('Kembalikan JSON.', undefined, { responseFormat: 'json_object' });
+
+    expect(receivedBodies[0]).toEqual(expect.objectContaining({
+      response_format: { type: 'json_object' },
+    }));
+  });
 
   it('parses JSON error status/code/type and numeric Retry-After', async () => {
     mockOpenAiError(429, JSON.stringify({

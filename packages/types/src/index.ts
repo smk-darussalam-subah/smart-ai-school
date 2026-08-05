@@ -142,12 +142,16 @@ export interface RagContext {
   content: string;
 }
 
+export interface AiChatOptions {
+  responseFormat?: 'json_object';
+}
+
 /**
  * Abstraksi AI provider — anti lock-in ke Ollama/Claude/OpenAI.
  * embed() panjang array HARUS == OLLAMA_EMBED_DIMENSIONS (768).
  */
 export interface AIGateway {
-  chat(prompt: string, context?: RagContext[]): Promise<string>;
+  chat(prompt: string, context?: RagContext[], options?: AiChatOptions): Promise<string>;
   embed(text: string): Promise<number[]>;
 }
 
