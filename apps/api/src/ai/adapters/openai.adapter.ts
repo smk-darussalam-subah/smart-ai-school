@@ -17,7 +17,7 @@
 //   OPENAI_CHAT_MODEL  — model chat (default: gpt-4.1-mini)
 // =============================================================================
 
-import { AIGateway, RagContext } from '@smk/types';
+import { AiChatOptions, AIGateway, RagContext } from '@smk/types';
 import { stripPiiForLlm } from './pii-strip.utils';
 
 /** OpenAI Chat Completions API response shape (minimal — hanya field yang dipakai). */
@@ -78,7 +78,7 @@ export class OpenAiAdapter implements AIGateway {
    * @param prompt  Pertanyaan atau instruksi dari user
    * @param context Opsional: potongan konteks RAG untuk grounding jawaban
    */
-  async chat(prompt: string, context?: RagContext[]): Promise<string> {
+  async chat(prompt: string, context?: RagContext[], options?: AiChatOptions): Promise<string> {
     const safePrompt = stripPiiForLlm(prompt);
 
     const systemContent =
@@ -103,6 +103,9 @@ export class OpenAiAdapter implements AIGateway {
       ],
       temperature: 0.2,
       max_tokens: 2048,
+      ...(options?.responseFormat === 'json_object'
+        ? { response_format: { type: 'json_object' as const } }
+        : {}),
     };
 
     const controller = new AbortController();
