@@ -1,5 +1,5 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import Redis from 'ioredis';
 import { logger } from '@smk/logger';
 
@@ -22,9 +22,9 @@ export type AiProviderStatus = {
   message: string;
 };
 
-const OPENAI_CIRCUIT_KEY = 'diis:ai:openai:circuit';
-const OPENAI_PROBE_LEASE_KEY = 'diis:ai:openai:probe-lease';
-const OPENAI_QUOTA_NOTICE_KEY = 'diis:ai:openai:quota-notice';
+const OPENAI_CIRCUIT_SUFFIX = 'circuit';
+const OPENAI_PROBE_LEASE_SUFFIX = 'probe-lease';
+const OPENAI_QUOTA_NOTICE_SUFFIX = 'quota-notice';
 const OPENAI_CIRCUIT_TTL_SECONDS = 7 * 24 * 60 * 60;
 const OPENAI_QUOTA_NOTICE_THROTTLE_SECONDS = 6 * 60 * 60;
 const DEFAULT_PROBE_LEASE_SECONDS = 60;
@@ -33,12 +33,14 @@ const DEFAULT_PROBE_AFTER_SECONDS = 30 * 60;
 @Injectable()
 export class AiProviderStatusService implements OnModuleDestroy {
   private readonly redis: Redis | null;
+  private readonly keyPrefix: string;
   private memoryState: OpenAiCircuitState | null = null;
   private memoryProbeLeaseUntil = 0;
   private memoryNoticeUntil = 0;
   private memoryNoticeIncidentId: string | null = null;
 
   constructor() {
+    this.keyPrefix = this.resolveKeyPrefix();
     const redisUrl = process.env['REDIS_URL'];
     if (!redisUrl) {
       this.redis = null;
@@ -91,7 +93,7 @@ export class AiProviderStatusService implements OnModuleDestroy {
 
     try {
       const result = await redis.set(
-        OPENAI_QUOTA_NOTICE_KEY,
+        this.redisKey(OPENAI_QUOTA_NOTICE_SUFFIX),
         incidentId,
         'EX',
         OPENAI_QUOTA_NOTICE_THROTTLE_SECONDS,
@@ -120,7 +122,7 @@ export class AiProviderStatusService implements OnModuleDestroy {
       await redis.eval(
         "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
         1,
-        OPENAI_QUOTA_NOTICE_KEY,
+        this.redisKey(OPENAI_QUOTA_NOTICE_SUFFIX),
         incidentId,
       );
     } catch (err) {
@@ -176,7 +178,7 @@ export class AiProviderStatusService implements OnModuleDestroy {
 
     try {
       const result = await redis.set(
-        OPENAI_PROBE_LEASE_KEY,
+        this.redisKey(OPENAI_PROBE_LEASE_SUFFIX),
         randomUUID(),
         'EX',
         this.probeLeaseSeconds(),
@@ -210,7 +212,7 @@ export class AiProviderStatusService implements OnModuleDestroy {
     const redis = await this.redisClient();
     if (!redis) return this.memoryState;
     try {
-      const raw = await redis.get(OPENAI_CIRCUIT_KEY);
+      const raw = await redis.get(this.redisKey(OPENAI_CIRCUIT_SUFFIX));
       if (!raw) return null;
       return JSON.parse(raw) as OpenAiCircuitState;
     } catch (err) {
@@ -226,7 +228,7 @@ export class AiProviderStatusService implements OnModuleDestroy {
     const redis = await this.redisClient();
     if (!redis) return;
     try {
-      await redis.set(OPENAI_CIRCUIT_KEY, JSON.stringify(state), 'EX', OPENAI_CIRCUIT_TTL_SECONDS);
+      await redis.set(this.redisKey(OPENAI_CIRCUIT_SUFFIX), JSON.stringify(state), 'EX', OPENAI_CIRCUIT_TTL_SECONDS);
     } catch (err) {
       logger.warn('[AiProviderStatusService] Falling back to memory circuit write', {
         error: err instanceof Error ? err.message : String(err),
@@ -239,7 +241,7 @@ export class AiProviderStatusService implements OnModuleDestroy {
     const redis = await this.redisClient();
     if (!redis) return;
     try {
-      await redis.del(OPENAI_CIRCUIT_KEY);
+      await redis.del(this.redisKey(OPENAI_CIRCUIT_SUFFIX));
     } catch (err) {
       logger.warn('[AiProviderStatusService] Failed to clear Redis AI provider circuit', {
         error: err instanceof Error ? err.message : String(err),
@@ -260,5 +262,30 @@ export class AiProviderStatusService implements OnModuleDestroy {
       });
       return null;
     }
+  }
+
+  private resolveKeyPrefix(): string {
+    const explicit = process.env['AI_PROVIDER_STATUS_NAMESPACE']?.trim();
+    if (explicit) return `diis:${this.sanitizeNamespace(explicit)}:ai:openai`;
+
+    const deploymentSeed =
+      process.env['DATABASE_URL']?.trim() ||
+      process.env['APP_ENV']?.trim() ||
+      process.env['NODE_ENV']?.trim() ||
+      'default';
+    const digest = createHash('sha256').update(deploymentSeed).digest('hex').slice(0, 12);
+    return `diis:${digest}:ai:openai`;
+  }
+
+  private sanitizeNamespace(value: string): string {
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48) || 'default';
+  }
+
+  private redisKey(suffix: string): string {
+    return `${this.keyPrefix}:${suffix}`;
   }
 }

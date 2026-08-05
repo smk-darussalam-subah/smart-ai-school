@@ -36,6 +36,7 @@ import { AiProviderStatusService } from '../ai/ai-provider-status.service';
 describe('AiProviderStatusService', () => {
   const originalEnv = process.env;
   const dateNowSpy = jest.spyOn(Date, 'now');
+  const keyPrefix = 'diis:staging-qa:ai:openai';
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,6 +45,8 @@ describe('AiProviderStatusService', () => {
     process.env = {
       ...originalEnv,
       REDIS_URL: 'redis://localhost:6379',
+      DATABASE_URL: 'postgres://database/staging',
+      AI_PROVIDER_STATUS_NAMESPACE: 'staging-qa',
       OPENAI_CIRCUIT_PROBE_AFTER_SECONDS: '60',
       OPENAI_CIRCUIT_PROBE_LEASE_SECONDS: '60',
     };
@@ -67,7 +70,7 @@ describe('AiProviderStatusService', () => {
     }));
     expect(mockRedisInstance.connect).toHaveBeenCalledTimes(1);
     expect(mockRedisInstance.set).toHaveBeenCalledWith(
-      'diis:ai:openai:circuit',
+      `${keyPrefix}:circuit`,
       expect.stringContaining('project_spend_limit_exceeded'),
       'EX',
       604800,
@@ -85,7 +88,7 @@ describe('AiProviderStatusService', () => {
 
   it('allows a half-open OpenAI probe after the bounded recovery window', async () => {
     const service = new AiProviderStatusService();
-    mockRedisStore.set('diis:ai:openai:circuit', JSON.stringify({
+    mockRedisStore.set(`${keyPrefix}:circuit`, JSON.stringify({
       state: 'open',
       reason: 'quota_exhausted',
       openedAt: '2026-08-04T00:30:00.000Z',
@@ -102,7 +105,7 @@ describe('AiProviderStatusService', () => {
 
   it('allows only one concurrent half-open OpenAI probe lease', async () => {
     const service = new AiProviderStatusService();
-    mockRedisStore.set('diis:ai:openai:circuit', JSON.stringify({
+    mockRedisStore.set(`${keyPrefix}:circuit`, JSON.stringify({
       state: 'open',
       reason: 'quota_exhausted',
       openedAt: '2026-08-04T00:30:00.000Z',
@@ -118,7 +121,7 @@ describe('AiProviderStatusService', () => {
     expect([first, second].filter(Boolean)).toHaveLength(1);
     expect([first, second].filter((value) => !value)).toHaveLength(1);
     expect(mockRedisInstance.set).toHaveBeenCalledWith(
-      'diis:ai:openai:probe-lease',
+      `${keyPrefix}:probe-lease`,
       expect.any(String),
       'EX',
       60,
@@ -135,7 +138,7 @@ describe('AiProviderStatusService', () => {
     expect(first).toEqual(expect.any(String));
     expect(second).toBeNull();
     expect(mockRedisInstance.set).toHaveBeenCalledWith(
-      'diis:ai:openai:quota-notice',
+      `${keyPrefix}:quota-notice`,
       first,
       'EX',
       21600,
@@ -149,16 +152,16 @@ describe('AiProviderStatusService', () => {
     expect(incidentId).toEqual(expect.any(String));
 
     await service.releaseOpenAiQuotaNoticeIncident(`${incidentId}-other`);
-    expect(mockRedisStore.has('diis:ai:openai:quota-notice')).toBe(true);
+    expect(mockRedisStore.has(`${keyPrefix}:quota-notice`)).toBe(true);
 
     await service.releaseOpenAiQuotaNoticeIncident(incidentId as string);
     expect(mockRedisInstance.eval).toHaveBeenCalledWith(
       expect.stringContaining("redis.call('get', KEYS[1])"),
       1,
-      'diis:ai:openai:quota-notice',
+      `${keyPrefix}:quota-notice`,
       incidentId,
     );
-    expect(mockRedisStore.has('diis:ai:openai:quota-notice')).toBe(false);
+    expect(mockRedisStore.has(`${keyPrefix}:quota-notice`)).toBe(false);
   });
 
   it('clears the circuit when OpenAI recovers', async () => {
@@ -167,10 +170,27 @@ describe('AiProviderStatusService', () => {
 
     await service.markOpenAiRecovered();
 
-    expect(mockRedisInstance.del).toHaveBeenCalledWith('diis:ai:openai:circuit');
+    expect(mockRedisInstance.del).toHaveBeenCalledWith(`${keyPrefix}:circuit`);
     await expect(service.getStatus()).resolves.toMatchObject({
       effectiveProvider: 'openai',
       openaiCircuit: 'closed',
     });
+  });
+
+  it('derives different Redis namespaces from different deployment databases when no explicit namespace is set', async () => {
+    delete process.env['AI_PROVIDER_STATUS_NAMESPACE'];
+    process.env['DATABASE_URL'] = 'postgres://database/staging';
+    const staging = new AiProviderStatusService();
+    await staging.markOpenAiQuotaExhausted('insufficient_quota');
+    const stagingKey = mockRedisInstance.set.mock.calls.at(-1)?.[0] as string;
+
+    process.env['DATABASE_URL'] = 'postgres://database/production';
+    const production = new AiProviderStatusService();
+    await production.markOpenAiQuotaExhausted('insufficient_quota');
+    const productionKey = mockRedisInstance.set.mock.calls.at(-1)?.[0] as string;
+
+    expect(stagingKey).toMatch(/^diis:[a-f0-9]{12}:ai:openai:circuit$/);
+    expect(productionKey).toMatch(/^diis:[a-f0-9]{12}:ai:openai:circuit$/);
+    expect(stagingKey).not.toBe(productionKey);
   });
 });
