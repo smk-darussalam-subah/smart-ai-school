@@ -31,7 +31,7 @@ const VALID_ENV: Record<string, string> = {
   OPENAI_API_KEY: 'test-openai-key',
 };
 
-const ENV_KEYS = [...Object.keys(VALID_ENV), 'APPOINTMENT_AUTOMATION_TOKEN', 'AI_PROVIDER'];
+const ENV_KEYS = [...Object.keys(VALID_ENV), 'APPOINTMENT_AUTOMATION_TOKEN', 'AI_PROVIDER', 'REDIS_QUEUE_NAMESPACE'];
 
 describe('validateEnv() — Environment Variable Validation at Startup (Item 12)', () => {
   let savedEnv: Record<string, string | undefined>;
@@ -150,12 +150,27 @@ describe('validateEnv() — Environment Variable Validation at Startup (Item 12)
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('NODE_ENV = "production" → valid (enum production diizinkan)', () => {
-    Object.assign(process.env, { ...VALID_ENV, NODE_ENV: 'production' });
+  it('NODE_ENV = "production" dengan REDIS_QUEUE_NAMESPACE → valid', () => {
+    Object.assign(process.env, { ...VALID_ENV, NODE_ENV: 'production', REDIS_QUEUE_NAMESPACE: 'production' });
 
     const env = validateEnv();
 
     expect(env.NODE_ENV).toBe('production');
+    expect(env.REDIS_QUEUE_NAMESPACE).toBe('production');
+  });
+
+  it('NODE_ENV = "production" tanpa REDIS_QUEUE_NAMESPACE → fail-fast', () => {
+    Object.assign(process.env, { ...VALID_ENV, NODE_ENV: 'production' });
+
+    expect(() => validateEnv()).toThrow('process.exit(1) called');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('REDIS_QUEUE_NAMESPACE invalid → process.exit(1) dipanggil', () => {
+    Object.assign(process.env, { ...VALID_ENV, REDIS_QUEUE_NAMESPACE: 'Staging Prod' });
+
+    expect(() => validateEnv()).toThrow('process.exit(1) called');
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
   it('APPOINTMENT_AUTOMATION_TOKEN kosong dari compose dianggap tidak dikonfigurasi', () => {
