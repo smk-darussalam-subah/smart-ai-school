@@ -317,7 +317,7 @@ export class AiGenerateService {
     promptForProvider: string,
     model: AiCallResult['model'],
   ): Promise<AiCallResult> {
-    const output = await gateway.chat(promptForProvider);
+    const output = await gateway.chat(promptForProvider, undefined, { responseFormat: 'json_object' });
     if (!output || output.trim().length === 0) {
       throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
