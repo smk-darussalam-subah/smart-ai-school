@@ -364,6 +364,11 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       },
     });
     expect(cloudChat).toHaveBeenCalledTimes(1);
+    expect(cloudChat).toHaveBeenCalledWith(
+      expect.stringContaining('Schema JSON'),
+      undefined,
+      { responseFormat: 'json_object' },
+    );
     expect(localChat).not.toHaveBeenCalled();
   });
 
@@ -390,7 +395,11 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       }],
     });
     expect(cloudChat).toHaveBeenCalledTimes(1);
-    expect(localChat).toHaveBeenCalledTimes(1);
+    expect(localChat).toHaveBeenCalledWith(
+      expect.stringContaining('Schema JSON'),
+      undefined,
+      { responseFormat: 'json_object' },
+    );
     expect(markOpenAiQuotaExhausted).toHaveBeenCalledWith('organization_spend_limit_exceeded');
     expect(notificationNotify).toHaveBeenCalledWith(expect.objectContaining({
       channel: 'email',

@@ -14,7 +14,7 @@
 // =============================================================================
 
 import Anthropic from '@anthropic-ai/sdk';
-import { AIGateway, RagContext } from '@smk/types';
+import { AiChatOptions, AIGateway, RagContext } from '@smk/types';
 import { stripPiiForLlm } from './pii-strip.utils';
 
 export class ClaudeAdapter implements AIGateway {
@@ -40,7 +40,7 @@ export class ClaudeAdapter implements AIGateway {
    * Strip PII (belt-and-suspenders) sebelum kirim — bahkan jika caller sudah strip.
    * Idempoten: placeholder [EMAIL]/[HP]/[NIS]/[NAMA] tidak di-strip ulang.
    */
-  async chat(prompt: string, context?: RagContext[]): Promise<string> {
+  async chat(prompt: string, context?: RagContext[], _options?: AiChatOptions): Promise<string> {
     const safePrompt = stripPiiForLlm(prompt);
 
     const systemContent =
