@@ -376,6 +376,8 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
         }),
       }) },
     );
+    const options = cloudChat.mock.calls[0][2] as { responseFormat: { schema: Record<string, unknown> } };
+    expect(JSON.stringify(options.responseFormat.schema)).not.toMatch(/minLength|maxLength|minItems|maxItems|pattern|diferensiasi/);
     expect(localChat).not.toHaveBeenCalled();
   });
 
@@ -414,6 +416,8 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
         }),
       }) },
     );
+    const options = localChat.mock.calls[0][2] as { responseFormat: { schema: Record<string, unknown> } };
+    expect(JSON.stringify(options.responseFormat.schema)).not.toMatch(/minLength|maxLength|minItems|maxItems|pattern|diferensiasi/);
     expect(markOpenAiQuotaExhausted).toHaveBeenCalledWith('organization_spend_limit_exceeded');
     expect(notificationNotify).toHaveBeenCalledWith(expect.objectContaining({
       channel: 'email',
