@@ -346,8 +346,11 @@ export class AiGenerateService {
   }
 
   private jsonSchemaFor(section: AiRppSection, academicYear: string): Record<string, unknown> {
-    const text = { type: 'string', minLength: 3, maxLength: 3000 };
-    const shortText = { type: 'string', minLength: 1, maxLength: 160 };
+    // Keep provider schemas portable across OpenAI Structured Outputs and Ollama
+    // structured format. Length, count, and pattern quality gates remain enforced
+    // by Zod after the provider returns JSON.
+    const text = { type: 'string' };
+    const shortText = { type: 'string' };
     const object = (properties: Record<string, unknown>) => ({
       type: 'object',
       additionalProperties: false,
@@ -358,16 +361,14 @@ export class AiGenerateService {
     switch (section) {
       case 'cp_tp':
         return object({
-          tp: { type: 'array', minItems: 1, maxItems: 12, items: text },
+          tp: { type: 'array', items: text },
         });
       case 'atp':
         return object({
           atp: {
             type: 'array',
-            minItems: 1,
-            maxItems: 24,
             items: object({
-              tpRef: { type: 'string', pattern: '^TP\\s+\\d+$' },
+              tpRef: { type: 'string' },
               indikator: text,
             }),
           },
@@ -376,8 +377,6 @@ export class AiGenerateService {
         return object({
           profilDimensi: {
             type: 'array',
-            minItems: 1,
-            maxItems: this.profileDimensionsFor(academicYear).length,
             items: { type: 'string', enum: [...this.profileDimensionsFor(academicYear)] },
           },
           profilUraian: text,
@@ -391,14 +390,11 @@ export class AiGenerateService {
         return object({
           kegiatan: {
             type: 'array',
-            minItems: 1,
-            maxItems: 12,
             items: object({
               pertemuan: shortText,
               pendahuluan: text,
               inti: text,
               penutup: text,
-              diferensiasi: text,
             }),
           },
         });
