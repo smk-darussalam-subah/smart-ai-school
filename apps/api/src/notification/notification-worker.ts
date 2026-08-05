@@ -1,15 +1,28 @@
-import { Worker, Job } from 'bullmq';
+import { Worker, Job, WorkerOptions } from 'bullmq';
 import { NotificationAdapter } from '@smk/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { logger } from '@smk/logger';
-import { NotifJob, NOTIFICATION_QUEUE } from './queue.config';
+import { NotifJob, NOTIFICATION_QUEUE, resolveNotificationQueuePrefix } from './queue.config';
 
 const CONCURRENCY = parseInt(process.env.NOTIF_QUEUE_CONCURRENCY || '1', 10);
+
+export function buildNotificationWorkerOptions(
+  connection: Record<string, unknown>,
+  prefix = resolveNotificationQueuePrefix(),
+): WorkerOptions {
+  return {
+    connection: connection as never,
+    prefix,
+    concurrency: CONCURRENCY,
+    autorun: true,
+  };
+}
 
 export function createNotificationWorker(
   connection: Record<string, unknown>,
   adapter: NotificationAdapter,
   prisma: PrismaService,
+  prefix = resolveNotificationQueuePrefix(),
 ): Worker<NotifJob> {
   const worker = new Worker<NotifJob>(
     NOTIFICATION_QUEUE,
@@ -48,11 +61,7 @@ export function createNotificationWorker(
         throw err; // Re-throw agar BullMQ retry
       }
     },
-    {
-      connection: connection as never,
-      concurrency: CONCURRENCY,
-      autorun: true,
-    },
+    buildNotificationWorkerOptions(connection, prefix),
   );
 
   worker.on('completed', (job) => {
@@ -68,6 +77,6 @@ export function createNotificationWorker(
     }
   });
 
-  logger.info('[NotifWorker] Started', { concurrency: CONCURRENCY });
+  logger.info('[NotifWorker] Started', { concurrency: CONCURRENCY, prefix });
   return worker;
 }

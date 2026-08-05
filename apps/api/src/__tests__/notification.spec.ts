@@ -19,6 +19,8 @@ import { NotificationModule } from '../notification/notification.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { LogAdapter } from '../notification/adapters/log.adapter';
 import { FonnteAdapter } from '../notification/adapters/fonnte.adapter';
+import { buildNotificationQueueOptions, resolveNotificationQueuePrefix } from '../notification/queue.config';
+import { buildNotificationWorkerOptions } from '../notification/notification-worker';
 
 const STALE = new Date('2026-06-01T07:50:00.000Z');
 
@@ -111,6 +113,35 @@ describe('NotificationService (BullMQ)', () => {
 // ════════════════════════════════════════════════════════════════════════════
 // NotificationModule factory
 // ════════════════════════════════════════════════════════════════════════════
+
+describe('Notification BullMQ namespace', () => {
+  it('membangun prefix terisolasi per environment eksplisit', () => {
+    const prodPrefix = resolveNotificationQueuePrefix('production', 'production');
+    const stagingPrefix = resolveNotificationQueuePrefix('staging', 'production');
+
+    expect(prodPrefix).toBe('diis:production:bull');
+    expect(stagingPrefix).toBe('diis:staging:bull');
+    expect(prodPrefix).not.toBe(stagingPrefix);
+  });
+
+  it('fail-fast saat production tidak memiliki REDIS_QUEUE_NAMESPACE', () => {
+    expect(() => resolveNotificationQueuePrefix('', 'production')).toThrow('REDIS_QUEUE_NAMESPACE');
+    expect(() => resolveNotificationQueuePrefix('   ', 'production')).toThrow('REDIS_QUEUE_NAMESPACE');
+  });
+
+  it('test/dev memakai default lokal yang aman dan tervalidasi', () => {
+    expect(resolveNotificationQueuePrefix(undefined, 'test')).toBe('diis:local:bull');
+    expect(() => resolveNotificationQueuePrefix('Staging Prod', 'production')).toThrow('REDIS_QUEUE_NAMESPACE');
+  });
+
+  it('Queue dan Worker memakai prefix yang sama dalam satu environment', () => {
+    const connection = { host: 'redis', port: 6379 };
+    const prefix = resolveNotificationQueuePrefix('staging', 'production');
+
+    expect(buildNotificationQueueOptions(connection, prefix).prefix).toBe('diis:staging:bull');
+    expect(buildNotificationWorkerOptions(connection, prefix).prefix).toBe('diis:staging:bull');
+  });
+});
 
 describe('NotificationModule factory', () => {
   const originalEnv = process.env;
