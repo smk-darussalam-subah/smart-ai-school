@@ -188,6 +188,30 @@ describe('OllamaAdapter.chat()', () => {
     expect(receivedBodies[0]).toEqual(expect.objectContaining({ format: 'json' }));
   });
 
+  it('uses JSON Schema mode for structured Ollama chat when schema is provided', async () => {
+    const receivedBodies: unknown[] = [];
+    const schema = {
+      type: 'object',
+      additionalProperties: false,
+      properties: { sarana: { type: 'string' }, target: { type: 'string' } },
+      required: ['sarana', 'target'],
+    };
+    global.fetch = jest.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      receivedBodies.push(JSON.parse(init.body as string));
+      return {
+        ok: true,
+        json: async () => ({ message: { content: '{"sarana":"Laptop","target":"Kelas X"}' } }),
+        text: async () => '',
+      } as unknown as Response;
+    });
+
+    await makeAdapter().chat('Kembalikan JSON.', undefined, {
+      responseFormat: { type: 'json_schema', name: 'rpp_sarana_patch', schema },
+    });
+
+    expect(receivedBodies[0]).toEqual(expect.objectContaining({ format: schema }));
+  });
+
   it('dengan context chunk → susun context + return string', async () => {
     const receivedBodies: unknown[] = [];
     global.fetch = jest.fn().mockImplementation(async (_url: string, init: RequestInit) => {
@@ -289,6 +313,31 @@ describe('OpenAiAdapter.chat() provider errors', () => {
 
     expect(receivedBodies[0]).toEqual(expect.objectContaining({
       response_format: { type: 'json_object' },
+    }));
+  });
+
+  it('requests JSON Schema mode when section-specific schema is provided', async () => {
+    const schema = {
+      type: 'object',
+      additionalProperties: false,
+      properties: { sarana: { type: 'string' }, target: { type: 'string' } },
+      required: ['sarana', 'target'],
+    };
+    const receivedBodies = mockOpenAiSuccess('{"sarana":"Laptop","target":"Kelas X"}');
+
+    await new OpenAiAdapter('test-key').chat('Kembalikan JSON.', undefined, {
+      responseFormat: { type: 'json_schema', name: 'rpp_sarana_patch', schema },
+    });
+
+    expect(receivedBodies[0]).toEqual(expect.objectContaining({
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'rpp_sarana_patch',
+          strict: true,
+          schema,
+        },
+      },
     }));
   });
 

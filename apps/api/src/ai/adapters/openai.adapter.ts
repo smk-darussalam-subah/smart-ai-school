@@ -103,9 +103,7 @@ export class OpenAiAdapter implements AIGateway {
       ],
       temperature: 0.2,
       max_tokens: 2048,
-      ...(options?.responseFormat === 'json_object'
-        ? { response_format: { type: 'json_object' as const } }
-        : {}),
+      ...openAiResponseFormat(options),
     };
 
     const controller = new AbortController();
@@ -153,6 +151,24 @@ export class OpenAiAdapter implements AIGateway {
 
     return content;
   }
+}
+
+function openAiResponseFormat(options?: AiChatOptions): Record<string, unknown> {
+  const responseFormat = options?.responseFormat;
+  if (!responseFormat) return {};
+  if (responseFormat === 'json_object') {
+    return { response_format: { type: 'json_object' as const } };
+  }
+  return {
+    response_format: {
+      type: 'json_schema' as const,
+      json_schema: {
+        name: responseFormat.name,
+        strict: responseFormat.strict ?? true,
+        schema: responseFormat.schema,
+      },
+    },
+  };
 }
 
 function parseRetryAfter(value: string | null): number | null {

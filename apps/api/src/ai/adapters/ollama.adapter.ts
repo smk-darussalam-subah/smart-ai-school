@@ -112,7 +112,7 @@ export class OllamaAdapter implements AIGateway {
           model: this.chatModel,
           messages,
           stream: false,
-          ...(options?.responseFormat === 'json_object' ? { format: 'json' } : {}),
+          ...ollamaResponseFormat(options),
         }),
         signal: controller.signal,
       });
@@ -136,4 +136,11 @@ export class OllamaAdapter implements AIGateway {
 
     return content;
   }
+}
+
+function ollamaResponseFormat(options?: AiChatOptions): Record<string, unknown> {
+  const responseFormat = options?.responseFormat;
+  if (!responseFormat) return {};
+  if (responseFormat === 'json_object') return { format: 'json' };
+  return { format: responseFormat.schema };
 }
