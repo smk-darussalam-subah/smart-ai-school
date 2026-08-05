@@ -128,7 +128,7 @@ const KegiatanItemSchema = z.object({
   pendahuluan: TextField,
   inti: TextField,
   penutup: TextField,
-  diferensiasi: TextField.optional(),
+  diferensiasi: TextField,
 }).strict();
 
 const PatchSchemas = {
@@ -395,6 +395,7 @@ export class AiGenerateService {
               pendahuluan: text,
               inti: text,
               penutup: text,
+              diferensiasi: text,
             }),
           },
         });

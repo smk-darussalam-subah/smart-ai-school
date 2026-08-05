@@ -389,6 +389,7 @@ services:
       # REDIS_URL harus di-set di .env dengan password yang sudah URL-encoded.
       # Sama seperti DATABASE_URL — deploy.yml generate nilai ini otomatis.
       REDIS_URL: ${REDIS_URL}
+      REDIS_QUEUE_NAMESPACE: ${REDIS_QUEUE_NAMESPACE}
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: diis
       KEYCLOAK_ISSUER: https://auth.smkdarussalamsubah.sch.id/realms/diis
