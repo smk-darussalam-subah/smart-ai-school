@@ -143,7 +143,12 @@ export interface RagContext {
 }
 
 export interface AiChatOptions {
-  responseFormat?: 'json_object';
+  responseFormat?: 'json_object' | {
+    type: 'json_schema';
+    name: string;
+    schema: Record<string, unknown>;
+    strict?: boolean;
+  };
 }
 
 /**

@@ -10,7 +10,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { logger } from '@smk/logger';
-import { AIGateway } from '@smk/types';
+import { AIGateway, AiChatOptions } from '@smk/types';
 import { z } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveTeacherId } from '../common/helpers/role-helpers';
@@ -185,7 +185,7 @@ export class AiGenerateService {
     this.assertSectionFoundation(dto.section, resolved.body);
 
     const prompt = this.buildRppSectionPrompt(dto.section, resolved.rpp, resolved.body);
-    const ai = await this.callAi(prompt);
+    const ai = await this.callAi(prompt, dto.section, resolved.rpp.academicYear);
     const output = this.normalizeSectionOutput(dto.section, ai.output, resolved.rpp, resolved.body);
 
     await this.auditGeneration({
@@ -250,13 +250,13 @@ export class AiGenerateService {
     }
   }
 
-  private async callAi(prompt: string): Promise<AiCallResult> {
+  private async callAi(prompt: string, section: AiRppSection, academicYear: string): Promise<AiCallResult> {
     const piiDetected = hasPii(prompt);
     const promptForProvider = stripPiiForLlm(prompt);
 
     if (!piiDetected && this.openaiGateway && await this.providerStatus.shouldAttemptOpenAiProbe()) {
       try {
-        const result = await this.callOpenAiWithRateLimitRetry(promptForProvider);
+        const result = await this.callOpenAiWithRateLimitRetry(promptForProvider, section, academicYear);
         await this.providerStatus.markOpenAiRecovered();
         return result;
       } catch (err) {
@@ -266,25 +266,29 @@ export class AiGenerateService {
           await this.providerStatus.markOpenAiQuotaExhausted(detailCode);
           this.scheduleAdminOpenAiQuotaNotice();
           logger.warn('[AiGenerateService] OpenAI quota exhausted; falling back to Ollama');
-          return this.callFallbackProvider(promptForProvider);
+          return this.callFallbackProvider(promptForProvider, section, academicYear);
         }
         throw this.mapProviderError(err, false);
       }
     }
 
     try {
-      return await this.callProvider(this.gateway, promptForProvider, 'ollama');
+      return await this.callProvider(this.gateway, promptForProvider, 'ollama', section, academicYear);
     } catch (err) {
       if (err instanceof HttpException) throw err;
       throw this.mapProviderError(err, piiDetected);
     }
   }
 
-  private async callOpenAiWithRateLimitRetry(promptForProvider: string): Promise<AiCallResult> {
+  private async callOpenAiWithRateLimitRetry(
+    promptForProvider: string,
+    section: AiRppSection,
+    academicYear: string,
+  ): Promise<AiCallResult> {
     let lastErr: unknown;
     for (let attempt = 1; attempt <= OPENAI_RATE_LIMIT_MAX_ATTEMPTS; attempt++) {
       try {
-        return await this.callProvider(this.openaiGateway as AIGateway, promptForProvider, 'gpt-4.1-mini');
+        return await this.callProvider(this.openaiGateway as AIGateway, promptForProvider, 'gpt-4.1-mini', section, academicYear);
       } catch (err) {
         lastErr = err;
         if (
@@ -303,9 +307,13 @@ export class AiGenerateService {
     throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
   }
 
-  private async callFallbackProvider(promptForProvider: string): Promise<AiCallResult> {
+  private async callFallbackProvider(
+    promptForProvider: string,
+    section: AiRppSection,
+    academicYear: string,
+  ): Promise<AiCallResult> {
     try {
-      return await this.callProvider(this.gateway, promptForProvider, 'ollama');
+      return await this.callProvider(this.gateway, promptForProvider, 'ollama', section, academicYear);
     } catch (fallbackErr) {
       if (fallbackErr instanceof HttpException) throw fallbackErr;
       throw this.mapProviderError(fallbackErr, false);
@@ -316,12 +324,105 @@ export class AiGenerateService {
     gateway: AIGateway,
     promptForProvider: string,
     model: AiCallResult['model'],
+    section: AiRppSection,
+    academicYear: string,
   ): Promise<AiCallResult> {
-    const output = await gateway.chat(promptForProvider, undefined, { responseFormat: 'json_object' });
+    const output = await gateway.chat(promptForProvider, undefined, this.responseFormatFor(section, academicYear));
     if (!output || output.trim().length === 0) {
       throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
     return { output, model, promptForAudit: promptForProvider };
+  }
+
+  private responseFormatFor(section: AiRppSection, academicYear: string): AiChatOptions {
+    return {
+      responseFormat: {
+        type: 'json_schema',
+        name: `rpp_${section}_patch`,
+        strict: true,
+        schema: this.jsonSchemaFor(section, academicYear),
+      },
+    };
+  }
+
+  private jsonSchemaFor(section: AiRppSection, academicYear: string): Record<string, unknown> {
+    const text = { type: 'string', minLength: 3, maxLength: 3000 };
+    const shortText = { type: 'string', minLength: 1, maxLength: 160 };
+    const object = (properties: Record<string, unknown>) => ({
+      type: 'object',
+      additionalProperties: false,
+      properties,
+      required: Object.keys(properties),
+    });
+
+    switch (section) {
+      case 'cp_tp':
+        return object({
+          tp: { type: 'array', minItems: 1, maxItems: 12, items: text },
+        });
+      case 'atp':
+        return object({
+          atp: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 24,
+            items: object({
+              tpRef: { type: 'string', pattern: '^TP\\s+\\d+$' },
+              indikator: text,
+            }),
+          },
+        });
+      case 'profil':
+        return object({
+          profilDimensi: {
+            type: 'array',
+            minItems: 1,
+            maxItems: this.profileDimensionsFor(academicYear).length,
+            items: { type: 'string', enum: [...this.profileDimensionsFor(academicYear)] },
+          },
+          profilUraian: text,
+        });
+      case 'sarana':
+        return object({
+          sarana: text,
+          target: text,
+        });
+      case 'kegiatan':
+        return object({
+          kegiatan: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 12,
+            items: object({
+              pertemuan: shortText,
+              pendahuluan: text,
+              inti: text,
+              penutup: text,
+              diferensiasi: text,
+            }),
+          },
+        });
+      case 'asesmen':
+        return object({
+          asesmenDiagnostik: text,
+          asesmenFormatif: text,
+          asesmenSumatif: text,
+        });
+      case 'remedial':
+        return object({
+          pengayaan: text,
+          remedial: text,
+        });
+      case 'refleksi':
+        return object({
+          refleksiGuru: text,
+          refleksiSiswa: text,
+        });
+      case 'lampiran':
+        return object({
+          lampiran: text,
+        });
+    }
   }
 
   private isOpenAiQuotaExhausted(err: unknown): boolean {
