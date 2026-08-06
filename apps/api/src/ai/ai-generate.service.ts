@@ -327,14 +327,18 @@ export class AiGenerateService {
     section: AiRppSection,
     academicYear: string,
   ): Promise<AiCallResult> {
-    const output = await gateway.chat(promptForProvider, undefined, this.responseFormatFor(section, academicYear));
+    const output = await gateway.chat(promptForProvider, undefined, this.responseFormatFor(section, academicYear, model));
     if (!output || output.trim().length === 0) {
       throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
     return { output, model, promptForAudit: promptForProvider };
   }
 
-  private responseFormatFor(section: AiRppSection, academicYear: string): AiChatOptions {
+  private responseFormatFor(section: AiRppSection, academicYear: string, model: AiCallResult['model']): AiChatOptions {
+    if (model === 'ollama') {
+      return { responseFormat: 'json_object' };
+    }
+
     return {
       responseFormat: {
         type: 'json_schema',
