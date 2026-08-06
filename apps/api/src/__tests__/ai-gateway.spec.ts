@@ -185,7 +185,10 @@ describe('OllamaAdapter.chat()', () => {
 
     await makeAdapter().chat('Kembalikan JSON.', undefined, { responseFormat: 'json_object' });
 
-    expect(receivedBodies[0]).toEqual(expect.objectContaining({ format: 'json' }));
+    expect(receivedBodies[0]).toEqual(expect.objectContaining({
+      format: 'json',
+      options: expect.objectContaining({ num_predict: 512, temperature: 0.2 }),
+    }));
   });
 
   it('uses JSON Schema mode for structured Ollama chat when schema is provided', async () => {
@@ -209,7 +212,10 @@ describe('OllamaAdapter.chat()', () => {
       responseFormat: { type: 'json_schema', name: 'rpp_sarana_patch', schema },
     });
 
-    expect(receivedBodies[0]).toEqual(expect.objectContaining({ format: schema }));
+    expect(receivedBodies[0]).toEqual(expect.objectContaining({
+      format: schema,
+      options: expect.objectContaining({ num_predict: 512, temperature: 0.2 }),
+    }));
   });
 
   it('dengan context chunk → susun context + return string', async () => {
