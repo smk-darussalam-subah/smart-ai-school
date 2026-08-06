@@ -11,11 +11,21 @@ jest.mock('@smk/logger', () => ({
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthUser } from '@smk/auth';
 import { AiGenerateService } from '../ai/ai-generate.service';
+import { AiProviderStatusService } from '../ai/ai-provider-status.service';
 import { PushService } from '../push/push.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
 const SISWA: AuthUser = { keycloakId: 'kc-siswa', username: 'siswa1', roles: ['SISWA'] } as AuthUser;
+const KEGIATAN_PATCH = JSON.stringify({
+  kegiatan: [{
+    pertemuan: 'Pertemuan 1',
+    pendahuluan: 'Apersepsi singkat.',
+    inti: 'Siswa berdiskusi memecahkan masalah.',
+    penutup: 'Refleksi dan tindak lanjut.',
+    diferensiasi: 'Guru memberi dukungan bertahap dan tantangan tambahan sesuai kesiapan siswa.',
+  }],
+});
 
 // ── AiGenerateService Tests ─────────────────────────────────────────────────
 
@@ -45,7 +55,7 @@ describe('AiGenerateService', () => {
     });
     teachingAssignmentFindFirst.mockResolvedValue({ id: 'ta-1' });
     aiGenCreate.mockResolvedValue({ id: 'gen-1' });
-    chatMock.mockResolvedValue('Draf kegiatan pembelajaran.');
+    chatMock.mockResolvedValue(KEGIATAN_PATCH);
 
     const prisma = {
       user: { findUnique: userFindUnique },
@@ -60,6 +70,14 @@ describe('AiGenerateService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: 'AI_GATEWAY', useValue: { chat: chatMock } },
         { provide: 'OPENAI_GATEWAY', useValue: null },
+        {
+          provide: AiProviderStatusService,
+          useValue: {
+            shouldAttemptOpenAiProbe: jest.fn().mockResolvedValue(true),
+            markOpenAiQuotaExhausted: jest.fn().mockResolvedValue(undefined),
+            markOpenAiRecovered: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
     service = moduleRef.get(AiGenerateService);

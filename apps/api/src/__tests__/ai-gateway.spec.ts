@@ -8,7 +8,7 @@
 //   ✓ OllamaAdapter.chat() tanpa context → return string
 //   ✓ OllamaAdapter.embed() Ollama error HTTP non-200 → throw
 //   ✓ OllamaAdapter.chat() Ollama error HTTP non-200 → throw
-//   ✓ Factory AI_PROVIDER unset → OllamaAdapter (default)
+//   ✓ Factory AI_PROVIDER unset → OpenAI gateway (default) + Ollama embed gateway
 //   ✓ Factory AI_PROVIDER=ollama → OllamaAdapter
 //   ✓ Factory AI_PROVIDER=claude → throw (Sprint 4 belum tersedia)
 //   ✓ AiService.backfillEmbeddings() panggil embed per chunk NULL + $queryRaw UPDATE
@@ -29,6 +29,7 @@ jest.mock('@smk/logger', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { OllamaAdapter } from '../ai/adapters/ollama.adapter';
+import { OpenAiAdapter, OpenAiProviderError } from '../ai/adapters/openai.adapter';
 import { AiModule } from '../ai/ai.module';
 import { AiService } from '../ai/ai.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -155,6 +156,68 @@ describe('OllamaAdapter.chat()', () => {
     expect(result).toContain('SMK Darussalam');
   });
 
+  it('does not use JSON mode for normal Ollama chat', async () => {
+    const receivedBodies: unknown[] = [];
+    global.fetch = jest.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      receivedBodies.push(JSON.parse(init.body as string));
+      return {
+        ok: true,
+        json: async () => ({ message: { content: 'Jawaban naratif.' } }),
+        text: async () => '',
+      } as unknown as Response;
+    });
+
+    await makeAdapter().chat('Jelaskan PPDB.');
+
+    expect(receivedBodies[0]).toEqual(expect.not.objectContaining({ format: 'json' }));
+  });
+
+  it('uses JSON mode for structured Ollama chat', async () => {
+    const receivedBodies: unknown[] = [];
+    global.fetch = jest.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      receivedBodies.push(JSON.parse(init.body as string));
+      return {
+        ok: true,
+        json: async () => ({ message: { content: '{"sarana":"Laptop","target":"Kelas X"}' } }),
+        text: async () => '',
+      } as unknown as Response;
+    });
+
+    await makeAdapter().chat('Kembalikan JSON.', undefined, { responseFormat: 'json_object' });
+
+    expect(receivedBodies[0]).toEqual(expect.objectContaining({
+      format: 'json',
+      options: expect.objectContaining({ num_predict: 512, temperature: 0.2 }),
+    }));
+  });
+
+  it('uses JSON Schema mode for structured Ollama chat when schema is provided', async () => {
+    const receivedBodies: unknown[] = [];
+    const schema = {
+      type: 'object',
+      additionalProperties: false,
+      properties: { sarana: { type: 'string' }, target: { type: 'string' } },
+      required: ['sarana', 'target'],
+    };
+    global.fetch = jest.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      receivedBodies.push(JSON.parse(init.body as string));
+      return {
+        ok: true,
+        json: async () => ({ message: { content: '{"sarana":"Laptop","target":"Kelas X"}' } }),
+        text: async () => '',
+      } as unknown as Response;
+    });
+
+    await makeAdapter().chat('Kembalikan JSON.', undefined, {
+      responseFormat: { type: 'json_schema', name: 'rpp_sarana_patch', schema },
+    });
+
+    expect(receivedBodies[0]).toEqual(expect.objectContaining({
+      format: schema,
+      options: expect.objectContaining({ num_predict: 512, temperature: 0.2 }),
+    }));
+  });
+
   it('dengan context chunk → susun context + return string', async () => {
     const receivedBodies: unknown[] = [];
     global.fetch = jest.fn().mockImplementation(async (_url: string, init: RequestInit) => {
@@ -205,6 +268,168 @@ describe('OllamaAdapter.chat()', () => {
 // AiModule — factory AI_PROVIDER
 // =============================================================================
 
+describe('OpenAiAdapter.chat() provider errors', () => {
+  const originalFetch = global.fetch;
+  const dateNowSpy = jest.spyOn(Date, 'now');
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    dateNowSpy.mockReset();
+    jest.clearAllMocks();
+  });
+
+  afterAll(() => {
+    dateNowSpy.mockRestore();
+  });
+
+  function mockOpenAiError(status: number, body: string, retryAfter: string | null = null): void {
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: false,
+      status,
+      headers: { get: (name: string) => (name.toLowerCase() === 'retry-after' ? retryAfter : null) },
+      text: async () => body,
+    } as unknown as Response);
+  }
+
+  function mockOpenAiSuccess(content = 'Jawaban naratif.'): unknown[] {
+    const receivedBodies: unknown[] = [];
+    global.fetch = jest.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      receivedBodies.push(JSON.parse(init.body as string));
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content } }] }),
+        text: async () => '',
+      } as unknown as Response;
+    });
+    return receivedBodies;
+  }
+
+  it('does not request JSON mode for normal OpenAI chat', async () => {
+    const receivedBodies = mockOpenAiSuccess();
+
+    await new OpenAiAdapter('test-key').chat('Jelaskan PPDB.');
+
+    expect(receivedBodies[0]).toEqual(expect.not.objectContaining({ response_format: expect.anything() }));
+  });
+
+  it('requests JSON object mode when structured output is required', async () => {
+    const receivedBodies = mockOpenAiSuccess('{"sarana":"Laptop","target":"Kelas X"}');
+
+    await new OpenAiAdapter('test-key').chat('Kembalikan JSON.', undefined, { responseFormat: 'json_object' });
+
+    expect(receivedBodies[0]).toEqual(expect.objectContaining({
+      response_format: { type: 'json_object' },
+    }));
+  });
+
+  it('requests JSON Schema mode when section-specific schema is provided', async () => {
+    const schema = {
+      type: 'object',
+      additionalProperties: false,
+      properties: { sarana: { type: 'string' }, target: { type: 'string' } },
+      required: ['sarana', 'target'],
+    };
+    const receivedBodies = mockOpenAiSuccess('{"sarana":"Laptop","target":"Kelas X"}');
+
+    await new OpenAiAdapter('test-key').chat('Kembalikan JSON.', undefined, {
+      responseFormat: { type: 'json_schema', name: 'rpp_sarana_patch', schema },
+    });
+
+    expect(receivedBodies[0]).toEqual(expect.objectContaining({
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'rpp_sarana_patch',
+          strict: true,
+          schema,
+        },
+      },
+    }));
+  });
+
+  it('parses JSON error status/code/type and numeric Retry-After', async () => {
+    mockOpenAiError(429, JSON.stringify({
+      error: {
+        message: 'Rate limit reached',
+        type: 'rate_limit_exceeded',
+        code: 'rate_limit_exceeded',
+      },
+    }), '7');
+
+    await expect(new OpenAiAdapter('test-key').chat('tes')).rejects.toMatchObject({
+      name: 'OpenAiProviderError',
+      status: 429,
+      code: 'rate_limit_exceeded',
+      type: 'rate_limit_exceeded',
+      retryAfterSeconds: 7,
+    });
+  });
+
+  it('parses HTTP-date Retry-After into seconds', async () => {
+    dateNowSpy.mockReturnValue(Date.parse('2026-08-04T01:00:00.000Z'));
+    mockOpenAiError(429, JSON.stringify({
+      error: {
+        message: 'Rate limit reached',
+        type: 'rate_limit_exceeded',
+        code: 'rate_limit_exceeded',
+      },
+    }), 'Tue, 04 Aug 2026 01:00:09 GMT');
+
+    await expect(new OpenAiAdapter('test-key').chat('tes')).rejects.toMatchObject({
+      retryAfterSeconds: 9,
+    });
+  });
+
+  it('ignores malformed Retry-After header', async () => {
+    mockOpenAiError(429, JSON.stringify({
+      error: {
+        message: 'Rate limit reached',
+        type: 'rate_limit_exceeded',
+        code: 'rate_limit_exceeded',
+      },
+    }), 'soon');
+
+    await expect(new OpenAiAdapter('test-key').chat('tes')).rejects.toMatchObject({
+      retryAfterSeconds: null,
+    });
+  });
+
+  it('handles non-JSON body without leaking raw provider body or API key', async () => {
+    const apiKey = 'sk-testSecretValue123456789';
+    mockOpenAiError(500, `provider raw body with ${apiKey} and billing details`, null);
+
+    try {
+      await new OpenAiAdapter(apiKey).chat('tes');
+      throw new Error('expected OpenAiProviderError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(OpenAiProviderError);
+      expect((err as Error).message).toBe('OpenAI chat gagal: HTTP 500');
+      expect((err as Error).message).not.toContain(apiKey);
+      expect((err as Error).message).not.toContain('provider raw body');
+    }
+  });
+
+  it('redacts API key-like values from parsed OpenAI error message', async () => {
+    const apiKey = 'sk-testSecretValue123456789';
+    mockOpenAiError(401, JSON.stringify({
+      error: {
+        message: `Invalid API key ${apiKey}`,
+        type: 'invalid_request_error',
+        code: 'invalid_api_key',
+      },
+    }), null);
+
+    try {
+      await new OpenAiAdapter(apiKey).chat('tes');
+      throw new Error('expected OpenAiProviderError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(OpenAiProviderError);
+      expect((err as Error).message).toContain('[REDACTED_OPENAI_KEY]');
+      expect((err as Error).message).not.toContain(apiKey);
+    }
+  });
+});
+
 describe('AiModule factory (AI_PROVIDER env)', () => {
   const originalEnv = process.env;
 
@@ -243,6 +468,54 @@ describe('AiModule factory (AI_PROVIDER env)', () => {
 
     const gateway = mod.get<AIGateway>('AI_GATEWAY');
     expect(gateway).toBeInstanceOf(OllamaAdapter);
+  });
+
+  it('AI_PROVIDER unset + OPENAI_API_KEY → OPENAI_GATEWAY OpenAiAdapter', async () => {
+    delete process.env['AI_PROVIDER'];
+    process.env['OPENAI_API_KEY'] = 'test-openai-key';
+
+    const mod = await Test.createTestingModule({ imports: [AiModule] })
+      .overrideProvider(PrismaService)
+      .useValue(buildPrismaMock())
+      .compile();
+
+    expect(mod.get<AIGateway | null>('OPENAI_GATEWAY')).toBeInstanceOf(OpenAiAdapter);
+  });
+
+  it('AI_PROVIDER=openai + OPENAI_API_KEY → OPENAI_GATEWAY OpenAiAdapter', async () => {
+    process.env['AI_PROVIDER'] = 'openai';
+    process.env['OPENAI_API_KEY'] = 'test-openai-key';
+
+    const mod = await Test.createTestingModule({ imports: [AiModule] })
+      .overrideProvider(PrismaService)
+      .useValue(buildPrismaMock())
+      .compile();
+
+    expect(mod.get<AIGateway | null>('OPENAI_GATEWAY')).toBeInstanceOf(OpenAiAdapter);
+  });
+
+  it('AI_PROVIDER=openai tanpa OPENAI_API_KEY → OPENAI_GATEWAY null', async () => {
+    process.env['AI_PROVIDER'] = 'openai';
+    delete process.env['OPENAI_API_KEY'];
+
+    const mod = await Test.createTestingModule({ imports: [AiModule] })
+      .overrideProvider(PrismaService)
+      .useValue(buildPrismaMock())
+      .compile();
+
+    expect(mod.get<AIGateway | null>('OPENAI_GATEWAY')).toBeNull();
+  });
+
+  it('AI_PROVIDER=openai dengan OPENAI_API_KEY whitespace → OPENAI_GATEWAY null', async () => {
+    process.env['AI_PROVIDER'] = 'openai';
+    process.env['OPENAI_API_KEY'] = '   ';
+
+    const mod = await Test.createTestingModule({ imports: [AiModule] })
+      .overrideProvider(PrismaService)
+      .useValue(buildPrismaMock())
+      .compile();
+
+    expect(mod.get<AIGateway | null>('OPENAI_GATEWAY')).toBeNull();
   });
 
   it('AI_PROVIDER=claude tanpa ANTHROPIC_API_KEY → CLAUDE_GATEWAY null, AI_GATEWAY tetap Ollama', async () => {
