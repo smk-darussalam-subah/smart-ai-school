@@ -11,6 +11,7 @@ import { type PapanRow, type PapanCell } from './_components/PapanPembelajaran';
 import BerandaKiosk, { type KioskChartClass, type KioskHealth } from './_components/BerandaKiosk';
 import type { KaldikEvent } from '@/lib/kiosk';
 import { scheduleDayOfWeek, JP_COUNT, currentJp, wibNow, wibTodayISO } from '@/lib/bell-times';
+import { isMobileOnlyDashboardRoleSet } from '@/lib/dashboard-routing';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -114,6 +115,40 @@ interface AdminStats {
   kehadiranDelta: number | null;
   ppdbLeads: number | null;
   rppMenunggu: number | null;
+}
+
+interface AiProviderStatus {
+  effectiveProvider: 'openai' | 'ollama';
+  openaiCircuit: 'closed' | 'open' | 'half_open';
+  reason: 'quota_exhausted' | null;
+  openedAt: string | null;
+  nextProbeAt: string | null;
+  detailCode: string | null;
+  message: string;
+}
+
+function AiProviderBanner({ status }: { status: AiProviderStatus | null }) {
+  if (!status || status.openaiCircuit === 'closed') return null;
+  const isProbe = status.openaiCircuit === 'half_open';
+  return (
+    <div className="mx-auto max-w-7xl px-4 pt-4 sm:px-6 lg:px-8">
+      <div className={`rounded-lg border px-4 py-3 text-sm ${
+        isProbe ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-amber-200 bg-amber-50 text-amber-950'
+      }`}>
+        <div className="font-semibold">
+          {isProbe ? 'OpenAI sedang dicek ulang' : 'Generate AI memakai Ollama sementara'}
+        </div>
+        <p className="mt-1 leading-relaxed">
+          {status.message} Periksa billing/usage OpenAI dan lakukan rotasi secret melalui prosedur rahasia bila diperlukan.
+        </p>
+        {status.nextProbeAt && (
+          <p className="mt-1 text-xs opacity-75">
+            Probe berikutnya: {new Date(status.nextProbeAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function RoleStats({ role, adminStats }: { role: string; adminStats?: AdminStats }) {
@@ -221,12 +256,7 @@ export default async function DashboardPage() {
   // Siswa & Orang Tua (role mobile-only) redirect ke workspace Akademik yang
   // self-contained (punya bottom-nav + tombol Keluar di account sheet). Tanpa
   // ini, mereka land di beranda kiosk yang hideChrome (tanpa sidebar/logout).
-  const isMobileOnlyRole =
-    (roles.includes('SISWA') || roles.includes('ORANG_TUA')) &&
-    !roles.includes('GURU') &&
-    !roles.includes('KEPALA_SEKOLAH') &&
-    !roles.includes('SUPER_ADMIN') &&
-    !roles.includes('TATA_USAHA');
+  const isMobileOnlyRole = isMobileOnlyDashboardRoleSet(roles);
   if (isMobileOnlyRole) {
     redirect('/dashboard/akademik');
   }
@@ -244,6 +274,7 @@ export default async function DashboardPage() {
   let kioskChart: { classes: KioskChartClass[]; dates: string[] } | null = null;
   let kioskEvents: KaldikEvent[] = [];
   let kioskHealth: KioskHealth = { score: null, delta: null, breakdown: [] };
+  let aiProviderStatus: AiProviderStatus | null = null;
   const dow = scheduleDayOfWeek(); // 0=Minggu (libur) … 6=Sabtu
   if (isGuruOnly) {
     const token = session?.accessToken ?? '';
@@ -265,7 +296,7 @@ export default async function DashboardPage() {
   if (isStaf) {
     const token = session?.accessToken ?? '';
     const isReviewer = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'].some((r) => roles.includes(r));
-    const [students, classes, hm, ppdb, rpp, sched, teacherToday, calendarRes, guruRes] = await Promise.all([
+    const [students, classes, hm, ppdb, rpp, sched, teacherToday, calendarRes, guruRes, aiStatus] = await Promise.all([
       apiFetch<{ total: number }>('/students?limit=1', token),
       apiFetch<{ total: number }>('/classes?limit=1', token),
       apiFetch<HeatmapData>('/attendance/heatmap?days=10', token),
@@ -283,7 +314,11 @@ export default async function DashboardPage() {
       apiFetch<CalendarApi[]>('/school/calendar', token),
       // Total guru → komponen Skor Kondisi Sekolah (kehadiran guru %).
       apiFetch<{ total: number }>('/users?role=GURU&limit=1', token),
+      roles.includes('SUPER_ADMIN')
+        ? apiFetch<AiProviderStatus>('/ai/provider-status', token)
+        : Promise.resolve(null),
     ]);
+    aiProviderStatus = aiStatus ?? null;
     heatmap = hm ?? null;
     papanRows = sched?.data ? buildPapanRows(sched.data) : [];
     const ppdbTotal =
@@ -341,7 +376,12 @@ export default async function DashboardPage() {
 
   // Staf (SA/KS/TU): Beranda kiosk "Papan Hari Ini" — data nyata + drill-down.
   if (isStaf && kioskKpi) {
-    return <BerandaKiosk firstName={firstName} papanRows={papanRows} kpi={kioskKpi} chart={kioskChart} agenda={kioskEvents} health={kioskHealth} canManageKiosk={roles.includes('SUPER_ADMIN') || roles.includes('KEPALA_SEKOLAH')} />;
+    return (
+      <>
+        <AiProviderBanner status={aiProviderStatus} />
+        <BerandaKiosk firstName={firstName} papanRows={papanRows} kpi={kioskKpi} chart={kioskChart} agenda={kioskEvents} health={kioskHealth} canManageKiosk={roles.includes('SUPER_ADMIN') || roles.includes('KEPALA_SEKOLAH')} />
+      </>
+    );
   }
 
   // Guru / Siswa / Orang Tua: sapaan + kartu per-role.

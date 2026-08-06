@@ -8,6 +8,7 @@
 // =============================================================================
 
 let capturedReqHeaders: Headers | undefined;
+let capturedRedirectUrl: string | undefined;
 
 jest.mock('next/server', () => ({
   NextResponse: {
@@ -21,9 +22,12 @@ jest.mock('next/server', () => ({
         },
       };
     }),
-    redirect: jest.fn((_url: unknown) => ({
-      headers: { set: jest.fn(), get: jest.fn() },
-    })),
+    redirect: jest.fn((url: URL) => {
+      capturedRedirectUrl = url.toString();
+      return {
+        headers: { set: jest.fn(), get: jest.fn() },
+      };
+    }),
   },
 }));
 
@@ -31,7 +35,15 @@ jest.mock('next-auth/jwt', () => ({
   getToken: jest.fn().mockResolvedValue(null),
 }));
 
+import { getToken } from 'next-auth/jwt';
 import { middleware } from '../middleware';
+
+const mockedGetToken = getToken as jest.MockedFunction<typeof getToken>;
+
+beforeEach(() => {
+  mockedGetToken.mockResolvedValue(null);
+  capturedRedirectUrl = undefined;
+});
 
 function makeRequest(pathname: string) {
   return {
@@ -137,5 +149,57 @@ describe('middleware — protected dynamic paths keep nonce (N21 non-regression)
     expect(src).toContain('strict-dynamic');
     expect(src).toMatch(/nonce-[A-Za-z0-9+/]+=*/);
     expect(src).not.toContain("'unsafe-inline'");
+  });
+});
+
+describe('middleware - learner OAuth landing (React #310 regression)', () => {
+  beforeEach(() => { capturedReqHeaders = undefined; });
+
+  it.each(['SISWA', 'ORANG_TUA'])('redirects a %s account before the App Router mounts', async (role) => {
+    mockedGetToken.mockResolvedValue({ roles: [role] } as Awaited<ReturnType<typeof getToken>>);
+
+    await middleware(makeRequest('/dashboard'));
+
+    expect(capturedRedirectUrl).toBe('http://localhost:3000/dashboard/akademik');
+    expect(capturedReqHeaders).toBeUndefined();
+  });
+
+  it.each(['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA'])(
+    'keeps a mixed SISWA + %s account on the standard dashboard',
+    async (role) => {
+      mockedGetToken.mockResolvedValue({ roles: ['SISWA', role] } as Awaited<ReturnType<typeof getToken>>);
+
+      await middleware(makeRequest('/dashboard'));
+
+      expect(capturedRedirectUrl).toBeUndefined();
+      expect(capturedReqHeaders).toBeDefined();
+    },
+  );
+
+  it.each(['SISWA', 'ORANG_TUA'])('keeps a %s + INDUSTRI account on the standard dashboard', async (role) => {
+    mockedGetToken.mockResolvedValue({ roles: [role, 'INDUSTRI'] } as Awaited<ReturnType<typeof getToken>>);
+
+    await middleware(makeRequest('/dashboard'));
+
+    expect(capturedRedirectUrl).toBeUndefined();
+    expect(capturedReqHeaders).toBeDefined();
+  });
+
+  it('does not redirect an INDUSTRI-only account to the akademik workspace', async () => {
+    mockedGetToken.mockResolvedValue({ roles: ['INDUSTRI'] } as Awaited<ReturnType<typeof getToken>>);
+
+    await middleware(makeRequest('/dashboard'));
+
+    expect(capturedRedirectUrl).toBeUndefined();
+    expect(capturedReqHeaders).toBeDefined();
+  });
+
+  it('does not redirect a learner already on the akademik workspace', async () => {
+    mockedGetToken.mockResolvedValue({ roles: ['SISWA'] } as Awaited<ReturnType<typeof getToken>>);
+
+    await middleware(makeRequest('/dashboard/akademik'));
+
+    expect(capturedRedirectUrl).toBeUndefined();
+    expect(capturedReqHeaders).toBeDefined();
   });
 });

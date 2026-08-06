@@ -11,7 +11,7 @@
 // Gunakan fetch bawaan Node 20 — tidak ada dependency tambahan.
 // =============================================================================
 
-import { AIGateway, RagContext } from '@smk/types';
+import { AiChatOptions, AIGateway, RagContext } from '@smk/types';
 
 export class OllamaAdapter implements AIGateway {
   private readonly baseUrl: string;
@@ -77,7 +77,7 @@ export class OllamaAdapter implements AIGateway {
    * Chat dengan konteks RAG opsional.
    * Susun prompt: system + context chunks + pertanyaan user.
    */
-  async chat(prompt: string, context?: RagContext[]): Promise<string> {
+  async chat(prompt: string, context?: RagContext[], options?: AiChatOptions): Promise<string> {
     const systemContent =
       'Kamu adalah asisten AI untuk SMK Darussalam Subah. ' +
       'Jawab pertanyaan berdasarkan konteks yang diberikan. ' +
@@ -112,6 +112,7 @@ export class OllamaAdapter implements AIGateway {
           model: this.chatModel,
           messages,
           stream: false,
+          ...ollamaResponseFormat(options),
         }),
         signal: controller.signal,
       });
@@ -135,4 +136,17 @@ export class OllamaAdapter implements AIGateway {
 
     return content;
   }
+}
+
+function ollamaResponseFormat(options?: AiChatOptions): Record<string, unknown> {
+  const responseFormat = options?.responseFormat;
+  if (!responseFormat) return {};
+  const generationOptions = {
+    temperature: 0.2,
+    num_predict: 512,
+  };
+  if (responseFormat === 'json_object') {
+    return { format: 'json', options: generationOptions };
+  }
+  return { format: responseFormat.schema, options: generationOptions };
 }

@@ -5,15 +5,20 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { logger } from '@smk/logger';
-import { AIGateway } from '@smk/types';
+import { AIGateway, AiChatOptions } from '@smk/types';
+import { z } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveTeacherId } from '../common/helpers/role-helpers';
 import { AiRppSection, GenerateRppStepDto } from './dto/generate.dto';
 import { hasPii, stripPiiForLlm } from './adapters/pii-strip.utils';
+import { NotificationService } from '../notification/notification.service';
+import { OpenAiProviderError } from './adapters/openai.adapter';
+import { AiProviderStatusService } from './ai-provider-status.service';
 
 type AiErrorCode =
   | 'AI_ENDPOINT_DISABLED'
@@ -49,10 +54,27 @@ type AiCallResult = {
   promptForAudit: string;
 };
 
+const OPENAI_RATE_LIMIT_MAX_ATTEMPTS = 2;
+const OPENAI_RATE_LIMIT_MAX_DELAY_MS = 2_000;
+
+const OPENAI_QUOTA_ERROR_CODES = new Set([
+  'credit_balance_exhausted',
+  'insufficient_quota',
+  'organization_usage_limit_exceeded',
+  'organization_spend_limit_exceeded',
+  'project_spend_limit_exceeded',
+]);
+
+const OPENAI_RATE_LIMIT_ERROR_CODES = new Set([
+  'rate_limit_exceeded',
+  'tokens_rate_limit_exceeded',
+  'requests_rate_limit_exceeded',
+]);
+
 const SECTION_LABELS: Record<AiRppSection, string> = {
   cp_tp: 'Capaian Pembelajaran (CP) dan Tujuan Pembelajaran (TP)',
   atp: 'Alur Tujuan Pembelajaran (ATP)',
-  profil: 'Profil Pelajar Pancasila',
+  profil: 'Dimensi Profil Lulusan',
   sarana: 'Sarana prasarana dan target peserta didik',
   kegiatan: 'Kegiatan pembelajaran',
   asesmen: 'Rencana asesmen',
@@ -61,12 +83,94 @@ const SECTION_LABELS: Record<AiRppSection, string> = {
   lampiran: 'Catatan lampiran pembelajaran',
 };
 
+const GRADUATE_PROFILE_DIMENSIONS = [
+  'Keimanan dan ketakwaan terhadap Tuhan Yang Maha Esa',
+  'Kewargaan',
+  'Penalaran kritis',
+  'Kreativitas',
+  'Kolaborasi',
+  'Kemandirian',
+  'Kesehatan',
+  'Komunikasi',
+] as const;
+
+const LEGACY_PANCASILA_DIMENSIONS = [
+  'Beriman & Berakhlak Mulia',
+  'Berkebinekaan Global',
+  'Bergotong Royong',
+  'Mandiri',
+  'Bernalar Kritis',
+  'Kreatif',
+] as const;
+
+const FORBIDDEN_OUTPUT_PATTERNS = [
+  /```/,
+  /(?:^|\n)\s*#{1,6}\s+\S+/,
+  /\bkompetensi\s+dasar\b/i,
+  /\bkompetensi\s+inti\b/i,
+  /\bki\s+(?:dan|\/|-|&)\s*kd\b/i,
+  /\bki\s*\/\s*kd\b/i,
+  /\bki\s*-\s*kd\b/i,
+  /\bkd\b/i,
+] as const;
+
+const TextField = z.string().trim().min(3).max(3000);
+const ShortTextField = z.string().trim().min(1).max(160);
+const TpRefField = z.string().trim().regex(/^TP\s+\d+$/i);
+
+const AtpItemSchema = z.object({
+  tpRef: TpRefField,
+  indikator: TextField,
+}).strict();
+
+const KegiatanItemSchema = z.object({
+  pertemuan: ShortTextField,
+  pendahuluan: TextField,
+  inti: TextField,
+  penutup: TextField,
+  diferensiasi: TextField,
+}).strict();
+
+const PatchSchemas = {
+  cp_tp: z.object({
+    tp: z.array(TextField).min(1).max(12),
+  }).strict(),
+  atp: z.object({
+    atp: z.array(AtpItemSchema).min(1).max(24),
+  }).strict(),
+  sarana: z.object({
+    sarana: TextField,
+    target: TextField,
+  }).strict(),
+  kegiatan: z.object({
+    kegiatan: z.array(KegiatanItemSchema).min(1).max(12),
+  }).strict(),
+  asesmen: z.object({
+    asesmenDiagnostik: TextField,
+    asesmenFormatif: TextField,
+    asesmenSumatif: TextField,
+  }).strict(),
+  remedial: z.object({
+    pengayaan: TextField,
+    remedial: TextField,
+  }).strict(),
+  refleksi: z.object({
+    refleksiGuru: TextField,
+    refleksiSiswa: TextField,
+  }).strict(),
+  lampiran: z.object({
+    lampiran: TextField,
+  }).strict(),
+} as const;
+
 @Injectable()
 export class AiGenerateService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject('AI_GATEWAY') private readonly gateway: AIGateway,
     @Inject('OPENAI_GATEWAY') private readonly openaiGateway: AIGateway | null,
+    private readonly providerStatus: AiProviderStatusService,
+    @Optional() private readonly notificationService?: NotificationService,
   ) {}
 
   rejectLegacyGeneration(): never {
@@ -81,8 +185,8 @@ export class AiGenerateService {
     this.assertSectionFoundation(dto.section, resolved.body);
 
     const prompt = this.buildRppSectionPrompt(dto.section, resolved.rpp, resolved.body);
-    const ai = await this.callAi(prompt);
-    const output = this.normalizeSectionOutput(dto.section, ai.output);
+    const ai = await this.callAi(prompt, dto.section, resolved.rpp.academicYear, resolved.rpp, resolved.body);
+    const output = this.normalizeSectionOutput(dto.section, ai.output, resolved.rpp, resolved.body);
 
     await this.auditGeneration({
       teacherId: resolved.teacherId,
@@ -136,29 +240,281 @@ export class AiGenerateService {
   }
 
   private assertSectionFoundation(section: AiRppSection, body: Record<string, unknown>): void {
-    if (section !== 'atp') return;
     const cp = this.asText(body['cp']);
     const tp = this.asStringArray(body['tp']);
-    if (!cp || tp.length === 0) {
+    if (section === 'cp_tp' && !cp) {
+      throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
+    }
+    if ((section === 'atp' || section === 'kegiatan' || section === 'asesmen') && (!cp || tp.length === 0)) {
       throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
     }
   }
 
-  private async callAi(prompt: string): Promise<AiCallResult> {
+  private async callAi(
+    prompt: string,
+    section: AiRppSection,
+    academicYear: string,
+    rpp: RppForAi,
+    body: Record<string, unknown>,
+  ): Promise<AiCallResult> {
     const piiDetected = hasPii(prompt);
     const promptForProvider = stripPiiForLlm(prompt);
-    const gateway = !piiDetected && this.openaiGateway ? this.openaiGateway : this.gateway;
-    const model = !piiDetected && this.openaiGateway ? 'gpt-4.1-mini' : 'ollama';
+    const ollamaPromptForProvider = stripPiiForLlm(this.buildOllamaFallbackPrompt(section, rpp, body));
+
+    if (!piiDetected && this.openaiGateway && await this.providerStatus.shouldAttemptOpenAiProbe()) {
+      try {
+        const result = await this.callOpenAiWithRateLimitRetry(promptForProvider, section, academicYear);
+        await this.providerStatus.markOpenAiRecovered();
+        return result;
+      } catch (err) {
+        if (err instanceof HttpException) throw err;
+        if (this.isOpenAiQuotaExhausted(err)) {
+          const detailCode = err instanceof OpenAiProviderError ? err.code : null;
+          await this.providerStatus.markOpenAiQuotaExhausted(detailCode);
+          this.scheduleAdminOpenAiQuotaNotice();
+          logger.warn('[AiGenerateService] OpenAI quota exhausted; falling back to Ollama');
+          return this.callFallbackProvider(ollamaPromptForProvider, section, academicYear);
+        }
+        throw this.mapProviderError(err, false);
+      }
+    }
 
     try {
-      const output = await gateway.chat(promptForProvider);
-      if (!output || output.trim().length === 0) {
-        throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
-      }
-      return { output, model, promptForAudit: promptForProvider };
+      return await this.callProvider(this.gateway, ollamaPromptForProvider, 'ollama', section, academicYear);
     } catch (err) {
       if (err instanceof HttpException) throw err;
       throw this.mapProviderError(err, piiDetected);
+    }
+  }
+
+  private async callOpenAiWithRateLimitRetry(
+    promptForProvider: string,
+    section: AiRppSection,
+    academicYear: string,
+  ): Promise<AiCallResult> {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= OPENAI_RATE_LIMIT_MAX_ATTEMPTS; attempt++) {
+      try {
+        return await this.callProvider(this.openaiGateway as AIGateway, promptForProvider, 'gpt-4.1-mini', section, academicYear);
+      } catch (err) {
+        lastErr = err;
+        if (
+          !(err instanceof OpenAiProviderError) ||
+          this.isOpenAiQuotaExhausted(err) ||
+          !this.isOpenAiTemporaryRateLimit(err) ||
+          attempt >= OPENAI_RATE_LIMIT_MAX_ATTEMPTS
+        ) {
+          throw err;
+        }
+        const retryDelayMs = this.openAiRetryDelayMs(err, attempt);
+        if (retryDelayMs === null) throw err;
+        await this.sleep(retryDelayMs);
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+  }
+
+  private async callFallbackProvider(
+    promptForProvider: string,
+    section: AiRppSection,
+    academicYear: string,
+  ): Promise<AiCallResult> {
+    try {
+      return await this.callProvider(this.gateway, promptForProvider, 'ollama', section, academicYear);
+    } catch (fallbackErr) {
+      if (fallbackErr instanceof HttpException) throw fallbackErr;
+      throw this.mapProviderError(fallbackErr, false);
+    }
+  }
+
+  private async callProvider(
+    gateway: AIGateway,
+    promptForProvider: string,
+    model: AiCallResult['model'],
+    section: AiRppSection,
+    academicYear: string,
+  ): Promise<AiCallResult> {
+    const output = await gateway.chat(promptForProvider, undefined, this.responseFormatFor(section, academicYear, model));
+    if (!output || output.trim().length === 0) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    return { output, model, promptForAudit: promptForProvider };
+  }
+
+  private responseFormatFor(section: AiRppSection, academicYear: string, model: AiCallResult['model']): AiChatOptions {
+    if (model === 'ollama') {
+      return { responseFormat: 'json_object' };
+    }
+
+    return {
+      responseFormat: {
+        type: 'json_schema',
+        name: `rpp_${section}_patch`,
+        strict: true,
+        schema: this.jsonSchemaFor(section, academicYear),
+      },
+    };
+  }
+
+  private jsonSchemaFor(section: AiRppSection, academicYear: string): Record<string, unknown> {
+    // Keep provider schemas portable across OpenAI Structured Outputs and Ollama
+    // structured format. Length, count, and pattern quality gates remain enforced
+    // by Zod after the provider returns JSON.
+    const text = { type: 'string' };
+    const shortText = { type: 'string' };
+    const object = (properties: Record<string, unknown>) => ({
+      type: 'object',
+      additionalProperties: false,
+      properties,
+      required: Object.keys(properties),
+    });
+
+    switch (section) {
+      case 'cp_tp':
+        return object({
+          tp: { type: 'array', items: text },
+        });
+      case 'atp':
+        return object({
+          atp: {
+            type: 'array',
+            items: object({
+              tpRef: { type: 'string' },
+              indikator: text,
+            }),
+          },
+        });
+      case 'profil':
+        return object({
+          profilDimensi: {
+            type: 'array',
+            items: { type: 'string', enum: [...this.profileDimensionsFor(academicYear)] },
+          },
+          profilUraian: text,
+        });
+      case 'sarana':
+        return object({
+          sarana: text,
+          target: text,
+        });
+      case 'kegiatan':
+        return object({
+          kegiatan: {
+            type: 'array',
+            items: object({
+              pertemuan: shortText,
+              pendahuluan: text,
+              inti: text,
+              penutup: text,
+              diferensiasi: text,
+            }),
+          },
+        });
+      case 'asesmen':
+        return object({
+          asesmenDiagnostik: text,
+          asesmenFormatif: text,
+          asesmenSumatif: text,
+        });
+      case 'remedial':
+        return object({
+          pengayaan: text,
+          remedial: text,
+        });
+      case 'refleksi':
+        return object({
+          refleksiGuru: text,
+          refleksiSiswa: text,
+        });
+      case 'lampiran':
+        return object({
+          lampiran: text,
+        });
+    }
+  }
+
+  private isOpenAiQuotaExhausted(err: unknown): boolean {
+    if (!(err instanceof OpenAiProviderError)) return false;
+    return !!err.code && OPENAI_QUOTA_ERROR_CODES.has(err.code);
+  }
+
+  private isOpenAiTemporaryRateLimit(err: OpenAiProviderError): boolean {
+    if (err.status !== 429) return false;
+    if (err.code && OPENAI_QUOTA_ERROR_CODES.has(err.code)) return false;
+    return !err.code || OPENAI_RATE_LIMIT_ERROR_CODES.has(err.code) || err.type === 'rate_limit_exceeded';
+  }
+
+  private openAiRetryDelayMs(err: OpenAiProviderError, attempt: number): number | null {
+    const retryAfterMs = err.retryAfterSeconds !== null ? err.retryAfterSeconds * 1000 : null;
+    if (retryAfterMs !== null && retryAfterMs > OPENAI_RATE_LIMIT_MAX_DELAY_MS) return null;
+    const fallbackMs = 250 * (2 ** (attempt - 1));
+    return retryAfterMs ?? Math.min(fallbackMs, OPENAI_RATE_LIMIT_MAX_DELAY_MS);
+  }
+
+  private sleep(ms: number): Promise<void> {
+    if (ms <= 0) return Promise.resolve();
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private scheduleAdminOpenAiQuotaNotice(): void {
+    void this.notifyAdminsOpenAiQuotaFallback();
+  }
+
+  private async notifyAdminsOpenAiQuotaFallback(): Promise<void> {
+    if (!this.notificationService) {
+      logger.warn('[AiGenerateService] OpenAI quota notice skipped: NotificationService unavailable');
+      return;
+    }
+
+    const incidentId = await this.providerStatus.claimOpenAiQuotaNoticeIncident();
+    if (!incidentId) return;
+
+    try {
+      const admins = await this.prisma.user.findMany({
+        where: { role: 'SUPER_ADMIN', isActive: true },
+        select: { id: true, fullName: true, email: true, phone: true },
+        take: 10,
+      });
+
+      const body =
+        'Kuota/kredit atau batas penggunaan OpenAI DIIS telah tercapai. ' +
+        'Sistem otomatis memakai Ollama lokal agar Generate Modul Ajar tetap berjalan. ' +
+        'Mohon periksa billing/usage OpenAI, lalu lakukan rotasi OPENAI_API_KEY hanya melalui prosedur secret-management resmi bila diperlukan.';
+
+      let sentCount = 0;
+      for (const admin of admins) {
+        const phone = admin.phone?.trim();
+        const email = admin.email?.trim();
+        const channel = phone ? 'whatsapp' : 'email';
+        const to = phone || email;
+        if (!to) continue;
+
+        try {
+          await this.notificationService.notify({
+            channel,
+            to,
+            subject: 'OpenAI fallback aktif',
+            body,
+            refType: 'ai_openai_quota',
+            refId: incidentId,
+          });
+          sentCount++;
+        } catch (err) {
+          logger.warn('[AiGenerateService] OpenAI quota notice recipient failed (fail-soft)', {
+            adminId: admin.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      if (sentCount === 0) {
+        await this.providerStatus.releaseOpenAiQuotaNoticeIncident(incidentId);
+      }
+    } catch (err) {
+      await this.providerStatus.releaseOpenAiQuotaNoticeIncident(incidentId);
+      logger.warn('[AiGenerateService] OpenAI quota notice failed (fail-soft)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -167,8 +523,20 @@ export class AiGenerateService {
       return this.aiException('AI_CONTEXT_PII_BLOCKED', HttpStatus.SERVICE_UNAVAILABLE);
     }
 
+    if (err instanceof OpenAiProviderError) {
+      if (this.isOpenAiTemporaryRateLimit(err)) {
+        return this.aiException('AI_PROVIDER_RATE_LIMITED', HttpStatus.TOO_MANY_REQUESTS);
+      }
+      if (err.status === 401 || err.status === 403 || err.code === 'invalid_api_key') {
+        return this.aiException('AI_PROVIDER_AUTH_FAILED', HttpStatus.SERVICE_UNAVAILABLE);
+      }
+      if (err.status >= 500) {
+        return this.aiException('AI_PROVIDER_UNAVAILABLE', HttpStatus.SERVICE_UNAVAILABLE);
+      }
+    }
+
     const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
-    if (message.includes('429') || message.includes('rate')) {
+    if (message.includes('rate_limit_exceeded')) {
       return this.aiException('AI_PROVIDER_RATE_LIMITED', HttpStatus.TOO_MANY_REQUESTS);
     }
     if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) {
@@ -180,30 +548,82 @@ export class AiGenerateService {
     return this.aiException('AI_PROVIDER_UNAVAILABLE', HttpStatus.SERVICE_UNAVAILABLE);
   }
 
-  private normalizeSectionOutput(section: AiRppSection, output: string): unknown {
-    if (section !== 'atp') return output.trim();
-    const parsed = this.extractJson(output);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
+  private normalizeSectionOutput(
+    section: AiRppSection,
+    output: string,
+    rpp: RppForAi,
+    body: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const parsed = this.parseJsonObject(output);
+    const schema = this.patchSchemaFor(section, rpp.academicYear);
+    const result = schema.safeParse(parsed);
+    if (!result.success) {
       throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
-    return parsed;
+
+    const patch = result.data as Record<string, unknown>;
+    this.assertNoForbiddenOutput(patch);
+    if (section === 'atp') this.assertAtpRefsMatchSavedTp(patch, body);
+    return patch;
   }
 
-  private extractJson(output: string): unknown {
-    const candidates = [
-      output,
-      output.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1],
-      output.match(/(\[[\s\S]*\]|\{[\s\S]*\})/)?.[1],
-    ].filter((candidate): candidate is string => typeof candidate === 'string');
+  private parseJsonObject(output: string): unknown {
+    const text = output.trim();
+    if (!text.startsWith('{') || !text.endsWith('}') || text.includes('```')) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+      }
+      return parsed;
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+  }
 
-    for (const candidate of candidates) {
-      try {
-        return JSON.parse(candidate.trim());
-      } catch {
-        // Try the next candidate.
+  private patchSchemaFor(section: AiRppSection, academicYear: string): z.ZodType<unknown> {
+    if (section === 'profil') {
+      const dimensions = this.profileDimensionsFor(academicYear);
+      return z.object({
+        profilDimensi: z.array(z.enum(dimensions)).min(1).max(dimensions.length),
+        profilUraian: TextField,
+      }).strict();
+    }
+    return PatchSchemas[section];
+  }
+
+  private assertAtpRefsMatchSavedTp(patch: Record<string, unknown>, body: Record<string, unknown>): void {
+    const tpCount = this.asStringArray(body['tp']).length;
+    const allowed = new Set(Array.from({ length: tpCount }, (_, index) => `TP ${index + 1}`));
+    const rows = patch['atp'];
+    if (!Array.isArray(rows) || rows.some((row) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) return true;
+      const tpRef = String((row as Record<string, unknown>)['tpRef'] ?? '').trim().toUpperCase();
+      return !allowed.has(tpRef.replace(/\s+/, ' '));
+    })) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+  }
+
+  private assertNoForbiddenOutput(value: unknown): void {
+    if (typeof value === 'string') {
+      if (FORBIDDEN_OUTPUT_PATTERNS.some((pattern) => pattern.test(value))) {
+        throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) this.assertNoForbiddenOutput(item);
+      return;
+    }
+    if (value && typeof value === 'object') {
+      for (const item of Object.values(value as Record<string, unknown>)) {
+        this.assertNoForbiddenOutput(item);
       }
     }
-    throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
   }
 
   private async auditGeneration(input: {
@@ -263,33 +683,35 @@ export class AiGenerateService {
       this.asText(body['kompetensiAwal']) ? `Kompetensi awal:\n${this.asText(body['kompetensiAwal'])}` : '',
     ].filter(Boolean);
 
-    const sectionContext = this.sectionSpecificContext(section, body);
-    const outputRule = section === 'atp'
-      ? 'Kembalikan JSON array saja dengan bentuk [{"tpRef":"TP 1","indikator":"indikator singkat"}].'
-      : 'Kembalikan markdown singkat yang langsung dapat disunting guru.';
+    const sectionContext = this.sectionSpecificContext(section, body, rpp.academicYear);
+    const outputRule = this.sectionOutputRule(section, rpp.academicYear);
 
     return [
       ...base,
       foundation.length ? foundation.join('\n\n') : 'CP/TP belum tersimpan.',
       sectionContext,
+      'Aturan keluaran wajib: kembalikan tepat satu JSON object valid. Tanpa markdown, tanpa code fence, tanpa heading dokumen penuh, tanpa teks pembuka/penutup.',
+      'Dilarang memakai istilah Kompetensi Dasar, KI/KD, atau format Kurikulum 2013. Gunakan CP, TP, ATP, langkah pembelajaran, dan asesmen.',
+      'Jangan membuat identitas personal, tautan palsu, nomor telepon, atau surel.',
       outputRule,
     ].filter(Boolean).join('\n\n').slice(0, 10000);
   }
 
-  private sectionSpecificContext(section: AiRppSection, body: Record<string, unknown>): string {
+  private sectionSpecificContext(section: AiRppSection, body: Record<string, unknown>, academicYear: string): string {
     switch (section) {
       case 'cp_tp':
         return [
           this.asText(body['kompetensiAwal']) ? `Kompetensi awal: ${this.asText(body['kompetensiAwal'])}` : '',
-          'Bantu rumuskan CP dan TP terukur. Jangan membuat ATP di bagian ini.',
+          'CP tersimpan adalah otoritatif. Usulkan TP terukur dari CP tersebut. Jangan mengubah atau menulis ulang CP. Jangan membuat ATP di bagian ini.',
         ].filter(Boolean).join('\n');
       case 'atp':
         return 'Susun urutan alur dari TP tersimpan. Jangan membuat TP baru.';
       case 'profil':
         return [
+          `Gunakan hanya dimensi berikut untuk tahun ajaran ${academicYear}: ${this.profileDimensionsFor(academicYear).join('; ')}.`,
           this.asStringArray(body['profilDimensi']).length
             ? `Dimensi terpilih: ${this.asStringArray(body['profilDimensi']).join(', ')}.`
-            : 'Dimensi belum dipilih; usulkan dimensi yang relevan dari daftar Profil Pelajar Pancasila.',
+            : 'Dimensi belum dipilih; usulkan dimensi yang paling relevan dari daftar resmi di atas.',
           this.asText(body['profilUraian']) ? `Uraian saat ini:\n${this.asText(body['profilUraian'])}` : '',
         ].filter(Boolean).join('\n\n');
       case 'sarana':
@@ -314,6 +736,116 @@ export class AiGenerateService {
       case 'lampiran':
         return 'Usulkan daftar lampiran belajar berupa teks/catatan. Jangan membuat tautan palsu.';
     }
+  }
+
+  private sectionOutputRule(section: AiRppSection, academicYear: string): string {
+    switch (section) {
+      case 'cp_tp':
+        return 'Schema JSON: {"tp":["TP operasional pertama","TP operasional kedua"]}. Field "cp" tidak boleh ada.';
+      case 'atp':
+        return 'Schema JSON: {"atp":[{"tpRef":"TP 1","indikator":"indikator ketercapaian singkat"}]}. tpRef wajib memakai TP 1, TP 2, dst sesuai TP tersimpan.';
+      case 'profil':
+        return `Schema JSON: {"profilDimensi":["${this.profileDimensionsFor(academicYear)[0]}"],"profilUraian":"uraian aktivitas singkat dan kontekstual"}.`;
+      case 'sarana':
+        return 'Schema JSON: {"sarana":"alat, bahan, ruang, atau perangkat yang dibutuhkan","target":"karakteristik peserta didik target"}.';
+      case 'kegiatan':
+        return 'Schema JSON: {"kegiatan":[{"pertemuan":"Pertemuan 1","pendahuluan":"aktivitas pembuka","inti":"aktivitas inti","penutup":"aktivitas penutup","diferensiasi":"strategi diferensiasi bila relevan"}]}.';
+      case 'asesmen':
+        return 'Schema JSON: {"asesmenDiagnostik":"rencana diagnostik","asesmenFormatif":"rencana formatif","asesmenSumatif":"rencana sumatif"}.';
+      case 'remedial':
+        return 'Schema JSON: {"pengayaan":"aktivitas untuk peserta didik tuntas","remedial":"aktivitas bantuan untuk peserta didik belum tuntas"}.';
+      case 'refleksi':
+        return 'Schema JSON: {"refleksiGuru":"pertanyaan refleksi guru","refleksiSiswa":"pertanyaan refleksi peserta didik"}.';
+      case 'lampiran':
+        return 'Schema JSON: {"lampiran":"daftar lampiran belajar yang perlu disiapkan guru"}.';
+    }
+  }
+
+  private buildOllamaFallbackPrompt(section: AiRppSection, rpp: RppForAi, body: Record<string, unknown>): string {
+    const patch = this.buildDeterministicFallbackPatch(section, rpp, body);
+    return [
+      'Kembalikan hanya JSON object berikut tanpa perubahan.',
+      'Tanpa markdown, tanpa code fence, tanpa teks pembuka/penutup.',
+      JSON.stringify(patch),
+    ].join('\n');
+  }
+
+  private buildDeterministicFallbackPatch(
+    section: AiRppSection,
+    rpp: RppForAi,
+    body: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const subject = this.asText(rpp.subject) || 'mata pelajaran';
+    const title = this.asText(rpp.title) || 'topik pembelajaran';
+    const model = this.asText(body['model']) || 'pembelajaran aktif';
+    const tp = this.asStringArray(body['tp']);
+    const firstTp = tp[0] || `Memahami konsep utama ${title}.`;
+
+    switch (section) {
+      case 'cp_tp':
+        return {
+          tp: [
+            `Menjelaskan konsep utama ${title} berdasarkan CP tersimpan.`,
+            `Menerapkan konsep ${title} dalam tugas pembelajaran ${subject}.`,
+          ],
+        };
+      case 'atp':
+        return {
+          atp: tp.map((item, index) => ({
+            tpRef: `TP ${index + 1}`,
+            indikator: `Menunjukkan ketercapaian: ${item}.`,
+          })),
+        };
+      case 'profil': {
+        const dimensions = this.profileDimensionsFor(rpp.academicYear);
+        const selected = this.asStringArray(body['profilDimensi'])
+          .filter((item): item is typeof dimensions[number] => (dimensions as readonly string[]).includes(item));
+        return {
+          profilDimensi: selected.length ? selected.slice(0, 2) : [dimensions[0]],
+          profilUraian: `Peserta didik menguatkan karakter melalui aktivitas ${title} yang selaras dengan pembelajaran ${subject}.`,
+        };
+      }
+      case 'sarana':
+        return {
+          sarana: this.asText(body['sarana']) || `Perangkat belajar, bahan ajar, dan lembar kerja untuk ${title}.`,
+          target: this.asText(body['target']) || `Peserta didik yang mempelajari ${subject} pada topik ${title}.`,
+        };
+      case 'kegiatan':
+        return {
+          kegiatan: [{
+            pertemuan: 'Pertemuan 1',
+            pendahuluan: `Guru membuka pembelajaran ${title}, menyampaikan tujuan, dan mengaitkan materi dengan pengalaman peserta didik.`,
+            inti: `Peserta didik mengikuti aktivitas ${model} untuk memahami ${firstTp.toLowerCase()}`,
+            penutup: `Guru dan peserta didik menyimpulkan pembelajaran ${title} serta mencatat tindak lanjut.`,
+            diferensiasi: 'Guru memberi dukungan bertahap, pilihan sumber belajar, dan tantangan lanjutan sesuai kesiapan peserta didik.',
+          }],
+        };
+      case 'asesmen':
+        return {
+          asesmenDiagnostik: `Tanya jawab awal untuk memetakan pemahaman peserta didik tentang ${title}.`,
+          asesmenFormatif: `Observasi proses dan cek pemahaman selama aktivitas ${subject}.`,
+          asesmenSumatif: `Produk atau tugas akhir yang membuktikan ketercapaian ${firstTp.toLowerCase()}`,
+        };
+      case 'remedial':
+        return {
+          pengayaan: `Peserta didik tuntas mengerjakan tantangan lanjutan terkait ${title}.`,
+          remedial: `Peserta didik belum tuntas mendapat bimbingan ulang dan latihan bertahap tentang ${title}.`,
+        };
+      case 'refleksi':
+        return {
+          refleksiGuru: `Bagian mana dari pembelajaran ${title} yang perlu diperkuat pada pertemuan berikutnya?`,
+          refleksiSiswa: `Apa hal utama yang sudah saya pahami dari pembelajaran ${title}?`,
+        };
+      case 'lampiran':
+        return {
+          lampiran: `Lembar kerja, rubrik asesmen, dan bahan pendukung untuk pembelajaran ${title}.`,
+        };
+    }
+  }
+
+  private profileDimensionsFor(academicYear: string): typeof GRADUATE_PROFILE_DIMENSIONS | typeof LEGACY_PANCASILA_DIMENSIONS {
+    const startYear = Number(academicYear.match(/^(\d{4})\/\d{4}$/)?.[1] ?? 0);
+    return startYear >= 2025 ? GRADUATE_PROFILE_DIMENSIONS : LEGACY_PANCASILA_DIMENSIONS;
   }
 
   private toBodyRecord(value: Prisma.JsonValue | null): Record<string, unknown> {

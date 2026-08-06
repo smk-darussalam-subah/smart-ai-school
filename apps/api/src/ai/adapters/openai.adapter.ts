@@ -17,7 +17,7 @@
 //   OPENAI_CHAT_MODEL  — model chat (default: gpt-4.1-mini)
 // =============================================================================
 
-import { AIGateway, RagContext } from '@smk/types';
+import { AiChatOptions, AIGateway, RagContext } from '@smk/types';
 import { stripPiiForLlm } from './pii-strip.utils';
 
 /** OpenAI Chat Completions API response shape (minimal — hanya field yang dipakai). */
@@ -25,6 +25,28 @@ interface OpenAiChatResponse {
   choices: Array<{
     message: { content: string };
   }>;
+}
+
+interface OpenAiErrorResponse {
+  error?: {
+    message?: string;
+    type?: string;
+    code?: string | null;
+    param?: string | null;
+  };
+}
+
+export class OpenAiProviderError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string | null,
+    readonly type: string | null,
+    readonly retryAfterSeconds: number | null,
+  ) {
+    super(message);
+    this.name = 'OpenAiProviderError';
+  }
 }
 
 export class OpenAiAdapter implements AIGateway {
@@ -56,7 +78,7 @@ export class OpenAiAdapter implements AIGateway {
    * @param prompt  Pertanyaan atau instruksi dari user
    * @param context Opsional: potongan konteks RAG untuk grounding jawaban
    */
-  async chat(prompt: string, context?: RagContext[]): Promise<string> {
+  async chat(prompt: string, context?: RagContext[], options?: AiChatOptions): Promise<string> {
     const safePrompt = stripPiiForLlm(prompt);
 
     const systemContent =
@@ -81,6 +103,7 @@ export class OpenAiAdapter implements AIGateway {
       ],
       temperature: 0.2,
       max_tokens: 2048,
+      ...openAiResponseFormat(options),
     };
 
     const controller = new AbortController();
@@ -103,8 +126,19 @@ export class OpenAiAdapter implements AIGateway {
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => '');
-      throw new Error(
-        `OpenAI chat gagal: HTTP ${response.status} — ${errorBody.slice(0, 500)}`,
+      let parsed: OpenAiErrorResponse | null = null;
+      try {
+        parsed = JSON.parse(errorBody) as OpenAiErrorResponse;
+      } catch {
+        parsed = null;
+      }
+
+      throw new OpenAiProviderError(
+        sanitizeOpenAiErrorMessage(parsed?.error?.message ?? `OpenAI chat gagal: HTTP ${response.status}`),
+        response.status,
+        parsed?.error?.code ?? null,
+        parsed?.error?.type ?? null,
+        parseRetryAfter(response.headers.get('retry-after')),
       );
     }
 
@@ -117,4 +151,39 @@ export class OpenAiAdapter implements AIGateway {
 
     return content;
   }
+}
+
+function openAiResponseFormat(options?: AiChatOptions): Record<string, unknown> {
+  const responseFormat = options?.responseFormat;
+  if (!responseFormat) return {};
+  if (responseFormat === 'json_object') {
+    return { response_format: { type: 'json_object' as const } };
+  }
+  return {
+    response_format: {
+      type: 'json_schema' as const,
+      json_schema: {
+        name: responseFormat.name,
+        strict: responseFormat.strict ?? true,
+        schema: responseFormat.schema,
+      },
+    },
+  };
+}
+
+function parseRetryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+  const dateMs = Date.parse(value);
+  if (Number.isFinite(dateMs)) {
+    return Math.max(0, Math.ceil((dateMs - Date.now()) / 1000));
+  }
+  return null;
+}
+
+function sanitizeOpenAiErrorMessage(message: string): string {
+  return message
+    .replace(/\bsk-[A-Za-z0-9_-]+\b/g, '[REDACTED_OPENAI_KEY]')
+    .replace(/\bBearer\s+[A-Za-z0-9._-]+\b/g, 'Bearer [REDACTED]');
 }

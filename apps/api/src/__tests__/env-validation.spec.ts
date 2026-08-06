@@ -28,9 +28,10 @@ const VALID_ENV: Record<string, string> = {
   KEYCLOAK_REALM: 'diis',
   KEYCLOAK_CLIENT_ID: 'diis-api',
   KEYCLOAK_CLIENT_SECRET: 'super-secret-client-secret',
+  OPENAI_API_KEY: 'test-openai-key',
 };
 
-const ENV_KEYS = [...Object.keys(VALID_ENV), 'APPOINTMENT_AUTOMATION_TOKEN'];
+const ENV_KEYS = [...Object.keys(VALID_ENV), 'APPOINTMENT_AUTOMATION_TOKEN', 'AI_PROVIDER', 'REDIS_QUEUE_NAMESPACE'];
 
 describe('validateEnv() — Environment Variable Validation at Startup (Item 12)', () => {
   let savedEnv: Record<string, string | undefined>;
@@ -79,6 +80,8 @@ describe('validateEnv() — Environment Variable Validation at Startup (Item 12)
     expect(env.KEYCLOAK_REALM).toBe('diis');
     expect(env.KEYCLOAK_CLIENT_ID).toBe('diis-api');
     expect(env.KEYCLOAK_CLIENT_SECRET).toBe('super-secret-client-secret');
+    expect(env.AI_PROVIDER).toBe('openai');
+    expect(env.OPENAI_API_KEY).toBe('test-openai-key');
   });
 
   it('NODE_ENV tidak diset → default ke "development"', () => {
@@ -101,12 +104,73 @@ describe('validateEnv() — Environment Variable Validation at Startup (Item 12)
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('NODE_ENV = "production" → valid (enum production diizinkan)', () => {
-    Object.assign(process.env, { ...VALID_ENV, NODE_ENV: 'production' });
+  it('AI_PROVIDER tidak diset → default ke OpenAI dengan key yang tervalidasi', () => {
+    Object.assign(process.env, VALID_ENV);
+
+    const env = validateEnv();
+
+    expect(env.AI_PROVIDER).toBe('openai');
+    expect(env.OPENAI_API_KEY).toBe('test-openai-key');
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('AI_PROVIDER=openai tanpa key → fail-fast', () => {
+    const { OPENAI_API_KEY: _unused, ...envWithoutOpenAiKey } = VALID_ENV;
+    Object.assign(process.env, { ...envWithoutOpenAiKey, AI_PROVIDER: 'openai' });
+
+    expect(() => validateEnv()).toThrow('process.exit(1) called');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('AI_PROVIDER=openai dengan key whitespace → fail-fast', () => {
+    Object.assign(process.env, { ...VALID_ENV, AI_PROVIDER: 'openai', OPENAI_API_KEY: '   ' });
+
+    expect(() => validateEnv()).toThrow('process.exit(1) called');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('AI_PROVIDER=ollama tanpa OpenAI key → valid untuk mode local/embedding', () => {
+    const { OPENAI_API_KEY: _unused, ...envWithoutOpenAiKey } = VALID_ENV;
+    Object.assign(process.env, { ...envWithoutOpenAiKey, AI_PROVIDER: 'ollama' });
+
+    const env = validateEnv();
+
+    expect(env.AI_PROVIDER).toBe('ollama');
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('AI_PROVIDER=ollama dengan key whitespace → key dianggap tidak dikonfigurasi dan tetap valid', () => {
+    Object.assign(process.env, { ...VALID_ENV, AI_PROVIDER: 'ollama', OPENAI_API_KEY: '   ' });
+
+    const env = validateEnv();
+
+    expect(env.AI_PROVIDER).toBe('ollama');
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('NODE_ENV = "production" dengan REDIS_QUEUE_NAMESPACE → valid', () => {
+    Object.assign(process.env, { ...VALID_ENV, NODE_ENV: 'production', REDIS_QUEUE_NAMESPACE: 'production' });
 
     const env = validateEnv();
 
     expect(env.NODE_ENV).toBe('production');
+    expect(env.REDIS_QUEUE_NAMESPACE).toBe('production');
+  });
+
+  it('NODE_ENV = "production" tanpa REDIS_QUEUE_NAMESPACE → fail-fast', () => {
+    Object.assign(process.env, { ...VALID_ENV, NODE_ENV: 'production' });
+
+    expect(() => validateEnv()).toThrow('process.exit(1) called');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('REDIS_QUEUE_NAMESPACE invalid → process.exit(1) dipanggil', () => {
+    Object.assign(process.env, { ...VALID_ENV, REDIS_QUEUE_NAMESPACE: 'Staging Prod' });
+
+    expect(() => validateEnv()).toThrow('process.exit(1) called');
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
   it('APPOINTMENT_AUTOMATION_TOKEN kosong dari compose dianggap tidak dikonfigurasi', () => {
