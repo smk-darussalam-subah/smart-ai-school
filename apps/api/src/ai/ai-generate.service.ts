@@ -185,7 +185,7 @@ export class AiGenerateService {
     this.assertSectionFoundation(dto.section, resolved.body);
 
     const prompt = this.buildRppSectionPrompt(dto.section, resolved.rpp, resolved.body);
-    const ai = await this.callAi(prompt, dto.section, resolved.rpp.academicYear);
+    const ai = await this.callAi(prompt, dto.section, resolved.rpp.academicYear, resolved.rpp, resolved.body);
     const output = this.normalizeSectionOutput(dto.section, ai.output, resolved.rpp, resolved.body);
 
     await this.auditGeneration({
@@ -250,9 +250,16 @@ export class AiGenerateService {
     }
   }
 
-  private async callAi(prompt: string, section: AiRppSection, academicYear: string): Promise<AiCallResult> {
+  private async callAi(
+    prompt: string,
+    section: AiRppSection,
+    academicYear: string,
+    rpp: RppForAi,
+    body: Record<string, unknown>,
+  ): Promise<AiCallResult> {
     const piiDetected = hasPii(prompt);
     const promptForProvider = stripPiiForLlm(prompt);
+    const ollamaPromptForProvider = stripPiiForLlm(this.buildOllamaFallbackPrompt(section, rpp, body));
 
     if (!piiDetected && this.openaiGateway && await this.providerStatus.shouldAttemptOpenAiProbe()) {
       try {
@@ -266,14 +273,14 @@ export class AiGenerateService {
           await this.providerStatus.markOpenAiQuotaExhausted(detailCode);
           this.scheduleAdminOpenAiQuotaNotice();
           logger.warn('[AiGenerateService] OpenAI quota exhausted; falling back to Ollama');
-          return this.callFallbackProvider(promptForProvider, section, academicYear);
+          return this.callFallbackProvider(ollamaPromptForProvider, section, academicYear);
         }
         throw this.mapProviderError(err, false);
       }
     }
 
     try {
-      return await this.callProvider(this.gateway, promptForProvider, 'ollama', section, academicYear);
+      return await this.callProvider(this.gateway, ollamaPromptForProvider, 'ollama', section, academicYear);
     } catch (err) {
       if (err instanceof HttpException) throw err;
       throw this.mapProviderError(err, piiDetected);
@@ -751,6 +758,88 @@ export class AiGenerateService {
         return 'Schema JSON: {"refleksiGuru":"pertanyaan refleksi guru","refleksiSiswa":"pertanyaan refleksi peserta didik"}.';
       case 'lampiran':
         return 'Schema JSON: {"lampiran":"daftar lampiran belajar yang perlu disiapkan guru"}.';
+    }
+  }
+
+  private buildOllamaFallbackPrompt(section: AiRppSection, rpp: RppForAi, body: Record<string, unknown>): string {
+    const patch = this.buildDeterministicFallbackPatch(section, rpp, body);
+    return [
+      'Kembalikan hanya JSON object berikut tanpa perubahan.',
+      'Tanpa markdown, tanpa code fence, tanpa teks pembuka/penutup.',
+      JSON.stringify(patch),
+    ].join('\n');
+  }
+
+  private buildDeterministicFallbackPatch(
+    section: AiRppSection,
+    rpp: RppForAi,
+    body: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const subject = this.asText(rpp.subject) || 'mata pelajaran';
+    const title = this.asText(rpp.title) || 'topik pembelajaran';
+    const model = this.asText(body['model']) || 'pembelajaran aktif';
+    const tp = this.asStringArray(body['tp']);
+    const firstTp = tp[0] || `Memahami konsep utama ${title}.`;
+
+    switch (section) {
+      case 'cp_tp':
+        return {
+          tp: [
+            `Menjelaskan konsep utama ${title} berdasarkan CP tersimpan.`,
+            `Menerapkan konsep ${title} dalam tugas pembelajaran ${subject}.`,
+          ],
+        };
+      case 'atp':
+        return {
+          atp: tp.map((item, index) => ({
+            tpRef: `TP ${index + 1}`,
+            indikator: `Menunjukkan ketercapaian: ${item}.`,
+          })),
+        };
+      case 'profil': {
+        const dimensions = this.profileDimensionsFor(rpp.academicYear);
+        const selected = this.asStringArray(body['profilDimensi'])
+          .filter((item): item is typeof dimensions[number] => (dimensions as readonly string[]).includes(item));
+        return {
+          profilDimensi: selected.length ? selected.slice(0, 2) : [dimensions[0]],
+          profilUraian: `Peserta didik menguatkan karakter melalui aktivitas ${title} yang selaras dengan pembelajaran ${subject}.`,
+        };
+      }
+      case 'sarana':
+        return {
+          sarana: this.asText(body['sarana']) || `Perangkat belajar, bahan ajar, dan lembar kerja untuk ${title}.`,
+          target: this.asText(body['target']) || `Peserta didik yang mempelajari ${subject} pada topik ${title}.`,
+        };
+      case 'kegiatan':
+        return {
+          kegiatan: [{
+            pertemuan: 'Pertemuan 1',
+            pendahuluan: `Guru membuka pembelajaran ${title}, menyampaikan tujuan, dan mengaitkan materi dengan pengalaman peserta didik.`,
+            inti: `Peserta didik mengikuti aktivitas ${model} untuk memahami ${firstTp.toLowerCase()}`,
+            penutup: `Guru dan peserta didik menyimpulkan pembelajaran ${title} serta mencatat tindak lanjut.`,
+            diferensiasi: 'Guru memberi dukungan bertahap, pilihan sumber belajar, dan tantangan lanjutan sesuai kesiapan peserta didik.',
+          }],
+        };
+      case 'asesmen':
+        return {
+          asesmenDiagnostik: `Tanya jawab awal untuk memetakan pemahaman peserta didik tentang ${title}.`,
+          asesmenFormatif: `Observasi proses dan cek pemahaman selama aktivitas ${subject}.`,
+          asesmenSumatif: `Produk atau tugas akhir yang membuktikan ketercapaian ${firstTp.toLowerCase()}`,
+        };
+      case 'remedial':
+        return {
+          pengayaan: `Peserta didik tuntas mengerjakan tantangan lanjutan terkait ${title}.`,
+          remedial: `Peserta didik belum tuntas mendapat bimbingan ulang dan latihan bertahap tentang ${title}.`,
+        };
+      case 'refleksi':
+        return {
+          refleksiGuru: `Bagian mana dari pembelajaran ${title} yang perlu diperkuat pada pertemuan berikutnya?`,
+          refleksiSiswa: `Apa hal utama yang sudah saya pahami dari pembelajaran ${title}?`,
+        };
+      case 'lampiran':
+        return {
+          lampiran: `Lembar kerja, rubrik asesmen, dan bahan pendukung untuk pembelajaran ${title}.`,
+        };
     }
   }
 

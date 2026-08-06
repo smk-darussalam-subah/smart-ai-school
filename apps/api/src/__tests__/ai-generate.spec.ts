@@ -202,7 +202,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(cloudChat).not.toHaveBeenCalled();
     const promptSentLocal = localChat.mock.calls[0][0] as string;
     expect(promptSentLocal).not.toContain('budi@example.com');
-    expect(promptSentLocal).toContain('[EMAIL]');
+    expect(promptSentLocal).not.toContain('Budi Santoso');
     const auditPrompt = aiGenerationCreate.mock.calls[0][0].data.prompt as string;
     expect(auditPrompt).not.toContain('Budi Santoso');
     expect(auditPrompt).not.toContain('budi@example.com');
@@ -411,7 +411,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     });
     expect(cloudChat).toHaveBeenCalledTimes(1);
     expect(localChat).toHaveBeenCalledWith(
-      expect.stringContaining('Schema JSON'),
+      expect.stringContaining('Kembalikan hanya JSON object berikut tanpa perubahan'),
       undefined,
       { responseFormat: 'json_object' },
     );
@@ -488,7 +488,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(cloudChat).not.toHaveBeenCalled();
     expect(localChat).toHaveBeenCalledTimes(1);
     expect(localChat).toHaveBeenCalledWith(
-      expect.stringContaining('Schema JSON'),
+      expect.stringContaining('Kembalikan hanya JSON object berikut tanpa perubahan'),
       undefined,
       { responseFormat: 'json_object' },
     );
