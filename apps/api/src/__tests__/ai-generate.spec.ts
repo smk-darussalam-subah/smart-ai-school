@@ -413,19 +413,8 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(localChat).toHaveBeenCalledWith(
       expect.stringContaining('Schema JSON'),
       undefined,
-      { responseFormat: expect.objectContaining({
-        type: 'json_schema',
-        name: 'rpp_kegiatan_patch',
-        schema: expect.objectContaining({
-          additionalProperties: false,
-          required: ['kegiatan'],
-        }),
-      }) },
+      { responseFormat: 'json_object' },
     );
-    const options = localChat.mock.calls[0][2] as { responseFormat: { schema: Record<string, unknown> } };
-    const schemaText = JSON.stringify(options.responseFormat.schema);
-    expect(schemaText).not.toMatch(/minLength|maxLength|minItems|maxItems|pattern/);
-    expect(schemaText).toContain('diferensiasi');
     expect(markOpenAiQuotaExhausted).toHaveBeenCalledWith('organization_spend_limit_exceeded');
     expect(notificationNotify).toHaveBeenCalledWith(expect.objectContaining({
       channel: 'email',
@@ -498,6 +487,11 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
 
     expect(cloudChat).not.toHaveBeenCalled();
     expect(localChat).toHaveBeenCalledTimes(1);
+    expect(localChat).toHaveBeenCalledWith(
+      expect.stringContaining('Schema JSON'),
+      undefined,
+      { responseFormat: 'json_object' },
+    );
     expect(notificationNotify).not.toHaveBeenCalled();
     expect(aiGenerationCreate).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ model: 'ollama' }),
