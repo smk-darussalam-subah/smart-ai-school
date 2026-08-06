@@ -141,6 +141,12 @@ export class OllamaAdapter implements AIGateway {
 function ollamaResponseFormat(options?: AiChatOptions): Record<string, unknown> {
   const responseFormat = options?.responseFormat;
   if (!responseFormat) return {};
-  if (responseFormat === 'json_object') return { format: 'json' };
-  return { format: responseFormat.schema };
+  const generationOptions = {
+    temperature: 0.2,
+    num_predict: 512,
+  };
+  if (responseFormat === 'json_object') {
+    return { format: 'json', options: generationOptions };
+  }
+  return { format: responseFormat.schema, options: generationOptions };
 }
