@@ -34,6 +34,8 @@ export interface SiswaBadge {
 
 export interface SiswaTugas {
   id: number;
+  uuid?: string;
+  assessmentSessionId?: string;
   mp: string;
   title: string;
   type: string;

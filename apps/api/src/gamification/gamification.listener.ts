@@ -49,6 +49,7 @@ export class GamificationListener {
         studentId: payload.studentId,
         error: err instanceof Error ? err.message : String(err),
       });
+      if (payload.deliveryMode === 'outbox') throw err;
     }
   }
 
@@ -83,6 +84,7 @@ export class GamificationListener {
         sessionId: payload.sessionId,
         error: err instanceof Error ? err.message : String(err),
       });
+      if (payload.deliveryMode === 'outbox') throw err;
     }
   }
 

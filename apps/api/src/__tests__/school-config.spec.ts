@@ -7,6 +7,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { SchoolConfigService } from '../school-config/school-config.service';
 import { SchoolConfigController } from '../school-config/school-config.controller';
+import { CreateMajorSchema } from '../school-config/dto/major.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AppointmentsService } from '../appointments/appointments.service';
@@ -106,6 +107,32 @@ describe('SchoolConfigService', () => {
     mockMajor.create.mockResolvedValue(MAJOR_TKRO);
     const result = await service.createMajor({ code: 'TKRO', name: 'TKRO' });
     expect(result.code).toBe('TKRO');
+  });
+
+  it('major DTO membatasi deskripsi produktif yang masuk prompt AI', () => {
+    const parsed = CreateMajorSchema.safeParse({
+      code: ' DKV ',
+      name: ' Desain Komunikasi Visual ',
+      description: '  Konteks produktif desain sekolah.  ',
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success ? parsed.data : null).toMatchObject({
+      code: 'DKV',
+      name: 'Desain Komunikasi Visual',
+      description: 'Konteks produktif desain sekolah.',
+    });
+    const whitespaceDescription = CreateMajorSchema.safeParse({
+      code: 'DKV',
+      name: 'Desain Komunikasi Visual',
+      description: '   ',
+    });
+    expect(whitespaceDescription.success).toBe(true);
+    expect(whitespaceDescription.success ? whitespaceDescription.data.description : 'failed').toBeNull();
+    expect(CreateMajorSchema.safeParse({
+      code: 'DKV',
+      name: 'Desain Komunikasi Visual',
+      description: 'x'.repeat(801),
+    }).success).toBe(false);
   });
 
   it('createMajor duplikat → Conflict', async () => {

@@ -321,22 +321,29 @@ export class LmsService {
       && (module.classId === null || module.classId === student.classId);
     if (!visible) throw new ForbiddenException('Modul tidak tersedia untuk Anda');
 
-    const computedStatus = dto.status ?? (dto.progress >= 100 ? 'completed' : 'active');
     const now = new Date();
+    const existingProgress = await this.prisma.lmsModuleProgress.findUnique({
+      where: { moduleId_studentId: { moduleId, studentId: student.id } },
+      select: { progress: true, status: true, completedAt: true },
+    });
+    const nextProgress = Math.max(existingProgress?.progress ?? 0, dto.progress);
+    const nextStatus = existingProgress?.status === 'completed' || dto.status === 'completed' || nextProgress >= 100
+      ? 'completed'
+      : 'active';
     return this.prisma.lmsModuleProgress.upsert({
       where: { moduleId_studentId: { moduleId, studentId: student.id } },
       create: {
         moduleId,
         studentId: student.id,
-        progress: dto.progress,
-        status: computedStatus,
+        progress: nextProgress,
+        status: nextStatus,
         startedAt: now,
-        completedAt: computedStatus === 'completed' ? now : null,
+        completedAt: nextStatus === 'completed' ? now : null,
       },
       update: {
-        progress: dto.progress,
-        status: computedStatus,
-        completedAt: computedStatus === 'completed' ? now : null,
+        progress: nextProgress,
+        status: nextStatus,
+        completedAt: nextStatus === 'completed' ? existingProgress?.completedAt ?? now : null,
       },
       select: { id: true, moduleId: true, progress: true, status: true, startedAt: true, completedAt: true },
     });

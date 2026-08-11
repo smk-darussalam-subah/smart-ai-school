@@ -18,7 +18,7 @@ import { RequirePermission } from '../permissions/decorators/require-permission.
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { AssessmentService } from './assessment.service';
 import {
-  CreateAssessmentSessionSchema, GradeEssaySchema, ListAssessmentSessionSchema,
+  AutosaveResponseSchema, CreateAssessmentSessionSchema, GradeEssaySchema, ListAssessmentSessionSchema,
   SubmitResponseSchema, UpdateAssessmentSessionSchema,
 } from './dto/assessment.dto';
 
@@ -36,6 +36,13 @@ export class AssessmentController {
     const parsed = ListAssessmentSessionSchema.safeParse(rawQuery);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors);
     return this.service.findAll(parsed.data, user);
+  }
+
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @RequirePermission('lms.read')
+  @Get('outbox/health')
+  getOutboxHealth(@CurrentUser() user: AuthUser) {
+    return this.service.getOutboxHealth(user);
   }
 
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU', 'SISWA')
@@ -142,6 +149,18 @@ export class AssessmentController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.service.gradeEssayResponse(id, responseId, dto as Parameters<typeof this.service.gradeEssayResponse>[2], user);
+  }
+
+  @Roles('SISWA')
+  @RequirePermission('lms.progress.manage')
+  @Post(':id/autosave')
+  @HttpCode(HttpStatus.OK)
+  autosaveResponse(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(AutosaveResponseSchema)) dto: unknown,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.autosaveResponse(id, dto as Parameters<typeof this.service.autosaveResponse>[1], user);
   }
 
   @Roles('SISWA')

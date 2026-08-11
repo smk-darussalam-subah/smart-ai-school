@@ -145,6 +145,7 @@ export interface TodayClass {
   jpEnd: number;
   startLabel: string;
   isNow: boolean;
+  moduleId?: string;
   /** U2 Wave 3: assessment session ID for analisis hasil (optional, populated when session exists). */
   assessmentSessionId?: string;
 }

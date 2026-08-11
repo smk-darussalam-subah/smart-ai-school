@@ -74,6 +74,7 @@ const emptyProfileForm = (p: SchoolProfile | null): ProfileForm => ({
 const emptyMajorForm: MajorForm = { code: '', name: '', description: '' };
 
 const MAJOR_PAGE_SIZE = 8;
+const MAJOR_DESCRIPTION_MAX_LENGTH = 800;
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -154,18 +155,19 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
 
   const handleSaveMajor = async () => {
     setMajorSaving(true);
+    const description = majorForm.description.trim() || null;
     let res;
     if (majorEditing) {
       res = await updateMajorAction(majorEditing.id, {
-        code: majorForm.code,
-        name: majorForm.name,
-        description: majorForm.description || null,
+        code: majorForm.code.trim(),
+        name: majorForm.name.trim(),
+        description,
       });
     } else {
       res = await createMajorAction({
-        code: majorForm.code,
-        name: majorForm.name,
-        description: majorForm.description || null,
+        code: majorForm.code.trim(),
+        name: majorForm.name.trim(),
+        description,
       });
     }
     setMajorSaving(false);
@@ -194,6 +196,7 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
   };
 
   const mf = (k: keyof MajorForm, v: string) => setMajorForm((p) => ({ ...p, [k]: v }));
+  const majorDescriptionLength = majorForm.description.length;
 
   // Reset ke halaman 1 saat majorsList berubah (setelah CRUD)
   useEffect(() => { setMajorPage(1); }, [majorsList.length]);
@@ -413,9 +416,14 @@ export default function ProfilClient({ profile, majors, isSuperAdmin }: Props) {
                   id="mj-desc"
                   value={majorForm.description}
                   onChange={(e) => mf('description', e.target.value)}
-                  placeholder="Deskripsi singkat jurusan (opsional)"
+                  placeholder="Contoh: konteks praktik, alat, proses kerja, dan produk utama jurusan."
+                  maxLength={MAJOR_DESCRIPTION_MAX_LENGTH}
                   rows={3}
                 />
+                <div className="mt-1 flex flex-wrap items-start justify-between gap-2 text-[11px] font-medium text-gray-500">
+                  <span>Dipakai sebagai konteks produktif AI Bank Soal. Kosongkan hanya jika guru harus memakai mode Umum.</span>
+                  <span>{majorDescriptionLength}/{MAJOR_DESCRIPTION_MAX_LENGTH}</span>
+                </div>
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-4">

@@ -1,4 +1,6 @@
 import { createElement, isValidElement, type ReactElement, type ReactNode } from 'react';
+import fs from 'fs';
+import path from 'path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import BerandaSiswa from '../app/dashboard/akademik/_components/siswa/BerandaSiswa';
 import { ModuleCard } from '../app/dashboard/akademik/_components/siswa/ModulSiswa';
@@ -124,5 +126,20 @@ describe('student LMS progress freshness', () => {
 
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('keeps Wave 4 student runtime entry points out of placeholder mode', () => {
+    const base = path.join(__dirname, '../app/dashboard/akademik/_components/siswa');
+    const taskDetail = fs.readFileSync(path.join(base, 'TaskDetailModal.tsx'), 'utf8');
+    const moduleDetail = fs.readFileSync(path.join(base, 'ModulDetailSiswa.tsx'), 'utf8');
+    const lessonModal = fs.readFileSync(path.join(base, 'LessonSessionModal.tsx'), 'utf8');
+
+    expect(taskDetail).not.toContain('Task Detail Modal');
+    expect(moduleDetail).not.toContain('Modul Detail screen');
+    expect(lessonModal).not.toContain('Lesson Session Modal');
+    expect(taskDetail).toContain('startAssessmentResponse');
+    expect(taskDetail).toContain('autosaveAssessmentResponse');
+    const submitCalls = [...taskDetail.matchAll(/submitAssessmentResponse\([^;]+;/g)].map((match) => match[0]);
+    expect(submitCalls).toEqual(['submitAssessmentResponse(task.assessmentSessionId!, answers);']);
   });
 });
