@@ -1019,7 +1019,8 @@ export class AiGenerateService {
       context.contentSummary ? `Ringkasan materi authoritative: ${context.contentSummary}` : '',
       'Setiap item wajib punya itemKey stabil, question, tpRefs, cognitiveLevel, rationale, warnings.',
       'question harus mengikuti salah satu type: multiple_choice, true_false, matching, essay.',
-      'Untuk matching, question.answer wajib array {promptId, matchId}; jangan pakai object dengan key dinamis.',
+      'Untuk matching, question.pairs[].id adalah kode internal; question.pairs[].prompt adalah sisi kiri; question.pairs[].match adalah teks jawaban sisi kanan yang lengkap, bukan kode seperti M1/M2 atau pengulangan id.',
+      'Untuk matching, question.answer wajib array {promptId, matchId}; promptId dan matchId sama-sama wajib berisi id dari question.pairs[].id. Jangan pakai object dengan key dinamis.',
       'Rubrik esai total weight tepat 100. Matching harus bijective. PG harus punya distraktor unik.',
     ].filter(Boolean).join('\n');
   }
@@ -1143,6 +1144,21 @@ export class AiGenerateService {
         if (!question || typeof question !== 'object') return item;
         const typedQuestion = question as { type?: unknown; answer?: unknown };
         if (typedQuestion.type !== 'matching' || !Array.isArray(typedQuestion.answer)) return item;
+        const matchingPairs = Array.isArray((typedQuestion as { pairs?: unknown }).pairs)
+          ? (typedQuestion as { pairs: unknown[] }).pairs
+            .filter((pair): pair is { id: string; match: string } =>
+              Boolean(pair)
+              && typeof pair === 'object'
+              && typeof (pair as { id?: unknown }).id === 'string'
+              && typeof (pair as { match?: unknown }).match === 'string')
+          : [];
+        const matchTextToId = new Map<string, string>();
+        for (const pair of matchingPairs) {
+          const normalizedMatchText = this.normalizedQuestionText(pair.match);
+          if (normalizedMatchText && !matchTextToId.has(normalizedMatchText)) {
+            matchTextToId.set(normalizedMatchText, pair.id);
+          }
+        }
         const answer = Object.fromEntries(
           typedQuestion.answer
             .filter((pair): pair is { promptId: string; matchId: string } =>
@@ -1150,7 +1166,10 @@ export class AiGenerateService {
               && typeof pair === 'object'
               && typeof (pair as { promptId?: unknown }).promptId === 'string'
               && typeof (pair as { matchId?: unknown }).matchId === 'string')
-            .map((pair) => [pair.promptId, pair.matchId]),
+            .map((pair) => {
+              const normalizedMatchId = this.normalizedQuestionText(pair.matchId);
+              return [pair.promptId, matchTextToId.get(normalizedMatchId) ?? pair.matchId];
+            }),
         );
         return {
           ...(item as Record<string, unknown>),
@@ -1231,7 +1250,26 @@ export class AiGenerateService {
     if (question.type === 'true_false' && /\btidak\b.+\bbukan\b|\bbukan\b.+\btidak\b/i.test(question.body)) {
       throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
+    if (question.type === 'matching') {
+      this.assertMatchingQuestionQuality(question.pairs);
+    }
     this.assertQuestionReadableForGrade(question.body, question.type, context.grade);
+  }
+
+  private assertMatchingQuestionQuality(pairs: Array<{ id: string; prompt: string; match: string }>): void {
+    const promptTexts = pairs.map((pair) => this.normalizedQuestionText(pair.prompt));
+    const matchTexts = pairs.map((pair) => this.normalizedQuestionText(pair.match));
+    if (new Set(promptTexts).size !== promptTexts.length || new Set(matchTexts).size !== matchTexts.length) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    if (pairs.some((pair) => {
+      const match = pair.match.trim();
+      return match.length < 4
+        || match.toLocaleLowerCase('id-ID') === pair.id.trim().toLocaleLowerCase('id-ID')
+        || /^[A-Za-z]?\d{1,3}$/i.test(match);
+    })) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
   }
 
   private normalizedQuestionText(text: string): string {
@@ -1363,9 +1401,9 @@ export class AiGenerateService {
       additionalProperties: false,
       required: ['id', 'prompt', 'match'],
       properties: {
-        id: { type: 'string' },
-        prompt: { type: 'string' },
-        match: { type: 'string' },
+        id: { type: 'string', description: 'Kode internal pasangan, misalnya p1, p2. Dipakai ulang oleh answer.promptId dan answer.matchId.' },
+        prompt: { type: 'string', description: 'Teks sisi kiri yang dilihat siswa, misalnya Router.' },
+        match: { type: 'string', description: 'Teks jawaban sisi kanan yang lengkap, misalnya Menghubungkan dua jaringan. Jangan isi dengan M1, M2, atau id.' },
       },
     };
     const questionShape = {
@@ -1408,8 +1446,8 @@ export class AiGenerateService {
                 additionalProperties: false,
                 required: ['promptId', 'matchId'],
                 properties: {
-                  promptId: { type: 'string' },
-                  matchId: { type: 'string' },
+                  promptId: { type: 'string', description: 'Harus sama dengan salah satu question.pairs[].id.' },
+                  matchId: { type: 'string', description: 'Harus sama dengan salah satu question.pairs[].id yang menjadi pasangan benar, bukan teks match dan bukan M1/M2.' },
                 },
               },
             },
