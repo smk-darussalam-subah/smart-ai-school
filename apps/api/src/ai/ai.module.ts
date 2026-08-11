@@ -33,7 +33,7 @@ function buildAiGateway(): AIGateway {
   const chatModel = process.env['OLLAMA_CHAT_MODEL'] ?? 'qwen2.5:7b';
   const embedModel = process.env['OLLAMA_EMBED_MODEL'] ?? 'nomic-embed-text';
   const embedDimensions = parseInt(process.env['OLLAMA_EMBED_DIMENSIONS'] ?? '768', 10);
-  const chatTimeoutMs = parseInt(process.env['OLLAMA_CHAT_TIMEOUT_MS'] ?? '90000', 10);
+  const chatTimeoutMs = parseInt(process.env['OLLAMA_CHAT_TIMEOUT_MS'] ?? '180000', 10);
 
   return new OllamaAdapter(baseUrl, chatModel, embedModel, embedDimensions, chatTimeoutMs);
 }
