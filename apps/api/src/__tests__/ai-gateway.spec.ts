@@ -432,12 +432,27 @@ describe('OpenAiAdapter.chat() provider errors', () => {
 
 describe('AiModule factory (AI_PROVIDER env)', () => {
   const originalEnv = process.env;
+  const compiledModules: TestingModule[] = [];
+
+  async function compileAiTestingModule(): Promise<TestingModule> {
+    const mod = await Test.createTestingModule({ imports: [AiModule] })
+      .overrideProvider(PrismaService)
+      .useValue(buildPrismaMock())
+      .overrideProvider('NOTIFICATION_QUEUE')
+      .useValue({ add: jest.fn(), close: jest.fn() })
+      .overrideProvider('NOTIFICATION_WORKER')
+      .useValue({ close: jest.fn() })
+      .compile();
+    compiledModules.push(mod);
+    return mod;
+  }
 
   beforeEach(() => {
     process.env = { ...originalEnv };
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await Promise.all(compiledModules.splice(0).map((mod) => mod.close()));
     process.env = originalEnv;
     jest.clearAllMocks();
   });
@@ -445,12 +460,7 @@ describe('AiModule factory (AI_PROVIDER env)', () => {
   it('AI_PROVIDER unset → OllamaAdapter (default)', async () => {
     delete process.env['AI_PROVIDER'];
 
-    const mod: TestingModule = await Test.createTestingModule({
-      imports: [AiModule],
-    })
-      .overrideProvider(PrismaService)
-      .useValue(buildPrismaMock())
-      .compile();
+    const mod = await compileAiTestingModule();
 
     const gateway = mod.get<AIGateway>('AI_GATEWAY');
     expect(gateway).toBeInstanceOf(OllamaAdapter);
@@ -459,12 +469,7 @@ describe('AiModule factory (AI_PROVIDER env)', () => {
   it('AI_PROVIDER=ollama → OllamaAdapter', async () => {
     process.env['AI_PROVIDER'] = 'ollama';
 
-    const mod: TestingModule = await Test.createTestingModule({
-      imports: [AiModule],
-    })
-      .overrideProvider(PrismaService)
-      .useValue(buildPrismaMock())
-      .compile();
+    const mod = await compileAiTestingModule();
 
     const gateway = mod.get<AIGateway>('AI_GATEWAY');
     expect(gateway).toBeInstanceOf(OllamaAdapter);
@@ -474,10 +479,7 @@ describe('AiModule factory (AI_PROVIDER env)', () => {
     delete process.env['AI_PROVIDER'];
     process.env['OPENAI_API_KEY'] = 'test-openai-key';
 
-    const mod = await Test.createTestingModule({ imports: [AiModule] })
-      .overrideProvider(PrismaService)
-      .useValue(buildPrismaMock())
-      .compile();
+    const mod = await compileAiTestingModule();
 
     expect(mod.get<AIGateway | null>('OPENAI_GATEWAY')).toBeInstanceOf(OpenAiAdapter);
   });
@@ -486,10 +488,7 @@ describe('AiModule factory (AI_PROVIDER env)', () => {
     process.env['AI_PROVIDER'] = 'openai';
     process.env['OPENAI_API_KEY'] = 'test-openai-key';
 
-    const mod = await Test.createTestingModule({ imports: [AiModule] })
-      .overrideProvider(PrismaService)
-      .useValue(buildPrismaMock())
-      .compile();
+    const mod = await compileAiTestingModule();
 
     expect(mod.get<AIGateway | null>('OPENAI_GATEWAY')).toBeInstanceOf(OpenAiAdapter);
   });
@@ -498,10 +497,7 @@ describe('AiModule factory (AI_PROVIDER env)', () => {
     process.env['AI_PROVIDER'] = 'openai';
     delete process.env['OPENAI_API_KEY'];
 
-    const mod = await Test.createTestingModule({ imports: [AiModule] })
-      .overrideProvider(PrismaService)
-      .useValue(buildPrismaMock())
-      .compile();
+    const mod = await compileAiTestingModule();
 
     expect(mod.get<AIGateway | null>('OPENAI_GATEWAY')).toBeNull();
   });
@@ -510,10 +506,7 @@ describe('AiModule factory (AI_PROVIDER env)', () => {
     process.env['AI_PROVIDER'] = 'openai';
     process.env['OPENAI_API_KEY'] = '   ';
 
-    const mod = await Test.createTestingModule({ imports: [AiModule] })
-      .overrideProvider(PrismaService)
-      .useValue(buildPrismaMock())
-      .compile();
+    const mod = await compileAiTestingModule();
 
     expect(mod.get<AIGateway | null>('OPENAI_GATEWAY')).toBeNull();
   });
@@ -522,10 +515,7 @@ describe('AiModule factory (AI_PROVIDER env)', () => {
     process.env['AI_PROVIDER'] = 'claude';
     delete process.env['ANTHROPIC_API_KEY'];
 
-    const mod = await Test.createTestingModule({ imports: [AiModule] })
-      .overrideProvider(PrismaService)
-      .useValue(buildPrismaMock())
-      .compile();
+    const mod = await compileAiTestingModule();
 
     // AI_GATEWAY tetap OllamaAdapter (embed + fallback chat)
     const gateway = mod.get<AIGateway>('AI_GATEWAY');

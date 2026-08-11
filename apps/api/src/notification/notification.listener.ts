@@ -210,6 +210,7 @@ export class NotificationListener {
         gradeId: payload.gradeId,
         error: err instanceof Error ? err.message : String(err),
       });
+      if (payload.deliveryMode === 'outbox') throw err;
     }
   }
 

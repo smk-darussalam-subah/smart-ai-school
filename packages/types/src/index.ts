@@ -66,6 +66,104 @@ export interface Teacher {
   createdAt: Date;
 }
 
+export type AssessmentType = 'diagnostik' | 'formatif' | 'sumatif';
+export type AssessmentSessionStatus = 'draft' | 'active' | 'completed';
+export type AssessmentGradeTarget = 'uh' | 'uts' | 'uas';
+export type AssessmentQuestionType = 'multiple_choice' | 'essay' | 'true_false' | 'matching';
+export type AssessmentDifficulty = 'easy' | 'medium' | 'hard';
+
+export interface AssessmentOption {
+  id: string;
+  text: string;
+}
+
+export interface AssessmentRubricCriterion {
+  id: string;
+  name: string;
+  description?: string;
+  weight: number;
+  maxScore: number;
+}
+
+export interface AssessmentMatchingPair {
+  id: string;
+  prompt: string;
+  match: string;
+}
+
+export interface AssessmentQuestionBase {
+  id: string;
+  type: AssessmentQuestionType;
+  body: string;
+  subject: string;
+  difficulty: AssessmentDifficulty;
+  tags: string[];
+}
+
+export interface AssessmentMultipleChoiceQuestion extends AssessmentQuestionBase {
+  type: 'multiple_choice';
+  options: AssessmentOption[];
+  answer: string;
+}
+
+export interface AssessmentTrueFalseQuestion extends AssessmentQuestionBase {
+  type: 'true_false';
+  answer: boolean;
+}
+
+export interface AssessmentMatchingQuestion extends AssessmentQuestionBase {
+  type: 'matching';
+  pairs: AssessmentMatchingPair[];
+  answer: Record<string, string>;
+}
+
+export interface AssessmentEssayQuestion extends AssessmentQuestionBase {
+  type: 'essay';
+  guideAnswer?: string;
+  rubric: AssessmentRubricCriterion[];
+}
+
+export type AssessmentQuestion =
+  | AssessmentMultipleChoiceQuestion
+  | AssessmentTrueFalseQuestion
+  | AssessmentMatchingQuestion
+  | AssessmentEssayQuestion;
+
+export type AssessmentStudentQuestion =
+  | Omit<AssessmentMultipleChoiceQuestion, 'answer'>
+  | Omit<AssessmentTrueFalseQuestion, 'answer'>
+  | Omit<AssessmentMatchingQuestion, 'answer' | 'pairs'> & {
+      prompts: Array<Pick<AssessmentMatchingPair, 'id' | 'prompt'>>;
+      choices: AssessmentOption[];
+    }
+  | Omit<AssessmentEssayQuestion, 'guideAnswer' | 'rubric'> & {
+      rubricCriteria: Array<Pick<AssessmentRubricCriterion, 'id' | 'name' | 'maxScore'>>;
+    };
+
+export interface AssessmentQuestionSelection {
+  questionId: string;
+  points: number;
+  order: number;
+}
+
+export type AssessmentAnswerValue =
+  | { type: 'multiple_choice'; optionId: string }
+  | { type: 'true_false'; value: boolean }
+  | { type: 'matching'; pairs: Record<string, string> }
+  | { type: 'essay'; text: string };
+
+export type AssessmentAnswerMap = Record<string, AssessmentAnswerValue>;
+
+export interface AssessmentItemScore {
+  questionId: string;
+  type: AssessmentQuestionType;
+  status: 'auto' | 'manual_pending' | 'manual_scored';
+  points: number;
+  maxPoints: number;
+  scorePct: number | null;
+  rubricScores?: Record<string, number>;
+}
+
 // ── PPDB (Penerimaan Peserta Didik Baru) ──────────────────────────────────────
 
 export type LeadStatus =

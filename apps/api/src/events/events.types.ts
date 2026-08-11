@@ -52,6 +52,7 @@ export interface GradeSubmittedPayload {
   type:         string;
   semester:     number;
   academicYear: string;
+  deliveryMode?: 'direct' | 'outbox';
 }
 
 /** Hanya di-emit untuk status 'alpha' | 'sakit' */
@@ -129,4 +130,5 @@ export interface AssessmentCompletedPayload {
   gradedCount:  number;
   /** Count of responses without auto-gradeable questions (essay-only) */
   skippedCount: number;
+  deliveryMode?: 'direct' | 'outbox';
 }
