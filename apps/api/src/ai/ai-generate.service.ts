@@ -406,7 +406,7 @@ export class AiGenerateService {
           tpRefs: question.tpRefs,
           cognitiveLevel: question.cognitiveLevel,
         };
-        if (this.questionFingerprint(current) !== this.questionFingerprint(expected)) {
+        if (this.persistedQuestionFingerprint(current) !== this.persistedQuestionFingerprint(expected)) {
           throw new ConflictException('Item draft sudah diterima dengan payload berbeda');
         }
         acceptedKeys.add(item.itemKey);
@@ -1314,6 +1314,29 @@ export class AiGenerateService {
 
   private questionFingerprint(value: unknown): string {
     return createHash('sha256').update(this.stableJson(value)).digest('hex');
+  }
+
+  private persistedQuestionFingerprint(value: unknown): string {
+    return createHash('sha256').update(this.stableJson(this.normalizePersistedQuestionValue(value))).digest('hex');
+  }
+
+  private normalizePersistedQuestionValue(value: unknown): unknown {
+    if (
+      value === undefined ||
+      value === Prisma.JsonNull ||
+      value === Prisma.DbNull ||
+      value === Prisma.AnyNull
+    ) {
+      return null;
+    }
+    if (Array.isArray(value)) return value.map((item) => this.normalizePersistedQuestionValue(item));
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .map(([key, nested]) => [key, this.normalizePersistedQuestionValue(nested)]),
+      );
+    }
+    return value;
   }
 
   private async withInProcessLock<T>(lockName: string, callback: () => Promise<T>): Promise<T> {
