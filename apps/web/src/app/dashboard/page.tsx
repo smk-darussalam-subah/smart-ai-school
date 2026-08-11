@@ -279,7 +279,7 @@ export default async function DashboardPage() {
   if (isGuruOnly) {
     const token = session?.accessToken ?? '';
     const [assignments, rpp, today] = await Promise.all([
-      apiFetch<{ data: { hoursPerWeek: number; class: { id: string } }[] }>('/teaching-assignments?limit=200', token),
+      apiFetch<{ data: { hoursPerWeek: number; class: { id: string } }[] }>('/teaching-assignments?limit=100', token),
       apiFetch<{ total: number }>('/rpp?status=submitted&limit=1', token),
       apiFetch<{ record: unknown | null }>('/teacher-attendance/today', token),
     ]);
