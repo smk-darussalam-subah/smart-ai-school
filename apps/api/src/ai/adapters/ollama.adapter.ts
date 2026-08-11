@@ -25,7 +25,7 @@ export class OllamaAdapter implements AIGateway {
     chatModel: string,
     embedModel: string,
     embedDimensions: number,
-    chatTimeoutMs = 90_000,
+    chatTimeoutMs = 180_000,
   ) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.chatModel = chatModel;
