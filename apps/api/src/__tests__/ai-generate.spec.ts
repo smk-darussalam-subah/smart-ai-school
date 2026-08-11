@@ -430,6 +430,29 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(asArray(asRecord(asRecord(questionSchema.properties).type).enum)).toEqual(['multiple_choice']);
   });
 
+  it('normalizes AI draft metadata back to teacher-selected TP, difficulty, and cognitive level', async () => {
+    shouldAttemptOpenAiProbe.mockResolvedValue(false);
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    queryRaw.mockResolvedValueOnce([{ id: 'gen-1', model: 'ollama' }]);
+    localChat.mockResolvedValue(JSON.stringify({
+      items: [{
+        ...AI_QUESTION_ITEM,
+        question: { ...AI_QUESTION_ITEM.question, difficulty: 'hard' },
+        tpRefs: ['Judul modul buatan provider'],
+        cognitiveLevel: 'C6',
+      }],
+    }));
+
+    const result = await service.generateQuestionDrafts({
+      ...questionDraftDto,
+      idempotencyKey: 'draft-key-normalized-metadata',
+    }, GURU);
+
+    expect(result.items[0]?.question.difficulty).toBe('easy');
+    expect(result.items[0]?.tpRefs).toEqual(['TP 1']);
+    expect(result.items[0]?.cognitiveLevel).toBe('C2');
+  });
+
   it('rejects productive question draft when the managed major description is empty', async () => {
     lmsModuleFindFirst.mockResolvedValue({ ...ownedModule, class: { ...ownedModule.class, majorCode: 'DKV' } });
     majorFindUnique.mockResolvedValue({ name: 'Desain Komunikasi Visual', description: null });
