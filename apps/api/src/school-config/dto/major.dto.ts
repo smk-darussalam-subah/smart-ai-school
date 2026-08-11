@@ -1,9 +1,14 @@
 import { z } from 'zod';
 
+const MajorDescriptionSchema = z.string()
+  .trim()
+  .max(800)
+  .transform((value) => value.length > 0 ? value : null);
+
 export const CreateMajorSchema = z.object({
-  code: z.string().min(2).max(10),
-  name: z.string().min(3).max(100),
-  description: z.string().optional().nullable(),
+  code: z.string().trim().min(2).max(10),
+  name: z.string().trim().min(3).max(100),
+  description: MajorDescriptionSchema.optional().nullable(),
   isActive: z.boolean().default(true),
 }).strict();
 

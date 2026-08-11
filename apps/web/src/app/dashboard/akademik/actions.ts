@@ -1,5 +1,6 @@
 'use server';
 
+import type { AssessmentQuestion } from '@smk/types';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
@@ -322,20 +323,42 @@ export interface EssayRubricCriteria {
   description: string; // "Siswa menunjukkan pemahaman..."
 }
 
-export interface QuestionData {
+export type QuestionType = 'multiple_choice' | 'essay' | 'true_false' | 'matching';
+export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
+export type CognitiveLevel = 'C1' | 'C2' | 'C3' | 'C4' | 'C5' | 'C6';
+export interface QuestionOption { id: string; text: string }
+export interface MatchingPair { id: string; prompt: string; match: string }
+
+interface QuestionBaseData {
   subject: string;
-  type: 'multiple_choice' | 'essay' | 'true_false';
+  type: QuestionType;
   body: string;
-  options?: string[];
-  answer?: string;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: QuestionDifficulty;
   tags?: string[];
-  rubric?: EssayRubricCriteria[]; // U2 Wave 2
 }
 
+export type QuestionData =
+  | (QuestionBaseData & { type: 'multiple_choice'; options: QuestionOption[]; answer: string })
+  | (QuestionBaseData & { type: 'true_false'; answer: boolean })
+  | (QuestionBaseData & { type: 'matching'; pairs: MatchingPair[]; answer: Record<string, string> })
+  | (QuestionBaseData & { type: 'essay'; guideAnswer?: string; rubric: EssayRubricCriteria[] });
+
 /** Fetch questions for a subject (or all if no subject). */
-export async function fetchQuestions(subject?: string) {
-  const path = subject ? `/questions?subject=${encodeURIComponent(subject)}&limit=100` : '/questions?limit=100';
+export async function fetchQuestions(subject?: string, params?: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  type?: QuestionType;
+  difficulty?: QuestionDifficulty;
+}) {
+  const searchParams = new URLSearchParams();
+  if (subject) searchParams.set('subject', subject);
+  searchParams.set('limit', String(params?.limit ?? 50));
+  searchParams.set('page', String(params?.page ?? 1));
+  if (params?.search) searchParams.set('search', params.search);
+  if (params?.type) searchParams.set('type', params.type);
+  if (params?.difficulty) searchParams.set('difficulty', params.difficulty);
+  const path = `/questions?${searchParams.toString()}`;
   const r = await apiCall(path, 'GET');
   return r;
 }
@@ -348,10 +371,36 @@ export async function createQuestion(data: QuestionData) {
 }
 
 /** Update an existing question. */
-export async function updateQuestion(id: string, data: Partial<QuestionData>) {
+export async function updateQuestion(id: string, data: QuestionData) {
   const r = await apiCall(`/questions/${id}`, 'PATCH', data);
   revalidatePath('/dashboard/akademik');
   return r;
+}
+
+export interface QuestionSelectionData {
+  questionId: string;
+  points: number;
+  order: number;
+}
+
+export interface CreateAssessmentSessionData {
+  moduleId: string;
+  title: string;
+  type: 'diagnostik' | 'formatif' | 'sumatif';
+  questionSelections: QuestionSelectionData[];
+  gradeTarget?: 'uh' | 'uts' | 'uas' | null;
+  classId?: string | null;
+  academicYear: string;
+  semester: number;
+  durationMinutes?: number;
+  randomizeOrder?: boolean;
+}
+
+export async function createAssessmentSession(data: CreateAssessmentSessionData): Promise<{ success: boolean; data?: AssessmentSessionData; error?: string }> {
+  const r = await apiCall('/assessment/sessions', 'POST', data);
+  if (!r.success) return { success: false, error: r.error };
+  revalidatePath('/dashboard/akademik');
+  return { success: true, data: r.data as AssessmentSessionData };
 }
 
 /** Delete a question. */
@@ -375,6 +424,71 @@ export async function aiGenerateRppStep(data: { rppId: string; section: string }
   return { success: true, data: r.data as { type: string; output: unknown } };
 }
 
+export interface AiQuestionDraftRequest {
+  rppId?: string;
+  moduleId?: string;
+  purpose: 'diagnostik' | 'formatif' | 'sumatif-uts' | 'sumatif-uas';
+  questionCount: number;
+  typeDistribution: Record<QuestionType, number>;
+  difficultyDistribution: Record<QuestionDifficulty, number>;
+  cognitiveDistribution: Record<CognitiveLevel, number>;
+  tpRefs: string[];
+  contextMode: 'umum' | 'auto_vokasi' | 'produktif';
+  character: 'konseptual' | 'studi_kasus' | 'praktik' | 'literasi' | 'numerasi';
+  teacherInstruction?: string;
+  idempotencyKey?: string;
+}
+
+export interface AiQuestionDraftItem {
+  itemKey: string;
+  question: QuestionData;
+  tpRefs: string[];
+  cognitiveLevel: CognitiveLevel;
+  rationale: string;
+  warnings: string[];
+}
+
+export async function generateQuestionDrafts(data: AiQuestionDraftRequest): Promise<{
+  success: boolean;
+  data?: { generationId: string; model: string; items: AiQuestionDraftItem[] };
+  error?: string;
+  errorCode?: string;
+}> {
+  const r = await apiCall('/ai/question-drafts', 'POST', data);
+  if (!r.success) return { success: false, error: r.error, errorCode: r.errorCode };
+  return { success: true, data: r.data as { generationId: string; model: string; items: AiQuestionDraftItem[] } };
+}
+
+export async function acceptQuestionDrafts(generationId: string, idempotencyKey: string, items: Array<{
+  itemKey: string;
+  question: QuestionData;
+  tpRefs: string[];
+  cognitiveLevel: CognitiveLevel;
+}>) {
+  const r = await apiCall(`/ai/question-drafts/${generationId}/accept`, 'POST', { idempotencyKey, items });
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+export async function rejectQuestionDrafts(generationId: string, idempotencyKey: string) {
+  const r = await apiCall(`/ai/question-drafts/${generationId}/reject`, 'POST', { idempotencyKey });
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+export async function regenerateQuestionDraftItem(generationId: string, itemKey: string, teacherInstruction?: string): Promise<{
+  success: boolean;
+  data?: { generationId: string; item: AiQuestionDraftItem };
+  error?: string;
+  errorCode?: string;
+}> {
+  const r = await apiCall(`/ai/question-drafts/${generationId}/items/${encodeURIComponent(itemKey)}/regenerate`, 'POST', {
+    ...(teacherInstruction?.trim() ? { teacherInstruction: teacherInstruction.trim() } : {}),
+  });
+  if (!r.success) return { success: false, error: r.error, errorCode: r.errorCode };
+  return { success: true, data: r.data as { generationId: string; item: AiQuestionDraftItem } };
+}
+
 // ── Assessment Sessions (U2 — comprehensive assessment) ────────────────────
 
 /** U2 Wave 1: SISWA memulai pengerjaan — mencatat startedAt, return shuffled questions. */
@@ -384,8 +498,13 @@ export async function startAssessmentResponse(sessionId: string) {
 }
 
 /** U2 Wave 1: SISWA submit jawaban dengan timer enforcement. */
-export async function submitAssessmentResponse(sessionId: string, answers: unknown, startedAt?: string) {
-  const r = await apiCall(`/assessment/sessions/${sessionId}/submit`, 'POST', { answers, startedAt });
+export async function autosaveAssessmentResponse(sessionId: string, answers: unknown) {
+  const r = await apiCall(`/assessment/sessions/${sessionId}/autosave`, 'POST', { answers });
+  return r;
+}
+
+export async function submitAssessmentResponse(sessionId: string, answers: unknown) {
+  const r = await apiCall(`/assessment/sessions/${sessionId}/submit`, 'POST', { answers });
   revalidatePath('/dashboard/akademik');
   return r;
 }
@@ -403,6 +522,44 @@ export async function fetchSessionAnalysis(sessionId: string) {
   return r;
 }
 
+export interface AssessmentEssayCorrection {
+  responseId: string;
+  questionId: string;
+  studentName: string;
+  nis: string;
+  body: string;
+  rubric: EssayRubricCriteria[];
+  answer: string;
+  status: 'manual_pending' | 'manual_scored' | 'auto';
+  scorePct: number | null;
+}
+
+export interface AssessmentResultsData {
+  session: { id: string; title: string; type: string; status: string };
+  classStudentCount: number | null;
+  submitted: number;
+  finalCount: number;
+  pendingManualCount: number;
+  avgScore: number | null;
+  responses: Array<{
+    id: string;
+    name: string;
+    nis: string;
+    score: number | null;
+    submittedAt: string | null;
+    startedAt: string | null;
+    timeSpentSec: number | null;
+    itemScores: unknown;
+  }>;
+  essayCorrections: AssessmentEssayCorrection[];
+}
+
+export async function fetchAssessmentResults(sessionId: string): Promise<{ success: boolean; data?: AssessmentResultsData; error?: string }> {
+  const r = await apiCall(`/assessment/sessions/${sessionId}/results`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as AssessmentResultsData };
+}
+
 /** P2 (S-01): Fetch a single assessment session with its questions (for preview mode). */
 export async function fetchAssessmentSession(sessionId: string): Promise<{ success: boolean; data?: AssessmentSessionData; error?: string }> {
   const r = await apiCall(`/assessment/sessions/${sessionId}`, 'GET');
@@ -410,18 +567,46 @@ export async function fetchAssessmentSession(sessionId: string): Promise<{ succe
   return { success: true, data: r.data as AssessmentSessionData };
 }
 
+export async function fetchAssessmentSessions(params?: {
+  page?: number;
+  limit?: number;
+  status?: 'draft' | 'active' | 'completed';
+  type?: 'diagnostik' | 'formatif' | 'sumatif';
+  subject?: string;
+  classId?: string;
+  academicYear?: string;
+  semester?: number;
+}): Promise<{ success: boolean; data?: { data: AssessmentSessionData[]; total: number; page: number; limit: number }; error?: string }> {
+  const searchParams = new URLSearchParams();
+  searchParams.set('page', String(params?.page ?? 1));
+  searchParams.set('limit', String(params?.limit ?? 100));
+  if (params?.status) searchParams.set('status', params.status);
+  if (params?.type) searchParams.set('type', params.type);
+  if (params?.subject) searchParams.set('subject', params.subject);
+  if (params?.classId) searchParams.set('classId', params.classId);
+  if (params?.academicYear) searchParams.set('academicYear', params.academicYear);
+  if (params?.semester) searchParams.set('semester', String(params.semester));
+  const r = await apiCall(`/assessment/sessions?${searchParams.toString()}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { data: AssessmentSessionData[]; total: number; page: number; limit: number } };
+}
+
 export interface AssessmentSessionData {
   id: string;
+  moduleId?: string;
+  classId?: string | null;
   title: string;
   type: string;
   status: string;
-  questions: unknown[];
+  questions: AssessmentQuestion[];
+  gradeTarget?: string | null;
   durationMinutes: number | null;
   randomizeOrder: boolean;
   startedAt: string | null;
   completedAt: string | null;
   module?: { id: string; title: string; subject: string };
   class?: { id: string; name: string };
+  _count?: { responses: number };
 }
 
 /** P2 (S-03): GURU starts/activates a session (draft → active). */
@@ -446,8 +631,8 @@ export async function exportQuestionsCsv(subject?: string) {
 }
 
 /** U2 Wave 4: Import questions from CSV rows. */
-export async function importQuestionsCsv(subject: string, rows: Array<{ type: string; body: string; options?: string; answer?: string; difficulty: string; tags?: string }>) {
-  const r = await apiCall('/questions/import', 'POST', { subject, rows });
+export async function importQuestionsCsv(subject: string, batchKey: string, rows: Array<{ rowKey: string; question: QuestionData }>) {
+  const r = await apiCall('/questions/import', 'POST', { subject, batchKey, rows });
   revalidatePath('/dashboard/akademik');
   return r;
 }
