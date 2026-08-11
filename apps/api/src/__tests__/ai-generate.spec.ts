@@ -393,9 +393,12 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     const matchingShape = shapes.find((shape) =>
       asArray(asRecord(asRecord(shape.properties).type).enum).includes('matching'));
     expect(matchingShape).toBeDefined();
+    const matchingPair = asRecord(asRecord(asRecord(matchingShape?.properties).pairs).items);
+    expect(asRecord(asRecord(matchingPair.properties).match).description).toContain('Jangan isi dengan M1');
     const matchingAnswer = asRecord(asRecord(asRecord(matchingShape?.properties).answer).items);
     expect(asArray(matchingAnswer.required).sort()).toEqual(['matchId', 'promptId']);
     expect(matchingAnswer.additionalProperties).toBe(false);
+    expect(asRecord(asRecord(matchingAnswer.properties).matchId).description).toContain('question.pairs[].id');
   });
 
   it('rejects productive question draft when the managed major description is empty', async () => {
@@ -590,12 +593,12 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
           type: 'matching',
           body: 'Pasangkan tag HTML dengan fungsinya.',
           pairs: [
-            { id: 'p1', prompt: '<a>', match: 'Tautan' },
-            { id: 'p2', prompt: '<img>', match: 'Gambar' },
+            { id: 'p1', prompt: '<a>', match: 'Membuat tautan halaman' },
+            { id: 'p2', prompt: '<img>', match: 'Menampilkan gambar pada halaman' },
           ],
           answer: [
-            { promptId: 'p1', matchId: 'p1' },
-            { promptId: 'p2', matchId: 'p2' },
+            { promptId: 'p1', matchId: 'Membuat tautan halaman' },
+            { promptId: 'p2', matchId: 'Menampilkan gambar pada halaman' },
           ],
           difficulty: 'medium',
           tags: ['html'],
@@ -619,6 +622,41 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       answer: { p1: 'p1', p2: 'p2' },
     }));
     expect(queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects matching draft items whose match text is only an internal code', async () => {
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    cloudChat.mockResolvedValue(JSON.stringify({
+      items: [{
+        itemKey: 'match-code-1',
+        question: {
+          subject: 'Pemrograman Web',
+          type: 'matching',
+          body: 'Pasangkan perangkat jaringan dengan fungsinya.',
+          pairs: [
+            { id: 'p1', prompt: 'Router', match: 'M1' },
+            { id: 'p2', prompt: 'Switch', match: 'M2' },
+          ],
+          answer: [
+            { promptId: 'p1', matchId: 'M1' },
+            { promptId: 'p2', matchId: 'M2' },
+          ],
+          difficulty: 'medium',
+          tags: ['jaringan'],
+        },
+        tpRefs: ['TP 1'],
+        cognitiveLevel: 'C2',
+        rationale: 'Mengukur pemahaman perangkat jaringan.',
+        warnings: [],
+      }],
+    }));
+
+    await expect(service.generateQuestionDrafts({
+      ...questionDraftDto,
+      idempotencyKey: 'draft-key-match-code',
+      typeDistribution: { multiple_choice: 0, true_false: 0, matching: 1, essay: 0 },
+      difficultyDistribution: { easy: 0, medium: 1, hard: 0 },
+    }, GURU)).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
   });
 
   it('uses one bounded repair attempt when provider returns invalid question JSON', async () => {
