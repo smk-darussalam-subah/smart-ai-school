@@ -731,6 +731,79 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     }));
   });
 
+  it('accepts newly created drafts when JSON nulls round-trip from the database as null', async () => {
+    const generationId = '33333333-3333-4333-8333-333333333333';
+    const trueFalseItem = {
+      ...AI_QUESTION_ITEM,
+      question: {
+        subject: 'Pemrograman Web',
+        type: 'true_false' as const,
+        body: 'Tag anchor digunakan untuk membuat tautan.',
+        answer: true,
+        difficulty: 'easy' as const,
+        tags: ['html'],
+      },
+    };
+    aiGenerationFindFirst.mockResolvedValue({
+      id: generationId,
+      teacherId: 'teacher-1',
+      output: JSON.stringify({ items: [trueFalseItem] }),
+      status: 'drafted',
+      requestSpec: {
+        source: { type: 'module', id: MODULE_ID },
+        purpose: 'formatif',
+        contextMode: 'auto_vokasi',
+        character: 'konseptual',
+      },
+      contextSnapshot: {
+        sourceType: 'module',
+        sourceId: MODULE_ID,
+        subject: 'Pemrograman Web',
+        title: 'HTML Dasar',
+        academicYear: '2026/2027',
+        semester: 1,
+        classId: 'class-1',
+        className: 'X TKJ 1',
+        grade: 10,
+        majorName: 'Teknik Komputer dan Jaringan',
+        tpOptions: [{ ref: 'TP 1', text: 'Mengidentifikasi tag HTML dasar.' }],
+      },
+      sourceType: 'module',
+      sourceId: MODULE_ID,
+    });
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    questionUpsert.mockResolvedValueOnce({
+      id: 'q-ai-1',
+      subject: trueFalseItem.question.subject,
+      type: trueFalseItem.question.type,
+      body: trueFalseItem.question.body,
+      options: null,
+      answer: 'true',
+      difficulty: trueFalseItem.question.difficulty,
+      tags: trueFalseItem.question.tags,
+      rubric: null,
+      aiItemKey: trueFalseItem.itemKey,
+      tpRefs: ['TP 1'],
+      cognitiveLevel: 'C2',
+    });
+
+    const result = await service.acceptQuestionDrafts(generationId, {
+      idempotencyKey: 'accept-key-json-null',
+      items: [{
+        itemKey: trueFalseItem.itemKey,
+        question: trueFalseItem.question,
+        tpRefs: ['TP 1'],
+        cognitiveLevel: 'C2',
+      }],
+    }, GURU);
+
+    expect(result.acceptedCount).toBe(1);
+    expect(aiGenerationUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: generationId },
+      data: { status: 'accepted' },
+    }));
+  });
+
   it('rejects accept retry when the same idempotency key has a different payload', async () => {
     const generationId = '33333333-3333-4333-8333-333333333333';
     aiGenerationFindFirst.mockResolvedValue({
