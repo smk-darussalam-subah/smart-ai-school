@@ -425,6 +425,9 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(asArray(schema.required)).toEqual(['items']);
     const itemSchema = asRecord(asRecord(asRecord(schema.properties).items).items);
     expect(itemSchema.required).toEqual(['itemKey', 'question', 'tpRefs', 'cognitiveLevel', 'rationale', 'warnings']);
+    const questionSchema = asRecord(asRecord(itemSchema.properties).question);
+    expect(questionSchema.anyOf).toBeUndefined();
+    expect(asArray(asRecord(asRecord(questionSchema.properties).type).enum)).toEqual(['multiple_choice']);
   });
 
   it('rejects productive question draft when the managed major description is empty', async () => {
