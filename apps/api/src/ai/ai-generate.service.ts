@@ -871,8 +871,9 @@ export class AiGenerateService {
     requestSpec: Prisma.JsonValue | null,
     context: ResolvedQuestionSourceContext,
   ): Pick<GenerateQuestionDraftDto, 'purpose' | 'contextMode' | 'character' | 'teacherInstruction'> {
-    const spec = requestSpec && typeof requestSpec === 'object' && !Array.isArray(requestSpec)
-      ? requestSpec as Record<string, unknown>
+    const originalSpec = this.questionDraftOriginalRequestSpec(requestSpec);
+    const spec = originalSpec && typeof originalSpec === 'object' && !Array.isArray(originalSpec)
+      ? originalSpec as Record<string, unknown>
       : {};
     const purpose = spec['purpose'];
     const contextMode = spec['contextMode'];

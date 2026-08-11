@@ -774,9 +774,16 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       output: AI_QUESTION_OUTPUT,
       status: 'drafted',
       requestSpec: {
-        purpose: 'formatif',
-        contextMode: 'auto_vokasi',
-        character: 'konseptual',
+        request: {
+          purpose: 'formatif',
+          contextMode: 'auto_vokasi',
+          character: 'konseptual',
+        },
+        lease: {
+          leaseId: 'lease-1',
+          leaseSequence: 1,
+          leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
       },
       contextSnapshot: {
         sourceType: 'module',
