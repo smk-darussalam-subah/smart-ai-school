@@ -215,6 +215,30 @@ describe('OllamaAdapter.chat()', () => {
     }
   });
 
+  it('uses a 180-second default timeout for contextual Ollama generation', async () => {
+    jest.useFakeTimers();
+    try {
+      global.fetch = jest.fn().mockImplementation((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        const signal = init.signal as AbortSignal;
+        signal.addEventListener('abort', () => reject(new Error('aborted by default timeout')));
+      }));
+
+      const result = makeAdapter().chat('Kembalikan JSON.', undefined, { responseFormat: 'json_object' })
+        .catch((error: Error) => error);
+
+      jest.advanceTimersByTime(179_999);
+      await Promise.resolve();
+      expect((global.fetch as jest.Mock).mock.calls[0][1].signal.aborted).toBe(false);
+
+      jest.advanceTimersByTime(1);
+      const error = await result;
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain('aborted by default timeout');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('uses JSON Schema mode for structured Ollama chat when schema is provided', async () => {
     const receivedBodies: unknown[] = [];
     const schema = {
