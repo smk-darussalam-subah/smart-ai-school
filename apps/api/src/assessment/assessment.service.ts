@@ -409,12 +409,22 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
     const existing = await this.prisma.assessmentSession.findFirst({
       where: { id, teacherId },
-      select: { id: true, status: true },
+      select: {
+        id: true,
+        status: true,
+        classId: true,
+        academicYear: true,
+        semester: true,
+        module: { select: { subject: true, classId: true } },
+      },
     });
     if (!existing) throw new NotFoundException('Sesi asesmen tidak ditemukan');
     if (existing.status !== 'draft') {
       throw new ConflictException(`Hanya sesi 'draft' yang bisa dimulai (sekarang '${existing.status}')`);
     }
+    const classId = existing.classId ?? existing.module.classId;
+    if (!classId) throw new BadRequestException('Sesi asesmen wajib memiliki kelas');
+    await this.assertTeachingScope(teacherId, existing.module.subject, classId, existing.academicYear, existing.semester);
     const updated = await this.prisma.assessmentSession.updateMany({
       where: { id, status: 'draft' },
       data: { status: 'active', startedAt: new Date() },
@@ -1010,6 +1020,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     if (!this.isReviewer(user)) {
       const teacherId = await this.resolveTeacherId(user.keycloakId);
       if (session.teacherId !== teacherId) throw new ForbiddenException('Bukan sesi Anda');
+      const classId = session.classId;
+      if (!classId) throw new BadRequestException('Sesi asesmen wajib memiliki kelas');
+      await this.assertTeachingScope(teacherId, session.module.subject, classId, session.academicYear, session.semester);
     }
 
     // Fetch the response
