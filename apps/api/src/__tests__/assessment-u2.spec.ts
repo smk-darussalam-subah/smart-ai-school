@@ -4,7 +4,7 @@ jest.mock('@smk/logger', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
@@ -329,6 +329,28 @@ describe('AssessmentService runtime attempt contract', () => {
 });
 
 describe('AssessmentService grading and analysis', () => {
+  it('rejects starting a draft session when the owner no longer has the teaching assignment', async () => {
+    const updateMany = jest.fn();
+    const service = await buildService({
+      teacher: { findFirst: jest.fn().mockResolvedValue({ id: 'teacher-1' }) },
+      teachingAssignment: { findFirst: jest.fn().mockResolvedValue(null) },
+      assessmentSession: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'session-1',
+          status: 'draft',
+          classId: 'class-1',
+          academicYear: '2026/2027',
+          semester: 1,
+          module: { subject: 'Pemrograman Web', classId: 'class-1' },
+        }),
+        updateMany,
+      },
+    });
+
+    await expect(service.startSession('session-1', GURU)).rejects.toThrow(ForbiddenException);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it('keeps mixed auto/manual submissions pending until essay is graded', async () => {
     const updateMany = jest.fn().mockResolvedValue({ count: 1 });
     const service = await buildService(studentPrisma({
@@ -381,6 +403,7 @@ describe('AssessmentService grading and analysis', () => {
       Promise.resolve({ id: 'response-1', sessionId: 'session-1', score: args.data.score, itemScores: args.data.itemScores, submittedAt: new Date() }));
     const service = await buildService({
       teacher: { findFirst: jest.fn().mockResolvedValue({ id: 'teacher-1' }) },
+      teachingAssignment: { findFirst: jest.fn().mockResolvedValue({ id: 'assignment-1' }) },
       assessmentSession: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'session-1',
@@ -417,6 +440,37 @@ describe('AssessmentService grading and analysis', () => {
     expect(responseUpdate.mock.calls[0][0].data.itemScores).toEqual(expect.arrayContaining([
       expect.objectContaining({ questionId: ESSAY_ID, status: 'manual_scored', scorePct: 76 }),
     ]));
+  });
+
+  it('rejects essay grading when the owner no longer has the teaching assignment', async () => {
+    const responseFindFirst = jest.fn();
+    const service = await buildService({
+      teacher: { findFirst: jest.fn().mockResolvedValue({ id: 'teacher-1' }) },
+      teachingAssignment: { findFirst: jest.fn().mockResolvedValue(null) },
+      assessmentSession: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'session-1',
+          status: 'active',
+          teacherId: 'teacher-1',
+          questions: [essayQuestion],
+          title: 'Esai CSS',
+          type: 'formatif',
+          moduleId: 'module-1',
+          classId: 'class-1',
+          academicYear: '2026/2027',
+          semester: 1,
+          gradeTarget: 'uh',
+          module: { subject: 'Pemrograman Web', teacherId: 'teacher-1' },
+        }),
+      },
+      assessmentResponse: { findFirst: responseFindFirst },
+    });
+
+    await expect(service.gradeEssayResponse('session-1', 'response-1', {
+      questionId: ESSAY_ID,
+      criteriaScores: { c1: 80, c2: 70 },
+    }, GURU)).rejects.toThrow(ForbiddenException);
+    expect(responseFindFirst).not.toHaveBeenCalled();
   });
 
   it('creates Grade idempotently by source assessment session on completion', async () => {
