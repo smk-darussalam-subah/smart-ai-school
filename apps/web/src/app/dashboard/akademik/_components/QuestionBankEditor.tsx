@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { AlertTriangle, Check, Copy, Database, Download, Loader2, Pencil, Plus, RefreshCw, Trash2, Upload, X } from 'lucide-react';
 import clsx from 'clsx';
 import { toast } from 'sonner';
@@ -280,9 +280,10 @@ export default function QuestionBankEditor({
   const [questionSearch, setQuestionSearch] = useState('');
   const [questionTypeFilter, setQuestionTypeFilter] = useState<'all' | QuestionType>('all');
   const [questionDifficultyFilter, setQuestionDifficultyFilter] = useState<'all' | QuestionDifficulty>('all');
-  const [loading, startLoad] = useTransition();
+  const [loading, setLoading] = useState(false);
   const [saving, startSave] = useTransition();
   const [csvLoading, startCsv] = useTransition();
+  const loadRequestRef = useRef(0);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -348,7 +349,10 @@ export default function QuestionBankEditor({
   const pageCount = Math.max(1, Math.ceil(questionTotal / QUESTION_PAGE_SIZE));
 
   const load = () => {
-    startLoad(async () => {
+    const requestId = loadRequestRef.current + 1;
+    loadRequestRef.current = requestId;
+    setLoading(true);
+    void (async () => {
       const res = await fetchQuestions(subject, {
         limit: QUESTION_PAGE_SIZE,
         page: questionPage,
@@ -356,6 +360,7 @@ export default function QuestionBankEditor({
         ...(questionTypeFilter !== 'all' ? { type: questionTypeFilter } : {}),
         ...(questionDifficultyFilter !== 'all' ? { difficulty: questionDifficultyFilter } : {}),
       });
+      if (requestId !== loadRequestRef.current) return;
       if (!res.success || !res.data) {
         toast.error(res.error ?? 'Gagal memuat bank soal.');
         return;
@@ -364,6 +369,8 @@ export default function QuestionBankEditor({
       const total = Array.isArray(res.data) ? data.length : (res.data as { total?: number }).total ?? data.length;
       setQuestions(data);
       setQuestionTotal(total);
+    })().finally(() => {
+      if (requestId === loadRequestRef.current) setLoading(false);
     });
   };
 
