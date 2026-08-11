@@ -18,17 +18,20 @@ export class OllamaAdapter implements AIGateway {
   private readonly chatModel: string;
   private readonly embedModel: string;
   private readonly embedDimensions: number;
+  private readonly chatTimeoutMs: number;
 
   constructor(
     baseUrl: string,
     chatModel: string,
     embedModel: string,
     embedDimensions: number,
+    chatTimeoutMs = 90_000,
   ) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.chatModel = chatModel;
     this.embedModel = embedModel;
     this.embedDimensions = embedDimensions;
+    this.chatTimeoutMs = Math.min(Math.max(Math.floor(chatTimeoutMs), 30_000), 180_000);
   }
 
   /**
@@ -101,7 +104,7 @@ export class OllamaAdapter implements AIGateway {
     messages.push({ role: 'user', content: prompt });
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30_000);
+    const timeout = setTimeout(() => controller.abort(), this.chatTimeoutMs);
 
     let response: Response;
     try {

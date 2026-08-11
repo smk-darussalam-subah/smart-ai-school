@@ -37,8 +37,8 @@ import { AIGateway } from '@smk/types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeAdapter(dims = 768): OllamaAdapter {
-  return new OllamaAdapter('http://ollama:11434', 'qwen2.5:7b', 'nomic-embed-text', dims);
+function makeAdapter(dims = 768, chatTimeoutMs?: number): OllamaAdapter {
+  return new OllamaAdapter('http://ollama:11434', 'qwen2.5:7b', 'nomic-embed-text', dims, chatTimeoutMs);
 }
 
 function mockFetchEmbed(embedding: number[]): void {
@@ -189,6 +189,30 @@ describe('OllamaAdapter.chat()', () => {
       format: 'json',
       options: expect.objectContaining({ num_predict: 512, temperature: 0.2 }),
     }));
+  });
+
+  it('uses the configured chat timeout for long-running Ollama requests', async () => {
+    jest.useFakeTimers();
+    try {
+      global.fetch = jest.fn().mockImplementation((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        const signal = init.signal as AbortSignal;
+        signal.addEventListener('abort', () => reject(new Error('aborted by configured timeout')));
+      }));
+
+      const result = makeAdapter(768, 45_000).chat('Kembalikan JSON.', undefined, { responseFormat: 'json_object' })
+        .catch((error: Error) => error);
+
+      jest.advanceTimersByTime(44_999);
+      await Promise.resolve();
+      expect((global.fetch as jest.Mock).mock.calls[0][1].signal.aborted).toBe(false);
+
+      jest.advanceTimersByTime(1);
+      const error = await result;
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain('aborted by configured timeout');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('uses JSON Schema mode for structured Ollama chat when schema is provided', async () => {
