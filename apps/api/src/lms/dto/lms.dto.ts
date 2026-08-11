@@ -34,6 +34,6 @@ export type ListLmsModuleQueryDto = z.infer<typeof ListLmsModuleQuerySchema>;
 
 export const UpdateProgressSchema = z.object({
   progress: z.coerce.number().int().min(0).max(100),
-  status: z.enum(['locked', 'active', 'completed']).optional(),
-});
+  status: z.enum(['active', 'completed']).optional(),
+}).strict();
 export type UpdateProgressDto = z.infer<typeof UpdateProgressSchema>;

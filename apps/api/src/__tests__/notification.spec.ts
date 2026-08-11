@@ -59,6 +59,10 @@ describe('NotificationService (BullMQ)', () => {
     service = await buildService(prisma, queue);
   });
 
+  afterEach(() => {
+    service.onModuleDestroy();
+  });
+
   it('notify() tulis pending lalu queue.add()', async () => {
     await service.notify({ channel: 'whatsapp', to: '6281234567890', body: 'test' });
 
@@ -69,12 +73,35 @@ describe('NotificationService (BullMQ)', () => {
   });
 
   it('idempotensi: ref sudah sent → skip', async () => {
-    prisma.notificationLog.findFirst.mockResolvedValueOnce({ id: 'existing' });
+    prisma.notificationLog.findFirst.mockResolvedValueOnce({ id: 'existing', status: 'sent' });
 
     await service.notify({ channel: 'whatsapp', to: '628xxx', body: 'x', refType: 'grade', refId: 'g-1' });
 
     expect(prisma.notificationLog.create).not.toHaveBeenCalled();
     expect(queue.add).not.toHaveBeenCalled();
+    expect(prisma.notificationLog.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ status: { in: ['pending', 'sent'] } }),
+    }));
+  });
+
+  it('idempotensi: ref pending -> requeue job agar outbox tidak false-success', async () => {
+    prisma.notificationLog.findFirst.mockResolvedValueOnce({
+      id: 'existing-pending',
+      status: 'pending',
+      channel: 'whatsapp',
+      recipient: '628xxx',
+      body: 'x',
+      subject: null,
+    });
+
+    await service.notify({ channel: 'whatsapp', to: '628xxx', body: 'x', refType: 'grade', refId: 'g-1' });
+
+    expect(prisma.notificationLog.create).not.toHaveBeenCalled();
+    expect(queue.add).toHaveBeenCalledWith(
+      'whatsapp',
+      expect.objectContaining({ logId: 'existing-pending' }),
+      { jobId: 'existing-pending' },
+    );
   });
 
   it('tanpa refType → tidak cek idempotensi, langsung queue', async () => {
@@ -84,9 +111,42 @@ describe('NotificationService (BullMQ)', () => {
     expect(queue.add).toHaveBeenCalledTimes(1);
   });
 
-  it('tanpa queue → tidak throw, skip', async () => {
-    const svc = await buildService(prisma); // no queue set
-    await expect(svc.notify({ channel: 'whatsapp', to: '628xxx', body: 'x' })).resolves.not.toThrow();
+  it('tanpa queue -> throw agar outbox bisa retry', async () => {
+    const mod: TestingModule = await Test.createTestingModule({
+      providers: [NotificationService, { provide: PrismaService, useValue: prisma }],
+    }).compile();
+    const svc = mod.get(NotificationService);
+    await expect(svc.notify({ channel: 'whatsapp', to: '628xxx', body: 'x' })).rejects.toThrow('Notification queue not initialized');
+  });
+
+  it('queue.add gagal -> row tetap pending dan error dilempar agar outbox retry', async () => {
+    queue.add.mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(service.notify({ channel: 'whatsapp', to: '628xxx', body: 'x' })).rejects.toThrow('redis down');
+
+    expect(prisma.notificationLog.update).not.toHaveBeenCalled();
+  });
+
+  it('idempotensi race: unique conflict ref pending -> refetch dan requeue row pemenang', async () => {
+    prisma.notificationLog.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'winner-pending',
+        status: 'pending',
+        channel: 'whatsapp',
+        recipient: '628xxx',
+        body: 'x',
+        subject: null,
+      });
+    prisma.notificationLog.create.mockRejectedValueOnce({ code: 'P2002' });
+
+    await service.notify({ channel: 'whatsapp', to: '628xxx', body: 'x', refType: 'grade', refId: '00000000-0000-4000-8000-000000000001' });
+
+    expect(queue.add).toHaveBeenCalledWith(
+      'whatsapp',
+      expect.objectContaining({ logId: 'winner-pending' }),
+      { jobId: 'winner-pending' },
+    );
   });
 
   it('onModuleInit: stale pending → queue.add()', async () => {

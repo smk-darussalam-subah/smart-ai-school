@@ -5,9 +5,10 @@ jest.mock('@smk/logger', () => ({
 
 import { HttpException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { AiGenerateService } from '../ai/ai-generate.service';
-import { GenerateRppStepSchema } from '../ai/dto/generate.dto';
+import { GenerateQuestionDraftSchema, GenerateRppStepSchema } from '../ai/dto/generate.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { OpenAiProviderError } from '../ai/adapters/openai.adapter';
@@ -27,6 +28,70 @@ const KEGIATAN_PATCH = JSON.stringify({
 const ATP_PATCH = JSON.stringify({
   atp: [{ tpRef: 'TP 1', indikator: 'Menjelaskan grafik fungsi linear dengan benar.' }],
 });
+const AI_QUESTION_ITEM = {
+  itemKey: 'item-1',
+  question: {
+    subject: 'Pemrograman Web',
+    type: 'multiple_choice' as const,
+    body: 'Manakah tag HTML yang digunakan untuk membuat tautan?',
+    options: [
+      { id: 'a', text: '<a>' },
+      { id: 'b', text: '<img>' },
+      { id: 'c', text: '<table>' },
+      { id: 'd', text: '<form>' },
+    ],
+    answer: 'a',
+    difficulty: 'easy' as const,
+    tags: ['html'],
+  },
+  tpRefs: ['TP 1'],
+  cognitiveLevel: 'C2' as const,
+  rationale: 'Mengukur pemahaman dasar tag tautan.',
+  warnings: [],
+};
+const AI_QUESTION_OUTPUT = JSON.stringify({ items: [AI_QUESTION_ITEM] });
+const MODULE_ID = '22222222-2222-4222-8222-222222222222';
+const questionDraftDto = {
+  moduleId: MODULE_ID,
+  purpose: 'formatif' as const,
+  questionCount: 1,
+  typeDistribution: { multiple_choice: 1, true_false: 0, matching: 0, essay: 0 },
+  difficultyDistribution: { easy: 1, medium: 0, hard: 0 },
+  cognitiveDistribution: { C1: 0, C2: 1, C3: 0, C4: 0, C5: 0, C6: 0 },
+  tpRefs: ['TP 1'],
+  contextMode: 'auto_vokasi' as const,
+  character: 'konseptual' as const,
+  idempotencyKey: 'draft-key-123456',
+};
+const questionDraftRequestSpec = {
+  source: { type: 'module', id: MODULE_ID },
+  purpose: 'formatif',
+  questionCount: 1,
+  typeDistribution: questionDraftDto.typeDistribution,
+  difficultyDistribution: questionDraftDto.difficultyDistribution,
+  cognitiveDistribution: questionDraftDto.cognitiveDistribution,
+  tpRefs: ['TP 1'],
+  contextMode: 'auto_vokasi',
+  character: 'konseptual',
+  teacherInstruction: null,
+};
+const ownedModule = {
+  id: MODULE_ID,
+  teacherId: 'teacher-1',
+  classId: 'class-1',
+  subject: 'Pemrograman Web',
+  title: 'HTML Dasar',
+  tp: 'Mengidentifikasi tag HTML dasar.',
+  content: 'Tag a membuat tautan dan img menampilkan gambar.',
+  academicYear: '2026/2027',
+  semester: 1,
+  class: { id: 'class-1', name: 'X TKJ 1', grade: 10, majorCode: 'TKJ' },
+};
+const p2002 = () => new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+  code: 'P2002',
+  clientVersion: 'test',
+  meta: { target: ['teacher_id', 'type', 'idempotency_key'] },
+});
 const kegiatanPatchWithInti = (inti: string) => JSON.stringify({
   kegiatan: [{
     pertemuan: 'Pertemuan 1',
@@ -37,6 +102,14 @@ const kegiatanPatchWithInti = (inti: string) => JSON.stringify({
   }],
 });
 const flushPromises = () => new Promise<void>((resolve) => setImmediate(resolve));
+const asRecord = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected object');
+  return value as Record<string, unknown>;
+};
+const asArray = (value: unknown): unknown[] => {
+  if (!Array.isArray(value)) throw new Error('Expected array');
+  return value;
+};
 
 describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   let service: AiGenerateService;
@@ -44,8 +117,23 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   const userFindMany = jest.fn();
   const teacherFindUnique = jest.fn();
   const rppFindFirst = jest.fn();
+  const lmsModuleFindFirst = jest.fn();
+  const majorFindUnique = jest.fn();
   const teachingAssignmentFindFirst = jest.fn();
+  const questionFindMany = jest.fn();
+  const questionCreate = jest.fn();
+  const questionFindUnique = jest.fn();
+  const questionUpsert = jest.fn();
+  const questionCount = jest.fn();
+  const aiGenerationFindFirst = jest.fn();
   const aiGenerationCreate = jest.fn();
+  const aiGenerationUpdate = jest.fn();
+  const aiGenerationUpdateMany = jest.fn();
+  const aiDraftAcceptanceUpsert = jest.fn();
+  const aiDraftAcceptanceUpdate = jest.fn();
+  const transaction = jest.fn();
+  const executeRaw = jest.fn();
+  const queryRaw = jest.fn();
   const localChat = jest.fn();
   const cloudChat = jest.fn();
   const notificationNotify = jest.fn();
@@ -73,7 +161,14 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   };
 
   beforeEach(async () => {
-    [userFindUnique, userFindMany, teacherFindUnique, rppFindFirst, teachingAssignmentFindFirst, aiGenerationCreate, localChat, cloudChat, notificationNotify, shouldAttemptOpenAiProbe, markOpenAiQuotaExhausted, markOpenAiRecovered, claimOpenAiQuotaNoticeIncident, releaseOpenAiQuotaNoticeIncident]
+    [
+      userFindUnique, userFindMany, teacherFindUnique, rppFindFirst, lmsModuleFindFirst,
+      majorFindUnique, teachingAssignmentFindFirst, questionFindMany, questionCreate, questionFindUnique,
+      questionUpsert, questionCount, aiGenerationFindFirst, aiGenerationCreate, aiGenerationUpdate, aiGenerationUpdateMany,
+      aiDraftAcceptanceUpsert, aiDraftAcceptanceUpdate, transaction, executeRaw, queryRaw, localChat, cloudChat,
+      notificationNotify, shouldAttemptOpenAiProbe, markOpenAiQuotaExhausted, markOpenAiRecovered,
+      claimOpenAiQuotaNoticeIncident, releaseOpenAiQuotaNoticeIncident,
+    ]
       .forEach((mock) => mock.mockReset());
 
     userFindUnique.mockResolvedValue({ id: 'user-1' });
@@ -85,8 +180,78 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     }]);
     teacherFindUnique.mockResolvedValue({ id: 'teacher-1' });
     rppFindFirst.mockResolvedValue(baseRpp);
+    lmsModuleFindFirst.mockResolvedValue(null);
+    majorFindUnique.mockResolvedValue({
+      name: 'Teknik Komputer dan Jaringan',
+      description: 'Administrasi jaringan sekolah. Keamanan perangkat lab. Layanan internet kelas.',
+    });
     teachingAssignmentFindFirst.mockResolvedValue({ id: 'ta-1' });
-    aiGenerationCreate.mockResolvedValue({});
+    questionFindMany.mockResolvedValue([]);
+    questionCreate.mockImplementation((args: { data: Record<string, unknown> }) => Promise.resolve({
+      id: 'q-ai-1',
+      subject: args.data.subject,
+      type: args.data.type,
+      body: args.data.body,
+      difficulty: args.data.difficulty,
+      aiItemKey: args.data.aiItemKey ?? null,
+    }));
+    questionFindUnique.mockResolvedValue(null);
+    questionUpsert.mockImplementation((args: { create: Record<string, unknown> }) => Promise.resolve({
+      id: 'q-ai-1',
+      subject: args.create.subject,
+      type: args.create.type,
+      body: args.create.body,
+      options: args.create.options ?? null,
+      answer: args.create.answer ?? null,
+      difficulty: args.create.difficulty,
+      tags: args.create.tags,
+      rubric: args.create.rubric ?? null,
+      aiItemKey: args.create.aiItemKey ?? null,
+      tpRefs: args.create.tpRefs ?? [],
+      cognitiveLevel: args.create.cognitiveLevel ?? null,
+    }));
+    questionCount.mockResolvedValue(0);
+    aiGenerationFindFirst.mockResolvedValue(null);
+    aiGenerationCreate.mockImplementation((args: { data: Record<string, unknown> }) => Promise.resolve({
+      id: 'gen-1',
+      model: args.data.model ?? 'gpt-4.1-mini',
+    }));
+    aiGenerationUpdate.mockImplementation((args: { data: Record<string, unknown> }) => Promise.resolve({
+      id: 'gen-1',
+      model: args.data.model ?? 'gpt-4.1-mini',
+    }));
+    aiGenerationUpdateMany.mockResolvedValue({ count: 1 });
+    executeRaw.mockResolvedValue(1);
+    queryRaw.mockResolvedValue([{ id: 'gen-1', model: 'gpt-4.1-mini' }]);
+    aiDraftAcceptanceUpsert.mockImplementation((args: { create: { payloadFingerprint: string } }) =>
+      Promise.resolve({ payloadFingerprint: args.create.payloadFingerprint }));
+    aiDraftAcceptanceUpdate.mockResolvedValue({ id: 'accept-1' });
+    const prisma = {
+      user: { findUnique: userFindUnique, findMany: userFindMany },
+      teacher: { findUnique: teacherFindUnique },
+      rpp: { findFirst: rppFindFirst },
+      lmsModule: { findFirst: lmsModuleFindFirst },
+      major: { findUnique: majorFindUnique },
+      teachingAssignment: { findFirst: teachingAssignmentFindFirst },
+      question: {
+        findMany: questionFindMany,
+        create: questionCreate,
+        findUnique: questionFindUnique,
+        upsert: questionUpsert,
+        count: questionCount,
+      },
+      aiGeneration: {
+        create: aiGenerationCreate,
+        findFirst: aiGenerationFindFirst,
+        update: aiGenerationUpdate,
+        updateMany: aiGenerationUpdateMany,
+      },
+      aiDraftAcceptance: { upsert: aiDraftAcceptanceUpsert, update: aiDraftAcceptanceUpdate },
+      $executeRaw: executeRaw,
+      $queryRaw: queryRaw,
+      $transaction: transaction,
+    };
+    transaction.mockImplementation((callback: (tx: typeof prisma) => unknown) => callback(prisma));
     localChat.mockResolvedValue(KEGIATAN_PATCH);
     cloudChat.mockResolvedValue(KEGIATAN_PATCH);
     notificationNotify.mockResolvedValue(undefined);
@@ -95,14 +260,6 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     markOpenAiRecovered.mockResolvedValue(undefined);
     claimOpenAiQuotaNoticeIncident.mockResolvedValue('incident-1');
     releaseOpenAiQuotaNoticeIncident.mockResolvedValue(undefined);
-
-    const prisma = {
-      user: { findUnique: userFindUnique, findMany: userFindMany },
-      teacher: { findUnique: teacherFindUnique },
-      rpp: { findFirst: rppFindFirst },
-      teachingAssignment: { findFirst: teachingAssignmentFindFirst },
-      aiGeneration: { create: aiGenerationCreate },
-    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -164,6 +321,13 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     }
   });
 
+  it('requires idempotencyKey at the AI question draft DTO boundary', () => {
+    const { idempotencyKey: _idempotencyKey, ...withoutKey } = questionDraftDto;
+
+    expect(GenerateQuestionDraftSchema.safeParse(questionDraftDto).success).toBe(true);
+    expect(GenerateQuestionDraftSchema.safeParse(withoutKey).success).toBe(false);
+  });
+
   it('rejects non-owner before provider call and audit write', async () => {
     rppFindFirst.mockResolvedValue(null);
 
@@ -184,6 +348,487 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(localChat).not.toHaveBeenCalled();
     expect(cloudChat).not.toHaveBeenCalled();
     expect(aiGenerationCreate).not.toHaveBeenCalled();
+  });
+
+  it('generates AI question drafts without creating canonical questions', async () => {
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    cloudChat.mockResolvedValue(AI_QUESTION_OUTPUT);
+
+    const result = await service.generateQuestionDrafts(questionDraftDto, GURU);
+
+    expect(result.items).toHaveLength(1);
+    expect(questionCreate).not.toHaveBeenCalled();
+    expect(aiGenerationCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        type: 'question-drafts',
+        sourceType: 'module',
+        sourceId: MODULE_ID,
+        status: 'generating',
+        idempotencyKey: 'draft-key-123456',
+      }),
+    }));
+    const createdSpec = asRecord(aiGenerationCreate.mock.calls[0][0].data.requestSpec);
+    expect(asRecord(createdSpec.request)).toEqual(questionDraftRequestSpec);
+    expect(asRecord(createdSpec.lease)).toEqual(expect.objectContaining({
+      leaseId: expect.any(String),
+      leaseExpiresAt: expect.any(String),
+      leaseSequence: 1,
+    }));
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    const prompt = cloudChat.mock.calls[0][0] as string;
+    expect(prompt).toContain('Katalog konteks umum-produktif sekolah');
+    expect(prompt).toContain('Administrasi jaringan sekolah');
+    const options = asRecord(cloudChat.mock.calls[0][2]);
+    const responseFormat = asRecord(options.responseFormat);
+    expect(responseFormat.strict).toBe(true);
+    const schema = asRecord(responseFormat.schema);
+    const itemSchema = asRecord(asRecord(asRecord(schema.properties).items).items);
+    expect(itemSchema.required).toEqual(['itemKey', 'question', 'tpRefs', 'cognitiveLevel', 'rationale', 'warnings']);
+    const questionSchema = asRecord(asRecord(itemSchema.properties).question);
+    const shapes = asArray(questionSchema.anyOf).map(asRecord);
+    for (const shape of shapes) {
+      const properties = asRecord(shape.properties);
+      expect([...asArray(shape.required)].sort()).toEqual(Object.keys(properties).sort());
+    }
+    const matchingShape = shapes.find((shape) =>
+      asArray(asRecord(asRecord(shape.properties).type).enum).includes('matching'));
+    expect(matchingShape).toBeDefined();
+    const matchingAnswer = asRecord(asRecord(asRecord(matchingShape?.properties).answer).items);
+    expect(asArray(matchingAnswer.required).sort()).toEqual(['matchId', 'promptId']);
+    expect(matchingAnswer.additionalProperties).toBe(false);
+  });
+
+  it('rejects productive question draft when the managed major description is empty', async () => {
+    lmsModuleFindFirst.mockResolvedValue({ ...ownedModule, class: { ...ownedModule.class, majorCode: 'DKV' } });
+    majorFindUnique.mockResolvedValue({ name: 'Desain Komunikasi Visual', description: null });
+    cloudChat.mockResolvedValue(AI_QUESTION_OUTPUT);
+
+    await expect(service.generateQuestionDrafts({ ...questionDraftDto, contextMode: 'produktif' }, GURU))
+      .rejects.toThrow('Konteks produktif untuk jurusan Desain Komunikasi Visual belum dikonfigurasi');
+
+    expect(cloudChat).not.toHaveBeenCalled();
+    expect(localChat).not.toHaveBeenCalled();
+    expect(aiGenerationCreate).not.toHaveBeenCalled();
+    expect(aiGenerationUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('bounds managed productive context before sending it to the provider', async () => {
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    majorFindUnique.mockResolvedValue({
+      name: 'Teknik Komputer dan Jaringan',
+      description: `${'A'.repeat(900)}. Konteks setelah batas tidak boleh masuk prompt.`,
+    });
+    cloudChat.mockResolvedValue(AI_QUESTION_OUTPUT);
+
+    await service.generateQuestionDrafts({ ...questionDraftDto, idempotencyKey: 'draft-key-bounded-context' }, GURU);
+
+    const prompt = cloudChat.mock.calls[0][0] as string;
+    expect(prompt).toContain('A'.repeat(180));
+    expect(prompt).not.toContain('Konteks setelah batas tidak boleh masuk prompt');
+  });
+
+  it('rejects near-duplicate AI question draft bodies before finalizing generation', async () => {
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    const nearDuplicateOutput = JSON.stringify({
+      items: [
+        AI_QUESTION_ITEM,
+        {
+          ...AI_QUESTION_ITEM,
+          itemKey: 'item-2',
+          question: {
+            ...AI_QUESTION_ITEM.question,
+            body: 'Manakah tag HTML digunakan untuk membuat tautan?',
+          },
+        },
+      ],
+    });
+    cloudChat.mockResolvedValue(nearDuplicateOutput);
+
+    await expect(service.generateQuestionDrafts({
+      ...questionDraftDto,
+      idempotencyKey: 'draft-key-near-duplicate',
+      questionCount: 2,
+      typeDistribution: { multiple_choice: 2, true_false: 0, matching: 0, essay: 0 },
+      difficultyDistribution: { easy: 2, medium: 0, hard: 0 },
+      cognitiveDistribution: { C1: 0, C2: 2, C3: 0, C4: 0, C5: 0, C6: 0 },
+    }, GURU)).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('rejects ambiguous multiple-choice options before finalizing generation', async () => {
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    const ambiguousOutput = JSON.stringify({
+      items: [{
+        ...AI_QUESTION_ITEM,
+        question: {
+          ...AI_QUESTION_ITEM.question,
+          options: [
+            { id: 'a', text: '<a>' },
+            { id: 'b', text: '<img>' },
+            { id: 'c', text: '<table>' },
+            { id: 'd', text: 'Semua jawaban benar' },
+          ],
+        },
+      }],
+    });
+    cloudChat.mockResolvedValue(ambiguousOutput);
+
+    await expect(service.generateQuestionDrafts({
+      ...questionDraftDto,
+      idempotencyKey: 'draft-key-ambiguous-option',
+    }, GURU)).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('recovers a concurrent generate race by returning the existing idempotent draft', async () => {
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    cloudChat.mockResolvedValue(AI_QUESTION_OUTPUT);
+    aiGenerationFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'gen-existing',
+        requestSpec: questionDraftRequestSpec,
+        output: AI_QUESTION_OUTPUT,
+        model: 'gpt-4.1-mini',
+      });
+    aiGenerationCreate.mockRejectedValueOnce(p2002());
+
+    const result = await service.generateQuestionDrafts(questionDraftDto, GURU);
+
+    expect(result.generationId).toBe('gen-existing');
+    expect(result.items).toEqual([AI_QUESTION_ITEM]);
+    expect(aiGenerationCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializes concurrent generate requests so the provider is called once per idempotency key', async () => {
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    cloudChat.mockResolvedValue(AI_QUESTION_OUTPUT);
+    let storedDraft: { id: string; requestSpec: Record<string, unknown>; output: string; model: string; status: string } | null = null;
+    aiGenerationFindFirst.mockImplementation(() => Promise.resolve(storedDraft));
+    aiGenerationCreate.mockImplementation(async (args: { data: Record<string, unknown> }) => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      storedDraft = {
+        id: 'gen-1',
+        requestSpec: args.data.requestSpec as Record<string, unknown>,
+        output: args.data.output as string,
+        model: args.data.model as string,
+        status: args.data.status as string,
+      };
+      return { id: 'gen-1' };
+    });
+    queryRaw.mockImplementation(async () => {
+      storedDraft = {
+        id: 'gen-1',
+        requestSpec: storedDraft?.requestSpec ?? questionDraftRequestSpec,
+        output: AI_QUESTION_OUTPUT,
+        model: 'gpt-4.1-mini',
+        status: 'drafted',
+      };
+      return [{ id: 'gen-1', model: 'gpt-4.1-mini' }];
+    });
+
+    const [first, second] = await Promise.all([
+      service.generateQuestionDrafts(questionDraftDto, GURU),
+      service.generateQuestionDrafts(questionDraftDto, GURU),
+    ]);
+
+    expect(first.generationId).toBe('gen-1');
+    expect(second.generationId).toBe('gen-1');
+    expect(cloudChat).toHaveBeenCalledTimes(1);
+    expect(aiGenerationCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('reclaims a stale generating lease before calling the provider again', async () => {
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    cloudChat.mockResolvedValue(AI_QUESTION_OUTPUT);
+    aiGenerationFindFirst.mockResolvedValueOnce({
+      id: 'gen-stale',
+      requestSpec: {
+        request: questionDraftRequestSpec,
+        lease: {
+          leaseId: 'old-lease',
+          leaseExpiresAt: new Date(Date.now() - 1000).toISOString(),
+          leaseSequence: 1,
+        },
+      },
+      output: '',
+      model: 'pending',
+      status: 'generating',
+    });
+    executeRaw.mockResolvedValueOnce(1);
+    queryRaw.mockResolvedValueOnce([{ id: 'gen-stale', model: 'gpt-4.1-mini' }]);
+
+    const result = await service.generateQuestionDrafts(questionDraftDto, GURU);
+
+    expect(result.generationId).toBe('gen-stale');
+    expect(aiGenerationCreate).not.toHaveBeenCalled();
+    expect(executeRaw).toHaveBeenCalledTimes(1);
+    expect(cloudChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a stale claimant finalize after its lease was superseded', async () => {
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    cloudChat.mockResolvedValue(AI_QUESTION_OUTPUT);
+    queryRaw.mockResolvedValueOnce([]);
+
+    await expect(service.generateQuestionDrafts(questionDraftDto, GURU))
+      .rejects.toThrow('Lease generate draft AI');
+
+    expect(cloudChat).toHaveBeenCalledTimes(1);
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('normalizes matching provider answer arrays before validating canonical output', async () => {
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    cloudChat.mockResolvedValue(JSON.stringify({
+      items: [{
+        itemKey: 'match-1',
+        question: {
+          subject: 'Pemrograman Web',
+          type: 'matching',
+          body: 'Pasangkan tag HTML dengan fungsinya.',
+          pairs: [
+            { id: 'p1', prompt: '<a>', match: 'Tautan' },
+            { id: 'p2', prompt: '<img>', match: 'Gambar' },
+          ],
+          answer: [
+            { promptId: 'p1', matchId: 'p1' },
+            { promptId: 'p2', matchId: 'p2' },
+          ],
+          difficulty: 'medium',
+          tags: ['html'],
+        },
+        tpRefs: ['TP 1'],
+        cognitiveLevel: 'C2',
+        rationale: 'Mengukur pemahaman pasangan tag dan fungsi.',
+        warnings: [],
+      }],
+    }));
+
+    const result = await service.generateQuestionDrafts({
+      ...questionDraftDto,
+      idempotencyKey: 'draft-key-matching',
+      typeDistribution: { multiple_choice: 0, true_false: 0, matching: 1, essay: 0 },
+      difficultyDistribution: { easy: 0, medium: 1, hard: 0 },
+    }, GURU);
+
+    expect(result.items[0]?.question).toEqual(expect.objectContaining({
+      type: 'matching',
+      answer: { p1: 'p1', p2: 'p2' },
+    }));
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses one bounded repair attempt when provider returns invalid question JSON', async () => {
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    cloudChat
+      .mockResolvedValueOnce(JSON.stringify({ items: [{ itemKey: 'bad', question: { type: 'essay' } }] }))
+      .mockResolvedValueOnce(AI_QUESTION_OUTPUT);
+
+    const result = await service.generateQuestionDrafts(questionDraftDto, GURU);
+
+    expect(result.items).toEqual([AI_QUESTION_ITEM]);
+    expect(cloudChat).toHaveBeenCalledTimes(2);
+    expect(aiGenerationCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts selected AI draft items into canonical questions with provenance', async () => {
+    const generationId = '33333333-3333-4333-8333-333333333333';
+    aiGenerationFindFirst.mockResolvedValue({
+      id: generationId,
+      teacherId: 'teacher-1',
+      output: AI_QUESTION_OUTPUT,
+      status: 'drafted',
+      requestSpec: {
+        source: { type: 'module', id: '22222222-2222-4222-8222-222222222222' },
+        purpose: 'formatif',
+        contextMode: 'auto_vokasi',
+        character: 'konseptual',
+      },
+      contextSnapshot: {
+        sourceType: 'module',
+        sourceId: '22222222-2222-4222-8222-222222222222',
+        subject: 'Pemrograman Web',
+        title: 'HTML Dasar',
+        academicYear: '2026/2027',
+        semester: 1,
+        classId: 'class-1',
+        className: 'X TKJ 1',
+        grade: 10,
+        majorName: 'Teknik Komputer dan Jaringan',
+        tpOptions: [{ ref: 'TP 1', text: 'Mengidentifikasi tag HTML dasar.' }],
+      },
+      sourceType: 'module',
+      sourceId: '22222222-2222-4222-8222-222222222222',
+    });
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+
+    const result = await service.acceptQuestionDrafts(generationId, {
+      idempotencyKey: 'accept-key-123456',
+      items: [{
+        itemKey: AI_QUESTION_ITEM.itemKey,
+        question: AI_QUESTION_ITEM.question,
+        tpRefs: ['TP 1'],
+        cognitiveLevel: 'C2',
+      }],
+    }, GURU);
+
+    expect(result.acceptedCount).toBe(1);
+    expect(questionUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({
+        teacherId: 'teacher-1',
+        subject: 'Pemrograman Web',
+        source: 'AI_ASSISTED',
+        aiGenerationId: generationId,
+        aiItemKey: 'item-1',
+        tpRefs: ['TP 1'],
+        cognitiveLevel: 'C2',
+      }),
+    }));
+    expect(aiGenerationUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: generationId },
+      data: { status: 'accepted' },
+    }));
+  });
+
+  it('rejects accept retry when the same idempotency key has a different payload', async () => {
+    const generationId = '33333333-3333-4333-8333-333333333333';
+    aiGenerationFindFirst.mockResolvedValue({
+      id: generationId,
+      teacherId: 'teacher-1',
+      output: AI_QUESTION_OUTPUT,
+      status: 'drafted',
+      contextSnapshot: {},
+      sourceType: 'module',
+      sourceId: MODULE_ID,
+    });
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    aiDraftAcceptanceUpsert.mockResolvedValueOnce({ payloadFingerprint: 'different-payload' });
+
+    await expect(service.acceptQuestionDrafts(generationId, {
+      idempotencyKey: 'accept-key-123456',
+      items: [{
+        itemKey: AI_QUESTION_ITEM.itemKey,
+        question: AI_QUESTION_ITEM.question,
+        tpRefs: ['TP 1'],
+        cognitiveLevel: 'C2',
+      }],
+    }, GURU)).rejects.toThrow('Idempotency key accept sudah dipakai untuk payload berbeda');
+
+    expect(questionUpsert).not.toHaveBeenCalled();
+  });
+
+  it('regenerates one AI draft item in the same generation', async () => {
+    const generationId = '33333333-3333-4333-8333-333333333333';
+    const replacement = {
+      ...AI_QUESTION_ITEM,
+      itemKey: 'provider-new-key',
+      question: {
+        ...AI_QUESTION_ITEM.question,
+        body: 'Tag HTML manakah yang membuat tautan ke halaman lain?',
+      },
+      rationale: 'Regenerate item tanpa mengubah distribusi.',
+    };
+    aiGenerationFindFirst.mockResolvedValue({
+      id: generationId,
+      output: AI_QUESTION_OUTPUT,
+      status: 'drafted',
+      requestSpec: {
+        purpose: 'formatif',
+        contextMode: 'auto_vokasi',
+        character: 'konseptual',
+      },
+      contextSnapshot: {
+        sourceType: 'module',
+        sourceId: '22222222-2222-4222-8222-222222222222',
+        subject: 'Pemrograman Web',
+        title: 'HTML Dasar',
+        academicYear: '2026/2027',
+        semester: 1,
+        classId: 'class-1',
+        className: 'X TKJ 1',
+        grade: 10,
+        majorName: 'Teknik Komputer dan Jaringan',
+        tpOptions: [{ ref: 'TP 1', text: 'Mengidentifikasi tag HTML dasar.' }],
+      },
+      sourceType: 'module',
+      sourceId: '22222222-2222-4222-8222-222222222222',
+    });
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    cloudChat.mockResolvedValue(JSON.stringify({ items: [replacement] }));
+
+    const result = await service.regenerateQuestionDraftItem(generationId, 'item-1', {}, GURU);
+
+    expect(result.item.itemKey).toBe('item-1');
+    expect(result.item.question.body).toContain('tautan');
+    expect(aiGenerationUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: generationId },
+      data: expect.objectContaining({
+        status: 'drafted',
+        output: expect.stringContaining('"itemKey":"item-1"'),
+      }),
+    }));
+  });
+
+  it('does not regenerate an accepted draft item', async () => {
+    const generationId = '33333333-3333-4333-8333-333333333333';
+    aiGenerationFindFirst.mockResolvedValue({
+      id: generationId,
+      output: AI_QUESTION_OUTPUT,
+      status: 'partially_accepted',
+      requestSpec: questionDraftRequestSpec,
+      contextSnapshot: {},
+      sourceType: 'module',
+      sourceId: MODULE_ID,
+    });
+    questionFindUnique.mockResolvedValue({ id: 'q-ai-1' });
+
+    await expect(service.regenerateQuestionDraftItem(generationId, 'item-1', {}, GURU))
+      .rejects.toThrow('Item draft sudah diterima dan tidak dapat diregenerasi');
+
+    expect(cloudChat).not.toHaveBeenCalled();
+    expect(localChat).not.toHaveBeenCalled();
+  });
+
+  it('rejects all draft items server-side only when none have been accepted', async () => {
+    const generationId = '33333333-3333-4333-8333-333333333333';
+    aiGenerationFindFirst.mockResolvedValue({
+      id: generationId,
+      status: 'drafted',
+      sourceType: 'module',
+      sourceId: MODULE_ID,
+      contextSnapshot: {},
+    });
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+
+    const result = await service.rejectQuestionDrafts(generationId, { idempotencyKey: 'reject-key-123456' }, GURU);
+
+    expect(result).toEqual({ generationId, rejected: true });
+    expect(aiGenerationUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: { status: 'rejected' },
+    }));
+  });
+
+  it('does not reject all after any draft item has been accepted', async () => {
+    const generationId = '33333333-3333-4333-8333-333333333333';
+    aiGenerationFindFirst.mockResolvedValue({
+      id: generationId,
+      status: 'partially_accepted',
+      sourceType: 'module',
+      sourceId: MODULE_ID,
+      contextSnapshot: {},
+    });
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    questionCount.mockResolvedValue(1);
+
+    await expect(service.rejectQuestionDrafts(generationId, { idempotencyKey: 'reject-key-123456' }, GURU))
+      .rejects.toThrow('Sebagian item sudah diterima');
+
+    expect(aiGenerationUpdateMany).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: { status: 'rejected' },
+    }));
   });
 
   it('routes PII context to local gateway and never calls cloud', async () => {
