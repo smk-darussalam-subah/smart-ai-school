@@ -401,6 +401,32 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(asRecord(asRecord(matchingAnswer.properties).matchId).description).toContain('question.pairs[].id');
   });
 
+  it('uses the strict question draft schema when Redis circuit routes generation to Ollama', async () => {
+    shouldAttemptOpenAiProbe.mockResolvedValue(false);
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    localChat.mockResolvedValue(AI_QUESTION_OUTPUT);
+    queryRaw.mockResolvedValueOnce([{ id: 'gen-1', model: 'ollama' }]);
+
+    const result = await service.generateQuestionDrafts({
+      ...questionDraftDto,
+      idempotencyKey: 'draft-key-ollama-schema',
+    }, GURU);
+
+    expect(result.model).toBe('ollama');
+    expect(result.items).toHaveLength(1);
+    expect(cloudChat).not.toHaveBeenCalled();
+    expect(localChat).toHaveBeenCalledTimes(1);
+    const options = asRecord(localChat.mock.calls[0][2]);
+    const responseFormat = asRecord(options.responseFormat);
+    expect(responseFormat.type).toBe('json_schema');
+    expect(responseFormat.name).toBe('question_drafts');
+    expect(responseFormat.strict).toBe(true);
+    const schema = asRecord(responseFormat.schema);
+    expect(asArray(schema.required)).toEqual(['items']);
+    const itemSchema = asRecord(asRecord(asRecord(schema.properties).items).items);
+    expect(itemSchema.required).toEqual(['itemKey', 'question', 'tpRefs', 'cognitiveLevel', 'rationale', 'warnings']);
+  });
+
   it('rejects productive question draft when the managed major description is empty', async () => {
     lmsModuleFindFirst.mockResolvedValue({ ...ownedModule, class: { ...ownedModule.class, majorCode: 'DKV' } });
     majorFindUnique.mockResolvedValue({ name: 'Desain Komunikasi Visual', description: null });

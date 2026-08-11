@@ -296,7 +296,8 @@ export class AiGenerateService {
         };
       } catch (error) {
         await this.markQuestionDraftGenerationFailed(claim.id, claim.lease, prompt, error);
-        throw error;
+        if (error instanceof HttpException) throw error;
+        throw this.mapProviderError(error, hasPii(prompt));
       }
     });
   }
@@ -1095,16 +1096,14 @@ export class AiGenerateService {
     model: AiCallResult['model'],
     _academicYear: string,
   ): Promise<AiCallResult> {
-    const responseFormat: AiChatOptions = model === 'ollama'
-      ? { responseFormat: 'json_object' }
-      : {
-        responseFormat: {
-          type: 'json_schema',
-          name: 'question_drafts',
-          strict: true,
-          schema: this.questionDraftJsonSchema(),
-        },
-      };
+    const responseFormat: AiChatOptions = {
+      responseFormat: {
+        type: 'json_schema',
+        name: 'question_drafts',
+        strict: true,
+        schema: this.questionDraftJsonSchema(),
+      },
+    };
     const output = await gateway.chat(promptForProvider, undefined, responseFormat);
     if (!output || output.trim().length === 0) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     return { output, model, promptForAudit: promptForProvider };
