@@ -61,6 +61,7 @@ const EnvSchema = z.object({
   OPENAI_CHAT_MODEL: z.string().default('gpt-4.1-mini'),
   OLLAMA_URL: z.string().url('OLLAMA_URL harus berupa URL valid').default('http://ollama:11434'),
   OLLAMA_CHAT_MODEL: z.string().default('qwen2.5:7b'),
+  OLLAMA_CHAT_TIMEOUT_MS: z.coerce.number().int().min(30_000).max(180_000).default(90_000),
   OLLAMA_EMBED_MODEL: z.string().default('nomic-embed-text'),
   OLLAMA_EMBED_DIMENSIONS: z.coerce.number().int().positive().default(768),
 
