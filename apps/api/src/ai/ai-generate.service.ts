@@ -843,7 +843,7 @@ export class AiGenerateService {
           prompt,
           'Output sebelumnya ditolak validator DIIS. Kembalikan ulang JSON object saja, tanpa markdown, field ekstra, KI/KD, PII, atau bentuk soal di luar schema.',
         ].join('\n');
-      const ai = await this.callQuestionDraftAi(promptForAttempt, context.academicYear);
+      const ai = await this.callQuestionDraftAi(promptForAttempt, context.academicYear, dto);
       try {
         return { ai, parsed: this.normalizeQuestionDraftOutput(ai.output, dto, context) };
       } catch (error) {
@@ -1066,14 +1066,14 @@ export class AiGenerateService {
       .slice(0, MAJOR_PRODUCTIVE_CONTEXT_MAX_CHARS);
   }
 
-  private async callQuestionDraftAi(prompt: string, academicYear: string): Promise<AiCallResult> {
+  private async callQuestionDraftAi(prompt: string, academicYear: string, dto: GenerateQuestionDraftDto): Promise<AiCallResult> {
     const piiDetected = hasPii(prompt);
     if (piiDetected) {
-      return this.callQuestionDraftProvider(this.gateway, stripPiiForLlm(prompt), 'ollama', academicYear);
+      return this.callQuestionDraftProvider(this.gateway, stripPiiForLlm(prompt), 'ollama', academicYear, dto);
     }
     if (this.openaiGateway && await this.providerStatus.shouldAttemptOpenAiProbe()) {
       try {
-        const result = await this.callQuestionDraftProvider(this.openaiGateway, stripPiiForLlm(prompt), 'gpt-4.1-mini', academicYear);
+        const result = await this.callQuestionDraftProvider(this.openaiGateway, stripPiiForLlm(prompt), 'gpt-4.1-mini', academicYear, dto);
         await this.providerStatus.markOpenAiRecovered();
         return result;
       } catch (err) {
@@ -1082,12 +1082,12 @@ export class AiGenerateService {
           const detailCode = err instanceof OpenAiProviderError ? err.code : null;
           await this.providerStatus.markOpenAiQuotaExhausted(detailCode);
           this.scheduleAdminOpenAiQuotaNotice();
-          return this.callQuestionDraftProvider(this.gateway, stripPiiForLlm(prompt), 'ollama', academicYear);
+          return this.callQuestionDraftProvider(this.gateway, stripPiiForLlm(prompt), 'ollama', academicYear, dto);
         }
         throw this.mapProviderError(err, false);
       }
     }
-    return this.callQuestionDraftProvider(this.gateway, stripPiiForLlm(prompt), 'ollama', academicYear);
+    return this.callQuestionDraftProvider(this.gateway, stripPiiForLlm(prompt), 'ollama', academicYear, dto);
   }
 
   private async callQuestionDraftProvider(
@@ -1095,13 +1095,14 @@ export class AiGenerateService {
     promptForProvider: string,
     model: AiCallResult['model'],
     _academicYear: string,
+    dto: GenerateQuestionDraftDto,
   ): Promise<AiCallResult> {
     const responseFormat: AiChatOptions = {
       responseFormat: {
         type: 'json_schema',
         name: 'question_drafts',
         strict: true,
-        schema: this.questionDraftJsonSchema(),
+        schema: this.questionDraftJsonSchema(model === 'ollama' ? dto : undefined),
       },
     };
     const output = await gateway.chat(promptForProvider, undefined, responseFormat);
@@ -1391,7 +1392,7 @@ export class AiGenerateService {
     );
   }
 
-  private questionDraftJsonSchema(): Record<string, unknown> {
+  private questionDraftJsonSchema(dto?: GenerateQuestionDraftDto): Record<string, unknown> {
     const baseProperties = {
       subject: { type: 'string' },
       body: { type: 'string' },
@@ -1429,9 +1430,10 @@ export class AiGenerateService {
         match: { type: 'string', description: 'Teks jawaban sisi kanan yang lengkap, misalnya Menghubungkan dua jaringan. Jangan isi dengan M1, M2, atau id.' },
       },
     };
-    const questionShape = {
-      anyOf: [
-        {
+    const questionShapes = [
+      {
+        questionType: 'multiple_choice',
+        schema: {
           type: 'object',
           additionalProperties: false,
           required: ['subject', 'type', 'body', 'difficulty', 'tags', 'options', 'answer'],
@@ -1442,7 +1444,10 @@ export class AiGenerateService {
             answer: { type: 'string' },
           },
         },
-        {
+      },
+      {
+        questionType: 'true_false',
+        schema: {
           type: 'object',
           additionalProperties: false,
           required: ['subject', 'type', 'body', 'difficulty', 'tags', 'answer'],
@@ -1452,7 +1457,10 @@ export class AiGenerateService {
             answer: { type: 'boolean' },
           },
         },
-        {
+      },
+      {
+        questionType: 'matching',
+        schema: {
           type: 'object',
           additionalProperties: false,
           required: ['subject', 'type', 'body', 'difficulty', 'tags', 'pairs', 'answer'],
@@ -1476,7 +1484,10 @@ export class AiGenerateService {
             },
           },
         },
-        {
+      },
+      {
+        questionType: 'essay',
+        schema: {
           type: 'object',
           additionalProperties: false,
           required: ['subject', 'type', 'body', 'difficulty', 'tags', 'guideAnswer', 'rubric'],
@@ -1487,8 +1498,15 @@ export class AiGenerateService {
             rubric: { type: 'array', minItems: 1, maxItems: 12, items: rubricSchema },
           },
         },
-      ],
-    };
+      },
+    ];
+    const requestedTypes = dto
+      ? new Set(Object.entries(dto.typeDistribution).filter(([, count]) => count > 0).map(([type]) => type))
+      : null;
+    const requestedShapes = requestedTypes
+      ? questionShapes.filter((shape) => requestedTypes.has(shape.questionType)).map((shape) => shape.schema)
+      : questionShapes.map((shape) => shape.schema);
+    const questionShape = requestedShapes.length === 1 ? requestedShapes[0] : { anyOf: requestedShapes };
     return {
       type: 'object',
       additionalProperties: false,
