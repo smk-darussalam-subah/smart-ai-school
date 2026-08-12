@@ -7,20 +7,202 @@ Mode: independent review only
 
 ## Verdict
 
-`APPROVED FOR EXPLICIT GIT PACKAGING`
+`STAGING FOLLOW-UP EVIDENCE COMPLETE - READY FOR FINAL REVIEW`
 
 Source sudah jauh lebih aman daripada baseline, khususnya snapshot soal, pemisahan
 kunci jawaban, attempt server-side, idempotensi baris Grade, strict provider schema,
 lease/fencing AI, durable outbox worker, CSV identity/FK, dan notification recovery.
-Follow-up ketujuh menutup acceptance terakhir P2-R22/R23. Gate request sekarang dipakai
-bersama oleh page-1, retry, dan append; konfigurasi jurusan konsisten di API/UI serta
-fail-closed sebelum AI claim/provider. Tidak ada P0/P1/P2 source yang masih terbuka.
-Approval ini hanya untuk packaging Git eksplisit, bukan staging sign-off atau izin
-production.
+Follow-up ketujuh tetap menutup seluruh temuan source dan approval packaging sebelumnya
+tetap valid. Runtime staging pada SHA `3c69a00c6c8c080a93d59e9208fe7ddac0bd34fd`
+membuktikan alur inti GURU -> SISWA -> koreksi -> Gradebook, privasi kunci jawaban,
+responsive mobile, outbox, dan dua hotfix terakhir. Follow-up 2026-08-12 pada SHA
+`4842278f41528f059d84f766f8a69b55106ed37c` menutup provider matrix, negative authority
+API, quality sampling, cleanup, dan evidence report packaging. Final staging sign-off
+tetap keputusan reviewer, tetapi blocker evidence yang tercatat pada re-review 2026-08-11
+sudah dilengkapi.
 
-Confidence: **0.99**.
+Confidence: **0.97**.
 
-## Independent Re-review Follow-up 7 - 2026-08-11 (Latest)
+## Independent Staging Follow-up Closure - 2026-08-12 (Latest)
+
+### Bounded verdict
+
+- **Provider matrix Bank Soal:** `PASS`.
+- **Negative authority API controls:** `PASS`.
+- **Quality sampling:** `PASS`.
+- **Evidence packaging:** `READY`, pending merge of this docs-only artifact into
+  `develop` and promotion to `staging`.
+- **Main/production promotion:** `HOLD` until reviewer grants final main gate.
+
+### Closure evidence
+
+- PR #474 merged to `develop` with CI green and merge commit
+  `748ebd2eb9568488b03bebe969964dda4da500dc`.
+- PR #475 merged to `staging` with CI green and merge commit
+  `4842278f41528f059d84f766f8a69b55106ed37c`.
+- Deploy run `31555792343` completed successfully for SHA
+  `4842278f41528f059d84f766f8a69b55106ed37c`.
+- VPS staging checkout `/opt/diis-staging/smart-ai-school`: same SHA; health `ok`.
+- Production checkout `/home/appuser/smart-ai-school`: read-only SHA
+  `8d03902dc29d6faa1e91137a08155ef56d546afb`; production was not modified.
+- Branch protection verified restored:
+  - `develop`: `required_approving_review_count=1`;
+  - `staging`: `required_approving_review_count=1`.
+- Open PR list at closure: empty.
+
+### Provider matrix result
+
+- OpenAI default Bank Soal draft generation returned 201, model `gpt-4.1-mini`, one item,
+  and generation id present.
+- Forced Ollama Bank Soal draft generation returned 201, model `ollama`, one item, and
+  generation id present after PR #474/#475 normalized provider subject output to the
+  authoritative teacher context.
+- Controlled invalid OpenAI credential test returned 503 `AI_PROVIDER_AUTH_FAILED`, did
+  not create canonical questions, and staging env was restored immediately afterward.
+- Redis/provider cleanup verified no forced circuit state or invalid key placeholder
+  remained.
+
+### Negative authority API result
+
+Direct authenticated server-boundary checks returned fail-closed 403 for:
+
+- SISWA against question draft generation and assessment session creation;
+- ORANG_TUA against question draft generation and assessment session creation;
+- GURU without matching TeachingAssignment against question draft generation and
+  assessment session creation.
+
+Responses did not expose answer key, guide answer, rubric internals, teacher ID, or
+private resource details.
+
+### Quality sampling result
+
+- Matrix: 2 majors x 6 subjects = 12 combinations.
+- Subjects: Matematika, Bahasa Indonesia, Bahasa Inggris, Administrasi Infrastruktur
+  Jaringan, Keamanan Jaringan Dasar, Troubleshooting Jaringan.
+- Minimum per combination: 10 questions.
+- Actual: 120 questions reviewed.
+- Result: 12/12 combinations PASS; 0 failed combinations; 0 wrong keys observed; 0 hard
+  answer leaks; 0 real PII; 0 rejected batches.
+
+### Packaging instruction
+
+Stage exactly:
+
+- `docs/audits/WAVE4-PHASE3-ASSESSMENT-RUNTIME-QUESTION-BANK-REVIEW-2026-08-03.md`
+- `docs/audits/WAVE4-PHASE3-ASSESSMENT-RUNTIME-QUESTION-BANK-STAGING-QA-2026-08-11.md`
+
+This is a docs/evidence-only package. Do not include source, cache, fixture dumps,
+credentials, screenshots, or runtime temp files.
+
+## Independent Staging Re-review - 2026-08-11 (Superseded by 2026-08-12 Follow-up Closure)
+
+### Bounded verdict
+
+- **Core functional staging flow:** `PASS`.
+- **Final staging sign-off:** `FOLLOW-UP REQUIRED`.
+- **Main/production promotion:** `HOLD`.
+- **Source/code remediation:** tidak diperlukan kecuali follow-up QA menemukan defect
+  baru. Kekurangan saat ini adalah evidence/runtime closure, bukan temuan source baru.
+
+### Findings
+
+#### P1-S1 - Provider matrix Bank Soal belum dibuktikan pada endpoint nyata
+
+Laporan staging hanya membuktikan satu AI generation pada `Produktif TKJ` yang
+menghasilkan empat tipe soal. Laporan tidak mengikat generation tersebut ke provider
+aktual, tidak membuktikan forced Ollama pada endpoint Bank Soal, dan tidak membuktikan
+failure path ketika provider gagal atau output ditolak. Ini belum memenuhi remaining
+runtime gate reviewer untuk OpenAI + Ollama serta tidak cukup untuk memastikan tidak ada
+canonical Question kosong/duplikat atau ledger palsu pada failure.
+
+Required narrow QA:
+
+1. jalankan satu generation Bank Soal nyata melalui OpenAI dan rekam provider/model dari
+   audit yang sudah di-redact;
+2. buka circuit staging sesuai protokol yang disetujui, jalankan payload Bank Soal yang
+   sama melalui Ollama, lalu bersihkan seluruh circuit/probe/notice key;
+3. lakukan satu controlled provider/output failure dan buktikan UI dapat retry, tidak ada
+   canonical Question baru, generation status truthful, dan tidak ada answer/PII leak;
+4. kembalikan provider staging ke `openai/closed` dan rekam safe counts/status saja.
+
+#### P1-S2 - Negative authority baru dibuktikan lewat visibility UI
+
+SISWA dan ORANG_TUA memang tidak melihat authoring surface, tetapi laporan menyatakan
+direct internal API proof tidak dijalankan. Hidden UI bukan boundary authorization.
+Selain itu belum ada proof GURU lain tanpa TeachingAssignment aktif ditolak terhadap
+Bank Soal/session milik fixture GURU.
+
+Required narrow QA:
+
+- gunakan sesi role yang sudah tersedia dan panggil endpoint authoring melalui jalur
+  aplikasi yang sah, bukan URL proxy publik mentah;
+- buktikan SISWA, ORANG_TUA, dan GURU tanpa assignment yang sesuai menerima 403/fail
+  closed untuk generate/accept question, create/activate session, dan correction;
+- pastikan respons tidak memuat question key, guide answer, rubric internal, teacher ID,
+  atau detail resource lain.
+
+#### P2-S1 - Quality sampling belum memenuhi acceptance reviewer
+
+Evidence hanya mencakup satu mapel produktif, satu jurusan, dan empat soal. Reviewer
+sebelumnya menetapkan sampling minimal tiga mapel umum dan tiga mapel produktif pada dua
+jurusan, minimal sepuluh soal per kombinasi, dinilai manusia dengan rubrik alignment TP,
+ketepatan kunci, kejelasan, difficulty, relevansi jurusan, dan ambiguitas. Karena itu QA
+saat ini membuktikan operability, belum membuktikan kualitas keluaran secara representatif.
+
+Sampling dapat dilakukan tanpa membuat banyak laporan: tambahkan satu tabel ringkas ke
+laporan QA yang sama berisi kombinasi, provider, jumlah accepted/edit ringan/rejected,
+reason code, kunci salah, hard validation leak, dan catatan guru. Target tetap: nol kunci
+salah/hard leak dan minimal 90% accepted setelah edit ringan.
+
+#### P2-S2 - Evidence final belum permanen di Git
+
+`WAVE4-PHASE3-ASSESSMENT-RUNTIME-QUESTION-BANK-STAGING-QA-2026-08-11.md` masih untracked
+di worktree reviewer dan tidak ditemukan pada `origin/staging`. Bukti QA tidak boleh hanya
+berada di satu worktree lokal sebelum main gate.
+
+Required packaging:
+
+- setelah P1-S1, P1-S2, dan P2-S1 ditutup, perbarui laporan QA yang sama;
+- stage laporan QA dan reviewer report ini dengan explicit file list;
+- buat docs/evidence PR ke `develop`, promote ke `staging`, tunggu CI dan staging deploy
+  bila exact staging tree menjadi syarat main gate;
+- baru buat promotion PR dari latest `origin/staging` ke `main`.
+
+### Evidence independently confirmed
+
+- GitHub deploy run `31471578245`: success pada branch staging dan SHA
+  `3c69a00c6c8c080a93d59e9208fe7ddac0bd34fd`.
+- VPS staging checkout: SHA yang sama; `smk-staging-api` healthy dan
+  `smk-staging-web` running.
+- `origin/develop`: `17d312c570408d30f38cbc6970b2eec865d4fcd5`.
+- `origin/staging`: `3c69a00c6c8c080a93d59e9208fe7ddac0bd34fd`.
+- `origin/main`: tetap `8d03902dc29d6faa1e91137a08155ef56d546afb`.
+- PR #458/#459 dan #460/#461 merged dengan Build, Lint & Type Check, dan Unit Tests
+  hijau. Diff hotfix sempit dan sesuai akar masalah.
+- Branch protection `develop` dan `staging`: approval wajib kembali `1`.
+- Tidak ada PR GitHub terbuka saat re-review.
+
+### Accepted staging evidence
+
+- OpenAI-path operability menghasilkan empat tipe soal dan masuk Bank Soal kanonik.
+- Session Studio, activation, randomized student attempt, submit, manual essay correction,
+  Grade UH `98`, dan `sourceAssessmentSessionId` terhubung end-to-end.
+- Kunci jawaban/guide tidak bocor pada student payload sebelum submit.
+- Outbox selesai `emitted=2`, tanpa pending/dead-letter.
+- Desktop dan mobile `390x844` usable tanpa horizontal overflow.
+- Final log sweep bersih dari error yang dicantumkan laporan.
+- Temporary credential/scratch dan runtime disposable dibersihkan; fixture staging PII-safe
+  boleh dipertahankan sesuai protokol QA Director.
+
+### Next gate
+
+Jangan meminta prompt Architect baru dan jangan membuat Wave 4.1. Kirim langsung ke
+eksekutor sebagai follow-up QA sempit pada scope Wave 4 yang sama. Setelah satu laporan
+terintegrasi menutup provider matrix, negative authority, quality sampling, dan evidence
+packaging, kembali ke reviewer untuk final staging sign-off. Production tetap tidak boleh
+dimutasi selama follow-up ini.
+
+## Independent Re-review Follow-up 7 - 2026-08-11 (Source Gate, superseded by staging re-review)
 
 Verdict: `APPROVED FOR EXPLICIT GIT PACKAGING`.
 
