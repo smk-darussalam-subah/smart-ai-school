@@ -7,23 +7,80 @@ Mode: independent review only
 
 ## Verdict
 
-`FOLLOW-UP REQUIRED BEFORE FINAL STAGING SIGN-OFF`
+`APPROVED FOR STAGING SIGN-OFF AND MAIN PROMOTION PLANNING`
 
 Source sudah jauh lebih aman daripada baseline, khususnya snapshot soal, pemisahan
 kunci jawaban, attempt server-side, idempotensi baris Grade, strict provider schema,
 lease/fencing AI, durable outbox worker, CSV identity/FK, dan notification recovery.
-Follow-up ketujuh tetap menutup seluruh temuan source dan approval packaging sebelumnya
-tetap valid. Runtime staging pada SHA `3c69a00c6c8c080a93d59e9208fe7ddac0bd34fd`
-membuktikan alur inti GURU -> SISWA -> koreksi -> Gradebook, privasi kunci jawaban,
-responsive mobile, outbox, dan dua hotfix terakhir. Follow-up 2026-08-12 pada application
-SHA `4842278f41528f059d84f766f8a69b55106ed37c` menutup provider matrix dasar, cleanup,
-dan evidence packaging. Re-review final menemukan authority matrix berbasis resource ID
-belum diuji dan quality sampling jurusan kedua belum valid secara kurikuler. Karena itu
-main/production tetap hold sampai follow-up sempit di bawah selesai.
+Follow-up ketujuh menutup seluruh temuan source. Runtime staging membuktikan alur inti
+GURU -> SISWA -> koreksi -> Gradebook, privasi kunci jawaban, responsive mobile, outbox,
+provider OpenAI/Ollama, controlled failure, negative authority hingga operasi resource-ID,
+serta quality sampling mapel umum dan produktif pada dua jurusan. Final evidence berada
+pada staging SHA `fdba558394bfe84ec4160246ee1af28f1f2b2998`; perbedaan dari application
+QA SHA hanya dokumentasi audit. Tidak ada P0/P1/P2 Wave 4 yang masih terbuka.
 
-Confidence: **0.97**.
+Confidence: **0.99**.
 
-## Independent Final Staging Re-review - 2026-08-12 (Latest)
+## Independent Final Staging Sign-off - 2026-08-12 (Latest)
+
+### Final verdict
+
+- **Source and database integrity:** `PASS`.
+- **Authenticated browser E2E:** `PASS`.
+- **Provider and failure matrix:** `PASS`.
+- **Authority and answer-key privacy:** `PASS`.
+- **Quality sampling:** `PASS`.
+- **Responsive UI and operational cleanup:** `PASS`.
+- **Staging sign-off:** `APPROVED`.
+- **Main gate:** `OPEN FOR CONTROLLED PROMOTION PLANNING`.
+
+Approval ini mengizinkan pembuatan promotion PR dari latest `origin/staging` ke `main`
+setelah sign-off reviewer ini dipermanenkan. Approval ini bukan perintah untuk melewati
+review wajib, mengubah production secara manual, atau menjalankan QA destruktif di
+production.
+
+### Closure of final findings
+
+- **P1-S3 closed:** 21/21 operasi resource-ID untuk SISWA, ORANG_TUA, dan GURU tanpa
+  TeachingAssignment/ownership gagal tertutup dengan 403/404. Cakupan meliputi accept,
+  reject, regenerate, activate, end, results, dan essay grading. Resource target tidak
+  berubah dan respons tidak membocorkan kunci/rubrik/payload privat.
+- **P2-S3 closed:** tiga sampel produktif QAAKL sekarang menggunakan TeachingAssignment,
+  modul, dan TP authoritative untuk Akuntansi Dasar, Komputer Akuntansi, dan Praktikum
+  Akuntansi. Sebanyak 30/30 soal diterima tanpa edit; sampel awal Praktikum yang lemah
+  ditolak sebagai evidence dan diganti tanpa melonggarkan validator.
+- **P2-S4 closed:** controlled provider failure menghasilkan 503, ledger final `failed`,
+  canonical Question delta nol, tanpa stale `generating`. Setelah override dibersihkan,
+  API sehat dan retry browser kembali membuka Review Draft AI dalam 14 detik tanpa error
+  provider atau legacy 410.
+
+### Independently verified evidence
+
+- PR #478 merged ke `develop` pada `74387e9819c20b55f7e8946e817cbd3a843fcd66`.
+- PR #479 merged ke `staging` pada `fdba558394bfe84ec4160246ee1af28f1f2b2998`.
+- Build Check, Lint & Type Check, dan Unit Tests pada kedua PR: success.
+- Deploy run `31565521969`: success pada SHA staging final.
+- VPS staging checkout: SHA yang sama; `smk-staging-api` healthy dan web running.
+- Perbandingan `880543daa87854e5dac2857116f3c45ac50c496f` ke SHA final hanya mengubah
+  dua dokumen audit; tidak ada source aplikasi baru setelah runtime QA.
+- Branch protection `develop` dan `staging`: satu approval wajib; open PR: tidak ada.
+- `main` dan production tetap `8d03902dc29d6faa1e91137a08155ef56d546afb`.
+
+### Controlled main sequence
+
+1. Package hanya pembaruan reviewer report ini dengan explicit file list ke `develop`,
+   lalu promote docs-only ke `staging`; tunggu CI dan deploy staging selesai.
+2. Buat promotion branch baru dari latest `origin/staging`, bukan branch lama atau
+   cherry-pick source Wave 4.
+3. Periksa diff/log staging -> main, pastikan tidak ada secret, fixture, dump, cache,
+   credential, atau artefak lokal.
+4. Buka PR ke `main`, tunggu CI dan approval wajib. Merge/deploy production tetap
+   memerlukan keputusan eksplisit Director pada gate PR tersebut.
+5. Setelah deploy, lakukan verifikasi production read-only: deployed SHA, API/web health,
+   migration status, container, dan nilai provider non-secret. Jangan forced circuit,
+   generate AI, membuat sesi, atau memutasi data production tanpa izin terpisah.
+
+## Independent Final Staging Re-review - 2026-08-12 (Superseded by final sign-off)
 
 ### Verdict
 
