@@ -47,6 +47,7 @@ const GRADE_SELECT = {
   type:         true,
   notes:        true,
   submittedBy:  true,
+  sourceAssessmentSessionId: true,
   createdAt:    true,
   updatedAt:    true,
   student: {

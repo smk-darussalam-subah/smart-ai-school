@@ -15,7 +15,7 @@ import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { QuestionBankService } from './question-bank.service';
 import {
   CreateQuestionSchema, CreateQuestionSetSchema, ImportQuestionsSchema,
-  ListQuestionSchema, ListQuestionSetSchema, UpdateQuestionSchema,
+  DuplicateQuestionSchema, ListQuestionSchema, ListQuestionSetSchema, UpdateQuestionSchema,
 } from './dto/question.dto';
 
 @Controller('questions')
@@ -67,6 +67,18 @@ export class QuestionController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.service.create(dto as Parameters<typeof this.service.create>[0], user);
+  }
+
+  @Roles('GURU')
+  @RequirePermission('lms.own.manage')
+  @Post(':id/duplicate')
+  @HttpCode(HttpStatus.CREATED)
+  duplicate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(DuplicateQuestionSchema)) dto: unknown,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.duplicate(id, dto as Parameters<typeof this.service.duplicate>[1], user);
   }
 
   @Roles('GURU')

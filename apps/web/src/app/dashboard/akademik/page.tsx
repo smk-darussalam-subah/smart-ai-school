@@ -3,7 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles, getActiveViewAs } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch, PaginatedResponse, GradeItem, AttendanceItem } from '@/lib/api';
-import type { SiswaBadge, SiswaXP, SiswaLeaderboardEntry, SiswaModul } from './_components/siswa/siswa-types';
+import type { SiswaBadge, SiswaXP, SiswaLeaderboardEntry, SiswaModul, SiswaTugas } from './_components/siswa/siswa-types';
 import { scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-times';
 import AkademikClient from './_components/AkademikClient';
 import AkademikWorkspace from './_components/AkademikWorkspace';
@@ -13,11 +13,12 @@ import OrtuWorkspace from './_components/ortu/OrtuWorkspace';
 import OrtuRefreshWrapper from './_components/ortu/OrtuRefreshWrapper';
 import KsWorkspace from './_components/KsWorkspace';
 import type { ScheduleItem, ActivityItem, RppItem, TodayClass, LmsModuleItem } from './_components/guru-types';
+import type { AssessmentSessionData } from './actions';
 import {
   normalizeAssignmentGroups,
   normalizeSppGroups,
   type SppDashboardGroup,
-  type StudentDashboardAssignmentGroup,
+  type StudentDashboardAssignmentGroup as OrtuStudentDashboardAssignmentGroup,
 } from './_components/ortu/ortu-mappers';
 
 interface Assignment { id: string; subject: string; class: { id: string; name: string } }
@@ -25,6 +26,19 @@ interface ClassItem { id: string; name: string; }
 export interface SubjectItem { id: string; code: string; name: string; isActive: boolean; }
 
 interface ActiveSemester { number: number; academicYear: { code: string } }
+interface StudentDashboardAssignment {
+  id: string;
+  type: 'lms' | 'assessment';
+  title: string;
+  subject: string;
+  guru: string | null;
+  status: 'pending' | 'submitted' | 'graded';
+  progress?: number;
+  kktp?: number;
+}
+interface SiswaDashboardAssignmentGroup {
+  assignments: StudentDashboardAssignment[];
+}
 
 function monthBounds(year: number, monthIndex0: number): { dateFrom: string; dateTo: string } {
   const month = String(monthIndex0 + 1).padStart(2, '0');
@@ -32,6 +46,29 @@ function monthBounds(year: number, monthIndex0: number): { dateFrom: string; dat
   return {
     dateFrom: `${year}-${month}-01`,
     dateTo: `${year}-${month}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
+const ASSESSMENT_SESSION_PAGE_SIZE = 100;
+
+async function fetchInitialAssessmentSessions(token: string): Promise<{
+  data: AssessmentSessionData[];
+  total: number;
+  page: number;
+  limit: number;
+  failed: boolean;
+}> {
+  const first = await apiFetch<{ data: AssessmentSessionData[]; total: number; page: number; limit: number }>(
+    `/assessment/sessions?page=1&limit=${ASSESSMENT_SESSION_PAGE_SIZE}`,
+    token,
+  );
+  if (!first) return { data: [], total: 0, page: 1, limit: ASSESSMENT_SESSION_PAGE_SIZE, failed: true };
+  return {
+    data: first.data,
+    total: first.total ?? first.data.length,
+    page: first.page ?? 1,
+    limit: first.limit ?? ASSESSMENT_SESSION_PAGE_SIZE,
+    failed: false,
   };
 }
 
@@ -85,7 +122,7 @@ export default async function AkademikPage() {
       apiFetch<{ id: string; studentId: string; totalXp: number; level: number; streakDays: number; nextLevelXp: number | null; xpToNextLevel: number | null }>('/gamification/my-xp', token),
       apiFetch<Array<{ id: string; studentId: string; totalXp: number; level: number; rank: number; student: { nis: string; user: { fullName: string }; class: { id: string; name: string } | null } }>>('/gamification/leaderboard-xp?limit=10', token),
       // P26: Wire pure SIM data sources to real APIs
-      apiFetch<{ data: Assignment[] }>('/student-dashboard/assignments?limit=20', token),
+      apiFetch<{ data: SiswaDashboardAssignmentGroup[] }>('/student-dashboard/assignments?limit=20', token),
       apiFetch<{ data: LmsModuleItem[] }>('/lms/modules/my-learning?limit=50', token),
       apiFetch<{ data: unknown[] }>('/student-dashboard/cp', token),
       apiFetch<{ hadir: number; izin: number; sakit: number; alpha: number; total: number }>('/analytics/attendance/stats', token),
@@ -154,6 +191,26 @@ export default async function AkademikPage() {
           };
         })
       : null;
+    const realAssignments: SiswaTugas[] | null = assignmentsRes
+      ? assignmentsRes.data.flatMap((group) => group.assignments).map((item, index) => ({
+          id: index + 1,
+          uuid: item.id,
+          assessmentSessionId: item.type === 'assessment' ? item.id : undefined,
+          mp: item.subject,
+          title: item.title,
+          type: item.type === 'assessment' ? 'Asesmen' : 'Modul LMS',
+          deadline: 'Aktif',
+          dlDays: 0,
+          status: item.status,
+          guru: item.guru ?? 'Guru mapel',
+          desc: item.type === 'assessment'
+            ? 'Kerjakan asesmen sesuai waktu dan kirim jawaban dari sistem.'
+            : 'Lanjutkan pembelajaran modul sampai selesai.',
+          score: item.status === 'graded' ? item.progress ?? 0 : undefined,
+          feedback: null,
+          submittedFiles: 0,
+        }))
+      : null;
 
     return (
       <SiswaRefreshWrapper>
@@ -165,7 +222,7 @@ export default async function AkademikPage() {
           realBadges={realBadges}
           realXp={realXp}
           realLeaderboard={realLeaderboard}
-          realAssignments={assignmentsRes?.data ?? null}
+          realAssignments={realAssignments}
           realModules={realModules}
           realCp={cpRes?.data ?? null}
           realAttStats={realAttStats}
@@ -183,8 +240,7 @@ export default async function AkademikPage() {
       apiFetch<{ data: RppItem[] }>('/rpp?limit=100', token),
       apiFetch<{ data: LmsModuleItem[] }>('/lms/modules?limit=200', token),
       apiFetch<ActiveSemester>('/school/semesters/active', token),
-      // R-13: Fetch assessment sessions for guru to wire hasPenilaian/hasFeedback
-      apiFetch<{ data: Array<{ id: string; classId: string | null; status: string; _count: { responses: number } }> }>('/assessment/sessions?limit=100', token),
+      fetchInitialAssessmentSessions(token),
     ]);
 
     const schedules = schedulesRes?.data ?? [];
@@ -194,16 +250,24 @@ export default async function AkademikPage() {
 
     // R-13: Build a map of classId → latest assessment session for penilaian/feedback status.
     // A session with status 'active' or 'completed' and responses > 0 means penilaian is available.
-    const assessmentSessions = assessmentRes?.data ?? [];
-    const sessionByClass = new Map<string, { id: string; status: string; hasResponses: boolean }>();
+    const assessmentSessions = assessmentRes.data;
+    const sessionByClassSubject = new Map<string, { id: string; status: string; hasResponses: boolean }>();
     for (const s of assessmentSessions) {
       if (s.classId) {
-        const existing = sessionByClass.get(s.classId);
+        const key = `${s.classId}|${s.module?.subject ?? ''}`;
+        const existing = sessionByClassSubject.get(key);
         // Prefer completed sessions with responses, then active, then draft
         if (!existing || s.status === 'completed' || (s.status === 'active' && existing.status === 'draft')) {
-          sessionByClass.set(s.classId, { id: s.id, status: s.status, hasResponses: s._count?.responses > 0 });
+          sessionByClassSubject.set(key, { id: s.id, status: s.status, hasResponses: (s._count?.responses ?? 0) > 0 });
         }
       }
+    }
+    const moduleByClassSubject = new Map<string, string>();
+    for (const module of lmsRes?.data ?? []) {
+      if (!module.classId || module.status === 'archived') continue;
+      const key = `${module.classId}|${module.subject}`;
+      const existing = moduleByClassSubject.get(key);
+      if (!existing || module.status === 'published') moduleByClassSubject.set(key, module.id);
     }
 
     const todayClasses: TodayClass[] = schedules
@@ -218,8 +282,9 @@ export default async function AkademikPage() {
         jpEnd: s.jpEnd,
         startLabel: jpStartLabel(s.jpStart),
         isNow: nowJp >= s.jpStart && nowJp <= s.jpEnd,
-        // R-13: Link assessment session if exists for this class
-        assessmentSessionId: sessionByClass.get(s.classId)?.id,
+        moduleId: moduleByClassSubject.get(`${s.classId}|${s.teachingAssignment?.subject ?? ''}`),
+        // R-13: Link assessment session if exists for this class+subject
+        assessmentSessionId: sessionByClassSubject.get(`${s.classId}|${s.teachingAssignment?.subject ?? ''}`)?.id,
       }));
 
     const academicYear = semRes?.academicYear?.code ?? '';
@@ -236,9 +301,13 @@ export default async function AkademikPage() {
         rpp={rppRes?.data ?? []}
         lmsModules={lmsRes?.data ?? []}
         todayClasses={todayClasses}
+        assessmentSessions={assessmentSessions}
+        assessmentSessionTotal={assessmentRes.total}
+        assessmentSessionPage={assessmentRes.page}
+        assessmentSessionLimit={assessmentRes.limit}
         academicYear={academicYear}
         semester={semester}
-        dataWarning={dataWarning}
+        dataWarning={dataWarning || assessmentRes.failed}
       />
     );
   }
@@ -251,8 +320,7 @@ export default async function AkademikPage() {
       apiFetch<{ data: RppItem[] }>('/rpp?limit=100', token),
       apiFetch<{ data: LmsModuleItem[] }>('/lms/modules?limit=200', token),
       apiFetch<ActiveSemester>('/school/semesters/active', token),
-      // P29: Wire sumatif audit from real assessment sessions API
-      apiFetch<{ data: unknown[] }>('/assessment/sessions?limit=20', token),
+      fetchInitialAssessmentSessions(token),
     ]);
 
     const academicYear = semRes?.academicYear?.code ?? '';
@@ -268,11 +336,11 @@ export default async function AkademikPage() {
         schedules={schedulesRes?.data ?? []}
         activities={activitiesRes?.data ?? []}
         lmsModules={lmsRes?.data ?? []}
-        realSumatif={assessmentRes?.data ?? undefined}
+        realSumatif={assessmentRes.data}
         subjects={subjectsRes?.data ?? []}
         academicYear={academicYear}
         semester={semester}
-        dataWarning={dataWarning}
+        dataWarning={dataWarning || assessmentRes.failed}
       />
     );
   }
@@ -313,7 +381,7 @@ export default async function AkademikPage() {
     const [childData, sppRes, assignmentsDashboardRes, semRes, leaderboardRes] = await Promise.all([
       childDataPromise,
       childIds.length ? apiFetch<{ data: SppDashboardGroup[] }>('/student-dashboard/spp', token) : Promise.resolve(null),
-      childIds.length ? apiFetch<{ data: StudentDashboardAssignmentGroup[] }>('/student-dashboard/assignments', token) : Promise.resolve(null),
+      childIds.length ? apiFetch<{ data: OrtuStudentDashboardAssignmentGroup[] }>('/student-dashboard/assignments', token) : Promise.resolve(null),
       apiFetch<ActiveSemester>('/school/semesters/active', token),
       childIds.length ? apiFetch<LeaderboardEntry[]>('/gamification/leaderboard-xp?limit=50', token) : Promise.resolve(null),
     ]);

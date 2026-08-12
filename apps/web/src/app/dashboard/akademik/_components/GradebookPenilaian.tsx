@@ -110,7 +110,7 @@ export default function GradebookPenilaian({
           </button>
           <button type="button" onClick={exportCsv} className="inline-flex items-center gap-1.5 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><Download className="h-4 w-4 text-emerald-600" />Ekspor</button>
           <button type="button" onClick={onInputNilai} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-[12.5px] font-bold text-white hover:bg-emerald-700"><Plus className="h-4 w-4" />Input Nilai</button>
-          <button type="button" onClick={() => setPgBankOpen(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><Database className="h-4 w-4 text-emerald-600" />Bank Soal PG</button>
+          <button type="button" onClick={() => setPgBankOpen(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><Database className="h-4 w-4 text-emerald-600" />Bank Soal</button>
           <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-1.5 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><Printer className="h-4 w-4 text-emerald-600" />Cetak</button>
         </div>
       </div>

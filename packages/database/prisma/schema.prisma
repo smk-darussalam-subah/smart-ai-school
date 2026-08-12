@@ -413,6 +413,7 @@ model Grade {
   score        Decimal   @db.Decimal(5, 2)
   type         GradeType
   notes        String?   @db.Text
+  sourceAssessmentSessionId String? @map("source_assessment_session_id") @db.Uuid
   submittedBy  String    @map("submitted_by") @db.Uuid   // userId pelaku (auth.users, audit — no FK; jika perlu teacher, trace via user→teacher)
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
@@ -420,10 +421,13 @@ model Grade {
   // Relations
   student    Student            @relation(fields: [studentId], references: [id])
   assignment TeachingAssignment @relation(fields: [assignmentId], references: [id])
+  sourceAssessmentSession AssessmentSession? @relation(fields: [sourceAssessmentSessionId], references: [id])
 
   @@index([studentId, academicYear, semester])
   @@index([assignmentId])
   @@index([submittedBy])
+  @@index([sourceAssessmentSessionId])
+  @@unique([sourceAssessmentSessionId, studentId])
   @@map("grades")
   @@schema("academic")
 }
@@ -638,6 +642,7 @@ model AssessmentSession {
   type         AssessmentType
   status       AssessmentSessionStatus @default(draft)
   questions    Json                  @db.JsonB
+  gradeTarget  GradeType?            @map("grade_target")
   durationMinutes Int?               @map("duration_minutes") // U2: timer durasi pengerjaan (menit)
   randomizeOrder Boolean   @default(false) @map("randomize_order") // U2: randomisasi urutan soal
   startedAt    DateTime?             @map("started_at")
@@ -651,6 +656,7 @@ model AssessmentSession {
   teacher    Teacher             @relation(fields: [teacherId], references: [id])
   class      Class?              @relation(fields: [classId], references: [id])
   responses  AssessmentResponse[]
+  sourceGrades Grade[]
 
   @@index([moduleId, status])
   @@index([teacherId, academicYear, semester])
@@ -664,6 +670,8 @@ model AssessmentResponse {
   sessionId   String    @map("session_id") @db.Uuid
   studentId   String    @map("student_id") @db.Uuid
   answers     Json?     @db.JsonB
+  questionOrder String[] @default([]) @map("question_order")
+  itemScores  Json?     @map("item_scores") @db.JsonB
   score       Int?
   startedAt   DateTime? @map("started_at") // U2: kapan siswa mulai mengerjakan
   timeSpentSec Int?     @map("time_spent_sec") // U2: total detik yang dihabiskan
@@ -677,6 +685,27 @@ model AssessmentResponse {
   @@unique([sessionId, studentId])
   @@index([studentId])
   @@map("assessment_responses")
+  @@schema("academic")
+}
+
+model AssessmentEventOutbox {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventType   String    @map("event_type") @db.VarChar(80)
+  dedupeKey   String    @unique @map("dedupe_key") @db.VarChar(180)
+  payload     Json      @db.JsonB
+  status      String    @default("pending") @db.VarChar(20)
+  attempts    Int       @default(0)
+  lastError   String?   @map("last_error") @db.Text
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at")
+  emittedAt   DateTime? @map("emitted_at")
+  deadLetterAt DateTime? @map("dead_letter_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@index([status, nextAttemptAt])
+  @@index([eventType, createdAt])
+  @@map("assessment_event_outbox")
   @@schema("academic")
 }
 
@@ -953,6 +982,24 @@ model RagChunk {
   @@index([category])
   @@index([isActive])
   @@map("rag_chunks")
+  @@schema("ai_knowledge")
+}
+
+model AiDraftAcceptance {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  aiGenerationId     String   @map("ai_generation_id") @db.Uuid
+  idempotencyKey     String   @map("idempotency_key") @db.VarChar(120)
+  payloadFingerprint String   @map("payload_fingerprint") @db.VarChar(64)
+  itemKeys           String[] @default([]) @map("item_keys")
+  status             String   @default("pending") @db.VarChar(20)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
+
+  aiGeneration AiGeneration @relation(fields: [aiGenerationId], references: [id], onDelete: Cascade)
+
+  @@unique([aiGenerationId, idempotencyKey])
+  @@index([status, createdAt])
+  @@map("ai_draft_acceptances")
   @@schema("ai_knowledge")
 }
 
@@ -1413,6 +1460,24 @@ enum QuestionDifficulty {
   @@schema("academic")
 }
 
+enum QuestionSource {
+  MANUAL
+  AI_ASSISTED
+
+  @@schema("academic")
+}
+
+enum CognitiveLevel {
+  C1
+  C2
+  C3
+  C4
+  C5
+  C6
+
+  @@schema("academic")
+}
+
 model Question {
   id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   teacherId  String             @map("teacher_id") @db.Uuid
@@ -1424,14 +1489,24 @@ model Question {
   difficulty QuestionDifficulty @default(medium)
   tags       String[]
   rubric     Json?              @db.JsonB // U2: essay rubrik — Array<{ id, name, weight, maxScore, description }>
+  source     QuestionSource     @default(MANUAL)
+  aiGenerationId String?        @map("ai_generation_id") @db.Uuid
+  aiItemKey  String?            @map("ai_item_key") @db.VarChar(80)
+  tpRefs     String[]           @default([]) @map("tp_refs")
+  cognitiveLevel CognitiveLevel? @map("cognitive_level")
   createdAt  DateTime            @default(now()) @map("created_at")
   updatedAt  DateTime            @updatedAt @map("updated_at")
 
   teacher      Teacher       @relation(fields: [teacherId], references: [id])
+  aiGeneration AiGeneration? @relation(fields: [aiGenerationId], references: [id], onDelete: Restrict)
+  importRows   QuestionImportRow[]
   questionSets QuestionSet[]
 
   @@index([teacherId, subject])
   @@index([subject, type])
+  @@index([source])
+  @@index([aiGenerationId])
+  @@unique([aiGenerationId, aiItemKey])
   @@map("questions")
   @@schema("academic")
 }
@@ -1448,6 +1523,27 @@ model QuestionSet {
 
   @@index([teacherId])
   @@map("question_sets")
+  @@schema("academic")
+}
+
+model QuestionImportRow {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teacherId          String   @map("teacher_id") @db.Uuid
+  batchKey           String   @map("batch_key") @db.VarChar(120)
+  rowKey             String   @map("row_key") @db.VarChar(120)
+  payloadFingerprint String   @map("payload_fingerprint") @db.VarChar(64)
+  questionId         String?  @map("question_id") @db.Uuid
+  status             String   @default("pending") @db.VarChar(20)
+  errorMessage       String?  @map("error_message") @db.Text
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
+
+  question Question? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+
+  @@unique([teacherId, batchKey, rowKey])
+  @@index([teacherId, batchKey])
+  @@index([questionId])
+  @@map("question_import_rows")
   @@schema("academic")
 }
 
@@ -1589,10 +1685,21 @@ model AiGeneration {
   output     String   @db.Text
   model      String   @db.VarChar(100)
   tokensUsed Int?    @map("tokens_used")
+  sourceType String?  @map("source_type") @db.VarChar(20)
+  sourceId   String?  @map("source_id") @db.Uuid
+  status     String?  @db.VarChar(30)
+  requestSpec Json?   @map("request_spec") @db.JsonB
+  contextSnapshot Json? @map("context_snapshot") @db.JsonB
+  idempotencyKey String? @map("idempotency_key") @db.VarChar(120)
   createdAt  DateTime @default(now()) @map("created_at")
+
+  questions Question[]
+  acceptances AiDraftAcceptance[]
 
   @@index([teacherId, createdAt])
   @@index([type, createdAt])
+  @@index([sourceType, sourceId])
+  @@unique([teacherId, type, idempotencyKey])
   @@map("ai_generations")
   @@schema("ai_knowledge")
 }

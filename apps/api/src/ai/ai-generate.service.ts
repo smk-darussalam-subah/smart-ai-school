@@ -1,10 +1,13 @@
 import {
+  BadRequestException,
+  ConflictException,
   ForbiddenException,
   GoneException,
   HttpException,
   HttpStatus,
   Inject,
   Injectable,
+  NotFoundException,
   Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -12,13 +15,23 @@ import { AuthUser } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { AIGateway, AiChatOptions } from '@smk/types';
 import { z } from 'zod';
+import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveTeacherId } from '../common/helpers/role-helpers';
-import { AiRppSection, GenerateRppStepDto } from './dto/generate.dto';
+import {
+  AcceptQuestionDraftDto,
+  GenerateQuestionDraftDto,
+  AiRppSection,
+  GenerateRppStepDto,
+  RejectQuestionDraftDto,
+  RegenerateQuestionDraftItemDto,
+} from './dto/generate.dto';
 import { hasPii, stripPiiForLlm } from './adapters/pii-strip.utils';
 import { NotificationService } from '../notification/notification.service';
 import { OpenAiProviderError } from './adapters/openai.adapter';
 import { AiProviderStatusService } from './ai-provider-status.service';
+import { QuestionPayloadSchema } from '../assessment/assessment-contract';
+import { questionPayloadToData } from '../assessment/assessment-runtime';
 
 type AiErrorCode =
   | 'AI_ENDPOINT_DISABLED'
@@ -48,11 +61,41 @@ type ResolvedRppContext = {
   body: Record<string, unknown>;
 };
 
+type ResolvedQuestionSourceContext = {
+  teacherId: string;
+  sourceType: 'rpp' | 'module';
+  sourceId: string;
+  subject: string;
+  title: string;
+  academicYear: string;
+  semester: number;
+  classId: string;
+  className: string;
+  grade: number | null;
+  majorName: string | null;
+  majorDescription: string | null;
+  tpOptions: Array<{ ref: string; text: string }>;
+  contentSummary: string;
+};
+
 type AiCallResult = {
   output: string;
   model: 'ollama' | 'gpt-4.1-mini';
   promptForAudit: string;
 };
+
+type QuestionDraftLease = {
+  leaseId: string;
+  leaseExpiresAt: string;
+  leaseSequence: number;
+};
+
+type QuestionDraftClaim =
+  | { kind: 'claimed'; id: string; lease: QuestionDraftLease }
+  | { kind: 'wait' }
+  | { kind: 'ready'; response: { generationId: string; model: string; source: ReturnType<AiGenerateService['contextSnapshot']>; items: QuestionDraftItem[] } };
+
+const QUESTION_DRAFT_LEASE_MS = 120_000;
 
 const OPENAI_RATE_LIMIT_MAX_ATTEMPTS = 2;
 const OPENAI_RATE_LIMIT_MAX_DELAY_MS = 2_000;
@@ -70,6 +113,9 @@ const OPENAI_RATE_LIMIT_ERROR_CODES = new Set([
   'tokens_rate_limit_exceeded',
   'requests_rate_limit_exceeded',
 ]);
+
+const MAJOR_PRODUCTIVE_CONTEXT_MAX_CHARS = 800;
+const MAJOR_PRODUCTIVE_HINT_MAX_CHARS = 180;
 
 const SECTION_LABELS: Record<AiRppSection, string> = {
   cp_tp: 'Capaian Pembelajaran (CP) dan Tujuan Pembelajaran (TP)',
@@ -113,10 +159,29 @@ const FORBIDDEN_OUTPUT_PATTERNS = [
   /\bki\s*-\s*kd\b/i,
   /\bkd\b/i,
 ] as const;
+const AMBIGUOUS_OPTION_PATTERNS = [
+  /\bsemua\s+jawaban\s+benar\b/i,
+  /\bsemua\s+benar\b/i,
+  /\btidak\s+ada\s+jawaban\s+yang\s+benar\b/i,
+  /\b(?:a|b|c|d)\s+(?:dan|&)\s+(?:a|b|c|d)\s+benar\b/i,
+] as const;
+const NEAR_DUPLICATE_THRESHOLD = 0.82;
 
 const TextField = z.string().trim().min(3).max(3000);
 const ShortTextField = z.string().trim().min(1).max(160);
 const TpRefField = z.string().trim().regex(/^TP\s+\d+$/i);
+const QuestionDraftItemSchema = z.object({
+  itemKey: z.string().trim().min(3).max(80),
+  question: QuestionPayloadSchema,
+  tpRefs: z.array(z.string().trim().min(1).max(120)).min(1).max(20),
+  cognitiveLevel: z.enum(['C1', 'C2', 'C3', 'C4', 'C5', 'C6']),
+  rationale: z.string().trim().min(3).max(1000),
+  warnings: z.array(z.string().trim().min(1).max(300)).max(10).default([]),
+}).strict();
+const QuestionDraftOutputSchema = z.object({
+  items: z.array(QuestionDraftItemSchema).min(1).max(20),
+}).strict();
+type QuestionDraftItem = z.infer<typeof QuestionDraftItemSchema>;
 
 const AtpItemSchema = z.object({
   tpRef: TpRefField,
@@ -165,6 +230,8 @@ const PatchSchemas = {
 
 @Injectable()
 export class AiGenerateService {
+  private readonly inProcessLocks = new Map<string, Promise<void>>();
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject('AI_GATEWAY') private readonly gateway: AIGateway,
@@ -197,6 +264,1299 @@ export class AiGenerateService {
     });
 
     return { type: dto.section, output };
+  }
+
+  async generateQuestionDrafts(dto: GenerateQuestionDraftDto, user: AuthUser) {
+    const context = await this.loadQuestionSourceContext(dto, user);
+    this.assertRequestedTpRefs(dto.tpRefs, context);
+
+    if (dto.teacherInstruction && hasPii(dto.teacherInstruction)) {
+      throw this.aiException('AI_CONTEXT_PII_BLOCKED', HttpStatus.BAD_REQUEST);
+    }
+    this.assertProductiveContextConfigured(dto, context);
+
+    return this.withInProcessLock(`ai-question-generate:${context.teacherId}:${dto.idempotencyKey}`, async () => {
+      const requestSpec = this.generationRequestSpec(dto);
+      const claim = await this.claimQuestionDraftGeneration(context, dto, requestSpec);
+      if (claim.kind === 'ready') return claim.response;
+      if (claim.kind === 'wait') return this.waitForQuestionDraftGeneration(context, dto, requestSpec);
+
+      const prompt = this.buildQuestionDraftPrompt(dto, context);
+      try {
+        const { ai, parsed } = await this.callQuestionDraftAiWithBoundedRepair(prompt, dto, context);
+        await this.assertNoQuestionDraftDuplicates(parsed.items, context.teacherId, context.subject);
+        const output = JSON.stringify({ items: parsed.items });
+        const stored = await this.finalizeQuestionDraftGeneration(claim.id, claim.lease, ai.promptForAudit, output, ai.model);
+
+        return {
+          generationId: stored.id,
+          model: stored.model,
+          source: this.contextSnapshot(context),
+          items: parsed.items,
+        };
+      } catch (error) {
+        await this.markQuestionDraftGenerationFailed(claim.id, claim.lease, prompt, error);
+        if (error instanceof HttpException) throw error;
+        throw this.mapProviderError(error, hasPii(prompt));
+      }
+    });
+  }
+
+  async acceptQuestionDrafts(generationId: string, dto: AcceptQuestionDraftDto, user: AuthUser) {
+    return this.withInProcessLock(
+      `ai-question-lifecycle:${generationId}`,
+      () => this.acceptQuestionDraftsLocked(generationId, dto, user),
+    );
+  }
+
+  private async acceptQuestionDraftsLocked(generationId: string, dto: AcceptQuestionDraftDto, user: AuthUser) {
+    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+    const generation = await this.prisma.aiGeneration.findFirst({
+      where: { id: generationId, teacherId, type: 'question-drafts' },
+      select: { id: true, teacherId: true, output: true, sourceType: true, sourceId: true, contextSnapshot: true, status: true },
+    });
+    if (!generation) throw new ForbiddenException('Draft AI Bank Soal tidak ditemukan');
+    if (generation.status === 'rejected') throw new ConflictException('Draft AI Bank Soal sudah ditolak');
+
+    const original = QuestionDraftOutputSchema.parse(JSON.parse(generation.output));
+    const originalKeys = new Set(original.items.map((item) => item.itemKey));
+    const context = await this.reloadQuestionGenerationContext(generation, user);
+    const payloadFingerprint = this.acceptanceFingerprint(dto.items);
+
+    for (const item of dto.items) {
+      if (!originalKeys.has(item.itemKey)) {
+        throw new BadRequestException(`Item draft ${item.itemKey} tidak dikenal`);
+      }
+      this.assertQuestionDraftItem({ ...item, rationale: 'accepted', warnings: [] }, context);
+    }
+
+    const accepted = await this.prisma.$transaction(async (tx) => {
+      const acceptance = await tx.aiDraftAcceptance.upsert({
+        where: {
+          aiGenerationId_idempotencyKey: {
+            aiGenerationId: generation.id,
+            idempotencyKey: dto.idempotencyKey,
+          },
+        },
+        create: {
+          aiGenerationId: generation.id,
+          idempotencyKey: dto.idempotencyKey,
+          payloadFingerprint,
+          itemKeys: dto.items.map((item) => item.itemKey),
+        },
+        update: {},
+        select: { payloadFingerprint: true },
+      });
+      if (acceptance.payloadFingerprint !== payloadFingerprint) {
+        throw new ConflictException('Idempotency key accept sudah dipakai untuk payload berbeda');
+      }
+
+      const locked = await tx.aiGeneration.findFirst({
+        where: { id: generationId, teacherId, type: 'question-drafts' },
+        select: { id: true, status: true },
+      });
+      if (!locked) throw new ForbiddenException('Draft AI Bank Soal tidak ditemukan');
+      if (locked.status === 'rejected') throw new ConflictException('Draft AI Bank Soal sudah ditolak');
+
+      const result: Array<{ id: string; subject: string; type: string; body: string; difficulty: string; aiItemKey: string | null }> = [];
+      const existingForGeneration = await tx.question.findMany({
+        where: { aiGenerationId: generation.id },
+        select: {
+          id: true, subject: true, type: true, body: true, options: true, answer: true,
+          difficulty: true, tags: true, rubric: true, aiItemKey: true, tpRefs: true, cognitiveLevel: true,
+        },
+      });
+      const acceptedKeys = new Set(existingForGeneration.map((item) => item.aiItemKey).filter((item): item is string => Boolean(item)));
+      for (const item of dto.items) {
+        const data = {
+          subject: item.question.subject,
+          type: item.question.type,
+          body: item.question.body,
+          difficulty: item.question.difficulty,
+          tags: item.question.tags,
+          ...questionPayloadToData(item.question),
+        };
+        const question = await tx.question.upsert({
+          where: { aiGenerationId_aiItemKey: { aiGenerationId: generation.id, aiItemKey: item.itemKey } },
+          create: {
+            teacherId,
+            ...data,
+            source: 'AI_ASSISTED',
+            aiGenerationId: generation.id,
+            aiItemKey: item.itemKey,
+            tpRefs: item.tpRefs,
+            cognitiveLevel: item.cognitiveLevel,
+          },
+          update: {},
+          select: {
+            id: true, subject: true, type: true, body: true, options: true, answer: true,
+            difficulty: true, tags: true, rubric: true, aiItemKey: true, tpRefs: true, cognitiveLevel: true,
+          },
+        });
+        const expected = { ...data, aiItemKey: item.itemKey, tpRefs: item.tpRefs, cognitiveLevel: item.cognitiveLevel };
+        const current = {
+          subject: question.subject,
+          type: question.type,
+          body: question.body,
+          options: question.options,
+          answer: question.answer,
+          difficulty: question.difficulty,
+          tags: question.tags,
+          rubric: question.rubric,
+          aiItemKey: question.aiItemKey,
+          tpRefs: question.tpRefs,
+          cognitiveLevel: question.cognitiveLevel,
+        };
+        if (this.persistedQuestionFingerprint(current) !== this.persistedQuestionFingerprint(expected)) {
+          throw new ConflictException('Item draft sudah diterima dengan payload berbeda');
+        }
+        acceptedKeys.add(item.itemKey);
+        result.push({
+          id: question.id,
+          subject: question.subject,
+          type: question.type,
+          body: question.body,
+          difficulty: question.difficulty,
+          aiItemKey: question.aiItemKey,
+        });
+      }
+
+      await tx.aiGeneration.update({
+        where: { id: generation.id },
+        data: { status: original.items.every((item) => acceptedKeys.has(item.itemKey)) ? 'accepted' : 'partially_accepted' },
+      });
+      await tx.aiDraftAcceptance.update({
+        where: {
+          aiGenerationId_idempotencyKey: {
+            aiGenerationId: generation.id,
+            idempotencyKey: dto.idempotencyKey,
+          },
+        },
+        data: { status: 'accepted' },
+      });
+      return result;
+    });
+
+    return { generationId: generation.id, acceptedCount: accepted.length, questions: accepted };
+  }
+
+  async regenerateQuestionDraftItem(
+    generationId: string,
+    itemKey: string,
+    dto: RegenerateQuestionDraftItemDto,
+    user: AuthUser,
+  ) {
+    return this.withInProcessLock(
+      `ai-question-lifecycle:${generationId}`,
+      () => this.regenerateQuestionDraftItemLocked(generationId, itemKey, dto, user),
+    );
+  }
+
+  private async regenerateQuestionDraftItemLocked(
+    generationId: string,
+    itemKey: string,
+    dto: RegenerateQuestionDraftItemDto,
+    user: AuthUser,
+  ) {
+    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+    if (dto.teacherInstruction && hasPii(dto.teacherInstruction)) {
+      throw this.aiException('AI_CONTEXT_PII_BLOCKED', HttpStatus.BAD_REQUEST);
+    }
+
+    const generation = await this.prisma.aiGeneration.findFirst({
+      where: { id: generationId, teacherId, type: 'question-drafts' },
+      select: {
+        id: true,
+        output: true,
+        requestSpec: true,
+        contextSnapshot: true,
+        sourceType: true,
+        sourceId: true,
+        status: true,
+      },
+    });
+    if (!generation) throw new ForbiddenException('Draft AI Bank Soal tidak ditemukan');
+    if (generation.status === 'accepted' || generation.status === 'rejected') {
+      throw new ConflictException('Draft AI Bank Soal sudah selesai dan tidak dapat diregenerasi');
+    }
+
+    const original = QuestionDraftOutputSchema.parse(JSON.parse(generation.output));
+    const target = original.items.find((item) => item.itemKey === itemKey);
+    if (!target) throw new NotFoundException('Item draft AI tidak ditemukan');
+    const acceptedItem = await this.prisma.question.findUnique({
+      where: { aiGenerationId_aiItemKey: { aiGenerationId: generation.id, aiItemKey: itemKey } },
+      select: { id: true },
+    });
+    if (acceptedItem) throw new ConflictException('Item draft sudah diterima dan tidak dapat diregenerasi');
+
+    const context = await this.reloadQuestionGenerationContext(generation, user);
+    const requestSpec = this.questionDraftSpecFromGeneration(generation.requestSpec, context);
+    const regenerateDto: GenerateQuestionDraftDto = {
+      ...(context.sourceType === 'module' ? { moduleId: context.sourceId } : { rppId: context.sourceId }),
+      purpose: requestSpec.purpose,
+      questionCount: 1,
+      typeDistribution: {
+        multiple_choice: target.question.type === 'multiple_choice' ? 1 : 0,
+        true_false: target.question.type === 'true_false' ? 1 : 0,
+        matching: target.question.type === 'matching' ? 1 : 0,
+        essay: target.question.type === 'essay' ? 1 : 0,
+      },
+      difficultyDistribution: {
+        easy: target.question.difficulty === 'easy' ? 1 : 0,
+        medium: target.question.difficulty === 'medium' ? 1 : 0,
+        hard: target.question.difficulty === 'hard' ? 1 : 0,
+      },
+      cognitiveDistribution: {
+        C1: target.cognitiveLevel === 'C1' ? 1 : 0,
+        C2: target.cognitiveLevel === 'C2' ? 1 : 0,
+        C3: target.cognitiveLevel === 'C3' ? 1 : 0,
+        C4: target.cognitiveLevel === 'C4' ? 1 : 0,
+        C5: target.cognitiveLevel === 'C5' ? 1 : 0,
+        C6: target.cognitiveLevel === 'C6' ? 1 : 0,
+      },
+      tpRefs: target.tpRefs,
+      contextMode: requestSpec.contextMode,
+      character: requestSpec.character,
+      teacherInstruction: dto.teacherInstruction ?? requestSpec.teacherInstruction,
+      idempotencyKey: `regen-${generation.id}-${itemKey.slice(0, 40)}`,
+    };
+
+    const prompt = [
+      this.buildQuestionDraftPrompt(regenerateDto, context),
+      `Regenerate tepat satu item pengganti untuk itemKey ${itemKey}. Jangan mengubah tipe, kesulitan, level kognitif, atau TP.`,
+    ].join('\n');
+    const { parsed } = await this.callQuestionDraftAiWithBoundedRepair(prompt, regenerateDto, context);
+    const replacement: QuestionDraftItem = { ...parsed.items[0]!, itemKey: target.itemKey };
+    const next = { items: original.items.map((item) => item.itemKey === itemKey ? replacement : item) };
+    await this.assertNoQuestionDraftDuplicates(next.items, teacherId, context.subject);
+
+    await this.prisma.aiGeneration.update({
+      where: { id: generation.id },
+      data: { output: JSON.stringify(next), status: 'drafted' },
+    });
+
+    return { generationId: generation.id, item: replacement };
+  }
+
+  async rejectQuestionDrafts(generationId: string, dto: RejectQuestionDraftDto, user: AuthUser) {
+    return this.withInProcessLock(
+      `ai-question-lifecycle:${generationId}`,
+      () => this.rejectQuestionDraftsLocked(generationId, dto, user),
+    );
+  }
+
+  private async rejectQuestionDraftsLocked(generationId: string, dto: RejectQuestionDraftDto, user: AuthUser) {
+    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+    const generation = await this.prisma.aiGeneration.findFirst({
+      where: { id: generationId, teacherId, type: 'question-drafts' },
+      select: { id: true, status: true, sourceType: true, sourceId: true, contextSnapshot: true },
+    });
+    if (!generation) throw new ForbiddenException('Draft AI Bank Soal tidak ditemukan');
+    if (generation.status === 'accepted') throw new ConflictException('Draft AI Bank Soal sudah diterima');
+    await this.reloadQuestionGenerationContext(generation, user);
+
+    const acceptedCount = await this.prisma.question.count({
+      where: { aiGenerationId: generation.id },
+    });
+    if (acceptedCount > 0) {
+      throw new ConflictException('Sebagian item sudah diterima; draft tidak dapat ditolak seluruhnya');
+    }
+
+    const fingerprint = this.questionFingerprint({ generationId, action: 'reject', idempotencyKey: dto.idempotencyKey });
+    await this.prisma.$transaction(async (tx) => {
+      const acceptance = await tx.aiDraftAcceptance.upsert({
+        where: {
+          aiGenerationId_idempotencyKey: {
+            aiGenerationId: generation.id,
+            idempotencyKey: dto.idempotencyKey,
+          },
+        },
+        create: {
+          aiGenerationId: generation.id,
+          idempotencyKey: dto.idempotencyKey,
+          payloadFingerprint: fingerprint,
+          itemKeys: [],
+          status: 'accepted',
+        },
+        update: {},
+        select: { payloadFingerprint: true },
+      });
+      if (acceptance.payloadFingerprint !== fingerprint) {
+        throw new ConflictException('Idempotency key reject sudah dipakai untuk payload berbeda');
+      }
+      await tx.aiGeneration.updateMany({
+        where: { id: generation.id, status: { not: 'accepted' } },
+        data: { status: 'rejected' },
+      });
+    });
+
+    return { generationId: generation.id, rejected: true };
+  }
+
+  private async claimQuestionDraftGeneration(
+    context: ResolvedQuestionSourceContext,
+    dto: GenerateQuestionDraftDto,
+    requestSpec: Record<string, unknown>,
+  ): Promise<QuestionDraftClaim> {
+    const existing = await this.prisma.aiGeneration.findFirst({
+      where: { teacherId: context.teacherId, type: 'question-drafts', idempotencyKey: dto.idempotencyKey },
+      select: { id: true, requestSpec: true, output: true, model: true, status: true },
+    });
+    if (existing) {
+      this.assertQuestionDraftRequestMatches(existing.requestSpec, requestSpec);
+      if (existing.status === 'generating') {
+        const existingLease = this.questionDraftLease(existing.requestSpec);
+        if (!this.isQuestionDraftLeaseExpired(existingLease)) return { kind: 'wait' };
+        const nextLease = this.newQuestionDraftLease((existingLease?.leaseSequence ?? 0) + 1);
+        const reclaimed = await this.reclaimQuestionDraftGeneration(existing.id, existingLease, requestSpec, nextLease);
+        return reclaimed ? { kind: 'claimed', id: existing.id, lease: nextLease } : { kind: 'wait' };
+      }
+      if (existing.status === 'failed') {
+        const nextLease = this.newQuestionDraftLease((this.questionDraftLease(existing.requestSpec)?.leaseSequence ?? 0) + 1);
+        const claimed = await this.prisma.aiGeneration.updateMany({
+          where: { id: existing.id, status: 'failed' },
+          data: {
+            status: 'generating',
+            prompt: '',
+            output: '',
+            model: 'pending',
+            requestSpec: this.storedQuestionDraftRequestSpec(requestSpec, nextLease) as Prisma.InputJsonValue,
+          },
+        });
+        return claimed.count === 1 ? { kind: 'claimed', id: existing.id, lease: nextLease } : { kind: 'wait' };
+      }
+      return { kind: 'ready', response: this.questionDraftResponse(existing, context, requestSpec) };
+    }
+
+    try {
+      const lease = this.newQuestionDraftLease(1);
+      const generation = await this.prisma.aiGeneration.create({
+        data: {
+          teacherId: context.teacherId,
+          type: 'question-drafts',
+          prompt: '',
+          output: '',
+          model: 'pending',
+          sourceType: context.sourceType,
+          sourceId: context.sourceId,
+          status: 'generating',
+          requestSpec: this.storedQuestionDraftRequestSpec(requestSpec, lease) as Prisma.InputJsonValue,
+          contextSnapshot: this.contextSnapshot(context) as Prisma.InputJsonValue,
+          idempotencyKey: dto.idempotencyKey,
+        },
+        select: { id: true },
+      });
+      return { kind: 'claimed', id: generation.id, lease };
+    } catch (error) {
+      if (
+        !(error instanceof Prisma.PrismaClientKnownRequestError)
+        || error.code !== 'P2002'
+      ) {
+        throw error;
+      }
+      return { kind: 'wait' };
+    }
+  }
+
+  private async waitForQuestionDraftGeneration(
+    context: ResolvedQuestionSourceContext,
+    dto: GenerateQuestionDraftDto,
+    requestSpec: Record<string, unknown>,
+  ): Promise<{ generationId: string; model: string; source: ReturnType<AiGenerateService['contextSnapshot']>; items: QuestionDraftItem[] }> {
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      await this.delay(250);
+      const existing = await this.prisma.aiGeneration.findFirst({
+        where: { teacherId: context.teacherId, type: 'question-drafts', idempotencyKey: dto.idempotencyKey },
+        select: { id: true, requestSpec: true, output: true, model: true, status: true },
+      });
+      if (!existing) continue;
+      this.assertQuestionDraftRequestMatches(existing.requestSpec, requestSpec);
+      if (existing.status === 'generating') continue;
+      if (existing.status === 'failed') {
+        throw new ConflictException('Generate draft AI sebelumnya gagal. Gunakan idempotency key baru untuk mencoba ulang.');
+      }
+      return this.questionDraftResponse(existing, context, requestSpec);
+    }
+    throw new ConflictException('Generate draft AI masih diproses. Coba lagi beberapa saat lagi.');
+  }
+
+  private questionDraftResponse(
+    generation: { id: string; requestSpec: unknown; output: string; model: string },
+    context: ResolvedQuestionSourceContext,
+    requestSpec: Record<string, unknown>,
+  ): { generationId: string; model: string; source: ReturnType<AiGenerateService['contextSnapshot']>; items: QuestionDraftItem[] } {
+    this.assertQuestionDraftRequestMatches(generation.requestSpec, requestSpec);
+    if (!generation.output.trim()) {
+      throw new ConflictException('Draft AI belum memiliki output valid');
+    }
+    return {
+      generationId: generation.id,
+      model: generation.model,
+      source: this.contextSnapshot(context),
+      items: QuestionDraftOutputSchema.parse(JSON.parse(generation.output)).items,
+    };
+  }
+
+  private assertQuestionDraftRequestMatches(existingSpec: unknown, requestSpec: Record<string, unknown>): void {
+    if (this.stableJson(this.questionDraftOriginalRequestSpec(existingSpec)) !== this.stableJson(requestSpec)) {
+      throw new ConflictException('Idempotency key sudah dipakai untuk request berbeda');
+    }
+  }
+
+  private storedQuestionDraftRequestSpec(requestSpec: Record<string, unknown>, lease: QuestionDraftLease): Record<string, unknown> {
+    return { request: requestSpec, lease };
+  }
+
+  private questionDraftOriginalRequestSpec(storedSpec: unknown): unknown {
+    if (!storedSpec || typeof storedSpec !== 'object' || Array.isArray(storedSpec)) return storedSpec;
+    const maybeRequest = (storedSpec as { request?: unknown }).request;
+    return maybeRequest && typeof maybeRequest === 'object' && !Array.isArray(maybeRequest)
+      ? maybeRequest
+      : storedSpec;
+  }
+
+  private questionDraftLease(storedSpec: unknown): QuestionDraftLease | null {
+    if (!storedSpec || typeof storedSpec !== 'object' || Array.isArray(storedSpec)) return null;
+    const lease = (storedSpec as { lease?: unknown }).lease;
+    if (!lease || typeof lease !== 'object' || Array.isArray(lease)) return null;
+    const candidate = lease as Partial<QuestionDraftLease>;
+    if (
+      typeof candidate.leaseId !== 'string'
+      || typeof candidate.leaseExpiresAt !== 'string'
+      || typeof candidate.leaseSequence !== 'number'
+    ) {
+      return null;
+    }
+    return {
+      leaseId: candidate.leaseId,
+      leaseExpiresAt: candidate.leaseExpiresAt,
+      leaseSequence: candidate.leaseSequence,
+    };
+  }
+
+  private newQuestionDraftLease(sequence: number): QuestionDraftLease {
+    return {
+      leaseId: randomUUID(),
+      leaseExpiresAt: new Date(Date.now() + QUESTION_DRAFT_LEASE_MS).toISOString(),
+      leaseSequence: sequence,
+    };
+  }
+
+  private isQuestionDraftLeaseExpired(lease: QuestionDraftLease | null): boolean {
+    if (!lease) return true;
+    const expiresAt = Date.parse(lease.leaseExpiresAt);
+    return Number.isNaN(expiresAt) || expiresAt <= Date.now();
+  }
+
+  private async reclaimQuestionDraftGeneration(
+    generationId: string,
+    previousLease: QuestionDraftLease | null,
+    requestSpec: Record<string, unknown>,
+    nextLease: QuestionDraftLease,
+  ): Promise<boolean> {
+    const storedSpec = JSON.stringify(this.storedQuestionDraftRequestSpec(requestSpec, nextLease));
+    const updated = previousLease
+      ? await this.prisma.$executeRaw(Prisma.sql`
+          UPDATE ai_knowledge.ai_generations
+          SET status = 'generating',
+              prompt = '',
+              output = '',
+              model = 'pending',
+              request_spec = ${storedSpec}::jsonb
+          WHERE id = ${generationId}::uuid
+            AND status = 'generating'
+            AND request_spec #>> '{lease,leaseId}' = ${previousLease.leaseId}
+        `)
+      : await this.prisma.$executeRaw(Prisma.sql`
+          UPDATE ai_knowledge.ai_generations
+          SET status = 'generating',
+              prompt = '',
+              output = '',
+              model = 'pending',
+              request_spec = ${storedSpec}::jsonb
+          WHERE id = ${generationId}::uuid
+            AND status = 'generating'
+            AND request_spec #>> '{lease,leaseId}' IS NULL
+        `);
+    return updated === 1;
+  }
+
+  private async finalizeQuestionDraftGeneration(
+    generationId: string,
+    lease: QuestionDraftLease,
+    prompt: string,
+    output: string,
+    model: AiCallResult['model'],
+  ): Promise<{ id: string; model: string }> {
+    const rows = await this.prisma.$queryRaw<Array<{ id: string; model: string }>>(Prisma.sql`
+      UPDATE ai_knowledge.ai_generations
+      SET prompt = ${prompt},
+          output = ${output},
+          model = ${model},
+          status = 'drafted'
+      WHERE id = ${generationId}::uuid
+        AND status = 'generating'
+        AND request_spec #>> '{lease,leaseId}' = ${lease.leaseId}
+      RETURNING id, model
+    `);
+    const stored = rows[0];
+    if (!stored) {
+      throw new ConflictException('Lease generate draft AI sudah kedaluwarsa atau diambil proses lain. Muat ulang hasil terbaru.');
+    }
+    return stored;
+  }
+
+  private async markQuestionDraftGenerationFailed(
+    generationId: string,
+    lease: QuestionDraftLease,
+    prompt: string,
+    error: unknown,
+  ): Promise<void> {
+    await this.prisma.$executeRaw(Prisma.sql`
+      UPDATE ai_knowledge.ai_generations
+      SET prompt = ${prompt},
+          output = ${this.errorMessage(error).slice(0, 2000)},
+          model = 'failed',
+          status = 'failed'
+      WHERE id = ${generationId}::uuid
+        AND status = 'generating'
+        AND request_spec #>> '{lease,leaseId}' = ${lease.leaseId}
+    `).catch((updateError: unknown) => {
+      logger.warn('[AiGenerateService] failed to mark question draft generation failed', {
+        generationId,
+        error: this.errorMessage(updateError),
+      });
+    });
+  }
+
+  private async callQuestionDraftAiWithBoundedRepair(
+    prompt: string,
+    dto: GenerateQuestionDraftDto,
+    context: ResolvedQuestionSourceContext,
+  ): Promise<{ ai: AiCallResult; parsed: { items: QuestionDraftItem[] } }> {
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const promptForAttempt = attempt === 0
+        ? prompt
+        : [
+          prompt,
+          'Output sebelumnya ditolak validator DIIS. Kembalikan ulang JSON object saja, tanpa markdown, field ekstra, KI/KD, PII, atau bentuk soal di luar schema.',
+        ].join('\n');
+      const ai = await this.callQuestionDraftAi(promptForAttempt, context.academicYear, dto);
+      try {
+        return { ai, parsed: this.normalizeQuestionDraftOutput(ai.output, dto, context) };
+      } catch (error) {
+        lastError = error;
+        if (!this.isAiOutputInvalid(error) || attempt === 1) throw error;
+      }
+    }
+    throw lastError;
+  }
+
+  private async reloadQuestionGenerationContext(
+    generation: { sourceType: string | null; sourceId: string | null },
+    user: AuthUser,
+  ): Promise<ResolvedQuestionSourceContext> {
+    if (generation.sourceType !== 'rpp' && generation.sourceType !== 'module') {
+      throw new ConflictException('Source context AI generation tidak valid');
+    }
+    if (!generation.sourceId) throw new ConflictException('Source context AI generation tidak lengkap');
+    return this.loadQuestionSourceContext(
+      generation.sourceType === 'rpp' ? { rppId: generation.sourceId } : { moduleId: generation.sourceId },
+      user,
+    );
+  }
+
+  private questionDraftSpecFromGeneration(
+    requestSpec: Prisma.JsonValue | null,
+    context: ResolvedQuestionSourceContext,
+  ): Pick<GenerateQuestionDraftDto, 'purpose' | 'contextMode' | 'character' | 'teacherInstruction'> {
+    const originalSpec = this.questionDraftOriginalRequestSpec(requestSpec);
+    const spec = originalSpec && typeof originalSpec === 'object' && !Array.isArray(originalSpec)
+      ? originalSpec as Record<string, unknown>
+      : {};
+    const purpose = spec['purpose'];
+    const contextMode = spec['contextMode'];
+    const character = spec['character'];
+    const teacherInstruction = spec['teacherInstruction'];
+    if (purpose !== 'diagnostik' && purpose !== 'formatif' && purpose !== 'sumatif-uts' && purpose !== 'sumatif-uas') {
+      throw new ConflictException('Request spec draft AI tidak valid');
+    }
+    return {
+      purpose,
+      contextMode: contextMode === 'umum' || contextMode === 'auto_vokasi' || contextMode === 'produktif'
+        ? contextMode
+        : context.majorName ? 'auto_vokasi' : 'umum',
+      character: character === 'konseptual' || character === 'studi_kasus' || character === 'praktik' || character === 'literasi' || character === 'numerasi'
+        ? character
+        : 'konseptual',
+      teacherInstruction: typeof teacherInstruction === 'string' && teacherInstruction.trim() ? teacherInstruction : undefined,
+    };
+  }
+
+  private async loadQuestionSourceContext(dto: { rppId?: string; moduleId?: string }, user: AuthUser): Promise<ResolvedQuestionSourceContext> {
+    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+    if (dto.rppId) {
+      const resolved = await this.loadOwnedRppContext(dto.rppId, user);
+      const tp = this.asStringArray(resolved.body['tp']);
+      if (tp.length === 0) throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
+      const major = resolved.rpp.class?.majorCode
+        ? await this.prisma.major.findUnique({ where: { code: resolved.rpp.class.majorCode }, select: { name: true, description: true } })
+        : null;
+      return {
+        teacherId,
+        sourceType: 'rpp',
+        sourceId: resolved.rpp.id,
+        subject: resolved.rpp.subject,
+        title: resolved.rpp.title,
+        academicYear: resolved.rpp.academicYear,
+        semester: resolved.rpp.semester,
+        classId: resolved.rpp.classId!,
+        className: resolved.rpp.class?.name ?? '',
+        grade: resolved.rpp.class?.grade ?? null,
+        majorName: major?.name ?? resolved.rpp.class?.majorCode ?? null,
+        majorDescription: this.boundedMajorProductiveContext(major?.description ?? null) || null,
+        tpOptions: tp.map((text, index) => ({ ref: `TP ${index + 1}`, text })),
+        contentSummary: [
+          this.asText(resolved.body['cp']),
+          this.asText(resolved.body['materi']),
+          this.asText(resolved.body['kegiatan']),
+          this.asText(resolved.body['asesmen']),
+        ].filter(Boolean).join('\n').slice(0, 6000),
+      };
+    }
+
+    const module = await this.prisma.lmsModule.findFirst({
+      where: { id: dto.moduleId, teacherId },
+      select: {
+        id: true, teacherId: true, classId: true, subject: true, title: true, tp: true,
+        content: true, academicYear: true, semester: true,
+        class: { select: { id: true, name: true, grade: true, majorCode: true } },
+      },
+    });
+    if (!module) throw new ForbiddenException('Modul LMS tidak ditemukan atau bukan milik guru');
+    if (!module.classId || !module.class) throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
+    if (!module.tp) throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
+    const assignment = await this.prisma.teachingAssignment.findFirst({
+      where: { teacherId, classId: module.classId, subject: module.subject, academicYear: module.academicYear },
+      select: { id: true },
+    });
+    if (!assignment) throw new ForbiddenException('Assignment mengajar untuk Modul LMS ini tidak aktif');
+    const major = await this.prisma.major.findUnique({ where: { code: module.class.majorCode }, select: { name: true, description: true } });
+    return {
+      teacherId,
+      sourceType: 'module',
+      sourceId: module.id,
+      subject: module.subject,
+      title: module.title,
+      academicYear: module.academicYear,
+      semester: module.semester,
+      classId: module.classId,
+      className: module.class.name,
+      grade: module.class.grade,
+      majorName: major?.name ?? module.class.majorCode,
+      majorDescription: this.boundedMajorProductiveContext(major?.description ?? null) || null,
+      tpOptions: [{ ref: 'TP 1', text: module.tp }],
+      contentSummary: (module.content ?? '').slice(0, 6000),
+    };
+  }
+
+  private assertRequestedTpRefs(tpRefs: string[], context: ResolvedQuestionSourceContext): void {
+    const allowed = new Set(context.tpOptions.map((tp) => tp.ref));
+    const invalid = tpRefs.filter((ref) => !allowed.has(ref));
+    if (invalid.length > 0) {
+      throw new BadRequestException(`TP tidak valid untuk sumber ini: ${invalid.join(', ')}`);
+    }
+  }
+
+  private generationRequestSpec(dto: GenerateQuestionDraftDto): Record<string, unknown> {
+    return {
+      source: dto.rppId ? { type: 'rpp', id: dto.rppId } : { type: 'module', id: dto.moduleId },
+      purpose: dto.purpose,
+      questionCount: dto.questionCount,
+      typeDistribution: dto.typeDistribution,
+      difficultyDistribution: dto.difficultyDistribution,
+      cognitiveDistribution: dto.cognitiveDistribution,
+      tpRefs: dto.tpRefs,
+      contextMode: dto.contextMode,
+      character: dto.character,
+      teacherInstruction: dto.teacherInstruction ?? null,
+    };
+  }
+
+  private contextSnapshot(context: ResolvedQuestionSourceContext): Record<string, unknown> {
+    return {
+      sourceType: context.sourceType,
+      sourceId: context.sourceId,
+      subject: context.subject,
+      title: context.title,
+      academicYear: context.academicYear,
+      semester: context.semester,
+      classId: context.classId,
+      className: context.className,
+      grade: context.grade,
+      majorName: context.majorName,
+      majorDescription: context.majorDescription,
+      tpOptions: context.tpOptions,
+    };
+  }
+
+  private buildQuestionDraftPrompt(dto: GenerateQuestionDraftDto, context: ResolvedQuestionSourceContext): string {
+    this.assertProductiveContextConfigured(dto, context);
+    return [
+      'Anda membuat draft soal untuk Bank Soal DIIS. Kembalikan JSON object valid saja.',
+      'Jangan memakai markdown, code fence, field ekstra, KI/KD, Kompetensi Inti, atau Kompetensi Dasar.',
+      'Jangan menyertakan data pribadi siswa/guru.',
+      `Mapel: ${context.subject}.`,
+      `Judul sumber: ${context.title}.`,
+      `Kelas: ${context.className}. Tahun ajaran: ${context.academicYear}. Semester: ${context.semester}.`,
+      `Jurusan: ${dto.contextMode === 'umum' ? 'jangan pakai konteks vokasi' : context.majorName ?? 'umum'}.`,
+      this.schoolCurriculumContextLine(dto, context),
+      `Tujuan asesmen: ${dto.purpose}. Karakter soal: ${dto.character}.`,
+      `Jumlah soal: ${dto.questionCount}. Distribusi tipe: ${JSON.stringify(dto.typeDistribution)}.`,
+      `Distribusi kesulitan: ${JSON.stringify(dto.difficultyDistribution)}. Distribusi kognitif: ${JSON.stringify(dto.cognitiveDistribution)}.`,
+      `TP dipilih: ${context.tpOptions.filter((tp) => dto.tpRefs.includes(tp.ref)).map((tp) => `${tp.ref}: ${tp.text}`).join(' | ')}.`,
+      dto.teacherInstruction ? `Catatan guru: ${dto.teacherInstruction}.` : '',
+      context.contentSummary ? `Ringkasan materi authoritative: ${context.contentSummary}` : '',
+      'Setiap item wajib punya itemKey stabil, question, tpRefs, cognitiveLevel, rationale, warnings.',
+      'question harus mengikuti salah satu type: multiple_choice, true_false, matching, essay.',
+      'Untuk matching, question.pairs[].id adalah kode internal; question.pairs[].prompt adalah sisi kiri; question.pairs[].match adalah teks jawaban sisi kanan yang lengkap, bukan kode seperti M1/M2 atau pengulangan id.',
+      'Untuk matching, question.answer wajib array {promptId, matchId}; promptId dan matchId sama-sama wajib berisi id dari question.pairs[].id. Jangan pakai object dengan key dinamis.',
+      'Rubrik esai total weight tepat 100. Matching harus bijective. PG harus punya distraktor unik.',
+    ].filter(Boolean).join('\n');
+  }
+
+  private schoolCurriculumContextLine(dto: GenerateQuestionDraftDto, context: ResolvedQuestionSourceContext): string {
+    if (dto.contextMode === 'umum') {
+      return 'Katalog konteks sekolah: gunakan konteks umum lintas jurusan; jangan memaksakan skenario vokasi.';
+    }
+    const hints = this.productiveContextHints(context.majorDescription);
+    if (hints.length === 0) {
+      const majorLabel = context.majorName ? ` untuk jurusan ${context.majorName}` : '';
+      return `Katalog konteks umum-produktif sekolah${majorLabel}: belum dikonfigurasi di deskripsi jurusan; jangan menebak skenario vokasi, gunakan konteks mapel dan kelas tanpa data pribadi.`;
+    }
+    return `Katalog konteks umum-produktif sekolah: ${hints.join('; ')}.`;
+  }
+
+  private productiveContextHints(majorDescription: string | null): string[] {
+    const bounded = this.boundedMajorProductiveContext(majorDescription);
+    if (!bounded) return [];
+    return bounded
+      .split(/[.;\n]/)
+      .map((item) => item.trim().replace(/\s+/g, ' '))
+      .filter((item) => item.length >= 12)
+      .map((item) => item.slice(0, MAJOR_PRODUCTIVE_HINT_MAX_CHARS))
+      .slice(0, 4);
+  }
+
+  private assertProductiveContextConfigured(dto: GenerateQuestionDraftDto, context: ResolvedQuestionSourceContext): void {
+    if (dto.contextMode === 'umum') return;
+    if (this.productiveContextHints(context.majorDescription).length > 0) return;
+    const majorLabel = context.majorName ? ` untuk jurusan ${context.majorName}` : '';
+    throw new BadRequestException(
+      `Konteks produktif${majorLabel} belum dikonfigurasi. Isi deskripsi jurusan di konfigurasi sekolah, atau pilih mode Umum.`,
+    );
+  }
+
+  private boundedMajorProductiveContext(majorDescription: string | null): string {
+    return (majorDescription ?? '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .slice(0, MAJOR_PRODUCTIVE_CONTEXT_MAX_CHARS);
+  }
+
+  private async callQuestionDraftAi(prompt: string, academicYear: string, dto: GenerateQuestionDraftDto): Promise<AiCallResult> {
+    const piiDetected = hasPii(prompt);
+    if (piiDetected) {
+      return this.callQuestionDraftProvider(this.gateway, stripPiiForLlm(prompt), 'ollama', academicYear, dto);
+    }
+    if (this.openaiGateway && await this.providerStatus.shouldAttemptOpenAiProbe()) {
+      try {
+        const result = await this.callQuestionDraftProvider(this.openaiGateway, stripPiiForLlm(prompt), 'gpt-4.1-mini', academicYear, dto);
+        await this.providerStatus.markOpenAiRecovered();
+        return result;
+      } catch (err) {
+        if (err instanceof HttpException) throw err;
+        if (this.isOpenAiQuotaExhausted(err)) {
+          const detailCode = err instanceof OpenAiProviderError ? err.code : null;
+          await this.providerStatus.markOpenAiQuotaExhausted(detailCode);
+          this.scheduleAdminOpenAiQuotaNotice();
+          return this.callQuestionDraftProvider(this.gateway, stripPiiForLlm(prompt), 'ollama', academicYear, dto);
+        }
+        throw this.mapProviderError(err, false);
+      }
+    }
+    return this.callQuestionDraftProvider(this.gateway, stripPiiForLlm(prompt), 'ollama', academicYear, dto);
+  }
+
+  private async callQuestionDraftProvider(
+    gateway: AIGateway,
+    promptForProvider: string,
+    model: AiCallResult['model'],
+    _academicYear: string,
+    dto: GenerateQuestionDraftDto,
+  ): Promise<AiCallResult> {
+    const responseFormat: AiChatOptions = {
+      responseFormat: {
+        type: 'json_schema',
+        name: 'question_drafts',
+        strict: true,
+        schema: this.questionDraftJsonSchema(model === 'ollama' ? dto : undefined),
+      },
+    };
+    const output = await gateway.chat(promptForProvider, undefined, responseFormat);
+    if (!output || output.trim().length === 0) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    return { output, model, promptForAudit: promptForProvider };
+  }
+
+  private normalizeQuestionDraftOutput(
+    rawOutput: string,
+    dto: GenerateQuestionDraftDto,
+    context: ResolvedQuestionSourceContext,
+  ): { items: QuestionDraftItem[] } {
+    if (FORBIDDEN_OUTPUT_PATTERNS.some((pattern) => pattern.test(rawOutput))) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawOutput);
+    } catch {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    parsed = this.normalizeQuestionDraftProviderOutput(parsed);
+    const result = QuestionDraftOutputSchema.safeParse(parsed);
+    if (!result.success) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    if (result.data.items.length !== dto.questionCount) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    const items = this.normalizeQuestionDraftMetadata(result.data.items, dto, context);
+    this.assertDraftDistribution(items, dto);
+    for (const item of items) {
+      this.assertQuestionDraftItem(item, context);
+    }
+    return { items };
+  }
+
+  private normalizeQuestionDraftMetadata(
+    items: QuestionDraftItem[],
+    dto: GenerateQuestionDraftDto,
+    context: ResolvedQuestionSourceContext,
+  ): QuestionDraftItem[] {
+    const difficultySlots = this.distributionSlots(['easy', 'medium', 'hard'] as const, dto.difficultyDistribution);
+    const cognitiveSlots = this.distributionSlots(['C1', 'C2', 'C3', 'C4', 'C5', 'C6'] as const, dto.cognitiveDistribution);
+
+    return items.map((item, index) => ({
+      ...item,
+      question: {
+        ...item.question,
+        subject: context.subject,
+        difficulty: difficultySlots[index] ?? item.question.difficulty,
+      },
+      tpRefs: dto.tpRefs,
+      cognitiveLevel: cognitiveSlots[index] ?? item.cognitiveLevel,
+    }));
+  }
+
+  private distributionSlots<const T extends string>(order: readonly T[], distribution: Record<T, number>): T[] {
+    return order.flatMap((key) => Array.from({ length: distribution[key] ?? 0 }, () => key));
+  }
+
+  private normalizeQuestionDraftProviderOutput(value: unknown): unknown {
+    if (!value || typeof value !== 'object' || !Array.isArray((value as { items?: unknown }).items)) return value;
+    return {
+      ...(value as Record<string, unknown>),
+      items: ((value as { items: unknown[] }).items).map((item) => {
+        if (!item || typeof item !== 'object') return item;
+        const question = (item as { question?: unknown }).question;
+        if (!question || typeof question !== 'object') return item;
+        const typedQuestion = question as { type?: unknown; answer?: unknown };
+        if (typedQuestion.type !== 'matching' || !Array.isArray(typedQuestion.answer)) return item;
+        const matchingPairs = Array.isArray((typedQuestion as { pairs?: unknown }).pairs)
+          ? (typedQuestion as { pairs: unknown[] }).pairs
+            .filter((pair): pair is { id: string; match: string } =>
+              Boolean(pair)
+              && typeof pair === 'object'
+              && typeof (pair as { id?: unknown }).id === 'string'
+              && typeof (pair as { match?: unknown }).match === 'string')
+          : [];
+        const matchTextToId = new Map<string, string>();
+        for (const pair of matchingPairs) {
+          const normalizedMatchText = this.normalizedQuestionText(pair.match);
+          if (normalizedMatchText && !matchTextToId.has(normalizedMatchText)) {
+            matchTextToId.set(normalizedMatchText, pair.id);
+          }
+        }
+        const answer = Object.fromEntries(
+          typedQuestion.answer
+            .filter((pair): pair is { promptId: string; matchId: string } =>
+              Boolean(pair)
+              && typeof pair === 'object'
+              && typeof (pair as { promptId?: unknown }).promptId === 'string'
+              && typeof (pair as { matchId?: unknown }).matchId === 'string')
+            .map((pair) => {
+              const normalizedMatchId = this.normalizedQuestionText(pair.matchId);
+              return [pair.promptId, matchTextToId.get(normalizedMatchId) ?? pair.matchId];
+            }),
+        );
+        return {
+          ...(item as Record<string, unknown>),
+          question: {
+            ...(question as Record<string, unknown>),
+            answer,
+          },
+        };
+      }),
+    };
+  }
+
+  private async assertNoQuestionDraftDuplicates(items: QuestionDraftItem[], teacherId: string, subject: string): Promise<void> {
+    const bodies = items.map((item) => this.normalizedQuestionText(item.question.body));
+    if (new Set(bodies).size !== bodies.length) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    for (let i = 0; i < bodies.length; i += 1) {
+      for (let j = i + 1; j < bodies.length; j += 1) {
+        if (this.textSimilarity(bodies[i]!, bodies[j]!) >= NEAR_DUPLICATE_THRESHOLD) {
+          throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+        }
+      }
+    }
+    const existing = await this.prisma.question.findMany({
+      where: { teacherId, subject, body: { in: items.map((item) => item.question.body) } },
+      select: { id: true },
+      take: 1,
+    });
+    if (existing.length > 0) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+  }
+
+  private assertDraftDistribution(items: QuestionDraftItem[], dto: GenerateQuestionDraftDto): void {
+    const countBy = <T extends string>(values: T[]) => values.reduce<Record<T, number>>((acc, value) => {
+      acc[value] = (acc[value] ?? 0) + 1;
+      return acc;
+    }, {} as Record<T, number>);
+    const typeCounts = countBy(items.map((item) => item.question.type));
+    const difficultyCounts = countBy(items.map((item) => item.question.difficulty));
+    const cognitiveCounts = countBy(items.map((item) => item.cognitiveLevel));
+    for (const [type, count] of Object.entries(dto.typeDistribution)) {
+      if ((typeCounts[type as keyof typeof typeCounts] ?? 0) !== count) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    for (const [difficulty, count] of Object.entries(dto.difficultyDistribution)) {
+      if ((difficultyCounts[difficulty as keyof typeof difficultyCounts] ?? 0) !== count) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    for (const [level, count] of Object.entries(dto.cognitiveDistribution)) {
+      if ((cognitiveCounts[level as keyof typeof cognitiveCounts] ?? 0) !== count) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+  }
+
+  private assertQuestionDraftItem(item: QuestionDraftItem, context: ResolvedQuestionSourceContext): void {
+    QuestionPayloadSchema.parse(item.question);
+    this.assertRequestedTpRefs(item.tpRefs, context);
+    if (item.question.subject !== context.subject) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    const serialized = JSON.stringify(item);
+    if (FORBIDDEN_OUTPUT_PATTERNS.some((pattern) => pattern.test(serialized)) || hasPii(serialized)) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    const question = item.question;
+    if (question.type === 'multiple_choice') {
+      const optionTexts = question.options.map((option) => this.normalizedQuestionText(option.text));
+      if (new Set(optionTexts).size !== optionTexts.length) {
+        throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+      }
+      if (question.options.some((option) => AMBIGUOUS_OPTION_PATTERNS.some((pattern) => pattern.test(option.text)))) {
+        throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+      }
+      const answerText = question.options.find((option) => option.id === question.answer)?.text.toLocaleLowerCase('id-ID') ?? '';
+      if (answerText && question.body.toLocaleLowerCase('id-ID').includes(answerText)) {
+        throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+      }
+    }
+    if (question.type === 'true_false' && /\btidak\b.+\bbukan\b|\bbukan\b.+\btidak\b/i.test(question.body)) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    if (question.type === 'matching') {
+      this.assertMatchingQuestionQuality(question.pairs);
+    }
+    this.assertQuestionReadableForGrade(question.body, question.type, context.grade);
+  }
+
+  private assertMatchingQuestionQuality(pairs: Array<{ id: string; prompt: string; match: string }>): void {
+    const promptTexts = pairs.map((pair) => this.normalizedQuestionText(pair.prompt));
+    const matchTexts = pairs.map((pair) => this.normalizedQuestionText(pair.match));
+    if (new Set(promptTexts).size !== promptTexts.length || new Set(matchTexts).size !== matchTexts.length) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+    if (pairs.some((pair) => {
+      const match = pair.match.trim();
+      return match.length < 4
+        || match.toLocaleLowerCase('id-ID') === pair.id.trim().toLocaleLowerCase('id-ID')
+        || /^[A-Za-z]?\d{1,3}$/i.test(match);
+    })) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+  }
+
+  private normalizedQuestionText(text: string): string {
+    return text
+      .toLocaleLowerCase('id-ID')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private textSimilarity(left: string, right: string): number {
+    const leftTokens = new Set(left.split(' ').filter((token) => token.length > 2));
+    const rightTokens = new Set(right.split(' ').filter((token) => token.length > 2));
+    if (leftTokens.size === 0 || rightTokens.size === 0) return 0;
+    const intersection = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+    const union = new Set([...leftTokens, ...rightTokens]).size;
+    return intersection / union;
+  }
+
+  private assertQuestionReadableForGrade(body: string, type: string, grade: number | null): void {
+    const wordCount = this.normalizedQuestionText(body).split(' ').filter(Boolean).length;
+    const effectiveGrade = grade ?? 10;
+    const limit = type === 'essay' ? 90 : effectiveGrade <= 10 ? 55 : 65;
+    if (wordCount > limit) {
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    }
+  }
+
+  private acceptanceFingerprint(items: AcceptQuestionDraftDto['items']): string {
+    return this.questionFingerprint({
+      items: [...items]
+        .sort((left, right) => left.itemKey.localeCompare(right.itemKey))
+        .map((item) => ({
+          itemKey: item.itemKey,
+          question: item.question,
+          tpRefs: [...item.tpRefs].sort(),
+          cognitiveLevel: item.cognitiveLevel,
+        })),
+    });
+  }
+
+  private questionFingerprint(value: unknown): string {
+    return createHash('sha256').update(this.stableJson(value)).digest('hex');
+  }
+
+  private persistedQuestionFingerprint(value: unknown): string {
+    return createHash('sha256').update(this.stableJson(this.normalizePersistedQuestionValue(value))).digest('hex');
+  }
+
+  private normalizePersistedQuestionValue(value: unknown): unknown {
+    if (
+      value === undefined ||
+      value === Prisma.JsonNull ||
+      value === Prisma.DbNull ||
+      value === Prisma.AnyNull
+    ) {
+      return null;
+    }
+    if (Array.isArray(value)) return value.map((item) => this.normalizePersistedQuestionValue(item));
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .map(([key, nested]) => [key, this.normalizePersistedQuestionValue(nested)]),
+      );
+    }
+    return value;
+  }
+
+  private async withInProcessLock<T>(lockName: string, callback: () => Promise<T>): Promise<T> {
+    const previous = this.inProcessLocks.get(lockName) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.inProcessLocks.set(lockName, current);
+
+    await previous.catch(() => undefined);
+    try {
+      return await callback();
+    } finally {
+      release();
+      if (this.inProcessLocks.get(lockName) === current) {
+        this.inProcessLocks.delete(lockName);
+      }
+    }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  private stableJson(value: unknown): string {
+    const normalize = (input: unknown): unknown => {
+      if (Array.isArray(input)) return input.map(normalize);
+      if (input && typeof input === 'object') {
+        return Object.fromEntries(
+          Object.entries(input as Record<string, unknown>)
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([key, nested]) => [key, normalize(nested)]),
+        );
+      }
+      return input;
+    };
+    return JSON.stringify(normalize(value));
+  }
+
+  private isAiOutputInvalid(error: unknown): boolean {
+    if (!(error instanceof HttpException)) return false;
+    const response = error.getResponse();
+    return Boolean(
+      response
+      && typeof response === 'object'
+      && 'error' in response
+      && (response as { error?: unknown }).error === 'AI_OUTPUT_INVALID',
+    );
+  }
+
+  private questionDraftJsonSchema(dto?: GenerateQuestionDraftDto): Record<string, unknown> {
+    const baseProperties = {
+      subject: { type: 'string' },
+      body: { type: 'string' },
+      difficulty: { type: 'string', enum: ['easy', 'medium', 'hard'] },
+      tags: { type: 'array', maxItems: 20, items: { type: 'string' } },
+    };
+    const optionSchema = {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id', 'text'],
+      properties: {
+        id: { type: 'string' },
+        text: { type: 'string' },
+      },
+    };
+    const rubricSchema = {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id', 'name', 'description', 'weight', 'maxScore'],
+      properties: {
+        id: { type: 'string' },
+        name: { type: 'string' },
+        description: { type: 'string' },
+        weight: { type: 'number' },
+        maxScore: { type: 'number' },
+      },
+    };
+    const matchingPairSchema = {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id', 'prompt', 'match'],
+      properties: {
+        id: { type: 'string', description: 'Kode internal pasangan, misalnya p1, p2. Dipakai ulang oleh answer.promptId dan answer.matchId.' },
+        prompt: { type: 'string', description: 'Teks sisi kiri yang dilihat siswa, misalnya Router.' },
+        match: { type: 'string', description: 'Teks jawaban sisi kanan yang lengkap, misalnya Menghubungkan dua jaringan. Jangan isi dengan M1, M2, atau id.' },
+      },
+    };
+    const questionShapes = [
+      {
+        questionType: 'multiple_choice',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['subject', 'type', 'body', 'difficulty', 'tags', 'options', 'answer'],
+          properties: {
+            ...baseProperties,
+            type: { type: 'string', enum: ['multiple_choice'] },
+            options: { type: 'array', minItems: 2, maxItems: 6, items: optionSchema },
+            answer: { type: 'string' },
+          },
+        },
+      },
+      {
+        questionType: 'true_false',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['subject', 'type', 'body', 'difficulty', 'tags', 'answer'],
+          properties: {
+            ...baseProperties,
+            type: { type: 'string', enum: ['true_false'] },
+            answer: { type: 'boolean' },
+          },
+        },
+      },
+      {
+        questionType: 'matching',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['subject', 'type', 'body', 'difficulty', 'tags', 'pairs', 'answer'],
+          properties: {
+            ...baseProperties,
+            type: { type: 'string', enum: ['matching'] },
+            pairs: { type: 'array', minItems: 2, maxItems: 20, items: matchingPairSchema },
+            answer: {
+              type: 'array',
+              minItems: 2,
+              maxItems: 20,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['promptId', 'matchId'],
+                properties: {
+                  promptId: { type: 'string', description: 'Harus sama dengan salah satu question.pairs[].id.' },
+                  matchId: { type: 'string', description: 'Harus sama dengan salah satu question.pairs[].id yang menjadi pasangan benar, bukan teks match dan bukan M1/M2.' },
+                },
+              },
+            },
+          },
+        },
+      },
+      {
+        questionType: 'essay',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['subject', 'type', 'body', 'difficulty', 'tags', 'guideAnswer', 'rubric'],
+          properties: {
+            ...baseProperties,
+            type: { type: 'string', enum: ['essay'] },
+            guideAnswer: { type: 'string' },
+            rubric: { type: 'array', minItems: 1, maxItems: 12, items: rubricSchema },
+          },
+        },
+      },
+    ];
+    const requestedTypes = dto
+      ? new Set(Object.entries(dto.typeDistribution).filter(([, count]) => count > 0).map(([type]) => type))
+      : null;
+    const requestedShapes = requestedTypes
+      ? questionShapes.filter((shape) => requestedTypes.has(shape.questionType)).map((shape) => shape.schema)
+      : questionShapes.map((shape) => shape.schema);
+    const questionShape = requestedShapes.length === 1 ? requestedShapes[0] : { anyOf: requestedShapes };
+    return {
+      type: 'object',
+      additionalProperties: false,
+      required: ['items'],
+      properties: {
+        items: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 20,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['itemKey', 'question', 'tpRefs', 'cognitiveLevel', 'rationale', 'warnings'],
+            properties: {
+              itemKey: { type: 'string' },
+              question: questionShape,
+              tpRefs: { type: 'array', items: { type: 'string' } },
+              cognitiveLevel: { type: 'string', enum: ['C1', 'C2', 'C3', 'C4', 'C5', 'C6'] },
+              rationale: { type: 'string' },
+              warnings: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
+      },
+    };
   }
 
   private async loadOwnedRppContext(rppId: string, user: AuthUser): Promise<ResolvedRppContext> {
