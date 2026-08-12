@@ -343,4 +343,3 @@ Recommended approval statement:
 ```text
 Saya menyetujui Wave B Gate 0 Option A: additive appointment schema, quarantine fail-closed, dynamic appointment permission resolver, explicit stable-role mapping, TF2 compatibility gate, dan PostgreSQL staging-copy dry-run sebelum Git gate.
 ```
-
