@@ -1128,11 +1128,31 @@ export class AiGenerateService {
     const result = QuestionDraftOutputSchema.safeParse(parsed);
     if (!result.success) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     if (result.data.items.length !== dto.questionCount) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
-    this.assertDraftDistribution(result.data.items, dto);
-    for (const item of result.data.items) {
+    const items = this.normalizeQuestionDraftMetadata(result.data.items, dto);
+    this.assertDraftDistribution(items, dto);
+    for (const item of items) {
       this.assertQuestionDraftItem(item, context);
     }
-    return result.data;
+    return { items };
+  }
+
+  private normalizeQuestionDraftMetadata(items: QuestionDraftItem[], dto: GenerateQuestionDraftDto): QuestionDraftItem[] {
+    const difficultySlots = this.distributionSlots(['easy', 'medium', 'hard'] as const, dto.difficultyDistribution);
+    const cognitiveSlots = this.distributionSlots(['C1', 'C2', 'C3', 'C4', 'C5', 'C6'] as const, dto.cognitiveDistribution);
+
+    return items.map((item, index) => ({
+      ...item,
+      question: {
+        ...item.question,
+        difficulty: difficultySlots[index] ?? item.question.difficulty,
+      },
+      tpRefs: dto.tpRefs,
+      cognitiveLevel: cognitiveSlots[index] ?? item.cognitiveLevel,
+    }));
+  }
+
+  private distributionSlots<const T extends string>(order: readonly T[], distribution: Record<T, number>): T[] {
+    return order.flatMap((key) => Array.from({ length: distribution[key] ?? 0 }, () => key));
   }
 
   private normalizeQuestionDraftProviderOutput(value: unknown): unknown {
