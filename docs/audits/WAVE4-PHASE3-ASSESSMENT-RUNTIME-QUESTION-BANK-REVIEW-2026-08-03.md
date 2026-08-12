@@ -7,7 +7,7 @@ Mode: independent review only
 
 ## Verdict
 
-`STAGING FOLLOW-UP EVIDENCE COMPLETE - READY FOR FINAL REVIEW`
+`FOLLOW-UP REQUIRED BEFORE FINAL STAGING SIGN-OFF`
 
 Source sudah jauh lebih aman daripada baseline, khususnya snapshot soal, pemisahan
 kunci jawaban, attempt server-side, idempotensi baris Grade, strict provider schema,
@@ -15,15 +15,110 @@ lease/fencing AI, durable outbox worker, CSV identity/FK, dan notification recov
 Follow-up ketujuh tetap menutup seluruh temuan source dan approval packaging sebelumnya
 tetap valid. Runtime staging pada SHA `3c69a00c6c8c080a93d59e9208fe7ddac0bd34fd`
 membuktikan alur inti GURU -> SISWA -> koreksi -> Gradebook, privasi kunci jawaban,
-responsive mobile, outbox, dan dua hotfix terakhir. Follow-up 2026-08-12 pada SHA
-`4842278f41528f059d84f766f8a69b55106ed37c` menutup provider matrix, negative authority
-API, quality sampling, cleanup, dan evidence report packaging. Final staging sign-off
-tetap keputusan reviewer, tetapi blocker evidence yang tercatat pada re-review 2026-08-11
-sudah dilengkapi.
+responsive mobile, outbox, dan dua hotfix terakhir. Follow-up 2026-08-12 pada application
+SHA `4842278f41528f059d84f766f8a69b55106ed37c` menutup provider matrix dasar, cleanup,
+dan evidence packaging. Re-review final menemukan authority matrix berbasis resource ID
+belum diuji dan quality sampling jurusan kedua belum valid secara kurikuler. Karena itu
+main/production tetap hold sampai follow-up sempit di bawah selesai.
 
 Confidence: **0.97**.
 
-## Independent Staging Follow-up Closure - 2026-08-12 (Latest)
+## Independent Final Staging Re-review - 2026-08-12 (Latest)
+
+### Verdict
+
+- **Runtime/deployment integrity:** `PASS`.
+- **Provider matrix dasar:** `PASS`.
+- **Evidence packaging:** `PASS`.
+- **Final staging sign-off:** `FOLLOW-UP REQUIRED`.
+- **Main/production promotion:** `HOLD`.
+
+Tidak diperlukan Prompt Architect baru, branch source baru, atau Wave 4.1. Lanjutkan
+langsung sebagai evidence-only/runtime follow-up pada Wave 4 yang sama. Jangan mengubah
+source kecuali pengujian sempit menemukan defect nyata.
+
+### Findings
+
+#### P1-S3 - Negative authority belum mencakup lifecycle berbasis resource ID
+
+Follow-up membuktikan 403 untuk `POST /ai/question-drafts` dan
+`POST /assessment/sessions`. Itu menutup create boundary, tetapi belum membuktikan
+authorization pada operasi yang menerima ID resource yang sudah ada. Acceptance reviewer
+sebelumnya juga meminta accept draft, activate session, dan correction. Celah IDOR atau
+ownership pada endpoint tersebut tidak dapat disimpulkan aman hanya dari kegagalan create.
+
+Required narrow proof untuk SISWA, ORANG_TUA, dan GURU tanpa TeachingAssignment/ownership
+yang sesuai:
+
+1. accept/reject/regenerate AI draft milik GURU fixture;
+2. activate/end session milik GURU fixture;
+3. read/write koreksi esai atau completion/Gradebook action milik GURU fixture;
+4. seluruhnya harus 403/404 fail-closed tanpa membocorkan answer key, guide answer,
+   rubric internal, teacher/student identifier, atau detail resource privat.
+
+Gunakan fixture staging existing dan ID sintetis yang sudah tersedia. Tidak perlu akun
+baru atau mutasi production.
+
+#### P2-S3 - Quality matrix jurusan kedua belum representatif
+
+Matriks menguji jurusan `QAW4` dan `QAAKL`, tetapi tiga mapel produktif untuk keduanya
+tetap Administrasi Infrastruktur Jaringan, Keamanan Jaringan Dasar, dan Troubleshooting
+Jaringan. Mapel tersebut relevan untuk jaringan, tetapi bukan sampel produktif yang wajar
+untuk jurusan akuntansi. Karena itu 12/12 PASS belum membuktikan kemampuan AI mengaitkan
+mapel umum dan produktif dengan dua konteks jurusan yang berbeda.
+
+Required correction:
+
+- pertahankan hasil QAW4 yang sudah ada;
+- untuk QAAKL, ulang hanya tiga kombinasi produktif menggunakan mapel produktif yang
+  sesuai katalog/TeachingAssignment/RPP QAAKL, misalnya Akuntansi Dasar, Komputer
+  Akuntansi, atau Praktikum Akuntansi yang benar-benar tersedia di staging;
+- jangan membuat nama mapel atau TP bebas hanya untuk QA; sumber harus authoritative;
+- catat accepted tanpa edit, accepted setelah edit ringan, rejected, dan reason code;
+- review harus dinyatakan dilakukan manusia/guru atau reviewer kompeten. Validator
+  otomatis boleh menjadi bukti tambahan, bukan pengganti penilaian relevansi dan
+  ambiguitas;
+- target tetap nol wrong key/hard leak/PII dan minimal 90% diterima setelah edit ringan.
+
+#### P2-S4 - Controlled failure proof belum lengkap pada state persistence dan recovery UI
+
+HTTP 503 `AI_PROVIDER_AUTH_FAILED`, pemulihan environment, dan tidak teramatinya canonical
+Question sudah diterima sebagai provider failure boundary. Namun laporan belum mencatat
+before/after canonical count, status final `AiGeneration`, atau recovery UI/retry setelah
+failure.
+
+Tambahkan pada run yang sama:
+
+- before/after count atau generation-specific query yang membuktikan nol canonical
+  Question dibuat;
+- status ledger generation yang truthful dan tidak tertinggal `generating`;
+- tombol/form kembali usable dan satu retry normal berhasil setelah provider dipulihkan.
+
+### Evidence accepted independently
+
+- PR #476 merged ke `develop` pada `d7eda1d1258984adf2857210ae1d94666042a8ed`;
+  PR #477 merged ke `staging` pada `880543daa87854e5dac2857116f3c45ac50c496f`.
+- Seluruh required CI untuk kedua PR hijau.
+- Deploy run `31559051798` sukses pada SHA `880543daa87854e5dac2857116f3c45ac50c496f`.
+- VPS staging checkout berada pada SHA tersebut; API healthy dan web running.
+- Perbandingan application QA SHA `4842278f41528f059d84f766f8a69b55106ed37c`
+  ke final evidence SHA `880543daa87854e5dac2857116f3c45ac50c496f` hanya
+  mengubah dua dokumen audit. Dengan demikian source aplikasi yang diuji tidak berubah.
+- Laporan QA final sudah ada pada `origin/staging`.
+- Branch protection `develop` dan `staging` kembali membutuhkan satu approval; tidak ada
+  PR terbuka.
+- `main` tetap `8d03902dc29d6faa1e91137a08155ef56d546afb`; production tidak disentuh.
+- OpenAI 201, forced Ollama 201, controlled auth failure 503, cleanup circuit/env, dan
+  negative create controls diterima sebagai bukti valid sesuai batas masing-masing.
+
+### Next gate
+
+Eksekutor cukup memperbarui laporan QA staging yang sama dengan tiga bukti sempit di atas,
+lalu membuat docs/evidence-only PR melalui `develop -> staging`. Setelah final evidence
+permanen dan SHA kembali diverifikasi, serahkan ke reviewer untuk sign-off. Jangan buat PR
+ke `main` sebelum verdict reviewer berubah menjadi approval eksplisit.
+
+## Independent Staging Follow-up Closure - 2026-08-12 (Superseded by final re-review)
 
 ### Bounded verdict
 
