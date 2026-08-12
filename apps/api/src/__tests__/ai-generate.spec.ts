@@ -430,14 +430,14 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(asArray(asRecord(asRecord(questionSchema.properties).type).enum)).toEqual(['multiple_choice']);
   });
 
-  it('normalizes AI draft metadata back to teacher-selected TP, difficulty, and cognitive level', async () => {
+  it('normalizes AI draft metadata and subject back to authoritative teacher context', async () => {
     shouldAttemptOpenAiProbe.mockResolvedValue(false);
     lmsModuleFindFirst.mockResolvedValue(ownedModule);
     queryRaw.mockResolvedValueOnce([{ id: 'gen-1', model: 'ollama' }]);
     localChat.mockResolvedValue(JSON.stringify({
       items: [{
         ...AI_QUESTION_ITEM,
-        question: { ...AI_QUESTION_ITEM.question, difficulty: 'hard' },
+        question: { ...AI_QUESTION_ITEM.question, subject: 'Judul modul buatan provider', difficulty: 'hard' },
         tpRefs: ['Judul modul buatan provider'],
         cognitiveLevel: 'C6',
       }],
@@ -448,6 +448,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       idempotencyKey: 'draft-key-normalized-metadata',
     }, GURU);
 
+    expect(result.items[0]?.question.subject).toBe('Pemrograman Web');
     expect(result.items[0]?.question.difficulty).toBe('easy');
     expect(result.items[0]?.tpRefs).toEqual(['TP 1']);
     expect(result.items[0]?.cognitiveLevel).toBe('C2');
