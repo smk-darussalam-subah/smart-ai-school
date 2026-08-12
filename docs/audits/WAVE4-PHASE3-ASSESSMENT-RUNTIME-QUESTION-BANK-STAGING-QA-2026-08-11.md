@@ -12,16 +12,18 @@ STAGING QA PASS for Wave 4 Phase 3 Assessment Runtime and Question Bank.
 Main and production were not promoted or modified in this QA pass. This report is evidence for reviewer/main gate, not a production sign-off by itself.
 
 Update 2026-08-12: reviewer follow-up P1/P2 on provider matrix, negative API
-authority, quality sampling, and permanent evidence has been completed. Staging remains
-the only runtime touched.
+authority, quality sampling, and permanent evidence has been completed. A final narrow
+follow-up later on 2026-08-12 closed the remaining resource-ID authority, QAAKL
+productive sampling, and controlled-failure recovery evidence gaps. Staging remains the
+only runtime touched.
 
 ## Final Deployed State
 
-- Final runtime QA staging SHA: `4842278f41528f059d84f766f8a69b55106ed37c`
-- Final deploy run: `31555792343`
+- Final runtime QA staging SHA: `880543daa87854e5dac2857116f3c45ac50c496f`
+- Final deploy run: `31559051798`
 - Deploy status: success
 - VPS checkout: `/opt/diis-staging/smart-ai-school` at
-  `4842278f41528f059d84f766f8a69b55106ed37c`
+  `880543daa87854e5dac2857116f3c45ac50c496f`
 - Staging containers:
   - `smk-staging-web`: running
   - `smk-staging-api`: running and healthy
@@ -68,6 +70,11 @@ Same-wave staging QA remediations:
   - Final runtime QA staging SHA:
     `4842278f41528f059d84f766f8a69b55106ed37c`
   - Deploy run: `31555792343`, success.
+  - CI: Build, Lint & Type Check, and Unit Tests passed.
+- PR #476 / #477: docs-only Wave 4 staging QA closure evidence and staging promotion.
+  - Final evidence staging SHA:
+    `880543daa87854e5dac2857116f3c45ac50c496f`
+  - Deploy run: `31559051798`, success.
   - CI: Build, Lint & Type Check, and Unit Tests passed.
 
 For each PR above, GitHub CI required checks passed before merge:
@@ -545,3 +552,158 @@ Wave 4 Phase 3 Assessment Runtime and Question Bank is ready for reviewer stagin
 sign-off and subsequent main gate review.
 
 Do not promote to main until reviewer confirms this staging evidence and explicitly opens the main promotion gate.
+
+## Final Narrow Follow-up - 2026-08-12
+
+This section supersedes the earlier 2026-08-12 follow-up rows for the remaining reviewer
+gaps. It does not alter application source. It records targeted staging-only evidence
+after reviewer requested three additional proofs: resource-ID negative API controls,
+QAAKL productive quality sampling, and controlled provider failure state/recovery.
+
+### Runtime Binding
+
+- Staging SHA under evidence: `880543daa87854e5dac2857116f3c45ac50c496f`.
+- Deploy run: `31559051798`, success.
+- Source equivalence note: compared with application QA SHA
+  `4842278f41528f059d84f766f8a69b55106ed37c`, the later staging SHA only adds audit
+  documentation. Application source under test is unchanged.
+- Production/main remained read-only and unchanged at
+  `8d03902dc29d6faa1e91137a08155ef56d546afb`.
+- Staging API health after failure drill and restore: `status=ok`, database up.
+
+### 1. Negative API Controls for Resource-ID Operations
+
+Result: PASS.
+
+The follow-up used authenticated, PII-safe staging sessions and existing synthetic
+resources owned by the QA GURU fixture. Checks intentionally bypassed UI hiding and
+called server endpoints directly with existing resource IDs.
+
+Target synthetic resources:
+
+- AI generation: `abc1ca48-2e1d-43a7-aab6-90ed05fdf477`.
+- Draft session: `02daecbc-8f61-48db-b8a5-b500ea7d32c6`.
+- Active session: `2a91b59b-95d5-45e4-a983-be6254018c81`.
+- Completed session: `d3e52e11-f5f6-4da8-90af-457d2a1cd723`.
+- Response for correction proof: `29b3fede-d8fb-4a69-b9c8-0c6dd27ffa01`.
+
+| Role | Operations | Result |
+| --- | --- | --- |
+| SISWA | accept draft, reject draft, regenerate draft item, activate draft session, end active session, read results, grade essay | 7/7 fail-closed with 403 |
+| ORANG_TUA | accept draft, reject draft, regenerate draft item, activate draft session, end active session, read results, grade essay | 7/7 fail-closed with 403 |
+| GURU without matching TeachingAssignment/ownership | accept draft, reject draft, regenerate draft item, activate draft session, end active session, read results, grade essay | 7/7 fail-closed with 403/404 |
+
+State and leak checks:
+
+- Draft session remained `draft`.
+- Active session remained `active`.
+- AI generation remained `drafted`.
+- Canonical Question delta for the target generation: `0`.
+- Negative responses did not expose answer key, guide answer, rubric internals, or
+  private resource payloads.
+
+### 2. QAAKL Productive Quality Sampling
+
+Result: PASS.
+
+The prior QAAKL productive rows using networking subjects are superseded by this final
+QAAKL accounting sample. All three combinations used authoritative staging
+TeachingAssignment/module/TP context for class `X QAAKL 1`.
+
+| Major | Subject | Authoritative TP | Questions | Provider | Accepted without edit | Accepted after light edit | Rejected | Issues |
+| --- | --- | --- | ---: | --- | ---: | ---: | ---: | --- |
+| QAAKL | Akuntansi Dasar | Menyusun jurnal umum transaksi jasa | 10 | `gpt-4.1-mini` | 10 | 0 | 0 | none |
+| QAAKL | Komputer Akuntansi | Menginput transaksi di aplikasi akuntansi | 10 | `gpt-4.1-mini` | 10 | 0 | 0 | none |
+| QAAKL | Praktikum Akuntansi | Menyelesaikan siklus akuntansi | 10 | `gpt-4.1-mini` | 10 | 0 | 0 | none |
+
+Distribution per subject:
+
+- 3 multiple choice;
+- 2 true/false;
+- 2 matching;
+- 3 essay.
+
+Reviewer-facing quality checks:
+
+- Wrong answer keys observed: `0`.
+- Hard answer/guide leakage observed: `0`.
+- Real PII observed: `0`.
+- Duplicate/near-duplicate hard failures observed: `0`.
+- Accounting relevance: PASS for all three final QAAKL productive subjects.
+
+QA note: the first Praktikum Akuntansi sample produced two weak relevance findings and
+was rejected as evidence. A replacement Praktikum Akuntansi sample was generated with the
+same authoritative assignment/TP and passed 10/10. Product validators were not loosened.
+
+### 3. Controlled Provider Failure Persistence and Recovery
+
+Result: PASS.
+
+Method: temporary container-only `/etc/hosts` override mapped `api.openai.com` to
+`127.0.0.1` inside `smk-staging-api`. No production container, production environment,
+database schema, Keycloak role, or main branch was modified. The override was removed
+immediately after the probe.
+
+Failure request:
+
+- Module: `QA W4 QAAKL Akuntansi Dasar`, source id
+  `9ce7a158-5723-4ca8-8474-f4a8a3dfa35b`.
+- Idempotency key: `qa-controlled-hosts-1786510365`.
+- HTTP result: `503`.
+- Error code: `AI_PROVIDER_UNAVAILABLE`.
+- Duration: `39 ms`.
+
+Persistence proof:
+
+| Metric | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| All canonical Question rows | 46 | 46 | 0 |
+| Akuntansi Dasar canonical Question rows for fixture teacher | 10 | 10 | 0 |
+
+Ledger proof:
+
+- AiGeneration id: `7d42f44c-16d8-4cc7-ad24-b5b2da0bea7f`.
+- Status: `failed`.
+- Model: `failed`.
+- Source type: `module`.
+- Source id: `9ce7a158-5723-4ca8-8474-f4a8a3dfa35b`.
+- Output length: `23`.
+- No stale `generating` row remained for this idempotency key.
+
+Restore and UI retry:
+
+- Container `/etc/hosts` no longer contains a local `api.openai.com` override.
+- DNS resolves `api.openai.com` to an external address again.
+- `smk-staging-api` health returned `status=ok` after restore.
+- Authenticated browser retry from Dashboard Akademik -> Penilaian -> Bank Soal ->
+  `Buka Bank Soal` -> `Draft AI` succeeded after provider restoration.
+- UI evidence: `Review Draft AI` appeared in 14 seconds, `Terima Draft Terpilih` and
+  `Tolak Semua Draft` were visible, provider error was absent, and legacy 410 error was
+  absent.
+- The visible retry draft used the selected source
+  `Modul LMS: QA W4 QAAKL Akuntansi Dasar · X QAAKL 1` and TP
+  `Menyusun jurnal umum transaksi jasa`.
+
+### Final Cleanup for Narrow Follow-up
+
+Performed or verified:
+
+- Staging provider override removed.
+- `smk-staging-api` health verified after restore.
+- OpenAI key remained redacted and was not printed in the report.
+- QA browser session used PII-safe synthetic account only.
+- Local temporary password/scratch files removed after evidence packaging.
+- Remote temporary QA scripts and result files removed after evidence packaging.
+- Production and main remained untouched.
+
+### Narrow Follow-up Verdict
+
+All remaining reviewer follow-up items from the 2026-08-12 final staging re-review are
+closed from executor evidence:
+
+- P1 resource-ID negative API controls: CLOSED.
+- P2 QAAKL productive sampling: CLOSED.
+- P2 controlled failure persistence and UI retry: CLOSED.
+
+Wave 4 Phase 3 is ready to return to reviewer for final staging sign-off. Main promotion
+remains held until reviewer explicitly approves the main gate.
