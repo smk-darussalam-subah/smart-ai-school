@@ -1128,7 +1128,7 @@ export class AiGenerateService {
     const result = QuestionDraftOutputSchema.safeParse(parsed);
     if (!result.success) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     if (result.data.items.length !== dto.questionCount) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
-    const items = this.normalizeQuestionDraftMetadata(result.data.items, dto);
+    const items = this.normalizeQuestionDraftMetadata(result.data.items, dto, context);
     this.assertDraftDistribution(items, dto);
     for (const item of items) {
       this.assertQuestionDraftItem(item, context);
@@ -1136,7 +1136,11 @@ export class AiGenerateService {
     return { items };
   }
 
-  private normalizeQuestionDraftMetadata(items: QuestionDraftItem[], dto: GenerateQuestionDraftDto): QuestionDraftItem[] {
+  private normalizeQuestionDraftMetadata(
+    items: QuestionDraftItem[],
+    dto: GenerateQuestionDraftDto,
+    context: ResolvedQuestionSourceContext,
+  ): QuestionDraftItem[] {
     const difficultySlots = this.distributionSlots(['easy', 'medium', 'hard'] as const, dto.difficultyDistribution);
     const cognitiveSlots = this.distributionSlots(['C1', 'C2', 'C3', 'C4', 'C5', 'C6'] as const, dto.cognitiveDistribution);
 
@@ -1144,6 +1148,7 @@ export class AiGenerateService {
       ...item,
       question: {
         ...item.question,
+        subject: context.subject,
         difficulty: difficultySlots[index] ?? item.question.difficulty,
       },
       tpRefs: dto.tpRefs,
