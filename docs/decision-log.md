@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-08-06 - Wave 4 AI Question provenance and assessment runtime authority
+
+**Keputusan:** Wave 4 Assessment memakai dua migration additive. Migration pertama
+menambah field runtime minimal untuk timer/resume, mixed grading, dan idempotency Grade:
+`AssessmentSession.gradeTarget`, `AssessmentResponse.questionOrder`,
+`AssessmentResponse.itemScores`, dan `Grade.sourceAssessmentSessionId` dengan unique source
+constraint. Migration kedua menambah provenance AI Bank Soal: `QuestionSource`,
+`CognitiveLevel`, `Question.aiGenerationId`, `Question.aiItemKey`, `Question.tpRefs`,
+`Question.cognitiveLevel`, dan metadata source/idempotency nullable di `AiGeneration`.
+
+**Konteks:** AI hanya membuat draft soal dari RPP/Modul authoritative; canonical
+`Question` baru dibuat setelah guru meninjau dan menerima item. `aiItemKey` wajib unik
+per generation agar partial/concurrent accept tidak menggandakan soal. TP belum
+dinormalisasi menjadi entity terpisah, sehingga referensi TP disimpan sebagai string yang
+divalidasi terhadap TP authoritative dari `Rpp.body` atau `LmsModule.tp`.
+
+**Lesson learned:** provenance AI harus disimpan sebagai kontrak domain, bukan tag bebas.
+Jangan menjalankan `prisma format` untuk perubahan schema kecil karena churn alignment
+menurunkan kualitas review. Browser QA Wave 4 dilakukan di staging setelah source gate,
+PR, deploy, dan SHA staging jelas.
+
+---
+
 ## 2026-07-27 - Appointment due activation scheduler: systemd, not n8n
 
 **Keputusan:** n8n tidak menjadi caller `POST /appointments/activate-due`. n8n tetap boleh

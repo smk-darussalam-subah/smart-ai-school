@@ -361,7 +361,7 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
 
       {/* Question Bank Editor overlay (opened from Asesmen tab) */}
       {qbOpen && (
-        <QuestionBankEditor subject={subject} onClose={() => setQbOpen(false)} />
+        <QuestionBankEditor subject={subject} moduleId={editing?.id} onClose={() => setQbOpen(false)} />
       )}
     </Dialog>
   );

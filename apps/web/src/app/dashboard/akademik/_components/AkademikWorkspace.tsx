@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutDashboard, CalendarClock, BookOpenCheck, ClipboardPenLine, CalendarCheck,
   ClipboardList, Award, ClipboardCheck, BookMarked, Calendar, UserCheck, Users, AlertTriangle,
@@ -13,6 +13,7 @@ import RingkasanGuru from './RingkasanGuru';
 import JadwalTimetable from './JadwalTimetable';
 import RekapPembelajaran from './RekapPembelajaran';
 import GradebookPenilaian from './GradebookPenilaian';
+import QuestionBankEditor, { type QuestionSourceOption } from './QuestionBankEditor';
 import CapaianRapor from './CapaianRapor';
 import PembelajaranGuru from './PembelajaranGuru';
 import AbsenModal from './AbsenModal';
@@ -24,7 +25,17 @@ import ModulAjarForm from './ModulAjarForm';
 import KehadiranGuru from './KehadiranGuru';
 import PenugasanGuru from './PenugasanGuru';
 import RaporWaliKelas from './guru/RaporWaliKelas';
-import { fetchWaliClasses, type WaliClassItem } from '../actions';
+import { fetchAssessmentSessions, fetchWaliClasses, type AssessmentSessionData, type WaliClassItem } from '../actions';
+import {
+  assessmentSessionPanelState,
+  assessmentSessionQueryKey,
+  buildAssessmentSessionCards,
+  buildQuestionSourceOptions,
+  canStartAssessmentSessionPageRequest,
+  createAssessmentSessionRequestGate,
+  isAssessmentSessionResponseCurrent,
+  mergeAssessmentSessionRegistry,
+} from './assessment-workspace-mappers';
 
 interface Assignment { id: string; subject: string; class: { id: string; name: string } }
 
@@ -38,6 +49,10 @@ interface Props {
   rpp: RppItem[];
   lmsModules: LmsModuleItem[];
   todayClasses: TodayClass[];
+  assessmentSessions: AssessmentSessionData[];
+  assessmentSessionTotal?: number;
+  assessmentSessionPage?: number;
+  assessmentSessionLimit?: number;
   academicYear: string;
   semester: number;
   /** true bila sebagian data inti (nilai/kehadiran) gagal dimuat. */
@@ -59,7 +74,8 @@ const NAV_ALL: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = 
 ];
 
 export default function AkademikWorkspace({
-  grades, attendances, assignments, schedules, activities, rpp, lmsModules, todayClasses, academicYear, semester, dataWarning,
+  grades, attendances, assignments, schedules, activities, rpp, lmsModules, todayClasses, assessmentSessions,
+  assessmentSessionTotal, assessmentSessionPage, assessmentSessionLimit, academicYear, semester, dataWarning,
 }: Props) {
   const approvedRpp = useMemo(() => rpp.filter((r) => r.status === 'approved'), [rpp]);
   const subjects = useMemo(() => {
@@ -96,6 +112,8 @@ export default function AkademikWorkspace({
   const [jurnal, setJurnal] = useState<{ classId: string; className: string; subject: string; startLabel: string; jpStart: number } | null>(null);
   const [inputNilai, setInputNilai] = useState(false);
   const [penilaian, setPenilaian] = useState<{ session: TodayClass; mode: 'preview' | 'monitor' | 'analysis'; tab: 'diag' | 'form' | 'fb' } | null>(null);
+  const [penilaianPanel, setPenilaianPanel] = useState<'nilai' | 'sesi' | 'bank' | 'koreksi'>('nilai');
+  const [penilaianBankOpen, setPenilaianBankOpen] = useState(false);
   const [sessFlow, setSessFlow] = useState<TodayClass | null>(null);
   // Step "Buka Modul Ajar" dari session flow: buka ModulAjarForm DI ATAS modal sesi.
   // RPP match dicari berdasarkan subject + class sesi; bila tak ada → create dgn subject pre-select.
@@ -104,6 +122,21 @@ export default function AkademikWorkspace({
   const [filterOpen, setFilterOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
   const activeFilterCount = (selClass !== 'all' ? 1 : 0) + (subject !== 'all' ? 1 : 0);
+  const [sessionRegistry, setSessionRegistry] = useState<AssessmentSessionData[]>(assessmentSessions);
+  const [sessionTotal, setSessionTotal] = useState(assessmentSessionTotal ?? assessmentSessions.length);
+  const [sessionPage, setSessionPage] = useState(assessmentSessionPage ?? 1);
+  const [sessionLimit, setSessionLimit] = useState(assessmentSessionLimit ?? 100);
+  const [sessionLoading, setSessionLoading] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const sessionRequestSeq = useRef(0);
+  const sessionFilterKeyRef = useRef('');
+  const sessionRequestGate = useMemo(() => createAssessmentSessionRequestGate(), []);
+  useEffect(() => {
+    setSessionRegistry(assessmentSessions);
+    setSessionTotal(assessmentSessionTotal ?? assessmentSessions.length);
+    setSessionPage(assessmentSessionPage ?? 1);
+    setSessionLimit(assessmentSessionLimit ?? 100);
+  }, [assessmentSessionLimit, assessmentSessionPage, assessmentSessionTotal, assessmentSessions]);
   useEffect(() => {
     // Auto-scroll tab aktif ke posisi terlihat (anti hidden saat ganti screen).
     const nav = navRef.current;
@@ -118,6 +151,99 @@ export default function AkademikWorkspace({
     (subject === 'all' ? false : g.assignment.subject === subject) &&
     (selClass === 'all' ? true : g.assignment.class.name === selClassName));
   const inputAssignmentId = assignments.find((a) => a.subject === subject && a.class?.name === selClassName)?.id;
+  const savedAssessmentCards = useMemo<TodayClass[]>(() => buildAssessmentSessionCards({
+    assessmentSessions: sessionRegistry,
+    subject,
+    classId: selClass,
+  }), [selClass, sessionRegistry, subject]);
+  const correctionAssessmentCards = useMemo(() =>
+    savedAssessmentCards.filter((item) => item.assessmentSessionId),
+  [savedAssessmentCards]);
+  const todaySessionCandidates = useMemo(() => todayClasses
+    .filter((item) => subject === 'all' || item.subject === subject)
+    .filter((item) => selClass === 'all' || item.classId === selClass),
+  [selClass, subject, todayClasses]);
+  const bankSourceOptions = useMemo<QuestionSourceOption[]>(() => buildQuestionSourceOptions({
+    subject,
+    classId: selClass,
+    lmsModules,
+    rpp,
+  }), [lmsModules, rpp, selClass, subject]);
+  const sessionFilterKey = useMemo(() => assessmentSessionQueryKey({
+    subject,
+    classId: selClass,
+    academicYear,
+    semester,
+    limit: sessionLimit,
+  }), [academicYear, selClass, semester, sessionLimit, subject]);
+  sessionFilterKeyRef.current = sessionFilterKey;
+  const loadSessionPage = useCallback(async (page: number, mode: 'replace' | 'append') => {
+    const requestKey = sessionFilterKey;
+    await sessionRequestGate.run(requestKey, async () => {
+      const requestId = sessionRequestSeq.current + 1;
+      sessionRequestSeq.current = requestId;
+      setSessionLoading(true);
+      setSessionError(null);
+      try {
+        const res = await fetchAssessmentSessions({
+          page,
+          limit: sessionLimit,
+          subject: subject === 'all' ? undefined : subject,
+          classId: selClass === 'all' ? undefined : selClass,
+          academicYear: academicYear || undefined,
+          semester,
+        });
+        if (!isAssessmentSessionResponseCurrent({
+          requestId,
+          latestRequestId: sessionRequestSeq.current,
+          requestKey,
+          currentKey: sessionFilterKeyRef.current,
+        })) return;
+        setSessionLoading(false);
+        if (!res.success || !res.data) {
+          setSessionError(res.error ?? (mode === 'append' ? 'Gagal memuat halaman sesi berikutnya.' : 'Gagal memuat sesi asesmen.'));
+          return;
+        }
+        setSessionRegistry((current) => mode === 'append'
+          ? mergeAssessmentSessionRegistry(current, res.data!.data)
+          : res.data!.data);
+        setSessionTotal(res.data.total);
+        setSessionPage(res.data.page);
+        setSessionLimit(res.data.limit);
+      } catch {
+        if (!isAssessmentSessionResponseCurrent({
+          requestId,
+          latestRequestId: sessionRequestSeq.current,
+          requestKey,
+          currentKey: sessionFilterKeyRef.current,
+        })) return;
+        setSessionLoading(false);
+        setSessionError(mode === 'append' ? 'Gagal memuat halaman sesi berikutnya.' : 'Gagal memuat sesi asesmen.');
+      }
+    });
+  }, [academicYear, selClass, semester, sessionFilterKey, sessionLimit, sessionRequestGate, subject]);
+  useEffect(() => {
+    void loadSessionPage(1, 'replace');
+  }, [loadSessionPage]);
+  const hasMoreSessions = sessionRegistry.length < sessionTotal;
+  const loadMoreSessions = async () => {
+    const appendKey = sessionFilterKey;
+    if (!canStartAssessmentSessionPageRequest({
+      loading: sessionLoading,
+      hasMore: hasMoreSessions,
+      inFlight: sessionRequestGate.isInFlight(appendKey),
+    })) return;
+    await loadSessionPage(sessionPage + 1, 'append');
+  };
+  const retrySessionRegistry = async () => {
+    await loadSessionPage(1, 'replace');
+  };
+  const sessionPanelState = assessmentSessionPanelState({
+    hasSavedSessions: savedAssessmentCards.length > 0,
+    hasTodayCandidates: todaySessionCandidates.length > 0,
+    loading: sessionLoading,
+    error: sessionError,
+  });
 
   return (
     <div className="space-y-1">
@@ -249,7 +375,120 @@ export default function AkademikWorkspace({
         {screen === 'penilaian' && (
           <Card title={`Penilaian${subject !== 'all' ? ` — ${subject}` : ''}${selClassName ? ` · ${selClassName}` : ''}`} icon={ClipboardPenLine}>
             {subject === 'all' && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-700">Pilih <b>Mapel</b> di bar atas untuk menampilkan nilai gradebook.</p>}
-            <GradebookPenilaian grades={penilaianGrades} className={selClassName || 'Semua Kelas'} subject={subject === 'all' ? '' : subject} onInputNilai={() => setInputNilai(true)} />
+            <div className="mb-3 grid grid-cols-4 gap-1 rounded-xl bg-[#f4f7f5] p-1">
+              {([
+                ['nilai', 'Nilai'],
+                ['sesi', 'Sesi Asesmen'],
+                ['bank', 'Bank Soal'],
+                ['koreksi', 'Koreksi'],
+              ] as const).map(([key, label]) => (
+                <button key={key} type="button" onClick={() => setPenilaianPanel(key)} className={clsx('rounded-lg px-2 py-2 text-[11px] font-bold', penilaianPanel === key ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {penilaianPanel === 'nilai' && (
+              <GradebookPenilaian grades={penilaianGrades} className={selClassName || 'Semua Kelas'} subject={subject === 'all' ? '' : subject} onInputNilai={() => setInputNilai(true)} />
+            )}
+            {penilaianPanel === 'sesi' && (
+              <div className="space-y-2" aria-busy={sessionLoading}>
+                {savedAssessmentCards.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-extrabold uppercase tracking-wide text-[#6b8079]">Sesi tersimpan</div>
+                    {savedAssessmentCards.map((item) => (
+                      <article key={item.assessmentSessionId} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e6efea] px-3 py-2">
+                        <div>
+                          <div className="text-[12.5px] font-bold text-[#0f2e25]">{item.subject} - {item.className}</div>
+                          <div className="text-[11px] font-semibold text-[#6b8079]">{item.startLabel}</div>
+                        </div>
+                        <button type="button" onClick={() => setPenilaian({ session: item, mode: 'preview', tab: 'diag' })} className="rounded-lg bg-emerald-600 px-3 py-2 text-[11.5px] font-bold text-white">Buka Studio</button>
+                      </article>
+                    ))}
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold text-[#6b8079]">
+                      <span>{sessionRegistry.length} dari {sessionTotal} sesi termuat</span>
+                      {hasMoreSessions && (
+                        <button
+                          type="button"
+                          onClick={loadMoreSessions}
+                          disabled={sessionLoading}
+                          className="inline-flex items-center gap-1 rounded-lg border border-[#dfe9e4] bg-white px-2 py-1 font-bold text-emerald-700 disabled:opacity-50"
+                        >
+                          <ChevronDown className="h-3.5 w-3.5" />
+                          {sessionLoading ? 'Memuat...' : 'Muat sesi berikutnya'}
+                        </button>
+                      )}
+                    </div>
+                    {sessionError && (
+                      <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+                        <span>{sessionError}</span>
+                        <button type="button" onClick={retrySessionRegistry} disabled={sessionLoading} className="rounded-md border border-amber-200 bg-white px-2 py-1 text-amber-700 disabled:opacity-50">Coba lagi</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {savedAssessmentCards.length === 0 && todaySessionCandidates.length > 0 && sessionError && (
+                  <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+                    <span>{sessionError}</span>
+                    <button type="button" onClick={retrySessionRegistry} disabled={sessionLoading} className="rounded-md border border-amber-200 bg-white px-2 py-1 text-amber-700 disabled:opacity-50">Coba lagi</button>
+                  </div>
+                )}
+                {todaySessionCandidates.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-extrabold uppercase tracking-wide text-[#6b8079]">Jadwal hari ini</div>
+                    {todaySessionCandidates.map((item) => (
+                      <article key={`${item.classId}-${item.subject}-${item.startLabel}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e6efea] px-3 py-2">
+                        <div>
+                          <div className="text-[12.5px] font-bold text-[#0f2e25]">{item.subject} - {item.className}</div>
+                          <div className="text-[11px] font-semibold text-[#6b8079]">{item.startLabel}</div>
+                        </div>
+                        <button type="button" onClick={() => setPenilaian({ session: item, mode: 'preview', tab: 'diag' })} className="rounded-lg bg-emerald-600 px-3 py-2 text-[11.5px] font-bold text-white">Buka Studio</button>
+                      </article>
+                    ))}
+                  </div>
+                )}
+                {sessionPanelState === 'loading' && (
+                  <div role="status" className="rounded-xl border border-dashed border-[#dfe9e4] p-6 text-center text-[12.5px] font-semibold text-[#6b8079]">Memuat sesi asesmen...</div>
+                )}
+                {sessionPanelState === 'error' && (
+                  <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-center">
+                    <div className="text-[12.5px] font-bold text-amber-800">{sessionError}</div>
+                    <button type="button" onClick={retrySessionRegistry} disabled={sessionLoading} className="mt-3 rounded-lg bg-amber-600 px-3 py-2 text-[11.5px] font-bold text-white disabled:opacity-50">Coba lagi</button>
+                  </div>
+                )}
+                {sessionPanelState === 'empty' && (
+                  <div className="rounded-xl border border-dashed border-[#dfe9e4] p-6 text-center text-[12.5px] font-semibold text-[#9bb0a8]">Belum ada sesi asesmen atau jadwal yang cocok untuk filter ini.</div>
+                )}
+              </div>
+            )}
+            {penilaianPanel === 'bank' && (
+              <div className="rounded-xl border border-[#e6efea] p-4">
+                <div className="text-[13px] font-bold text-[#0f2e25]">Bank Soal</div>
+                <div className="mt-1 text-[12px] font-semibold text-[#6b8079]">Kelola soal manual, import CSV, dan draft AI berbasis Modul/RPP dari Session Studio.</div>
+                <button type="button" onClick={() => setPenilaianBankOpen(true)} disabled={subject === 'all'} className="mt-3 rounded-lg bg-emerald-600 px-3 py-2 text-[12px] font-bold text-white disabled:opacity-50">Buka Bank Soal</button>
+              </div>
+            )}
+            {penilaianPanel === 'koreksi' && (
+              <div className="space-y-2" aria-busy={sessionLoading}>
+                {correctionAssessmentCards.length === 0 && sessionLoading ? (
+                  <div role="status" className="rounded-xl border border-dashed border-[#dfe9e4] p-6 text-center text-[12.5px] font-semibold text-[#6b8079]">Memuat sesi koreksi...</div>
+                ) : correctionAssessmentCards.length === 0 && sessionError ? (
+                  <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-center">
+                    <div className="text-[12.5px] font-bold text-amber-800">{sessionError}</div>
+                    <button type="button" onClick={retrySessionRegistry} disabled={sessionLoading} className="mt-3 rounded-lg bg-amber-600 px-3 py-2 text-[11.5px] font-bold text-white disabled:opacity-50">Coba lagi</button>
+                  </div>
+                ) : correctionAssessmentCards.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-[#dfe9e4] p-6 text-center text-[12.5px] font-semibold text-[#9bb0a8]">Belum ada sesi asesmen aktif/selesai yang bisa dibuka untuk koreksi.</div>
+                ) : correctionAssessmentCards.map((item) => (
+                  <article key={`${item.assessmentSessionId}-correction`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e6efea] px-3 py-2">
+                    <div>
+                      <div className="text-[12.5px] font-bold text-[#0f2e25]">{item.subject} - {item.className}</div>
+                      <div className="text-[11px] font-semibold text-[#6b8079]">Buka analisis untuk koreksi esai pending.</div>
+                    </div>
+                    <button type="button" onClick={() => setPenilaian({ session: item, mode: 'analysis', tab: 'form' })} className="rounded-lg bg-amber-500 px-3 py-2 text-[11.5px] font-bold text-white">Buka Koreksi</button>
+                  </article>
+                ))}
+              </div>
+            )}
           </Card>
         )}
 
@@ -301,6 +540,8 @@ export default function AkademikWorkspace({
       {penilaian && (
         <PenilaianSesiModal
           session={penilaian.session}
+          academicYear={academicYear}
+          semester={semester}
           initialMode={penilaian.mode}
           initialTab={penilaian.tab}
           onClose={() => setPenilaian(null)}
@@ -309,6 +550,13 @@ export default function AkademikWorkspace({
 
       {/* Modul Ajar popup dari session flow (step "Buka Modul Ajar") — DI ATAS modal sesi.
           z-50 (Dialog) > z-40 (SessionFlowModal). Modal sesi tetap terbuka di bawah. */}
+      {penilaianBankOpen && subject !== 'all' && (
+        <QuestionBankEditor
+          subject={subject}
+          sourceOptions={bankSourceOptions}
+          onClose={() => setPenilaianBankOpen(false)}
+        />
+      )}
       {modulFromSession && (
         <ModulAjarForm
           key={modulFromSession.rpp?.id ?? 'session-modul'}
@@ -335,4 +583,3 @@ function Card({ title, icon: Icon, children }: { title: string; icon: typeof Lay
     </div>
   );
 }
-

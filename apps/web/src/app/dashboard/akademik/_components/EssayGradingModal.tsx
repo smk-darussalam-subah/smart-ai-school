@@ -27,9 +27,10 @@ interface Props {
   questions: EssayQuestion[];
   responses: EssayResponse[];
   onClose: () => void;
+  onSaved?: () => void;
 }
 
-export default function EssayGradingModal({ sessionId, questions, responses, onClose }: Props) {
+export default function EssayGradingModal({ sessionId, questions, responses, onClose, onSaved }: Props) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [scores, setScores] = useState<Record<string, Record<string, number>>>({});
   const [saving, startSave] = useTransition();
@@ -96,6 +97,7 @@ export default function EssayGradingModal({ sessionId, questions, responses, onC
         return;
       }
       setSaved((prev) => new Set(prev).add(`${responseId}-${questionId}`));
+      onSaved?.();
     });
   };
 
@@ -158,8 +160,8 @@ export default function EssayGradingModal({ sessionId, questions, responses, onC
                 <div className="mt-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-[#6b8079]">Rubrik Penilaian</span>
-                    <span className={clsx('text-[10px] font-bold', Math.abs(weightTotal - 1) < 0.01 ? 'text-emerald-600' : 'text-amber-600')}>
-                      Total bobot: {weightTotal.toFixed(2)} {Math.abs(weightTotal - 1) < 0.01 ? '✓' : '⚠ (idealnya 1.0)'}
+                    <span className={clsx('text-[10px] font-bold', Math.abs(weightTotal - 100) < 0.01 ? 'text-emerald-600' : 'text-amber-600')}>
+                      Total bobot: {weightTotal.toFixed(0)} {Math.abs(weightTotal - 100) < 0.01 ? 'valid' : '(harus 100)'}
                     </span>
                   </div>
                   {q.rubric.map((c) => {
@@ -169,7 +171,7 @@ export default function EssayGradingModal({ sessionId, questions, responses, onC
                         <div className="flex-1">
                           <div className="text-[11.5px] font-bold text-[#0f2e25]">{c.name}</div>
                           <div className="text-[10px] text-[#9bb0a8]">{c.description}</div>
-                          <div className="text-[10px] text-[#6b8079]">Bobot: {(c.weight * 100).toFixed(0)}% · Max: {c.maxScore}</div>
+                          <div className="text-[10px] text-[#6b8079]">Bobot: {c.weight.toFixed(0)}% · Maks: {c.maxScore}</div>
                         </div>
                         <input
                           type="number"

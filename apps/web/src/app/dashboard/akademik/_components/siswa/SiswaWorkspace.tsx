@@ -268,6 +268,9 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
   const attendanceEntries = (attendance ?? [])
     .map(toAttendanceEntry)
     .filter((entry): entry is AttendanceEntry => entry !== null);
+  const activeModule = activeModulId
+    ? displayedModules.find((module) => module.id === activeModulId) ?? null
+    : null;
 
   const renderScreen = () => {
     const commonProps = {
@@ -405,11 +408,13 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
       <main className="mx-auto max-w-[560px] pb-24">
         {activeScreen === 'modul' && activeModulId ? (
           <ModulDetailSiswa
+            module={activeModule}
             moduleId={activeModulId}
             go={go}
             setActiveModulId={setActiveModulId}
             setBadgeCelebration={setBadgeCelebration}
             showToast={showToast}
+            onModuleCompleted={onModuleCompleted}
           />
         ) : (
           renderScreen()
@@ -469,6 +474,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
           teacher={modal.data.teacher}
           room={modal.data.room}
           jpIndex={modal.data.jpIndex}
+          modules={displayedModules}
           onClose={() => setModal({ type: null })}
           openModulDetail={(id: number) => {
             setModal({ type: null });
