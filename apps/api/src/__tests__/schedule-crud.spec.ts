@@ -28,16 +28,22 @@ describe('ScheduleService 2F-1 (update/remove/overlap-inklusif)', () => {
   const taFindUnique = jest.fn();
   const taFindMany = jest.fn();
   const create = jest.fn();
+  const executeRaw = jest.fn();
+  const transaction = jest.fn();
 
   beforeEach(async () => {
-    [findUnique, findFirst, update, del, taFindUnique, taFindMany, create]
+    [findUnique, findFirst, update, del, taFindUnique, taFindMany, create, executeRaw, transaction]
       .forEach((m) => m.mockReset());
     const prisma = {
       schedule: { findUnique, findFirst, update, delete: del, create, findMany: jest.fn(), count: jest.fn() },
       teachingAssignment: { findUnique: taFindUnique, findMany: taFindMany },
       student: { findUnique: jest.fn(), findMany: jest.fn() },
       user: { findUnique: jest.fn() },
+      $executeRaw: executeRaw,
+      $transaction: transaction,
     };
+    executeRaw.mockResolvedValue(1);
+    transaction.mockImplementation((callback: (tx: typeof prisma) => unknown) => callback(prisma));
     const module: TestingModule = await Test.createTestingModule({
       providers: [ScheduleService, { provide: PrismaService, useValue: prisma }],
     }).compile();
@@ -100,5 +106,8 @@ describe('ScheduleService 2F-1 (update/remove/overlap-inklusif)', () => {
     findUnique.mockResolvedValue({ id: 'sch-1' });
     del.mockResolvedValue({ id: 'sch-1' });
     expect(await service.remove('sch-1')).toEqual({ deleted: true, id: 'sch-1' });
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(executeRaw).toHaveBeenCalledTimes(1);
+    expect(executeRaw.mock.invocationCallOrder[0]!).toBeLessThan(del.mock.invocationCallOrder[0]!);
   });
 });

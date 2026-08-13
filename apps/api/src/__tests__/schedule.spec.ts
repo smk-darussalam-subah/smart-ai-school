@@ -65,6 +65,15 @@ const GURU_USER: AuthUser = {
   keycloakId: 'kc-guru', email: 'guru@smk.sch.id',
   username: 'guru1', fullName: 'Agus', roles: ['GURU'],
 };
+const WAKA_KURIKULUM_USER: AuthUser = {
+  ...GURU_USER,
+  roles: ['GURU', 'WAKA_KURIKULUM'],
+};
+const KAPROG_USER: AuthUser = {
+  ...GURU_USER,
+  keycloakId: 'kc-kaprog',
+  roles: ['GURU', 'KAPROG'],
+};
 const SISWA_USER: AuthUser = {
   keycloakId: 'kc-siswa', email: 'siswa@smk.sch.id',
   username: 'siswa1', fullName: 'Budi', roles: ['SISWA'],
@@ -108,10 +117,13 @@ const CREATE_DTO = {
 // ── Mock PrismaService ────────────────────────────────────────────────────────
 
 function buildPrisma() {
-  return {
+  const prisma = {
     user:               { findUnique: jest.fn() },
     teacher:            { findUnique: jest.fn() },
     student:            { findUnique: jest.fn(), findMany: jest.fn() },
+    class:              { findFirst: jest.fn() },
+    academicYear:       { findMany: jest.fn() },
+    appointment:        { findMany: jest.fn() },
     teachingAssignment: { findUnique: jest.fn(), findMany: jest.fn() },
     schedule: {
       findFirst:  jest.fn(),
@@ -119,7 +131,11 @@ function buildPrisma() {
       count:      jest.fn(),
       create:     jest.fn(),
     },
+    $executeRaw: jest.fn().mockResolvedValue(1),
   };
+  return Object.assign(prisma, {
+    $transaction: jest.fn((callback: (tx: typeof prisma) => unknown) => callback(prisma)),
+  });
 }
 
 // ── ScheduleService tests ─────────────────────────────────────────────────────
@@ -157,6 +173,7 @@ describe('ScheduleService', () => {
       });
       prisma.teachingAssignment.findMany.mockResolvedValue([{ id: 'ta-uuid-001' }]);
       prisma.schedule.findFirst
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(opts.guruConflict ? { id: 'conflict' } : null)
         .mockResolvedValueOnce(opts.roomConflict ? { id: 'conflict' } : null);
       prisma.schedule.create.mockResolvedValue(MOCK_SCHEDULE);
@@ -165,8 +182,13 @@ describe('ScheduleService', () => {
     it('SA input jadwal valid → create dipanggil, data dikembalikan', async () => {
       setupValidCreate();
       const result = await service.create(CREATE_DTO);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
       expect(prisma.schedule.create).toHaveBeenCalledTimes(1);
       expect(result).toEqual(MOCK_SCHEDULE);
+
+      const lockSql = prisma.$executeRaw.mock.calls[0][0] as Prisma.Sql;
+      expect(lockSql.strings.join(' ')).toContain('pg_advisory_xact_lock');
     });
 
     it('teachingAssignmentId tidak ada → BadRequestException', async () => {
@@ -230,6 +252,61 @@ describe('ScheduleService', () => {
         Prisma.PrismaClientKnownRequestError,
       );
     });
+
+    it('serializes concurrent creates before checking teacher conflicts', async () => {
+      const created: Array<{ id: string; classId: string; teachingAssignmentId: string }> = [];
+      let lockTail: Promise<void> = Promise.resolve();
+      prisma.$transaction.mockImplementation((callback) => {
+        const predecessor = lockTail;
+        let releaseLock: () => void = () => undefined;
+        lockTail = new Promise<void>((resolve) => { releaseLock = resolve; });
+        const tx = {
+          ...prisma,
+          $executeRaw: jest.fn(async (query: unknown) => {
+            await predecessor;
+            return prisma.$executeRaw(query);
+          }),
+        };
+        return Promise.resolve(callback(tx)).finally(releaseLock);
+      });
+      prisma.teachingAssignment.findUnique.mockImplementation((args: { where: { id: string } }) =>
+        Promise.resolve({
+          id: args.where.id, teacherId: 'teacher-shared',
+          classId: args.where.id === 'ta-1' ? 'class-1' : 'class-2',
+          academicYear: '2026/2027',
+        }));
+      prisma.teachingAssignment.findMany.mockResolvedValue([{ id: 'ta-1' }, { id: 'ta-2' }]);
+      prisma.schedule.findFirst.mockImplementation((args: { where: Record<string, unknown> }) => {
+        const where = args.where as { classId?: string; teachingAssignmentId?: { in: string[] } };
+        if (where.classId) return Promise.resolve(created.find((row) => row.classId === where.classId) ?? null);
+        if (where.teachingAssignmentId) {
+          return Promise.resolve(created.find((row) => where.teachingAssignmentId?.in.includes(row.teachingAssignmentId)) ?? null);
+        }
+        return Promise.resolve(null);
+      });
+      prisma.schedule.create.mockImplementation((args: { data: Record<string, unknown> }) => {
+        const row = {
+          id: `schedule-${created.length + 1}`,
+          classId: String(args.data.classId),
+          teachingAssignmentId: String(args.data.teachingAssignmentId),
+        };
+        created.push(row);
+        return Promise.resolve({ ...MOCK_SCHEDULE, ...args.data, id: row.id });
+      });
+
+      const results = await Promise.allSettled([
+        service.create({ classId: 'class-1', teachingAssignmentId: 'ta-1', dayOfWeek: 1,
+          jpStart: 1, jpEnd: 2, room: null, academicYear: '2026/2027', semester: 1 }),
+        service.create({ classId: 'class-2', teachingAssignmentId: 'ta-2', dayOfWeek: 1,
+          jpStart: 1, jpEnd: 2, room: null, academicYear: '2026/2027', semester: 1 }),
+      ]);
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const rejected = results.find((result) => result.status === 'rejected');
+      expect(rejected?.status === 'rejected' ? rejected.reason : null).toBeInstanceOf(ConflictException);
+      expect(created).toHaveLength(1);
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
+    });
   });
 
   // ── findAll ───────────────────────────────────────────────────────────────────
@@ -257,6 +334,71 @@ describe('ScheduleService', () => {
     it('TU melihat semua — tidak ada ownership filter', async () => {
       await service.findAll(BASE_QUERY, TU_USER);
       expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('WAKA_KURIKULUM aktif melihat semua meski base role GURU', async () => {
+      await service.findAll(BASE_QUERY, WAKA_KURIKULUM_USER);
+      const callWhere = prisma.schedule.findMany.mock.calls[0][0].where;
+      expect(callWhere.teachingAssignmentId).toBeUndefined();
+      expect(prisma.teacher.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('KAPROG scopes schedule reads to the active Appointment major and year', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'auth-user-kaprog', isActive: true, deletedAt: null,
+      });
+      prisma.academicYear.findMany.mockResolvedValue([
+        { id: 'year-active', code: '2025/2026' },
+      ]);
+      prisma.appointment.findMany.mockResolvedValue([
+        { majorId: 'major-tkj', major: { id: 'major-tkj', code: 'TKJ' } },
+      ]);
+
+      await service.findAll(BASE_QUERY, KAPROG_USER);
+
+      const where = prisma.schedule.findMany.mock.calls[0][0].where;
+      expect(where).toMatchObject({
+        academicYear: '2025/2026',
+        class: {
+          isActive: true,
+          academicYear: '2025/2026',
+          majorCode: { in: ['TKJ'] },
+        },
+      });
+      expect(where.teachingAssignmentId).toBeUndefined();
+    });
+
+    it('KAPROG gets 403 for an explicit classId outside the active major scope', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'auth-user-kaprog', isActive: true, deletedAt: null,
+      });
+      prisma.academicYear.findMany.mockResolvedValue([
+        { id: 'year-active', code: '2025/2026' },
+      ]);
+      prisma.appointment.findMany.mockResolvedValue([
+        { majorId: 'major-tkj', major: { id: 'major-tkj', code: 'TKJ' } },
+      ]);
+      prisma.class.findFirst.mockResolvedValue(null);
+
+      await expect(service.findAll(
+        { ...BASE_QUERY, classId: 'class-outside-major' },
+        KAPROG_USER,
+      )).rejects.toThrow(ForbiddenException);
+      expect(prisma.schedule.findMany).not.toHaveBeenCalled();
+    });
+
+    it('KAPROG fails closed when no active Appointment scope exists', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'auth-user-kaprog', isActive: true, deletedAt: null,
+      });
+      prisma.academicYear.findMany.mockResolvedValue([
+        { id: 'year-active', code: '2025/2026' },
+      ]);
+      prisma.appointment.findMany.mockResolvedValue([]);
+
+      await expect(service.findAll(BASE_QUERY, KAPROG_USER))
+        .rejects.toThrow(ForbiddenException);
+      expect(prisma.schedule.findMany).not.toHaveBeenCalled();
     });
 
     it('SA + teacherId filter → TeachingAssignment dicari, taIds dipakai di where', async () => {
@@ -447,6 +589,19 @@ describe('ScheduleController', () => {
   it('create — body valid → delegasi ke service', async () => {
     await controller.create(CREATE_DTO);
     expect(service.create).toHaveBeenCalledWith(CREATE_DTO);
+  });
+
+  it('KAPROG is available only on the schedule list read route', () => {
+    expect(Reflect.getMetadata('roles', ScheduleController.prototype.findAll))
+      .toContain('KAPROG');
+    expect(Reflect.getMetadata('roles', ScheduleController.prototype.create))
+      .not.toContain('KAPROG');
+    expect(Reflect.getMetadata('roles', ScheduleController.prototype.update))
+      .not.toContain('KAPROG');
+    expect(Reflect.getMetadata('roles', ScheduleController.prototype.remove))
+      .not.toContain('KAPROG');
+    expect(Reflect.getMetadata('roles', ScheduleController.prototype.autoGenerate))
+      .not.toContain('KAPROG');
   });
 });
 

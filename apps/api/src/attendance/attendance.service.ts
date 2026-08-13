@@ -15,6 +15,8 @@
 // =============================================================================
 
 import {
+  BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -89,22 +91,43 @@ export class AttendanceService {
     // 1. Resolve userId untuk recordedBy
     const userId = await resolveUserId(this.prisma, user.keycloakId);
 
-    // 2. Pastikan guru mengajar di classId ini (ownership POST)
+    const activeYear = await this.prisma.academicYear.findFirst({
+      where: { isActive: true },
+      select: { code: true },
+    });
+    if (!activeYear) throw new ConflictException('Tidak ada tahun ajaran aktif');
+
+    const kelas = await this.prisma.class.findUnique({
+      where: { id: dto.classId },
+      select: { id: true, academicYear: true, isActive: true },
+    });
+    if (!kelas) throw new NotFoundException('Kelas tidak ditemukan');
+    if (!kelas.isActive || kelas.academicYear !== activeYear.code) {
+      throw new BadRequestException('Absensi hanya dapat dicatat untuk kelas pada tahun ajaran aktif');
+    }
+
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
     const assignment = await this.prisma.teachingAssignment.findFirst({
-      where: { teacherId, classId: dto.classId },
+      where: { teacherId, classId: dto.classId, academicYear: activeYear.code },
       select: { id: true },
     });
     if (!assignment) {
       throw new ForbiddenException('Guru tidak mengajar di kelas ini');
     }
 
-    // 3. Pastikan kelas ada
-    const kelas = await this.prisma.class.findUnique({
-      where: { id: dto.classId },
+    const studentIds = [...new Set(dto.records.map((record) => record.studentId))];
+    const eligibleStudents = await this.prisma.student.findMany({
+      where: {
+        id: { in: studentIds },
+        classId: dto.classId,
+        status: 'active',
+        deletedAt: null,
+      },
       select: { id: true },
     });
-    if (!kelas) throw new NotFoundException('Kelas tidak ditemukan');
+    if (eligibleStudents.length !== studentIds.length) {
+      throw new BadRequestException('Terdapat siswa tidak aktif atau bukan anggota kelas ini');
+    }
 
     // 4. Parse date string → Date (UTC tengah malam)
     const date = parseDateStr(dto.date);
@@ -164,7 +187,7 @@ export class AttendanceService {
     }
 
     // Ownership filter per role
-    if (isGuruOnly(user)) {
+    if (isGuruOnly(user) && !user.roles.includes('WAKA_KESISWAAN')) {
       const myClassIds = await resolveGuruClassIds(this.prisma, user.keycloakId);
       if (myClassIds.length === 0) {
         return { data: [], total: 0, page: query.page, limit: query.limit };
@@ -312,11 +335,14 @@ export class AttendanceService {
     if (query.to) dateWhere.lte = parseDateStr(query.to);
 
     let scopeClassIds: string[] | null = null;
-    if (isGuruOnly(user)) {
+    if (isGuruOnly(user) && !user.roles.includes('WAKA_KESISWAAN')) {
       scopeClassIds = await resolveGuruClassIds(this.prisma, user.keycloakId);
       if (scopeClassIds.length === 0) {
         return { sessions: [], attention: [], trend: [] };
       }
+    }
+    if (scopeClassIds && query.classId && !scopeClassIds.includes(query.classId)) {
+      throw new ForbiddenException('Guru tidak mengajar di kelas ini');
     }
 
     const where: Prisma.AttendanceWhereInput = {

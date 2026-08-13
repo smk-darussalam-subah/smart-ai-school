@@ -32,9 +32,12 @@ async function fetchApi(path: string, method: string, body?: unknown) {
 export async function generateReports(body: Record<string, unknown>) {
   return fetchApi('/report-cards/generate', 'POST', body);
 }
-export async function transitionReport(id: string, action: string) {
-  return fetchApi(`/report-cards/${id}/status`, 'PATCH', { action });
+export async function transitionReport(id: string, action: string, reason?: string) {
+  return fetchApi(`/report-cards/${id}/status`, 'PATCH', { action, ...(reason ? { reason } : {}) });
 }
-export async function updateReportNotes(id: string, notes: string | null) {
-  return fetchApi(`/report-cards/${id}/notes`, 'PATCH', { notes });
+export async function recoverReport(id: string, reason: string, incidentReference: string) {
+  return fetchApi(`/report-cards/${id}/recovery`, 'PATCH', { reason, incidentReference });
+}
+export async function updateReportNotes(id: string, notes: string | null, expectedUpdatedAt: string) {
+  return fetchApi(`/report-cards/${id}/notes`, 'PATCH', { notes, expectedUpdatedAt });
 }

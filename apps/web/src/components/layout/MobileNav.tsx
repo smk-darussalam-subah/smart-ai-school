@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Sidebar } from './Sidebar';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Menu } from 'lucide-react';
 
 export default function MobileNav({ viewAs = null, permissions = [], permError = false, positionRoles = [] }: { viewAs?: string | null; permissions?: string[]; permError?: boolean; positionRoles?: string[] }) {
@@ -19,11 +19,12 @@ export default function MobileNav({ viewAs = null, permissions = [], permError =
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger asChild>
-          <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-            <Menu className="h-6 w-6 text-gray-600" />
+          <button type="button" aria-label="Buka menu navigasi" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <Menu className="h-6 w-6 text-gray-600" aria-hidden="true" />
           </button>
         </SheetTrigger>
         <SheetContent side="left" className="p-0 w-64 border-none">
+          <SheetTitle className="sr-only">Menu navigasi</SheetTitle>
           <Sidebar viewAs={viewAs} permissions={permissions} permError={permError} positionRoles={positionRoles} className="w-full h-full border-none shadow-none" />
         </SheetContent>
       </Sheet>

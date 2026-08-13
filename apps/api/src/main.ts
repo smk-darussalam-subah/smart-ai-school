@@ -14,6 +14,10 @@ import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter'
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { validateEnv } from './config/env.validation';
 import { logger } from '@smk/logger';
+import {
+  CLASS_ACTIVITY_MEDIA_MAX_BYTES,
+  CLASS_ACTIVITY_MEDIA_TYPES,
+} from './class-activities/class-activity-media';
 
 /**
  * Mendaftarkan security headers via Fastify onSend hook.
@@ -52,6 +56,15 @@ function registerSecurityHeaders(app: NestFastifyApplication): void {
   });
 }
 
+function registerPrivateMediaParser(app: NestFastifyApplication): void {
+  const fastify = app.getHttpAdapter().getInstance();
+  fastify.addContentTypeParser(
+    [...CLASS_ACTIVITY_MEDIA_TYPES],
+    { parseAs: 'buffer', bodyLimit: CLASS_ACTIVITY_MEDIA_MAX_BYTES },
+    (_request, body, done) => done(null, body),
+  );
+}
+
 async function bootstrap() {
   // ── Fail-fast env validation (Item 12 — W3-03 Security Hardening) ──────────
   // Jika env var wajib kosong/invalid, process.exit(1) sebelum NestJS start.
@@ -66,6 +79,7 @@ async function bootstrap() {
   // ── Security ────────────────────────────────────────────────────────────────
   // Security headers via Fastify onSend hook (helmet-equivalent untuk Fastify)
   registerSecurityHeaders(app);
+  registerPrivateMediaParser(app);
 
   app.enableCors({
     origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],

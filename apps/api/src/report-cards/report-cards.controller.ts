@@ -1,11 +1,11 @@
 // =============================================================================
 // ReportCardsController — Hub Rapor (KamilEdu M12)
-// read: semua role akademik (ownership di service/QUERY) · generate+notes: SA/TU ·
-// check/return/publish: SA/KS · distribute: SA/KS/TU
+// read: semua role akademik (ownership di service/query) · generate+notes: wali kelas ·
+// check/return: Waka Kurikulum · publish: KS · distribute: KS/TU · SA: recovery.
 // =============================================================================
 
 import {
-  BadRequestException, Body, Controller, Get, HttpCode, HttpStatus,
+  BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, HttpStatus,
   Param, ParseUUIDPipe, Patch, Post, Query,
 } from '@nestjs/common';
 import { AuthUser, UserRole } from '@smk/auth';
@@ -17,6 +17,7 @@ import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { ReportCardsService } from './report-cards.service';
 import {
   GenerateReportsDto, GenerateReportsSchema, ListReportsQuerySchema,
+  RecoverReportDto, RecoverReportSchema,
   TransitionDto, TransitionSchema, UpdateNotesDto, UpdateNotesSchema,
 } from './dto/report-card.dto';
 
@@ -27,9 +28,30 @@ export class ReportCardsController {
     private readonly permissions: PermissionsService,
   ) {}
 
+  // Static routes must stay before studentId routes.
+
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM' as UserRole, 'KAPROG' as UserRole)
+  @RequirePermission('report.read')
+  @Get('options/classes')
+  listReadableClasses(@CurrentUser() user: AuthUser) {
+    return this.service.listReadableClasses(user);
+  }
+
   // ── Rapor section endpoints (P23 — dedicated routes before :id) ───────────
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'WAKA_KURIKULUM' as UserRole, 'KAPROG' as UserRole)
+  @RequirePermission('report.read')
+  @Get(':studentId/official-sections')
+  findOfficialSections(
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+    @Query('year') year: string,
+    @Query('semester') semester: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.findOfficialSections(studentId, year, Number(semester), user);
+  }
+
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'WAKA_KURIKULUM' as UserRole, 'KAPROG' as UserRole)
   @RequirePermission('report.read')
   @Get(':studentId/muatan-lokal')
   findMuatanLokal(
@@ -41,7 +63,7 @@ export class ReportCardsController {
     return this.service.findMuatanLokal(studentId, year, Number(semester), user);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'WAKA_KURIKULUM' as UserRole, 'KAPROG' as UserRole)
   @RequirePermission('report.read')
   @Get(':studentId/attendance-summary')
   findAttendanceSummary(
@@ -53,7 +75,7 @@ export class ReportCardsController {
     return this.service.findAttendanceSummary(studentId, year, Number(semester), user);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'WAKA_KURIKULUM' as UserRole, 'KAPROG' as UserRole)
   @RequirePermission('report.read')
   @Get(':studentId/development-description')
   findDevelopmentDescription(
@@ -65,7 +87,7 @@ export class ReportCardsController {
     return this.service.findDevelopmentDescription(studentId, year, Number(semester), user);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'WAKA_KURIKULUM' as UserRole, 'KAPROG' as UserRole)
   @RequirePermission('report.read')
   @Get(':studentId/approval')
   findApproval(
@@ -79,7 +101,7 @@ export class ReportCardsController {
 
   // ── General routes ────────────────────────────────────────────────────────
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'WAKA_KURIKULUM' as UserRole, 'KAPROG' as UserRole)
   @RequirePermission('report.read')
   @Get()
   findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
@@ -88,57 +110,84 @@ export class ReportCardsController {
     return this.service.findAll(parsed.data, user);
   }
 
-  @Roles('SUPER_ADMIN', 'TATA_USAHA')
-  @RequirePermission('report.manage')
+  @Roles('GURU')
+  @RequirePermission('report.wali.manage')
   @Post('generate')
   @HttpCode(HttpStatus.CREATED)
-  generate(@Body(ZodPipe(GenerateReportsSchema)) dto: GenerateReportsDto) {
-    return this.service.generate(dto);
+  generate(
+    @Body(ZodPipe(GenerateReportsSchema)) dto: GenerateReportsDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    if (user.roles.includes('SUPER_ADMIN')) {
+      throw new ForbiddenException('Super Admin hanya dapat memakai jalur pemulihan administratif rapor');
+    }
+    return this.service.generate(dto, user);
   }
 
   /**
    * Satu endpoint transisi sesuai kontrak frontend; otorisasi per-aksi di sini:
-   * check/return/publish = SA/KS (review) · distribute = SA/KS/TU.
-   * RolesGuard level handler memuat union; pemisahan presisi via service?
-   * → TIDAK: dicek eksplisit di bawah agar fail-closed per aksi.
+   * check/return = Waka Kurikulum · publish = KS/SA · distribute = KS/TU/SA.
+   * Bantuan SA tetap memakai identitas SA asli; recovery berada di endpoint terpisah.
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_KURIKULUM' as UserRole)
-  @RequirePermission(['report.read', 'report.review'])
+  @RequirePermission('report.read')
   @Patch(':id/status')
   async transition(
     @Param('id', ParseUUIDPipe) id: string,
     @Body(ZodPipe(TransitionSchema)) dto: TransitionDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const activePositions = await this.permissions.getActivePositionCodes(user.keycloakId);
-    const isReviewer =
-      user.roles.includes('SUPER_ADMIN') ||
-      activePositions.has('KEPALA_SEKOLAH') ||
-      activePositions.has('WAKA_KURIKULUM');
-    const canDistribute =
-      user.roles.includes('SUPER_ADMIN') ||
-      user.roles.includes('TATA_USAHA') ||
-      activePositions.has('KEPALA_SEKOLAH');
-    if (dto.action === 'distribute' && !canDistribute) {
-      throw new BadRequestException(
-        `Aksi '${dto.action}' hanya untuk SUPER_ADMIN/KEPALA_SEKOLAH/TATA_USAHA`,
-      );
+    const isSuperAdmin = user.roles.includes('SUPER_ADMIN');
+    const requiredPermission = dto.action === 'check' || dto.action === 'return'
+      ? 'report.review'
+      : dto.action === 'publish'
+        ? 'report.publish'
+        : 'report.distribute';
+    if (!await this.permissions.hasPermission(user.keycloakId, user.roles, requiredPermission)) {
+      throw new ForbiddenException(`Permission '${requiredPermission}' diperlukan untuk aksi ini`);
     }
-    if (dto.action !== 'distribute' && !isReviewer) {
-      throw new BadRequestException(
-        `Aksi '${dto.action}' hanya untuk SUPER_ADMIN/KEPALA_SEKOLAH/WAKA_KURIKULUM`,
-      );
+    const activePositions = await this.permissions.getActivePositionCodes(user.keycloakId);
+    const isCurriculumDeputy = activePositions.has('WAKA_KURIKULUM');
+    const isPrincipal = activePositions.has('KEPALA_SEKOLAH');
+    const isAdministration = user.roles.includes('TATA_USAHA');
+    const allowed = dto.action === 'check' || dto.action === 'return'
+      ? isCurriculumDeputy && !isSuperAdmin
+      : dto.action === 'publish'
+        ? isPrincipal || isSuperAdmin
+        : isPrincipal || isAdministration || isSuperAdmin;
+    if (!allowed) {
+      const owner = dto.action === 'check' || dto.action === 'return'
+        ? 'WAKA_KURIKULUM'
+        : dto.action === 'publish'
+          ? 'KEPALA_SEKOLAH atau bantuan SUPER_ADMIN'
+          : 'TATA_USAHA/KEPALA_SEKOLAH atau bantuan SUPER_ADMIN';
+      throw new ForbiddenException(`Aksi '${dto.action}' hanya untuk ${owner}`);
     }
     return this.service.transition(id, dto, user);
   }
 
-  @Roles('SUPER_ADMIN', 'TATA_USAHA')
-  @RequirePermission('report.manage')
+  @Roles('SUPER_ADMIN')
+  @RequirePermission('report.recover')
+  @Patch(':id/recovery')
+  recover(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(RecoverReportSchema)) dto: RecoverReportDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.recover(id, dto, user);
+  }
+
+  @Roles('GURU')
+  @RequirePermission('report.wali.manage')
   @Patch(':id/notes')
   updateNotes(
     @Param('id', ParseUUIDPipe) id: string,
     @Body(ZodPipe(UpdateNotesSchema)) dto: UpdateNotesDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.service.updateNotes(id, dto);
+    if (user.roles.includes('SUPER_ADMIN')) {
+      throw new ForbiddenException('Super Admin hanya dapat memakai jalur pemulihan administratif rapor');
+    }
+    return this.service.updateNotes(id, dto, user);
   }
 }

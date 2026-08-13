@@ -49,6 +49,14 @@ const EnvSchema = z.object({
     z.string().min(32).optional(),
   ),
 
+  // Class Activity media stays optional at API boot. The feature fails closed
+  // with 503 until all storage values are available to the API process.
+  CLASS_ACTIVITY_MEDIA_ENDPOINT: z.preprocess(blankStringToUndefined, z.string().url().optional()),
+  CLASS_ACTIVITY_MEDIA_ACCESS_KEY: z.preprocess(blankStringToUndefined, z.string().min(1).optional()),
+  CLASS_ACTIVITY_MEDIA_SECRET_KEY: z.preprocess(blankStringToUndefined, z.string().min(1).optional()),
+  CLASS_ACTIVITY_MEDIA_BUCKET: z.preprocess(blankStringToUndefined, z.string().min(3).optional()),
+  CLASS_ACTIVITY_MEDIA_REGION: z.preprocess(blankStringToUndefined, z.string().min(1).optional()),
+
   // ── AI / Ollama + Claude + OpenAI (SMA-48, R-28) ────────────────────────────
   // AI_PROVIDER: 'openai' (default) | 'ollama' (local) | 'claude' (legacy)
   // ANTHROPIC_API_KEY: opsional — provider Claude hanya aktif jika key tersedia

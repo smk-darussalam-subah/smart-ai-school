@@ -61,6 +61,11 @@ const GURU_USER: AuthUser = {
   username: 'guru1', fullName: 'Agus', roles: ['GURU'],
 };
 
+const WAKA_KESISWAAN_USER: AuthUser = {
+  keycloakId: 'kc-waka-sis', email: 'waka.sis@smk.sch.id',
+  username: 'waka-sis', fullName: 'Waka Kesiswaan', roles: ['GURU', 'WAKA_KESISWAAN'],
+} as AuthUser;
+
 const SISWA_USER: AuthUser = {
   keycloakId: 'kc-siswa', email: 'siswa@smk.sch.id',
   username: 'siswa1', fullName: 'Budi', roles: ['SISWA'],
@@ -98,6 +103,7 @@ const BULK_DTO = {
 function buildPrisma() {
   return {
     $transaction: jest.fn(),
+    academicYear: { findFirst: jest.fn() },
     user:    { findUnique: jest.fn() },
     teacher: { findUnique: jest.fn() },
     student: { findUnique: jest.fn(), findMany: jest.fn() },
@@ -137,12 +143,21 @@ describe('AttendanceService', () => {
   describe('bulkCreate', () => {
     function setupGuruResolve(opts: { teacherId?: string; hasAssignment?: boolean } = {}) {
       const tid = opts.teacherId ?? 'teacher-uuid-001';
+      prisma.academicYear.findFirst.mockResolvedValue({ code: '2025/2026' });
       prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-guru' });
       prisma.teacher.findUnique.mockResolvedValue({ id: tid });
       prisma.teachingAssignment.findFirst.mockResolvedValue(
         opts.hasAssignment === false ? null : { id: 'assign-uuid-001' },
       );
-      prisma.class.findUnique.mockResolvedValue({ id: 'class-uuid-001' });
+      prisma.class.findUnique.mockResolvedValue({
+        id: 'class-uuid-001',
+        academicYear: '2025/2026',
+        isActive: true,
+      });
+      prisma.student.findMany.mockResolvedValue([
+        { id: 'student-uuid-001' },
+        { id: 'student-uuid-002' },
+      ]);
     }
 
     it('bulk insert berhasil — $transaction dipanggil dengan benar', async () => {
@@ -187,7 +202,24 @@ describe('AttendanceService', () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
+    it('menolak satu siswa dari luar kelas dan tidak menulis data parsial', async () => {
+      setupGuruResolve();
+      prisma.student.findMany.mockResolvedValue([{ id: 'student-uuid-001' }]);
+
+      await expect(service.bulkCreate(BULK_DTO, GURU_USER)).rejects.toThrow(
+        'Terdapat siswa tidak aktif atau bukan anggota kelas ini',
+      );
+      expect(prisma.attendance.create).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
     it('GURU tanpa profil teacher → ForbiddenException', async () => {
+      prisma.academicYear.findFirst.mockResolvedValue({ code: '2025/2026' });
+      prisma.class.findUnique.mockResolvedValue({
+        id: 'class-uuid-001',
+        academicYear: '2025/2026',
+        isActive: true,
+      });
       prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-guru' });
       prisma.teacher.findUnique.mockResolvedValue(null);
 
@@ -195,6 +227,7 @@ describe('AttendanceService', () => {
     });
 
     it('classId tidak ada → NotFoundException', async () => {
+      prisma.academicYear.findFirst.mockResolvedValue({ code: '2025/2026' });
       prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-guru' });
       prisma.teacher.findUnique.mockResolvedValue({ id: 'teacher-uuid-001' });
       prisma.teachingAssignment.findFirst.mockResolvedValue({ id: 'assign-uuid-001' });
@@ -263,6 +296,13 @@ describe('AttendanceService', () => {
       expect(prisma.user.findUnique).not.toHaveBeenCalled();
     });
 
+    it('WAKA_KESISWAAN membaca seluruh absensi tanpa scope guru', async () => {
+      await service.findAll(BASE_QUERY, WAKA_KESISWAAN_USER);
+
+      expect(prisma.attendance.findMany.mock.calls[0][0].where).toEqual({});
+      expect(prisma.teacher.findUnique).not.toHaveBeenCalled();
+    });
+
     it('SA + classId filter → where.classId diterapkan', async () => {
       await service.findAll({ ...BASE_QUERY, classId: 'class-uuid-001' }, SA_USER);
 
@@ -291,6 +331,7 @@ describe('AttendanceService', () => {
 
     describe('GURU ownership', () => {
       function setupGuru(classIds: string[]) {
+        prisma.academicYear.findFirst.mockResolvedValue({ code: '2025/2026' });
         prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-guru' });
         prisma.teacher.findUnique.mockResolvedValue({ id: 'teacher-uuid-001' });
         prisma.teachingAssignment.findMany.mockResolvedValue(

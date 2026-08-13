@@ -34,7 +34,7 @@ export class SubjectController {
   constructor(private service: SubjectService) {}
 
   /** GET /subjects — list referensi mapel */
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM')
   @Get()
   findAll(@Query() rawQuery: unknown) {
     const parsed = ListSubjectsQuerySchema.safeParse(rawQuery);

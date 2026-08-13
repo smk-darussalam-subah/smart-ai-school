@@ -39,9 +39,11 @@ export async function updateRpp(id: string, body: Record<string, unknown>) {
 export async function submitRpp(id: string) {
   return fetchApi(`/rpp/${id}/submit`, 'PATCH');
 }
-export async function reviewRpp(id: string, decision: 'approved' | 'revision', note?: string) {
+export async function reviewRpp(id: string, decision: 'recommended' | 'approved' | 'revision', note?: string) {
   return fetchApi(`/rpp/${id}/review`, 'PATCH', { decision, note: note || null });
 }
-export async function deleteRpp(id: string) {
+export async function archiveRpp(id: string) {
   return fetchApi(`/rpp/${id}`, 'DELETE');
 }
+
+export const deleteRpp = archiveRpp;

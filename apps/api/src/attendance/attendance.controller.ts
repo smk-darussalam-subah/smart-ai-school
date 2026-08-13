@@ -50,7 +50,7 @@ export class AttendanceController {
    * GET /attendance/heatmap — Grid kehadiran kelas × hari (N hari terakhir).
    * Konsumsi: widget dashboard (referensi KamilEdu Modul 1). Staf saja.
    */
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_KESISWAAN')
   @RequirePermission('academic.attendance.read')
   @Get('heatmap')
   heatmap(@Query() rawQuery: unknown) {
@@ -63,7 +63,7 @@ export class AttendanceController {
    * GET /attendance — List absensi dengan ownership filter per role.
    * Query: classId, studentId, dateFrom, dateTo, page, limit.
    */
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'WAKA_KESISWAAN')
   @RequirePermission('academic.attendance.read')
   @Get()
   findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
@@ -77,7 +77,7 @@ export class AttendanceController {
    * Group by date + class + subject. Returns sessions + attention + trend.
    * RBAC: GURU (own sessions), SUPER_ADMIN, KEPALA_SEKOLAH.
    */
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU', 'WAKA_KESISWAAN')
   @RequirePermission('academic.attendance.read')
   @Get('sessions')
   sessions(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {

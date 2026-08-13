@@ -61,19 +61,32 @@ export class PermissionsService {
   async getActivePositionCodes(keycloakId: string): Promise<Set<string>> {
     const authUserId = await this.findAuthUserId(keycloakId);
     if (!authUserId) return new Set();
+    const activeYearId = await this.resolveSingleActiveAcademicYearId();
+    if (!activeYearId) return new Set();
 
     const today = this.today();
     try {
       const appointments = await this.prisma.appointment.findMany({
         where: {
           status: ACTIVE_APPOINTMENT_STATUS,
-          staff: { userId: authUserId },
-          academicYear: { isActive: true },
+          staff: {
+            userId: authUserId,
+            deletedAt: null,
+            user: { isActive: true, deletedAt: null },
+          },
+          academicYearId: activeYearId,
+          position: { isActive: true },
           effectiveFrom: { lte: today },
           OR: [
             { effectiveUntil: null },
             { effectiveUntil: { gte: today } },
           ],
+          AND: [{
+            OR: [
+              { position: { scopeType: 'NONE' }, majorId: null },
+              { position: { scopeType: 'MAJOR' }, major: { isActive: true } },
+            ],
+          }],
         },
         select: { position: { select: { code: true } } },
       });
@@ -135,11 +148,7 @@ export class PermissionsService {
   }
 
   async getUserEffectivePermissions(userId: string) {
-    const activeYear = await this.prisma.academicYear.findFirst({
-      where: { isActive: true },
-      select: { id: true },
-    });
-    const activeYearId = activeYear?.id ?? null;
+    const activeYearId = await this.resolveSingleActiveAcademicYearId();
 
     const overrides = await this.prisma.userPermissionOverride.findMany({
       where: {
@@ -195,11 +204,7 @@ export class PermissionsService {
     const authUserId = await this.findAuthUserId(keycloakId);
 
     // TF2-P1-1: Ambil active academic year untuk filter override.
-    const activeYear = await this.prisma.academicYear.findFirst({
-      where: { isActive: true },
-      select: { id: true },
-    });
-    const activeYearId = activeYear?.id ?? null;
+    const activeYearId = await this.resolveSingleActiveAcademicYearId();
 
     const [rolePermissions, userOverrides, appointmentPermissions] = await Promise.all([
       this.prisma.rolePermission.findMany({
@@ -220,7 +225,8 @@ export class PermissionsService {
           })
         : Promise.resolve([] as { grant: boolean; permission: { code: string } }[]),
       authUserId
-        ? this.resolveActiveAppointmentPermissionCodes(authUserId)
+        && activeYearId
+        ? this.resolveActiveAppointmentPermissionCodes(authUserId, activeYearId)
         : Promise.resolve([] as string[]),
     ]);
 
@@ -331,19 +337,33 @@ export class PermissionsService {
     return user?.id ?? null;
   }
 
-  private async resolveActiveAppointmentPermissionCodes(userId: string): Promise<string[]> {
+  private async resolveActiveAppointmentPermissionCodes(
+    userId: string,
+    activeYearId: string,
+  ): Promise<string[]> {
     const today = this.today();
     try {
       const appointments = await this.prisma.appointment.findMany({
         where: {
           status: ACTIVE_APPOINTMENT_STATUS,
-          staff: { userId },
-          academicYear: { isActive: true },
+          staff: {
+            userId,
+            deletedAt: null,
+            user: { isActive: true, deletedAt: null },
+          },
+          academicYearId: activeYearId,
+          position: { isActive: true },
           effectiveFrom: { lte: today },
           OR: [
             { effectiveUntil: null },
             { effectiveUntil: { gte: today } },
           ],
+          AND: [{
+            OR: [
+              { position: { scopeType: 'NONE' }, majorId: null },
+              { position: { scopeType: 'MAJOR' }, major: { isActive: true } },
+            ],
+          }],
         },
         select: {
           position: {
@@ -373,6 +393,29 @@ export class PermissionsService {
         error: err instanceof Error ? err.message : String(err),
       });
       return [];
+    }
+  }
+
+  /** Appointment authority is undefined unless exactly one academic year is active. */
+  private async resolveSingleActiveAcademicYearId(): Promise<string | null> {
+    try {
+      const activeYears = await this.prisma.academicYear.findMany({
+        where: { isActive: true },
+        select: { id: true },
+        take: 2,
+      });
+      if (activeYears.length !== 1) {
+        if (activeYears.length > 1) {
+          logger.warn('[PermissionsService] multiple active academic years; scoped authority denied');
+        }
+        return null;
+      }
+      return activeYears[0]?.id ?? null;
+    } catch (err) {
+      logger.warn('[PermissionsService] active academic year resolution failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
     }
   }
 
