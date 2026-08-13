@@ -10,6 +10,7 @@ describe('academic governance migration contract', () => {
   );
   const schema = read('packages/database/prisma/schema.prisma');
   const compose = read('infrastructure/docker/docker-compose.yml');
+  const deploy = read('.github/workflows/deploy.yml');
 
   it('persists the two-stage Modul Ajar and auditable report pipeline', () => {
     expect(migration).toContain("ADD VALUE IF NOT EXISTS 'curriculum_reviewed'");
@@ -44,6 +45,18 @@ describe('academic governance migration contract', () => {
     expect(compose).toContain('CLASS_ACTIVITY_MEDIA_ACCESS_KEY: ${CLASS_ACTIVITY_MEDIA_ACCESS_KEY}');
     expect(compose).toContain('CLASS_ACTIVITY_MEDIA_SECRET_KEY: ${CLASS_ACTIVITY_MEDIA_SECRET_KEY}');
     expect(compose).not.toMatch(/CLASS_ACTIVITY_MEDIA_SECRET_KEY:\s+["']?[A-Za-z0-9/+]{20,}/);
+  });
+
+  it('provisions isolated least-privilege staging media storage without logging secrets', () => {
+    expect(deploy).toContain('_MEDIA_BUCKET="diis-class-activities-staging"');
+    expect(deploy).toContain('CLASS_ACTIVITY_MEDIA_ACCESS_KEY "$_MEDIA_ACCESS"');
+    expect(deploy).toContain('CLASS_ACTIVITY_MEDIA_SECRET_KEY "$_MEDIA_SECRET"');
+    expect(deploy).toContain('diis-staging-class-activity');
+    expect(deploy).toContain('s3:GetObject');
+    expect(deploy).toContain('s3:PutObject');
+    expect(deploy).toContain('s3:DeleteObject');
+    expect(deploy).toContain('anonymous set none');
+    expect(deploy).not.toMatch(/echo[^\n]*_MEDIA_SECRET/);
   });
 
   it('closes assignment mutation races at the database boundary', () => {
