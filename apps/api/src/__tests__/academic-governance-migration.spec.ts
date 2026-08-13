@@ -47,11 +47,15 @@ describe('academic governance migration contract', () => {
     expect(compose).not.toMatch(/CLASS_ACTIVITY_MEDIA_SECRET_KEY:\s+["']?[A-Za-z0-9/+]{20,}/);
   });
 
-  it('provisions isolated least-privilege staging media storage without logging secrets', () => {
+  it('provisions isolated least-privilege media storage for staging and production', () => {
     expect(deploy).toContain('_MEDIA_BUCKET="diis-class-activities-staging"');
+    expect(deploy).toContain('_MEDIA_BUCKET="diis-class-activities"');
+    expect(deploy).toContain('_MEDIA_ACCESS="diis-staging-media"');
+    expect(deploy).toContain('_MEDIA_ACCESS="diis-production-media"');
     expect(deploy).toContain('CLASS_ACTIVITY_MEDIA_ACCESS_KEY "$_MEDIA_ACCESS"');
     expect(deploy).toContain('CLASS_ACTIVITY_MEDIA_SECRET_KEY "$_MEDIA_SECRET"');
     expect(deploy).toContain('diis-staging-class-activity');
+    expect(deploy).toContain('diis-production-class-activity');
     expect(deploy).toContain('s3:GetObject');
     expect(deploy).toContain('s3:PutObject');
     expect(deploy).toContain('s3:DeleteObject');
