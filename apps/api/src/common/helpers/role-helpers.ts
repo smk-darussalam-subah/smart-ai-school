@@ -70,14 +70,19 @@ export async function resolveSiswaId(prisma: PrismaService, keycloakId: string):
 /** keycloakId → semua classId yang diajar guru */
 export async function resolveGuruClassIds(prisma: PrismaService, keycloakId: string): Promise<string[]> {
   const teacherId = await resolveTeacherId(prisma, keycloakId);
+  const activeYear = await prisma.academicYear.findFirst({
+    where: { isActive: true },
+    select: { code: true },
+  });
+  if (!activeYear) return [];
   const [assignments, waliClasses] = await Promise.all([
     prisma.teachingAssignment.findMany({
-      where: { teacherId },
+      where: { teacherId, academicYear: activeYear.code, class: { isActive: true } },
       select: { classId: true },
       distinct: ['classId'],
     }),
     prisma.class.findMany({
-      where: { teacherId, isActive: true },
+      where: { teacherId, isActive: true, academicYear: activeYear.code },
       select: { id: true },
     }),
   ]);

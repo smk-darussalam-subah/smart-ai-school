@@ -1,6 +1,7 @@
 const mockApiFetch = jest.fn();
 const mockGetServerSession = jest.fn();
 const mockGetEffectiveRoles = jest.fn();
+const mockGetActiveViewAs = jest.fn();
 const mockRedirect = jest.fn((url: string) => {
   throw new Error(`redirect:${url}`);
 });
@@ -23,6 +24,7 @@ jest.mock('@/lib/api', () => ({
 
 jest.mock('@/lib/view-as', () => ({
   getEffectiveRoles: mockGetEffectiveRoles,
+  getActiveViewAs: mockGetActiveViewAs,
 }));
 
 jest.mock('../app/dashboard/rpp/_components/RppBoard', () => ({
@@ -38,6 +40,7 @@ describe('RppPage appointment-aware reviewer gate', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetServerSession.mockResolvedValue({ accessToken: 'token' });
+    mockGetActiveViewAs.mockResolvedValue(null);
   });
 
   it('allows active WAKA appointment with stable GURU identity to open reviewer board', async () => {
@@ -48,32 +51,33 @@ describe('RppPage appointment-aware reviewer gate', () => {
           positions: [{ status: 'ACTIVE', position: { code: 'WAKA_KURIKULUM', name: 'Wakasek Kurikulum' } }],
         };
       }
-      if (url === '/rpp?limit=100') return { data: [], total: 0 };
-      if (url === '/school/semesters/active') {
-        return { number: 1, academicYear: { code: '2026/2027' } };
-      }
+      if (url === '/auth/me') return { permissions: ['rpp.read', 'rpp.curriculum.review'] };
+      if (url === '/rpp?page=1&limit=20') return { data: [], total: 0, page: 1, limit: 20 };
       return null;
     });
 
-    const result = await RppPage() as { props: { isReviewer: boolean; userRole: string } };
+    const result = await RppPage({ searchParams: Promise.resolve({}) }) as { props: { canCurriculumReview: boolean } };
 
     expect(mockRedirect).not.toHaveBeenCalled();
-    expect(result.props.isReviewer).toBe(true);
-    expect(result.props.userRole).toBe('WAKA_KURIKULUM');
+    expect(result.props.canCurriculumReview).toBe(true);
     expect(mockApiFetch.mock.calls.map((call) => call[0])).toEqual([
       '/positions/my-positions',
-      '/rpp?limit=100',
-      '/school/semesters/active',
+      '/auth/me',
+      '/rpp?page=1&limit=20',
     ]);
   });
 
   it('redirects ordinary GURU without active reviewer appointment', async () => {
     mockGetEffectiveRoles.mockResolvedValue(['GURU']);
-    mockApiFetch.mockResolvedValueOnce({ positions: [] });
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === '/positions/my-positions') return { positions: [] };
+      if (url === '/auth/me') return { permissions: ['rpp.read'] };
+      return null;
+    });
 
-    await expect(RppPage()).rejects.toThrow('redirect:/dashboard/akademik');
+    await expect(RppPage({ searchParams: Promise.resolve({}) })).rejects.toThrow('redirect:/dashboard/akademik');
 
     expect(mockRedirect).toHaveBeenCalledWith('/dashboard/akademik');
-    expect(mockApiFetch).toHaveBeenCalledTimes(1);
+    expect(mockApiFetch).toHaveBeenCalledTimes(2);
   });
 });

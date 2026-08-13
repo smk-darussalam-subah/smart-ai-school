@@ -7,14 +7,13 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import {
-  FileText, Loader2, AlertTriangle, Search, Send, Save,
+  FileText, Loader2, AlertTriangle, Search, Save,
   CheckCircle2, Info, RefreshCw, X,
 } from 'lucide-react';
 import clsx from 'clsx';
 import {
   fetchReportCardsByClass,
   generateReportCards,
-  transitionReportStatus,
   updateReportNotes,
   type ReportCardItem,
 } from '../../actions';
@@ -82,15 +81,6 @@ export default function RaporWaliKelas({ waliClasses, academicYear, semester }: 
     });
   };
 
-  const handleCheck = (reportId: string) => {
-    startGenTransition(async () => {
-      const res = await transitionReportStatus(reportId, 'check');
-      if (res.success) {
-        reload(selClass);
-      }
-    });
-  };
-
   const filtered = useMemo(() => {
     if (!search) return reports;
     const q = search.toLowerCase();
@@ -120,7 +110,7 @@ export default function RaporWaliKelas({ waliClasses, academicYear, semester }: 
           <h2 className="text-lg font-bold text-[#0f2e25]">Kompilasi Rapor Wali Kelas</h2>
         </div>
         <p className="text-[12.5px] text-[#6b8079]">
-          Buat rapor untuk siswa kelas Anda, edit catatan wali kelas, lalu kirim ke KS untuk ditinjau.
+          Siapkan draft rapor dan catatan wali kelas. Kepala Sekolah dapat meninjau draft tersimpan langsung dari hub Rapor.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-600">
@@ -164,7 +154,7 @@ export default function RaporWaliKelas({ waliClasses, academicYear, semester }: 
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <span>
           Tombol <b>Kompilasi Rapor</b> akan membuat rapor draft untuk semua siswa aktif di kelas ini.
-          Siswa yang sudah punya rapor akan dilewati (idempoten).
+          Draft yang sudah ada akan disegarkan; rapor yang sudah diperiksa atau diterbitkan tidak akan ditimpa.
         </span>
       </div>
 
@@ -210,7 +200,6 @@ export default function RaporWaliKelas({ waliClasses, academicYear, semester }: 
                   key={r.id}
                   report={r}
                   onEditNotes={() => setEditingNotes(r)}
-                  onCheck={() => handleCheck(r.id)}
                 />
               ))}
             </tbody>
@@ -237,14 +226,10 @@ export default function RaporWaliKelas({ waliClasses, academicYear, semester }: 
 function WaliRaporRow({
   report,
   onEditNotes,
-  onCheck,
 }: {
   report: ReportCardItem;
   onEditNotes: () => void;
-  onCheck: () => void;
 }) {
-  const [pending, startTransition] = useTransition();
-
   return (
     <tr className="border-b border-[#f0f5f2] hover:bg-[#f9fbfa]">
       <td className="py-3 pl-4 pr-2">
@@ -271,17 +256,10 @@ function WaliRaporRow({
               <Save className="h-3 w-3" /> Catatan
             </button>
           )}
-          {/* Submit to KS: draft → checked */}
           {report.status === 'draft' && (
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => startTransition(onCheck)}
-              className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-2.5 py-1.5 text-[10px] font-bold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-50"
-            >
-              {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-              Kirim ke KS
-            </button>
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-600">
+              <CheckCircle2 className="h-3 w-3" /> Tersedia untuk ditinjau KS
+            </span>
           )}
           {report.status === 'checked' && (
             <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-600">
@@ -323,7 +301,7 @@ function NotesEditorModal({
 
   const handleSave = async () => {
     setSaving(true);
-    const res = await updateReportNotes(report.id, notes.trim() || null);
+    const res = await updateReportNotes(report.id, notes.trim() || null, report.updatedAt);
     setSaving(false);
     if (res.success) {
       onSaved();

@@ -39,7 +39,7 @@ describe('PermissionsService', () => {
   const mockPermDelete = jest.fn();
   const mockTransaction = jest.fn();
   // TF2-P1-1: Mocks untuk zombie permissions filter.
-  const mockAyFindFirst = jest.fn();
+  const mockAyFindMany = jest.fn();
   const mockUpoFindFirst = jest.fn();
   const mockUpoUpdate = jest.fn();
   const mockUpoCreate = jest.fn();
@@ -48,11 +48,11 @@ describe('PermissionsService', () => {
   beforeEach(async () => {
     [mockRpFindMany, mockUpoFindMany, mockUserFindUnique, mockPermFindMany,
       mockPermCreate, mockPermDelete, mockTransaction,
-      mockAyFindFirst, mockUpoFindFirst, mockUpoUpdate, mockUpoCreate,
+      mockAyFindMany, mockUpoFindFirst, mockUpoUpdate, mockUpoCreate,
       mockAppointmentFindMany,
     ].forEach(m => m.mockReset());
-    // TF2-P1-1: Default academicYear.findFirst mengembalikan tahun aktif.
-    mockAyFindFirst.mockResolvedValue({ id: 'ay-2026' });
+    // Exactly one active year is required for scoped overrides and appointments.
+    mockAyFindMany.mockResolvedValue([{ id: 'ay-2026' }]);
     mockAppointmentFindMany.mockResolvedValue([]);
 
     const prisma = {
@@ -67,7 +67,7 @@ describe('PermissionsService', () => {
         deleteMany: jest.fn(),
       },
       user: { findUnique: mockUserFindUnique },
-      academicYear: { findFirst: mockAyFindFirst },  // TF2-P1-1: active year lookup
+      academicYear: { findMany: mockAyFindMany },
       appointment: { findMany: mockAppointmentFindMany },
       $transaction: mockTransaction,
     };
@@ -260,8 +260,9 @@ describe('PermissionsService', () => {
         expect.objectContaining({
           where: expect.objectContaining({
             status: 'ACTIVE',
-            staff: { userId: 'auth-1' },
-            academicYear: { isActive: true },
+            staff: expect.objectContaining({ userId: 'auth-1', deletedAt: null }),
+            academicYearId: 'ay-2026',
+            position: { isActive: true },
           }),
         }),
       );
@@ -278,8 +279,9 @@ describe('PermissionsService', () => {
         expect.objectContaining({
           where: expect.objectContaining({
             status: 'ACTIVE',
-            staff: { userId: 'auth-1' },
-            academicYear: { isActive: true },
+            staff: expect.objectContaining({ userId: 'auth-1', deletedAt: null }),
+            academicYearId: 'ay-2026',
+            position: { isActive: true },
           }),
         }),
       );
@@ -297,6 +299,27 @@ describe('PermissionsService', () => {
       mockPermFindMany.mockResolvedValue([{ code: 'report.review' }]);
 
       expect(await service.hasPermission('kc-ks', ['TATA_USAHA'], 'report.review')).toBe(false);
+    });
+
+    it('invalidateAll memaksa permission appointment hangat dinilai ulang setelah scope berubah', async () => {
+      mockRpFindMany.mockResolvedValue([]);
+      mockUpoFindMany.mockResolvedValue([]);
+      mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
+      mockAppointmentFindMany
+        .mockResolvedValueOnce([
+          { position: { permissions: [{ permissionId: 'perm-review' }] } },
+        ])
+        .mockResolvedValueOnce([]);
+      mockPermFindMany.mockResolvedValue([{ code: 'report.review' }]);
+
+      await expect(service.hasPermission('kc-kaprog', ['GURU'], 'report.review')).resolves.toBe(true);
+      await expect(service.hasPermission('kc-kaprog', ['GURU'], 'report.review')).resolves.toBe(true);
+      expect(mockAppointmentFindMany).toHaveBeenCalledTimes(1);
+
+      service.invalidateAll();
+
+      await expect(service.hasPermission('kc-kaprog', ['GURU'], 'report.review')).resolves.toBe(false);
+      expect(mockAppointmentFindMany).toHaveBeenCalledTimes(2);
     });
 
     it('role position historis tidak membaca role_permissions langsung', async () => {
@@ -374,11 +397,57 @@ describe('PermissionsService', () => {
         expect.objectContaining({
           where: expect.objectContaining({
             status: 'ACTIVE',
-            staff: { userId: 'auth-1' },
-            academicYear: { isActive: true },
+            staff: expect.objectContaining({
+              userId: 'auth-1',
+              deletedAt: null,
+              user: { isActive: true, deletedAt: null },
+            }),
+            academicYearId: 'ay-2026',
+            position: { isActive: true },
+            effectiveFrom: { lte: expect.any(Date) },
+            OR: [
+              { effectiveUntil: null },
+              { effectiveUntil: { gte: expect.any(Date) } },
+            ],
+            AND: [{
+              OR: [
+                { position: { scopeType: 'NONE' }, majorId: null },
+                { position: { scopeType: 'MAJOR' }, major: { isActive: true } },
+              ],
+            }],
           }),
         }),
       );
+    });
+
+    it('fails closed when no academic year is active', async () => {
+      mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
+      mockAyFindMany.mockResolvedValue([]);
+
+      await expect(service.getActivePositionCodes('kc-user')).resolves.toEqual(new Set());
+      expect(mockAppointmentFindMany).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when more than one academic year is active', async () => {
+      mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
+      mockAyFindMany.mockResolvedValue([{ id: 'ay-a' }, { id: 'ay-b' }]);
+
+      await expect(service.getActivePositionCodes('kc-user')).resolves.toEqual(new Set());
+      expect(mockAyFindMany).toHaveBeenCalledWith(expect.objectContaining({ take: 2 }));
+      expect(mockAppointmentFindMany).not.toHaveBeenCalled();
+    });
+
+    it('does not grant appointment permissions when active-year configuration is ambiguous', async () => {
+      mockRpFindMany.mockResolvedValue([]);
+      mockUpoFindMany.mockResolvedValue([]);
+      mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
+      mockAyFindMany.mockResolvedValue([{ id: 'ay-a' }, { id: 'ay-b' }]);
+
+      await expect(service.hasPermission('kc-user', ['GURU'], 'report.review')).resolves.toBe(false);
+      expect(mockAppointmentFindMany).not.toHaveBeenCalled();
+      expect(mockUpoFindMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ OR: [{ academicYearId: null }] }),
+      }));
     });
   });
 

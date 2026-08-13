@@ -37,7 +37,7 @@ export class ScheduleController {
    * GET /schedules — Lihat jadwal dengan ownership filter per role.
    * Query opsional: classId, teacherId, dayOfWeek, academicYear, semester.
    */
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'WAKA_KURIKULUM', 'KAPROG')
   @RequirePermission('academic.schedule.read')
   @Get()
   findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
@@ -51,7 +51,7 @@ export class ScheduleController {
    * Konflik kelas (P2002) → 409 via PrismaExceptionFilter.
    * Konflik guru/ruang → 409 via ConflictException (app-level).
    */
-  @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
   @RequirePermission('academic.schedule.manage')
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -60,7 +60,7 @@ export class ScheduleController {
   }
 
   /** PATCH /schedules/:id — ubah slot (hari/JP/ruang/semester); re-cek konflik. */
-  @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
   @RequirePermission('academic.schedule.manage')
   @Patch(':id')
   update(
@@ -71,7 +71,7 @@ export class ScheduleController {
   }
 
   /** DELETE /schedules/:id — hard delete (template mingguan tanpa dependen). */
-  @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
   @RequirePermission('academic.schedule.manage')
   @Delete(':id')
   remove(@Param('id', ParseUUIDPipe) id: string) {
@@ -81,7 +81,7 @@ export class ScheduleController {
   /** T3-02 B8: GET /schedules/auto-generate — preview auto-scheduling result.
    *  Greedy constraint-based: fills day×JP slots avoiding conflicts.
    *  Returns preview without persisting. */
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM')
   @RequirePermission('academic.schedule.manage')
   @Get('auto-generate')
   autoGenerate(

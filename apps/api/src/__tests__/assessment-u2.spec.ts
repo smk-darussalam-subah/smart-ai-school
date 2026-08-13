@@ -21,6 +21,7 @@ const MC_ID = '11111111-1111-4111-8111-111111111111';
 const TF_ID = '22222222-2222-4222-8222-222222222222';
 const MATCH_ID = '33333333-3333-4333-8333-333333333333';
 const ESSAY_ID = '44444444-4444-4444-8444-444444444444';
+const ESSAY_TWO_ID = '55555555-5555-4555-8555-555555555555';
 
 const mcQuestion = {
   id: MC_ID,
@@ -76,6 +77,16 @@ const essayQuestion = {
   difficulty: 'medium' as const,
   tags: ['css'],
   points: 50,
+};
+
+const secondEssayQuestion = {
+  ...essayQuestion,
+  id: ESSAY_TWO_ID,
+  body: 'Jelaskan fungsi JavaScript.',
+  rubric: [
+    { id: 'd1', name: 'Konsep', weight: 50, maxScore: 100 },
+    { id: 'd2', name: 'Contoh', weight: 50, maxScore: 100 },
+  ],
 };
 
 async function buildService(
@@ -399,9 +410,11 @@ describe('AssessmentService grading and analysis', () => {
   });
 
   it('grades essay from immutable session snapshot rubric', async () => {
+    const queryRaw = jest.fn().mockResolvedValue([{ id: 'response-1' }]);
     const responseUpdate = jest.fn().mockImplementation((args: { data: { score: number | null; itemScores: unknown } }) =>
       Promise.resolve({ id: 'response-1', sessionId: 'session-1', score: args.data.score, itemScores: args.data.itemScores, submittedAt: new Date() }));
     const service = await buildService({
+      $queryRaw: queryRaw,
       teacher: { findFirst: jest.fn().mockResolvedValue({ id: 'teacher-1' }) },
       teachingAssignment: { findFirst: jest.fn().mockResolvedValue({ id: 'assignment-1' }) },
       assessmentSession: {
@@ -421,8 +434,9 @@ describe('AssessmentService grading and analysis', () => {
         }),
       },
       assessmentResponse: {
-        findFirst: jest.fn().mockResolvedValue({
+        findUnique: jest.fn().mockResolvedValue({
           id: 'response-1',
+          sessionId: 'session-1',
           answers: { [ESSAY_ID]: { type: 'essay', text: 'CSS mengatur tampilan.' } },
           itemScores: [],
           submittedAt: new Date(),
@@ -440,6 +454,69 @@ describe('AssessmentService grading and analysis', () => {
     expect(responseUpdate.mock.calls[0][0].data.itemScores).toEqual(expect.arrayContaining([
       expect.objectContaining({ questionId: ESSAY_ID, status: 'manual_scored', scorePct: 76 }),
     ]));
+    const lockSql = queryRaw.mock.calls[0][0] as Prisma.Sql;
+    expect(lockSql.strings.join(' ')).toContain('FROM "academic"."assessment_responses"');
+    expect(lockSql.strings.join(' ')).toContain('FOR UPDATE');
+  });
+
+  it('preserves both manual scores when two essay grades arrive concurrently', async () => {
+    const submittedAt = new Date();
+    const storedResponse: {
+      id: string; sessionId: string; answers: Record<string, unknown>;
+      itemScores: unknown[]; score: number | null; submittedAt: Date;
+    } = {
+      id: 'response-1', sessionId: 'session-1', submittedAt, score: null, itemScores: [],
+      answers: {
+        [ESSAY_ID]: { type: 'essay', text: 'CSS mengatur tampilan.' },
+        [ESSAY_TWO_ID]: { type: 'essay', text: 'JavaScript mengatur interaksi.' },
+      },
+    };
+    const queryRaw = jest.fn().mockResolvedValue([{ id: 'response-1' }]);
+    const responseFindUnique = jest.fn().mockImplementation(() => Promise.resolve({
+      ...storedResponse, itemScores: [...storedResponse.itemScores],
+    }));
+    const responseUpdate = jest.fn().mockImplementation((args: { data: { score: number | null; itemScores: unknown } }) => {
+      storedResponse.score = args.data.score;
+      storedResponse.itemScores = args.data.itemScores as unknown[];
+      return Promise.resolve({ ...storedResponse });
+    });
+    const prisma: Record<string, unknown> = {
+      $queryRaw: queryRaw,
+      teacher: { findFirst: jest.fn().mockResolvedValue({ id: 'teacher-1' }) },
+      teachingAssignment: { findFirst: jest.fn().mockResolvedValue({ id: 'assignment-1' }) },
+      assessmentSession: { findUnique: jest.fn().mockResolvedValue({
+        id: 'session-1', status: 'active', teacherId: 'teacher-1',
+        questions: [essayQuestion, secondEssayQuestion], title: 'Dua Esai',
+        type: 'formatif', moduleId: 'module-1', classId: 'class-1',
+        academicYear: '2026/2027', semester: 1, gradeTarget: 'uh',
+        module: { subject: 'Pemrograman Web', teacherId: 'teacher-1' },
+      }) },
+      assessmentResponse: { findUnique: responseFindUnique, update: responseUpdate },
+    };
+    let transactionTail: Promise<void> = Promise.resolve();
+    const transaction = jest.fn((callback: (tx: Record<string, unknown>) => Promise<unknown>) => {
+      const result = transactionTail.then(() => callback(prisma));
+      transactionTail = result.then(() => undefined, () => undefined);
+      return result;
+    });
+    prisma.$transaction = transaction;
+    const service = await buildService(prisma);
+
+    await Promise.all([
+      service.gradeEssayResponse('session-1', 'response-1', {
+        questionId: ESSAY_ID, criteriaScores: { c1: 80, c2: 70 },
+      }, GURU),
+      service.gradeEssayResponse('session-1', 'response-1', {
+        questionId: ESSAY_TWO_ID, criteriaScores: { d1: 90, d2: 80 },
+      }, GURU),
+    ]);
+
+    expect(storedResponse.itemScores).toEqual(expect.arrayContaining([
+      expect.objectContaining({ questionId: ESSAY_ID, status: 'manual_scored', scorePct: 76 }),
+      expect.objectContaining({ questionId: ESSAY_TWO_ID, status: 'manual_scored', scorePct: 85 }),
+    ]));
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(queryRaw).toHaveBeenCalledTimes(2);
   });
 
   it('rejects essay grading when the owner no longer has the teaching assignment', async () => {

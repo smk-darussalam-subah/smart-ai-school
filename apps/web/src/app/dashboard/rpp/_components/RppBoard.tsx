@@ -1,27 +1,23 @@
 'use client';
 
-// =============================================================================
-// RppBoard — pipeline RPP (KamilEdu M11)
-// GURU: kelola milik sendiri (draft → submit → revisi → submit ulang).
-// KS/SA: antrian review (approve / minta revisi + catatan wajib).
-// =============================================================================
-
 import { useEffect, useState, useTransition } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Archive, Check, Eye, LoaderCircle, RotateCcw, Search, Send } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { TablePagination } from '@/components/ui/table-pagination';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import { createRpp, deleteRpp, reviewRpp, submitRpp, updateRpp } from '../actions';
 import ModulAjarView from '@/components/academic/ModulAjarView';
 import type { ModulAjarBody } from '@/app/dashboard/akademik/_components/guru-types';
+import { useQueryState } from '@/hooks/use-query-state';
+import { archiveRpp, reviewRpp } from '../actions';
+
+export type RppStatus = 'draft' | 'submitted' | 'curriculum_reviewed' | 'approved' | 'revision';
 
 export interface RppItem {
   id: string;
@@ -30,11 +26,16 @@ export interface RppItem {
   content?: string | null;
   body?: ModulAjarBody | null;
   fileUrl?: string | null;
-  status: 'draft' | 'submitted' | 'approved' | 'revision';
+  status: RppStatus;
   reviewerName?: string | null;
   reviewNote?: string | null;
+  curriculumReviewerName?: string | null;
+  curriculumReviewNote?: string | null;
+  curriculumReviewedAt?: string | null;
+  finalReviewerName?: string | null;
+  finalReviewNote?: string | null;
+  finalApprovedAt?: string | null;
   submittedAt?: string | null;
-  reviewedAt?: string | null;
   academicYear: string;
   semester: number;
   updatedAt: string;
@@ -45,75 +46,69 @@ export interface RppItem {
 interface Props {
   items: RppItem[];
   total: number;
-  isGuru: boolean;
-  isReviewer: boolean;
-  canDelete: boolean;
-  /**
-   * W3-4 P2: Role reviewer utama untuk kustomisasi label UI.
-   * 'KEPALA_SEKOLAH' / 'SUPER_ADMIN' → tombol 'Setujui' (final approval)
-   * 'WAKA_KURIKULUM' → tombol 'Review' / 'Setujui (delegasi KS)'
-   * Null/non-reviewer → label default.
-   */
-  userRole?: string | null;
-  defaultAcademicYear?: string;
-  defaultSemester?: number;
+  query: { page: number; limit: number; status: string; search: string };
+  canCurriculumReview: boolean;
+  canFinalApprove: boolean;
+  canArchive: boolean;
 }
 
-const STATUS_BADGE: Record<RppItem['status'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+const STATUS: Record<RppStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   draft: { label: 'Draft', variant: 'outline' },
-  submitted: { label: 'Menunggu Review', variant: 'secondary' },
-  approved: { label: '✓ Disetujui', variant: 'default' },
-  revision: { label: '↩ Perlu Revisi', variant: 'destructive' },
+  submitted: { label: 'Menunggu review kurikulum', variant: 'secondary' },
+  curriculum_reviewed: { label: 'Direkomendasikan ke KS', variant: 'secondary' },
+  approved: { label: 'Disetujui final', variant: 'default' },
+  revision: { label: 'Perlu revisi', variant: 'destructive' },
 };
 
-export default function RppBoard({ items, total, isGuru, isReviewer, canDelete, userRole, defaultAcademicYear, defaultSemester }: Props) {
-  const [statusFilter, setStatusFilter] = useState(isReviewer ? 'submitted' : 'all');
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<RppItem | null>(null);
+export default function RppBoard({ items, total, query, canCurriculumReview, canFinalApprove, canArchive }: Props) {
+  const { setParams, isPending } = useQueryState();
+  const [search, setSearch] = useState(query.search);
+  const [detail, setDetail] = useState<RppItem | null>(null);
   const [reviewing, setReviewing] = useState<RppItem | null>(null);
+  const [archiving, setArchiving] = useState<RppItem | null>(null);
   const [error, setError] = useState('');
-  const [pending, startTransition] = useTransition();
+  const [busy, startTransition] = useTransition();
 
-  // W3-4 P2: Role-aware UI labels.
-  // WAKA_KURIKULUM: primary action = Review (catatan + revisi), secondary = approve as KS delegate.
-  // KS/SA: primary action = Final Approval.
-  const isWaka = userRole === 'WAKA_KURIKULUM';
-  const isFinalApprover = userRole === 'KEPALA_SEKOLAH' || userRole === 'SUPER_ADMIN';
-  const reviewButtonLabel = isWaka ? 'Review Sekarang' : isFinalApprover ? 'Review & Approve' : 'Review Sekarang';
+  useEffect(() => setSearch(query.search), [query.search]);
+  useEffect(() => {
+    if (search === query.search) return;
+    const timer = setTimeout(() => setParams({ search: search || null }), 350);
+    return () => clearTimeout(timer);
+  }, [query.search, search, setParams]);
 
-  const filtered = items.filter((r) => statusFilter === 'all' || r.status === statusFilter);
-
-  const run = (fn: () => Promise<{ success: boolean; error?: string }>) => {
+  const run = (action: () => Promise<{ success: boolean; error?: string }>, onSuccess?: () => void) => {
     setError('');
     startTransition(async () => {
-      const r = await fn();
-      if (!r.success) setError(r.error ?? 'Aksi gagal');
+      const result = await action();
+      if (!result.success) setError(result.error ?? 'Aksi gagal diproses');
+      else onSuccess?.();
     });
   };
 
+  const canReview = (item: RppItem) =>
+    (canCurriculumReview && item.status === 'submitted') ||
+    (canFinalApprove && item.status === 'curriculum_reviewed');
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+    <div className="space-y-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">📄 RPP</h1>
-          <p className="text-sm text-muted-foreground">
-            {total} dokumen · {isReviewer ? 'mode review' : 'milik Anda'}
-          </p>
+          <h1 className="text-2xl font-bold">Review Modul Ajar</h1>
+          <p className="text-sm text-muted-foreground">Review kurikulum, rekomendasi, dan persetujuan final dalam dua tahap.</p>
         </div>
-        <div className="flex gap-2">
-          {isGuru && (
-            <Button onClick={() => { setEditing(null); setFormOpen(true); }}>+ Buat RPP</Button>
-          )}
-          <Select value={statusFilter} onValueChange={(v: string) => setStatusFilter(v)}>
-            <SelectTrigger className="w-44" aria-label="Filter status">
-              <SelectValue />
-            </SelectTrigger>
+        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+          <div className="relative min-w-0 sm:w-72">
+            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari judul, mapel, atau guru" className="pl-9" aria-label="Cari Modul Ajar" />
+          </div>
+          <Select value={query.status || 'all'} onValueChange={(value: string) => setParams({ status: value })}>
+            <SelectTrigger className="sm:w-56" aria-label="Filter status"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Semua Status</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="submitted">Menunggu Review</SelectItem>
-              <SelectItem value="approved">Disetujui</SelectItem>
-              <SelectItem value="revision">Perlu Revisi</SelectItem>
+              <SelectItem value="all">Semua status</SelectItem>
+              <SelectItem value="submitted">Menunggu kurikulum</SelectItem>
+              <SelectItem value="curriculum_reviewed">Menunggu KS</SelectItem>
+              <SelectItem value="approved">Disetujui final</SelectItem>
+              <SelectItem value="revision">Perlu revisi</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -121,249 +116,142 @@ export default function RppBoard({ items, total, isGuru, isReviewer, canDelete, 
 
       {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
 
-      {filtered.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">
-            Tidak ada RPP pada filter ini.
-          </CardContent>
-        </Card>
-      ) : (
-        filtered.map((r) => (
-          <Card key={r.id}>
-            <CardHeader className="pb-2">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <CardTitle className="text-base">{r.title}</CardTitle>
-                <Badge variant={STATUS_BADGE[r.status].variant}>{STATUS_BADGE[r.status].label}</Badge>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {r.subject} · {r.academicYear} Smt {r.semester}
-                {r.class ? ` · ${r.class.name}` : ''}
-                {isReviewer ? ` · oleh ${r.teacher.user.fullName}` : ''}
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {r.content && <p className="text-sm whitespace-pre-wrap line-clamp-4">{r.content}</p>}
-              {r.fileUrl && (
-                <a className="text-sm text-primary underline" href={r.fileUrl} target="_blank" rel="noreferrer">
-                  📎 Lampiran RPP
-                </a>
-              )}
-              {r.status === 'revision' && r.reviewNote && (
-                <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
-                  <strong>Catatan reviewer{r.reviewerName ? ` (${r.reviewerName})` : ''}:</strong> {r.reviewNote}
+      <div className={`grid gap-3 transition-opacity ${isPending ? 'opacity-60' : ''}`} aria-busy={isPending}>
+        {items.length === 0 ? (
+          <Card><CardContent className="py-12 text-center text-sm text-muted-foreground">Tidak ada Modul Ajar pada filter ini.</CardContent></Card>
+        ) : items.map((item) => (
+          <Card key={item.id}>
+            <CardHeader className="pb-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <CardTitle className="text-base leading-6">{item.title}</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">{item.subject} | {item.class?.name ?? 'Tanpa kelas'} | {item.teacher.user.fullName}</p>
                 </div>
-              )}
+                <Badge variant={STATUS[item.status].variant}>{STATUS[item.status].label}</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-muted-foreground">{item.academicYear} | Semester {item.semester}</p>
               <div className="flex flex-wrap gap-2">
-                {isGuru && (r.status === 'draft' || r.status === 'revision') && (
-                  <>
-                    <Button size="sm" variant="outline" disabled={pending}
-                      onClick={() => { setEditing(r); setFormOpen(true); }}>Edit</Button>
-                    <Button size="sm" disabled={pending}
-                      onClick={() => run(() => submitRpp(r.id))}>Ajukan Review</Button>
-                  </>
-                )}
-                {isReviewer && r.status === 'submitted' && (
-                  <Button size="sm" disabled={pending} onClick={() => setReviewing(r)}>
-                    {reviewButtonLabel}
+                <Button size="sm" variant="outline" onClick={() => setDetail(item)}>
+                  <Eye className="mr-2 h-4 w-4" aria-hidden="true" />Detail
+                </Button>
+                {canReview(item) && (
+                  <Button size="sm" onClick={() => { setError(''); setReviewing(item); }}>
+                    <Send className="mr-2 h-4 w-4" aria-hidden="true" />Ambil keputusan
                   </Button>
                 )}
-                {canDelete && (r.status === 'draft' || !isGuru) && (
-                  <Button size="sm" variant="destructive" disabled={pending}
-                    onClick={() => run(() => deleteRpp(r.id))}>Hapus</Button>
+                 {canArchive && (
+                   <Button size="sm" variant="outline" disabled={busy} onClick={() => setArchiving(item)}>
+                    <Archive className="mr-2 h-4 w-4" aria-hidden="true" />Arsipkan
+                  </Button>
                 )}
               </div>
             </CardContent>
           </Card>
-        ))
-      )}
+        ))}
+      </div>
 
-      {isGuru && (
-        <RppFormDialog open={formOpen} onOpenChange={setFormOpen} rpp={editing} defaultAcademicYear={defaultAcademicYear} defaultSemester={defaultSemester} />
-      )}
-      <ReviewDialog rpp={reviewing} onClose={() => setReviewing(null)} run={run} pending={pending} userRole={userRole} />
+      <TablePagination page={query.page} limit={query.limit} total={total} onPage={(page) => setParams({ page })} />
+      <RppDetailDialog item={detail} onClose={() => setDetail(null)} />
+      <ReviewDialog
+        item={reviewing}
+        canCurriculumReview={canCurriculumReview}
+        onClose={() => setReviewing(null)}
+        pending={busy}
+        error={error}
+        run={run}
+      />
+      <ConfirmDialog
+        open={!!archiving}
+        onOpenChange={(open) => !open && setArchiving(null)}
+        title="Arsipkan Modul Ajar?"
+        description={archiving ? `${archiving.title} akan disembunyikan dari antrean aktif. Riwayat audit tetap dipertahankan.` : ''}
+        confirmLabel="Arsipkan"
+        variant="warning"
+        onConfirm={async () => {
+          if (!archiving) return false;
+          const result = await archiveRpp(archiving.id);
+          if (!result.success) { setError(result.error ?? 'Modul Ajar gagal diarsipkan'); return false; }
+          return true;
+        }}
+      />
     </div>
   );
 }
 
-// ── Form Guru ─────────────────────────────────────────────────────────────────
-function RppFormDialog({ open, onOpenChange, rpp, defaultAcademicYear, defaultSemester }: {
-  open: boolean; onOpenChange: (o: boolean) => void; rpp: RppItem | null; defaultAcademicYear?: string; defaultSemester?: number;
-}) {
-  const isEdit = !!rpp;
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [subject, setSubject] = useState('');
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [fileUrl, setFileUrl] = useState('');
-  const [academicYear, setAcademicYear] = useState(defaultAcademicYear || '2026/2027');
-  const [semester, setSemester] = useState(String(defaultSemester ?? 1));
+function RppBody({ item }: { item: RppItem }) {
+  return item.body ? (
+    <ModulAjarView body={item.body} academicYear={item.academicYear} />
+  ) : item.content ? (
+    <div className="whitespace-pre-wrap rounded border bg-muted/30 p-4 text-sm">{item.content}</div>
+  ) : (
+    <p className="text-sm text-muted-foreground">Isi terstruktur tidak tersedia. Periksa lampiran dokumen.</p>
+  );
+}
 
-  useEffect(() => {
-    if (open) {
-      setError('');
-      setSubject(rpp?.subject ?? '');
-      setTitle(rpp?.title ?? '');
-      setContent(rpp?.content ?? '');
-      setFileUrl(rpp?.fileUrl ?? '');
-      setAcademicYear(rpp?.academicYear ?? defaultAcademicYear ?? '2026/2027');
-      setSemester(String(rpp?.semester ?? defaultSemester ?? 1));
-    }
-  }, [open, rpp]);
-
-  const save = async (submit: boolean) => {
-    setLoading(true);
-    setError('');
-    const body: Record<string, unknown> = {
-      subject, title,
-      content: content.trim() || null,
-      fileUrl: fileUrl.trim() || null,
-      academicYear, semester: Number(semester),
-    };
-    let r;
-    if (isEdit) {
-      r = await updateRpp(rpp!.id, body);
-      if (r.success && submit) r = await submitRpp(rpp!.id);
-    } else {
-      r = await createRpp({ ...body, submit });
-    }
-    setLoading(false);
-    if (r.success) onOpenChange(false);
-    else setError(('error' in r && r.error) || 'Gagal menyimpan');
-  };
-
+function RppDetailDialog({ item, onClose }: { item: RppItem | null; onClose: () => void }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+    <Dialog open={!!item} onOpenChange={(open: boolean) => !open && onClose()}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit RPP' : 'Buat RPP'}</DialogTitle>
-          <DialogDescription>Isi konten langsung atau tautkan lampiran.</DialogDescription>
+          <DialogTitle>{item?.title}</DialogTitle>
+          <DialogDescription>{item?.subject} | {item?.teacher.user.fullName} | {item?.academicYear} Semester {item?.semester}</DialogDescription>
         </DialogHeader>
-        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void save(false); }}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="rpp-subject">Mata Pelajaran</Label>
-              <Input id="rpp-subject" required minLength={2} value={subject}
-                onChange={(e) => setSubject(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="rpp-title">Judul</Label>
-              <Input id="rpp-title" required minLength={3} value={title}
-                onChange={(e) => setTitle(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="rpp-ta">Tahun Ajaran</Label>
-              <Input id="rpp-ta" required pattern="\d{4}/\d{4}" value={academicYear}
-                onChange={(e) => setAcademicYear(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Semester</Label>
-              <Select value={semester} onValueChange={(v: string) => setSemester(v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">Ganjil (1)</SelectItem>
-                  <SelectItem value="2">Genap (2)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="rpp-content">Isi RPP</Label>
-            <Textarea id="rpp-content" rows={8} value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="Tujuan pembelajaran, kegiatan, asesmen…" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="rpp-file">URL Lampiran (opsional)</Label>
-            <Input id="rpp-file" type="url" value={fileUrl}
-              onChange={(e) => setFileUrl(e.target.value)}
-              placeholder="https://drive.google.com/…" />
-          </div>
-          {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" disabled={loading}
-              onClick={() => onOpenChange(false)}>Batal</Button>
-            <Button type="submit" variant="secondary" disabled={loading}>
-              {loading ? 'Menyimpan…' : 'Simpan Draft'}
-            </Button>
-            <Button type="button" disabled={loading} onClick={() => void save(true)}>
-              {loading ? 'Menyimpan…' : 'Simpan & Ajukan'}
-            </Button>
-          </div>
-        </form>
+        {item && <RppBody item={item} />}
+        {item?.fileUrl && <Button asChild variant="outline"><a href={item.fileUrl} target="_blank" rel="noreferrer">Buka lampiran</a></Button>}
+        {item && (item.curriculumReviewerName || item.finalReviewerName || item.reviewNote) && (
+          <section className="space-y-2 border-t pt-4" aria-label="Riwayat keputusan">
+            <h2 className="text-sm font-semibold">Riwayat keputusan</h2>
+            {item.curriculumReviewerName && <p className="text-sm"><b>Review kurikulum:</b> {item.curriculumReviewerName}{item.curriculumReviewNote ? ` - ${item.curriculumReviewNote}` : ''}</p>}
+            {item.finalReviewerName && <p className="text-sm"><b>Persetujuan final:</b> {item.finalReviewerName}{item.finalReviewNote ? ` - ${item.finalReviewNote}` : ''}</p>}
+            {item.status === 'revision' && item.reviewNote && <p className="text-sm text-destructive"><b>Revisi terakhir:</b> {item.reviewNote}</p>}
+          </section>
+        )}
       </DialogContent>
     </Dialog>
   );
 }
 
-// ── Dialog Review (WAKA/KS/SA) ────────────────────────────────────────────────
-function ReviewDialog({ rpp, onClose, run, pending, userRole }: {
-  rpp: RppItem | null;
+function ReviewDialog({ item, canCurriculumReview, onClose, run, pending, error }: {
+  item: RppItem | null;
+  canCurriculumReview: boolean;
   onClose: () => void;
-  run: (fn: () => Promise<{ success: boolean; error?: string }>) => void;
+  run: (action: () => Promise<{ success: boolean; error?: string }>, onSuccess?: () => void) => void;
   pending: boolean;
-  userRole?: string | null;
+  error: string;
 }) {
   const [note, setNote] = useState('');
-  useEffect(() => { if (rpp) setNote(''); }, [rpp]);
-
-  // W3-4 P2: Role-aware dialog title, button labels, dan hint.
-  const isWaka = userRole === 'WAKA_KURIKULUM';
-  const isFinalApprover = userRole === 'KEPALA_SEKOLAH' || userRole === 'SUPER_ADMIN';
-  const dialogTitle = isFinalApprover
-    ? `Final Approval: ${rpp?.title ?? ''}`
-    : `Review: ${rpp?.title ?? ''}`;
-  const approveLabel = isWaka ? '✓ Setujui (delegasi KS)' : '✓ Setujui';
-  const revisionLabel = '↩ Minta Revisi';
-  const roleHint = isWaka
-    ? 'Anda melakukan review sebagai WAKA_KURIKULUM. KS dapat mendisposisikan approval final kepada Anda.'
-    : isFinalApprover
-      ? 'Anda melakukan final approval sebagai KEPALA_SEKOLAH/SUPER_ADMIN.'
-      : '';
+  const isCurriculumStage = item?.status === 'submitted' && canCurriculumReview;
+  useEffect(() => { if (item) setNote(''); }, [item]);
+  const decide = (decision: 'recommended' | 'approved' | 'revision') => {
+    if (!item) return;
+    run(() => reviewRpp(item.id, decision, note.trim() || undefined), onClose);
+  };
 
   return (
-    <Dialog open={!!rpp} onOpenChange={(o: boolean) => !o && onClose()}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+    <Dialog open={!!item} onOpenChange={(open: boolean) => !open && !pending && onClose()}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>{dialogTitle}</DialogTitle>
-          <DialogDescription>
-            {rpp?.subject} · {rpp?.teacher.user.fullName} · {rpp?.academicYear} Smt {rpp?.semester}
-          </DialogDescription>
+          <DialogTitle>{isCurriculumStage ? 'Review kurikulum' : 'Persetujuan final'}: {item?.title}</DialogTitle>
+          <DialogDescription>{isCurriculumStage ? 'Waka/Kaprog memberi rekomendasi. Persetujuan final tetap oleh Kepala Sekolah.' : 'Kepala Sekolah memeriksa rekomendasi dan mengambil keputusan final.'}</DialogDescription>
         </DialogHeader>
-        {roleHint && (
-          <div className={`rounded-md px-3 py-2 text-xs ${isWaka ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`}>
-            {roleHint}
-          </div>
-        )}
-        {rpp?.body ? (
-          <ModulAjarView body={rpp.body} academicYear={rpp.academicYear} />
-        ) : rpp?.content ? (
-          <div className="rounded border bg-gray-50 px-3 py-2 text-sm whitespace-pre-wrap max-h-64 overflow-y-auto">
-            {rpp.content}
-          </div>
-        ) : null}
-        {rpp?.fileUrl && (
-          <a className="text-sm text-primary underline" href={rpp.fileUrl} target="_blank" rel="noreferrer">
-            📎 Buka lampiran
-          </a>
-        )}
+        {item && <RppBody item={item} />}
+        {item?.curriculumReviewerName && <p className="rounded border bg-muted/30 p-3 text-sm"><b>Rekomendasi {item.curriculumReviewerName}:</b> {item.curriculumReviewNote || 'Tanpa catatan tambahan'}</p>}
         <div className="space-y-1.5">
-          <Label htmlFor="review-note">Catatan (wajib bila minta revisi)</Label>
-          <Textarea id="review-note" rows={3} value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Masukan untuk guru…" />
+          <Label htmlFor="rpp-review-note">Catatan keputusan</Label>
+          <Textarea id="rpp-review-note" rows={3} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Tuliskan masukan yang spesifik dan dapat ditindaklanjuti" />
+          <p className="text-xs text-muted-foreground">Catatan minimal 3 karakter wajib untuk permintaan revisi.</p>
         </div>
-        <div className="flex justify-end gap-2">
+        {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="outline" disabled={pending} onClick={onClose}>Batal</Button>
-          <Button variant="destructive" disabled={pending || note.trim().length < 3}
-            onClick={() => { if (rpp) { run(() => reviewRpp(rpp.id, 'revision', note.trim())); onClose(); } }}>
-            {revisionLabel}
+          <Button variant="destructive" disabled={pending || note.trim().length < 3} onClick={() => decide('revision')}>
+            {pending ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}Minta revisi
           </Button>
-          <Button disabled={pending}
-            onClick={() => { if (rpp) { run(() => reviewRpp(rpp.id, 'approved', note.trim() || undefined)); onClose(); } }}>
-            {approveLabel}
+          <Button disabled={pending} onClick={() => decide(isCurriculumStage ? 'recommended' : 'approved')}>
+            {pending ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+            {isCurriculumStage ? 'Rekomendasikan ke KS' : 'Setujui final'}
           </Button>
         </div>
       </DialogContent>

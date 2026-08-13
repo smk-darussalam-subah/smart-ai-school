@@ -1,65 +1,42 @@
 import React from 'react';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
+import { authOptions } from '@/lib/auth';
 import { apiFetch } from '@/lib/api';
-import RppBoard, { RppItem } from './_components/RppBoard';
+import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
+import AcademicDataNotice from '../_components/AcademicDataNotice';
+import RppBoard, { type RppItem } from './_components/RppBoard';
 
-interface ListResponse { data: RppItem[]; total: number; }
-interface ActiveSemester { number: number; academicYear: { code: string } }
-interface MyPositionsResponse {
-  positions: Array<{ status: 'ACTIVE'; position: { code: string; name: string } }>;
-}
+const PAGE_SIZE = 20;
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+const one = (value: string | string[] | undefined) => Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
 
-export default async function RppPage() {
+interface ListResponse { data: RppItem[]; total: number; page: number; limit: number }
+
+export default async function RppPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
-  const roles: string[] = await getEffectiveRoles(session);
+  const authority = await resolveDashboardAuthority(session);
+  const canRead = authority.can('rpp.read') && authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPROG');
+  if (!canRead) redirect('/dashboard/akademik');
 
-  // Halaman ini = REVIEW Modul Ajar (KS/SA/WAKA_KURIKULUM dengan permission rpp.review).
-  // Pembuatan/edit Modul Ajar oleh GURU sudah satu pintu di Akademik → Pembelajaran
-  // → Modul Ajar (hapus dualitas).
-  //
-  // W3-4 P2: Role-aware UI — WAKA_KURIKULUM dan KS tetap sama-sama dapat review+approve
-  // via satu endpoint (one-step consistent), tetapi UI menyesuaikan label tombol
-  // agar sesuai dengan kapasitas utama peran:
-  //   - WAKA_KURIKULUM: label "Review" / "Minta Revisi" / "Setujui (delegasi KS)"
-  //   - KEPALA_SEKOLAH: label "Setujui" / "Final Approval" / "Minta Revisi"
-  //   - SUPER_ADMIN: setara KS
-  // Audit trail juga mencatat role reviewer di reviewerName (service layer).
-  const token = session.accessToken ?? '';
-  const directReviewer = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'].some((r) => roles.includes(r));
-  const myPositions = directReviewer
-    ? null
-    : await apiFetch<MyPositionsResponse>('/positions/my-positions', token);
-  const positionRoles = (myPositions?.positions ?? []).map((item) => item.position.code);
-  const effectiveReviewerRoles = [...new Set([...roles, ...positionRoles])];
-  const isReviewer = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'].some((r) => effectiveReviewerRoles.includes(r));
-  if (!isReviewer) redirect('/dashboard/akademik');
+  const sp = await searchParams;
+  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const status = one(sp.status);
+  const search = one(sp.search).trim().slice(0, 100);
+  const query = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
+  if (status) query.set('status', status);
+  if (search) query.set('search', search);
 
-  // W3-4 P2: Determine primary reviewer role for UI customization.
-  // Priority: SUPER_ADMIN > KEPALA_SEKOLAH > WAKA_KURIKULUM (matches service priority).
-  const userRole = effectiveReviewerRoles.find((r) => r === 'SUPER_ADMIN')
-    ?? effectiveReviewerRoles.find((r) => r === 'KEPALA_SEKOLAH')
-    ?? effectiveReviewerRoles.find((r) => r === 'WAKA_KURIKULUM')
-    ?? null;
+  const response = await apiFetch<ListResponse>(`/rpp?${query.toString()}`, session.accessToken ?? '');
+  if (!response) return <AcademicDataNotice href="/dashboard/rpp" message="Antrean Review Modul Ajar belum dapat dimuat." />;
 
-  const [res, semRes] = await Promise.all([
-    apiFetch<ListResponse>('/rpp?limit=100', token),
-    apiFetch<ActiveSemester>('/school/semesters/active', token),
-  ]);
-
-  return (
-    <RppBoard
-      items={res?.data ?? []}
-      total={res?.total ?? 0}
-      isGuru={false}
-      isReviewer
-      canDelete={roles.includes('SUPER_ADMIN')}
-      userRole={userRole}
-      defaultAcademicYear={semRes?.academicYear?.code ?? ''}
-      defaultSemester={semRes?.number ?? 1}
-    />
-  );
+  return <RppBoard
+    items={response.data}
+    total={response.total}
+    query={{ page, limit: PAGE_SIZE, status, search }}
+    canCurriculumReview={authority.can('rpp.curriculum.review') && authority.hasRole('WAKA_KURIKULUM', 'KAPROG')}
+    canFinalApprove={authority.can('rpp.final.approve') && authority.hasRole('KEPALA_SEKOLAH')}
+    canArchive={authority.hasRole('SUPER_ADMIN')}
+  />;
 }

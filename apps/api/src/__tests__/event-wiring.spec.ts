@@ -88,6 +88,7 @@ function buildMockPrismaForStudent() {
 
 function buildMockPrismaForGrade() {
   return {
+    academicYear:       { findFirst: jest.fn() },
     user:               { findUnique: jest.fn() },
     teacher:            { findUnique: jest.fn() },
     student:            { findUnique: jest.fn(), findMany: jest.fn() },
@@ -106,6 +107,7 @@ function buildMockPrismaForGrade() {
 function buildMockPrismaForAttendance() {
   return {
     $transaction:       jest.fn(),
+    academicYear:       { findFirst: jest.fn() },
     user:               { findUnique: jest.fn() },
     teacher:            { findUnique: jest.fn() },
     student:            { findUnique: jest.fn(), findMany: jest.fn() },
@@ -294,10 +296,20 @@ describe('GradeService — event producer', () => {
     // Setup default mocks untuk create()
     prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-guru' });
     prisma.teacher.findUnique.mockResolvedValue({ id: 'teacher-uuid-001' });
+    prisma.academicYear.findFirst.mockResolvedValue({ code: '2025/2026' });
     prisma.teachingAssignment.findUnique.mockResolvedValue({
-      id: ASSIGN_UUID, teacherId: 'teacher-uuid-001', academicYear: '2025/2026',
+      id: ASSIGN_UUID,
+      teacherId: 'teacher-uuid-001',
+      classId: CLASS_UUID,
+      academicYear: '2025/2026',
+      class: { isActive: true },
     });
-    prisma.student.findUnique.mockResolvedValue({ id: STUDENT_UUID });
+    prisma.student.findUnique.mockResolvedValue({
+      id: STUDENT_UUID,
+      classId: CLASS_UUID,
+      status: 'active',
+      deletedAt: null,
+    });
     prisma.grade.findFirst.mockResolvedValue(null); // tidak ada duplikat
     prisma.grade.create.mockResolvedValue(MOCK_GRADE);
   });
@@ -357,8 +369,15 @@ describe('AttendanceService — event producer (filter alpha/sakit)', () => {
     // Default mocks untuk bulkCreate
     prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-guru' });
     prisma.teacher.findUnique.mockResolvedValue({ id: 'teacher-uuid-001' });
+    prisma.academicYear.findFirst.mockResolvedValue({ code: '2025/2026' });
     prisma.teachingAssignment.findFirst.mockResolvedValue({ id: 'assign-uuid-001' });
-    prisma.class.findUnique.mockResolvedValue({ id: CLASS_UUID });
+    prisma.class.findUnique.mockResolvedValue({
+      id: CLASS_UUID,
+      academicYear: '2025/2026',
+      isActive: true,
+    });
+    prisma.student.findMany.mockImplementation((args: { where?: { id?: { in?: string[] } } }) =>
+      Promise.resolve((args.where?.id?.in ?? []).map((id) => ({ id }))));
   });
 
   function makeAttRecord(id: string, studentId: string, status: string) {

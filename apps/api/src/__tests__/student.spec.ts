@@ -85,6 +85,9 @@ const MOCK_STUDENT = {
 
 function buildPrisma() {
   return {
+    academicYear: {
+      findFirst: jest.fn(),
+    },
     user: {
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -136,6 +139,7 @@ describe('StudentService', () => {
 
     service = module.get(StudentService);
     jest.clearAllMocks();
+    prisma.academicYear.findFirst.mockResolvedValue({ code: '2025/2026' });
     prisma.class.findMany.mockResolvedValue([]);
   });
 

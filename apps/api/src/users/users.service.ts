@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserStatusService } from '../auth/user-status.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -169,6 +169,16 @@ export class UsersService {
    * Lihat academic-lifecycle.md §14.1 untuk prinsip fail-soft DIIS.
    */
   async updateRole(id: string, role: UserRole, actor: string) {
+    const actorUser = await this.prisma.user.findFirst({
+      where: { keycloakId: actor, isActive: true, deletedAt: null },
+      select: { id: true, role: true },
+    });
+    if (!actorUser || actorUser.role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Hanya Super Admin yang dapat mengubah role identitas');
+    }
+    if (actorUser.id === id) {
+      throw new ForbiddenException('Super Admin tidak dapat mengubah role akunnya sendiri');
+    }
     if (!isPrimaryRole(role)) {
       throw new BadRequestException(
         `Role ${role} adalah jabatan period-bound. Kelola melalui appointment/Struktur Organisasi, bukan role identitas Keycloak.`,
@@ -285,11 +295,24 @@ export class UsersService {
    * Lihat academic-lifecycle.md §14.1 untuk prinsip fail-soft DIIS.
    */
   async updateActive(id: string, isActive: boolean, actor: string) {
+    const actorUser = await this.prisma.user.findFirst({
+      where: { keycloakId: actor, isActive: true, deletedAt: null },
+      select: { id: true, role: true },
+    });
+    if (!actorUser || !['SUPER_ADMIN', 'TATA_USAHA'].includes(actorUser.role)) {
+      throw new ForbiddenException('Aktor tidak berwenang mengubah status akun');
+    }
+    if (actorUser.id === id && !isActive) {
+      throw new ForbiddenException('Pengguna tidak dapat menonaktifkan akunnya sendiri');
+    }
     const user = await this.prisma.user.findUnique({
       where: { id },
       select: { id: true, keycloakId: true, fullName: true, role: true },
     });
     if (!user) throw new NotFoundException('User tidak ditemukan');
+    if (actorUser.role === 'TATA_USAHA' && ['SUPER_ADMIN', 'TATA_USAHA'].includes(user.role)) {
+      throw new ForbiddenException('Tata Usaha tidak dapat mengubah status akun istimewa');
+    }
 
     // C3-(a): last-SA protection (DB-side, jalan pertama, tidak boleh di-skip)
     if (

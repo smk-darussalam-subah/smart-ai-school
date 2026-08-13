@@ -22,39 +22,63 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import {
   resolveGuruClassIds,
-  resolveSiswaId,
-  resolveUserId,
-  isElevated,
+  resolveTeacherId,
 } from '../common/helpers/role-helpers';
+import {
+  assertClassInKaprogScope,
+  isKaprogScopedReader,
+  kaprogClassWhere,
+  resolveActiveKaprogMajorScope,
+} from '../common/helpers/appointment-scope.helper';
+import { averageScores, calculateWeightedFinalScore } from '../common/helpers/grade-final-score.helper';
 import { EVENTS, ReportDistributedPayload } from '../events/events.types';
 import {
   GenerateReportsDto,
   ListReportsQueryDto,
+  RecoverReportDto,
   TransitionDto,
   UpdateNotesDto,
 } from './dto/report-card.dto';
 
-const ELEVATED = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] as const;
+const ELEVATED = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_KURIKULUM'] as const;
 
 const REPORT_SELECT = {
   id: true, studentId: true, classId: true, academicYear: true, semester: true,
   status: true, grades: true, attendance: true, notes: true,
-  generatedAt: true, checkedAt: true, publishedAt: true, distributedAt: true,
+  studentNameSnapshot: true, studentNisSnapshot: true,
+  classNameSnapshot: true, homeroomTeacherNameSnapshot: true,
+  generatedAt: true, checkedAt: true, checkedBy: true,
+  checkedByName: true,
+  returnedAt: true, returnedBy: true, returnedByName: true, returnReason: true,
+  publishedAt: true, publishedBy: true, publishedByName: true,
+  distributedAt: true, distributedBy: true, distributedByName: true,
+  updatedAt: true,
   student: { select: { id: true, nis: true, user: { select: { fullName: true } } } },
   class: { select: { id: true, name: true } },
+  statusEvents: {
+    select: {
+      id: true, action: true, fromStatus: true, toStatus: true, actorName: true,
+      reason: true, incidentReference: true, createdAt: true,
+    },
+    orderBy: { createdAt: 'desc' as const },
+    take: 20,
+  },
 } as const;
+
+type ReportSnapshotDb = Pick<Prisma.TransactionClient, 'grade' | 'attendance'>;
 
 // Transisi sah: action → { dari, ke, stempel waktu }
 const TRANSITIONS: Record<
   TransitionDto['action'],
-  { from: string; to: 'draft' | 'checked' | 'published' | 'distributed'; stamp: string | null }
+  { from: string; to: 'draft' | 'checked' | 'published' | 'distributed' }
 > = {
-  check:      { from: 'draft',     to: 'checked',     stamp: 'checkedAt' },
-  return:     { from: 'checked',   to: 'draft',       stamp: null },
-  publish:    { from: 'checked',   to: 'published',   stamp: 'publishedAt' },
-  distribute: { from: 'published', to: 'distributed', stamp: 'distributedAt' },
+  check:      { from: 'draft',     to: 'checked' },
+  return:     { from: 'checked',   to: 'draft' },
+  publish:    { from: 'checked',   to: 'published' },
+  distribute: { from: 'published', to: 'distributed' },
 };
 
 interface SubjectSnapshot {
@@ -69,6 +93,7 @@ export class ReportCardsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly permissions: PermissionsService,
   ) {}
 
   private isElevated(user: AuthUser): boolean {
@@ -77,6 +102,9 @@ export class ReportCardsService {
 
   /** Klausa ownership baca per role — selalu DI QUERY. */
   private async ownershipWhere(user: AuthUser): Promise<Prisma.ReportCardWhereInput> {
+    if (isKaprogScopedReader(user)) {
+      return { class: kaprogClassWhere(await resolveActiveKaprogMajorScope(this.prisma, user)) };
+    }
     if (this.isElevated(user)) return {};
 
     if (user.roles.includes('GURU')) {
@@ -102,6 +130,50 @@ export class ReportCardsService {
     throw new ForbiddenException('Akses ditolak');
   }
 
+  private async draftManagerClassIds(user: AuthUser): Promise<Set<string> | null> {
+    if (user.roles.includes('SUPER_ADMIN')) return new Set();
+    if (!user.roles.includes('GURU')) return new Set();
+    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+    const classes = await this.prisma.class.findMany({
+      where: { teacherId, isActive: true },
+      select: { id: true },
+    });
+    return new Set(classes.map((item) => item.id));
+  }
+
+  async listReadableClasses(user: AuthUser) {
+    let where: Prisma.ClassWhereInput = { isActive: true };
+    let teacherId: string | null = null;
+
+    if (isKaprogScopedReader(user)) {
+      where = {
+        ...where,
+        ...kaprogClassWhere(await resolveActiveKaprogMajorScope(this.prisma, user)),
+      };
+    } else if (!this.isElevated(user)) {
+      if (!user.roles.includes('GURU')) throw new ForbiddenException('Akses ditolak');
+      const classIds = await resolveGuruClassIds(this.prisma, user.keycloakId);
+      teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+      where = { ...where, id: { in: classIds } };
+    }
+    if (teacherId === null && user.roles.includes('GURU') && !user.roles.includes('SUPER_ADMIN')) {
+      teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+    }
+
+    const classes = await this.prisma.class.findMany({
+      where,
+      select: { id: true, name: true, teacherId: true },
+      orderBy: { name: 'asc' },
+    });
+    return {
+      data: classes.map((item) => ({
+        id: item.id,
+        name: item.name,
+        canManageDraft: teacherId !== null && item.teacherId === teacherId,
+      })),
+    };
+  }
+
   async findAll(query: ListReportsQueryDto, user: AuthUser) {
     const ownership = await this.ownershipWhere(user);
     const where: Prisma.ReportCardWhereInput = {
@@ -109,7 +181,21 @@ export class ReportCardsService {
       ...(query.classId ? { classId: query.classId } : {}),
       ...(query.academicYear ? { academicYear: query.academicYear } : {}),
       ...(query.semester ? { semester: query.semester } : {}),
+      ...(query.search ? {
+        OR: [
+          { student: { user: { fullName: { contains: query.search, mode: 'insensitive' } } } },
+          { student: { nis: { contains: query.search, mode: 'insensitive' } } },
+          { class: { name: { contains: query.search, mode: 'insensitive' } } },
+        ],
+      } : {}),
     };
+    if (isKaprogScopedReader(user) && query.classId) {
+      await assertClassInKaprogScope(
+        this.prisma,
+        query.classId,
+        await resolveActiveKaprogMajorScope(this.prisma, user),
+      );
+    }
     if (
       !this.isElevated(user) &&
       (user.roles.includes('SISWA') || user.roles.includes('ORANG_TUA'))
@@ -120,7 +206,7 @@ export class ReportCardsService {
     }
 
     const skip = (query.page - 1) * query.limit;
-    const [data, total] = await Promise.all([
+    const [data, total, manageableClassIds] = await Promise.all([
       this.prisma.reportCard.findMany({
         where,
         orderBy: [{ class: { name: 'asc' } }, { student: { nis: 'asc' } }],
@@ -129,98 +215,147 @@ export class ReportCardsService {
         select: REPORT_SELECT,
       }),
       this.prisma.reportCard.count({ where }),
+      this.draftManagerClassIds(user),
     ]);
-    return { data, total, page: query.page, limit: query.limit };
+    return {
+      data: data.map((item) => ({
+        ...item,
+        canManageDraft: manageableClassIds === null || manageableClassIds.has(item.classId),
+      })),
+      total,
+      page: query.page,
+      limit: query.limit,
+    };
   }
 
   /** Generate rapor massal satu kelas — idempoten (yang sudah ada dilewati). */
-  async generate(dto: GenerateReportsDto) {
-    const kelas = await this.prisma.class.findUnique({
-      where: { id: dto.classId },
-      select: { id: true, students: { where: { status: 'active' }, select: { id: true } } },
-    });
-    if (!kelas) throw new NotFoundException('Kelas tidak ditemukan');
-    if (kelas.students.length === 0) {
-      throw new BadRequestException('Kelas tidak memiliki siswa aktif');
-    }
+  async generate(dto: GenerateReportsDto, user?: AuthUser) {
+    if (user) await this.assertDraftManager(dto.classId, user);
+    return this.prisma.$transaction(async (tx) => {
+      const lockKey = `${dto.classId}:${dto.academicYear}:${dto.semester}`;
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('report-card-generate'), hashtext(${lockKey}))`,
+      );
+      const kelas = await tx.class.findUnique({
+        where: { id: dto.classId },
+        select: {
+          id: true,
+          name: true,
+          academicYear: true,
+          teacher: { select: { user: { select: { fullName: true } } } },
+          students: {
+            where: { status: 'active', deletedAt: null },
+            select: { id: true, nis: true, user: { select: { fullName: true } } },
+          },
+        },
+      });
+      if (!kelas) throw new NotFoundException('Kelas tidak ditemukan');
+      if (kelas.academicYear !== dto.academicYear) {
+        throw new BadRequestException('Tahun ajaran rapor harus sama dengan tahun ajaran kelas');
+      }
+      if (kelas.students.length === 0) {
+        throw new BadRequestException('Kelas tidak memiliki siswa aktif');
+      }
 
-    const existing = await this.prisma.reportCard.findMany({
-      where: {
-        academicYear: dto.academicYear,
-        semester: dto.semester,
-        studentId: { in: kelas.students.map((s) => s.id) },
-      },
-      select: { studentId: true },
-    });
-    const existingIds = new Set(existing.map((e) => e.studentId));
-    const targets = kelas.students.filter((s) => !existingIds.has(s.id));
+      const existing = await tx.reportCard.findMany({
+        where: {
+          academicYear: dto.academicYear,
+          semester: dto.semester,
+          studentId: { in: kelas.students.map((student) => student.id) },
+        },
+        select: { id: true, studentId: true, status: true },
+      });
+      const existingByStudent = new Map(existing.map((item) => [item.studentId, item]));
 
-    let generated = 0;
-    for (const s of targets) {
-      const [grades, attendance] = await Promise.all([
-        this.buildGradeSnapshot(s.id, dto.academicYear, dto.semester),
-        this.buildAttendanceSnapshot(s.id, dto.classId),
-      ]);
-      await this.prisma.reportCard.create({
-        data: {
-          studentId: s.id,
+      let generated = 0;
+      let refreshed = 0;
+      let skipped = 0;
+      for (const student of kelas.students) {
+        const current = existingByStudent.get(student.id);
+        if (current && current.status !== 'draft') {
+          skipped++;
+          continue;
+        }
+        const [grades, attendance] = await Promise.all([
+          this.buildGradeSnapshot(tx, student.id, dto.classId, dto.academicYear, dto.semester),
+          this.buildAttendanceSnapshot(tx, student.id, dto.classId, dto.academicYear, dto.semester),
+        ]);
+        const data = {
+          studentId: student.id,
           classId: dto.classId,
           academicYear: dto.academicYear,
           semester: dto.semester,
           grades: grades as unknown as Prisma.InputJsonValue,
           attendance: attendance as Prisma.InputJsonValue,
-        },
-      });
-      generated++;
-    }
+          studentNameSnapshot: student.user.fullName,
+          studentNisSnapshot: student.nis,
+          classNameSnapshot: kelas.name,
+          homeroomTeacherNameSnapshot: kelas.teacher?.user.fullName ?? null,
+        };
+        if (current) {
+          const changed = await tx.reportCard.updateMany({
+            where: { id: current.id, status: 'draft' },
+            data,
+          });
+          if (changed.count === 1) refreshed++;
+          else skipped++;
+        } else {
+          await tx.reportCard.create({ data });
+          generated++;
+        }
+      }
 
-    return { generated, skipped: existingIds.size, totalStudents: kelas.students.length };
+      return { generated, refreshed, skipped, totalStudents: kelas.students.length };
+    });
   }
 
   private async buildGradeSnapshot(
+    db: ReportSnapshotDb,
     studentId: string,
+    classId: string,
     academicYear: string,
     semester: number,
   ): Promise<SubjectSnapshot[]> {
-    const grades = await this.prisma.grade.findMany({
-      where: { studentId, academicYear, semester },
+    const grades = await db.grade.findMany({
+      where: { studentId, academicYear, semester, assignment: { classId } },
       select: { score: true, type: true, assignment: { select: { subject: true } } },
     });
 
-    const bySubject = new Map<string, { scores: number[]; byType: Map<string, number[]> }>();
+    const bySubject = new Map<string, { count: number; byType: Map<string, number[]> }>();
     for (const g of grades) {
       const subject = g.assignment.subject;
       const entry =
         bySubject.get(subject) ??
-        { scores: [] as number[], byType: new Map<string, number[]>() };
+        { count: 0, byType: new Map<string, number[]>() };
       const score = Number(g.score);
-      entry.scores.push(score);
+      entry.count++;
       const typeArr = entry.byType.get(g.type) ?? [];
       typeArr.push(score);
       entry.byType.set(g.type, typeArr);
       bySubject.set(subject, entry);
     }
 
-    const avg = (arr: number[]) =>
-      Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 100) / 100;
-
     return [...bySubject.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([subject, e]) => ({
         subject,
-        count: e.scores.length,
-        average: avg(e.scores),
-        byType: Object.fromEntries([...e.byType.entries()].map(([t, arr]) => [t, avg(arr)])),
+        count: e.count,
+        average: calculateWeightedFinalScore(e.byType),
+        byType: Object.fromEntries([...e.byType.entries()].map(([type, scores]) => [type, averageScores(scores)])),
       }));
   }
 
   private async buildAttendanceSnapshot(
+    db: ReportSnapshotDb,
     studentId: string,
     classId: string,
+    academicYear: string,
+    semester: number,
   ): Promise<Record<string, number>> {
-    const grouped = await this.prisma.attendance.groupBy({
+    const { from, to } = this.semesterDateRange(academicYear, semester);
+    const grouped = await db.attendance.groupBy({
       by: ['status'],
-      where: { studentId, classId },
+      where: { studentId, classId, date: { gte: from, lte: to } },
       _count: { _all: true },
     });
     const result: Record<string, number> = { hadir: 0, izin: 0, sakit: 0, alpha: 0 };
@@ -228,8 +363,26 @@ export class ReportCardsService {
     return result;
   }
 
+  private semesterDateRange(academicYear: string, semester: number): { from: Date; to: Date } {
+    const match = /^(\d{4})\/(\d{4})$/.exec(academicYear);
+    if (!match || Number(match[2]) !== Number(match[1]) + 1 || ![1, 2].includes(semester)) {
+      throw new BadRequestException('Tahun ajaran atau semester tidak valid');
+    }
+    const firstYear = Number(match[1]);
+    const secondYear = Number(match[2]);
+    return semester === 1
+      ? { from: new Date(Date.UTC(firstYear, 6, 1)), to: new Date(Date.UTC(firstYear, 11, 31, 23, 59, 59, 999)) }
+      : { from: new Date(Date.UTC(secondYear, 0, 1)), to: new Date(Date.UTC(secondYear, 5, 30, 23, 59, 59, 999)) };
+  }
+
   /** Transisi status sesuai pipeline; aksi tidak sah → 409 dengan pesan jelas. */
-  async transition(id: string, dto: TransitionDto, _user: AuthUser) {
+  async transition(id: string, dto: TransitionDto, user: AuthUser) {
+    await this.assertTransitionAuthority(dto.action, user);
+    const actor = await this.prisma.user.findUnique({
+      where: { keycloakId: user.keycloakId },
+      select: { fullName: true },
+    });
+    const actorName = actor?.fullName ?? user.username;
     const existing = await this.prisma.reportCard.findUnique({
       where: { id },
       select: { id: true, status: true, studentId: true, academicYear: true, semester: true },
@@ -243,13 +396,59 @@ export class ReportCardsService {
       );
     }
 
-    const updated = await this.prisma.reportCard.update({
-      where: { id },
-      data: {
+    const updateData: Prisma.ReportCardUpdateManyMutationInput = {
         status: t.to,
-        ...(t.stamp ? { [t.stamp]: new Date() } : {}),
-      },
-      select: REPORT_SELECT,
+        ...(dto.action === 'check' ? {
+          checkedAt: new Date(),
+          checkedBy: user.keycloakId,
+          checkedByName: actorName,
+          returnedAt: null,
+          returnedBy: null,
+          returnedByName: null,
+          returnReason: null,
+        } : {}),
+        ...(dto.action === 'return' ? {
+          checkedAt: null,
+          checkedBy: null,
+          checkedByName: null,
+          returnedAt: new Date(),
+          returnedBy: user.keycloakId,
+          returnedByName: actorName,
+          returnReason: dto.reason,
+        } : {}),
+        ...(dto.action === 'publish' ? {
+          publishedAt: new Date(),
+          publishedBy: user.keycloakId,
+          publishedByName: actorName,
+        } : {}),
+        ...(dto.action === 'distribute' ? {
+          distributedAt: new Date(),
+          distributedBy: user.keycloakId,
+          distributedByName: actorName,
+        } : {}),
+    };
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const changed = await tx.reportCard.updateMany({
+        where: { id, status: existing.status },
+        data: updateData,
+      });
+      if (changed.count !== 1) {
+        throw new ConflictException('Status rapor berubah. Muat ulang data sebelum mengambil keputusan.');
+      }
+      await tx.reportCardStatusEvent.create({
+        data: {
+          reportCardId: id,
+          action: dto.action,
+          fromStatus: existing.status,
+          toStatus: t.to,
+          actorId: user.keycloakId,
+          actorName,
+          reason: dto.reason ?? null,
+        },
+      });
+      const result = await tx.reportCard.findUnique({ where: { id }, select: REPORT_SELECT });
+      if (!result) throw new NotFoundException('Rapor tidak ditemukan setelah transisi');
+      return result;
     });
 
     if (dto.action === 'distribute') {
@@ -263,219 +462,265 @@ export class ReportCardsService {
     return updated;
   }
 
-  /** Catatan wali kelas — hanya saat draft (sebelum diperiksa). */
-  async updateNotes(id: string, dto: UpdateNotesDto) {
+  private async assertTransitionAuthority(action: TransitionDto['action'], user: AuthUser): Promise<void> {
+    const requiredPermission = action === 'check' || action === 'return'
+      ? 'report.review'
+      : action === 'publish'
+        ? 'report.publish'
+        : 'report.distribute';
+    if (!await this.permissions.hasPermission(user.keycloakId, user.roles, requiredPermission)) {
+      throw new ForbiddenException(`Permission '${requiredPermission}' diperlukan untuk aksi ini`);
+    }
+
+    const isSuperAdmin = user.roles.includes('SUPER_ADMIN');
+    if (isSuperAdmin) {
+      if (action === 'publish' || action === 'distribute') return;
+      throw new ForbiddenException('Pemeriksaan dan pengembalian rapor hanya untuk Waka Kurikulum');
+    }
+
+    const activePositions = await this.permissions.getActivePositionCodes(user.keycloakId);
+    const isCurriculumDeputy = activePositions.has('WAKA_KURIKULUM');
+    const isPrincipal = activePositions.has('KEPALA_SEKOLAH');
+    const isAdministration = user.roles.includes('TATA_USAHA');
+    const allowed = action === 'check' || action === 'return'
+      ? isCurriculumDeputy
+      : action === 'publish'
+        ? isPrincipal
+        : isPrincipal || isAdministration;
+    if (!allowed) {
+      throw new ForbiddenException(`Aktor tidak berwenang menjalankan aksi '${action}' pada rapor`);
+    }
+  }
+
+  /** Administrative recovery is isolated from the pedagogical workflow. */
+  async recover(id: string, dto: RecoverReportDto, user: AuthUser) {
+    if (!user.roles.includes('SUPER_ADMIN')) {
+      throw new ForbiddenException('Pemulihan rapor hanya untuk Super Admin');
+    }
+    const actor = await this.prisma.user.findUnique({
+      where: { keycloakId: user.keycloakId },
+      select: { fullName: true },
+    });
+    const actorName = actor?.fullName ?? user.username;
     const existing = await this.prisma.reportCard.findUnique({
       where: { id },
       select: { id: true, status: true },
     });
     if (!existing) throw new NotFoundException('Rapor tidak ditemukan');
+    if (existing.status === 'draft') {
+      throw new ConflictException('Rapor sudah berstatus draft dan tidak memerlukan pemulihan');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const changed = await tx.reportCard.updateMany({
+        where: { id, status: existing.status },
+        data: {
+          status: 'draft',
+          checkedAt: null,
+          checkedBy: null,
+          checkedByName: null,
+          returnedAt: null,
+          returnedBy: null,
+          returnedByName: null,
+          returnReason: null,
+          publishedAt: null,
+          publishedBy: null,
+          publishedByName: null,
+          distributedAt: null,
+          distributedBy: null,
+          distributedByName: null,
+        },
+      });
+      if (changed.count !== 1) {
+        throw new ConflictException('Status rapor berubah. Muat ulang sebelum melakukan pemulihan.');
+      }
+      await tx.reportCardStatusEvent.create({
+        data: {
+          reportCardId: id,
+          action: 'recover',
+          fromStatus: existing.status,
+          toStatus: 'draft',
+          actorId: user.keycloakId,
+          actorName,
+          reason: dto.reason,
+          incidentReference: dto.incidentReference,
+        },
+      });
+      const recovered = await tx.reportCard.findUnique({ where: { id }, select: REPORT_SELECT });
+      if (!recovered) throw new NotFoundException('Rapor tidak ditemukan setelah pemulihan');
+      return recovered;
+    });
+  }
+
+  /** Catatan wali kelas — hanya saat draft (sebelum diperiksa). */
+  async updateNotes(id: string, dto: UpdateNotesDto, user?: AuthUser) {
+    if (user) this.assertRoutineReportOperator(user);
+    const existing = await this.prisma.reportCard.findUnique({
+      where: { id },
+      select: { id: true, status: true, classId: true },
+    });
+    if (!existing) throw new NotFoundException('Rapor tidak ditemukan');
+    if (user) await this.assertDraftManager(existing.classId, user);
     if (existing.status !== 'draft') {
       throw new ConflictException('Catatan hanya bisa diubah saat status draft');
     }
-    return this.prisma.reportCard.update({
-      where: { id },
-      data: { notes: dto.notes },
-      select: REPORT_SELECT,
+    const nextUpdatedAt = new Date(Math.max(Date.now(), dto.expectedUpdatedAt.getTime() + 1));
+    const changed = await this.prisma.reportCard.updateMany({
+      where: { id, status: 'draft', updatedAt: dto.expectedUpdatedAt },
+      data: { notes: dto.notes, updatedAt: nextUpdatedAt },
     });
+    if (changed.count !== 1) {
+      throw new ConflictException('Rapor telah berubah. Muat ulang sebelum menyimpan catatan.');
+    }
+    const updated = await this.prisma.reportCard.findUnique({ where: { id }, select: REPORT_SELECT });
+    if (!updated) throw new NotFoundException('Rapor tidak ditemukan setelah catatan diperbarui');
+    return updated;
+  }
+
+  private async assertDraftManager(classId: string, user: AuthUser): Promise<void> {
+    this.assertRoutineReportOperator(user);
+    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+    const waliClass = await this.prisma.class.findFirst({
+      where: { id: classId, teacherId, isActive: true },
+      select: { id: true },
+    });
+    if (!waliClass) {
+      throw new ForbiddenException('Hanya wali kelas yang dapat menyiapkan draft rapor kelas ini');
+    }
+  }
+
+  private assertRoutineReportOperator(user: AuthUser): void {
+    if (user.roles.includes('SUPER_ADMIN')) {
+      throw new ForbiddenException('Super Admin hanya dapat memakai jalur pemulihan administratif rapor');
+    }
+    if (!user.roles.includes('GURU')) throw new ForbiddenException('Akses ditolak');
   }
 
   // ── Rapor Section Endpoints (P23) ──────────────────────────────────────
 
-  /** Verify ownership: SISWA → own data, ORTU → child data */
-  private async verifyAccess(
-    studentId: string,
-    user: AuthUser,
-  ): Promise<void> {
-    if (isElevated(user)) return;
-    if (user.roles.includes('GURU')) {
-      const student = await this.prisma.student.findFirst({
-        where: { id: studentId, deletedAt: null },
-        select: { classId: true },
-      });
-      if (!student) throw new NotFoundException('Siswa tidak ditemukan');
-      const classIds = await resolveGuruClassIds(this.prisma, user.keycloakId);
-      if (!student.classId || !classIds.includes(student.classId)) {
-        throw new ForbiddenException('Guru hanya bisa mengakses rapor siswa pada kelas yang diampu');
-      }
-      return;
-    }
-    if (user.roles.includes('SISWA')) {
-      const ownId = await resolveSiswaId(this.prisma, user.keycloakId);
-      if (ownId !== studentId) throw new ForbiddenException('Akses ditolak — bukan data Anda');
-      return;
-    }
-    if (user.roles.includes('ORANG_TUA')) {
-      const userId = await resolveUserId(this.prisma, user.keycloakId);
-      const child = await this.prisma.student.findFirst({
-        where: { id: studentId, parentId: userId, deletedAt: null },
-        select: { id: true },
-      });
-      if (!child) throw new ForbiddenException('Siswa ini bukan anak Anda');
-      return;
-    }
-  }
-
   /** Section B — Muatan Lokal grades for a student */
-  private async assertFamilyDistributedSection(
+  private async findOfficialSectionSnapshot(
     studentId: string,
     year: string,
     semester: number,
     user: AuthUser,
-  ): Promise<void> {
-    if (
-      isElevated(user) ||
-      user.roles.includes('GURU') ||
-      (!user.roles.includes('SISWA') && !user.roles.includes('ORANG_TUA'))
-    ) {
-      return;
-    }
-    const distributed = await this.prisma.reportCard.findFirst({
+  ) {
+    const ownership = await this.ownershipWhere(user);
+    const family = user.roles.includes('SISWA') || user.roles.includes('ORANG_TUA');
+    const report = await this.prisma.reportCard.findFirst({
       where: {
-        studentId,
-        academicYear: year,
-        semester,
-        status: 'distributed',
+        AND: [
+          ownership,
+          {
+            studentId,
+            academicYear: year,
+            semester,
+            ...(family ? { status: 'distributed' as const } : {}),
+          },
+        ],
       },
-      select: { id: true },
+      select: {
+        id: true,
+        status: true,
+        grades: true,
+        attendance: true,
+        studentNameSnapshot: true,
+        studentNisSnapshot: true,
+        classNameSnapshot: true,
+        homeroomTeacherNameSnapshot: true,
+        publishedAt: true,
+        publishedByName: true,
+      },
     });
-    if (!distributed) {
-      throw new ForbiddenException('Rapor belum dibagikan untuk periode ini');
+    if (!report) {
+      throw new ForbiddenException(
+        family ? 'Rapor belum dibagikan untuk periode ini' : 'Rapor tidak tersedia dalam lingkup akses Anda',
+      );
     }
+    return report;
+  }
+
+  private officialSectionsFromSnapshot(
+    report: Awaited<ReturnType<ReportCardsService['findOfficialSectionSnapshot']>>,
+    year: string,
+    semester: number,
+  ) {
+    const grades = Array.isArray(report.grades)
+      ? (report.grades as unknown as SubjectSnapshot[]).filter((item) =>
+          typeof item?.subject === 'string' && Number.isFinite(item.average))
+      : [];
+    const attendanceValue = report.attendance && typeof report.attendance === 'object' && !Array.isArray(report.attendance)
+      ? report.attendance as Record<string, unknown>
+      : {};
+    const attendance = {
+      hadir: Number(attendanceValue.hadir ?? 0),
+      izin: Number(attendanceValue.izin ?? 0),
+      sakit: Number(attendanceValue.sakit ?? 0),
+      alpha: Number(attendanceValue.alpha ?? 0),
+    };
+    const total = attendance.hadir + attendance.izin + attendance.sakit + attendance.alpha;
+    const scores = grades.map((grade) => grade.average);
+    const average = scores.length > 0
+      ? scores.reduce((sum, score) => sum + score, 0) / scores.length
+      : null;
+    const academicLevel = average === null
+      ? '-'
+      : average >= 85 ? 'Sangat Baik' : average >= 75 ? 'Baik' : average >= 60 ? 'Cukup' : 'Perlu Bimbingan';
+    const description = average === null
+      ? 'Belum ada data nilai pada snapshot rapor ini.'
+      : `Siswa menunjukkan perkembangan akademik ${academicLevel.toLowerCase()} dengan rata-rata nilai akhir ${Math.round(average)}. Semangat belajar perlu dipertahankan dan ditingkatkan untuk mencapai hasil yang lebih optimal.`;
+
+    return {
+      reportCardId: report.id,
+      snapshotStatus: report.status,
+      identity: {
+        studentName: report.studentNameSnapshot ?? '-',
+        nis: report.studentNisSnapshot ?? '-',
+      },
+      muatanLokal: {
+        subjects: grades
+          .filter((grade) => grade.subject.toLowerCase().includes('muatan lokal'))
+          .map((grade) => ({
+            name: grade.subject,
+            na: grade.average,
+            kktp: 75,
+            predikat: grade.average >= 75 ? 'Tuntas' : 'Belum Tuntas',
+          })),
+      },
+      attendance: { ...attendance, total },
+      development: { description, spiritual: '-', social: '-', academic: academicLevel },
+      approval: {
+        homeroomTeacher: report.homeroomTeacherNameSnapshot ?? '-',
+        principal: report.publishedByName ?? '-',
+        approvedAt: report.publishedAt,
+        schoolYear: year,
+        semester,
+        className: report.classNameSnapshot ?? '-',
+      },
+    };
+  }
+
+  async findOfficialSections(studentId: string, year: string, semester: number, user: AuthUser) {
+    const report = await this.findOfficialSectionSnapshot(studentId, year, semester, user);
+    return this.officialSectionsFromSnapshot(report, year, semester);
   }
 
   async findMuatanLokal(studentId: string, year: string, semester: number, user: AuthUser) {
-    await this.verifyAccess(studentId, user);
-    await this.assertFamilyDistributedSection(studentId, year, semester, user);
-    const grades = await this.prisma.grade.findMany({
-      where: {
-        studentId,
-        academicYear: year,
-        semester,
-        assignment: { subject: { contains: 'Muatan Lokal', mode: 'insensitive' } },
-      },
-      select: { score: true, type: true, assignment: { select: { subject: true } } },
-    });
-    const bySubject = new Map<string, { scores: number[]; count: number }>();
-    for (const g of grades) {
-      const subjectName = g.assignment?.subject ?? 'Unknown';
-      const entry = bySubject.get(subjectName) ?? { scores: [], count: 0 };
-      entry.scores.push(Number(g.score));
-      entry.count++;
-      bySubject.set(subjectName, entry);
-    }
-    return {
-      subjects: Array.from(bySubject.entries()).map(([name, data]) => ({
-        name,
-        na: data.scores.length > 0 ? Math.round(data.scores.reduce((a: number, b: number) => a + b, 0) / data.scores.length) : 0,
-        kktp: 75,
-        predikat: data.scores.length > 0 && (data.scores.reduce((a: number, b: number) => a + b, 0) / data.scores.length) >= 75 ? 'Tuntas' : 'Belum Tuntas',
-      })),
-    };
+    return (await this.findOfficialSections(studentId, year, semester, user)).muatanLokal;
   }
 
   /** Section D — Ketidakhadiran summary for a student */
   async findAttendanceSummary(studentId: string, year: string, semester: number, user: AuthUser) {
-    await this.verifyAccess(studentId, user);
-    await this.assertFamilyDistributedSection(studentId, year, semester, user);
-    // Build date range from year + semester (semester 1 = Jul-Dec, semester 2 = Jan-Jun)
-    const startDate = semester === 1 ? `${year}-07-01` : `${year}-01-01`;
-    const endDate = semester === 1 ? `${year}-12-31` : `${year}-06-30`;
-    const records = await this.prisma.attendance.findMany({
-      where: {
-        studentId,
-        date: { gte: startDate, lte: endDate },
-      },
-      select: { status: true },
-    });
-    const summary = { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: records.length };
-    for (const r of records) {
-      if (r.status === 'hadir') summary.hadir++;
-      else if (r.status === 'izin') summary.izin++;
-      else if (r.status === 'sakit') summary.sakit++;
-      else if (r.status === 'alpha') summary.alpha++;
-    }
-    return summary;
+    return (await this.findOfficialSections(studentId, year, semester, user)).attendance;
   }
 
   /** Section F — Deskripsi Perkembangan (auto-generated from grade trends) */
   async findDevelopmentDescription(studentId: string, year: string, semester: number, user: AuthUser) {
-    await this.verifyAccess(studentId, user);
-    await this.assertFamilyDistributedSection(studentId, year, semester, user);
-    const grades = await this.prisma.grade.findMany({
-      where: { studentId, academicYear: year, semester },
-      select: { score: true },
-    });
-    if (grades.length === 0) {
-      return { description: 'Belum ada data nilai untuk periode ini.', spiritual: '-', social: '-', academic: '-' };
-    }
-    const scores = grades.map((g) => Number(g.score));
-    const avg = scores.reduce((sum: number, s: number) => sum + s, 0) / scores.length;
-    const academicLevel = avg >= 85 ? 'Sangat Baik' : avg >= 75 ? 'Baik' : avg >= 60 ? 'Cukup' : 'Perlu Bimbingan';
-    const description = `Siswa menunjukkan perkembangan akademik ${academicLevel.toLowerCase()} dengan rata-rata nilai ${Math.round(avg)}. ` +
-      `Semangat belajar perlu dipertahankan dan ditingkatkan untuk mencapai hasil yang lebih optimal.`;
-    return {
-      description,
-      spiritual: 'Baik',
-      social: 'Baik',
-      academic: academicLevel,
-    };
+    return (await this.findOfficialSections(studentId, year, semester, user)).development;
   }
 
   /** Section G — Pengesahan (homeroom teacher + principal info) */
   async findApproval(studentId: string, year: string, semester: number, user: AuthUser) {
-    await this.verifyAccess(studentId, user);
-    await this.assertFamilyDistributedSection(studentId, year, semester, user);
-    // Get student's class and homeroom teacher (wali kelas)
-    const student = await this.prisma.student.findUnique({
-      where: { id: studentId },
-      select: {
-        class: {
-          select: {
-            id: true, name: true,
-            // homeroom teacher via teaching assignment or class relation
-          },
-        },
-      },
-    });
-    // Find wali kelas: first teacher assigned to this class
-    let homeroomTeacher: string | null = null;
-    if (student?.class) {
-      const assignment = await this.prisma.teachingAssignment.findFirst({
-        where: { classId: student.class.id },
-        select: { teacherId: true },
-      });
-      if (assignment?.teacherId) {
-        const teacher = await this.prisma.teacher.findUnique({
-          where: { id: assignment.teacherId },
-          select: { user: { select: { fullName: true } } },
-        });
-        homeroomTeacher = teacher?.user?.fullName ?? null;
-      }
-    }
-    const today = new Date();
-    const principal = await this.prisma.appointment.findFirst({
-      where: {
-        status: 'ACTIVE',
-        position: { code: 'KEPALA_SEKOLAH' },
-        academicYear: { code: year },
-        effectiveFrom: { lte: today },
-        OR: [
-          { effectiveUntil: null },
-          { effectiveUntil: { gte: today } },
-        ],
-      },
-      select: {
-        staff: { select: { user: { select: { fullName: true } } } },
-      },
-    });
-    return {
-      homeroomTeacher: homeroomTeacher ?? '-',
-      principal: principal?.staff.user.fullName ?? '-',
-      approvedAt: null,
-      schoolYear: year,
-      semester,
-      className: student?.class?.name ?? '-',
-    };
+    return (await this.findOfficialSections(studentId, year, semester, user)).approval;
   }
 }

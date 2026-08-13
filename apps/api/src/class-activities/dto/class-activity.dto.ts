@@ -6,14 +6,16 @@ export const CreateActivitySchema = z.object({
   title: z.string().trim().min(3).max(255),
   description: z.string().trim().max(5000).nullish(),
   category: z.enum(['pembelajaran', 'ulangan', 'praktikum', 'kegiatan', 'lainnya']).default('pembelajaran'),
-  photoUrl: z.string().url().max(2000).nullish(),
-});
+}).strict('Gunakan endpoint media privat untuk mengunggah foto kegiatan');
 export type CreateActivityDto = z.infer<typeof CreateActivitySchema>;
 
-export const UpdateActivitySchema = CreateActivitySchema.partial();
+export const UpdateActivitySchema = CreateActivitySchema.partial().strict(
+  'Gunakan endpoint media privat untuk mengubah foto kegiatan',
+);
 export type UpdateActivityDto = z.infer<typeof UpdateActivitySchema>;
 
 export const ListActivitiesQuerySchema = z.object({
+  search: z.string().trim().max(100).optional(),
   classId: z.string().uuid().optional(),
   category: z.enum(['pembelajaran', 'ulangan', 'praktikum', 'kegiatan', 'lainnya']).optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),

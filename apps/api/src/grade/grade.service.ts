@@ -16,6 +16,7 @@
 // =============================================================================
 
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -107,7 +108,7 @@ export class GradeService {
     const assignmentFilter: Prisma.TeachingAssignmentWhereInput = {};
     if (query.classId) assignmentFilter.classId = query.classId;
 
-    if (isGuruOnly(user)) {
+    if (isGuruOnly(user) && !user.roles.includes('WAKA_KURIKULUM')) {
       // GURU: hanya nilai dari assignment yang dipegang sendiri
       const myTeacherId = await resolveTeacherId(this.prisma, user.keycloakId);
       assignmentFilter.teacherId = myTeacherId;
@@ -148,22 +149,42 @@ export class GradeService {
 
     // 2. Pastikan guru punya profil teacher dan assignment-nya milik dia
     const myTeacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+    const activeYear = await this.prisma.academicYear.findFirst({
+      where: { isActive: true },
+      select: { code: true },
+    });
+    if (!activeYear) throw new ConflictException('Tidak ada tahun ajaran aktif');
 
     const assignment = await this.prisma.teachingAssignment.findUnique({
       where: { id: dto.assignmentId },
-      select: { id: true, teacherId: true, academicYear: true },
+      select: {
+        id: true,
+        teacherId: true,
+        classId: true,
+        academicYear: true,
+        class: { select: { isActive: true } },
+      },
     });
     if (!assignment) throw new NotFoundException('TeachingAssignment tidak ditemukan');
     if (assignment.teacherId !== myTeacherId) {
       throw new ForbiddenException('Guru hanya bisa input nilai untuk assignment sendiri');
     }
+    if (assignment.academicYear !== activeYear.code || !assignment.class.isActive) {
+      throw new BadRequestException('Nilai hanya dapat diinput untuk penugasan tahun ajaran aktif');
+    }
 
     // 3. Pastikan siswa terdaftar
     const student = await this.prisma.student.findUnique({
       where: { id: dto.studentId },
-      select: { id: true },
+      select: { id: true, classId: true, status: true, deletedAt: true },
     });
     if (!student) throw new NotFoundException('Siswa tidak ditemukan');
+    if (student.deletedAt || student.status !== 'active') {
+      throw new BadRequestException('Nilai hanya dapat diinput untuk siswa aktif');
+    }
+    if (student.classId !== assignment.classId) {
+      throw new BadRequestException('Siswa tidak terdaftar pada kelas penugasan ini');
+    }
 
     // 4. DOBEL GUARD: UTS/UAS hanya boleh satu per (siswa, assignment, semester, type)
     if (dto.type === 'uts' || dto.type === 'uas') {

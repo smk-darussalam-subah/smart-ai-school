@@ -462,6 +462,25 @@ model Attendance {
   @@schema("academic")
 }
 
+model ReportCardStatusEvent {
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportCardId String       @map("report_card_id") @db.Uuid
+  action       String       @db.VarChar(20)
+  fromStatus   ReportStatus @map("from_status")
+  toStatus     ReportStatus @map("to_status")
+  actorId      String       @map("actor_id") @db.VarChar(64)
+  actorName    String       @map("actor_name") @db.VarChar(100)
+  reason       String?      @db.Text
+  incidentReference String? @map("incident_reference") @db.VarChar(100)
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  reportCard ReportCard @relation(fields: [reportCardId], references: [id], onDelete: Cascade)
+
+  @@index([reportCardId, createdAt])
+  @@map("report_card_status_events")
+  @@schema("academic")
+}
+
 enum AttendanceStatus {
   hadir
   izin
@@ -516,28 +535,39 @@ model Schedule {
 
 
 // RPP — Rencana Pelaksanaan Pembelajaran (referensi KamilEdu Modul 11)
-// Pipeline: draft → submitted → approved | revision (revisi → edit → submitted lagi).
+// Pipeline: draft -> submitted -> curriculum_reviewed -> approved;
+// revision returns the module to its author before either approval stage.
 // fileUrl nullable (File Storage API just-in-time); content = isi RPP teks/markdown.
 // reviewerId/actor = Keycloak sub (pola AuditLog — tanpa FK lintas-schema).
 model Rpp {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  teacherId    String    @map("teacher_id") @db.Uuid
-  classId      String?   @map("class_id") @db.Uuid
-  subject      String    @db.VarChar(100)
-  title        String    @db.VarChar(255)
-  content      String?   @db.Text   // ringkasan/preview teks
-  body         Json?     @db.JsonB  // Modul Ajar terstruktur (Kurikulum Merdeka): CP/TP/ATP/profil/sarana/kegiatan/asesmen/dst
-  fileUrl      String?   @map("file_url") @db.Text
-  status       RppStatus @default(draft)
-  reviewerId   String?   @map("reviewer_id") @db.VarChar(64)
-  reviewerName String?   @map("reviewer_name") @db.VarChar(100)
-  reviewNote   String?   @map("review_note") @db.Text
-  submittedAt  DateTime? @map("submitted_at")
-  reviewedAt   DateTime? @map("reviewed_at")
-  academicYear String    @map("academic_year") @db.VarChar(9)
-  semester     Int
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teacherId              String    @map("teacher_id") @db.Uuid
+  classId                String?   @map("class_id") @db.Uuid
+  subject                String    @db.VarChar(100)
+  title                  String    @db.VarChar(255)
+  content                String?   @db.Text   // ringkasan/preview teks
+  body                   Json?     @db.JsonB  // Modul Ajar terstruktur (Kurikulum Merdeka): CP/TP/ATP/profil/sarana/kegiatan/asesmen/dst
+  fileUrl                String?   @map("file_url") @db.Text
+  status                 RppStatus @default(draft)
+  reviewerId             String?   @map("reviewer_id") @db.VarChar(64) // legacy compatibility
+  reviewerName           String?   @map("reviewer_name") @db.VarChar(100) // legacy compatibility
+  reviewNote             String?   @map("review_note") @db.Text // latest reviewer note
+  curriculumReviewerId   String?   @map("curriculum_reviewer_id") @db.VarChar(64)
+  curriculumReviewerName String?   @map("curriculum_reviewer_name") @db.VarChar(100)
+  curriculumReviewNote   String?   @map("curriculum_review_note") @db.Text
+  curriculumReviewedAt   DateTime? @map("curriculum_reviewed_at")
+  finalReviewerId        String?   @map("final_reviewer_id") @db.VarChar(64)
+  finalReviewerName      String?   @map("final_reviewer_name") @db.VarChar(100)
+  finalReviewNote        String?   @map("final_review_note") @db.Text
+  finalApprovedAt        DateTime? @map("final_approved_at")
+  submittedAt            DateTime? @map("submitted_at")
+  reviewedAt             DateTime? @map("reviewed_at") // legacy/latest decision timestamp
+  archivedAt             DateTime? @map("archived_at")
+  archivedBy             String?   @map("archived_by") @db.VarChar(64)
+  academicYear           String    @map("academic_year") @db.VarChar(9)
+  semester               Int
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at")
 
   teacher    Teacher     @relation(fields: [teacherId], references: [id])
   class      Class?      @relation(fields: [classId], references: [id])
@@ -552,6 +582,7 @@ model Rpp {
 enum RppStatus {
   draft
   submitted
+  curriculum_reviewed
   approved
   revision
 
@@ -739,14 +770,29 @@ model ReportCard {
   grades        Json         // SubjectSnapshot[]: {subject,count,average,byType}
   attendance    Json?        // {hadir,izin,sakit,alpha}
   notes         String?      @db.Text
+  studentNameSnapshot String? @map("student_name_snapshot") @db.VarChar(255)
+  studentNisSnapshot String?  @map("student_nis_snapshot") @db.VarChar(50)
+  classNameSnapshot String?   @map("class_name_snapshot") @db.VarChar(100)
+  homeroomTeacherNameSnapshot String? @map("homeroom_teacher_name_snapshot") @db.VarChar(255)
   generatedAt   DateTime     @default(now()) @map("generated_at")
   checkedAt     DateTime?    @map("checked_at")
+  checkedBy     String?      @map("checked_by") @db.VarChar(64)
+  checkedByName String?      @map("checked_by_name") @db.VarChar(100)
+  returnedAt    DateTime?    @map("returned_at")
+  returnedBy    String?      @map("returned_by") @db.VarChar(64)
+  returnedByName String?     @map("returned_by_name") @db.VarChar(100)
+  returnReason  String?      @map("return_reason") @db.Text
   publishedAt   DateTime?    @map("published_at")
+  publishedBy   String?      @map("published_by") @db.VarChar(64)
+  publishedByName String?    @map("published_by_name") @db.VarChar(100)
   distributedAt DateTime?    @map("distributed_at")
+  distributedBy String?      @map("distributed_by") @db.VarChar(64)
+  distributedByName String?  @map("distributed_by_name") @db.VarChar(100)
   updatedAt     DateTime     @default(now()) @updatedAt @map("updated_at")
 
   student Student @relation(fields: [studentId], references: [id])
   class   Class   @relation(fields: [classId], references: [id])
+  statusEvents ReportCardStatusEvent[]
 
   @@unique([studentId, academicYear, semester])
   @@index([classId, academicYear, semester])
