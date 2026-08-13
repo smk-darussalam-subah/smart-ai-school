@@ -393,7 +393,44 @@ describe('ReportCardsService', () => {
     await expect(service.findOfficialSections('s1', '2025/2026', 2, SISWA))
       .rejects.toThrow('Rapor belum dibagikan');
     expect(rcFindFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ studentId: 's1', status: 'distributed' }),
+      where: {
+        AND: [
+          { studentId: 's1' },
+          expect.objectContaining({ studentId: 's1', status: 'distributed' }),
+        ],
+      },
+    }));
+  });
+
+  it('bagian rapor siswa menginterseksikan studentId route dengan ownership', async () => {
+    studentFindFirst.mockResolvedValue({ id: 's1' });
+    rcFindFirst.mockResolvedValue(null);
+
+    await expect(service.findOfficialSections('s2', '2025/2026', 2, SISWA))
+      .rejects.toThrow('Rapor belum dibagikan');
+    expect(rcFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        AND: [
+          { studentId: 's1' },
+          expect.objectContaining({ studentId: 's2', status: 'distributed' }),
+        ],
+      },
+    }));
+  });
+
+  it('bagian rapor orang tua menginterseksikan studentId route dengan daftar anak', async () => {
+    userFindUnique.mockResolvedValue({ parent: [{ id: 'anak-1' }, { id: 'anak-2' }] });
+    rcFindFirst.mockResolvedValue(null);
+
+    await expect(service.findOfficialSections('anak-lain', '2025/2026', 2, ORTU))
+      .rejects.toThrow('Rapor belum dibagikan');
+    expect(rcFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        AND: [
+          { studentId: { in: ['anak-1', 'anak-2'] }, status: 'distributed' },
+          expect.objectContaining({ studentId: 'anak-lain', status: 'distributed' }),
+        ],
+      },
     }));
   });
 
