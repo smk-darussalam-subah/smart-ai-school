@@ -609,11 +609,15 @@ export class ReportCardsService {
     const family = user.roles.includes('SISWA') || user.roles.includes('ORANG_TUA');
     const report = await this.prisma.reportCard.findFirst({
       where: {
-        ...ownership,
-        studentId,
-        academicYear: year,
-        semester,
-        ...(family ? { status: 'distributed' as const } : {}),
+        AND: [
+          ownership,
+          {
+            studentId,
+            academicYear: year,
+            semester,
+            ...(family ? { status: 'distributed' as const } : {}),
+          },
+        ],
       },
       select: {
         id: true,
