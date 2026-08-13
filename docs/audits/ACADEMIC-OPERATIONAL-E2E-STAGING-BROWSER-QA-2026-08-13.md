@@ -11,8 +11,9 @@ Production promotion: **NOT PART OF THIS QA**
 - Initial staging promotion: PR #487, SHA `72fbd9590d7a38c2e9167826ccf1bf01b9df15b9`.
 - Report-section ownership fix: PR #488 and PR #489.
 - Staging media provisioning fix: PR #490 and PR #491.
-- Final tested staging SHA: `aeb72bff3b7c755118c3eee21c30c43905a42630`.
-- Final deployment run: `31677625244`, successful.
+- Production media provisioning preflight: PR #494 and PR #495.
+- Final tested staging SHA: `13ebd771f422c7876636f2773104d5eaa5f8e6a3`.
+- Final deployment run: `31682099794`, successful.
 - Production remained unchanged at `3b42efc38c71d5c79e5fea8b168efbbbc900e6de`.
 - `develop` and `staging` required approvals were temporarily changed from 1 to 0 only for authorized merges and restored to 1 after every merge.
 
@@ -145,6 +146,10 @@ Post-deploy proof:
 - Final API container reached healthy status.
 - Public staging API health and staging login returned 200.
 - Production API health and production login also returned 200 without production mutation.
+- Environment-specific media provisioning reused the staging credentials and
+  completed idempotently after being generalized for the production release path.
+- Production will use a distinct bucket, user, and bucket-scoped policy; the
+  production path was not executed during staging QA.
 
 ## Fixture Cleanup
 
