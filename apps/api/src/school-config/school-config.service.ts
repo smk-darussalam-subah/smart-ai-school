@@ -84,7 +84,11 @@ export class SchoolConfigService {
 
   async updateMajor(id: string, data: Record<string, unknown>) {
     try {
-      return await this.prisma.major.update({ where: { id }, data });
+      const updated = await this.prisma.major.update({ where: { id }, data });
+      // Major identity/activity participates in appointment authority. Clear all
+      // cached permission sets only after the database mutation succeeds.
+      this.permissionsService.invalidateAll();
+      return updated;
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code === 'P2025') throw new NotFoundException('Jurusan tidak ditemukan.');

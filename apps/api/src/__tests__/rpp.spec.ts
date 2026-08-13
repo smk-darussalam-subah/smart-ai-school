@@ -16,6 +16,7 @@ import { AuthUser } from '@smk/auth';
 import { RppController } from '../rpp/rpp.controller';
 import { RppService } from '../rpp/rpp.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { ReviewRppSchema, CreateRppSchema } from '../rpp/dto/rpp.dto';
 
 const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
@@ -23,6 +24,7 @@ const KS: AuthUser = { keycloakId: 'kc-ks', username: 'kepsek', roles: ['KEPALA_
 const SA: AuthUser = { keycloakId: 'kc-sa', username: 'admin', roles: ['SUPER_ADMIN'] } as AuthUser;
 // W3-4: WAKA_KURIKULUM dengan rpp.review kini dapat menyelesaikan review.
 const WAKA: AuthUser = { keycloakId: 'kc-waka', username: 'waka', roles: ['WAKA_KURIKULUM'] } as AuthUser;
+const KAPROG: AuthUser = { keycloakId: 'kc-kaprog', username: 'kaprog', roles: ['GURU', 'KAPROG'] } as AuthUser;
 
 describe('RppService', () => {
   let service: RppService;
@@ -34,27 +36,45 @@ describe('RppService', () => {
   const rppCount = jest.fn();
   const rppCreate = jest.fn();
   const rppUpdate = jest.fn();
+  const rppUpdateMany = jest.fn();
   const rppDelete = jest.fn();
+  const userFindUnique = jest.fn();
+  const academicYearFindMany = jest.fn();
+  const appointmentFindMany = jest.fn();
+  const classFindFirst = jest.fn();
+  const hasPermission = jest.fn();
 
   beforeEach(async () => {
-    [teacherFindFirst, teachingAssignmentFindFirst, rppFindFirst, rppFindUnique, rppFindMany, rppCount, rppCreate, rppUpdate, rppDelete]
+    [teacherFindFirst, teachingAssignmentFindFirst, rppFindFirst, rppFindUnique, rppFindMany, rppCount, rppCreate, rppUpdate, rppUpdateMany, rppDelete, userFindUnique, academicYearFindMany, appointmentFindMany, classFindFirst, hasPermission]
       .forEach((m) => m.mockReset());
     teacherFindFirst.mockResolvedValue({ id: 'teacher-1' });
     // W3-6: by default, the GURU has a matching assignment for class-1 / MTK / 2026/2027.
     teachingAssignmentFindFirst.mockResolvedValue({ id: 'ta-1' });
     rppCreate.mockImplementation((a: { data: Record<string, unknown> }) => Promise.resolve({ id: 'rpp-1', ...a.data }));
     rppUpdate.mockImplementation((a: { data: Record<string, unknown> }) => Promise.resolve({ id: 'rpp-1', ...a.data }));
+    rppUpdateMany.mockResolvedValue({ count: 1 });
+    rppFindUnique.mockResolvedValue({ id: 'rpp-1' });
+    hasPermission.mockResolvedValue(true);
 
     const prisma = {
       teacher: { findFirst: teacherFindFirst },
       teachingAssignment: { findFirst: teachingAssignmentFindFirst },
       rpp: {
         findFirst: rppFindFirst, findUnique: rppFindUnique, findMany: rppFindMany,
-        count: rppCount, create: rppCreate, update: rppUpdate, delete: rppDelete,
+        count: rppCount, create: rppCreate, update: rppUpdate, updateMany: rppUpdateMany, delete: rppDelete,
       },
+      user: { findUnique: userFindUnique },
+      academicYear: { findMany: academicYearFindMany },
+      appointment: { findMany: appointmentFindMany },
+      class: { findFirst: classFindFirst },
     };
     const module: TestingModule = await Test.createTestingModule({
-      providers: [RppService, { provide: PrismaService, useValue: prisma }, { provide: EventEmitter2, useValue: { emit: jest.fn() } }],
+      providers: [
+        RppService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        { provide: PermissionsService, useValue: { hasPermission } },
+      ],
     }).compile();
     service = module.get(RppService);
   });
@@ -99,6 +119,23 @@ describe('RppService', () => {
     await expect(service.findAll({ page: 1, limit: 20 }, siswa)).rejects.toThrow(ForbiddenException);
   });
 
+  it('findAll KAPROG dibatasi jurusan appointment aktif dan classId terlarang fail-closed', async () => {
+    userFindUnique.mockResolvedValue({ id: 'u-kaprog', isActive: true, deletedAt: null });
+    academicYearFindMany.mockResolvedValue([{ id: 'ay-1', code: '2026/2027' }]);
+    appointmentFindMany.mockResolvedValue([{ majorId: 'major-1', major: { id: 'major-1', code: 'TKJ' } }]);
+    classFindFirst.mockResolvedValue(null);
+    rppFindMany.mockResolvedValue([]);
+    rppCount.mockResolvedValue(0);
+
+    await service.findAll({ page: 1, limit: 20 }, KAPROG);
+    expect(rppFindMany.mock.calls[0][0].where.class).toEqual(expect.objectContaining({
+      academicYear: '2026/2027',
+      majorCode: { in: ['TKJ'] },
+    }));
+    await expect(service.findAll({ classId: 'outside', page: 1, limit: 20 }, KAPROG))
+      .rejects.toThrow(ForbiddenException);
+  });
+
   it('update: status submitted → 409 (tak bisa edit saat menunggu review)', async () => {
     rppFindFirst.mockResolvedValue({ id: 'rpp-1', status: 'submitted' });
     await expect(service.update('rpp-1', { title: 'X' }, GURU)).rejects.toThrow(ConflictException);
@@ -107,23 +144,23 @@ describe('RppService', () => {
   it('submit: revision → submitted (siklus revisi); approved → 409', async () => {
     rppFindFirst.mockResolvedValue({ id: 'rpp-1', status: 'revision', content: 'isi', fileUrl: null });
     await service.submit('rpp-1', GURU);
-    expect(rppUpdate.mock.calls[0][0].data.status).toBe('submitted');
+    expect(rppUpdateMany.mock.calls[0][0].data.status).toBe('submitted');
 
     rppFindFirst.mockResolvedValue({ id: 'rpp-1', status: 'approved', content: 'isi', fileUrl: null });
     await expect(service.submit('rpp-1', GURU)).rejects.toThrow(ConflictException);
   });
 
-  it('review: hanya status submitted; jejak reviewer terisi', async () => {
-    rppFindUnique.mockResolvedValue({ id: 'rpp-1', status: 'submitted' });
+  it('review final hanya dari rekomendasi kurikulum; jejak reviewer terisi', async () => {
+    rppFindUnique.mockResolvedValue({ id: 'rpp-1', status: 'curriculum_reviewed', archivedAt: null });
     await service.review('rpp-1', { decision: 'approved', note: null }, KS);
-    const data = rppUpdate.mock.calls[0][0].data;
+    const data = rppUpdateMany.mock.calls[0][0].data;
     expect(data.status).toBe('approved');
     expect(data.reviewerId).toBe('kc-ks');
     expect(data.reviewedAt).toBeInstanceOf(Date);
 
-    rppFindUnique.mockResolvedValue({ id: 'rpp-1', status: 'draft' });
+    rppFindUnique.mockResolvedValue({ id: 'rpp-1', status: 'submitted', archivedAt: null });
     await expect(service.review('rpp-1', { decision: 'approved', note: null }, KS))
-      .rejects.toThrow(ConflictException);
+      .rejects.toThrow(ForbiddenException);
   });
 
   it('DTO review: revisi tanpa catatan → ditolak Zod', () => {
@@ -134,11 +171,18 @@ describe('RppService', () => {
 
   it('remove GURU: hanya draft milik sendiri; SA bebas', async () => {
     rppFindFirst.mockResolvedValue({ id: 'rpp-1', status: 'approved' });
-    await expect(service.remove('rpp-1', GURU)).rejects.toThrow(ConflictException);
+    await expect(service.archive('rpp-1', GURU)).rejects.toThrow(ConflictException);
 
-    rppFindUnique.mockResolvedValue({ id: 'rpp-1' });
-    rppDelete.mockResolvedValue({});
-    expect(await service.remove('rpp-1', SA)).toEqual({ deleted: true, id: 'rpp-1' });
+    rppFindUnique.mockResolvedValue({ id: 'rpp-1', archivedAt: null });
+    expect(await service.archive('rpp-1', SA)).toEqual({ archived: true, id: 'rpp-1' });
+  });
+
+  it('archive gagal tertutup bila status berubah secara bersamaan', async () => {
+    rppFindFirst.mockResolvedValue({ id: 'rpp-1', status: 'draft', archivedAt: null });
+    rppUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(service.archive('rpp-1', GURU))
+      .rejects.toThrow('Status Modul Ajar berubah');
   });
 
   it('DTO create: default draft + validasi tahun ajaran', () => {
@@ -214,39 +258,88 @@ describe('RppService', () => {
     expect(stored.durasiMenit).toBe(45);
   });
 
-  // ── W3-4: WAKA_KURIKULUM one-step reviewer ──────────────────────────────
-  it('W3-4: WAKA_KURIKULUM dapat menyelesaikan review (one-step consistent)', async () => {
-    rppFindUnique.mockResolvedValue({ id: 'rpp-1', status: 'submitted' });
-    await service.review('rpp-1', { decision: 'approved', note: null }, WAKA);
-    const data = rppUpdate.mock.calls[0][0].data;
-    expect(data.status).toBe('approved');
+  // Two-stage review: Waka/Kaprog recommends; KS approves final.
+  it('WAKA_KURIKULUM merekomendasikan, bukan menyetujui final', async () => {
+    rppFindUnique.mockResolvedValue({ id: 'rpp-1', status: 'submitted', archivedAt: null });
+    await service.review('rpp-1', { decision: 'recommended', note: 'Sesuai kurikulum' }, WAKA);
+    const data = rppUpdateMany.mock.calls[0][0].data;
+    expect(data.status).toBe('curriculum_reviewed');
     expect(data.reviewerId).toBe('kc-waka');
     // W3-4 P2: reviewerName mencakup role tag untuk audit trail.
     expect(data.reviewerName).toBe('waka [WAKA_KURIKULUM]');
   });
 
   it('W3-4 P2: KS reviewerName mencakup role tag [KEPALA_SEKOLAH]', async () => {
-    rppFindUnique.mockResolvedValue({ id: 'rpp-1', status: 'submitted' });
+    rppFindUnique.mockResolvedValue({ id: 'rpp-1', status: 'curriculum_reviewed', archivedAt: null });
     await service.review('rpp-1', { decision: 'approved', note: null }, KS);
-    const data = rppUpdate.mock.calls[0][0].data;
+    const data = rppUpdateMany.mock.calls[0][0].data;
     expect(data.reviewerName).toBe('kepsek [KEPALA_SEKOLAH]');
   });
 
-  it('W3-4 P2: SA reviewerName mencakup role tag [SUPER_ADMIN] (prioritas tertinggi)', async () => {
-    rppFindUnique.mockResolvedValue({ id: 'rpp-1', status: 'submitted' });
-    await service.review('rpp-1', { decision: 'approved', note: null }, SA);
-    const data = rppUpdate.mock.calls[0][0].data;
-    expect(data.reviewerName).toBe('admin [SUPER_ADMIN]');
+  it('SUPER_ADMIN bukan reviewer pedagogis rutin', async () => {
+    rppFindUnique.mockResolvedValue({ id: 'rpp-1', status: 'submitted', archivedAt: null });
+    await expect(service.review('rpp-1', { decision: 'approved', note: null }, SA))
+      .rejects.toThrow(ForbiddenException);
   });
 
-  it('W3-4 P2: User dengan multi-role (SA+KS) → role prioritas tertinggi (SUPER_ADMIN)', async () => {
+  it('permission tahap review tidak dapat saling menggantikan', async () => {
+    rppFindUnique.mockResolvedValue({
+      id: 'rpp-1', status: 'submitted', archivedAt: null, curriculumReviewerId: null,
+    });
+    hasPermission.mockResolvedValue(false);
+    await expect(service.review('rpp-1', { decision: 'recommended', note: 'Sesuai' }, WAKA))
+      .rejects.toThrow("Permission 'rpp.curriculum.review'");
+    expect(rppUpdateMany).not.toHaveBeenCalled();
+
+    rppFindUnique.mockResolvedValue({
+      id: 'rpp-1', status: 'curriculum_reviewed', archivedAt: null,
+      curriculumReviewerId: 'kc-waka-lain',
+    });
+    await expect(service.review('rpp-1', { decision: 'approved', note: null }, KS))
+      .rejects.toThrow("Permission 'rpp.final.approve'");
+    expect(hasPermission).toHaveBeenLastCalledWith(
+      'kc-ks', ['KEPALA_SEKOLAH'], 'rpp.final.approve',
+    );
+  });
+
+  it('review gagal tertutup bila status berubah secara bersamaan', async () => {
+    rppFindUnique.mockResolvedValue({ id: 'rpp-1', status: 'curriculum_reviewed', archivedAt: null });
+    rppUpdateMany.mockResolvedValue({ count: 0 });
+    await expect(service.review('rpp-1', { decision: 'approved', note: null }, KS))
+      .rejects.toThrow('Status Modul Ajar berubah');
+  });
+
+  it('User multi-role SA+KS mengambil keputusan sebagai Kepala Sekolah', async () => {
     const multiRoleUser = {
       keycloakId: 'kc-multi', username: 'multi', roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN'],
     } as AuthUser;
-    rppFindUnique.mockResolvedValue({ id: 'rpp-1', status: 'submitted' });
+    rppFindUnique.mockResolvedValue({ id: 'rpp-1', status: 'curriculum_reviewed', archivedAt: null });
     await service.review('rpp-1', { decision: 'approved', note: null }, multiRoleUser);
-    const data = rppUpdate.mock.calls[0][0].data;
-    expect(data.reviewerName).toBe('multi [SUPER_ADMIN]');
+    const data = rppUpdateMany.mock.calls[0][0].data;
+    expect(data.reviewerName).toBe('multi [KEPALA_SEKOLAH]');
+  });
+
+  it('user multi-appointment mengikuti tahap dan tidak dapat menyetujui rekomendasinya sendiri', async () => {
+    const dualReviewer = {
+      keycloakId: 'kc-dual', username: 'dual', roles: ['GURU', 'WAKA_KURIKULUM', 'KEPALA_SEKOLAH'],
+    } as AuthUser;
+    rppFindUnique.mockResolvedValue({
+      id: 'rpp-1', status: 'submitted', archivedAt: null, curriculumReviewerId: null,
+    });
+    await service.review('rpp-1', { decision: 'recommended', note: 'Sesuai' }, dualReviewer);
+    expect(rppUpdateMany.mock.calls[0][0].data.reviewerName).toBe('dual [WAKA_KURIKULUM]');
+
+    rppFindUnique.mockResolvedValue({
+      id: 'rpp-1', status: 'curriculum_reviewed', archivedAt: null, curriculumReviewerId: 'kc-dual',
+    });
+    await expect(service.review('rpp-1', { decision: 'approved', note: null }, dualReviewer))
+      .rejects.toThrow('aktor yang berbeda');
+
+    rppFindUnique.mockResolvedValue({
+      id: 'rpp-1', status: 'curriculum_reviewed', archivedAt: null, curriculumReviewerId: 'kc-waka-lain',
+    });
+    await service.review('rpp-1', { decision: 'approved', note: null }, dualReviewer);
+    expect(rppUpdateMany.mock.calls[1][0].data.reviewerName).toBe('dual [KEPALA_SEKOLAH]');
   });
 
   it('W3-4: WAKA_KURIKULUM dapat melihat semua RPP (findAll isReviewer=true)', async () => {
@@ -280,27 +373,24 @@ describe('RppService', () => {
     });
   });
 
-  it('W3-6: KS (reviewer) bypass assignment check — boleh create untuk kelas mana pun', async () => {
-    // KS tidak punya profile teacher di mock ini → resolveTeacherId akan throw.
-    // Skip test ini untuk KS karena memang KS tidak create RPP (hanya GURU).
-    // Uji via WAKA: WAKA juga reviewer, tidak kena assertTeachingAssignment.
+  it('WAKA yang juga GURU tetap wajib memakai assignment mengajarnya', async () => {
     teacherFindFirst.mockResolvedValue({ id: 'teacher-waka' });
-    // WAKA tidak melalui assertTeachingAssignment karena isReviewer(WAKA) = true.
-    await service.create({
+    teachingAssignmentFindFirst.mockResolvedValue(null);
+    await expect(service.create({
       subject: 'FISIKA', title: 'X', content: 'isi', academicYear: '2026/2027',
       classId: 'class-z', semester: 1, submit: false,
-    }, WAKA);
-    expect(teachingAssignmentFindFirst).not.toHaveBeenCalled();
+    }, WAKA)).rejects.toThrow(ForbiddenException);
+    expect(teachingAssignmentFindFirst).toHaveBeenCalled();
   });
 });
 
 describe('RppController appointment-aware reviewer metadata', () => {
   it('GET reviewer paths request WAKA_KURIKULUM so RolesGuard can enrich from active Appointment', () => {
     expect(Reflect.getMetadata('roles', RppController.prototype.findAll))
-      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU']);
+      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPROG', 'GURU']);
     expect(Reflect.getMetadata('roles', RppController.prototype.findOne))
-      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU']);
+      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPROG', 'GURU']);
     expect(Reflect.getMetadata('roles', RppController.prototype.review))
-      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM']);
+      .toEqual(['KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPROG']);
   });
 });

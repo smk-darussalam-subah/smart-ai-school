@@ -37,7 +37,7 @@ export class TeachingAssignmentController {
    * Guru: filter otomatis ke assignment sendiri (service layer).
    * SA/KS/TU: melihat semua, bisa filter via query.
    */
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'KAPROG')
   @RequirePermission('academic.teaching.read')
   @Get()
   findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
@@ -46,11 +46,26 @@ export class TeachingAssignmentController {
     return this.service.findAll(parsed.data, user);
   }
 
+  /** Data referensi aktif untuk form penugasan, tanpa mengekspos UUID mentah. */
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_KURIKULUM', 'KAPROG')
+  @RequirePermission('academic.teaching.read')
+  @Get('options/active')
+  findActiveOptions(@CurrentUser() user: AuthUser) {
+    return this.service.findActiveOptions(user);
+  }
+
+  @Roles('GURU')
+  @RequirePermission('academic.teaching.read')
+  @Get('me/context')
+  findMyTeacherContext(@CurrentUser() user: AuthUser) {
+    return this.service.findMyTeacherContext(user);
+  }
+
   /**
    * GET /teaching-assignments/:id
    * Guru: 403 jika assignment bukan miliknya (service layer).
    */
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'KAPROG')
   @RequirePermission('academic.teaching.read')
   @Get(':id')
   findById(
@@ -65,7 +80,7 @@ export class TeachingAssignmentController {
    * 400 jika teacherId/classId tidak ada.
    * 409 jika kombinasi sudah ada.
    */
-  @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
   @RequirePermission('academic.teaching.manage')
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -77,7 +92,7 @@ export class TeachingAssignmentController {
    * PATCH /teaching-assignments/:id — update subject/hoursPerWeek/academicYear.
    * teacherId/classId tidak bisa diubah via PATCH.
    */
-  @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
   @RequirePermission('academic.teaching.manage')
   @Patch(':id')
   update(

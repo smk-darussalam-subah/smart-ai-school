@@ -5,7 +5,7 @@
 // plus ringkasan Rata²/Tuntas & catatan kenaikan. Dipakai bersama guru/siswa/ortu.
 // NA & predikat dari lib/academic (W0a) — konsisten lintas dashboard.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -23,12 +23,7 @@ import {
   type StudentGradeComponents,
 } from '@/lib/academic';
 import { STATUS_TEXT_CLASS } from './grade-meta';
-import {
-  fetchMuatanLokal,
-  fetchAttendanceSummary,
-  fetchDevelopmentDescription,
-  fetchApprovalInfo,
-} from '@/app/dashboard/akademik/actions';
+import { fetchOfficialReportSections } from '@/app/dashboard/akademik/actions';
 
 export interface RaporRow {
   subject: string;
@@ -78,22 +73,53 @@ export function RaporModal({
   const [sectionF, setSectionF] = useState<{ description: string; spiritual: string; social: string; academic: string } | null>(null);
   const [sectionG, setSectionG] = useState<{ homeroomTeacher: string; principal: string; approvedAt: string | null; schoolYear: string; semester: number; className: string } | null>(null);
   const [sectionsLoading, setSectionsLoading] = useState(false);
+  const [sectionsError, setSectionsError] = useState('');
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
+  const sectionKey = studentId && academicYear && semester
+    ? `${studentId}:${academicYear}:${semester}`
+    : null;
 
   useEffect(() => {
-    if (!open || !studentId || !academicYear || !semester) return;
+    const requestId = ++requestIdRef.current;
+    setSectionB(null);
+    setSectionD(null);
+    setSectionF(null);
+    setSectionG(null);
+    setLoadedKey(null);
+    setSectionsError('');
+    setSectionsLoading(false);
+    if (!open || !studentId || !academicYear || !semester || !sectionKey) return;
     setSectionsLoading(true);
-    Promise.all([
-      fetchMuatanLokal(studentId, academicYear, semester),
-      fetchAttendanceSummary(studentId, academicYear, semester),
-      fetchDevelopmentDescription(studentId, academicYear, semester),
-      fetchApprovalInfo(studentId, academicYear, semester),
-    ]).then(([b, d, f, g]) => {
-      if (b.success) setSectionB(b.data ?? null);
-      if (d.success) setSectionD(d.data ?? null);
-      if (f.success) setSectionF(f.data ?? null);
-      if (g.success) setSectionG(g.data ?? null);
-    }).finally(() => setSectionsLoading(false));
-  }, [open, studentId, academicYear, semester]);
+    fetchOfficialReportSections(studentId, academicYear, semester)
+      .then((result) => {
+        if (requestIdRef.current !== requestId) return;
+        if (!result.success) {
+          setSectionsError(result.error ?? 'Data rapor resmi belum dapat dimuat.');
+          return;
+        }
+        setSectionB(result.data.muatanLokal);
+        setSectionD(result.data.attendance);
+        setSectionF(result.data.development);
+        setSectionG(result.data.approval);
+        setLoadedKey(sectionKey);
+      })
+      .catch(() => {
+        if (requestIdRef.current === requestId) setSectionsError('Data rapor resmi belum dapat dimuat.');
+      })
+      .finally(() => {
+        if (requestIdRef.current === requestId) setSectionsLoading(false);
+      });
+    return () => {
+      requestIdRef.current += 1;
+    };
+  }, [open, studentId, academicYear, semester, sectionKey]);
+
+  const sectionsReady = loadedKey !== null && loadedKey === sectionKey;
+  const visibleSectionB = sectionsReady ? sectionB : null;
+  const visibleSectionD = sectionsReady ? sectionD : null;
+  const visibleSectionF = sectionsReady ? sectionF : null;
+  const visibleSectionG = sectionsReady ? sectionG : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -172,6 +198,11 @@ export function RaporModal({
             <Loader2 className="h-3 w-3 animate-spin" /> Memuat data rapor...
           </div>
         )}
+        {sectionsError && !sectionsLoading && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700" role="alert">
+            {sectionsError}
+          </div>
+        )}
         {!sectionsLoading && (!studentId || !academicYear || !semester) && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-bold text-amber-700">
             Data lengkap tersedia saat rapor diterbitkan.
@@ -180,9 +211,9 @@ export function RaporModal({
 
         {/* B. Muatan Lokal */}
         <RaporSection title="B. MUATAN LOKAL">
-          {sectionB && sectionB.subjects.length > 0 ? (
+          {visibleSectionB && visibleSectionB.subjects.length > 0 ? (
             <div className="space-y-1.5">
-              {sectionB.subjects.map((s) => (
+              {visibleSectionB.subjects.map((s) => (
                 <div key={s.name} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-[11px]">
                   <span className="font-semibold text-slate-700">{s.name}</span>
                   <div className="flex items-center gap-3">
@@ -192,7 +223,7 @@ export function RaporModal({
                 </div>
               ))}
             </div>
-          ) : sectionB ? (
+          ) : visibleSectionB ? (
             <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[11px] font-medium text-slate-400">
               Tidak ada muatan lokal untuk periode ini
             </div>
@@ -213,10 +244,10 @@ export function RaporModal({
         {/* D. Ketidakhadiran */}
         <RaporSection title="D. KETIDAKHADIRAN">
           <div className="grid grid-cols-4 gap-2">
-            <AttendanceStat label="Hadir" value={sectionD ? String(sectionD.hadir) : '—'} className="text-emerald-600" />
-            <AttendanceStat label="Izin" value={sectionD ? String(sectionD.izin) : '—'} className="text-sky-600" />
-            <AttendanceStat label="Sakit" value={sectionD ? String(sectionD.sakit) : '—'} className="text-amber-600" />
-            <AttendanceStat label="Alpha" value={sectionD ? String(sectionD.alpha) : '—'} className="text-rose-600" />
+            <AttendanceStat label="Hadir" value={visibleSectionD ? String(visibleSectionD.hadir) : '—'} className="text-emerald-600" />
+            <AttendanceStat label="Izin" value={visibleSectionD ? String(visibleSectionD.izin) : '—'} className="text-sky-600" />
+            <AttendanceStat label="Sakit" value={visibleSectionD ? String(visibleSectionD.sakit) : '—'} className="text-amber-600" />
+            <AttendanceStat label="Alpha" value={visibleSectionD ? String(visibleSectionD.alpha) : '—'} className="text-rose-600" />
           </div>
         </RaporSection>
 
@@ -229,15 +260,15 @@ export function RaporModal({
 
         {/* F. Deskripsi Perkembangan Kompetensi */}
         <RaporSection title="F. DESKRIPSI PERKEMBANGAN KOMPETENSI">
-          {sectionF ? (
+          {visibleSectionF ? (
             <div className="space-y-2">
               <div className="rounded-lg border border-slate-200 px-3 py-2 text-[11px] leading-relaxed text-slate-600">
-                {sectionF.description}
+                {visibleSectionF.description}
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <DevCard icon={Brain} title="Pengetahuan" desc={sectionF.academic} />
-                <DevCard icon={Hand} title="Keterampilan" desc={sectionF.social} />
-                <DevCard icon={Heart} title="Sikap" desc={sectionF.spiritual} />
+                <DevCard icon={Brain} title="Pengetahuan" desc={visibleSectionF.academic} />
+                <DevCard icon={Hand} title="Keterampilan" desc={visibleSectionF.social} />
+                <DevCard icon={Heart} title="Sikap" desc={visibleSectionF.spiritual} />
               </div>
             </div>
           ) : (
@@ -259,19 +290,19 @@ export function RaporModal({
             <div>
               <div className="mb-8 font-semibold text-slate-600">Wali Kelas<br />&nbsp;</div>
               <div className="mx-4 border-t border-slate-400 pt-1 text-slate-400">
-                {sectionG?.homeroomTeacher ? `(${sectionG.homeroomTeacher})` : '(..............................)'}
+                {visibleSectionG?.homeroomTeacher ? `(${visibleSectionG.homeroomTeacher})` : '(..............................)'}
               </div>
             </div>
             <div>
               <div className="mb-8 font-semibold text-slate-600">Mengetahui,<br />Kepala Sekolah</div>
               <div className="mx-4 border-t border-slate-400 pt-1 text-slate-400">
-                {sectionG?.principal ? `(${sectionG.principal})` : '(..............................)'}
+                {visibleSectionG?.principal ? `(${visibleSectionG.principal})` : '(..............................)'}
               </div>
             </div>
           </div>
-          {sectionG && (
+          {visibleSectionG && (
             <div className="mt-2 text-center text-[9px] text-slate-500">
-              {sectionG.className} · Tahun Ajaran {sectionG.schoolYear} · Semester {sectionG.semester}
+              {visibleSectionG.className} · Tahun Ajaran {visibleSectionG.schoolYear} · Semester {visibleSectionG.semester}
             </div>
           )}
         </RaporSection>

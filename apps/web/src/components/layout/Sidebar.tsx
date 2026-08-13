@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
 import ViewAsSwitcher from './ViewAsSwitcher';
 import { can } from '@/lib/permissions';
+import { visiblePositionRoles } from '@/lib/sidebar-position-roles';
 import {
   Home, BarChart3, BookOpen, BookMarked, CalendarDays, CalendarRange, ClipboardCheck, GraduationCap,
   Backpack, FileText, Users, ClipboardList, Wallet, Briefcase, MapPin, School,
@@ -64,12 +65,12 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: 'Akademik',
     items: [
-      { label: 'Akademik', href: '/dashboard/akademik', icon: BookOpen, roles: ['GURU', 'SISWA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'ORANG_TUA', 'WAKA_KURIKULUM', 'KAPROG'], permissions: ['academic.grade.read'] },
+        { label: 'Akademik', href: '/dashboard/akademik', icon: BookOpen, roles: ['GURU', 'SISWA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'ORANG_TUA', 'WAKA_KURIKULUM', 'KAPROG'], permissions: ['academic.grade.read', 'academic.teaching.read'] },
       { label: 'Jadwal', href: '/dashboard/jadwal', icon: CalendarDays, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'WAKA_KURIKULUM', 'KAPROG'], permissions: ['academic.schedule.read'] },
       { label: 'Nilai & Absensi', href: '/dashboard/nilai', icon: ClipboardCheck, roles: ['SISWA', 'ORANG_TUA'], permissions: ['grade.own.read', 'grade.child.read'] },
-      { label: 'Rapor', href: '/dashboard/rapor', icon: GraduationCap, roles: ['SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'GURU'], permissions: ['report.read'] },
-      { label: 'Kegiatan Kelas', href: '/dashboard/kegiatan', icon: Backpack, roles: ['GURU', 'SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KESISWAAN'], permissions: ['activity.read'] },
-      { label: 'Review Modul Ajar', href: '/dashboard/rpp', icon: FileText, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'WAKA_KURIKULUM'], permissions: ['rpp.review'] },
+        { label: 'Rapor', href: '/dashboard/rapor', icon: GraduationCap, roles: ['SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'KAPROG'], permissions: ['report.read'] },
+      { label: 'Kegiatan Kelas', href: '/dashboard/kegiatan', icon: Backpack, roles: ['GURU', 'SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KESISWAAN', 'KAPROG'], permissions: ['activity.read'] },
+      { label: 'Review Modul Ajar', href: '/dashboard/rpp', icon: FileText, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'WAKA_KURIKULUM', 'KAPROG'], permissions: ['rpp.read'] },
     ],
   },
   {
@@ -130,14 +131,16 @@ export function Sidebar({ viewAs = null, permissions = [], permError = false, po
   // Mode tinjau: sempitkan tampilan ke role terpilih (server sudah validasi cookie)
   const roles: string[] = viewAs && realRoles.includes(viewAs) ? [viewAs] : realRoles;
   // R-24: Gabungkan session roles + position codes dari backend untuk sidebar filtering
-  const effectiveRoles: string[] = [...new Set([...roles, ...positionRoles])];
+  const effectiveRoles: string[] = viewAs
+    ? roles
+    : [...new Set([...roles, ...positionRoles])];
 
   const primaryRole = roles[0] ?? '';
   const roleLabel = ROLE_LABELS[primaryRole] ?? primaryRole;
   const roleBadgeColor = ROLE_COLORS[primaryRole] ?? 'bg-gray-100 text-gray-700';
 
   // R-24: Tampilkan badge jabatan tambahan jika ada position roles di luar session
-  const extraPositionRoles = positionRoles.filter((r) => !roles.includes(r));
+  const extraPositionRoles = visiblePositionRoles(viewAs, roles, positionRoles);
 
   // Kontrak izin: SUPER_ADMIN = wildcard '*' (lih. lib/permissions.can + auth.service.getMe).
   // Jaga wildcard secara LOKAL agar menu SA tidak hilang walau /auth/me sempat gagal/seed tertinggal.
@@ -146,9 +149,11 @@ export function Sidebar({ viewAs = null, permissions = [], permError = false, po
 
   const isVisible = (item: NavItem): boolean => {
     if (item.roles && !item.roles.some((r) => effectiveRoles.includes(r))) return false;
-    // Mode terbatas (permError = /auth/me gagal): lewati gate izin, andalkan filter role saja —
-    // RBAC backend tetap menegakkan akses di setiap request, jadi ini aman dan mencegah menu kosong.
-    if (!permError && item.permissions && !can(effectivePermissions, item.permissions)) return false;
+    if (
+      item.permissions
+      && !isSuperAdmin
+      && (permError || !can(effectivePermissions, item.permissions))
+    ) return false;
     return true;
   };
 

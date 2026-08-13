@@ -113,7 +113,14 @@ describe('ClassesController RBAC wiring', () => {
     expect(Reflect.getMetadata('roles', ClassesController.prototype.update))
       .toEqual(['SUPER_ADMIN', 'TATA_USAHA']);
     expect(Reflect.getMetadata('roles', ClassesController.prototype.findAll))
-      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU']);
+      .toEqual([
+        'SUPER_ADMIN',
+        'KEPALA_SEKOLAH',
+        'TATA_USAHA',
+        'GURU',
+        'WAKA_KURIKULUM',
+        'WAKA_KESISWAAN',
+      ]);
   });
 });
 

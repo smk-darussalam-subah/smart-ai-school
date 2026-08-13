@@ -32,7 +32,7 @@ import {
 export class ClassesController {
   constructor(private readonly service: ClassesService) {}
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'WAKA_KESISWAAN')
   @Get()
   findAll(@Query() rawQuery: unknown) {
     const parsed = ListClassesQuerySchema.safeParse(rawQuery);
@@ -40,7 +40,7 @@ export class ClassesController {
     return this.service.findAll(parsed.data);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'WAKA_KESISWAAN')
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.findOne(id);

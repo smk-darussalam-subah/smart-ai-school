@@ -47,3 +47,37 @@ export async function deleteSchedule(id: string) {
   revalidatePath(PATH);
   return r;
 }
+
+export interface ScheduleListParams {
+  page: number;
+  limit: number;
+  classId?: string;
+  academicYear?: string;
+  semester?: number;
+}
+
+export async function fetchScheduleList(params: ScheduleListParams) {
+  const query = new URLSearchParams({
+    page: String(params.page),
+    limit: String(params.limit),
+  });
+  if (params.classId) query.set('classId', params.classId);
+  if (params.academicYear) query.set('academicYear', params.academicYear);
+  if (params.semester) query.set('semester', String(params.semester));
+  return fetchApi(`/schedules?${query.toString()}`, 'GET');
+}
+
+export async function searchScheduleAssignments(params: {
+  search?: string;
+  academicYear?: string;
+  page?: number;
+  limit?: number;
+}) {
+  const query = new URLSearchParams({
+    page: String(params.page ?? 1),
+    limit: String(params.limit ?? 20),
+  });
+  if (params.search?.trim()) query.set('search', params.search.trim());
+  if (params.academicYear) query.set('academicYear', params.academicYear);
+  return fetchApi(`/teaching-assignments?${query.toString()}`, 'GET');
+}

@@ -4,7 +4,7 @@ jest.mock('@smk/logger', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { UserStatusService } from '../auth/user-status.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -45,6 +45,7 @@ describe('UsersService', () => {
   const mockFindMany = jest.fn();
   const mockCount = jest.fn();
   const mockFindUnique = jest.fn();
+  const mockFindFirst = jest.fn();
   const mockUpdate = jest.fn();
   const mockKc = {
     assignRealmRole: jest.fn(),
@@ -59,7 +60,8 @@ describe('UsersService', () => {
   };
 
   beforeEach(async () => {
-    [mockFindMany, mockCount, mockFindUnique, mockUpdate].forEach(m => m.mockReset());
+    [mockFindMany, mockCount, mockFindUnique, mockFindFirst, mockUpdate].forEach(m => m.mockReset());
+    mockFindFirst.mockResolvedValue({ id: 'actor-sa', role: 'SUPER_ADMIN' });
     mockKc.assignRealmRole.mockReset();
     mockKc.removeRealmRole.mockReset();
     mockKc.setEnabled.mockReset();
@@ -68,7 +70,7 @@ describe('UsersService', () => {
     mockPerms.invalidateAll.mockReset();
 
     const prisma = {
-      user: { findMany: mockFindMany, count: mockCount, findUnique: mockFindUnique, update: mockUpdate },
+      user: { findMany: mockFindMany, count: mockCount, findUnique: mockFindUnique, findFirst: mockFindFirst, update: mockUpdate },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -336,6 +338,15 @@ describe('UsersService', () => {
 
       await expect(service.updateRole('u-xxx', 'GURU', 'kc-sa')).rejects.toThrow(NotFoundException);
     });
+
+    it('menolak perubahan role oleh TATA_USAHA dan perubahan role sendiri', async () => {
+      mockFindFirst.mockResolvedValue({ id: 'actor-tu', role: 'TATA_USAHA' });
+      await expect(service.updateRole('u-001', 'SUPER_ADMIN', 'kc-tu')).rejects.toThrow(ForbiddenException);
+      expect(mockFindUnique).not.toHaveBeenCalled();
+
+      mockFindFirst.mockResolvedValue({ id: 'u-001', role: 'SUPER_ADMIN' });
+      await expect(service.updateRole('u-001', 'GURU', 'kc-sa')).rejects.toThrow(ForbiddenException);
+    });
   });
 
   // ── updateActive ─────────────────────────────────────────────────────────
@@ -404,6 +415,15 @@ describe('UsersService', () => {
     it('user tidak ditemukan → NotFoundException', async () => {
       mockFindUnique.mockResolvedValue(null);
       await expect(service.updateActive('u-xxx', true, 'kc-sa')).rejects.toThrow(NotFoundException);
+    });
+
+    it('TATA_USAHA tidak dapat menonaktifkan akun istimewa atau dirinya sendiri', async () => {
+      mockFindFirst.mockResolvedValue({ id: 'actor-tu', role: 'TATA_USAHA' });
+      mockFindUnique.mockResolvedValue(makeUser({ id: 'target-sa', role: 'SUPER_ADMIN' }));
+      await expect(service.updateActive('target-sa', false, 'kc-tu')).rejects.toThrow(ForbiddenException);
+
+      mockFindFirst.mockResolvedValue({ id: 'actor-tu', role: 'TATA_USAHA' });
+      await expect(service.updateActive('actor-tu', false, 'kc-tu')).rejects.toThrow(ForbiddenException);
     });
   });
 

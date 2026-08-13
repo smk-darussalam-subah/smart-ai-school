@@ -1025,14 +1025,6 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       await this.assertTeachingScope(teacherId, session.module.subject, classId, session.academicYear, session.semester);
     }
 
-    // Fetch the response
-    const response = await this.prisma.assessmentResponse.findFirst({
-      where: { id: responseId, sessionId },
-      select: { id: true, answers: true, itemScores: true, submittedAt: true },
-    });
-    if (!response) throw new NotFoundException('Respons tidak ditemukan');
-    if (!response.submittedAt) throw new ConflictException('Respons belum dikirim');
-
     const questions = parseSnapshotQuestions(session.questions);
     const question = questions.find((item) => item.id === dto.questionId);
     if (!question || question.type !== 'essay') throw new NotFoundException('Soal esai tidak ditemukan dalam snapshot sesi');
@@ -1062,39 +1054,61 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       ? Math.round((weightedSum / maxWeightedSum) * 100)
       : 0;
 
-    const existingAnswers = (response.answers ?? {}) as unknown as AssessmentAnswerMap;
-    const previousItemScores = Array.isArray(response.itemScores)
-      ? response.itemScores as unknown as AssessmentItemScore[]
-      : [];
-    const manualItem: AssessmentItemScore = {
-      questionId: question.id,
-      type: 'essay',
-      status: 'manual_scored',
-      points: Math.round((totalScore / 100) * question.points * 100) / 100,
-      maxPoints: question.points,
-      scorePct: totalScore,
-      rubricScores: Object.fromEntries(Object.entries(criteriaResults).map(([id, value]) => [id, value.score])),
-    };
-    const nextItemScores = [
-      ...previousItemScores.filter((item) => item.questionId !== dto.questionId),
-      manualItem,
-    ];
-    const scored = scoreAnswers(existingAnswers, questions, nextItemScores);
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const lockedRows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id"
+        FROM "academic"."assessment_responses"
+        WHERE "id" = ${responseId}::uuid
+          AND "session_id" = ${sessionId}::uuid
+        FOR UPDATE
+      `);
+      if (lockedRows.length === 0) throw new NotFoundException('Respons tidak ditemukan');
 
-    const updated = await this.prisma.assessmentResponse.update({
-      where: { id: responseId },
-      data: {
-        score: scored.score,
-        itemScores: scored.itemScores as Prisma.InputJsonValue,
-      },
-      select: {
-        id: true, sessionId: true, score: true, itemScores: true, submittedAt: true,
-      },
+      // Re-read after locking so concurrent essay graders merge the latest scores.
+      const response = await tx.assessmentResponse.findUnique({
+        where: { id: responseId },
+        select: { id: true, sessionId: true, answers: true, itemScores: true, submittedAt: true },
+      });
+      if (!response || response.sessionId !== sessionId) {
+        throw new NotFoundException('Respons tidak ditemukan');
+      }
+      if (!response.submittedAt) throw new ConflictException('Respons belum dikirim');
+
+      const existingAnswers = (response.answers ?? {}) as unknown as AssessmentAnswerMap;
+      const previousItemScores = Array.isArray(response.itemScores)
+        ? response.itemScores as unknown as AssessmentItemScore[]
+        : [];
+      const manualItem: AssessmentItemScore = {
+        questionId: question.id,
+        type: 'essay',
+        status: 'manual_scored',
+        points: Math.round((totalScore / 100) * question.points * 100) / 100,
+        maxPoints: question.points,
+        scorePct: totalScore,
+        rubricScores: Object.fromEntries(Object.entries(criteriaResults).map(([id, value]) => [id, value.score])),
+      };
+      const nextItemScores = [
+        ...previousItemScores.filter((item) => item.questionId !== dto.questionId),
+        manualItem,
+      ];
+      const scored = scoreAnswers(existingAnswers, questions, nextItemScores);
+
+      const updatedResponse = await tx.assessmentResponse.update({
+        where: { id: responseId },
+        data: {
+          score: scored.score,
+          itemScores: scored.itemScores as Prisma.InputJsonValue,
+        },
+        select: {
+          id: true, sessionId: true, score: true, itemScores: true, submittedAt: true,
+        },
+      });
+      if (session.status === 'completed') {
+        await this.syncGradesForCompletedSession(session, tx);
+      }
+      return updatedResponse;
     });
-    if (session.status === 'completed') {
-      await this.syncGradesForCompletedSession(session);
-      this.runAssessmentOutboxWorker('completion');
-    }
+    if (session.status === 'completed') this.runAssessmentOutboxWorker('completion');
     return updated;
   }
 
