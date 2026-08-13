@@ -121,58 +121,67 @@ jobs:
               docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
                 run --rm db-init-staging
 
-              # Provision isolated private media storage for staging. The API uses a
-              # dedicated least-privilege MinIO user; root credentials never enter
-              # the API container and no secret value is written to the action log.
-              _MEDIA_ACCESS="diis-staging-media"
-              _MEDIA_BUCKET="diis-class-activities-staging"
-              _MEDIA_SECRET=$(grep '^CLASS_ACTIVITY_MEDIA_SECRET_KEY=' "$ENV_FILE" | head -1 | cut -d= -f2- || true)
-              _MEDIA_RESET="0"
-              if [ -z "$_MEDIA_SECRET" ]; then
-                _MEDIA_SECRET=$(openssl rand -hex 32)
-                _MEDIA_RESET="1"
-              fi
-              upsert_media_env() {
-                _KEY="$1"
-                _VALUE="$2"
-                if grep -q "^${_KEY}=" "$ENV_FILE" 2>/dev/null; then
-                  sed -i "s|^${_KEY}=.*|${_KEY}=${_VALUE}|" "$ENV_FILE"
-                else
-                  printf '\n%s=%s\n' "$_KEY" "$_VALUE" >> "$ENV_FILE"
-                fi
-              }
-              upsert_media_env CLASS_ACTIVITY_MEDIA_ENDPOINT http://minio:9000
-              upsert_media_env CLASS_ACTIVITY_MEDIA_ACCESS_KEY "$_MEDIA_ACCESS"
-              upsert_media_env CLASS_ACTIVITY_MEDIA_SECRET_KEY "$_MEDIA_SECRET"
-              upsert_media_env CLASS_ACTIVITY_MEDIA_BUCKET "$_MEDIA_BUCKET"
-              upsert_media_env CLASS_ACTIVITY_MEDIA_REGION us-east-1
-
-              docker exec \
-                -e DIIS_MEDIA_ACCESS="$_MEDIA_ACCESS" \
-                -e DIIS_MEDIA_SECRET="$_MEDIA_SECRET" \
-                -e DIIS_MEDIA_BUCKET="$_MEDIA_BUCKET" \
-                -e DIIS_MEDIA_RESET="$_MEDIA_RESET" \
-                smk-pg-backup sh -ceu '
-                  MC=/opt/backup-bin/mc
-                  test -x "$MC"
-                  "$MC" alias set diis-media "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" --quiet
-                  "$MC" mb --ignore-existing "diis-media/$DIIS_MEDIA_BUCKET" >/dev/null
-                  printf "%s\n" "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:GetBucketLocation\",\"s3:ListBucket\"],\"Resource\":[\"arn:aws:s3:::$DIIS_MEDIA_BUCKET\"]},{\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\"],\"Resource\":[\"arn:aws:s3:::$DIIS_MEDIA_BUCKET/*\"]}]}" > /tmp/diis-media-policy.json
-                  "$MC" admin policy create diis-media diis-staging-class-activity /tmp/diis-media-policy.json >/dev/null
-                  if [ "$DIIS_MEDIA_RESET" = "1" ] && "$MC" admin user info diis-media "$DIIS_MEDIA_ACCESS" >/dev/null 2>&1; then
-                    "$MC" admin user remove diis-media "$DIIS_MEDIA_ACCESS" >/dev/null
-                  fi
-                  if ! "$MC" admin user info diis-media "$DIIS_MEDIA_ACCESS" >/dev/null 2>&1; then
-                    "$MC" admin user add diis-media "$DIIS_MEDIA_ACCESS" "$DIIS_MEDIA_SECRET" >/dev/null
-                  fi
-                  "$MC" admin policy attach diis-media diis-staging-class-activity --user "$DIIS_MEDIA_ACCESS" >/dev/null
-                  "$MC" anonymous set none "diis-media/$DIIS_MEDIA_BUCKET" >/dev/null
-                  rm -f /tmp/diis-media-policy.json
-                '
-              unset _MEDIA_SECRET
-              echo "Private class-activity media storage ready (staging isolated)"
               echo "✅ smk_staging_db siap"
             fi
+
+            # Provision private class-activity storage before building the API.
+            # Each environment gets a separate bucket and least-privilege user;
+            # MinIO root credentials never enter the API container or action log.
+            if [ "$BRANCH" = "main" ]; then
+              _MEDIA_ACCESS="diis-production-media"
+              _MEDIA_BUCKET="diis-class-activities"
+              _MEDIA_POLICY="diis-production-class-activity"
+            else
+              _MEDIA_ACCESS="diis-staging-media"
+              _MEDIA_BUCKET="diis-class-activities-staging"
+              _MEDIA_POLICY="diis-staging-class-activity"
+            fi
+            _MEDIA_SECRET=$(grep '^CLASS_ACTIVITY_MEDIA_SECRET_KEY=' "$ENV_FILE" | head -1 | cut -d= -f2- || true)
+            _MEDIA_RESET="0"
+            if [ -z "$_MEDIA_SECRET" ]; then
+              _MEDIA_SECRET=$(openssl rand -hex 32)
+              _MEDIA_RESET="1"
+            fi
+            upsert_media_env() {
+              _KEY="$1"
+              _VALUE="$2"
+              if grep -q "^${_KEY}=" "$ENV_FILE" 2>/dev/null; then
+                sed -i "s|^${_KEY}=.*|${_KEY}=${_VALUE}|" "$ENV_FILE"
+              else
+                printf '\n%s=%s\n' "$_KEY" "$_VALUE" >> "$ENV_FILE"
+              fi
+            }
+            upsert_media_env CLASS_ACTIVITY_MEDIA_ENDPOINT http://minio:9000
+            upsert_media_env CLASS_ACTIVITY_MEDIA_ACCESS_KEY "$_MEDIA_ACCESS"
+            upsert_media_env CLASS_ACTIVITY_MEDIA_SECRET_KEY "$_MEDIA_SECRET"
+            upsert_media_env CLASS_ACTIVITY_MEDIA_BUCKET "$_MEDIA_BUCKET"
+            upsert_media_env CLASS_ACTIVITY_MEDIA_REGION us-east-1
+
+            docker exec \
+              -e DIIS_MEDIA_ACCESS="$_MEDIA_ACCESS" \
+              -e DIIS_MEDIA_SECRET="$_MEDIA_SECRET" \
+              -e DIIS_MEDIA_BUCKET="$_MEDIA_BUCKET" \
+              -e DIIS_MEDIA_POLICY="$_MEDIA_POLICY" \
+              -e DIIS_MEDIA_RESET="$_MEDIA_RESET" \
+              smk-pg-backup sh -ceu '
+                MC=/opt/backup-bin/mc
+                test -x "$MC"
+                "$MC" alias set diis-media "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" --quiet
+                "$MC" mb --ignore-existing "diis-media/$DIIS_MEDIA_BUCKET" >/dev/null
+                printf "%s\n" "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:GetBucketLocation\",\"s3:ListBucket\"],\"Resource\":[\"arn:aws:s3:::$DIIS_MEDIA_BUCKET\"]},{\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\"],\"Resource\":[\"arn:aws:s3:::$DIIS_MEDIA_BUCKET/*\"]}]}" > /tmp/diis-media-policy.json
+                "$MC" admin policy create diis-media "$DIIS_MEDIA_POLICY" /tmp/diis-media-policy.json >/dev/null
+                if [ "$DIIS_MEDIA_RESET" = "1" ] && "$MC" admin user info diis-media "$DIIS_MEDIA_ACCESS" >/dev/null 2>&1; then
+                  "$MC" admin user remove diis-media "$DIIS_MEDIA_ACCESS" >/dev/null
+                fi
+                if ! "$MC" admin user info diis-media "$DIIS_MEDIA_ACCESS" >/dev/null 2>&1; then
+                  "$MC" admin user add diis-media "$DIIS_MEDIA_ACCESS" "$DIIS_MEDIA_SECRET" >/dev/null
+                fi
+                "$MC" admin policy attach diis-media "$DIIS_MEDIA_POLICY" --user "$DIIS_MEDIA_ACCESS" >/dev/null
+                "$MC" anonymous set none "diis-media/$DIIS_MEDIA_BUCKET" >/dev/null
+                rm -f /tmp/diis-media-policy.json
+              '
+            unset _MEDIA_SECRET
+            echo "Private class-activity media storage ready (${BRANCH} isolated)"
 
             # ── Build image (api, web, api-migrate) ──────────────────────────
             # api-migrate harus ikut di-build agar migration files selalu up-to-date.
