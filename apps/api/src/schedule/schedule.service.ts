@@ -26,9 +26,17 @@ import { AuthUser } from '@smk/auth';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { isGuruOnly, isSiswaOnly, isOrangTuaOnly, resolveUserId, resolveTeacherId, resolveSiswaClassId } from '../common/helpers/role-helpers';
+import {
+  assertClassInKaprogScope,
+  isKaprogScopedReader,
+  kaprogClassWhere,
+  resolveActiveKaprogMajorScope,
+} from '../common/helpers/appointment-scope.helper';
 import { CreateScheduleDto } from './dto/create-schedule.dto';
 import { UpdateScheduleDto } from './dto/update-schedule.dto';
 import { ListScheduleQuery } from './dto/list-schedule.dto';
+
+const SCHEDULE_MUTATION_LOCK_KEY = 'academic:schedule:mutation:v1';
 
 // ── Select shape ──────────────────────────────────────────────────────────────
 
@@ -67,6 +75,12 @@ const SCHEDULE_SELECT = {
 export class ScheduleService {
   constructor(private prisma: PrismaService) {}
 
+  private async acquireMutationLock(tx: Prisma.TransactionClient): Promise<void> {
+    await tx.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${SCHEDULE_MUTATION_LOCK_KEY}))`,
+    );
+  }
+
   /** keycloakId → teacher.id[] (untuk resolusi jadwal guru: semua assignment-nya) */
   private async resolveGuruAssignmentIds(keycloakId: string): Promise<string[]> {
     const teacherId = await resolveTeacherId(this.prisma, keycloakId);
@@ -101,7 +115,34 @@ export class ScheduleService {
     if (query.semester)     where.semester      = query.semester;
 
     // Ownership filter per role
-    if (isGuruOnly(user)) {
+    // RolesGuard appends active appointment codes to the stable identity role.
+    if (isKaprogScopedReader(user)) {
+      const scope = await resolveActiveKaprogMajorScope(this.prisma, user);
+      if (query.classId) {
+        await assertClassInKaprogScope(this.prisma, query.classId, scope);
+      }
+      if (query.academicYear && query.academicYear !== scope.academicYearCode) {
+        return { data: [], total: 0, page: query.page, limit: query.limit };
+      }
+      where.academicYear = scope.academicYearCode;
+      where.class = kaprogClassWhere(scope);
+      if (query.classId) where.classId = query.classId;
+      if (query.teacherId) {
+        const assignments = await this.prisma.teachingAssignment.findMany({
+          where: {
+            teacherId: query.teacherId,
+            academicYear: scope.academicYearCode,
+            class: kaprogClassWhere(scope),
+          },
+          select: { id: true },
+        });
+        const taIds = assignments.map((assignment) => assignment.id);
+        if (taIds.length === 0) {
+          return { data: [], total: 0, page: query.page, limit: query.limit };
+        }
+        where.teachingAssignmentId = { in: taIds };
+      }
+    } else if (isGuruOnly(user) && !user.roles.includes('WAKA_KURIKULUM')) {
       const myAssignmentIds = await this.resolveGuruAssignmentIds(user.keycloakId);
       if (myAssignmentIds.length === 0) {
         return { data: [], total: 0, page: query.page, limit: query.limit };
@@ -158,8 +199,11 @@ export class ScheduleService {
   // ── create ───────────────────────────────────────────────────────────────────
 
   async create(dto: CreateScheduleDto) {
+    return this.prisma.$transaction(async (tx) => {
+      await this.acquireMutationLock(tx);
+
     // 1. Validasi teachingAssignmentId → ambil teacherId, classId, academicYear
-    const assignment = await this.prisma.teachingAssignment.findUnique({
+    const assignment = await tx.teachingAssignment.findUnique({
       where: { id: dto.teachingAssignmentId },
       select: { id: true, teacherId: true, classId: true, academicYear: true },
     });
@@ -184,18 +228,18 @@ export class ScheduleService {
       classId: dto.classId, dayOfWeek: dto.dayOfWeek,
       jpStart: dto.jpStart, jpEnd: dto.jpEnd,
       academicYear: dto.academicYear, semester: dto.semester,
-    });
+    }, tx);
 
     // 2. Cek konflik guru (app-level, sebelum insert):
     //    Guru yang sama tidak boleh mengajar di slot JP yang overlap di hari & semester yang sama
-    const guruTaIds = await this.prisma.teachingAssignment
+    const guruTaIds = await tx.teachingAssignment
       .findMany({
         where: { teacherId: assignment.teacherId },
         select: { id: true },
       })
       .then((rows) => rows.map((r) => r.id));
 
-    const guruConflict = await this.prisma.schedule.findFirst({
+    const guruConflict = await tx.schedule.findFirst({
       where: {
         teachingAssignmentId: { in: guruTaIds },
         dayOfWeek:            dto.dayOfWeek,
@@ -218,7 +262,7 @@ export class ScheduleService {
     // 3. Cek konflik ruang (app-level, skip jika room null):
     //    Ruang yang sama tidak boleh dipakai oleh dua kelas di slot JP yang overlap
     if (dto.room) {
-      const roomConflict = await this.prisma.schedule.findFirst({
+      const roomConflict = await tx.schedule.findFirst({
         where: {
           room:         dto.room,
           dayOfWeek:    dto.dayOfWeek,
@@ -238,7 +282,7 @@ export class ScheduleService {
 
     // 4. Insert — P2002 (unique classId+dayOfWeek+jpStart+academicYear+semester)
     //    di-catch oleh PrismaExceptionFilter global → 409
-    return this.prisma.schedule.create({
+    return tx.schedule.create({
       data: {
         classId:              dto.classId,
         teachingAssignmentId: dto.teachingAssignmentId,
@@ -251,13 +295,14 @@ export class ScheduleService {
       },
       select: SCHEDULE_SELECT,
     });
+    });
   }
   // ── 2F-1: cek konflik rentang KELAS (unique DB hanya menjaga jpStart) ───────
   private async assertNoClassRangeConflict(params: {
     classId: string; dayOfWeek: number; jpStart: number; jpEnd: number;
     academicYear: string; semester: number; excludeId?: string;
-  }): Promise<void> {
-    const clash = await this.prisma.schedule.findFirst({
+  }, db: Prisma.TransactionClient | PrismaService = this.prisma): Promise<void> {
+    const clash = await db.schedule.findFirst({
       where: {
         classId:      params.classId,
         dayOfWeek:    params.dayOfWeek,
@@ -278,7 +323,10 @@ export class ScheduleService {
 
   // ── 2F-1: update slot (hari/JP/ruang/semester) dengan re-cek konflik ────────
   async update(id: string, dto: UpdateScheduleDto) {
-    const existing = await this.prisma.schedule.findUnique({
+    return this.prisma.$transaction(async (tx) => {
+      await this.acquireMutationLock(tx);
+
+    const existing = await tx.schedule.findUnique({
       where: { id },
       select: {
         id: true, classId: true, teachingAssignmentId: true, dayOfWeek: true,
@@ -304,13 +352,13 @@ export class ScheduleService {
       jpStart: next.jpStart, jpEnd: next.jpEnd,
       academicYear: existing.academicYear, semester: next.semester,
       excludeId: id,
-    });
+    }, tx);
 
     // Konflik guru (exclude diri sendiri) — inklusif
-    const guruTaIds = await this.prisma.teachingAssignment
+    const guruTaIds = await tx.teachingAssignment
       .findMany({ where: { teacherId: existing.teachingAssignment.teacherId }, select: { id: true } })
       .then((rows) => rows.map((r) => r.id));
-    const guruConflict = await this.prisma.schedule.findFirst({
+    const guruConflict = await tx.schedule.findFirst({
       where: {
         id:                   { not: id },
         teachingAssignmentId: { in: guruTaIds },
@@ -327,7 +375,7 @@ export class ScheduleService {
     }
 
     if (next.room) {
-      const roomConflict = await this.prisma.schedule.findFirst({
+      const roomConflict = await tx.schedule.findFirst({
         where: {
           id:           { not: id },
           room:         next.room,
@@ -344,19 +392,23 @@ export class ScheduleService {
       }
     }
 
-    return this.prisma.schedule.update({
+    return tx.schedule.update({
       where: { id },
       data: next,
       select: SCHEDULE_SELECT,
+    });
     });
   }
 
   // ── 2F-1: hapus slot (hard delete — template mingguan tanpa dependen FK) ────
   async remove(id: string) {
-    const existing = await this.prisma.schedule.findUnique({ where: { id }, select: { id: true } });
-    if (!existing) throw new NotFoundException('Jadwal tidak ditemukan');
-    await this.prisma.schedule.delete({ where: { id } });
-    return { deleted: true, id };
+    return this.prisma.$transaction(async (tx) => {
+      await this.acquireMutationLock(tx);
+      const existing = await tx.schedule.findUnique({ where: { id }, select: { id: true } });
+      if (!existing) throw new NotFoundException('Jadwal tidak ditemukan');
+      await tx.schedule.delete({ where: { id } });
+      return { deleted: true, id };
+    });
   }
 
   // ── T3-02 B8: Auto-scheduling (greedy constraint-based) ────────────────────

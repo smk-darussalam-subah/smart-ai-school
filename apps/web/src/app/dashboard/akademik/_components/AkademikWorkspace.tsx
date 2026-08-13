@@ -36,8 +36,12 @@ import {
   isAssessmentSessionResponseCurrent,
   mergeAssessmentSessionRegistry,
 } from './assessment-workspace-mappers';
+import {
+  buildAssignmentSessionCandidates,
+  type AssessmentTeachingAssignment,
+} from './assessment-assignment-candidates';
 
-interface Assignment { id: string; subject: string; class: { id: string; name: string } }
+type Assignment = AssessmentTeachingAssignment;
 
 interface Props {
   grades: GradeItem[];
@@ -57,6 +61,7 @@ interface Props {
   semester: number;
   /** true bila sebagian data inti (nilai/kehadiran) gagal dimuat. */
   dataWarning?: boolean;
+  canManageReportCards: boolean;
 }
 
 type Screen = 'ringkasan' | 'jadwal' | 'pembelajaran' | 'penilaian' | 'kehadiran' | 'penugasan' | 'capaian' | 'rekap' | 'rapor';
@@ -76,6 +81,7 @@ const NAV_ALL: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = 
 export default function AkademikWorkspace({
   grades, attendances, assignments, schedules, activities, rpp, lmsModules, todayClasses, assessmentSessions,
   assessmentSessionTotal, assessmentSessionPage, assessmentSessionLimit, academicYear, semester, dataWarning,
+  canManageReportCards,
 }: Props) {
   const approvedRpp = useMemo(() => rpp.filter((r) => r.status === 'approved'), [rpp]);
   const subjects = useMemo(() => {
@@ -98,14 +104,20 @@ export default function AkademikWorkspace({
   // W2-B-5: Wali kelas detection — fetch real wali classes from /teachers/me/wali-classes
   const [waliClasses, setWaliClasses] = useState<WaliClassItem[]>([]);
   useEffect(() => {
+    if (!canManageReportCards) {
+      setWaliClasses([]);
+      return;
+    }
     fetchWaliClasses().then((res) => {
       if (res.success && res.data) setWaliClasses(res.data.classes);
     });
-  }, []);
+  }, [canManageReportCards]);
   // W2-13: 'Rapor Kelas' tab only visible when guru is actually a wali kelas
   const NAV = useMemo(() =>
-    waliClasses.length > 0 ? NAV_ALL : NAV_ALL.filter((n) => n.key !== 'rapor'),
-  [waliClasses.length]);
+    canManageReportCards && waliClasses.length > 0
+      ? NAV_ALL
+      : NAV_ALL.filter((n) => n.key !== 'rapor'),
+  [canManageReportCards, waliClasses.length]);
   const [subject, setSubject] = useState<string>('all');
   const [selClass, setSelClass] = useState<string>('all');
   const [absen, setAbsen] = useState<{ classId: string; className: string } | null>(null);
@@ -163,6 +175,17 @@ export default function AkademikWorkspace({
     .filter((item) => subject === 'all' || item.subject === subject)
     .filter((item) => selClass === 'all' || item.classId === selClass),
   [selClass, subject, todayClasses]);
+  const assignmentSessionCandidates = useMemo<TodayClass[]>(() =>
+    buildAssignmentSessionCandidates({
+      assignments,
+      lmsModules,
+      todayClasses: todaySessionCandidates,
+      subject,
+      classId: selClass,
+      academicYear,
+      semester,
+    }),
+  [academicYear, assignments, lmsModules, selClass, semester, subject, todaySessionCandidates]);
   const bankSourceOptions = useMemo<QuestionSourceOption[]>(() => buildQuestionSourceOptions({
     subject,
     classId: selClass,
@@ -240,7 +263,7 @@ export default function AkademikWorkspace({
   };
   const sessionPanelState = assessmentSessionPanelState({
     hasSavedSessions: savedAssessmentCards.length > 0,
-    hasTodayCandidates: todaySessionCandidates.length > 0,
+    hasTodayCandidates: todaySessionCandidates.length > 0 || assignmentSessionCandidates.length > 0,
     loading: sessionLoading,
     error: sessionError,
   });
@@ -446,6 +469,20 @@ export default function AkademikWorkspace({
                     ))}
                   </div>
                 )}
+                {assignmentSessionCandidates.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-extrabold uppercase tracking-wide text-[#6b8079]">Penugasan mengajar</div>
+                    {assignmentSessionCandidates.map((item) => (
+                      <article key={`${item.classId}-${item.subject}-assignment`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e6efea] px-3 py-2">
+                        <div>
+                          <div className="text-[12.5px] font-bold text-[#0f2e25]">{item.subject} - {item.className}</div>
+                          <div className="text-[11px] font-semibold text-[#6b8079]">Siap membuat sesi, jadwal tidak wajib.</div>
+                        </div>
+                        <button type="button" onClick={() => setPenilaian({ session: item, mode: 'preview', tab: 'diag' })} className="rounded-lg bg-emerald-600 px-3 py-2 text-[11.5px] font-bold text-white">Buka Studio</button>
+                      </article>
+                    ))}
+                  </div>
+                )}
                 {sessionPanelState === 'loading' && (
                   <div role="status" className="rounded-xl border border-dashed border-[#dfe9e4] p-6 text-center text-[12.5px] font-semibold text-[#6b8079]">Memuat sesi asesmen...</div>
                 )}
@@ -456,7 +493,7 @@ export default function AkademikWorkspace({
                   </div>
                 )}
                 {sessionPanelState === 'empty' && (
-                  <div className="rounded-xl border border-dashed border-[#dfe9e4] p-6 text-center text-[12.5px] font-semibold text-[#9bb0a8]">Belum ada sesi asesmen atau jadwal yang cocok untuk filter ini.</div>
+                  <div className="rounded-xl border border-dashed border-[#dfe9e4] p-6 text-center text-[12.5px] font-semibold text-[#9bb0a8]">Belum ada sesi atau penugasan mengajar yang cocok untuk filter ini.</div>
                 )}
               </div>
             )}

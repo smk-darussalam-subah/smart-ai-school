@@ -57,6 +57,11 @@ const GURU_USER: AuthUser = {
   username: 'guru1', fullName: 'Agus Setiawan', roles: ['GURU'],
 };
 
+const WAKA_KURIKULUM_USER: AuthUser = {
+  keycloakId: 'kc-waka-kur', email: 'waka.kur@smk.sch.id',
+  username: 'waka-kur', fullName: 'Waka Kurikulum', roles: ['GURU', 'WAKA_KURIKULUM'],
+} as AuthUser;
+
 const SISWA_USER: AuthUser = {
   keycloakId: 'kc-siswa', email: 'siswa@smk.sch.id',
   username: 'siswa1', fullName: 'Budi Santoso', roles: ['SISWA'],
@@ -73,7 +78,16 @@ const THREE_DAYS_AGO = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 const MOCK_ASSIGNMENT = {
   id: 'assign-uuid-001',
   teacherId: 'teacher-uuid-001',
+  classId: 'class-uuid-001',
   academicYear: '2025/2026',
+  class: { isActive: true },
+};
+
+const MOCK_ACTIVE_STUDENT = {
+  id: 'student-uuid-001',
+  classId: 'class-uuid-001',
+  status: 'active',
+  deletedAt: null,
 };
 
 const MOCK_GRADE = {
@@ -104,6 +118,7 @@ const MOCK_GRADE = {
 
 function buildPrisma() {
   return {
+    academicYear: { findFirst: jest.fn() },
     user:       { findUnique: jest.fn() },
     teacher:    { findUnique: jest.fn() },
     student:    { findUnique: jest.fn(), findMany: jest.fn() },
@@ -150,6 +165,7 @@ describe('GradeService', () => {
     };
 
     function setupGuruResolve(teacherId = 'teacher-uuid-001') {
+      prisma.academicYear.findFirst.mockResolvedValue({ code: '2025/2026' });
       prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-guru' });
       prisma.teacher.findUnique.mockResolvedValue({ id: teacherId });
     }
@@ -157,7 +173,7 @@ describe('GradeService', () => {
     it('GURU berhasil input nilai UTS baru', async () => {
       setupGuruResolve();
       prisma.teachingAssignment.findUnique.mockResolvedValue(MOCK_ASSIGNMENT);
-      prisma.student.findUnique.mockResolvedValue({ id: 'student-uuid-001' });
+      prisma.student.findUnique.mockResolvedValue(MOCK_ACTIVE_STUDENT);
       prisma.grade.findFirst.mockResolvedValue(null); // belum ada UTS
       prisma.grade.create.mockResolvedValue(MOCK_GRADE);
 
@@ -188,12 +204,47 @@ describe('GradeService', () => {
       await expect(service.create(CREATE_DTO, GURU_USER)).rejects.toThrow(ForbiddenException);
     });
 
+    it('menolak penugasan dari tahun ajaran tidak aktif', async () => {
+      setupGuruResolve();
+      prisma.teachingAssignment.findUnique.mockResolvedValue({
+        ...MOCK_ASSIGNMENT,
+        academicYear: '2024/2025',
+      });
+
+      await expect(service.create(CREATE_DTO, GURU_USER)).rejects.toThrow(
+        'Nilai hanya dapat diinput untuk penugasan tahun ajaran aktif',
+      );
+      expect(prisma.grade.create).not.toHaveBeenCalled();
+    });
+
     it('studentId tidak ada → NotFoundException', async () => {
       setupGuruResolve();
       prisma.teachingAssignment.findUnique.mockResolvedValue(MOCK_ASSIGNMENT);
       prisma.student.findUnique.mockResolvedValue(null); // siswa tidak ada
 
       await expect(service.create(CREATE_DTO, GURU_USER)).rejects.toThrow(NotFoundException);
+    });
+
+    it('menolak siswa aktif dari kelas lain', async () => {
+      setupGuruResolve();
+      prisma.teachingAssignment.findUnique.mockResolvedValue(MOCK_ASSIGNMENT);
+      prisma.student.findUnique.mockResolvedValue({ ...MOCK_ACTIVE_STUDENT, classId: 'class-uuid-other' });
+
+      await expect(service.create(CREATE_DTO, GURU_USER)).rejects.toThrow(
+        'Siswa tidak terdaftar pada kelas penugasan ini',
+      );
+      expect(prisma.grade.create).not.toHaveBeenCalled();
+    });
+
+    it('menolak siswa nonaktif', async () => {
+      setupGuruResolve();
+      prisma.teachingAssignment.findUnique.mockResolvedValue(MOCK_ASSIGNMENT);
+      prisma.student.findUnique.mockResolvedValue({ ...MOCK_ACTIVE_STUDENT, status: 'inactive' });
+
+      await expect(service.create(CREATE_DTO, GURU_USER)).rejects.toThrow(
+        'Nilai hanya dapat diinput untuk siswa aktif',
+      );
+      expect(prisma.grade.create).not.toHaveBeenCalled();
     });
 
     it('GURU tidak punya profil teacher → ForbiddenException', async () => {
@@ -207,7 +258,7 @@ describe('GradeService', () => {
       it('UTS dobel → ConflictException (409)', async () => {
         setupGuruResolve();
         prisma.teachingAssignment.findUnique.mockResolvedValue(MOCK_ASSIGNMENT);
-        prisma.student.findUnique.mockResolvedValue({ id: 'student-uuid-001' });
+        prisma.student.findUnique.mockResolvedValue(MOCK_ACTIVE_STUDENT);
         prisma.grade.findFirst.mockResolvedValue({ id: 'existing-grade' }); // sudah ada UTS
 
         await expect(service.create(CREATE_DTO, GURU_USER)).rejects.toThrow(ConflictException);
@@ -217,7 +268,7 @@ describe('GradeService', () => {
       it('UAS dobel → ConflictException (409)', async () => {
         setupGuruResolve();
         prisma.teachingAssignment.findUnique.mockResolvedValue(MOCK_ASSIGNMENT);
-        prisma.student.findUnique.mockResolvedValue({ id: 'student-uuid-001' });
+        prisma.student.findUnique.mockResolvedValue(MOCK_ACTIVE_STUDENT);
         prisma.grade.findFirst.mockResolvedValue({ id: 'existing-grade' });
 
         const uasDto = { ...CREATE_DTO, type: 'uas' as const };
@@ -227,7 +278,7 @@ describe('GradeService', () => {
       it('UH dobel → OK (boleh banyak)', async () => {
         setupGuruResolve();
         prisma.teachingAssignment.findUnique.mockResolvedValue(MOCK_ASSIGNMENT);
-        prisma.student.findUnique.mockResolvedValue({ id: 'student-uuid-001' });
+        prisma.student.findUnique.mockResolvedValue(MOCK_ACTIVE_STUDENT);
         prisma.grade.create.mockResolvedValue({ ...MOCK_GRADE, type: 'uh' });
 
         const uhDto = { ...CREATE_DTO, type: 'uh' as const };
@@ -241,7 +292,7 @@ describe('GradeService', () => {
       it('praktik dobel → OK', async () => {
         setupGuruResolve();
         prisma.teachingAssignment.findUnique.mockResolvedValue(MOCK_ASSIGNMENT);
-        prisma.student.findUnique.mockResolvedValue({ id: 'student-uuid-001' });
+        prisma.student.findUnique.mockResolvedValue(MOCK_ACTIVE_STUDENT);
         prisma.grade.create.mockResolvedValue({ ...MOCK_GRADE, type: 'praktik' });
 
         await service.create({ ...CREATE_DTO, type: 'praktik' as const }, GURU_USER);
@@ -252,7 +303,7 @@ describe('GradeService', () => {
       it('UTS cek → findFirst dipanggil dengan filter yang benar', async () => {
         setupGuruResolve();
         prisma.teachingAssignment.findUnique.mockResolvedValue(MOCK_ASSIGNMENT);
-        prisma.student.findUnique.mockResolvedValue({ id: 'student-uuid-001' });
+        prisma.student.findUnique.mockResolvedValue(MOCK_ACTIVE_STUDENT);
         prisma.grade.findFirst.mockResolvedValue(null);
         prisma.grade.create.mockResolvedValue(MOCK_GRADE);
 
@@ -287,6 +338,13 @@ describe('GradeService', () => {
 
       expect(result.data).toHaveLength(1);
       expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('WAKA_KURIKULUM membaca seluruh nilai tanpa scope guru', async () => {
+      await service.findAll(BASE_QUERY, WAKA_KURIKULUM_USER);
+
+      expect(prisma.grade.findMany.mock.calls[0][0].where).toEqual({});
+      expect(prisma.teacher.findUnique).not.toHaveBeenCalled();
     });
 
     it('GURU hanya melihat nilai dari assignment sendiri', async () => {

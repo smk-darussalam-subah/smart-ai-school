@@ -121,6 +121,7 @@ export class UsersController {
   }
 
   @Patch(':id/role')
+  @Roles('SUPER_ADMIN')
   @RequirePermission('user.manage')
   async updateRole(
     @Param('id', ParseUUIDPipe) id: string,

@@ -20,7 +20,7 @@ interface NavItem {
 const ROUTE_PERMISSIONS: Record<string, string[]> = {
   '/dashboard': [], // semua role
   '/dashboard/executive': ['finance.read'],
-  '/dashboard/akademik': ['academic.grade.read'],
+  '/dashboard/akademik': ['academic.grade.read', 'academic.teaching.read'],
   '/dashboard/siswa': ['student.read'],
   '/dashboard/ppdb': ['ppdb.read'],
   '/dashboard/keuangan': ['finance.read'],

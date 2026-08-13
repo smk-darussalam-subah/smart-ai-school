@@ -1,35 +1,21 @@
 'use client';
 
-// =============================================================================
-// RaporHub — pipeline rapor (KamilEdu M12): draft → diperiksa → terbit → dibagikan
-// Staf: generate + kelola transisi · SISWA/ORTU: lihat rapor terbit + detail
-// =============================================================================
-
-import { useEffect, useState, useTransition } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { useEffect, useMemo, useState, useTransition } from 'react';
+import { Check, Eye, FileCheck2, LoaderCircle, RotateCcw, Search, Send, ShieldAlert } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TablePagination } from '@/components/ui/table-pagination';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table';
-import { generateReports, transitionReport, updateReportNotes } from '../actions';
+import { useQueryState } from '@/hooks/use-query-state';
+import { generateReports, recoverReport, transitionReport, updateReportNotes } from '../actions';
 
-interface SubjectSnapshot {
-  subject: string;
-  count: number;
-  average: number;
-  byType: Record<string, number>;
-}
-
+interface SubjectSnapshot { subject: string; count: number; average: number; byType: Record<string, number> }
 export interface ReportItem {
   id: string;
   studentId: string;
@@ -41,316 +27,217 @@ export interface ReportItem {
   attendance?: Record<string, number> | null;
   notes?: string | null;
   generatedAt: string;
+  updatedAt: string;
+  checkedAt?: string | null;
+  checkedBy?: string | null;
+  checkedByName?: string | null;
+  returnedAt?: string | null;
+  returnedBy?: string | null;
+  returnedByName?: string | null;
+  returnReason?: string | null;
+  publishedAt?: string | null;
+  publishedBy?: string | null;
+  publishedByName?: string | null;
+  distributedAt?: string | null;
+  distributedBy?: string | null;
+  distributedByName?: string | null;
+  canManageDraft: boolean;
+  statusEvents?: Array<{
+    id: string; action: string; fromStatus: string; toStatus: string;
+    actorName: string; reason?: string | null; incidentReference?: string | null; createdAt: string;
+  }>;
   student: { id: string; nis: string; user: { fullName: string } };
   class: { id: string; name: string };
 }
-
-interface ClassItem { id: string; name: string; }
-
+interface ClassItem { id: string; name: string; canManageDraft: boolean }
 interface Props {
   items: ReportItem[];
   total: number;
   classes: ClassItem[];
+  query: { page: number; limit: number; classId: string; status: string; search: string };
   canGenerate: boolean;
-  canReview: boolean;
+  canCheck: boolean;
+  canPublish: boolean;
   canDistribute: boolean;
-  isStaf: boolean;
-  defaultAcademicYear?: string;
-  defaultSemester?: number;
+  canRecover: boolean;
+  isOperational: boolean;
+  defaultAcademicYear: string;
+  defaultSemester: number;
 }
 
-const STATUS_BADGE: Record<ReportItem['status'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  draft: { label: 'Draft', variant: 'outline' },
-  checked: { label: 'Diperiksa', variant: 'secondary' },
-  published: { label: 'Terbit', variant: 'default' },
-  distributed: { label: '✓ Dibagikan', variant: 'default' },
+const STATUS = {
+  draft: { label: 'Draft wali kelas', variant: 'outline' as const },
+  checked: { label: 'Diperiksa Waka', variant: 'secondary' as const },
+  published: { label: 'Diterbitkan KS', variant: 'default' as const },
+  distributed: { label: 'Didistribusikan', variant: 'default' as const },
 };
 
-export default function RaporHub({ items, total, classes, canGenerate, canReview, canDistribute, isStaf, defaultAcademicYear, defaultSemester }: Props) {
-  const [classFilter, setClassFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
+export default function RaporHub(props: Props) {
+  const { items, total, classes, query, canGenerate, canCheck, canPublish, canDistribute, canRecover, isOperational } = props;
+  const { setParams, isPending } = useQueryState();
+  const [search, setSearch] = useState(query.search);
   const [detail, setDetail] = useState<ReportItem | null>(null);
-  const [genOpen, setGenOpen] = useState(false);
+  const [returning, setReturning] = useState<ReportItem | null>(null);
+  const [confirming, setConfirming] = useState<{ report: ReportItem; action: 'publish' | 'distribute' } | null>(null);
+  const [recovering, setRecovering] = useState<ReportItem | null>(null);
+  const [generateOpen, setGenerateOpen] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
-  const [pending, startTransition] = useTransition();
+  const [busy, startTransition] = useTransition();
 
-  const filtered = items.filter((r) =>
-    (classFilter === 'all' || r.classId === classFilter) &&
-    (statusFilter === 'all' || r.status === statusFilter));
+  useEffect(() => setSearch(query.search), [query.search]);
+  useEffect(() => {
+    if (search === query.search) return;
+    const timer = setTimeout(() => setParams({ search: search || null }), 350);
+    return () => clearTimeout(timer);
+  }, [query.search, search, setParams]);
 
-  const run = (fn: () => Promise<{ success: boolean; error?: string; data?: unknown }>, onOk?: (d: unknown) => void) => {
+  const run = (action: () => Promise<{ success: boolean; error?: string; data?: unknown }>, onSuccess?: () => void) => {
     setError('');
+    setInfo('');
     startTransition(async () => {
-      const r = await fn();
-      if (!r.success) setError(r.error ?? 'Aksi gagal');
-      else onOk?.(r.data);
+      const result = await action();
+      if (!result.success) setError(result.error ?? 'Aksi gagal diproses');
+      else onSuccess?.();
     });
   };
 
-  const actionsFor = (r: ReportItem) => {
-    const acts: { label: string; action: string; show: boolean; variant?: 'outline' | 'destructive' }[] = [
-      { label: '✓ Periksa', action: 'check', show: canReview && r.status === 'draft' },
-      { label: '↩ Kembalikan', action: 'return', show: canReview && r.status === 'checked', variant: 'outline' },
-      { label: '📢 Terbitkan', action: 'publish', show: canReview && r.status === 'checked' },
-      { label: '📤 Bagikan', action: 'distribute', show: canDistribute && r.status === 'published' },
-    ];
-    return acts.filter((a) => a.show);
-  };
-
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+    <div className="space-y-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">🎓 Rapor</h1>
-          <p className="text-sm text-muted-foreground">
-            {total} rapor · alur: Draft → Diperiksa → Terbit → Dibagikan
-          </p>
+          <h1 className="text-2xl font-bold">Rapor</h1>
+          <p className="text-sm text-muted-foreground">Wali kelas menyiapkan draft, Waka memeriksa, KS menerbitkan, lalu TU mendistribusikan.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {canGenerate && (
-            <Button onClick={() => setGenOpen(true)}>⚙ Generate Rapor Kelas</Button>
-          )}
-          {isStaf && classes.length > 0 && (
-            <Select value={classFilter} onValueChange={(v: string) => setClassFilter(v)}>
-              <SelectTrigger className="w-40" aria-label="Filter kelas"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Kelas</SelectItem>
-                {classes.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          )}
-          {isStaf && (
-            <Select value={statusFilter} onValueChange={(v: string) => setStatusFilter(v)}>
-              <SelectTrigger className="w-40" aria-label="Filter status"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Status</SelectItem>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="checked">Diperiksa</SelectItem>
-                <SelectItem value="published">Terbit</SelectItem>
-                <SelectItem value="distributed">Dibagikan</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
-        </div>
+        {canGenerate && <Button onClick={() => setGenerateOpen(true)}><FileCheck2 className="mr-2 h-4 w-4" aria-hidden="true" />Siapkan draft kelas</Button>}
       </div>
 
-      {info && <p className="text-sm text-green-600" role="status">{info}</p>}
+      {canRecover && (
+        <div className="flex items-start gap-2 border-l-4 border-amber-500 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <p><b>Mode bantuan Super Admin.</b> Penerbitan, distribusi, dan pemulihan akan tercatat atas identitas Anda.</p>
+        </div>
+      )}
+
+      {isOperational && (
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(240px,1fr)_200px_200px]">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari nama atau NIS" className="pl-9" aria-label="Cari rapor" />
+          </div>
+          <Select value={query.classId || 'all'} onValueChange={(value: string) => setParams({ classId: value })}>
+            <SelectTrigger aria-label="Filter kelas"><SelectValue placeholder="Semua kelas" /></SelectTrigger>
+            <SelectContent><SelectItem value="all">Semua kelas</SelectItem>{classes.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+          </Select>
+          <Select value={query.status || 'all'} onValueChange={(value: string) => setParams({ status: value })}>
+            <SelectTrigger aria-label="Filter status"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="all">Semua status</SelectItem>{Object.entries(STATUS).map(([value, meta]) => <SelectItem key={value} value={value}>{meta.label}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {info && <p className="text-sm text-emerald-700" role="status">{info}</p>}
       {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
 
-      {filtered.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">
-            {isStaf ? 'Belum ada rapor — generate dari nilai yang sudah masuk.' : 'Belum ada rapor terbit.'}
-          </CardContent>
-        </Card>
+      {items.length === 0 ? (
+        <Card><CardContent className="py-12 text-center text-sm text-muted-foreground">{isOperational ? 'Belum ada rapor pada filter ini.' : 'Belum ada rapor yang dapat ditampilkan.'}</CardContent></Card>
       ) : (
-        <Card>
-          <CardContent className="pt-4">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Siswa</TableHead>
-                  <TableHead>Kelas</TableHead>
-                  <TableHead>TA / Smt</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell>
-                      <button className="text-left underline-offset-2 hover:underline" onClick={() => setDetail(r)}>
-                        {r.student.user.fullName}
-                      </button>
-                      <span className="text-muted-foreground text-xs"> · {r.student.nis}</span>
-                    </TableCell>
-                    <TableCell>{r.class.name}</TableCell>
-                    <TableCell className="whitespace-nowrap">{r.academicYear} / {r.semester}</TableCell>
-                    <TableCell>
-                      <Badge variant={STATUS_BADGE[r.status].variant}>{STATUS_BADGE[r.status].label}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1.5 flex-wrap">
-                        <Button size="sm" variant="outline" onClick={() => setDetail(r)}>Detail</Button>
-                        {actionsFor(r).map((a) => (
-                          <Button key={a.action} size="sm" variant={a.variant} disabled={pending}
-                            onClick={() => run(() => transitionReport(r.id, a.action))}>
-                            {a.label}
-                          </Button>
-                        ))}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <div className={`overflow-x-auto rounded-md border transition-opacity ${isPending ? 'opacity-60' : ''}`} aria-busy={isPending}>
+          <Table>
+            <TableHeader><TableRow><TableHead>Siswa</TableHead><TableHead>Kelas</TableHead><TableHead>Periode</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
+            <TableBody>{items.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell><div className="font-medium">{item.student.user.fullName}</div><div className="text-xs text-muted-foreground">NIS {item.student.nis}</div></TableCell>
+                <TableCell>{item.class.name}</TableCell>
+                <TableCell className="whitespace-nowrap">{item.academicYear} / {item.semester}</TableCell>
+                <TableCell><Badge variant={STATUS[item.status].variant}>{STATUS[item.status].label}</Badge></TableCell>
+                <TableCell><div className="flex flex-wrap justify-end gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setDetail(item)}><Eye className="mr-2 h-4 w-4" aria-hidden="true" />Detail</Button>
+                  {canCheck && item.status === 'draft' && <Button size="sm" disabled={busy} onClick={() => run(() => transitionReport(item.id, 'check'))}><Check className="mr-2 h-4 w-4" aria-hidden="true" />Tandai diperiksa</Button>}
+                  {canCheck && item.status === 'checked' && <Button size="sm" variant="outline" disabled={busy} onClick={() => setReturning(item)}><RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" />Kembalikan</Button>}
+                   {canPublish && item.status === 'checked' && <Button size="sm" disabled={busy} onClick={() => setConfirming({ report: item, action: 'publish' })}><Send className="mr-2 h-4 w-4" aria-hidden="true" />Terbitkan</Button>}
+                   {canDistribute && item.status === 'published' && <Button size="sm" disabled={busy} onClick={() => setConfirming({ report: item, action: 'distribute' })}><Send className="mr-2 h-4 w-4" aria-hidden="true" />Distribusikan</Button>}
+                  {canRecover && item.status !== 'draft' && <Button size="sm" variant="outline" disabled={busy} onClick={() => setRecovering(item)}><ShieldAlert className="mr-2 h-4 w-4" aria-hidden="true" />Pemulihan</Button>}
+                </div></TableCell>
+              </TableRow>
+            ))}</TableBody>
+          </Table>
+        </div>
       )}
 
-      <DetailDialog report={detail} onClose={() => setDetail(null)} canEditNotes={canGenerate} run={run} pending={pending} />
-      {canGenerate && (
-        <GenerateDialog open={genOpen} onOpenChange={setGenOpen} classes={classes}
-          onResult={(msg) => setInfo(msg)} defaultAcademicYear={defaultAcademicYear} defaultSemester={defaultSemester} />
-      )}
+      <TablePagination page={query.page} limit={query.limit} total={total} onPage={(page) => setParams({ page })} />
+      <ReportDetail report={detail} pending={busy} onClose={() => setDetail(null)} run={run} />
+      <ReturnDialog report={returning} pending={busy} error={error} onClose={() => setReturning(null)} run={run} />
+      <ConfirmTransitionDialog value={confirming} pending={busy} error={error} onClose={() => setConfirming(null)} run={run} />
+      <RecoveryDialog report={recovering} pending={busy} error={error} onClose={() => setRecovering(null)} run={run} />
+      {canGenerate && <GenerateDialog {...props} open={generateOpen} onOpenChange={setGenerateOpen} onResult={setInfo} />}
     </div>
   );
 }
 
-// ── Detail rapor ──────────────────────────────────────────────────────────────
-function DetailDialog({ report, onClose, canEditNotes, run, pending }: {
-  report: ReportItem | null;
-  onClose: () => void;
-  canEditNotes: boolean;
-  run: (fn: () => Promise<{ success: boolean; error?: string }>) => void;
-  pending: boolean;
+function ReportDetail({ report, pending, onClose, run }: {
+  report: ReportItem | null; pending: boolean; onClose: () => void;
+  run: (action: () => Promise<{ success: boolean; error?: string }>, onSuccess?: () => void) => void;
 }) {
   const [notes, setNotes] = useState('');
   useEffect(() => { if (report) setNotes(report.notes ?? ''); }, [report]);
-
-  const att = report?.attendance;
-  return (
-    <Dialog open={!!report} onOpenChange={(o: boolean) => !o && onClose()}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Rapor — {report?.student.user.fullName}</DialogTitle>
-          <DialogDescription>
-            {report?.class.name} · {report?.academicYear} Semester {report?.semester} ·{' '}
-            {report ? STATUS_BADGE[report.status].label : ''}
-          </DialogDescription>
-        </DialogHeader>
-
-        {report && report.grades.length === 0 && (
-          <p className="text-sm text-muted-foreground">Belum ada nilai untuk periode ini.</p>
-        )}
-        {report && report.grades.length > 0 && (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Mapel</TableHead>
-                <TableHead className="text-right">Rata-rata</TableHead>
-                <TableHead>Per Tipe</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {report.grades.map((g) => (
-                <TableRow key={g.subject}>
-                  <TableCell>{g.subject}</TableCell>
-                  <TableCell className="text-right font-semibold">{g.average}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {Object.entries(g.byType).map(([t, v]) => `${t.toUpperCase()}: ${v}`).join(' · ')}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-
-        {att && (
-          <p className="text-sm">
-            Kehadiran: <strong>{att.hadir ?? 0}</strong> hadir · {att.izin ?? 0} izin ·{' '}
-            {att.sakit ?? 0} sakit · {att.alpha ?? 0} alpa
-          </p>
-        )}
-
-        {canEditNotes && report?.status === 'draft' ? (
-          <div className="space-y-1.5">
-            <Label htmlFor="rapor-notes">Catatan Wali Kelas</Label>
-            <Textarea id="rapor-notes" rows={3} value={notes}
-              onChange={(e) => setNotes(e.target.value)} />
-            <Button size="sm" disabled={pending}
-              onClick={() => report && run(() => updateReportNotes(report.id, notes.trim() || null))}>
-              Simpan Catatan
-            </Button>
-          </div>
-        ) : report?.notes ? (
-          <div className="rounded border bg-gray-50 px-3 py-2 text-sm">
-            <strong>Catatan:</strong> {report.notes}
-          </div>
-        ) : null}
-      </DialogContent>
-    </Dialog>
-  );
+  const attendance = report?.attendance;
+  return <Dialog open={!!report} onOpenChange={(open: boolean) => !open && onClose()}>
+    <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+      <DialogHeader><DialogTitle>Rapor {report?.student.user.fullName}</DialogTitle><DialogDescription>{report?.class.name} | {report?.academicYear} Semester {report?.semester}</DialogDescription></DialogHeader>
+      {report && report.grades.length > 0 ? <div className="overflow-x-auto rounded border"><Table><TableHeader><TableRow><TableHead>Mata pelajaran</TableHead><TableHead className="text-right">Nilai akhir</TableHead><TableHead>Komponen</TableHead></TableRow></TableHeader><TableBody>{report.grades.map((grade) => <TableRow key={grade.subject}><TableCell>{grade.subject}</TableCell><TableCell className="text-right font-semibold">{grade.average}</TableCell><TableCell className="text-xs text-muted-foreground">{Object.entries(grade.byType).map(([type, value]) => `${type.toUpperCase()}: ${value}`).join(' | ')}</TableCell></TableRow>)}</TableBody></Table></div> : <p className="text-sm text-muted-foreground">Belum ada nilai pada snapshot ini.</p>}
+      {attendance && <p className="text-sm">Kehadiran: <b>{attendance.hadir ?? 0}</b> hadir | {attendance.izin ?? 0} izin | {attendance.sakit ?? 0} sakit | {attendance.alpha ?? 0} alpa</p>}
+      {report?.canManageDraft && report.status === 'draft' ? <div className="space-y-2"><Label htmlFor="report-notes">Catatan wali kelas</Label><Textarea id="report-notes" rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} /><Button size="sm" disabled={pending} onClick={() => run(() => updateReportNotes(report.id, notes.trim() || null, report.updatedAt), onClose)}>Simpan catatan</Button></div> : report?.notes ? <p className="rounded border bg-muted/30 p-3 text-sm"><b>Catatan wali kelas:</b> {report.notes}</p> : null}
+      {report?.returnReason && <p className="rounded border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><b>Alasan pengembalian terakhir:</b> {report.returnReason}</p>}
+      {report && <div className="border-t pt-3 text-xs text-muted-foreground"><p>Diperiksa oleh: {report.checkedByName ?? '-'}</p>{report.returnedAt && <p>Dikembalikan oleh: {report.returnedByName ?? '-'}</p>}<p>Diterbitkan oleh: {report.publishedByName ?? '-'}</p><p>Didistribusikan oleh: {report.distributedByName ?? '-'}</p></div>}
+      {report?.statusEvents && report.statusEvents.length > 0 && <section className="space-y-2 border-t pt-3" aria-label="Riwayat status rapor"><h3 className="text-sm font-semibold">Riwayat status</h3>{report.statusEvents.map((event) => <div key={event.id} className="text-xs text-muted-foreground"><p><b>{event.actorName}</b>: {event.fromStatus} ke {event.toStatus}</p><p>{new Date(event.createdAt).toLocaleString('id-ID')}{event.incidentReference ? ` | Insiden ${event.incidentReference}` : ''}{event.reason ? ` | ${event.reason}` : ''}</p></div>)}</section>}
+    </DialogContent>
+  </Dialog>;
 }
 
-// ── Generate massal ───────────────────────────────────────────────────────────
-function GenerateDialog({ open, onOpenChange, classes, onResult, defaultAcademicYear, defaultSemester }: {
-  open: boolean; onOpenChange: (o: boolean) => void;
-  classes: ClassItem[]; onResult: (msg: string) => void;
-  defaultAcademicYear?: string; defaultSemester?: number;
+function ReturnDialog({ report, pending, error, onClose, run }: { report: ReportItem | null; pending: boolean; error: string; onClose: () => void; run: (action: () => Promise<{ success: boolean; error?: string }>, onSuccess?: () => void) => void }) {
+  const [reason, setReason] = useState('');
+  useEffect(() => { if (report) setReason(''); }, [report]);
+  return <Dialog open={!!report} onOpenChange={(open: boolean) => !open && !pending && onClose()}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Kembalikan ke wali kelas</DialogTitle><DialogDescription>Jelaskan perbaikan yang diperlukan agar wali kelas dapat menindaklanjuti tanpa menebak.</DialogDescription></DialogHeader><div className="space-y-2"><Label htmlFor="return-reason">Alasan pengembalian</Label><Textarea id="return-reason" rows={4} value={reason} onChange={(event) => setReason(event.target.value)} /></div>{error && <p className="text-sm text-destructive" role="alert">{error}</p>}<div className="flex justify-end gap-2"><Button variant="outline" disabled={pending} onClick={onClose}>Batal</Button><Button variant="destructive" disabled={pending || reason.trim().length < 3} onClick={() => report && run(() => transitionReport(report.id, 'return', reason.trim()), onClose)}>{pending && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}Kembalikan</Button></div></DialogContent></Dialog>;
+}
+
+function RecoveryDialog({ report, pending, error, onClose, run }: { report: ReportItem | null; pending: boolean; error: string; onClose: () => void; run: (action: () => Promise<{ success: boolean; error?: string }>, onSuccess?: () => void) => void }) {
+  const [reason, setReason] = useState('');
+  const [incidentReference, setIncidentReference] = useState('');
+  useEffect(() => {
+    if (report) {
+      setReason('');
+      setIncidentReference('');
+    }
+  }, [report]);
+  return <Dialog open={!!report} onOpenChange={(open: boolean) => !open && !pending && onClose()}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Pemulihan administratif rapor</DialogTitle><DialogDescription>Jalur ini hanya untuk insiden operasional. Rapor akan dikembalikan ke draft dan seluruh tahapan persetujuan harus dijalankan ulang.</DialogDescription></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label htmlFor="incident-reference">Referensi insiden</Label><Input id="incident-reference" value={incidentReference} onChange={(event) => setIncidentReference(event.target.value)} placeholder="Contoh: INC-2026-0042" maxLength={100} /></div><div className="space-y-2"><Label htmlFor="recovery-reason">Alasan pemulihan</Label><Textarea id="recovery-reason" rows={4} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Jelaskan insiden dan alasan dokumen perlu dibuka kembali." maxLength={2000} /></div></div>{error && <p className="text-sm text-destructive" role="alert">{error}</p>}<div className="flex justify-end gap-2"><Button variant="outline" disabled={pending} onClick={onClose}>Batal</Button><Button variant="destructive" disabled={pending || reason.trim().length < 10 || incidentReference.trim().length < 3} onClick={() => report && run(() => recoverReport(report.id, reason.trim(), incidentReference.trim()), onClose)}>{pending && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}Pulihkan ke draft</Button></div></DialogContent></Dialog>;
+}
+
+function ConfirmTransitionDialog({ value, pending, error, onClose, run }: {
+  value: { report: ReportItem; action: 'publish' | 'distribute' } | null;
+  pending: boolean;
+  error: string;
+  onClose: () => void;
+  run: (action: () => Promise<{ success: boolean; error?: string }>, onSuccess?: () => void) => void;
 }) {
+  const publishing = value?.action === 'publish';
+  return <Dialog open={!!value} onOpenChange={(open: boolean) => !open && !pending && onClose()}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{publishing ? 'Terbitkan rapor?' : 'Distribusikan rapor?'}</DialogTitle><DialogDescription>{value ? `${value.report.student.user.fullName} | ${value.report.class.name} | ${value.report.academicYear} Semester ${value.report.semester}` : ''}</DialogDescription></DialogHeader><p className="text-sm text-muted-foreground">{publishing ? 'Rapor akan dikunci sebagai dokumen terbit dan siap didistribusikan oleh petugas.' : 'Rapor akan langsung dapat dilihat oleh siswa dan orang tua. Pastikan identitas, nilai, kehadiran, dan catatan sudah benar.'}</p>{error && <p className="text-sm text-destructive" role="alert">{error}</p>}<div className="flex justify-end gap-2"><Button variant="outline" disabled={pending} onClick={onClose}>Batal</Button><Button disabled={pending} onClick={() => value && run(() => transitionReport(value.report.id, value.action), onClose)}>{pending && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}{publishing ? 'Ya, terbitkan' : 'Ya, distribusikan'}</Button></div></DialogContent></Dialog>;
+}
+
+function GenerateDialog({ open, onOpenChange, classes, defaultAcademicYear, defaultSemester, onResult }: Props & { open: boolean; onOpenChange: (open: boolean) => void; onResult: (message: string) => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [classId, setClassId] = useState('');
-  const [academicYear, setAcademicYear] = useState(defaultAcademicYear || '2026/2027');
-  const [semester, setSemester] = useState(String(defaultSemester ?? 1));
-
-  useEffect(() => {
-    if (open) { setError(''); setClassId(classes[0]?.id ?? ''); }
-  }, [open, classes]);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    const r = await generateReports({ classId, academicYear, semester: Number(semester) });
-    setLoading(false);
-    if (r.success) {
-      const d = r.data as { created: number; regenerated: number; skipped: number; totalStudents: number };
-      onResult(`Generate selesai: ${d.created} baru · ${d.regenerated} diperbarui · ${d.skipped} dilewati (sudah diperiksa+) dari ${d.totalStudents} siswa.`);
-      onOpenChange(false);
-    } else setError(('error' in r && r.error) || 'Gagal generate');
+  const [academicYear, setAcademicYear] = useState(defaultAcademicYear);
+  const [semester, setSemester] = useState(String(defaultSemester));
+  const manageableClasses = useMemo(() => classes.filter((item) => item.canManageDraft), [classes]);
+  useEffect(() => { if (open) { setError(''); setClassId(manageableClasses[0]?.id ?? ''); setAcademicYear(defaultAcademicYear); setSemester(String(defaultSemester)); } }, [manageableClasses, defaultAcademicYear, defaultSemester, open]);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setLoading(true); setError('');
+    const result = await generateReports({ classId, academicYear, semester: Number(semester) }); setLoading(false);
+    if (!result.success) { setError(result.error ?? 'Draft rapor gagal disiapkan'); return; }
+    const data = result.data as { generated: number; refreshed: number; skipped: number; totalStudents: number };
+    onResult(`${data.generated} draft baru, ${data.refreshed} draft diperbarui, dan ${data.skipped} rapor terkunci dilewati dari ${data.totalStudents} siswa.`); onOpenChange(false);
   };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Generate Rapor per Kelas</DialogTitle>
-          <DialogDescription>
-            Snapshot nilai & kehadiran dibuat sebagai draft. Rapor yang sudah
-            diperiksa/terbit TIDAK akan ditimpa.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Kelas</Label>
-            <Select value={classId || undefined} onValueChange={(v: string) => setClassId(v)}>
-              <SelectTrigger><SelectValue placeholder="Pilih kelas" /></SelectTrigger>
-              <SelectContent>
-                {classes.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="gen-ta">Tahun Ajaran</Label>
-              <Input id="gen-ta" required pattern="\d{4}/\d{4}" value={academicYear}
-                onChange={(e) => setAcademicYear(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Semester</Label>
-              <Select value={semester} onValueChange={(v: string) => setSemester(v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">Ganjil (1)</SelectItem>
-                  <SelectItem value="2">Genap (2)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" disabled={loading}
-              onClick={() => onOpenChange(false)}>Batal</Button>
-            <Button type="submit" disabled={loading || !classId}>
-              {loading ? 'Memproses…' : 'Generate'}
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Siapkan draft rapor kelas</DialogTitle><DialogDescription>Snapshot nilai dan kehadiran dibuat sebagai draft. Rapor yang telah diperiksa tidak akan ditimpa.</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={submit}><div className="space-y-2"><Label>Kelas wali</Label><Select value={classId || undefined} onValueChange={setClassId}><SelectTrigger><SelectValue placeholder="Pilih kelas" /></SelectTrigger><SelectContent>{manageableClasses.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div><div className="grid grid-cols-2 gap-3"><div className="space-y-2"><Label htmlFor="report-year">Tahun ajaran</Label><Input id="report-year" required pattern="\d{4}/\d{4}" value={academicYear} onChange={(event) => setAcademicYear(event.target.value)} /></div><div className="space-y-2"><Label>Semester</Label><Select value={semester} onValueChange={setSemester}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">Ganjil</SelectItem><SelectItem value="2">Genap</SelectItem></SelectContent></Select></div></div>{error && <p className="text-sm text-destructive" role="alert">{error}</p>}<div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={loading} onClick={() => onOpenChange(false)}>Batal</Button><Button type="submit" disabled={loading || !classId}>{loading && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}Siapkan draft</Button></div></form></DialogContent></Dialog>;
 }

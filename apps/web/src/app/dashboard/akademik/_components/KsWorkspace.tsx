@@ -2,7 +2,7 @@
 
 // =============================================================================
 // KsWorkspace — Dashboard KS / Waka Kurikulum (F4 — mockup adoption).
-// 7 screens: Beranda · Modul Ajar (RPP approval) · Audit Sumatif ·
+// 7 screens: Beranda · Modul Ajar (RPP approval) · Monitoring Sumatif ·
 // Monitoring KBM · Rekap Audit · KKTP · Jadwal & Tugas.
 // Desktop-first. Real data where APIs exist.
 // Mockup ref: .tasks/akademik-mockup/akademik-ks.html (1,305 lines)
@@ -12,9 +12,9 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import {
   LayoutDashboard, FileCheck2, ClipboardPenLine, Monitor, ClipboardCheck,
   Target, CalendarClock, Users, BadgeCheck, Presentation, FileClock,
-  AlertTriangle, Activity, TrendingUp, ListChecks, ChevronRight, X, UserX,
+  AlertTriangle, Activity, TrendingUp, ListChecks, ChevronRight, X,
   Check, CheckCircle2, XCircle, Info, Save, Table2, LayoutGrid, SlidersHorizontal,
-  Route, Lightbulb, Paperclip, FileText, RefreshCw,
+  Route, Lightbulb, Paperclip, FileText,
   type LucideIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -23,8 +23,8 @@ import type { ScheduleItem, ActivityItem, RppItem, ClassRef, LmsModuleItem } fro
 import { resolveProfileFramework } from './modul-ajar-profile';
 import { KKTP_DEFAULT } from '@/lib/academic';
 import { JP_SLOTS, fmtMin, scheduleDayOfWeek, wibTodayISO, wibDateLabel, currentJp, wibNow } from '@/lib/bell-times';
-import { reviewRpp, fetchAttendanceHeatmap, fetchMonitoringKbm, fetchRekapAudit, fetchKktpConfigs, saveKktpConfig, fetchTeacherAttendanceToday } from '../actions';
-import type { TeacherAttendanceSummary } from '../actions';
+import { fetchAttendanceHeatmap, fetchMonitoringKbm, fetchRekapAudit, fetchKktpConfigs, saveKktpConfig, fetchTeacherAttendanceToday } from '../actions';
+import type { AssessmentSessionData, TeacherAttendanceSummary } from '../actions';
 import RaporPipelineKs from './ks/RaporPipelineKs';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -40,7 +40,7 @@ interface Props {
   schedules: ScheduleItem[];
   activities: ActivityItem[];
   lmsModules: LmsModuleItem[];
-  realSumatif?: unknown[];
+  realSumatif?: AssessmentSessionData[];
   subjects?: { id: string; code: string; name: string; isActive: boolean }[];
   academicYear: string;
   semester: number;
@@ -64,11 +64,25 @@ const DOW = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
 // ── Types & config ───────────────────────────────────────────────────────────
 
-// P0: All SIMULASI constants purged — type-only anchors or honest config.
-// Sumatif data comes from /assessment/sessions (T1-05). Below is the type only.
+type SumatifStatus = 'Draft' | 'Aktif' | 'Selesai';
+
 interface SumatifItem {
-  id: string; guru: string; mapel: string; kelas: string; jenis: string;
-  judul: string; soal: number; status: string; tanggal: string; kkm: number; deskripsi: string;
+  id: string;
+  title: string;
+  subject: string;
+  className: string;
+  questionCount: number;
+  responseCount: number;
+  status: SumatifStatus;
+  durationMinutes: number | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+function sumatifStatus(status: string): SumatifStatus {
+  if (status === 'active') return 'Aktif';
+  if (status === 'completed') return 'Selesai';
+  return 'Draft';
 }
 
 // Scheduling structural config (NOT simulasi — these are real school parameters)
@@ -94,21 +108,34 @@ export default function KsWorkspace({
     if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }, [screen]);
   const [selRpp, setSelRpp] = useState<RppItem | null>(null);
-  // T1-05 (audit v2): gunakan data real dari /assessment/sessions; JANGAN fallback ke fake data.
-  // Saat kosong → array kosong → AuditSumatifKs menampilkan empty state (bukan data palsu).
-  // P0: typeof SIM_SUMATIF → SumatifItem interface.
-  const sumatifData = (realSumatif as SumatifItem[] | undefined) ?? [];
+  const sumatifData = useMemo<SumatifItem[]>(() => (realSumatif ?? [])
+    .filter((item) => item.type.toLowerCase() === 'sumatif')
+    .map((item) => ({
+      id: item.id,
+      title: item.title,
+      subject: item.module?.subject ?? '—',
+      className: item.class?.name ?? '—',
+      questionCount: item.questions?.length ?? 0,
+      responseCount: item._count?.responses ?? 0,
+      status: sumatifStatus(item.status),
+      durationMinutes: item.durationMinutes,
+      startedAt: item.startedAt,
+      completedAt: item.completedAt,
+    })), [realSumatif]);
   const [selSumatif, setSelSumatif] = useState<SumatifItem | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
   // Derived data
-  const pendingRpp = useMemo(() => rpp.filter((r) => r.status === 'submitted'), [rpp]);
-  const pendingSumatif = sumatifData.filter((s) => s.status === 'Menunggu');
+  const pendingRpp = useMemo(
+    () => rpp.filter((r) => r.status === 'submitted' || r.status === 'curriculum_reviewed'),
+    [rpp],
+  );
+  const activeSumatif = sumatifData.filter((s) => s.status === 'Aktif');
 
   const navWithBadges = NAV.map((n) => {
     if (n.key === 'modul') return { ...n, badge: pendingRpp.length };
-    if (n.key === 'sumatif') return { ...n, badge: pendingSumatif.length };
+    if (n.key === 'sumatif') return { ...n, badge: activeSumatif.length };
     return n;
   });
 
@@ -146,7 +173,7 @@ export default function KsWorkspace({
   return (
     <div className="space-y-1">
       <h1 className="text-2xl font-bold tracking-tight text-[#0f2e25]">Dashboard KS / Waka Kurikulum</h1>
-      <p className="text-sm text-[#6b8079]">Pengawasan akademik · approval modul ajar · audit sumatif · monitoring KBM</p>
+      <p className="text-sm text-[#6b8079]">Pengawasan akademik · approval modul ajar · monitoring sumatif · monitoring KBM</p>
 
       {dataWarning && (
         <div className="mt-2 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[12.5px] font-semibold text-amber-700">
@@ -217,21 +244,21 @@ export default function KsWorkspace({
       </div>
 
       <div className="pt-4">
-        {screen === 'beranda' && <BerandaKs hadirPct={hadirPct} todayAtt={todayAtt} pendingRpp={pendingRpp.length} pendingSumatif={pendingSumatif.length} belowKktp={belowKktp} schedules={schedules} classes={classes} onNavigate={setScreen} />}
-        {screen === 'modul' && <ModulAjarKs rpp={rpp} onReview={setSelRpp} showToast={showToast} />}
+        {screen === 'beranda' && <BerandaKs hadirPct={hadirPct} todayAtt={todayAtt} pendingRpp={pendingRpp.length} activeSumatif={activeSumatif.length} belowKktp={belowKktp} schedules={schedules} classes={classes} onNavigate={setScreen} />}
+        {screen === 'modul' && <ModulAjarKs rpp={rpp} onReview={setSelRpp} />}
         {screen === 'sumatif' && <AuditSumatifKs onOpenDetail={setSelSumatif} data={sumatifData} />}
         {screen === 'monitor' && <MonitoringKbmKs kelasMapel={kelasMapel} attendances={attendances} schedules={schedules} classes={classes} />}
         {screen === 'rekap' && <RekapAuditKs kelasMapel={kelasMapel} grades={grades} attendances={attendances} activities={activities} rpp={rpp} />}
         {screen === 'kktp' && <KktpKs kelasMapel={kelasMapel} subjects={subjects ?? []} showToast={showToast} academicYear={academicYear} semester={semester} />}
-        {screen === 'jadwal' && <JadwalTugasKs schedules={schedules} classes={classes} showToast={showToast} pendingRpp={pendingRpp} pendingSumatif={pendingSumatif} />}
-        {screen === 'rapor' && <RaporPipelineKs classes={classes} academicYear={academicYear} semester={semester} />}
+        {screen === 'jadwal' && <JadwalTugasKs schedules={schedules} classes={classes} pendingRpp={pendingRpp} activeSumatif={activeSumatif} />}
+        {screen === 'rapor' && <RaporPipelineKs academicYear={academicYear} semester={semester} />}
       </div>
 
       {/* Modul Ajar Detail Modal */}
-      {selRpp && <RppDetailModal rpp={selRpp} onClose={() => setSelRpp(null)} showToast={showToast} />}
+      {selRpp && <RppDetailModal rpp={selRpp} onClose={() => setSelRpp(null)} />}
 
       {/* Sumatif Detail Modal */}
-      {selSumatif && <SumatifDetailModal item={selSumatif} onClose={() => setSelSumatif(null)} showToast={showToast} />}
+      {selSumatif && <SumatifDetailModal item={selSumatif} onClose={() => setSelSumatif(null)} />}
 
       {/* Toast */}
       {toast && (
@@ -245,8 +272,8 @@ export default function KsWorkspace({
 
 // ═══ SCREEN 1: BERANDA ════════════════════════════════════════════════════════
 
-function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, belowKktp, schedules, classes, onNavigate }: {
-  hadirPct: number | null; todayAtt: AttendanceItem[]; pendingRpp: number; pendingSumatif: number;
+function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, activeSumatif, belowKktp, schedules, classes, onNavigate }: {
+  hadirPct: number | null; todayAtt: AttendanceItem[]; pendingRpp: number; activeSumatif: number;
   belowKktp: { kelas: string; mapel: string; tuntasPct: number | null }[];
   schedules: ScheduleItem[]; classes: ClassRef[]; onNavigate: (s: Screen) => void;
 }) {
@@ -298,7 +325,7 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
         <Kpi icon={BadgeCheck} label="Guru Hadir" value={teacherAtt ? `${teacherAtt.hadir}/${teacherAtt.total}` : '—'} sub={teacherAtt ? `${teacherAtt.belum} belum hadir` : 'Memuat...'} onClick={() => setBerandaModal('guruHadir')} />
         <Kpi icon={Presentation} label="Kelas Berjalan" value={`${activeClasses}`} sub={`${todaySchedules.length} sesi hari ini`} onClick={() => setBerandaModal('kelasBerjalan')} />
         <Kpi icon={FileClock} label="Modul Pending" value={`${pendingRpp}`} valueClass="text-amber-600" onClick={() => onNavigate('modul')} />
-        <Kpi icon={ClipboardPenLine} label="Sumatif Pending" value={`${pendingSumatif}`} valueClass="text-amber-600" onClick={() => onNavigate('sumatif')} />
+        <Kpi icon={ClipboardPenLine} label="Sumatif Aktif" value={`${activeSumatif}`} valueClass="text-sky-600" onClick={() => onNavigate('sumatif')} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
@@ -336,13 +363,6 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
                 <ChevronRight className="h-4 w-4 shrink-0 text-[#9bb0a8]" />
               </button>
             )}
-            {pendingSumatif > 0 && (
-              <button type="button" onClick={() => onNavigate('sumatif')} className="flex w-full items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3 text-left transition hover:border-emerald-200 hover:shadow-sm">
-                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-600"><ClipboardPenLine className="h-[18px] w-[18px]" /></div>
-                <div className="min-w-0 flex-1"><b className="text-[12.5px] text-[#0f2e25]">{pendingSumatif} soal sumatif perlu audit</b><div className="text-[11.5px] text-[#6b8079]">Klik untuk audit</div></div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-[#9bb0a8]" />
-              </button>
-            )}
             {belowKktp.length > 0 && (
               <button type="button" onClick={() => onNavigate('monitor')} className="flex w-full items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3 text-left transition hover:border-emerald-200 hover:shadow-sm">
                 <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-rose-50 text-rose-600"><AlertTriangle className="h-[18px] w-[18px]" /></div>
@@ -350,12 +370,7 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, pendingSumatif, 
                 <ChevronRight className="h-4 w-4 shrink-0 text-[#9bb0a8]" />
               </button>
             )}
-            <button type="button" onClick={() => onNavigate('monitor')} className="flex w-full items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3 text-left transition hover:border-emerald-200 hover:shadow-sm">
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-violet-50 text-violet-600"><UserX className="h-[18px] w-[18px]" /></div>
-              <div className="min-w-0 flex-1"><b className="text-[12.5px] text-[#0f2e25]">0 guru RPP turnaround &gt; 7 hari</b><div className="text-[11.5px] text-[#6b8079]">Perlu follow-up Wakakur</div></div>
-              <ChevronRight className="h-4 w-4 shrink-0 text-[#9bb0a8]" />
-            </button>
-            {pendingRpp === 0 && pendingSumatif === 0 && belowKktp.length === 0 && (
+            {pendingRpp === 0 && belowKktp.length === 0 && (
               <div className="grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">Tidak ada tindakan tertunda.</div>
             )}
           </div>
@@ -656,44 +671,29 @@ function KelasBerjalanModal({ schedules, classes, onClose }: { schedules: Schedu
 
 // ═══ SCREEN 2: MODUL AJAR (RPP Approval) ═══════════════════════════════════════
 
-function ModulAjarKs({ rpp, onReview, showToast }: { rpp: RppItem[]; onReview: (r: RppItem) => void; showToast: (msg: string) => void }) {
+function ModulAjarKs({ rpp, onReview }: { rpp: RppItem[]; onReview: (r: RppItem) => void }) {
   const [filter, setFilter] = useState<'Semua' | 'Menunggu' | 'Disetujui' | 'Ditolak'>('Semua');
-  const [pending, startTransition] = useTransition();
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
 
   const statusMap: Record<string, 'Semua' | 'Menunggu' | 'Disetujui' | 'Ditolak'> = {
-    submitted: 'Menunggu', approved: 'Disetujui', revision: 'Ditolak', draft: 'Semua',
+    submitted: 'Menunggu', curriculum_reviewed: 'Menunggu', approved: 'Disetujui', revision: 'Ditolak', draft: 'Semua',
   };
   const filtered = rpp.filter((r) => filter === 'Semua' || statusMap[r.status] === filter);
 
-  const handleReview = (r: RppItem, decision: 'approved' | 'revision') => {
-    const note = decision === 'revision' ? window.prompt('Alasan revisi (opsional):', '') : undefined;
-    setErr(null); setBusyId(r.id);
-    startTransition(async () => {
-      const res = await reviewRpp(r.id, decision, note ?? undefined);
-      setBusyId(null);
-      if (res.success) showToast(decision === 'approved' ? 'Modul ajar disetujui — notifikasi terkirim ke guru' : 'Modul ajar ditolak — guru diberi notifikasi');
-      else setErr(res.error ?? 'Gagal mereview Modul Ajar.');
-    });
-  };
-
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="flex items-center gap-2 text-[17px] font-bold text-[#0f2e25]"><FileCheck2 className="h-5 w-5 text-emerald-600" />Approval Modul Ajar / RPP</h3>
-          <p className="text-[12.5px] text-[#6b8079]">Review dan approve modul ajar yang diajukan guru</p>
+          <h3 className="flex items-center gap-2 text-[17px] font-bold text-[#0f2e25]"><FileCheck2 className="h-5 w-5 text-emerald-600" />Status Modul Ajar</h3>
+          <p className="text-[12.5px] text-[#6b8079]">Ringkasan status. Keputusan dua tahap dilakukan pada antrean khusus.</p>
         </div>
-        <div className="inline-flex rounded-xl bg-[#f4f7f5] p-1">
+        <a href="/dashboard/rpp" className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-emerald-700">Buka Review Modul Ajar</a>
+      </div>
+      <div className="inline-flex rounded-xl bg-[#f4f7f5] p-1">
           {(['Semua', 'Menunggu', 'Disetujui', 'Ditolak'] as const).map((f) => (
             <button key={f} type="button" onClick={() => setFilter(f)}
               className={clsx('rounded-lg px-3 py-1.5 text-[12px] font-bold', filter === f ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]')}>{f}</button>
           ))}
-        </div>
       </div>
-
-      {err && <div className="flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-600"><AlertTriangle className="h-4 w-4 shrink-0" />{err}</div>}
 
       {filtered.length === 0 ? (
         <div className="grid h-24 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] text-[#9bb0a8]">Tidak ada modul ajar untuk filter ini.</div>
@@ -702,25 +702,16 @@ function ModulAjarKs({ rpp, onReview, showToast }: { rpp: RppItem[]; onReview: (
           {filtered.map((r) => {
             const st = statusMap[r.status] ?? 'Semua';
             const stBadge = st === 'Menunggu' ? 'bg-amber-50 text-amber-700' : st === 'Disetujui' ? 'bg-emerald-50 text-emerald-700' : st === 'Ditolak' ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-600';
-            const isBusy = pending && busyId === r.id;
             return (
               <div key={r.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3.5">
                 <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-emerald-100 text-[12px] font-bold text-emerald-700">{r.subject.charAt(0)}</div>
                 <div className="min-w-0 flex-1">
                   <b className="text-[13px] text-[#0f2e25]">{r.title}</b>
-                  <div className="text-[11px] text-[#6b8079]">{r.subject} · {r.class?.name ?? '—'} · {r.status === 'submitted' ? 'diajukan' : r.status === 'approved' ? 'disetujui' : r.status === 'revision' ? 'revisi' : 'draft'}{r.submittedAt ? ` ${new Date(r.submittedAt).toLocaleDateString('id')}` : ''}</div>
+                  <div className="text-[11px] text-[#6b8079]">{r.subject} · {r.class?.name ?? '—'} · {r.status === 'submitted' ? 'menunggu kurikulum' : r.status === 'curriculum_reviewed' ? 'menunggu persetujuan KS' : r.status === 'approved' ? 'disetujui final' : r.status === 'revision' ? 'revisi' : 'draft'}{r.submittedAt ? ` ${new Date(r.submittedAt).toLocaleDateString('id')}` : ''}</div>
                   {r.status === 'revision' && r.reviewNote && <div className="mt-1 text-[10.5px] font-medium text-amber-700">Catatan KS: {r.reviewNote}</div>}
                 </div>
                 <span className={clsx('rounded-md px-2 py-0.5 text-[10.5px] font-bold', stBadge)}>{st}</span>
-                <div className="flex gap-1.5">
-                  <button type="button" onClick={() => onReview(r)} className="inline-flex items-center gap-1 rounded-lg border border-[#e6efea] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><Info className="h-3.5 w-3.5" />Detail</button>
-                  {r.status === 'submitted' && (
-                    <>
-                      <button type="button" onClick={() => handleReview(r, 'approved')} disabled={isBusy} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"><Check className="h-3.5 w-3.5" />Approve</button>
-                      <button type="button" onClick={() => handleReview(r, 'revision')} disabled={isBusy} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] font-bold text-rose-600 hover:bg-rose-100 disabled:opacity-50"><X className="h-3.5 w-3.5" />Tolak</button>
-                    </>
-                  )}
-                </div>
+                <button type="button" onClick={() => onReview(r)} className="inline-flex items-center gap-1 rounded-lg border border-[#e6efea] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><Info className="h-3.5 w-3.5" />Detail</button>
               </div>
             );
           })}
@@ -733,40 +724,35 @@ function ModulAjarKs({ rpp, onReview, showToast }: { rpp: RppItem[]; onReview: (
 // ═══ SCREEN 3: AUDIT SUMATIF ═════════════════════════════════════════════════
 
 function AuditSumatifKs({ onOpenDetail, data }: { onOpenDetail: (s: SumatifItem) => void; data: SumatifItem[] }) {
-  const [filter, setFilter] = useState<'Semua' | 'Menunggu' | 'Disetujui' | 'Ditolak'>('Semua');
+  const [filter, setFilter] = useState<'Semua' | SumatifStatus>('Semua');
   const filtered = data.filter((s) => filter === 'Semua' || s.status === filter);
-  const sumatifDataPresent = data.length > 0;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="flex items-center gap-2 text-[17px] font-bold text-[#0f2e25]"><ClipboardPenLine className="h-5 w-5 text-emerald-600" />Audit Sumatif</h3>
-          <p className="text-[12.5px] text-[#6b8079]">Review soal sumatif sebelum dipublikasi ke siswa</p>
+          <h3 className="flex items-center gap-2 text-[17px] font-bold text-[#0f2e25]"><ClipboardPenLine className="h-5 w-5 text-emerald-600" />Monitoring Sumatif</h3>
+          <p className="text-[12.5px] text-[#6b8079]">Status sesi, jumlah soal, dan respons siswa</p>
         </div>
         <div className="inline-flex rounded-xl bg-[#f4f7f5] p-1">
-          {(['Semua', 'Menunggu', 'Disetujui', 'Ditolak'] as const).map((f) => (
+          {(['Semua', 'Draft', 'Aktif', 'Selesai'] as const).map((f) => (
             <button key={f} type="button" onClick={() => setFilter(f)} className={clsx('rounded-lg px-3 py-1.5 text-[12px] font-bold', filter === f ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]')}>{f}</button>
           ))}
         </div>
       </div>
-      {sumatifDataPresent ? (
-        <div className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10.5px] font-bold text-sky-700"><ClipboardPenLine className="h-3 w-3" /> Data sesi dari /assessment/sessions</div>
-      ) : null}
       <div className="space-y-2.5">
         {filtered.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[#e6efea] bg-[#f9fbfa] px-4 py-8 text-center">
             <ClipboardPenLine className="mx-auto h-7 w-7 text-[#cbd5e1]" />
             <p className="mt-2 text-[13px] font-bold text-[#0f2e25]">Belum ada sesi sumatif</p>
-            <p className="text-[11.5px] text-[#6b8079]">Sesi assessment yang dibuat guru akan muncul di sini untuk diaudit.</p>
           </div>
         ) : (
           filtered.map((s) => {
-            const stBadge = s.status === 'Menunggu' ? 'bg-amber-50 text-amber-700' : s.status === 'Disetujui' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600';
+            const stBadge = s.status === 'Aktif' ? 'bg-sky-50 text-sky-700' : s.status === 'Selesai' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600';
             return (
               <button key={s.id} type="button" onClick={() => onOpenDetail(s)} className="flex w-full items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3.5 text-left transition hover:border-emerald-200 hover:shadow-sm">
-                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-100 text-[11px] font-bold text-emerald-700">{s.jenis}</div>
-                <div className="min-w-0 flex-1"><b className="text-[13px] text-[#0f2e25]">{s.judul}</b><div className="text-[11px] text-[#6b8079]">{s.guru} · {s.mapel} · {s.kelas} · {s.soal} soal · {s.tanggal}</div></div>
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-100 text-[11px] font-bold text-emerald-700">{s.questionCount}</div>
+                <div className="min-w-0 flex-1"><b className="text-[13px] text-[#0f2e25]">{s.title}</b><div className="text-[11px] text-[#6b8079]">{s.subject} · {s.className} · {s.responseCount} respons</div></div>
                 <span className={clsx('rounded-md px-2 py-0.5 text-[10.5px] font-bold', stBadge)}>{s.status}</span>
               </button>
             );
@@ -1207,19 +1193,12 @@ function KktpKs({ kelasMapel, subjects, showToast, academicYear, semester }: { k
 
 // ═══ SCREEN 7: JADWAL & TUGAS ═════════════════════════════════════════════════
 
-function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumatif }: {
+function JadwalTugasKs({ schedules, classes, pendingRpp, activeSumatif }: {
   schedules: ScheduleItem[]; classes: ClassRef[];
-  showToast: (msg: string) => void;
-  pendingRpp: RppItem[]; pendingSumatif: SumatifItem[];
+  pendingRpp: RppItem[]; activeSumatif: SumatifItem[];
 }) {
   const [selClass, setSelClass] = useState<string>('all');
   const filtered = selClass === 'all' ? schedules : schedules.filter((s) => s.classId === selClass);
-
-  // G17: Schedule edit modal state
-  const [editCtx, setEditCtx] = useState<{ day: number; classId: string; jp: number; className: string } | null>(null);
-  const [editMapel, setEditMapel] = useState('');
-  const [editGuru, setEditGuru] = useState('');
-  const [editRuang, setEditRuang] = useState('');
 
   const matrixRows = JP_SLOTS.map((slot) => ({
     slot,
@@ -1239,43 +1218,19 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
   }, [schedules]);
   const over24 = guruLoad.filter((g) => g.jp > SCHED_CONFIG.maxJpGuru).length;
 
-  // G15: Tugas mendatang (pending RPP + sumatif)
+  // Antrian hanya memakai status server; tidak membuat deadline sintetis.
   const tugasMendatang = useMemo(() => [
-    ...pendingRpp.map((r, i) => ({ title: r.title, subject: r.subject, kelas: r.class?.name ?? '—', deadline: `${2 + i} hari`, status: 'Menunggu Review' })),
-    ...pendingSumatif.map((s, i) => ({ title: s.judul, subject: s.mapel, kelas: s.kelas, deadline: `${3 + i} hari`, status: 'Menunggu Audit' })),
-  ], [pendingRpp, pendingSumatif]);
-
-  // Unique mapel list for edit modal dropdown
-  const mapelList = useMemo(() => [...new Set(schedules.map((s) => s.teachingAssignment?.subject).filter(Boolean))].sort(), [schedules]);
-
-  // G17: Schedule edit handlers
-  const openSchedEdit = (day: number, classId: string, jp: number) => {
-    const cls = classes.find((c) => c.id === classId);
-    const existing = schedules.find((s) => s.classId === classId && s.dayOfWeek === day && jp >= s.jpStart && jp <= s.jpEnd);
-    setEditCtx({ day, classId, jp, className: cls?.name ?? '—' });
-    setEditMapel(existing?.teachingAssignment?.subject ?? mapelList[0] ?? '');
-    setEditGuru(existing?.teachingAssignment?.teacher?.user?.fullName ?? '');
-    setEditRuang(existing?.room ?? '');
-  };
-  const saveSchedEdit = () => {
-    if (!editCtx) return;
-    showToast(`Jadwal manual disimpan · ${DOW[editCtx.day]} JP${editCtx.jp}`);
-    setEditCtx(null);
-  };
-  const clearSchedEdit = () => {
-    if (!editCtx) return;
-    showToast('Slot jadwal dikosongkan');
-    setEditCtx(null);
-  };
+    ...pendingRpp.map((r) => ({ title: r.title, subject: r.subject, kelas: r.class?.name ?? '—', status: 'Menunggu Review' })),
+    ...activeSumatif.map((s) => ({ title: s.title, subject: s.subject, kelas: s.className, status: 'Sumatif Aktif' })),
+  ], [activeSumatif, pendingRpp]);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="flex items-center gap-2 text-[17px] font-bold text-[#0f2e25]"><CalendarClock className="h-5 w-5 text-emerald-600" />Jadwal & Pembagian Tugas Mengajar</h3>
-          <p className="text-[12.5px] text-[#6b8079]">{classes.length} rombel · {totalJP} JP total · klik sel untuk detail</p>
+          <p className="text-[12.5px] text-[#6b8079]">{classes.length} rombel · {totalJP} JP total · mode pantau</p>
         </div>
-        <button onClick={() => showToast('Generate Ulang dinonaktifkan — penjadwalan manual aktif')} className="inline-flex items-center gap-1.5 rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><RefreshCw className="h-3.5 w-3.5" />Generate Ulang</button>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -1285,9 +1240,9 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
         <Kpi icon={Presentation} label="Sesi" value={`${schedules.length}`} />
       </div>
 
-      {/* G14: Konfigurasi Penjadwalan */}
+      {/* Struktur jadwal, read-only untuk KS. */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
-        <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><SlidersHorizontal className="h-4 w-4 text-emerald-600" />Konfigurasi Penjadwalan</h4>
+        <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><SlidersHorizontal className="h-4 w-4 text-emerald-600" />Struktur Jadwal</h4>
         <div className="mt-3 grid grid-cols-3 gap-3 lg:grid-cols-6">
           {[['Hari Aktif', `${SCHED_CONFIG.days}`], ['JP/Hari', `${SCHED_CONFIG.jpPerDay}`], ['Total JP/Minggu', `${SCHED_CONFIG.days * SCHED_CONFIG.jpPerDay}`], ['Rombel', `${classes.length}`], ['Guru', `${guruLoad.length}`], ['Max JP/Guru', `${SCHED_CONFIG.maxJpGuru}`]].map(([label, val]) => (
             <div key={label} className="rounded-xl bg-[#f4f7f5] px-3 py-2.5 text-center"><div className="text-[20px] font-extrabold text-[#0f2e25]">{val}</div><div className="text-[10.5px] font-medium text-[#6b8079]">{label}</div></div>
@@ -1295,7 +1250,7 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
         </div>
       </div>
 
-      {/* G16: Conflict Panel — P0: SIM_SCHED_CONFLICTS removed. Real conflicts computed from schedule gaps. */}
+      {/* Kelengkapan penugasan; panel ini tidak menyatakan bebas overlap. */}
       {(() => {
         // Detect real conflicts: classes with JP slots missing a teacher assignment
         const conflictSlots: { day: number; jp: number; rombel: string }[] = [];
@@ -1318,10 +1273,9 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
                 {conflictSlots.map((c, i) => <tr key={i} className="border-b border-rose-100"><td className="py-2 pr-3 font-bold text-rose-700">{DOW[c.day]}</td><td className="py-2 pr-3 text-rose-600">JP{c.jp}</td><td className="py-2 text-rose-600">{c.rombel}</td></tr>)}
               </tbody></table>
             </div>
-            <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-medium text-amber-700"><Info className="mr-1 inline h-3 w-3" />Tugaskan guru untuk slot yang kosong, atau klik sel di matriks untuk edit manual.</div>
           </div>
         ) : (
-          <div className="rounded-lg bg-emerald-50 px-3 py-2 text-[11.5px] font-semibold text-emerald-700"><CheckCircle2 className="mr-1 inline h-3.5 w-3.5" /><b>Tanpa konflik!</b> Semua {schedules.length} slot jadwal memiliki guru.</div>
+          <div className="rounded-lg bg-emerald-50 px-3 py-2 text-[11.5px] font-semibold text-emerald-700"><CheckCircle2 className="mr-1 inline h-3.5 w-3.5" />Semua {schedules.length} slot jadwal memiliki guru.</div>
         );
       })()}
 
@@ -1345,11 +1299,11 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
                 <tr key={slot.jp}>
                   <td className="px-2 py-2 text-[10.5px] font-extrabold text-emerald-700">JP {slot.jp}<span className="block font-medium text-[#9bb0a8]">{fmtMin(slot.startMin)}</span></td>
                   {cells.map((c, i) => c ? (
-                    <td key={i} onClick={() => openSchedEdit(i + 1, c.classId, slot.jp)} className="cursor-pointer rounded-md border border-emerald-200 bg-emerald-50/40 px-2 py-1.5 text-center hover:bg-emerald-50">
+                    <td key={i} className="rounded-md border border-emerald-200 bg-emerald-50/40 px-2 py-1.5 text-center">
                       <b className="text-[10.5px] text-[#0f2e25]">{c.teachingAssignment?.subject?.slice(0, 8) ?? '—'}</b>
                       <div className="text-[9.5px] text-[#6b8079]">{c.class?.name ?? '—'}</div>
                     </td>
-                  ) : <td key={i} onClick={() => selClass !== 'all' && openSchedEdit(i + 1, selClass, slot.jp)} className="cursor-pointer rounded-md border border-[#e6efea] bg-[#f9fbfa] text-center text-[#9bb0a8] hover:bg-[#f0f4f2]">+</td>)}
+                  ) : <td key={i} className="rounded-md border border-[#e6efea] bg-[#f9fbfa] text-center text-[#9bb0a8]">—</td>)}
                 </tr>
               ))}
             </tbody>
@@ -1379,16 +1333,15 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
         </div>
       </div>
 
-      {/* G15: Tugas Mendatang */}
+      {/* Status akademik tanpa deadline sintetis. */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
-        <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><FileClock className="h-4 w-4 text-emerald-600" />Tugas Mendatang</h4>
+        <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><FileClock className="h-4 w-4 text-emerald-600" />Status Akademik</h4>
         <div className="mt-3 space-y-1">
           {tugasMendatang.map((t, i) => (
-            <div key={i} className="grid grid-cols-[2fr_1fr_1fr_70px_110px] items-center gap-2 border-b border-[#f0f4f2] py-2.5 text-[12px]">
-              <span className="font-bold text-[#0f2e25]">{t.title}</span>
-              <span className="text-[#355a4e]">{t.subject}</span>
-              <span className="text-[#6b8079]">{t.kelas}</span>
-              <span className="text-right font-bold text-amber-600">{t.deadline}</span>
+            <div key={`${t.status}-${i}`} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-[#f0f4f2] py-2.5 text-[12px] sm:grid-cols-[2fr_1fr_1fr_120px]">
+              <span className="min-w-0 font-bold text-[#0f2e25]">{t.title}</span>
+              <span className="hidden text-[#355a4e] sm:block">{t.subject}</span>
+              <span className="hidden text-[#6b8079] sm:block">{t.kelas}</span>
               <span className="text-right"><span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">{t.status}</span></span>
             </div>
           ))}
@@ -1396,67 +1349,16 @@ function JadwalTugasKs({ schedules, classes, showToast, pendingRpp, pendingSumat
         </div>
       </div>
 
-      {/* G17: Schedule Edit Modal */}
-      {editCtx && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEditCtx(null)}>
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-[#e6efea] px-5 py-3.5">
-              <div>
-                <div className="text-[14px] font-bold text-[#0f2e25]">Edit Jadwal — {editCtx.className}</div>
-                <div className="text-[11.5px] text-[#6b8079]">{DOW[editCtx.day]} · JP{editCtx.jp}</div>
-              </div>
-              <button onClick={() => setEditCtx(null)} className="text-[#9bb0a8] hover:text-[#0f2e25]"><X className="h-4 w-4" /></button>
-            </div>
-            <div className="space-y-3 px-5 py-4">
-              <div>
-                <label className="text-[11px] font-bold uppercase text-[#6b8079]">Mapel</label>
-                <select value={editMapel} onChange={(e) => setEditMapel(e.target.value)} className="mt-1 w-full rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-medium text-[#0f2e25]">
-                  {mapelList.map((m) => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[11px] font-bold uppercase text-[#6b8079]">Guru</label>
-                <select value={editGuru} onChange={(e) => setEditGuru(e.target.value)} className="mt-1 w-full rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-medium text-[#0f2e25]">
-                  {guruLoad.map((g) => <option key={g.name} value={g.name}>{g.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[11px] font-bold uppercase text-[#6b8079]">Ruang</label>
-                <input value={editRuang} onChange={(e) => setEditRuang(e.target.value)} placeholder="cth. Lab Komputer 1" className="mt-1 w-full rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-medium text-[#0f2e25]" />
-              </div>
-            </div>
-            <div className="flex items-center justify-between border-t border-[#e6efea] px-5 py-3.5">
-              <button onClick={clearSchedEdit} className="text-[12px] font-bold text-rose-600 hover:underline">Kosongkan Slot</button>
-              <div className="flex gap-2">
-                <button onClick={() => setEditCtx(null)} className="rounded-lg border border-[#e6efea] px-4 py-2 text-[12px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Batal</button>
-                <button onClick={saveSchedEdit} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-[12px] font-bold text-white hover:bg-emerald-700"><Save className="h-3.5 w-3.5" />Simpan</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
 // ═══ MODALS ═══════════════════════════════════════════════════════════════════
 
-function RppDetailModal({ rpp, onClose, showToast }: { rpp: RppItem; onClose: () => void; showToast: (msg: string) => void }) {
-  const [pending, startTransition] = useTransition();
+function RppDetailModal({ rpp, onClose }: { rpp: RppItem; onClose: () => void }) {
   const body = rpp.body;
   const fase = body?.fase ?? '—';
   const profileFramework = resolveProfileFramework(rpp.academicYear);
-
-  const handleReview = (decision: 'approved' | 'revision') => {
-    const note = decision === 'revision' ? window.prompt('Alasan revisi (opsional):', '') : undefined;
-    startTransition(async () => {
-      const res = await reviewRpp(rpp.id, decision, note ?? undefined);
-      if (res.success) {
-        showToast(decision === 'approved' ? 'Modul ajar disetujui — notifikasi terkirim ke guru' : 'Modul ajar ditolak — guru diberi notifikasi');
-        onClose();
-      }
-    });
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -1471,7 +1373,7 @@ function RppDetailModal({ rpp, onClose, showToast }: { rpp: RppItem; onClose: ()
             <StatPill n={`${body?.jpAllocation ?? '—'}`} l="Alokasi JP" />
             <StatPill n={`${body?.tp?.length ?? 0}`} l="CP/TP" />
             <StatPill n={fase} l="Fase" />
-            <StatPill n={rpp.status === 'approved' ? 'Disetujui' : rpp.status === 'submitted' ? 'Menunggu' : rpp.status === 'revision' ? 'Revisi' : 'Draft'} l="Status" />
+            <StatPill n={rpp.status === 'approved' ? 'Disetujui final' : rpp.status === 'curriculum_reviewed' ? 'Menunggu KS' : rpp.status === 'submitted' ? 'Menunggu kurikulum' : rpp.status === 'revision' ? 'Revisi' : 'Draft'} l="Status" />
           </div>
           {rpp.reviewNote && <div className="rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-semibold text-amber-700"><AlertTriangle className="mr-1 inline h-3 w-3" />Catatan KS: {rpp.reviewNote}</div>}
 
@@ -1543,58 +1445,42 @@ function RppDetailModal({ rpp, onClose, showToast }: { rpp: RppItem; onClose: ()
             {body?.lampiranUrl && <a href={body.lampiranUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-[12px] font-bold text-emerald-600 hover:underline">{body.lampiranUrl}</a>}
           </DetailSection>}
 
-          <p className="text-[11px] text-[#9bb0a8]"><Info className="mr-1 inline h-3 w-3" />Modul ajar yang disetujui otomatis tersinkron ke dashboard guru dan LMS siswa.</p>
+          <p className="text-[11px] text-[#9bb0a8]"><Info className="mr-1 inline h-3 w-3" />Keputusan dilakukan melalui antrean Review Modul Ajar agar jejak review dua tahap tetap utuh.</p>
         </div>
 
-        {/* Footer with actions */}
-        {rpp.status === 'submitted' && (
-          <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[#e6efea] bg-white px-5 py-3">
-            <button type="button" onClick={() => handleReview('revision')} disabled={pending} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-[12.5px] font-bold text-rose-600 hover:bg-rose-100 disabled:opacity-50"><X className="h-4 w-4" />Tolak</button>
-            <button type="button" onClick={() => handleReview('approved')} disabled={pending} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-[12.5px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"><Check className="h-4 w-4" />Setujui</button>
-          </div>
-        )}
+        <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[#e6efea] bg-white px-5 py-3">
+          <button type="button" onClick={onClose} className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>
+          <a href="/dashboard/rpp" className="inline-flex items-center rounded-xl bg-emerald-600 px-4 py-2 text-[12.5px] font-bold text-white hover:bg-emerald-700">Buka antrean review</a>
+        </div>
       </div>
     </div>
   );
 }
 
-function SumatifDetailModal({ item, onClose, showToast }: { item: SumatifItem; onClose: () => void; showToast: (msg: string) => void }) {
-  const handleSumatifAction = (action: 'Disetujui' | 'Ditolak') => {
-    if (action === 'Ditolak') window.prompt('Alasan penolakan (opsional):', '');
-    showToast(action === 'Disetujui' ? 'Sumatif disetujui — siap dipublikasi ke siswa' : 'Sumatif ditolak — guru diberi notifikasi');
-    onClose();
-  };
+function SumatifDetailModal({ item, onClose }: { item: SumatifItem; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="sticky top-0 flex items-center justify-between border-b border-[#e6efea] bg-white px-5 py-4">
-          <div><h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><ClipboardPenLine className="h-5 w-5 text-emerald-600" />{item.judul}</h3><p className="text-[11.5px] text-[#6b8079]">{item.guru} · {item.mapel} · {item.kelas} · {item.jenis} · KKM {item.kkm}</p></div>
+          <div><h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><ClipboardPenLine className="h-5 w-5 text-emerald-600" />{item.title}</h3><p className="text-[11.5px] text-[#6b8079]">{item.subject} · {item.className}</p></div>
           <button type="button" onClick={onClose} className="rounded-lg p-1 text-[#9bb0a8] hover:bg-[#f4f7f5]" aria-label="Tutup"><X className="h-5 w-5" /></button>
         </div>
         <div className="space-y-4 p-5">
           <div className="flex flex-wrap gap-2">
-            <StatPill n={`${item.soal}`} l="Jumlah Soal" />
-            <StatPill n={`${item.kkm}`} l="KKM" />
-            <StatPill n={item.jenis} l="Jenis" />
+            <StatPill n={`${item.questionCount}`} l="Jumlah Soal" />
+            <StatPill n={`${item.responseCount}`} l="Respons" />
+            <StatPill n={item.durationMinutes ? `${item.durationMinutes} mnt` : '—'} l="Durasi" />
             <StatPill n={item.status} l="Status" />
           </div>
-          <div><b className="text-[11.5px] font-bold text-[#6b8079]">Deskripsi</b><p className="mt-1 text-[12.5px] text-[#355a4e]">{item.deskripsi}</p></div>
-          {/* Pratinjau Soal */}
-          <div>
-            <b className="text-[11.5px] font-bold text-[#6b8079]">Pratinjau Soal</b>
-            <p className="mt-1 text-[12px] text-[#9bb0a8]">Soal lengkap tersedia setelah approval dari guru.</p>
-          </div>
-          <p className="text-[11px] text-[#9bb0a8]"><Info className="mr-1 inline h-3 w-3" />Sumatif yang disetujui otomatis muncul di LMS siswa sesuai jadwal.</p>
+          <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-2 text-[12px]">
+            <dt className="font-semibold text-[#6b8079]">Mulai</dt>
+            <dd className="text-[#355a4e]">{item.startedAt ? new Date(item.startedAt).toLocaleString('id-ID') : '—'}</dd>
+            <dt className="font-semibold text-[#6b8079]">Selesai</dt>
+            <dd className="text-[#355a4e]">{item.completedAt ? new Date(item.completedAt).toLocaleString('id-ID') : '—'}</dd>
+          </dl>
         </div>
         <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[#e6efea] bg-white px-5 py-3">
-          {item.status === 'Menunggu' ? (
-            <>
-              <button type="button" onClick={() => handleSumatifAction('Ditolak')} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-[12.5px] font-bold text-rose-600 hover:bg-rose-100"><X className="h-4 w-4" />Tolak</button>
-              <button type="button" onClick={() => handleSumatifAction('Disetujui')} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-[12.5px] font-bold text-white hover:bg-emerald-700"><Check className="h-4 w-4" />Setujui</button>
-            </>
-          ) : (
-            <button type="button" onClick={onClose} className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>
-          )}
+          <button type="button" onClick={onClose} className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>
         </div>
       </div>
     </div>

@@ -15,7 +15,7 @@ interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: 'danger' | 'warning' | 'info';
-  onConfirm: () => void | Promise<void>;
+  onConfirm: () => void | boolean | Promise<void | boolean>;
 }
 
 const VARIANT_STYLES: Record<NonNullable<ConfirmDialogProps['variant']>, { icon: string; btn: string }> = {
@@ -48,8 +48,8 @@ export function ConfirmDialog({
   const handleConfirm = async () => {
     setLoading(true);
     try {
-      await onConfirm();
-      onOpenChange(false);
+      const shouldClose = await onConfirm();
+      if (shouldClose !== false) onOpenChange(false);
     } finally {
       setLoading(false);
     }

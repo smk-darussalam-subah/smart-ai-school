@@ -147,11 +147,22 @@ describe('SchoolConfigService', () => {
     mockMajor.update.mockResolvedValue({ ...MAJOR_TKRO, name: 'Updated' });
     const result = await service.updateMajor('m1', { name: 'Updated' });
     expect(result.name).toBe('Updated');
+    expect(mockPermissions.invalidateAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('updateMajor nonaktif membersihkan cache appointment hanya setelah update berhasil', async () => {
+    mockMajor.update.mockResolvedValue({ ...MAJOR_TKRO, isActive: false });
+
+    await service.updateMajor('m1', { isActive: false });
+
+    expect(mockMajor.update).toHaveBeenCalledWith({ where: { id: 'm1' }, data: { isActive: false } });
+    expect(mockPermissions.invalidateAll).toHaveBeenCalledTimes(1);
   });
 
   it('updateMajor → not found → NotFoundException', async () => {
     mockMajor.update.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('test', { code: 'P2025', clientVersion: '5.0.0' }));
     await expect(service.updateMajor('not-exist', { name: 'X' })).rejects.toThrow(NotFoundException);
+    expect(mockPermissions.invalidateAll).not.toHaveBeenCalled();
   });
 
   it('updateMajor → duplicate code → ConflictException', async () => {

@@ -52,7 +52,7 @@ export class GradeController {
    * GET /grades — Semua role yang punya akses nilai.
    * Ownership difilter di service (GURU=kelas sendiri, SISWA=diri, OT=anak).
    */
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'WAKA_KURIKULUM')
   @RequirePermission('academic.grade.read')
   @Get()
   findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
