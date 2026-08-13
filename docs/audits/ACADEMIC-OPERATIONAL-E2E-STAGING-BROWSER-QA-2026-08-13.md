@@ -1,8 +1,8 @@
 # Academic Operational E2E Staging Browser QA
 
-Tanggal: 2026-08-13  
-Target: `staging`  
-Verdict: **APPROVED FOR STAGING SIGN-OFF**  
+Tanggal: 2026-08-13
+Target: `staging`
+Verdict: **APPROVED FOR STAGING SIGN-OFF**
 Production promotion: **NOT PART OF THIS QA**
 
 ## Binding Release Evidence
