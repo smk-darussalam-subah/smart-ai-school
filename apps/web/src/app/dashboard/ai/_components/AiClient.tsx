@@ -6,6 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
 import { setupAiChatMountedGuard, shouldApplyAiChatResponse, shouldSendChatKey } from '../ai-chat-ui';
+import {
+  deleteAiChatSession,
+  fetchAiChatHistory,
+  fetchAiChatSessions,
+  sendAiChatMessage,
+  type AiChatSessionSummary,
+} from '../actions';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -13,28 +20,9 @@ interface Message {
   sources?: { title: string }[];
 }
 
-interface ChatSessionSummary {
-  id: string;
-  title: string | null;
-  updatedAt: string;
-}
-
-interface SessionListResponse {
-  data?: ChatSessionSummary[];
-}
-
-interface HistoryResponse {
-  messages?: Array<{ role: string; content: string }>;
-}
-
-async function parseError(res: Response): Promise<string> {
-  const data = await res.json().catch(() => null) as { message?: string; error?: string } | null;
-  return data?.message ?? data?.error ?? 'Permintaan gagal diproses.';
-}
-
 export default function AiClient({ initialQuestion = '' }: { initialQuestion?: string }) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
+  const [sessions, setSessions] = useState<AiChatSessionSummary[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
@@ -60,11 +48,10 @@ export default function AiClient({ initialQuestion = '' }: { initialQuestion?: s
   }, [messages, loading]);
 
   const loadSessions = async (signal?: AbortSignal) => {
-    const res = await fetch('/api/backend/ai/chat/sessions?limit=20', { cache: 'no-store', signal });
-    if (!res.ok) throw new Error(await parseError(res));
-    const data = await res.json() as SessionListResponse;
+    const result = await fetchAiChatSessions(20);
+    if (!result.success) throw new Error(result.error);
     if (signal?.aborted || !mountedRef.current) return;
-    setSessions(data.data ?? []);
+    setSessions(result.data.data ?? []);
   };
 
   const invalidateActiveRequests = () => {
@@ -86,11 +73,10 @@ export default function AiClient({ initialQuestion = '' }: { initialQuestion?: s
     setSessionLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/backend/ai/chat/${id}/history`, { cache: 'no-store', signal: activeSignal });
-      if (!res.ok) throw new Error(await parseError(res));
-      const data = await res.json() as HistoryResponse;
+      const result = await fetchAiChatHistory(id);
+      if (!result.success) throw new Error(result.error);
       if (!shouldApplyAiChatResponse({ requestEpoch: epoch, currentEpoch: requestEpochRef.current, aborted: activeSignal.aborted, mounted: mountedRef.current })) return;
-      setMessages((data.messages ?? []).map((m) => ({
+      setMessages((result.data.messages ?? []).map((m) => ({
         role: m.role === 'user' ? 'user' : 'assistant',
         content: m.content,
       })));
@@ -112,11 +98,10 @@ export default function AiClient({ initialQuestion = '' }: { initialQuestion?: s
       try {
         const prefill = initialQuestion.trim().slice(0, 500);
         const savedSessionId = localStorage.getItem('diis-ai-session-id');
-        const res = await fetch('/api/backend/ai/chat/sessions?limit=20', { cache: 'no-store', signal: controller.signal });
-        if (!res.ok) throw new Error(await parseError(res));
-        const data = await res.json() as SessionListResponse;
+        const result = await fetchAiChatSessions(20);
+        if (!result.success) throw new Error(result.error);
         if (controller.signal.aborted || !mountedRef.current) return;
-        const nextSessions = data.data ?? [];
+        const nextSessions = result.data.data ?? [];
         setSessions(nextSessions);
         if (prefill) {
           setSessionId(null);
@@ -153,8 +138,8 @@ export default function AiClient({ initialQuestion = '' }: { initialQuestion?: s
     setDeletingId(id);
     setError('');
     try {
-      const res = await fetch(`/api/backend/ai/chat/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(await parseError(res));
+      const result = await deleteAiChatSession(id);
+      if (!result.success) throw new Error(result.error);
       if (sessionId === id) startNew();
       await loadSessions();
     } catch (err) {
@@ -178,14 +163,9 @@ export default function AiClient({ initialQuestion = '' }: { initialQuestion?: s
     try {
       const controller = new AbortController();
       sendControllerRef.current = controller;
-      const res = await fetch('/api/backend/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, ...(sessionId ? { sessionId } : {}) }),
-        signal: controller.signal,
-      });
-      if (!res.ok) throw new Error(await parseError(res));
-      const data = await res.json() as { answer?: string; sources?: { title: string }[]; sessionId?: string };
+      const result = await sendAiChatMessage({ message: text, sessionId });
+      if (!result.success) throw new Error(result.error);
+      const data = result.data;
       if (!shouldApplyAiChatResponse({ requestEpoch: epoch, currentEpoch: requestEpochRef.current, aborted: controller.signal.aborted, mounted: mountedRef.current })) return;
       const nextSessionId = data.sessionId ?? sessionId;
       if (nextSessionId) {

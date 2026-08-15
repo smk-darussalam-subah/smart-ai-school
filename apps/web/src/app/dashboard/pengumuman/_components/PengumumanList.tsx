@@ -17,7 +17,7 @@ import PengumumanFormDialog from './PengumumanForm';
 import {
   archiveAnnouncement, deleteAnnouncement, pinAnnouncement, publishAnnouncement,
 } from '../actions';
-import { getAnnouncementDisplayStatus } from '../pengumuman-ui';
+import { getAnnouncementDisplayStatus, normalizeAnnouncementAudience, type AnnouncementAudienceInput } from '../pengumuman-ui';
 
 export interface Announcement {
   id: string;
@@ -25,7 +25,7 @@ export interface Announcement {
   content: string;
   category: 'umum' | 'akademik' | 'keuangan' | 'kegiatan' | 'darurat';
   priority: 'biasa' | 'penting' | 'urgent';
-  audience: string[];
+  audience: AnnouncementAudienceInput;
   isPinned: boolean;
   status: 'draft' | 'published' | 'archived';
   publishedAt?: string | null;
@@ -189,7 +189,9 @@ export default function PengumumanList({
           </CardContent>
         </Card>
       ) : (
-        announcements.map((announcement) => (
+        announcements.map((announcement) => {
+          const audience = normalizeAnnouncementAudience(announcement.audience);
+          return (
           <Card key={announcement.id} className={announcement.isPinned ? 'border-primary' : undefined}>
             <CardHeader className="pb-2">
               <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
@@ -216,7 +218,7 @@ export default function PengumumanList({
                     ? `Terjadwal ${formatDateTime(announcement.scheduledAt)}`
                     : `Dibuat ${formatDateTime(announcement.createdAt)}`}
                 {announcement.createdByName ? ` | oleh ${announcement.createdByName}` : ''}
-                {canManage && announcement.audience.length > 0 ? ` | audiens: ${announcement.audience.join(', ')}` : ''}
+                {canManage && audience.length > 0 ? ` | audiens: ${audience.join(', ')}` : ''}
                 {canManage && announcement.deliveryPreparedAt ? ` | disiapkan ${formatDateTime(announcement.deliveryPreparedAt)}` : ''}
               </p>
             </CardHeader>
@@ -256,7 +258,8 @@ export default function PengumumanList({
               )}
             </CardContent>
           </Card>
-        ))
+          );
+        })
       )}
 
       <TablePagination page={page} limit={limit} total={total} onPage={(nextPage) => setQuery({ page: String(nextPage) })} />

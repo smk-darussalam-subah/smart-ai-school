@@ -7,7 +7,7 @@ import {
   type FamilyRemedialItem,
 } from '../app/dashboard/akademik/_components/ortu/ortu-remedial-ui';
 import { buildFinanceSppQuery, canApproveSpp, canRecordSpp, defaultSppPeriod, FinanceAuthority } from '../app/dashboard/keuangan/keuangan-ui';
-import { getAnnouncementDisplayStatus } from '../app/dashboard/pengumuman/pengumuman-ui';
+import { getAnnouncementDisplayStatus, normalizeAnnouncementAudience } from '../app/dashboard/pengumuman/pengumuman-ui';
 
 function authority(permissions: string[], roles: string[]): FinanceAuthority {
   return {
@@ -148,5 +148,13 @@ describe('Wave 5 continuous operations UI helpers', () => {
       scheduledAt: '2026-08-15T00:00:00.000Z',
       deliveryPreparedAt: '2026-08-14T01:00:00.000Z',
     }, now)).toEqual({ label: 'Terbit', variant: 'default' });
+  });
+
+  it('normalizes announcement audience from array and legacy object payloads', () => {
+    expect(normalizeAnnouncementAudience(['GURU', '', 'SISWA'])).toEqual(['GURU', 'SISWA']);
+    expect(normalizeAnnouncementAudience({ all: true })).toEqual(['ALL']);
+    expect(normalizeAnnouncementAudience({ roles: ['TATA_USAHA', 7, 'ORANG_TUA'] })).toEqual(['TATA_USAHA', 'ORANG_TUA']);
+    expect(normalizeAnnouncementAudience({ audience: ['INDUSTRI'] })).toEqual(['INDUSTRI']);
+    expect(normalizeAnnouncementAudience(null)).toEqual([]);
   });
 });
