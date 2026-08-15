@@ -43,6 +43,7 @@ import { FinanceController } from '../finance/finance.controller';
 import { FinanceModule } from '../finance/finance.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '@smk/auth';
+import { NotificationService } from '../notification/notification.service';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ const MOCK_SPP = {
 // ── Mock PrismaService ────────────────────────────────────────────────────────
 
 function buildPrisma() {
-  return {
+  const prisma = {
     user:       { findUnique: jest.fn() },
     student:    { findUnique: jest.fn(), findMany: jest.fn() },
     sppPayment: {
@@ -99,9 +100,16 @@ function buildPrisma() {
       findMany: jest.fn(),
       findUnique: jest.fn(),
       update:   jest.fn(),
+      updateMany: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       count:    jest.fn(),
       groupBy:  jest.fn(),
     },
+    notificationLog: { createMany: jest.fn(), findMany: jest.fn() },
+  };
+  return {
+    ...prisma,
+    $transaction: jest.fn((callback: (tx: typeof prisma) => unknown) => callback(prisma)),
   };
 }
 
@@ -111,15 +119,19 @@ describe('FinanceService', () => {
   let service: FinanceService;
   let prisma: ReturnType<typeof buildPrisma>;
   let eventEmitter: { emit: jest.Mock };
+  let notificationService: { enqueueCommittedPendingLogs: jest.Mock };
 
   beforeEach(async () => {
     prisma = buildPrisma();
     eventEmitter = { emit: jest.fn() };
+    notificationService = { enqueueCommittedPendingLogs: jest.fn().mockResolvedValue({ queuedCount: 0 }) };
+    prisma.notificationLog.findMany.mockResolvedValue([]);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FinanceService,
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: eventEmitter },
+        { provide: NotificationService, useValue: notificationService },
       ],
     }).compile();
     service = module.get(FinanceService);
@@ -196,7 +208,7 @@ describe('FinanceService', () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-tu' });
       prisma.sppPayment.create.mockResolvedValue({ ...MOCK_SPP, status: 'unpaid', paidAt: null });
 
-      await service.createRecord({ ...CREATE_DTO, status: 'unpaid' as const }, TU_USER);
+      await service.createRecord(CREATE_DTO, TU_USER);
 
       const callData = prisma.sppPayment.create.mock.calls[0][0].data;
       expect(callData.status).toBe('unpaid');
@@ -403,42 +415,66 @@ describe('FinanceService', () => {
   // ── approve ──────────────────────────────────────────────────────────────────
 
   describe('approve', () => {
+    const approvalPayment = {
+      id: 'spp-uuid-001',
+      status: 'unpaid',
+      approvedBy: null,
+      approvedAt: null,
+      month: 7,
+      year: 2025,
+      amount: 250000,
+      studentId: 'student-uuid-001',
+      student: {
+        nis: '2024001',
+        user: { fullName: 'Budi', phone: '081111111111' },
+        parent: { phone: '628111111112' },
+      },
+    };
     it('SA berhasil approve — approvedBy=userId, approvedAt di-set', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-admin' });
-      prisma.sppPayment.findUnique.mockResolvedValue({
-        id: 'spp-uuid-001',
-        status: 'unpaid',
-        approvedBy: null,
-        approvedAt: null,
-      });
-      prisma.sppPayment.update.mockResolvedValue({
+      prisma.sppPayment.findUnique.mockResolvedValue(approvalPayment);
+      prisma.sppPayment.updateMany.mockResolvedValue({ count: 1 });
+      prisma.sppPayment.findUniqueOrThrow.mockResolvedValue({
         ...MOCK_SPP,
         approvedBy: 'user-uuid-admin',
         approvedAt: new Date(),
       });
+      notificationService.enqueueCommittedPendingLogs.mockResolvedValueOnce({ queuedCount: 2 });
+      prisma.notificationLog.findMany.mockResolvedValueOnce([
+        { id: 'existing-payment-log-1' },
+        { id: 'existing-payment-log-2' },
+      ]);
 
       const result = await service.approve('spp-uuid-001', SA_USER);
 
-      expect(prisma.sppPayment.update).toHaveBeenCalledWith(
+      expect(prisma.sppPayment.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ approvedBy: 'user-uuid-admin' }),
         }),
       );
       expect(result.approvedBy).toBe('user-uuid-admin');
-      expect(prisma.sppPayment.update.mock.calls[0][0].data).toMatchObject({ status: 'paid' });
-      expect(prisma.sppPayment.update.mock.calls[0][0].data.paidAt).toBeInstanceOf(Date);
-      expect(eventEmitter.emit).toHaveBeenCalled();
+      expect(prisma.sppPayment.updateMany.mock.calls[0][0].data).toMatchObject({ status: 'paid' });
+      expect(prisma.sppPayment.updateMany.mock.calls[0][0].data.paidAt).toBeInstanceOf(Date);
+      expect(prisma.notificationLog.createMany).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({ recipient: '+6281111111111', refType: 'payment', refId: 'spp-uuid-001:+6281111111111', status: 'pending' }),
+          expect.objectContaining({ recipient: '+628111111112', refType: 'payment', refId: 'spp-uuid-001:+628111111112', status: 'pending' }),
+        ]),
+        skipDuplicates: true,
+      }));
+      expect(notificationService.enqueueCommittedPendingLogs).toHaveBeenCalledWith([
+        'existing-payment-log-1',
+        'existing-payment-log-2',
+      ]);
+      expect(result.notificationHandoff).toEqual({ status: 'queued', requestedCount: 2, queuedCount: 2 });
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
 
     it('KS berhasil approve', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-ks' });
-      prisma.sppPayment.findUnique.mockResolvedValue({
-        id: 'spp-uuid-001',
-        status: 'unpaid',
-        approvedBy: null,
-        approvedAt: null,
-      });
-      prisma.sppPayment.update.mockResolvedValue({
+      prisma.sppPayment.findUnique.mockResolvedValue(approvalPayment);
+      prisma.sppPayment.updateMany.mockResolvedValue({ count: 1 });
+      prisma.sppPayment.findUniqueOrThrow.mockResolvedValue({
         ...MOCK_SPP,
         approvedBy: 'user-uuid-ks',
         approvedAt: new Date(),
@@ -459,7 +495,7 @@ describe('FinanceService', () => {
       });
 
       await expect(service.approve('spp-uuid-001', SA_USER)).rejects.toThrow(ConflictException);
-      expect(prisma.sppPayment.update).not.toHaveBeenCalled();
+      expect(prisma.sppPayment.updateMany).not.toHaveBeenCalled();
     });
 
     it('payment tidak ditemukan → NotFoundException', async () => {
@@ -471,18 +507,36 @@ describe('FinanceService', () => {
 
     it('approvedAt adalah Date instance', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-admin' });
-      prisma.sppPayment.findUnique.mockResolvedValue({
-        id: 'spp-uuid-001',
-        status: 'unpaid',
-        approvedBy: null,
-        approvedAt: null,
-      });
-      prisma.sppPayment.update.mockResolvedValue({ ...MOCK_SPP, approvedBy: 'user-uuid-admin', approvedAt: new Date() });
+      prisma.sppPayment.findUnique.mockResolvedValue(approvalPayment);
+      prisma.sppPayment.updateMany.mockResolvedValue({ count: 1 });
+      prisma.sppPayment.findUniqueOrThrow.mockResolvedValue({ ...MOCK_SPP, approvedBy: 'user-uuid-admin', approvedAt: new Date() });
 
       await service.approve('spp-uuid-001', SA_USER);
 
-      const updateCall = prisma.sppPayment.update.mock.calls[0][0];
+      const updateCall = prisma.sppPayment.updateMany.mock.calls[0][0];
       expect(updateCall.data.approvedAt).toBeInstanceOf(Date);
+    });
+
+    it('dedupe penerima bukti pembayaran setelah normalisasi nomor', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-admin' });
+      prisma.sppPayment.findUnique.mockResolvedValue({
+        ...approvalPayment,
+        student: {
+          ...approvalPayment.student,
+          user: { fullName: 'Budi', phone: '081111111111' },
+          parent: { phone: '+6281111111111' },
+        },
+      });
+      prisma.sppPayment.updateMany.mockResolvedValue({ count: 1 });
+      prisma.sppPayment.findUniqueOrThrow.mockResolvedValue({ ...MOCK_SPP, approvedBy: 'user-uuid-admin', approvedAt: new Date() });
+
+      await service.approve('spp-uuid-001', SA_USER);
+
+      expect(prisma.notificationLog.createMany.mock.calls[0][0].data).toHaveLength(1);
+      expect(prisma.notificationLog.createMany.mock.calls[0][0].data[0]).toEqual(expect.objectContaining({
+        recipient: '+6281111111111',
+        refId: 'spp-uuid-001:+6281111111111',
+      }));
     });
   });
 });
@@ -571,6 +625,12 @@ describe('FinanceModule', () => {
     const module = await Test.createTestingModule({
       imports: [FinanceModule],
     })
+      .overrideProvider('NOTIFICATION_QUEUE')
+      .useValue({ add: jest.fn(), close: jest.fn() })
+      .overrideProvider('NOTIFICATION_WORKER')
+      .useValue({ close: jest.fn() })
+      .overrideProvider(NotificationService)
+      .useValue({ enqueueCommittedPendingLogs: jest.fn() })
       .overrideProvider(FinanceService)
       .useValue({})
       .compile();

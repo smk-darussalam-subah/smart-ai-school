@@ -58,7 +58,7 @@ function makeGateway(overrides?: Partial<AIGateway>): AIGateway {
 }
 
 function makePrisma(overrides?: Partial<PrismaService>): PrismaService {
-  return {
+  const prisma = {
     $queryRaw: jest.fn().mockResolvedValue([]),
     $executeRaw: jest.fn().mockResolvedValue(1),
     user: {
@@ -80,12 +80,17 @@ function makePrisma(overrides?: Partial<PrismaService>): PrismaService {
     chatSession: {
       findUnique: jest.fn().mockResolvedValue({ id: 'session-uuid', userId: 'db-user-uuid-sa' }),
       create: jest.fn().mockResolvedValue({ id: 'new-session-uuid' }),
+      update: jest.fn().mockResolvedValue({ id: 'session-uuid' }),
     },
     chatMessage: {
       createMany: jest.fn().mockResolvedValue({ count: 2 }),
       findMany: jest.fn().mockResolvedValue([]),
     },
     ...overrides,
+  };
+  return {
+    ...prisma,
+    $transaction: jest.fn((callback: (tx: typeof prisma) => unknown) => callback(prisma)),
   } as unknown as PrismaService;
 }
 

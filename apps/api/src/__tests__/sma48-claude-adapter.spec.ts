@@ -62,7 +62,7 @@ function makeClaudeGateway(): jest.Mocked<AIGateway> {
 }
 
 function makePrisma(): PrismaService {
-  return {
+  const prisma = {
     $queryRaw: jest.fn().mockResolvedValue([]),
     $executeRaw: jest.fn().mockResolvedValue(1),
     user: {
@@ -75,11 +75,16 @@ function makePrisma(): PrismaService {
     chatSession: {
       findUnique: jest.fn().mockResolvedValue({ id: 'session-uuid', userId: 'db-user-uuid' }),
       create: jest.fn().mockResolvedValue({ id: 'new-session-uuid' }),
+      update: jest.fn().mockResolvedValue({ id: 'session-uuid' }),
     },
     chatMessage: {
       createMany: jest.fn().mockResolvedValue({ count: 2 }),
       findMany: jest.fn().mockResolvedValue([]),
     },
+  };
+  return {
+    ...prisma,
+    $transaction: jest.fn((callback: (tx: typeof prisma) => unknown) => callback(prisma)),
   } as unknown as PrismaService;
 }
 

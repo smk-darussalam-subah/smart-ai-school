@@ -438,7 +438,7 @@ describe('Attendance', () => {
 describe('Finance SPP', () => {
   let sppId: string;
 
-  it('POST /api/v1/finance/spp — TU catat pembayaran → 201', async () => {
+  it('POST /api/v1/finance/spp — TU setup SPP manual unpaid → 201', async () => {
     const res = await req()
       .post('/api/v1/finance/spp')
       .set(auth('e2e-token-tu'))
@@ -447,11 +447,11 @@ describe('Finance SPP', () => {
         month:  1,
         year:   2026,
         amount: 500000,
-        status: 'paid',
       })
       .expect(201);
     expect(res.body.studentId).toBe(IDS.student);
     expect(String(res.body.amount)).toBe('500000');
+    expect(res.body.status).toBe('unpaid');
     sppId = res.body.id;
   });
 
@@ -578,7 +578,7 @@ describe('AI Chat', () => {
     expect(res.body.messages[1].role).toBe('assistant');
   });
 
-  it('POST /api/v1/ai/chat — SA akses history SISWA → 200 (SA bypass ownership)', async () => {
+  it('GET /api/v1/ai/chat/:sessionId/history — SA tidak membaca history SISWA → 403', async () => {
     const chat = await req()
       .post('/api/v1/ai/chat')
       .set(auth('e2e-token-siswa'))
@@ -588,7 +588,7 @@ describe('AI Chat', () => {
     await req()
       .get(`/api/v1/ai/chat/${chat.body.sessionId}/history`)
       .set(auth('e2e-token-sa'))
-      .expect(200);
+      .expect(403);
   });
 
   it('POST /api/v1/ai/chat — tanpa token → 401', async () => {
