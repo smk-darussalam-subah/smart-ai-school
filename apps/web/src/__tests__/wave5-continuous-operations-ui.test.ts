@@ -155,6 +155,8 @@ describe('Wave 5 continuous operations UI helpers', () => {
     expect(normalizeAnnouncementAudience({ all: true })).toEqual(['ALL']);
     expect(normalizeAnnouncementAudience({ roles: ['TATA_USAHA', 7, 'ORANG_TUA'] })).toEqual(['TATA_USAHA', 'ORANG_TUA']);
     expect(normalizeAnnouncementAudience({ audience: ['INDUSTRI'] })).toEqual(['INDUSTRI']);
+    expect(normalizeAnnouncementAudience('["ALL"]')).toEqual(['ALL']);
+    expect(normalizeAnnouncementAudience('{"roles":["GURU","SISWA"]}')).toEqual(['GURU', 'SISWA']);
     expect(normalizeAnnouncementAudience(null)).toEqual([]);
   });
 });
