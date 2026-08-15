@@ -19,6 +19,7 @@ import {
   type SppApiItem, type WaLogApiItem,
 } from './ortu-mappers';
 import { fetchTeachers } from '../../actions';
+import RemedialOrtu from './RemedialOrtu';
 
 interface BerandaOrtuProps {
   showToast: (msg: string) => void;
@@ -34,6 +35,7 @@ interface BerandaOrtuProps {
   waLog: WaLogApiItem[];
   attendance: AttendanceItem[];
   rank?: number | null;
+  activeStudentId?: string;
 }
 
 /** WIB-based greeting prefix. */
@@ -52,7 +54,7 @@ const RING_CIRC = 2 * Math.PI * RING_R;
 
 const EMPTY_CHILD: OrtuChild = { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
 
-export default function BerandaOrtu({ showToast: _showToast, go, setModal, grades, announcements, children, activeChildIndex, schedule, spp, waLog, attendance, rank }: BerandaOrtuProps) {
+export default function BerandaOrtu({ showToast: _showToast, go, setModal, grades, announcements, children, activeChildIndex, schedule, spp, waLog, attendance, rank, activeStudentId }: BerandaOrtuProps) {
   // U4: Fetch wali kelas / teachers for contact info
   const [waliKelas, setWaliKelas] = useState<{ name: string; subject: string; phone: string | null; email: string | null } | null>(null);
   useEffect(() => {
@@ -341,6 +343,8 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
         })
         )}
       </div>
+
+      <RemedialOrtu studentId={activeStudentId} />
 
       {/* 8. Announcements */}
       <div className="mb-3.5 rounded-[var(--r)] border border-[var(--border)] bg-[var(--surface)] p-3.5">

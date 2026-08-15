@@ -37,7 +37,8 @@ export type UpdateAssessmentSessionDto = z.infer<typeof UpdateAssessmentSessionS
 
 export const ListAssessmentSessionSchema = z.object({
   moduleId: z.string().uuid().optional(),
-  status: z.enum(['draft', 'active', 'completed']).optional(),
+  status: z.enum(['draft', 'active', 'completed', 'cancelled']).optional(),
+  purpose: z.enum(['regular', 'remedial']).optional(),
   type: z.enum(['diagnostik', 'formatif', 'sumatif']).optional(),
   subject: z.string().trim().min(1).max(100).optional(),
   classId: z.string().uuid().optional(),
@@ -47,6 +48,70 @@ export const ListAssessmentSessionSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 }).strict();
 export type ListAssessmentSessionDto = z.infer<typeof ListAssessmentSessionSchema>;
+
+export const FamilyRemedialQuerySchema = z.object({
+  studentId: z.string().uuid(),
+  status: z.enum(['active', 'completed']).optional(),
+  academicYear: z.string().regex(/^\d{4}\/\d{4}$/).optional(),
+  semester: z.coerce.number().int().min(1).max(2).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(20).default(5),
+}).strict();
+export type FamilyRemedialQueryDto = z.infer<typeof FamilyRemedialQuerySchema>;
+
+export const RemedialCandidatesQuerySchema = z.object({
+  classId: z.string().uuid(),
+  subject: z.string().trim().min(1).max(100),
+  academicYear: z.string().regex(/^\d{4}\/\d{4}$/),
+  semester: z.coerce.number().int().min(1).max(2),
+  type: z.enum(['uh', 'uts', 'uas', 'praktik', 'sikap']).optional(),
+  search: z.string().trim().max(100).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+}).strict();
+export type RemedialCandidatesQueryDto = z.infer<typeof RemedialCandidatesQuerySchema>;
+
+export const CreateRemedialSessionSchema = z.object({
+  title: z.string().trim().min(3).max(255),
+  sourceGradeIds: z.array(z.string().uuid()).min(1).max(100),
+  questionSelections: QuestionSelectionListSchema,
+  dueAt: z.string().datetime({ offset: true }).optional(),
+  instructions: z.string().trim().max(2_000).optional(),
+  durationMinutes: z.number().int().min(1).max(300).optional(),
+  randomizeOrder: z.boolean().optional(),
+}).strict();
+export type CreateRemedialSessionDto = z.infer<typeof CreateRemedialSessionSchema>;
+
+export const UpdateRemedialSessionSchema = z.object({
+  title: z.string().trim().min(3).max(255).optional(),
+  questionSelections: QuestionSelectionListSchema.optional(),
+  dueAt: z.string().datetime({ offset: true }).nullable().optional(),
+  instructions: z.string().trim().max(2_000).nullable().optional(),
+  durationMinutes: z.number().int().min(1).max(300).nullable().optional(),
+  randomizeOrder: z.boolean().optional(),
+}).strict();
+export type UpdateRemedialSessionDto = z.infer<typeof UpdateRemedialSessionSchema>;
+
+export const CancelRemedialSessionSchema = z.object({
+  reason: z.string().trim().max(500).optional(),
+}).strict();
+export type CancelRemedialSessionDto = z.infer<typeof CancelRemedialSessionSchema>;
+
+export const FinalizeRemedialParticipantSchema = z.object({
+  participantId: z.string().uuid(),
+}).strict();
+export type FinalizeRemedialParticipantDto = z.infer<typeof FinalizeRemedialParticipantSchema>;
+
+export const RetryRemedialParticipantSchema = z.object({
+  participantId: z.string().uuid(),
+  title: z.string().trim().min(3).max(255).optional(),
+  questionSelections: QuestionSelectionListSchema,
+  dueAt: z.string().datetime({ offset: true }).optional(),
+  instructions: z.string().trim().max(2_000).optional(),
+  durationMinutes: z.number().int().min(1).max(300).optional(),
+  randomizeOrder: z.boolean().optional(),
+}).strict();
+export type RetryRemedialParticipantDto = z.infer<typeof RetryRemedialParticipantSchema>;
 
 export const SubmitResponseSchema = z.object({
   answers: AnswerMapSchema,

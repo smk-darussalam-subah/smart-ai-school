@@ -2,13 +2,21 @@ import PublicKioskBoard, { type KioskBundle } from './_components/PublicKioskBoa
 
 const API_BASE = process.env.API_URL || 'http://api:3001';
 export const dynamic = 'force-dynamic';
-export const metadata = { title: 'Ruang Guru — DIIS' };
+export const metadata = {
+  title: 'Ruang Guru - DIIS',
+  robots: { index: false, follow: false },
+  referrer: 'no-referrer',
+};
 
 export default async function RuangGuruPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   let data: KioskBundle | null = null;
   try {
-    const res = await fetch(`${API_BASE}/api/v1/public/kiosk?token=${encodeURIComponent(token)}`, { cache: 'no-store' });
+    const res = await fetch(`${API_BASE}/api/v1/public/kiosk`, {
+      headers: { 'x-diis-kiosk-token': token },
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+    });
     if (res.ok) data = (await res.json()) as KioskBundle;
   } catch {
     data = null;

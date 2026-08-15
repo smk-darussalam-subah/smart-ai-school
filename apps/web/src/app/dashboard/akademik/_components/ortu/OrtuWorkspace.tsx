@@ -141,6 +141,7 @@ export default function OrtuWorkspace({
             waLog={childWaLog ?? []}
             attendance={childAttendance ?? []}
             rank={activeChildRank}
+            activeStudentId={activeStudentId}
           />
         );
       // Following screens implemented in subsequent batches

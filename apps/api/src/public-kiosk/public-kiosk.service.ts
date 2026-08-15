@@ -12,6 +12,15 @@ const JP_COUNT = 8;
 
 interface HeatRow { cells: { date: string; total: number; hadir: number; pct: number | null }[] }
 
+function shortTeacherName(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '-';
+  const first = parts[0] ?? '-';
+  if (parts.length === 1) return first;
+  const secondInitial = parts[1]?.[0] ?? '';
+  return secondInitial ? `${first} ${secondInitial}.` : first;
+}
+
 @Injectable()
 export class PublicKioskService {
   constructor(
@@ -65,7 +74,7 @@ export class PublicKioskService {
       for (let jp = s.jpStart; jp <= s.jpEnd && jp <= JP_COUNT; jp++) {
         const idx = jp - 1;
         if (idx >= 0 && entry.cells[idx] === null) {
-          entry.cells[idx] = { subject: s.teachingAssignment.subject, teacher: s.teachingAssignment.teacher.user.fullName, room: s.room };
+          entry.cells[idx] = { subject: s.teachingAssignment.subject, teacher: shortTeacherName(s.teachingAssignment.teacher.user.fullName), room: s.room };
         }
       }
     }

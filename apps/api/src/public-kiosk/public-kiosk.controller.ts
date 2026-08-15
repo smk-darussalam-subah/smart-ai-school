@@ -3,7 +3,7 @@
 // Gerbang: token kiosk valid (di-validasi di service). Data agregat tanpa PII.
 // =============================================================================
 
-import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Header, Headers } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator';
 import { PublicKioskService } from './public-kiosk.service';
 
@@ -13,8 +13,13 @@ export class PublicKioskController {
 
   @Public()
   @Get('kiosk')
-  kiosk(@Query('token') token?: string) {
-    if (!token) throw new BadRequestException('token wajib');
-    return this.service.getKiosk(token);
+  @Header('Cache-Control', 'no-store')
+  @Header('Referrer-Policy', 'no-referrer')
+  @Header('X-Robots-Tag', 'noindex, nofollow')
+  kiosk(
+    @Headers('x-diis-kiosk-token') headerToken?: string,
+  ) {
+    if (!headerToken) throw new BadRequestException('x-diis-kiosk-token wajib');
+    return this.service.getKiosk(headerToken);
   }
 }

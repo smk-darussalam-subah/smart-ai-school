@@ -20,16 +20,32 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
-import { PaymentStatus, Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
+import { NotifChannel, PaymentStatus, Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
+import { logger } from '@smk/logger';
 import { PrismaService } from '../prisma/prisma.service';
 import { isSiswaOnly, isOrangTuaOnly, resolveUserId, resolveSiswaId } from '../common/helpers/role-helpers';
+import { normalizePhoneE164 } from '../common/helpers/phone';
+import { NotificationService } from '../notification/notification.service';
 import { CreateSppDto } from './dto/create-spp.dto';
 import { ListSppQuery } from './dto/list-spp.dto';
 import { SummarySppQuery } from './dto/summary-spp.dto';
-import { EVENTS, PaymentReceivedPayload } from '../events/events.types';
+
+type NotificationHandoffResult = {
+  status: 'none' | 'queued' | 'pending_recovery';
+  requestedCount: number;
+  queuedCount: number;
+};
+
+type NotificationLogRef = {
+  refType: string;
+  refId: string;
+  recipient: string;
+  channel: NotifChannel;
+};
 
 // ── Select shape ─────────────────────────────────────────────────────────────
 
@@ -62,8 +78,70 @@ const SPP_SELECT = {
 export class FinanceService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly eventEmitter: EventEmitter2,
+    @Optional() private readonly notificationService?: NotificationService,
   ) {}
+
+  private async enqueueCommittedNotificationLogs(ids: string[], source: string): Promise<NotificationHandoffResult> {
+    if (ids.length === 0) return { status: 'none', requestedCount: 0, queuedCount: 0 };
+    if (!this.notificationService) {
+      logger.warn('[FinanceService] notification service unavailable; committed logs deferred to recovery', {
+        source,
+        count: ids.length,
+      });
+      return { status: 'pending_recovery', requestedCount: ids.length, queuedCount: 0 };
+    }
+    try {
+      const result = await this.notificationService.enqueueCommittedPendingLogs(ids);
+      return {
+        status: result.queuedCount === ids.length ? 'queued' : 'pending_recovery',
+        requestedCount: ids.length,
+        queuedCount: result.queuedCount,
+      };
+    } catch (error: unknown) {
+      logger.warn('[FinanceService] committed notification enqueue deferred to recovery', {
+        source,
+        count: ids.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { status: 'pending_recovery', requestedCount: ids.length, queuedCount: 0 };
+    }
+  }
+
+  private notificationLogRefs(logs: Prisma.NotificationLogCreateManyInput[]): NotificationLogRef[] {
+    const unique = new Map<string, NotificationLogRef>();
+    for (const log of logs) {
+      if (!log.refType || !log.refId || !log.recipient || !log.channel) continue;
+      const ref = {
+        refType: String(log.refType),
+        refId: String(log.refId),
+        recipient: String(log.recipient),
+        channel: log.channel as NotifChannel,
+      };
+      unique.set(`${ref.refType}:${ref.refId}:${ref.recipient}:${ref.channel}`, ref);
+    }
+    return [...unique.values()];
+  }
+
+  private async committedPendingNotificationLogIds(
+    tx: Prisma.TransactionClient,
+    logs: Prisma.NotificationLogCreateManyInput[],
+  ): Promise<string[]> {
+    const refs = this.notificationLogRefs(logs);
+    if (refs.length === 0) return [];
+    const rows = await tx.notificationLog.findMany({
+      where: {
+        status: 'pending',
+        OR: refs.map((ref) => ({
+          refType: ref.refType,
+          refId: ref.refId,
+          recipient: ref.recipient,
+          channel: ref.channel,
+        })),
+      },
+      select: { id: true },
+    });
+    return rows.map((row) => row.id);
+  }
 
   /** keycloakId → student.id[] (anak untuk ORANG_TUA) */
   private async resolveChildStudentIds(keycloakId: string): Promise<string[]> {
@@ -91,7 +169,7 @@ export class FinanceService {
         year:       dto.year,
         amount:     dto.amount,
         status:     PaymentStatus.unpaid,
-        receiptNo:  dto.receiptNo,
+        receiptNo:  null,
         paidAt:     null,
         recordedBy: userId,
       },
@@ -109,6 +187,7 @@ export class FinanceService {
     const where: Prisma.SppPaymentWhereInput = {};
 
     if (query.year)   where.year   = query.year;
+    if (query.month)  where.month  = query.month;
     if (query.status) where.status = query.status as PaymentStatus;
 
     if (isSiswaOnly(user)) {
@@ -121,6 +200,19 @@ export class FinanceService {
     } else {
       // SA/KS/TU: filter opsional
       if (query.studentId) where.studentId = query.studentId;
+      if (query.classId) where.student = { is: { classId: query.classId } };
+    }
+    if (query.search) {
+      where.student = {
+        is: {
+          ...(query.classId && !isSiswaOnly(user) && !isOrangTuaOnly(user) ? { classId: query.classId } : {}),
+          OR: [
+            { nis: { contains: query.search, mode: 'insensitive' } },
+            { user: { fullName: { contains: query.search, mode: 'insensitive' } } },
+            { class: { name: { contains: query.search, mode: 'insensitive' } } },
+          ],
+        },
+      };
     }
 
     const skip = (query.page - 1) * query.limit;
@@ -201,36 +293,83 @@ export class FinanceService {
   async approve(id: string, user: AuthUser) {
     const userId = await resolveUserId(this.prisma, user.keycloakId);
 
-    const payment = await this.prisma.sppPayment.findUnique({
-      where:  { id },
-      select: { id: true, status: true, approvedBy: true, approvedAt: true },
+    const result = await this.prisma.$transaction(async (tx) => {
+      const payment = await tx.sppPayment.findUnique({
+        where:  { id },
+        select: {
+          id: true,
+          status: true,
+          approvedBy: true,
+          approvedAt: true,
+          month: true,
+          year: true,
+          amount: true,
+          studentId: true,
+          student: {
+            select: {
+              nis: true,
+              user: { select: { fullName: true, phone: true } },
+              parent: { select: { phone: true } },
+            },
+          },
+        },
+      });
+      if (!payment) throw new NotFoundException('Data pembayaran SPP tidak ditemukan');
+      if (payment.approvedBy || payment.status === 'paid') {
+        throw new ConflictException('Pembayaran ini sudah disetujui sebelumnya');
+      }
+
+      const now = new Date();
+      const receiptNo = `SPP-${payment.year}-${String(payment.month).padStart(2, '0')}-${payment.student.nis}-${payment.id.slice(0, 8).toUpperCase()}`;
+      const updatedCount = await tx.sppPayment.updateMany({
+        where: { id, status: PaymentStatus.unpaid, approvedBy: null, approvedAt: null },
+        data: {
+          approvedBy: userId,
+          approvedAt: now,
+          paidAt: now,
+          receiptNo,
+          status: PaymentStatus.paid,
+        },
+      });
+      if (updatedCount.count !== 1) throw new ConflictException('Pembayaran ini sudah disetujui sebelumnya');
+
+      const amountLabel = Number(payment.amount).toLocaleString('id-ID');
+      const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+      const body = `Pembayaran SPP ${monthNames[payment.month] ?? `Bulan-${payment.month}`} ${payment.year} sebesar Rp ${amountLabel} untuk ${payment.student.user.fullName} telah diterima. No. kwitansi: ${receiptNo}.`;
+      const recipients = new Set<string>();
+      for (const rawPhone of [payment.student.user.phone, payment.student.parent?.phone]) {
+        if (!rawPhone || rawPhone.trim().length === 0) continue;
+        try {
+          recipients.add(normalizePhoneE164(rawPhone));
+        } catch {
+          // Skip invalid legacy numbers; do not expose raw phone values in logs.
+        }
+      }
+      const deliverableLogs: Prisma.NotificationLogCreateManyInput[] = [...recipients].map((recipient) => ({
+        id: randomUUID(),
+        recipient,
+        channel: 'whatsapp',
+        body,
+        status: 'pending',
+        refType: 'payment',
+        refId: `${payment.id}:${recipient}`,
+      }));
+      if (deliverableLogs.length > 0) {
+        await tx.notificationLog.createMany({ data: deliverableLogs, skipDuplicates: true });
+      }
+      const logIds = await this.committedPendingNotificationLogIds(tx, deliverableLogs);
+
+      const updatedPayment = await tx.sppPayment.findUniqueOrThrow({
+        where: { id },
+        select: SPP_SELECT,
+      });
+      return {
+        payment: updatedPayment,
+        logIds,
+      };
     });
-    if (!payment) throw new NotFoundException('Data pembayaran SPP tidak ditemukan');
-    if (payment.approvedBy || payment.status === 'paid') {
-      throw new ConflictException('Pembayaran ini sudah disetujui sebelumnya');
-    }
-
-    const updated = await this.prisma.sppPayment.update({
-      where: { id },
-      data:  {
-        approvedBy: userId,
-        approvedAt: new Date(),
-        paidAt: new Date(),
-        status: PaymentStatus.paid,
-      },
-      select: SPP_SELECT,
-    });
-
-    const payPayload: PaymentReceivedPayload = {
-      paymentId:  updated.id,
-      studentId:  updated.studentId,
-      month:      updated.month,
-      year:       updated.year,
-      amount:     updated.amount.toString(),
-      receiptNo:  updated.receiptNo ?? null,
-    };
-    this.eventEmitter.emit(EVENTS.PAYMENT_RECEIVED, payPayload);
-
-    return updated;
+    const notificationHandoff = await this.enqueueCommittedNotificationLogs(result.logIds, 'payment');
+    return { ...result.payment, notificationHandoff };
   }
 }

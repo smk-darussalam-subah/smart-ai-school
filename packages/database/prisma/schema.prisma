@@ -246,6 +246,7 @@ model Student {
   sppPayments SppPayment[]
   lmsProgress LmsModuleProgress[]
   assessmentResponses AssessmentResponse[]
+  remedialParticipants RemedialParticipant[]
   studentBadges       StudentBadge[]
   studentXp           StudentXp?
 
@@ -397,6 +398,7 @@ model TeachingAssignment {
   class     Class      @relation(fields: [classId], references: [id])
   grades    Grade[]
   schedules Schedule[]
+  assessmentSessions AssessmentSession[]
 
   @@unique([teacherId, classId, subject, academicYear])
   @@index([classId])  // TeachingAssignmentService.findAll(classId-only, elevated) — unik composite mulai dari teacherId, tidak cover classId standalone
@@ -422,6 +424,7 @@ model Grade {
   student    Student            @relation(fields: [studentId], references: [id])
   assignment TeachingAssignment @relation(fields: [assignmentId], references: [id])
   sourceAssessmentSession AssessmentSession? @relation(fields: [sourceAssessmentSessionId], references: [id])
+  remedialParticipants    RemedialParticipant[]
 
   @@index([studentId, academicYear, semester])
   @@index([assignmentId])
@@ -666,32 +669,43 @@ enum LmsProgressStatus {
 // =============================================================================
 model AssessmentSession {
   id           String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  moduleId     String                @map("module_id") @db.Uuid
+  moduleId     String?               @map("module_id") @db.Uuid
+  teachingAssignmentId String?        @map("teaching_assignment_id") @db.Uuid
   teacherId    String                @map("teacher_id") @db.Uuid
   classId      String?               @map("class_id") @db.Uuid
   title        String                @db.VarChar(255)
   type         AssessmentType
   status       AssessmentSessionStatus @default(draft)
+  purpose      AssessmentSessionPurpose @default(regular)
   questions    Json                  @db.JsonB
   gradeTarget  GradeType?            @map("grade_target")
   durationMinutes Int?               @map("duration_minutes") // U2: timer durasi pengerjaan (menit)
   randomizeOrder Boolean   @default(false) @map("randomize_order") // U2: randomisasi urutan soal
+  dueAt        DateTime?              @map("due_at")
+  instructions String?                @db.Text
   startedAt    DateTime?             @map("started_at")
   completedAt  DateTime?             @map("completed_at")
+  cancelledAt  DateTime?             @map("cancelled_at")
+  cancelledBy  String?                @map("cancelled_by") @db.Uuid
+  cancelReason String?                @map("cancel_reason") @db.Text
   academicYear String                @map("academic_year") @db.VarChar(9)
   semester     Int
   createdAt    DateTime              @default(now()) @map("created_at")
   updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at")
 
-  module     LmsModule           @relation(fields: [moduleId], references: [id])
+  module     LmsModule?          @relation(fields: [moduleId], references: [id])
+  teachingAssignment TeachingAssignment? @relation(fields: [teachingAssignmentId], references: [id])
   teacher    Teacher             @relation(fields: [teacherId], references: [id])
   class      Class?              @relation(fields: [classId], references: [id])
   responses  AssessmentResponse[]
   sourceGrades Grade[]
+  remedialParticipants RemedialParticipant[]
 
   @@index([moduleId, status])
+  @@index([teachingAssignmentId, purpose, status])
   @@index([teacherId, academicYear, semester])
   @@index([classId, status])
+  @@index([purpose, status, dueAt])
   @@map("assessment_sessions")
   @@schema("academic")
 }
@@ -748,11 +762,77 @@ enum AssessmentType {
   @@schema("academic")
 }
 
+enum AssessmentSessionPurpose {
+  regular
+  remedial
+
+  @@schema("academic")
+}
+
 enum AssessmentSessionStatus {
   draft
   active
   completed
+  cancelled
 
+  @@schema("academic")
+}
+
+enum RemedialParticipantStatus {
+  assigned
+  in_progress
+  submitted
+  passed
+  needs_retry
+  cancelled
+
+  @@schema("academic")
+}
+
+enum KktpProvenance {
+  module
+  config
+  system_default
+
+  @@schema("academic")
+}
+
+model RemedialParticipant {
+  id                    String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId             String                    @map("session_id") @db.Uuid
+  studentId             String                    @map("student_id") @db.Uuid
+  sourceGradeId         String                    @map("source_grade_id") @db.Uuid
+  retryOfParticipantId  String?                   @unique @map("retry_of_participant_id") @db.Uuid
+  retryRootParticipantId String?                  @map("retry_root_participant_id") @db.Uuid
+  status                RemedialParticipantStatus @default(assigned)
+  sourceScore           Decimal                   @map("source_score") @db.Decimal(5, 2)
+  sourceGradeUpdatedAt  DateTime                  @map("source_grade_updated_at")
+  rawScore              Decimal?                  @map("raw_score") @db.Decimal(5, 2)
+  effectiveScore        Decimal?                  @map("effective_score") @db.Decimal(5, 2)
+  kktpValue             Int                       @map("kktp_value")
+  kktpProvenance        KktpProvenance            @map("kktp_provenance")
+  assignedAt            DateTime                  @default(now()) @map("assigned_at")
+  startedAt             DateTime?                 @map("started_at")
+  submittedAt           DateTime?                 @map("submitted_at")
+  finalizedAt           DateTime?                 @map("finalized_at")
+  finalizedBy           String?                   @map("finalized_by") @db.Uuid
+  cancelledAt           DateTime?                 @map("cancelled_at")
+  cancelledBy           String?                   @map("cancelled_by") @db.Uuid
+  cancelReason          String?                   @map("cancel_reason") @db.Text
+  createdAt             DateTime                  @default(now()) @map("created_at")
+  updatedAt             DateTime                  @updatedAt @map("updated_at")
+
+  session               AssessmentSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student               Student                   @relation(fields: [studentId], references: [id])
+  sourceGrade           Grade                     @relation(fields: [sourceGradeId], references: [id])
+  retryOfParticipant    RemedialParticipant?      @relation("RemedialRetry", fields: [retryOfParticipantId], references: [id])
+  retryParticipants     RemedialParticipant[]     @relation("RemedialRetry")
+
+  @@unique([sessionId, studentId])
+  @@index([studentId, status])
+  @@index([sourceGradeId, status])
+  @@index([retryRootParticipantId])
+  @@map("remedial_participants")
   @@schema("academic")
 }
 
@@ -926,7 +1006,7 @@ model NotificationLog {
   sentAt    DateTime?    @map("sent_at")
   error     String?      @db.Text
   refType   String?      @map("ref_type")   // "grade", "payment", "ppdb"
-  refId     String?      @map("ref_id") @db.Uuid
+  refId     String?      @map("ref_id") @db.VarChar(180)
   createdAt DateTime     @default(now()) @map("created_at")
 
   @@index([recipient, createdAt])
@@ -966,6 +1046,7 @@ model Announcement {
   status        AnnouncementStatus   @default(draft)
   publishedAt   DateTime?            @map("published_at")
   scheduledAt   DateTime?            @map("scheduled_at")
+  deliveryPreparedAt DateTime?        @map("delivery_prepared_at")
   createdBy     String?              @map("created_by") @db.VarChar(64)
   createdByName String?              @map("created_by_name") @db.VarChar(100)
   createdAt     DateTime             @default(now()) @map("created_at")
@@ -973,6 +1054,7 @@ model Announcement {
 
   @@index([status, isPinned, publishedAt(sort: Desc)])
   @@index([category, status])
+  @@index([status, scheduledAt, deliveryPreparedAt])
   @@map("announcements")
   @@schema("notification")
 }

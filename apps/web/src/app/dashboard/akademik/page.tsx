@@ -93,7 +93,7 @@ async function fetchInitialAssessmentSessions(token: string): Promise<{
     total: number;
     page: number;
     limit: number;
-  }>(`/assessment/sessions?page=1&limit=${ASSESSMENT_SESSION_PAGE_SIZE}`, token);
+  }>(`/assessment/sessions?page=1&limit=${ASSESSMENT_SESSION_PAGE_SIZE}&purpose=regular`, token);
   if (!first)
     return { data: [], total: 0, page: 1, limit: ASSESSMENT_SESSION_PAGE_SIZE, failed: true };
   return {

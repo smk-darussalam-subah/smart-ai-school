@@ -98,7 +98,7 @@ function makePrisma(opts: {
     messages = [],
   } = opts;
 
-  return {
+  const prisma = {
     $queryRaw: jest.fn().mockResolvedValue([]),
     $executeRaw: jest.fn().mockResolvedValue(1),
 
@@ -136,12 +136,17 @@ function makePrisma(opts: {
         ),
       ),
       create: jest.fn().mockResolvedValue({ id: NEW_SESSION_ID }),
+      update: jest.fn().mockResolvedValue({ id: SESSION_ID }),
     },
 
     chatMessage: {
       createMany: jest.fn().mockResolvedValue({ count: 2 }),
       findMany: jest.fn().mockResolvedValue(messages),
     },
+  };
+  return {
+    ...prisma,
+    $transaction: jest.fn((callback: (tx: typeof prisma) => unknown) => callback(prisma)),
   } as unknown as PrismaService;
 }
 
@@ -345,7 +350,7 @@ describe('(d) getChatHistory oleh user lain (bukan pemilik): 403', () => {
 
 // ── (e) SA akses history user lain → 200 ────────────────────────────────────
 
-describe('(e) getChatHistory oleh SUPER_ADMIN (bukan pemilik): 200', () => {
+describe('(e) getChatHistory oleh SUPER_ADMIN (bukan pemilik): 403', () => {
   it('SA dapat akses session user manapun tanpa 403', async () => {
     const now = new Date();
     const messages = [
@@ -358,13 +363,11 @@ describe('(e) getChatHistory oleh SUPER_ADMIN (bukan pemilik): 200', () => {
     const mod = await buildModule(gateway, prisma);
     const svc = mod.get(AiService);
 
-    const result = await svc.getChatHistory(SESSION_ID, makeSuperAdmin());
+    await expect(svc.getChatHistory(SESSION_ID, makeSuperAdmin())).rejects.toThrow(/bukan session milik/i);
 
-    expect(result.sessionId).toBe(SESSION_ID);
-    expect(result.messages).toHaveLength(1);
     // SA tidak perlu panggil resolveUserId (skip ownership check)
     // Verifikasi: user.findUnique tidak dipanggil untuk SA (optimasi — tidak perlu resolve)
-    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(prisma.user.findUnique).toHaveBeenCalled();
   });
 
   it('SA dapat akses session yang ada → history dikembalikan penuh', async () => {
@@ -379,9 +382,7 @@ describe('(e) getChatHistory oleh SUPER_ADMIN (bukan pemilik): 200', () => {
     const mod = await buildModule(gateway, prisma);
     const svc = mod.get(AiService);
 
-    const result = await svc.getChatHistory(SESSION_ID, makeSuperAdmin());
-
-    expect(result.messages).toHaveLength(2);
+    await expect(svc.getChatHistory(SESSION_ID, makeSuperAdmin())).rejects.toThrow(/bukan session milik/i);
   });
 });
 

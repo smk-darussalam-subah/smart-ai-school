@@ -376,6 +376,17 @@ export class ReportCardsService {
   }
 
   /** Transisi status sesuai pipeline; aksi tidak sah → 409 dengan pesan jelas. */
+  private async lockReportSnapshot(
+    db: Prisma.TransactionClient | PrismaService,
+    input: { studentId: string; classId: string; academicYear: string; semester: number },
+  ): Promise<void> {
+    const raw = db as { $executeRaw?: unknown };
+    if (typeof raw.$executeRaw !== 'function') return;
+    await db.$executeRaw(Prisma.sql`
+      SELECT pg_advisory_xact_lock(hashtextextended(${`report-grade:${input.studentId}:${input.classId}:${input.academicYear}:${input.semester}`}, 0))
+    `);
+  }
+
   async transition(id: string, dto: TransitionDto, user: AuthUser) {
     await this.assertTransitionAuthority(dto.action, user);
     const actor = await this.prisma.user.findUnique({
@@ -385,7 +396,15 @@ export class ReportCardsService {
     const actorName = actor?.fullName ?? user.username;
     const existing = await this.prisma.reportCard.findUnique({
       where: { id },
-      select: { id: true, status: true, studentId: true, academicYear: true, semester: true },
+      select: {
+        id: true,
+        status: true,
+        studentId: true,
+        classId: true,
+        academicYear: true,
+        semester: true,
+        generatedAt: true,
+      },
     });
     if (!existing) throw new NotFoundException('Rapor tidak ditemukan');
 
@@ -395,7 +414,6 @@ export class ReportCardsService {
         `Aksi '${dto.action}' butuh status '${t.from}' (sekarang '${existing.status}')`,
       );
     }
-
     const updateData: Prisma.ReportCardUpdateManyMutationInput = {
         status: t.to,
         ...(dto.action === 'check' ? {
@@ -428,8 +446,42 @@ export class ReportCardsService {
         } : {}),
     };
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockReportSnapshot(tx, existing);
+      const current = await tx.reportCard.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          status: true,
+          studentId: true,
+          classId: true,
+          academicYear: true,
+          semester: true,
+          generatedAt: true,
+        },
+      });
+      if (!current) throw new NotFoundException('Rapor tidak ditemukan');
+      if (current.status !== t.from) {
+        throw new ConflictException(
+          `Aksi '${dto.action}' butuh status '${t.from}' (sekarang '${current.status}')`,
+        );
+      }
+      if (dto.action === 'check') {
+        const staleGrade = await tx.grade.findFirst({
+          where: {
+            studentId: current.studentId,
+            academicYear: current.academicYear,
+            semester: current.semester,
+            updatedAt: { gt: current.generatedAt },
+            assignment: { classId: current.classId },
+          },
+          select: { id: true },
+        });
+        if (staleGrade) {
+          throw new ConflictException('Draft rapor sudah tertinggal dari nilai terbaru. Wali kelas harus refresh draft sebelum diperiksa.');
+        }
+      }
       const changed = await tx.reportCard.updateMany({
-        where: { id, status: existing.status },
+        where: { id, status: current.status },
         data: updateData,
       });
       if (changed.count !== 1) {
@@ -439,7 +491,7 @@ export class ReportCardsService {
         data: {
           reportCardId: id,
           action: dto.action,
-          fromStatus: existing.status,
+          fromStatus: current.status,
           toStatus: t.to,
           actorId: user.keycloakId,
           actorName,
