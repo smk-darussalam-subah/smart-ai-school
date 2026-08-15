@@ -3,6 +3,9 @@ import { z } from 'zod';
 export const ListSppQuerySchema = z.object({
   studentId: z.string().uuid().optional(),
   year:      z.coerce.number().int().min(2020).max(2100).optional(),
+  month:     z.coerce.number().int().min(1).max(12).optional(),
+  classId:   z.string().uuid().optional(),
+  search:    z.string().trim().max(100).optional(),
   status:    z.enum(['unpaid', 'paid', 'late', 'waived']).optional(),
   page:      z.coerce.number().int().positive().default(1),
   limit:     z.coerce.number().int().positive().max(100).default(20),

@@ -126,7 +126,7 @@ export class AiService {
   }> {
     const userId = await resolveUserId(this.prisma, user.keycloakId);
 
-    let sessionId: string;
+    let sessionId: string | null = dto.sessionId ?? null;
 
     if (dto.sessionId) {
       // Validasi session ada dan milik user ini
@@ -139,14 +139,7 @@ export class AiService {
       sessionId = session.id;
     } else {
       // Buat session baru — title dari 50 char pertama pesan
-      const newSession = await this.prisma.chatSession.create({
-        data: {
-          userId,
-          title: dto.message.slice(0, 50),
-        },
-        select: { id: true },
-      });
-      sessionId = newSession.id;
+      sessionId = null;
     }
 
     // RAG — embed + similarity search (selalu via Ollama, data tidak keluar)
@@ -193,18 +186,38 @@ export class AiService {
       answer = await this.gateway.chat(dto.message, context);
     }
 
-    // Simpan pesan user + jawaban assistant ke chat history
-    await this.prisma.chatMessage.createMany({
-      data: [
-        { sessionId, role: 'user', content: dto.message },
-        { sessionId, role: 'assistant', content: answer },
-      ],
+    const persistedSessionId = await this.prisma.$transaction(async (tx) => {
+      let targetSessionId = sessionId;
+      if (!targetSessionId) {
+        const newSession = await tx.chatSession.create({
+          data: {
+            userId,
+            title: dto.message.slice(0, 50),
+          },
+          select: { id: true },
+        });
+        targetSessionId = newSession.id;
+      } else {
+        await tx.chatSession.update({
+          where: { id: targetSessionId },
+          data: { updatedAt: new Date() },
+          select: { id: true },
+        });
+      }
+
+      await tx.chatMessage.createMany({
+        data: [
+          { sessionId: targetSessionId, role: 'user', content: dto.message },
+          { sessionId: targetSessionId, role: 'assistant', content: answer },
+        ],
+      });
+      return targetSessionId;
     });
 
     return {
       answer,
       sources: chunks.map((c) => ({ title: c.title })),
-      sessionId,
+      sessionId: persistedSessionId,
     };
   }
 
@@ -226,12 +239,9 @@ export class AiService {
     });
     if (!session) throw new NotFoundException('Chat session tidak ditemukan');
 
-    const isSuperAdmin = user.roles.includes('SUPER_ADMIN');
-    if (!isSuperAdmin) {
-      const userId = await resolveUserId(this.prisma, user.keycloakId);
-      if (session.userId !== userId) {
-        throw new ForbiddenException('Akses ditolak: bukan session milik Anda');
-      }
+    const userId = await resolveUserId(this.prisma, user.keycloakId);
+    if (session.userId !== userId) {
+      throw new ForbiddenException('Akses ditolak: bukan session milik Anda');
     }
 
     const messages = await this.prisma.chatMessage.findMany({
@@ -252,6 +262,39 @@ export class AiService {
    * Buat knowledge chunk sebagai DRAFT (isActive=false).
    * createdBy = auth.users.id. Embed fail-soft.
    */
+  async listChatSessions(
+    user: AuthUser,
+    page = 1,
+    limit = 20,
+  ): Promise<{ data: Array<{ id: string; title: string | null; updatedAt: Date; createdAt: Date }>; total: number; page: number; limit: number }> {
+    const userId = await resolveUserId(this.prisma, user.keycloakId);
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(Math.max(1, limit), 50);
+    const [data, total] = await Promise.all([
+      this.prisma.chatSession.findMany({
+        where: { userId },
+        select: { id: true, title: true, updatedAt: true, createdAt: true },
+        orderBy: { updatedAt: 'desc' },
+        skip: (safePage - 1) * safeLimit,
+        take: safeLimit,
+      }),
+      this.prisma.chatSession.count({ where: { userId } }),
+    ]);
+    return { data, total, page: safePage, limit: safeLimit };
+  }
+
+  async deleteChatSession(sessionId: string, user: AuthUser): Promise<{ deleted: true; id: string }> {
+    const userId = await resolveUserId(this.prisma, user.keycloakId);
+    const session = await this.prisma.chatSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, userId: true },
+    });
+    if (!session) throw new NotFoundException('Chat session tidak ditemukan');
+    if (session.userId !== userId) throw new ForbiddenException('Bukan session milik Anda');
+    await this.prisma.chatSession.delete({ where: { id: sessionId } });
+    return { deleted: true, id: sessionId };
+  }
+
   async createKnowledge(
     dto: CreateKnowledgeDto,
     user: AuthUser,

@@ -222,6 +222,8 @@ describe('SchoolConfigService', () => {
       { yearId: 'ay-new', oldYearId: 'ay-old' },
     );
     expect(mockAppointments.acquireActivationLock).toHaveBeenCalledWith(prisma);
+    expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.findFirst.mock.invocationCallOrder[0]!);
+    expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.updateMany.mock.invocationCallOrder[0]!);
     expect(mockPermissions.invalidateAll).toHaveBeenCalled();
   });
 
@@ -255,11 +257,14 @@ describe('SchoolConfigService', () => {
   it('updateAcademicYear with isActive → transactional activate', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mock$transaction.mockImplementation(async (cb: (tx: any) => Promise<unknown>) => cb(prisma));
+    mockAY.findFirst.mockResolvedValue({ id: 'ay-old' });
     mockAY.updateMany.mockResolvedValue({ count: 1 });
     mockAY.update.mockResolvedValue({ ...AY, isActive: true });
     const result = await service.updateAcademicYear('ay1', { isActive: true });
     expect(mock$transaction).toHaveBeenCalledTimes(1);
     expect(result).toBeDefined();
+    expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.findFirst.mock.invocationCallOrder[0]!);
+    expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.updateMany.mock.invocationCallOrder[0]!);
   });
 
   it('updateAcademicYear → not found → NotFoundException', async () => {

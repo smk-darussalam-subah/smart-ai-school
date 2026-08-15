@@ -122,7 +122,7 @@ export interface AssessmentCompletedPayload {
   type:         string;   // 'diagnostik' | 'formatif' | 'sumatif'
   teacherId:    string;
   classId:      string | null;
-  moduleId:     string;
+  moduleId:     string | null;
   subject:      string;
   academicYear: string;
   semester:     number;

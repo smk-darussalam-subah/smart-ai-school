@@ -98,6 +98,35 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
     logger.debug('[NotificationService] Queued', { logId: log.id, channel });
   }
 
+  async enqueueCommittedPendingLogs(ids: string[]): Promise<{ queuedCount: number }> {
+    if (!this.queue) {
+      logger.error('[NotificationService] Queue not initialized - committed logs require retry', {
+        count: ids.length,
+      });
+      throw new Error('Notification queue not initialized');
+    }
+
+    const uniqueIds = [...new Set(ids)].slice(0, 500);
+    if (uniqueIds.length === 0) return { queuedCount: 0 };
+
+    const logs = await this.prisma.notificationLog.findMany({
+      where: { id: { in: uniqueIds }, status: 'pending' },
+      select: { id: true, channel: true, recipient: true, body: true, subject: true },
+    });
+
+    for (const log of logs) {
+      await this.enqueuePendingLog({
+        id: log.id,
+        channel: log.channel as 'whatsapp' | 'email',
+        recipient: log.recipient,
+        body: log.body,
+        subject: log.subject ?? undefined,
+      });
+    }
+
+    return { queuedCount: logs.length };
+  }
+
   private async recoverPendingNotifications(source: 'startup' | 'interval'): Promise<void> {
     if (!this.queue) return;
     if (this.pendingRecoveryRunning) return;

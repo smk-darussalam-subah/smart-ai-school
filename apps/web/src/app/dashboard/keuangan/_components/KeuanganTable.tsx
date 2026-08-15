@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useTransition } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import { TablePagination } from '@/components/ui/table-pagination';
 import { approveSpp, recordSpp, searchStudentsForSppAction } from '../actions';
+import { defaultSppPeriod } from '../keuangan-ui';
 import { isSppApprovable } from './spp-ui';
 
 interface SppPayment {
@@ -27,9 +29,18 @@ interface StudentOption {
   class?: { name: string } | null;
 }
 
+interface ClassOption {
+  id: string;
+  name: string;
+}
+
 interface Props {
   payments: SppPayment[];
   total: number;
+  page: number;
+  limit: number;
+  filters: { search: string; status: string; month: string; year: string; classId: string };
+  classes: ClassOption[];
   canRecord: boolean;
   canApprove: boolean;
 }
@@ -43,11 +54,18 @@ const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondar
 
 const MONTHS = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
-const PAGE_SIZE = 10;
-
-export default function KeuanganTable({ payments, total, canRecord, canApprove }: Props) {
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+export default function KeuanganTable({ payments, total, page, limit, filters, classes, canRecord, canApprove }: Props) {
+  const today = new Date();
+  const defaultPeriod = defaultSppPeriod(today);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [isNavigating, startTransition] = useTransition();
+  const [search, setSearch] = useState(filters.search);
+  const [statusFilter, setStatusFilter] = useState(filters.status);
+  const [monthFilter, setMonthFilter] = useState(filters.month);
+  const [yearFilter, setYearFilter] = useState(filters.year);
+  const [classFilter, setClassFilter] = useState(filters.classId);
   const [formOpen, setFormOpen] = useState(false);
   const [studentSearch, setStudentSearch] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState('');
@@ -58,16 +76,31 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [approving, setApproving] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
 
-  const filtered = payments.filter((p) => {
-    const matchSearch = !search || p.student.nis.includes(search) || p.student.user.fullName.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === 'all' || p.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
+  const setQuery = (patch: Record<string, string | null>) => {
+    const next = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null || value === '') next.delete(key);
+      else next.set(key, value);
+    }
+    startTransition(() => router.replace(`${pathname}?${next.toString()}`));
+  };
 
-  // Reset ke halaman 1 saat filter berubah
-  useEffect(() => { setCurrentPage(1); }, [search, statusFilter]);
+  useEffect(() => {
+    setSearch(filters.search);
+    setStatusFilter(filters.status);
+    setMonthFilter(filters.month);
+    setYearFilter(filters.year);
+    setClassFilter(filters.classId);
+  }, [filters.search, filters.status, filters.month, filters.year, filters.classId]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (search === filters.search) return;
+      setQuery({ search: search.trim() || null, page: '1' });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search, filters.search]);
   useEffect(() => {
     if (!formOpen) return;
     let cancelled = false;
@@ -91,8 +124,6 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
     };
   }, [formOpen, studentSearch]);
 
-  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-
   const handleRecord = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
@@ -105,13 +136,16 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
       setSelectedStudentId('');
       setSelectedStudent(null);
       setStudentSearch('');
+      router.refresh();
     }
     else setError(result?.error || 'Gagal');
   };
 
   const handleApprove = async (id: string) => {
     setApproving(id);
-    await approveSpp(id);
+    const result = await approveSpp(id);
+    if (!result.success) setError(result.error ?? 'Gagal menyetujui pembayaran');
+    else router.refresh();
     setApproving(null);
   };
 
@@ -131,14 +165,43 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
 
       <div className="flex flex-col sm:flex-row gap-3">
         <Input placeholder="Cari NIS atau nama..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={classFilter || 'all'} onValueChange={(value: string) => { setClassFilter(value === 'all' ? '' : value); setQuery({ classId: value === 'all' ? null : value, page: '1' }); }}>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder="Kelas" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua Kelas</SelectItem>
+            {classes.map((kelas) => (
+              <SelectItem key={kelas.id} value={kelas.id}>{kelas.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={statusFilter} onValueChange={(value: string) => { setStatusFilter(value); setQuery({ status: value === 'all' ? null : value, page: '1' }); }}>
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua</SelectItem>
             {Object.entries(STATUS_MAP).map(([k, v]) => (<SelectItem key={k} value={k}>{v.label}</SelectItem>))}
           </SelectContent>
         </Select>
-        <span className="text-sm text-muted-foreground self-center">{filtered.length} dari {total} transaksi</span>
+        <Select value={monthFilter || 'all'} onValueChange={(value: string) => { setMonthFilter(value === 'all' ? '' : value); setQuery({ month: value === 'all' ? null : value, page: '1' }); }}>
+          <SelectTrigger className="w-[170px]"><SelectValue placeholder="Bulan" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua Bulan</SelectItem>
+            {MONTHS.slice(1).map((label, index) => (
+              <SelectItem key={label} value={String(index + 1)}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
+          value={yearFilter}
+          onChange={(event) => {
+            const value = event.target.value.replace(/\D/g, '').slice(0, 4);
+            setYearFilter(value);
+            if (value.length === 0 || value.length === 4) setQuery({ year: value || null, page: '1' });
+          }}
+          inputMode="numeric"
+          placeholder="Tahun"
+          className="w-[120px]"
+        />
+        <span className="text-sm text-muted-foreground self-center">{isNavigating ? 'Memuat...' : `${payments.length} tampil dari ${total} transaksi`}</span>
       </div>
 
       <div className="rounded-xl border shadow-sm overflow-x-auto">
@@ -153,9 +216,9 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {payments.length === 0 ? (
               <TableRow><TableCell colSpan={canApprove ? 5 : 4} className="text-center h-24 text-muted-foreground">Belum ada data SPP</TableCell></TableRow>
-            ) : paginated.map((p) => (
+            ) : payments.map((p) => (
               <TableRow key={p.id}>
                 <TableCell className="font-medium">{p.student.user.fullName} <span className="text-muted-foreground">({p.student.nis})</span></TableCell>
                 <TableCell>{MONTHS[p.month]} {p.year}</TableCell>
@@ -178,7 +241,7 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
         </Table>
       </div>
 
-      <TablePagination page={currentPage} limit={PAGE_SIZE} total={filtered.length} onPage={setCurrentPage} />
+      <TablePagination page={page} limit={limit} total={total} onPage={(nextPage) => setQuery({ page: String(nextPage) })} />
 
       <Dialog open={formOpen} onOpenChange={(next: boolean) => { setFormOpen(next); if (!next) { setSelectedStudentId(''); setSelectedStudent(null); setStudentSearch(''); setStudentOptions([]); setStudentError(''); setError(''); } }}>
         <DialogContent className="sm:max-w-lg">
@@ -237,11 +300,11 @@ export default function KeuanganTable({ payments, total, canRecord, canApprove }
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="month">Bulan (1-12)</Label>
-                <Input id="month" name="month" type="number" min={1} max={12} defaultValue={6} required />
+                <Input id="month" name="month" type="number" min={1} max={12} defaultValue={Number(filters.month) || defaultPeriod.month} required />
               </div>
               <div>
                 <Label htmlFor="year">Tahun</Label>
-                <Input id="year" name="year" type="number" defaultValue={2026} required />
+                <Input id="year" name="year" type="number" defaultValue={Number(filters.year) || defaultPeriod.year} required />
               </div>
             </div>
             <div>

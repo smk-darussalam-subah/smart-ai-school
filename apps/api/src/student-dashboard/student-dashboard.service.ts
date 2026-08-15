@@ -7,6 +7,7 @@
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { AuthUser } from '@smk/auth';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   isSiswaOnly,
@@ -14,7 +15,8 @@ import {
   resolveSiswaId,
   resolveUserId,
 } from '../common/helpers/role-helpers';
-import { naOf, NaComponents, KKM_DEFAULT } from '../analytics/analytics.math';
+import { naOf, NaComponents } from '../analytics/analytics.math';
+import { resolveKktpThreshold } from '../academic/kktp-resolver';
 
 interface StudentBrief {
   id: string;
@@ -109,7 +111,7 @@ export class StudentDashboardService {
         // LMS modules published for this student's class
         const lmsWhere = {
           status: 'published' as const,
-          OR: [{ classId: s.classId ?? undefined }, { classId: null }],
+          OR: s.classId ? [{ classId: s.classId }, { classId: null }] : [{ classId: null }],
         };
         const modules = await this.prisma.lmsModule.findMany({
           where: lmsWhere,
@@ -135,39 +137,65 @@ export class StudentDashboardService {
             status,
             progress: prog?.progress ?? 0,
             kktp: m.kktp,
+            kktpProvenance: 'module',
           };
         });
 
-        // Assessment sessions (active/completed) for this student's class
+        // Assessment sessions: regular by class, remedial strictly by participant.
+        const sessionVisibility: Prisma.AssessmentSessionWhereInput[] = [
+          ...(s.classId ? [{ purpose: 'regular' as const, classId: s.classId }] : []),
+          {
+            purpose: 'remedial' as const,
+            remedialParticipants: { some: { studentId: s.id, status: { not: 'cancelled' as const } } },
+          },
+        ];
         const sessions = await this.prisma.assessmentSession.findMany({
           where: {
             status: { in: ['active', 'completed'] },
-            OR: [{ classId: s.classId ?? undefined }, { classId: null }],
+            OR: sessionVisibility,
           },
           orderBy: [{ createdAt: 'desc' }],
           select: {
-            id: true, title: true, type: true, status: true,
-            module: { select: { subject: true } },
+            id: true, title: true, type: true, status: true, purpose: true,
+            academicYear: true, semester: true,
+            module: { select: { subject: true, kktp: true } },
+            teachingAssignment: { select: { subject: true } },
+            remedialParticipants: {
+              where: { studentId: s.id, status: { not: 'cancelled' } },
+              take: 1,
+              select: { kktpValue: true, kktpProvenance: true },
+            },
             responses: {
               where: { studentId: s.id },
               select: { score: true, submittedAt: true },
             },
           },
         });
-        const sessionAssignments = sessions.map((sess) => {
+        const sessionAssignments = await Promise.all(sessions.map(async (sess) => {
           const resp = sess.responses[0];
           const status = !resp ? 'pending' : resp.score !== null ? 'graded' : 'submitted';
+          const subject = sess.module?.subject ?? sess.teachingAssignment?.subject ?? null;
+          const participant = sess.remedialParticipants[0];
+          const kktp = await resolveKktpThreshold(this.prisma, sess.purpose === 'remedial' && participant
+            ? { participantSnapshot: { value: participant.kktpValue, provenance: participant.kktpProvenance } }
+            : {
+                moduleKktp: sess.module?.kktp ?? null,
+                subject,
+                academicYear: sess.academicYear,
+                semester: sess.semester,
+              });
           return {
             id: sess.id,
             type: 'assessment' as const,
             title: sess.title,
-            subject: sess.module?.subject ?? '—',
+            subject: subject ?? '-',
             guru: null,
             status,
             progress: resp?.score ?? 0,
-            kktp: KKM_DEFAULT,
+            kktp: kktp.value,
+            kktpProvenance: kktp.provenance,
           };
-        });
+        }));
 
         return {
           studentId: s.id,
@@ -194,27 +222,37 @@ export class StudentDashboardService {
           },
         });
 
-        // Group by subject → type → scores
-        const bySubject = new Map<string, NaComponents>();
+        // Group by exact KKTP context so the threshold never guesses across terms.
+        const bySubject = new Map<string, NaComponents & { subject: string; academicYear: string; semester: number }>();
         for (const g of grades) {
           const subject = g.assignment.subject;
-          const comp = bySubject.get(subject) ?? {};
+          const key = `${subject}\u0000${g.academicYear}\u0000${g.semester}`;
+          const comp = bySubject.get(key) ?? { subject, academicYear: g.academicYear, semester: g.semester };
           const score = Number(g.score);
           if (g.type === 'uh') comp.uh = avg(comp.uh, score);
           else if (g.type === 'praktik') comp.praktik = avg(comp.praktik, score);
           else if (g.type === 'sikap') comp.sikap = avg(comp.sikap, score);
           else if (g.type === 'uts') comp.uts = avg(comp.uts, score);
           else if (g.type === 'uas') comp.uas = avg(comp.uas, score);
-          bySubject.set(subject, comp);
+          bySubject.set(key, comp);
         }
 
-        const subjects = [...bySubject.entries()].map(([subject, comp]) => {
+        const subjects = await Promise.all([...bySubject.values()].map(async (comp) => {
           const na = naOf(comp);
+          const kktp = await resolveKktpThreshold(this.prisma, {
+            subject: comp.subject,
+            academicYear: comp.academicYear,
+            semester: comp.semester,
+          });
+          const threshold = kktp.value;
           return {
-            subject,
+            subject: comp.subject,
+            academicYear: comp.academicYear,
+            semester: comp.semester,
             na,
-            kktp: KKM_DEFAULT,
-            status: na !== null ? (na >= KKM_DEFAULT ? 'tuntas' : 'remedial') : null,
+            kktp: threshold,
+            kktpProvenance: kktp.provenance,
+            status: na !== null && threshold !== null ? (na >= threshold ? 'tuntas' : 'remedial') : null,
             components: {
               uh: comp.uh ?? null,
               praktik: comp.praktik ?? null,
@@ -223,7 +261,7 @@ export class StudentDashboardService {
               uas: comp.uas ?? null,
             },
           };
-        });
+        }));
 
         return {
           studentId: s.id,

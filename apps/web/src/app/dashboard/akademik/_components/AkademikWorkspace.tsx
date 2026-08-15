@@ -22,6 +22,7 @@ import InputNilaiModal from './InputNilaiModal';
 import PenilaianSesiModal from './PenilaianSesiModal';
 import SessionFlowModal from './SessionFlowModal';
 import ModulAjarForm from './ModulAjarForm';
+import RemedialPanel from './RemedialPanel';
 import KehadiranGuru from './KehadiranGuru';
 import PenugasanGuru from './PenugasanGuru';
 import RaporWaliKelas from './guru/RaporWaliKelas';
@@ -124,7 +125,7 @@ export default function AkademikWorkspace({
   const [jurnal, setJurnal] = useState<{ classId: string; className: string; subject: string; startLabel: string; jpStart: number } | null>(null);
   const [inputNilai, setInputNilai] = useState(false);
   const [penilaian, setPenilaian] = useState<{ session: TodayClass; mode: 'preview' | 'monitor' | 'analysis'; tab: 'diag' | 'form' | 'fb' } | null>(null);
-  const [penilaianPanel, setPenilaianPanel] = useState<'nilai' | 'sesi' | 'bank' | 'koreksi'>('nilai');
+  const [penilaianPanel, setPenilaianPanel] = useState<'nilai' | 'sesi' | 'bank' | 'koreksi' | 'remedial'>('nilai');
   const [penilaianBankOpen, setPenilaianBankOpen] = useState(false);
   const [sessFlow, setSessFlow] = useState<TodayClass | null>(null);
   // Step "Buka Modul Ajar" dari session flow: buka ModulAjarForm DI ATAS modal sesi.
@@ -211,6 +212,7 @@ export default function AkademikWorkspace({
         const res = await fetchAssessmentSessions({
           page,
           limit: sessionLimit,
+          purpose: 'regular',
           subject: subject === 'all' ? undefined : subject,
           classId: selClass === 'all' ? undefined : selClass,
           academicYear: academicYear || undefined,
@@ -398,12 +400,13 @@ export default function AkademikWorkspace({
         {screen === 'penilaian' && (
           <Card title={`Penilaian${subject !== 'all' ? ` — ${subject}` : ''}${selClassName ? ` · ${selClassName}` : ''}`} icon={ClipboardPenLine}>
             {subject === 'all' && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-700">Pilih <b>Mapel</b> di bar atas untuk menampilkan nilai gradebook.</p>}
-            <div className="mb-3 grid grid-cols-4 gap-1 rounded-xl bg-[#f4f7f5] p-1">
+            <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-[#f4f7f5] p-1 sm:grid-cols-5">
               {([
                 ['nilai', 'Nilai'],
                 ['sesi', 'Sesi Asesmen'],
                 ['bank', 'Bank Soal'],
                 ['koreksi', 'Koreksi'],
+                ['remedial', 'Remedial'],
               ] as const).map(([key, label]) => (
                 <button key={key} type="button" onClick={() => setPenilaianPanel(key)} className={clsx('rounded-lg px-2 py-2 text-[11px] font-bold', penilaianPanel === key ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]')}>
                   {label}
@@ -525,6 +528,15 @@ export default function AkademikWorkspace({
                   </article>
                 ))}
               </div>
+            )}
+            {penilaianPanel === 'remedial' && (
+              <RemedialPanel
+                subject={subject}
+                classId={selClass}
+                className={selClassName || 'Semua Kelas'}
+                academicYear={academicYear}
+                semester={semester}
+              />
             )}
           </Card>
         )}
