@@ -123,7 +123,7 @@ function buildMockPrismaForAttendance() {
 }
 
 function buildMockPrismaForFinance() {
-  return {
+  const prisma = {
     user:       { findUnique: jest.fn() },
     student:    { findUnique: jest.fn(), findMany: jest.fn() },
     sppPayment: {
@@ -131,9 +131,16 @@ function buildMockPrismaForFinance() {
       findMany:   jest.fn(),
       findUnique: jest.fn(),
       update:     jest.fn(),
+      updateMany: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       count:      jest.fn(),
       groupBy:    jest.fn(),
     },
+    notificationLog: { createMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+  };
+  return {
+    ...prisma,
+    $transaction: jest.fn((callback: (tx: typeof prisma) => unknown) => callback(prisma)),
   };
 }
 
@@ -497,7 +504,7 @@ describe('FinanceService — event producer (payment.received)', () => {
       approvedAt: null,
       createdAt:  new Date(),
       updatedAt:  new Date(),
-      student:    { id: STUDENT_UUID, nis: '2024001', user: { fullName: 'Budi' } },
+      student:    { id: STUDENT_UUID, nis: '2024001', user: { fullName: 'Budi', phone: '081234567890' }, parent: { phone: '081234567891' } },
     };
   }
 
@@ -537,51 +544,47 @@ describe('FinanceService — event producer (payment.received)', () => {
     expect(emitter.emit).not.toHaveBeenCalled();
   });
 
-  it('emit payment.received saat setup manual unpaid di-approve', async () => {
+  it('membuat pending notification log saat setup manual unpaid di-approve', async () => {
     prisma.sppPayment.findUnique.mockResolvedValue({
-      id: PAY_UUID,
-      status: 'unpaid',
+      ...mockPayment('unpaid'),
       approvedBy: null,
       approvedAt: null,
     });
-    prisma.sppPayment.update.mockResolvedValue(mockPayment('paid'));
+    prisma.sppPayment.updateMany.mockResolvedValue({ count: 1 });
+    prisma.sppPayment.findUniqueOrThrow.mockResolvedValue(mockPayment('paid'));
 
     await service.approve(PAY_UUID, TU_USER);
 
-    expect(emitter.emit).toHaveBeenCalledTimes(1);
-    expect(emitter.emit).toHaveBeenCalledWith(
-      EVENTS.PAYMENT_RECEIVED,
-      expect.objectContaining({
-        paymentId:  PAY_UUID,
-        studentId:  STUDENT_UUID,
-        month:      7,
-        year:       2025,
-        amount:     '250000',
-        receiptNo:  'RCP-001',
-      }),
-    );
+    expect(emitter.emit).not.toHaveBeenCalled();
+    expect(prisma.notificationLog.createMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.arrayContaining([
+        expect.objectContaining({ refType: 'payment', refId: `${PAY_UUID}:+6281234567890`, recipient: '+6281234567890', status: 'pending' }),
+        expect.objectContaining({ refType: 'payment', refId: `${PAY_UUID}:+6281234567891`, recipient: '+6281234567891', status: 'pending' }),
+      ]),
+      skipDuplicates: true,
+    }));
   });
 
-  it('TIDAK emit untuk status late saat create karena pembayaran belum di-approve', async () => {
+  it('TIDAK emit saat create karena pembayaran manual selalu unpaid', async () => {
     prisma.sppPayment.create.mockResolvedValue(mockPayment('late'));
 
-    await service.createRecord({ ...CREATE_DTO, status: 'late' as const }, TU_USER);
+    await service.createRecord(CREATE_DTO, TU_USER);
 
     expect(emitter.emit).not.toHaveBeenCalled();
   });
 
-  it('TIDAK emit untuk status unpaid', async () => {
+  it('TIDAK emit untuk setup unpaid', async () => {
     prisma.sppPayment.create.mockResolvedValue(mockPayment('unpaid'));
 
-    await service.createRecord({ ...CREATE_DTO, status: 'unpaid' as const }, TU_USER);
+    await service.createRecord(CREATE_DTO, TU_USER);
 
     expect(emitter.emit).not.toHaveBeenCalled();
   });
 
-  it('TIDAK emit untuk status waived', async () => {
+  it('TIDAK emit walau mock mengembalikan status waived', async () => {
     prisma.sppPayment.create.mockResolvedValue(mockPayment('waived'));
 
-    await service.createRecord({ ...CREATE_DTO, status: 'waived' as const }, TU_USER);
+    await service.createRecord(CREATE_DTO, TU_USER);
 
     expect(emitter.emit).not.toHaveBeenCalled();
   });

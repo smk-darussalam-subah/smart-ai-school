@@ -118,29 +118,28 @@ export class SchoolConfigService {
     // Cek duplikat SEBELUM menonaktifkan yang lain (hindari efek samping bila gagal).
     const exists = await this.prisma.academicYear.findUnique({ where: { code: data.code }, select: { id: true } });
     if (exists) throw new ConflictException(`Tahun ajaran ${data.code} sudah terdaftar.`);
-    // TF2-P1-1: Capture oldActiveYear SEBELUM transaction mengubah isActive.
-    const oldActiveYear = data.isActive
-      ? await this.prisma.academicYear.findFirst({ where: { isActive: true }, select: { id: true } })
-      : null;
     // C1: Transactional — deactivate-all + create must be atomic.
     // BUG FIX: Activating a new TA must also deactivate ALL semesters from the old TA.
     let affectedAppointmentUsers: string[] = [];
+    let oldActiveYearId: string | null = null;
     const result = await this.prisma.$transaction(async (tx) => {
       if (data.isActive) {
+        await this.appointmentsService.acquireActivationLock(tx);
+        const oldActiveYear = await tx.academicYear.findFirst({ where: { isActive: true }, select: { id: true } });
+        oldActiveYearId = oldActiveYear?.id ?? null;
         await tx.academicYear.updateMany({ data: { isActive: false } });
         await tx.semester.updateMany({ data: { isActive: false } });
       }
       const created = await tx.academicYear.create({ data });
       if (data.isActive) {
-        await this.appointmentsService.acquireActivationLock(tx);
         const summary = await this.appointmentsService.applyAcademicYearActivation(tx, {
           yearId: created.id,
-          oldYearId: oldActiveYear?.id ?? null,
+          oldYearId: oldActiveYearId,
         });
         affectedAppointmentUsers = summary.affectedKeycloakIds;
         logger.info('[SchoolConfig] appointment cutover applied in academic-year create transaction', {
           yearId: created.id,
-          oldYearId: oldActiveYear?.id ?? null,
+          oldYearId: oldActiveYearId,
           endedAppointments: summary.endedCount,
           cancelledAppointments: summary.cancelledCount,
           activatedAppointments: summary.activatedCount,
@@ -149,8 +148,8 @@ export class SchoolConfigService {
       return created;
     });
     // TF2-P1-1: Cascade cleanup tahun lama setelah commit berhasil.
-    if (oldActiveYear && oldActiveYear.id !== result.id) {
-      await this.cleanupOldYearPermissions(oldActiveYear.id);
+    if (oldActiveYearId && oldActiveYearId !== result.id) {
+      await this.cleanupOldYearPermissions(oldActiveYearId);
     }
     if (data.isActive) {
       this.invalidateAppointmentUsers(affectedAppointmentUsers);
@@ -162,28 +161,27 @@ export class SchoolConfigService {
     // C1: Transactional — deactivate-all + activate-target must be atomic.
     // H1: Map Prisma P2025 → NotFoundException.
     // BUG FIX: Activating a TA must also deactivate ALL semesters from the old TA.
-    // TF2-P1-1: Capture oldActiveYear SEBELUM transaction mengubah isActive.
-    const oldActiveYear = data.isActive === true
-      ? await this.prisma.academicYear.findFirst({ where: { isActive: true }, select: { id: true } })
-      : null;
     try {
       let affectedAppointmentUsers: string[] = [];
+      let oldActiveYearId: string | null = null;
       const result = await this.prisma.$transaction(async (tx) => {
         if (data.isActive === true) {
+          await this.appointmentsService.acquireActivationLock(tx);
+          const oldActiveYear = await tx.academicYear.findFirst({ where: { isActive: true }, select: { id: true } });
+          oldActiveYearId = oldActiveYear?.id ?? null;
           await tx.academicYear.updateMany({ data: { isActive: false } });
           await tx.semester.updateMany({ data: { isActive: false } });
         }
         const updated = await tx.academicYear.update({ where: { id }, data });
         if (data.isActive === true) {
-          await this.appointmentsService.acquireActivationLock(tx);
           const summary = await this.appointmentsService.applyAcademicYearActivation(tx, {
             yearId: id,
-            oldYearId: oldActiveYear && oldActiveYear.id !== id ? oldActiveYear.id : null,
+            oldYearId: oldActiveYearId && oldActiveYearId !== id ? oldActiveYearId : null,
           });
           affectedAppointmentUsers = summary.affectedKeycloakIds;
           logger.info('[SchoolConfig] appointment cutover applied in academic-year update transaction', {
             yearId: id,
-            oldYearId: oldActiveYear?.id ?? null,
+            oldYearId: oldActiveYearId,
             endedAppointments: summary.endedCount,
             cancelledAppointments: summary.cancelledCount,
             activatedAppointments: summary.activatedCount,
@@ -192,8 +190,8 @@ export class SchoolConfigService {
         return updated;
       });
       // TF2-P1-1: Cascade cleanup tahun lama setelah commit berhasil.
-      if (oldActiveYear && oldActiveYear.id !== id) {
-        await this.cleanupOldYearPermissions(oldActiveYear.id);
+      if (oldActiveYearId && oldActiveYearId !== id) {
+        await this.cleanupOldYearPermissions(oldActiveYearId);
       }
       if (data.isActive === true) {
         this.invalidateAppointmentUsers(affectedAppointmentUsers);

@@ -44,9 +44,11 @@ describe('ReportCardsService', () => {
   const rcUpdateMany = jest.fn();
   const statusEventCreate = jest.fn();
   const executeRaw = jest.fn();
+  const queryRaw = jest.fn();
   const classFindUnique = jest.fn();
   const classFindMany = jest.fn();
   const gradeFindMany = jest.fn();
+  const gradeFindFirst = jest.fn();
   const attGroupBy = jest.fn();
   const teacherFindFirst = jest.fn();
   const teacherFindUnique = jest.fn();
@@ -62,8 +64,8 @@ describe('ReportCardsService', () => {
 
   beforeEach(async () => {
     [emit, rcFindMany, rcFindFirst, rcFindUnique, rcCount, rcCreate, rcUpdate, rcUpdateMany, statusEventCreate,
-      executeRaw, classFindUnique,
-      classFindMany, gradeFindMany, attGroupBy, teacherFindFirst, teacherFindUnique,
+      executeRaw, queryRaw, classFindUnique,
+      classFindMany, gradeFindMany, gradeFindFirst, attGroupBy, teacherFindFirst, teacherFindUnique,
       teachingAssignmentFindMany, studentFindFirst, userFindUnique, academicYearFindMany,
       appointmentFindMany, classFindFirst]
       .forEach((m) => m.mockReset());
@@ -72,6 +74,7 @@ describe('ReportCardsService', () => {
       Promise.resolve({ id: 'rc-1', ...a.data }));
     rcUpdateMany.mockResolvedValue({ count: 1 });
     classFindMany.mockResolvedValue([]);
+    gradeFindFirst.mockResolvedValue(null);
     academicYearFindFirst.mockResolvedValue({ code: '2025/2026' });
     serviceHasPermission.mockResolvedValue(true);
     serviceGetActivePositionCodes.mockResolvedValue(new Set(['WAKA_KURIKULUM']));
@@ -82,7 +85,7 @@ describe('ReportCardsService', () => {
         create: rcCreate, update: rcUpdate, updateMany: rcUpdateMany,
       },
       class: { findUnique: classFindUnique, findMany: classFindMany, findFirst: classFindFirst },
-      grade: { findMany: gradeFindMany },
+      grade: { findMany: gradeFindMany, findFirst: gradeFindFirst },
       attendance: { groupBy: attGroupBy },
       teacher: { findFirst: teacherFindFirst, findUnique: teacherFindUnique },
       teachingAssignment: { findMany: teachingAssignmentFindMany },
@@ -92,6 +95,7 @@ describe('ReportCardsService', () => {
       appointment: { findMany: appointmentFindMany },
       reportCardStatusEvent: { create: statusEventCreate },
       $executeRaw: executeRaw,
+      $queryRaw: queryRaw,
     };
     const transaction = jest.fn(async (callback: (tx: typeof prisma) => unknown) => callback(prisma));
     Object.assign(prisma, { $transaction: transaction });
@@ -209,8 +213,18 @@ describe('ReportCardsService', () => {
 
   it('pipeline: check draft→checked; publish butuh checked (draft → 409)', async () => {
     userFindUnique.mockResolvedValue({ fullName: 'Waka Kurikulum' });
-    rcFindUnique.mockResolvedValue({ id: 'rc-1', status: 'draft', studentId: 's1', academicYear: '2026/2027', semester: 1 });
+    rcFindUnique.mockResolvedValue({
+      id: 'rc-1',
+      status: 'draft',
+      studentId: 's1',
+      classId: 'c1',
+      academicYear: '2026/2027',
+      semester: 1,
+      generatedAt: new Date('2026-08-13T00:00:00.000Z'),
+    });
     await service.transition('rc-1', { action: 'check' }, WAKA_KURIKULUM);
+    expect(executeRaw).toHaveBeenCalled();
+    expect(queryRaw).not.toHaveBeenCalled();
     expect(rcUpdateMany.mock.calls[0][0].data.status).toBe('checked');
     expect(rcUpdateMany.mock.calls[0][0].data.checkedAt).toBeInstanceOf(Date);
     expect(rcUpdateMany.mock.calls[0][0].data.checkedByName).toBe('Waka Kurikulum');
@@ -221,6 +235,24 @@ describe('ReportCardsService', () => {
 
     await expect(service.transition('rc-1', { action: 'publish' }, SA))
       .rejects.toThrow(ConflictException); // masih draft di mock
+  });
+
+  it('menolak check draft jika Grade berubah setelah draft rapor dibuat', async () => {
+    userFindUnique.mockResolvedValue({ fullName: 'Waka Kurikulum' });
+    rcFindUnique.mockResolvedValue({
+      id: 'rc-1',
+      status: 'draft',
+      studentId: 's1',
+      classId: 'c1',
+      academicYear: '2026/2027',
+      semester: 1,
+      generatedAt: new Date('2026-08-13T01:00:00.000Z'),
+    });
+    gradeFindFirst.mockResolvedValue({ id: 'grade-1', updatedAt: new Date('2026-08-13T01:05:00.000Z') });
+
+    await expect(service.transition('rc-1', { action: 'check' }, WAKA_KURIKULUM))
+      .rejects.toThrow(ConflictException);
+    expect(rcUpdateMany).not.toHaveBeenCalled();
   });
 
   it('distribute: published→distributed + emit report.distributed', async () => {

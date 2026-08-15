@@ -127,6 +127,35 @@ describe('NotificationService (BullMQ)', () => {
     expect(prisma.notificationLog.update).not.toHaveBeenCalled();
   });
 
+  it('enqueueCommittedPendingLogs queues pending committed rows with stable jobId', async () => {
+    prisma.notificationLog.findMany.mockResolvedValueOnce([
+      { id: 'committed-1', channel: 'whatsapp', recipient: '628xxx', body: 'x', subject: null },
+    ]);
+
+    const result = await service.enqueueCommittedPendingLogs(['committed-1', 'committed-1']);
+
+    expect(result).toEqual({ queuedCount: 1 });
+    expect(prisma.notificationLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: { in: ['committed-1'] }, status: 'pending' },
+    }));
+    expect(queue.add).toHaveBeenCalledWith(
+      'whatsapp',
+      expect.objectContaining({ logId: 'committed-1' }),
+      { jobId: 'committed-1' },
+    );
+  });
+
+  it('enqueueCommittedPendingLogs keeps committed rows pending when queue is unavailable', async () => {
+    prisma.notificationLog.findMany.mockResolvedValueOnce([
+      { id: 'committed-1', channel: 'whatsapp', recipient: '628xxx', body: 'x', subject: null },
+    ]);
+    queue.add.mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(service.enqueueCommittedPendingLogs(['committed-1'])).rejects.toThrow('redis down');
+
+    expect(prisma.notificationLog.update).not.toHaveBeenCalled();
+  });
+
   it('idempotensi race: unique conflict ref pending -> refetch dan requeue row pemenang', async () => {
     prisma.notificationLog.findFirst
       .mockResolvedValueOnce(null)
