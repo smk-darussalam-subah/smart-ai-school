@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/select';
 import { createAnnouncement, updateAnnouncement } from '../actions';
 import type { Announcement } from './PengumumanList';
+import { normalizeAnnouncementAudience } from '../pengumuman-ui';
 
 interface Props {
   open: boolean;
@@ -65,14 +66,15 @@ function fromDatetimeLocalWib(value: string): string {
 
 function toFormState(announcement: Announcement | null): FormState {
   if (!announcement) return EMPTY;
-  const isAll = announcement.audience.includes('ALL');
+  const audience = normalizeAnnouncementAudience(announcement.audience);
+  const isAll = audience.includes('ALL');
   return {
     title: announcement.title,
     content: announcement.content,
     category: announcement.category,
     priority: announcement.priority,
     audienceAll: isAll,
-    audienceRoles: isAll ? [] : announcement.audience,
+    audienceRoles: isAll ? [] : audience,
     scheduledAt: announcement.scheduledAt ? toDatetimeLocalWib(announcement.scheduledAt) : '',
   };
 }
