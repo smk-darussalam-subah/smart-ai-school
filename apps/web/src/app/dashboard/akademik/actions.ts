@@ -6,6 +6,7 @@ import { authOptions } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { apiErrorMessage } from '@/lib/api';
+import type { FamilyRemedialListResponse } from './_components/ortu/ortu-remedial-ui';
 
 const API_BASE = process.env.API_URL ?? 'http://localhost:3001';
 
@@ -860,6 +861,21 @@ export async function fetchRemedialSessions(params: {
   const r = await apiCall(`/assessment/remedials?${searchParams.toString()}`, 'GET');
   if (!r.success) return { success: false, error: r.error };
   return { success: true, data: r.data as { data: AssessmentSessionData[]; total: number; page: number; limit: number } };
+}
+
+export async function fetchFamilyRemedials(params: {
+  studentId: string;
+  page?: number;
+  limit?: number;
+}): Promise<{ success: boolean; data?: FamilyRemedialListResponse; error?: string }> {
+  const searchParams = new URLSearchParams({
+    studentId: params.studentId,
+    page: String(params.page ?? 1),
+    limit: String(params.limit ?? 5),
+  });
+  const r = await apiCall(`/assessment/remedials/family?${searchParams.toString()}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as FamilyRemedialListResponse };
 }
 
 export async function createRemedialSession(data: {

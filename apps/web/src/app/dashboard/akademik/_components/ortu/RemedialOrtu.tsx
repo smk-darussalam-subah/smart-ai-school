@@ -7,8 +7,8 @@ import {
   remedialDueState,
   shouldApplyOrtuRemedialResponse,
   type FamilyRemedialItem,
-  type FamilyRemedialListResponse,
 } from './ortu-remedial-ui';
+import { fetchFamilyRemedials } from '../../actions';
 
 interface RemedialOrtuProps {
   studentId?: string;
@@ -25,11 +25,6 @@ function statusLabel(item: FamilyRemedialItem): string {
 function dueLabel(dueAt: string | null): string {
   if (!dueAt) return 'Tanpa tenggat';
   return new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(dueAt));
-}
-
-async function parseError(res: Response): Promise<string> {
-  const data = await res.json().catch(() => null) as { message?: string; error?: string } | null;
-  return data?.message ?? data?.error ?? 'Remedial belum dapat dimuat.';
 }
 
 export default function RemedialOrtu({ studentId }: RemedialOrtuProps) {
@@ -57,13 +52,8 @@ export default function RemedialOrtu({ studentId }: RemedialOrtuProps) {
     setLoading(true);
     setError('');
     try {
-      const params = new URLSearchParams({ studentId, limit: '5' });
-      const res = await fetch(`/api/backend/assessment/remedials/family?${params.toString()}`, {
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      if (!res.ok) throw new Error(await parseError(res));
-      const data = await res.json() as FamilyRemedialListResponse;
+      const result = await fetchFamilyRemedials({ studentId, limit: 5 });
+      if (!result.success) throw new Error(result.error ?? 'Remedial belum dapat dimuat.');
       if (!shouldApplyOrtuRemedialResponse({
         requestId,
         currentRequestId: requestRef.current,
@@ -72,7 +62,7 @@ export default function RemedialOrtu({ studentId }: RemedialOrtuProps) {
         aborted: controller.signal.aborted,
         mounted: mountedRef.current,
       })) return;
-      setItems(data.data ?? []);
+      setItems(result.data?.data ?? []);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
       if (!shouldApplyOrtuRemedialResponse({
