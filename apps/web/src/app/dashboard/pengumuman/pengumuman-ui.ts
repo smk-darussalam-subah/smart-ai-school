@@ -36,7 +36,17 @@ export function getAnnouncementDisplayStatus(
 
 export function normalizeAnnouncementAudience(audience: AnnouncementAudienceInput): string[] {
   if (Array.isArray(audience)) return audience.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
-  if (typeof audience === 'string' && audience.trim()) return [audience.trim()];
+  if (typeof audience === 'string' && audience.trim()) {
+    const trimmed = audience.trim();
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      try {
+        return normalizeAnnouncementAudience(JSON.parse(trimmed) as AnnouncementAudienceInput);
+      } catch {
+        return [trimmed];
+      }
+    }
+    return [trimmed];
+  }
   if (!audience || typeof audience !== 'object') return [];
   if (audience.all === true) return ['ALL'];
   if (Array.isArray(audience.roles)) return normalizeAnnouncementAudience(audience.roles);
