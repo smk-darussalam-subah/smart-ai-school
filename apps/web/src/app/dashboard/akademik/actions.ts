@@ -6,6 +6,7 @@ import { authOptions } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { apiErrorMessage } from '@/lib/api';
+import type { FamilyRemedialListResponse } from './_components/ortu/ortu-remedial-ui';
 
 const API_BASE = process.env.API_URL ?? 'http://localhost:3001';
 
@@ -734,7 +735,8 @@ export async function fetchAssessmentSession(
 export async function fetchAssessmentSessions(params?: {
   page?: number;
   limit?: number;
-  status?: 'draft' | 'active' | 'completed';
+  status?: 'draft' | 'active' | 'completed' | 'cancelled';
+  purpose?: 'regular' | 'remedial';
   type?: 'diagnostik' | 'formatif' | 'sumatif';
   subject?: string;
   classId?: string;
@@ -749,6 +751,7 @@ export async function fetchAssessmentSessions(params?: {
   searchParams.set('page', String(params?.page ?? 1));
   searchParams.set('limit', String(params?.limit ?? 100));
   if (params?.status) searchParams.set('status', params.status);
+  if (params?.purpose) searchParams.set('purpose', params.purpose);
   if (params?.type) searchParams.set('type', params.type);
   if (params?.subject) searchParams.set('subject', params.subject);
   if (params?.classId) searchParams.set('classId', params.classId);
@@ -765,20 +768,161 @@ export async function fetchAssessmentSessions(params?: {
 export interface AssessmentSessionData {
   id: string;
   teacherId?: string;
-  moduleId?: string;
+  moduleId?: string | null;
+  teachingAssignmentId?: string | null;
   classId?: string | null;
   title: string;
   type: string;
   status: string;
+  purpose?: 'regular' | 'remedial';
   questions: AssessmentQuestion[];
   gradeTarget?: string | null;
+  dueAt?: string | null;
+  instructions?: string | null;
+  remedialParticipants?: RemedialParticipantData[];
   durationMinutes: number | null;
   randomizeOrder: boolean;
   startedAt: string | null;
   completedAt: string | null;
   module?: { id: string; title: string; subject: string };
+  teachingAssignment?: { id: string; subject: string } | null;
   class?: { id: string; name: string };
-  _count?: { responses: number };
+  _count?: { responses: number; remedialParticipants?: number };
+}
+
+export interface RemedialCandidateData {
+  gradeId: string;
+  studentId: string;
+  studentName: string;
+  nis: string;
+  score: number;
+  type: string;
+  kktpValue: number;
+  kktpProvenance: string;
+  gradeUpdatedAt: string;
+}
+
+export interface RemedialParticipantData {
+  id: string;
+  status: 'assigned' | 'in_progress' | 'submitted' | 'passed' | 'needs_retry' | 'cancelled';
+  sourceScore: string | number;
+  rawScore: number | null;
+  effectiveScore: string | number | null;
+  kktpValue: string | number;
+  kktpProvenance: string;
+  finalizedAt: string | null;
+  sourceGradeUpdatedAt: string;
+  sourceGrade: { id: string; type: string; updatedAt: string; score: string | number };
+  student: { id: string; nis: string; user: { fullName: string } };
+}
+
+export async function fetchRemedialCandidates(params: {
+  classId: string;
+  subject: string;
+  academicYear: string;
+  semester: number;
+  type?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}): Promise<{ success: boolean; data?: { data: RemedialCandidateData[]; total: number; page: number; limit: number }; error?: string }> {
+  const searchParams = new URLSearchParams({
+    classId: params.classId,
+    subject: params.subject,
+    academicYear: params.academicYear,
+    semester: String(params.semester),
+    page: String(params.page ?? 1),
+    limit: String(params.limit ?? 50),
+  });
+  if (params.type) searchParams.set('type', params.type);
+  if (params.search) searchParams.set('search', params.search);
+  const r = await apiCall(`/assessment/remedials/candidates?${searchParams.toString()}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { data: RemedialCandidateData[]; total: number; page: number; limit: number } };
+}
+
+export async function fetchRemedialSessions(params: {
+  page?: number;
+  limit?: number;
+  status?: 'draft' | 'active' | 'completed' | 'cancelled';
+  subject?: string;
+  classId?: string;
+  academicYear?: string;
+  semester?: number;
+}): Promise<{ success: boolean; data?: { data: AssessmentSessionData[]; total: number; page: number; limit: number }; error?: string }> {
+  const searchParams = new URLSearchParams();
+  searchParams.set('page', String(params.page ?? 1));
+  searchParams.set('limit', String(params.limit ?? 50));
+  if (params.status) searchParams.set('status', params.status);
+  if (params.subject) searchParams.set('subject', params.subject);
+  if (params.classId) searchParams.set('classId', params.classId);
+  if (params.academicYear) searchParams.set('academicYear', params.academicYear);
+  if (params.semester) searchParams.set('semester', String(params.semester));
+  const r = await apiCall(`/assessment/remedials?${searchParams.toString()}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as { data: AssessmentSessionData[]; total: number; page: number; limit: number } };
+}
+
+export async function fetchFamilyRemedials(params: {
+  studentId: string;
+  page?: number;
+  limit?: number;
+}): Promise<{ success: boolean; data?: FamilyRemedialListResponse; error?: string }> {
+  const searchParams = new URLSearchParams({
+    studentId: params.studentId,
+    page: String(params.page ?? 1),
+    limit: String(params.limit ?? 5),
+  });
+  const r = await apiCall(`/assessment/remedials/family?${searchParams.toString()}`, 'GET');
+  if (!r.success) return { success: false, error: r.error };
+  return { success: true, data: r.data as FamilyRemedialListResponse };
+}
+
+export async function createRemedialSession(data: {
+  title: string;
+  sourceGradeIds: string[];
+  questionSelections: QuestionSelectionData[];
+  dueAt?: string;
+  instructions?: string;
+  durationMinutes?: number;
+  randomizeOrder?: boolean;
+}): Promise<{ success: boolean; data?: AssessmentSessionData; error?: string }> {
+  const r = await apiCall('/assessment/remedials', 'POST', data);
+  if (!r.success) return { success: false, error: r.error };
+  revalidatePath('/dashboard/akademik');
+  return { success: true, data: r.data as AssessmentSessionData };
+}
+
+export async function activateRemedialSession(sessionId: string) {
+  const r = await apiCall(`/assessment/remedials/${sessionId}/activate`, 'PATCH');
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+export async function cancelRemedialSession(sessionId: string, reason?: string) {
+  const r = await apiCall(`/assessment/remedials/${sessionId}/cancel`, 'PATCH', { ...(reason?.trim() ? { reason: reason.trim() } : {}) });
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+export async function finalizeRemedialParticipant(sessionId: string, participantId: string) {
+  const r = await apiCall(`/assessment/remedials/${sessionId}/finalize`, 'POST', { participantId });
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+export async function retryRemedialParticipant(sessionId: string, data: {
+  participantId: string;
+  title?: string;
+  questionSelections: QuestionSelectionData[];
+  dueAt?: string;
+  instructions?: string;
+  durationMinutes?: number;
+  randomizeOrder?: boolean;
+}) {
+  const r = await apiCall(`/assessment/remedials/${sessionId}/retry`, 'POST', data);
+  revalidatePath('/dashboard/akademik');
+  return r;
 }
 
 /** P2 (S-03): GURU starts/activates a session (draft → active). */

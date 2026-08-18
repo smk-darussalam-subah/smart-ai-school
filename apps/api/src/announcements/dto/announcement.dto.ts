@@ -14,6 +14,14 @@ export const AnnouncementAudienceSchema = z
     'Audiens "ALL" tidak boleh dicampur dengan role spesifik',
   );
 
+const ScheduledAtSchema = z
+  .string()
+  .datetime({ offset: true })
+  .refine((value) => {
+    const date = new Date(value);
+    return date.getUTCSeconds() === 0 && date.getUTCMilliseconds() === 0;
+  }, 'Jadwal pengumuman harus presisi menit');
+
 export const CreateAnnouncementSchema = z.object({
   title: z.string().trim().min(3, 'Judul minimal 3 karakter').max(255),
   content: z.string().trim().min(1, 'Isi pengumuman wajib diisi').max(20_000),
@@ -22,7 +30,7 @@ export const CreateAnnouncementSchema = z.object({
   audience: AnnouncementAudienceSchema.default(['ALL']),
   isPinned: z.boolean().default(false),
   status: z.enum(['draft', 'published']).default('draft'),
-  scheduledAt: z.string().datetime({ offset: true }).nullish(),
+  scheduledAt: ScheduledAtSchema.nullish(),
 });
 export type CreateAnnouncementDto = z.infer<typeof CreateAnnouncementSchema>;
 

@@ -3,7 +3,7 @@
 //
 // RBAC:
 //   - read   : semua role terautentikasi (visibilitas difilter di service/query)
-//   - manage : SUPER_ADMIN, KEPALA_SEKOLAH (buat/ubah/terbit/arsip/sematkan)
+//   - manage : permission `announcement.manage` efektif (role stabil/appointment)
 //   - delete : SUPER_ADMIN saja
 // Mutasi tercatat otomatis oleh AuditInterceptor global.
 // =============================================================================
@@ -71,7 +71,7 @@ export class AnnouncementsController {
     return this.service.findOne(id, user);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles(...ALL_ROLES)
   @RequirePermission('announcement.manage')
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -82,7 +82,7 @@ export class AnnouncementsController {
     return this.service.create(dto, user);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles(...ALL_ROLES)
   @RequirePermission('announcement.manage')
   @Patch(':id')
   update(
@@ -93,7 +93,7 @@ export class AnnouncementsController {
     return this.service.update(id, dto, user);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles(...ALL_ROLES)
   @RequirePermission('announcement.manage')
   @Patch(':id/publish')
   publish(
@@ -103,7 +103,7 @@ export class AnnouncementsController {
     return this.service.publish(id, user);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles(...ALL_ROLES)
   @RequirePermission('announcement.manage')
   @Patch(':id/archive')
   archive(
@@ -113,7 +113,7 @@ export class AnnouncementsController {
     return this.service.archive(id, user);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles(...ALL_ROLES)
   @RequirePermission('announcement.manage')
   @Patch(':id/pin')
   setPin(

@@ -10,12 +10,14 @@ jest.mock('@smk/logger', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AuthUser } from '@smk/auth';
 import { AnnouncementsService } from '../announcements/announcements.service';
 import { AnnouncementsController } from '../announcements/announcements.controller';
 import { PrismaService } from '../prisma/prisma.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import { NotificationService } from '../notification/notification.service';
 import {
   CreateAnnouncementSchema,
   ListAnnouncementsQuerySchema,
@@ -51,12 +53,31 @@ describe('AnnouncementsService', () => {
   const mockCreate = jest.fn();
   const mockUpdate = jest.fn();
   const mockDelete = jest.fn();
+  const mockQueryRaw = jest.fn();
+  const mockUserFindMany = jest.fn();
+  const mockAppointmentFindMany = jest.fn();
+  const mockNotificationCreateMany = jest.fn();
+  const mockNotificationFindMany = jest.fn();
+  const mockEnqueueCommittedPendingLogs = jest.fn();
+  const mockHasPermission = jest.fn();
+  const mockGetActivePositionCodes = jest.fn();
 
   beforeEach(async () => {
-    [mockFindMany, mockFindFirst, mockCount, mockCreate, mockUpdate, mockDelete]
+    [mockFindMany, mockFindFirst, mockCount, mockCreate, mockUpdate, mockDelete,
+      mockQueryRaw, mockUserFindMany, mockAppointmentFindMany, mockNotificationCreateMany,
+      mockNotificationFindMany, mockHasPermission, mockGetActivePositionCodes]
       .forEach((m) => m.mockReset());
+    mockQueryRaw.mockResolvedValue([]);
+    mockUserFindMany.mockResolvedValue([]);
+    mockAppointmentFindMany.mockResolvedValue([]);
+    mockNotificationCreateMany.mockResolvedValue({ count: 0 });
+    mockNotificationFindMany.mockResolvedValue([]);
+    mockEnqueueCommittedPendingLogs.mockResolvedValue({ queuedCount: 0 });
+    mockHasPermission.mockImplementation((_keycloakId: string, roles: string[], permission: string) =>
+      permission === 'announcement.manage' && roles.includes('SUPER_ADMIN'));
+    mockGetActivePositionCodes.mockResolvedValue([]);
 
-    const prisma = {
+    const tx = {
       announcement: {
         findMany: mockFindMany,
         findFirst: mockFindFirst,
@@ -65,13 +86,29 @@ describe('AnnouncementsService', () => {
         update: mockUpdate,
         delete: mockDelete,
       },
+      user: { findMany: mockUserFindMany },
+      appointment: { findMany: mockAppointmentFindMany },
+      notificationLog: { createMany: mockNotificationCreateMany, findMany: mockNotificationFindMany },
+      $queryRaw: mockQueryRaw,
+    };
+    const prisma = {
+      ...tx,
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AnnouncementsService,
         { provide: PrismaService, useValue: prisma },
+        {
+          provide: PermissionsService,
+          useValue: {
+            hasPermission: mockHasPermission,
+            getActivePositionCodes: mockGetActivePositionCodes,
+          },
+        },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        { provide: NotificationService, useValue: { enqueueCommittedPendingLogs: mockEnqueueCommittedPendingLogs } },
       ],
     }).compile();
     service = module.get(AnnouncementsService);
@@ -101,6 +138,21 @@ describe('AnnouncementsService', () => {
 
     await service.findAll({ status: 'draft', page: 1, limit: 20 }, GURU);
     expect(mockFindMany.mock.calls[0][0].where.status).toBe('published');
+  });
+
+  it('non-manager memakai kode appointment aktif untuk visibilitas audiens jabatan', async () => {
+    mockGetActivePositionCodes.mockResolvedValue(['WAKA_HUMAS']);
+    mockFindMany.mockResolvedValue([]);
+    mockCount.mockResolvedValue(0);
+
+    await service.findAll({ page: 1, limit: 20 }, GURU);
+
+    expect(mockGetActivePositionCodes).toHaveBeenCalledWith('kc-guru');
+    expect(mockFindMany.mock.calls[0][0].where.OR).toEqual(
+      expect.arrayContaining([
+        { audience: { array_contains: ['WAKA_HUMAS'] } },
+      ]),
+    );
   });
 
   it('SUPER_ADMIN → bebas filter status, tanpa klausa audiens', async () => {
@@ -180,6 +232,102 @@ describe('AnnouncementsService', () => {
     expect(mockDelete).toHaveBeenCalledWith({ where: { id: ANN.id } });
     expect(res).toEqual({ deleted: true, id: ANN.id });
   });
+
+  it('prepareDueAnnouncements mengklaim deliveryPreparedAt dan membuat pending logs hanya untuk urgent/darurat', async () => {
+    mockQueryRaw.mockResolvedValue([{
+      id: ANN.id,
+      title: 'Kelas dipulangkan lebih awal',
+      category: 'darurat',
+      priority: 'urgent',
+      audience: ['GURU'],
+    }]);
+    mockUserFindMany.mockResolvedValue([{ phone: '628111111111' }, { phone: null }]);
+    mockNotificationCreateMany.mockResolvedValue({ count: 0 });
+    mockNotificationFindMany.mockResolvedValueOnce([{ id: 'existing-announcement-log' }]);
+    mockEnqueueCommittedPendingLogs.mockResolvedValueOnce({ queuedCount: 1 });
+
+    const result = await service.prepareDueAnnouncements(10);
+
+    expect(result).toEqual({
+      claimedCount: 1,
+      notificationCount: 1,
+      notificationHandoff: { status: 'queued', requestedCount: 1, queuedCount: 1, pendingRecoveryCount: 0 },
+    });
+    expect(mockUserFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ role: { in: ['GURU'] } }),
+      select: { phone: true },
+    }));
+    expect(mockNotificationCreateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: [expect.objectContaining({
+        recipient: '+628111111111',
+        status: 'pending',
+        refType: 'announcement',
+        refId: `${ANN.id}:+628111111111`,
+      })],
+      skipDuplicates: true,
+    }));
+    expect(mockEnqueueCommittedPendingLogs).toHaveBeenCalledWith(['existing-announcement-log']);
+  });
+
+  it('prepareDueAnnouncements mengambil penerima jabatan dari appointment aktif, bukan role stabil lama', async () => {
+    mockQueryRaw.mockResolvedValue([{
+      id: ANN.id,
+      title: 'Instruksi Kepala Sekolah',
+      category: 'umum',
+      priority: 'urgent',
+      audience: ['KEPALA_SEKOLAH'],
+    }]);
+    mockAppointmentFindMany.mockResolvedValue([
+      { staff: { user: { phone: '081222222222' } } },
+    ]);
+    mockNotificationCreateMany.mockResolvedValue({ count: 1 });
+    mockNotificationFindMany.mockResolvedValueOnce([{ id: 'existing-appointment-announcement-log' }]);
+    mockEnqueueCommittedPendingLogs.mockResolvedValueOnce({ queuedCount: 1 });
+
+    const result = await service.prepareDueAnnouncements(10);
+
+    expect(result).toEqual({
+      claimedCount: 1,
+      notificationCount: 1,
+      notificationHandoff: { status: 'queued', requestedCount: 1, queuedCount: 1, pendingRecoveryCount: 0 },
+    });
+    expect(mockUserFindMany).not.toHaveBeenCalled();
+    expect(mockAppointmentFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        status: 'ACTIVE',
+        academicYear: { isActive: true },
+      }),
+    }));
+    expect(mockNotificationCreateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: [expect.objectContaining({
+        recipient: '+6281222222222',
+        refType: 'announcement',
+        refId: `${ANN.id}:+6281222222222`,
+      })],
+      skipDuplicates: true,
+    }));
+    expect(mockEnqueueCommittedPendingLogs).toHaveBeenCalledWith(['existing-appointment-announcement-log']);
+  });
+
+  it('menolak perubahan content/audience/schedule setelah pengumuman prepared', async () => {
+    mockFindFirst.mockResolvedValue({ ...ANN, deliveryPreparedAt: new Date('2026-08-13T01:00:00.000Z') });
+
+    await expect(service.update(ANN.id, { content: 'ubah isi' }, SA)).rejects.toThrow(ConflictException);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('tetap mengizinkan pin pada pengumuman yang sudah prepared', async () => {
+    const prepared = { ...ANN, deliveryPreparedAt: new Date('2026-08-13T01:00:00.000Z') };
+    mockFindFirst.mockResolvedValue(prepared);
+    mockUpdate.mockResolvedValue({ ...prepared, isPinned: true });
+
+    await service.update(ANN.id, { isPinned: true }, SA);
+
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: ANN.id },
+      data: { isPinned: true },
+    }));
+  });
 });
 
 describe('Announcement DTOs (Zod)', () => {
@@ -236,7 +384,7 @@ describe('AnnouncementsController RBAC wiring', () => {
 
   it('POST → SUPER_ADMIN + KEPALA_SEKOLAH', () => {
     const roles = Reflect.getMetadata('roles', AnnouncementsController.prototype.create);
-    expect(roles).toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH']);
+    expect(roles).toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI']);
   });
 
   it('GET list → semua 7 role', () => {

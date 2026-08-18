@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/select';
 import { createAnnouncement, updateAnnouncement } from '../actions';
 import type { Announcement } from './PengumumanList';
+import { normalizeAnnouncementAudience } from '../pengumuman-ui';
 
 interface Props {
   open: boolean;
@@ -25,8 +26,12 @@ const ROLES = [
 ] as const;
 
 const ROLE_LABEL: Record<string, string> = {
-  KEPALA_SEKOLAH: 'Kepala Sekolah', TATA_USAHA: 'Tata Usaha', GURU: 'Guru',
-  SISWA: 'Siswa', ORANG_TUA: 'Orang Tua', INDUSTRI: 'Industri',
+  KEPALA_SEKOLAH: 'Kepala Sekolah',
+  TATA_USAHA: 'Tata Usaha',
+  GURU: 'Guru',
+  SISWA: 'Siswa',
+  ORANG_TUA: 'Orang Tua',
+  INDUSTRI: 'Industri',
 };
 
 interface FormState {
@@ -40,21 +45,37 @@ interface FormState {
 }
 
 const EMPTY: FormState = {
-  title: '', content: '', category: 'umum', priority: 'biasa',
-  audienceAll: true, audienceRoles: [], scheduledAt: '',
+  title: '',
+  content: '',
+  category: 'umum',
+  priority: 'biasa',
+  audienceAll: true,
+  audienceRoles: [],
+  scheduledAt: '',
 };
 
-function toFormState(a: Announcement | null): FormState {
-  if (!a) return EMPTY;
-  const isAll = a.audience.includes('ALL');
+function toDatetimeLocalWib(iso: string): string {
+  const date = new Date(iso);
+  const wib = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+  return wib.toISOString().slice(0, 16);
+}
+
+function fromDatetimeLocalWib(value: string): string {
+  return new Date(`${value}:00+07:00`).toISOString();
+}
+
+function toFormState(announcement: Announcement | null): FormState {
+  if (!announcement) return EMPTY;
+  const audience = normalizeAnnouncementAudience(announcement.audience);
+  const isAll = audience.includes('ALL');
   return {
-    title: a.title,
-    content: a.content,
-    category: a.category,
-    priority: a.priority,
+    title: announcement.title,
+    content: announcement.content,
+    category: announcement.category,
+    priority: announcement.priority,
     audienceAll: isAll,
-    audienceRoles: isAll ? [] : a.audience,
-    scheduledAt: a.scheduledAt ? a.scheduledAt.slice(0, 10) : '',
+    audienceRoles: isAll ? [] : audience,
+    scheduledAt: announcement.scheduledAt ? toDatetimeLocalWib(announcement.scheduledAt) : '',
   };
 }
 
@@ -72,14 +93,14 @@ export default function PengumumanFormDialog({ open, onOpenChange, announcement 
   }, [open, announcement]);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
-    setForm((p) => ({ ...p, [key]: value }));
+    setForm((previous) => ({ ...previous, [key]: value }));
 
   const toggleRole = (role: string) =>
-    setForm((p) => ({
-      ...p,
-      audienceRoles: p.audienceRoles.includes(role)
-        ? p.audienceRoles.filter((r) => r !== role)
-        : [...p.audienceRoles, role],
+    setForm((previous) => ({
+      ...previous,
+      audienceRoles: previous.audienceRoles.includes(role)
+        ? previous.audienceRoles.filter((item) => item !== role)
+        : [...previous.audienceRoles, role],
     }));
 
   const submit = async (publishNow: boolean) => {
@@ -88,7 +109,7 @@ export default function PengumumanFormDialog({ open, onOpenChange, announcement 
 
     const audience = form.audienceAll ? ['ALL'] : form.audienceRoles;
     if (audience.length === 0) {
-      setError('Pilih minimal satu audiens, atau gunakan "Semua".');
+      setError('Pilih minimal satu audiens, atau gunakan Semua.');
       setLoading(false);
       return;
     }
@@ -99,60 +120,63 @@ export default function PengumumanFormDialog({ open, onOpenChange, announcement 
       category: form.category,
       priority: form.priority,
       audience,
-      scheduledAt: form.scheduledAt
-        ? new Date(`${form.scheduledAt}T00:00:00+07:00`).toISOString()
-        : null,
+      scheduledAt: form.scheduledAt ? fromDatetimeLocalWib(form.scheduledAt) : null,
     };
     if (!isEdit) body.status = publishNow ? 'published' : 'draft';
     else if (publishNow) body.status = 'published';
 
-    const r = isEdit
-      ? await updateAnnouncement(announcement!.id, body)
+    const result = isEdit
+      ? await updateAnnouncement(announcement.id, body)
       : await createAnnouncement(body);
 
     setLoading(false);
-    if (r?.success) onOpenChange(false);
-    else setError(r?.error || 'Gagal menyimpan pengumuman');
+    if (result?.success) onOpenChange(false);
+    else setError(result?.error || 'Gagal menyimpan pengumuman');
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? 'Edit Pengumuman' : 'Buat Pengumuman'}</DialogTitle>
           <DialogDescription>
-            Pengumuman tampil untuk audiens terpilih setelah diterbitkan.
+            Pengumuman tampil untuk audiens terpilih setelah diterbitkan dan waktu efektifnya tiba.
           </DialogDescription>
         </DialogHeader>
 
         <form
           className="space-y-4"
-          onSubmit={(e) => { e.preventDefault(); void submit(false); }}
+          onSubmit={(event) => { event.preventDefault(); void submit(false); }}
         >
           <div className="space-y-1.5">
             <Label htmlFor="ann-title">Judul</Label>
             <Input
-              id="ann-title" required minLength={3} maxLength={255}
+              id="ann-title"
+              required
+              minLength={3}
+              maxLength={255}
               value={form.title}
-              onChange={(e) => update('title', e.target.value)}
-              placeholder="cth. Libur Hari Raya Idul Adha"
+              onChange={(event) => update('title', event.target.value)}
+              placeholder="Contoh: Libur Hari Raya"
             />
           </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="ann-content">Isi Pengumuman</Label>
             <Textarea
-              id="ann-content" required rows={5}
+              id="ann-content"
+              required
+              rows={5}
               value={form.content}
-              onChange={(e) => update('content', e.target.value)}
-              placeholder="Tulis isi pengumuman…"
+              onChange={(event) => update('content', event.target.value)}
+              placeholder="Tulis isi pengumuman..."
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Kategori</Label>
-              <Select value={form.category} onValueChange={(v: string) => update('category', v)}>
+              <Select value={form.category} onValueChange={(value: string) => update('category', value)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="umum">Umum</SelectItem>
@@ -165,7 +189,7 @@ export default function PengumumanFormDialog({ open, onOpenChange, announcement 
             </div>
             <div className="space-y-1.5">
               <Label>Prioritas</Label>
-              <Select value={form.priority} onValueChange={(v: string) => update('priority', v)}>
+              <Select value={form.priority} onValueChange={(value: string) => update('priority', value)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="biasa">Biasa</SelectItem>
@@ -180,7 +204,8 @@ export default function PengumumanFormDialog({ open, onOpenChange, announcement 
             <Label>Audiens</Label>
             <div className="flex flex-wrap gap-2">
               <Button
-                type="button" size="sm"
+                type="button"
+                size="sm"
                 variant={form.audienceAll ? 'default' : 'outline'}
                 onClick={() => update('audienceAll', !form.audienceAll)}
               >
@@ -188,7 +213,9 @@ export default function PengumumanFormDialog({ open, onOpenChange, announcement 
               </Button>
               {!form.audienceAll && ROLES.map((role) => (
                 <Button
-                  key={role} type="button" size="sm"
+                  key={role}
+                  type="button"
+                  size="sm"
                   variant={form.audienceRoles.includes(role) ? 'default' : 'outline'}
                   onClick={() => toggleRole(role)}
                 >
@@ -201,12 +228,14 @@ export default function PengumumanFormDialog({ open, onOpenChange, announcement 
           <div className="space-y-1.5">
             <Label htmlFor="ann-scheduled">Jadwalkan Tampil (opsional)</Label>
             <Input
-              id="ann-scheduled" type="date"
+              id="ann-scheduled"
+              type="datetime-local"
+              step={60}
               value={form.scheduledAt}
-              onChange={(e) => update('scheduledAt', e.target.value)}
+              onChange={(event) => update('scheduledAt', event.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Bila diisi, pengumuman terbit baru tampil mulai tanggal ini.
+              Jadwal memakai WIB dan harus tepat hingga menit.
             </p>
           </div>
 
@@ -218,10 +247,10 @@ export default function PengumumanFormDialog({ open, onOpenChange, announcement 
               Batal
             </Button>
             <Button type="submit" variant="secondary" disabled={loading}>
-              {loading ? 'Menyimpan…' : 'Simpan Draft'}
+              {loading ? 'Menyimpan...' : 'Simpan Draft'}
             </Button>
             <Button type="button" disabled={loading} onClick={() => void submit(true)}>
-              {loading ? 'Menyimpan…' : isEdit ? 'Simpan & Terbitkan' : 'Terbitkan'}
+              {loading ? 'Menyimpan...' : isEdit ? 'Simpan & Terbitkan' : 'Terbitkan'}
             </Button>
           </div>
         </form>

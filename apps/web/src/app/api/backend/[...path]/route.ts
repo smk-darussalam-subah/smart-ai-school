@@ -14,6 +14,9 @@
 // dan semua header x-* custom.
 // =============================================================================
 
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+
 const API_BASE = process.env.API_URL ?? 'http://localhost:3001';
 
 // Headers yang TIDAK boleh di-forward ke backend (hop-by-hop atau Next.js internal)
@@ -29,7 +32,7 @@ const STRIP_HEADERS = new Set([
   'proxy-connection',
 ]);
 
-function buildBackendHeaders(reqHeaders: Headers): Record<string, string> {
+function copyForwardableHeaders(reqHeaders: Headers): Record<string, string> {
   const out: Record<string, string> = {};
   reqHeaders.forEach((value, key) => {
     const lower = key.toLowerCase();
@@ -37,6 +40,16 @@ function buildBackendHeaders(reqHeaders: Headers): Record<string, string> {
       out[key] = value;
     }
   });
+  return out;
+}
+
+async function buildBackendRequestHeaders(reqHeaders: Headers): Promise<Record<string, string>> {
+  const out = copyForwardableHeaders(reqHeaders);
+  const hasAuthorization = Object.keys(out).some((key) => key.toLowerCase() === 'authorization');
+  if (!hasAuthorization) {
+    const session = await getServerSession(authOptions).catch(() => null);
+    if (session?.accessToken) out.Authorization = `Bearer ${session.accessToken}`;
+  }
   return out;
 }
 
@@ -51,12 +64,12 @@ async function proxyRequest(
   try {
     const backendRes = await fetch(backendUrl, {
       method: request.method,
-      headers: buildBackendHeaders(request.headers),
+      headers: await buildBackendRequestHeaders(request.headers),
       body: request.method !== 'GET' && request.method !== 'HEAD' ? await request.arrayBuffer() : undefined,
     });
 
     // Forward response headers (strip hop-by-hop)
-    const responseHeaders = buildBackendHeaders(backendRes.headers);
+    const responseHeaders = copyForwardableHeaders(backendRes.headers);
 
     return new Response(backendRes.body, {
       status: backendRes.status,

@@ -23,6 +23,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AiService } from './ai.service';
@@ -62,6 +63,17 @@ export class AiController {
     return this.aiService.chatWithRag(dto, user);
   }
 
+  @RequirePermission('ai.chat')
+  @Get('chat/sessions')
+  @HttpCode(HttpStatus.OK)
+  sessions(
+    @CurrentUser() user: AuthUser,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.aiService.listChatSessions(user, Number(page ?? '1'), Number(limit ?? '20'));
+  }
+
   /**
    * GET /ai/chat/:sessionId/history — riwayat pesan satu session.
    * RBAC (service-level): pemilik session ATAU SUPER_ADMIN.
@@ -75,6 +87,16 @@ export class AiController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.aiService.getChatHistory(sessionId, user);
+  }
+
+  @RequirePermission('ai.chat')
+  @Delete('chat/:sessionId')
+  @HttpCode(HttpStatus.OK)
+  deleteSession(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.aiService.deleteChatSession(sessionId, user);
   }
 
   // ── Knowledge — collection ──────────────────────────────────────────────────
