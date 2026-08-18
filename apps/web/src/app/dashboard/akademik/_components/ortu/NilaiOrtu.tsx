@@ -11,6 +11,7 @@ import {
 interface NilaiOrtuProps {
   setModal: (modal: ModalState) => void;
   grades?: unknown[];
+  onOpenOfficialReport: () => void;
 }
 
 /** Average an array of scores, rounded to integer. */
@@ -18,7 +19,7 @@ function avgArr(arr: number[]): number {
   return Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
 }
 
-export default function NilaiOrtu({ setModal, grades }: NilaiOrtuProps) {
+export default function NilaiOrtu({ setModal, grades, onOpenOfficialReport }: NilaiOrtuProps) {
   // T1-04 (audit v2): nilai langsung dari props. Empty → empty state, BUKAN SIM_NILAI.
   const nilai: OrtuNilai[] = grades?.length ? (grades as OrtuNilai[]) : [];
   const avg = avgNa(nilai);
@@ -36,7 +37,7 @@ export default function NilaiOrtu({ setModal, grades }: NilaiOrtuProps) {
     <div className="px-4 pb-4">
       <div className="mb-3.5">
         <h1 className="text-xl font-extrabold">Nilai Akademik</h1>
-        <p className="mt-0.5 text-[12px] font-medium text-[var(--muted)]">Progress nilai & rapor</p>
+        <p className="mt-0.5 text-[12px] font-medium text-[var(--muted)]">Nilai berjalan dan dokumen rapor resmi</p>
         {nilai.length === 0 && (
           <div className="mt-2 flex items-center gap-2 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] font-bold text-sky-500">
             <span>ℹ️</span> Belum ada nilai — guru belum menginput nilai untuk anak Anda
@@ -70,10 +71,10 @@ export default function NilaiOrtu({ setModal, grades }: NilaiOrtuProps) {
             Nilai per Mapel
           </div>
           <button
-            onClick={() => setModal({ type: 'rapor' })}
+            onClick={onOpenOfficialReport}
             className="cursor-pointer text-[11px] font-bold text-[var(--pril)]"
           >
-            Rapor
+            Rapor resmi
           </button>
         </div>
         {nilai.map((n) => {

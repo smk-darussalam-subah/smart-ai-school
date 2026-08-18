@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import {
   Home, CalendarCheck, TrendingUp, Wallet, Award,
   Sun, Moon, Bell, ChevronDown,
@@ -17,10 +18,9 @@ import CapaianOrtu from './CapaianOrtu';
 import GradeDetailModal from './GradeDetailModal';
 import PengumumanModal from './PengumumanModal';
 import DayDetailModal from './DayDetailModal';
-import RaporModal from './RaporModal';
 import PayDetailModal from './PayDetailModal';
 import PushNotificationToggle from '@/components/shared/PushNotificationToggle';
-import { subscribePush, unsubscribePush } from '../../actions';
+import { fetchMyNotifications, subscribePush, unsubscribePush } from '../../actions';
 import { initials } from './ortu-data';
 import type { OrtuChild, OrtuNilai, OrtuPengumuman } from './ortu-types';
 import type { AttendanceCellStatus, Pembayaran } from '@/lib/academic';
@@ -33,7 +33,7 @@ import { filterByStudentId, type OrtuAssignmentItem, type SppApiItem } from './o
 export type OrtuScreen = 'beranda' | 'kehadiran' | 'nilai' | 'pembayaran' | 'capaian';
 
 export interface ModalState {
-  type: 'grade' | 'pengumuman' | 'day' | 'rapor' | 'task' | 'pay' | 'teacher' | null;
+  type: 'grade' | 'pengumuman' | 'day' | 'task' | 'pay' | 'teacher' | null;
   data?: Record<string, unknown>;
 }
 
@@ -57,9 +57,10 @@ interface OrtuWorkspaceProps {
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function OrtuWorkspace({
-  children: realChildren, grades, attendance, schedule, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, semesterLabel, childRanks
+  children: realChildren, grades, attendance, schedule, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, childRanks
 }: OrtuWorkspaceProps) {
   const { data: session } = useSession();
+  const router = useRouter();
   const [activeScreen, setActiveScreen] = useState<OrtuScreen>('beranda');
   const [modal, setModal] = useState<ModalState>({ type: null });
   const [toast, setToast] = useState<string | null>(null);
@@ -107,6 +108,13 @@ export default function OrtuWorkspace({
   const childBadges = filterByStudentId(realBadges, activeStudentId);
   const childWaLog = filterByStudentId(realWaLog, activeStudentId);
   const activeChildRank = activeStudentId ? childRanks?.[activeStudentId] ?? null : null;
+  const openOfficialReport = useCallback(() => {
+    if (!activeStudentId) {
+      showToast('Pilih anak terlebih dahulu.');
+      return;
+    }
+    router.push(`/dashboard/rapor?studentId=${encodeURIComponent(activeStudentId)}`);
+  }, [activeStudentId, router, showToast]);
   const selectChild = (i: number) => {
     setActiveChildIndex(i);
     setChildSelectorOpen(false);
@@ -159,6 +167,7 @@ export default function OrtuWorkspace({
           <NilaiOrtu
             setModal={setModal}
             grades={childGrades}
+            onOpenOfficialReport={openOfficialReport}
           />
         );
       case 'pembayaran':
@@ -330,17 +339,6 @@ export default function OrtuWorkspace({
         />
       )}
 
-      {modal.type === 'rapor' && (
-        <RaporModal
-          nilai={(childGrades ?? []) as unknown as OrtuNilai[]}
-          onClose={() => setModal({ type: null })}
-          showToast={showToast}
-          studentName={child.name}
-          catatanWaliKelas={null}
-          semesterLabel={semesterLabel}
-        />
-      )}
-
       {modal.type === 'pay' && (
         <PayDetailModal
           payment={(modal.data as { payment: Pembayaran }).payment}
@@ -395,7 +393,7 @@ export default function OrtuWorkspace({
             </button>
 
             {/* T3-03: Push notification toggle */}
-            <PushNotificationToggle onSubscribe={subscribePush} onUnsubscribe={unsubscribePush} />
+            <PushNotificationToggle onSubscribe={subscribePush} onUnsubscribe={unsubscribePush} onFetchNotifications={fetchMyNotifications} />
 
             {/* Logout */}
             <button

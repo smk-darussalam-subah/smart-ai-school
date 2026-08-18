@@ -1,8 +1,91 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import * as vm from 'node:vm';
 
 function source(relativePath: string): string {
   return readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
+}
+
+type WorkerEvent = {
+  data?: { json: () => unknown };
+  notification?: { data?: { url?: unknown }; close: () => void };
+  waitUntil: (promise: Promise<unknown>) => void;
+};
+type WorkerHandler = (event: WorkerEvent) => void;
+
+function loadServiceWorkerHarness() {
+  const listeners = new Map<string, WorkerHandler[]>();
+  const shownNotifications: Array<{ title: string; options: { data?: { url?: string } } }> = [];
+  const openWindow = jest.fn().mockResolvedValue(undefined);
+  const sandboxSelf = {
+    location: { origin: 'https://staging.smkdarussalamsubah.sch.id' },
+    skipWaiting: jest.fn(),
+    addEventListener: (type: string, handler: WorkerHandler) => {
+      listeners.set(type, [...(listeners.get(type) ?? []), handler]);
+    },
+    registration: {
+      showNotification: jest.fn((title: string, options: { data?: { url?: string } }) => {
+        shownNotifications.push({ title, options });
+        return Promise.resolve();
+      }),
+    },
+    clients: {
+      claim: jest.fn(),
+      matchAll: jest.fn().mockResolvedValue([]),
+      openWindow,
+    },
+  };
+  const sandbox = {
+    self: sandboxSelf,
+    caches: {
+      open: jest.fn().mockResolvedValue({ addAll: jest.fn(), put: jest.fn() }),
+      keys: jest.fn().mockResolvedValue([]),
+      delete: jest.fn().mockResolvedValue(true),
+      match: jest.fn().mockResolvedValue(undefined),
+    },
+    fetch: jest.fn(),
+    Response: class Response {},
+    URL,
+    Promise,
+  };
+  vm.runInNewContext(source('../public/sw.js'), sandbox, { filename: 'sw.js' });
+
+  const first = (type: string): WorkerHandler => {
+    const handler = listeners.get(type)?.[0];
+    if (!handler) throw new Error(`Service worker handler ${type} tidak terdaftar`);
+    return handler;
+  };
+  const runEvent = async (type: string, event: Omit<WorkerEvent, 'waitUntil'>) => {
+    const waits: Promise<unknown>[] = [];
+    first(type)({
+      ...event,
+      waitUntil: (promise) => {
+        waits.push(Promise.resolve(promise));
+      },
+    });
+    await Promise.all(waits);
+  };
+
+  return {
+    async pushUrl(payload: unknown): Promise<string | undefined> {
+      await runEvent('push', {
+        data: payload === undefined ? undefined : { json: () => payload },
+      });
+      return shownNotifications.at(-1)?.options.data?.url;
+    },
+    async pushMalformedJson(): Promise<string | undefined> {
+      await runEvent('push', {
+        data: { json: () => { throw new Error('bad payload'); } },
+      });
+      return shownNotifications.at(-1)?.options.data?.url;
+    },
+    async clickTarget(url: unknown): Promise<string | undefined> {
+      await runEvent('notificationclick', {
+        notification: { data: { url }, close: jest.fn() },
+      });
+      return openWindow.mock.calls.at(-1)?.[0];
+    },
+  };
 }
 
 describe('academic operational UI contracts', () => {
@@ -111,6 +194,79 @@ describe('academic operational UI contracts', () => {
     expect(reportPage).toContain("canCheck={!authority.hasRole('SUPER_ADMIN')");
     expect(reportPage).toContain("canPublish={authority.can('report.publish') && authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH')}");
     expect(reportPage).toContain("canDistribute={authority.can('report.distribute') && authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')}");
+  });
+
+  it('keeps family and student report entry points on the canonical report module', () => {
+    const ortuWorkspace = source('app/dashboard/akademik/_components/ortu/OrtuWorkspace.tsx');
+    const nilaiOrtu = source('app/dashboard/akademik/_components/ortu/NilaiOrtu.tsx');
+    const nilaiSiswa = source('app/dashboard/akademik/_components/siswa/NilaiSiswa.tsx');
+    const siswaWorkspace = source('app/dashboard/akademik/_components/siswa/SiswaWorkspace.tsx');
+
+    expect(ortuWorkspace).toContain('router.push(`/dashboard/rapor?studentId=${encodeURIComponent(activeStudentId)}`)');
+    expect(ortuWorkspace).toContain('onFetchNotifications={fetchMyNotifications}');
+    expect(siswaWorkspace).toContain('onFetchNotifications={fetchMyNotifications}');
+    expect(nilaiOrtu).toContain('Rapor resmi');
+    expect(nilaiSiswa).toContain("router.push('/dashboard/rapor')");
+    expect(nilaiSiswa).toContain('Rapor resmi');
+    expect(ortuWorkspace).not.toContain("import RaporModal from './RaporModal'");
+    expect(ortuWorkspace).not.toContain("type: 'rapor'");
+    expect(nilaiSiswa).not.toContain('Rapor akan tersedia');
+  });
+
+  it('locks report generation UI to the active period and supports selected-child filtering', () => {
+    const reportPage = source('app/dashboard/rapor/page.tsx');
+    const reportHub = source('app/dashboard/rapor/_components/RaporHub.tsx');
+
+    expect(reportPage).toContain('const studentId = one(sp.studentId)');
+    expect(reportPage).toContain("query.set('studentId', studentId)");
+    expect(reportHub).toContain('Tahun ajaran aktif');
+    expect(reportHub).toContain('Semester aktif');
+    expect(reportHub).toContain('generateReports({ classId, academicYear: defaultAcademicYear, semester: defaultSemester })');
+    expect(reportHub).toContain('KKTP snapshot');
+    expect(reportHub).not.toContain('id="report-year"');
+    expect(reportHub).not.toContain('setAcademicYear');
+    expect(reportHub).not.toContain('setSemester');
+  });
+
+  it('wires push notification history to user-bound logs and handles service-worker push events', () => {
+    const actions = source('app/dashboard/akademik/actions.ts');
+    const toggle = source('components/shared/PushNotificationToggle.tsx');
+    const sw = source('../public/sw.js');
+
+    expect(actions).toContain("apiCall('/push/my-notifications', 'GET')");
+    expect(toggle).toContain('onFetchNotifications');
+    expect(toggle).not.toContain('recipient: string');
+    expect(sw).toContain("self.addEventListener('push'");
+    expect(sw).toContain('showNotification');
+    expect(sw).toContain('function safeSameOriginPath');
+    expect(sw).toContain("candidate.startsWith('//')");
+    expect(sw).toContain("candidate.includes('\\\\')");
+    expect(sw).toContain('new URL(candidate, self.location.origin)');
+    expect(sw).toContain("self.addEventListener('notificationclick'");
+    expect(sw).toContain('clients.openWindow(targetUrl)');
+  });
+
+  it('sanitizes service-worker notification URLs behaviorally', async () => {
+    const sw = loadServiceWorkerHarness();
+
+    await expect(sw.pushUrl({ url: '/dashboard/rapor?studentId=s1#nilai' }))
+      .resolves.toBe('/dashboard/rapor?studentId=s1#nilai');
+    await expect(sw.pushUrl({ url: '//evil.example/steal' }))
+      .resolves.toBe('/dashboard');
+    await expect(sw.pushUrl({ url: 'https://evil.example/dashboard' }))
+      .resolves.toBe('/dashboard');
+    await expect(sw.pushUrl({ url: '/dashboard\\rapor' }))
+      .resolves.toBe('/dashboard');
+    await expect(sw.pushUrl({ url: '/%E0%A4%A' }))
+      .resolves.toBe('/dashboard');
+    await expect(sw.pushUrl(undefined))
+      .resolves.toBe('/dashboard');
+    await expect(sw.pushMalformedJson())
+      .resolves.toBe('/dashboard');
+    await expect(sw.clickTarget('//evil.example/steal'))
+      .resolves.toBe('/dashboard');
+    await expect(sw.clickTarget('/dashboard/rapor'))
+      .resolves.toBe('/dashboard/rapor');
   });
 
   it('keeps multi-role Super Admin out of routine report authoring and sends note versions', () => {

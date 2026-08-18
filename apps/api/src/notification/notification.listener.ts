@@ -416,40 +416,15 @@ export class NotificationListener {
   }
 
   /**
-   * report.distributed → WA ke ORANG TUA siswa (rapor sudah bisa dilihat).
-   * Idempoten per rapor via refType+refId.
+   * report.distributed → observed only.
+   * Durable report notification intents are created inside ReportCardsService.
    */
   @OnEvent(EVENTS.REPORT_DISTRIBUTED)
   async onReportDistributed(payload: ReportDistributedPayload): Promise<void> {
-    try {
-      const c = await this.resolveStudentContacts(payload.studentId);
-      if (!c.parentPhone) {
-        logger.warn('[NotificationListener] report.distributed: ortu tanpa nomor WA', {
-          reportCardId: payload.reportCardId,
-        });
-        return;
-      }
-      const body =
-        `Yth. Orang Tua/Wali ${c.fullName}, rapor ${payload.academicYear} ` +
-        `Semester ${payload.semester} ananda telah DIBAGIKAN dan dapat dilihat ` +
-        `di DIIS.\n— SMK Darussalam Subah`;
-      await this.notificationService.notify({
-        channel: 'whatsapp',
-        to: c.parentPhone,
-        body,
-        refType: 'report-card',
-        refId: payload.reportCardId,
-      });
-      await this.waLogService.logWaNotification({
-        studentId: payload.studentId,
-        recipient: c.parentPhone,
-        message: body,
-        eventType: 'report.distributed',
-      });
-    } catch (err) {
-      logger.error('[NotificationListener] report.distributed gagal (fail-soft)', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    logger.info('[NotificationListener] report.distributed observed', {
+      reportCardId: payload.reportCardId,
+      academicYear: payload.academicYear,
+      semester: payload.semester,
+    });
   }
 }
