@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Target, FileText, X } from 'lucide-react';
 import { mpColor, mpIcon } from './siswa-data';
 import { KKTP_DEFAULT } from '@/lib/academic';
@@ -13,13 +14,14 @@ interface Props {
 
 type Filter = 'all' | 'tuntas' | 'remedial';
 
-export default function NilaiSiswa({ grades, showToast }: Props) {
+export default function NilaiSiswa({ grades }: Props) {
   // RESOLVED R-20: Nilai data comes from /grades endpoint (real data, computed client-side).
   // The /analytics/grades/student endpoint exists but provides the same NA computation server-side.
   // Future enhancement: class-average comparison + AI-powered improvement suggestions.
 
   const [filter, setFilter] = useState<Filter>('all');
   const [detailGrade, setDetailGrade] = useState<SiswaNilai | null>(null);
+  const router = useRouter();
 
   // T1-04 (audit v2): grades langsung dari props. Empty → empty state, BUKAN SIM_NILAI.
   const displayGrades = grades;
@@ -46,11 +48,11 @@ export default function NilaiSiswa({ grades, showToast }: Props) {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-extrabold tracking-tight">Nilai &amp; Capaian</h1>
           <button
-            onClick={() => showToast('Rapor akan tersedia setelah akhir semester')}
+            onClick={() => router.push('/dashboard/rapor')}
             className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-bold text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
           >
             <FileText className="h-3.5 w-3.5" />
-            Rapor
+            Rapor resmi
           </button>
         </div>
         <div className="mt-3 grid grid-cols-3 gap-3">

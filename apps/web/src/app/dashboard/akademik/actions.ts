@@ -305,7 +305,7 @@ export interface OfficialReportSections {
   reportCardId: string;
   snapshotStatus: string;
   identity: { studentName: string; nis: string };
-  muatanLokal: { subjects: { name: string; na: number; kktp: number; predikat: string }[] };
+  muatanLokal: { subjects: { name: string; na: number; kktp: number | null; kktpProvenance?: string | null; predikat: string }[] };
   attendance: { hadir: number; izin: number; sakit: number; alpha: number; total: number };
   development: { description: string; spiritual: string; social: string; academic: string };
   approval: {
@@ -389,6 +389,23 @@ export async function fetchApprovalInfo(studentId: string, year: string, semeste
       className: string;
     },
   };
+}
+
+export interface PushNotificationHistoryItem {
+  id: string;
+  channel: string;
+  subject: string | null;
+  body: string;
+  status: string;
+  sentAt: string | null;
+  refType: string | null;
+  createdAt: string;
+}
+
+export async function fetchMyNotifications(): Promise<PushNotificationHistoryItem[] | null> {
+  const r = await apiCall('/push/my-notifications', 'GET');
+  if (!r.success) return null;
+  return Array.isArray(r.data) ? (r.data as PushNotificationHistoryItem[]) : [];
 }
 
 // ── Analytics (T2-02 — KS health & tren) ───────────────────────────────────

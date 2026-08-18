@@ -17,9 +17,10 @@ import { NotifJob } from './queue.config';
 const STALE_MINUTES = 5;
 const STALE_RETRY_LIMIT = 50;
 const PENDING_RECOVERY_INTERVAL_MS = 60_000;
+type NotificationChannel = 'whatsapp' | 'email' | 'push';
 
 export interface NotifyInput {
-  channel: 'whatsapp' | 'email';
+  channel: NotificationChannel;
   to: string;
   body: string;
   subject?: string;
@@ -117,7 +118,7 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
     for (const log of logs) {
       await this.enqueuePendingLog({
         id: log.id,
-        channel: log.channel as 'whatsapp' | 'email',
+        channel: log.channel as 'whatsapp' | 'email' | 'push',
         recipient: log.recipient,
         body: log.body,
         subject: log.subject ?? undefined,
@@ -146,7 +147,7 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
       for (const log of stale) {
         await this.enqueuePendingLog({
           id: log.id,
-          channel: log.channel as 'whatsapp' | 'email',
+          channel: log.channel as NotificationChannel,
           recipient: log.recipient,
           body: log.body,
           subject: log.subject ?? undefined,
@@ -164,7 +165,7 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
     refType: string;
     refId: string;
     to: string;
-    channel: 'whatsapp' | 'email';
+    channel: NotificationChannel;
   }) {
     return this.prisma.notificationLog.findFirst({
       where: {
@@ -187,7 +188,7 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
       body: string;
       subject: string | null;
     },
-    context: { refType: string; refId: string; channel: 'whatsapp' | 'email' },
+    context: { refType: string; refId: string; channel: NotificationChannel },
   ): Promise<boolean> {
     if (existing.status === 'sent') {
       logger.info('[NotificationService] Skip (already sent)', {
@@ -201,7 +202,7 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
 
     await this.enqueuePendingLog({
       id: existing.id,
-      channel: existing.channel as 'whatsapp' | 'email',
+      channel: existing.channel as NotificationChannel,
       recipient: existing.recipient,
       body: existing.body,
       subject: existing.subject ?? undefined,
@@ -217,7 +218,7 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
 
   private async enqueuePendingLog(log: {
     id: string;
-    channel: 'whatsapp' | 'email';
+    channel: NotificationChannel;
     recipient: string;
     body: string;
     subject?: string;

@@ -15,7 +15,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { useQueryState } from '@/hooks/use-query-state';
 import { generateReports, recoverReport, transitionReport, updateReportNotes } from '../actions';
 
-interface SubjectSnapshot { subject: string; count: number; average: number; byType: Record<string, number> }
+interface SubjectSnapshot {
+  subject: string;
+  count: number;
+  average: number;
+  byType: Record<string, number>;
+  kktp?: number | null;
+  kktpProvenance?: string | null;
+}
 export interface ReportItem {
   id: string;
   studentId: string;
@@ -54,7 +61,7 @@ interface Props {
   items: ReportItem[];
   total: number;
   classes: ClassItem[];
-  query: { page: number; limit: number; classId: string; status: string; search: string };
+  query: { page: number; limit: number; classId: string; studentId?: string; status: string; search: string };
   canGenerate: boolean;
   canCheck: boolean;
   canPublish: boolean;
@@ -185,7 +192,7 @@ function ReportDetail({ report, pending, onClose, run }: {
   return <Dialog open={!!report} onOpenChange={(open: boolean) => !open && onClose()}>
     <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
       <DialogHeader><DialogTitle>Rapor {report?.student.user.fullName}</DialogTitle><DialogDescription>{report?.class.name} | {report?.academicYear} Semester {report?.semester}</DialogDescription></DialogHeader>
-      {report && report.grades.length > 0 ? <div className="overflow-x-auto rounded border"><Table><TableHeader><TableRow><TableHead>Mata pelajaran</TableHead><TableHead className="text-right">Nilai akhir</TableHead><TableHead>Komponen</TableHead></TableRow></TableHeader><TableBody>{report.grades.map((grade) => <TableRow key={grade.subject}><TableCell>{grade.subject}</TableCell><TableCell className="text-right font-semibold">{grade.average}</TableCell><TableCell className="text-xs text-muted-foreground">{Object.entries(grade.byType).map(([type, value]) => `${type.toUpperCase()}: ${value}`).join(' | ')}</TableCell></TableRow>)}</TableBody></Table></div> : <p className="text-sm text-muted-foreground">Belum ada nilai pada snapshot ini.</p>}
+      {report && report.grades.length > 0 ? <div className="overflow-x-auto rounded border"><Table><TableHeader><TableRow><TableHead>Mata pelajaran</TableHead><TableHead className="text-right">Nilai akhir</TableHead><TableHead>KKTP snapshot</TableHead><TableHead>Komponen</TableHead></TableRow></TableHeader><TableBody>{report.grades.map((grade) => <TableRow key={grade.subject}><TableCell>{grade.subject}</TableCell><TableCell className="text-right font-semibold">{grade.average}</TableCell><TableCell className="text-xs">{typeof grade.kktp === 'number' ? `${grade.kktp} (${grade.kktpProvenance ?? 'snapshot'})` : 'Belum tersedia'}</TableCell><TableCell className="text-xs text-muted-foreground">{Object.entries(grade.byType).map(([type, value]) => `${type.toUpperCase()}: ${value}`).join(' | ')}</TableCell></TableRow>)}</TableBody></Table></div> : <p className="text-sm text-muted-foreground">Belum ada nilai pada snapshot ini.</p>}
       {attendance && <p className="text-sm">Kehadiran: <b>{attendance.hadir ?? 0}</b> hadir | {attendance.izin ?? 0} izin | {attendance.sakit ?? 0} sakit | {attendance.alpha ?? 0} alpa</p>}
       {report?.canManageDraft && report.status === 'draft' ? <div className="space-y-2"><Label htmlFor="report-notes">Catatan wali kelas</Label><Textarea id="report-notes" rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} /><Button size="sm" disabled={pending} onClick={() => run(() => updateReportNotes(report.id, notes.trim() || null, report.updatedAt), onClose)}>Simpan catatan</Button></div> : report?.notes ? <p className="rounded border bg-muted/30 p-3 text-sm"><b>Catatan wali kelas:</b> {report.notes}</p> : null}
       {report?.returnReason && <p className="rounded border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><b>Alasan pengembalian terakhir:</b> {report.returnReason}</p>}
@@ -228,16 +235,14 @@ function GenerateDialog({ open, onOpenChange, classes, defaultAcademicYear, defa
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [classId, setClassId] = useState('');
-  const [academicYear, setAcademicYear] = useState(defaultAcademicYear);
-  const [semester, setSemester] = useState(String(defaultSemester));
   const manageableClasses = useMemo(() => classes.filter((item) => item.canManageDraft), [classes]);
-  useEffect(() => { if (open) { setError(''); setClassId(manageableClasses[0]?.id ?? ''); setAcademicYear(defaultAcademicYear); setSemester(String(defaultSemester)); } }, [manageableClasses, defaultAcademicYear, defaultSemester, open]);
+  useEffect(() => { if (open) { setError(''); setClassId(manageableClasses[0]?.id ?? ''); } }, [manageableClasses, open]);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setLoading(true); setError('');
-    const result = await generateReports({ classId, academicYear, semester: Number(semester) }); setLoading(false);
+    const result = await generateReports({ classId, academicYear: defaultAcademicYear, semester: defaultSemester }); setLoading(false);
     if (!result.success) { setError(result.error ?? 'Draft rapor gagal disiapkan'); return; }
     const data = result.data as { generated: number; refreshed: number; skipped: number; totalStudents: number };
     onResult(`${data.generated} draft baru, ${data.refreshed} draft diperbarui, dan ${data.skipped} rapor terkunci dilewati dari ${data.totalStudents} siswa.`); onOpenChange(false);
   };
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Siapkan draft rapor kelas</DialogTitle><DialogDescription>Snapshot nilai dan kehadiran dibuat sebagai draft. Rapor yang telah diperiksa tidak akan ditimpa.</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={submit}><div className="space-y-2"><Label>Kelas wali</Label><Select value={classId || undefined} onValueChange={setClassId}><SelectTrigger><SelectValue placeholder="Pilih kelas" /></SelectTrigger><SelectContent>{manageableClasses.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div><div className="grid grid-cols-2 gap-3"><div className="space-y-2"><Label htmlFor="report-year">Tahun ajaran</Label><Input id="report-year" required pattern="\d{4}/\d{4}" value={academicYear} onChange={(event) => setAcademicYear(event.target.value)} /></div><div className="space-y-2"><Label>Semester</Label><Select value={semester} onValueChange={setSemester}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">Ganjil</SelectItem><SelectItem value="2">Genap</SelectItem></SelectContent></Select></div></div>{error && <p className="text-sm text-destructive" role="alert">{error}</p>}<div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={loading} onClick={() => onOpenChange(false)}>Batal</Button><Button type="submit" disabled={loading || !classId}>{loading && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}Siapkan draft</Button></div></form></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Siapkan draft rapor kelas</DialogTitle><DialogDescription>Snapshot nilai, KKTP, dan kehadiran dibuat hanya untuk periode aktif. Rapor yang telah diperiksa tidak akan ditimpa.</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={submit}><div className="space-y-2"><Label>Kelas wali</Label><Select value={classId || undefined} onValueChange={setClassId}><SelectTrigger><SelectValue placeholder="Pilih kelas" /></SelectTrigger><SelectContent>{manageableClasses.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div><div className="grid grid-cols-2 gap-3 rounded-md border bg-muted/30 p-3 text-sm"><div><div className="text-xs font-medium text-muted-foreground">Tahun ajaran aktif</div><div className="font-semibold">{defaultAcademicYear}</div></div><div><div className="text-xs font-medium text-muted-foreground">Semester aktif</div><div className="font-semibold">{defaultSemester === 1 ? 'Ganjil' : 'Genap'}</div></div></div>{error && <p className="text-sm text-destructive" role="alert">{error}</p>}<div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={loading} onClick={() => onOpenChange(false)}>Batal</Button><Button type="submit" disabled={loading || !classId}>{loading && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}Siapkan draft</Button></div></form></DialogContent></Dialog>;
 }
