@@ -36,6 +36,7 @@ export type UpdateNotesDto = z.infer<typeof UpdateNotesSchema>;
 
 export const ListReportsQuerySchema = z.object({
   classId: z.string().uuid().optional(),
+  studentId: z.string().uuid().optional(),
   status: z.enum(['draft', 'checked', 'published', 'distributed']).optional(),
   search: z.string().trim().max(100).optional(),
   academicYear: z.string().regex(/^\d{4}\/\d{4}$/).optional(),

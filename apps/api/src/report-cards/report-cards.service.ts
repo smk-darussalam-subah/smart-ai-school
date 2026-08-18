@@ -23,6 +23,7 @@ import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { NotificationService } from '../notification/notification.service';
 import {
   resolveGuruClassIds,
   resolveTeacherId,
@@ -34,6 +35,8 @@ import {
   resolveActiveKaprogMajorScope,
 } from '../common/helpers/appointment-scope.helper';
 import { averageScores, calculateWeightedFinalScore } from '../common/helpers/grade-final-score.helper';
+import { normalizePhoneE164 } from '../common/helpers/phone';
+import { PersistedKktpProvenance, resolveKktpThreshold } from '../academic/kktp-resolver';
 import { EVENTS, ReportDistributedPayload } from '../events/events.types';
 import {
   GenerateReportsDto,
@@ -68,7 +71,7 @@ const REPORT_SELECT = {
   },
 } as const;
 
-type ReportSnapshotDb = Pick<Prisma.TransactionClient, 'grade' | 'attendance'>;
+type ReportSnapshotDb = Prisma.TransactionClient;
 
 // Transisi sah: action → { dari, ke, stempel waktu }
 const TRANSITIONS: Record<
@@ -86,6 +89,19 @@ interface SubjectSnapshot {
   count: number;
   average: number;
   byType: Record<string, number>;
+  kktp: number;
+  kktpProvenance: PersistedKktpProvenance;
+}
+
+interface ActiveReportPeriod {
+  academicYear: string;
+  semester: number;
+}
+
+export interface DistributionHandoff {
+  status: 'queued' | 'pending_recovery';
+  intentCount: number;
+  queuedCount: number;
 }
 
 @Injectable()
@@ -94,6 +110,7 @@ export class ReportCardsService {
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
     private readonly permissions: PermissionsService,
+    private readonly notifications: NotificationService,
   ) {}
 
   private isElevated(user: AuthUser): boolean {
@@ -176,34 +193,32 @@ export class ReportCardsService {
 
   async findAll(query: ListReportsQueryDto, user: AuthUser) {
     const ownership = await this.ownershipWhere(user);
-    const where: Prisma.ReportCardWhereInput = {
-      ...ownership,
-      ...(query.classId ? { classId: query.classId } : {}),
-      ...(query.academicYear ? { academicYear: query.academicYear } : {}),
-      ...(query.semester ? { semester: query.semester } : {}),
-      ...(query.search ? {
+    await this.assertReadableClassFilter(query.classId, user);
+    const filters: Prisma.ReportCardWhereInput[] = [];
+    if (Object.keys(ownership).length > 0) filters.push(ownership);
+    if (query.classId) filters.push({ classId: query.classId });
+    if (query.studentId) filters.push({ studentId: query.studentId });
+    if (query.academicYear) filters.push({ academicYear: query.academicYear });
+    if (query.semester) filters.push({ semester: query.semester });
+    if (query.search) {
+      filters.push({
         OR: [
           { student: { user: { fullName: { contains: query.search, mode: 'insensitive' } } } },
           { student: { nis: { contains: query.search, mode: 'insensitive' } } },
           { class: { name: { contains: query.search, mode: 'insensitive' } } },
         ],
-      } : {}),
-    };
-    if (isKaprogScopedReader(user) && query.classId) {
-      await assertClassInKaprogScope(
-        this.prisma,
-        query.classId,
-        await resolveActiveKaprogMajorScope(this.prisma, user),
-      );
+      });
     }
     if (
       !this.isElevated(user) &&
       (user.roles.includes('SISWA') || user.roles.includes('ORANG_TUA'))
     ) {
-      where.status = 'distributed';
+      filters.push({ status: 'distributed' });
     } else if (query.status) {
-      where.status = query.status;
+      filters.push({ status: query.status });
     }
+    const where: Prisma.ReportCardWhereInput =
+      filters.length > 0 ? { AND: filters } : {};
 
     const skip = (query.page - 1) * query.limit;
     const [data, total, manageableClassIds] = await Promise.all([
@@ -236,12 +251,19 @@ export class ReportCardsService {
       await tx.$executeRaw(
         Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('report-card-generate'), hashtext(${lockKey}))`,
       );
+      const activePeriod = await this.resolveActiveReportPeriod(tx);
+      if (dto.academicYear !== activePeriod.academicYear || dto.semester !== activePeriod.semester) {
+        throw new BadRequestException(
+          `Draft rapor hanya dapat disiapkan untuk periode aktif ${activePeriod.academicYear} semester ${activePeriod.semester}`,
+        );
+      }
       const kelas = await tx.class.findUnique({
         where: { id: dto.classId },
         select: {
           id: true,
           name: true,
           academicYear: true,
+          isActive: true,
           teacher: { select: { user: { select: { fullName: true } } } },
           students: {
             where: { status: 'active', deletedAt: null },
@@ -250,6 +272,7 @@ export class ReportCardsService {
         },
       });
       if (!kelas) throw new NotFoundException('Kelas tidak ditemukan');
+      if (!kelas.isActive) throw new BadRequestException('Kelas tidak aktif');
       if (kelas.academicYear !== dto.academicYear) {
         throw new BadRequestException('Tahun ajaran rapor harus sama dengan tahun ajaran kelas');
       }
@@ -335,14 +358,29 @@ export class ReportCardsService {
       bySubject.set(subject, entry);
     }
 
-    return [...bySubject.entries()]
+    const subjects = [...bySubject.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([subject, e]) => ({
+      .map(([subject, e]) => ({ subject, entry: e }));
+    const snapshots: SubjectSnapshot[] = [];
+    for (const { subject, entry } of subjects) {
+      const kktp = await resolveKktpThreshold(db, {
         subject,
-        count: e.count,
-        average: calculateWeightedFinalScore(e.byType),
-        byType: Object.fromEntries([...e.byType.entries()].map(([type, scores]) => [type, averageScores(scores)])),
-      }));
+        academicYear,
+        semester,
+      });
+      if (kktp.value === null || kktp.provenance === 'unconfigured') {
+        throw new BadRequestException(`KKTP untuk ${subject} belum terkonfigurasi`);
+      }
+      snapshots.push({
+        subject,
+        count: entry.count,
+        average: calculateWeightedFinalScore(entry.byType),
+        byType: Object.fromEntries([...entry.byType.entries()].map(([type, scores]) => [type, averageScores(scores)])),
+        kktp: kktp.value,
+        kktpProvenance: kktp.provenance,
+      });
+    }
+    return snapshots;
   }
 
   private async buildAttendanceSnapshot(
@@ -445,7 +483,7 @@ export class ReportCardsService {
           distributedByName: actorName,
         } : {}),
     };
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const txResult = await this.prisma.$transaction(async (tx) => {
       await this.lockReportSnapshot(tx, existing);
       const current = await tx.reportCard.findUnique({
         where: { id },
@@ -457,6 +495,7 @@ export class ReportCardsService {
           academicYear: true,
           semester: true,
           generatedAt: true,
+          grades: true,
         },
       });
       if (!current) throw new NotFoundException('Rapor tidak ditemukan');
@@ -466,6 +505,7 @@ export class ReportCardsService {
         );
       }
       if (dto.action === 'check') {
+        this.assertKktpSnapshotReady(current.grades);
         const staleGrade = await tx.grade.findFirst({
           where: {
             studentId: current.studentId,
@@ -500,16 +540,43 @@ export class ReportCardsService {
       });
       const result = await tx.reportCard.findUnique({ where: { id }, select: REPORT_SELECT });
       if (!result) throw new NotFoundException('Rapor tidak ditemukan setelah transisi');
-      return result;
+      const notificationLogIds = dto.action === 'distribute'
+        ? await this.createReportDistributionIntents(tx, {
+            reportCardId: current.id,
+            studentId: current.studentId,
+            academicYear: current.academicYear,
+            semester: current.semester,
+          })
+        : [];
+      return { report: result, notificationLogIds };
     });
+    const updated = txResult.report;
 
     if (dto.action === 'distribute') {
+      const intentCount = txResult.notificationLogIds.length;
+      let handoff: DistributionHandoff = {
+        status: intentCount === 0 ? 'queued' : 'pending_recovery',
+        intentCount,
+        queuedCount: 0,
+      };
+      try {
+        const queued = await this.notifications.enqueueCommittedPendingLogs(txResult.notificationLogIds);
+        const queuedCount = Math.max(0, Math.min(queued.queuedCount, intentCount));
+        handoff = {
+          status: queued.queuedCount === intentCount ? 'queued' : 'pending_recovery',
+          intentCount,
+          queuedCount,
+        };
+      } catch {
+        handoff.status = 'pending_recovery';
+      }
       this.eventEmitter.emit(EVENTS.REPORT_DISTRIBUTED, {
         reportCardId: updated.id,
         studentId: existing.studentId,
         academicYear: existing.academicYear,
         semester: existing.semester,
       } satisfies ReportDistributedPayload);
+      return { ...updated, notificationHandoff: handoff };
     }
     return updated;
   }
@@ -641,6 +708,145 @@ export class ReportCardsService {
     }
   }
 
+  private async assertReadableClassFilter(classId: string | undefined, user: AuthUser): Promise<void> {
+    if (!classId || this.isElevated(user)) return;
+    if (isKaprogScopedReader(user)) {
+      await assertClassInKaprogScope(
+        this.prisma,
+        classId,
+        await resolveActiveKaprogMajorScope(this.prisma, user),
+      );
+      return;
+    }
+    if (user.roles.includes('GURU')) {
+      const classIds = await resolveGuruClassIds(this.prisma, user.keycloakId);
+      if (!classIds.includes(classId)) {
+        throw new ForbiddenException('Kelas berada di luar scope guru aktif');
+      }
+    }
+  }
+
+  private async resolveActiveReportPeriod(db: Pick<Prisma.TransactionClient, 'academicYear'>): Promise<ActiveReportPeriod> {
+    const years = await db.academicYear.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        code: true,
+        semesters: {
+          where: { isActive: true },
+          select: { number: true },
+          take: 2,
+        },
+      },
+      take: 2,
+    });
+    const activeYear = years[0];
+    const activeSemester = activeYear?.semesters[0];
+    if (years.length !== 1 || !activeYear || activeYear.semesters.length !== 1 || !activeSemester) {
+      throw new BadRequestException('Konfigurasi tahun ajaran dan semester aktif harus tepat satu');
+    }
+    return {
+      academicYear: activeYear.code,
+      semester: activeSemester.number,
+    };
+  }
+
+  private assertKktpSnapshotReady(grades: Prisma.JsonValue): void {
+    if (!Array.isArray(grades)) {
+      throw new ConflictException('Snapshot nilai rapor tidak valid. Wali kelas harus refresh draft.');
+    }
+    for (const grade of grades) {
+      if (
+        !grade ||
+        typeof grade !== 'object' ||
+        Array.isArray(grade) ||
+        !Number.isFinite((grade as { kktp?: unknown }).kktp) ||
+        !['module', 'config', 'system_default'].includes(String((grade as { kktpProvenance?: unknown }).kktpProvenance))
+      ) {
+        throw new ConflictException('Snapshot KKTP belum lengkap. Wali kelas harus refresh draft sebelum diperiksa.');
+      }
+    }
+  }
+
+  private async createReportDistributionIntents(
+    tx: Prisma.TransactionClient,
+    input: { reportCardId: string; studentId: string; academicYear: string; semester: number },
+  ): Promise<string[]> {
+    const student = await tx.student.findUnique({
+      where: { id: input.studentId },
+      select: {
+        userId: true,
+        parentId: true,
+        parent: { select: { phone: true } },
+      },
+    });
+    if (!student) return [];
+    const subject = 'Rapor semester tersedia';
+    const body = `Rapor semester ${input.semester} tahun ajaran ${input.academicYear} telah dibagikan di DIIS.`;
+    const data: Prisma.NotificationLogCreateManyInput[] = [];
+    if (student.userId) {
+      data.push({
+        recipient: student.userId,
+        channel: 'push',
+        subject,
+        body,
+        status: 'pending',
+        refType: 'report-card',
+        refId: input.reportCardId,
+      });
+    }
+    if (student.parentId) {
+      data.push({
+        recipient: student.parentId,
+        channel: 'push',
+        subject,
+        body,
+        status: 'pending',
+        refType: 'report-card',
+        refId: input.reportCardId,
+      });
+    }
+    const parentPhone = this.normalizeOptionalWhatsappRecipient(student.parent?.phone);
+    if (parentPhone) {
+      data.push({
+        recipient: parentPhone,
+        channel: 'whatsapp',
+        subject,
+        body,
+        status: 'pending',
+        refType: 'report-card',
+        refId: input.reportCardId,
+      });
+    }
+    const unique = new Map<string, Prisma.NotificationLogCreateManyInput>();
+    for (const row of data) unique.set(`${row.channel}:${row.recipient}`, row);
+    const rows = [...unique.values()];
+    if (rows.length === 0) return [];
+    await tx.notificationLog.createMany({ data: rows, skipDuplicates: true });
+    const pending = await tx.notificationLog.findMany({
+      where: {
+        refType: 'report-card',
+        refId: input.reportCardId,
+        status: 'pending',
+        OR: rows.map((row) => ({
+          channel: row.channel,
+          recipient: row.recipient,
+        })),
+      },
+      select: { id: true },
+    });
+    return pending.map((row) => row.id);
+  }
+
+  private normalizeOptionalWhatsappRecipient(phone: string | null | undefined): string | null {
+    if (!phone?.trim()) return null;
+    try {
+      return normalizePhoneE164(phone);
+    } catch {
+      return null;
+    }
+  }
+
   private assertRoutineReportOperator(user: AuthUser): void {
     if (user.roles.includes('SUPER_ADMIN')) {
       throw new ForbiddenException('Super Admin hanya dapat memakai jalur pemulihan administratif rapor');
@@ -715,9 +921,17 @@ export class ReportCardsService {
     const average = scores.length > 0
       ? scores.reduce((sum, score) => sum + score, 0) / scores.length
       : null;
+    const allSnapshotsHaveKktp = grades.every((grade) =>
+      Number.isFinite(grade.kktp) &&
+      ['module', 'config', 'system_default'].includes(grade.kktpProvenance));
+    const averageKktp = allSnapshotsHaveKktp && grades.length > 0
+      ? grades.reduce((sum, grade) => sum + grade.kktp, 0) / grades.length
+      : null;
     const academicLevel = average === null
       ? '-'
-      : average >= 85 ? 'Sangat Baik' : average >= 75 ? 'Baik' : average >= 60 ? 'Cukup' : 'Perlu Bimbingan';
+      : averageKktp === null
+        ? 'Snapshot KKTP belum tersedia'
+        : average >= averageKktp + 10 ? 'Sangat Baik' : average >= averageKktp ? 'Baik' : average >= averageKktp - 15 ? 'Cukup' : 'Perlu Bimbingan';
     const description = average === null
       ? 'Belum ada data nilai pada snapshot rapor ini.'
       : `Siswa menunjukkan perkembangan akademik ${academicLevel.toLowerCase()} dengan rata-rata nilai akhir ${Math.round(average)}. Semangat belajar perlu dipertahankan dan ditingkatkan untuk mencapai hasil yang lebih optimal.`;
@@ -735,8 +949,11 @@ export class ReportCardsService {
           .map((grade) => ({
             name: grade.subject,
             na: grade.average,
-            kktp: 75,
-            predikat: grade.average >= 75 ? 'Tuntas' : 'Belum Tuntas',
+            kktp: Number.isFinite(grade.kktp) ? grade.kktp : null,
+            kktpProvenance: grade.kktpProvenance ?? null,
+            predikat: Number.isFinite(grade.kktp)
+              ? grade.average >= grade.kktp ? 'Tuntas' : 'Belum Tuntas'
+              : 'Snapshot KKTP tidak tersedia',
           })),
       },
       attendance: { ...attendance, total },

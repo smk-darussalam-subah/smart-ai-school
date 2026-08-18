@@ -26,7 +26,7 @@ import TaskDetailModal from './TaskDetailModal';
 import DayDetailModal from './DayDetailModal';
 import BadgeDetailModal from './BadgeDetailModal';
 import PushNotificationToggle from '@/components/shared/PushNotificationToggle';
-import { subscribePush, unsubscribePush, fetchDailyQuests, fetchPersonalCalendar } from '../../actions';
+import { fetchMyNotifications, subscribePush, unsubscribePush, fetchDailyQuests, fetchPersonalCalendar } from '../../actions';
 import {
   normalizeAnnouncements,
 } from './siswa-data';
@@ -580,7 +580,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             </button>
 
             {/* T3-03: Push notification toggle */}
-            <PushNotificationToggle onSubscribe={subscribePush} onUnsubscribe={unsubscribePush} />
+            <PushNotificationToggle onSubscribe={subscribePush} onUnsubscribe={unsubscribePush} onFetchNotifications={fetchMyNotifications} />
 
             {/* Logout */}
             <button
