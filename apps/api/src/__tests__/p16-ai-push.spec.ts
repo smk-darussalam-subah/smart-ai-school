@@ -16,6 +16,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuthUser } from '@smk/auth';
 import { AiGenerateService } from '../ai/ai-generate.service';
 import { AiProviderStatusService } from '../ai/ai-provider-status.service';
+import { REQUIRED_PERMISSION_KEY } from '../permissions/decorators/require-permission.decorator';
+import { PushController } from '../push/push.controller';
 import { PushService } from '../push/push.service';
 import { SubscribeSchema, UnsubscribeSchema } from '../push/dto/push.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -161,6 +163,16 @@ describe('Push DTO validation', () => {
       expect(UnsubscribeSchema.safeParse({ endpoint }).success).toBe(false);
     }
   });
+});
+
+describe('PushController permissions', () => {
+  it.each(['subscribe', 'unsubscribe', 'findMyNotifications'] as const)(
+    '%s accepts report.read so ORANG_TUA can use report notification history',
+    (methodName) => {
+      expect(Reflect.getMetadata(REQUIRED_PERMISSION_KEY, PushController.prototype[methodName]))
+        .toEqual(['lms.read', 'report.read']);
+    },
+  );
 });
 
 describe('PushService', () => {
