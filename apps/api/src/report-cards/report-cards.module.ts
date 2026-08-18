@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PermissionModule } from '../permissions/permissions.module';
+import { NotificationModule } from '../notification/notification.module';
 import { ReportCardsController } from './report-cards.controller';
 import { ReportCardsService } from './report-cards.service';
 
 @Module({
-  imports: [PrismaModule, PermissionModule],
+  imports: [PrismaModule, PermissionModule, NotificationModule],
   controllers: [ReportCardsController],
   providers: [ReportCardsService],
   exports: [ReportCardsService],

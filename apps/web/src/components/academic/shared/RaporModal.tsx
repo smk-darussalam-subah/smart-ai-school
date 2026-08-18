@@ -68,7 +68,7 @@ export function RaporModal({
   const naik = rows.length > 0 && tuntas >= rows.length - 1;
 
   // T2-01: Fetch sections B-G data
-  const [sectionB, setSectionB] = useState<{ subjects: { name: string; na: number; kktp: number; predikat: string }[] } | null>(null);
+  const [sectionB, setSectionB] = useState<{ subjects: { name: string; na: number; kktp: number | null; kktpProvenance?: string | null; predikat: string }[] } | null>(null);
   const [sectionD, setSectionD] = useState<{ hadir: number; izin: number; sakit: number; alpha: number; total: number } | null>(null);
   const [sectionF, setSectionF] = useState<{ description: string; spiritual: string; social: string; academic: string } | null>(null);
   const [sectionG, setSectionG] = useState<{ homeroomTeacher: string; principal: string; approvedAt: string | null; schoolYear: string; semester: number; className: string } | null>(null);
@@ -218,6 +218,7 @@ export function RaporModal({
                   <span className="font-semibold text-slate-700">{s.name}</span>
                   <div className="flex items-center gap-3">
                     <span className="font-extrabold text-slate-900">NA {s.na}</span>
+                    <span className="text-[9px] font-bold text-slate-500">{s.kktp === null ? 'KKTP belum tersedia' : `KKTP ${s.kktp}`}</span>
                     <span className={cn('rounded px-2 py-0.5 text-[9px] font-bold', s.predikat === 'Tuntas' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700')}>{s.predikat}</span>
                   </div>
                 </div>

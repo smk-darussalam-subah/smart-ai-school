@@ -1,6 +1,7 @@
 import { Worker, Job, WorkerOptions } from 'bullmq';
 import { NotificationAdapter } from '@smk/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { PushService } from '../push/push.service';
 import { logger } from '@smk/logger';
 import { NotifJob, NOTIFICATION_QUEUE, resolveNotificationQueuePrefix } from './queue.config';
 
@@ -23,6 +24,7 @@ export function createNotificationWorker(
   adapter: NotificationAdapter,
   prisma: PrismaService,
   prefix = resolveNotificationQueuePrefix(),
+  pushService?: PushService,
 ): Worker<NotifJob> {
   const worker = new Worker<NotifJob>(
     NOTIFICATION_QUEUE,
@@ -32,7 +34,17 @@ export function createNotificationWorker(
       logger.debug('[NotifWorker] Processing', { logId, channel, attempt: job.attemptsMade + 1 });
 
       try {
-        await adapter.send(channel, to, body, subject);
+        if (channel === 'push') {
+          if (!pushService) throw new Error('Push service not initialized');
+          await pushService.dispatchNotificationLog({
+            logId,
+            userId: to,
+            title: subject ?? 'Notifikasi DIIS',
+            body,
+          });
+        } else {
+          await adapter.send(channel, to, body, subject);
+        }
 
         await prisma.notificationLog.update({
           where: { id: logId },

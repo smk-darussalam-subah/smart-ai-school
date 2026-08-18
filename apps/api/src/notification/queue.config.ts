@@ -6,7 +6,7 @@ const QUEUE_NAMESPACE_PATTERN = /^[a-z0-9][a-z0-9_-]{1,31}$/;
 
 export interface NotifJob {
   logId: string;
-  channel: 'whatsapp' | 'email';
+  channel: 'whatsapp' | 'email' | 'push';
   to: string;
   body: string;
   subject?: string;
