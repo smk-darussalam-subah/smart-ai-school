@@ -95,6 +95,26 @@ jobs:
             fi
             echo "✅ REDIS_URL → redis://:***@redis:6379"
 
+            set_env_var() {
+              _KEY="$1"
+              _VALUE="$2"
+              if grep -q "^${_KEY}=" "$ENV_FILE" 2>/dev/null; then
+                sed -i "s|^${_KEY}=.*|${_KEY}=${_VALUE}|" "$ENV_FILE"
+              else
+                printf '\n%s=%s\n' "$_KEY" "$_VALUE" >> "$ENV_FILE"
+              fi
+            }
+
+            if [ -n "${{ secrets.VAPID_PUBLIC_KEY }}" ] && [ -n "${{ secrets.VAPID_PRIVATE_KEY }}" ]; then
+              set_env_var VAPID_PUBLIC_KEY "${{ secrets.VAPID_PUBLIC_KEY }}"
+              set_env_var VAPID_PRIVATE_KEY "${{ secrets.VAPID_PRIVATE_KEY }}"
+              set_env_var VAPID_SUBJECT "${{ secrets.VAPID_SUBJECT || 'mailto:admin@smkdarussalamsubah.sch.id' }}"
+              set_env_var NEXT_PUBLIC_VAPID_PUBLIC_KEY "${{ secrets.VAPID_PUBLIC_KEY }}"
+              echo "✅ VAPID environment present for ${BRANCH} (values redacted)"
+            else
+              echo "⚠️ VAPID secrets unavailable for ${BRANCH}; PWA Push remains disabled"
+            fi
+
             if [ "$BRANCH" = "staging" ]; then
               # ── Patch .env.staging: tulis STAGING_DATABASE_URL ──────────────
               # STAGING_DATABASE_URL selalu menunjuk smk_staging_db (bukan smk_db).
