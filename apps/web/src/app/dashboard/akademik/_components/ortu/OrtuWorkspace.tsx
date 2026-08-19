@@ -325,6 +325,7 @@ export default function OrtuWorkspace({
       {modal.type === 'pengumuman' && (
         <PengumumanModal
           announcements={(announcements ?? []) as unknown as OrtuPengumuman[]}
+          onFetchNotifications={fetchMyNotifications}
           onClose={() => setModal({ type: null })}
         />
       )}
