@@ -335,7 +335,7 @@ export default function OrtuWorkspace({
         <PengumumanModal
           announcements={(announcements ?? []) as unknown as OrtuPengumuman[]}
           onFetchNotifications={fetchMyNotifications}
-          reportStudentId={activeStudentId}
+          fallbackStudentId={activeStudentId}
           returnFocusRef={notificationTriggerRef}
           onClose={closeNotificationCenter}
         />

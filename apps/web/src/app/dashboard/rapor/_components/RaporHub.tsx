@@ -33,7 +33,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { useQueryState } from '@/hooks/use-query-state';
 import {
   kktpProvenanceLabel,
+  learnerDashboardHref,
   learnerNotificationCenterHref,
+  RAPOR_LEARNER_COLORS,
 } from '../../akademik/_components/learner-navigation';
 import { generateReports, recoverReport, transitionReport, updateReportNotes } from '../actions';
 
@@ -303,6 +305,7 @@ function LearnerAppShell({
 }) {
   const appClass = shell === 'parent' ? 'ortu-app' : 'siswa-app';
   const brandLabel = shell === 'parent' ? 'Orang Tua' : 'Smart AI School';
+  const dashboardHref = learnerDashboardHref(shell === 'parent' ? studentId : undefined);
   const notificationHref = learnerNotificationCenterHref(shell === 'parent' ? studentId : undefined);
   return (
     <div className={`${appClass} relative min-h-screen bg-[var(--bg)] text-[var(--text)] transition-colors duration-300`}>
@@ -318,7 +321,7 @@ function LearnerAppShell({
             </div>
           </div>
           <a
-            href="/dashboard/akademik"
+            href={dashboardHref}
             className="flex min-h-11 items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-bold text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]"
             aria-label="Kembali ke dashboard akademik"
           >
@@ -358,7 +361,7 @@ function LearnerAppShell({
 
       <nav className="fixed bottom-0 left-1/2 z-30 w-full max-w-[560px] -translate-x-1/2 border-t border-[var(--border)] bg-[var(--nav-bg)] backdrop-blur-2xl">
         <div className="grid grid-cols-3 px-3 py-2">
-          <a href="/dashboard/akademik" className="flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1 text-[var(--muted)] transition-colors hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]">
+          <a href={dashboardHref} className="flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1 text-[var(--muted)] transition-colors hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]">
             <Home className="h-5 w-5" aria-hidden="true" />
             <span className="text-[11px] font-bold">Beranda</span>
           </a>
@@ -504,7 +507,13 @@ function LearnerReportCard({ report, onDetail }: { report: ReportItem; onDetail:
                 const done = step >= index + 1;
                 return (
                   <div key={label} className="flex items-center gap-3">
-                    <span className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold ${done ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted)]'}`}>
+                    <span
+                      className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold ${done ? 'border-emerald-300' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted)]'}`}
+                      style={done ? {
+                        backgroundColor: RAPOR_LEARNER_COLORS.completedStepBackground,
+                        color: RAPOR_LEARNER_COLORS.completedStepForeground,
+                      } : undefined}
+                    >
                       {done ? <Check className="h-4 w-4" aria-hidden="true" /> : index + 1}
                     </span>
                     <span className={done ? 'font-bold text-[var(--text)]' : 'font-semibold text-[var(--muted)]'}>{label}</span>

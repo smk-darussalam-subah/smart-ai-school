@@ -4,6 +4,7 @@ import {
   initialChildIndex,
   kktpProvenanceLabel,
   learnerDashboardHref,
+  learnerNotificationTargetHref,
   learnerNotificationCenterHref,
   learnerReportHref,
   restoreDialogTriggerFocus,
@@ -23,6 +24,36 @@ describe('learner notification and report navigation', () => {
     expect(learnerReportHref(studentId)).toBe('/dashboard/rapor?studentId=child%20id%2Fwith%20spaces');
   });
 
+  it('uses server-bound notification target before active-child fallback', () => {
+    expect(learnerNotificationTargetHref(
+      { refType: 'report-card', targetHref: learnerReportHref('child-a') },
+      'child-b',
+    )).toBe('/dashboard/rapor?studentId=child-a');
+    expect(learnerNotificationTargetHref(
+      { refType: 'report-card', targetHref: null },
+      'child-b',
+    )).toBe('/dashboard/rapor');
+    expect(learnerNotificationTargetHref(
+      { refType: 'announcement', targetHref: null },
+      'child-b',
+    )).toBe('/dashboard/akademik?studentId=child-b');
+  });
+
+  it('ignores unsafe notification targets', () => {
+    for (const unsafeTarget of [
+      'https://evil.test/dashboard/rapor?studentId=child-a',
+      '//evil.test/dashboard/rapor?studentId=child-a',
+      '/dashboard\\rapor?studentId=child-a',
+      '/login',
+      'not a dashboard route',
+    ]) {
+      expect(learnerNotificationTargetHref(
+        { refType: 'announcement', targetHref: unsafeTarget },
+        'child-b',
+      )).toBe('/dashboard/akademik?studentId=child-b');
+    }
+  });
+
   it('selects only the requested owned child and safely falls back when it is absent', () => {
     const children = [{ studentId: 'child-a' }, { studentId: 'child-b' }];
 
@@ -40,6 +71,9 @@ describe('learner notification and report navigation', () => {
 
   it('keeps Rapor call-to-action and passive navigation colors above WCAG AA', () => {
     expect(contrastRatio(RAPOR_LEARNER_COLORS.ctaForeground, RAPOR_LEARNER_COLORS.ctaBackground)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(RAPOR_LEARNER_COLORS.studentActiveForeground, RAPOR_LEARNER_COLORS.studentActiveBackground)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(RAPOR_LEARNER_COLORS.parentActiveForeground, RAPOR_LEARNER_COLORS.parentActiveBackground)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(RAPOR_LEARNER_COLORS.completedStepForeground, RAPOR_LEARNER_COLORS.completedStepBackground)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(RAPOR_LEARNER_COLORS.darkNavInactive, RAPOR_LEARNER_COLORS.darkNavBackground)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(RAPOR_LEARNER_COLORS.darkParentNavInactive, RAPOR_LEARNER_COLORS.darkNavBackground)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(RAPOR_LEARNER_COLORS.lightNavInactive, RAPOR_LEARNER_COLORS.lightNavBackground)).toBeGreaterThanOrEqual(4.5);
