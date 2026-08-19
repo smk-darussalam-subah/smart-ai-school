@@ -268,11 +268,23 @@ describe('academic operational UI contracts', () => {
   it('wires push notification history to user-bound logs and handles service-worker push events', () => {
     const actions = source('app/dashboard/akademik/actions.ts');
     const toggle = source('components/shared/PushNotificationToggle.tsx');
+    const siswaWorkspace = source('app/dashboard/akademik/_components/siswa/SiswaWorkspace.tsx');
+    const siswaAnnouncements = source('app/dashboard/akademik/_components/siswa/PengumumanModal.tsx');
+    const ortuWorkspace = source('app/dashboard/akademik/_components/ortu/OrtuWorkspace.tsx');
+    const ortuAnnouncements = source('app/dashboard/akademik/_components/ortu/PengumumanModal.tsx');
     const sw = source('../public/sw.js');
 
     expect(actions).toContain("apiCall('/push/my-notifications', 'GET')");
     expect(toggle).toContain('onFetchNotifications');
     expect(toggle).not.toContain('recipient: string');
+    expect(siswaWorkspace).toContain('onFetchNotifications={fetchMyNotifications}');
+    expect(ortuWorkspace).toContain('onFetchNotifications={fetchMyNotifications}');
+    expect(siswaAnnouncements).toContain("notification.refType === 'report-card' ? '/dashboard/rapor'");
+    expect(ortuAnnouncements).toContain("notification.refType === 'report-card' ? '/dashboard/rapor'");
+    expect(siswaAnnouncements).toContain('window.location.href = notificationTargetHref(item)');
+    expect(ortuAnnouncements).toContain('window.location.href = notificationTargetHref(item)');
+    expect(siswaAnnouncements).toContain('Notifikasi');
+    expect(ortuAnnouncements).toContain('Notifikasi');
     expect(sw).toContain("self.addEventListener('push'");
     expect(sw).toContain('showNotification');
     expect(sw).toContain('function safeSameOriginPath');
