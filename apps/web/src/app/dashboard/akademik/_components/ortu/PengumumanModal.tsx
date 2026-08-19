@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Bell, Calendar, ExternalLink, Inbox, Loader2, Megaphone, X } from 'lucide-react';
+import { Bell, Calendar, ExternalLink, Inbox, Loader2, Megaphone } from 'lucide-react';
+import LearnerNotificationDialog from '../LearnerNotificationDialog';
+import { learnerReportHref } from '../learner-navigation';
 import type { OrtuPengumuman } from './ortu-types';
 
 interface NotificationEntry {
@@ -18,11 +20,12 @@ interface NotificationEntry {
 interface PengumumanModalProps {
   announcements: OrtuPengumuman[];
   onFetchNotifications?: () => Promise<NotificationEntry[] | null>;
+  reportStudentId?: string;
   onClose: () => void;
 }
 
-export function notificationTargetHref(notification: Pick<NotificationEntry, 'refType'>): string {
-  return notification.refType === 'report-card' ? '/dashboard/rapor' : '/dashboard/akademik';
+export function notificationTargetHref(notification: Pick<NotificationEntry, 'refType'>, studentId?: string): string {
+  return notification.refType === 'report-card' ? learnerReportHref(studentId) : '/dashboard/akademik';
 }
 
 function formatDate(value: string | null): string {
@@ -31,7 +34,7 @@ function formatDate(value: string | null): string {
   return parsed.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
 }
 
-export default function PengumumanModal({ announcements, onFetchNotifications, onClose }: PengumumanModalProps) {
+export default function PengumumanModal({ announcements, onFetchNotifications, reportStudentId, onClose }: PengumumanModalProps) {
   const hasNotificationFeed = typeof onFetchNotifications === 'function';
   const [activeTab, setActiveTab] = useState<'notifications' | 'announcements'>(
     hasNotificationFeed ? 'notifications' : 'announcements',
@@ -67,40 +70,20 @@ export default function PengumumanModal({ announcements, onFetchNotifications, o
   }, [hasNotificationFeed, onFetchNotifications]);
 
   return (
-    <div
-      className="ortu-app fixed inset-0 z-50 flex items-end justify-center bg-[var(--ovl-bg)] backdrop-blur-sm"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Notifikasi dan pengumuman sekolah"
+    <LearnerNotificationDialog
+      shell="parent"
+      title="Notifikasi"
+      description={`${notifications.length} notifikasi · ${announcements.length} pengumuman`}
+      onClose={onClose}
     >
-      <div className="max-h-[85vh] w-full max-w-[560px] overflow-auto rounded-t-[var(--r-lg)] border border-[var(--border)] bg-[var(--bg2)] p-4 pb-8 animate-[slideUp_0.3s_cubic-bezier(0.22,0.61,0.36,1)]">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Bell className="h-4 w-4 text-[var(--pri)]" />
-            <div>
-              <b className="block text-[15px] font-extrabold">Notifikasi</b>
-              <span className="text-[10px] font-semibold text-[var(--muted)]">
-                {notifications.length} notifikasi · {announcements.length} pengumuman
-              </span>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)]"
-            aria-label="Tutup"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-8">
 
         {hasNotificationFeed && (
           <div className="mb-4 grid grid-cols-2 gap-2 rounded-[var(--r)] bg-[var(--surface)] p-1">
             <button
               type="button"
               onClick={() => setActiveTab('notifications')}
-              className={`flex items-center justify-center gap-2 rounded-[10px] px-3 py-2 text-[11px] font-extrabold transition-all ${
+              className={`flex min-h-11 items-center justify-center gap-2 rounded-[10px] px-3 py-2 text-[11px] font-extrabold transition-all ${
                 activeTab === 'notifications'
                   ? 'bg-[var(--pri)] text-white'
                   : 'text-[var(--muted)] hover:bg-[var(--surface2)]'
@@ -113,7 +96,7 @@ export default function PengumumanModal({ announcements, onFetchNotifications, o
             <button
               type="button"
               onClick={() => setActiveTab('announcements')}
-              className={`flex items-center justify-center gap-2 rounded-[10px] px-3 py-2 text-[11px] font-extrabold transition-all ${
+              className={`flex min-h-11 items-center justify-center gap-2 rounded-[10px] px-3 py-2 text-[11px] font-extrabold transition-all ${
                 activeTab === 'announcements'
                   ? 'bg-[var(--pri)] text-white'
                   : 'text-[var(--muted)] hover:bg-[var(--surface2)]'
@@ -169,8 +152,8 @@ export default function PengumumanModal({ announcements, onFetchNotifications, o
                   </div>
                   <button
                     type="button"
-                    onClick={() => { window.location.href = notificationTargetHref(item); }}
-                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--surface2)] text-[var(--text)] transition-colors hover:border-[var(--pri)] hover:text-[var(--pri)]"
+                    onClick={() => { window.location.href = notificationTargetHref(item, reportStudentId); }}
+                    className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface2)] text-[var(--text)] transition-colors hover:border-[var(--pri)] hover:text-[var(--pri)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
                     aria-label="Buka notifikasi"
                   >
                     <ExternalLink className="h-4 w-4" />
@@ -201,6 +184,6 @@ export default function PengumumanModal({ announcements, onFetchNotifications, o
           ))
         )}
       </div>
-    </div>
+    </LearnerNotificationDialog>
   );
 }
