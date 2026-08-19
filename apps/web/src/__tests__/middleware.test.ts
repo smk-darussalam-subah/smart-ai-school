@@ -152,6 +152,17 @@ describe('middleware — protected dynamic paths keep nonce (N21 non-regression)
   });
 });
 
+describe('middleware — public PWA assets', () => {
+  beforeEach(() => { capturedReqHeaders = undefined; });
+
+  it.each(['/sw.js', '/manifest.json'])('serves %s without redirecting unauthenticated users', async (path) => {
+    await middleware(makeRequest(path));
+
+    expect(capturedRedirectUrl).toBeUndefined();
+    expect(capturedReqHeaders).toBeDefined();
+  });
+});
+
 describe('middleware - learner OAuth landing (React #310 regression)', () => {
   beforeEach(() => { capturedReqHeaders = undefined; });
 
