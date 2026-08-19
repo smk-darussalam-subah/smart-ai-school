@@ -1,14 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition, type ReactNode } from 'react';
 import {
+  Bell,
   CalendarDays,
   Check,
   CheckCircle2,
   ClipboardCheck,
   Eye,
   FileCheck2,
+  FileText,
   GraduationCap,
+  Home,
   LoaderCircle,
   RotateCcw,
   Search,
@@ -83,6 +86,7 @@ interface Props {
   canDistribute: boolean;
   canRecover: boolean;
   isOperational: boolean;
+  learnerShell?: 'student' | 'parent' | null;
   defaultAcademicYear: string;
   defaultSemester: number;
 }
@@ -125,7 +129,7 @@ function periodLabel(report: ReportItem): string {
 }
 
 export default function RaporHub(props: Props) {
-  const { items, total, classes, query, canGenerate, canCheck, canPublish, canDistribute, canRecover, isOperational, defaultAcademicYear, defaultSemester } = props;
+  const { items, total, classes, query, canGenerate, canCheck, canPublish, canDistribute, canRecover, isOperational, learnerShell, defaultAcademicYear, defaultSemester } = props;
   const { setParams, isPending } = useQueryState();
   const [search, setSearch] = useState(query.search);
   const [detail, setDetail] = useState<ReportItem | null>(null);
@@ -160,6 +164,34 @@ export default function RaporHub(props: Props) {
     }, { draft: 0, checked: 0, published: 0, distributed: 0 });
   }, [items]);
   const activePeriod = `${defaultAcademicYear} · Semester ${defaultSemester}`;
+
+  useEffect(() => {
+    if (isOperational) return;
+    const storageKey = learnerShell === 'parent' ? 'diis-ortu-theme' : 'diis-theme';
+    const saved = typeof window !== 'undefined' ? window.localStorage.getItem(storageKey) : null;
+    document.documentElement.setAttribute('data-theme', saved === 'light' ? 'light' : 'dark');
+  }, [isOperational, learnerShell]);
+
+  if (!isOperational) {
+    return (
+      <LearnerAppShell
+        shell={learnerShell ?? 'student'}
+        activePeriod={activePeriod}
+        total={total}
+        distributed={statusCounts.distributed}
+      >
+        {info && <p className="text-sm font-semibold text-[var(--em)]" role="status">{info}</p>}
+        {error && <p className="text-sm font-semibold text-rose-500" role="alert">{error}</p>}
+        <LearnerReportBoard items={items} isPending={isPending} onDetail={setDetail} />
+        {total > query.limit && (
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2">
+            <TablePagination page={query.page} limit={query.limit} total={total} onPage={(page) => setParams({ page })} />
+          </div>
+        )}
+        <ReportDetail report={detail} pending={busy} learnerShell={learnerShell ?? 'student'} onClose={() => setDetail(null)} run={run} />
+      </LearnerAppShell>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -249,6 +281,94 @@ export default function RaporHub(props: Props) {
   );
 }
 
+function LearnerAppShell({
+  shell,
+  activePeriod,
+  total,
+  distributed,
+  children,
+}: {
+  shell: 'student' | 'parent';
+  activePeriod: string;
+  total: number;
+  distributed: number;
+  children: ReactNode;
+}) {
+  const appClass = shell === 'parent' ? 'ortu-app' : 'siswa-app';
+  const brandLabel = shell === 'parent' ? 'Orang Tua' : 'Smart AI School';
+  return (
+    <div className={`${appClass} relative min-h-screen bg-[var(--bg)] text-[var(--text)] transition-colors duration-300`}>
+      <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--topbar-bg)] backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[560px] items-center justify-between px-5 py-4">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-800 text-base font-extrabold text-white shadow-[0_0_20px_rgba(16,185,129,.3)]">
+              D
+            </div>
+            <div>
+              <div className="text-sm font-bold">DIIS</div>
+              <div className="text-[10px] font-semibold text-[var(--muted)]">{brandLabel}</div>
+            </div>
+          </div>
+          <a
+            href="/dashboard/akademik"
+            className="flex h-9 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-bold text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
+            aria-label="Kembali ke dashboard akademik"
+          >
+            <Home className="h-4 w-4" aria-hidden="true" />
+            Dashboard
+          </a>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-[560px] space-y-4 px-4 pb-24 pt-4">
+        <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-sm">
+          <div className="border-b border-[var(--border)] bg-[linear-gradient(135deg,rgba(16,185,129,.24),rgba(59,130,246,.10))] p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--em)]">Rapor resmi</p>
+                <h1 className="mt-1 text-2xl font-extrabold tracking-normal text-[var(--text)]">Dokumen semester</h1>
+                <p className="mt-1 text-xs font-semibold text-[var(--muted)]">{activePeriod}</p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface)] text-[var(--em)]">
+                <FileText className="h-6 w-6" aria-hidden="true" />
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-px bg-[var(--border)]">
+            <div className="bg-[var(--surface)] p-4">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Total</p>
+              <p className="mt-1 text-2xl font-extrabold text-[var(--text)]">{total}</p>
+            </div>
+            <div className="bg-[var(--surface)] p-4">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Dibagikan</p>
+              <p className="mt-1 text-2xl font-extrabold text-[var(--em)]">{distributed}</p>
+            </div>
+          </div>
+        </section>
+        {children}
+      </main>
+
+      <nav className="fixed bottom-0 left-1/2 z-30 w-full max-w-[560px] -translate-x-1/2 border-t border-[var(--border)] bg-[var(--nav-bg)] backdrop-blur-2xl">
+        <div className="grid grid-cols-3 px-3 py-2">
+          <a href="/dashboard/akademik" className="flex flex-col items-center gap-1 rounded-lg px-2 py-1.5 text-[var(--dim)] transition-colors hover:text-[var(--text)]">
+            <Home className="h-5 w-5" aria-hidden="true" />
+            <span className="text-[9px] font-bold">Beranda</span>
+          </a>
+          <a href="/dashboard/akademik" className="flex flex-col items-center gap-1 rounded-lg px-2 py-1.5 text-[var(--dim)] transition-colors hover:text-[var(--text)]">
+            <Bell className="h-5 w-5" aria-hidden="true" />
+            <span className="text-[9px] font-bold">Notifikasi</span>
+          </a>
+          <span className="relative flex flex-col items-center gap-1 rounded-lg px-2 py-1.5 text-[var(--em)]" aria-current="page">
+            <span className="absolute left-[30%] right-[30%] top-0 h-[2.5px] rounded-full bg-[var(--em)]" />
+            <FileText className="h-5 w-5 drop-shadow-[0_0_6px_rgba(16,185,129,.4)]" aria-hidden="true" />
+            <span className="text-[9px] font-bold">Rapor</span>
+          </span>
+        </div>
+      </nav>
+    </div>
+  );
+}
+
 function MetricTile({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
     <div className="flex items-center gap-3 bg-slate-50 p-5">
@@ -264,6 +384,20 @@ function MetricTile({ icon: Icon, label, value }: { icon: LucideIcon; label: str
 }
 
 function EmptyReports({ operational }: { operational: boolean }) {
+  if (!operational) {
+    return (
+      <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface)] px-5 py-10 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--surface2)] text-[var(--muted)]">
+          <FileCheck2 className="h-6 w-6" aria-hidden="true" />
+        </div>
+        <p className="mt-3 font-bold text-[var(--text)]">Belum ada rapor</p>
+        <p className="mt-1 text-sm font-medium text-[var(--muted)]">
+          Rapor resmi akan muncul setelah sekolah mendistribusikannya.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <Card className="border-dashed">
       <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
@@ -302,26 +436,26 @@ function LearnerReportCard({ report, onDetail }: { report: ReportItem; onDetail:
   const step = STATUS_STEP[report.status];
   const visibleGrades = report.grades.slice(0, 4);
   return (
-    <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 bg-slate-950 p-5 text-white sm:p-6">
+    <article className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-sm">
+      <div className="border-b border-[var(--border)] bg-[linear-gradient(135deg,rgba(16,185,129,.20),rgba(59,130,246,.10))] p-5 text-[var(--text)]">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-2">
-            <Badge className="w-fit rounded-md border-white/15 bg-white/10 text-white hover:bg-white/10">
+            <Badge className="w-fit rounded-md border border-[var(--border)] bg-[var(--surface2)] text-[var(--text)] hover:bg-[var(--surface2)]">
               {STATUS[report.status].label}
             </Badge>
             <div>
-              <h2 className="text-2xl font-bold tracking-normal sm:text-3xl">{report.student.user.fullName}</h2>
-              <p className="mt-1 text-sm text-slate-300">NIS {report.student.nis} · {report.class.name}</p>
+              <h2 className="text-2xl font-extrabold tracking-normal">{report.student.user.fullName}</h2>
+              <p className="mt-1 text-sm font-semibold text-[var(--muted)]">NIS {report.student.nis} · {report.class.name}</p>
             </div>
           </div>
-          <div className="rounded-lg border border-white/15 bg-white/10 px-4 py-3">
-            <p className="text-xs font-semibold uppercase text-slate-300">Periode</p>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Periode</p>
             <p className="mt-1 text-lg font-bold">{periodLabel(report)}</p>
           </div>
         </div>
       </div>
 
-      <div className="grid gap-0 border-b border-slate-200 sm:grid-cols-4">
+      <div className="grid gap-0 border-b border-[var(--border)] sm:grid-cols-4">
         <SummaryCell icon={GraduationCap} label="Rata-rata" value={average === null ? '-' : String(average)} />
         <SummaryCell icon={ClipboardCheck} label="Mapel" value={String(report.grades.length)} />
         <SummaryCell icon={UserRound} label="Hadir" value={String(attendance.hadir ?? 0)} />
@@ -331,50 +465,50 @@ function LearnerReportCard({ report, onDetail }: { report: ReportItem; onDetail:
       <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_280px]">
         <section className="space-y-3" aria-label="Ringkasan nilai rapor">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold uppercase text-slate-500">Ringkasan nilai</h3>
-            <span className="text-xs text-slate-500">Snapshot resmi</span>
+            <h3 className="text-sm font-bold uppercase text-[var(--muted)]">Ringkasan nilai</h3>
+            <span className="text-xs font-semibold text-[var(--muted)]">Snapshot resmi</span>
           </div>
           {visibleGrades.length > 0 ? (
             <div className="space-y-2">
               {visibleGrades.map((grade) => (
-                <div key={grade.subject} className="grid grid-cols-[minmax(0,1fr)_72px] items-center gap-3 rounded-lg border border-slate-200 px-4 py-3">
+                <div key={grade.subject} className="grid grid-cols-[minmax(0,1fr)_72px] items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-4 py-3">
                   <div className="min-w-0">
-                    <p className="truncate font-semibold text-slate-950">{grade.subject}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">KKTP {typeof grade.kktp === 'number' ? grade.kktp : '-'} · {grade.count} komponen</p>
+                    <p className="truncate font-bold text-[var(--text)]">{grade.subject}</p>
+                    <p className="mt-0.5 text-xs font-semibold text-[var(--muted)]">KKTP {typeof grade.kktp === 'number' ? grade.kktp : '-'} · {grade.count} komponen</p>
                   </div>
-                  <div className="text-right text-2xl font-bold text-slate-950">{grade.average}</div>
+                  <div className="text-right text-2xl font-extrabold text-[var(--text)]">{grade.average}</div>
                 </div>
               ))}
               {report.grades.length > visibleGrades.length && (
-                <p className="text-xs text-slate-500">{report.grades.length - visibleGrades.length} mata pelajaran lain tersedia di detail.</p>
+                <p className="text-xs font-semibold text-[var(--muted)]">{report.grades.length - visibleGrades.length} mata pelajaran lain tersedia di detail.</p>
               )}
             </div>
           ) : (
-            <p className="rounded-lg border border-dashed border-slate-200 px-4 py-5 text-sm text-slate-500">Belum ada nilai pada snapshot ini.</p>
+            <p className="rounded-xl border border-dashed border-[var(--border)] px-4 py-5 text-sm font-semibold text-[var(--muted)]">Belum ada nilai pada snapshot ini.</p>
           )}
         </section>
 
         <aside className="space-y-4" aria-label="Status dokumen rapor">
-          <div className="rounded-lg border border-slate-200 p-4">
-            <h3 className="text-sm font-bold text-slate-950">Status dokumen</h3>
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg)] p-4">
+            <h3 className="text-sm font-bold text-[var(--text)]">Status dokumen</h3>
             <div className="mt-4 space-y-3">
               {['Draft', 'Diperiksa', 'Diterbitkan', 'Didistribusikan'].map((label, index) => {
                 const done = step >= index + 1;
                 return (
                   <div key={label} className="flex items-center gap-3">
-                    <span className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold ${done ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-200 bg-slate-50 text-slate-400'}`}>
+                    <span className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold ${done ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted)]'}`}>
                       {done ? <Check className="h-4 w-4" aria-hidden="true" /> : index + 1}
                     </span>
-                    <span className={done ? 'font-medium text-slate-950' : 'text-slate-500'}>{label}</span>
+                    <span className={done ? 'font-bold text-[var(--text)]' : 'font-semibold text-[var(--muted)]'}>{label}</span>
                   </div>
                 );
               })}
             </div>
           </div>
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+          <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm font-semibold text-[var(--em)]">
             Dokumen ini memakai snapshot nilai, KKTP, kehadiran, dan catatan pada saat rapor diterbitkan.
           </div>
-          <Button className="w-full" onClick={() => onDetail(report)}>
+          <Button className="w-full rounded-xl bg-emerald-500 font-bold text-white hover:bg-emerald-600" onClick={() => onDetail(report)}>
             <Eye className="mr-2 h-4 w-4" aria-hidden="true" />
             Lihat rincian rapor
           </Button>
@@ -386,13 +520,13 @@ function LearnerReportCard({ report, onDetail }: { report: ReportItem; onDetail:
 
 function SummaryCell({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
-    <div className="flex items-center gap-3 border-b border-slate-200 p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
-      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+    <div className="flex items-center gap-3 border-b border-[var(--border)] p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--surface2)] text-[var(--em)]">
         <Icon className="h-4 w-4" aria-hidden="true" />
       </span>
       <span className="min-w-0">
-        <span className="block text-xs font-semibold uppercase text-slate-500">{label}</span>
-        <span className="block truncate text-lg font-bold text-slate-950">{value}</span>
+        <span className="block text-xs font-bold uppercase tracking-wider text-[var(--muted)]">{label}</span>
+        <span className="block truncate text-lg font-extrabold text-[var(--text)]">{value}</span>
       </span>
     </div>
   );
@@ -462,15 +596,17 @@ function OperationalReportRegistry({
   );
 }
 
-function ReportDetail({ report, pending, onClose, run }: {
-  report: ReportItem | null; pending: boolean; onClose: () => void;
+function ReportDetail({ report, pending, learnerShell, onClose, run }: {
+  report: ReportItem | null; pending: boolean; learnerShell?: 'student' | 'parent' | null; onClose: () => void;
   run: (action: () => Promise<{ success: boolean; error?: string }>, onSuccess?: () => void) => void;
 }) {
   const [notes, setNotes] = useState('');
   useEffect(() => { if (report) setNotes(report.notes ?? ''); }, [report]);
   const attendance = report?.attendance;
+  const shellClass = learnerShell ? (learnerShell === 'parent' ? 'ortu-app' : 'siswa-app') : '';
+  const dialogTone = learnerShell ? 'border-[var(--border)] bg-[var(--bg2)] text-[var(--text)]' : '';
   return <Dialog open={!!report} onOpenChange={(open: boolean) => !open && onClose()}>
-    <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+    <DialogContent className={`${shellClass} max-h-[92vh] overflow-y-auto sm:max-w-3xl ${dialogTone}`}>
       <DialogHeader><DialogTitle>Rapor {report?.student.user.fullName}</DialogTitle><DialogDescription>{report?.class.name} | {report?.academicYear} Semester {report?.semester}</DialogDescription></DialogHeader>
       {report && report.grades.length > 0 ? <div className="overflow-x-auto rounded border"><Table><TableHeader><TableRow><TableHead>Mata pelajaran</TableHead><TableHead className="text-right">Nilai akhir</TableHead><TableHead>KKTP snapshot</TableHead><TableHead>Komponen</TableHead></TableRow></TableHeader><TableBody>{report.grades.map((grade) => <TableRow key={grade.subject}><TableCell>{grade.subject}</TableCell><TableCell className="text-right font-semibold">{grade.average}</TableCell><TableCell className="text-xs">{typeof grade.kktp === 'number' ? `${grade.kktp} (${grade.kktpProvenance ?? 'snapshot'})` : 'Belum tersedia'}</TableCell><TableCell className="text-xs text-muted-foreground">{Object.entries(grade.byType).map(([type, value]) => `${type.toUpperCase()}: ${value}`).join(' | ')}</TableCell></TableRow>)}</TableBody></Table></div> : <p className="text-sm text-muted-foreground">Belum ada nilai pada snapshot ini.</p>}
       {attendance && <p className="text-sm">Kehadiran: <b>{attendance.hadir ?? 0}</b> hadir | {attendance.izin ?? 0} izin | {attendance.sakit ?? 0} sakit | {attendance.alpha ?? 0} alpa</p>}
