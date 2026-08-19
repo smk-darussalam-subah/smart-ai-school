@@ -399,6 +399,7 @@ export interface PushNotificationHistoryItem {
   status: string;
   sentAt: string | null;
   refType: string | null;
+  targetHref?: string | null;
   createdAt: string;
 }
 

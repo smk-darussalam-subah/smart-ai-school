@@ -18,6 +18,29 @@ export function learnerReportHref(studentId?: string): string {
   return withStudentId('/dashboard/rapor', studentId);
 }
 
+function safeDashboardHref(value: string | null | undefined): string | null {
+  const candidate = value?.trim();
+  if (!candidate || candidate.startsWith('//') || candidate.includes('\\')) return null;
+  try {
+    const parsed = new URL(candidate, 'https://diis.local');
+    if (parsed.origin !== 'https://diis.local') return null;
+    if (!parsed.pathname.startsWith('/dashboard/')) return null;
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return null;
+  }
+}
+
+export function learnerNotificationTargetHref(
+  notification: { refType?: string | null; targetHref?: string | null },
+  fallbackStudentId?: string,
+): string {
+  const targetHref = safeDashboardHref(notification.targetHref);
+  if (targetHref) return targetHref;
+  if (notification.refType === 'report-card') return learnerReportHref();
+  return learnerDashboardHref(fallbackStudentId);
+}
+
 export function kktpProvenanceLabel(value: KktpProvenance): string {
   if (value === 'module') return 'Ketentuan modul';
   if (value === 'config') return 'Konfigurasi kelas';
@@ -56,6 +79,12 @@ export function contrastRatio(foreground: string, background: string): number {
 export const RAPOR_LEARNER_COLORS = {
   ctaBackground: '#34d399',
   ctaForeground: '#020617',
+  studentActiveBackground: '#d1fae5',
+  studentActiveForeground: '#022c22',
+  parentActiveBackground: '#dbeafe',
+  parentActiveForeground: '#172554',
+  completedStepBackground: '#d1fae5',
+  completedStepForeground: '#022c22',
   darkNavBackground: '#0a0f1a',
   darkNavInactive: '#8896a8',
   darkParentNavInactive: '#7a8ba0',
