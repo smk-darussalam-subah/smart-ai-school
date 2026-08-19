@@ -17,7 +17,10 @@ export default async function RaporPage({ searchParams }: { searchParams: Search
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
   const authority = await resolveDashboardAuthority(session);
-  if (!authority.can('report.read') || authority.hasRole('INDUSTRI')) redirect('/dashboard');
+  const isLearnerReportViewer = authority.hasRole('SISWA', 'ORANG_TUA')
+    && !authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'KAPROG', 'INDUSTRI');
+  if (authority.hasRole('INDUSTRI')) redirect('/dashboard');
+  if (!isLearnerReportViewer && !authority.can('report.read')) redirect('/dashboard');
   const sp = await searchParams;
   const page = Math.max(1, Number(one(sp.page)) || 1);
   const classId = one(sp.classId);

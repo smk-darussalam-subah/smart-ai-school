@@ -244,6 +244,10 @@ describe('academic operational UI contracts', () => {
     expect(ortuWorkspace).toContain('router.push(`/dashboard/rapor?studentId=${encodeURIComponent(activeStudentId)}`)');
     expect(ortuWorkspace).toContain('onFetchNotifications={fetchMyNotifications}');
     expect(siswaWorkspace).toContain('onFetchNotifications={fetchMyNotifications}');
+    expect(reportPage).toContain('const isLearnerReportViewer = authority.hasRole(\'SISWA\', \'ORANG_TUA\')');
+    expect(reportPage).toContain("&& !authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'KAPROG', 'INDUSTRI')");
+    expect(reportPage).toContain("if (authority.hasRole('INDUSTRI')) redirect('/dashboard')");
+    expect(reportPage).toContain("if (!isLearnerReportViewer && !authority.can('report.read')) redirect('/dashboard')");
     expect(reportPage).toContain("const learnerShell = authority.hasRole('ORANG_TUA') ? 'parent' : authority.hasRole('SISWA') ? 'student' : null");
     expect(reportPage).toContain('learnerShell={learnerShell}');
     expect(reportHub).toContain("learnerShell?: 'student' | 'parent' | null");
