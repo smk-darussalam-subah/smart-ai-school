@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type RefObject } from 'react';
 import { Bell, Calendar, ExternalLink, Inbox, Loader2, Megaphone } from 'lucide-react';
 import LearnerNotificationDialog from '../LearnerNotificationDialog';
 import { learnerReportHref } from '../learner-navigation';
@@ -21,6 +21,7 @@ interface PengumumanModalProps {
   announcements: OrtuPengumuman[];
   onFetchNotifications?: () => Promise<NotificationEntry[] | null>;
   reportStudentId?: string;
+  returnFocusRef: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
 }
 
@@ -34,7 +35,7 @@ function formatDate(value: string | null): string {
   return parsed.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
 }
 
-export default function PengumumanModal({ announcements, onFetchNotifications, reportStudentId, onClose }: PengumumanModalProps) {
+export default function PengumumanModal({ announcements, onFetchNotifications, reportStudentId, returnFocusRef, onClose }: PengumumanModalProps) {
   const hasNotificationFeed = typeof onFetchNotifications === 'function';
   const [activeTab, setActiveTab] = useState<'notifications' | 'announcements'>(
     hasNotificationFeed ? 'notifications' : 'announcements',
@@ -74,6 +75,7 @@ export default function PengumumanModal({ announcements, onFetchNotifications, r
       shell="parent"
       title="Notifikasi"
       description={`${notifications.length} notifikasi · ${announcements.length} pengumuman`}
+      returnFocusRef={returnFocusRef}
       onClose={onClose}
     >
       <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-8">

@@ -31,6 +31,10 @@ export function initialChildIndex<T extends { studentId?: string }>(children: T[
   return index >= 0 ? index : 0;
 }
 
+export function restoreDialogTriggerFocus(target: { focus: () => void } | null | undefined): void {
+  target?.focus();
+}
+
 function relativeLuminance(hex: string): number {
   const value = hex.replace('#', '');
   if (!/^[0-9a-f]{6}$/i.test(value)) throw new Error('Warna harus menggunakan format #RRGGBB');
