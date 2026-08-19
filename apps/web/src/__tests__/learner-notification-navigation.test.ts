@@ -6,6 +6,7 @@ import {
   learnerDashboardHref,
   learnerNotificationCenterHref,
   learnerReportHref,
+  restoreDialogTriggerFocus,
 } from '@/app/dashboard/akademik/_components/learner-navigation';
 
 describe('learner notification and report navigation', () => {
@@ -42,5 +43,14 @@ describe('learner notification and report navigation', () => {
     expect(contrastRatio(RAPOR_LEARNER_COLORS.darkNavInactive, RAPOR_LEARNER_COLORS.darkNavBackground)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(RAPOR_LEARNER_COLORS.darkParentNavInactive, RAPOR_LEARNER_COLORS.darkNavBackground)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(RAPOR_LEARNER_COLORS.lightNavInactive, RAPOR_LEARNER_COLORS.lightNavBackground)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('restores focus to the notification trigger when the modal closes', () => {
+    const focus = jest.fn();
+
+    restoreDialogTriggerFocus({ focus });
+    restoreDialogTriggerFocus(null);
+
+    expect(focus).toHaveBeenCalledTimes(1);
   });
 });
