@@ -1,10 +1,25 @@
 'use client';
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
-import { Check, Eye, FileCheck2, LoaderCircle, RotateCcw, Search, Send, ShieldAlert } from 'lucide-react';
+import {
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  ClipboardCheck,
+  Eye,
+  FileCheck2,
+  GraduationCap,
+  LoaderCircle,
+  RotateCcw,
+  Search,
+  Send,
+  ShieldAlert,
+  type LucideIcon,
+  UserRound,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -79,8 +94,38 @@ const STATUS = {
   distributed: { label: 'Didistribusikan', variant: 'default' as const },
 };
 
+const STATUS_CLASS: Record<ReportItem['status'], string> = {
+  draft: 'border-slate-200 bg-slate-50 text-slate-700',
+  checked: 'border-sky-200 bg-sky-50 text-sky-800',
+  published: 'border-indigo-200 bg-indigo-50 text-indigo-800',
+  distributed: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+};
+
+const STATUS_STEP: Record<ReportItem['status'], number> = {
+  draft: 1,
+  checked: 2,
+  published: 3,
+  distributed: 4,
+};
+
+function formatDate(value?: string | null): string {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function averageOf(grades: SubjectSnapshot[]): number | null {
+  if (grades.length === 0) return null;
+  return Math.round((grades.reduce((sum, item) => sum + item.average, 0) / grades.length) * 10) / 10;
+}
+
+function periodLabel(report: ReportItem): string {
+  return `${report.academicYear} · Semester ${report.semester}`;
+}
+
 export default function RaporHub(props: Props) {
-  const { items, total, classes, query, canGenerate, canCheck, canPublish, canDistribute, canRecover, isOperational } = props;
+  const { items, total, classes, query, canGenerate, canCheck, canPublish, canDistribute, canRecover, isOperational, defaultAcademicYear, defaultSemester } = props;
   const { setParams, isPending } = useQueryState();
   const [search, setSearch] = useState(query.search);
   const [detail, setDetail] = useState<ReportItem | null>(null);
@@ -108,16 +153,44 @@ export default function RaporHub(props: Props) {
       else onSuccess?.();
     });
   };
+  const statusCounts = useMemo(() => {
+    return items.reduce<Record<ReportItem['status'], number>>((acc, item) => {
+      acc[item.status] += 1;
+      return acc;
+    }, { draft: 0, checked: 0, published: 0, distributed: 0 });
+  }, [items]);
+  const activePeriod = `${defaultAcademicYear} · Semester ${defaultSemester}`;
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Rapor</h1>
-          <p className="text-sm text-muted-foreground">Wali kelas menyiapkan draft, Waka memeriksa, KS menerbitkan, lalu TU mendistribusikan.</p>
+    <div className="space-y-6">
+      <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="space-y-4 p-5 sm:p-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary" className="rounded-md bg-emerald-50 text-emerald-800 hover:bg-emerald-50">Dokumen resmi sekolah</Badge>
+              <span className="text-xs font-medium text-slate-500">{activePeriod}</span>
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-3xl font-bold tracking-normal text-slate-950 sm:text-4xl">Rapor</h1>
+              <p className="max-w-2xl text-sm leading-6 text-slate-600">
+                {isOperational
+                  ? 'Kelola alur rapor dari draft wali kelas sampai distribusi ke siswa dan orang tua.'
+                  : 'Lihat rapor resmi yang sudah diterbitkan dan didistribusikan sekolah.'}
+              </p>
+            </div>
+            {canGenerate && (
+              <Button onClick={() => setGenerateOpen(true)} className="w-full sm:w-auto">
+                <FileCheck2 className="mr-2 h-4 w-4" aria-hidden="true" />
+                Siapkan draft kelas
+              </Button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-px bg-slate-200 lg:grid-cols-1">
+            <MetricTile icon={ClipboardCheck} label="Total rapor" value={String(total)} />
+            <MetricTile icon={CheckCircle2} label="Didistribusikan" value={String(statusCounts.distributed)} />
+          </div>
         </div>
-        {canGenerate && <Button onClick={() => setGenerateOpen(true)}><FileCheck2 className="mr-2 h-4 w-4" aria-hidden="true" />Siapkan draft kelas</Button>}
-      </div>
+      </section>
 
       {canRecover && (
         <div className="flex items-start gap-2 border-l-4 border-amber-500 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
@@ -146,30 +219,24 @@ export default function RaporHub(props: Props) {
       {info && <p className="text-sm text-emerald-700" role="status">{info}</p>}
       {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
 
-      {items.length === 0 ? (
-        <Card><CardContent className="py-12 text-center text-sm text-muted-foreground">{isOperational ? 'Belum ada rapor pada filter ini.' : 'Belum ada rapor yang dapat ditampilkan.'}</CardContent></Card>
+      {isOperational ? (
+        <OperationalReportRegistry
+          items={items}
+          query={query}
+          busy={busy}
+          isPending={isPending}
+          canCheck={canCheck}
+          canPublish={canPublish}
+          canDistribute={canDistribute}
+          canRecover={canRecover}
+          onDetail={setDetail}
+          onReturn={setReturning}
+          onConfirm={setConfirming}
+          onRecover={setRecovering}
+          run={run}
+        />
       ) : (
-        <div className={`overflow-x-auto rounded-md border transition-opacity ${isPending ? 'opacity-60' : ''}`} aria-busy={isPending}>
-          <Table>
-            <TableHeader><TableRow><TableHead>Siswa</TableHead><TableHead>Kelas</TableHead><TableHead>Periode</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
-            <TableBody>{items.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell><div className="font-medium">{item.student.user.fullName}</div><div className="text-xs text-muted-foreground">NIS {item.student.nis}</div></TableCell>
-                <TableCell>{item.class.name}</TableCell>
-                <TableCell className="whitespace-nowrap">{item.academicYear} / {item.semester}</TableCell>
-                <TableCell><Badge variant={STATUS[item.status].variant}>{STATUS[item.status].label}</Badge></TableCell>
-                <TableCell><div className="flex flex-wrap justify-end gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setDetail(item)}><Eye className="mr-2 h-4 w-4" aria-hidden="true" />Detail</Button>
-                  {canCheck && item.status === 'draft' && <Button size="sm" disabled={busy} onClick={() => run(() => transitionReport(item.id, 'check'))}><Check className="mr-2 h-4 w-4" aria-hidden="true" />Tandai diperiksa</Button>}
-                  {canCheck && item.status === 'checked' && <Button size="sm" variant="outline" disabled={busy} onClick={() => setReturning(item)}><RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" />Kembalikan</Button>}
-                   {canPublish && item.status === 'checked' && <Button size="sm" disabled={busy} onClick={() => setConfirming({ report: item, action: 'publish' })}><Send className="mr-2 h-4 w-4" aria-hidden="true" />Terbitkan</Button>}
-                   {canDistribute && item.status === 'published' && <Button size="sm" disabled={busy} onClick={() => setConfirming({ report: item, action: 'distribute' })}><Send className="mr-2 h-4 w-4" aria-hidden="true" />Distribusikan</Button>}
-                  {canRecover && item.status !== 'draft' && <Button size="sm" variant="outline" disabled={busy} onClick={() => setRecovering(item)}><ShieldAlert className="mr-2 h-4 w-4" aria-hidden="true" />Pemulihan</Button>}
-                </div></TableCell>
-              </TableRow>
-            ))}</TableBody>
-          </Table>
-        </div>
+        <LearnerReportBoard items={items} isPending={isPending} onDetail={setDetail} />
       )}
 
       <TablePagination page={query.page} limit={query.limit} total={total} onPage={(page) => setParams({ page })} />
@@ -179,6 +246,219 @@ export default function RaporHub(props: Props) {
       <RecoveryDialog report={recovering} pending={busy} error={error} onClose={() => setRecovering(null)} run={run} />
       {canGenerate && <GenerateDialog {...props} open={generateOpen} onOpenChange={setGenerateOpen} onResult={setInfo} />}
     </div>
+  );
+}
+
+function MetricTile({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3 bg-slate-50 p-5">
+      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-emerald-700 shadow-sm">
+        <Icon className="h-5 w-5" aria-hidden="true" />
+      </span>
+      <span>
+        <span className="block text-xs font-semibold uppercase text-slate-500">{label}</span>
+        <span className="block text-2xl font-bold text-slate-950">{value}</span>
+      </span>
+    </div>
+  );
+}
+
+function EmptyReports({ operational }: { operational: boolean }) {
+  return (
+    <Card className="border-dashed">
+      <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+          <FileCheck2 className="h-6 w-6" aria-hidden="true" />
+        </div>
+        <div>
+          <p className="font-semibold text-slate-900">Belum ada rapor</p>
+          <p className="mt-1 text-sm text-slate-500">
+            {operational ? 'Tidak ada rapor yang cocok dengan filter saat ini.' : 'Rapor resmi akan muncul setelah sekolah mendistribusikannya.'}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LearnerReportBoard({ items, isPending, onDetail }: {
+  items: ReportItem[];
+  isPending: boolean;
+  onDetail: (report: ReportItem) => void;
+}) {
+  if (items.length === 0) return <EmptyReports operational={false} />;
+  return (
+    <div className={`space-y-4 transition-opacity ${isPending ? 'opacity-60' : ''}`} aria-busy={isPending}>
+      {items.map((item) => (
+        <LearnerReportCard key={item.id} report={item} onDetail={onDetail} />
+      ))}
+    </div>
+  );
+}
+
+function LearnerReportCard({ report, onDetail }: { report: ReportItem; onDetail: (report: ReportItem) => void }) {
+  const average = averageOf(report.grades);
+  const attendance = report.attendance ?? {};
+  const step = STATUS_STEP[report.status];
+  const visibleGrades = report.grades.slice(0, 4);
+  return (
+    <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 bg-slate-950 p-5 text-white sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <Badge className="w-fit rounded-md border-white/15 bg-white/10 text-white hover:bg-white/10">
+              {STATUS[report.status].label}
+            </Badge>
+            <div>
+              <h2 className="text-2xl font-bold tracking-normal sm:text-3xl">{report.student.user.fullName}</h2>
+              <p className="mt-1 text-sm text-slate-300">NIS {report.student.nis} · {report.class.name}</p>
+            </div>
+          </div>
+          <div className="rounded-lg border border-white/15 bg-white/10 px-4 py-3">
+            <p className="text-xs font-semibold uppercase text-slate-300">Periode</p>
+            <p className="mt-1 text-lg font-bold">{periodLabel(report)}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-0 border-b border-slate-200 sm:grid-cols-4">
+        <SummaryCell icon={GraduationCap} label="Rata-rata" value={average === null ? '-' : String(average)} />
+        <SummaryCell icon={ClipboardCheck} label="Mapel" value={String(report.grades.length)} />
+        <SummaryCell icon={UserRound} label="Hadir" value={String(attendance.hadir ?? 0)} />
+        <SummaryCell icon={CalendarDays} label="Dibagikan" value={formatDate(report.distributedAt)} />
+      </div>
+
+      <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <section className="space-y-3" aria-label="Ringkasan nilai rapor">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-bold uppercase text-slate-500">Ringkasan nilai</h3>
+            <span className="text-xs text-slate-500">Snapshot resmi</span>
+          </div>
+          {visibleGrades.length > 0 ? (
+            <div className="space-y-2">
+              {visibleGrades.map((grade) => (
+                <div key={grade.subject} className="grid grid-cols-[minmax(0,1fr)_72px] items-center gap-3 rounded-lg border border-slate-200 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-slate-950">{grade.subject}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">KKTP {typeof grade.kktp === 'number' ? grade.kktp : '-'} · {grade.count} komponen</p>
+                  </div>
+                  <div className="text-right text-2xl font-bold text-slate-950">{grade.average}</div>
+                </div>
+              ))}
+              {report.grades.length > visibleGrades.length && (
+                <p className="text-xs text-slate-500">{report.grades.length - visibleGrades.length} mata pelajaran lain tersedia di detail.</p>
+              )}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-dashed border-slate-200 px-4 py-5 text-sm text-slate-500">Belum ada nilai pada snapshot ini.</p>
+          )}
+        </section>
+
+        <aside className="space-y-4" aria-label="Status dokumen rapor">
+          <div className="rounded-lg border border-slate-200 p-4">
+            <h3 className="text-sm font-bold text-slate-950">Status dokumen</h3>
+            <div className="mt-4 space-y-3">
+              {['Draft', 'Diperiksa', 'Diterbitkan', 'Didistribusikan'].map((label, index) => {
+                const done = step >= index + 1;
+                return (
+                  <div key={label} className="flex items-center gap-3">
+                    <span className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold ${done ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-200 bg-slate-50 text-slate-400'}`}>
+                      {done ? <Check className="h-4 w-4" aria-hidden="true" /> : index + 1}
+                    </span>
+                    <span className={done ? 'font-medium text-slate-950' : 'text-slate-500'}>{label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+            Dokumen ini memakai snapshot nilai, KKTP, kehadiran, dan catatan pada saat rapor diterbitkan.
+          </div>
+          <Button className="w-full" onClick={() => onDetail(report)}>
+            <Eye className="mr-2 h-4 w-4" aria-hidden="true" />
+            Lihat rincian rapor
+          </Button>
+        </aside>
+      </div>
+    </article>
+  );
+}
+
+function SummaryCell({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3 border-b border-slate-200 p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-xs font-semibold uppercase text-slate-500">{label}</span>
+        <span className="block truncate text-lg font-bold text-slate-950">{value}</span>
+      </span>
+    </div>
+  );
+}
+
+function OperationalReportRegistry({
+  items,
+  query,
+  busy,
+  isPending,
+  canCheck,
+  canPublish,
+  canDistribute,
+  canRecover,
+  onDetail,
+  onReturn,
+  onConfirm,
+  onRecover,
+  run,
+}: {
+  items: ReportItem[];
+  query: Props['query'];
+  busy: boolean;
+  isPending: boolean;
+  canCheck: boolean;
+  canPublish: boolean;
+  canDistribute: boolean;
+  canRecover: boolean;
+  onDetail: (report: ReportItem) => void;
+  onReturn: (report: ReportItem) => void;
+  onConfirm: (value: { report: ReportItem; action: 'publish' | 'distribute' }) => void;
+  onRecover: (report: ReportItem) => void;
+  run: (action: () => Promise<{ success: boolean; error?: string; data?: unknown }>, onSuccess?: () => void) => void;
+}) {
+  if (items.length === 0) return <EmptyReports operational />;
+  return (
+    <Card className={`overflow-hidden transition-opacity ${isPending ? 'opacity-60' : ''}`} aria-busy={isPending}>
+      <CardHeader className="border-b border-slate-200 pb-4">
+        <CardTitle className="text-lg">Registry rapor</CardTitle>
+        <p className="text-sm text-slate-500">Daftar kerja sesuai filter aktif. Aksi hanya muncul jika status dan kewenangan cocok.</p>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader><TableRow><TableHead>Siswa</TableHead><TableHead>Kelas</TableHead><TableHead>Periode</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
+            <TableBody>{items.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell><div className="font-medium">{item.student.user.fullName}</div><div className="text-xs text-muted-foreground">NIS {item.student.nis}</div></TableCell>
+                <TableCell>{item.class.name}</TableCell>
+                <TableCell className="whitespace-nowrap">{item.academicYear} / {item.semester}</TableCell>
+                <TableCell><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${STATUS_CLASS[item.status]}`}>{STATUS[item.status].label}</span></TableCell>
+                <TableCell><div className="flex flex-wrap justify-end gap-2">
+                  <Button size="sm" variant="outline" onClick={() => onDetail(item)}><Eye className="mr-2 h-4 w-4" aria-hidden="true" />Detail</Button>
+                  {canCheck && item.status === 'draft' && <Button size="sm" disabled={busy} onClick={() => run(() => transitionReport(item.id, 'check'))}><Check className="mr-2 h-4 w-4" aria-hidden="true" />Tandai diperiksa</Button>}
+                  {canCheck && item.status === 'checked' && <Button size="sm" variant="outline" disabled={busy} onClick={() => onReturn(item)}><RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" />Kembalikan</Button>}
+                  {canPublish && item.status === 'checked' && <Button size="sm" disabled={busy} onClick={() => onConfirm({ report: item, action: 'publish' })}><Send className="mr-2 h-4 w-4" aria-hidden="true" />Terbitkan</Button>}
+                  {canDistribute && item.status === 'published' && <Button size="sm" disabled={busy} onClick={() => onConfirm({ report: item, action: 'distribute' })}><Send className="mr-2 h-4 w-4" aria-hidden="true" />Distribusikan</Button>}
+                  {canRecover && item.status !== 'draft' && <Button size="sm" variant="outline" disabled={busy} onClick={() => onRecover(item)}><ShieldAlert className="mr-2 h-4 w-4" aria-hidden="true" />Pemulihan</Button>}
+                </div></TableCell>
+              </TableRow>
+            ))}</TableBody>
+          </Table>
+        </div>
+        <div className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">Halaman {query.page}, maksimal {query.limit} rapor per halaman.</div>
+      </CardContent>
+    </Card>
   );
 }
 
