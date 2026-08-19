@@ -1,8 +1,9 @@
 'use client';
 
-import { useRef, type ReactNode } from 'react';
+import { useRef, type ReactNode, type RefObject } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Bell, X } from 'lucide-react';
+import { restoreDialogTriggerFocus } from './learner-navigation';
 
 interface Props {
   shell: 'student' | 'parent';
@@ -10,9 +11,10 @@ interface Props {
   description: string;
   children: ReactNode;
   onClose: () => void;
+  returnFocusRef: RefObject<HTMLButtonElement | null>;
 }
 
-export default function LearnerNotificationDialog({ shell, title, description, children, onClose }: Props) {
+export default function LearnerNotificationDialog({ shell, title, description, children, onClose, returnFocusRef }: Props) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const appClass = shell === 'parent' ? 'ortu-app' : 'siswa-app';
   const accentClass = shell === 'parent' ? 'text-[var(--pri)]' : 'text-emerald-400';
@@ -22,10 +24,15 @@ export default function LearnerNotificationDialog({ shell, title, description, c
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className={`${appClass} fixed inset-0 z-50 bg-black/70 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0`} />
         <DialogPrimitive.Content
+          aria-modal="true"
           className={`${appClass} fixed bottom-0 left-1/2 z-50 flex max-h-[88dvh] w-full max-w-[560px] -translate-x-1/2 flex-col overflow-hidden rounded-t-[20px] border border-[var(--border)] bg-[var(--bg2)] text-[var(--text)] shadow-2xl outline-none data-[state=open]:animate-[slideUp_.3s_ease]`}
           onOpenAutoFocus={(event: Event) => {
             event.preventDefault();
             closeRef.current?.focus();
+          }}
+          onCloseAutoFocus={(event: Event) => {
+            event.preventDefault();
+            restoreDialogTriggerFocus(returnFocusRef.current);
           }}
         >
           <header className="flex items-center justify-between gap-4 border-b border-[var(--border)] p-4 pl-5">

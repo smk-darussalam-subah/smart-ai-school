@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
@@ -146,6 +146,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
   const [profileOpen, setProfileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [modal, setModal] = useState<ModalState>(openNotifications ? { type: 'pengumuman' } : { type: null });
+  const notificationTriggerRef = useRef<HTMLButtonElement>(null);
   const [badgeCelebration, setBadgeCelebration] = useState<BadgeCelebrationData>({ show: false });
   const [toast, setToast] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
@@ -391,6 +392,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
               {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
             <button
+              ref={notificationTriggerRef}
               onClick={() => setModal({ type: 'pengumuman' })}
               className="relative flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]"
               aria-label="Notifikasi dan pengumuman"
@@ -473,6 +475,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             ? normalizeAnnouncements(announcements as { id: string; title: string; createdAt: string }[])
             : []}
           onFetchNotifications={fetchMyNotifications}
+          returnFocusRef={notificationTriggerRef}
           onClose={closeNotificationCenter}
         />
       )}
