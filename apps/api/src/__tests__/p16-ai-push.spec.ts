@@ -24,6 +24,7 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
 const SISWA: AuthUser = { keycloakId: 'kc-siswa', username: 'siswa1', roles: ['SISWA'] } as AuthUser;
+const ORANG_TUA: AuthUser = { keycloakId: 'kc-ortu', username: 'ortu1', roles: ['ORANG_TUA'] } as AuthUser;
 const KEGIATAN_PATCH = JSON.stringify({
   kegiatan: [{
     pertemuan: 'Pertemuan 1',
@@ -185,9 +186,24 @@ describe('PushService', () => {
   const pushSubDelete = jest.fn();
   const pushSubDeleteMany = jest.fn();
   const notifLogFindMany = jest.fn();
+  const notifLogFindFirst = jest.fn();
+  const reportCardFindMany = jest.fn();
+  const reportCardFindFirst = jest.fn();
 
   beforeEach(async () => {
-    [userFindUnique, pushSubFindUnique, pushSubCreate, pushSubUpdate, pushSubFindMany, pushSubDelete, pushSubDeleteMany, notifLogFindMany]
+    [
+      userFindUnique,
+      pushSubFindUnique,
+      pushSubCreate,
+      pushSubUpdate,
+      pushSubFindMany,
+      pushSubDelete,
+      pushSubDeleteMany,
+      notifLogFindMany,
+      notifLogFindFirst,
+      reportCardFindMany,
+      reportCardFindFirst,
+    ]
       .forEach((m) => m.mockReset());
 
     userFindUnique.mockResolvedValue({ id: 'user-1', phone: '628123', email: 'test@test.com' });
@@ -196,6 +212,9 @@ describe('PushService', () => {
     pushSubCreate.mockImplementation((a: { data: Record<string, unknown> }) =>
       Promise.resolve({ id: 'ps-1', ...a.data }));
     notifLogFindMany.mockResolvedValue([]);
+    notifLogFindFirst.mockResolvedValue(null);
+    reportCardFindMany.mockResolvedValue([]);
+    reportCardFindFirst.mockResolvedValue(null);
 
     const prisma = {
       user: { findUnique: userFindUnique },
@@ -207,7 +226,8 @@ describe('PushService', () => {
         delete: pushSubDelete,
         deleteMany: pushSubDeleteMany,
       },
-      notificationLog: { findMany: notifLogFindMany },
+      notificationLog: { findMany: notifLogFindMany, findFirst: notifLogFindFirst },
+      reportCard: { findMany: reportCardFindMany, findFirst: reportCardFindFirst },
     };
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [PushService, { provide: PrismaService, useValue: prisma }],
@@ -244,12 +264,89 @@ describe('PushService', () => {
 
   it('findMyNotifications → returns only push logs bound to current user id', async () => {
     notifLogFindMany.mockResolvedValue([
-      { id: 'nl-1', channel: 'push', body: 'Rapor tersedia', status: 'sent', createdAt: new Date() },
+      {
+        id: 'nl-1',
+        channel: 'push',
+        subject: null,
+        body: 'Rapor tersedia',
+        status: 'sent',
+        sentAt: null,
+        refType: null,
+        refId: null,
+        createdAt: new Date(),
+      },
     ]);
     const res = await service.findMyNotifications(SISWA);
     expect(res).toHaveLength(1);
     expect(notifLogFindMany.mock.calls[0][0].where).toEqual({ recipient: 'user-1', channel: 'push' });
     expect(notifLogFindMany.mock.calls[0][0].select.recipient).toBeUndefined();
+    expect(notifLogFindMany.mock.calls[0][0].select.refId).toBe(true);
+    expect(res[0]).toMatchObject({ targetHref: '/dashboard/akademik' });
+    expect(JSON.stringify(res[0])).not.toContain('refId');
+  });
+
+  it('findMyNotifications → resolves report targets to the owning child instead of active UI child', async () => {
+    const reportA = '11111111-1111-4111-8111-111111111111';
+    const reportB = '22222222-2222-4222-8222-222222222222';
+    const reportForeign = '33333333-3333-4333-8333-333333333333';
+    notifLogFindMany.mockResolvedValue([
+      {
+        id: 'nl-a',
+        channel: 'push',
+        subject: 'Rapor A',
+        body: 'Rapor tersedia',
+        status: 'sent',
+        sentAt: null,
+        refType: 'report-card',
+        refId: reportA,
+        createdAt: new Date(),
+      },
+      {
+        id: 'nl-b',
+        channel: 'push',
+        subject: 'Rapor B',
+        body: 'Rapor tersedia',
+        status: 'sent',
+        sentAt: null,
+        refType: 'report-card',
+        refId: reportB,
+        createdAt: new Date(),
+      },
+      {
+        id: 'nl-foreign',
+        channel: 'push',
+        subject: 'Rapor asing',
+        body: 'Rapor tersedia',
+        status: 'sent',
+        sentAt: null,
+        refType: 'report-card',
+        refId: reportForeign,
+        createdAt: new Date(),
+      },
+    ]);
+    reportCardFindMany.mockResolvedValue([
+      { id: reportA, studentId: 'child-a' },
+      { id: reportB, studentId: 'child-b' },
+    ]);
+
+    const res = await service.findMyNotifications(ORANG_TUA);
+
+    expect(reportCardFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: { in: [reportA, reportB, reportForeign] },
+        status: 'distributed',
+        student: expect.objectContaining({
+          deletedAt: null,
+          OR: [{ parentId: 'user-1' }],
+        }),
+      }),
+    }));
+    expect(res.map((item) => item.targetHref)).toEqual([
+      '/dashboard/rapor?studentId=child-a',
+      '/dashboard/rapor?studentId=child-b',
+      '/dashboard/rapor',
+    ]);
+    expect(JSON.stringify(res)).not.toContain(reportA);
   });
 
   it('dispatchNotificationLog → no subscription succeeds as in-app-only availability', async () => {
@@ -267,6 +364,11 @@ describe('PushService', () => {
     const previousPrivate = process.env.VAPID_PRIVATE_KEY;
     process.env.VAPID_PUBLIC_KEY = 'public';
     process.env.VAPID_PRIVATE_KEY = 'private';
+    notifLogFindFirst.mockResolvedValue({
+      refType: 'report-card',
+      refId: '11111111-1111-4111-8111-111111111111',
+    });
+    reportCardFindFirst.mockResolvedValue({ studentId: 'student-1' });
     pushSubFindMany.mockResolvedValue([
       { id: 'ps-unsafe', endpoint: 'https://127.0.0.1/internal', keys: { p256dh: 'px', auth: 'ax' } },
       { id: 'ps-1', endpoint: 'https://fcm.googleapis.com/fcm/send/ok', keys: { p256dh: 'p', auth: 'a' } },
@@ -290,7 +392,7 @@ describe('PushService', () => {
         .toBe('https://fcm.googleapis.com/fcm/send/ok');
       expect(payload).toEqual(expect.objectContaining({
         title: 'Rapor semester tersedia',
-        url: '/dashboard/rapor',
+        url: '/dashboard/rapor?studentId=student-1',
       }));
       expect(JSON.stringify(payload)).not.toContain('NIS');
       expect(pushSubDelete).toHaveBeenCalledWith({ where: { id: 'ps-unsafe' } });

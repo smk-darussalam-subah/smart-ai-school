@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState, type RefObject } from 'react';
 import { Bell, Calendar, ExternalLink, Inbox, Loader2, Megaphone } from 'lucide-react';
 import LearnerNotificationDialog from '../LearnerNotificationDialog';
-import { learnerReportHref } from '../learner-navigation';
+import {
+  learnerNotificationTargetHref,
+  RAPOR_LEARNER_COLORS,
+} from '../learner-navigation';
 import type { OrtuPengumuman } from './ortu-types';
 
 interface NotificationEntry {
@@ -14,20 +17,26 @@ interface NotificationEntry {
   status: string;
   sentAt: string | null;
   refType: string | null;
+  targetHref?: string | null;
   createdAt: string;
 }
 
 interface PengumumanModalProps {
   announcements: OrtuPengumuman[];
   onFetchNotifications?: () => Promise<NotificationEntry[] | null>;
-  reportStudentId?: string;
+  fallbackStudentId?: string;
   returnFocusRef: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
 }
 
-export function notificationTargetHref(notification: Pick<NotificationEntry, 'refType'>, studentId?: string): string {
-  return notification.refType === 'report-card' ? learnerReportHref(studentId) : '/dashboard/akademik';
+export function notificationTargetHref(notification: Pick<NotificationEntry, 'refType' | 'targetHref'>, fallbackStudentId?: string): string {
+  return learnerNotificationTargetHref(notification, fallbackStudentId);
 }
+
+const PARENT_ACTIVE_CONTROL_STYLE = {
+  backgroundColor: RAPOR_LEARNER_COLORS.parentActiveBackground,
+  color: RAPOR_LEARNER_COLORS.parentActiveForeground,
+};
 
 function formatDate(value: string | null): string {
   const parsed = new Date(value ?? '');
@@ -35,7 +44,7 @@ function formatDate(value: string | null): string {
   return parsed.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
 }
 
-export default function PengumumanModal({ announcements, onFetchNotifications, reportStudentId, returnFocusRef, onClose }: PengumumanModalProps) {
+export default function PengumumanModal({ announcements, onFetchNotifications, fallbackStudentId, returnFocusRef, onClose }: PengumumanModalProps) {
   const hasNotificationFeed = typeof onFetchNotifications === 'function';
   const [activeTab, setActiveTab] = useState<'notifications' | 'announcements'>(
     hasNotificationFeed ? 'notifications' : 'announcements',
@@ -87,26 +96,28 @@ export default function PengumumanModal({ announcements, onFetchNotifications, r
               onClick={() => setActiveTab('notifications')}
               className={`flex min-h-11 items-center justify-center gap-2 rounded-[10px] px-3 py-2 text-[11px] font-extrabold transition-all ${
                 activeTab === 'notifications'
-                  ? 'bg-[var(--pri)] text-white'
+                  ? 'border border-blue-300 shadow-sm'
                   : 'text-[var(--muted)] hover:bg-[var(--surface2)]'
               }`}
+              style={activeTab === 'notifications' ? PARENT_ACTIVE_CONTROL_STYLE : undefined}
             >
               <Inbox className="h-3.5 w-3.5" />
               Notifikasi
-              <span className="rounded-full bg-black/10 px-1.5 text-[10px]">{notifications.length}</span>
+              <span className="rounded-full bg-white/60 px-1.5 text-[10px]">{notifications.length}</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('announcements')}
               className={`flex min-h-11 items-center justify-center gap-2 rounded-[10px] px-3 py-2 text-[11px] font-extrabold transition-all ${
                 activeTab === 'announcements'
-                  ? 'bg-[var(--pri)] text-white'
+                  ? 'border border-blue-300 shadow-sm'
                   : 'text-[var(--muted)] hover:bg-[var(--surface2)]'
               }`}
+              style={activeTab === 'announcements' ? PARENT_ACTIVE_CONTROL_STYLE : undefined}
             >
               <Megaphone className="h-3.5 w-3.5" />
               Pengumuman
-              <span className="rounded-full bg-black/10 px-1.5 text-[10px]">{announcements.length}</span>
+              <span className="rounded-full bg-white/60 px-1.5 text-[10px]">{announcements.length}</span>
             </button>
           </div>
         )}
@@ -154,7 +165,7 @@ export default function PengumumanModal({ announcements, onFetchNotifications, r
                   </div>
                   <button
                     type="button"
-                    onClick={() => { window.location.href = notificationTargetHref(item, reportStudentId); }}
+                    onClick={() => { window.location.href = notificationTargetHref(item, fallbackStudentId); }}
                     className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface2)] text-[var(--text)] transition-colors hover:border-[var(--pri)] hover:text-[var(--pri)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
                     aria-label="Buka notifikasi"
                   >

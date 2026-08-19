@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type RefObject } from 'react';
 import { Bell, Calendar, ExternalLink, Inbox, Loader2, Megaphone, Tag } from 'lucide-react';
 import LearnerNotificationDialog from '../LearnerNotificationDialog';
+import { learnerNotificationTargetHref, RAPOR_LEARNER_COLORS } from '../learner-navigation';
 import type { SiswaPengumuman } from './siswa-types';
 
 interface NotificationEntry {
@@ -13,6 +14,7 @@ interface NotificationEntry {
   status: string;
   sentAt: string | null;
   refType: string | null;
+  targetHref?: string | null;
   createdAt: string;
 }
 
@@ -23,9 +25,14 @@ interface Props {
   onClose: () => void;
 }
 
-export function notificationTargetHref(notification: Pick<NotificationEntry, 'refType'>): string {
-  return notification.refType === 'report-card' ? '/dashboard/rapor' : '/dashboard/akademik';
+export function notificationTargetHref(notification: Pick<NotificationEntry, 'refType' | 'targetHref'>): string {
+  return learnerNotificationTargetHref(notification);
 }
+
+const STUDENT_ACTIVE_CONTROL_STYLE = {
+  backgroundColor: RAPOR_LEARNER_COLORS.studentActiveBackground,
+  color: RAPOR_LEARNER_COLORS.studentActiveForeground,
+};
 
 function formatDate(value: string | null): string {
   const parsed = new Date(value ?? '');
@@ -95,26 +102,28 @@ export default function PengumumanModal({ announcements, onFetchNotifications, r
                 onClick={() => setActiveTab('notifications')}
                 className={`flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-[11px] font-extrabold transition-all ${
                   activeTab === 'notifications'
-                    ? 'bg-emerald-500 text-white'
+                    ? 'border border-emerald-300 shadow-sm'
                     : 'text-[var(--muted)] hover:bg-[var(--surface2)]'
                 }`}
+                style={activeTab === 'notifications' ? STUDENT_ACTIVE_CONTROL_STYLE : undefined}
               >
                 <Inbox className="h-3.5 w-3.5" />
                 Notifikasi
-                <span className="rounded-full bg-black/10 px-1.5 text-[10px]">{notifications.length}</span>
+                <span className="rounded-full bg-white/60 px-1.5 text-[10px]">{notifications.length}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('announcements')}
                 className={`flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-[11px] font-extrabold transition-all ${
                   activeTab === 'announcements'
-                    ? 'bg-emerald-500 text-white'
+                    ? 'border border-emerald-300 shadow-sm'
                     : 'text-[var(--muted)] hover:bg-[var(--surface2)]'
                 }`}
+                style={activeTab === 'announcements' ? STUDENT_ACTIVE_CONTROL_STYLE : undefined}
               >
                 <Megaphone className="h-3.5 w-3.5" />
                 Pengumuman
-                <span className="rounded-full bg-black/10 px-1.5 text-[10px]">{displayAnnouncements.length}</span>
+                <span className="rounded-full bg-white/60 px-1.5 text-[10px]">{displayAnnouncements.length}</span>
               </button>
             </div>
           </div>
@@ -135,9 +144,10 @@ export default function PengumumanModal({ announcements, onFetchNotifications, r
                   onClick={() => setFilter(key)}
                   className={`flex min-h-11 items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
                     filter === key
-                      ? 'bg-emerald-500 text-white'
+                      ? 'border border-emerald-300 shadow-sm'
                       : 'border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--border2)]'
                   }`}
+                  style={filter === key ? STUDENT_ACTIVE_CONTROL_STYLE : undefined}
                 >
                   <Tag className="h-3 w-3" />
                   {label}

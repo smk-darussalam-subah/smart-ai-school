@@ -256,7 +256,9 @@ describe('academic operational UI contracts', () => {
     expect(reportHub).toContain("document.documentElement.setAttribute('data-theme'");
     expect(reportHub).toContain('learnerNotificationCenterHref');
     expect(ortuWorkspace).toContain('initialStudentId');
-    expect(ortuWorkspace).toContain('reportStudentId={activeStudentId}');
+    expect(ortuWorkspace).toContain('fallbackStudentId={activeStudentId}');
+    expect(reportHub).toContain("const dashboardHref = learnerDashboardHref(shell === 'parent' ? studentId : undefined)");
+    expect(reportHub).toContain('href={dashboardHref}');
     expect(siswaWorkspace).toContain('openNotifications');
     expect(nilaiOrtu).toContain('Rapor resmi');
     expect(nilaiSiswa).toContain("router.push('/dashboard/rapor')");
@@ -295,10 +297,11 @@ describe('academic operational UI contracts', () => {
     expect(toggle).not.toContain('recipient: string');
     expect(siswaWorkspace).toContain('onFetchNotifications={fetchMyNotifications}');
     expect(ortuWorkspace).toContain('onFetchNotifications={fetchMyNotifications}');
-    expect(siswaAnnouncements).toContain("notification.refType === 'report-card' ? '/dashboard/rapor'");
-    expect(ortuAnnouncements).toContain("notification.refType === 'report-card' ? learnerReportHref(studentId)");
+    expect(actions).toContain('targetHref?: string | null');
+    expect(siswaAnnouncements).toContain('learnerNotificationTargetHref(notification)');
+    expect(ortuAnnouncements).toContain('learnerNotificationTargetHref(notification, fallbackStudentId)');
     expect(siswaAnnouncements).toContain('window.location.href = notificationTargetHref(item)');
-    expect(ortuAnnouncements).toContain('window.location.href = notificationTargetHref(item, reportStudentId)');
+    expect(ortuAnnouncements).toContain('window.location.href = notificationTargetHref(item, fallbackStudentId)');
     expect(siswaAnnouncements).toContain('<LearnerNotificationDialog');
     expect(ortuAnnouncements).toContain('<LearnerNotificationDialog');
     expect(siswaWorkspace).toContain('aria-label="Notifikasi dan pengumuman"');
