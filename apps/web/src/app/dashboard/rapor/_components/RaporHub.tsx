@@ -31,6 +31,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { TablePagination } from '@/components/ui/table-pagination';
 import { Textarea } from '@/components/ui/textarea';
 import { useQueryState } from '@/hooks/use-query-state';
+import {
+  kktpProvenanceLabel,
+  learnerNotificationCenterHref,
+} from '../../akademik/_components/learner-navigation';
 import { generateReports, recoverReport, transitionReport, updateReportNotes } from '../actions';
 
 interface SubjectSnapshot {
@@ -179,6 +183,7 @@ export default function RaporHub(props: Props) {
         activePeriod={activePeriod}
         total={total}
         distributed={statusCounts.distributed}
+        studentId={query.studentId}
       >
         {info && <p className="text-sm font-semibold text-[var(--em)]" role="status">{info}</p>}
         {error && <p className="text-sm font-semibold text-rose-500" role="alert">{error}</p>}
@@ -286,16 +291,19 @@ function LearnerAppShell({
   activePeriod,
   total,
   distributed,
+  studentId,
   children,
 }: {
   shell: 'student' | 'parent';
   activePeriod: string;
   total: number;
   distributed: number;
+  studentId?: string;
   children: ReactNode;
 }) {
   const appClass = shell === 'parent' ? 'ortu-app' : 'siswa-app';
   const brandLabel = shell === 'parent' ? 'Orang Tua' : 'Smart AI School';
+  const notificationHref = learnerNotificationCenterHref(shell === 'parent' ? studentId : undefined);
   return (
     <div className={`${appClass} relative min-h-screen bg-[var(--bg)] text-[var(--text)] transition-colors duration-300`}>
       <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--topbar-bg)] backdrop-blur-xl">
@@ -311,7 +319,7 @@ function LearnerAppShell({
           </div>
           <a
             href="/dashboard/akademik"
-            className="flex h-9 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-bold text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
+            className="flex min-h-11 items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-bold text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]"
             aria-label="Kembali ke dashboard akademik"
           >
             <Home className="h-4 w-4" aria-hidden="true" />
@@ -350,18 +358,18 @@ function LearnerAppShell({
 
       <nav className="fixed bottom-0 left-1/2 z-30 w-full max-w-[560px] -translate-x-1/2 border-t border-[var(--border)] bg-[var(--nav-bg)] backdrop-blur-2xl">
         <div className="grid grid-cols-3 px-3 py-2">
-          <a href="/dashboard/akademik" className="flex flex-col items-center gap-1 rounded-lg px-2 py-1.5 text-[var(--dim)] transition-colors hover:text-[var(--text)]">
+          <a href="/dashboard/akademik" className="flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1 text-[var(--muted)] transition-colors hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]">
             <Home className="h-5 w-5" aria-hidden="true" />
-            <span className="text-[9px] font-bold">Beranda</span>
+            <span className="text-[11px] font-bold">Beranda</span>
           </a>
-          <a href="/dashboard/akademik" className="flex flex-col items-center gap-1 rounded-lg px-2 py-1.5 text-[var(--dim)] transition-colors hover:text-[var(--text)]">
+          <a href={notificationHref} className="flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1 text-[var(--muted)] transition-colors hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]">
             <Bell className="h-5 w-5" aria-hidden="true" />
-            <span className="text-[9px] font-bold">Notifikasi</span>
+            <span className="text-[11px] font-bold">Notifikasi</span>
           </a>
-          <span className="relative flex flex-col items-center gap-1 rounded-lg px-2 py-1.5 text-[var(--em)]" aria-current="page">
+          <span className="relative flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1 text-[var(--em)]" aria-current="page">
             <span className="absolute left-[30%] right-[30%] top-0 h-[2.5px] rounded-full bg-[var(--em)]" />
             <FileText className="h-5 w-5 drop-shadow-[0_0_6px_rgba(16,185,129,.4)]" aria-hidden="true" />
-            <span className="text-[9px] font-bold">Rapor</span>
+            <span className="text-[11px] font-bold">Rapor</span>
           </span>
         </div>
       </nav>
@@ -508,7 +516,7 @@ function LearnerReportCard({ report, onDetail }: { report: ReportItem; onDetail:
           <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm font-semibold text-[var(--em)]">
             Dokumen ini memakai snapshot nilai, KKTP, kehadiran, dan catatan pada saat rapor diterbitkan.
           </div>
-          <Button className="w-full rounded-xl bg-emerald-500 font-bold text-white hover:bg-emerald-600" onClick={() => onDetail(report)}>
+          <Button className="min-h-11 w-full rounded-xl bg-emerald-400 font-bold text-slate-950 hover:bg-emerald-300 focus-visible:ring-emerald-300" onClick={() => onDetail(report)}>
             <Eye className="mr-2 h-4 w-4" aria-hidden="true" />
             Lihat rincian rapor
           </Button>
@@ -606,9 +614,9 @@ function ReportDetail({ report, pending, learnerShell, onClose, run }: {
   const shellClass = learnerShell ? (learnerShell === 'parent' ? 'ortu-app' : 'siswa-app') : '';
   const dialogTone = learnerShell ? 'border-[var(--border)] bg-[var(--bg2)] text-[var(--text)]' : '';
   return <Dialog open={!!report} onOpenChange={(open: boolean) => !open && onClose()}>
-    <DialogContent className={`${shellClass} max-h-[92vh] overflow-y-auto sm:max-w-3xl ${dialogTone}`}>
+    <DialogContent className={`${shellClass} max-h-[92vh] overflow-y-auto sm:max-w-3xl ${dialogTone} [&>button]:flex [&>button]:h-11 [&>button]:w-11 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-xl`}>
       <DialogHeader><DialogTitle>Rapor {report?.student.user.fullName}</DialogTitle><DialogDescription>{report?.class.name} | {report?.academicYear} Semester {report?.semester}</DialogDescription></DialogHeader>
-      {report && report.grades.length > 0 ? <div className="overflow-x-auto rounded border"><Table><TableHeader><TableRow><TableHead>Mata pelajaran</TableHead><TableHead className="text-right">Nilai akhir</TableHead><TableHead>KKTP snapshot</TableHead><TableHead>Komponen</TableHead></TableRow></TableHeader><TableBody>{report.grades.map((grade) => <TableRow key={grade.subject}><TableCell>{grade.subject}</TableCell><TableCell className="text-right font-semibold">{grade.average}</TableCell><TableCell className="text-xs">{typeof grade.kktp === 'number' ? `${grade.kktp} (${grade.kktpProvenance ?? 'snapshot'})` : 'Belum tersedia'}</TableCell><TableCell className="text-xs text-muted-foreground">{Object.entries(grade.byType).map(([type, value]) => `${type.toUpperCase()}: ${value}`).join(' | ')}</TableCell></TableRow>)}</TableBody></Table></div> : <p className="text-sm text-muted-foreground">Belum ada nilai pada snapshot ini.</p>}
+      {report && report.grades.length > 0 ? <div className="overflow-x-auto rounded border"><Table><TableHeader><TableRow><TableHead>Mata pelajaran</TableHead><TableHead className="text-right">Nilai akhir</TableHead><TableHead>KKTP snapshot</TableHead><TableHead>Komponen</TableHead></TableRow></TableHeader><TableBody>{report.grades.map((grade) => <TableRow key={grade.subject}><TableCell>{grade.subject}</TableCell><TableCell className="text-right font-semibold">{grade.average}</TableCell><TableCell className="text-xs">{typeof grade.kktp === 'number' ? `${grade.kktp} · ${kktpProvenanceLabel(grade.kktpProvenance)}` : 'Belum tersedia'}</TableCell><TableCell className="text-xs text-muted-foreground">{Object.entries(grade.byType).map(([type, value]) => `${type.toUpperCase()}: ${value}`).join(' | ')}</TableCell></TableRow>)}</TableBody></Table></div> : <p className="text-sm text-muted-foreground">Belum ada nilai pada snapshot ini.</p>}
       {attendance && <p className="text-sm">Kehadiran: <b>{attendance.hadir ?? 0}</b> hadir | {attendance.izin ?? 0} izin | {attendance.sakit ?? 0} sakit | {attendance.alpha ?? 0} alpa</p>}
       {report?.canManageDraft && report.status === 'draft' ? <div className="space-y-2"><Label htmlFor="report-notes">Catatan wali kelas</Label><Textarea id="report-notes" rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} /><Button size="sm" disabled={pending} onClick={() => run(() => updateReportNotes(report.id, notes.trim() || null, report.updatedAt), onClose)}>Simpan catatan</Button></div> : report?.notes ? <p className="rounded border bg-muted/30 p-3 text-sm"><b>Catatan wali kelas:</b> {report.notes}</p> : null}
       {report?.returnReason && <p className="rounded border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><b>Alasan pengembalian terakhir:</b> {report.returnReason}</p>}
