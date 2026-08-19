@@ -45,6 +45,8 @@ const PUBLIC_EXACT: readonly string[] = [
   '/',
   '/spmb',
   '/privacy',
+  '/sw.js',
+  '/manifest.json',
   '/jurusan/tkro',
   '/jurusan/tjkt',
   '/jurusan/akl',
