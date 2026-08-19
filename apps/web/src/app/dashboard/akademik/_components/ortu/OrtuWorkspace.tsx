@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
@@ -66,6 +66,7 @@ export default function OrtuWorkspace({
   const router = useRouter();
   const [activeScreen, setActiveScreen] = useState<OrtuScreen>('beranda');
   const [modal, setModal] = useState<ModalState>(openNotifications ? { type: 'pengumuman' } : { type: null });
+  const notificationTriggerRef = useRef<HTMLButtonElement>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [accountOpen, setAccountOpen] = useState(false);
@@ -250,6 +251,7 @@ export default function OrtuWorkspace({
 
             {/* Bell / Pengumuman */}
             <button
+              ref={notificationTriggerRef}
               onClick={() => setModal({ type: 'pengumuman' })}
               className="relative flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
               aria-label="Notifikasi dan pengumuman"
@@ -334,6 +336,7 @@ export default function OrtuWorkspace({
           announcements={(announcements ?? []) as unknown as OrtuPengumuman[]}
           onFetchNotifications={fetchMyNotifications}
           reportStudentId={activeStudentId}
+          returnFocusRef={notificationTriggerRef}
           onClose={closeNotificationCenter}
         />
       )}
