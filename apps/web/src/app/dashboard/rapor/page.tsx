@@ -30,6 +30,7 @@ export default async function RaporPage({ searchParams }: { searchParams: Search
   if (status) query.set('status', status);
   if (search) query.set('search', search);
   const isOperational = authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'KAPROG');
+  const learnerShell = authority.hasRole('ORANG_TUA') ? 'parent' : authority.hasRole('SISWA') ? 'student' : null;
   const token = session.accessToken ?? '';
   const [reports, classResponse, semester] = await Promise.all([
     apiFetch<ListResponse>(`/report-cards?${query.toString()}`, token),
@@ -49,6 +50,7 @@ export default async function RaporPage({ searchParams }: { searchParams: Search
     canDistribute={authority.can('report.distribute') && authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')}
     canRecover={authority.can('report.recover') && authority.hasRole('SUPER_ADMIN')}
     isOperational={isOperational}
+    learnerShell={learnerShell}
     defaultAcademicYear={semester.academicYear.code}
     defaultSemester={semester.number}
   />;
