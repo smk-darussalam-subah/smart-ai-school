@@ -9,7 +9,14 @@ function source(relativePath: string): string {
 type WorkerEvent = {
   data?: { json: () => unknown };
   notification?: { data?: { url?: unknown }; close: () => void };
+  request?: {
+    method: string;
+    url: string;
+    mode?: string;
+    destination?: string;
+  };
   waitUntil: (promise: Promise<unknown>) => void;
+  respondWith?: (promise: Promise<unknown>) => void;
 };
 type WorkerHandler = (event: WorkerEvent) => void;
 
@@ -43,8 +50,20 @@ function loadServiceWorkerHarness() {
       delete: jest.fn().mockResolvedValue(true),
       match: jest.fn().mockResolvedValue(undefined),
     },
-    fetch: jest.fn(),
-    Response: class Response {},
+    fetch: jest.fn().mockResolvedValue({
+      status: 200,
+      clone() {
+        return this;
+      },
+    }),
+    Response: class Response {
+      body: unknown;
+      init: unknown;
+      constructor(body?: unknown, init?: unknown) {
+        this.body = body;
+        this.init = init;
+      }
+    },
     URL,
     Promise,
   };
@@ -84,6 +103,24 @@ function loadServiceWorkerHarness() {
         notification: { data: { url }, close: jest.fn() },
       });
       return openWindow.mock.calls.at(-1)?.[0];
+    },
+    async fetchHandled(request: WorkerEvent['request']): Promise<boolean> {
+      const waits: Promise<unknown>[] = [];
+      let handled = false;
+      let response: Promise<unknown> | undefined;
+      first('fetch')({
+        request,
+        waitUntil: (promise) => {
+          waits.push(Promise.resolve(promise));
+        },
+        respondWith: (promise) => {
+          handled = true;
+          response = Promise.resolve(promise);
+        },
+      });
+      await Promise.all(waits);
+      if (response) await response;
+      return handled;
     },
   };
 }
@@ -244,6 +281,33 @@ describe('academic operational UI contracts', () => {
     expect(sw).toContain('new URL(candidate, self.location.origin)');
     expect(sw).toContain("self.addEventListener('notificationclick'");
     expect(sw).toContain('clients.openWindow(targetUrl)');
+  });
+
+  it('does not cache authenticated pages or navigation documents in the service worker', async () => {
+    const sw = loadServiceWorkerHarness();
+
+    await expect(sw.fetchHandled({
+      method: 'GET',
+      url: 'https://staging.smkdarussalamsubah.sch.id/dashboard/rapor',
+      mode: 'navigate',
+      destination: 'document',
+    })).resolves.toBe(false);
+    await expect(sw.fetchHandled({
+      method: 'GET',
+      url: 'https://staging.smkdarussalamsubah.sch.id/consent',
+      mode: 'navigate',
+      destination: 'document',
+    })).resolves.toBe(false);
+    await expect(sw.fetchHandled({
+      method: 'GET',
+      url: 'https://staging.smkdarussalamsubah.sch.id/api/v1/report-cards',
+      destination: '',
+    })).resolves.toBe(false);
+    await expect(sw.fetchHandled({
+      method: 'GET',
+      url: 'https://staging.smkdarussalamsubah.sch.id/manifest.json',
+      destination: 'manifest',
+    })).resolves.toBe(true);
   });
 
   it('sanitizes service-worker notification URLs behaviorally', async () => {

@@ -3,11 +3,31 @@
 // Basic offline caching for LMS modules and static assets.
 // =============================================================================
 
-const CACHE_NAME = 'diis-v1';
+const CACHE_NAME = 'diis-v2-static';
 const STATIC_ASSETS = [
-  '/',
   '/manifest.json',
 ];
+
+function shouldHandleFetch(request) {
+  if (request.method !== 'GET') return false;
+  let url;
+  try {
+    url = new URL(request.url);
+  } catch {
+    return false;
+  }
+  if (url.origin !== self.location.origin) return false;
+  if (request.mode === 'navigate' || request.destination === 'document') return false;
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/dashboard') ||
+    url.pathname.startsWith('/consent') ||
+    url.pathname.startsWith('/login')
+  ) {
+    return false;
+  }
+  return true;
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -30,11 +50,7 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Only handle GET requests
-  if (event.request.method !== 'GET') return;
-
-  // Skip API requests (always fetch from network)
-  if (event.request.url.includes('/api/')) return;
+  if (!shouldHandleFetch(event.request)) return;
 
   // Cache-first strategy for static assets
   event.respondWith(
@@ -49,13 +65,7 @@ self.addEventListener('fetch', (event) => {
           });
         }
         return response;
-      }).catch(() => {
-        // Offline fallback
-        if (event.request.destination === 'document') {
-          return caches.match('/');
-        }
-        return new Response('Offline', { status: 503, statusText: 'Offline' });
-      });
+      }).catch(() => new Response('Offline', { status: 503, statusText: 'Offline' }));
     })
   );
 });
