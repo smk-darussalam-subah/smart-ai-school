@@ -464,6 +464,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
           announcements={announcements?.length
             ? normalizeAnnouncements(announcements as { id: string; title: string; createdAt: string }[])
             : []}
+          onFetchNotifications={fetchMyNotifications}
           onClose={() => setModal({ type: null })}
         />
       )}
