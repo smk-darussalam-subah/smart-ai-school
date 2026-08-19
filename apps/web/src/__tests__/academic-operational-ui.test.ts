@@ -238,10 +238,18 @@ describe('academic operational UI contracts', () => {
     const nilaiOrtu = source('app/dashboard/akademik/_components/ortu/NilaiOrtu.tsx');
     const nilaiSiswa = source('app/dashboard/akademik/_components/siswa/NilaiSiswa.tsx');
     const siswaWorkspace = source('app/dashboard/akademik/_components/siswa/SiswaWorkspace.tsx');
+    const reportPage = source('app/dashboard/rapor/page.tsx');
+    const reportHub = source('app/dashboard/rapor/_components/RaporHub.tsx');
 
     expect(ortuWorkspace).toContain('router.push(`/dashboard/rapor?studentId=${encodeURIComponent(activeStudentId)}`)');
     expect(ortuWorkspace).toContain('onFetchNotifications={fetchMyNotifications}');
     expect(siswaWorkspace).toContain('onFetchNotifications={fetchMyNotifications}');
+    expect(reportPage).toContain("const learnerShell = authority.hasRole('ORANG_TUA') ? 'parent' : authority.hasRole('SISWA') ? 'student' : null");
+    expect(reportPage).toContain('learnerShell={learnerShell}');
+    expect(reportHub).toContain("learnerShell?: 'student' | 'parent' | null");
+    expect(reportHub).toContain('<LearnerAppShell');
+    expect(reportHub).toContain("shell === 'parent' ? 'ortu-app' : 'siswa-app'");
+    expect(reportHub).toContain("document.documentElement.setAttribute('data-theme'");
     expect(nilaiOrtu).toContain('Rapor resmi');
     expect(nilaiSiswa).toContain("router.push('/dashboard/rapor')");
     expect(nilaiSiswa).toContain('Rapor resmi');
