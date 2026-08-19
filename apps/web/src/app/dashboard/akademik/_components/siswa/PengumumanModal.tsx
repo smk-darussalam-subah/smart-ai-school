@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Bell, Calendar, ExternalLink, Inbox, Loader2, Megaphone, Tag } from 'lucide-react';
+import LearnerNotificationDialog from '../LearnerNotificationDialog';
 import type { SiswaPengumuman } from './siswa-types';
 
 interface NotificationEntry {
@@ -77,29 +78,12 @@ export default function PengumumanModal({ announcements, onFetchNotifications, o
   }, [hasNotificationFeed, onFetchNotifications]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="w-full max-w-[560px] animate-[slideUp_.3s_ease] rounded-t-[20px] border border-[var(--border)] bg-[var(--bg2)]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="border-b border-[var(--border)] p-5 pb-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-extrabold">Notifikasi</h3>
-              <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
-                {notifications.length} notifikasi · {displayAnnouncements.length} pengumuman · {pentingCount} penting
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="cursor-pointer text-[var(--muted)] transition-colors hover:text-[var(--text)]"
-              aria-label="Tutup"
-            >
-              x
-            </button>
-          </div>
-        </div>
+    <LearnerNotificationDialog
+      shell="student"
+      title="Notifikasi"
+      description={`${notifications.length} notifikasi · ${displayAnnouncements.length} pengumuman · ${pentingCount} penting`}
+      onClose={onClose}
+    >
 
         {hasNotificationFeed && (
           <div className="border-b border-[var(--border)] px-5 py-3">
@@ -107,7 +91,7 @@ export default function PengumumanModal({ announcements, onFetchNotifications, o
               <button
                 type="button"
                 onClick={() => setActiveTab('notifications')}
-                className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[11px] font-extrabold transition-all ${
+                className={`flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-[11px] font-extrabold transition-all ${
                   activeTab === 'notifications'
                     ? 'bg-emerald-500 text-white'
                     : 'text-[var(--muted)] hover:bg-[var(--surface2)]'
@@ -120,7 +104,7 @@ export default function PengumumanModal({ announcements, onFetchNotifications, o
               <button
                 type="button"
                 onClick={() => setActiveTab('announcements')}
-                className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[11px] font-extrabold transition-all ${
+                className={`flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-[11px] font-extrabold transition-all ${
                   activeTab === 'announcements'
                     ? 'bg-emerald-500 text-white'
                     : 'text-[var(--muted)] hover:bg-[var(--surface2)]'
@@ -147,7 +131,7 @@ export default function PengumumanModal({ announcements, onFetchNotifications, o
                   key={key}
                   type="button"
                   onClick={() => setFilter(key)}
-                  className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
+                  className={`flex min-h-11 items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
                     filter === key
                       ? 'bg-emerald-500 text-white'
                       : 'border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--border2)]'
@@ -161,7 +145,7 @@ export default function PengumumanModal({ announcements, onFetchNotifications, o
           </div>
         )}
 
-        <div className="max-h-[60vh] space-y-3 overflow-y-auto p-5">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
           {activeTab === 'notifications' && hasNotificationFeed ? (
             notificationLoading ? (
               <div className="flex items-center justify-center gap-2 py-8 text-sm font-semibold text-[var(--muted)]">
@@ -198,7 +182,7 @@ export default function PengumumanModal({ announcements, onFetchNotifications, o
                     <button
                       type="button"
                       onClick={() => { window.location.href = notificationTargetHref(item); }}
-                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface2)] text-[var(--text)] transition-colors hover:border-emerald-500 hover:text-emerald-500"
+                      className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface2)] text-[var(--text)] transition-colors hover:border-emerald-500 hover:text-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
                       aria-label="Buka notifikasi"
                     >
                       <ExternalLink className="h-4 w-4" />
@@ -260,12 +244,11 @@ export default function PengumumanModal({ announcements, onFetchNotifications, o
           <button
             type="button"
             onClick={onClose}
-            className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm font-bold text-[var(--text)] transition-all hover:border-[var(--border2)] hover:bg-[var(--surface2)]"
+            className="min-h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm font-bold text-[var(--text)] transition-all hover:border-[var(--border2)] hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
           >
             Tutup
           </button>
         </div>
-      </div>
-    </div>
+    </LearnerNotificationDialog>
   );
 }

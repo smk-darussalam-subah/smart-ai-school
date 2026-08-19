@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import {
   Home, CalendarClock, BookOpen, TrendingUp, ClipboardList,
   UserCheck, Award, Sun, Moon, Bell, ChevronLeft,
@@ -76,6 +77,7 @@ interface SiswaWorkspaceProps {
   realCp?: unknown[] | null;
   realAttStats?: { hadir: number; izin: number; sakit: number; alpha: number; total: number; pct: number } | null;
   viewAs?: string | null;
+  openNotifications?: boolean;
 }
 
 function initials(name?: string | null): string {
@@ -136,13 +138,14 @@ function toSiswaKalenderEvent(event: SchoolCalendarEvent): SiswaKalenderEvent {
   };
 }
 
-export default function SiswaWorkspace({ grades, attendance, schedule, announcements, realBadges, realXp, realLeaderboard, realAssignments, realModules, realCp, realAttStats, viewAs }: SiswaWorkspaceProps) {
+export default function SiswaWorkspace({ grades, attendance, schedule, announcements, realBadges, realXp, realLeaderboard, realAssignments, realModules, realCp, realAttStats, viewAs, openNotifications = false }: SiswaWorkspaceProps) {
   const { data: session } = useSession();
+  const router = useRouter();
   const [activeScreen, setActiveScreen] = useState<SiswaScreen>('beranda');
   const [activeModulId, setActiveModulId] = useState<number | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [modal, setModal] = useState<ModalState>({ type: null });
+  const [modal, setModal] = useState<ModalState>(openNotifications ? { type: 'pengumuman' } : { type: null });
   const [badgeCelebration, setBadgeCelebration] = useState<BadgeCelebrationData>({ show: false });
   const [toast, setToast] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
@@ -225,6 +228,11 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
     setActiveModulId(null);
     window.scrollTo(0, 0);
   }, []);
+
+  const closeNotificationCenter = useCallback(() => {
+    setModal({ type: null });
+    if (openNotifications) router.replace('/dashboard/akademik', { scroll: false });
+  }, [openNotifications, router]);
 
   // Swipe gesture for Profile CV
   useEffect(() => {
@@ -377,22 +385,22 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
           <div className="flex items-center gap-2">
             <button
               onClick={toggleTheme}
-              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
+              className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]"
               aria-label="Toggle theme"
             >
               {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
             <button
               onClick={() => setModal({ type: 'pengumuman' })}
-              className="relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
-              aria-label="Pengumuman"
+              className="relative flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]"
+              aria-label="Notifikasi dan pengumuman"
             >
               <Bell className="h-4 w-4" />
               <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-rose-500 ring-2 ring-[var(--bg)]" />
             </button>
             <button
               onClick={() => setAccountOpen(true)}
-              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
+              className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]"
               aria-label="Akun"
             >
               <UserIcon className="h-4 w-4" />
@@ -431,14 +439,14 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
                 key={key}
                 onClick={() => go(key)}
                 className={clsx(
-                  'flex flex-col items-center gap-1 rounded-lg px-2 py-1.5 transition-all duration-200',
+                  'flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]',
                   isActive ? 'text-emerald-500' : 'text-[var(--dim)]'
                 )}
                 aria-label={label}
                 aria-current={isActive ? 'page' : undefined}
               >
                 <Icon className={clsx('h-5 w-5', isActive && 'drop-shadow-[0_0_6px_rgba(16,185,129,.4)]')} />
-                <span className="text-[9px] font-bold">{label}</span>
+                <span className="text-[10px] font-bold">{label}</span>
               </button>
             );
           })}
@@ -465,7 +473,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             ? normalizeAnnouncements(announcements as { id: string; title: string; createdAt: string }[])
             : []}
           onFetchNotifications={fetchMyNotifications}
-          onClose={() => setModal({ type: null })}
+          onClose={closeNotificationCenter}
         />
       )}
 

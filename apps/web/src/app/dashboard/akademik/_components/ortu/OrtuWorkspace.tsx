@@ -27,6 +27,7 @@ import type { AttendanceCellStatus, Pembayaran } from '@/lib/academic';
 import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem } from '../guru-types';
 import { filterByStudentId, type OrtuAssignmentItem, type SppApiItem } from './ortu-mappers';
+import { initialChildIndex, learnerDashboardHref, learnerReportHref } from '../learner-navigation';
 
 // ── Types (exported for child components) ───────────────────────────────────
 
@@ -52,22 +53,24 @@ interface OrtuWorkspaceProps {
   viewAs?: string | null;
   semesterLabel?: string;
   childRanks?: Record<string, number | null>;
+  openNotifications?: boolean;
+  initialStudentId?: string;
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function OrtuWorkspace({
-  children: realChildren, grades, attendance, schedule, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, childRanks
+  children: realChildren, grades, attendance, schedule, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, childRanks, openNotifications = false, initialStudentId
 }: OrtuWorkspaceProps) {
   const { data: session } = useSession();
   const router = useRouter();
   const [activeScreen, setActiveScreen] = useState<OrtuScreen>('beranda');
-  const [modal, setModal] = useState<ModalState>({ type: null });
+  const [modal, setModal] = useState<ModalState>(openNotifications ? { type: 'pengumuman' } : { type: null });
   const [toast, setToast] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [accountOpen, setAccountOpen] = useState(false);
   // T1-02 (audit v2): active child state untuk multi-child selector (C1 fix).
-  const [activeChildIndex, setActiveChildIndex] = useState(0);
+  const [activeChildIndex, setActiveChildIndex] = useState(() => initialChildIndex(realChildren ?? [], initialStudentId));
   const [childSelectorOpen, setChildSelectorOpen] = useState(false);
 
   // Theme management — scoped to .ortu-app CSS variables (§6.4)
@@ -113,8 +116,12 @@ export default function OrtuWorkspace({
       showToast('Pilih anak terlebih dahulu.');
       return;
     }
-    router.push(`/dashboard/rapor?studentId=${encodeURIComponent(activeStudentId)}`);
+    router.push(learnerReportHref(activeStudentId));
   }, [activeStudentId, router, showToast]);
+  const closeNotificationCenter = useCallback(() => {
+    setModal({ type: null });
+    if (openNotifications) router.replace(learnerDashboardHref(activeStudentId), { scroll: false });
+  }, [activeStudentId, openNotifications, router]);
   const selectChild = (i: number) => {
     setActiveChildIndex(i);
     setChildSelectorOpen(false);
@@ -209,7 +216,7 @@ export default function OrtuWorkspace({
             <div className="relative">
               <button
                 onClick={() => childList.length > 0 && setChildSelectorOpen((o) => !o)}
-                className="flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 transition-colors hover:border-[var(--pri)]"
+                className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 transition-colors hover:border-[var(--pri)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
                 aria-label="Pilih anak"
                 aria-expanded={childSelectorOpen}
                 disabled={childList.length === 0}
@@ -226,7 +233,7 @@ export default function OrtuWorkspace({
                     <button
                       key={c.id}
                       onClick={() => selectChild(i)}
-                      className={`flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12px] font-bold transition-colors hover:bg-[var(--surface2)] ${i === activeChildIndex ? 'text-[var(--pri)]' : 'text-[var(--text)]'}`}
+                      className={`flex min-h-11 w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12px] font-bold transition-colors hover:bg-[var(--surface2)] ${i === activeChildIndex ? 'text-[var(--pri)]' : 'text-[var(--text)]'}`}
                     >
                       <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--grad)] text-[9px] font-extrabold text-white">
                         {initials(c.name)}
@@ -244,8 +251,8 @@ export default function OrtuWorkspace({
             {/* Bell / Pengumuman */}
             <button
               onClick={() => setModal({ type: 'pengumuman' })}
-              className="relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
-              aria-label="Pengumuman"
+              className="relative flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
+              aria-label="Notifikasi dan pengumuman"
             >
               <Bell className="h-[18px] w-[18px]" />
               <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[var(--rose)] ring-1.5 ring-[var(--topbar-bg)]" />
@@ -254,7 +261,7 @@ export default function OrtuWorkspace({
             {/* Theme toggle */}
             <button
               onClick={toggleTheme}
-              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
+              className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
               aria-label="Toggle theme"
             >
               {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
@@ -263,7 +270,7 @@ export default function OrtuWorkspace({
             {/* Account */}
             <button
               onClick={() => setAccountOpen(true)}
-              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
+              className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
               aria-label="Akun"
             >
               <UserIcon className="h-[18px] w-[18px]" />
@@ -290,14 +297,14 @@ export default function OrtuWorkspace({
                 key={key}
                 onClick={() => go(key)}
                 className={clsx(
-                  'relative flex flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 transition-all duration-200',
+                  'relative flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]',
                   isActive ? 'text-[var(--pril)]' : 'text-[var(--dim)]',
                 )}
                 aria-label={label}
                 aria-current={isActive ? 'page' : undefined}
               >
                 <Icon className={clsx('h-5 w-5', isActive && 'drop-shadow-[0_0_6px_rgba(59,130,246,.4)]')} />
-                <span className="text-[9.5px] font-bold">{label}</span>
+                <span className="text-[10px] font-bold">{label}</span>
                 {/* Payment badge — dynamic unpaid count */}
                 {key === 'pembayaran' && unpaidCount > 0 && (
                   <span className="absolute right-[calc(50%-18px)] top-0.5 flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-[var(--rose)] px-1 text-[8.5px] font-extrabold text-white">
@@ -326,7 +333,8 @@ export default function OrtuWorkspace({
         <PengumumanModal
           announcements={(announcements ?? []) as unknown as OrtuPengumuman[]}
           onFetchNotifications={fetchMyNotifications}
-          onClose={() => setModal({ type: null })}
+          reportStudentId={activeStudentId}
+          onClose={closeNotificationCenter}
         />
       )}
 
