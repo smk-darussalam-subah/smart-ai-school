@@ -241,7 +241,7 @@ describe('academic operational UI contracts', () => {
     const reportPage = source('app/dashboard/rapor/page.tsx');
     const reportHub = source('app/dashboard/rapor/_components/RaporHub.tsx');
 
-    expect(ortuWorkspace).toContain('router.push(`/dashboard/rapor?studentId=${encodeURIComponent(activeStudentId)}`)');
+    expect(ortuWorkspace).toContain('router.push(learnerReportHref(activeStudentId))');
     expect(ortuWorkspace).toContain('onFetchNotifications={fetchMyNotifications}');
     expect(siswaWorkspace).toContain('onFetchNotifications={fetchMyNotifications}');
     expect(reportPage).toContain('const isLearnerReportViewer = authority.hasRole(\'SISWA\', \'ORANG_TUA\')');
@@ -254,6 +254,10 @@ describe('academic operational UI contracts', () => {
     expect(reportHub).toContain('<LearnerAppShell');
     expect(reportHub).toContain("shell === 'parent' ? 'ortu-app' : 'siswa-app'");
     expect(reportHub).toContain("document.documentElement.setAttribute('data-theme'");
+    expect(reportHub).toContain('learnerNotificationCenterHref');
+    expect(ortuWorkspace).toContain('initialStudentId');
+    expect(ortuWorkspace).toContain('reportStudentId={activeStudentId}');
+    expect(siswaWorkspace).toContain('openNotifications');
     expect(nilaiOrtu).toContain('Rapor resmi');
     expect(nilaiSiswa).toContain("router.push('/dashboard/rapor')");
     expect(nilaiSiswa).toContain('Rapor resmi');
@@ -292,11 +296,13 @@ describe('academic operational UI contracts', () => {
     expect(siswaWorkspace).toContain('onFetchNotifications={fetchMyNotifications}');
     expect(ortuWorkspace).toContain('onFetchNotifications={fetchMyNotifications}');
     expect(siswaAnnouncements).toContain("notification.refType === 'report-card' ? '/dashboard/rapor'");
-    expect(ortuAnnouncements).toContain("notification.refType === 'report-card' ? '/dashboard/rapor'");
+    expect(ortuAnnouncements).toContain("notification.refType === 'report-card' ? learnerReportHref(studentId)");
     expect(siswaAnnouncements).toContain('window.location.href = notificationTargetHref(item)');
-    expect(ortuAnnouncements).toContain('window.location.href = notificationTargetHref(item)');
-    expect(siswaAnnouncements).toContain('Notifikasi');
-    expect(ortuAnnouncements).toContain('Notifikasi');
+    expect(ortuAnnouncements).toContain('window.location.href = notificationTargetHref(item, reportStudentId)');
+    expect(siswaAnnouncements).toContain('<LearnerNotificationDialog');
+    expect(ortuAnnouncements).toContain('<LearnerNotificationDialog');
+    expect(siswaWorkspace).toContain('aria-label="Notifikasi dan pengumuman"');
+    expect(ortuWorkspace).toContain('aria-label="Notifikasi dan pengumuman"');
     expect(sw).toContain("self.addEventListener('push'");
     expect(sw).toContain('showNotification');
     expect(sw).toContain('function safeSameOriginPath');
