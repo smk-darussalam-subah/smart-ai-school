@@ -404,6 +404,9 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4.1-mini}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@smkdarussalamsubah.sch.id}
       APPOINTMENT_AUTOMATION_TOKEN: ${APPOINTMENT_AUTOMATION_TOKEN}
       CLASS_ACTIVITY_MEDIA_ENDPOINT: ${CLASS_ACTIVITY_MEDIA_ENDPOINT:-http://minio:9000}
       CLASS_ACTIVITY_MEDIA_ACCESS_KEY: ${CLASS_ACTIVITY_MEDIA_ACCESS_KEY}
@@ -437,6 +440,8 @@ services:
     build:
       context: ../..
       dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
     container_name: smk-web
     restart: unless-stopped
     environment:
@@ -445,6 +450,7 @@ services:
       NEXT_PUBLIC_KEYCLOAK_URL: https://auth.smkdarussalamsubah.sch.id
       NEXT_PUBLIC_KEYCLOAK_REALM: diis
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: diis-web
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
       # Next-Auth server-side (N22) — JANGAN NEXT_PUBLIC_ untuk secret
       NEXTAUTH_URL: https://smkdarussalamsubah.sch.id
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
