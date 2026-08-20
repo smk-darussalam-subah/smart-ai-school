@@ -18,6 +18,7 @@ import { ReportCardsController } from '../report-cards/report-cards.controller';
 import { ClassActivitiesService } from '../class-activities/class-activities.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { NotificationService } from '../notification/notification.service';
 import { PrivateObjectStorageService } from '../storage/private-object-storage.service';
 import { EVENTS } from '../events/events.types';
 import { TransitionSchema, UpdateNotesSchema } from '../report-cards/dto/report-card.dto';
@@ -54,28 +55,39 @@ describe('ReportCardsService', () => {
   const teacherFindUnique = jest.fn();
   const teachingAssignmentFindMany = jest.fn();
   const studentFindFirst = jest.fn();
+  const studentFindUnique = jest.fn();
   const userFindUnique = jest.fn();
+  const kktpConfigFindUnique = jest.fn();
+  const notificationLogCreateMany = jest.fn();
+  const notificationLogFindMany = jest.fn();
   const academicYearFindFirst = jest.fn();
   const academicYearFindMany = jest.fn();
   const appointmentFindMany = jest.fn();
   const classFindFirst = jest.fn();
   const serviceHasPermission = jest.fn();
   const serviceGetActivePositionCodes = jest.fn();
+  const enqueueCommittedPendingLogs = jest.fn();
 
   beforeEach(async () => {
     [emit, rcFindMany, rcFindFirst, rcFindUnique, rcCount, rcCreate, rcUpdate, rcUpdateMany, statusEventCreate,
       executeRaw, queryRaw, classFindUnique,
       classFindMany, gradeFindMany, gradeFindFirst, attGroupBy, teacherFindFirst, teacherFindUnique,
-      teachingAssignmentFindMany, studentFindFirst, userFindUnique, academicYearFindMany,
-      appointmentFindMany, classFindFirst]
+      teachingAssignmentFindMany, studentFindFirst, studentFindUnique, userFindUnique, kktpConfigFindUnique,
+      notificationLogCreateMany, notificationLogFindMany, academicYearFindMany, appointmentFindMany, classFindFirst]
       .forEach((m) => m.mockReset());
-    [serviceHasPermission, serviceGetActivePositionCodes].forEach((m) => m.mockReset());
+    [serviceHasPermission, serviceGetActivePositionCodes, enqueueCommittedPendingLogs].forEach((m) => m.mockReset());
     rcUpdate.mockImplementation((a: { data: Record<string, unknown> }) =>
       Promise.resolve({ id: 'rc-1', ...a.data }));
     rcUpdateMany.mockResolvedValue({ count: 1 });
     classFindMany.mockResolvedValue([]);
     gradeFindFirst.mockResolvedValue(null);
     academicYearFindFirst.mockResolvedValue({ code: '2025/2026' });
+    academicYearFindMany.mockResolvedValue([{ id: 'ay-active', code: '2026/2027', semesters: [{ number: 1 }] }]);
+    kktpConfigFindUnique.mockResolvedValue(null);
+    notificationLogCreateMany.mockResolvedValue({ count: 3 });
+    notificationLogFindMany.mockResolvedValue([{ id: 'nl-1' }, { id: 'nl-2' }, { id: 'nl-3' }]);
+    studentFindUnique.mockResolvedValue({ userId: 'user-s1', parentId: 'parent-s1', parent: { phone: '08123456789' } });
+    enqueueCommittedPendingLogs.mockResolvedValue({ queuedCount: 3 });
     serviceHasPermission.mockResolvedValue(true);
     serviceGetActivePositionCodes.mockResolvedValue(new Set(['WAKA_KURIKULUM']));
 
@@ -89,8 +101,10 @@ describe('ReportCardsService', () => {
       attendance: { groupBy: attGroupBy },
       teacher: { findFirst: teacherFindFirst, findUnique: teacherFindUnique },
       teachingAssignment: { findMany: teachingAssignmentFindMany },
-      student: { findFirst: studentFindFirst },
+      student: { findFirst: studentFindFirst, findUnique: studentFindUnique },
       user: { findUnique: userFindUnique },
+      kktpConfig: { findUnique: kktpConfigFindUnique },
+      notificationLog: { createMany: notificationLogCreateMany, findMany: notificationLogFindMany },
       academicYear: { findFirst: academicYearFindFirst, findMany: academicYearFindMany },
       appointment: { findMany: appointmentFindMany },
       reportCardStatusEvent: { create: statusEventCreate },
@@ -111,6 +125,7 @@ describe('ReportCardsService', () => {
             getActivePositionCodes: serviceGetActivePositionCodes,
           },
         },
+        { provide: NotificationService, useValue: { enqueueCommittedPendingLogs } },
       ],
     }).compile();
     service = module.get(ReportCardsService);
@@ -118,7 +133,7 @@ describe('ReportCardsService', () => {
 
   it('generate: snapshot per mapel (count/average/byType) + idempoten skip existing', async () => {
     classFindUnique.mockResolvedValue({
-      id: 'c1', name: 'XI TKJ 1', academicYear: '2026/2027', teacher: null,
+      id: 'c1', name: 'XI TKJ 1', academicYear: '2026/2027', isActive: true, teacher: null,
       students: [
         { id: 's1', nis: '1001', user: { fullName: 'Siswa Satu' } },
         { id: 's2', nis: '1002', user: { fullName: 'Siswa Dua' } },
@@ -144,6 +159,7 @@ describe('ReportCardsService', () => {
       .find((g) => g.subject === 'Matematika')!;
     expect(mtk.average).toBe(85);
     expect(mtk.byType).toEqual({ uh: 80, uts: 90 });
+    expect(mtk).toEqual(expect.objectContaining({ kktp: 75, kktpProvenance: 'system_default' }));
     expect(data.attendance).toEqual({ hadir: 90, izin: 0, sakit: 2, alpha: 0 });
     expect(data).toEqual(expect.objectContaining({
       studentNameSnapshot: 'Siswa Satu',
@@ -155,7 +171,7 @@ describe('ReportCardsService', () => {
 
   it('generate memakai NA berbobot yang dinormalisasi, bukan rata-rata mentah', async () => {
     classFindUnique.mockResolvedValue({
-      id: 'c1', name: 'XI TKJ 1', academicYear: '2026/2027', teacher: null,
+      id: 'c1', name: 'XI TKJ 1', academicYear: '2026/2027', isActive: true, teacher: null,
       students: [{ id: 's1', nis: '1001', user: { fullName: 'Siswa Satu' } }],
     });
     rcFindMany.mockResolvedValue([]);
@@ -172,8 +188,58 @@ describe('ReportCardsService', () => {
     expect(grades[0]?.average).toBe(44.4);
   });
 
+  it('generate menyimpan KKTP config berbeda per mapel pada snapshot', async () => {
+    classFindUnique.mockResolvedValue({
+      id: 'c1', name: 'XI TKJ 1', academicYear: '2026/2027', isActive: true, teacher: null,
+      students: [{ id: 's1', nis: '1001', user: { fullName: 'Siswa Satu' } }],
+    });
+    rcFindMany.mockResolvedValue([]);
+    gradeFindMany.mockResolvedValue([
+      { score: '80', type: 'uh', assignment: { subject: 'Matematika' } },
+      { score: '85', type: 'uh', assignment: { subject: 'Produktif TKJ' } },
+    ]);
+    kktpConfigFindUnique.mockImplementation(({ where }: { where: { subject_academicYear_semester: { subject: string } } }) =>
+      Promise.resolve(where.subject_academicYear_semester.subject === 'Matematika'
+        ? { kktp: 72 }
+        : { kktp: 80 }));
+    attGroupBy.mockResolvedValue([]);
+    rcCreate.mockResolvedValue({ id: 'rc-new' });
+
+    await service.generate({ classId: 'c1', academicYear: '2026/2027', semester: 1 });
+
+    const grades = rcCreate.mock.calls[0][0].data.grades as Array<{ subject: string; kktp: number; kktpProvenance: string }>;
+    expect(grades).toEqual([
+      expect.objectContaining({ subject: 'Matematika', kktp: 72, kktpProvenance: 'config' }),
+      expect.objectContaining({ subject: 'Produktif TKJ', kktp: 80, kktpProvenance: 'config' }),
+    ]);
+  });
+
+  it('generate menolak periode non-aktif sebelum membaca kelas', async () => {
+    academicYearFindMany.mockResolvedValue([{ id: 'ay-active', code: '2026/2027', semesters: [{ number: 2 }] }]);
+
+    await expect(service.generate({ classId: 'c1', academicYear: '2026/2027', semester: 1 }))
+      .rejects.toThrow('periode aktif 2026/2027 semester 2');
+    expect(classFindUnique).not.toHaveBeenCalled();
+  });
+
+  it('generate fail-closed bila periode aktif ambigu', async () => {
+    academicYearFindMany.mockResolvedValue([
+      { id: 'ay-1', code: '2026/2027', semesters: [{ number: 1 }] },
+      { id: 'ay-2', code: '2027/2028', semesters: [{ number: 1 }] },
+    ]);
+
+    await expect(service.generate({ classId: 'c1', academicYear: '2026/2027', semester: 1 }))
+      .rejects.toThrow('harus tepat satu');
+    expect(classFindUnique).not.toHaveBeenCalled();
+
+    academicYearFindMany.mockResolvedValue([{ id: 'ay-1', code: '2026/2027', semesters: [{ number: 1 }, { number: 2 }] }]);
+    await expect(service.generate({ classId: 'c1', academicYear: '2026/2027', semester: 1 }))
+      .rejects.toThrow('harus tepat satu');
+    expect(classFindUnique).not.toHaveBeenCalled();
+  });
+
   it('generate: kelas tanpa siswa aktif → BadRequest; kelas tak ada → NotFound', async () => {
-    classFindUnique.mockResolvedValue({ id: 'c1', name: 'XI TKJ 1', academicYear: '2026/2027', teacher: null, students: [] });
+    classFindUnique.mockResolvedValue({ id: 'c1', name: 'XI TKJ 1', academicYear: '2026/2027', isActive: true, teacher: null, students: [] });
     await expect(service.generate({ classId: 'c1', academicYear: '2026/2027', semester: 1 }))
       .rejects.toThrow(BadRequestException);
     classFindUnique.mockResolvedValue(null);
@@ -183,7 +249,7 @@ describe('ReportCardsService', () => {
 
   it('generate menyegarkan draft yang sudah ada tanpa mengubah rapor non-draft', async () => {
     classFindUnique.mockResolvedValue({
-      id: 'c1', name: 'XI TKJ 1', academicYear: '2026/2027', teacher: null,
+      id: 'c1', name: 'XI TKJ 1', academicYear: '2026/2027', isActive: true, teacher: null,
       students: [{ id: 's1', nis: '1001', user: { fullName: 'Siswa Satu' } }],
     });
     rcFindMany.mockResolvedValue([{ id: 'rc-1', studentId: 's1', status: 'draft' }]);
@@ -201,7 +267,7 @@ describe('ReportCardsService', () => {
 
   it('generate menolak tahun ajaran yang berbeda dari kelas', async () => {
     classFindUnique.mockResolvedValue({
-      id: 'c1', name: 'XI TKJ 1', academicYear: '2025/2026', teacher: null,
+      id: 'c1', name: 'XI TKJ 1', academicYear: '2025/2026', isActive: true, teacher: null,
       students: [{ id: 's1', nis: '1001', user: { fullName: 'Siswa Satu' } }],
     });
 
@@ -221,6 +287,7 @@ describe('ReportCardsService', () => {
       academicYear: '2026/2027',
       semester: 1,
       generatedAt: new Date('2026-08-13T00:00:00.000Z'),
+      grades: [{ subject: 'Matematika', count: 1, average: 80, byType: { uh: 80 }, kktp: 75, kktpProvenance: 'config' }],
     });
     await service.transition('rc-1', { action: 'check' }, WAKA_KURIKULUM);
     expect(executeRaw).toHaveBeenCalled();
@@ -247,6 +314,7 @@ describe('ReportCardsService', () => {
       academicYear: '2026/2027',
       semester: 1,
       generatedAt: new Date('2026-08-13T01:00:00.000Z'),
+      grades: [{ subject: 'Matematika', count: 1, average: 80, byType: { uh: 80 }, kktp: 75, kktpProvenance: 'config' }],
     });
     gradeFindFirst.mockResolvedValue({ id: 'grade-1', updatedAt: new Date('2026-08-13T01:05:00.000Z') });
 
@@ -255,10 +323,29 @@ describe('ReportCardsService', () => {
     expect(rcUpdateMany).not.toHaveBeenCalled();
   });
 
-  it('distribute: published→distributed + emit report.distributed', async () => {
+  it('menolak check draft legacy yang belum memiliki snapshot KKTP', async () => {
+    userFindUnique.mockResolvedValue({ fullName: 'Waka Kurikulum' });
+    rcFindUnique.mockResolvedValue({
+      id: 'rc-1',
+      status: 'draft',
+      studentId: 's1',
+      classId: 'c1',
+      academicYear: '2026/2027',
+      semester: 1,
+      generatedAt: new Date('2026-08-13T01:00:00.000Z'),
+      grades: [{ subject: 'Matematika', count: 1, average: 80, byType: { uh: 80 } }],
+    });
+
+    await expect(service.transition('rc-1', { action: 'check' }, WAKA_KURIKULUM))
+      .rejects.toThrow('Snapshot KKTP belum lengkap');
+    expect(gradeFindFirst).not.toHaveBeenCalled();
+    expect(rcUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('distribute: published→distributed + durable notification handoff + event observer', async () => {
     userFindUnique.mockResolvedValue({ fullName: 'Administrator Sekolah' });
     rcFindUnique.mockResolvedValue({ id: 'rc-1', status: 'published', studentId: 's1', academicYear: '2026/2027', semester: 1 });
-    await service.transition('rc-1', { action: 'distribute' }, SA);
+    const result = await service.transition('rc-1', { action: 'distribute' }, SA);
     expect(rcUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         status: 'distributed',
@@ -273,6 +360,124 @@ describe('ReportCardsService', () => {
     }));
     expect(emit).toHaveBeenCalledWith(EVENTS.REPORT_DISTRIBUTED, expect.objectContaining({
       reportCardId: 'rc-1', studentId: 's1',
+    }));
+    expect(notificationLogCreateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.arrayContaining([
+        expect.objectContaining({ channel: 'push', recipient: 'user-s1', body: expect.not.stringContaining('Siswa') }),
+        expect.objectContaining({ channel: 'push', recipient: 'parent-s1' }),
+        expect.objectContaining({ channel: 'whatsapp', recipient: '+628123456789' }),
+      ]),
+      skipDuplicates: true,
+    }));
+    expect(enqueueCommittedPendingLogs).toHaveBeenCalledWith(['nl-1', 'nl-2', 'nl-3']);
+    expect(result).toEqual(expect.objectContaining({
+      notificationHandoff: { status: 'queued', intentCount: 3, queuedCount: 3 },
+    }));
+  });
+
+  it('distribute tetap mengembalikan recovery handoff ketika queue belum siap', async () => {
+    userFindUnique.mockResolvedValue({ fullName: 'Administrator Sekolah' });
+    rcFindUnique.mockResolvedValue({ id: 'rc-1', status: 'published', studentId: 's1', academicYear: '2026/2027', semester: 1 });
+    enqueueCommittedPendingLogs.mockRejectedValue(new Error('queue down'));
+
+    const result = await service.transition('rc-1', { action: 'distribute' }, SA);
+
+    expect(notificationLogCreateMany).toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({
+      notificationHandoff: { status: 'pending_recovery', intentCount: 3, queuedCount: 0 },
+    }));
+  });
+
+  it('distribute melaporkan pending_recovery ketika antrean hanya menerima sebagian intent', async () => {
+    userFindUnique.mockResolvedValue({ fullName: 'Administrator Sekolah' });
+    rcFindUnique.mockResolvedValue({ id: 'rc-1', status: 'published', studentId: 's1', academicYear: '2026/2027', semester: 1 });
+    enqueueCommittedPendingLogs.mockResolvedValue({ queuedCount: 2 });
+
+    const result = await service.transition('rc-1', { action: 'distribute' }, SA);
+
+    expect(notificationLogCreateMany).toHaveBeenCalled();
+    expect(enqueueCommittedPendingLogs).toHaveBeenCalledWith(['nl-1', 'nl-2', 'nl-3']);
+    expect(result).toEqual(expect.objectContaining({
+      notificationHandoff: { status: 'pending_recovery', intentCount: 3, queuedCount: 2 },
+    }));
+  });
+
+  it('distribute parent tanpa nomor tetap mendapat push intent tanpa WhatsApp', async () => {
+    userFindUnique.mockResolvedValue({ fullName: 'Administrator Sekolah' });
+    rcFindUnique.mockResolvedValue({ id: 'rc-1', status: 'published', studentId: 's1', academicYear: '2026/2027', semester: 1 });
+    studentFindUnique.mockResolvedValue({ userId: 'user-s1', parentId: 'parent-s1', parent: { phone: null } });
+    notificationLogFindMany.mockResolvedValue([{ id: 'nl-student' }, { id: 'nl-parent' }]);
+    enqueueCommittedPendingLogs.mockResolvedValue({ queuedCount: 2 });
+
+    const result = await service.transition('rc-1', { action: 'distribute' }, SA);
+
+    const rows = notificationLogCreateMany.mock.calls[0][0].data as Array<{ channel: string; recipient: string }>;
+    expect(rows).toEqual([
+      expect.objectContaining({ channel: 'push', recipient: 'user-s1' }),
+      expect.objectContaining({ channel: 'push', recipient: 'parent-s1' }),
+    ]);
+    expect(rows.some((row) => row.channel === 'whatsapp')).toBe(false);
+    expect(result).toEqual(expect.objectContaining({
+      notificationHandoff: { status: 'queued', intentCount: 2, queuedCount: 2 },
+    }));
+  });
+
+  it.each([
+    ['format lokal 08', '0812 3456 7890', '+6281234567890'],
+    ['format E.164', '+6281234567890', '+6281234567890'],
+  ])('distribute menormalisasi nomor WhatsApp wali %s', async (_label, inputPhone, expectedPhone) => {
+    userFindUnique.mockResolvedValue({ fullName: 'Administrator Sekolah' });
+    rcFindUnique.mockResolvedValue({ id: 'rc-1', status: 'published', studentId: 's1', academicYear: '2026/2027', semester: 1 });
+    studentFindUnique.mockResolvedValue({ userId: 'user-s1', parentId: 'parent-s1', parent: { phone: inputPhone } });
+
+    await service.transition('rc-1', { action: 'distribute' }, SA);
+
+    const rows = notificationLogCreateMany.mock.calls[0][0].data as Array<{ channel: string; recipient: string }>;
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ channel: 'whatsapp', recipient: expectedPhone }),
+    ]));
+    expect(rows.filter((row) => row.channel === 'whatsapp' && row.recipient === expectedPhone)).toHaveLength(1);
+  });
+
+  it('distribute memakai recipient normal yang sama untuk nomor ekuivalen sehingga duplicate lama di-skip', async () => {
+    userFindUnique.mockResolvedValue({ fullName: 'Administrator Sekolah' });
+    rcFindUnique.mockResolvedValue({ id: 'rc-1', status: 'published', studentId: 's1', academicYear: '2026/2027', semester: 1 });
+    studentFindUnique.mockResolvedValue({ userId: 'user-s1', parentId: 'parent-s1', parent: { phone: '08 12-3456-7890' } });
+    notificationLogCreateMany.mockResolvedValue({ count: 2 });
+    notificationLogFindMany.mockResolvedValue([{ id: 'nl-student' }, { id: 'nl-parent' }, { id: 'existing-whatsapp' }]);
+    enqueueCommittedPendingLogs.mockResolvedValue({ queuedCount: 3 });
+
+    const result = await service.transition('rc-1', { action: 'distribute' }, SA);
+
+    expect(notificationLogCreateMany.mock.calls[0][0]).toEqual(expect.objectContaining({
+      data: expect.arrayContaining([
+        expect.objectContaining({ channel: 'whatsapp', recipient: '+6281234567890' }),
+      ]),
+      skipDuplicates: true,
+    }));
+    expect(enqueueCommittedPendingLogs).toHaveBeenCalledWith(['nl-student', 'nl-parent', 'existing-whatsapp']);
+    expect(result).toEqual(expect.objectContaining({
+      notificationHandoff: { status: 'queued', intentCount: 3, queuedCount: 3 },
+    }));
+  });
+
+  it('distribute mengabaikan nomor WhatsApp wali invalid tanpa membatalkan push/in-app', async () => {
+    userFindUnique.mockResolvedValue({ fullName: 'Administrator Sekolah' });
+    rcFindUnique.mockResolvedValue({ id: 'rc-1', status: 'published', studentId: 's1', academicYear: '2026/2027', semester: 1 });
+    studentFindUnique.mockResolvedValue({ userId: 'user-s1', parentId: 'parent-s1', parent: { phone: '0812ABC' } });
+    notificationLogFindMany.mockResolvedValue([{ id: 'nl-student' }, { id: 'nl-parent' }]);
+    enqueueCommittedPendingLogs.mockResolvedValue({ queuedCount: 2 });
+
+    const result = await service.transition('rc-1', { action: 'distribute' }, SA);
+
+    const rows = notificationLogCreateMany.mock.calls[0][0].data as Array<{ channel: string; recipient: string }>;
+    expect(rows).toEqual([
+      expect.objectContaining({ channel: 'push', recipient: 'user-s1' }),
+      expect.objectContaining({ channel: 'push', recipient: 'parent-s1' }),
+    ]);
+    expect(rows.some((row) => row.channel === 'whatsapp')).toBe(false);
+    expect(result).toEqual(expect.objectContaining({
+      notificationHandoff: { status: 'queued', intentCount: 2, queuedCount: 2 },
     }));
   });
 
@@ -395,8 +600,8 @@ describe('ReportCardsService', () => {
       publishedAt: new Date('2026-06-20T08:00:00.000Z'),
       publishedByName: 'Kepala Sekolah Saat Terbit',
       grades: [
-        { subject: 'Muatan Lokal Jawa', count: 2, average: 88.8, byType: { uh: 100, praktik: 80 } },
-        { subject: 'Matematika', count: 2, average: 76.5, byType: { uh: 80, uas: 75 } },
+        { subject: 'Muatan Lokal Jawa', count: 2, average: 88.8, byType: { uh: 100, praktik: 80 }, kktp: 80, kktpProvenance: 'config' },
+        { subject: 'Matematika', count: 2, average: 76.5, byType: { uh: 80, uas: 75 }, kktp: 78, kktpProvenance: 'config' },
       ],
       attendance: { hadir: 90, izin: 2, sakit: 1, alpha: 0 },
     });
@@ -404,7 +609,7 @@ describe('ReportCardsService', () => {
     const result = await service.findOfficialSections('s1', '2025/2026', 2, SA);
 
     expect(result.muatanLokal.subjects).toEqual([expect.objectContaining({
-      name: 'Muatan Lokal Jawa', na: 88.8, predikat: 'Tuntas',
+      name: 'Muatan Lokal Jawa', na: 88.8, kktp: 80, kktpProvenance: 'config', predikat: 'Tuntas',
     })]);
     expect(result.attendance).toEqual({ hadir: 90, izin: 2, sakit: 1, alpha: 0, total: 93 });
     expect(result.approval).toEqual(expect.objectContaining({
@@ -416,6 +621,31 @@ describe('ReportCardsService', () => {
     expect(attGroupBy).not.toHaveBeenCalled();
     expect(appointmentFindMany).not.toHaveBeenCalled();
     expect(classFindUnique).not.toHaveBeenCalled();
+  });
+
+  it('bagian resmi snapshot legacy tidak memalsukan KKTP 75', async () => {
+    rcFindFirst.mockResolvedValue({
+      id: 'rc-legacy',
+      status: 'distributed',
+      studentNameSnapshot: 'Nama Saat Terbit',
+      studentNisSnapshot: '1001',
+      classNameSnapshot: 'XI TKJ 1',
+      homeroomTeacherNameSnapshot: 'Wali Saat Terbit',
+      publishedAt: new Date('2026-06-20T08:00:00.000Z'),
+      publishedByName: 'Kepala Sekolah Saat Terbit',
+      grades: [
+        { subject: 'Muatan Lokal Jawa', count: 2, average: 88.8, byType: { uh: 100, praktik: 80 } },
+      ],
+      attendance: {},
+    });
+
+    const result = await service.findOfficialSections('s1', '2025/2026', 2, SA);
+
+    expect(result.muatanLokal.subjects).toEqual([expect.objectContaining({
+      name: 'Muatan Lokal Jawa',
+      kktp: null,
+      predikat: 'Snapshot KKTP tidak tersedia',
+    })]);
   });
 
   it('bagian rapor keluarga wajib berasal dari snapshot berstatus distributed', async () => {
@@ -472,8 +702,10 @@ describe('ReportCardsService', () => {
     rcCount.mockResolvedValue(0);
     await service.findAll({ page: 1, limit: 100, status: 'draft' }, SISWA);
     const where = rcFindMany.mock.calls[0][0].where;
-    expect(where.studentId).toBe('stu-1');
-    expect(where.status).toBe('distributed');
+    expect(where.AND).toEqual(expect.arrayContaining([
+      { studentId: 'stu-1' },
+      { status: 'distributed' },
+    ]));
   });
 
   it('ownership: ORTU → anak-anaknya + distributed; GURU → kelas ampuannya', async () => {
@@ -482,8 +714,10 @@ describe('ReportCardsService', () => {
     rcCount.mockResolvedValue(0);
     await service.findAll({ page: 1, limit: 100 }, ORTU);
     let where = rcFindMany.mock.calls[0][0].where;
-    expect(where.studentId).toEqual({ in: ['anak-1', 'anak-2'] });
-    expect(where.status).toBe('distributed');
+    expect(where.AND).toEqual(expect.arrayContaining([
+      { studentId: { in: ['anak-1', 'anak-2'] }, status: 'distributed' },
+      { status: 'distributed' },
+    ]));
 
     userFindUnique.mockResolvedValue({ id: 'guru-user-1' });
     teacherFindUnique.mockResolvedValue({ id: 'teacher-1' });
@@ -491,7 +725,39 @@ describe('ReportCardsService', () => {
     classFindMany.mockResolvedValue([{ id: 'c2' }]);
     await service.findAll({ page: 1, limit: 100 }, GURU);
     where = rcFindMany.mock.calls[1][0].where;
-    expect(where.classId).toEqual({ in: ['c1', 'c2'] });
+    expect(where.AND).toEqual([{ classId: { in: ['c1', 'c2'] } }]);
+  });
+
+  it('ownership: selected child filter parent tetap diinterseksi dengan ownership dan distributed', async () => {
+    userFindUnique.mockResolvedValue({ parent: [{ id: 'anak-1' }, { id: 'anak-2' }] });
+    rcFindMany.mockResolvedValue([]);
+    rcCount.mockResolvedValue(0);
+
+    await service.findAll({ page: 1, limit: 20, studentId: 'anak-2', status: 'draft' }, ORTU);
+
+    expect(rcFindMany.mock.calls[0][0].where.AND).toEqual(expect.arrayContaining([
+      { studentId: { in: ['anak-1', 'anak-2'] }, status: 'distributed' },
+      { studentId: 'anak-2' },
+      { status: 'distributed' },
+    ]));
+  });
+
+  it('ownership: filter classId guru diinterseksi dan class luar ditolak', async () => {
+    userFindUnique.mockResolvedValue({ id: 'guru-user-1' });
+    teacherFindUnique.mockResolvedValue({ id: 'teacher-1' });
+    teachingAssignmentFindMany.mockResolvedValue([{ classId: 'c1' }]);
+    classFindMany.mockResolvedValue([{ id: 'c2' }]);
+    rcFindMany.mockResolvedValue([]);
+    rcCount.mockResolvedValue(0);
+
+    await service.findAll({ page: 1, limit: 20, classId: 'c1' }, GURU);
+    expect(rcFindMany.mock.calls[0][0].where.AND).toEqual(expect.arrayContaining([
+      { classId: { in: ['c1', 'c2'] } },
+      { classId: 'c1' },
+    ]));
+
+    await expect(service.findAll({ page: 1, limit: 20, classId: 'outside' }, GURU))
+      .rejects.toThrow('Kelas berada di luar scope guru aktif');
   });
 
   it('SUPER_ADMIN + GURU tidak menerima metadata pengelola draft', async () => {
@@ -610,7 +876,7 @@ describe('ReportCardsService', () => {
     rcFindMany.mockResolvedValue([]);
     rcCount.mockResolvedValue(0);
     await service.findAll({ page: 1, limit: 20 }, KAPROG);
-    expect(rcFindMany.mock.calls[0][0].where.class).toEqual(expect.objectContaining({
+    expect(rcFindMany.mock.calls[0][0].where.AND[0].class).toEqual(expect.objectContaining({
       academicYear: '2026/2027', majorCode: { in: ['TKJ'] },
     }));
   });

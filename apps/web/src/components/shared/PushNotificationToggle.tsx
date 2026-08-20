@@ -23,7 +23,6 @@ import {
 
 interface NotificationEntry {
   id: string;
-  recipient: string;
   channel: string;
   subject: string | null;
   body: string;

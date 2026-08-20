@@ -80,6 +80,9 @@ function monthBounds(year: number, monthIndex0: number): { dateFrom: string; dat
 }
 
 const ASSESSMENT_SESSION_PAGE_SIZE = 100;
+type AcademicSearchParams = Promise<Record<string, string | string[] | undefined>>;
+const oneSearchParam = (value: string | string[] | undefined): string =>
+  Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
 
 async function fetchInitialAssessmentSessions(token: string): Promise<{
   data: AssessmentSessionData[];
@@ -105,9 +108,12 @@ async function fetchInitialAssessmentSessions(token: string): Promise<{
   };
 }
 
-export default async function AkademikPage() {
+export default async function AkademikPage({ searchParams }: { searchParams: AcademicSearchParams }) {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
+  const requestedParams = await searchParams;
+  const openNotifications = oneSearchParam(requestedParams.panel) === 'notifications';
+  const initialStudentId = oneSearchParam(requestedParams.studentId).trim();
   const token = session?.accessToken ?? '';
   const authority = await resolveDashboardAuthority(session);
   const roles = authority.roles;
@@ -364,6 +370,7 @@ export default async function AkademikPage() {
           realCp={cpRes?.data ?? null}
           realAttStats={realAttStats}
           viewAs={viewAs}
+          openNotifications={openNotifications}
         />
       </SiswaRefreshWrapper>
     );
@@ -643,6 +650,8 @@ export default async function AkademikPage() {
           viewAs={viewAs}
           semesterLabel={semesterLabel}
           childRanks={childRanks}
+          openNotifications={openNotifications}
+          initialStudentId={initialStudentId}
         />
       </OrtuRefreshWrapper>
     );

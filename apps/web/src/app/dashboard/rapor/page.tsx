@@ -17,17 +17,23 @@ export default async function RaporPage({ searchParams }: { searchParams: Search
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
   const authority = await resolveDashboardAuthority(session);
-  if (!authority.can('report.read') || authority.hasRole('INDUSTRI')) redirect('/dashboard');
+  const isLearnerReportViewer = authority.hasRole('SISWA', 'ORANG_TUA')
+    && !authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'KAPROG', 'INDUSTRI');
+  if (authority.hasRole('INDUSTRI')) redirect('/dashboard');
+  if (!isLearnerReportViewer && !authority.can('report.read')) redirect('/dashboard');
   const sp = await searchParams;
   const page = Math.max(1, Number(one(sp.page)) || 1);
   const classId = one(sp.classId);
+  const studentId = one(sp.studentId);
   const status = one(sp.status);
   const search = one(sp.search).trim().slice(0, 100);
   const query = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
   if (classId) query.set('classId', classId);
+  if (studentId) query.set('studentId', studentId);
   if (status) query.set('status', status);
   if (search) query.set('search', search);
   const isOperational = authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'KAPROG');
+  const learnerShell = authority.hasRole('ORANG_TUA') ? 'parent' : authority.hasRole('SISWA') ? 'student' : null;
   const token = session.accessToken ?? '';
   const [reports, classResponse, semester] = await Promise.all([
     apiFetch<ListResponse>(`/report-cards?${query.toString()}`, token),
@@ -40,13 +46,14 @@ export default async function RaporPage({ searchParams }: { searchParams: Search
     items={reports.data}
     total={reports.total}
     classes={classResponse?.data ?? []}
-    query={{ page, limit: PAGE_SIZE, classId, status, search }}
+    query={{ page, limit: PAGE_SIZE, classId, studentId, status, search }}
     canGenerate={!authority.hasRole('SUPER_ADMIN') && authority.can('report.wali.manage') && authority.hasRole('GURU') && (classResponse?.data.some((item) => item.canManageDraft) ?? false)}
     canCheck={!authority.hasRole('SUPER_ADMIN') && authority.can('report.review') && authority.hasRole('WAKA_KURIKULUM')}
     canPublish={authority.can('report.publish') && authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH')}
     canDistribute={authority.can('report.distribute') && authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')}
     canRecover={authority.can('report.recover') && authority.hasRole('SUPER_ADMIN')}
     isOperational={isOperational}
+    learnerShell={learnerShell}
     defaultAcademicYear={semester.academicYear.code}
     defaultSemester={semester.number}
   />;
