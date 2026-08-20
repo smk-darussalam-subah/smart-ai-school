@@ -17,7 +17,7 @@ export class PushController {
   constructor(private readonly service: PushService) {}
 
   @Roles('SISWA', 'ORANG_TUA', 'GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN')
-  @RequirePermission('lms.read')
+  @RequirePermission(['lms.read', 'report.read'])
   @Post('subscribe')
   @HttpCode(HttpStatus.CREATED)
   subscribe(
@@ -28,7 +28,7 @@ export class PushController {
   }
 
   @Roles('SISWA', 'ORANG_TUA', 'GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN')
-  @RequirePermission('lms.read')
+  @RequirePermission(['lms.read', 'report.read'])
   @Post('unsubscribe')
   @HttpCode(HttpStatus.OK)
   unsubscribe(
@@ -39,7 +39,7 @@ export class PushController {
   }
 
   @Roles('SISWA', 'ORANG_TUA')
-  @RequirePermission('lms.read')
+  @RequirePermission(['lms.read', 'report.read'])
   @Get('my-notifications')
   findMyNotifications(@CurrentUser() user: AuthUser) {
     return this.service.findMyNotifications(user);

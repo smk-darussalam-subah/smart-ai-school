@@ -34,6 +34,8 @@ RUN cd packages/auth   && npx tsc --project tsconfig.json
 # --build-arg API_URL=http://localhost:3001 for local Docker builds.
 ARG API_URL=http://api:3001
 ENV API_URL=${API_URL}
+ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
 
 RUN cd apps/web && npx next build
 
