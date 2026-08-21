@@ -32,6 +32,7 @@ import {
   buildSemesterCloseIdempotencyKey,
   canSubmitSemesterClose,
   closureCsvFilename,
+  formatSemesterDateTime,
   formatReadinessMetric,
   isReadinessStale,
 } from '../semester-closing-ui';
@@ -53,14 +54,6 @@ const ACTION_LINKS: Record<string, { label: string; href: string }> = {
   review_teaching_assignments: { label: 'Jadwal & Assignment', href: '/dashboard/jadwal' },
   view_closure: { label: 'Riwayat', href: '#history' },
 };
-
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return '-';
-  return new Intl.DateTimeFormat('id-ID', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value));
-}
 
 function MetricGrid({ readiness }: { readiness: { metrics: SemesterReadiness['metrics'] } }) {
   return (
@@ -229,7 +222,7 @@ export function HistoricalReportPanel({
       <dl className="grid gap-3 border-b border-slate-200 px-4 py-4 text-sm md:grid-cols-2 xl:grid-cols-4">
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Ditutup</dt>
-          <dd className="mt-1 font-semibold text-slate-950">{formatDateTime(closure.closedAt)}</dd>
+          <dd className="mt-1 font-semibold text-slate-950">{formatSemesterDateTime(closure.closedAt)}</dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Aktor</dt>
@@ -596,7 +589,7 @@ export default function SemesterClosingClient({
                   Hanya Kepala Sekolah dengan Appointment aktif yang dapat menutup semester. Super Admin tetap dapat membaca audit, tetapi tidak menjadi aktor close.
                 </p>
                 <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                  <div><dt className="text-slate-500">Preview</dt><dd className="font-semibold text-slate-900">{formatDateTime(readiness.generatedAt)}</dd></div>
+                  <div><dt className="text-slate-500">Preview</dt><dd className="font-semibold text-slate-900">{formatSemesterDateTime(readiness.generatedAt)}</dd></div>
                   <div><dt className="text-slate-500">Hash</dt><dd className="font-mono text-xs text-slate-700">{readiness.readinessHash.slice(0, 16)}...</dd></div>
                   <div><dt className="text-slate-500">Periode</dt><dd className="font-semibold text-slate-900">{readiness.period.startDate} - {readiness.period.endDate}</dd></div>
                   <div><dt className="text-slate-500">Berikutnya</dt><dd className="font-semibold text-slate-900">{readiness.nextPeriod ? `Semester ${readiness.nextPeriod.semester}` : 'Tidak ada'}</dd></div>
@@ -677,7 +670,7 @@ export default function SemesterClosingClient({
                     {closures.map((closure) => (
                       <tr key={closure.id}>
                         <td className="px-4 py-3 font-semibold text-slate-950">Semester {closure.semester.number} {closure.semester.academicYear.code}</td>
-                        <td className="px-4 py-3 text-slate-600">{formatDateTime(closure.closedAt)}</td>
+                        <td className="px-4 py-3 text-slate-600">{formatSemesterDateTime(closure.closedAt)}</td>
                         <td className="px-4 py-3 text-slate-600">{closure.closedBy.fullName ?? '-'}</td>
                         <td className="px-4 py-3 font-mono text-xs text-slate-600">{closure.readinessHash.slice(0, 16)}...</td>
                         <td className="px-4 py-3">
