@@ -6,6 +6,7 @@ import {
   canReadSemesterFinalReport,
   canSubmitSemesterClose,
   closureCsvFilename,
+  formatSemesterDateTime,
   formatReadinessMetric,
   isReadinessStale,
   safeCsvFilenameSegment,
@@ -129,6 +130,10 @@ describe('semester closing UI helpers', () => {
     expect(formatReadinessMetric({ value: 3 })).toBe('3');
     expect(formatReadinessMetric({ value: 7, total: 10 })).toBe('7/10');
     expect(getRoutePermissions('/dashboard/penutupan-semester')).toEqual([]);
+  });
+
+  it('formats semester timestamps with the app timezone to avoid hydration drift', () => {
+    expect(formatSemesterDateTime('2026-08-20T01:00:00.000Z')).toContain('08.00');
   });
 
   it('renders GURU readiness without final report or history tabs', () => {

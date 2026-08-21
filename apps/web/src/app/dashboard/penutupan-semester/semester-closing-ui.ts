@@ -1,9 +1,20 @@
 import type { ReadinessMetric } from './actions';
 
+const APP_TIME_ZONE = 'Asia/Jakarta';
+
 export type SemesterClosingAuthority = {
   can: (permission: string) => boolean;
   hasRole: (...roles: string[]) => boolean;
 };
+
+export function formatSemesterDateTime(value: string | null | undefined): string {
+  if (!value) return '-';
+  return new Intl.DateTimeFormat('id-ID', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: APP_TIME_ZONE,
+  }).format(new Date(value));
+}
 
 export function formatReadinessMetric(metric: Pick<ReadinessMetric, 'value' | 'total'>): string {
   return metric.total === undefined ? String(metric.value) : `${metric.value}/${metric.total}`;
