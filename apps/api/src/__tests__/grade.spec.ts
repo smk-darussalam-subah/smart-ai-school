@@ -43,6 +43,7 @@ import { GradeService } from '../grade/grade.service';
 import { GradeController } from '../grade/grade.controller';
 import { GradeModule } from '../grade/grade.module';
 import { PrismaService } from '../prisma/prisma.service';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { AuthUser } from '@smk/auth';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -118,6 +119,7 @@ const MOCK_GRADE = {
 
 function buildPrisma() {
   return {
+    $transaction: jest.fn(),
     academicYear: { findFirst: jest.fn() },
     user:       { findUnique: jest.fn() },
     teacher:    { findUnique: jest.fn() },
@@ -147,10 +149,18 @@ describe('GradeService', () => {
         GradeService,
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        {
+          provide: AcademicPeriodService,
+          useValue: {
+            getActivePeriod: jest.fn().mockResolvedValue(null),
+            assertWritablePeriodWithCutoverLock: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
     service = module.get(GradeService);
     jest.clearAllMocks();
+    prisma.$transaction.mockImplementation(async (callback) => callback(prisma));
   });
 
   // ── create ───────────────────────────────────────────────────────────────────

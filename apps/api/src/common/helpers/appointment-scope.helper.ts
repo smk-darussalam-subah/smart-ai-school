@@ -26,10 +26,6 @@ export async function resolveActiveKaprogMajorScope(
   prisma: PrismaService,
   user: AuthUser,
 ): Promise<ActiveKaprogMajorScope> {
-  if (!user.roles.includes('KAPROG')) {
-    throw new ForbiddenException('Appointment KAPROG aktif diperlukan untuk akses jurusan');
-  }
-
   const authUser = await prisma.user.findUnique({
     where: { keycloakId: user.keycloakId },
     select: { id: true, isActive: true, deletedAt: true },

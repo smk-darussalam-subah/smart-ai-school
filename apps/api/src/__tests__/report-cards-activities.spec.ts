@@ -20,6 +20,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { NotificationService } from '../notification/notification.service';
 import { PrivateObjectStorageService } from '../storage/private-object-storage.service';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { EVENTS } from '../events/events.types';
 import { TransitionSchema, UpdateNotesSchema } from '../report-cards/dto/report-card.dto';
 
@@ -126,6 +127,12 @@ describe('ReportCardsService', () => {
           },
         },
         { provide: NotificationService, useValue: { enqueueCommittedPendingLogs } },
+        {
+          provide: AcademicPeriodService,
+          useValue: {
+            assertWritablePeriodWithCutoverLock: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
     service = module.get(ReportCardsService);

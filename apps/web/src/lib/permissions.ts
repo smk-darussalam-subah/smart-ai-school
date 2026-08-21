@@ -29,6 +29,7 @@ const ROUTE_PERMISSIONS: Record<string, string[]> = {
   '/dashboard/jadwal': ['academic.schedule.read'],
   '/dashboard/kegiatan': ['activity.read'],
   '/dashboard/rapor': ['report.read'],
+  '/dashboard/penutupan-semester': [],
   '/dashboard/rpp': ['rpp.read'],
   '/dashboard/presensi-guru': ['teacher.attendance.read'],
   '/dashboard/pengumuman': ['announcement.read'],
