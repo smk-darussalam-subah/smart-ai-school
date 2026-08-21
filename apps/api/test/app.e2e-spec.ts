@@ -97,6 +97,7 @@ const IDS = {
   teacher:      'e2e00000-0000-4000-b000-000000000002',
   assignment:   'e2e00000-0000-4000-b000-000000000003',
   student:      'e2e00000-0000-4000-b000-000000000004',
+  semester:      'e2e00000-0000-4000-b000-000000000006',
   kcSA:         'e2e00000-0000-4000-c000-000000000001',
   kcKS:         'e2e00000-0000-4000-c000-000000000002',
   kcTU:         'e2e00000-0000-4000-c000-000000000003',
@@ -158,7 +159,42 @@ async function seedTestData() {
   await prisma.teachingAssignment.deleteMany({ where: { id: IDS.assignment } });
   await prisma.teacher.deleteMany({ where: { id: IDS.teacher } });
   await prisma.class.deleteMany({ where: { id: IDS.class } });
+  await prisma.semesterClosure.deleteMany({ where: { semesterId: IDS.semester } });
+  await prisma.semester.deleteMany({ where: { id: IDS.semester } });
   await prisma.user.deleteMany({ where: { email: { endsWith: '@e2e.test' } } });
+
+  await prisma.academicYear.updateMany({
+    where: { isActive: true, code: { not: '2025/2026' } },
+    data: { isActive: false },
+  });
+  const academicYear = await prisma.academicYear.upsert({
+    where: { code: '2025/2026' },
+    update: {
+      startDate: new Date('2025-07-01'),
+      endDate: new Date('2026-06-30'),
+      isActive: true,
+    },
+    create: {
+      code: '2025/2026',
+      startDate: new Date('2025-07-01'),
+      endDate: new Date('2026-06-30'),
+      isActive: true,
+    },
+  });
+  await prisma.semester.updateMany({
+    where: { isActive: true, id: { not: IDS.semester } },
+    data: { isActive: false },
+  });
+  await prisma.semester.create({
+    data: {
+      id: IDS.semester,
+      academicYearId: academicYear.id,
+      number: 1,
+      startDate: new Date('2025-07-01'),
+      endDate: new Date('2025-12-31'),
+      isActive: true,
+    },
+  });
 
   // Users
   await prisma.user.createMany({
@@ -230,6 +266,8 @@ async function cleanupTestData() {
   await prisma.teachingAssignment.deleteMany({ where: { id: IDS.assignment } });
   await prisma.teacher.deleteMany({ where: { id: IDS.teacher } });
   await prisma.class.deleteMany({ where: { id: IDS.class } });
+  await prisma.semesterClosure.deleteMany({ where: { semesterId: IDS.semester } });
+  await prisma.semester.deleteMany({ where: { id: IDS.semester } });
   await prisma.user.deleteMany({ where: { email: { endsWith: '@e2e.test' } } });
 }
 
@@ -406,7 +444,7 @@ describe('Attendance', () => {
       .set(auth('e2e-token-guru'))
       .send({
         classId: IDS.class,
-        date: '2026-01-15',
+        date: '2025-08-15',
         records: [{ studentId: IDS.student, status: 'hadir' }],
       })
       .expect(201);
@@ -425,7 +463,7 @@ describe('Attendance', () => {
     await req()
       .post('/api/v1/attendance')
       .set(auth('e2e-token-siswa'))
-      .send({ classId: IDS.class, date: '2026-01-16', records: [{ studentId: IDS.student, status: 'hadir' }] })
+      .send({ classId: IDS.class, date: '2025-08-16', records: [{ studentId: IDS.student, status: 'hadir' }] })
       .expect(403);
   });
 

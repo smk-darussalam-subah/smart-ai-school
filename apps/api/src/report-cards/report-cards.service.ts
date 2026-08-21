@@ -37,6 +37,7 @@ import {
 import { averageScores, calculateWeightedFinalScore } from '../common/helpers/grade-final-score.helper';
 import { normalizePhoneE164 } from '../common/helpers/phone';
 import { PersistedKktpProvenance, resolveKktpThreshold } from '../academic/kktp-resolver';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { EVENTS, ReportDistributedPayload } from '../events/events.types';
 import {
   GenerateReportsDto,
@@ -111,6 +112,7 @@ export class ReportCardsService {
     private readonly eventEmitter: EventEmitter2,
     private readonly permissions: PermissionsService,
     private readonly notifications: NotificationService,
+    private readonly academicPeriod: AcademicPeriodService,
   ) {}
 
   private isElevated(user: AuthUser): boolean {
@@ -257,6 +259,10 @@ export class ReportCardsService {
           `Draft rapor hanya dapat disiapkan untuk periode aktif ${activePeriod.academicYear} semester ${activePeriod.semester}`,
         );
       }
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+        academicYear: dto.academicYear,
+        semester: dto.semester,
+      });
       const kelas = await tx.class.findUnique({
         where: { id: dto.classId },
         select: {
@@ -484,6 +490,10 @@ export class ReportCardsService {
         } : {}),
     };
     const txResult = await this.prisma.$transaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+        academicYear: existing.academicYear,
+        semester: existing.semester,
+      });
       await this.lockReportSnapshot(tx, existing);
       const current = await tx.reportCard.findUnique({
         where: { id },
@@ -623,7 +633,7 @@ export class ReportCardsService {
     const actorName = actor?.fullName ?? user.username;
     const existing = await this.prisma.reportCard.findUnique({
       where: { id },
-      select: { id: true, status: true },
+      select: { id: true, status: true, academicYear: true, semester: true },
     });
     if (!existing) throw new NotFoundException('Rapor tidak ditemukan');
     if (existing.status === 'draft') {
@@ -631,6 +641,10 @@ export class ReportCardsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+        academicYear: existing.academicYear,
+        semester: existing.semester,
+      });
       const changed = await tx.reportCard.updateMany({
         where: { id, status: existing.status },
         data: {
@@ -676,7 +690,7 @@ export class ReportCardsService {
     if (user) this.assertRoutineReportOperator(user);
     const existing = await this.prisma.reportCard.findUnique({
       where: { id },
-      select: { id: true, status: true, classId: true },
+      select: { id: true, status: true, classId: true, academicYear: true, semester: true },
     });
     if (!existing) throw new NotFoundException('Rapor tidak ditemukan');
     if (user) await this.assertDraftManager(existing.classId, user);
@@ -684,9 +698,15 @@ export class ReportCardsService {
       throw new ConflictException('Catatan hanya bisa diubah saat status draft');
     }
     const nextUpdatedAt = new Date(Math.max(Date.now(), dto.expectedUpdatedAt.getTime() + 1));
-    const changed = await this.prisma.reportCard.updateMany({
-      where: { id, status: 'draft', updatedAt: dto.expectedUpdatedAt },
-      data: { notes: dto.notes, updatedAt: nextUpdatedAt },
+    const changed = await this.prisma.$transaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+        academicYear: existing.academicYear,
+        semester: existing.semester,
+      });
+      return tx.reportCard.updateMany({
+        where: { id, status: 'draft', updatedAt: dto.expectedUpdatedAt },
+        data: { notes: dto.notes, updatedAt: nextUpdatedAt },
+      });
     });
     if (changed.count !== 1) {
       throw new ConflictException('Rapor telah berubah. Muat ulang sebelum menyimpan catatan.');

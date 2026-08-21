@@ -42,6 +42,7 @@ import { AttendanceService } from '../attendance/attendance.service';
 import { AttendanceController } from '../attendance/attendance.controller';
 import { AttendanceModule } from '../attendance/attendance.module';
 import { PrismaService } from '../prisma/prisma.service';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { AuthUser } from '@smk/auth';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -131,6 +132,13 @@ describe('AttendanceService', () => {
         AttendanceService,
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        {
+          provide: AcademicPeriodService,
+          useValue: {
+            getActivePeriod: jest.fn().mockResolvedValue(null),
+            assertWritableDateWithCutoverLock: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
     service = module.get(AttendanceService);
@@ -162,15 +170,16 @@ describe('AttendanceService', () => {
 
     it('bulk insert berhasil — $transaction dipanggil dengan benar', async () => {
       setupGuruResolve();
-      prisma.$transaction.mockResolvedValue([MOCK_ATTENDANCE, { ...MOCK_ATTENDANCE, id: 'att-uuid-002', studentId: 'student-uuid-002' }]);
+      prisma.attendance.create
+        .mockResolvedValueOnce(MOCK_ATTENDANCE)
+        .mockResolvedValueOnce({ ...MOCK_ATTENDANCE, id: 'att-uuid-002', studentId: 'student-uuid-002' });
+      prisma.$transaction.mockImplementation(async (callback) => callback(prisma));
 
       const result = await service.bulkCreate(BULK_DTO, GURU_USER);
 
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-      // $transaction menerima array Prisma promises (satu per record)
       const txArg = prisma.$transaction.mock.calls[0][0];
-      expect(Array.isArray(txArg)).toBe(true);
-      expect(txArg).toHaveLength(2); // 2 records
+      expect(typeof txArg).toBe('function');
       expect(result.count).toBe(2);
       expect(result.date).toBe('2025-07-21');
       expect(result.classId).toBe('class-uuid-001');
@@ -179,12 +188,9 @@ describe('AttendanceService', () => {
     it('recordedBy diisi dengan userId guru (bukan teacherId)', async () => {
       setupGuruResolve();
       // Pastikan attendance.create dipanggil dengan recordedBy = user.id
-      prisma.$transaction.mockImplementation(async (ops: unknown[]) => {
-        // simulate: return mock data, verify create was called correctly via attendance.create mock
-        return ops.map(() => MOCK_ATTENDANCE);
-      });
+      prisma.$transaction.mockImplementation(async (callback) => callback(prisma));
       // Inject spy pada attendance.create untuk cek argumen
-      const createSpy = jest.spyOn(prisma.attendance, 'create').mockReturnValue(MOCK_ATTENDANCE as never);
+      const createSpy = jest.spyOn(prisma.attendance, 'create').mockResolvedValue(MOCK_ATTENDANCE as never);
 
       await service.bulkCreate(BULK_DTO, GURU_USER);
 
@@ -261,8 +267,8 @@ describe('AttendanceService', () => {
 
     it('date di-parse UTC — attendance.create menerima Date object', async () => {
       setupGuruResolve();
-      const createSpy = jest.spyOn(prisma.attendance, 'create').mockReturnValue(MOCK_ATTENDANCE as never);
-      prisma.$transaction.mockImplementation(async (ops: unknown[]) => ops.map(() => MOCK_ATTENDANCE));
+      const createSpy = jest.spyOn(prisma.attendance, 'create').mockResolvedValue(MOCK_ATTENDANCE as never);
+      prisma.$transaction.mockImplementation(async (callback) => callback(prisma));
 
       await service.bulkCreate({ ...BULK_DTO, date: '2025-01-15' }, GURU_USER);
 

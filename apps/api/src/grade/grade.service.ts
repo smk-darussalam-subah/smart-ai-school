@@ -31,6 +31,7 @@ import { CreateGradeDto } from './dto/create-grade.dto';
 import { UpdateGradeDto } from './dto/update-grade.dto';
 import { ListGradesQuery } from './dto/list-grades.dto';
 import { EVENTS, GradeSubmittedPayload } from '../events/events.types';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 
 // ── Konstanta ─────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,7 @@ export class GradeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly academicPeriod: AcademicPeriodService,
   ) {}
 
   /** keycloakId → student.id[] (satu atau lebih anak untuk ORANG_TUA) */
@@ -149,12 +151,6 @@ export class GradeService {
 
     // 2. Pastikan guru punya profil teacher dan assignment-nya milik dia
     const myTeacherId = await resolveTeacherId(this.prisma, user.keycloakId);
-    const activeYear = await this.prisma.academicYear.findFirst({
-      where: { isActive: true },
-      select: { code: true },
-    });
-    if (!activeYear) throw new ConflictException('Tidak ada tahun ajaran aktif');
-
     const assignment = await this.prisma.teachingAssignment.findUnique({
       where: { id: dto.assignmentId },
       select: {
@@ -169,8 +165,22 @@ export class GradeService {
     if (assignment.teacherId !== myTeacherId) {
       throw new ForbiddenException('Guru hanya bisa input nilai untuk assignment sendiri');
     }
+    const activePeriod = await this.academicPeriod.getActivePeriod(this.prisma);
+    const fallbackYear = activePeriod
+      ? null
+      : await this.prisma.academicYear.findFirst({
+          where: { isActive: true },
+          select: { code: true },
+        });
+    if (!activePeriod && !fallbackYear) throw new ConflictException('Tidak ada tahun ajaran aktif');
+    const activeYear = activePeriod
+      ? { code: activePeriod.academicYear, semester: activePeriod.semester }
+      : { code: fallbackYear!.code, semester: dto.semester };
     if (assignment.academicYear !== activeYear.code || !assignment.class.isActive) {
       throw new BadRequestException('Nilai hanya dapat diinput untuk penugasan tahun ajaran aktif');
+    }
+    if (dto.semester !== activeYear.semester) {
+      throw new BadRequestException('Nilai hanya dapat diinput untuk semester aktif');
     }
 
     // 3. Pastikan siswa terdaftar
@@ -186,38 +196,48 @@ export class GradeService {
       throw new BadRequestException('Siswa tidak terdaftar pada kelas penugasan ini');
     }
 
-    // 4. DOBEL GUARD: UTS/UAS hanya boleh satu per (siswa, assignment, semester, type)
-    if (dto.type === 'uts' || dto.type === 'uas') {
-      const existing = await this.prisma.grade.findFirst({
-        where: {
+    const createGrade = async (db: PrismaService | Prisma.TransactionClient) => {
+      // 4. DOBEL GUARD: UTS/UAS hanya boleh satu per (siswa, assignment, semester, type)
+      if (dto.type === 'uts' || dto.type === 'uas') {
+        const existing = await db.grade.findFirst({
+          where: {
+            studentId:    dto.studentId,
+            assignmentId: dto.assignmentId,
+            semester:     dto.semester,
+            type:         dto.type as GradeType,
+          },
+          select: { id: true },
+        });
+        if (existing) {
+          throw new ConflictException(
+            `Nilai ${dto.type.toUpperCase()} untuk siswa ini sudah ada di semester ${dto.semester}`,
+          );
+        }
+      }
+      // UH/praktik/sikap: boleh banyak, tidak ada guard dobel
+
+      // 5. Simpan
+      return db.grade.create({
+        data: {
           studentId:    dto.studentId,
           assignmentId: dto.assignmentId,
           semester:     dto.semester,
+          academicYear: assignment.academicYear,
+          score:        dto.score,
           type:         dto.type as GradeType,
+          notes:        dto.notes,
+          submittedBy:  userId,
         },
-        select: { id: true },
+        select: GRADE_SELECT,
       });
-      if (existing) {
-        throw new ConflictException(
-          `Nilai ${dto.type.toUpperCase()} untuk siswa ini sudah ada di semester ${dto.semester}`,
-        );
-      }
-    }
-    // UH/praktik/sikap: boleh banyak, tidak ada guard dobel
+    };
 
-    // 5. Simpan
-    const grade = await this.prisma.grade.create({
-      data: {
-        studentId:    dto.studentId,
-        assignmentId: dto.assignmentId,
-        semester:     dto.semester,
+    const grade = await this.prisma.$transaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
         academicYear: assignment.academicYear,
-        score:        dto.score,
-        type:         dto.type as GradeType,
-        notes:        dto.notes,
-        submittedBy:  userId,
-      },
-      select: GRADE_SELECT,
+        semester: dto.semester,
+      });
+      return createGrade(tx);
     });
 
     // Emit grade.submitted — fire-and-forget
@@ -240,7 +260,7 @@ export class GradeService {
   async update(id: string, dto: UpdateGradeDto, user: AuthUser) {
     const grade = await this.prisma.grade.findUnique({
       where: { id },
-      select: { id: true, submittedBy: true, createdAt: true },
+      select: { id: true, submittedBy: true, createdAt: true, academicYear: true, semester: true },
     });
     if (!grade) throw new NotFoundException('Grade tidak ditemukan');
 
@@ -260,10 +280,16 @@ export class GradeService {
       }
     }
 
-    return this.prisma.grade.update({
-      where: { id },
-      data: dto,
-      select: GRADE_SELECT,
+    return this.prisma.$transaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+        academicYear: grade.academicYear,
+        semester: grade.semester,
+      });
+      return tx.grade.update({
+        where: { id },
+        data: dto,
+        select: GRADE_SELECT,
+      });
     });
   }
 }

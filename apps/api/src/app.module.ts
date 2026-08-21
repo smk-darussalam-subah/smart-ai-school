@@ -52,6 +52,8 @@ import { GamificationModule } from './gamification/gamification.module';
 import { PushModule } from './push/push.module';
 import { KktpConfigModule } from './kktp-config/kktp-config.module';
 import { AppointmentsModule } from './appointments/appointments.module';
+import { AcademicPeriodModule } from './academic-period/academic-period.module';
+import { SemesterClosingModule } from './semester-closing/semester-closing.module';
 
 @Module({
   imports: [
@@ -100,6 +102,8 @@ import { AppointmentsModule } from './appointments/appointments.module';
     PushModule,
     KktpConfigModule,
     AppointmentsModule,
+    AcademicPeriodModule,
+    SemesterClosingModule,
   ],
   providers: [
     UserStatusService,

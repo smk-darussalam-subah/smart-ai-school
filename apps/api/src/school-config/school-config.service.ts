@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AppointmentsService } from '../appointments/appointments.service';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { CalendarType, PermissionOverrideSource, Prisma } from '@prisma/client';
 import { logger } from '@smk/logger';
 
@@ -15,6 +16,7 @@ export class SchoolConfigService {
     private readonly prisma: PrismaService,
     private readonly permissionsService: PermissionsService,
     private readonly appointmentsService: AppointmentsService,
+    private readonly academicPeriod: AcademicPeriodService,
   ) {}
 
   // ═══ Profile (singleton) ═══════════════════════════════════════════════════
@@ -107,11 +109,18 @@ export class SchoolConfigService {
   }
 
   async getActiveAcademicYear() {
-    const ay = await this.prisma.academicYear.findFirst({
+    const years = await this.prisma.academicYear.findMany({
       where: { isActive: true },
+      take: 2,
+      orderBy: { startDate: 'desc' },
     });
-    if (!ay) throw new NotFoundException('Tidak ada tahun ajaran aktif');
-    return ay;
+    if (Array.isArray(years)) {
+      if (years.length !== 1) throw new NotFoundException('Tahun ajaran aktif harus tepat satu');
+      return years[0]!;
+    }
+    const year = await this.prisma.academicYear.findFirst({ where: { isActive: true } });
+    if (!year) throw new NotFoundException('Tahun ajaran aktif harus tepat satu');
+    return year;
   }
 
   async createAcademicYear(data: { code: string; startDate: Date; endDate: Date; isActive?: boolean }) {
@@ -125,8 +134,18 @@ export class SchoolConfigService {
     const result = await this.prisma.$transaction(async (tx) => {
       if (data.isActive) {
         await this.appointmentsService.acquireActivationLock(tx);
-        const oldActiveYear = await tx.academicYear.findFirst({ where: { isActive: true }, select: { id: true } });
-        oldActiveYearId = oldActiveYear?.id ?? null;
+        const oldActiveYears = await tx.academicYear.findMany({
+          where: { isActive: true },
+          select: { id: true },
+          take: 2,
+        });
+        if (Array.isArray(oldActiveYears) && oldActiveYears.length > 1) {
+          throw new ConflictException('Tahun ajaran aktif harus tepat satu sebelum aktivasi baru diproses.');
+        }
+        oldActiveYearId = Array.isArray(oldActiveYears)
+          ? oldActiveYears[0]?.id ?? null
+          : (await tx.academicYear.findFirst({ where: { isActive: true }, select: { id: true } }))?.id ?? null;
+        await this.academicPeriod.assertAcademicYearActivationAllowed(tx, oldActiveYearId);
         await tx.academicYear.updateMany({ data: { isActive: false } });
         await tx.semester.updateMany({ data: { isActive: false } });
       }
@@ -165,10 +184,30 @@ export class SchoolConfigService {
       let affectedAppointmentUsers: string[] = [];
       let oldActiveYearId: string | null = null;
       const result = await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.academicYear.findUnique({
+          where: { id },
+          select: { id: true, isActive: true },
+        });
+        if (!existing) throw new NotFoundException('Tahun ajaran tidak ditemukan.');
+        if ('isActive' in data) {
+          await this.assertGenericAcademicYearMutationAllowed(tx, existing, data.isActive);
+        }
         if (data.isActive === true) {
           await this.appointmentsService.acquireActivationLock(tx);
-          const oldActiveYear = await tx.academicYear.findFirst({ where: { isActive: true }, select: { id: true } });
-          oldActiveYearId = oldActiveYear?.id ?? null;
+          const oldActiveYears = await tx.academicYear.findMany({
+            where: { isActive: true },
+            select: { id: true },
+            take: 2,
+          });
+          if (Array.isArray(oldActiveYears) && oldActiveYears.length > 1) {
+            throw new ConflictException('Tahun ajaran aktif harus tepat satu sebelum aktivasi baru diproses.');
+          }
+          oldActiveYearId = Array.isArray(oldActiveYears)
+            ? oldActiveYears[0]?.id ?? null
+            : (await tx.academicYear.findFirst({ where: { isActive: true }, select: { id: true } }))?.id ?? null;
+          if (oldActiveYearId !== id) {
+            await this.academicPeriod.assertAcademicYearActivationAllowed(tx, oldActiveYearId);
+          }
           await tx.academicYear.updateMany({ data: { isActive: false } });
           await tx.semester.updateMany({ data: { isActive: false } });
         }
@@ -213,6 +252,47 @@ export class SchoolConfigService {
     if (uniqueIds.length === 0) {
       this.permissionsService.invalidateAll();
     }
+  }
+
+  private async assertGenericAcademicYearMutationAllowed(
+    tx: Prisma.TransactionClient,
+    existing: { id: string; isActive: boolean },
+    requestedValue: unknown,
+  ): Promise<void> {
+    if (existing.isActive) {
+      throw new ConflictException(
+        'Tahun ajaran aktif tidak boleh diubah statusnya melalui endpoint generic. Gunakan workflow Penutupan Semester.',
+      );
+    }
+    if (requestedValue !== true) return;
+    const [activeYearCount, activeSemesterCount] = await Promise.all([
+      tx.academicYear.count({ where: { isActive: true } }),
+      tx.semester.count({ where: { isActive: true } }),
+    ]);
+    if (activeYearCount > 0 || activeSemesterCount > 0) {
+      throw new ConflictException(
+        'Aktivasi tahun ajaran harus melalui workflow Penutupan Semester.',
+      );
+    }
+  }
+
+  private async assertGenericSemesterMutationAllowed(
+    tx: Prisma.TransactionClient,
+    existing: { id: string; academicYearId: string; number: number; isActive: boolean },
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    if (!('isActive' in data)) return;
+    if (existing.isActive) {
+      throw new ConflictException(
+        'Semester aktif tidak boleh diubah statusnya melalui endpoint generic. Gunakan workflow Penutupan Semester.',
+      );
+    }
+    if (data.isActive !== true) return;
+    await this.academicPeriod.assertInitialSemesterActivationAllowed(tx, {
+      semesterId: existing.id,
+      academicYearId: typeof data.academicYearId === 'string' ? data.academicYearId : existing.academicYearId,
+      number: typeof data.number === 'number' ? data.number : existing.number,
+    });
   }
 
   // ── TF2-P1-1: Zombie Permissions cleanup ─────────────────────────────────────
@@ -264,11 +344,21 @@ export class SchoolConfigService {
   }
 
   async getActiveSemester() {
+    const semesters = await this.prisma.semester.findMany({
+      where: { isActive: true },
+      include: { academicYear: { select: { code: true } } },
+      take: 2,
+      orderBy: { startDate: 'desc' },
+    });
+    if (Array.isArray(semesters)) {
+      if (semesters.length !== 1) throw new NotFoundException('Semester aktif harus tepat satu');
+      return semesters[0]!;
+    }
     const semester = await this.prisma.semester.findFirst({
       where: { isActive: true },
       include: { academicYear: { select: { code: true } } },
     });
-    if (!semester) throw new NotFoundException('Tidak ada semester aktif');
+    if (!semester) throw new NotFoundException('Semester aktif harus tepat satu');
     return semester;
   }
 
@@ -281,6 +371,10 @@ export class SchoolConfigService {
     // C1: Transactional — deactivate-all + create must be atomic.
     return this.prisma.$transaction(async (tx) => {
       if (data.isActive) {
+        await this.academicPeriod.assertInitialSemesterActivationAllowed(tx, {
+          academicYearId: data.academicYearId,
+          number: data.number,
+        });
         await tx.semester.updateMany({ data: { isActive: false } });
       }
       return tx.semester.create({ data });
@@ -292,6 +386,13 @@ export class SchoolConfigService {
     // H1: Map Prisma P2025 → NotFoundException.
     try {
       return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.semester.findUnique({
+          where: { id },
+          select: { id: true, academicYearId: true, number: true, isActive: true },
+        });
+        if (!existing) throw new NotFoundException('Semester tidak ditemukan.');
+        await this.academicPeriod.assertWritableSemesterId(tx, id);
+        await this.assertGenericSemesterMutationAllowed(tx, existing, data);
         if (data.isActive === true) {
           await tx.semester.updateMany({ data: { isActive: false } });
         }
