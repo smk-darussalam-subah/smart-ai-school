@@ -69,6 +69,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Jadwal', href: '/dashboard/jadwal', icon: CalendarDays, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'WAKA_KURIKULUM', 'KAPROG'], permissions: ['academic.schedule.read'] },
       { label: 'Nilai & Absensi', href: '/dashboard/nilai', icon: ClipboardCheck, roles: ['SISWA', 'ORANG_TUA'], permissions: ['grade.own.read', 'grade.child.read'] },
         { label: 'Rapor', href: '/dashboard/rapor', icon: GraduationCap, roles: ['SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'KAPROG'], permissions: ['report.read'] },
+      { label: 'Penutupan Semester', href: '/dashboard/penutupan-semester', icon: ShieldCheck, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPROG', 'GURU'] },
       { label: 'Kegiatan Kelas', href: '/dashboard/kegiatan', icon: Backpack, roles: ['GURU', 'SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KESISWAAN', 'KAPROG'], permissions: ['activity.read'] },
       { label: 'Review Modul Ajar', href: '/dashboard/rpp', icon: FileText, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'WAKA_KURIKULUM', 'KAPROG'], permissions: ['rpp.read'] },
     ],

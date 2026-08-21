@@ -22,6 +22,7 @@ import {
 import { QuestionPayloadSchema } from '../assessment/assessment-contract';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 
 const SISWA: AuthUser = { keycloakId: 'kc-siswa', username: 'siswa1', roles: ['SISWA'] } as AuthUser;
 const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
@@ -137,6 +138,12 @@ async function buildService(
       AssessmentService,
       { provide: PrismaService, useValue: prismaWithTransaction },
       { provide: EventEmitter2, useValue: { emit, emitAsync } },
+      {
+        provide: AcademicPeriodService,
+        useValue: {
+          assertWritablePeriodWithCutoverLock: jest.fn().mockResolvedValue(undefined),
+        },
+      },
       ...(notificationService ? [{ provide: NotificationService, useValue: notificationService }] : []),
     ],
   }).compile();
