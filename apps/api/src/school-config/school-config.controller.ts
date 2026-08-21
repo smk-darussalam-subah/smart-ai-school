@@ -11,6 +11,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { Public } from '../auth/decorators/public.decorator';
 import { SchoolConfigService } from './school-config.service';
@@ -83,13 +84,15 @@ export class SchoolConfigController {
     return this.service.getActiveAcademicYear();
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN')
+  @RequirePermission('academic.period.manage')
   @Post('academic-years')
   createAcademicYear(@Body(ZodPipe(CreateAcademicYearSchema)) dto: Record<string, unknown>) {
     return this.service.createAcademicYear(dto as { code: string; startDate: Date; endDate: Date; isActive?: boolean });
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN')
+  @RequirePermission('academic.period.manage')
   @Patch('academic-years/:id')
   updateAcademicYear(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(UpdateAcademicYearSchema)) dto: Record<string, unknown>) {
     return this.service.updateAcademicYear(id, dto);
@@ -108,7 +111,8 @@ export class SchoolConfigController {
     return this.service.getActiveSemester();
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN')
+  @RequirePermission('academic.period.manage')
   @Post('semesters')
   createSemester(@Body(ZodPipe(CreateSemesterSchema)) dto: Record<string, unknown>) {
     return this.service.createSemester(dto as {
@@ -116,7 +120,8 @@ export class SchoolConfigController {
     });
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
+  @Roles('SUPER_ADMIN')
+  @RequirePermission('academic.period.manage')
   @Patch('semesters/:id')
   updateSemester(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(UpdateSemesterSchema)) dto: Record<string, unknown>) {
     return this.service.updateSemester(id, dto);

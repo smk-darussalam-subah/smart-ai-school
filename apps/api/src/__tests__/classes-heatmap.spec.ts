@@ -14,6 +14,7 @@ import { ClassesService } from '../classes/classes.service';
 import { ClassesController } from '../classes/classes.controller';
 import { AttendanceService } from '../attendance/attendance.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { CreateClassSchema, ListClassesQuerySchema } from '../classes/dto/class.dto';
 import { HeatmapQuerySchema } from '../attendance/dto/heatmap.dto';
 
@@ -143,6 +144,13 @@ describe('AttendanceService.heatmap', () => {
         AttendanceService,
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        {
+          provide: AcademicPeriodService,
+          useValue: {
+            getActivePeriod: jest.fn().mockResolvedValue(null),
+            assertWritableDateWithCutoverLock: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
     service = module.get(AttendanceService);

@@ -45,6 +45,7 @@ import { FinanceService } from '../finance/finance.service';
 import { NotificationListener } from '../notification/notification.listener';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { WaLogService } from '../wa-log/wa-log.service';
 import { AuthUser } from '@smk/auth';
 import { EVENTS } from '../events/events.types';
@@ -88,6 +89,7 @@ function buildMockPrismaForStudent() {
 
 function buildMockPrismaForGrade() {
   return {
+    $transaction:       jest.fn(),
     academicYear:       { findFirst: jest.fn() },
     user:               { findUnique: jest.fn() },
     teacher:            { findUnique: jest.fn() },
@@ -295,6 +297,13 @@ describe('GradeService — event producer', () => {
         GradeService,
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: emitter },
+        {
+          provide: AcademicPeriodService,
+          useValue: {
+            getActivePeriod: jest.fn().mockResolvedValue(null),
+            assertWritablePeriodWithCutoverLock: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
     service = module.get(GradeService);
@@ -319,6 +328,7 @@ describe('GradeService — event producer', () => {
     });
     prisma.grade.findFirst.mockResolvedValue(null); // tidak ada duplikat
     prisma.grade.create.mockResolvedValue(MOCK_GRADE);
+    prisma.$transaction.mockImplementation(async (callback) => callback(prisma));
   });
 
   it('create() emit grade.submitted dengan payload benar', async () => {
@@ -368,6 +378,13 @@ describe('AttendanceService — event producer (filter alpha/sakit)', () => {
         AttendanceService,
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: emitter },
+        {
+          provide: AcademicPeriodService,
+          useValue: {
+            getActivePeriod: jest.fn().mockResolvedValue(null),
+            assertWritableDateWithCutoverLock: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
     service = module.get(AttendanceService);

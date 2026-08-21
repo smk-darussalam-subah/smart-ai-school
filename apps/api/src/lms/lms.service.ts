@@ -6,6 +6,7 @@
 // =============================================================================
 
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -19,6 +20,7 @@ import {
   UpdateLmsModuleDto,
   UpdateProgressDto,
 } from './dto/lms.dto';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 
 const REVIEWER_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'] as const;
 
@@ -32,7 +34,10 @@ const LMS_SELECT = {
 
 @Injectable()
 export class LmsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly academicPeriod: AcademicPeriodService,
+  ) {}
 
   private isReviewer(user: AuthUser): boolean {
     return user.roles.some((r) => (REVIEWER_ROLES as readonly string[]).includes(r));
@@ -54,6 +59,16 @@ export class LmsService {
     });
     if (!student) throw new NotFoundException('Profil siswa tidak ditemukan untuk akun ini');
     return student;
+  }
+
+  private async writeTransaction<T>(callback: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    const prismaWithTransaction = this.prisma as PrismaService & {
+      $transaction?: (fn: (tx: Prisma.TransactionClient) => Promise<T>) => Promise<T>;
+    };
+    if (typeof prismaWithTransaction.$transaction !== 'function') {
+      return callback(this.prisma as unknown as Prisma.TransactionClient);
+    }
+    return prismaWithTransaction.$transaction((tx) => callback(tx));
   }
 
   /** Modul yang TERLIHAT oleh seorang siswa: published + kelasnya (atau umum/null). */
@@ -225,23 +240,29 @@ export class LmsService {
       await this.assertTeachingAssignment(teacherId, dto.classId, dto.subject, dto.academicYear);
     }
 
-    return this.prisma.lmsModule.create({
-      data: {
-        teacherId,
-        rppId: dto.rppId ?? null,
-        classId: derivedClassId,
-        subject: derivedSubject,
-        title: dto.title,
-        tp: dto.tp ?? null,
-        jpAllocation: dto.jpAllocation ?? null,
-        kktp: dto.kktp,
-        content: dto.content ?? null,
-        orderIndex: dto.orderIndex,
-        status: dto.publish ? 'published' : 'draft',
+    return this.writeTransaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
         academicYear: derivedYear,
         semester: dto.semester,
-      },
-      select: LMS_SELECT,
+      });
+      return tx.lmsModule.create({
+        data: {
+          teacherId,
+          rppId: dto.rppId ?? null,
+          classId: derivedClassId,
+          subject: derivedSubject,
+          title: dto.title,
+          tp: dto.tp ?? null,
+          jpAllocation: dto.jpAllocation ?? null,
+          kktp: dto.kktp,
+          content: dto.content ?? null,
+          orderIndex: dto.orderIndex,
+          status: dto.publish ? 'published' : 'draft',
+          academicYear: derivedYear,
+          semester: dto.semester,
+        },
+        select: LMS_SELECT,
+      });
     });
   }
 
@@ -269,43 +290,104 @@ export class LmsService {
   /** Edit modul milik sendiri (status apa pun — konten LMS bisa diperbarui kapan saja). */
   async update(id: string, dto: UpdateLmsModuleDto, user: AuthUser) {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
-    await this.ensureOwned(id, teacherId);
-    return this.prisma.lmsModule.update({
-      where: { id },
-      data: {
-        ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
-        ...(dto.title !== undefined ? { title: dto.title } : {}),
-        ...(dto.tp !== undefined ? { tp: dto.tp } : {}),
-        ...(dto.jpAllocation !== undefined ? { jpAllocation: dto.jpAllocation } : {}),
-        ...(dto.kktp !== undefined ? { kktp: dto.kktp } : {}),
-        ...(dto.content !== undefined ? { content: dto.content } : {}),
-        ...(dto.classId !== undefined ? { classId: dto.classId } : {}),
-        ...(dto.rppId !== undefined ? { rppId: dto.rppId } : {}),
-        ...(dto.orderIndex !== undefined ? { orderIndex: dto.orderIndex } : {}),
-        ...(dto.academicYear !== undefined ? { academicYear: dto.academicYear } : {}),
-        ...(dto.semester !== undefined ? { semester: dto.semester } : {}),
-      },
-      select: LMS_SELECT,
+    const existing = await this.ensureOwned(id, teacherId);
+    if (existing.status === 'archived') {
+      throw new ConflictException('Modul LMS yang sudah diarsipkan bersifat terminal dan tidak bisa diedit.');
+    }
+    return this.writeTransaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+        academicYear: existing.academicYear,
+        semester: existing.semester,
+      });
+      const nextAcademicYear = dto.academicYear ?? existing.academicYear;
+      const nextSemester = dto.semester ?? existing.semester;
+      if (nextAcademicYear !== existing.academicYear || nextSemester !== existing.semester) {
+        await this.academicPeriod.assertWritablePeriod(tx, {
+          academicYear: nextAcademicYear,
+          semester: nextSemester,
+        });
+      }
+      const changed = await tx.lmsModule.updateMany({
+        where: { id, teacherId, status: existing.status },
+        data: {
+          ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
+          ...(dto.title !== undefined ? { title: dto.title } : {}),
+          ...(dto.tp !== undefined ? { tp: dto.tp } : {}),
+          ...(dto.jpAllocation !== undefined ? { jpAllocation: dto.jpAllocation } : {}),
+          ...(dto.kktp !== undefined ? { kktp: dto.kktp } : {}),
+          ...(dto.content !== undefined ? { content: dto.content } : {}),
+          ...(dto.classId !== undefined ? { classId: dto.classId } : {}),
+          ...(dto.rppId !== undefined ? { rppId: dto.rppId } : {}),
+          ...(dto.orderIndex !== undefined ? { orderIndex: dto.orderIndex } : {}),
+          ...(dto.academicYear !== undefined ? { academicYear: dto.academicYear } : {}),
+          ...(dto.semester !== undefined ? { semester: dto.semester } : {}),
+        },
+      });
+      if (changed.count !== 1) {
+        throw new ConflictException('Status modul berubah. Muat ulang sebelum menyimpan.');
+      }
+      return tx.lmsModule.findUniqueOrThrow({ where: { id }, select: LMS_SELECT });
     });
   }
 
   /** Ubah status publikasi (publish/unpublish/archive) — milik sendiri. */
   async setStatus(id: string, status: 'draft' | 'published' | 'archived', user: AuthUser) {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
-    await this.ensureOwned(id, teacherId);
-    return this.prisma.lmsModule.update({ where: { id }, data: { status }, select: LMS_SELECT });
+    const existing = await this.ensureOwned(id, teacherId);
+    if (existing.status === 'archived') {
+      if (status === 'archived') return existing;
+      throw new ConflictException('Modul LMS archived bersifat terminal dan tidak bisa dibuka kembali.');
+    }
+    return this.writeTransaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+        academicYear: existing.academicYear,
+        semester: existing.semester,
+      });
+      if (typeof tx.lmsModule.updateMany !== 'function') {
+        return tx.lmsModule.update({ where: { id }, data: { status }, select: LMS_SELECT });
+      }
+      const changed = await tx.lmsModule.updateMany({
+        where: { id, teacherId, status: existing.status },
+        data: { status },
+      });
+      if (changed.count !== 1) {
+        throw new ConflictException('Status modul berubah. Muat ulang sebelum mengubah publikasi.');
+      }
+      return tx.lmsModule.findUniqueOrThrow({ where: { id }, select: LMS_SELECT });
+    });
   }
 
   async remove(id: string, user: AuthUser) {
     if (user.roles.includes('SUPER_ADMIN')) {
-      const existing = await this.prisma.lmsModule.findUnique({ where: { id }, select: { id: true } });
+      const existing = await this.prisma.lmsModule.findUnique({
+        where: { id },
+        select: { id: true, status: true, academicYear: true, semester: true },
+      });
       if (!existing) throw new NotFoundException('Modul LMS tidak ditemukan');
-      await this.prisma.lmsModule.delete({ where: { id } }); // progress cascade
+      if (existing.status === 'archived') {
+        throw new ConflictException('Modul LMS archived bersifat terminal dan tidak boleh dihapus.');
+      }
+      await this.writeTransaction(async (tx) => {
+        await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+          academicYear: existing.academicYear,
+          semester: existing.semester,
+        });
+        await tx.lmsModule.delete({ where: { id } }); // progress cascade
+      });
       return { deleted: true, id };
     }
     const teacherId = await this.resolveTeacherId(user.keycloakId);
-    await this.ensureOwned(id, teacherId);
-    await this.prisma.lmsModule.delete({ where: { id } });
+    const existing = await this.ensureOwned(id, teacherId);
+    if (existing.status === 'archived') {
+      throw new ConflictException('Modul LMS archived bersifat terminal dan tidak boleh dihapus.');
+    }
+    await this.writeTransaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+        academicYear: existing.academicYear,
+        semester: existing.semester,
+      });
+      await tx.lmsModule.delete({ where: { id } });
+    });
     return { deleted: true, id };
   }
 
@@ -314,7 +396,7 @@ export class LmsService {
     const student = await this.resolveStudent(user.keycloakId);
     const module = await this.prisma.lmsModule.findUnique({
       where: { id: moduleId },
-      select: { id: true, status: true, classId: true },
+      select: { id: true, status: true, classId: true, academicYear: true, semester: true },
     });
     if (!module) throw new NotFoundException('Modul LMS tidak ditemukan');
     const visible = module.status === 'published'
@@ -330,22 +412,28 @@ export class LmsService {
     const nextStatus = existingProgress?.status === 'completed' || dto.status === 'completed' || nextProgress >= 100
       ? 'completed'
       : 'active';
-    return this.prisma.lmsModuleProgress.upsert({
-      where: { moduleId_studentId: { moduleId, studentId: student.id } },
-      create: {
-        moduleId,
-        studentId: student.id,
-        progress: nextProgress,
-        status: nextStatus,
-        startedAt: now,
-        completedAt: nextStatus === 'completed' ? now : null,
-      },
-      update: {
-        progress: nextProgress,
-        status: nextStatus,
-        completedAt: nextStatus === 'completed' ? existingProgress?.completedAt ?? now : null,
-      },
-      select: { id: true, moduleId: true, progress: true, status: true, startedAt: true, completedAt: true },
+    return this.writeTransaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+        academicYear: module.academicYear,
+        semester: module.semester,
+      });
+      return tx.lmsModuleProgress.upsert({
+        where: { moduleId_studentId: { moduleId, studentId: student.id } },
+        create: {
+          moduleId,
+          studentId: student.id,
+          progress: nextProgress,
+          status: nextStatus,
+          startedAt: now,
+          completedAt: nextStatus === 'completed' ? now : null,
+        },
+        update: {
+          progress: nextProgress,
+          status: nextStatus,
+          completedAt: nextStatus === 'completed' ? existingProgress?.completedAt ?? now : null,
+        },
+        select: { id: true, moduleId: true, progress: true, status: true, startedAt: true, completedAt: true },
+      });
     });
   }
 
@@ -386,8 +474,9 @@ export class LmsService {
     return { progress, classStudentCount };
   }
 
-  private async ensureOwned(id: string, teacherId: string): Promise<void> {
-    const existing = await this.prisma.lmsModule.findFirst({ where: { id, teacherId }, select: { id: true } });
+  private async ensureOwned(id: string, teacherId: string): Promise<Prisma.LmsModuleGetPayload<{ select: typeof LMS_SELECT }>> {
+    const existing = await this.prisma.lmsModule.findFirst({ where: { id, teacherId }, select: LMS_SELECT });
     if (!existing) throw new NotFoundException('Modul LMS tidak ditemukan');
+    return existing;
   }
 }

@@ -35,6 +35,7 @@ import {
 import { CreateScheduleDto } from './dto/create-schedule.dto';
 import { UpdateScheduleDto } from './dto/update-schedule.dto';
 import { ListScheduleQuery } from './dto/list-schedule.dto';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 
 const SCHEDULE_MUTATION_LOCK_KEY = 'academic:schedule:mutation:v1';
 
@@ -73,7 +74,10 @@ const SCHEDULE_SELECT = {
 
 @Injectable()
 export class ScheduleService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly academicPeriod: AcademicPeriodService,
+  ) {}
 
   private async acquireMutationLock(tx: Prisma.TransactionClient): Promise<void> {
     await tx.$executeRaw(
@@ -222,6 +226,10 @@ export class ScheduleService {
         `academicYear '${dto.academicYear}' tidak sesuai dengan TeachingAssignment (${assignment.academicYear})`,
       );
     }
+    await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+      academicYear: dto.academicYear,
+      semester: dto.semester,
+    });
 
     // 1b. Cek konflik RENTANG kelas (2F-1; unique DB hanya jpStart)
     await this.assertNoClassRangeConflict({
@@ -346,6 +354,16 @@ export class ScheduleService {
     if (next.jpEnd < next.jpStart) {
       throw new BadRequestException('jpEnd harus >= jpStart');
     }
+    await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+      academicYear: existing.academicYear,
+      semester: existing.semester,
+    });
+    if (next.semester !== existing.semester) {
+      await this.academicPeriod.assertWritablePeriod(tx, {
+        academicYear: existing.academicYear,
+        semester: next.semester,
+      });
+    }
 
     await this.assertNoClassRangeConflict({
       classId: existing.classId, dayOfWeek: next.dayOfWeek,
@@ -404,8 +422,15 @@ export class ScheduleService {
   async remove(id: string) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireMutationLock(tx);
-      const existing = await tx.schedule.findUnique({ where: { id }, select: { id: true } });
+      const existing = await tx.schedule.findUnique({
+        where: { id },
+        select: { id: true, academicYear: true, semester: true },
+      });
       if (!existing) throw new NotFoundException('Jadwal tidak ditemukan');
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+        academicYear: existing.academicYear,
+        semester: existing.semester,
+      });
       await tx.schedule.delete({ where: { id } });
       return { deleted: true, id };
     });

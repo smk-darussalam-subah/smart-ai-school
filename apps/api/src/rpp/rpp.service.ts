@@ -16,6 +16,7 @@ import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { EVENTS, RppReviewedPayload } from '../events/events.types';
 import {
   assertClassInKaprogScope,
@@ -58,6 +59,7 @@ export class RppService {
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
     private readonly permissions: PermissionsService,
+    private readonly academicPeriod: AcademicPeriodService,
   ) {}
 
   private isReviewer(user: AuthUser): boolean {
@@ -71,6 +73,16 @@ export class RppService {
     });
     if (!teacher) throw new NotFoundException('Profil guru tidak ditemukan untuk akun ini');
     return teacher.id;
+  }
+
+  private async writeTransaction<T>(callback: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    const prismaWithTransaction = this.prisma as PrismaService & {
+      $transaction?: (fn: (tx: Prisma.TransactionClient) => Promise<T>) => Promise<T>;
+    };
+    if (typeof prismaWithTransaction.$transaction !== 'function') {
+      return callback(this.prisma as unknown as Prisma.TransactionClient);
+    }
+    return prismaWithTransaction.$transaction((tx) => callback(tx));
   }
 
   async findAll(query: ListRppQueryDto, user: AuthUser) {
@@ -139,21 +151,27 @@ export class RppService {
     // classId + subject + academicYear. Mencegah guru membuat Modul Ajar
     // untuk kelas/mapel yang bukan assignmennya dengan menebak UUID kelas.
     await this.assertTeachingAssignment(teacherId, dto.classId, dto.subject, dto.academicYear);
-    return this.prisma.rpp.create({
-      data: {
-        teacherId,
-        classId: dto.classId ?? null,
-        subject: dto.subject,
-        title: dto.title,
-        content: dto.content ?? null,
-        body: dto.body ? (dto.body as Prisma.InputJsonValue) : Prisma.DbNull,
-        fileUrl: dto.fileUrl ?? null,
+    return this.writeTransaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
         academicYear: dto.academicYear,
         semester: dto.semester,
-        status: dto.submit ? 'submitted' : 'draft',
-        submittedAt: dto.submit ? new Date() : null,
-      },
-      select: RPP_SELECT,
+      });
+      return tx.rpp.create({
+        data: {
+          teacherId,
+          classId: dto.classId ?? null,
+          subject: dto.subject,
+          title: dto.title,
+          content: dto.content ?? null,
+          body: dto.body ? (dto.body as Prisma.InputJsonValue) : Prisma.DbNull,
+          fileUrl: dto.fileUrl ?? null,
+          academicYear: dto.academicYear,
+          semester: dto.semester,
+          status: dto.submit ? 'submitted' : 'draft',
+          submittedAt: dto.submit ? new Date() : null,
+        },
+        select: RPP_SELECT,
+      });
     });
   }
 
@@ -162,7 +180,7 @@ export class RppService {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
     const existing = await this.prisma.rpp.findFirst({
       where: { id, teacherId },
-      select: { id: true, status: true, classId: true, subject: true, academicYear: true },
+      select: { id: true, status: true, classId: true, subject: true, academicYear: true, semester: true },
     });
     if (!existing) throw new NotFoundException('RPP tidak ditemukan');
     if (!(EDITABLE_STATUSES as readonly string[]).includes(existing.status)) {
@@ -173,18 +191,28 @@ export class RppService {
     const newSubject = dto.subject !== undefined ? dto.subject : existing.subject;
     const newYear = dto.academicYear !== undefined ? dto.academicYear : existing.academicYear;
     await this.assertTeachingAssignment(teacherId, newClassId, newSubject, newYear);
-    const changed = await this.prisma.rpp.updateMany({
-      where: { id, teacherId, status: existing.status, archivedAt: null },
-      data: {
-        ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
-        ...(dto.title !== undefined ? { title: dto.title } : {}),
-        ...(dto.content !== undefined ? { content: dto.content } : {}),
-        ...(dto.body !== undefined ? { body: dto.body ? (dto.body as Prisma.InputJsonValue) : Prisma.DbNull } : {}),
-        ...(dto.fileUrl !== undefined ? { fileUrl: dto.fileUrl } : {}),
-        ...(dto.classId !== undefined ? { classId: dto.classId } : {}),
-        ...(dto.academicYear !== undefined ? { academicYear: dto.academicYear } : {}),
-        ...(dto.semester !== undefined ? { semester: dto.semester } : {}),
-      },
+    const changed = await this.writeTransaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+        academicYear: existing.academicYear,
+        semester: existing.semester,
+      });
+      const nextSemester = dto.semester ?? existing.semester;
+      if (newYear !== existing.academicYear || nextSemester !== existing.semester) {
+        await this.academicPeriod.assertWritablePeriod(tx, { academicYear: newYear, semester: nextSemester });
+      }
+      return tx.rpp.updateMany({
+        where: { id, teacherId, status: existing.status, archivedAt: null },
+        data: {
+          ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
+          ...(dto.title !== undefined ? { title: dto.title } : {}),
+          ...(dto.content !== undefined ? { content: dto.content } : {}),
+          ...(dto.body !== undefined ? { body: dto.body ? (dto.body as Prisma.InputJsonValue) : Prisma.DbNull } : {}),
+          ...(dto.fileUrl !== undefined ? { fileUrl: dto.fileUrl } : {}),
+          ...(dto.classId !== undefined ? { classId: dto.classId } : {}),
+          ...(dto.academicYear !== undefined ? { academicYear: dto.academicYear } : {}),
+          ...(dto.semester !== undefined ? { semester: dto.semester } : {}),
+        },
+      });
     });
     if (changed.count !== 1) {
       throw new ConflictException('Status Modul Ajar berubah. Muat ulang sebelum menyimpan edit.');
@@ -199,7 +227,7 @@ export class RppService {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
     const existing = await this.prisma.rpp.findFirst({
       where: { id, teacherId },
-      select: { id: true, status: true, content: true, body: true, fileUrl: true },
+      select: { id: true, status: true, content: true, body: true, fileUrl: true, academicYear: true, semester: true },
     });
     if (!existing) throw new NotFoundException('RPP tidak ditemukan');
     if (!(EDITABLE_STATUSES as readonly string[]).includes(existing.status)) {
@@ -208,20 +236,26 @@ export class RppService {
     if (!existing.content && !existing.fileUrl && !existing.body) {
       throw new BadRequestException('Modul Ajar kosong — isi struktur/teks atau lampiran dulu');
     }
-    const changed = await this.prisma.rpp.updateMany({
-      where: { id, teacherId, status: existing.status, archivedAt: null },
-      data: {
-        status: 'submitted',
-        submittedAt: new Date(),
-        curriculumReviewerId: null,
-        curriculumReviewerName: null,
-        curriculumReviewNote: null,
-        curriculumReviewedAt: null,
-        finalReviewerId: null,
-        finalReviewerName: null,
-        finalReviewNote: null,
-        finalApprovedAt: null,
-      },
+    const changed = await this.writeTransaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+        academicYear: existing.academicYear,
+        semester: existing.semester,
+      });
+      return tx.rpp.updateMany({
+        where: { id, teacherId, status: existing.status, archivedAt: null },
+        data: {
+          status: 'submitted',
+          submittedAt: new Date(),
+          curriculumReviewerId: null,
+          curriculumReviewerName: null,
+          curriculumReviewNote: null,
+          curriculumReviewedAt: null,
+          finalReviewerId: null,
+          finalReviewerName: null,
+          finalReviewNote: null,
+          finalApprovedAt: null,
+        },
+      });
     });
     if (changed.count !== 1) {
       throw new ConflictException('Status Modul Ajar berubah. Muat ulang sebelum mengajukan.');
@@ -239,6 +273,8 @@ export class RppService {
         id: true,
         status: true,
         classId: true,
+        academicYear: true,
+        semester: true,
         archivedAt: true,
         curriculumReviewerId: true,
       },
@@ -325,9 +361,15 @@ export class RppService {
         finalApprovedAt: dto.decision === 'approved' ? now : null,
       }),
     };
-    const changed = await this.prisma.rpp.updateMany({
-      where: { id, status: existing.status, archivedAt: null },
-      data: updateData,
+    const changed = await this.writeTransaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+        academicYear: existing.academicYear,
+        semester: existing.semester,
+      });
+      return tx.rpp.updateMany({
+        where: { id, status: existing.status, archivedAt: null },
+        data: updateData,
+      });
     });
     if (changed.count !== 1) {
       throw new ConflictException('Status Modul Ajar berubah. Muat ulang antrean sebelum mengambil keputusan.');
@@ -358,13 +400,19 @@ export class RppService {
     if (user.roles.includes('SUPER_ADMIN')) {
       const existing = await this.prisma.rpp.findUnique({
         where: { id },
-        select: { id: true, archivedAt: true },
+        select: { id: true, archivedAt: true, academicYear: true, semester: true },
       });
       if (!existing) throw new NotFoundException('RPP tidak ditemukan');
       if (existing.archivedAt) throw new ConflictException('Modul Ajar sudah diarsipkan');
-      const changed = await this.prisma.rpp.updateMany({
-        where: { id, archivedAt: null },
-        data: { archivedAt: new Date(), archivedBy: user.keycloakId },
+      const changed = await this.writeTransaction(async (tx) => {
+        await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+          academicYear: existing.academicYear,
+          semester: existing.semester,
+        });
+        return tx.rpp.updateMany({
+          where: { id, archivedAt: null },
+          data: { archivedAt: new Date(), archivedBy: user.keycloakId },
+        });
       });
       if (changed.count !== 1) {
         throw new ConflictException('Status Modul Ajar berubah. Muat ulang sebelum mengarsipkan.');
@@ -374,16 +422,22 @@ export class RppService {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
     const existing = await this.prisma.rpp.findFirst({
       where: { id, teacherId },
-      select: { id: true, status: true, archivedAt: true },
+      select: { id: true, status: true, archivedAt: true, academicYear: true, semester: true },
     });
     if (!existing) throw new NotFoundException('RPP tidak ditemukan');
     if (existing.status !== 'draft') {
       throw new ConflictException('Hanya RPP draft yang bisa dihapus guru');
     }
     if (existing.archivedAt) throw new ConflictException('Modul Ajar sudah diarsipkan');
-    const changed = await this.prisma.rpp.updateMany({
-      where: { id, teacherId, status: 'draft', archivedAt: null },
-      data: { archivedAt: new Date(), archivedBy: user.keycloakId },
+    const changed = await this.writeTransaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
+        academicYear: existing.academicYear,
+        semester: existing.semester,
+      });
+      return tx.rpp.updateMany({
+        where: { id, teacherId, status: 'draft', archivedAt: null },
+        data: { archivedAt: new Date(), archivedBy: user.keycloakId },
+      });
     });
     if (changed.count !== 1) {
       throw new ConflictException('Status Modul Ajar berubah. Muat ulang sebelum mengarsipkan.');

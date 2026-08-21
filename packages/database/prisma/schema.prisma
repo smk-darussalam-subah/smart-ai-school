@@ -50,6 +50,7 @@ model User {
   staff       Staff?                               // identitas kepegawaian (KS/Guru/TU) — 2J-4
   parent      Student[]  @relation("ParentStudent")
   leads       PpdbLead[] @relation("AssignedLeads")
+  semesterClosures SemesterClosure[]
 
   @@map("users")
   @@index([role])
@@ -1233,6 +1234,7 @@ model AcademicYear {
   calendarEvents  AcademicCalendar[]
   staffPositions  StaffPosition[]
   appointments     Appointment[]
+  semesterClosures SemesterClosure[]
 
   @@map("academic_years")
   @@schema("school")
@@ -1249,9 +1251,36 @@ model Semester {
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  closure        SemesterClosure? @relation("SemesterClosureSource")
+  nextClosure    SemesterClosure? @relation("SemesterClosureNext")
 
   @@unique([academicYearId, number])
   @@map("semesters")
+  @@schema("school")
+}
+
+model SemesterClosure {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  academicYearId   String   @map("academic_year_id") @db.Uuid
+  semesterId       String   @unique @map("semester_id") @db.Uuid
+  nextSemesterId   String?  @unique @map("next_semester_id") @db.Uuid
+  closedByUserId   String   @map("closed_by_user_id") @db.Uuid
+  closedAt         DateTime @default(now()) @map("closed_at")
+  readinessVersion String   @map("readiness_version") @db.VarChar(40)
+  readinessHash    String   @map("readiness_hash") @db.VarChar(96)
+  idempotencyKey   String   @unique @map("idempotency_key") @db.VarChar(180)
+  snapshot         Json     @db.JsonB
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  semester     Semester     @relation("SemesterClosureSource", fields: [semesterId], references: [id])
+  nextSemester Semester?    @relation("SemesterClosureNext", fields: [nextSemesterId], references: [id])
+  closedBy     User         @relation(fields: [closedByUserId], references: [id])
+
+  @@index([academicYearId, closedAt])
+  @@index([closedByUserId, closedAt])
+  @@index([readinessHash])
+  @@map("semester_closures")
   @@schema("school")
 }
 

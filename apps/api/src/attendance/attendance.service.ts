@@ -30,6 +30,7 @@ import { CreateAttendanceDto } from './dto/create-attendance.dto';
 import { ListAttendanceQuery } from './dto/list-attendance.dto';
 import { AttendanceSessionsQuery } from './dto/attendance-sessions.dto';
 import { EVENTS, AttendanceRecordedPayload } from '../events/events.types';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ export class AttendanceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly academicPeriod: AcademicPeriodService,
   ) {}
 
   /** keycloakId → student.id[] (satu atau lebih anak untuk ORANG_TUA) */
@@ -91,17 +93,27 @@ export class AttendanceService {
     // 1. Resolve userId untuk recordedBy
     const userId = await resolveUserId(this.prisma, user.keycloakId);
 
-    const activeYear = await this.prisma.academicYear.findFirst({
-      where: { isActive: true },
-      select: { code: true },
-    });
-    if (!activeYear) throw new ConflictException('Tidak ada tahun ajaran aktif');
-
     const kelas = await this.prisma.class.findUnique({
       where: { id: dto.classId },
       select: { id: true, academicYear: true, isActive: true },
     });
     if (!kelas) throw new NotFoundException('Kelas tidak ditemukan');
+    const date = parseDateStr(dto.date);
+    const activePeriod = await this.academicPeriod.getActivePeriod(this.prisma);
+    const fallbackYear = activePeriod
+      ? null
+      : await this.prisma.academicYear.findFirst({
+          where: { isActive: true },
+          select: { code: true, startDate: true, endDate: true },
+        });
+    if (!activePeriod && !fallbackYear) throw new ConflictException('Tidak ada tahun ajaran aktif');
+    const activeYear = activePeriod
+      ? { code: activePeriod.academicYear, startDate: activePeriod.startDate, endDate: activePeriod.endDate }
+      : {
+          code: fallbackYear!.code,
+          startDate: fallbackYear!.startDate ?? date,
+          endDate: fallbackYear!.endDate ?? date,
+        };
     if (!kelas.isActive || kelas.academicYear !== activeYear.code) {
       throw new BadRequestException('Absensi hanya dapat dicatat untuk kelas pada tahun ajaran aktif');
     }
@@ -129,27 +141,37 @@ export class AttendanceService {
       throw new BadRequestException('Terdapat siswa tidak aktif atau bukan anggota kelas ini');
     }
 
-    // 4. Parse date string → Date (UTC tengah malam)
-    const date = parseDateStr(dto.date);
+    if (date < activeYear.startDate || date > activeYear.endDate) {
+      throw new BadRequestException('Tanggal absensi harus berada pada semester aktif');
+    }
 
     // 5. Bulk insert atomik via $transaction
     // Jika ada P2002 (unique [studentId,classId,date]) → seluruh transaksi di-rollback
     // → error propagate ke PrismaExceptionFilter global → 409
-    const results = await this.prisma.$transaction(
-      dto.records.map((r) =>
-        this.prisma.attendance.create({
-          data: {
-            studentId:  r.studentId,
-            classId:    dto.classId,
-            date,
-            status:     r.status as AttendanceStatus,
-            notes:      r.notes,
-            recordedBy: userId,
-          },
-          select: ATTENDANCE_SELECT,
-        }),
-      ),
+    const buildCreateOps = (db: PrismaService | Prisma.TransactionClient) => (
+      dto.records.map((r) => db.attendance.create({
+        data: {
+          studentId:  r.studentId,
+          classId:    dto.classId,
+          date,
+          status:     r.status as AttendanceStatus,
+          notes:      r.notes,
+          recordedBy: userId,
+        },
+        select: ATTENDANCE_SELECT,
+      }))
     );
+    const insertRecords = async (db: PrismaService | Prisma.TransactionClient) => {
+      const created = [];
+      for (const op of buildCreateOps(db)) {
+        created.push(await op);
+      }
+      return created;
+    };
+    const results = await this.prisma.$transaction(async (tx) => {
+      await this.academicPeriod.assertWritableDateWithCutoverLock(tx, date);
+      return insertRecords(tx);
+    });
 
     // Emit attendance.recorded hanya untuk alpha/sakit (guardrail SMA-43)
     for (const record of results) {

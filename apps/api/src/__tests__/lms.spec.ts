@@ -13,6 +13,7 @@ import { AuthUser } from '@smk/auth';
 import { LmsController } from '../lms/lms.controller';
 import { LmsService } from '../lms/lms.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 
 const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
 const SISWA: AuthUser = { keycloakId: 'kc-siswa', username: 'siswa1', roles: ['SISWA'] } as AuthUser;
@@ -70,7 +71,17 @@ describe('LmsService', () => {
       lmsModuleProgress: { upsert: progressUpsert, findMany: progressFindMany, findUnique: progressFindUnique },
     };
     const moduleRef: TestingModule = await Test.createTestingModule({
-      providers: [LmsService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        LmsService,
+        { provide: PrismaService, useValue: prisma },
+        {
+          provide: AcademicPeriodService,
+          useValue: {
+            assertWritablePeriodWithCutoverLock: jest.fn().mockResolvedValue(undefined),
+            assertWritablePeriod: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+      ],
     }).compile();
     service = moduleRef.get(LmsService);
   });

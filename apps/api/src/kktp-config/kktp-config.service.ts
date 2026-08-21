@@ -8,12 +8,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import { resolveUserId } from '../common/helpers/role-helpers';
 import { AuthUser } from '@smk/auth';
 import { UpsertKktpDto, ListKktpQuery } from './dto/kktp-config.dto';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 
 const DEFAULT_KKTP = 75;
 
 @Injectable()
 export class KktpConfigService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly academicPeriod: AcademicPeriodService,
+  ) {}
 
   /** List all KKTP configs, optionally filtered by academicYear + semester. */
   async findAll(query: ListKktpQuery) {
@@ -30,32 +34,41 @@ export class KktpConfigService {
   /** Upsert a KKTP config for a subject + academicYear + semester. */
   async upsert(dto: UpsertKktpDto, user: AuthUser) {
     const userId = await resolveUserId(this.prisma, user.keycloakId).catch(() => null);
-    return this.prisma.kktpConfig.upsert({
-      where: {
-        subject_academicYear_semester: {
-          subject: dto.subject,
-          academicYear: dto.academicYear,
-          semester: dto.semester,
-        },
-      },
-      create: {
-        subject: dto.subject,
-        kktp: dto.kktp,
+    return this.prisma.$transaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
         academicYear: dto.academicYear,
         semester: dto.semester,
-        createdBy: userId,
-      },
-      update: {
-        kktp: dto.kktp,
-        createdBy: userId,
-      },
+      });
+      return tx.kktpConfig.upsert({
+        where: {
+          subject_academicYear_semester: {
+            subject: dto.subject,
+            academicYear: dto.academicYear,
+            semester: dto.semester,
+          },
+        },
+        create: {
+          subject: dto.subject,
+          kktp: dto.kktp,
+          academicYear: dto.academicYear,
+          semester: dto.semester,
+          createdBy: userId,
+        },
+        update: {
+          kktp: dto.kktp,
+          createdBy: userId,
+        },
+      });
     });
   }
 
   /** Delete a KKTP config (revert to default). */
   async remove(subject: string, academicYear: string, semester: number) {
-    await this.prisma.kktpConfig.deleteMany({
-      where: { subject, academicYear, semester },
+    await this.prisma.$transaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, { academicYear, semester });
+      await tx.kktpConfig.deleteMany({
+        where: { subject, academicYear, semester },
+      });
     });
     return { deleted: true };
   }
