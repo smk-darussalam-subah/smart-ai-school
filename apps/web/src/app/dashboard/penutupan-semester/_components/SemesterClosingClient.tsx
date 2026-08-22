@@ -32,9 +32,12 @@ import {
   buildSemesterCloseIdempotencyKey,
   canSubmitSemesterClose,
   closureCsvFilename,
+  formatKktpProvenance,
   formatSemesterDateTime,
   formatReadinessMetric,
   isReadinessStale,
+  semesterClosingUnavailableCopy,
+  type SemesterClosingUnavailableReason,
 } from '../semester-closing-ui';
 
 type Tab = 'readiness' | 'report' | 'history';
@@ -144,7 +147,7 @@ function FinalReportView({ finalReport }: { finalReport?: SemesterFinalReport })
         rows={(finalReport?.subjectKktp ?? []).map((row) => [
           row.subject,
           row.kktp ?? '-',
-          row.provenance,
+          formatKktpProvenance(row.provenance),
           row.gradeRecords,
           row.belowKktpCount,
           row.passRate === null ? '-' : `${row.passRate.toFixed(1)}%`,
@@ -309,17 +312,24 @@ export default function SemesterClosingClient({
   canReadFinalReport,
   canCloseSemester,
   initialTab = 'readiness',
+  unavailableReason = 'api-error',
+  initialClosuresError = null,
+  initialSelectedClosure = null,
 }: {
   initialReadiness: SemesterReadiness | null;
   initialClosures: SemesterClosureSummary[];
   canReadFinalReport: boolean;
   canCloseSemester: boolean;
   initialTab?: Tab;
+  unavailableReason?: SemesterClosingUnavailableReason;
+  initialClosuresError?: string | null;
+  initialSelectedClosure?: SemesterClosureDetail | null;
 }) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [readiness, setReadiness] = useState(initialReadiness);
   const [closures, setClosures] = useState(initialClosures);
-  const [selectedClosure, setSelectedClosure] = useState<SemesterClosureDetail | null>(null);
+  const [selectedClosure, setSelectedClosure] = useState<SemesterClosureDetail | null>(initialSelectedClosure);
+  const [historyError, setHistoryError] = useState<string | null>(initialClosuresError);
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const [confirmation, setConfirmation] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -369,6 +379,26 @@ export default function SemesterClosingClient({
     });
   }
 
+  function reloadClosures() {
+    if (requestLockRef.current) return;
+    requestLockRef.current = 'closures';
+    startTransition(async () => {
+      try {
+        const result = await listSemesterClosuresAction();
+        if (result.success) {
+          setClosures(result.data.data);
+          setHistoryError(null);
+          setMessage({ tone: 'success', text: 'Riwayat snapshot diperbarui.' });
+        } else {
+          setHistoryError(result.error);
+          setMessage({ tone: 'error', text: result.error });
+        }
+      } finally {
+        requestLockRef.current = null;
+      }
+    });
+  }
+
   function closeSemester() {
     if (!readiness || confirmation !== 'TUTUP SEMESTER' || requestLockRef.current) return;
     if (isReadinessStale(readiness, latestHashRef.current, Date.now())) {
@@ -406,7 +436,14 @@ export default function SemesterClosingClient({
             setReadiness(refreshed.data);
             setNowMs(Date.now());
           }
-          if (history?.success) setClosures(history.data.data);
+          if (history?.success) {
+            setClosures(history.data.data);
+            setHistoryError(null);
+          } else if (history && !history.success) {
+            const error = `Riwayat belum berhasil dimuat ulang. ${history.error}`;
+            setHistoryError(error);
+            setMessage({ tone: 'error', text: error });
+          }
         } else {
           setMessage({ tone: 'error', text: result.error });
         }
@@ -473,10 +510,12 @@ export default function SemesterClosingClient({
   }
 
   if (!readiness) {
+    const unavailable = semesterClosingUnavailableCopy(unavailableReason);
     return (
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="rounded-lg border border-red-200 bg-red-50 p-5 text-red-900">
-          Data penutupan semester tidak dapat dimuat. Periksa izin atau konfigurasi periode aktif.
+        <div className={`rounded-lg border p-5 ${unavailable.className}`}>
+          <h1 className="text-base font-semibold">{unavailable.title}</h1>
+          <p className="mt-1 text-sm">{unavailable.description}</p>
         </div>
       </main>
     );
@@ -577,48 +616,58 @@ export default function SemesterClosingClient({
           <MetricGrid readiness={readiness} />
           <FindingTable title="Blocker Wajib Selesai" tone="blocker" items={readiness.blockers} />
           <FindingTable title="Warning dan Risiko Operasional" tone="warning" items={readiness.warnings} />
-          {canReadFinalReport && (
-          <section className="rounded-lg border border-slate-200 bg-white p-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <h2 className="flex items-center gap-2 text-base font-semibold text-slate-950">
-                  <Lock className="h-4 w-4" />
-                  Final Close
-                </h2>
-                <p className="mt-1 max-w-3xl text-sm text-slate-600">
-                  Hanya Kepala Sekolah dengan Appointment aktif yang dapat menutup semester. Super Admin tetap dapat membaca audit, tetapi tidak menjadi aktor close.
-                </p>
-                <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                  <div><dt className="text-slate-500">Preview</dt><dd className="font-semibold text-slate-900">{formatSemesterDateTime(readiness.generatedAt)}</dd></div>
-                  <div><dt className="text-slate-500">Hash</dt><dd className="font-mono text-xs text-slate-700">{readiness.readinessHash.slice(0, 16)}...</dd></div>
-                  <div><dt className="text-slate-500">Periode</dt><dd className="font-semibold text-slate-900">{readiness.period.startDate} - {readiness.period.endDate}</dd></div>
-                  <div><dt className="text-slate-500">Berikutnya</dt><dd className="font-semibold text-slate-900">{readiness.nextPeriod ? `Semester ${readiness.nextPeriod.semester}` : 'Tidak ada'}</dd></div>
-                </dl>
+          {canCloseSemester ? (
+            <section className="rounded-lg border border-slate-200 bg-white p-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h2 className="flex items-center gap-2 text-base font-semibold text-slate-950">
+                    <Lock className="h-4 w-4" />
+                    Final Close
+                  </h2>
+                  <p className="mt-1 max-w-3xl text-sm text-slate-600">
+                    Hanya Kepala Sekolah dengan Appointment aktif yang dapat menutup semester. Super Admin tetap dapat membaca audit, tetapi tidak menjadi aktor close.
+                  </p>
+                  <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                    <div><dt className="text-slate-500">Preview</dt><dd className="font-semibold text-slate-900">{formatSemesterDateTime(readiness.generatedAt)}</dd></div>
+                    <div><dt className="text-slate-500">Hash</dt><dd className="font-mono text-xs text-slate-700">{readiness.readinessHash.slice(0, 16)}...</dd></div>
+                    <div><dt className="text-slate-500">Periode</dt><dd className="font-semibold text-slate-900">{readiness.period.startDate} - {readiness.period.endDate}</dd></div>
+                    <div><dt className="text-slate-500">Berikutnya</dt><dd className="font-semibold text-slate-900">{readiness.nextPeriod ? `Semester ${readiness.nextPeriod.semester}` : 'Tidak ada'}</dd></div>
+                  </dl>
+                </div>
+                <div className="w-full shrink-0 lg:w-80">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="semester-close-confirmation">
+                    Ketik TUTUP SEMESTER
+                  </label>
+                  <input
+                    id="semester-close-confirmation"
+                    value={confirmation}
+                    onChange={(event) => setConfirmation(event.target.value)}
+                    className="mt-2 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-100"
+                    placeholder="TUTUP SEMESTER"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setConfirmOpen(true)}
+                    disabled={!canClose}
+                    className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Tutup Semester Final
+                  </button>
+                </div>
               </div>
-              <div className="w-full shrink-0 lg:w-80">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="semester-close-confirmation">
-                  Ketik TUTUP SEMESTER
-                </label>
-                <input
-                  id="semester-close-confirmation"
-                  value={confirmation}
-                  onChange={(event) => setConfirmation(event.target.value)}
-                  className="mt-2 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-100"
-                  placeholder="TUTUP SEMESTER"
-                />
-                <button
-                  type="button"
-                  onClick={() => setConfirmOpen(true)}
-                  disabled={!canClose}
-                  className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  Tutup Semester Final
-                </button>
-              </div>
-            </div>
-          </section>
-          )}
+            </section>
+          ) : canReadFinalReport ? (
+            <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <h2 className="flex items-center gap-2 text-base font-semibold text-slate-950">
+                <Lock className="h-4 w-4" />
+                Mode Tinjau
+              </h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-600">
+                Anda dapat meninjau kesiapan, capaian, dan riwayat penutupan semester. Aksi final close hanya tersedia untuk Kepala Sekolah dengan Appointment aktif.
+              </p>
+            </section>
+          ) : null}
         </div>
       )}
 
@@ -652,7 +701,23 @@ export default function SemesterClosingClient({
             <div className="border-b border-slate-200 px-4 py-3">
               <h2 className="text-base font-semibold text-slate-950">Riwayat Snapshot</h2>
             </div>
-            {closures.length === 0 ? (
+            {historyError ? (
+              <div className="space-y-3 px-4 py-6">
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950">
+                  <p className="font-semibold">Riwayat belum dapat dimuat.</p>
+                  <p className="mt-1">{historyError}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={reloadClosures}
+                  disabled={isPending}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Coba lagi
+                </button>
+              </div>
+            ) : closures.length === 0 ? (
               <div className="px-4 py-6 text-sm text-slate-500">Belum ada semester yang ditutup.</div>
             ) : (
               <div className="overflow-x-auto">
