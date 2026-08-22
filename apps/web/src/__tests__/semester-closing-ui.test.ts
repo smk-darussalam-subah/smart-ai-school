@@ -3,13 +3,16 @@ import { renderToString } from 'react-dom/server';
 import {
   buildSemesterCloseIdempotencyKey,
   canCloseSemesterFromAuthority,
+  canReadSemesterClosingReadiness,
   canReadSemesterFinalReport,
   canSubmitSemesterClose,
   closureCsvFilename,
+  formatKktpProvenance,
   formatSemesterDateTime,
   formatReadinessMetric,
   isReadinessStale,
   safeCsvFilenameSegment,
+  semesterClosingUnavailableCopy,
 } from '../app/dashboard/penutupan-semester/semester-closing-ui';
 import SemesterClosingClient, { HistoricalReportPanel } from '../app/dashboard/penutupan-semester/_components/SemesterClosingClient';
 import { getRoutePermissions } from '../lib/permissions';
@@ -136,6 +139,28 @@ describe('semester closing UI helpers', () => {
     expect(formatSemesterDateTime('2026-08-20T01:00:00.000Z')).toContain('08.00');
   });
 
+  it('maps KKTP provenance to operator-safe labels without leaking raw internal codes', () => {
+    expect(formatKktpProvenance('system_default')).toBe('Standar sekolah');
+    expect(formatKktpProvenance('config')).toBe('Konfigurasi kelas');
+    expect(formatKktpProvenance('module')).toBe('Ketentuan modul');
+    expect(formatKktpProvenance('unconfigured')).toBe('Belum dikonfigurasi');
+    expect(formatKktpProvenance('legacy_internal_code')).toBe('Sumber lain');
+  });
+
+  it('keeps readiness route access explicit before fetching semester data', () => {
+    expect(canReadSemesterClosingReadiness({
+      can: () => false,
+      hasRole: (...roles: string[]) => roles.includes('GURU'),
+    })).toBe(true);
+    expect(canReadSemesterClosingReadiness({
+      can: () => false,
+      hasRole: (...roles: string[]) => roles.includes('TATA_USAHA'),
+    })).toBe(false);
+    expect(semesterClosingUnavailableCopy('access-denied').title).toContain('Akses penutupan semester ditolak');
+    expect(semesterClosingUnavailableCopy('no-active-period').title).toContain('Periode aktif belum valid');
+    expect(semesterClosingUnavailableCopy('api-error').title).toContain('tidak dapat dimuat');
+  });
+
   it('renders GURU readiness without final report or history tabs', () => {
     const html = renderToString(React.createElement(SemesterClosingClient, {
       initialReadiness: readiness,
@@ -151,7 +176,7 @@ describe('semester closing UI helpers', () => {
     expect(html).not.toContain('Tutup Semester Final');
   });
 
-  it('renders oversight tabs only for final-report readers', () => {
+  it('renders close action only for Kepala Sekolah close authority', () => {
     const html = renderToString(React.createElement(SemesterClosingClient, {
       initialReadiness: readiness,
       initialClosures: [],
@@ -162,6 +187,34 @@ describe('semester closing UI helpers', () => {
     expect(html).toContain('Capaian');
     expect(html).toContain('Riwayat');
     expect(html).toContain('Tutup Semester Final');
+  });
+
+  it('renders read-only policy note for oversight readers without close authority', () => {
+    const html = renderToString(React.createElement(SemesterClosingClient, {
+      initialReadiness: readiness,
+      initialClosures: [],
+      canReadFinalReport: true,
+      canCloseSemester: false,
+    }));
+
+    expect(html).toContain('Capaian');
+    expect(html).toContain('Riwayat');
+    expect(html).toContain('Mode Tinjau');
+    expect(html).not.toContain('Ketik TUTUP SEMESTER');
+    expect(html).not.toContain('Tutup Semester Final');
+  });
+
+  it('renders distinct no-access state without generic configuration copy', () => {
+    const html = renderToString(React.createElement(SemesterClosingClient, {
+      initialReadiness: null,
+      initialClosures: [],
+      canReadFinalReport: false,
+      canCloseSemester: false,
+      unavailableReason: 'access-denied',
+    }));
+
+    expect(html).toContain('Akses penutupan semester ditolak');
+    expect(html).not.toContain('Periksa izin atau konfigurasi periode aktif');
   });
 
   it('renders history rows with report-open and period-bound CSV actions', () => {
@@ -183,6 +236,44 @@ describe('semester closing UI helpers', () => {
     expect(html).toContain('Lihat laporan');
     expect(html).toContain('CSV');
     expect(html).toContain('Pilih laporan dari tabel riwayat');
+  });
+
+  it('renders history API failure as retryable error instead of false empty state', () => {
+    const html = renderToString(React.createElement(SemesterClosingClient, {
+      initialReadiness: readiness,
+      initialClosures: [],
+      canReadFinalReport: true,
+      canCloseSemester: false,
+      initialTab: 'history',
+      initialClosuresError: 'Riwayat gagal dimuat',
+    }));
+
+    expect(html).toContain('Riwayat belum dapat dimuat.');
+    expect(html).toContain('Riwayat gagal dimuat');
+    expect(html).toContain('Coba lagi');
+    expect(html).not.toContain('Belum ada semester yang ditutup.');
+  });
+
+  it('renders retry-success history state as real rows without stale error copy', () => {
+    const html = renderToString(React.createElement(SemesterClosingClient, {
+      initialReadiness: readiness,
+      initialClosures: [{
+        id: 'closure-retry',
+        closedAt: '2026-08-20T02:00:00.000Z',
+        readinessVersion: 'wave7.v1',
+        readinessHash: 'd'.repeat(64),
+        semester: { number: 1, academicYear: { code: '2026/2027' } },
+        closedBy: { fullName: 'Kepala Sekolah' },
+      }],
+      canReadFinalReport: true,
+      canCloseSemester: false,
+      initialTab: 'history',
+      initialClosuresError: null,
+    }));
+
+    expect(html).toMatch(/Semester[\s\S]*1[\s\S]*2026\/2027/);
+    expect(html).toContain('Lihat laporan');
+    expect(html).not.toContain('Riwayat belum dapat dimuat.');
   });
 
   it('renders historical report from immutable closure snapshot rather than current readiness preview', () => {
@@ -232,5 +323,40 @@ describe('semester closing UI helpers', () => {
     expect(html).toContain('Semester 2 2025/2026');
     expect(html).toContain('XII AKL 1');
     expect(html).not.toContain('X TKJ 1');
+  });
+
+  it('keeps selected closure visible when post-close history refresh fails', () => {
+    const historicalSnapshot = {
+      ...readiness,
+      ready: undefined,
+      generatedAt: undefined,
+      closedAt: undefined,
+      readinessHash: undefined,
+      period: { ...readiness.period, academicYear: '2026/2027', semester: 1 },
+    };
+    const html = renderToString(React.createElement(SemesterClosingClient, {
+      initialReadiness: readiness,
+      initialClosures: [],
+      canReadFinalReport: true,
+      canCloseSemester: true,
+      initialTab: 'history',
+      initialClosuresError: 'Riwayat belum berhasil dimuat ulang. API riwayat gagal.',
+      initialSelectedClosure: {
+        id: 'closure-new',
+        closedAt: '2026-08-20T02:00:00.000Z',
+        readinessVersion: 'wave7.v1',
+        readinessHash: 'e'.repeat(64),
+        semesterId: 'sem-1',
+        nextSemesterId: null,
+        semester: { number: 1, academicYear: { code: '2026/2027' } },
+        closedBy: { fullName: 'Kepala Sekolah' },
+        snapshot: historicalSnapshot,
+      },
+    }));
+
+    expect(html).toContain('Laporan Final Historis');
+    expect(html).toContain('Semester 1 2026/2027');
+    expect(html).toContain('Riwayat belum berhasil dimuat ulang.');
+    expect(html).not.toContain('Belum ada semester yang ditutup.');
   });
 });

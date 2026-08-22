@@ -7,6 +7,11 @@ export type SemesterClosingAuthority = {
   hasRole: (...roles: string[]) => boolean;
 };
 
+export type SemesterClosingUnavailableReason =
+  | 'access-denied'
+  | 'no-active-period'
+  | 'api-error';
+
 export function formatSemesterDateTime(value: string | null | undefined): string {
   if (!value) return '-';
   return new Intl.DateTimeFormat('id-ID', {
@@ -18,6 +23,16 @@ export function formatSemesterDateTime(value: string | null | undefined): string
 
 export function formatReadinessMetric(metric: Pick<ReadinessMetric, 'value' | 'total'>): string {
   return metric.total === undefined ? String(metric.value) : `${metric.value}/${metric.total}`;
+}
+
+export function formatKktpProvenance(value: string | null | undefined): string {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === 'module') return 'Ketentuan modul';
+  if (normalized === 'config') return 'Konfigurasi kelas';
+  if (normalized === 'system_default') return 'Standar sekolah';
+  if (normalized === 'unconfigured') return 'Belum dikonfigurasi';
+  if (normalized === 'snapshot') return 'Snapshot resmi';
+  return 'Sumber lain';
 }
 
 export function buildSemesterCloseIdempotencyKey(readiness: { period: { semesterId: string }; readinessHash: string }): string {
@@ -41,6 +56,10 @@ export function canSubmitSemesterClose(input: {
   );
 }
 
+export function canReadSemesterClosingReadiness(authority: SemesterClosingAuthority): boolean {
+  return authority.hasRole('SUPER_ADMIN', 'GURU', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPROG');
+}
+
 export function canReadSemesterFinalReport(authority: SemesterClosingAuthority): boolean {
   return (
     authority.can('academic.final-report.read') &&
@@ -53,6 +72,32 @@ export function canCloseSemesterFromAuthority(authority: SemesterClosingAuthorit
     authority.can('academic.semester.close') &&
     authority.hasRole('KEPALA_SEKOLAH')
   );
+}
+
+export function semesterClosingUnavailableCopy(reason: SemesterClosingUnavailableReason): {
+  title: string;
+  description: string;
+  className: string;
+} {
+  if (reason === 'access-denied') {
+    return {
+      title: 'Akses penutupan semester ditolak',
+      description: 'Fitur ini hanya tersedia untuk Super Admin, Guru, Kepala Sekolah, Waka Kurikulum, atau Kaprog dengan kewenangan aktif.',
+      className: 'border-amber-200 bg-amber-50 text-amber-950',
+    };
+  }
+  if (reason === 'no-active-period') {
+    return {
+      title: 'Periode aktif belum valid',
+      description: 'Tahun ajaran dan semester aktif harus tepat satu sebelum preview penutupan semester dapat dihitung.',
+      className: 'border-slate-200 bg-slate-50 text-slate-900',
+    };
+  }
+  return {
+    title: 'Data penutupan semester tidak dapat dimuat',
+    description: 'Koneksi atau layanan akademik sedang bermasalah. Coba segarkan halaman atau ulangi setelah layanan pulih.',
+    className: 'border-red-200 bg-red-50 text-red-950',
+  };
 }
 
 export function safeCsvFilenameSegment(value: string | number): string {

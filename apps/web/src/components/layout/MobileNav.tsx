@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Menu } from 'lucide-react';
@@ -19,7 +19,7 @@ export default function MobileNav({ viewAs = null, permissions = [], permError =
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger asChild>
-          <button type="button" aria-label="Buka menu navigasi" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+          <button type="button" aria-label="Buka menu navigasi" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-gray-100 transition-colors">
             <Menu className="h-6 w-6 text-gray-600" aria-hidden="true" />
           </button>
         </SheetTrigger>
