@@ -11,6 +11,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { ScheduleService } from '../schedule/schedule.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 
 const EXISTING = {
   id: 'sch-1', classId: 'c1', teachingAssignmentId: 'ta-1',
@@ -45,7 +46,17 @@ describe('ScheduleService 2F-1 (update/remove/overlap-inklusif)', () => {
     executeRaw.mockResolvedValue(1);
     transaction.mockImplementation((callback: (tx: typeof prisma) => unknown) => callback(prisma));
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ScheduleService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        ScheduleService,
+        { provide: PrismaService, useValue: prisma },
+        {
+          provide: AcademicPeriodService,
+          useValue: {
+            assertWritablePeriodWithCutoverLock: jest.fn().mockResolvedValue(undefined),
+            assertWritablePeriod: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+      ],
     }).compile();
     service = module.get(ScheduleService);
   });

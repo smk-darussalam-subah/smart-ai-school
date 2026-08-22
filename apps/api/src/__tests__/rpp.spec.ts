@@ -17,6 +17,7 @@ import { RppController } from '../rpp/rpp.controller';
 import { RppService } from '../rpp/rpp.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { ReviewRppSchema, CreateRppSchema } from '../rpp/dto/rpp.dto';
 
 const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
@@ -74,6 +75,13 @@ describe('RppService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
         { provide: PermissionsService, useValue: { hasPermission } },
+        {
+          provide: AcademicPeriodService,
+          useValue: {
+            assertWritablePeriodWithCutoverLock: jest.fn().mockResolvedValue(undefined),
+            assertWritablePeriod: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
     service = module.get(RppService);

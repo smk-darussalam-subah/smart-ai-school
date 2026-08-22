@@ -45,6 +45,7 @@ import { ScheduleService }    from '../schedule/schedule.service';
 import { ScheduleController } from '../schedule/schedule.controller';
 import { ScheduleModule }     from '../schedule/schedule.module';
 import { PrismaService }      from '../prisma/prisma.service';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { AuthUser }           from '@smk/auth';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -150,6 +151,13 @@ describe('ScheduleService', () => {
       providers: [
         ScheduleService,
         { provide: PrismaService, useValue: prisma },
+        {
+          provide: AcademicPeriodService,
+          useValue: {
+            assertWritablePeriodWithCutoverLock: jest.fn().mockResolvedValue(undefined),
+            assertWritablePeriod: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
     service = module.get(ScheduleService);

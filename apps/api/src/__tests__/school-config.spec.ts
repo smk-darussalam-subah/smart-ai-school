@@ -11,6 +11,7 @@ import { CreateMajorSchema } from '../school-config/dto/major.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AppointmentsService } from '../appointments/appointments.service';
+import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { Prisma } from '@prisma/client';
 
 const PROFILE = { id: 'p1', name: 'SMK Darussalam Subah', npsn: '20324567', address: 'Jl. Raya', phone: null, email: null, website: null, headmasterName: null, headmasterNip: null, logoUrl: null, accreditation: 'A', createdAt: new Date(), updatedAt: new Date() };
@@ -26,8 +27,8 @@ describe('SchoolConfigService', () => {
   let service: SchoolConfigService;
   const mockProfile = { findFirst: jest.fn(), update: jest.fn() };
   const mockMajor = { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() };
-  const mockAY = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() };
-  const mockSem = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() };
+  const mockAY = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() };
+  const mockSem = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() };
   const mockCal = { findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() };
   const mockStaffPosition = { updateMany: jest.fn() };
   const mockUserPermissionOverride = { deleteMany: jest.fn() };
@@ -36,6 +37,11 @@ describe('SchoolConfigService', () => {
   const mockAppointments = {
     acquireActivationLock: jest.fn(),
     applyAcademicYearActivation: jest.fn(),
+  };
+  const mockAcademicPeriod = {
+    assertAcademicYearActivationAllowed: jest.fn(),
+    assertInitialSemesterActivationAllowed: jest.fn(),
+    assertWritableSemesterId: jest.fn(),
   };
 
   const prisma = {
@@ -51,12 +57,15 @@ describe('SchoolConfigService', () => {
 
   beforeEach(async () => {
     [mockProfile.findFirst, mockProfile.update, mockMajor.findMany, mockMajor.findUnique, mockMajor.create, mockMajor.update,
-      mockAY.findMany, mockAY.findFirst, mockAY.findUnique, mockAY.create, mockAY.update, mockAY.updateMany,
-      mockSem.findMany, mockSem.findFirst, mockSem.findUnique, mockSem.create, mockSem.update, mockSem.updateMany,
+      mockAY.findMany, mockAY.findFirst, mockAY.findUnique, mockAY.create, mockAY.update, mockAY.updateMany, mockAY.count,
+      mockSem.findMany, mockSem.findFirst, mockSem.findUnique, mockSem.create, mockSem.update, mockSem.updateMany, mockSem.count,
       mockCal.findMany, mockCal.create, mockCal.update, mockCal.delete,
       mockStaffPosition.updateMany, mockUserPermissionOverride.deleteMany,
       mock$transaction, mockPermissions.invalidateAll, mockPermissions.invalidateUser,
-      mockAppointments.acquireActivationLock, mockAppointments.applyAcademicYearActivation].forEach(m => m.mockReset());
+      mockAppointments.acquireActivationLock, mockAppointments.applyAcademicYearActivation,
+      mockAcademicPeriod.assertAcademicYearActivationAllowed,
+      mockAcademicPeriod.assertInitialSemesterActivationAllowed,
+      mockAcademicPeriod.assertWritableSemesterId].forEach(m => m.mockReset());
     mockAppointments.acquireActivationLock.mockResolvedValue(undefined);
     mockAppointments.applyAcademicYearActivation.mockResolvedValue({
       endedCount: 0,
@@ -71,6 +80,7 @@ describe('SchoolConfigService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: PermissionsService, useValue: mockPermissions },
         { provide: AppointmentsService, useValue: mockAppointments },
+        { provide: AcademicPeriodService, useValue: mockAcademicPeriod },
       ],
     }).compile();
     service = module.get(SchoolConfigService);
@@ -254,16 +264,19 @@ describe('SchoolConfigService', () => {
     expect(mockAY.create).not.toHaveBeenCalled();
   });
 
-  it('updateAcademicYear with isActive → transactional activate', async () => {
+  it('updateAcademicYear with isActive → transactional bootstrap only when no active period exists', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mock$transaction.mockImplementation(async (cb: (tx: any) => Promise<unknown>) => cb(prisma));
-    mockAY.findFirst.mockResolvedValue({ id: 'ay-old' });
+    mockAY.findUnique.mockResolvedValue({ id: 'ay1', isActive: false });
+    mockAY.count.mockResolvedValue(0);
+    mockSem.count.mockResolvedValue(0);
+    mockAY.findMany.mockResolvedValue([]);
     mockAY.updateMany.mockResolvedValue({ count: 1 });
     mockAY.update.mockResolvedValue({ ...AY, isActive: true });
     const result = await service.updateAcademicYear('ay1', { isActive: true });
     expect(mock$transaction).toHaveBeenCalledTimes(1);
     expect(result).toBeDefined();
-    expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.findFirst.mock.invocationCallOrder[0]!);
+    expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.findMany.mock.invocationCallOrder[0]!);
     expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.updateMany.mock.invocationCallOrder[0]!);
   });
 
@@ -294,6 +307,7 @@ describe('SchoolConfigService', () => {
   it('updateSemester with isActive → transactional activate', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mock$transaction.mockImplementation(async (cb: (tx: any) => Promise<unknown>) => cb(prisma));
+    mockSem.findUnique.mockResolvedValue({ id: 's1', academicYearId: 'ay1', number: 1, isActive: false });
     mockSem.updateMany.mockResolvedValue({ count: 1 });
     mockSem.update.mockResolvedValue({ ...SEM, isActive: true });
     const result = await service.updateSemester('s1', { isActive: true });

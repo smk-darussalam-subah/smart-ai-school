@@ -1,19 +1,15 @@
 'use client';
 
-// Manajemen Tahun Ajaran & Semester (SA + KS). Buat TA/semester baru & set aktif
-// (aktivasi otomatis menonaktifkan yang lama — ditangani backend). Inilah cara
-// self-service memulai tahun ajaran baru, menggantikan seed/SQL manual.
-
+import Link from 'next/link';
 import { useState, useTransition } from 'react';
 import {
-  CalendarRange, Plus, CheckCircle2, Power, AlertTriangle, Loader2, CalendarDays, Pencil,
+  CalendarRange, Plus, CheckCircle2, AlertTriangle, Loader2, CalendarDays, Pencil,
 } from 'lucide-react';
 import { fmtDateShort } from '@/lib/academic';
 import {
-  createAcademicYear, activateAcademicYear, createSemester, activateSemester,
+  createAcademicYear, createSemester,
   updateAcademicYearAction, updateSemesterAction,
 } from '../actions';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -41,41 +37,11 @@ const FIELD = 'w-full rounded-xl border border-[#e6efea] bg-white px-3 py-2 text
 export default function TahunAjaranClient({ years, semesters }: { years: AcademicYearRow[]; semesters: SemesterRow[] }) {
   const [yearDialog, setYearDialog] = useState(false);
   const [semForYear, setSemForYear] = useState<AcademicYearRow | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
   const [editTarget, setEditTarget] = useState<{ type: 'year' | 'semester'; id: string; code: string; startDate: string; endDate: string } | null>(null);
 
   const sortedYears = [...years].sort((a, b) => b.code.localeCompare(a.code));
   const activeYear = years.find((y) => y.isActive);
   const activeSem = semesters.find((s) => s.isActive);
-
-  // M1: Now includes successMsg so user gets feedback on successful activation.
-  const run = (id: string, fn: () => Promise<{ success: boolean; error?: string }>, successMsg?: string) => {
-    setBusyId(id);
-    startTransition(async () => {
-      const res = await fn();
-      setBusyId(null);
-      if (!res.success) toast.error(res.error ?? 'Aksi gagal.');
-      else if (successMsg) toast.success(successMsg);
-    });
-  };
-
-  const [confirmState, setConfirmState] = useState<{ title: string; description: string; action: () => void } | null>(null);
-
-  const doActivateYear = (y: AcademicYearRow) => {
-    setConfirmState({
-      title: 'Aktifkan Tahun Ajaran',
-      description: `Aktifkan Tahun Ajaran ${y.code}? Tahun ajaran aktif lainnya akan dinonaktifkan.`,
-      action: () => run(y.id, () => activateAcademicYear(y.id), `Tahun ajaran ${y.code} diaktifkan.`),
-    });
-  };
-  const doActivateSem = (s: SemesterRow) => {
-    setConfirmState({
-      title: 'Aktifkan Semester',
-      description: `Aktifkan Semester ${s.number} (${s.academicYear?.code ?? ''})? Semester aktif lainnya akan dinonaktifkan.`,
-      action: () => run(s.id, () => activateSemester(s.id), `Semester ${s.number} diaktifkan.`),
-    });
-  };
 
   return (
     <div className="space-y-4">
@@ -84,7 +50,7 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
           <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-[#0f2e25]">
             <CalendarRange className="h-6 w-6 text-emerald-600" />Tahun Ajaran &amp; Semester
           </h1>
-          <p className="text-sm text-[#6b8079]">Kelola periode akademik. Aktifkan TA &amp; semester saat memulai tahun ajaran baru.</p>
+          <p className="text-sm text-[#6b8079]">Kelola setup periode. Transisi aktif operasional dilakukan melalui Penutupan Semester.</p>
         </div>
         <button type="button" onClick={() => { setYearDialog(true); }}
           className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-[13px] font-bold text-white hover:bg-emerald-700">
@@ -99,6 +65,9 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
           Aktif sekarang: {activeYear ? `TA ${activeYear.code}` : 'belum ada TA aktif'}
           {activeSem ? ` · Semester ${activeSem.number}` : ' · belum ada semester aktif'}
         </span>
+        <Link href="/dashboard/penutupan-semester" className="ml-auto rounded-lg border border-emerald-300 bg-white px-3 py-2 text-[12px] font-bold text-emerald-800 hover:bg-emerald-100">
+          Buka Penutupan Semester
+        </Link>
       </div>
 
       {sortedYears.length === 0 ? (
@@ -127,12 +96,6 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
                       className="inline-flex items-center gap-1 rounded-lg border border-[#e6efea] bg-white px-2.5 py-1.5 text-[12px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">
                       <Pencil className="h-3.5 w-3.5" />Edit Tanggal
                     </button>
-                    {!y.isActive && (
-                      <button type="button" onClick={() => doActivateYear(y)} disabled={pending && busyId === y.id}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12.5px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
-                        {pending && busyId === y.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Power className="h-3.5 w-3.5" />}Aktifkan TA
-                      </button>
-                    )}
                   </div>
                 </div>
 
@@ -162,12 +125,6 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
                               className="inline-flex items-center gap-1 rounded-lg border border-[#e6efea] bg-white px-2 py-1.5 text-[11px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">
                               <Pencil className="h-3 w-3" />
                             </button>
-                            {!s.isActive && (
-                              <button type="button" onClick={() => doActivateSem(s)} disabled={pending && busyId === s.id}
-                                className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11.5px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
-                                {pending && busyId === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Power className="h-3.5 w-3.5" />}Aktifkan
-                              </button>
-                            )}
                           </div>
                         </div>
                       ))}
@@ -183,15 +140,6 @@ export default function TahunAjaranClient({ years, semesters }: { years: Academi
       {yearDialog && <YearDialog onClose={() => setYearDialog(false)} onErr={(e: string | null) => e ? toast.error(e) : toast.success('Tahun ajaran dibuat.')} />}
       {semForYear && <SemesterDialog year={semForYear} onClose={() => setSemForYear(null)} onErr={(e: string | null) => e ? toast.error(e) : toast.success('Semester dibuat.')} />}
       {editTarget && <EditDateDialog target={editTarget} onClose={() => setEditTarget(null)} />}
-      <ConfirmDialog
-        open={!!confirmState}
-        onOpenChange={(o: boolean) => !o && setConfirmState(null)}
-        title={confirmState?.title ?? ''}
-        description={confirmState?.description ?? ''}
-        variant="warning"
-        confirmLabel="Aktifkan"
-        onConfirm={() => { confirmState?.action(); }}
-      />
     </div>
   );
 }
@@ -236,7 +184,7 @@ function YearDialog({ onClose, onErr }: { onClose: () => void; onErr: (e: string
           </div>
           <label className="flex items-center gap-2 text-[12.5px] font-semibold text-[#355a4e]">
             <input type="checkbox" checked={isActive} onChange={(e) => setActive(e.target.checked)} className="h-4 w-4 accent-emerald-600" />
-            Jadikan aktif (menonaktifkan TA aktif lainnya)
+            Jadikan aktif hanya untuk setup awal tanpa tahun ajaran aktif
           </label>
           {local && <div className="flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-600"><AlertTriangle className="h-4 w-4 shrink-0" />{local}</div>}
         </div>
@@ -285,7 +233,7 @@ function SemesterDialog({ year, onClose, onErr }: { year: AcademicYearRow; onClo
           </div>
           <label className="flex items-center gap-2 text-[12.5px] font-semibold text-[#355a4e]">
             <input type="checkbox" checked={isActive} onChange={(e) => setActive(e.target.checked)} className="h-4 w-4 accent-emerald-600" />
-            Jadikan aktif (menonaktifkan semester aktif lainnya)
+            Jadikan aktif hanya untuk setup awal Semester 1 tanpa semester aktif
           </label>
           {local && <div className="flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-600"><AlertTriangle className="h-4 w-4 shrink-0" />{local}</div>}
         </div>
