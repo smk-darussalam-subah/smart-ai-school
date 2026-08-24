@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { type MouseEvent, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
@@ -34,6 +34,7 @@ import {
   filterMonitoringSessions,
   formatMonitoringTime,
   monitoringInitialClock,
+  restoreMonitoringDialogFocus,
   type MonitoringDevice,
   type MonitoringFilters,
   type MonitoringSnapshot,
@@ -116,6 +117,16 @@ export default function MonitoringClient({
   const [pairResult, setPairResult] = useState<PairingResult | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<MonitoringDevice | 'ALL' | null>(null);
+  const dialogReturnFocusRef = useRef<HTMLButtonElement | null>(null);
+
+  function rememberDialogTrigger(event: MouseEvent<HTMLButtonElement>) {
+    dialogReturnFocusRef.current = event.currentTarget;
+  }
+
+  function restoreDialogFocus(event: Event) {
+    event.preventDefault();
+    restoreMonitoringDialogFocus(dialogReturnFocusRef.current);
+  }
 
   useEffect(() => {
     setClock(Date.now());
@@ -239,7 +250,7 @@ export default function MonitoringClient({
                 <div className="min-w-0"><p className="truncate font-semibold text-slate-950">{session.className} · {session.subject}</p><p className="truncate text-sm text-slate-500">{session.room ?? 'Ruang belum ditetapkan'} · {session.teacherName ?? 'Guru belum tersedia'}</p></div>
                 <p className="text-sm text-slate-700">{formatMonitoringTime(session.startsAt).split(',').at(-1)} - {formatMonitoringTime(session.endsAt).split(',').at(-1)}</p>
                 <span className={`w-fit rounded-md px-2 py-1 text-xs font-semibold ${STATUS_TONE[session.status]}`}>{STATUS_LABEL[session.status]}</span>
-                <Button variant="outline" className="min-h-11" onClick={() => setSelectedSession(session)}>Detail</Button>
+                <Button variant="outline" className="min-h-11" onClick={(event) => { rememberDialogTrigger(event); setSelectedSession(session); }}>Detail</Button>
               </article>
             ))}
             {!initialError && visibleSessions.length === 0 && (
@@ -260,36 +271,36 @@ export default function MonitoringClient({
           </section>
 
           <section className="rounded-lg border border-slate-200 bg-white" aria-labelledby="device-heading">
-            <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4"><div><h2 id="device-heading" className="font-bold text-slate-950">Perangkat display</h2><p className="text-sm text-slate-500">{initialDevices.length} perangkat terdaftar</p></div>{canManageDevices && <Button size="icon" className="h-11 w-11" aria-label="Buat pairing perangkat" onClick={() => { setPairResult(null); setMutationError(null); setPairOpen(true); }}><Plus className="h-5 w-5" /></Button>}</div>
+            <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4"><div><h2 id="device-heading" className="font-bold text-slate-950">Perangkat display</h2><p className="text-sm text-slate-500">{initialDevices.length} perangkat terdaftar</p></div>{canManageDevices && <Button size="icon" className="h-11 w-11" aria-label="Buat pairing perangkat" onClick={(event) => { rememberDialogTrigger(event); setPairResult(null); setMutationError(null); setPairOpen(true); }}><Plus className="h-5 w-5" /></Button>}</div>
             {deviceWarning && <p className="border-b border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="alert">{deviceWarning}</p>}
             {mutationError && <p className="border-b border-red-200 bg-red-50 p-3 text-sm text-red-900" role="alert">{mutationError}</p>}
             <div className="divide-y divide-slate-200">
               {initialDevices.map((device) => (
-                <article key={device.id} className="p-4"><div className="flex items-start gap-3"><MonitorCog className="mt-0.5 h-5 w-5 text-slate-500" /><div className="min-w-0 flex-1"><p className="truncate font-semibold text-slate-900">{device.label}</p><p className="text-xs text-slate-500">{displayProfileLabel(device.profile)} · {device.status === 'ACTIVE' ? 'Aktif' : device.status === 'PENDING' ? 'Menunggu pairing' : device.status === 'EXPIRED' ? 'Kedaluwarsa' : 'Dicabut'}</p><p className="mt-1 text-xs text-slate-500">Terlihat: {device.status === 'EXPIRED' ? 'Credential perlu diputar' : formatMonitoringTime(device.lastSeenAt)}</p></div></div>{canManageDevices && device.status !== 'REVOKED' && <div className="mt-3 flex gap-2"><Button variant="outline" size="sm" className="min-h-11 flex-1" onClick={() => rotate(device)}><RotateCcw className="mr-2 h-4 w-4" /> {device.status === 'EXPIRED' ? 'Pulihkan' : 'Putar'}</Button><Button variant="outline" size="sm" className="min-h-11 flex-1 text-red-700" onClick={() => setConfirmTarget(device)}><Ban className="mr-2 h-4 w-4" /> Cabut</Button></div>}</article>
+                <article key={device.id} className="p-4"><div className="flex items-start gap-3"><MonitorCog className="mt-0.5 h-5 w-5 text-slate-500" /><div className="min-w-0 flex-1"><p className="truncate font-semibold text-slate-900">{device.label}</p><p className="text-xs text-slate-500">{displayProfileLabel(device.profile)} · {device.status === 'ACTIVE' ? 'Aktif' : device.status === 'PENDING' ? 'Menunggu pairing' : device.status === 'EXPIRED' ? 'Kedaluwarsa' : 'Dicabut'}</p><p className="mt-1 text-xs text-slate-500">Terlihat: {device.status === 'EXPIRED' ? 'Credential perlu diputar' : formatMonitoringTime(device.lastSeenAt)}</p></div></div>{canManageDevices && device.status !== 'REVOKED' && <div className="mt-3 flex gap-2"><Button variant="outline" size="sm" className="min-h-11 flex-1" onClick={(event) => { rememberDialogTrigger(event); void rotate(device); }}><RotateCcw className="mr-2 h-4 w-4" /> {device.status === 'EXPIRED' ? 'Pulihkan' : 'Putar'}</Button><Button variant="outline" size="sm" className="min-h-11 flex-1 text-red-700" onClick={(event) => { rememberDialogTrigger(event); setConfirmTarget(device); }}><Ban className="mr-2 h-4 w-4" /> Cabut</Button></div>}</article>
               ))}
               {initialDevices.length === 0 && <p className="p-4 text-sm text-slate-500">Belum ada perangkat display terdaftar.</p>}
             </div>
-            {canManageDevices && initialDevices.some((device) => device.status !== 'REVOKED') && <div className="border-t border-slate-200 p-3"><Button variant="ghost" className="min-h-11 w-full text-red-700" onClick={() => setConfirmTarget('ALL')}>Cabut semua perangkat</Button></div>}
+            {canManageDevices && initialDevices.some((device) => device.status !== 'REVOKED') && <div className="border-t border-slate-200 p-3"><Button variant="ghost" className="min-h-11 w-full text-red-700" onClick={(event) => { rememberDialogTrigger(event); setConfirmTarget('ALL'); }}>Cabut semua perangkat</Button></div>}
           </section>
         </aside>
       </div>
 
       <Dialog open={!!selectedSession} onOpenChange={(open: boolean) => !open && setSelectedSession(null)}>
-        <DialogContent className="max-h-[88vh] max-w-xl overflow-y-auto rounded-lg [&>button]:flex [&>button]:h-11 [&>button]:w-11 [&>button]:items-center [&>button]:justify-center">
+        <DialogContent onCloseAutoFocus={restoreDialogFocus} className="max-h-[88vh] max-w-xl overflow-y-auto rounded-lg [&>button]:flex [&>button]:h-11 [&>button]:w-11 [&>button]:items-center [&>button]:justify-center">
           <DialogHeader><DialogTitle>Detail sesi kelas</DialogTitle><DialogDescription>Rekap bernama ini hanya tersedia pada monitoring privat sesuai kewenangan.</DialogDescription></DialogHeader>
           {selectedSession && <dl className="grid gap-4 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">Kelas</dt><dd className="font-semibold">{selectedSession.className}</dd></div><div><dt className="text-slate-500">Mata pelajaran</dt><dd className="font-semibold">{selectedSession.subject}</dd></div><div><dt className="text-slate-500">Guru ditugaskan</dt><dd className="font-semibold">{selectedSession.teacherName ?? 'Belum tersedia'}</dd></div><div><dt className="text-slate-500">Ruang</dt><dd className="font-semibold">{selectedSession.room ?? 'Belum ditetapkan'}</dd></div><div><dt className="text-slate-500">Waktu</dt><dd className="font-semibold">{formatMonitoringTime(selectedSession.startsAt)} - {formatMonitoringTime(selectedSession.endsAt)}</dd></div><div><dt className="text-slate-500">Status</dt><dd><span className={`inline-block rounded-md px-2 py-1 text-xs font-semibold ${STATUS_TONE[selectedSession.status]}`}>{STATUS_LABEL[selectedSession.status]}</span></dd></div></dl>}
         </DialogContent>
       </Dialog>
 
       <Dialog open={pairOpen} onOpenChange={(open: boolean) => { setPairOpen(open); if (!open) setPairResult(null); }}>
-        <DialogContent className="max-w-md rounded-lg [&>button]:flex [&>button]:h-11 [&>button]:w-11 [&>button]:items-center [&>button]:justify-center">
+        <DialogContent onCloseAutoFocus={restoreDialogFocus} className="max-w-md rounded-lg [&>button]:flex [&>button]:h-11 [&>button]:w-11 [&>button]:items-center [&>button]:justify-center">
           <DialogHeader><DialogTitle>{pairResult ? 'Kode pairing siap' : 'Pasangkan perangkat display'}</DialogTitle><DialogDescription>{pairResult ? 'Kode hanya digunakan pada halaman pairing perangkat dan memiliki masa berlaku terbatas.' : 'Tentukan profil yang mengendalikan proyeksi data dan kebijakan audio.'}</DialogDescription></DialogHeader>
           {pairResult ? <div className="space-y-4"><div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-center"><p className="text-xs font-semibold uppercase text-emerald-800">Kode pairing</p><p className="mt-2 font-mono text-2xl font-bold tracking-widest text-emerald-950">{pairResult.pairingCode}</p><p className="mt-3 break-all font-mono text-xs text-emerald-900">ID: {pairResult.id}</p><p className="mt-2 text-xs text-emerald-800">Berlaku sampai {formatMonitoringTime(pairResult.expiresAt)}</p></div><Button variant="outline" className="min-h-11 w-full" onClick={() => navigator.clipboard.writeText(`${pairResult.id}\n${pairResult.pairingCode}`)}><Copy className="mr-2 h-4 w-4" /> Salin ID dan kode</Button><p className="text-xs leading-5 text-slate-500">Buka <b>/display/pair</b> pada perangkat tujuan. Jangan simpan kode di laporan atau screenshot; kode tidak dapat digunakan ulang setelah aktivasi.</p></div> : <form action={createPairing} className="space-y-4"><div className="space-y-2"><Label htmlFor="display-label">Nama perangkat</Label><Input id="display-label" name="label" maxLength={100} placeholder="Contoh: TV Ruang Guru" required /></div><div className="space-y-2"><Label htmlFor="display-profile">Profil ruangan</Label><select id="display-profile" name="profile" className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm" defaultValue="RUANG_GURU"><option value="RUANG_GURU">Ruang Guru · audio lokal tersedia</option><option value="RUANG_TU">Ruang Tata Usaha · visual saja</option></select></div>{mutationError && <p className="text-sm text-red-700" role="alert">{mutationError}</p>}<Button type="submit" className="min-h-11 w-full">Buat kode pairing</Button></form>}
         </DialogContent>
       </Dialog>
 
       <Dialog open={!!confirmTarget} onOpenChange={(open: boolean) => !open && setConfirmTarget(null)}>
-        <DialogContent className="max-w-md rounded-lg [&>button]:flex [&>button]:h-11 [&>button]:w-11 [&>button]:items-center [&>button]:justify-center">
+        <DialogContent onCloseAutoFocus={restoreDialogFocus} className="max-w-md rounded-lg [&>button]:flex [&>button]:h-11 [&>button]:w-11 [&>button]:items-center [&>button]:justify-center">
           <DialogHeader><DialogTitle>Cabut akses display?</DialogTitle><DialogDescription>{confirmTarget === 'ALL' ? 'Semua display aktif akan terputus dan harus dipasangkan ulang.' : 'Display ini akan kehilangan akses pada refresh atau reconnect berikutnya.'}</DialogDescription></DialogHeader>
           <div className="flex justify-end gap-2"><Button variant="outline" className="min-h-11" onClick={() => setConfirmTarget(null)}>Batal</Button><Button variant="destructive" className="min-h-11" onClick={confirmRevoke}><Ban className="mr-2 h-4 w-4" /> Cabut akses</Button></div>
         </DialogContent>
