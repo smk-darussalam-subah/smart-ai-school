@@ -118,6 +118,24 @@ describe('Wave 8.5 bell resolver and strict DTO boundary', () => {
 });
 
 describe('Wave 8.5 pairing credential invariants', () => {
+  it('allows only the configured web origin for public activation', () => {
+    const previous = process.env.WEB_URL;
+    process.env.WEB_URL = 'https://staging.school.test';
+    const service = new DisplayDeviceService({} as PrismaService);
+    try {
+      expect(() => service.assertTrustedActivationOrigin('https://staging.school.test')).not.toThrow();
+      expect(() => service.assertTrustedActivationOrigin('https://evil.test')).toThrow(
+        ForbiddenException,
+      );
+      expect(() => service.assertTrustedActivationOrigin(undefined)).toThrow(
+        ForbiddenException,
+      );
+    } finally {
+      if (previous === undefined) delete process.env.WEB_URL;
+      else process.env.WEB_URL = previous;
+    }
+  });
+
   it('serializes an SSE event as bounded JSON without header injection', () => {
     expect(
       serializeDisplayEvent({
