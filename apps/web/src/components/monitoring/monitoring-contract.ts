@@ -134,6 +134,26 @@ export interface MonitoringFilters {
   attentionOnly: boolean;
 }
 
+export function formatMonitoringTime(value: string | null): string {
+  if (!value) return 'Belum pernah';
+  const date = new Date(value);
+  return Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat('id-ID', {
+        timeZone: 'Asia/Jakarta',
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: 'short',
+      }).format(date)
+    : 'Tidak tersedia';
+}
+
+export function monitoringInitialClock(generatedAt: string | null | undefined): number {
+  if (!generatedAt) return 0;
+  const parsed = new Date(generatedAt).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export function filterMonitoringSessions(sessions: DisplaySession[], filters: MonitoringFilters): DisplaySession[] {
   const query = filters.query.trim().toLocaleLowerCase('id-ID');
   return sessions.filter((session) => {

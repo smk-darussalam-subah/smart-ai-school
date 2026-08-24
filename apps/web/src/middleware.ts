@@ -78,6 +78,7 @@ const STATIC_INTERACTIVE: readonly string[] = ['/', '/spmb', '/login', '/auth', 
 
 function isPublicStaticPage(pathname: string): boolean {
   if (STATIC_INTERACTIVE.includes(pathname)) return true;
+  if (pathname.startsWith('/display/')) return true;
   return pathname.startsWith('/jurusan/');
 }
 
