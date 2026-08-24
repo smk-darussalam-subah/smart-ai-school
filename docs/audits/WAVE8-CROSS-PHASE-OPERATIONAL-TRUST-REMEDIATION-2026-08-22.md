@@ -41,7 +41,7 @@ Reviewer report: `docs/audits/WAVE8-CROSS-PHASE-OPERATIONAL-TRUST-SOURCE-REVIEW-
 
 | Reviewer finding | Closure |
 |---|---|
-| P1 Users UI offered `KEPALA_SEKOLAH` as identity role | Closed. Users role filter and role-change dropdown now use `USER_IDENTITY_ROLE_OPTIONS`, exactly six primary identity roles. `KEPALA_SEKOLAH` remains displayable only as a legacy label, not selectable. `/users?role=` DTO now accepts the API six-role identity schema only, so manual `role=KEPALA_SEKOLAH` is rejected before service filtering. |
+| P1 Users UI offered `KEPALA_SEKOLAH` as identity role | Closed. Users role filter and role-change dropdown now use `USER_IDENTITY_ROLE_OPTIONS`, exactly six primary identity roles. `KEPALA_SEKOLAH` remains displayable only as a legacy label, not selectable. `/users?role=` DTO consumes canonical `PrimaryRoleSchema` from `@smk/auth`, so manual `role=KEPALA_SEKOLAH` is rejected before service filtering. |
 | P1 Calendar fetched all agenda under active-year label | Closed. Page resolves active academic year first. If active year succeeds, calendar is fetched with exact `academicYearId`. If active-year status fails or no active year exists, the page does not call `/school/calendar` and renders an empty read-only setup/error state, preventing mixed cross-year data. A two-year behavioral helper test proves each valid active year gets its own scoped query and failure states never produce an unscoped query. |
 | P1 Period-status failure left delete active | Closed. `canMutateCalendar()` gates add, edit, submit, and delete together. Delete button is disabled and the confirm path also returns an explicit error if mutation is not allowed. |
 | P1 Empty 2xx response accepted as `data=null` | Closed. `apiFetchResult()` now treats empty 2xx body as `unavailable` with `Respons server tidak valid. Coba lagi.` Valid empty JSON arrays remain valid success payloads. |
@@ -49,6 +49,24 @@ Reviewer report: `docs/audits/WAVE8-CROSS-PHASE-OPERATIONAL-TRUST-SOURCE-REVIEW-
 | P2 Users search navigated on every character | Closed. Users search now keeps local input state and applies URL navigation with an explicit 350 ms debounce budget. |
 | P2 Auto-schedule preview stale during cutover | Closed. `autoGenerate()` now holds the writable-period/cutover lock inside one transaction while validating year, reading teaching assignments, and reading occupancy schedules for the preview. |
 | P2 Calendar empty state told users to click a locked button | Closed. Empty-state copy is now conditional. It only says `Klik Tambah Agenda` when add is enabled; locked setup/error states show read-only explanatory copy. Behavioral helper coverage verifies both states. |
+
+## Post-Packaging CI Fix Follow-up
+
+Reviewer report: `docs/audits/WAVE8-POST-PACKAGING-CI-FIX-REREVIEW-2026-08-24.md`.
+
+| Finding | Closure |
+|---|---|
+| P1-R09 CI fix duplicated identity-role authority and left E2E auth mock false | Closed. `ApiPrimaryRoleSchema` was removed. Provisioning and Users DTOs now use canonical `PrimaryRoleSchema` from `@smk/auth`. The E2E auth mock now spreads `jest.requireActual('@smk/auth')` and overrides only token helpers. Regression coverage proves the E2E environment has exactly six `PRIMARY_ROLES`, accepts `GURU`, and rejects `KEPALA_SEKOLAH`. The E2E KS fixture now uses stable `GURU` identity plus mocked active `KEPALA_SEKOLAH` appointment capability. |
+
+Post-packaging follow-up verification:
+
+- `@smk/auth` build: pass.
+- Runtime contract smoke: `PRIMARY_ROLES` six stable roles, `GURU` accepted, `KEPALA_SEKOLAH` rejected.
+- API focused: `wave8-operational-trust.spec.ts`, `school-config.spec.ts`, `schedule.spec.ts`, `users.spec.ts`: 4 suites / 120 tests pass.
+- API provisioning/users focused: `provisioning.spec.ts`, `users.spec.ts`, `wave8-operational-trust.spec.ts`: 3 suites / 79 tests pass.
+- API type-check, lint, and build: pass.
+- Web focused regression: `wave8-operational-trust-ui.test.ts`, `siswa-form-state.test.ts`: 2 suites / 15 tests pass.
+- Local full E2E was not run because local Docker/PostgreSQL/Redis were unavailable; GitHub CI E2E remains the required runtime gate for this narrow PR.
 
 ## Changed File Manifest
 
@@ -60,7 +78,6 @@ Reviewer report: `docs/audits/WAVE8-CROSS-PHASE-OPERATIONAL-TRUST-SOURCE-REVIEW-
 - `apps/api/src/auth/auth.service.ts`
 - `apps/api/src/auth/dto/update-me.dto.ts`
 - `apps/api/src/common/dto/academic-period.dto.ts`
-- `apps/api/src/common/dto/primary-role.dto.ts`
 - `apps/api/src/kktp-config/dto/kktp-config.dto.ts`
 - `apps/api/src/kktp-config/kktp-config.controller.ts`
 - `apps/api/src/provisioning/dto/provision.dto.ts`
@@ -75,6 +92,7 @@ Reviewer report: `docs/audits/WAVE8-CROSS-PHASE-OPERATIONAL-TRUST-SOURCE-REVIEW-
 - `apps/api/src/teaching-assignment/dto/list-assignments.dto.ts`
 - `apps/api/src/users/dto/update-user.dto.ts`
 - `apps/api/src/users/dto/list-users.dto.ts`
+- `apps/api/test/app.e2e-spec.ts`
 
 ### Web
 
@@ -101,6 +119,7 @@ Reviewer report: `docs/audits/WAVE8-CROSS-PHASE-OPERATIONAL-TRUST-SOURCE-REVIEW-
 ### Documentation
 
 - `docs/audits/WAVE8-CROSS-PHASE-OPERATIONAL-TRUST-REMEDIATION-2026-08-22.md`
+- `docs/audits/WAVE8-POST-PACKAGING-CI-FIX-REREVIEW-2026-08-24.md`
 
 ## Error-State and Resource Matrix
 
@@ -131,7 +150,7 @@ Reviewer report: `docs/audits/WAVE8-CROSS-PHASE-OPERATIONAL-TRUST-SOURCE-REVIEW-
 | Profile URLs | website and logo URL must be absolute http/https, no credentials, empty string normalized to null |
 | Me avatar | absolute http/https only, no credentials, empty string normalized to null |
 | TeachingAssignment/Schedule list | shared academic-year regex; invalid filters fail validation instead of returning false-empty |
-| Users list | role filter is the API six-role identity schema; appointment codes such as `KEPALA_SEKOLAH` and `WAKA_KURIKULUM` are rejected |
+| Users list | role filter is canonical `PrimaryRoleSchema`; appointment codes such as `KEPALA_SEKOLAH` and `WAKA_KURIKULUM` are rejected |
 | Auto-schedule | academic year regex, semester 1/2, bounded days/jp/maxJpGuru, exact target period, assignment/occupancy reads under cutover lock, no DB write for preview |
 
 ## Native Dialog Closure Evidence
