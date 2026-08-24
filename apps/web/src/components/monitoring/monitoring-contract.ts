@@ -154,6 +154,10 @@ export function monitoringInitialClock(generatedAt: string | null | undefined): 
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+export function restoreMonitoringDialogFocus(target: { focus: () => void } | null): void {
+  target?.focus();
+}
+
 export function filterMonitoringSessions(sessions: DisplaySession[], filters: MonitoringFilters): DisplaySession[] {
   const query = filters.query.trim().toLocaleLowerCase('id-ID');
   return sessions.filter((session) => {
