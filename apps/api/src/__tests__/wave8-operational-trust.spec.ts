@@ -5,6 +5,7 @@ import { UpdateProfileSchema } from '../school-config/dto/update-profile.dto';
 import { UpdateMeSchema } from '../auth/dto/update-me.dto';
 import { RemoveKktpParamsSchema } from '../kktp-config/dto/kktp-config.dto';
 import { ListUsersQuerySchema } from '../users/dto/list-users.dto';
+import { PRIMARY_ROLES, PrimaryRoleSchema, isPrimaryRole } from '@smk/auth';
 
 describe('Wave 8 operational trust DTO contracts', () => {
   it('validates calendar event ranges and rejects unknown fields', () => {
@@ -92,6 +93,9 @@ describe('Wave 8 operational trust DTO contracts', () => {
   });
 
   it('accepts only six stable identity roles for Users list filters', () => {
+    expect(PRIMARY_ROLES).toEqual(['SUPER_ADMIN', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI']);
+    expect(PrimaryRoleSchema.safeParse('KEPALA_SEKOLAH').success).toBe(false);
+    expect(isPrimaryRole('KEPALA_SEKOLAH')).toBe(false);
     expect(ListUsersQuerySchema.safeParse({ role: 'GURU' }).success).toBe(true);
     expect(ListUsersQuerySchema.safeParse({ role: 'KEPALA_SEKOLAH' }).success).toBe(false);
     expect(ListUsersQuerySchema.safeParse({ role: 'WAKA_KURIKULUM' }).success).toBe(false);
