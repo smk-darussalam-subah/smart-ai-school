@@ -2,8 +2,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
-import { apiFetch } from '@/lib/api';
+import { apiFetchResult } from '@/lib/api';
 import PresensiGuru, { AttendanceRecord, TodayStatus } from './_components/PresensiGuru';
+import LoadError from '@/components/LoadError';
 
 interface ListResponse {
   data: AttendanceRecord[];
@@ -20,18 +21,29 @@ export default async function PresensiGuruPage() {
   if (!isGuru && !isStaf) redirect('/dashboard');
 
   const token = session.accessToken ?? '';
-  const [today, list] = await Promise.all([
-    isGuru ? apiFetch<TodayStatus>('/teacher-attendance/today', token) : Promise.resolve(null),
-    apiFetch<ListResponse>('/teacher-attendance?limit=31', token),
+  const [todayResult, listResult] = await Promise.all([
+    isGuru ? apiFetchResult<TodayStatus>('/teacher-attendance/today', token) : Promise.resolve(null),
+    apiFetchResult<ListResponse>('/teacher-attendance?limit=31', token),
   ]);
+
+  if (isStaf && !isGuru && listResult.status !== 'success') {
+    return (
+      <LoadError
+        title="Rekap presensi belum dapat dimuat"
+        message={listResult.message}
+      />
+    );
+  }
 
   return (
     <PresensiGuru
       isGuru={isGuru}
       isStaf={isStaf}
-      today={today}
-      records={list?.data ?? []}
-      total={list?.total ?? 0}
+      today={todayResult && todayResult.status === 'success' ? todayResult.data : null}
+      todayError={isGuru && todayResult && todayResult.status !== 'success' ? todayResult.message : ''}
+      records={listResult.status === 'success' ? listResult.data.data : []}
+      total={listResult.status === 'success' ? listResult.data.total : 0}
+      historyError={listResult.status === 'success' ? '' : listResult.message}
     />
   );
 }

@@ -5,6 +5,7 @@ import { MessageSquare, Plus, Send, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { setupAiChatMountedGuard, shouldApplyAiChatResponse, shouldSendChatKey } from '../ai-chat-ui';
 import {
   deleteAiChatSession,
@@ -27,6 +28,8 @@ export default function AiClient({ initialQuestion = '' }: { initialQuestion?: s
   const [loading, setLoading] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AiChatSessionSummary | null>(null);
+  const [deleteError, setDeleteError] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -133,17 +136,20 @@ export default function AiClient({ initialQuestion = '' }: { initialQuestion?: s
   };
 
   const deleteSession = async (id: string) => {
-    if (!window.confirm('Hapus riwayat chat ini?')) return;
     invalidateActiveRequests();
     setDeletingId(id);
     setError('');
+    setDeleteError('');
     try {
       const result = await deleteAiChatSession(id);
       if (!result.success) throw new Error(result.error);
       if (sessionId === id) startNew();
       await loadSessions();
+      setDeleteTarget(null);
+      return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal menghapus chat.');
+      setDeleteError(err instanceof Error ? err.message : 'Gagal menghapus chat.');
+      return false;
     } finally {
       setDeletingId(null);
     }
@@ -220,7 +226,7 @@ export default function AiClient({ initialQuestion = '' }: { initialQuestion?: s
                   size="icon"
                   variant="ghost"
                   disabled={deletingId === session.id}
-                  onClick={() => deleteSession(session.id)}
+                  onClick={() => { setDeleteTarget(session); setDeleteError(''); }}
                   aria-label="Hapus chat"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -288,6 +294,27 @@ export default function AiClient({ initialQuestion = '' }: { initialQuestion?: s
           </div>
         </div>
       </Card>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+            setDeleteError('');
+          }
+        }}
+        title="Hapus riwayat chat?"
+        description={deleteTarget
+          ? `${deleteTarget.title ?? 'Chat tanpa judul'} akan dihapus dari riwayat AI. Percakapan aktif lain tetap dipertahankan.`
+          : ''}
+        confirmLabel="Hapus chat"
+        variant="danger"
+        error={deleteError}
+        onConfirm={async () => {
+          if (!deleteTarget) return false;
+          return deleteSession(deleteTarget.id);
+        }}
+      />
     </div>
   );
 }

@@ -18,20 +18,29 @@ describe('Siswa form state', () => {
       }),
     ).toEqual({
       nis: '12345',
-      userId: 'user-1',
       classId: 'class-1',
       status: 'active',
       joinedAt: '2026-07-19',
     });
   });
 
-  it('returns empty defaults for add mode', () => {
-    expect(toSiswaFormState(null)).toEqual({
-      nis: '',
-      userId: '',
+  it('does not expose raw Keycloak UUID in the edit form state', () => {
+    const state = toSiswaFormState({
+      id: 'student-1',
+      nis: '12345',
+      status: 'active',
+      joinedAt: null,
+      user: { id: 'kc-user-1', fullName: 'Siswa Aman' },
+      parent: null,
+      class: null,
+    });
+
+    expect(state).toEqual({
+      nis: '12345',
       classId: '',
       status: 'active',
       joinedAt: '',
     });
+    expect(state).not.toHaveProperty('userId');
   });
 });

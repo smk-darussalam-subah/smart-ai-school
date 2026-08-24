@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -18,7 +19,7 @@ import { SchoolConfigService } from './school-config.service';
 import { UpdateProfileSchema } from './dto/update-profile.dto';
 import { CreateAcademicYearSchema, UpdateAcademicYearSchema } from './dto/academic-year.dto';
 import { CreateSemesterSchema, UpdateSemesterSchema } from './dto/semester.dto';
-import { CreateCalendarEventSchema, UpdateCalendarEventSchema } from './dto/calendar-event.dto';
+import { CreateCalendarEventSchema, ListCalendarEventsQuerySchema, UpdateCalendarEventSchema } from './dto/calendar-event.dto';
 import { CreateMajorSchema, UpdateMajorSchema } from './dto/major.dto';
 
 @Controller('school')
@@ -130,8 +131,10 @@ export class SchoolConfigController {
   // ═══ Academic Calendar ═════════════════════════════════════════════════════
 
   @Get('calendar')
-  getCalendarEvents(@Query('academicYearId') academicYearId?: string, @Query('type') type?: string) {
-    return this.service.getCalendarEvents(academicYearId, type);
+  getCalendarEvents(@Query() rawQuery: unknown) {
+    const parsed = ListCalendarEventsQuerySchema.safeParse(rawQuery);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.service.getCalendarEvents(parsed.data.academicYearId, parsed.data.type);
   }
 
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')

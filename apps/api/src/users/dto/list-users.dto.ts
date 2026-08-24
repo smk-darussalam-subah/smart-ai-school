@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { UserRole } from '@smk/auth';
+import { ApiPrimaryRoleSchema } from '../../common/dto/primary-role.dto';
 
 export const ListUsersQuerySchema = z.object({
-  role: UserRole.optional(),
+  role: ApiPrimaryRoleSchema.optional(),
   search: z.string().max(100).optional(),
   isActive: z
     .enum(['true', 'false'])

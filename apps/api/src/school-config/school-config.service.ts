@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -79,14 +79,39 @@ export class SchoolConfigService {
   }
 
   async createMajor(data: { code: string; name: string; description?: string | null; isActive?: boolean }) {
-    const exists = await this.prisma.major.findUnique({ where: { code: data.code }, select: { id: true } });
+    const code = data.code.trim().toUpperCase();
+    const exists = await this.prisma.major.findFirst({
+      where: { code: { equals: code, mode: 'insensitive' } },
+      select: { id: true },
+    });
     if (exists) throw new ConflictException(`Kode jurusan ${data.code} sudah terdaftar.`);
-    return this.prisma.major.create({ data });
+    try {
+      return await this.prisma.major.create({ data: { ...data, code } });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new ConflictException('Kode jurusan sudah digunakan.');
+      }
+      throw e;
+    }
   }
 
   async updateMajor(id: string, data: Record<string, unknown>) {
+    const normalized = {
+      ...data,
+      ...(typeof data.code === 'string' ? { code: data.code.trim().toUpperCase() } : {}),
+    };
+    if (typeof normalized.code === 'string') {
+      const duplicate = await this.prisma.major.findFirst({
+        where: {
+          id: { not: id },
+          code: { equals: normalized.code, mode: 'insensitive' },
+        },
+        select: { id: true },
+      });
+      if (duplicate) throw new ConflictException('Kode jurusan sudah digunakan.');
+    }
     try {
-      const updated = await this.prisma.major.update({ where: { id }, data });
+      const updated = await this.prisma.major.update({ where: { id }, data: normalized });
       // Major identity/activity participates in appointment authority. Clear all
       // cached permission sets only after the database mutation succeeds.
       this.permissionsService.invalidateAll();
@@ -410,7 +435,10 @@ export class SchoolConfigService {
 
   async getCalendarEvents(academicYearId?: string, type?: string) {
     const where: Record<string, unknown> = {};
-    if (academicYearId) where.academicYearId = academicYearId;
+    if (academicYearId) {
+      await this.assertAcademicYearExists(academicYearId);
+      where.academicYearId = academicYearId;
+    }
     if (type) where.type = type as CalendarType;
 
     return this.prisma.academicCalendar.findMany({
@@ -424,14 +452,64 @@ export class SchoolConfigService {
     academicYearId: string; name: string; startDate: Date; endDate: Date;
     type: CalendarType; description?: string | null;
   }) {
+    const year = await this.assertAcademicYearExists(data.academicYearId);
+    this.assertCalendarRange(data.startDate, data.endDate, year);
     return this.prisma.academicCalendar.create({ data });
   }
 
   async updateCalendarEvent(id: string, data: Record<string, unknown>) {
-    return this.prisma.academicCalendar.update({ where: { id }, data });
+    const existing = await this.prisma.academicCalendar.findUnique({
+      where: { id },
+      include: { academicYear: true },
+    });
+    if (!existing) throw new NotFoundException('Agenda kalender tidak ditemukan.');
+    const academicYearId = typeof data.academicYearId === 'string' ? data.academicYearId : existing.academicYearId;
+    const year = academicYearId === existing.academicYearId
+      ? existing.academicYear
+      : await this.assertAcademicYearExists(academicYearId);
+    const startDate = data.startDate instanceof Date ? data.startDate : existing.startDate;
+    const endDate = data.endDate instanceof Date ? data.endDate : existing.endDate;
+    this.assertCalendarRange(startDate, endDate, year);
+    try {
+      return await this.prisma.academicCalendar.update({ where: { id }, data });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+        throw new NotFoundException('Agenda kalender tidak ditemukan.');
+      }
+      throw e;
+    }
   }
 
   async deleteCalendarEvent(id: string) {
-    return this.prisma.academicCalendar.delete({ where: { id } });
+    try {
+      return await this.prisma.academicCalendar.delete({ where: { id } });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+        throw new NotFoundException('Agenda kalender tidak ditemukan.');
+      }
+      throw e;
+    }
+  }
+
+  private async assertAcademicYearExists(id: string) {
+    const year = await this.prisma.academicYear.findUnique({
+      where: { id },
+      select: { id: true, startDate: true, endDate: true },
+    });
+    if (!year) throw new NotFoundException('Tahun ajaran tidak ditemukan.');
+    return year;
+  }
+
+  private assertCalendarRange(
+    startDate: Date,
+    endDate: Date,
+    year: { startDate: Date; endDate: Date },
+  ) {
+    if (endDate < startDate) {
+      throw new BadRequestException('Tanggal selesai tidak boleh sebelum tanggal mulai.');
+    }
+    if (startDate < year.startDate || endDate > year.endDate) {
+      throw new BadRequestException('Rentang agenda harus berada dalam batas tahun ajaran.');
+    }
   }
 }

@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { z } from 'zod';
-import { PrimaryRoleSchema } from '@smk/auth';
+import { ApiPrimaryRoleSchema } from '../../common/dto/primary-role.dto';
 import { phoneE164 } from '../../common/helpers/phone';
 
 // Role pegawai internal yayasan → wajib NIY + status kepegawaian (punya baris school.staff).
@@ -14,7 +14,7 @@ const EmploymentStatusSchema = z.enum(['GTY', 'GTT', 'PTY', 'PTT']);
 const StudentStatusSchema = z.enum(['active', 'inactive', 'graduated', 'dropped']);
 
 export const ProvisionUserSchema = z.object({
-  role: PrimaryRoleSchema,
+  role: ApiPrimaryRoleSchema,
   fullName: z.string().min(1, 'fullName wajib diisi'),
   gender: GenderSchema,
   email: z.string().email().optional(),
