@@ -10,4 +10,10 @@ describe('visiblePositionRoles', () => {
     expect(visiblePositionRoles('GURU', ['GURU'], ['WAKA_KURIKULUM', 'KEPALA_SEKOLAH']))
       .toEqual([]);
   });
+
+  it('restores appointment roles after mode tinjau ends', () => {
+    const positions = ['WAKA_KURIKULUM', 'KEPALA_SEKOLAH'];
+    expect(visiblePositionRoles('GURU', ['GURU'], positions)).toEqual([]);
+    expect(visiblePositionRoles(null, ['GURU'], positions)).toEqual(positions);
+  });
 });

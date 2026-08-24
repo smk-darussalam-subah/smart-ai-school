@@ -8,13 +8,15 @@ function readThemeFile(path: string): string {
 }
 
 describe('DIIS Keycloak login theme', () => {
-  it('keeps password inputs readable on the dark login theme', () => {
+  it('keeps password inputs readable on the institutional light theme', () => {
     const css = readThemeFile('resources/css/login.css');
 
-    expect(css).toContain("#password");
-    expect(css).toContain("#password-new");
-    expect(css).toContain("-webkit-text-fill-color: #f8fafc");
-    expect(css).toContain("input.pf-c-form-control:-webkit-autofill");
+    expect(css).toContain('#password');
+    expect(css).toContain('#password-new');
+    expect(css).toContain('background: #ffffff !important');
+    expect(css).toContain('color: var(--diis-ink) !important');
+    expect(css).toContain('-webkit-text-fill-color: var(--diis-ink) !important');
+    expect(css).toContain('input.pf-c-form-control:-webkit-autofill');
   });
 
   it('positions the locale menu without covering the login form', () => {

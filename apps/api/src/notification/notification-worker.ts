@@ -29,7 +29,16 @@ export function createNotificationWorker(
   const worker = new Worker<NotifJob>(
     NOTIFICATION_QUEUE,
     async (job: Job<NotifJob>) => {
-      const { logId, channel, to, body, subject } = job.data;
+      const { logId } = job.data;
+      const pending = await resolvePendingNotificationIntent(prisma, logId);
+      if (!pending) {
+        logger.info('[NotifWorker] Skipped inactive notification intent', { logId });
+        return;
+      }
+      const channel = pending.channel;
+      const to = pending.recipient;
+      const body = pending.body;
+      const subject = pending.subject ?? undefined;
 
       logger.debug('[NotifWorker] Processing', { logId, channel, attempt: job.attemptsMade + 1 });
 
@@ -91,4 +100,12 @@ export function createNotificationWorker(
 
   logger.info('[NotifWorker] Started', { concurrency: CONCURRENCY, prefix });
   return worker;
+}
+
+export async function resolvePendingNotificationIntent(prisma: PrismaService, logId: string) {
+  const log = await prisma.notificationLog.findUnique({
+    where: { id: logId },
+    select: { status: true, channel: true, recipient: true, body: true, subject: true },
+  });
+  return log?.status === 'pending' ? log : null;
 }

@@ -52,10 +52,10 @@ model User {
   leads       PpdbLead[] @relation("AssignedLeads")
   semesterClosures SemesterClosure[]
 
-  @@map("users")
   @@index([role])
   @@index([isActive])
   @@index([deletedAt])
+  @@map("users")
   @@schema("auth")
 }
 
@@ -210,6 +210,7 @@ model Class {
   teachingAssignments TeachingAssignment[]
   attendanceRecords   Attendance[]
   schedules           Schedule[]
+  classSessions       ClassSession[]
   rpps                Rpp[]
   reportCards         ReportCard[]
   activities          ClassActivity[]
@@ -290,11 +291,12 @@ model Teacher {
   assessmentSessions  AssessmentSession[]
   questions           Question[]
   questionSets        QuestionSet[]
+  scheduledClassSessions ClassSession[]       @relation("ClassSessionScheduledTeacher")
+  assignedClassSessions  ClassSession[]       @relation("ClassSessionAssignedTeacher")
 
   @@map("teachers")
   @@schema("teacher")
 }
-
 
 // Presensi Guru (referensi KamilEdu Modul 8) — check-in/out + GPS geofence.
 // Foto selfie: photoUrl nullable (File Storage API = just-in-time, lihat decision-log).
@@ -400,6 +402,7 @@ model TeachingAssignment {
   grades    Grade[]
   schedules Schedule[]
   assessmentSessions AssessmentSession[]
+  classSessions      ClassSession[]
 
   @@unique([teacherId, classId, subject, academicYear])
   @@index([classId])  // TeachingAssignmentService.findAll(classId-only, elevated) — unik composite mulai dari teacherId, tidak cover classId standalone
@@ -427,11 +430,11 @@ model Grade {
   sourceAssessmentSession AssessmentSession? @relation(fields: [sourceAssessmentSessionId], references: [id])
   remedialParticipants    RemedialParticipant[]
 
+  @@unique([sourceAssessmentSessionId, studentId])
   @@index([studentId, academicYear, semester])
   @@index([assignmentId])
   @@index([submittedBy])
   @@index([sourceAssessmentSessionId])
-  @@unique([sourceAssessmentSessionId, studentId])
   @@map("grades")
   @@schema("academic")
 }
@@ -526,6 +529,7 @@ model Schedule {
   // Relations
   class              Class              @relation(fields: [classId], references: [id])
   teachingAssignment TeachingAssignment @relation(fields: [teachingAssignmentId], references: [id])
+  classSessions      ClassSession[]
 
   // Satu kelas tidak bisa punya dua jadwal di slot JP yang sama.
   // + 2G-2: exclusion constraint "schedules_class_jp_range_excl" (raw SQL,
@@ -537,6 +541,333 @@ model Schedule {
   @@schema("academic")
 }
 
+enum BellScheduleScope {
+  SCHOOL
+  RUANG_GURU
+  RUANG_TU
+
+  @@schema("school")
+}
+
+enum BellScheduleKind {
+  NORMAL
+  RAMADAN
+  EXAM
+  SPECIAL
+
+  @@schema("school")
+}
+
+enum BellSegmentType {
+  INSTRUCTION
+  BREAK
+  CEREMONY
+  OTHER
+
+  @@schema("school")
+}
+
+model BellScheduleProfile {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code           String            @unique @db.VarChar(60)
+  name           String            @db.VarChar(120)
+  scope          BellScheduleScope @default(SCHOOL)
+  kind           BellScheduleKind  @default(NORMAL)
+  timezone       String            @default("Asia/Jakarta") @db.VarChar(40)
+  effectiveFrom  DateTime          @map("effective_from") @db.Date
+  effectiveUntil DateTime?         @map("effective_until") @db.Date
+  provenance     String            @db.VarChar(255)
+  createdBy      String?           @map("created_by") @db.VarChar(255)
+  revokedAt      DateTime?         @map("revoked_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  segments      BellScheduleSegment[]
+  classSessions ClassSession[]
+
+  @@index([scope, effectiveFrom, effectiveUntil])
+  @@map("bell_schedule_profiles")
+  @@schema("school")
+}
+
+model BellScheduleSegment {
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  profileId   String          @map("profile_id") @db.Uuid
+  jpNumber    Int?            @map("jp_number")
+  label       String          @db.VarChar(80)
+  type        BellSegmentType
+  startMinute Int             @map("start_minute")
+  endMinute   Int             @map("end_minute")
+  sortOrder   Int             @map("sort_order")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  profile BellScheduleProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, sortOrder])
+  @@unique([profileId, jpNumber])
+  @@index([profileId, startMinute])
+  @@map("bell_schedule_segments")
+  @@schema("school")
+}
+
+enum DisplayDeviceProfile {
+  RUANG_GURU
+  RUANG_TU
+
+  @@schema("school")
+}
+
+enum DisplayDeviceStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+
+  @@schema("school")
+}
+
+model DisplayDevice {
+  id                String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  profile           DisplayDeviceProfile
+  label             String               @db.VarChar(100)
+  status            DisplayDeviceStatus  @default(PENDING)
+  credentialHash    String?              @unique @map("credential_hash") @db.Char(64)
+  credentialVersion Int                  @default(1) @map("credential_version")
+  createdBy         String               @map("created_by") @db.VarChar(255)
+  expiresAt         DateTime?            @map("expires_at")
+  activatedAt       DateTime?            @map("activated_at")
+  lastSeenAt        DateTime?            @map("last_seen_at")
+  revokedAt         DateTime?            @map("revoked_at")
+  audioEnabled      Boolean              @default(false) @map("audio_enabled")
+  isAudibleLeader   Boolean              @default(false) @map("is_audible_leader")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+
+  pairingChallenges DisplayPairingChallenge[]
+  alertDeliveries   ClassSessionAlertDelivery[]
+  acknowledgements  ClassSessionAlertAcknowledgement[]
+
+  @@index([profile, status])
+  @@index([lastSeenAt])
+  @@map("display_devices")
+  @@schema("school")
+}
+
+model DisplayPairingChallenge {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deviceId      String    @map("device_id") @db.Uuid
+  challengeHash String    @unique @map("challenge_hash") @db.Char(64)
+  expiresAt     DateTime  @map("expires_at")
+  attempts      Int       @default(0)
+  maxAttempts   Int       @default(5) @map("max_attempts")
+  consumedAt    DateTime? @map("consumed_at")
+  createdBy     String    @map("created_by") @db.VarChar(255)
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  device DisplayDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, expiresAt])
+  @@map("display_pairing_challenges")
+  @@schema("school")
+}
+
+enum ClassSessionStatus {
+  SCHEDULED
+  REASSIGNED
+  STARTED
+  COMPLETED
+  MISSED
+  CANCELLED
+  SUPERSEDED
+
+  @@schema("academic")
+}
+
+enum ClassSessionEventType {
+  MATERIALIZED
+  STARTED
+  COMPLETED
+  MISSED
+  CANCELLED
+  REASSIGNED
+  SUPERSEDED
+  RECOVERED
+  ALERT_CREATED
+  ALERT_CANCELLED
+
+  @@schema("academic")
+}
+
+enum OperationalActorType {
+  USER
+  DEVICE
+  SYSTEM
+
+  @@schema("academic")
+}
+
+model ClassSession {
+  id                    String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scheduleId            String             @map("schedule_id") @db.Uuid
+  serviceDate           DateTime           @map("service_date") @db.Date
+  academicYearId        String             @map("academic_year_id") @db.Uuid
+  semesterId            String             @map("semester_id") @db.Uuid
+  bellScheduleProfileId String             @map("bell_schedule_profile_id") @db.Uuid
+  classId               String             @map("class_id") @db.Uuid
+  teachingAssignmentId  String             @map("teaching_assignment_id") @db.Uuid
+  scheduledTeacherId    String             @map("scheduled_teacher_id") @db.Uuid
+  assignedTeacherId     String             @map("assigned_teacher_id") @db.Uuid
+  classNameSnapshot     String             @map("class_name_snapshot") @db.VarChar(100)
+  subjectSnapshot       String             @map("subject_snapshot") @db.VarChar(120)
+  scheduledTeacherName  String             @map("scheduled_teacher_name") @db.VarChar(255)
+  assignedTeacherName   String             @map("assigned_teacher_name") @db.VarChar(255)
+  roomSnapshot          String?            @map("room_snapshot") @db.VarChar(80)
+  scheduledStartAt      DateTime           @map("scheduled_start_at") @db.Timestamptz(3)
+  scheduledEndAt        DateTime           @map("scheduled_end_at") @db.Timestamptz(3)
+  status                ClassSessionStatus @default(SCHEDULED)
+  version               Int                @default(1)
+  startedAt             DateTime?          @map("started_at") @db.Timestamptz(3)
+  startedBy             String?            @map("started_by") @db.VarChar(255)
+  completedAt           DateTime?          @map("completed_at") @db.Timestamptz(3)
+  completedBy           String?            @map("completed_by") @db.VarChar(255)
+  missedAt              DateTime?          @map("missed_at") @db.Timestamptz(3)
+  cancelledAt           DateTime?          @map("cancelled_at") @db.Timestamptz(3)
+  cancelledBy           String?            @map("cancelled_by") @db.VarChar(255)
+  cancellationReason    String?            @map("cancellation_reason") @db.VarChar(500)
+  reassignedAt          DateTime?          @map("reassigned_at") @db.Timestamptz(3)
+  reassignedBy          String?            @map("reassigned_by") @db.VarChar(255)
+  reassignmentReason    String?            @map("reassignment_reason") @db.VarChar(500)
+  supersededAt          DateTime?          @map("superseded_at") @db.Timestamptz(3)
+  supersededBy          String?            @map("superseded_by") @db.VarChar(255)
+  supersedeReason       String?            @map("supersede_reason") @db.VarChar(500)
+  lateByMinutes         Int?               @map("late_by_minutes")
+  createdAt             DateTime           @default(now()) @map("created_at")
+  updatedAt             DateTime           @updatedAt @map("updated_at")
+
+  schedule            Schedule            @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
+  academicYear        AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  semester            Semester            @relation(fields: [semesterId], references: [id], onDelete: Restrict)
+  bellScheduleProfile BellScheduleProfile @relation(fields: [bellScheduleProfileId], references: [id], onDelete: Restrict)
+  class               Class               @relation(fields: [classId], references: [id], onDelete: Restrict)
+  teachingAssignment  TeachingAssignment  @relation(fields: [teachingAssignmentId], references: [id], onDelete: Restrict)
+  scheduledTeacher    Teacher             @relation("ClassSessionScheduledTeacher", fields: [scheduledTeacherId], references: [id], onDelete: Restrict)
+  assignedTeacher     Teacher             @relation("ClassSessionAssignedTeacher", fields: [assignedTeacherId], references: [id], onDelete: Restrict)
+  events              ClassSessionEvent[]
+  alerts              ClassSessionAlert[]
+
+  @@unique([scheduleId, serviceDate])
+  @@index([serviceDate, status])
+  @@index([assignedTeacherId, serviceDate])
+  @@index([classId, serviceDate])
+  @@map("class_sessions")
+  @@schema("academic")
+}
+
+model ClassSessionEvent {
+  id         String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId  String                @map("session_id") @db.Uuid
+  eventType  ClassSessionEventType @map("event_type")
+  eventKey   String                @unique @map("event_key") @db.VarChar(180)
+  actorType  OperationalActorType  @map("actor_type")
+  actorId    String?               @map("actor_id") @db.VarChar(255)
+  reason     String?               @db.VarChar(500)
+  metadata   Json?
+  occurredAt DateTime              @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  session ClassSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, occurredAt])
+  @@map("class_session_events")
+  @@schema("academic")
+}
+
+enum ClassSessionAlertStage {
+  PRIVATE_T5
+  ROOM_T10
+  ESCALATION_T15
+
+  @@schema("academic")
+}
+
+enum ClassSessionAlertStatus {
+  PENDING
+  CLAIMED
+  DISPATCHED
+  CANCELLED
+
+  @@schema("academic")
+}
+
+enum ClassSessionDeliveryStatus {
+  PENDING
+  DELIVERED
+  PLAYED
+  ACKNOWLEDGED
+  CANCELLED
+
+  @@schema("academic")
+}
+
+model ClassSessionAlert {
+  id                 String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId          String                  @map("session_id") @db.Uuid
+  stage              ClassSessionAlertStage
+  dueAt              DateTime                @map("due_at") @db.Timestamptz(3)
+  status             ClassSessionAlertStatus @default(PENDING)
+  claimToken         String?                 @map("claim_token") @db.Uuid
+  claimedAt          DateTime?               @map("claimed_at") @db.Timestamptz(3)
+  leaseUntil         DateTime?               @map("lease_until") @db.Timestamptz(3)
+  dispatchedAt       DateTime?               @map("dispatched_at") @db.Timestamptz(3)
+  cancelledAt        DateTime?               @map("cancelled_at") @db.Timestamptz(3)
+  cancellationReason String?                 @map("cancellation_reason") @db.VarChar(500)
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
+
+  session    ClassSession                @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  deliveries ClassSessionAlertDelivery[]
+
+  @@unique([sessionId, stage])
+  @@index([status, dueAt])
+  @@index([leaseUntil])
+  @@map("class_session_alerts")
+  @@schema("academic")
+}
+
+model ClassSessionAlertDelivery {
+  id          String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  alertId     String                     @map("alert_id") @db.Uuid
+  deviceId    String                     @map("device_id") @db.Uuid
+  status      ClassSessionDeliveryStatus @default(PENDING)
+  audible     Boolean                    @default(false)
+  deliveredAt DateTime?                  @map("delivered_at") @db.Timestamptz(3)
+  playedAt    DateTime?                  @map("played_at") @db.Timestamptz(3)
+  cancelledAt DateTime?                  @map("cancelled_at") @db.Timestamptz(3)
+  createdAt   DateTime                   @default(now()) @map("created_at")
+  updatedAt   DateTime                   @updatedAt @map("updated_at")
+
+  alert           ClassSessionAlert                 @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  device          DisplayDevice                     @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  acknowledgement ClassSessionAlertAcknowledgement?
+
+  @@unique([alertId, deviceId])
+  @@index([deviceId, status, createdAt])
+  @@map("class_session_alert_deliveries")
+  @@schema("academic")
+}
+
+model ClassSessionAlertAcknowledgement {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deliveryId     String   @unique @map("delivery_id") @db.Uuid
+  actorDeviceId  String   @map("actor_device_id") @db.Uuid
+  reason         String?  @db.VarChar(500)
+  acknowledgedAt DateTime @default(now()) @map("acknowledged_at") @db.Timestamptz(3)
+
+  delivery    ClassSessionAlertDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  actorDevice DisplayDevice             @relation(fields: [actorDeviceId], references: [id], onDelete: Restrict)
+
+  @@index([actorDeviceId, acknowledgedAt])
+  @@map("class_session_alert_acknowledgements")
+  @@schema("academic")
+}
 
 // RPP — Rencana Pelaksanaan Pembelajaran (referensi KamilEdu Modul 11)
 // Pipeline: draft -> submitted -> curriculum_reviewed -> approved;
@@ -837,7 +1168,6 @@ model RemedialParticipant {
   @@schema("academic")
 }
 
-
 // Rapor (KamilEdu M12) — snapshot nilai+kehadiran per siswa per semester.
 // Pipeline: draft → checked (diperiksa) → published (terbit) → distributed (dibagikan);
 // return: checked → draft. grades/attendance = SNAPSHOT JSON (immutable saat terbit).
@@ -1033,7 +1363,6 @@ enum NotifStatus {
   @@schema("notification")
 }
 
-
 // Pengumuman Sekolah (referensi KamilEdu Modul 14)
 // createdBy = Keycloak sub, TANPA FK lintas-schema (pola ChatSession.userId)
 model Announcement {
@@ -1131,7 +1460,6 @@ model AiDraftAcceptance {
   @@map("ai_draft_acceptances")
   @@schema("ai_knowledge")
 }
-
 
 // =============================================================================
 // AI KNOWLEDGE SCHEMA — Chat history (SMA-49)
@@ -1235,6 +1563,7 @@ model AcademicYear {
   staffPositions  StaffPosition[]
   appointments     Appointment[]
   semesterClosures SemesterClosure[]
+  classSessions    ClassSession[]
 
   @@map("academic_years")
   @@schema("school")
@@ -1253,6 +1582,7 @@ model Semester {
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
   closure        SemesterClosure? @relation("SemesterClosureSource")
   nextClosure    SemesterClosure? @relation("SemesterClosureNext")
+  classSessions ClassSession[]
 
   @@unique([academicYearId, number])
   @@map("semesters")
@@ -1659,11 +1989,11 @@ model Question {
   importRows   QuestionImportRow[]
   questionSets QuestionSet[]
 
+  @@unique([aiGenerationId, aiItemKey])
   @@index([teacherId, subject])
   @@index([subject, type])
   @@index([source])
   @@index([aiGenerationId])
-  @@unique([aiGenerationId, aiItemKey])
   @@map("questions")
   @@schema("academic")
 }
@@ -1853,10 +2183,10 @@ model AiGeneration {
   questions Question[]
   acceptances AiDraftAcceptance[]
 
+  @@unique([teacherId, type, idempotencyKey])
   @@index([teacherId, createdAt])
   @@index([type, createdAt])
   @@index([sourceType, sourceId])
-  @@unique([teacherId, type, idempotencyKey])
   @@map("ai_generations")
   @@schema("ai_knowledge")
 }

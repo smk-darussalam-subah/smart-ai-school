@@ -71,7 +71,10 @@ function dailyOverall(heat: HeatmapResp | null): TrenSeries {
   return { labels: heat.dates.map((d) => d.slice(5)), pcts };
 }
 
-function deriveSpp(rows: SppSummaryRow[] | null): { months: SppMonth[]; collectedPct: number | null } {
+function deriveSpp(rows: SppSummaryRow[] | null): {
+  months: SppMonth[];
+  collectedPct: number | null;
+} {
   if (!rows || rows.length === 0) return { months: [], collectedPct: null };
   const map = new Map<string, { month: number; year: number; paid: number; total: number }>();
   let paidAll = 0;
@@ -105,7 +108,7 @@ function deriveHealth(
   const pilars = [
     { label: 'Kehadiran Siswa', pct: studentPct },
     { label: 'Kehadiran Guru', pct: teacher?.gpsPct ?? null },
-    { label: 'Ketuntasan KKM', pct: grades?.overall.kkmPassRate ?? null },
+    { label: 'Ketuntasan KKTP', pct: grades?.overall.kkmPassRate ?? null },
     { label: 'Kepatuhan RPP', pct: teacher?.rpp.approvalRate ?? null },
   ];
   const avail = pilars.filter((p) => p.pct !== null).map((p) => p.pct as number);
@@ -119,11 +122,23 @@ export async function fetchExecutiveBundle(filters: ExecFilters): Promise<Execut
   const qp = toParams(filters);
 
   const empty: ExecutiveData = {
-    filters: { academicYear: filters.academicYear ?? '', semester: filters.semester ?? 1, majorCode: filters.majorCode },
+    filters: {
+      academicYear: filters.academicYear ?? '',
+      semester: filters.semester ?? 1,
+      majorCode: filters.majorCode,
+    },
     majors: [],
     studentsActive: null,
     health: { score: null, delta: null, pilars: [] },
-    kpi: { studentPct: null, studentDelta: null, studentSpark: [], teacherPct: null, avgGrade: null, sppCollectedPct: null, ppdbConversion: null },
+    kpi: {
+      studentPct: null,
+      studentDelta: null,
+      studentSpark: [],
+      teacherPct: null,
+      avgGrade: null,
+      sppCollectedPct: null,
+      ppdbConversion: null,
+    },
     tren: { labels: [], pcts: [] },
     grades: null,
     atRisk: null,
@@ -135,24 +150,31 @@ export async function fetchExecutiveBundle(filters: ExecFilters): Promise<Execut
   };
   if (!token) return empty;
 
-  const [heat, grades, atRisk, aging, teacher, ppdb, sppRows, students, majors, years] = await Promise.all([
-    apiFetch<HeatmapResp>('/attendance/heatmap', token, { days: String(TREND_DAYS) }),
-    apiFetch<GradeAnalytics>('/analytics/grades', token, qp),
-    apiFetch<ExecutiveData['atRisk']>('/analytics/at-risk', token, qp),
-    apiFetch<Aging>('/analytics/finance/aging', token, qp),
-    apiFetch<TeacherCompliance>('/analytics/teacher-compliance', token, qp),
-    apiFetch<PpdbStats>('/ppdb/stats', token),
-    apiFetch<SppSummaryRow[]>('/finance/spp/summary', token),
-    apiFetch<{ total: number }>('/students', token, { status: 'active', limit: '1' }),
-    apiFetch<MajorRef[]>('/school/majors', token, { activeOnly: 'true' }),
-    apiFetch<AcademicYearRow[]>('/school/academic-years', token),
-  ]);
+  const [heat, grades, atRisk, aging, teacher, ppdb, sppRows, students, majors, years] =
+    await Promise.all([
+      apiFetch<HeatmapResp>('/attendance/heatmap', token, { days: String(TREND_DAYS) }),
+      apiFetch<GradeAnalytics>('/analytics/grades', token, qp),
+      apiFetch<ExecutiveData['atRisk']>('/analytics/at-risk', token, qp),
+      apiFetch<Aging>('/analytics/finance/aging', token, qp),
+      apiFetch<TeacherCompliance>('/analytics/teacher-compliance', token, qp),
+      apiFetch<PpdbStats>('/ppdb/stats', token),
+      apiFetch<SppSummaryRow[]>('/finance/spp/summary', token),
+      apiFetch<{ total: number }>('/students', token, { status: 'active', limit: '1' }),
+      apiFetch<MajorRef[]>('/school/majors', token, { activeOnly: 'true' }),
+      apiFetch<AcademicYearRow[]>('/school/academic-years', token),
+    ]);
 
   const tren = dailyOverall(heat);
   const studentSpark = tren.pcts.slice(-10);
-  const studentPct = heat?.overall?.today?.pct ?? (studentSpark.length ? studentSpark[studentSpark.length - 1]! : null);
+  const studentPct =
+    heat?.overall?.today?.pct ??
+    (studentSpark.length ? studentSpark[studentSpark.length - 1]! : null);
   const studentDelta =
-    studentSpark.length >= 2 ? Math.round((studentSpark[studentSpark.length - 1]! - studentSpark[studentSpark.length - 2]!) * 10) / 10 : null;
+    studentSpark.length >= 2
+      ? Math.round(
+          (studentSpark[studentSpark.length - 1]! - studentSpark[studentSpark.length - 2]!) * 10,
+        ) / 10
+      : null;
 
   const { months: spp, collectedPct } = deriveSpp(sppRows);
   const health = deriveHealth(studentPct, studentDelta, teacher, grades);
@@ -180,7 +202,12 @@ export async function fetchExecutiveBundle(filters: ExecFilters): Promise<Execut
   };
 
   // Tahun ajaran aktif → default filter bila belum di-set.
-  const activeYear = years?.find((y) => y.isActive)?.code ?? years?.[0]?.code ?? filters.academicYear ?? grades?.filters.academicYear ?? '';
+  const activeYear =
+    years?.find((y) => y.isActive)?.code ??
+    years?.[0]?.code ??
+    filters.academicYear ??
+    grades?.filters.academicYear ??
+    '';
 
   return {
     filters: {
