@@ -18,6 +18,7 @@ const ME_SELECT = {
   fullName: true,
   role: true,
   phone: true,
+  avatarUrl: true,
   isActive: true,
   consentAt: true,
   consentVersion: true,
@@ -30,6 +31,7 @@ export type MeResponse = {
   fullName: string;
   role: string;
   phone: string | null;
+  avatarUrl: string | null;
   isActive: boolean;
   consentAt: Date | null;
   consentVersion: string | null;
@@ -74,6 +76,7 @@ export class AuthService {
         fullName: '',
         role: (roles[0] ?? '') as string,
         phone: null,
+        avatarUrl: null,
         isActive: true,
         consentAt: null,
         consentVersion: null,

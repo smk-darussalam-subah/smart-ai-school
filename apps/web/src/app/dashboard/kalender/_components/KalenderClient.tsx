@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
-import { CalendarDays, CalendarPlus, Pencil, Trash2, X, Loader2, Save } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CalendarPlus, Pencil, Trash2, X, Loader2, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,6 +20,8 @@ import {
   createCalendarEventAction, updateCalendarEventAction, deleteCalendarEventAction,
 } from '../actions';
 import type { CalendarEvent } from '../page';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { calendarEmptyStateMessage, canMutateCalendar } from '../kalender-ui';
 
 const TYPE_OPTIONS: { value: KaldikEvent['type']; label: string }[] = [
   { value: 'exam', label: 'Ujian' },
@@ -31,18 +33,21 @@ const TYPE_OPTIONS: { value: KaldikEvent['type']; label: string }[] = [
 interface Props {
   events: CalendarEvent[];
   academicYear: { id: string; code: string } | null;
+  periodWarning?: string | null;
 }
 
 function toKaldik(e: CalendarEvent): KaldikEvent {
   return { id: e.id, name: e.name, date: e.startDate.slice(0, 10), endDate: e.endDate.slice(0, 10), type: e.type };
 }
 
-export default function KalenderClient({ events, academicYear }: Props) {
+export default function KalenderClient({ events, academicYear, periodWarning }: Props) {
   const router = useRouter();
   const today = new Date();
   const [cal, setCal] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<CalendarEvent | null>(null);
+  const [deleteError, setDeleteError] = useState('');
 
   // form dialog
   const [open, setOpen] = useState(false);
@@ -56,19 +61,22 @@ export default function KalenderClient({ events, academicYear }: Props) {
 
   const kaldik = useMemo(() => events.map(toKaldik), [events]);
   const sorted = useMemo(() => [...events].sort((a, b) => a.startDate.localeCompare(b.startDate)), [events]);
+  const canMutate = canMutateCalendar(academicYear, periodWarning);
 
   const openNew = () => {
+    if (!canMutate) return;
     setEditId(null); setName(''); setType('event');
     setStartDate(ymd(today)); setEndDate(ymd(today)); setDescription(''); setErr(''); setOpen(true);
   };
   const openEdit = (e: CalendarEvent) => {
+    if (!canMutate) return;
     setEditId(e.id); setName(e.name); setType(e.type);
     setStartDate(e.startDate.slice(0, 10)); setEndDate(e.endDate.slice(0, 10)); setDescription(e.description ?? ''); setErr(''); setOpen(true);
   };
 
   const submit = async () => {
     setErr('');
-    if (!academicYear) { setErr('Belum ada tahun ajaran aktif.'); return; }
+    if (!academicYear || !canMutate) { setErr('Agenda hanya dapat diubah saat tahun ajaran aktif berhasil dimuat.'); return; }
     if (!name.trim()) { setErr('Nama agenda wajib diisi.'); return; }
     if (endDate < startDate) { setErr('Tanggal selesai tidak boleh sebelum tanggal mulai.'); return; }
     setBusy(true);
@@ -80,11 +88,16 @@ export default function KalenderClient({ events, academicYear }: Props) {
   };
 
   const remove = async (e: CalendarEvent) => {
-    if (!confirm(`Hapus agenda "${e.name}"?`)) return;
     setMsg(''); setErr('');
+    setDeleteError('');
+    if (!canMutate) {
+      setDeleteError('Agenda hanya dapat dihapus saat tahun ajaran aktif berhasil dimuat.');
+      return false;
+    }
     const res = await deleteCalendarEventAction(e.id);
-    if (res.error) { setMsg(`Gagal: ${res.error}`); return; }
-    setMsg('Agenda dihapus.'); router.refresh();
+    if (res.error) { setDeleteError(res.error); return false; }
+    setMsg('Agenda dihapus.'); setDeleteTarget(null); router.refresh();
+    return true;
   };
 
   const fmtRange = (e: CalendarEvent) => {
@@ -105,12 +118,19 @@ export default function KalenderClient({ events, academicYear }: Props) {
           <p className="mt-1 text-sm text-muted-foreground">Kelola agenda, ujian, dan hari libur (kaldik). Tampil otomatis di Beranda. Hari libur tidak dihitung sebagai hari aktif.</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">T.A. {academicYear?.code ?? '—'}</span>
-          <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700" disabled={!academicYear} onClick={openNew}><CalendarPlus className="h-4 w-4" /> Tambah Agenda</Button>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">T.A. {academicYear?.code ?? 'Mode baca saja'}</span>
+          <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700" disabled={!canMutate} onClick={openNew}><CalendarPlus className="h-4 w-4" /> Tambah Agenda</Button>
         </div>
       </div>
 
-      {msg && <div className={clsx('rounded-lg px-4 py-2 text-sm', msg.startsWith('Gagal') ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700')}>{msg}</div>}
+      {periodWarning && (
+        <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          {periodWarning}
+        </div>
+      )}
+
+      {msg && <div role="status" className={clsx('rounded-lg px-4 py-2 text-sm', msg.startsWith('Gagal') ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700')}>{msg}</div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
@@ -123,9 +143,9 @@ export default function KalenderClient({ events, academicYear }: Props) {
         </div>
 
         <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm">
-          <div className="px-5 py-3.5 border-b border-gray-100"><h2 className="font-semibold text-gray-800 text-sm">Daftar Agenda — T.A. {academicYear?.code ?? '—'}</h2></div>
+          <div className="px-5 py-3.5 border-b border-gray-100"><h2 className="font-semibold text-gray-800 text-sm">Daftar Agenda — T.A. {academicYear?.code ?? 'Mode baca saja'}</h2></div>
           {sorted.length === 0 ? (
-            <p className="py-12 text-center text-sm text-gray-400">Belum ada agenda. Klik “Tambah Agenda”.</p>
+            <p className="py-12 text-center text-sm text-gray-400">{calendarEmptyStateMessage(canMutate)}</p>
           ) : (
             <ul className="divide-y divide-gray-50">
               {sorted.map((e) => {
@@ -139,8 +159,28 @@ export default function KalenderClient({ events, academicYear }: Props) {
                       </p>
                       <p className="text-xs text-gray-400 mt-0.5">{fmtRange(e)}{e.description ? ` · ${e.description}` : ''}</p>
                     </div>
-                    <button onClick={() => openEdit(e)} className="w-8 h-8 grid place-items-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-emerald-700" title="Edit"><Pencil className="w-4 h-4" /></button>
-                    <button onClick={() => remove(e)} className="w-8 h-8 grid place-items-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title="Hapus"><Trash2 className="w-4 h-4" /></button>
+                    <button
+                      type="button"
+                      onClick={() => openEdit(e)}
+                      disabled={!canMutate}
+                      className="grid h-11 w-11 place-items-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={`Edit agenda ${e.name}`}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!canMutate) return;
+                        setDeleteTarget(e);
+                        setDeleteError('');
+                      }}
+                      disabled={!canMutate}
+                      className="grid h-11 w-11 place-items-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={`Hapus agenda ${e.name}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </li>
                 );
               })}
@@ -179,6 +219,27 @@ export default function KalenderClient({ events, academicYear }: Props) {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setDeleteTarget(null);
+            setDeleteError('');
+          }
+        }}
+        title="Hapus agenda kalender?"
+        description={deleteTarget
+          ? `${deleteTarget.name} pada ${fmtRange(deleteTarget)} akan dihapus dari kalender sekolah.`
+          : ''}
+        confirmLabel="Hapus agenda"
+        variant="danger"
+        error={deleteError}
+        onConfirm={async () => {
+          if (!deleteTarget) return false;
+          return remove(deleteTarget);
+        }}
+      />
     </div>
   );
 }

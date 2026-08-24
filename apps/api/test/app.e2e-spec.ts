@@ -15,26 +15,9 @@
 // ── jest.mock harus sebelum semua import (hoisted oleh Jest transform) ────────
 
 jest.mock('@smk/auth', () => {
-  const { z } = require('zod');
-  const UserRole = z.enum([
-    'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA',
-    'GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI',
-  ]);
-  const PRIMARY_ROLES = [
-    'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA',
-    'GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI',
-  ];
-  const POSITION_CODES = [
-    'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'WAKA_KESISWAAN', 'WAKA_HUMAS',
-    'WAKA_SARPRAS', 'KEPALA_TU', 'KAPROG', 'KOOR_BKK', 'KOOR_HUBIN',
-    'GURU_BK', 'BENDAHARA', 'STAF_KEPEGAWAIAN', 'OPERATOR_DAPODIK',
-  ];
+  const actual = jest.requireActual('@smk/auth');
   return {
-    UserRole,
-    PRIMARY_ROLES,
-    POSITION_CODES,
-    isPositionCode: (role: string) => POSITION_CODES.includes(role),
-    isPrimaryRole: (role: string) => PRIMARY_ROLES.includes(role),
+    ...actual,
     verifyKeycloakToken: jest.fn(),
     extractAuthUser: jest.fn(),
     hasRole: jest.fn(),
@@ -58,7 +41,11 @@ jest.mock('../src/permissions/permissions.service', () => ({
   PermissionsService: jest.fn().mockImplementation(() => ({
     hasPermission: jest.fn().mockResolvedValue(true),
     getEffectivePermissions: jest.fn().mockResolvedValue(new Set()),
-    getActivePositionCodes: jest.fn().mockResolvedValue(new Set()),
+    getActivePositionCodes: jest.fn().mockImplementation((keycloakId: string) =>
+      Promise.resolve(keycloakId === 'e2e00000-0000-4000-c000-000000000002'
+        ? new Set(['KEPALA_SEKOLAH'])
+        : new Set()),
+    ),
   })),
 }));
 
@@ -75,7 +62,14 @@ import { INestApplication } from '@nestjs/common';
 import { NestFastifyApplication, FastifyAdapter } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import supertest from 'supertest';
-import { verifyKeycloakToken, extractAuthUser, AuthUser } from '@smk/auth';
+import {
+  verifyKeycloakToken,
+  extractAuthUser,
+  AuthUser,
+  PRIMARY_ROLES,
+  PrimaryRoleSchema,
+  isPrimaryRole,
+} from '@smk/auth';
 import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { PrismaExceptionFilter } from '../src/common/filters/prisma-exception.filter';
@@ -109,7 +103,7 @@ const IDS = {
 // ── Test tokens → AuthUser mapping ───────────────────────────────────────────
 const USERS: Record<string, AuthUser> = {
   'e2e-token-sa':   { keycloakId: IDS.kcSA,    roles: ['SUPER_ADMIN'],    email: 'sa@e2e.test',    username: 'sa-e2e',    fullName: 'SA E2E' },
-  'e2e-token-ks':   { keycloakId: IDS.kcKS,    roles: ['KEPALA_SEKOLAH'], email: 'ks@e2e.test',    username: 'ks-e2e',    fullName: 'KS E2E' },
+  'e2e-token-ks':   { keycloakId: IDS.kcKS,    roles: ['GURU'],           email: 'ks@e2e.test',    username: 'ks-e2e',    fullName: 'KS E2E' },
   'e2e-token-tu':   { keycloakId: IDS.kcTU,    roles: ['TATA_USAHA'],     email: 'tu@e2e.test',    username: 'tu-e2e',    fullName: 'TU E2E' },
   'e2e-token-guru': { keycloakId: IDS.kcGuru,  roles: ['GURU'],           email: 'guru@e2e.test',  username: 'guru-e2e',  fullName: 'Guru E2E' },
   'e2e-token-siswa':{ keycloakId: IDS.kcSiswa, roles: ['SISWA'],          email: 'siswa@e2e.test', username: 'siswa-e2e', fullName: 'Siswa E2E' },
@@ -200,7 +194,7 @@ async function seedTestData() {
   await prisma.user.createMany({
     data: [
       { id: IDS.userSA,    keycloakId: IDS.kcSA,    email: 'sa@e2e.test',    fullName: 'SA E2E',    role: 'SUPER_ADMIN',    isActive: true },
-      { id: IDS.userKS,    keycloakId: IDS.kcKS,    email: 'ks@e2e.test',    fullName: 'KS E2E',    role: 'KEPALA_SEKOLAH', isActive: true },
+      { id: IDS.userKS,    keycloakId: IDS.kcKS,    email: 'ks@e2e.test',    fullName: 'KS E2E',    role: 'GURU', isActive: true },
       { id: IDS.userTU,    keycloakId: IDS.kcTU,    email: 'tu@e2e.test',    fullName: 'TU E2E',    role: 'TATA_USAHA',     isActive: true },
       { id: IDS.userGuru,  keycloakId: IDS.kcGuru,  email: 'guru@e2e.test',  fullName: 'Guru E2E',  role: 'GURU',           isActive: true },
       { id: IDS.userSiswa, keycloakId: IDS.kcSiswa, email: 'siswa@e2e.test', fullName: 'Siswa E2E', role: 'SISWA',          isActive: true },
@@ -310,6 +304,15 @@ function req() {
 // =============================================================================
 // JALUR P0
 // =============================================================================
+
+describe('Auth mock contract', () => {
+  it('keeps @smk/auth primary roles canonical in E2E', () => {
+    expect(PRIMARY_ROLES).toEqual(['SUPER_ADMIN', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI']);
+    expect(PrimaryRoleSchema.safeParse('GURU').success).toBe(true);
+    expect(PrimaryRoleSchema.safeParse('KEPALA_SEKOLAH').success).toBe(false);
+    expect(isPrimaryRole('KEPALA_SEKOLAH')).toBe(false);
+  });
+});
 
 // ── Health (smoke test) ───────────────────────────────────────────────────────
 describe('GET /health', () => {
