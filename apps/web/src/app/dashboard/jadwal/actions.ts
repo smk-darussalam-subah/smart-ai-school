@@ -81,3 +81,57 @@ export async function searchScheduleAssignments(params: {
   if (params.academicYear) query.set('academicYear', params.academicYear);
   return fetchApi(`/teaching-assignments?${query.toString()}`, 'GET');
 }
+
+export async function startClassSession(id: string, idempotencyKey: string) {
+  const result = await fetchApi(`/class-sessions/${id}/start`, 'POST', { idempotencyKey });
+  if (result.success) revalidatePath(PATH);
+  return result;
+}
+
+export async function completeClassSession(id: string, idempotencyKey: string) {
+  const result = await fetchApi(`/class-sessions/${id}/complete`, 'POST', { idempotencyKey });
+  if (result.success) revalidatePath(PATH);
+  return result;
+}
+
+export async function cancelClassSession(id: string, reason: string, idempotencyKey: string) {
+  const result = await fetchApi(`/class-sessions/${id}/cancel`, 'POST', {
+    reason,
+    idempotencyKey,
+  });
+  if (result.success) revalidatePath(PATH);
+  return result;
+}
+
+export async function reassignClassSession(
+  id: string,
+  teacherId: string,
+  reason: string,
+  idempotencyKey: string,
+) {
+  const result = await fetchApi(`/class-sessions/${id}/reassign`, 'POST', {
+    teacherId,
+    reason,
+    idempotencyKey,
+  });
+  if (result.success) revalidatePath(PATH);
+  return result;
+}
+
+export async function createBellSchedule(body: Record<string, unknown>) {
+  const result = await fetchApi('/bell-schedules', 'POST', body);
+  if (result.success) revalidatePath(PATH);
+  return result;
+}
+
+export async function updateBellSchedule(id: string, body: Record<string, unknown>) {
+  const result = await fetchApi(`/bell-schedules/${id}`, 'PATCH', body);
+  if (result.success) revalidatePath(PATH);
+  return result;
+}
+
+export async function revokeBellSchedule(id: string) {
+  const result = await fetchApi(`/bell-schedules/${id}`, 'DELETE');
+  if (result.success) revalidatePath(PATH);
+  return result;
+}

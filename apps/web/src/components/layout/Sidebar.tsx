@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -7,30 +8,21 @@ import clsx from 'clsx';
 import ViewAsSwitcher from './ViewAsSwitcher';
 import { can } from '@/lib/permissions';
 import { visiblePositionRoles } from '@/lib/sidebar-position-roles';
+import { identityRoleLabel, isShellRouteActive, positionRoleLabel } from '@/lib/display-shell';
 import {
   Home, BarChart3, BookOpen, BookMarked, CalendarDays, CalendarRange, ClipboardCheck, GraduationCap,
   Backpack, FileText, Users, ClipboardList, Wallet, Briefcase, MapPin, School,
   Megaphone, Sparkles, Brain, UserCog, Activity, ShieldCheck, LogOut, MessageSquare, Building2,
   FileCheck, LogIn, UserCheck,
+  MonitorCog,
   type LucideIcon,
 } from 'lucide-react';
 
 // =============================================================================
 // Role → Label mapping
 // =============================================================================
-const ROLE_LABELS: Record<string, string> = {
-  SUPER_ADMIN: 'Super Admin',
-  KEPALA_SEKOLAH: 'Kepala Sekolah',
-  TATA_USAHA: 'Tata Usaha',
-  GURU: 'Guru',
-  SISWA: 'Siswa',
-  ORANG_TUA: 'Orang Tua',
-  INDUSTRI: 'Industri',
-};
-
 const ROLE_COLORS: Record<string, string> = {
   SUPER_ADMIN: 'bg-red-100 text-red-700',
-  KEPALA_SEKOLAH: 'bg-purple-100 text-purple-700',
   TATA_USAHA: 'bg-teal-100 text-teal-700',
   GURU: 'bg-blue-100 text-blue-700',
   SISWA: 'bg-green-100 text-green-700',
@@ -60,6 +52,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Beranda', href: '/dashboard', icon: Home },
       { label: 'Dasbor Eksekutif', href: '/dashboard/executive', icon: BarChart3, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN'], permissions: ['finance.read'] },
+      { label: 'Monitoring Operasional', href: '/dashboard/monitoring', icon: MonitorCog, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
     ],
   },
   {
@@ -125,7 +118,7 @@ const NAV_GROUPS: NavGroup[] = [
 // =============================================================================
 // Sidebar Component
 // =============================================================================
-export function Sidebar({ viewAs = null, permissions = [], permError = false, positionRoles = [], className }: { viewAs?: string | null; permissions?: string[]; permError?: boolean; positionRoles?: string[]; className?: string }) {
+export function Sidebar({ viewAs = null, permissions = [], permError = false, positionRoles = [], className, onNavigate }: { viewAs?: string | null; permissions?: string[]; permError?: boolean; positionRoles?: string[]; className?: string; onNavigate?: () => void }) {
   const { data: session } = useSession();
   const pathname = usePathname();
   const realRoles: string[] = (session?.roles as string[]) ?? [];
@@ -137,7 +130,7 @@ export function Sidebar({ viewAs = null, permissions = [], permError = false, po
     : [...new Set([...roles, ...positionRoles])];
 
   const primaryRole = roles[0] ?? '';
-  const roleLabel = ROLE_LABELS[primaryRole] ?? primaryRole;
+  const roleLabel = identityRoleLabel(primaryRole);
   const roleBadgeColor = ROLE_COLORS[primaryRole] ?? 'bg-gray-100 text-gray-700';
 
   // R-24: Tampilkan badge jabatan tambahan jika ada position roles di luar session
@@ -162,14 +155,13 @@ export function Sidebar({ viewAs = null, permissions = [], permError = false, po
     .map((g) => ({ ...g, items: g.items.filter(isVisible) }))
     .filter((g) => g.items.length > 0);
 
-  const isItemActive = (href: string) =>
-    pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
+  const isItemActive = (href: string) => isShellRouteActive(pathname, href);
 
   return (
-    <aside className={clsx('flex flex-col w-64 min-h-screen bg-white border-r border-emerald-900/10 shadow-soft-sm', className)}>
+    <aside className={clsx('flex min-h-screen w-64 flex-col overflow-hidden border-r border-emerald-900/10 bg-white shadow-soft-sm', className)}>
       {/* Brand */}
       <div className="flex items-center gap-3 px-5 h-16 border-b border-gray-100">
-        <div className="w-9 h-9 bg-smk-emerald-deep rounded-xl flex items-center justify-center shrink-0">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-smk-emerald-deep">
           <span className="text-white text-sm font-bold">D</span>
         </div>
         <div className="min-w-0">
@@ -183,21 +175,18 @@ export function Sidebar({ viewAs = null, permissions = [], permError = false, po
         <p className="text-sm font-medium text-gray-800 truncate">{session?.user?.name ?? '—'}</p>
         <p className="text-xs text-gray-400 truncate mb-2">{session?.user?.email ?? ''}</p>
         <span className={clsx('badge', roleBadgeColor)}>
-          {roleLabel}
+          Identitas: {roleLabel}
           {viewAs ? ' · tinjau' : ''}
         </span>
-        {/* R-24: Indikator jabatan tambahan yang belum tersinkron ke sesi */}
+        {/* Appointment aktif berasal dari resolver server, bukan identity role Keycloak. */}
         {extraPositionRoles.length > 0 && (
-          <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] leading-snug text-blue-700">
-            Jabatan tambahan tersedia: <span className="font-semibold">{extraPositionRoles.join(', ')}</span>.
-            {' '}
-            <button
-              type="button"
-              onClick={() => { window.location.href = '/api/auth/signin?callbackUrl=' + encodeURIComponent(window.location.pathname); }}
-              className="underline hover:text-blue-900 font-medium"
-            >
-              Segarkan sesi
-            </button>
+          <div className="mt-2 space-y-1" aria-label="Appointment aktif">
+            <p className="text-[10px] font-semibold uppercase text-slate-400">Appointment aktif</p>
+            {extraPositionRoles.map((code) => (
+              <p key={code} className="rounded-md border border-blue-100 bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-800">
+                {positionRoleLabel(code)}
+              </p>
+            ))}
           </div>
         )}
         <div className="mt-3">
@@ -225,8 +214,10 @@ export function Sidebar({ viewAs = null, permissions = [], permError = false, po
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={onNavigate}
+                    aria-current={active ? 'page' : undefined}
                     className={clsx(
-                      'relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                      'relative flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-1',
                       active
                         ? 'bg-emerald-50 text-emerald-800'
                         : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
@@ -248,8 +239,9 @@ export function Sidebar({ viewAs = null, permissions = [], permError = false, po
       {/* Keluar */}
       <div className="px-3 py-4 border-t border-gray-100">
         <button
+          type="button"
           onClick={() => { window.location.href = '/api/auth/federated-logout'; }}
-          className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors"
+          className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700"
         >
           <LogOut className="w-[18px] h-[18px] shrink-0" />
           Keluar
