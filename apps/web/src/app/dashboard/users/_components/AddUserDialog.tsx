@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -182,10 +182,10 @@ export default function AddUserDialog({ isSuperAdmin }: Props) {
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><UserPlus className="h-5 w-5" /></span>
             Tambah Pengguna
           </DialogTitle>
-          <p className="text-sm text-muted-foreground">
-            Buat akun guru, tata usaha, kepala sekolah, atau mitra industri. Siswa dibuat di menu Data Siswa.
+          <DialogDescription>
+            Buat akun guru, tata usaha, atau mitra industri. Siswa dibuat di menu Data Siswa.
             Jabatan diatur terpisah di menu Struktur Organisasi.
-          </p>
+          </DialogDescription>
         </DialogHeader>
 
         {/* Tabs */}

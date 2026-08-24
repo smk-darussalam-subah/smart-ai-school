@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -191,7 +191,12 @@ export default function KalenderClient({ events, academicYear, periodWarning }: 
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>{editId ? 'Edit Agenda' : 'Tambah Agenda'}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{editId ? 'Edit Agenda' : 'Tambah Agenda'}</DialogTitle>
+            <DialogDescription>
+              Agenda disimpan pada tahun ajaran aktif dan tampil di kalender sekolah.
+            </DialogDescription>
+          </DialogHeader>
           {err && <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"><X className="mt-0.5 h-4 w-4 shrink-0" /> {err}</div>}
           <div className="space-y-4">
             <div>
