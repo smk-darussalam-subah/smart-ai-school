@@ -2,8 +2,10 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
-import { apiFetch } from '@/lib/api';
+import { apiFetchResult } from '@/lib/api';
 import KalenderClient from './_components/KalenderClient';
+import LoadError from '@/components/LoadError';
+import { resolveCalendarScope } from './kalender-ui';
 
 export interface CalendarEvent {
   id: string;
@@ -22,15 +24,28 @@ export default async function KalenderPage() {
   if (!EDITORS.some((r) => roles.includes(r))) redirect('/dashboard');
 
   const token = session?.accessToken ?? '';
-  const [calendar, activeYear] = await Promise.all([
-    apiFetch<CalendarEvent[]>('/school/calendar', token),
-    apiFetch<{ id: string; code: string } | null>('/school/academic-years/active', token),
-  ]);
+  const activeYearResult = await apiFetchResult<{ id: string; code: string } | null>('/school/academic-years/active', token);
+  const scope = resolveCalendarScope(activeYearResult);
+  const calendarResult = scope.query
+    ? await apiFetchResult<CalendarEvent[]>('/school/calendar', token, scope.query)
+    : null;
+
+  if (calendarResult && calendarResult.status !== 'success') {
+    return (
+      <LoadError
+        title="Kalender belum dapat dimuat"
+        message={calendarResult.status === 'forbidden'
+          ? 'Akses kalender ditolak untuk akun ini.'
+          : calendarResult.message}
+      />
+    );
+  }
 
   return (
     <KalenderClient
-      events={Array.isArray(calendar) ? calendar : []}
-      academicYear={activeYear && 'id' in (activeYear as object) ? (activeYear as { id: string; code: string }) : null}
+      events={calendarResult?.status === 'success' && Array.isArray(calendarResult.data) ? calendarResult.data : []}
+      academicYear={scope.academicYear}
+      periodWarning={scope.periodWarning}
     />
   );
 }

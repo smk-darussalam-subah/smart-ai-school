@@ -123,7 +123,7 @@ function buildPrisma() {
     teacher:            { findUnique: jest.fn() },
     student:            { findUnique: jest.fn(), findMany: jest.fn() },
     class:              { findFirst: jest.fn() },
-    academicYear:       { findMany: jest.fn() },
+    academicYear:       { findMany: jest.fn(), findUnique: jest.fn() },
     appointment:        { findMany: jest.fn() },
     teachingAssignment: { findUnique: jest.fn(), findMany: jest.fn() },
     schedule: {
@@ -144,20 +144,22 @@ function buildPrisma() {
 describe('ScheduleService', () => {
   let service: ScheduleService;
   let prisma: ReturnType<typeof buildPrisma>;
+  let academicPeriod: {
+    assertWritablePeriodWithCutoverLock: jest.Mock;
+    assertWritablePeriod: jest.Mock;
+  };
 
   beforeEach(async () => {
     prisma = buildPrisma();
+    academicPeriod = {
+      assertWritablePeriodWithCutoverLock: jest.fn().mockResolvedValue(undefined),
+      assertWritablePeriod: jest.fn().mockResolvedValue(undefined),
+    };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScheduleService,
         { provide: PrismaService, useValue: prisma },
-        {
-          provide: AcademicPeriodService,
-          useValue: {
-            assertWritablePeriodWithCutoverLock: jest.fn().mockResolvedValue(undefined),
-            assertWritablePeriod: jest.fn().mockResolvedValue(undefined),
-          },
-        },
+        { provide: AcademicPeriodService, useValue: academicPeriod },
       ],
     }).compile();
     service = module.get(ScheduleService);
@@ -314,6 +316,50 @@ describe('ScheduleService', () => {
       expect(rejected?.status === 'rejected' ? rejected.reason : null).toBeInstanceOf(ConflictException);
       expect(created).toHaveLength(1);
       expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // ── autoGenerate ─────────────────────────────────────────────────────────────
+
+  describe('autoGenerate', () => {
+    it('memegang cutover lock sampai assignment dan occupancy selesai dibaca', async () => {
+      const callOrder: string[] = [];
+      academicPeriod.assertWritablePeriodWithCutoverLock.mockImplementation(async () => {
+        callOrder.push('lock');
+      });
+      prisma.academicYear.findUnique.mockImplementation(async () => {
+        callOrder.push('year');
+        return { id: 'ay-2026' };
+      });
+      prisma.teachingAssignment.findMany.mockImplementation(async () => {
+        callOrder.push('assignments');
+        return [{
+          id: 'ta-1',
+          subject: 'Matematika',
+          hoursPerWeek: 2,
+          teacherId: 'teacher-1',
+          class: { id: 'class-1', name: 'X TKJ 1' },
+          schedules: [],
+        }];
+      });
+      prisma.schedule.findMany.mockImplementation(async () => {
+        callOrder.push('occupancy');
+        return [];
+      });
+
+      const result = await service.autoGenerate('2026/2027', 1, {
+        days: 6,
+        jpPerDay: 8,
+        maxJpGuru: 24,
+      });
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(academicPeriod.assertWritablePeriodWithCutoverLock).toHaveBeenCalledWith(
+        prisma,
+        { academicYear: '2026/2027', semester: 1 },
+      );
+      expect(result.generated).toHaveLength(2);
+      expect(callOrder).toEqual(['lock', 'year', 'assignments', 'occupancy']);
     });
   });
 

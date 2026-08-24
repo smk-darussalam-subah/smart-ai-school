@@ -27,7 +27,7 @@ import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { ScheduleService } from './schedule.service';
 import { CreateScheduleSchema, CreateScheduleDto } from './dto/create-schedule.dto';
 import { UpdateScheduleSchema, UpdateScheduleDto } from './dto/update-schedule.dto';
-import { ListScheduleQuerySchema } from './dto/list-schedule.dto';
+import { AutoGenerateScheduleQuerySchema, ListScheduleQuerySchema } from './dto/list-schedule.dto';
 
 @Controller('schedules')
 export class ScheduleController {
@@ -84,17 +84,10 @@ export class ScheduleController {
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM')
   @RequirePermission('academic.schedule.manage')
   @Get('auto-generate')
-  autoGenerate(
-    @Query('academicYear') academicYear: string,
-    @Query('semester') semester: string,
-    @Query('days') days?: string,
-    @Query('jpPerDay') jpPerDay?: string,
-    @Query('maxJpGuru') maxJpGuru?: string,
-  ) {
-    return this.service.autoGenerate(academicYear, Number(semester), {
-      days: days ? Number(days) : undefined,
-      jpPerDay: jpPerDay ? Number(jpPerDay) : undefined,
-      maxJpGuru: maxJpGuru ? Number(maxJpGuru) : undefined,
-    });
+  autoGenerate(@Query() rawQuery: unknown) {
+    const parsed = AutoGenerateScheduleQuerySchema.safeParse(rawQuery);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    const { academicYear, semester, days, jpPerDay, maxJpGuru } = parsed.data;
+    return this.service.autoGenerate(academicYear, semester, { days, jpPerDay, maxJpGuru });
   }
 }

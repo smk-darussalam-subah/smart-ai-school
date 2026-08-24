@@ -26,10 +26,10 @@ const SEM = { id: 's1', academicYearId: 'ay1', number: 1, startDate: new Date('2
 describe('SchoolConfigService', () => {
   let service: SchoolConfigService;
   const mockProfile = { findFirst: jest.fn(), update: jest.fn() };
-  const mockMajor = { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() };
+  const mockMajor = { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() };
   const mockAY = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() };
   const mockSem = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() };
-  const mockCal = { findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() };
+  const mockCal = { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() };
   const mockStaffPosition = { updateMany: jest.fn() };
   const mockUserPermissionOverride = { deleteMany: jest.fn() };
   const mock$transaction = jest.fn();
@@ -56,10 +56,10 @@ describe('SchoolConfigService', () => {
   };
 
   beforeEach(async () => {
-    [mockProfile.findFirst, mockProfile.update, mockMajor.findMany, mockMajor.findUnique, mockMajor.create, mockMajor.update,
+    [mockProfile.findFirst, mockProfile.update, mockMajor.findMany, mockMajor.findUnique, mockMajor.findFirst, mockMajor.create, mockMajor.update,
       mockAY.findMany, mockAY.findFirst, mockAY.findUnique, mockAY.create, mockAY.update, mockAY.updateMany, mockAY.count,
       mockSem.findMany, mockSem.findFirst, mockSem.findUnique, mockSem.create, mockSem.update, mockSem.updateMany, mockSem.count,
-      mockCal.findMany, mockCal.create, mockCal.update, mockCal.delete,
+      mockCal.findMany, mockCal.findUnique, mockCal.create, mockCal.update, mockCal.delete,
       mockStaffPosition.updateMany, mockUserPermissionOverride.deleteMany,
       mock$transaction, mockPermissions.invalidateAll, mockPermissions.invalidateUser,
       mockAppointments.acquireActivationLock, mockAppointments.applyAcademicYearActivation,
@@ -113,7 +113,7 @@ describe('SchoolConfigService', () => {
   });
 
   it('createMajor → insert', async () => {
-    mockMajor.findUnique.mockResolvedValue(null);
+    mockMajor.findFirst.mockResolvedValue(null);
     mockMajor.create.mockResolvedValue(MAJOR_TKRO);
     const result = await service.createMajor({ code: 'TKRO', name: 'TKRO' });
     expect(result.code).toBe('TKRO');
@@ -146,11 +146,23 @@ describe('SchoolConfigService', () => {
   });
 
   it('createMajor duplikat → Conflict', async () => {
-    mockMajor.findUnique.mockResolvedValue({ id: 'm1' });
+    mockMajor.findFirst.mockResolvedValue({ id: 'm1' });
     await expect(
       service.createMajor({ code: 'TKRO', name: 'TKRO' }),
     ).rejects.toThrow(ConflictException);
     expect(mockMajor.create).not.toHaveBeenCalled();
+  });
+
+  it('createMajor race P2002 → Conflict tanpa 500', async () => {
+    mockMajor.findFirst.mockResolvedValue(null);
+    mockMajor.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('duplicate', {
+      code: 'P2002',
+      clientVersion: '5.0.0',
+    }));
+
+    await expect(
+      service.createMajor({ code: 'TKRO', name: 'TKRO' }),
+    ).rejects.toThrow(ConflictException);
   });
 
   it('updateMajor → success', async () => {
@@ -339,6 +351,7 @@ describe('SchoolConfigService', () => {
   });
 
   it('createCalendarEvent → insert', async () => {
+    mockAY.findUnique.mockResolvedValue(AY);
     mockCal.create.mockResolvedValue({ id: 'e1', academicYearId: 'ay1', name: 'UTS', startDate: new Date(), endDate: new Date(), type: 'exam', description: null, createdAt: new Date(), updatedAt: new Date() });
     await service.createCalendarEvent({ academicYearId: 'ay1', name: 'UTS', startDate: new Date(), endDate: new Date(), type: 'exam' });
     expect(mockCal.create).toHaveBeenCalledTimes(1);

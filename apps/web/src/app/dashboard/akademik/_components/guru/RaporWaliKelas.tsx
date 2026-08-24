@@ -298,15 +298,18 @@ function NotesEditorModal({
 }) {
   const [notes, setNotes] = useState(report.notes ?? '');
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const handleSave = async () => {
+    if (saving) return;
     setSaving(true);
+    setSaveError('');
     const res = await updateReportNotes(report.id, notes.trim() || null, report.updatedAt);
     setSaving(false);
     if (res.success) {
       onSaved();
     } else {
-      alert(res.error ?? 'Gagal menyimpan catatan');
+      setSaveError(res.error ?? 'Gagal menyimpan catatan');
     }
   };
 
@@ -337,6 +340,11 @@ function NotesEditorModal({
           className="w-full rounded-xl border border-[#e6efea] bg-white px-3 py-2.5 text-[12.5px] leading-relaxed text-[#355a4e] outline-none focus:border-emerald-300"
         />
         <p className="mt-1 text-right text-[10px] text-[#9bb0a8]">{notes.length} / 5000 karakter</p>
+        {saveError && (
+          <p role="alert" className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700">
+            {saveError}
+          </p>
+        )}
 
         <div className="mt-4 flex justify-end gap-2">
           <button
