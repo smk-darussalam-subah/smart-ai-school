@@ -1,6 +1,8 @@
 import {
   filterMonitoringSessions,
+  formatMonitoringTime,
   hasMonitoringReaderRole,
+  monitoringInitialClock,
   normalizeMonitoringDevices,
   normalizeMonitoringSnapshot,
 } from '../components/monitoring/monitoring-contract';
@@ -18,6 +20,16 @@ const SESSION = {
 };
 
 describe('Wave 8.5 operational monitoring contract', () => {
+  it('uses a deterministic Jakarta timestamp and snapshot-derived hydration clock', () => {
+    const generatedAt = '2026-08-24T02:00:00.000Z';
+    expect(formatMonitoringTime(generatedAt)).toContain('09.00');
+    expect(formatMonitoringTime(null)).toBe('Belum pernah');
+    expect(formatMonitoringTime('invalid')).toBe('Tidak tersedia');
+    expect(monitoringInitialClock(generatedAt)).toBe(Date.parse(generatedAt));
+    expect(monitoringInitialClock(null)).toBe(0);
+    expect(monitoringInitialClock('invalid')).toBe(0);
+  });
+
   it.each([
     ['SUPER_ADMIN', true],
     ['TATA_USAHA', true],
