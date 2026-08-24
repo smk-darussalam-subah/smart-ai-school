@@ -1,10 +1,11 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getEffectiveRoles } from '@/lib/view-as';
+import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
 import { redirect } from 'next/navigation';
-import { apiFetch } from '@/lib/api';
+import { apiFetchResult } from '@/lib/api';
 import LoadError from '@/components/LoadError';
 import UsersClient from './_components/UsersClient';
+import { isUserIdentityRoleOption } from './users-ui';
 
 interface UserItem {
   id: string;
@@ -16,11 +17,11 @@ interface UserItem {
   createdAt: string;
 }
 
-interface UserGroup {
-  role: string;
-  label: string;
-  count: number;
-  users: UserItem[];
+interface UserListResponse {
+  data: UserItem[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 // TF2-P0-NEW-1 (Opsi B): PermissionItem tetap didefinisikan di sini untuk type
@@ -36,36 +37,53 @@ export interface PermissionItem {
   module: string;
 }
 
+const PAGE_SIZE = 20;
 interface Props {
-  searchParams: Promise<{ search?: string }>;
+  searchParams: Promise<{ search?: string; role?: string; status?: string; page?: string }>;
 }
 
 export default async function UsersPage({ searchParams }: Props) {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
-  const roles: string[] = await getEffectiveRoles(session);
+  const authority = await resolveDashboardAuthority(session);
+  const roles = authority.roles;
   if (!roles.includes('SUPER_ADMIN') && !roles.includes('TATA_USAHA')) redirect('/dashboard');
 
   const token = session?.accessToken ?? '';
   const sp = await searchParams;
+  const requestedRole = isUserIdentityRoleOption(sp.role) ? sp.role : '';
+  const requestedStatus = sp.status === 'active' || sp.status === 'inactive' ? sp.status : '';
+  const page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
 
   const queryParams = new URLSearchParams();
-  queryParams.set('limit', '50');
-  if (sp.search) queryParams.set('search', sp.search);
+  queryParams.set('limit', String(PAGE_SIZE));
+  queryParams.set('page', String(page));
+  if (sp.search?.trim()) queryParams.set('search', sp.search.trim());
+  if (requestedRole) queryParams.set('role', requestedRole);
+  if (requestedStatus) queryParams.set('isActive', requestedStatus === 'active' ? 'true' : 'false');
 
   // TF2-P0-NEW-1 (Opsi B): Hanya fetch /users/grouped di page-level. Fetch
   // /permissions dihapus karena SA-only — TU tidak punya akses dan akan
   // menyebabkan LoadError. Panel permissions di-load lazy oleh SUPER_ADMIN
   // saat klik tombol "Izin" (lihat UsersClient.tsx loadAllPermissions).
-  const groupedData = await apiFetch<{ groups: UserGroup[] }>(`/users/grouped?${queryParams.toString()}`, token);
-  if (groupedData === null) return <LoadError />;
-
-  const groups = groupedData?.groups ?? [];
+  const usersResult = await apiFetchResult<UserListResponse>(`/users?${queryParams.toString()}`, token);
+  if (usersResult.status !== 'success') {
+    return <LoadError title="Daftar pengguna belum dapat dimuat" message={usersResult.message} />;
+  }
 
   return (
     <UsersClient
-      initialGroups={groups}
+      users={usersResult.data.data}
+      total={usersResult.data.total}
+      page={usersResult.data.page ?? page}
+      limit={usersResult.data.limit ?? PAGE_SIZE}
+      query={{
+        search: sp.search ?? '',
+        role: requestedRole || 'all',
+        status: requestedStatus || 'all',
+      }}
       isSuperAdmin={roles.includes('SUPER_ADMIN')}
+      canManageUsers={authority.can('user.manage') && (roles.includes('SUPER_ADMIN') || roles.includes('TATA_USAHA'))}
     />
   );
 }

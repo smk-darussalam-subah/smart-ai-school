@@ -28,12 +28,6 @@ async function fetchApi(path: string, method: string, body?: unknown) {
   return { success: true, data: await res.json() };
 }
 
-export async function createSiswa(body: Record<string, unknown>) {
-  const result = await fetchApi('/students', 'POST', body);
-  revalidatePath('/dashboard/siswa');
-  return result;
-}
-
 export async function updateSiswa(id: string, body: Record<string, unknown>) {
   const result = await fetchApi(`/students/${id}`, 'PATCH', body);
   revalidatePath('/dashboard/siswa');
@@ -42,12 +36,6 @@ export async function updateSiswa(id: string, body: Record<string, unknown>) {
 
 export async function deleteSiswa(id: string) {
   const result = await fetchApi(`/students/${id}`, 'DELETE');
-  revalidatePath('/dashboard/siswa');
-  return result;
-}
-
-export async function createKelas(body: Record<string, unknown>) {
-  const result = await fetchApi('/classes', 'POST', body);
   revalidatePath('/dashboard/siswa');
   return result;
 }

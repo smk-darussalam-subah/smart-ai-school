@@ -14,6 +14,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { checkIn, checkOut } from '../actions';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 export interface AttendanceRecord {
   id: string;
@@ -35,8 +37,10 @@ interface Props {
   isGuru: boolean;
   isStaf: boolean;
   today: TodayStatus | null;
+  todayError?: string;
   records: AttendanceRecord[];
   total: number;
+  historyError?: string;
 }
 
 function fmtTime(iso?: string | null): string {
@@ -66,12 +70,14 @@ function getPosition(): Promise<{ lat?: number; lng?: number; geoError?: string 
   });
 }
 
-export default function PresensiGuru({ isGuru, isStaf, today, records, total }: Props) {
+export default function PresensiGuru({ isGuru, isStaf, today, todayError = '', records, total, historyError = '' }: Props) {
+  const router = useRouter();
   const [error, setError] = useState('');
   const [geoWarn, setGeoWarn] = useState('');
   const [pending, startTransition] = useTransition();
 
   const record = today?.record ?? null;
+  const todayUnavailable = Boolean(todayError);
   const sudahMasuk = !!record;
   const sudahPulang = !!record?.checkOutAt;
 
@@ -105,6 +111,17 @@ export default function PresensiGuru({ isGuru, isStaf, today, records, total }: 
             <CardTitle className="text-base">Hari Ini · {today?.date ?? ''}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            {todayUnavailable && (
+              <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <span className="inline-flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  Status presensi hari ini belum dapat dimuat. Check-in/out dinonaktifkan sampai status berhasil dimuat.
+                </span>
+                <Button type="button" size="sm" variant="outline" onClick={() => router.refresh()}>
+                  <RefreshCw className="mr-2 h-4 w-4" /> Coba lagi
+                </Button>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-4 text-sm">
               <span>
                 Masuk: <strong>{fmtTime(record?.checkInAt)}</strong>
@@ -123,12 +140,12 @@ export default function PresensiGuru({ isGuru, isStaf, today, records, total }: 
 
             <div className="flex gap-2">
               {!sudahMasuk && (
-                <Button size="lg" disabled={pending} onClick={() => doAction('in')}>
+                <Button size="lg" disabled={pending || todayUnavailable} onClick={() => doAction('in')}>
                   {pending ? 'Mengambil lokasi…' : '✓ Check-in Sekarang'}
                 </Button>
               )}
               {sudahMasuk && !sudahPulang && (
-                <Button size="lg" variant="outline" disabled={pending} onClick={() => doAction('out')}>
+                <Button size="lg" variant="outline" disabled={pending || todayUnavailable} onClick={() => doAction('out')}>
                   {pending ? 'Mengambil lokasi…' : 'Check-out'}
                 </Button>
               )}
@@ -156,44 +173,56 @@ export default function PresensiGuru({ isGuru, isStaf, today, records, total }: 
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {records.length === 0 ? (
+          {historyError ? (
+            <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <span className="inline-flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                Riwayat presensi belum dapat dimuat: {historyError}
+              </span>
+              <Button type="button" size="sm" variant="outline" onClick={() => router.refresh()}>
+                <RefreshCw className="mr-2 h-4 w-4" /> Coba lagi
+              </Button>
+            </div>
+          ) : records.length === 0 ? (
             <p className="text-sm text-muted-foreground py-6 text-center">
               Belum ada data presensi.
             </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tanggal</TableHead>
-                  {isStaf && <TableHead>Guru</TableHead>}
-                  <TableHead>Masuk</TableHead>
-                  <TableHead>Pulang</TableHead>
-                  <TableHead>Lokasi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {records.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell className="whitespace-nowrap">{fmtDate(r.date)}</TableCell>
-                    {isStaf && (
-                      <TableCell>
-                        {r.teacher.user.fullName}
-                        {r.teacher.user.staff?.niy ? <span className="text-muted-foreground"> · {r.teacher.user.staff.niy}</span> : null}
-                      </TableCell>
-                    )}
-                    <TableCell>{fmtTime(r.checkInAt)}</TableCell>
-                    <TableCell>{fmtTime(r.checkOutAt)}</TableCell>
-                    <TableCell>
-                      {r.outsideGeofence ? (
-                        <Badge variant="destructive">⚠ Luar Area{r.distanceInM != null ? ` (${r.distanceInM} m)` : ''}</Badge>
-                      ) : (
-                        <Badge variant="outline">✓ Dalam Area{r.distanceInM != null ? ` (${r.distanceInM} m)` : ''}</Badge>
-                      )}
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tanggal</TableHead>
+                    {isStaf && <TableHead>Guru</TableHead>}
+                    <TableHead>Masuk</TableHead>
+                    <TableHead>Pulang</TableHead>
+                    <TableHead>Lokasi</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {records.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="whitespace-nowrap">{fmtDate(r.date)}</TableCell>
+                      {isStaf && (
+                        <TableCell>
+                          {r.teacher.user.fullName}
+                          {r.teacher.user.staff?.niy ? <span className="text-muted-foreground"> · {r.teacher.user.staff.niy}</span> : null}
+                        </TableCell>
+                      )}
+                      <TableCell>{fmtTime(r.checkInAt)}</TableCell>
+                      <TableCell>{fmtTime(r.checkOutAt)}</TableCell>
+                      <TableCell>
+                        {r.outsideGeofence ? (
+                          <Badge variant="destructive">⚠ Luar Area{r.distanceInM != null ? ` (${r.distanceInM} m)` : ''}</Badge>
+                        ) : (
+                          <Badge variant="outline">✓ Dalam Area{r.distanceInM != null ? ` (${r.distanceInM} m)` : ''}</Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>

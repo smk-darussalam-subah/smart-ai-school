@@ -77,6 +77,14 @@ export interface BackfillResult {
   failed: number;
 }
 
+export type ApiFetchResult<T> =
+  | { status: 'success'; data: T; httpStatus: number }
+  | {
+      status: 'forbidden' | 'notFound' | 'unavailable' | 'requestError';
+      httpStatus?: number;
+      message: string;
+    };
+
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
 /**
@@ -112,9 +120,69 @@ export async function apiFetch<T>(
     return res.json() as Promise<T>;
   } catch (err) {
     // redirect() throws a NEXT_REDIRECT error — re-throw it, jangan swallow
-    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err;
+    if (isNextRedirectError(err)) throw err;
     if (process.env.NODE_ENV === 'development') console.error(`[apiFetch] network error ${path}:`, err);
     return null;
+  }
+}
+
+function isNextRedirectError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const digest = 'digest' in error ? String((error as { digest?: unknown }).digest ?? '') : '';
+  return error.message === 'NEXT_REDIRECT' || digest.startsWith('NEXT_REDIRECT');
+}
+
+async function parseBody(res: Response): Promise<{ value: unknown; malformedJson: boolean; emptyBody: boolean }> {
+  const text = await res.text().catch(() => '');
+  if (!text.trim()) return { value: null, malformedJson: false, emptyBody: true };
+  try {
+    return { value: JSON.parse(text), malformedJson: false, emptyBody: false };
+  } catch {
+    return { value: null, malformedJson: true, emptyBody: false };
+  }
+}
+
+export async function apiFetchResult<T>(
+  path: string,
+  token: string,
+  params?: Record<string, string>,
+): Promise<ApiFetchResult<T>> {
+  const url = new URL(`/api/v1${path}`, API_BASE);
+  if (params) {
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  }
+
+  try {
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+
+    if (res.status === 401) {
+      redirect('/login?reason=session');
+    }
+
+    const parsedBody = await parseBody(res);
+    const body = parsedBody.value;
+    if (!res.ok) {
+      const message = apiErrorMessage(body, res.status >= 500
+        ? 'Server belum dapat memuat data. Coba lagi.'
+        : 'Permintaan tidak dapat diproses.');
+      if (res.status === 403) return { status: 'forbidden', httpStatus: res.status, message };
+      if (res.status === 404) return { status: 'notFound', httpStatus: res.status, message };
+      if (res.status >= 500) return { status: 'unavailable', httpStatus: res.status, message };
+      return { status: 'requestError', httpStatus: res.status, message };
+    }
+
+    if (parsedBody.malformedJson || parsedBody.emptyBody) {
+      return { status: 'unavailable', httpStatus: res.status, message: 'Respons server tidak valid. Coba lagi.' };
+    }
+
+    return { status: 'success', httpStatus: res.status, data: body as T };
+  } catch (err) {
+    if (isNextRedirectError(err)) throw err;
+    if (process.env.NODE_ENV === 'development') console.error(`[apiFetchResult] network error ${path}:`, err);
+    return { status: 'unavailable', message: 'Koneksi ke server gagal. Coba lagi.' };
   }
 }
 
@@ -156,7 +224,7 @@ export async function apiMutate<T>(
     if (!text) return null;
     return JSON.parse(text) as T;
   } catch (err) {
-    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err;
+    if (isNextRedirectError(err)) throw err;
     if (process.env.NODE_ENV === 'development') console.error(`[apiMutate] network error ${options.method} ${path}:`, err);
     return null;
   }

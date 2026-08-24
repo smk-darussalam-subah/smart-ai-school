@@ -13,7 +13,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { KktpConfigService } from './kktp-config.service';
-import { UpsertKktpSchema, ListKktpQuerySchema } from './dto/kktp-config.dto';
+import { UpsertKktpSchema, ListKktpQuerySchema, RemoveKktpParamsSchema } from './dto/kktp-config.dto';
 
 @Controller('kktp-config')
 export class KktpConfigController {
@@ -46,6 +46,8 @@ export class KktpConfigController {
     @Param('academicYear') academicYear: string,
     @Param('semester') semester: string,
   ) {
-    return this.service.remove(subject, academicYear, Number(semester));
+    const parsed = RemoveKktpParamsSchema.safeParse({ subject, academicYear, semester });
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.service.remove(parsed.data.subject, parsed.data.academicYear, parsed.data.semester);
   }
 }

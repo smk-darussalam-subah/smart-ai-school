@@ -445,82 +445,95 @@ export class ScheduleService {
     const DAYS = config.days ?? 6; // Senin–Sabtu
     const JP_PER_DAY = config.jpPerDay ?? 8;
     const MAX_JP_GURU = config.maxJpGuru ?? 24;
+    return this.prisma.$transaction(async (tx) => {
+      await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, { academicYear, semester });
+      const year = await tx.academicYear.findUnique({
+        where: { code: academicYear },
+        select: { id: true },
+      });
+      if (!year) throw new BadRequestException('Tahun ajaran tidak terdaftar.');
 
-    // Fetch all teaching assignments needing schedule
-    const assignments = await this.prisma.teachingAssignment.findMany({
-      where: { academicYear },
-      select: {
-        id: true, subject: true, hoursPerWeek: true,
-        teacherId: true,
-        class: { select: { id: true, name: true } },
-        schedules: { select: { id: true } }, // count existing
-      },
-    });
+      // Fetch all active teaching assignments needing schedule in the target semester.
+      const assignments = await tx.teachingAssignment.findMany({
+        where: {
+          academicYear,
+          class: { isActive: true },
+          teacher: { deletedAt: null, user: { isActive: true, deletedAt: null } },
+        },
+        select: {
+          id: true, subject: true, hoursPerWeek: true,
+          teacherId: true,
+          class: { select: { id: true, name: true } },
+          schedules: { where: { academicYear, semester }, select: { id: true } },
+        },
+        orderBy: [{ class: { name: 'asc' } }, { subject: 'asc' }, { id: 'asc' }],
+      });
 
-    // Only auto-schedule assignments without existing schedules
-    const needsSched = assignments.filter((a) => a.schedules.length === 0);
-    if (needsSched.length === 0) return { generated: [], skipped: assignments.length, conflicts: [] };
+      // Only auto-schedule assignments without existing schedules for the target semester.
+      const needsSched = assignments.filter((a) => a.schedules.length === 0);
+      if (needsSched.length === 0) return { generated: [], skipped: assignments.length, conflicts: [] };
 
-    // Track occupied slots: classId/day/jp and teacherId/day/jp
-    const classSlots = new Set<string>(); // `${classId}|${day}|${jp}`
-    const teacherSlots = new Set<string>(); // `${teacherId}|${day}|${jp}`
-    const teacherJpCount = new Map<string, number>(); // teacherId → total JP
-    const conflicts: { assignment: string; reason: string }[] = [];
+      // Track occupied slots: classId/day/jp and teacherId/day/jp
+      const classSlots = new Set<string>(); // `${classId}|${day}|${jp}`
+      const teacherSlots = new Set<string>(); // `${teacherId}|${day}|${jp}`
+      const teacherJpCount = new Map<string, number>(); // teacherId → total JP
+      const conflicts: { assignment: string; reason: string }[] = [];
 
-    // Load existing schedules into occupancy maps
-    const existing = await this.prisma.schedule.findMany({
-      where: { academicYear, semester },
-      select: { classId: true, dayOfWeek: true, jpStart: true, jpEnd: true,
-        teachingAssignment: { select: { teacherId: true } } },
-    });
-    for (const s of existing) {
-      for (let jp = s.jpStart; jp <= s.jpEnd; jp++) {
-        classSlots.add(`${s.classId}|${s.dayOfWeek}|${jp}`);
-        teacherSlots.add(`${s.teachingAssignment.teacherId}|${s.dayOfWeek}|${jp}`);
+      // Load existing schedules into occupancy maps while the cutover lock is still held.
+      const existing = await tx.schedule.findMany({
+        where: { academicYear, semester },
+        select: { classId: true, dayOfWeek: true, jpStart: true, jpEnd: true,
+          teachingAssignment: { select: { teacherId: true } } },
+      });
+      for (const s of existing) {
+        for (let jp = s.jpStart; jp <= s.jpEnd; jp++) {
+          classSlots.add(`${s.classId}|${s.dayOfWeek}|${jp}`);
+          teacherSlots.add(`${s.teachingAssignment.teacherId}|${s.dayOfWeek}|${jp}`);
+        }
+        const cur = teacherJpCount.get(s.teachingAssignment.teacherId) ?? 0;
+        teacherJpCount.set(s.teachingAssignment.teacherId, cur + (s.jpEnd - s.jpStart + 1));
       }
-      const cur = teacherJpCount.get(s.teachingAssignment.teacherId) ?? 0;
-      teacherJpCount.set(s.teachingAssignment.teacherId, cur + (s.jpEnd - s.jpStart + 1));
-    }
 
-    // Greedy: for each assignment, try to place hoursPerWeek JP slots
-    const generated: {
-      assignmentId: string; subject: string; className: string;
-      day: number; jpStart: number; jpEnd: number;
-    }[] = [];
+      // Greedy: for each assignment, try to place hoursPerWeek JP slots
+      const generated: {
+        assignmentId: string; subject: string; className: string;
+        day: number; jpStart: number; jpEnd: number;
+      }[] = [];
 
-    for (const a of needsSched) {
-      const classId = a.class?.id;
-      if (!classId) { conflicts.push({ assignment: a.id, reason: 'No class assigned' }); continue; }
-      let placed = 0;
+      for (const a of needsSched) {
+        const classId = a.class?.id;
+        if (!classId) { conflicts.push({ assignment: a.id, reason: 'Kelas penugasan tidak aktif atau tidak ditemukan.' }); continue; }
+        let placed = 0;
 
-      outer: for (let day = 1; day <= DAYS && placed < a.hoursPerWeek; day++) {
-        for (let jp = 1; jp <= JP_PER_DAY && placed < a.hoursPerWeek; jp++) {
-          const classKey = `${classId}|${day}|${jp}`;
-          const teacherKey = `${a.teacherId}|${day}|${jp}`;
+        outer: for (let day = 1; day <= DAYS && placed < a.hoursPerWeek; day++) {
+          for (let jp = 1; jp <= JP_PER_DAY && placed < a.hoursPerWeek; jp++) {
+            const classKey = `${classId}|${day}|${jp}`;
+            const teacherKey = `${a.teacherId}|${day}|${jp}`;
 
-          if (classSlots.has(classKey)) continue; // class busy
-          if (teacherSlots.has(teacherKey)) continue; // teacher busy
-          const guruJp = teacherJpCount.get(a.teacherId) ?? 0;
-          if (guruJp >= MAX_JP_GURU) { conflicts.push({ assignment: a.id, reason: `Teacher max JP (${MAX_JP_GURU}) reached` }); break outer; }
+            if (classSlots.has(classKey)) continue; // class busy
+            if (teacherSlots.has(teacherKey)) continue; // teacher busy
+            const guruJp = teacherJpCount.get(a.teacherId) ?? 0;
+            if (guruJp >= MAX_JP_GURU) { conflicts.push({ assignment: a.id, reason: `Batas maksimal ${MAX_JP_GURU} JP guru tercapai.` }); break outer; }
 
-          // Place 1 JP slot
-          classSlots.add(classKey);
-          teacherSlots.add(teacherKey);
-          teacherJpCount.set(a.teacherId, guruJp + 1);
-          placed++;
+            // Place 1 JP slot
+            classSlots.add(classKey);
+            teacherSlots.add(teacherKey);
+            teacherJpCount.set(a.teacherId, guruJp + 1);
+            placed++;
 
-          generated.push({
-            assignmentId: a.id, subject: a.subject, className: a.class?.name ?? '-',
-            day, jpStart: jp, jpEnd: jp,
-          });
+            generated.push({
+              assignmentId: a.id, subject: a.subject, className: a.class?.name ?? '-',
+              day, jpStart: jp, jpEnd: jp,
+            });
+          }
+        }
+
+        if (placed < a.hoursPerWeek) {
+          conflicts.push({ assignment: a.id, reason: `Hanya dapat menempatkan ${placed}/${a.hoursPerWeek} JP karena slot kosong tidak cukup.` });
         }
       }
 
-      if (placed < a.hoursPerWeek) {
-        conflicts.push({ assignment: a.id, reason: `Only placed ${placed}/${a.hoursPerWeek} JP — no free slots` });
-      }
-    }
-
-    return { generated, skipped: assignments.length - needsSched.length, conflicts };
+      return { generated, skipped: assignments.length - needsSched.length, conflicts };
+    });
   }
 }
