@@ -1,6 +1,5 @@
 export interface SiswaFormStudent {
   id: string;
-  userId?: string;
   nis: string;
   status: string;
   user: { id?: string; fullName: string; email?: string };
@@ -11,18 +10,16 @@ export interface SiswaFormStudent {
 
 export interface SiswaFormState {
   nis: string;
-  userId: string;
   classId: string;
   status: string;
   joinedAt: string;
 }
 
-export function toSiswaFormState(student: SiswaFormStudent | null): SiswaFormState {
+export function toSiswaFormState(student: SiswaFormStudent): SiswaFormState {
   return {
-    nis: student?.nis ?? '',
-    userId: student?.user.id ?? student?.userId ?? '',
-    classId: student?.class?.id ?? '',
-    status: student?.status ?? 'active',
-    joinedAt: student?.joinedAt ? student.joinedAt.split('T')[0] ?? '' : '',
+    nis: student.nis,
+    classId: student.class?.id ?? '',
+    status: student.status,
+    joinedAt: student.joinedAt ? student.joinedAt.split('T')[0] ?? '' : '',
   };
 }
