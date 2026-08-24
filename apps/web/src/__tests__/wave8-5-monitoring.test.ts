@@ -5,6 +5,7 @@ import {
   monitoringInitialClock,
   normalizeMonitoringDevices,
   normalizeMonitoringSnapshot,
+  restoreMonitoringDialogFocus,
 } from '../components/monitoring/monitoring-contract';
 
 const SESSION = {
@@ -28,6 +29,13 @@ describe('Wave 8.5 operational monitoring contract', () => {
     expect(monitoringInitialClock(generatedAt)).toBe(Date.parse(generatedAt));
     expect(monitoringInitialClock(null)).toBe(0);
     expect(monitoringInitialClock('invalid')).toBe(0);
+  });
+
+  it('restores focus to the control that opened a monitoring dialog', () => {
+    const focus = jest.fn();
+    restoreMonitoringDialogFocus({ focus });
+    restoreMonitoringDialogFocus(null);
+    expect(focus).toHaveBeenCalledTimes(1);
   });
 
   it.each([
