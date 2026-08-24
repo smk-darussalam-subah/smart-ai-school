@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Briefcase } from 'lucide-react';
+import { Briefcase, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +22,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { TablePagination } from '@/components/ui/table-pagination';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useQueryState } from '@/hooks/use-query-state';
+import {
   updateUserRole,
   updateUserActive,
   grantUserPermission,
@@ -33,11 +43,7 @@ import {
 import AddUserDialog from './AddUserDialog';
 import UserAccessDialog from './UserAccessDialog';
 import type { PermissionItem } from '../page';
-
-const ROLES = [
-  'SUPER_ADMIN', 'TATA_USAHA',
-  'GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI',
-] as const;
+import { USER_IDENTITY_ROLE_OPTIONS, USERS_SEARCH_DEBOUNCE_MS } from '../users-ui';
 
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: 'Super Admin',
@@ -69,400 +75,441 @@ interface UserItem {
   createdAt: string;
 }
 
-interface UserGroup {
-  role: string;
-  label: string;
-  count: number;
-  users: UserItem[];
-}
-
-// TF2-P0-NEW-1: PermissionItem type di-import dari page.tsx (single source
-// of truth). Hindari duplikasi type definition.
 interface UserPermission {
   permission: PermissionItem;
   grant: boolean;
 }
 
+type ConfirmTarget =
+  | { kind: 'role'; user: UserItem; nextRole: string }
+  | { kind: 'active'; user: UserItem; nextActive: boolean };
+
 interface Props {
-  initialGroups: UserGroup[];
+  users: UserItem[];
+  total: number;
+  page: number;
+  limit: number;
+  query: { search: string; role: string; status: string };
   isSuperAdmin: boolean;
+  canManageUsers: boolean;
 }
 
-export default function UsersClient({ initialGroups, isSuperAdmin }: Props) {
-  const router = useRouter();
+function syncMessage(data: unknown, success: string): string {
+  const pending = Boolean((data as { keycloakSyncPending?: boolean } | undefined)?.keycloakSyncPending);
+  return pending
+    ? `${success}. Sinkronisasi Keycloak tertunda; database sudah menjadi sumber kebenaran.`
+    : success;
+}
 
-  const [groups] = useState<UserGroup[]>(initialGroups);
-  // TF2-P0-NEW-1 (Opsi B): permissions tidak lagi di-pass dari page-level
-  // (initialPermissions prop dihapus). Lazy-load saat SUPER_ADMIN pertama kali
-  // klik tombol "Izin". Tujuannya: TU tidak memicu fetch /permissions yang
-  // akan 403 dan menyebabkan LoadError di page-level.
+export default function UsersClient({
+  users,
+  total,
+  page,
+  limit,
+  query,
+  isSuperAdmin,
+  canManageUsers,
+}: Props) {
+  const router = useRouter();
+  const { setParams, isPending } = useQueryState();
+  const requestSeq = useRef(0);
+  const [search, setSearch] = useState(query.search);
   const [permissions, setPermissions] = useState<PermissionItem[]>([]);
   const [permissionsLoaded, setPermissionsLoaded] = useState(false);
-  const [search, setSearch] = useState('');
-
-  const [expandedRole, setExpandedRole] = useState<string | null>(null);
-  const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
   const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
   const [effectivePerms, setEffectivePerms] = useState<string[]>([]);
   const [overrideLoading, setOverrideLoading] = useState(false);
   const [tab, setTab] = useState<'override' | 'effective'>('effective');
-  // TF2-P1-NEW-2: Error state untuk loadUserPermissions. Sebelumnya error
-  // di-swallow menjadi empty array → admin tidak bisa bedakan "user tidak
-  // punya izin" dari "API error".
   const [permissionError, setPermissionError] = useState<string | null>(null);
-
-  // TF2-P1-2: State untuk dialog korelasi Users ↔ Struktur (akses efektif).
-  // Hanya SUPER_ADMIN yang bisa membuka — backend @Roles('SUPER_ADMIN') di
-  // positions.controller.ts:40. Tombol di-render conditional saat isSuperAdmin.
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [accessCheckUser, setAccessCheckUser] = useState<string | null>(null);
-
   const [actionMsg, setActionMsg] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null);
+  const [confirmError, setConfirmError] = useState('');
+  const [busyAction, setBusyAction] = useState<string | null>(null);
 
-  const handleSearch = (value: string) => {
+  const applySearch = (value: string) => {
     setSearch(value);
-    const params = new URLSearchParams({ ...(value && { search: value }) });
-    router.push(`/dashboard/users?${params.toString()}`);
   };
 
-  // TF-4: handle keycloakSyncPending flag dari backend. Bila KC sync gagal
-  // (KC down/unreachable), DB tetap ter-update tapi user perlu diberi tahu
-  // bahwa sinkronisasi Keycloak tertunda. Sebelumnya: error fatal & DB tidak ter-update.
-  const handleRoleChange = async (userId: string, newRole: string) => {
-    setActionMsg('');
-    const result = await updateUserRole(userId, newRole);
-    if (result.error) {
-      setActionMsg(`Gagal: ${result.error}`);
-    } else {
-      const syncPending = (result.data as { keycloakSyncPending?: boolean } | undefined)?.keycloakSyncPending === true;
-      setActionMsg(syncPending
-        ? 'Peran diubah di database. ⚠ Sinkronisasi Keycloak tertunda — coba sync ulang nanti atau hubungi teknisi.'
-        : 'Peran berhasil diubah');
-    }
-    router.refresh();
-  };
+  useEffect(() => {
+    setSearch(query.search);
+  }, [query.search]);
 
-  const handleToggleActive = async (userId: string, current: boolean) => {
-    setActionMsg('');
-    const result = await updateUserActive(userId, !current);
-    if (result.error) {
-      setActionMsg(`Gagal: ${result.error}`);
-    } else {
-      const syncPending = (result.data as { keycloakSyncPending?: boolean } | undefined)?.keycloakSyncPending === true;
-      const baseMsg = current ? 'Pengguna dinonaktifkan' : 'Pengguna diaktifkan';
-      setActionMsg(syncPending
-        ? `${baseMsg} di database. ⚠ Sinkronisasi Keycloak tertunda — coba sync ulang nanti atau hubungi teknisi.`
-        : baseMsg);
-    }
-    router.refresh();
-  };
+  useEffect(() => {
+    const normalized = search.trim();
+    if (normalized === query.search.trim()) return;
+    const timeout = window.setTimeout(() => {
+      setParams({ search: normalized || null });
+    }, USERS_SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timeout);
+  }, [query.search, search, setParams]);
 
-  const loadUserPermissions = async (userId: string) => {
-    setSelectedUser(userId);
+  const loadUserPermissions = async (user: UserItem) => {
+    if (!isSuperAdmin) return;
+    const seq = requestSeq.current + 1;
+    requestSeq.current = seq;
+    setSelectedUser(user);
     setOverrideLoading(true);
-    // TF2-P1-NEW-2: Reset error state setiap kali load baru dimulai.
     setPermissionError(null);
+    setCatalogError(null);
+    setUserPermissions([]);
+    setEffectivePerms([]);
 
-    // TF2-P0-NEW-1 (Opsi B): Lazy-load permission catalog saat SUPER_ADMIN
-    // pertama kali buka panel izin. TU tidak pernah memanggil ini (tombol
-    // "Izin" hanya render saat isSuperAdmin).
-    if (isSuperAdmin && !permissionsLoaded) {
+    if (!permissionsLoaded) {
       const catalogResult = await fetchPermissionCatalog();
+      if (requestSeq.current !== seq) return;
       if (catalogResult.error) {
-        // Catalog error tidak fatal — panel override akan tampil kosong tapi
-        // effectivePerms tetap bisa dimuat dari endpoint lain.
+        setCatalogError(catalogResult.error);
         setPermissions([]);
       } else if (Array.isArray(catalogResult.data)) {
         setPermissions(catalogResult.data);
+        setPermissionsLoaded(true);
       }
-      setPermissionsLoaded(true);
     }
 
     const [overrideResult, effectiveResult] = await Promise.all([
-      fetchUserOverrides(userId),
-      fetchEffectivePermissions(userId),
+      fetchUserOverrides(user.id),
+      fetchEffectivePermissions(user.id),
     ]);
-    // TF2-P1-NEW-2: Surface error eksplisit, jangan swallow sebagai empty.
+    if (requestSeq.current !== seq) return;
     if (overrideResult.error || effectiveResult.error) {
-      const msg = overrideResult.error || effectiveResult.error || 'Gagal memuat izin';
-      setPermissionError(msg);
-      setUserPermissions([]);
-      setEffectivePerms([]);
-    } else {
-      setPermissionError(null);
-      if (overrideResult.data) setUserPermissions(Array.isArray(overrideResult.data) ? overrideResult.data : []);
-      else setUserPermissions([]);
-      if (effectiveResult.data) {
-        const d = effectiveResult.data as { permissions: string[] };
-        setEffectivePerms(d.permissions ?? []);
-      } else {
-        setEffectivePerms([]);
-      }
+      setPermissionError(overrideResult.error || effectiveResult.error || 'Gagal memuat izin');
+      setOverrideLoading(false);
+      return;
     }
+    setUserPermissions(Array.isArray(overrideResult.data) ? overrideResult.data : []);
+    const data = effectiveResult.data as { permissions?: string[] } | undefined;
+    setEffectivePerms(data?.permissions ?? []);
     setOverrideLoading(false);
+  };
+
+  const confirmAction = async () => {
+    if (!confirmTarget) return false;
+    const actionKey = `${confirmTarget.kind}:${confirmTarget.user.id}`;
+    if (busyAction) return false;
+    setBusyAction(actionKey);
+    setConfirmError('');
+    setActionMsg('');
+    setActionError('');
+    try {
+      if (confirmTarget.kind === 'role') {
+        const result = await updateUserRole(confirmTarget.user.id, confirmTarget.nextRole);
+        if (result.error) {
+          setConfirmError(result.error);
+          return false;
+        }
+        setActionMsg(syncMessage(result.data, 'Peran pengguna berhasil diubah'));
+      } else {
+        const result = await updateUserActive(confirmTarget.user.id, confirmTarget.nextActive);
+        if (result.error) {
+          setConfirmError(result.error);
+          return false;
+        }
+        setActionMsg(syncMessage(result.data, confirmTarget.nextActive ? 'Pengguna diaktifkan' : 'Pengguna dinonaktifkan'));
+      }
+      setConfirmTarget(null);
+      router.refresh();
+      return true;
+    } finally {
+      setBusyAction(null);
+    }
   };
 
   const handleOverride = async (userId: string, permissionId: string, grant: boolean) => {
     setActionMsg('');
+    setActionError('');
     const result = await grantUserPermission(userId, permissionId, grant);
-    if (result.error) setActionMsg(`Gagal: ${result.error}`);
+    if (result.error) setActionError(result.error);
     else setActionMsg(grant ? 'Izin diberikan' : 'Izin dicabut');
-    loadUserPermissions(userId);
+    if (selectedUser) void loadUserPermissions(selectedUser);
   };
 
   const handleRevokeOverride = async (userId: string, permissionId: string) => {
     setActionMsg('');
+    setActionError('');
     const result = await revokeUserPermission(userId, permissionId);
-    if (result.error) setActionMsg(`Gagal: ${result.error}`);
+    if (result.error) setActionError(result.error);
     else setActionMsg('Penggantian izin dihapus');
-    loadUserPermissions(userId);
+    if (selectedUser) void loadUserPermissions(selectedUser);
   };
 
-  const toggleGroup = (role: string) => {
-    setExpandedRole((prev) => (prev === role ? null : role));
-  };
+  const activeConfirm = confirmTarget?.kind === 'active' ? confirmTarget : null;
+  const roleConfirm = confirmTarget?.kind === 'role' ? confirmTarget : null;
+  const confirmTitle = roleConfirm ? 'Ubah role identitas?' : activeConfirm?.nextActive ? 'Aktifkan pengguna?' : 'Nonaktifkan pengguna?';
+  const confirmDescription = roleConfirm
+    ? `${roleConfirm.user.fullName} akan berubah dari ${ROLE_LABELS[roleConfirm.user.role] ?? roleConfirm.user.role} menjadi ${ROLE_LABELS[roleConfirm.nextRole] ?? roleConfirm.nextRole}. Perubahan role identitas dapat memengaruhi sesi dan akses.`
+    : activeConfirm
+      ? `${activeConfirm.user.fullName} akan ${activeConfirm.nextActive ? 'diaktifkan kembali' : 'dinonaktifkan'}. Perubahan status dapat memengaruhi akses masuk.`
+      : '';
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Manajemen Pengguna</h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Manajemen Pengguna</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {total} pengguna sesuai filter. Daftar ini dipaginasi dari server.
+          </p>
+        </div>
         <AddUserDialog isSuperAdmin={isSuperAdmin} />
       </div>
 
       {actionMsg && (
-        <div className={`text-sm px-4 py-2 rounded-lg ${actionMsg.startsWith('Gagal') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+        <div role="status" className="rounded-lg bg-green-50 px-4 py-2 text-sm text-green-700">
           {actionMsg}
         </div>
       )}
+      {actionError && (
+        <div role="alert" className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">
+          Gagal: {actionError}
+        </div>
+      )}
 
-      {/* ── Pencarian ──────────────────────────────────────────────────────── */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Daftar Pengguna per Peran</CardTitle>
-          <div className="flex gap-2">
+        <CardHeader>
+          <CardTitle>Filter Pengguna</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_180px_auto]">
             <Input
               placeholder="Cari nama atau surel..."
               value={search}
-              onChange={(e) => handleSearch(e.target.value)}
-              className="w-56 text-sm"
+              onChange={(e) => applySearch(e.target.value)}
+              className="text-sm"
+              aria-label="Cari pengguna"
             />
-            <Button size="sm" variant="outline" onClick={() => router.refresh()}>
-              Segarkan
+            <Select value={query.role} onValueChange={(value: string) => setParams({ role: value })}>
+              <SelectTrigger aria-label="Filter role">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua role</SelectItem>
+                {USER_IDENTITY_ROLE_OPTIONS.map((role) => (
+                  <SelectItem key={role} value={role}>{ROLE_LABELS[role]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={query.status} onValueChange={(value: string) => setParams({ status: value })}>
+              <SelectTrigger aria-label="Filter status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua status</SelectItem>
+                <SelectItem value="active">Aktif</SelectItem>
+                <SelectItem value="inactive">Nonaktif</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button type="button" variant="outline" onClick={() => router.refresh()} disabled={isPending}>
+              <RefreshCw className="mr-2 h-4 w-4" /> Segarkan
             </Button>
           </div>
-        </CardHeader>
+        </CardContent>
       </Card>
 
-      {/* ── Akordeon per Peran ─────────────────────────────────────────────── */}
-      {groups.map((group) => (
-        <Card key={group.role}>
-          <button
-            onClick={() => toggleGroup(group.role)}
-            className="w-full text-left px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${ROLE_COLORS[group.role] || 'bg-gray-100'}`}>
-                {ROLE_LABELS[group.role] || group.role}
-              </span>
-              <span className="text-sm text-gray-500">
-                {group.count} pengguna
-              </span>
-            </div>
-            <span className="text-gray-400 text-lg">
-              {expandedRole === group.role ? '\u25B2' : '\u25BC'}
-            </span>
-          </button>
-
-          {expandedRole === group.role && (
-            <CardContent className="pt-0 pb-4">
-              {group.users.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4">Belum ada pengguna dengan peran ini.</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nama</TableHead>
-                      <TableHead>Surel</TableHead>
-                      <TableHead>Peran</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="w-[260px]">Tindakan</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {group.users.map((u) => (
-                      <TableRow key={u.id}>
-                        <TableCell className="font-medium">{u.fullName}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{u.email}</TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button className={`text-xs px-2 py-1 rounded-full font-medium cursor-pointer ${ROLE_COLORS[u.role] || 'bg-gray-100'}`}>
-                                {ROLE_LABELS[u.role] || u.role}
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                              {ROLES.map((r) => (
-                                <DropdownMenuItem
-                                  key={r}
-                                  onClick={() => handleRoleChange(u.id, r)}
-                                  disabled={r === u.role}
-                                >
-                                  {ROLE_LABELS[r]} {r === u.role ? '(aktif)' : ''}
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={u.isActive ? 'default' : 'secondary'}>
-                            {u.isActive ? 'Aktif' : 'Nonaktif'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
+      <Card>
+        <CardHeader>
+          <CardTitle>Daftar Pengguna</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="overflow-x-auto rounded-xl border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nama</TableHead>
+                  <TableHead>Surel</TableHead>
+                  <TableHead>Peran</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="min-w-[280px]">Tindakan</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {users.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                      Tidak ada pengguna sesuai filter.
+                    </TableCell>
+                  </TableRow>
+                ) : users.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell className="font-medium">{user.fullName}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{user.email}</TableCell>
+                    <TableCell>
+                      {isSuperAdmin ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className={`min-h-10 rounded-full px-2.5 py-1 text-xs font-medium ${ROLE_COLORS[user.role] || 'bg-gray-100'}`}
+                              aria-label={`Ubah role ${user.fullName}`}
+                            >
+                              {ROLE_LABELS[user.role] || user.role}
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            {USER_IDENTITY_ROLE_OPTIONS.map((role) => (
+                              <DropdownMenuItem
+                                key={role}
+                                onClick={() => setConfirmTarget({ kind: 'role', user, nextRole: role })}
+                                disabled={role === user.role}
+                              >
+                                {ROLE_LABELS[role]} {role === user.role ? '(aktif)' : ''}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : (
+                        <span className={`inline-flex min-h-8 items-center rounded-full px-2.5 py-1 text-xs font-medium ${ROLE_COLORS[user.role] || 'bg-gray-100'}`}>
+                          {ROLE_LABELS[user.role] || user.role}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={user.isActive ? 'default' : 'secondary'}>
+                        {user.isActive ? 'Aktif' : 'Nonaktif'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-2">
+                        {isSuperAdmin && (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => void loadUserPermissions(user)}>
+                              <ShieldCheck className="mr-1.5 h-4 w-4" /> Izin
+                            </Button>
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => loadUserPermissions(u.id)}
+                              className="gap-1.5"
+                              onClick={() => setAccessCheckUser(user.id)}
                             >
-                              Izin
+                              <Briefcase className="h-3.5 w-3.5" /> Jabatan
                             </Button>
-                            {/* TF2-P1-2: Buka dialog korelasi jabatan-izin (SA only). */}
-                            {isSuperAdmin && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="gap-1.5"
-                                onClick={() => setAccessCheckUser(u.id)}
-                                title="Lihat jabatan aktif + izin efektif (R-25)"
-                              >
-                                <Briefcase className="h-3.5 w-3.5" /> Jabatan
-                              </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant={u.isActive ? 'destructive' : 'default'}
-                              onClick={() => handleToggleActive(u.id, u.isActive)}
-                            >
-                              {u.isActive ? 'Nonaktifkan' : 'Aktifkan'}
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          )}
-        </Card>
-      ))}
+                          </>
+                        )}
+                        {canManageUsers && (
+                          <Button
+                            size="sm"
+                            variant={user.isActive ? 'destructive' : 'default'}
+                            disabled={busyAction === `active:${user.id}`}
+                            onClick={() => setConfirmTarget({ kind: 'active', user, nextActive: !user.isActive })}
+                          >
+                            {busyAction === `active:${user.id}` ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+                            {user.isActive ? 'Nonaktifkan' : 'Aktifkan'}
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <TablePagination page={page} limit={limit} total={total} onPage={(nextPage) => setParams({ page: nextPage })} />
+        </CardContent>
+      </Card>
 
-      {/* TF2-P1-2: Dialog korelasi Users ↔ Struktur (akses efektif). */}
       <UserAccessDialog
         userId={accessCheckUser}
         onClose={() => setAccessCheckUser(null)}
       />
 
-      {/* ── Panel Izin Pengguna ──────────────────────────────────────────────── */}
-      {selectedUser && (
+      {isSuperAdmin && selectedUser && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Izin Pengguna</CardTitle>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant={tab === 'effective' ? 'default' : 'outline'}
-                onClick={() => setTab('effective')}
-              >
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle>Izin Pengguna - {selectedUser.fullName}</CardTitle>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant={tab === 'effective' ? 'default' : 'outline'} onClick={() => setTab('effective')}>
                 Izin Efektif
               </Button>
-              <Button
-                size="sm"
-                variant={tab === 'override' ? 'default' : 'outline'}
-                onClick={() => setTab('override')}
-              >
+              <Button size="sm" variant={tab === 'override' ? 'default' : 'outline'} onClick={() => setTab('override')}>
                 Penggantian Izin
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setSelectedUser(null)}>Tutup</Button>
             </div>
           </CardHeader>
           <CardContent>
-            {/* TF2-P1-NEW-2: Error banner saat API izin gagal. Sebelumnya error */}
-            {/* di-swallow jadi empty state → admin mengira user tak punya izin. */}
+            {catalogError && (
+              <div role="alert" className="mb-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+                <p className="font-semibold">Katalog izin gagal dimuat: {catalogError}</p>
+                <p className="mt-1 text-xs">Ini bukan katalog kosong. Coba muat ulang panel izin.</p>
+              </div>
+            )}
             {permissionError && !overrideLoading && (
-              <div className="mb-3 rounded-md bg-red-50 border border-red-300 px-3 py-2 text-sm text-red-800">
+              <div role="alert" className="mb-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
                 <p className="font-semibold">Gagal memuat izin: {permissionError}</p>
-                <p className="mt-1 text-xs">Ini bukan berarti user tidak punya izin — kemungkinan ada masalah koneksi ke server. Coba tutup dan buka panel ini lagi.</p>
+                <p className="mt-1 text-xs">Ini bukan berarti pengguna tidak punya izin.</p>
               </div>
             )}
             {overrideLoading ? (
               <p className="text-sm text-muted-foreground">Memuat data izin...</p>
             ) : tab === 'effective' ? (
               <div className="flex flex-wrap gap-2">
-                {effectivePerms.length === 0 ? (
+                {effectivePerms.length === 0 && !permissionError ? (
                   <p className="text-sm text-muted-foreground">Tidak ada izin efektif.</p>
                 ) : (
                   effectivePerms.map((code) => (
-                    <span key={code} className="text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2.5 py-1 font-mono">
+                    <span key={code} className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 font-mono text-xs text-blue-700">
                       {code}
                     </span>
                   ))
                 )}
               </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            ) : catalogError ? null : (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {permissions.map((perm) => {
                   const override = userPermissions.find((up) => up.permission.id === perm.id);
                   const isGranted = override?.grant ?? false;
                   const isDenied = override && !override.grant;
-
                   return (
-                    <div
+                    <button
                       key={perm.code}
-                      className={`text-xs rounded-lg p-2 border cursor-pointer transition-colors ${
-                        isGranted ? 'bg-green-50 border-green-300' :
-                        isDenied ? 'bg-red-50 border-red-300' :
-                        'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                      type="button"
+                      className={`min-h-16 rounded-lg border p-2 text-left text-xs transition-colors ${
+                        isGranted ? 'border-green-300 bg-green-50' :
+                        isDenied ? 'border-red-300 bg-red-50' :
+                        'border-gray-200 bg-gray-50 hover:bg-gray-100'
                       }`}
                       onClick={() => {
                         if (isGranted || isDenied) {
-                          handleRevokeOverride(selectedUser, perm.id);
+                          void handleRevokeOverride(selectedUser.id, perm.id);
                         } else {
-                          handleOverride(selectedUser, perm.id, true);
+                          void handleOverride(selectedUser.id, perm.id, true);
                         }
                       }}
                     >
-                      <code className="text-slate-700 font-mono">{perm.code}</code>
-                      <p className="text-muted-foreground mt-0.5">{perm.module}</p>
-                      {isGranted && <span className="text-green-600 font-medium">Diberikan</span>}
-                      {isDenied && <span className="text-red-600 font-medium">Dicabut</span>}
-                    </div>
+                      <code className="font-mono text-slate-700">{perm.code}</code>
+                      <p className="mt-0.5 text-muted-foreground">{perm.module}</p>
+                      {isGranted && <span className="font-medium text-green-600">Diberikan</span>}
+                      {isDenied && <span className="font-medium text-red-600">Dicabut</span>}
+                    </button>
                   );
                 })}
+                {permissions.length === 0 && !catalogError && (
+                  <p className="text-sm text-muted-foreground">Katalog izin kosong.</p>
+                )}
               </div>
             )}
           </CardContent>
         </Card>
       )}
 
-      {/* ── Sistem Izin ───────────────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader><CardTitle>Sistem Izin</CardTitle></CardHeader>
-        <CardContent>
-          {permissions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada izin terdaftar. Jalankan seed untuk menginisialisasi.</p>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-              {permissions.map((p) => (
-                <div key={p.code} className="text-xs bg-gray-50 rounded-lg p-2 border">
-                  <code className="text-slate-700 font-mono">{p.code}</code>
-                  <p className="text-muted-foreground mt-0.5">{p.module}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <ConfirmDialog
+        open={!!confirmTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmTarget(null);
+            setConfirmError('');
+          }
+        }}
+        title={confirmTitle}
+        description={confirmDescription}
+        confirmLabel={roleConfirm ? 'Ubah role' : activeConfirm?.nextActive ? 'Aktifkan' : 'Nonaktifkan'}
+        variant={activeConfirm?.nextActive ? 'warning' : 'danger'}
+        error={confirmError}
+        onConfirm={confirmAction}
+      />
     </div>
   );
 }

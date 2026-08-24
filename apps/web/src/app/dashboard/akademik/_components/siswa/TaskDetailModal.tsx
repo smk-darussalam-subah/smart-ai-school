@@ -9,6 +9,7 @@ import {
   startAssessmentResponse,
   submitAssessmentResponse,
 } from '../../actions';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface Props {
   task: SiswaTugas;
@@ -138,6 +139,7 @@ export default function TaskDetailModal({ task, onClose, showToast }: Props) {
   const [submitted, setSubmitted] = useState(task.status === 'submitted' || task.status === 'graded');
   const [currentIndex, setCurrentIndex] = useState(0);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+  const [confirmUnanswered, setConfirmUnanswered] = useState(false);
   const [busy, startTransition] = useTransition();
 
   const answeredCount = useMemo(
@@ -186,7 +188,8 @@ export default function TaskDetailModal({ task, onClose, showToast }: Props) {
   const submitAnswers = useCallback((options?: { skipConfirm?: boolean }) => {
     if (!task.assessmentSessionId || !attempt || submitted) return;
     const unanswered = attempt.questions.length - answeredCount;
-    if (!options?.skipConfirm && unanswered > 0 && !window.confirm(`${unanswered} soal belum terjawab. Tetap kirim jawaban?`)) {
+    if (!options?.skipConfirm && unanswered > 0) {
+      setConfirmUnanswered(true);
       return;
     }
     startTransition(async () => {
@@ -365,6 +368,19 @@ export default function TaskDetailModal({ task, onClose, showToast }: Props) {
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={confirmUnanswered}
+        onOpenChange={setConfirmUnanswered}
+        title="Kirim jawaban belum lengkap?"
+        description={`${Math.max(0, totalQuestions - answeredCount)} soal belum terjawab. Jawaban akan dikirim apa adanya dan tidak dapat dilengkapi setelah terkirim.`}
+        confirmLabel="Tetap kirim"
+        variant="warning"
+        onConfirm={() => {
+          setConfirmUnanswered(false);
+          submitAnswers({ skipConfirm: true });
+          return true;
+        }}
+      />
     </div>
   );
 }

@@ -12,6 +12,7 @@ interface ConfirmDialogProps {
   onOpenChange: (open: boolean) => void;
   title: string;
   description: string;
+  error?: string;
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: 'danger' | 'warning' | 'info';
@@ -38,6 +39,7 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
+  error,
   confirmLabel = 'Konfirmasi',
   cancelLabel = 'Batal',
   variant = 'warning',
@@ -46,6 +48,7 @@ export function ConfirmDialog({
   const [loading, setLoading] = useState(false);
 
   const handleConfirm = async () => {
+    if (loading) return;
     setLoading(true);
     try {
       const shouldClose = await onConfirm();
@@ -67,6 +70,11 @@ export function ConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+        {error ? (
+          <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">
+            {error}
+          </div>
+        ) : null}
         <div className="flex justify-end gap-2 mt-2">
           <Button
             variant="outline"
