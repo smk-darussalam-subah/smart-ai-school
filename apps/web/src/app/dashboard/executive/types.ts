@@ -23,19 +23,49 @@ export interface GradeBox {
   q3: number;
   min: number;
   max: number;
-  kkmPassRate: number;
+  kkmPassRate: number | null;
 }
 export interface KkmMatrix {
   majors: string[];
   subjects: string[];
-  cells: { majorCode: string; subject: string; count: number; passRate: number | null }[];
+  cells: {
+    majorCode: string;
+    subject: string;
+    count: number;
+    passRate: number | null;
+    kktp?: number | null;
+  }[];
 }
 export interface GradeAnalytics {
-  filters: { academicYear: string; semester: number; kkm: number; majorCode: string | null; classId: string | null };
-  overall: { count: number; mean: number; median: number; q1: number; q3: number; min: number; max: number; kkmPassRate: number };
+  filters: {
+    academicYear: string;
+    semester: number;
+    kkm: null;
+    thresholdMode: 'authoritative_per_subject';
+    majorCode: string | null;
+    classId: string | null;
+  };
+  overall: {
+    count: number;
+    mean: number;
+    median: number;
+    q1: number;
+    q3: number;
+    min: number;
+    max: number;
+    kkmPassRate: number | null;
+  };
   byMajor: GradeBox[];
-  bySubject: { subject: string; count: number; mean: number; kkmPassRate: number }[];
+  bySubject: {
+    subject: string;
+    count: number;
+    mean: number;
+    kkmPassRate: number | null;
+    kktp: number | null;
+    kktpProvenance: string;
+  }[];
   kkmMatrix: KkmMatrix;
+  kktpCatalog: { subject: string; value: number | null; provenance: string }[];
   correlation: { r: number; n: number; points: { x: number; y: number }[] };
 }
 
@@ -59,7 +89,14 @@ export interface TeacherCompliance {
   totalTeachers: number;
   presentToday: number;
   gpsPct: number | null;
-  rpp: { draft: number; submitted: number; approved: number; revision: number; total: number; approvalRate: number | null };
+  rpp: {
+    draft: number;
+    submitted: number;
+    approved: number;
+    revision: number;
+    total: number;
+    approvalRate: number | null;
+  };
 }
 
 // ── /ppdb/stats ──────────────────────────────────────────────────────────────

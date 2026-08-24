@@ -24,7 +24,6 @@ import {
   AGING_BUCKETS,
   AT_RISK_ALPHA_MIN,
   AT_RISK_WINDOW_DAYS,
-  KKM_DEFAULT,
   NaComponents,
   agingBucketIndex,
   diffDays,
@@ -35,6 +34,7 @@ import {
   round1,
   summarize,
 } from './analytics.math';
+import { resolveKktpThreshold, type ResolvedKktp } from '../academic/kktp-resolver';
 
 const MATRIX_SUBJECT_LIMIT = 6; // kolom heatmap KKM agar terbaca
 const SCATTER_POINT_CAP = 160; // batas titik scatter yang dikirim (r dihitung dari semua)
@@ -42,6 +42,22 @@ const SCATTER_POINT_CAP = 160; // batas titik scatter yang dikirim (r dihitung d
 interface Period {
   academicYear: string;
   semester: number;
+}
+
+export function jakartaDateKey(value: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(value);
+}
+
+export function databaseDateRange(dateKey: string) {
+  const start = new Date(`${dateKey}T00:00:00.000Z`);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return { gte: start, lt: end };
 }
 
 @Injectable()
@@ -66,8 +82,7 @@ export class AnalyticsService {
       // Tak ada semester aktif → turunkan dari tanggal (Jul=awal TA baru).
       const now = new Date();
       const y = now.getUTCFullYear();
-      const fallbackYear =
-        now.getUTCMonth() >= 6 ? `${y}/${y + 1}` : `${y - 1}/${y}`;
+      const fallbackYear = now.getUTCMonth() >= 6 ? `${y}/${y + 1}` : `${y - 1}/${y}`;
       return {
         academicYear: query.academicYear ?? fallbackYear,
         semester: query.semester ?? 1,
@@ -80,10 +95,30 @@ export class AnalyticsService {
       academicYear: period.academicYear,
       semester: period.semester,
       ...(query.classId ? { assignment: { classId: query.classId } } : {}),
-      ...(query.majorCode
-        ? { assignment: { class: { majorCode: query.majorCode } } }
-        : {}),
+      ...(query.majorCode ? { assignment: { class: { majorCode: query.majorCode } } } : {}),
     };
+  }
+
+  private async resolveKktpCatalog(subjects: Iterable<string>, period: Period) {
+    const uniqueSubjects = [...new Set(subjects)].sort((a, b) => a.localeCompare(b));
+    const entries = await Promise.all(
+      uniqueSubjects.map(
+        async (subject) =>
+          [
+            subject,
+            await resolveKktpThreshold(this.prisma, {
+              subject,
+              academicYear: period.academicYear,
+              semester: period.semester,
+            }),
+          ] as const,
+      ),
+    );
+    return new Map<string, ResolvedKktp>(entries);
+  }
+
+  private kktpValue(catalog: Map<string, ResolvedKktp>, subject: string): number | null {
+    return catalog.get(subject)?.value ?? null;
   }
 
   // ── 1. Analitik nilai: distribusi + ketuntasan KKM + korelasi ─────────────
@@ -106,6 +141,14 @@ export class AnalyticsService {
     const bySubject = new Map<string, number[]>();
     const matrix = new Map<string, number[]>(); // `${major}|${subject}`
 
+    const kktpCatalog = await this.resolveKktpCatalog(
+      rows.map((row) => row.assignment.subject),
+      period,
+    );
+    const passByMajor = new Map<string, { passed: number; total: number }>();
+    let overallPassed = 0;
+    let overallComparable = 0;
+
     for (const r of rows) {
       const s = Number(r.score);
       const major = r.assignment.class?.majorCode ?? '—';
@@ -114,6 +157,17 @@ export class AnalyticsService {
       pushTo(byMajor, major, s);
       pushTo(bySubject, subject, s);
       pushTo(matrix, `${major}|${subject}`, s);
+      const threshold = this.kktpValue(kktpCatalog, subject);
+      if (threshold !== null) {
+        const majorPass = passByMajor.get(major) ?? { passed: 0, total: 0 };
+        majorPass.total += 1;
+        overallComparable += 1;
+        if (s >= threshold) {
+          majorPass.passed += 1;
+          overallPassed += 1;
+        }
+        passByMajor.set(major, majorPass);
+      }
     }
 
     // byMajor (box-plot)
@@ -121,7 +175,9 @@ export class AnalyticsService {
       .map(([majorCode, scores]) => ({
         majorCode,
         ...summarize(scores),
-        kkmPassRate: kkmPassRate(scores, KKM_DEFAULT),
+        kkmPassRate: passByMajor.get(majorCode)?.total
+          ? round1((passByMajor.get(majorCode)!.passed / passByMajor.get(majorCode)!.total) * 100)
+          : null,
       }))
       .sort((a, b) => a.majorCode.localeCompare(b.majorCode));
 
@@ -131,7 +187,12 @@ export class AnalyticsService {
         subject,
         count: scores.length,
         mean: round1(mean(scores)),
-        kkmPassRate: kkmPassRate(scores, KKM_DEFAULT),
+        kkmPassRate:
+          this.kktpValue(kktpCatalog, subject) === null
+            ? null
+            : kkmPassRate(scores, this.kktpValue(kktpCatalog, subject)!),
+        kktp: this.kktpValue(kktpCatalog, subject),
+        kktpProvenance: kktpCatalog.get(subject)?.provenance ?? 'unconfigured',
       }))
       .sort((a, b) => b.count - a.count);
 
@@ -146,7 +207,11 @@ export class AnalyticsService {
           majorCode: major,
           subject,
           count: scores.length,
-          passRate: scores.length ? kkmPassRate(scores, KKM_DEFAULT) : null,
+          passRate:
+            scores.length && this.kktpValue(kktpCatalog, subject) !== null
+              ? kkmPassRate(scores, this.kktpValue(kktpCatalog, subject)!)
+              : null,
+          kktp: this.kktpValue(kktpCatalog, subject),
         });
       }
     }
@@ -154,11 +219,22 @@ export class AnalyticsService {
     const correlation = await this.correlation(period, query, where);
 
     return {
-      filters: { ...period, kkm: KKM_DEFAULT, majorCode: query.majorCode ?? null, classId: query.classId ?? null },
-      overall: { ...summarize(all), kkmPassRate: kkmPassRate(all, KKM_DEFAULT) },
+      filters: {
+        ...period,
+        kkm: null,
+        thresholdMode: 'authoritative_per_subject',
+        majorCode: query.majorCode ?? null,
+        classId: query.classId ?? null,
+      },
+      overall: {
+        ...summarize(all),
+        kkmPassRate:
+          overallComparable > 0 ? round1((overallPassed / overallComparable) * 100) : null,
+      },
       byMajor: majorRows,
       bySubject: subjectRows,
       kkmMatrix: { majors, subjects, cells },
+      kktpCatalog: [...kktpCatalog.entries()].map(([subject, value]) => ({ subject, ...value })),
       correlation,
     };
   }
@@ -250,7 +326,10 @@ export class AnalyticsService {
       select: { class: { select: { name: true, grade: true, majorCode: true } } },
     });
 
-    const byClassMap = new Map<string, { className: string; majorCode: string; grade: number; count: number }>();
+    const byClassMap = new Map<
+      string,
+      { className: string; majorCode: string; grade: number; count: number }
+    >();
     for (const s of students) {
       if (!s.class) continue;
       const key = s.class.name;
@@ -339,9 +418,8 @@ export class AnalyticsService {
     const rppActive = rpp.submitted + rpp.approved + rpp.revision; // non-draft
     const approvalRate = rppActive > 0 ? round1((rpp.approved / rppActive) * 100) : null;
 
-    const gpsPct = totalTeachers > 0
-      ? Math.min(100, Math.round((presentToday / totalTeachers) * 100))
-      : null;
+    const gpsPct =
+      totalTeachers > 0 ? Math.min(100, Math.round((presentToday / totalTeachers) * 100)) : null;
 
     return {
       totalTeachers,
@@ -367,7 +445,8 @@ export class AnalyticsService {
     const grades = await this.prisma.grade.findMany({
       where,
       select: {
-        score: true, type: true,
+        score: true,
+        type: true,
         assignment: {
           select: {
             subject: true,
@@ -381,10 +460,13 @@ export class AnalyticsService {
     });
 
     // Group by teacher|class|subject
-    const key = (g: typeof grades[0]) =>
+    const key = (g: (typeof grades)[0]) =>
       `${g.assignment.teacher?.user?.fullName ?? '-'}|${g.assignment.class?.name ?? '-'}|${g.assignment.subject}`;
 
-    const grouped = new Map<string, { scores: number[]; teacher: string; className: string; subject: string }>();
+    const grouped = new Map<
+      string,
+      { scores: number[]; teacher: string; className: string; subject: string }
+    >();
     for (const g of grades) {
       const k = key(g);
       const entry = grouped.get(k) ?? {
@@ -397,23 +479,36 @@ export class AnalyticsService {
       grouped.set(k, entry);
     }
 
-    const result = [...grouped.values()].map((e) => {
-      const avg = e.scores.length > 0
-        ? Math.round(e.scores.reduce((a, b) => a + b, 0) / e.scores.length * 100) / 100
-        : 0;
-      const tuntas = e.scores.filter((s) => s >= KKM_DEFAULT).length;
-      return {
-        teacher: e.teacher,
-        className: e.className,
-        subject: e.subject,
-        count: e.scores.length,
-        average: avg,
-        tuntasCount: tuntas,
-        tuntasPct: e.scores.length > 0 ? Math.round((tuntas / e.scores.length) * 100) : null,
-      };
-    }).sort((a, b) => a.teacher.localeCompare(b.teacher) || a.subject.localeCompare(b.subject));
+    const kktpCatalog = await this.resolveKktpCatalog(
+      grades.map((grade) => grade.assignment.subject),
+      period,
+    );
+    const result = [...grouped.values()]
+      .map((e) => {
+        const avg =
+          e.scores.length > 0
+            ? Math.round((e.scores.reduce((a, b) => a + b, 0) / e.scores.length) * 100) / 100
+            : 0;
+        const kktp = this.kktpValue(kktpCatalog, e.subject);
+        const tuntas = kktp === null ? 0 : e.scores.filter((s) => s >= kktp).length;
+        return {
+          teacher: e.teacher,
+          className: e.className,
+          subject: e.subject,
+          count: e.scores.length,
+          average: avg,
+          tuntasCount: tuntas,
+          tuntasPct:
+            e.scores.length > 0 && kktp !== null
+              ? Math.round((tuntas / e.scores.length) * 100)
+              : null,
+          kktp,
+          kktpProvenance: kktpCatalog.get(e.subject)?.provenance ?? 'unconfigured',
+        };
+      })
+      .sort((a, b) => a.teacher.localeCompare(b.teacher) || a.subject.localeCompare(b.subject));
 
-    return { data: result, kkm: KKM_DEFAULT };
+    return { data: result, thresholdMode: 'authoritative_per_subject' };
   }
 
   // ── T3-02 B6: Monitoring KBM (guru × kelas × mapel real-time status) ──────
@@ -421,15 +516,19 @@ export class AnalyticsService {
   /** B6: Build monitoring matrix from existing grades + attendance + jurnal.
    *  No KBM session module needed — aggregates from current data.
    *  Resilient: returns empty array if any sub-query fails. */
-  async monitoringKbm(query: AnalyticsQuery) {
+  async monitoringKbm(query: AnalyticsQuery, now = new Date()) {
     const period = await this.resolvePeriod(query);
+    const todayISO = jakartaDateKey(now);
+    const todayRange = databaseDateRange(todayISO);
 
     try {
       // Get all teaching assignments for the period
       const assignments = await this.prisma.teachingAssignment.findMany({
         where: { academicYear: period.academicYear },
         select: {
-          id: true, subject: true, hoursPerWeek: true,
+          id: true,
+          subject: true,
+          hoursPerWeek: true,
           teacher: { select: { user: { select: { fullName: true } } } },
           class: { select: { id: true, name: true } },
           grades: {
@@ -441,71 +540,104 @@ export class AnalyticsService {
       });
 
       // Get today's attendance per class (resilient — may be empty)
-      const todayISO = new Date().toISOString().slice(0, 10);
-      const todayAtt = await this.prisma.attendance.groupBy({
-        by: ['classId', 'status'],
-        where: { date: { gte: new Date(todayISO), lt: new Date(todayISO + 'T23:59:59Z') } },
-        _count: { _all: true },
-      }).catch(() => []);
+      const todayAtt = await this.prisma.attendance
+        .groupBy({
+          by: ['classId', 'status'],
+          where: { date: todayRange },
+          _count: { _all: true },
+        })
+        .catch(() => []);
 
       // Get class activities (jurnal) — resilient
-      const activities = await this.prisma.classActivity.findMany({
-        where: { date: { gte: new Date(period.academicYear.slice(0, 4) + '-' + (period.semester === 1 ? '07' : '01') + '-01') } },
-        select: { teacherId: true, classId: true, date: true, title: true, category: true },
-        orderBy: { date: 'desc' },
-        take: 200,
-      }).catch(() => []);
+      const activities = await this.prisma.classActivity
+        .findMany({
+          where: {
+            date: {
+              gte: new Date(
+                period.academicYear.slice(0, 4) +
+                  '-' +
+                  (period.semester === 1 ? '07' : '01') +
+                  '-01',
+              ),
+            },
+          },
+          select: { teacherId: true, classId: true, date: true, title: true, category: true },
+          orderBy: { date: 'desc' },
+          take: 200,
+        })
+        .catch(() => []);
+      const kktpCatalog = await this.resolveKktpCatalog(
+        assignments.map((assignment) => assignment.subject),
+        period,
+      );
 
-    // Build monitoring rows
-    const attByClass = new Map<string, { hadir: number; total: number }>();
-    for (const a of todayAtt) {
-      const entry = attByClass.get(a.classId) ?? { hadir: 0, total: 0 };
-      entry.total += a._count._all;
-      if (a.status === 'hadir') entry.hadir += a._count._all;
-      attByClass.set(a.classId, entry);
-    }
+      // Build monitoring rows
+      const attByClass = new Map<string, { hadir: number; total: number }>();
+      for (const a of todayAtt) {
+        const entry = attByClass.get(a.classId) ?? { hadir: 0, total: 0 };
+        entry.total += a._count._all;
+        if (a.status === 'hadir') entry.hadir += a._count._all;
+        attByClass.set(a.classId, entry);
+      }
 
-    const activitiesByTeacherClass = new Map<string, number>();
-    for (const act of activities) {
-      const key = `${act.teacherId}|${act.classId}`;
-      activitiesByTeacherClass.set(key, (activitiesByTeacherClass.get(key) ?? 0) + 1);
-    }
+      const activitiesByTeacherClass = new Map<string, number>();
+      for (const act of activities) {
+        const key = `${act.teacherId}|${act.classId}`;
+        activitiesByTeacherClass.set(key, (activitiesByTeacherClass.get(key) ?? 0) + 1);
+      }
 
-    const rows = assignments.map((a) => {
-      const scores = a.grades.map((g) => Number(g.score));
-      const avg = scores.length > 0 ? Math.round(scores.reduce((x, y) => x + y, 0) / scores.length * 100) / 100 : null;
-      const tuntas = scores.filter((s) => s >= KKM_DEFAULT).length;
-      const tuntasPct = scores.length > 0 ? Math.round((tuntas / scores.length) * 100) : null;
+      const rows = assignments.map((a) => {
+        const scores = a.grades.map((g) => Number(g.score));
+        const avg =
+          scores.length > 0
+            ? Math.round((scores.reduce((x, y) => x + y, 0) / scores.length) * 100) / 100
+            : null;
+        const kktp = this.kktpValue(kktpCatalog, a.subject);
+        const tuntas = kktp === null ? 0 : scores.filter((s) => s >= kktp).length;
+        const tuntasPct =
+          scores.length > 0 && kktp !== null ? Math.round((tuntas / scores.length) * 100) : null;
 
-      const att = attByClass.get(a.class?.id ?? '') ?? { hadir: 0, total: 0 };
-      const hadirPct = att.total > 0 ? Math.round((att.hadir / att.total) * 100) : null;
+        const att = attByClass.get(a.class?.id ?? '') ?? { hadir: 0, total: 0 };
+        const hadirPct = att.total > 0 ? Math.round((att.hadir / att.total) * 100) : null;
 
-      const jurnalCount = activitiesByTeacherClass.get(`${a.id}|${a.class?.id ?? ''}`) ?? 0;
+        const jurnalCount = activitiesByTeacherClass.get(`${a.id}|${a.class?.id ?? ''}`) ?? 0;
 
-      // Status: 'on' if tuntasPct >= 75, 'warn' if >= 60, 'risk' otherwise
-      const status: 'on' | 'warn' | 'risk' =
-        tuntasPct !== null ? (tuntasPct >= 75 ? 'on' : tuntasPct >= 60 ? 'warn' : 'risk') : 'risk';
+        // Status is an operational completion-rate signal, not a replacement for KKTP.
+        const status: 'on' | 'warn' | 'risk' =
+          tuntasPct !== null
+            ? tuntasPct >= 75
+              ? 'on'
+              : tuntasPct >= 60
+                ? 'warn'
+                : 'risk'
+            : 'risk';
 
-      return {
-        guru: a.teacher?.user?.fullName ?? '-',
-        mapel: a.subject,
-        kelas: a.class?.name ?? '-',
-        jp: a.hoursPerWeek,
-        avg,
-        tuntasPct,
-        hadirPct,
-        jurnalCount,
-        gradeCount: scores.length,
-        status,
-      };
-    });
+        return {
+          guru: a.teacher?.user?.fullName ?? '-',
+          mapel: a.subject,
+          kelas: a.class?.name ?? '-',
+          jp: a.hoursPerWeek,
+          avg,
+          tuntasPct,
+          hadirPct,
+          jurnalCount,
+          gradeCount: scores.length,
+          kktp,
+          kktpProvenance: kktpCatalog.get(a.subject)?.provenance ?? 'unconfigured',
+          status,
+        };
+      });
 
-    rows.sort((a, b) => a.kelas.localeCompare(b.kelas) || a.mapel.localeCompare(b.mapel));
+      rows.sort((a, b) => a.kelas.localeCompare(b.kelas) || a.mapel.localeCompare(b.mapel));
 
-    return { data: rows, date: todayISO, kkm: KKM_DEFAULT };
+      return { data: rows, date: todayISO, thresholdMode: 'authoritative_per_subject' };
     } catch {
       // Resilient: return empty if any query fails
-      return { data: [], date: new Date().toISOString().slice(0, 10), kkm: KKM_DEFAULT };
+      return {
+        data: [],
+        date: todayISO,
+        thresholdMode: 'unavailable',
+      };
     }
   }
 
@@ -539,14 +671,22 @@ export class AnalyticsService {
     const grades = await this.prisma.grade.findMany({
       where: gradeWhere,
       select: {
-        score: true, type: true, studentId: true,
+        score: true,
+        type: true,
+        studentId: true,
         assignment: { select: { subject: true, classId: true, class: { select: { name: true } } } },
       },
     });
 
     // ── Per-mapel progress: group by subject, compute NA per student, tuntas rate ──
     // Student-grade-components per subject (mirror lib/academic.ts naOf)
-    const subjectStudentMap = new Map<string, Map<string, { uh: number[]; praktik: number[]; sikap: number[]; uts: number[]; uas: number[] }>>();
+    const subjectStudentMap = new Map<
+      string,
+      Map<
+        string,
+        { uh: number[]; praktik: number[]; sikap: number[]; uts: number[]; uas: number[] }
+      >
+    >();
     const subjectTotalStudents = new Map<string, Set<string>>();
 
     for (const g of grades) {
@@ -570,31 +710,61 @@ export class AnalyticsService {
     }
 
     const W = { uh: 0.2, praktik: 0.25, sikap: 0.15, uts: 0.2, uas: 0.2 };
-    const computeNa = (c: { uh: number[]; praktik: number[]; sikap: number[]; uts: number[]; uas: number[] }): number | null => {
-      const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+    const computeNa = (c: {
+      uh: number[];
+      praktik: number[];
+      sikap: number[];
+      uts: number[];
+      uas: number[];
+    }): number | null => {
+      const avg = (arr: number[]) =>
+        arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
       const parts: { val: number; w: number }[] = [];
-      const uh = avg(c.uh); if (uh !== null) parts.push({ val: uh, w: W.uh });
-      const praktik = avg(c.praktik); if (praktik !== null) parts.push({ val: praktik, w: W.praktik });
-      const sikap = avg(c.sikap); if (sikap !== null) parts.push({ val: sikap, w: W.sikap });
-      const uts = avg(c.uts); if (uts !== null) parts.push({ val: uts, w: W.uts });
-      const uas = avg(c.uas); if (uas !== null) parts.push({ val: uas, w: W.uas });
+      const uh = avg(c.uh);
+      if (uh !== null) parts.push({ val: uh, w: W.uh });
+      const praktik = avg(c.praktik);
+      if (praktik !== null) parts.push({ val: praktik, w: W.praktik });
+      const sikap = avg(c.sikap);
+      if (sikap !== null) parts.push({ val: sikap, w: W.sikap });
+      const uts = avg(c.uts);
+      if (uts !== null) parts.push({ val: uts, w: W.uts });
+      const uas = avg(c.uas);
+      if (uas !== null) parts.push({ val: uas, w: W.uas });
       if (parts.length === 0) return null;
       const wSum = parts.reduce((a, p) => a + p.w, 0);
       return Math.round((parts.reduce((a, p) => a + p.val * p.w, 0) / wSum) * 10) / 10;
     };
 
-    const mapelProgress = [...subjectStudentMap.entries()].map(([subject, studentMap]) => {
-      const nas: number[] = [];
-      for (const comps of studentMap.values()) {
-        const na = computeNa(comps);
-        if (na !== null) nas.push(na);
-      }
-      const total = subjectTotalStudents.get(subject)?.size ?? nas.length;
-      const tuntas = nas.filter((n) => n >= KKM_DEFAULT).length;
-      const avgNa = nas.length ? Math.round((nas.reduce((a, b) => a + b, 0) / nas.length) * 10) / 10 : 0;
-      const pct = nas.length ? Math.round((tuntas / nas.length) * 100) : 0;
-      return { mapel: subject, progres: pct, na: avgNa, tuntas, total: Math.max(total, nas.length), tp: `${tuntas}/${Math.max(total, nas.length)} tuntas` };
-    }).sort((a, b) => b.progres - a.progres);
+    const kktpCatalog = await this.resolveKktpCatalog(subjectStudentMap.keys(), period);
+    const mapelProgress = [...subjectStudentMap.entries()]
+      .map(([subject, studentMap]) => {
+        const nas: number[] = [];
+        for (const comps of studentMap.values()) {
+          const na = computeNa(comps);
+          if (na !== null) nas.push(na);
+        }
+        const total = subjectTotalStudents.get(subject)?.size ?? nas.length;
+        const kktp = this.kktpValue(kktpCatalog, subject);
+        const tuntas = kktp === null ? 0 : nas.filter((n) => n >= kktp).length;
+        const avgNa = nas.length
+          ? Math.round((nas.reduce((a, b) => a + b, 0) / nas.length) * 10) / 10
+          : 0;
+        const pct = nas.length ? Math.round((tuntas / nas.length) * 100) : 0;
+        return {
+          mapel: subject,
+          progres: kktp === null ? 0 : pct,
+          na: avgNa,
+          tuntas,
+          total: Math.max(total, nas.length),
+          tp:
+            kktp === null
+              ? 'KKTP belum dikonfigurasi'
+              : `${tuntas}/${Math.max(total, nas.length)} tuntas`,
+          kktp,
+          kktpProvenance: kktpCatalog.get(subject)?.provenance ?? 'unconfigured',
+        };
+      })
+      .sort((a, b) => b.progres - a.progres);
 
     // ── CP breakdown: derive CPs from RPP body untuk classId / subjects ──
     // Ambil RPP untuk subject yang ada; CP info dari body.cpGoals / body.objectives
@@ -604,7 +774,11 @@ export class AnalyticsService {
       status: 'approved',
       academicYear: period.academicYear,
       semester: period.semester,
-      ...(scopeClassIds ? { classId: { in: scopeClassIds } } : query.classId ? { classId: query.classId } : {}),
+      ...(scopeClassIds
+        ? { classId: { in: scopeClassIds } }
+        : query.classId
+          ? { classId: query.classId }
+          : {}),
       ...(scopeSubjects ? { subject: { in: scopeSubjects } } : {}),
     };
     const rpps = await this.prisma.rpp.findMany({
@@ -613,7 +787,11 @@ export class AnalyticsService {
     });
 
     // Extract CP goals dari RPP body (JSON field — format bebas)
-    interface CpEntry { cp: string; desc: string; subject: string }
+    interface CpEntry {
+      cp: string;
+      desc: string;
+      subject: string;
+    }
     const cpList: CpEntry[] = [];
     for (const r of rpps) {
       const body = r.body as Record<string, unknown> | null;
@@ -621,20 +799,38 @@ export class AnalyticsService {
       const cpGoals = (body.cpGoals ?? body.objectives ?? body.cp) as unknown;
       if (Array.isArray(cpGoals)) {
         cpGoals.forEach((cp, i) => {
-          const desc = typeof cp === 'string' ? cp : (cp as Record<string, unknown>)?.desc as string ?? (cp as Record<string, unknown>)?.description as string ?? '—';
+          const desc =
+            typeof cp === 'string'
+              ? cp
+              : (((cp as Record<string, unknown>)?.desc as string) ??
+                ((cp as Record<string, unknown>)?.description as string) ??
+                '—');
           cpList.push({ cp: `CP ${i + 1}`, desc, subject: r.subject });
         });
       }
     }
 
     // Bila tak ada CP dari RPP, turunkan dari grade types (sumatif → CP proxy)
-    const cpBreakdown = cpList.length > 0 ? cpList.map((c) => {
-      // Progres CP = avg tuntas rate untuk subject CP ini
-      const subjProgress = mapelProgress.find((m) => m.mapel === c.subject);
-      return { cp: c.cp, desc: c.desc, progres: subjProgress?.progres ?? 0, tuntas: subjProgress?.tuntas ?? 0, total: subjProgress?.total ?? 0 };
-    }) : mapelProgress.slice(0, 4).map((m, i) => ({
-      cp: `CP ${i + 1}`, desc: m.mapel, progres: m.progres, tuntas: m.tuntas, total: m.total,
-    }));
+    const cpBreakdown =
+      cpList.length > 0
+        ? cpList.map((c) => {
+            // Progres CP = avg tuntas rate untuk subject CP ini
+            const subjProgress = mapelProgress.find((m) => m.mapel === c.subject);
+            return {
+              cp: c.cp,
+              desc: c.desc,
+              progres: subjProgress?.progres ?? 0,
+              tuntas: subjProgress?.tuntas ?? 0,
+              total: subjProgress?.total ?? 0,
+            };
+          })
+        : mapelProgress.slice(0, 4).map((m, i) => ({
+            cp: `CP ${i + 1}`,
+            desc: m.mapel,
+            progres: m.progres,
+            tuntas: m.tuntas,
+            total: m.total,
+          }));
 
     return { mapelProgress, cpBreakdown };
   }
@@ -662,6 +858,28 @@ interface StudentBrief {
 @Injectable()
 export class StudentAnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async resolveKktpCatalog(subjects: Iterable<string>, period: Period) {
+    const uniqueSubjects = [...new Set(subjects)].sort((a, b) => a.localeCompare(b));
+    const entries = await Promise.all(
+      uniqueSubjects.map(
+        async (subject) =>
+          [
+            subject,
+            await resolveKktpThreshold(this.prisma, {
+              subject,
+              academicYear: period.academicYear,
+              semester: period.semester,
+            }),
+          ] as const,
+      ),
+    );
+    return new Map<string, ResolvedKktp>(entries);
+  }
+
+  private kktpValue(catalog: Map<string, ResolvedKktp>, subject: string): number | null {
+    return catalog.get(subject)?.value ?? null;
+  }
 
   /** Resolve studentIds berdasarkan role (ownership check di service layer). */
   private async resolveStudentIds(query: StudentAnalyticsQuery, user: AuthUser): Promise<string[]> {
@@ -706,7 +924,8 @@ export class StudentAnalyticsService {
     return this.prisma.student.findMany({
       where: { id: { in: studentIds }, deletedAt: null },
       select: {
-        id: true, nis: true,
+        id: true,
+        nis: true,
         user: { select: { fullName: true } },
         class: { select: { name: true } },
       },
@@ -733,7 +952,10 @@ export class StudentAnalyticsService {
       _count: { _all: true },
     });
 
-    const statsMap = new Map<string, { hadir: number; izin: number; sakit: number; alpha: number; total: number }>();
+    const statsMap = new Map<
+      string,
+      { hadir: number; izin: number; sakit: number; alpha: number; total: number }
+    >();
     for (const g of grouped) {
       const cur = statsMap.get(g.studentId) ?? { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0 };
       cur.total += g._count._all;
@@ -775,7 +997,8 @@ export class StudentAnalyticsService {
     } else {
       const now = new Date();
       const y = now.getUTCFullYear();
-      academicYear = query.academicYear ?? (now.getUTCMonth() >= 6 ? `${y}/${y + 1}` : `${y - 1}/${y}`);
+      academicYear =
+        query.academicYear ?? (now.getUTCMonth() >= 6 ? `${y}/${y + 1}` : `${y - 1}/${y}`);
       semester = query.semester ?? 1;
     }
 
@@ -792,9 +1015,22 @@ export class StudentAnalyticsService {
         assignment: { select: { subject: true } },
       },
     });
+    const kktpCatalog = await this.resolveKktpCatalog(
+      grades.map((grade) => grade.assignment.subject),
+      {
+        academicYear,
+        semester,
+      },
+    );
 
     // Group by studentId → subject → type → scores[]
-    type CompArrays = { uh: number[]; praktik: number[]; sikap: number[]; uts: number[]; uas: number[] };
+    type CompArrays = {
+      uh: number[];
+      praktik: number[];
+      sikap: number[];
+      uts: number[];
+      uas: number[];
+    };
     const map = new Map<string, Map<string, CompArrays>>();
     for (const g of grades) {
       if (!map.has(g.studentId)) map.set(g.studentId, new Map());
@@ -826,6 +1062,7 @@ export class StudentAnalyticsService {
           uas: avg(comp.uas),
         };
         const na = naOf(naComponents);
+        const kktp = this.kktpValue(kktpCatalog, subject);
         return {
           subject,
           uh: naComponents.uh ?? null,
@@ -834,8 +1071,9 @@ export class StudentAnalyticsService {
           uts: naComponents.uts ?? null,
           uas: naComponents.uas ?? null,
           na,
-          kktp: KKM_DEFAULT,
-          status: na !== null ? (na >= KKM_DEFAULT ? 'tuntas' : 'remedial') : null,
+          kktp,
+          kktpProvenance: kktpCatalog.get(subject)?.provenance ?? 'unconfigured',
+          status: na !== null && kktp !== null ? (na >= kktp ? 'tuntas' : 'remedial') : null,
         };
       });
       return {
