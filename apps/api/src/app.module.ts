@@ -54,6 +54,10 @@ import { KktpConfigModule } from './kktp-config/kktp-config.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { AcademicPeriodModule } from './academic-period/academic-period.module';
 import { SemesterClosingModule } from './semester-closing/semester-closing.module';
+import { BellScheduleModule } from './bell-schedule/bell-schedule.module';
+import { DisplayDeviceModule } from './display-devices/display-device.module';
+import { ClassSessionModule } from './class-sessions/class-session.module';
+import { OperationalMonitoringModule } from './operational-monitoring/operational-monitoring.module';
 
 @Module({
   imports: [
@@ -104,6 +108,10 @@ import { SemesterClosingModule } from './semester-closing/semester-closing.modul
     AppointmentsModule,
     AcademicPeriodModule,
     SemesterClosingModule,
+    BellScheduleModule,
+    DisplayDeviceModule,
+    ClassSessionModule,
+    OperationalMonitoringModule,
   ],
   providers: [
     UserStatusService,

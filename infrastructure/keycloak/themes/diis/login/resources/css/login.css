@@ -1,253 +1,77 @@
-/*
- * DIIS Keycloak Login Theme — login.css
- *
- * Targets VERIFIED PatternFly 4 selectors from live production DOM.
- * Source: https://auth.smkdarussalamsubah.sch.id/realms/diis/ (saved 2026-07-14)
- *
- * Design tokens aligned with React auth page (globals.css [data-auth-theme="dark"]).
- * No external @import — system font stack only.
- *
- * DOM structure (verified):
- *   html.login-pf > body > div.login-pf-page
- *     ├── div#kc-header.login-pf-page-header > div#kc-header-wrapper
- *     └── div.card-pf
- *         ├── header.login-pf-header > h1#kc-page-title
- *         └── div#kc-content > div#kc-content-wrapper
- *             └── div#kc-form > div#kc-form-wrapper > form#kc-form-login
- *                 ├── input#username.pf-c-form-control
- *                 ├── input#password.pf-c-form-control
- *                 └── input#kc-login.pf-c-button.pf-m-primary.pf-m-block
- */
+/* DIIS Keycloak login theme. No external assets or font requests. */
+:root {
+  --diis-ink: #0f172a;
+  --diis-muted: #526072;
+  --diis-border: #cbd5e1;
+  --diis-canvas: #f8fafc;
+  --diis-brand: #064534;
+  --diis-brand-hover: #04372a;
+  --diis-focus: #1d4ed8;
+}
 
-/* ── Base: dark background ─────────────────────────────────────────────── */
 html.login-pf,
 html.login-pf body {
-  background: #060d1a;
+  background: var(--diis-canvas);
+  color: var(--diis-ink);
+  min-height: 100%;
 }
 
 .login-pf-page {
-  background: linear-gradient(180deg, #060d1a 0%, #0a1628 100%);
+  background: var(--diis-canvas);
   min-height: 100vh;
-  padding: 2rem 1rem;
+  padding: clamp(1.25rem, 5vh, 4rem) 1rem 2rem;
 }
 
-/* ── Header: DIIS branding ─────────────────────────────────────────────── */
 #kc-header-wrapper {
-  font-family: 'Fraunces', 'Georgia', 'Times New Roman', serif;
-  color: #e8eef5;
-  font-size: 1.5rem;
+  color: var(--diis-brand);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(1.4rem, 3vw, 1.9rem);
   font-weight: 700;
+  letter-spacing: 0;
+  padding: 0.75rem 0 1.5rem;
   text-align: center;
-  padding: 1.5rem 0;
-  text-shadow: 0 0 24px rgba(59, 130, 246, 0.3);
-  letter-spacing: -0.01em;
 }
 
-/* ── Card: glass-card effect ───────────────────────────────────────────── */
 .card-pf {
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.05),
-    0 8px 32px -8px rgba(0, 0, 0, 0.3);
-  max-width: 400px;
+  background: #ffffff;
+  border: 1px solid var(--diis-border);
+  border-radius: 8px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+  color: var(--diis-ink);
   margin: 0 auto;
-  padding: 2rem;
-  color: #e8eef5;
+  max-width: 420px;
+  padding: clamp(1.5rem, 4vw, 2.25rem);
+  position: relative;
 }
 
-/* ── Page title ────────────────────────────────────────────────────────── */
 #kc-page-title {
-  color: #e8eef5;
-  font-family: 'Fraunces', 'Georgia', 'Times New Roman', serif;
-  font-size: 1.25rem;
-  font-weight: 700;
-  margin-bottom: 1.5rem;
-  text-align: center;
+  color: var(--diis-ink);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  font-size: 1.35rem;
+  font-weight: 750;
+  letter-spacing: 0;
+  margin: 0 0 1.5rem;
+  text-align: left;
 }
 
-/* ── Form header ───────────────────────────────────────────────────────── */
 .login-pf-header {
   margin-bottom: 0.5rem;
 }
-
-/* ── Form labels ───────────────────────────────────────────────────────── */
-.pf-c-form__label {
-  color: #7a8ba0;
-  font-size: 0.875rem;
-  font-weight: 500;
-  margin-bottom: 0.375rem;
-}
-
-/* ── Form inputs ───────────────────────────────────────────────────────── */
-.pf-c-form-control {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #e8eef5;
-  border-radius: 8px;
-  padding: 0.625rem 0.75rem;
-  font-size: 0.875rem;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.pf-c-form-control::placeholder {
-  color: #4a5b70;
-}
-
-.pf-c-form-control:focus {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(59, 130, 246, 0.4);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-  outline: none;
-}
-
-/* ── Input group (password + toggle) ───────────────────────────────────── */
-.pf-c-input-group {
-  display: flex;
-  gap: 0;
-}
-
-.pf-c-input-group .pf-c-form-control {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-
-/* ── Password toggle button ────────────────────────────────────────────── */
-.pf-c-button.pf-m-control {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-left: none;
-  border-radius: 0 8px 8px 0;
-  color: #7a8ba0;
-  transition: color 0.2s;
-}
-
-.pf-c-button.pf-m-control:hover {
-  color: #e8eef5;
-  background: rgba(255, 255, 255, 0.1);
-}
-
-/* ── Primary button: gradient ──────────────────────────────────────────── */
-.pf-c-button.pf-m-primary {
-  background: linear-gradient(to right, #1d4ed8, #2563eb);
-  border: none;
-  border-radius: 12px;
-  color: #ffffff;
-  font-weight: 600;
-  font-size: 0.875rem;
-  letter-spacing: 0.025em;
-  padding: 0.75rem 1.5rem;
-  transition: all 0.2s;
-  width: 100%;
-}
-
-.pf-c-button.pf-m-primary:hover {
-  background: linear-gradient(to right, #2563eb, #1d4ed8);
-  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
-}
-
-.pf-c-button.pf-m-primary:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px #060d1a, 0 0 0 4px rgba(59, 130, 246, 0.5);
-}
-
-.pf-c-button.pf-m-primary:active {
-  transform: scale(0.98);
-}
-
-/* ── Form buttons container ────────────────────────────────────────────── */
-#kc-form-buttons {
-  margin-top: 1.5rem;
-}
-
-/* ── Links ─────────────────────────────────────────────────────────────── */
-#kc-form a,
-.login-pf-settings a {
-  color: #60a5fa;
-  font-size: 0.8125rem;
-  text-decoration: none;
-  transition: color 0.2s;
-}
-
-#kc-form a:hover,
-.login-pf-settings a:hover {
-  color: #93bbfd;
-  text-decoration: underline;
-}
-
-/* ── Locale dropdown ───────────────────────────────────────────────────── */
-#kc-locale {
-  text-align: right;
-  margin-bottom: 0.5rem;
-}
-
-#kc-locale button {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  color: #7a8ba0;
-  font-size: 0.75rem;
-  padding: 0.25rem 0.75rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-#kc-locale button:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #e8eef5;
-}
-
-/* ── Locale dropdown menu ──────────────────────────────────────────────── */
-.pf-c-dropdown__menu {
-  background: rgba(10, 22, 40, 0.95);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-}
-
-.pf-c-dropdown__menu-item {
-  color: #7a8ba0;
-  font-size: 0.8125rem;
-}
-
-.pf-c-dropdown__menu-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #e8eef5;
-}
-
-/* ── Error/alert messages ──────────────────────────────────────────────── */
-.pf-c-alert.pf-m-danger,
-.pf-c-alert.pf-m-warning {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  border-radius: 8px;
-  color: #fca5a5;
-  margin-bottom: 1rem;
-}
-
-.pf-c-alert.pf-m-warning {
-  background: rgba(245, 158, 11, 0.1);
-  border-color: rgba(245, 158, 11, 0.2);
-  color: #fcd34d;
-}
-
-/* ── Form group spacing ────────────────────────────────────────────────── */
 .form-group {
   margin-bottom: 1rem;
 }
 
-/* ── Responsive: mobile ────────────────────────────────────────────────── */
-/* Runtime QA fixes: login fields, locale menu, and first-login password help. */
-.card-pf {
-  position: relative;
-}
-
-#kc-page-title {
-  position: relative;
-  z-index: 1;
+.pf-c-form__label,
+label {
+  color: #334155;
+  font-size: 0.875rem;
+  font-weight: 650;
+  margin-bottom: 0.4rem;
 }
 
 .pf-c-form-control,
@@ -259,82 +83,111 @@ input[type='password'].pf-c-form-control,
 #password,
 #password-new,
 #password-confirm {
-  background-color: rgba(15, 23, 42, 0.88) !important;
+  background: #ffffff !important;
   background-image: none !important;
-  border-color: rgba(148, 163, 184, 0.28) !important;
+  border: 1px solid #94a3b8 !important;
+  border-radius: 6px;
   box-shadow: none !important;
-  color: #f8fafc !important;
-  -webkit-text-fill-color: #f8fafc !important;
-  caret-color: #38bdf8;
+  caret-color: var(--diis-focus);
+  color: var(--diis-ink) !important;
+  font-size: 1rem;
+  min-height: 46px;
+  padding: 0.7rem 0.8rem;
+  -webkit-text-fill-color: var(--diis-ink) !important;
 }
 
 .pf-c-form-control::placeholder {
-  color: #94a3b8;
-  -webkit-text-fill-color: #94a3b8;
+  color: #64748b;
+  -webkit-text-fill-color: #64748b;
 }
 
 .pf-c-form-control:focus,
 input.pf-c-form-control:focus {
-  background-color: rgba(15, 23, 42, 0.94) !important;
-  border-color: rgba(56, 189, 248, 0.64) !important;
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.24) !important;
+  border-color: var(--diis-focus) !important;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.18) !important;
   outline: none;
 }
 
 input.pf-c-form-control:-webkit-autofill,
 input.pf-c-form-control:-webkit-autofill:hover,
 input.pf-c-form-control:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0 1000px rgba(15, 23, 42, 0.96) inset !important;
-  -webkit-text-fill-color: #f8fafc !important;
-  caret-color: #38bdf8;
-  transition: background-color 9999s ease-out;
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  -webkit-text-fill-color: var(--diis-ink) !important;
+  caret-color: var(--diis-focus);
 }
 
 .pf-c-input-group {
+  display: flex;
   width: 100%;
 }
-
 .pf-c-input-group .pf-c-form-control {
+  border-bottom-right-radius: 0;
+  border-top-right-radius: 0;
   flex: 1 1 auto;
   min-width: 0;
 }
 
 .pf-c-button.pf-m-control {
-  background: rgba(15, 23, 42, 0.88) !important;
-  border-color: rgba(148, 163, 184, 0.28) !important;
-  border-left: none !important;
-  color: #cbd5e1 !important;
+  background: #ffffff !important;
+  border: 1px solid #94a3b8 !important;
+  border-left: 0 !important;
+  border-radius: 0 6px 6px 0;
+  color: #475569 !important;
   flex: 0 0 3.25rem;
+  min-height: 46px;
 }
 
 .pf-c-button.pf-m-control:hover {
-  background: rgba(30, 41, 59, 0.96) !important;
-  color: #f8fafc !important;
+  background: #f1f5f9 !important;
+  color: var(--diis-ink) !important;
 }
-
 .pf-c-button.pf-m-control:focus {
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35);
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.18);
   outline: none;
 }
 
-.form-group:has(#password-new)::after {
-  background: rgba(14, 165, 233, 0.1);
-  border: 1px solid rgba(125, 211, 252, 0.24);
-  border-radius: 10px;
-  color: #bae6fd;
-  content: 'Minimal 8 karakter: huruf besar, huruf kecil, angka, simbol, dan tidak sama dengan username.';
-  display: block;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  margin-top: 0.625rem;
-  padding: 0.625rem 0.75rem;
+#kc-form-buttons {
+  margin-top: 1.5rem;
+}
+.pf-c-button.pf-m-primary {
+  background: var(--diis-brand);
+  border: 0;
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  min-height: 46px;
+  padding: 0.75rem 1.25rem;
+  width: 100%;
+}
+
+.pf-c-button.pf-m-primary:hover {
+  background: var(--diis-brand-hover);
+}
+.pf-c-button.pf-m-primary:focus {
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.28);
+  outline: none;
+}
+
+#kc-form a,
+.login-pf-settings a {
+  color: #1d4ed8;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+#kc-form a:hover,
+.login-pf-settings a:hover {
+  color: #1e3a8a;
+  text-decoration: underline;
 }
 
 #kc-locale {
   display: flex;
   justify-content: flex-end;
+  margin-bottom: 0.75rem;
   position: relative;
-  text-align: right;
   z-index: 4;
 }
 
@@ -345,17 +198,32 @@ input.pf-c-form-control:-webkit-autofill:focus {
   position: relative;
 }
 
+#kc-locale button {
+  background: #ffffff;
+  border: 1px solid var(--diis-border);
+  border-radius: 6px;
+  color: #334155;
+  cursor: pointer;
+  font-size: 0.8rem;
+  min-height: 44px;
+  padding: 0.5rem 0.8rem;
+}
+
+#kc-locale button:hover {
+  background: #f1f5f9;
+  color: var(--diis-ink);
+}
+
 #kc-locale-dropdown ul,
 .pf-c-dropdown__menu {
-  background: rgba(10, 22, 40, 0.97);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 10px;
-  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.34);
+  background: #ffffff;
+  border: 1px solid var(--diis-border);
+  border-radius: 6px;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14);
   left: auto;
   list-style: none;
-  margin: 0.5rem 0 0;
-  min-width: 8rem;
+  margin: 0.4rem 0 0;
+  min-width: 9rem;
   padding: 0.35rem;
   position: absolute;
   right: 0;
@@ -364,17 +232,12 @@ input.pf-c-form-control:-webkit-autofill:focus {
   z-index: 20;
 }
 
-#kc-locale-dropdown li {
-  margin: 0;
-}
-
 #kc-locale-dropdown a,
 .pf-c-dropdown__menu-item {
-  border-radius: 6px;
-  color: #cbd5e1;
+  border-radius: 4px;
+  color: #334155;
   display: block;
-  font-size: 0.8125rem;
-  padding: 0.45rem 0.65rem;
+  padding: 0.55rem 0.65rem;
   text-align: left;
   text-decoration: none;
   white-space: nowrap;
@@ -382,33 +245,53 @@ input.pf-c-form-control:-webkit-autofill:focus {
 
 #kc-locale-dropdown a:hover,
 .pf-c-dropdown__menu-item:hover {
-  background: rgba(96, 165, 250, 0.12);
-  color: #f8fafc;
+  background: #ecfdf5;
+  color: var(--diis-brand);
+}
+
+.pf-c-alert.pf-m-danger,
+.pf-c-alert.pf-m-warning {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #991b1b;
+  margin-bottom: 1rem;
+}
+
+.pf-c-alert.pf-m-warning {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.form-group:has(#password-new)::after {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  color: #1e3a8a;
+  content: 'Minimal 8 karakter: huruf besar, huruf kecil, angka, simbol, dan tidak sama dengan username.';
+  display: block;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin-top: 0.625rem;
+  padding: 0.65rem 0.75rem;
 }
 
 @media (max-width: 480px) {
   .login-pf-page {
     padding: 1rem;
   }
-
   .card-pf {
+    box-shadow: none;
     margin: 0;
-    padding: 1.5rem;
-    border-radius: 12px;
+    padding: 1.35rem;
   }
-
-  #kc-header-wrapper {
-    font-size: 1.25rem;
-  }
-
   #kc-page-title {
-    font-size: 1.125rem;
+    font-size: 1.2rem;
   }
 }
 
-/* ── Reduced motion: accessibility ─────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  .card-pf,
   .pf-c-button,
   .pf-c-form-control {
     transition: none !important;

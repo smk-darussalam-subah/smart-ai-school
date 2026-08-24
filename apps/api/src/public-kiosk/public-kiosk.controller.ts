@@ -16,10 +16,8 @@ export class PublicKioskController {
   @Header('Cache-Control', 'no-store')
   @Header('Referrer-Policy', 'no-referrer')
   @Header('X-Robots-Tag', 'noindex, nofollow')
-  kiosk(
-    @Headers('x-diis-kiosk-token') headerToken?: string,
-  ) {
-    if (!headerToken) throw new BadRequestException('x-diis-kiosk-token wajib');
-    return this.service.getKiosk(headerToken);
+  kiosk(@Headers('x-diis-kiosk-token') legacyToken?: string) {
+    if (!legacyToken) throw new BadRequestException('Link display lama telah dinonaktifkan. Gunakan pairing Display Sekolah.');
+    return this.service.getKiosk(legacyToken);
   }
 }

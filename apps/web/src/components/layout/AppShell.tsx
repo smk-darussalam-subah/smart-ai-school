@@ -12,6 +12,7 @@ import { Sidebar } from './Sidebar';
 import MobileNav from './MobileNav';
 import TopBar from './TopBar';
 import ViewAsBanner from './ViewAsBanner';
+import { visiblePositionRoles } from '@/lib/sidebar-position-roles';
 
 interface Props {
   viewAs: string | null;
@@ -24,6 +25,7 @@ interface Props {
 
 export default function AppShell({ viewAs, permissions, permError, hideChrome, positionRoles = [], children }: Props) {
   const [collapsed, setCollapsed] = useState(false);
+  const effectivePositionRoles = visiblePositionRoles(viewAs, [], positionRoles);
 
   // SISWA & ORANG_TUA dashboards are self-contained mobile-first apps with
   // native bottom navigation. Skip all AppShell chrome and render children directly.
@@ -32,9 +34,15 @@ export default function AppShell({ viewAs, permissions, permError, hideChrome, p
   }
 
   return (
-    <div className="flex flex-col md:flex-row h-full min-h-screen">
+    <div className="flex min-h-screen flex-col md:flex-row">
+      <a
+        href="#main-content"
+        className="fixed left-3 top-3 z-[100] -translate-y-20 rounded-lg bg-slate-950 px-4 py-3 text-sm font-semibold text-white focus:translate-y-0"
+      >
+        Lewati ke konten utama
+      </a>
       {/* Mobile: top bar + drawer (komponen sudah md:hidden) */}
-      <MobileNav viewAs={viewAs} permissions={permissions} permError={permError} positionRoles={positionRoles} />
+      <MobileNav viewAs={viewAs} permissions={permissions} permError={permError} positionRoles={effectivePositionRoles} />
 
       {/* Desktop sidebar — disembunyikan ke kiri saat collapsed */}
       <div
@@ -44,14 +52,14 @@ export default function AppShell({ viewAs, permissions, permError, hideChrome, p
         )}
         aria-hidden={collapsed}
       >
-        <Sidebar viewAs={viewAs} permissions={permissions} permError={permError} positionRoles={positionRoles} />
+        <Sidebar viewAs={viewAs} permissions={permissions} permError={permError} positionRoles={effectivePositionRoles} />
       </div>
 
       {/* Konten */}
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar onToggleSidebar={() => setCollapsed((c) => !c)} />
+        <TopBar viewAs={viewAs} positionRoles={effectivePositionRoles} onToggleSidebar={() => setCollapsed((c) => !c)} />
         {viewAs && <ViewAsBanner viewAs={viewAs} />}
-        <main className="flex-1 overflow-auto bg-gray-50">
+        <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto bg-gray-50 outline-none">
           <div className="p-4 md:p-6">{children}</div>
         </main>
       </div>
