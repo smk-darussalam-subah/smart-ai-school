@@ -20,7 +20,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LogAdapter } from '../notification/adapters/log.adapter';
 import { FonnteAdapter } from '../notification/adapters/fonnte.adapter';
 import { buildNotificationQueueOptions, resolveNotificationQueuePrefix } from '../notification/queue.config';
-import { buildNotificationWorkerOptions } from '../notification/notification-worker';
+import {
+  buildNotificationWorkerOptions,
+  resolvePendingNotificationIntent,
+} from '../notification/notification-worker';
 
 const STALE = new Date('2026-06-01T07:50:00.000Z');
 
@@ -196,6 +199,43 @@ describe('NotificationService (BullMQ)', () => {
   it('onModuleInit: DB error → fail-soft (tidak throw)', async () => {
     prisma.notificationLog.findMany.mockRejectedValueOnce(new Error('DB down'));
     await expect(service.onModuleInit()).resolves.not.toThrow();
+  });
+});
+
+describe('Notification worker authoritative intent', () => {
+  it('skips a stale queued job after its durable intent is no longer pending', async () => {
+    const prisma = {
+      notificationLog: {
+        findUnique: jest.fn().mockResolvedValue({
+          status: 'failed',
+          channel: 'push',
+          recipient: 'old-teacher',
+          body: 'stale',
+          subject: null,
+        }),
+      },
+    };
+    await expect(resolvePendingNotificationIntent(
+      prisma as unknown as PrismaService,
+      'stale-job',
+    )).resolves.toBeNull();
+  });
+
+  it('uses the current pending row instead of stale payload fields from BullMQ', async () => {
+    const authoritative = {
+      status: 'pending',
+      channel: 'push',
+      recipient: 'replacement-teacher',
+      body: 'current',
+      subject: 'Konfirmasi sesi',
+    };
+    const prisma = {
+      notificationLog: { findUnique: jest.fn().mockResolvedValue(authoritative) },
+    };
+    await expect(resolvePendingNotificationIntent(
+      prisma as unknown as PrismaService,
+      'current-job',
+    )).resolves.toEqual(authoritative);
   });
 });
 

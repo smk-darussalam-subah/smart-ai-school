@@ -13,8 +13,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { AuthUser } from '@smk/auth';
-import { AnalyticsService } from '../analytics/analytics.service';
-import { StudentAnalyticsService } from '../analytics/analytics.service';
+import {
+  AnalyticsService,
+  StudentAnalyticsService,
+  databaseDateRange,
+  jakartaDateKey,
+} from '../analytics/analytics.service';
 import { AnalyticsController } from '../analytics/analytics.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { SchoolConfigService } from '../school-config/school-config.service';
@@ -31,6 +35,15 @@ import {
 
 // ── Math murni ─────────────────────────────────────────────────────────────
 describe('analytics.math', () => {
+  it('uses the Jakarta calendar date across the midnight boundary', () => {
+    expect(jakartaDateKey(new Date('2026-08-23T16:59:59.999Z'))).toBe('2026-08-23');
+    expect(jakartaDateKey(new Date('2026-08-23T17:00:00.000Z'))).toBe('2026-08-24');
+    expect(databaseDateRange('2026-08-24')).toEqual({
+      gte: new Date('2026-08-24T00:00:00.000Z'),
+      lt: new Date('2026-08-25T00:00:00.000Z'),
+    });
+  });
+
   it('mean & median', () => {
     expect(mean([2, 4, 6])).toBe(4);
     expect(median([1, 2, 3, 4])).toBe(2.5);
@@ -97,11 +110,14 @@ function buildPrisma() {
     teacher: { count: jest.fn() },
     teacherAttendance: { count: jest.fn() },
     rpp: { groupBy: jest.fn() },
+    kktpConfig: { findUnique: jest.fn().mockResolvedValue(null) },
   };
 }
 
 const schoolMock = {
-  getActiveSemester: jest.fn().mockResolvedValue({ number: 1, academicYear: { code: '2025/2026' } }),
+  getActiveSemester: jest
+    .fn()
+    .mockResolvedValue({ number: 1, academicYear: { code: '2025/2026' } }),
   getActiveAcademicYear: jest.fn().mockResolvedValue({
     startDate: new Date('2025-07-01'),
     endDate: new Date('2026-06-30'),
@@ -128,6 +144,9 @@ describe('AnalyticsService', () => {
   // ── grades ────────────────────────────────────────────────────────────────
   describe('grades', () => {
     it('agregasi distribusi + matriks KKM + korelasi', async () => {
+      prisma.kktpConfig.findUnique.mockImplementation(async ({ where }) => ({
+        kktp: where.subject_academicYear_semester.subject === 'Matematika' ? 80 : 70,
+      }));
       prisma.grade.findMany.mockResolvedValue([
         { score: '80', assignment: { subject: 'Matematika', class: { majorCode: 'TKRO' } } },
         { score: '60', assignment: { subject: 'Matematika', class: { majorCode: 'TKRO' } } },
@@ -150,13 +169,20 @@ describe('AnalyticsService', () => {
 
       const res = await service.grades({});
 
-      expect(res.filters.kkm).toBe(75);
+      expect(res.filters.kkm).toBeNull();
+      expect(res.filters.thresholdMode).toBe('authoritative_per_subject');
       expect(res.overall.count).toBe(4);
       // 80,90,75 ≥75 → 3 dari 4 = 75%
       expect(res.overall.kkmPassRate).toBe(75);
       expect(res.byMajor.map((m) => m.majorCode).sort()).toEqual(['AKL', 'TKRO']);
       expect(res.kkmMatrix.majors).toContain('TKRO');
       expect(res.kkmMatrix.subjects).toContain('Matematika');
+      expect(res.kktpCatalog).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ subject: 'Matematika', value: 80, provenance: 'config' }),
+          expect.objectContaining({ subject: 'B.Indonesia', value: 70, provenance: 'config' }),
+        ]),
+      );
       // korelasi positif kuat
       expect(res.correlation.n).toBe(3);
       expect(res.correlation.r).toBeGreaterThan(0.9);
@@ -333,12 +359,25 @@ function buildStudentPrisma() {
     class: { findMany: jest.fn() },
     attendance: { groupBy: jest.fn() },
     grade: { findMany: jest.fn() },
+    kktpConfig: { findUnique: jest.fn().mockResolvedValue(null) },
   };
 }
 
-const SA_USER: AuthUser = { keycloakId: 'kc-sa', username: 'admin', roles: ['SUPER_ADMIN'] } as AuthUser;
-const SISWA_USER: AuthUser = { keycloakId: 'kc-siswa', username: 'siswa1', roles: ['SISWA'] } as AuthUser;
-const ORTU_USER: AuthUser = { keycloakId: 'kc-ortu', username: 'ortu1', roles: ['ORANG_TUA'] } as AuthUser;
+const SA_USER: AuthUser = {
+  keycloakId: 'kc-sa',
+  username: 'admin',
+  roles: ['SUPER_ADMIN'],
+} as AuthUser;
+const SISWA_USER: AuthUser = {
+  keycloakId: 'kc-siswa',
+  username: 'siswa1',
+  roles: ['SISWA'],
+} as AuthUser;
+const ORTU_USER: AuthUser = {
+  keycloakId: 'kc-ortu',
+  username: 'ortu1',
+  roles: ['ORANG_TUA'],
+} as AuthUser;
 
 describe('StudentAnalyticsService', () => {
   let service: StudentAnalyticsService;
@@ -346,11 +385,19 @@ describe('StudentAnalyticsService', () => {
 
   beforeEach(async () => {
     prisma = buildStudentPrisma();
-    [prisma.user.findUnique, prisma.student.findMany, prisma.student.findUnique,
-     prisma.teacher.findUnique, prisma.teachingAssignment.findMany,
-     prisma.class.findMany, prisma.attendance.groupBy, prisma.grade.findMany]
-      .forEach((m) => m.mockReset());
+    [
+      prisma.user.findUnique,
+      prisma.student.findMany,
+      prisma.student.findUnique,
+      prisma.teacher.findUnique,
+      prisma.teachingAssignment.findMany,
+      prisma.class.findMany,
+      prisma.attendance.groupBy,
+      prisma.grade.findMany,
+      prisma.kktpConfig.findUnique,
+    ].forEach((m) => m.mockReset());
     prisma.class.findMany.mockResolvedValue([]);
+    prisma.kktpConfig.findUnique.mockResolvedValue(null);
     const module: TestingModule = await Test.createTestingModule({
       providers: [StudentAnalyticsService, { provide: PrismaService, useValue: prisma }],
     }).compile();
@@ -430,6 +477,8 @@ describe('StudentAnalyticsService', () => {
     expect(subj.uh).toBe(83);
     expect(subj.na).toBe(86);
     expect(subj.status).toBe('tuntas');
+    expect(subj.kktp).toBe(75);
+    expect(subj.kktpProvenance).toBe('system_default');
   });
 
   it('NA dengan komponen parsial → renormalisasi', async () => {

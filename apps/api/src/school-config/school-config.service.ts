@@ -1,5 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { randomBytes } from 'crypto';
+import { BadRequestException, ConflictException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AppointmentsService } from '../appointments/appointments.service';
@@ -36,23 +35,16 @@ export class SchoolConfigService {
 
   // ═══ Kiosk link (token publik Ruang Guru) ══════════════════════════════════
   async getKioskToken() {
-    const profile = await this.prisma.schoolProfile.findFirst({ select: { kioskToken: true } });
-    return { token: profile?.kioskToken ?? null };
+    throw new GoneException('Manajemen link kiosk lama telah dinonaktifkan. Gunakan pairing Display Sekolah.');
   }
 
   async regenerateKioskToken() {
-    const profile = await this.prisma.schoolProfile.findFirst({ select: { id: true } });
-    if (!profile) throw new NotFoundException('School profile belum dikonfigurasi');
-    const token = randomBytes(24).toString('base64url'); // ~32 char URL-safe, sulit ditebak
-    await this.prisma.schoolProfile.update({ where: { id: profile.id }, data: { kioskToken: token } });
-    this.profileCache = null;
-    return { token };
+    throw new GoneException('Regenerasi link kiosk lama telah dinonaktifkan. Gunakan pairing Display Sekolah.');
   }
 
   async validateKioskToken(token: string): Promise<boolean> {
-    if (!token || token.length < 16) return false;
-    const profile = await this.prisma.schoolProfile.findFirst({ select: { kioskToken: true } });
-    return !!profile?.kioskToken && profile.kioskToken === token;
+    void token;
+    return false;
   }
 
   async updateProfile(data: Record<string, unknown>) {

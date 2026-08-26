@@ -105,7 +105,7 @@ describe('middleware — static interactive pages get unsafe-inline (N21a)', () 
     return csp.split(';').find(d => d.trim().startsWith('script-src')) ?? '';
   }
 
-  it.each(['/login', '/health', '/', '/jurusan/tkro'])(
+  it.each(['/login', '/health', '/', '/jurusan/tkro', '/display/pair', '/display/room'])(
     '%s (static) script-src gets unsafe-inline, no nonce, no strict-dynamic',
     async (path) => {
       await middleware(makeRequest(path));

@@ -6,46 +6,40 @@
 // =============================================================================
 
 import { useSession } from 'next-auth/react';
-import { useState } from 'react';
-import { PanelLeft, Maximize, LogOut } from 'lucide-react';
+import React from 'react';
+import { PanelLeft, LogOut } from 'lucide-react';
+import { identityRoleLabel, positionRoleLabel } from '@/lib/display-shell';
 
 function initials(name?: string | null): string {
   if (!name) return 'U';
   return name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 }
 
-export default function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
+export default function TopBar({ viewAs = null, onToggleSidebar, positionRoles = [] }: { viewAs?: string | null; onToggleSidebar: () => void; positionRoles?: string[] }) {
   const { data: session } = useSession();
-  const [fs, setFs] = useState(false);
-
-  const toggleFullscreen = () => {
-    const el = document.documentElement;
-    if (!document.fullscreenElement) {
-      el.requestFullscreen?.().then(() => setFs(true)).catch(() => {});
-    } else {
-      document.exitFullscreen?.().then(() => setFs(false)).catch(() => {});
-    }
-  };
+  const identity = identityRoleLabel(viewAs ?? ((session?.roles as string[] | undefined) ?? [])[0] ?? '');
+  const appointment = positionRoles[0] ? positionRoleLabel(positionRoles[0]) : null;
 
   return (
     <header className="hidden md:flex h-16 shrink-0 items-center justify-between px-6 bg-white/85 backdrop-blur border-b border-emerald-900/10 sticky top-0 z-30">
-      <button
-        onClick={onToggleSidebar}
-        aria-label="Sembunyikan / tampilkan menu"
-        className="w-9 h-9 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500"
-      >
-        <PanelLeft className="w-5 h-5" />
-      </button>
+      <div className="flex min-w-0 items-center gap-3">
+        <button
+          type="button"
+          onClick={onToggleSidebar}
+          aria-label="Sembunyikan atau tampilkan menu"
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700"
+        >
+          <PanelLeft className="h-5 w-5" aria-hidden="true" />
+        </button>
+        <div className="min-w-0">
+          <p className="truncate text-xs font-semibold uppercase text-slate-500">{viewAs ? 'Mode tinjau' : 'Konteks aktif'}</p>
+          <p className="truncate text-sm font-medium text-slate-800">
+            {identity}{appointment ? ` · ${appointment}` : ''}
+          </p>
+        </div>
+      </div>
 
       <div className="flex items-center gap-3">
-        <button
-          onClick={toggleFullscreen}
-          className="flex items-center gap-1.5 text-xs font-medium px-3 h-9 rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors"
-        >
-          <Maximize className="w-4 h-4" />
-          {fs ? 'Keluar Layar Penuh' : 'Mode Ruang Guru'}
-        </button>
-        <div className="h-6 w-px bg-gray-200" />
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-700 text-xs font-semibold">
             {initials(session?.user?.name)}
@@ -56,7 +50,7 @@ export default function TopBar({ onToggleSidebar }: { onToggleSidebar: () => voi
           <button
             onClick={() => { window.location.href = '/api/auth/federated-logout'; }}
             aria-label="Keluar"
-            className="ml-1 w-9 h-9 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 flex items-center justify-center transition-colors"
+            className="ml-1 flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700"
           >
             <LogOut className="w-4 h-4" />
           </button>

@@ -395,6 +395,7 @@ services:
       KEYCLOAK_ISSUER: https://auth.smkdarussalamsubah.sch.id/realms/diis
       KEYCLOAK_CLIENT_ID: diis-api
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_API_CLIENT_SECRET}
+      WEB_URL: https://smkdarussalamsubah.sch.id
       OLLAMA_URL: http://ollama:11434
       OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen2.5:1.5b}
       OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}

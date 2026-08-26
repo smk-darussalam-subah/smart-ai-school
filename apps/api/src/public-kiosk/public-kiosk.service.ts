@@ -31,7 +31,7 @@ export class PublicKioskService {
 
   async getKiosk(token: string) {
     if (!(await this.school.validateKioskToken(token))) {
-      throw new ForbiddenException('Token tidak valid');
+      throw new ForbiddenException('Link display lama telah dinonaktifkan. Gunakan pairing Display Sekolah.');
     }
 
     const wib = new Date(Date.now() + 7 * 60 * 60 * 1000);
