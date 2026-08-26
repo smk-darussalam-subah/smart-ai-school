@@ -1,4 +1,6 @@
 import {
+  canBecomeAudibleLeader,
+  displayCredentialActionLabel,
   filterMonitoringSessions,
   formatMonitoringTime,
   hasMonitoringReaderRole,
@@ -57,7 +59,14 @@ describe('Wave 8.5 operational monitoring contract', () => {
       generatedAt: '2026-08-24T02:00:00.000Z',
       currentSegment: 'JP 2',
       sessions: [SESSION],
-      alerts: [{ id: '123e4567-e89b-42d3-a456-426614174000', eventKey: 'evt-1', className: 'X AKL 1', stage: 'ROOM_T10' }],
+      alerts: [
+        {
+          id: '123e4567-e89b-42d3-a456-426614174000',
+          eventKey: 'evt-1',
+          className: 'X AKL 1',
+          stage: 'ROOM_T10',
+        },
+      ],
     });
     expect(result?.summary.missed).toBe(1);
     expect(result?.summary.attention).toBe(1);
@@ -65,20 +74,70 @@ describe('Wave 8.5 operational monitoring contract', () => {
   });
 
   it('filters by query, status, and attention without broadening the result', () => {
-    const snapshot = normalizeMonitoringSnapshot({ generatedAt: '2026-08-24T02:00:00.000Z', sessions: [SESSION] });
-    expect(filterMonitoringSessions(snapshot?.sessions ?? [], { query: 'akuntansi', status: 'MISSED', attentionOnly: true })).toHaveLength(1);
-    expect(filterMonitoringSessions(snapshot?.sessions ?? [], { query: 'tkj', status: 'ALL', attentionOnly: false })).toHaveLength(0);
-    expect(filterMonitoringSessions(snapshot?.sessions ?? [], { query: '', status: 'STARTED', attentionOnly: false })).toHaveLength(0);
+    const snapshot = normalizeMonitoringSnapshot({
+      generatedAt: '2026-08-24T02:00:00.000Z',
+      sessions: [SESSION],
+    });
+    expect(
+      filterMonitoringSessions(snapshot?.sessions ?? [], {
+        query: 'akuntansi',
+        status: 'MISSED',
+        attentionOnly: true,
+      }),
+    ).toHaveLength(1);
+    expect(
+      filterMonitoringSessions(snapshot?.sessions ?? [], {
+        query: 'tkj',
+        status: 'ALL',
+        attentionOnly: false,
+      }),
+    ).toHaveLength(0);
+    expect(
+      filterMonitoringSessions(snapshot?.sessions ?? [], {
+        query: '',
+        status: 'STARTED',
+        attentionOnly: false,
+      }),
+    ).toHaveLength(0);
   });
 
   it('accepts only known display profiles and lifecycle states', () => {
-    const devices = normalizeMonitoringDevices({ data: [
-      { id: 'device-1', label: 'TV Guru', profile: 'RUANG_GURU', status: 'ACTIVE', isAudibleLeader: true },
-      { id: 'device-3', label: 'TV Lama', profile: 'RUANG_TU', status: 'EXPIRED' },
-      { id: 'device-2', label: 'Unknown', profile: 'LOBBY', status: 'ACTIVE' },
-    ] });
+    const devices = normalizeMonitoringDevices({
+      data: [
+        {
+          id: 'device-1',
+          label: 'TV Guru',
+          profile: 'RUANG_GURU',
+          status: 'ACTIVE',
+          isAudibleLeader: true,
+        },
+        { id: 'device-3', label: 'TV Lama', profile: 'RUANG_TU', status: 'EXPIRED' },
+        { id: 'device-2', label: 'Unknown', profile: 'LOBBY', status: 'ACTIVE' },
+      ],
+    });
     expect(devices).toHaveLength(2);
-    expect(devices[0]).toMatchObject({ label: 'TV Guru', profile: 'RUANG_GURU', audibleLeader: true });
+    expect(devices[0]).toMatchObject({
+      label: 'TV Guru',
+      profile: 'RUANG_GURU',
+      audibleLeader: true,
+    });
     expect(devices[1]).toMatchObject({ label: 'TV Lama', status: 'EXPIRED' });
+  });
+
+  it('uses explicit credential copy and exposes audio-leader promotion only when eligible', () => {
+    const activeFollower = {
+      id: 'device-1',
+      label: 'TV Guru',
+      profile: 'RUANG_GURU' as const,
+      status: 'ACTIVE' as const,
+      audibleLeader: false,
+      lastSeenAt: null,
+      expiresAt: null,
+    };
+    expect(displayCredentialActionLabel('ACTIVE')).toBe('Ganti kode pairing');
+    expect(displayCredentialActionLabel('EXPIRED')).toBe('Pulihkan pairing');
+    expect(canBecomeAudibleLeader(activeFollower)).toBe(true);
+    expect(canBecomeAudibleLeader({ ...activeFollower, audibleLeader: true })).toBe(false);
+    expect(canBecomeAudibleLeader({ ...activeFollower, profile: 'RUANG_TU' })).toBe(false);
   });
 });

@@ -28,18 +28,14 @@ export interface MonitoringSnapshot {
 
 type RecordValue = Record<string, unknown>;
 
-const MONITORING_READER_ROLES = new Set([
-  'SUPER_ADMIN',
-  'TATA_USAHA',
-  'KEPALA_SEKOLAH',
-]);
+const MONITORING_READER_ROLES = new Set(['SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_SEKOLAH']);
 
 export function hasMonitoringReaderRole(roles: readonly string[]): boolean {
   return roles.some((role) => MONITORING_READER_ROLES.has(role));
 }
 
 function record(value: unknown): RecordValue {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : {};
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as RecordValue) : {};
 }
 
 function array(value: unknown): unknown[] {
@@ -86,11 +82,13 @@ export function normalizeMonitoringSnapshot(input: unknown): MonitoringSnapshot 
   const alerts = normalizeAlertList(payload.alerts);
   const supplied = record(payload.summary);
   const counters = record(payload.counters);
-  const statusCount = (status: DisplaySession['status']) => sessions.filter((item) => item.status === status).length;
+  const statusCount = (status: DisplaySession['status']) =>
+    sessions.filter((item) => item.status === status).length;
   return {
     generatedAt,
     staleAfterSeconds: Math.min(300, Math.max(30, count(payload.staleAfterSeconds) || 75)),
-    currentSegment: text(payload.currentSegment) || text(record(payload.schoolDay).currentSegment) || null,
+    currentSegment:
+      text(payload.currentSegment) || text(record(payload.schoolDay).currentSegment) || null,
     sessions,
     alerts,
     summary: {
@@ -98,7 +96,10 @@ export function normalizeMonitoringSnapshot(input: unknown): MonitoringSnapshot 
       started: count(supplied.started) || count(counters.STARTED) || statusCount('STARTED'),
       completed: count(supplied.completed) || count(counters.COMPLETED) || statusCount('COMPLETED'),
       missed: count(supplied.missed) || count(counters.MISSED) || statusCount('MISSED'),
-      attention: count(supplied.attention) || count(payload.activeAlerts) || alerts.filter((item) => !item.acknowledged).length,
+      attention:
+        count(supplied.attention) ||
+        count(payload.activeAlerts) ||
+        alerts.filter((item) => !item.acknowledged).length,
     },
   };
 }
@@ -109,8 +110,13 @@ function normalizeDevice(value: unknown): MonitoringDevice | null {
   const label = text(source.label);
   const profile = source.profile;
   const status = source.status;
-  if (!id || !label || (profile !== 'RUANG_GURU' && profile !== 'RUANG_TU')
-    || (status !== 'PENDING' && status !== 'ACTIVE' && status !== 'EXPIRED' && status !== 'REVOKED')) return null;
+  if (
+    !id ||
+    !label ||
+    (profile !== 'RUANG_GURU' && profile !== 'RUANG_TU') ||
+    (status !== 'PENDING' && status !== 'ACTIVE' && status !== 'EXPIRED' && status !== 'REVOKED')
+  )
+    return null;
   return {
     id,
     label,
@@ -124,8 +130,20 @@ function normalizeDevice(value: unknown): MonitoringDevice | null {
 
 export function normalizeMonitoringDevices(input: unknown): MonitoringDevice[] {
   const source = record(input);
-  const values = Array.isArray(input) ? input : array(source.data).length ? array(source.data) : array(source.devices);
+  const values = Array.isArray(input)
+    ? input
+    : array(source.data).length
+      ? array(source.data)
+      : array(source.devices);
   return values.map(normalizeDevice).filter((item): item is MonitoringDevice => item !== null);
+}
+
+export function displayCredentialActionLabel(status: MonitoringDevice['status']): string {
+  return status === 'EXPIRED' ? 'Pulihkan pairing' : 'Ganti kode pairing';
+}
+
+export function canBecomeAudibleLeader(device: MonitoringDevice): boolean {
+  return device.profile === 'RUANG_GURU' && device.status === 'ACTIVE' && !device.audibleLeader;
 }
 
 export interface MonitoringFilters {
@@ -158,11 +176,19 @@ export function restoreMonitoringDialogFocus(target: { focus: () => void } | nul
   target?.focus();
 }
 
-export function filterMonitoringSessions(sessions: DisplaySession[], filters: MonitoringFilters): DisplaySession[] {
+export function filterMonitoringSessions(
+  sessions: DisplaySession[],
+  filters: MonitoringFilters,
+): DisplaySession[] {
   const query = filters.query.trim().toLocaleLowerCase('id-ID');
   return sessions.filter((session) => {
     if (filters.status !== 'ALL' && session.status !== filters.status) return false;
-    if (filters.attentionOnly && session.status !== 'MISSED' && !(session.lateByMinutes && session.lateByMinutes > 0)) return false;
+    if (
+      filters.attentionOnly &&
+      session.status !== 'MISSED' &&
+      !(session.lateByMinutes && session.lateByMinutes > 0)
+    )
+      return false;
     if (!query) return true;
     return [session.className, session.subject, session.room, session.teacherName]
       .filter(Boolean)
