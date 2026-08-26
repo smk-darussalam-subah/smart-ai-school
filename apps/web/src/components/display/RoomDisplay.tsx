@@ -595,9 +595,9 @@ export default function RoomDisplay() {
         )}
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-3 p-[clamp(.75rem,1.5vw,1.5rem)] lg:grid-cols-[minmax(0,1fr)_minmax(17rem,25%)]">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-[clamp(.75rem,1.5vw,1.5rem)] lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(17rem,25%)] lg:overflow-hidden">
         <section
-          className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900"
+          className="flex min-h-[32rem] shrink-0 flex-col rounded-lg border border-slate-800 bg-slate-900 lg:min-h-0 lg:shrink lg:overflow-hidden"
           aria-labelledby="room-session-heading"
         >
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
@@ -669,13 +669,13 @@ export default function RoomDisplay() {
               )}
             </div>
           </div>
-          <div className="grid min-h-0 flex-1 grid-cols-1 divide-y divide-slate-800 overflow-hidden md:grid-cols-2 md:grid-rows-3 md:divide-x md:divide-y-0">
+          <div className="grid grid-cols-1 divide-y divide-slate-800 md:min-h-0 md:flex-1 md:grid-cols-2 md:grid-rows-3 md:divide-x md:divide-y-0 md:overflow-hidden">
             {visibleSessions.map((session) => (
               <button
                 type="button"
                 key={session.id}
                 onClick={() => setSelected(session)}
-                className={`min-h-0 border-l-4 p-[clamp(.65rem,1vw,1rem)] text-left outline-none hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 ${statusTone(session.status)}`}
+                className={`min-h-36 border-l-4 p-[clamp(.65rem,1vw,1rem)] text-left outline-none hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 md:min-h-0 ${statusTone(session.status)}`}
               >
                 <div className="flex h-full flex-col justify-between gap-2">
                   <div>
@@ -711,7 +711,7 @@ export default function RoomDisplay() {
           </div>
         </section>
 
-        <aside className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
+        <aside className="grid min-h-0 shrink-0 grid-rows-[auto_minmax(0,1fr)] gap-3 lg:shrink">
           <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
             <div className="flex items-center justify-between">
               <div>

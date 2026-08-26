@@ -1,4 +1,6 @@
 import { NextRequest } from 'next/server';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { POST as activateDisplay } from '../app/api/display/activate/route';
 import { legacyDisplayHandoff } from '../app/ruang-guru/[token]/legacy-handoff';
 import {
@@ -482,6 +484,20 @@ describe('Wave 8.5 display credential and projection boundary', () => {
     jest.advanceTimersByTime(1);
     expect(page).toBe(2);
     clearInterval(timer);
+  });
+
+  it('keeps mobile display session cards scrollable instead of collapsing text', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'src/components/display/RoomDisplay.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto');
+    expect(source).toContain('lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(17rem,25%)] lg:overflow-hidden');
+    expect(source).toContain('min-h-[32rem] shrink-0');
+    expect(source).toContain('grid-cols-1 divide-y divide-slate-800');
+    expect(source).toContain('min-h-36 border-l-4');
+    expect(source).toContain('md:min-h-0');
   });
 
   it('uses the next JP cohort during a break instead of stale morning sessions', () => {
