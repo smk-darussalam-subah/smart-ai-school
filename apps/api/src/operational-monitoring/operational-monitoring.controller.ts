@@ -22,6 +22,7 @@ import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import {
   DeviceDeliveryAcknowledgementSchema,
+  DevicePlaybackClaimSchema,
   OperationalMonitoringQuerySchema,
 } from './operational-monitoring.dto';
 import { OperationalMonitoringService } from './operational-monitoring.service';
@@ -99,9 +100,19 @@ export class OperationalDisplayController {
   @Post('deliveries/:id/delivered')
   delivered(
     @Param('id', ParseUUIDPipe) id: string,
-    @Headers('x-diis-display-credential') credential?: string,
+    @Headers('x-diis-display-credential') credential: string | undefined,
   ) {
     return this.service.markDelivered(credential, id);
+  }
+
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
+  @Audit({ action: 'displayDelivery.claim', resourceType: 'display_delivery', captureBody: false })
+  @Post('deliveries/:id/claim')
+  claim(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Headers('x-diis-display-credential') credential?: string,
+  ) {
+    return this.service.claimPlayback(credential, id);
   }
 
   @Throttle({ default: { ttl: 60_000, limit: 60 } })
@@ -109,9 +120,25 @@ export class OperationalDisplayController {
   @Post('deliveries/:id/played')
   played(
     @Param('id', ParseUUIDPipe) id: string,
-    @Headers('x-diis-display-credential') credential?: string,
+    @Headers('x-diis-display-credential') credential: string | undefined,
+    @Body(ZodPipe(DevicePlaybackClaimSchema)) dto: { claimToken: string },
   ) {
-    return this.service.markPlayed(credential, id);
+    return this.service.markPlayed(credential, id, dto.claimToken);
+  }
+
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
+  @Audit({
+    action: 'displayDelivery.release',
+    resourceType: 'display_delivery',
+    captureBody: false,
+  })
+  @Post('deliveries/:id/release')
+  release(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Headers('x-diis-display-credential') credential: string | undefined,
+    @Body(ZodPipe(DevicePlaybackClaimSchema)) dto: { claimToken: string },
+  ) {
+    return this.service.releasePlaybackClaim(credential, id, dto.claimToken);
   }
 
   @Throttle({ default: { ttl: 60_000, limit: 30 } })

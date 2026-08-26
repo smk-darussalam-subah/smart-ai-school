@@ -33,6 +33,14 @@ export async function rotateDisplayDeviceAction(id: string) {
   return result;
 }
 
+export async function setDisplayAudibleLeaderAction(id: string) {
+  const result = await apiAction(`/display-devices/${id}/audible-leader`, 'PATCH', {
+    enabled: true,
+  });
+  if (!result.error) refresh();
+  return result;
+}
+
 export async function revokeDisplayDeviceAction(id: string) {
   const result = await apiAction(`/display-devices/${id}`, 'DELETE');
   if (!result.error) refresh();
