@@ -47,6 +47,9 @@ const PUBLIC_EXACT: readonly string[] = [
   '/privacy',
   '/sw.js',
   '/manifest.json',
+  '/apple-touch-icon.png',
+  '/icon-192.png',
+  '/icon-512.png',
   '/jurusan/tkro',
   '/jurusan/tjkt',
   '/jurusan/akl',
@@ -57,28 +60,25 @@ const PUBLIC_PREFIXES = [
   '/auth',
   '/api/auth',
   '/api/backend',
+  '/api/display',
+  '/display',
   '/health',
   '/ruang-guru',
   '/_next',
   '/favicon',
 ] as const;
 
-function isPublicPath(pathname: string): boolean {
+export function isPublicPath(pathname: string): boolean {
   if (PUBLIC_EXACT.includes(pathname)) return true;
   if (pathname.startsWith('/jurusan/')) return true;
   return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
-const STATIC_INTERACTIVE: readonly string[] = [
-  '/',
-  '/spmb',
-  '/login',
-  '/auth',
-  '/health',
-];
+const STATIC_INTERACTIVE: readonly string[] = ['/', '/spmb', '/login', '/auth', '/health'];
 
 function isPublicStaticPage(pathname: string): boolean {
   if (STATIC_INTERACTIVE.includes(pathname)) return true;
+  if (pathname.startsWith('/display/')) return true;
   return pathname.startsWith('/jurusan/');
 }
 
