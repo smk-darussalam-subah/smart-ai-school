@@ -30,6 +30,7 @@ describe('MobileNav', () => {
     const desktop = renderToString(React.createElement(TopBar, {
       viewAs: 'GURU',
       positionRoles: [],
+      sidebarExpanded: false,
       onToggleSidebar: () => undefined,
     }));
     expect(mobile).toContain('Mode tinjau · Guru');
@@ -44,6 +45,7 @@ describe('MobileNav', () => {
     }));
     const desktop = renderToString(React.createElement(TopBar, {
       positionRoles: ['WAKA_KURIKULUM'],
+      sidebarExpanded: false,
       onToggleSidebar: () => undefined,
     }));
     expect(mobile).toContain('Waka Kurikulum');

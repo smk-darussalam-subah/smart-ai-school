@@ -46,9 +46,10 @@ export default function AppShell({ viewAs, permissions, permError, hideChrome, p
 
       {/* Desktop sidebar — disembunyikan ke kiri saat collapsed */}
       <div
+        id="dashboard-sidebar"
         className={clsx(
-          'hidden md:block shrink-0 transition-[margin] duration-200 ease-out',
-          collapsed && '-ml-64',
+          'shrink-0',
+          collapsed ? 'hidden' : 'hidden md:block',
         )}
         aria-hidden={collapsed}
       >
@@ -57,7 +58,7 @@ export default function AppShell({ viewAs, permissions, permError, hideChrome, p
 
       {/* Konten */}
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar viewAs={viewAs} positionRoles={effectivePositionRoles} onToggleSidebar={() => setCollapsed((c) => !c)} />
+        <TopBar viewAs={viewAs} positionRoles={effectivePositionRoles} sidebarExpanded={!collapsed} onToggleSidebar={() => setCollapsed((c) => !c)} />
         {viewAs && <ViewAsBanner viewAs={viewAs} />}
         <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto bg-gray-50 outline-none">
           <div className="p-4 md:p-6">{children}</div>

@@ -82,7 +82,7 @@ function buildPrisma() {
     teacher: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
     class: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
     subject: { findFirst: jest.fn(), findMany: jest.fn() },
-    academicYear: { findUnique: jest.fn(), findMany: jest.fn() },
+    academicYear: { findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
     appointment: { findMany: jest.fn() },
     schedule: { count: jest.fn() },
     grade: { count: jest.fn() },
@@ -124,6 +124,8 @@ describe('TeachingAssignmentService', () => {
     prisma.class.findFirst.mockResolvedValue({ id: 'class-uuid-001', academicYear: '2025/2026' });
     prisma.subject.findFirst.mockResolvedValue({ name: 'Jaringan Komputer' });
     prisma.academicYear.findUnique.mockResolvedValue({ code: '2025/2026' });
+    prisma.academicYear.findFirst.mockResolvedValue({ code: '2025/2026' });
+    prisma.teachingAssignment.count.mockResolvedValue(1);
     prisma.schedule.count.mockResolvedValue(0);
     prisma.grade.count.mockResolvedValue(0);
     prisma.rpp.count.mockResolvedValue(0);
@@ -140,10 +142,19 @@ describe('TeachingAssignmentService', () => {
 
       await expect(service.findMyTeacherContext(GURU_USER)).resolves.toEqual({
         teacherId: 'teacher-authoritative',
+        activeAssignmentCount: 1,
+        academicYear: '2025/2026',
       });
       expect(prisma.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({
         where: { keycloakId: 'kc-guru' },
       }));
+      expect(prisma.teachingAssignment.count).toHaveBeenCalledWith({
+        where: {
+          teacherId: 'teacher-authoritative',
+          academicYear: '2025/2026',
+          class: { isActive: true },
+        },
+      });
     });
 
     it('limits KAPROG options to the active appointment major', async () => {

@@ -55,6 +55,7 @@ export interface RoleBasedHomeProps {
   agenda: AgendaItem[];
   sessions: SessionItem[];
   monitoringSummary?: { active: number; late: number; missed: number } | null;
+  dataAvailability: { schedule: boolean; agenda: boolean; sessions: boolean };
   generatedAt: string;
 }
 
@@ -210,6 +211,7 @@ export default function RoleBasedHome({
   agenda,
   sessions,
   monitoringSummary,
+  dataAvailability,
   generatedAt,
 }: RoleBasedHomeProps) {
   const identity = roles.find((role) => IDENTITY_LABELS[role]);
@@ -272,7 +274,11 @@ export default function RoleBasedHome({
               <span>Kelas dan mapel</span>
               <span>Status</span>
             </div>
-            {sessions.length > 0 ? (
+            {!dataAvailability.sessions ? (
+              <div role="alert" className="p-5 text-sm leading-6 text-amber-900">
+                Sesi hari ini belum dapat dimuat. Muat ulang halaman sebelum mengambil tindakan.
+              </div>
+            ) : sessions.length > 0 ? (
               sessions.slice(0, 6).map((session) => {
                 const statusMeta = classSessionStatusMeta(session.status);
                 return <article
@@ -296,6 +302,10 @@ export default function RoleBasedHome({
                   </span>
                 </article>
               })
+            ) : !dataAvailability.schedule ? (
+              <div role="alert" className="p-5 text-sm leading-6 text-amber-900">
+                Jadwal belum dapat diverifikasi. Data gagal tidak ditampilkan sebagai sesi kosong.
+              </div>
             ) : scheduleRows.length > 0 ? (
               <div className="p-5 text-sm text-slate-600">
                 Jadwal tersedia. Sesi harian sedang disiapkan dari jadwal dan Bell Schedule aktif.
@@ -309,7 +319,11 @@ export default function RoleBasedHome({
           <div className="rounded-lg border border-slate-200 bg-white p-4">
             <h3 className="text-sm font-bold text-slate-900">Agenda terdekat</h3>
             <div className="mt-3 space-y-3">
-              {agenda.length > 0 ? (
+              {!dataAvailability.agenda ? (
+                <p role="alert" className="text-sm leading-6 text-amber-900">
+                  Agenda belum dapat dimuat untuk periode aktif. Muat ulang halaman.
+                </p>
+              ) : agenda.length > 0 ? (
                 agenda.slice(0, 4).map((item) => (
                   <article
                     key={item.id}

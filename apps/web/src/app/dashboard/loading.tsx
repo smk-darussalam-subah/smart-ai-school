@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
 export default function DashboardLoading() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" role="status" aria-live="polite" aria-busy="true">
+      <span className="sr-only">Memuat dashboard</span>
       <Skeleton className="h-8 w-64" />
       <Skeleton className="h-5 w-96" />
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-6">
