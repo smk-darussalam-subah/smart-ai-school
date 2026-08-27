@@ -62,6 +62,14 @@ read_login_theme() {
   sed -n 's/.*"loginTheme"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$response"
 }
 
+read_theme_property() {
+  local property=$1
+  local -a values
+  mapfile -t values < <(sed -n "s/^${property}=//p" "$theme_root/theme.properties")
+  [[ ${#values[@]} -eq 1 && -n "${values[0]}" ]] || fail "theme-property:$property"
+  printf '%s\n' "${values[0]}"
+}
+
 set_login_theme() {
   local theme=$1
   docker exec "$container" /opt/keycloak/bin/kcadm.sh update \
@@ -99,8 +107,6 @@ verify_runtime_bundle() {
     count=$((count + 1))
   done < "$manifest"
   [[ $count -eq 5 ]] || fail "runtime-file-count"
-  docker exec "$container" test -f /opt/keycloak/themes/diis/login/resources/js/login.js ||
-    fail "runtime-login-js-missing"
   echo "THEME_RUNTIME_BUNDLE_OK file_count=5"
 }
 
@@ -120,6 +126,34 @@ verify_public_auth() {
   grep -Eq 'id="kc-(form-login|page-title)"|class="[^"]*login-pf' <<<"$login_page" ||
     fail "login-page-unavailable"
   echo "KEYCLOAK_PUBLIC_AUTH_OK discovery=true login_page=true"
+}
+
+verify_public_theme_assets() {
+  local login_page stylesheet script relative_path manifest_path expected_hash actual_hash
+  local -a references
+  stylesheet=$(read_theme_property styles)
+  script=$(read_theme_property scripts)
+  login_page=$(curl --fail --silent --show-error --location --max-time 20 \
+    --get "$auth_origin/realms/$realm/protocol/openid-connect/auth" \
+    --data-urlencode "client_id=$auth_probe_client_id" \
+    --data-urlencode 'response_type=code' \
+    --data-urlencode 'scope=openid' \
+    --data-urlencode "redirect_uri=$auth_probe_redirect_uri")
+
+  for relative_path in "$stylesheet" "$script"; do
+    mapfile -t references < <(
+      grep -oE '/resources/[^"[:space:]]+/login/diis/[^"[:space:]]+' <<<"$login_page" |
+        grep -F "/login/diis/$relative_path" || true
+    )
+    [[ ${#references[@]} -eq 1 ]] || fail "public-asset-reference:$relative_path"
+    manifest_path="resources/$relative_path"
+    expected_hash=$(awk -v path="$manifest_path" '$2 == path { print $1 }' "$manifest")
+    [[ "$expected_hash" =~ ^[0-9a-f]{64}$ ]] || fail "public-asset-manifest:$relative_path"
+    actual_hash=$(curl --fail --silent --show-error --max-time 20 \
+      "$auth_origin${references[0]}" | sha256sum | awk '{print $1}')
+    [[ "$actual_hash" == "$expected_hash" ]] || fail "public-asset-hash:$relative_path"
+    printf 'THEME_PUBLIC_ASSET_OK path=%s sha256=%s\n' "$relative_path" "$actual_hash"
+  done
 }
 
 contain_failure() {
@@ -180,6 +214,7 @@ authenticate_kcadm
 set_login_theme diis
 [[ "$(read_login_theme)" == diis ]] || fail "realm-theme-verification"
 verify_public_auth
+verify_public_theme_assets
 
 error_count=$(docker logs "$container" --since "$cutover_started_at" --tail 300 2>&1 |
   grep -Eic '(^|[[:space:]])ERROR([[:space:]]|$)|HTTP[^0-9]*5[0-9][0-9]' || true)

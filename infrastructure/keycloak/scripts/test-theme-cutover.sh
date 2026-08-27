@@ -7,6 +7,10 @@ bundle_verifier="$script_dir/verify-theme-bundle.sh"
 preflight_verifier="$script_dir/verify-theme-cutover-preflight.sh"
 source_theme="$keycloak_root/themes/diis/login"
 source_manifest="$keycloak_root/diis-login-theme.sha256"
+source_stylesheet=$(sed -n 's/^styles=//p' "$source_theme/theme.properties")
+source_script=$(sed -n 's/^scripts=//p' "$source_theme/theme.properties")
+source_stylesheet_path="resources/$source_stylesheet"
+source_script_path="resources/$source_script"
 node_binary=${DIIS_NODE_BINARY:-node}
 temp_root=$(mktemp -d)
 
@@ -45,14 +49,27 @@ expect_failure "missing-tree-entry:messages/messages_en.properties" \
   bash "$bundle_verifier" "$temp_root/missing/theme" "$temp_root/missing/config/manifest.sha256"
 
 copy_bundle "$temp_root/missing-js"
-rm "$temp_root/missing-js/theme/resources/js/login.js"
-expect_failure "missing-tree-entry:resources/js/login.js" \
+rm "$temp_root/missing-js/theme/$source_script_path"
+expect_failure "missing-tree-entry:$source_script_path" \
   bash "$bundle_verifier" "$temp_root/missing-js/theme" "$temp_root/missing-js/config/manifest.sha256"
 
 copy_bundle "$temp_root/wrong-hash"
 printf '\ninvalid\n' >> "$temp_root/wrong-hash/theme/theme.properties"
 expect_failure "hash-mismatch:theme.properties" \
   bash "$bundle_verifier" "$temp_root/wrong-hash/theme" "$temp_root/wrong-hash/config/manifest.sha256"
+
+copy_bundle "$temp_root/stale-asset-name"
+printf '\ncache-bust-regression\n' >> "$temp_root/stale-asset-name/theme/$source_stylesheet_path"
+updated_hash=$(sha256sum "$temp_root/stale-asset-name/theme/$source_stylesheet_path" | awk '{print $1}')
+awk -v path="$source_stylesheet_path" -v hash="$updated_hash" \
+  '$2 == path { print hash "  " path; next } { print }' \
+  "$temp_root/stale-asset-name/config/manifest.sha256" > \
+  "$temp_root/stale-asset-name/config/manifest.sha256.next"
+mv "$temp_root/stale-asset-name/config/manifest.sha256.next" \
+  "$temp_root/stale-asset-name/config/manifest.sha256"
+expect_failure "asset-name-hash-mismatch:$source_stylesheet_path" \
+  bash "$bundle_verifier" "$temp_root/stale-asset-name/theme" \
+    "$temp_root/stale-asset-name/config/manifest.sha256"
 
 copy_bundle "$temp_root/extra-template"
 printf 'unexpected\n' > "$temp_root/extra-template/theme/login.ftl"
@@ -70,7 +87,7 @@ expect_failure "unexpected-tree-entry:resources/css/legacy.css" \
   bash "$bundle_verifier" "$temp_root/extra-css/theme" "$temp_root/extra-css/config/manifest.sha256"
 
 copy_bundle "$temp_root/symlink"
-ln -s login.js "$temp_root/symlink/theme/resources/js/login-link.js"
+ln -s "$(basename "$source_script")" "$temp_root/symlink/theme/resources/js/login-link.js"
 expect_failure "unexpected-tree-entry:resources/js/login-link.js" \
   bash "$bundle_verifier" "$temp_root/symlink/theme" "$temp_root/symlink/config/manifest.sha256"
 
@@ -159,6 +176,9 @@ if (!remote.with.script.includes('DIIS_CONFIRMATION')) {
 if (!/--no-deps --force-recreate keycloak\s/.test(`${remoteScript}\n`)) {
   throw new Error('Remote cutover is not restricted to recreating Keycloak');
 }
+if (!remoteScript.includes('verify_public_theme_assets')) {
+  throw new Error('Remote cutover does not verify public theme assets');
+}
 NODE
 
-echo "THEME_CUTOVER_TESTS_OK cases=16"
+echo "THEME_CUTOVER_TESTS_OK cases=17"
