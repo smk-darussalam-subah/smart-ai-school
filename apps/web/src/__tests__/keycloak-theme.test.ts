@@ -40,8 +40,14 @@ describe('DIIS Keycloak login theme', () => {
     expect(script).toContain("window.addEventListener('blur'");
   });
 
-  it('opens and closes the locale menu through click, outside click, and Escape', () => {
-    type Handler = (event: { key?: string; target?: unknown; preventDefault(): void }) => void;
+  it('keeps locale menu state and forward/backward Tab focus deterministic', () => {
+    type Handler = (event: {
+      key?: string;
+      shiftKey?: boolean;
+      target?: unknown;
+      preventDefault(): void;
+      stopImmediatePropagation(): void;
+    }) => void;
     const handlers = new Map<string, Handler[]>();
     const classNames = new Set<string>();
     const attributes = new Map<string, string>();
@@ -52,7 +58,11 @@ describe('DIIS Keycloak login theme', () => {
       handlers.set(key, [...(handlers.get(key) ?? []), handler]);
     };
     const emit = (scope: string, type: string, event: Partial<Parameters<Handler>[0]> = {}) => {
-      const payload = { preventDefault: jest.fn(), ...event } as Parameters<Handler>[0];
+      const payload = {
+        preventDefault: jest.fn(),
+        stopImmediatePropagation: jest.fn(),
+        ...event,
+      } as Parameters<Handler>[0];
       for (const handler of handlers.get(`${scope}:${type}`) ?? []) handler(payload);
       return payload;
     };
@@ -67,12 +77,25 @@ describe('DIIS Keycloak login theme', () => {
       setAttribute: (name: string, value: string) => attributes.set(`menu:${name}`, value),
       querySelector: () => items[0],
       querySelectorAll: () => items,
+      contains: (target: unknown) => items.includes(target as never),
       addEventListener: (type: string, handler: Handler) => on('menu', type, handler),
     };
     const trigger = {
+      hasAttribute: () => false,
+      getAttribute: () => null,
       setAttribute: (name: string, value: string) => attributes.set(`trigger:${name}`, value),
       addEventListener: (type: string, handler: Handler) => on('trigger', type, handler),
       focus: () => { activeElement = trigger; },
+    };
+    const username = {
+      hasAttribute: () => false,
+      getAttribute: () => null,
+      focus: () => { activeElement = 'Username'; },
+    };
+    const password = {
+      hasAttribute: () => false,
+      getAttribute: () => null,
+      focus: () => { activeElement = 'Password'; },
     };
     const dropdown = {
       classList: {
@@ -88,6 +111,7 @@ describe('DIIS Keycloak login theme', () => {
       readyState: 'complete',
       get activeElement() { return activeElement; },
       getElementById: (id: string) => id === 'kc-locale-dropdown' ? dropdown : id === 'kc-current-locale-link' ? trigger : null,
+      querySelectorAll: () => [trigger, username, password],
       addEventListener: (type: string, handler: Handler) => on('document', type, handler),
     };
     const window = {
@@ -117,6 +141,20 @@ describe('DIIS Keycloak login theme', () => {
     expect(activeElement).toBe('English');
     emit('menu', 'keydown', { key: 'Home', target: menu });
     expect(activeElement).toBe('Bahasa Indonesia');
+    const forwardTab = emit('menu', 'keydown', { key: 'Tab', target: menu });
+    expect(forwardTab.preventDefault).toHaveBeenCalled();
+    expect(forwardTab.stopImmediatePropagation).toHaveBeenCalled();
+    expect(classNames.has('is-open')).toBe(false);
+    expect(activeElement).toBe('Username');
+
+    emit('trigger', 'keydown', { key: 'Enter', target: trigger });
+    const backwardTab = emit('menu', 'keydown', { key: 'Tab', shiftKey: true, target: menu });
+    expect(backwardTab.preventDefault).toHaveBeenCalled();
+    expect(backwardTab.stopImmediatePropagation).toHaveBeenCalled();
+    expect(classNames.has('is-open')).toBe(false);
+    expect(activeElement).toBe(trigger);
+
+    emit('trigger', 'keydown', { key: 'Enter', target: trigger });
     emit('menu', 'keydown', { key: 'Escape', target: menu });
     expect(classNames.has('is-open')).toBe(false);
     expect(activeElement).toBe(trigger);
