@@ -141,11 +141,20 @@ cat > "$mock_bin/curl" <<'MOCK_CURL'
 set -euo pipefail
 
 printf '%s\n' "$*" >> "$DIIS_MOCK_STATE_DIR/curl.log"
-url=${*: -1}
-if [[ "$url" == *'/.well-known/openid-configuration' ]]; then
+args=$*
+if [[ "$args" == *'/.well-known/openid-configuration'* ]]; then
   printf '{"issuer":"%s/realms/%s"}\n' "$DIIS_AUTH_ORIGIN" "$DIIS_KEYCLOAK_REALM"
-else
+elif [[ "$args" == *'/protocol/openid-connect/auth'* ]]; then
+  [[ "$args" == *'--data-urlencode client_id=diis-web'* ]]
+  [[ "$args" == *'--data-urlencode response_type=code'* ]]
+  [[ "$args" == *'--data-urlencode scope=openid'* ]]
+  [[ "$args" == *'--data-urlencode redirect_uri=https://smkdarussalamsubah.sch.id/api/auth/callback/keycloak'* ]]
   printf '<html><body class="login-pf"><h1 id="kc-page-title">Sign in</h1></body></html>\n'
+elif [[ "$args" == *'/account'* ]]; then
+  printf '<html><head><title>Account Management</title></head></html>\n'
+else
+  printf 'unexpected curl request\n' >&2
+  exit 22
 fi
 MOCK_CURL
 chmod +x "$mock_bin/docker" "$mock_bin/curl"
@@ -232,5 +241,12 @@ run_remote_failure 'before-mutation' 'legacy-theme' 'pre-mutation' 'legacy-theme
 run_remote_failure 'restore-previous' 'legacy-theme' 'post-mutation' 'legacy-theme' 'success'
 run_remote_failure 'fallback-built-in' 'diis' 'post-mutation' 'keycloak' 'success'
 run_remote_failure 'operator-required' 'diis' 'containment-failure' 'diis' 'failure'
+
+for curl_log in "$state_root"/*/curl.log; do
+  grep -Fq '/protocol/openid-connect/auth' "$curl_log"
+  grep -Fq -- '--data-urlencode client_id=diis-web' "$curl_log"
+  grep -Fq -- '--data-urlencode redirect_uri=https://smkdarussalamsubah.sch.id/api/auth/callback/keycloak' "$curl_log"
+  ! grep -Fq '/account' "$curl_log"
+done
 
 echo 'THEME_CONTAINMENT_TESTS_OK cases=4'
