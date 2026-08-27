@@ -12,6 +12,8 @@ readonly preflight="$work_dir/infrastructure/keycloak/scripts/verify-theme-cutov
 readonly container=${DIIS_KEYCLOAK_CONTAINER:-smk-keycloak}
 readonly realm=${DIIS_KEYCLOAK_REALM:-diis}
 readonly auth_origin=${DIIS_AUTH_ORIGIN:-https://auth.smkdarussalamsubah.sch.id}
+readonly auth_probe_client_id=${DIIS_AUTH_PROBE_CLIENT_ID:-diis-web}
+readonly auth_probe_redirect_uri=${DIIS_AUTH_PROBE_REDIRECT_URI:-https://smkdarussalamsubah.sch.id/api/auth/callback/keycloak}
 readonly run_id=${DIIS_RUN_ID:-manual}
 readonly kc_config="/tmp/diis-theme-cutover-${run_id//[^a-zA-Z0-9._-]/_}.config"
 
@@ -110,7 +112,11 @@ verify_public_auth() {
     fail "issuer-mismatch"
 
   login_page=$(curl --fail --silent --show-error --location --max-time 20 \
-    "$auth_origin/realms/$realm/account")
+    --get "$auth_origin/realms/$realm/protocol/openid-connect/auth" \
+    --data-urlencode "client_id=$auth_probe_client_id" \
+    --data-urlencode 'response_type=code' \
+    --data-urlencode 'scope=openid' \
+    --data-urlencode "redirect_uri=$auth_probe_redirect_uri")
   grep -Eq 'id="kc-(form-login|page-title)"|class="[^"]*login-pf' <<<"$login_page" ||
     fail "login-page-unavailable"
   echo "KEYCLOAK_PUBLIC_AUTH_OK discovery=true login_page=true"
