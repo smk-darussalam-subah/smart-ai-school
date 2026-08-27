@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   Home, CalendarCheck, TrendingUp, Wallet, Award,
   Sun, Moon, Bell, ChevronDown,
-  LogOut, X, User as UserIcon,
+  LogOut, X, User as UserIcon, CircleHelp,
 } from 'lucide-react';
 import clsx from 'clsx';
 import ViewAsBanner from '@/components/layout/ViewAsBanner';
@@ -264,10 +265,19 @@ export default function OrtuWorkspace({
             <button
               onClick={toggleTheme}
               className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
-              aria-label="Toggle theme"
+              aria-label="Ganti tema"
             >
               {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
             </button>
+
+            <Link
+              href={activeStudentId ? `/dashboard/panduan?from=/dashboard/akademik&studentId=${encodeURIComponent(activeStudentId)}` : '/dashboard/panduan?from=/dashboard/akademik'}
+              onClick={() => setAccountOpen(false)}
+              className="mb-2 flex min-h-11 w-full items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm font-semibold text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
+            >
+              <CircleHelp className="h-4 w-4" aria-hidden="true" />
+              Panduan orang tua
+            </Link>
 
             {/* Account */}
             <button
@@ -421,7 +431,7 @@ export default function OrtuWorkspace({
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 animate-[fadeIn_.3s_ease] rounded-[10px] border border-[var(--border2)] bg-[var(--bg2)] px-4 py-2.5 text-[12px] font-semibold text-[var(--text)] shadow-[var(--shlift)]">
+        <div role="status" aria-live="polite" className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 animate-[fadeIn_.3s_ease] rounded-[10px] border border-[var(--border2)] bg-[var(--bg2)] px-4 py-2.5 text-[12px] font-semibold text-[var(--text)] shadow-[var(--shlift)] motion-reduce:animate-none">
           {toast}
         </div>
       )}
