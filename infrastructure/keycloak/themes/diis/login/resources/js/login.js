@@ -20,6 +20,23 @@
       var first = menu.querySelector('a');
       if (first) first.focus();
     };
+    var focusAfterTrigger = function () {
+      var focusable = Array.prototype.slice.call(document.querySelectorAll([
+        'a[href]:not([tabindex="-1"])',
+        'button:not([disabled]):not([tabindex="-1"])',
+        'input:not([disabled]):not([type="hidden"]):not([tabindex="-1"])',
+        'select:not([disabled]):not([tabindex="-1"])',
+        'textarea:not([disabled]):not([tabindex="-1"])',
+        '[tabindex]:not([tabindex="-1"])'
+      ].join(','))).filter(function (element) {
+        return !menu.contains(element) &&
+          !element.hasAttribute('hidden') &&
+          element.getAttribute('aria-hidden') !== 'true';
+      });
+      var triggerIndex = focusable.indexOf(trigger);
+      var next = triggerIndex >= 0 ? focusable[triggerIndex + 1] : null;
+      (next || trigger).focus();
+    };
 
     trigger.setAttribute('role', 'button');
     trigger.setAttribute('aria-haspopup', 'menu');
@@ -66,8 +83,14 @@
       } else if (event.key === 'End' && items.length > 0) {
         event.preventDefault();
         items[items.length - 1].focus();
+      } else if (event.key === 'Tab') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        close(false);
+        if (event.shiftKey) trigger.focus();
+        else focusAfterTrigger();
       }
-    });
+    }, true);
     document.addEventListener('click', function (event) {
       if (!dropdown.contains(event.target)) close(false);
     });
