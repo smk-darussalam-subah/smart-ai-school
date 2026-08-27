@@ -21,11 +21,28 @@ manifest=$2
 theme_root=$(cd "$theme_root" && pwd -P)
 manifest=$(cd "$(dirname "$manifest")" && printf '%s/%s\n' "$(pwd -P)" "$(basename "$manifest")")
 
+read_theme_property() {
+  local property=$1
+  local -a values
+  mapfile -t values < <(sed -n "s/^${property}=//p" "$theme_root/theme.properties")
+  [[ ${#values[@]} -eq 1 && -n "${values[0]}" ]] || fail "theme-property:$property"
+  printf '%s\n' "${values[0]}"
+}
+
+stylesheet=$(read_theme_property styles)
+script=$(read_theme_property scripts)
+[[ "$stylesheet" =~ ^css/login\.([0-9a-f]{12})\.css$ ]] || fail "stylesheet-name-not-content-addressed"
+stylesheet_hash_prefix=${BASH_REMATCH[1]}
+[[ "$script" =~ ^js/login\.([0-9a-f]{12})\.js$ ]] || fail "script-name-not-content-addressed"
+script_hash_prefix=${BASH_REMATCH[1]}
+stylesheet_path="resources/$stylesheet"
+script_path="resources/$script"
+
 expected_paths=(
   "messages/messages_en.properties"
   "messages/messages_id.properties"
-  "resources/css/login.css"
-  "resources/js/login.js"
+  "$stylesheet_path"
+  "$script_path"
   "theme.properties"
 )
 
@@ -35,10 +52,15 @@ declare -A expected_tree=(
   ["messages/messages_id.properties"]="f"
   ["resources"]="d"
   ["resources/css"]="d"
-  ["resources/css/login.css"]="f"
+  ["$stylesheet_path"]="f"
   ["resources/js"]="d"
-  ["resources/js/login.js"]="f"
+  ["$script_path"]="f"
   ["theme.properties"]="f"
+)
+
+declare -A content_hash_prefixes=(
+  ["$stylesheet_path"]="$stylesheet_hash_prefix"
+  ["$script_path"]="$script_hash_prefix"
 )
 
 while IFS=$'\t' read -r relative_path entry_type; do
@@ -73,6 +95,10 @@ for index in "${!expected_paths[@]}"; do
 
   actual_hash=$(sha256sum "$file_path" | awk '{print $1}')
   [[ "$actual_hash" == "$expected_hash" ]] || fail "hash-mismatch:$relative_path"
+  if [[ -n "${content_hash_prefixes[$relative_path]+present}" ]]; then
+    [[ "${actual_hash:0:12}" == "${content_hash_prefixes[$relative_path]}" ]] ||
+      fail "asset-name-hash-mismatch:$relative_path"
+  fi
   printf 'THEME_FILE_OK path=%s sha256=%s\n' "$relative_path" "$actual_hash"
 done
 
