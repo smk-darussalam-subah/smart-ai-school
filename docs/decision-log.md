@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-08-27 - Keycloak public theme assets use content-addressed filenames
+
+**Decision.** Custom DIIS login CSS and JavaScript filenames include the first 12 characters of
+their SHA-256 digest. `theme.properties`, the exact bundle verifier, and the approved manifest must
+agree with those names. The controlled cutover also verifies the hashes returned by the public auth
+origin after activation, not only files mounted inside the Keycloak container.
+
+**Reason.** Shared auth correctly mounted the reviewed theme, but the stable public asset URL
+`css/login.css` retained a 30-day cached pre-cutover response. The container and direct origin served
+the reviewed CSS while the public edge served an older file, leaving the locale menu visually open.
+Content-addressed URLs make cache reuse safe and force a new public URL whenever CSS or JavaScript
+content changes.
+
+**Boundary.** A public asset hash mismatch is a failed cutover. Automatic containment restores the
+previous safe theme and a second dispatch requires investigation, independent review, and new
+production approval. Manual edge purge, file copy, realm mutation, or service restart is not an
+acceptable substitute.
+
+---
+
 ## 2026-08-26 - Wave 9 Keycloak login theme follow-up explicitly authorized
 
 **Decision.** Director's Wave 9 follow-up request explicitly includes fixing and polishing the

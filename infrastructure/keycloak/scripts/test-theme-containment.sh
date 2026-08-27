@@ -149,7 +149,16 @@ elif [[ "$args" == *'/protocol/openid-connect/auth'* ]]; then
   [[ "$args" == *'--data-urlencode response_type=code'* ]]
   [[ "$args" == *'--data-urlencode scope=openid'* ]]
   [[ "$args" == *'--data-urlencode redirect_uri=https://smkdarussalamsubah.sch.id/api/auth/callback/keycloak'* ]]
-  printf '<html><body class="login-pf"><h1 id="kc-page-title">Sign in</h1></body></html>\n'
+  stylesheet=$(sed -n 's/^styles=//p' "$DIIS_MOCK_THEME_ROOT/theme.properties")
+  script=$(sed -n 's/^scripts=//p' "$DIIS_MOCK_THEME_ROOT/theme.properties")
+  printf '<html><head><link href="/resources/mock/login/diis/%s"></head><body class="login-pf"><h1 id="kc-page-title">Sign in</h1><script src="/resources/mock/login/diis/%s"></script></body></html>\n' \
+    "$stylesheet" "$script"
+elif [[ "$args" =~ /login/diis/(css/login\.[0-9a-f]{12}\.css|js/login\.[0-9a-f]{12}\.js) ]]; then
+  if [[ -f "$DIIS_MOCK_STATE_DIR/fail-public-asset" && "${BASH_REMATCH[1]}" == css/* ]]; then
+    printf 'stale public asset\n'
+  else
+    cat "$DIIS_MOCK_THEME_ROOT/resources/${BASH_REMATCH[1]}"
+  fi
 elif [[ "$args" == *'/account'* ]]; then
   printf '<html><head><title>Account Management</title></head></html>\n'
 else
@@ -174,6 +183,7 @@ run_remote_failure() {
   case "$failure_mode" in
     pre-mutation) : > "$state/pre-mutation-unhealthy" ;;
     post-mutation) : > "$state/fail-post-check" ;;
+    public-asset) : > "$state/fail-public-asset" ;;
     containment-failure)
       : > "$state/fail-post-check"
       : > "$state/fail-containment"
@@ -224,6 +234,9 @@ run_remote_failure() {
     return 1
   }
   grep -Fq 'diis' "$state/theme-updates.log"
+  if [[ "$failure_mode" == public-asset ]]; then
+    grep -Fq 'reason=public-asset-hash:' "$output_file"
+  fi
 
   if [[ "$expected_containment" == success ]]; then
     grep -Fq "THEME_CUTOVER_CONTAINMENT_OK safe_theme=$expected_theme" "$output_file"
@@ -239,6 +252,7 @@ run_remote_failure() {
 
 run_remote_failure 'before-mutation' 'legacy-theme' 'pre-mutation' 'legacy-theme' 'none'
 run_remote_failure 'restore-previous' 'legacy-theme' 'post-mutation' 'legacy-theme' 'success'
+run_remote_failure 'reject-stale-public-asset' 'legacy-theme' 'public-asset' 'legacy-theme' 'success'
 run_remote_failure 'fallback-built-in' 'diis' 'post-mutation' 'keycloak' 'success'
 run_remote_failure 'operator-required' 'diis' 'containment-failure' 'diis' 'failure'
 
@@ -249,4 +263,4 @@ for curl_log in "$state_root"/*/curl.log; do
   ! grep -Fq '/account' "$curl_log"
 done
 
-echo 'THEME_CONTAINMENT_TESTS_OK cases=4'
+echo 'THEME_CONTAINMENT_TESTS_OK cases=5'
