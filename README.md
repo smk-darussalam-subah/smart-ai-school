@@ -17,8 +17,8 @@
 | Database | PostgreSQL + pgvector | 16+ | ✅ Aktif |
 | Cache | Redis | 7.x | ✅ Aktif |
 | Automation | n8n (self-hosted) | latest | ✅ Aktif |
-| AI Lokal | Ollama + Llama 3.1 | latest | ✅ Aktif |
-| AI Premium | Claude API (Anthropic) | claude-sonnet-4-6 | ✅ Opsional |
+| AI Utama | OpenAI | gpt-4.1-mini | ✅ Default deployment |
+| AI Lokal | Ollama | deployment-managed | ✅ Fallback terkontrol dan embedding lokal |
 | Auth | Keycloak (SSO + RBAC) | 24.x | ✅ Aktif |
 | Analytics | Metabase | latest | ✅ Aktif |
 | Monitoring | Grafana + Prometheus + Uptime Kuma | latest | ✅ Aktif |

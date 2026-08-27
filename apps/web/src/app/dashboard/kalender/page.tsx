@@ -1,8 +1,8 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetchResult } from '@/lib/api';
+import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
 import KalenderClient from './_components/KalenderClient';
 import LoadError from '@/components/LoadError';
 import { resolveCalendarScope } from './kalender-ui';
@@ -20,8 +20,11 @@ const EDITORS = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'];
 
 export default async function KalenderPage() {
   const session = await getServerSession(authOptions);
-  const roles: string[] = await getEffectiveRoles(session);
-  if (!EDITORS.some((r) => roles.includes(r))) redirect('/dashboard');
+  if (!session) redirect('/login');
+  const authority = await resolveDashboardAuthority(session);
+  if (!authority.can('academic.period.read') || !EDITORS.some((role) => authority.hasRole(role))) {
+    redirect('/dashboard');
+  }
 
   const token = session?.accessToken ?? '';
   const activeYearResult = await apiFetchResult<{ id: string; code: string } | null>('/school/academic-years/active', token);

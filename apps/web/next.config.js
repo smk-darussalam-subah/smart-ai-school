@@ -11,6 +11,11 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // Wave 9: private documentation stays outside /public and is included explicitly
+  // in the standalone server output for the authenticated streaming route.
+  outputFileTracingIncludes: {
+    '/api/help/artifacts/[id]': ['./private/help-artifacts/**/*'],
+  },
   async rewrites() {
     return [
       {
