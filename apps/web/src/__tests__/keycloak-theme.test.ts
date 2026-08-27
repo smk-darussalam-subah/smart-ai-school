@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -8,9 +9,24 @@ function readThemeFile(path: string): string {
   return readFileSync(resolve(themeRoot, path), 'utf8');
 }
 
+function readThemeProperty(name: 'styles' | 'scripts'): string {
+  const matches = readThemeFile('theme.properties')
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith(`${name}=`));
+  expect(matches).toHaveLength(1);
+  const value = matches[0];
+  if (!value) throw new Error(`Missing ${name} theme property`);
+  return value.slice(name.length + 1);
+}
+
+function readThemeAsset(name: 'styles' | 'scripts'): { path: string; source: string } {
+  const path = readThemeProperty(name);
+  return { path, source: readThemeFile(`resources/${path}`) };
+}
+
 describe('DIIS Keycloak login theme', () => {
   it('keeps password inputs readable on the institutional light theme', () => {
-    const css = readThemeFile('resources/css/login.css');
+    const css = readThemeAsset('styles').source;
 
     expect(css).toContain('#password');
     expect(css).toContain('#password-new');
@@ -21,8 +37,9 @@ describe('DIIS Keycloak login theme', () => {
   });
 
   it('keeps the locale menu closed until the explicit accessible trigger opens it', () => {
-    const css = readThemeFile('resources/css/login.css');
-    const script = readThemeFile('resources/js/login.js');
+    const css = readThemeAsset('styles').source;
+    const scriptAsset = readThemeAsset('scripts');
+    const script = scriptAsset.source;
     const properties = readThemeFile('theme.properties');
 
     expect(css).toContain("#kc-locale-dropdown ul");
@@ -32,7 +49,7 @@ describe('DIIS Keycloak login theme', () => {
     expect(css).toContain("display: none !important");
     expect(css).toContain("#kc-locale-dropdown.is-open ul");
     expect(css).toContain("min-height: 44px");
-    expect(properties).toContain('scripts=js/login.js');
+    expect(properties).toContain(`scripts=${scriptAsset.path}`);
     expect(script).toContain("trigger.setAttribute('aria-expanded', 'false')");
     expect(script).toContain("event.key === 'Escape'");
     expect(script).toContain("!dropdown.contains(event.target)");
@@ -119,7 +136,7 @@ describe('DIIS Keycloak login theme', () => {
       setTimeout: (handler: () => void) => handler(),
     };
 
-    runInNewContext(readThemeFile('resources/js/login.js'), { document, window });
+    runInNewContext(readThemeAsset('scripts').source, { document, window });
     expect(attributes.get('trigger:aria-expanded')).toBe('false');
     expect(attributes.get('trigger:aria-controls')).toBe('kc-locale-list');
     expect(attributes.get('menu:aria-hidden')).toBe('true');
@@ -171,7 +188,7 @@ describe('DIIS Keycloak login theme', () => {
   });
 
   it('documents the first-login password policy in the update password view', () => {
-    const css = readThemeFile('resources/css/login.css');
+    const css = readThemeAsset('styles').source;
     const idMessages = readThemeFile('messages/messages_id.properties');
     const enMessages = readThemeFile('messages/messages_en.properties');
 
@@ -179,5 +196,17 @@ describe('DIIS Keycloak login theme', () => {
     expect(css).toContain("Minimal 8 karakter");
     expect(idMessages).toContain("invalidPasswordMinSpecialCharsMessage");
     expect(enMessages).toContain("invalidPasswordMinSpecialCharsMessage");
+  });
+
+  it.each([
+    ['styles', /^css\/login\.([0-9a-f]{12})\.css$/],
+    ['scripts', /^js\/login\.([0-9a-f]{12})\.js$/],
+  ] as const)('content-addresses the %s asset for long-lived public caching', (property, pattern) => {
+    const asset = readThemeAsset(property);
+    const match = asset.path.match(pattern);
+    const digest = createHash('sha256').update(asset.source).digest('hex');
+
+    expect(match).not.toBeNull();
+    expect(match?.[1]).toBe(digest.slice(0, 12));
   });
 });
