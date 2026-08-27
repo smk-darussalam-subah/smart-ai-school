@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { authOptions } from '@/lib/auth';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, apiFetchResult, type ApiFetchResult } from '@/lib/api';
 import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
 import { getEffectiveRoles } from '@/lib/view-as';
 import { isMobileOnlyDashboardRoleSet } from '@/lib/dashboard-routing';
@@ -123,6 +123,10 @@ function AiProviderBanner({ status }: { status: AiProviderStatus | null }) {
   );
 }
 
+function successfulEmpty<T>(data: T): ApiFetchResult<T> {
+  return { status: 'success', data, httpStatus: 200 };
+}
+
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
@@ -177,14 +181,14 @@ export default async function DashboardPage() {
       ? apiFetch<{ total: number }>('/rpp?status=submitted&limit=1', token)
       : Promise.resolve(null),
     canReadSchedule && dayOfWeek > 0
-      ? apiFetch<{ data: ScheduleApi[] }>(`/schedules?dayOfWeek=${dayOfWeek}&limit=500`, token)
-      : Promise.resolve(null),
+      ? apiFetchResult<{ data: ScheduleApi[] }>(`/schedules?dayOfWeek=${dayOfWeek}&limit=500`, token)
+      : Promise.resolve(successfulEmpty({ data: [] as ScheduleApi[] })),
     academicYear
-      ? apiFetch<CalendarApi[]>('/school/calendar', token, { academicYearId: academicYear.id })
-      : Promise.resolve(null),
+      ? apiFetchResult<CalendarApi[]>('/school/calendar', token, { academicYearId: academicYear.id })
+      : Promise.resolve({ status: 'unavailable', message: 'Periode aktif belum tersedia.' } as ApiFetchResult<CalendarApi[]>),
     canReadSchedule
-      ? apiFetch<{ data: ClassSessionApi[] }>(`/class-sessions?date=${wibToday()}`, token)
-      : Promise.resolve(null),
+      ? apiFetchResult<{ data: ClassSessionApi[] }>(`/class-sessions?date=${wibToday()}`, token)
+      : Promise.resolve(successfulEmpty({ data: [] as ClassSessionApi[] })),
     canReadMonitoring
       ? apiFetch<MonitoringApi>('/operational-monitoring/snapshot', token)
       : Promise.resolve(null),
@@ -215,14 +219,14 @@ export default async function DashboardPage() {
           ppdbLeads: ppdbTotal,
           rppMenunggu: rpp?.total ?? null,
         }}
-        scheduleRows={buildPapanRows(schedule?.data ?? [])}
-        agenda={(calendar ?? []).map((item) => ({
+        scheduleRows={buildPapanRows(schedule.status === 'success' ? schedule.data.data : [])}
+        agenda={(calendar.status === 'success' ? calendar.data : []).map((item) => ({
           id: item.id,
           name: item.name,
           date: item.startDate.slice(0, 10),
           endDate: item.endDate.slice(0, 10),
         }))}
-        sessions={(sessions?.data ?? []).map((item) => ({
+        sessions={(sessions.status === 'success' ? sessions.data.data : []).map((item) => ({
           id: item.id,
           className: item.classNameSnapshot,
           subject: item.subjectSnapshot,
@@ -242,6 +246,11 @@ export default async function DashboardPage() {
               }
             : null
         }
+        dataAvailability={{
+          schedule: schedule.status === 'success',
+          agenda: calendar.status === 'success',
+          sessions: sessions.status === 'success',
+        }}
         generatedAt={new Date().toISOString()}
       />
     </>

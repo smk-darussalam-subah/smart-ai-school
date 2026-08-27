@@ -240,22 +240,18 @@ LoggingInterceptor: audit log via Winston
 
 ---
 
-## 6. Role-Based Access Matrix
+## 6. Authority Model
 
-7 role tersedia di sistem. Role di-assign di Keycloak dan di-carry dalam JWT token.
+Keycloak hanya membawa enam identity role stabil: `SUPER_ADMIN`, `TATA_USAHA`, `GURU`,
+`SISWA`, `ORANG_TUA`, dan `INDUSTRI`. Jabatan seperti `KEPALA_SEKOLAH`, Waka, Kaprog,
+Bendahara, BKK, dan Hubin bukan identity role. Jabatan tersebut berasal dari Appointment DIIS
+yang berbatas tahun, scope, approval, dan lifecycle.
 
-| Modul | SUPER_ADMIN | KEPALA_SEKOLAH | TATA_USAHA | GURU | SISWA | ORANG_TUA | INDUSTRI |
-|-------|:-----------:|:--------------:|:----------:|:----:|:-----:|:---------:|:--------:|
-| Dashboard Eksekutif | ✅ | ✅ | — | — | — | — | — |
-| Keuangan (SPP/BOS) | ✅ | 👁 | ✅ | — | 👁 | 👁 | — |
-| PPDB / CRM | ✅ | 👁 | ✅ | 👁 | — | — | — |
-| Data Siswa | ✅ | 👁 | ✅ | 👁 | 👁 | 👁 | — |
-| Nilai & Absensi | ✅ | 👁 | — | ✅ | 👁 | 👁 | — |
-| PKL/Prakerin | ✅ | 👁 | 👁 | ✅ | ✅ | 👁 | ✅ |
-| BKK/Rekrutmen | ✅ | 👁 | — | — | ✅ | — | ✅ |
-| Monitoring/AI | ✅ | — | — | — | — | — | — |
-
-> ✅ = write access | 👁 = read only | — = tidak ada akses
+Effective authority dibentuk dari identity role, Appointment aktif, permission database, serta
+resource context seperti Teaching Assignment, Wali Kelas, dan selected child. Controller dan
+service tetap menjadi enforcement boundary; visibilitas menu tidak pernah dianggap sebagai
+bukti akses. Matrix operasional canonical berada pada role/permission seed dan source resolver,
+bukan tabel dokumentasi statis yang mudah tertinggal.
 
 ---
 
@@ -274,7 +270,8 @@ LoggingInterceptor: audit log via Winston
 | Cache | Redis | 7.x | + AOF persistence |
 | Auth Server | Keycloak | 24.x | Realm: diis |
 | Automation | n8n | latest | workflow engine |
-| AI Lokal | Ollama | latest | LLM inference lokal |
+| AI Utama | OpenAI gpt-4.1-mini | managed API | Generate terstruktur dan chat |
+| AI Lokal | Ollama | deployment-managed | Fallback terkontrol dan embedding lokal |
 | Analytics | Metabase | 0.49.10 | self-hosted BI |
 | File Storage | MinIO | latest | S3-compatible |
 | Monitoring | Prometheus + Grafana | latest | metrics + dashboard |

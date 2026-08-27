@@ -254,3 +254,27 @@
   --glow-sh: 0 0 0 1px rgba(37, 99, 235, 0.08), 0 4px 24px -8px rgba(37, 99, 235, 0.1);
   --empty-cell: rgba(0, 0, 0, 0.02);
 }
+
+@media print {
+  @page {
+    margin: 16mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  .help-print-surface {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  .help-print-surface h1,
+  .help-print-surface h2,
+  .help-print-surface h3,
+  .help-print-surface aside,
+  .help-print-surface li {
+    break-inside: avoid;
+  }
+}

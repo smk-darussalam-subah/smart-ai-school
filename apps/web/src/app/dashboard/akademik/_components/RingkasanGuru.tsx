@@ -1,11 +1,12 @@
 'use client';
 import { useState } from 'react';
 
-import { Target, GraduationCap, CalendarCheck, BookOpenCheck, Clock, PenLine, Info, Code, ListChecks, Users, FileText, ClipboardList, ChevronRight, UserCheck, CalendarClock, ClipboardPenLine, ClipboardCheck, GitBranch, HelpCircle, X, PlayCircle } from 'lucide-react';
+import { Target, GraduationCap, CalendarCheck, BookOpenCheck, Clock, PenLine, Info, Code, ListChecks, Users, FileText, ClipboardList, ChevronRight, UserCheck, CalendarClock, ClipboardPenLine, ClipboardCheck, GitBranch, HelpCircle, PlayCircle } from 'lucide-react';
 import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ActivityItem, RppItem, TodayClass } from './guru-types';
 import { KKTP_DEFAULT } from './guru-types';
 import { wibDateLabel, wibTodayISO } from '@/lib/bell-times';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
 interface Props {
   grades: GradeItem[];
@@ -65,11 +66,11 @@ export default function RingkasanGuru({ grades, attendances, activities, rpp, to
             <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><Clock className="h-[18px] w-[18px] text-emerald-600" />Kelas Hari Ini</h3>
             <div className="flex items-center gap-2">
               <span className="rounded-md bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">{wibDateLabel()}</span>
-              {onNavigate && <button type="button" onClick={() => onNavigate('jadwal')} className="text-[11.5px] font-bold text-emerald-600 hover:text-emerald-700">Lihat jadwal →</button>}
+              {onNavigate && <button type="button" onClick={() => onNavigate('jadwal')} className="min-h-11 rounded-lg px-2 text-[11.5px] font-bold text-emerald-700 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">Lihat jadwal →</button>}
             </div>
           </div>
           {todayClasses.length === 0 ? (
-            <div className="mt-3 grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">Tidak ada jadwal mengajar hari ini.</div>
+            <div className="mt-3 grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#526b62]">Tidak ada jadwal mengajar hari ini.</div>
           ) : (
             <div className="mt-3 space-y-2.5">
               {todayClasses.map((c, i) => (
@@ -79,42 +80,42 @@ export default function RingkasanGuru({ grades, attendances, activities, rpp, to
                     <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><Code className="h-5 w-5" /></div>
                     <div className="min-w-0 flex-1">
                       <b className="text-[13.5px] text-[#0f2e25]">{c.subject} · {c.className}</b>
-                      <div className="text-[12px] text-[#6b8079]">JP {c.jpStart}{c.jpEnd !== c.jpStart ? `–${c.jpEnd}` : ''} · {c.startLabel} · {c.room ?? 'Ruang —'}{c.isNow ? ' · sedang berlangsung' : ''}</div>
+                      <div className="text-[12px] text-[#526b62]">JP {c.jpStart}{c.jpEnd !== c.jpStart ? `–${c.jpEnd}` : ''} · {c.startLabel} · {c.room ?? 'Ruang —'}{c.isNow ? ' · sedang berlangsung' : ''}</div>
                     </div>
                     {c.isNow && <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-extrabold text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />LIVE</span>}
                   </div>
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    {onStartSession && <button type="button" onClick={() => onStartSession(c)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-[12.5px] font-bold text-white hover:bg-emerald-700"><PlayCircle className="h-4 w-4" />Mulai Sesi</button>}
-                    <button type="button" onClick={() => onAbsen({ classId: c.classId, className: c.className })} className="inline-flex items-center gap-1.5 rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><CalendarCheck className="h-4 w-4 text-emerald-600" />Absen</button>
-                    <button type="button" onClick={() => onJurnal({ classId: c.classId, className: c.className, subject: c.subject, startLabel: c.startLabel, jpStart: c.jpStart })} className="inline-flex items-center gap-1.5 rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><PenLine className="h-4 w-4 text-emerald-600" />Jurnal</button>
-                    {onPenilaian && <button type="button" onClick={() => onPenilaian(c)} className="inline-flex items-center gap-1.5 rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><ClipboardPenLine className="h-4 w-4 text-emerald-600" />Nilai</button>}
+                    {onStartSession && <button type="button" onClick={() => onStartSession(c)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-[12.5px] font-bold text-white hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"><PlayCircle className="h-4 w-4" />Mulai Sesi</button>}
+                    <button type="button" onClick={() => onAbsen({ classId: c.classId, className: c.className })} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[#d5e2dc] bg-white px-3 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"><CalendarCheck className="h-4 w-4 text-emerald-700" />Absen</button>
+                    <button type="button" onClick={() => onJurnal({ classId: c.classId, className: c.className, subject: c.subject, startLabel: c.startLabel, jpStart: c.jpStart })} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[#d5e2dc] bg-white px-3 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"><PenLine className="h-4 w-4 text-emerald-700" />Jurnal</button>
+                    {onPenilaian && <button type="button" onClick={() => onPenilaian(c)} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[#d5e2dc] bg-white px-3 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"><ClipboardPenLine className="h-4 w-4 text-emerald-700" />Nilai</button>}
                   </div>
                 </div>
               ))}
             </div>
           )}
-          <p className="mt-3 flex items-center gap-1.5 text-[11.5px] text-[#6b8079]"><Info className="h-3.5 w-3.5" />Klik <b>Absen</b> (default semua hadir) atau <b>Jurnal</b> (terisi otomatis dari konteks &amp; Modul Ajar disetujui — dapat disunting).</p>
+          <p className="mt-3 flex items-center gap-1.5 text-[11.5px] text-[#526b62]"><Info className="h-3.5 w-3.5" />Klik <b>Absen</b> (default semua hadir) atau <b>Jurnal</b> (terisi otomatis dari konteks &amp; Modul Ajar disetujui — dapat disunting).</p>
         </div>
 
         {/* Perlu Tindakan */}
         <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
           <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><ListChecks className="h-[18px] w-[18px] text-emerald-600" />Perlu Tindakan</h3>
           {tindakan.length === 0 ? (
-            <div className="mt-3 grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">Tidak ada tindakan tertunda 🎉</div>
+            <div className="mt-3 grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#526b62]">Tidak ada tindakan tertunda.</div>
           ) : (
             <div className="mt-3 space-y-2.5">
               {tindakan.map((t, i) => {
                 const Icon = t.icon;
                 return (
-                  <button key={i} type="button" onClick={() => onNavigate?.(t.action)} className="flex w-full items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3 text-left transition hover:border-emerald-200 hover:shadow-sm">
+                  <button key={i} type="button" onClick={() => onNavigate?.(t.action)} className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3 text-left transition hover:border-emerald-200 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
                     <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${t.color}`}><Icon className="h-[18px] w-[18px]" /></div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <b className="text-[12.5px] text-[#0f2e25]">{t.title}</b>
                       </div>
-                      <div className="text-[11.5px] text-[#6b8079]">{t.sub}</div>
+                      <div className="text-[11.5px] text-[#526b62]">{t.sub}</div>
                     </div>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-[#9bb0a8]" />
+                    <ChevronRight className="h-4 w-4 shrink-0 text-[#526b62]" />
                   </button>
                 );
               })}
@@ -129,7 +130,7 @@ export default function RingkasanGuru({ grades, attendances, activities, rpp, to
       {/* Alur Kerja Guru */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><GitBranch className="h-[18px] w-[18px] text-emerald-600" />Alur Kerja Guru</h3>
-        <p className="mt-1 text-[12.5px] text-[#6b8079]">Dari awal tahun hingga rekap audit — semua terhubung dalam satu sistem.</p>
+        <p className="mt-1 text-[12.5px] text-[#526b62]">Dari awal tahun hingga rekap audit — semua terhubung dalam satu sistem.</p>
         <div className="mt-3 space-y-2">
           <FlowStep step="1" icon={UserCheck} color="bg-sky-50 text-sky-600" title="Awal Tahun — Pembagian Tugas oleh KS" desc="KS menugaskan guru ke kelas & mapel → otomatis muncul di filter & jadwal" done onClick={() => onNavigate?.('jadwal')} />
           <FlowStep step="2" icon={FileText} color="bg-emerald-50 text-emerald-700" title="Buat & Ajukan Modul Ajar" desc="RPP wizard 11-langkah → ajukan ke Wakakur → aktifkan di LMS" onClick={() => onNavigate?.('pembelajaran')} />
@@ -145,30 +146,36 @@ export default function RingkasanGuru({ grades, attendances, activities, rpp, to
 function Kpi({ icon: Icon, label, value, sub, tooltip }: { icon: typeof Target; label: string; value: string; sub?: string; tooltip?: string }) {
   return (
     <div className="rounded-2xl border border-[#e6efea] bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-[#6b8079]">
+      <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-[#526b62]">
         <Icon className="h-3.5 w-3.5 text-emerald-600" />{label}
         {tooltip && (
           <span className="group relative inline-flex">
-            <HelpCircle className="h-3 w-3 cursor-help text-[#9bb0a8]" />
-            <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 hidden -translate-x-1/2 whitespace-pre-wrap rounded-lg bg-[#0f2e25] px-3 py-2 text-[10px] font-medium leading-relaxed text-white shadow-lg group-hover:block w-48">{tooltip}</span>
+            <button
+              type="button"
+              aria-label={tooltip}
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[#526b62] hover:bg-[#f4f7f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+            >
+              <HelpCircle className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 hidden w-52 -translate-x-1/2 whitespace-pre-wrap rounded-lg bg-[#0f2e25] px-3 py-2 text-[11px] font-medium leading-relaxed text-white shadow-lg group-hover:block group-focus-within:block">{tooltip}</span>
           </span>
         )}
       </div>
       <div className="mt-1.5 text-[26px] font-extrabold tracking-tight text-[#0f2e25]">{value}</div>
-      {sub && <div className="mt-0.5 text-[10.5px] font-medium text-[#9bb0a8]">{sub}</div>}
+      {sub && <div className="mt-0.5 text-[10.5px] font-medium text-[#526b62]">{sub}</div>}
     </div>
   );
 }
 
 function FlowStep({ step, icon: Icon, color, title, desc, done, onClick }: { step: string; icon: typeof Target; color: string; title: string; desc: string; done?: boolean; onClick?: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="flex w-full items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3 text-left transition hover:border-emerald-200 hover:shadow-sm">
+    <button type="button" onClick={onClick} className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3 text-left transition hover:border-emerald-200 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
       <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${color}`}><Icon className="h-[18px] w-[18px]" /></div>
       <div className="min-w-0 flex-1">
         <b className="text-[12.5px] text-[#0f2e25]">{step}. {title}</b>
-        <div className="text-[11.5px] text-[#6b8079]">{desc}</div>
+        <div className="text-[11.5px] text-[#526b62]">{desc}</div>
       </div>
-      {done ? <span className="shrink-0 rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">✓</span> : <ChevronRight className="h-4 w-4 shrink-0 text-[#9bb0a8]" />}
+      {done ? <span className="shrink-0 rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">✓</span> : <ChevronRight className="h-4 w-4 shrink-0 text-[#526b62]" />}
     </button>
   );
 }
@@ -195,16 +202,16 @@ function StatusHariIni({ todayClasses, attendances, activities }: { todayClasses
         <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><ClipboardList className="h-[18px] w-[18px] text-emerald-600" />Status Hari Ini</h3>
         <span className="rounded-md bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">{wibDateLabel()}</span>
       </div>
-      <p className="mt-1 text-[12.5px] text-[#6b8079]">Status <b>absen · jurnal · penilaian · feedback</b> untuk tiap sesi hari ini.</p>
+      <p className="mt-1 text-[12.5px] text-[#526b62]">Status <b>absen · jurnal · penilaian · feedback</b> untuk tiap sesi hari ini.</p>
       <div className="mt-3 space-y-2">
         {sessions.length === 0 ? (
-          <div className="grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">Tidak ada sesi mengajar hari ini.</div>
+          <div className="grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#526b62]">Tidak ada sesi mengajar hari ini.</div>
         ) : (
           sessions.map((s, i) => (
-            <button key={`${s.classId}-${s.jpStart}-${i}`} type="button" onClick={() => setSelected(s)} className="flex w-full flex-wrap items-center gap-2 rounded-xl border border-[#e6efea] bg-white p-3 text-left transition hover:border-emerald-200 hover:shadow-sm">
+            <button key={`${s.classId}-${s.jpStart}-${i}`} type="button" onClick={() => setSelected(s)} className="flex min-h-11 w-full flex-wrap items-center gap-2 rounded-xl border border-[#e6efea] bg-white p-3 text-left transition hover:border-emerald-200 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
               <div className="min-w-0 flex-1">
                 <b className="text-[12.5px] text-[#0f2e25]">{s.subject} · {s.className}</b>
-                <div className="text-[11.5px] text-[#6b8079]">JP {s.jpStart}{s.jpEnd !== s.jpStart ? `–${s.jpEnd}` : ''} · {s.startLabel} · klik untuk rincian</div>
+                <div className="text-[11.5px] text-[#526b62]">JP {s.jpStart}{s.jpEnd !== s.jpStart ? `–${s.jpEnd}` : ''} · {s.startLabel} · klik untuk rincian</div>
               </div>
               <StatusChip status={s.hasAbsen ? 'ok' : 'warn'} label="Absen" />
               <StatusChip status={s.hasJurnal ? 'ok' : 'warn'} label="Jurnal" />
@@ -250,17 +257,20 @@ function SessionDetailModal({ session, attendances, activities, onClose }: {
   const hasJurnal = activities.some((a) => a.date?.slice(0, 10) === today && a.classId === session.classId);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <div className="flex items-center justify-between">
-          <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">Detail Sesi — {session.subject} · {session.className}</h3>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-[#9bb0a8] hover:bg-[#f4f7f5]" aria-label="Tutup"><X className="h-4 w-4" /></button>
+    <Dialog open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
+      <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto p-5" onOpenAutoFocus={(event: Event) => {
+        event.preventDefault();
+        document.getElementById('session-detail-title')?.focus();
+      }}>
+        <div className="pr-10">
+          <DialogTitle id="session-detail-title" tabIndex={-1} className="text-[15px] font-bold text-[#0f2e25] outline-none">Detail Sesi — {session.subject} · {session.className}</DialogTitle>
+          <DialogDescription className="mt-1 text-[11.5px] text-[#526b62]">Ringkasan kehadiran, asesmen, feedback, dan jurnal hari ini.</DialogDescription>
         </div>
         <div className="mt-3 grid grid-cols-4 gap-2">
-          <div className="rounded-xl bg-emerald-50 p-2 text-center"><div className="text-[18px] font-extrabold text-emerald-700">{hadir}</div><div className="text-[10px] font-semibold text-[#6b8079]">Hadir</div></div>
-          <div className="rounded-xl bg-sky-50 p-2 text-center"><div className="text-[18px] font-extrabold text-sky-700">{izin}</div><div className="text-[10px] font-semibold text-[#6b8079]">Izin</div></div>
-          <div className="rounded-xl bg-amber-50 p-2 text-center"><div className="text-[18px] font-extrabold text-amber-600">{sakit}</div><div className="text-[10px] font-semibold text-[#6b8079]">Sakit</div></div>
-          <div className="rounded-xl bg-rose-50 p-2 text-center"><div className="text-[18px] font-extrabold text-rose-600">{alpha}</div><div className="text-[10px] font-semibold text-[#6b8079]">Alpha</div></div>
+          <div className="rounded-xl bg-emerald-50 p-2 text-center"><div className="text-[18px] font-extrabold text-emerald-700">{hadir}</div><div className="text-[10px] font-semibold text-[#526b62]">Hadir</div></div>
+          <div className="rounded-xl bg-sky-50 p-2 text-center"><div className="text-[18px] font-extrabold text-sky-700">{izin}</div><div className="text-[10px] font-semibold text-[#526b62]">Izin</div></div>
+          <div className="rounded-xl bg-amber-50 p-2 text-center"><div className="text-[18px] font-extrabold text-amber-600">{sakit}</div><div className="text-[10px] font-semibold text-[#526b62]">Sakit</div></div>
+          <div className="rounded-xl bg-rose-50 p-2 text-center"><div className="text-[18px] font-extrabold text-rose-600">{alpha}</div><div className="text-[10px] font-semibold text-[#526b62]">Alpha</div></div>
         </div>
         {absent.length > 0 && (
           <div className="mt-3 rounded-lg bg-[#f4f7f5] p-3 text-[11.5px] text-[#355a4e]">
@@ -270,21 +280,21 @@ function SessionDetailModal({ session, attendances, activities, onClose }: {
         <div className="mt-3 space-y-2">
           <div>
             <b className="text-[12px] text-[#0f2e25]">Diagnostik</b>
-            <div className="mt-1 text-[10.5px] text-[#9bb0a8]">{session.assessmentSessionId ? 'Sesi asesmen tersedia — lihat detail di tab Penilaian.' : 'Belum ada sesi diagnostik untuk kelas ini.'}</div>
+            <div className="mt-1 text-[10.5px] text-[#526b62]">{session.assessmentSessionId ? 'Sesi asesmen tersedia — lihat detail di tab Penilaian.' : 'Belum ada sesi diagnostik untuk kelas ini.'}</div>
           </div>
           <div>
             <b className="text-[12px] text-[#0f2e25]">Formatif</b>
-            <div className="mt-1 text-[10.5px] text-[#9bb0a8]">{session.assessmentSessionId ? 'Sesi asesmen tersedia — lihat detail di tab Penilaian.' : 'Belum ada sesi formatif untuk kelas ini.'}</div>
+            <div className="mt-1 text-[10.5px] text-[#526b62]">{session.assessmentSessionId ? 'Sesi asesmen tersedia — lihat detail di tab Penilaian.' : 'Belum ada sesi formatif untuk kelas ini.'}</div>
           </div>
           <div>
             <b className="text-[12px] text-[#0f2e25]">Feedback</b>
-            <div className="mt-1 text-[10.5px] text-[#9bb0a8]">{session.assessmentSessionId ? 'Feedback tersedia setelah sesi diselesaikan.' : 'Belum ada feedback untuk sesi ini.'}</div>
+            <div className="mt-1 text-[10.5px] text-[#526b62]">{session.assessmentSessionId ? 'Feedback tersedia setelah sesi diselesaikan.' : 'Belum ada feedback untuk sesi ini.'}</div>
           </div>
         </div>
         <div className="mt-3 flex items-center justify-between">
           {hasJurnal && <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Jurnal ✓</span>}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

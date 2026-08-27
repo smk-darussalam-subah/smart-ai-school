@@ -129,10 +129,13 @@ describe('semester closing UI helpers', () => {
     expect(isReadinessStale(readiness, 'b'.repeat(64), new Date(readiness.generatedAt).getTime() + 60_000)).toBe(true);
   });
 
-  it('formats metric totals and keeps the scoped route permission-neutral', () => {
+  it('formats metric totals and keeps the route permission-gated', () => {
     expect(formatReadinessMetric({ value: 3 })).toBe('3');
     expect(formatReadinessMetric({ value: 7, total: 10 })).toBe('7/10');
-    expect(getRoutePermissions('/dashboard/penutupan-semester')).toEqual([]);
+    expect(getRoutePermissions('/dashboard/penutupan-semester')).toEqual([
+      'academic.final-report.read',
+      'academic.semester.close',
+    ]);
   });
 
   it('formats semester timestamps with the app timezone to avoid hydration drift', () => {
