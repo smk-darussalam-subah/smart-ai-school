@@ -6,7 +6,11 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
 import ViewAsSwitcher from './ViewAsSwitcher';
-import { can } from '@/lib/permissions';
+import {
+  CLASS_CONFIG_DISCOVERABILITY_RULE,
+  isNavigationItemVisible,
+  PPDB_DISCOVERABILITY_RULE,
+} from '@/lib/navigation-authority';
 import { visiblePositionRoles } from '@/lib/sidebar-position-roles';
 import { identityRoleLabel, isShellRouteActive, positionRoleLabel } from '@/lib/display-shell';
 import {
@@ -15,6 +19,7 @@ import {
   Megaphone, Sparkles, Brain, UserCog, Activity, ShieldCheck, LogOut, MessageSquare, Building2,
   FileCheck, LogIn, UserCheck,
   MonitorCog,
+  CircleHelp,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -62,7 +67,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Jadwal', href: '/dashboard/jadwal', icon: CalendarDays, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'WAKA_KURIKULUM', 'KAPROG'], permissions: ['academic.schedule.read'] },
       { label: 'Nilai & Absensi', href: '/dashboard/nilai', icon: ClipboardCheck, roles: ['SISWA', 'ORANG_TUA'], permissions: ['grade.own.read', 'grade.child.read'] },
         { label: 'Rapor', href: '/dashboard/rapor', icon: GraduationCap, roles: ['SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'KAPROG'], permissions: ['report.read'] },
-      { label: 'Penutupan Semester', href: '/dashboard/penutupan-semester', icon: ShieldCheck, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPROG', 'GURU'] },
+      { label: 'Penutupan Semester', href: '/dashboard/penutupan-semester', icon: ShieldCheck, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPROG'], permissions: ['academic.final-report.read', 'academic.semester.close'] },
       { label: 'Kegiatan Kelas', href: '/dashboard/kegiatan', icon: Backpack, roles: ['GURU', 'SISWA', 'ORANG_TUA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KESISWAAN', 'KAPROG'], permissions: ['activity.read'] },
       { label: 'Review Modul Ajar', href: '/dashboard/rpp', icon: FileText, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'WAKA_KURIKULUM', 'KAPROG'], permissions: ['rpp.read'] },
     ],
@@ -70,8 +75,8 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: 'Kesiswaan',
     items: [
-      { label: 'Data Siswa', href: '/dashboard/siswa', icon: Users, roles: ['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_TU', 'WAKA_KESISWAAN', 'KAPROG', 'GURU_BK', 'OPERATOR_DAPODIK', 'INDUSTRI'], permissions: ['student.read'] },
-      { label: 'PPDB', href: '/dashboard/ppdb', icon: ClipboardList, roles: ['KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_TU', 'WAKA_HUMAS', 'KOOR_BKK', 'KOOR_HUBIN'], permissions: ['ppdb.read'] },
+      { label: 'Data Siswa', href: '/dashboard/siswa', icon: Users, roles: ['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_TU', 'WAKA_KESISWAAN', 'KAPROG', 'GURU_BK', 'OPERATOR_DAPODIK'], permissions: ['student.read'] },
+      { label: 'PPDB', href: '/dashboard/ppdb', icon: ClipboardList, ...PPDB_DISCOVERABILITY_RULE },
       { label: 'Lowongan', href: '/dashboard/lowongan', icon: Briefcase, roles: ['INDUSTRI', 'SISWA'], permissions: ['student.read', 'ai.chat'] },
     ],
   },
@@ -101,7 +106,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Manajemen Pengguna', href: '/dashboard/users', icon: UserCog, roles: ['SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_TU', 'STAF_KEPEGAWAIAN'], permissions: ['user.read'] },
       { label: 'Struktur Organisasi', href: '/dashboard/struktur-organisasi', icon: Briefcase, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
       { label: 'Mata Pelajaran', href: '/dashboard/mapel', icon: BookMarked, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU'] },
-      { label: 'Manajemen Kelas', href: '/dashboard/kelas', icon: School, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
+      { label: 'Manajemen Kelas', href: '/dashboard/kelas', icon: School, ...CLASS_CONFIG_DISCOVERABILITY_RULE },
       { label: 'Kalender & Agenda', href: '/dashboard/kalender', icon: CalendarDays, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] },
       { label: 'Tahun Ajaran', href: '/dashboard/tahun-ajaran', icon: CalendarRange, roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] },
       { label: 'Kesehatan Sistem', href: '/dashboard/health', icon: Activity, roles: ['SUPER_ADMIN'], permissions: ['audit.read'] },
@@ -141,15 +146,12 @@ export function Sidebar({ viewAs = null, permissions = [], permError = false, po
   const isSuperAdmin = effectiveRoles.includes('SUPER_ADMIN');
   const effectivePermissions = isSuperAdmin ? ['*'] : permissions;
 
-  const isVisible = (item: NavItem): boolean => {
-    if (item.roles && !item.roles.some((r) => effectiveRoles.includes(r))) return false;
-    if (
-      item.permissions
-      && !isSuperAdmin
-      && (permError || !can(effectivePermissions, item.permissions))
-    ) return false;
-    return true;
-  };
+  const isVisible = (item: NavItem): boolean => isNavigationItemVisible(
+    item,
+    effectiveRoles,
+    effectivePermissions,
+    permError,
+  );
 
   const visibleGroups = NAV_GROUPS
     .map((g) => ({ ...g, items: g.items.filter(isVisible) }))
@@ -238,6 +240,20 @@ export function Sidebar({ viewAs = null, permissions = [], permError = false, po
 
       {/* Keluar */}
       <div className="px-3 py-4 border-t border-gray-100">
+        <Link
+          href="/dashboard/panduan"
+          onClick={onNavigate}
+          aria-current={isItemActive('/dashboard/panduan') ? 'page' : undefined}
+          className={clsx(
+            'mb-1 flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700',
+            isItemActive('/dashboard/panduan')
+              ? 'bg-emerald-50 text-emerald-800'
+              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
+          )}
+        >
+          <CircleHelp className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+          Panduan
+        </Link>
         <button
           type="button"
           onClick={() => { window.location.href = '/api/auth/federated-logout'; }}

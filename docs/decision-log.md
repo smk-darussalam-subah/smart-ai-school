@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-08-26 - Wave 9 Keycloak login theme follow-up explicitly authorized
+
+**Decision.** Director's Wave 9 follow-up request explicitly includes fixing and polishing the
+Keycloak login locale selector shown in the supplied browser screenshot. The authorized manifest is
+limited to these theme files:
+
+- `infrastructure/keycloak/themes/diis/login/messages/messages_en.properties`
+- `infrastructure/keycloak/themes/diis/login/messages/messages_id.properties`
+- `infrastructure/keycloak/themes/diis/login/resources/css/login.css`
+- `infrastructure/keycloak/themes/diis/login/resources/js/login.js`
+- `infrastructure/keycloak/themes/diis/login/theme.properties`
+
+**Boundary.** This approval covers source-only presentation, Indonesian/English copy, responsive
+layout, keyboard/focus behavior, and ARIA correction. It does not authorize realm roles, clients,
+flows, secrets, container mutation, deploy, staging, or production access. Validation requires the
+theme behavior test, web type-check/lint/build, actual theme preview at desktop/mobile, and a later
+Keycloak runtime browser gate after the reviewed SHA is deployed.
+
+**Reason.** The locale panel could remain open and obscure the login form. The follow-up preserves
+the existing DIIS visual identity while making close, Escape, focus-out, and menu semantics reliable.
+
+---
+
 ## 2026-08-06 - Wave 4 AI Question provenance and assessment runtime authority
 
 **Keputusan:** Wave 4 Assessment memakai dua migration additive. Migration pertama

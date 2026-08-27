@@ -193,7 +193,20 @@ export class TeachingAssignmentService {
 
   async findMyTeacherContext(user: AuthUser) {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
-    return { teacherId };
+    const activeYear = await this.prisma.academicYear.findFirst({
+      where: { isActive: true },
+      select: { code: true },
+    });
+    const activeAssignmentCount = activeYear
+      ? await this.prisma.teachingAssignment.count({
+          where: {
+            teacherId,
+            academicYear: activeYear.code,
+            class: { isActive: true },
+          },
+        })
+      : 0;
+    return { teacherId, activeAssignmentCount, academicYear: activeYear?.code ?? null };
   }
 
   // ── CRUD ─────────────────────────────────────────────────────────────────────
@@ -391,14 +404,20 @@ export class TeachingAssignmentService {
   // Kelas tempat guru ini adalah wali kelas (Class.teacherId = teacher.id).
   // Teacher.isWaliKelas flag juga dicek untuk konsistensi.
   async findWaliClasses(user: AuthUser) {
-    const teacher = await this.prisma.teacher.findFirst({
-      where: { user: { keycloakId: user.keycloakId }, deletedAt: null },
-      select: { id: true, isWaliKelas: true },
-    });
-    if (!teacher) return { classes: [], isWaliKelas: false };
+    const [teacher, activeYear] = await Promise.all([
+      this.prisma.teacher.findFirst({
+        where: { user: { keycloakId: user.keycloakId }, deletedAt: null },
+        select: { id: true, isWaliKelas: true },
+      }),
+      this.prisma.academicYear.findFirst({
+        where: { isActive: true },
+        select: { code: true },
+      }),
+    ]);
+    if (!teacher || !activeYear) return { classes: [], isWaliKelas: false };
 
     const classes = await this.prisma.class.findMany({
-      where: { teacherId: teacher.id, isActive: true },
+      where: { teacherId: teacher.id, isActive: true, academicYear: activeYear.code },
       select: { id: true, name: true, majorCode: true, grade: true, academicYear: true },
       orderBy: [{ grade: 'asc' }, { name: 'asc' }],
     });

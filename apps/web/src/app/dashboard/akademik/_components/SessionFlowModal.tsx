@@ -5,6 +5,7 @@ import {
   BookOpen, ClipboardCheck, ClipboardPenLine, MessageCircle, PenLine,
 } from 'lucide-react';
 import type { TodayClass } from './guru-types';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
 interface Props {
   session: TodayClass | null;
@@ -76,15 +77,17 @@ export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPen
   const ActIcon = act?.icon;
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+    <Dialog open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
+      <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto p-5" onOpenAutoFocus={(event: Event) => {
+        event.preventDefault();
+        document.getElementById('session-flow-title')?.focus();
+      }}>
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="pr-10">
           <div>
-            <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><PlayCircle className="h-[18px] w-[18px] text-emerald-600" />Sesi Mengajar — {session.subject} · {session.className}</h3>
-            <p className="text-[11px] text-[#6b8079]">{session.startLabel} · JP {session.jpStart}–{session.jpEnd}{session.room ? ` · ${session.room}` : ''}</p>
+            <DialogTitle id="session-flow-title" tabIndex={-1} className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25] outline-none"><PlayCircle className="h-[18px] w-[18px] text-emerald-600" />Sesi Mengajar — {session.subject} · {session.className}</DialogTitle>
+            <DialogDescription className="text-[11px] text-[#526b62]">{session.startLabel} · JP {session.jpStart}–{session.jpEnd}{session.room ? ` · ${session.room}` : ''}</DialogDescription>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-[#9bb0a8] hover:bg-[#f4f7f5]" aria-label="Tutup"><X className="h-4 w-4" /></button>
         </div>
 
         {/* Step progress indicator */}
@@ -95,11 +98,11 @@ export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPen
             const isCurrent = idx === step;
             return (
               <div key={idx} className="flex items-center gap-1">
-                <div className={`grid h-6 w-6 place-items-center rounded-full text-[9px] font-extrabold ${isCurrent ? 'bg-emerald-600 text-white' : isPast ? 'bg-emerald-50 text-emerald-700' : 'bg-[#f4f7f5] text-[#9bb0a8]'}`}>
+                <div className={`grid h-6 w-6 place-items-center rounded-full text-[9px] font-extrabold ${isCurrent ? 'bg-emerald-700 text-white' : isPast ? 'bg-emerald-50 text-emerald-800' : 'bg-[#f4f7f5] text-[#526b62]'}`}>
                   {idx}
                 </div>
                 {isCurrent && <span className="text-[9px] font-extrabold text-emerald-700">{st.n}</span>}
-                {i < 7 && <ChevronRight className="h-2.5 w-2.5 text-[#9bb0a8]" />}
+                {i < 7 && <ChevronRight className="h-2.5 w-2.5 text-[#526b62]" />}
               </div>
             );
           })}
@@ -114,17 +117,17 @@ export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPen
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            {act && ActIcon && <button type="button" onClick={handleAction} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-[11.5px] font-bold text-white hover:bg-emerald-700"><ActIcon className="h-3.5 w-3.5" />{act.label}</button>}
+            {act && ActIcon && <button type="button" onClick={handleAction} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-[11.5px] font-bold text-white hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-800 focus-visible:ring-offset-2"><ActIcon className="h-3.5 w-3.5" />{act.label}</button>}
           </div>
         </div>
 
         {/* Footer */}
         <div className="mt-4 flex items-center justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-[#e6efea] bg-white px-4 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>
-          {step > 1 && <button type="button" onClick={handlePrev} className="inline-flex items-center gap-1 rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]"><ChevronLeft className="h-4 w-4" /></button>}
-          <button type="button" onClick={handleNext} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-4 py-2 text-[12.5px] font-bold text-white hover:bg-emerald-700">{isLast ? (<><X className="h-4 w-4" />Tutup Alur</>) : (<>Lanjut <ChevronRight className="h-4 w-4" /></>)}</button>
+          <button type="button" onClick={onClose} className="min-h-11 rounded-lg border border-[#e6efea] bg-white px-4 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-800">Tutup</button>
+          {step > 1 && <button type="button" onClick={handlePrev} aria-label="Langkah sebelumnya" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-[#e6efea] bg-white px-3 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-800"><ChevronLeft className="h-4 w-4" /></button>}
+          <button type="button" onClick={handleNext} className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-emerald-700 px-4 text-[12.5px] font-bold text-white hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-800 focus-visible:ring-offset-2">{isLast ? (<><X className="h-4 w-4" />Tutup Alur</>) : (<>Lanjut <ChevronRight className="h-4 w-4" /></>)}</button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

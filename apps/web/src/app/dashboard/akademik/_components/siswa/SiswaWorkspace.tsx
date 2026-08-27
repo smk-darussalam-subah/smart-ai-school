@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   Home, CalendarClock, BookOpen, TrendingUp, ClipboardList,
   UserCheck, Award, Sun, Moon, Bell, ChevronLeft,
-  LogOut, X, User as UserIcon,
+  LogOut, X, User as UserIcon, CircleHelp,
 } from 'lucide-react';
 import clsx from 'clsx';
 import ViewAsBanner from '@/components/layout/ViewAsBanner';
@@ -387,7 +388,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             <button
               onClick={toggleTheme}
               className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]"
-              aria-label="Toggle theme"
+              aria-label="Ganti tema"
             >
               {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
@@ -459,10 +460,10 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
       {!profileOpen && (
         <button
           onClick={() => setProfileOpen(true)}
-          className="fixed right-0 top-1/2 z-25 -translate-y-1/2"
-          aria-label="Open Profile CV"
+          className="fixed right-0 top-1/2 z-25 flex h-[70px] w-11 -translate-y-1/2 items-center justify-end focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]"
+          aria-label="Buka profil siswa"
         >
-          <div className="flex h-[70px] w-[22px] animate-[swipePulse_2s_ease_infinite] items-center justify-center rounded-l-xl bg-gradient-to-br from-emerald-500 to-emerald-800">
+          <div className="flex h-[70px] w-6 animate-[swipePulse_2s_ease_infinite] items-center justify-center rounded-l-xl bg-gradient-to-br from-emerald-500 to-emerald-800 motion-reduce:animate-none">
             <ChevronLeft className="h-3.5 w-3.5 text-white" />
           </div>
         </button>
@@ -563,7 +564,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             <button
               onClick={() => setAccountOpen(false)}
               aria-label="Tutup"
-              className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-[var(--surface2)]"
+              className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]"
             >
               <X className="h-4 w-4" />
             </button>
@@ -591,6 +592,15 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
               <span className="text-xs text-[var(--muted)]">Ketuk untuk ganti</span>
             </button>
 
+            <Link
+              href="/dashboard/panduan?from=/dashboard/akademik"
+              onClick={() => setAccountOpen(false)}
+              className="mb-2 flex min-h-11 w-full items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm font-semibold text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]"
+            >
+              <CircleHelp className="h-4 w-4" aria-hidden="true" />
+              Panduan siswa
+            </Link>
+
             {/* T3-03: Push notification toggle */}
             <PushNotificationToggle onSubscribe={subscribePush} onUnsubscribe={unsubscribePush} onFetchNotifications={fetchMyNotifications} />
 
@@ -608,7 +618,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 animate-[fadeIn_.3s_ease] rounded-xl border border-emerald-500 bg-[var(--bg2)] px-5 py-3 text-[12.5px] font-bold text-[var(--text)] shadow-[0_8px_40px_-12px_rgba(0,0,0,.6)]">
+        <div role="status" aria-live="polite" className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 animate-[fadeIn_.3s_ease] rounded-xl border border-emerald-500 bg-[var(--bg2)] px-5 py-3 text-[12.5px] font-bold text-[var(--text)] shadow-[0_8px_40px_-12px_rgba(0,0,0,.6)] motion-reduce:animate-none">
           {toast}
         </div>
       )}

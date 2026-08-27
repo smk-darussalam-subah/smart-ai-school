@@ -171,9 +171,12 @@ input.pf-c-form-control:-webkit-autofill:focus {
 
 #kc-form a,
 .login-pf-settings a {
+  align-items: center;
   color: #1d4ed8;
+  display: inline-flex;
   font-size: 0.875rem;
   font-weight: 600;
+  min-height: 44px;
   text-decoration: none;
 }
 
@@ -198,20 +201,47 @@ input.pf-c-form-control:-webkit-autofill:focus {
   position: relative;
 }
 
-#kc-locale button {
+#kc-locale-dropdown {
+  align-items: flex-end;
+  flex-direction: column;
+}
+
+#kc-locale button,
+#kc-current-locale-link {
   background: #ffffff;
   border: 1px solid var(--diis-border);
   border-radius: 6px;
   color: #334155;
   cursor: pointer;
+  display: inline-flex;
   font-size: 0.8rem;
+  font-weight: 650;
+  align-items: center;
+  gap: 0.4rem;
+  justify-content: center;
   min-height: 44px;
   padding: 0.5rem 0.8rem;
+  text-decoration: none;
 }
 
-#kc-locale button:hover {
+#kc-locale button:hover,
+#kc-current-locale-link:hover {
   background: #f1f5f9;
   color: var(--diis-ink);
+}
+
+#kc-current-locale-link::after {
+  border-bottom: 0;
+  border-left: 0.28rem solid transparent;
+  border-right: 0.28rem solid transparent;
+  border-top: 0.34rem solid currentColor;
+  content: '';
+  display: inline-block;
+}
+
+#kc-current-locale-link:focus-visible {
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.18);
+  outline: none;
 }
 
 #kc-locale-dropdown ul,
@@ -225,18 +255,26 @@ input.pf-c-form-control:-webkit-autofill:focus {
   margin: 0.4rem 0 0;
   min-width: 9rem;
   padding: 0.35rem;
-  position: absolute;
-  right: 0;
-  top: 100%;
+  position: static;
   width: max-content;
   z-index: 20;
+  display: none !important;
+  max-height: min(14rem, 50vh);
+  overflow-y: auto;
+}
+
+#kc-locale-dropdown.is-open ul,
+#kc-locale-dropdown.is-open .pf-c-dropdown__menu {
+  display: block !important;
 }
 
 #kc-locale-dropdown a,
 .pf-c-dropdown__menu-item {
+  align-items: center;
   border-radius: 4px;
   color: #334155;
-  display: block;
+  display: flex;
+  min-height: 44px;
   padding: 0.55rem 0.65rem;
   text-align: left;
   text-decoration: none;
@@ -244,9 +282,12 @@ input.pf-c-form-control:-webkit-autofill:focus {
 }
 
 #kc-locale-dropdown a:hover,
-.pf-c-dropdown__menu-item:hover {
+.pf-c-dropdown__menu-item:hover,
+#kc-locale-dropdown a:focus-visible,
+.pf-c-dropdown__menu-item:focus-visible {
   background: #ecfdf5;
   color: var(--diis-brand);
+  outline: none;
 }
 
 .pf-c-alert.pf-m-danger,
@@ -288,6 +329,10 @@ input.pf-c-form-control:-webkit-autofill:focus {
   }
   #kc-page-title {
     font-size: 1.2rem;
+  }
+  #kc-locale-dropdown ul,
+  .pf-c-dropdown__menu {
+    max-width: calc(100vw - 4rem);
   }
 }
 

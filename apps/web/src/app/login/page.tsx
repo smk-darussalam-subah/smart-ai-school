@@ -1,6 +1,7 @@
 'use client';
 
 import Image from 'next/image';
+import Link from 'next/link';
 import { signIn } from 'next-auth/react';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -156,8 +157,11 @@ function LoginContent() {
             </button>
 
             <p className="mt-5 text-sm leading-6 text-slate-600">
-              Akun bermasalah? Hubungi Tata Usaha. Jangan membagikan kata sandi atau kode masuk.
+              Jangan membagikan kata sandi atau kode masuk.
             </p>
+            <Link href="/login/bantuan" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-blue-800 hover:text-blue-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-2">
+              Bantuan masuk
+            </Link>
           </div>
           <p className="mt-6 text-center text-xs text-slate-500">
             &copy; {new Date().getFullYear()} SMK Darussalam Subah
