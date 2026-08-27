@@ -51,7 +51,7 @@ export default function ViewAsSwitcher({
         Masuk sebagai
       </p>
       <Select value={viewAs ?? ASLI} onValueChange={apply} disabled={pending}>
-        <SelectTrigger className="h-8 text-xs" aria-label="Pilih peran tinjau">
+        <SelectTrigger className="min-h-11 text-xs" aria-label="Pilih peran tinjau">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

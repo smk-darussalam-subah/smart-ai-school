@@ -154,21 +154,16 @@ Setiap listener dibungkus `try/catch` dengan logging via NestJS Logger. Jika Fon
 
 ## 4. Role & RBAC
 
-### 4.1 7 Base Role (Keycloak realm roles)
+### 4.1 Enam Identity Role Stabil
 
-> **Sumber kode:** `enum UserRole` (schema.prisma L59-83)
+Keycloak hanya menyimpan `SUPER_ADMIN`, `TATA_USAHA`, `GURU`, `SISWA`, `ORANG_TUA`, dan
+`INDUSTRI`. Kepala Sekolah dan jabatan organisasi lain tidak disimpan sebagai realm role.
 
-| Role | Cakupan |
-|---|---|
-| `SUPER_ADMIN` | Full system access, provisioning, konfigurasi |
-| `KEPALA_SEKOLAH` | Oversight, approval, analytics |
-| `TATA_USAHA` | Admin: finance (record), PPDB, data siswa |
-| `GURU` | Teaching, assessment, grading |
-| `SISWA` | Learning, assignments, assessments |
-| `ORANG_TUA` | Monitoring progres anak, payments |
-| `INDUSTRI` | Mitra industri (PKL/BKK, lowongan kerja) |
+### 4.2 Lima Belas Position Code Berbasis Appointment
 
-### 4.2 11 Position Code (synced sebagai Keycloak realm roles via R-23)
+Position code adalah katalog jabatan period-bound di database DIIS. Authority hanya efektif
+ketika Appointment berada pada lifecycle dan tahun yang sah; resolver permission tidak membaca
+legacy `StaffPosition` sebagai authority.
 
 | Code | Kategori | Cakupan |
 |---|---|---|
@@ -183,6 +178,9 @@ Setiap listener dibungkus `try/catch` dengan logging via NestJS Logger. Jika Fon
 | `GURU_BK` | FUNGSIONAL | Guru bimbingan konseling |
 | `BENDAHARA` | TENDIK | Bendahara |
 | `STAF_KEPEGAWAIAN` / `OPERATOR_DAPODIK` | TENDIK | Staf kepegawaian / operator Dapodik |
+
+Effective authority selalu menggabungkan identity role, Appointment aktif, permission database,
+dan resource scope seperti Teaching Assignment, Wali Kelas, Kaprog major, atau selected child.
 
 ### 4.3 Permission-Based RBAC
 

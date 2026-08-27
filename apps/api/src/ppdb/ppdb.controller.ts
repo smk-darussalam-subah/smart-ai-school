@@ -68,7 +68,10 @@ export class PpdbController {
     return this.ppdbService.submitSpmbIntake(dto, this.extractClientIp(req));
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
+  @Roles(
+    'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'KEPALA_TU',
+    'WAKA_HUMAS', 'KOOR_BKK', 'KOOR_HUBIN', 'WAKIL_KOOR_HUBIN',
+  )
   @RequirePermission('ppdb.read')
   @Get('leads')
   findAll(@Query() rawQuery: unknown) {
@@ -84,7 +87,10 @@ export class PpdbController {
     return this.ppdbService.getStats();
   }
 
-  @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @Roles(
+    'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'KEPALA_TU',
+    'WAKA_HUMAS', 'KOOR_BKK', 'KOOR_HUBIN', 'WAKIL_KOOR_HUBIN',
+  )
   @RequirePermission('ppdb.read')
   @Get('leads/:id')
   findById(@Param('id', ParseUUIDPipe) id: string) {

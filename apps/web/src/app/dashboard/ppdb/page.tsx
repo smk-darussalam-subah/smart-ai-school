@@ -1,8 +1,9 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch, PaginatedResponse } from '@/lib/api';
+import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
+import { PPDB_DISCOVERABILITY_RULE } from '@/lib/navigation-authority';
 import LoadError from '@/components/LoadError';
 import PpdbTable from './_components/PpdbTable';
 import { PPDB_LEADS_PAGE_LIMIT, ppdbLeadsListPath } from './ppdb-query';
@@ -21,11 +22,12 @@ const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? (v
 export default async function PpdbPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
-  const roles: string[] = await getEffectiveRoles(session);
+  const authority = await resolveDashboardAuthority(session);
+  const canRead = PPDB_DISCOVERABILITY_RULE.permissions.every((permission) => authority.can(permission)) &&
+    authority.hasRole(...PPDB_DISCOVERABILITY_RULE.roles);
+  if (!canRead) redirect('/dashboard');
 
-  if (roles.includes('GURU')) redirect('/dashboard');
-
-  const canEdit = roles.includes('SUPER_ADMIN') || roles.includes('TATA_USAHA');
+  const canEdit = authority.can('ppdb.update') && authority.hasRole('SUPER_ADMIN', 'TATA_USAHA');
   const token = session.accessToken ?? '';
   const sp = await searchParams;
   const page = Math.max(1, Number(one(sp.page)) || 1);

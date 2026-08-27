@@ -44,7 +44,7 @@ export const ProvisionUserSchema = z.object({
       return { message: `${dto.role} memerlukan ${(dto.role === 'ORANG_TUA' ? 'phone' : 'email')}` };
     },
   )
-  // Pegawai (GURU/TU/KS) wajib status kepegawaian; NIY opsional (boleh belum punya).
+  // Pegawai dengan identity GURU/TATA_USAHA wajib status kepegawaian; jabatan berasal dari Appointment.
   // Non-pegawai (INDUSTRI/ORANG_TUA/SUPER_ADMIN) tidak boleh isi niy/status.
   .refine(
     (dto) => {

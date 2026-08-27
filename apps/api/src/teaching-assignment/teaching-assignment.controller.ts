@@ -22,6 +22,7 @@ import { AuthUser } from '@smk/auth';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
+import { Audit } from '../audit-log/decorators/audit.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { TeachingAssignmentService } from './teaching-assignment.service';
 import { CreateAssignmentSchema, CreateAssignmentDto } from './dto/create-assignment.dto';
@@ -82,6 +83,7 @@ export class TeachingAssignmentController {
    */
   @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
   @RequirePermission('academic.teaching.manage')
+  @Audit({ action: 'teachingAssignment.create', resourceType: 'teaching_assignment', captureBody: false })
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(@Body(ZodPipe(CreateAssignmentSchema)) dto: CreateAssignmentDto) {
@@ -94,6 +96,7 @@ export class TeachingAssignmentController {
    */
   @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
   @RequirePermission('academic.teaching.manage')
+  @Audit({ action: 'teachingAssignment.update', resourceType: 'teaching_assignment', captureBody: false })
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -107,6 +110,7 @@ export class TeachingAssignmentController {
    */
   @Roles('SUPER_ADMIN')
   @RequirePermission('academic.teaching.manage')
+  @Audit({ action: 'teachingAssignment.delete', resourceType: 'teaching_assignment', captureBody: false })
   @Delete(':id')
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.remove(id);

@@ -1,9 +1,10 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getEffectiveRoles } from '@/lib/view-as';
 import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import LoadError from '@/components/LoadError';
+import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
+import { CLASS_CONFIG_DISCOVERABILITY_RULE } from '@/lib/navigation-authority';
 import KelasClient from './_components/KelasClient';
 
 export interface ClassRow {
@@ -37,17 +38,21 @@ const STAFF_ROLES = ['GURU', 'TATA_USAHA', 'KEPALA_SEKOLAH'];
 export default async function KelasPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
-  const roles: string[] = await getEffectiveRoles(session);
-  if (!roles.includes('SUPER_ADMIN') && !roles.includes('KEPALA_SEKOLAH') && !roles.includes('TATA_USAHA')) {
+  const authority = await resolveDashboardAuthority(session);
+  if (!CLASS_CONFIG_DISCOVERABILITY_RULE.permissions.every((permission) => authority.can(permission)) ||
+    !authority.hasRole(...CLASS_CONFIG_DISCOVERABILITY_RULE.roles)) {
     redirect('/dashboard');
   }
 
   const token = session?.accessToken ?? '';
 
+  const canManage = authority.can('academic.teaching.manage') && authority.hasRole('SUPER_ADMIN', 'TATA_USAHA');
   const [classesRes, majorsRes, groupedRes] = await Promise.all([
     apiFetch<{ data: ClassRow[]; total: number }>('/classes?includeInactive=true&limit=100', token),
     apiFetch<Major[]>('/school/majors?activeOnly=true', token),
-    apiFetch<{ groups: { role: string; users: StaffCandidate[] }[] }>('/users/grouped?limit=100', token),
+    canManage
+      ? apiFetch<{ groups: { role: string; users: StaffCandidate[] }[] }>('/users/grouped?limit=100', token)
+      : Promise.resolve(null),
   ]);
 
   if (classesRes === null) return <LoadError />;
@@ -58,8 +63,7 @@ export default async function KelasPage() {
     .filter((g) => STAFF_ROLES.includes(g.role))
     .flatMap((g) => g.users.map((u) => ({ ...u, role: g.role })));
 
-  const isSuperAdmin = roles.includes('SUPER_ADMIN');
-  const canManage = isSuperAdmin || roles.includes('TATA_USAHA');
+  const isSuperAdmin = authority.hasRole('SUPER_ADMIN');
 
   return (
     <KelasClient
