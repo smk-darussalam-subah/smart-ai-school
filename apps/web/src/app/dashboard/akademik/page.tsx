@@ -39,6 +39,7 @@ import {
   type SppDashboardGroup,
   type StudentDashboardAssignmentGroup as OrtuStudentDashboardAssignmentGroup,
 } from './_components/ortu/ortu-mappers';
+import { resolveAcademicWorkflowView } from '@/lib/academic-workflow-deep-link';
 
 type Assignment = TeachingAssignmentItem;
 interface ClassItem {
@@ -65,6 +66,17 @@ interface StudentDashboardAssignment {
   status: 'pending' | 'submitted' | 'graded';
   progress?: number;
   kktp?: number;
+  purpose?: 'regular' | 'remedial';
+  sessionStatus?: string;
+  dueAt?: string | null;
+  instructions?: string | null;
+  remedialParticipant?: {
+    status: 'assigned' | 'in_progress' | 'submitted' | 'passed' | 'needs_retry';
+    assignedAt: string;
+    startedAt: string | null;
+    submittedAt: string | null;
+    finalizedAt: string | null;
+  } | null;
 }
 interface SiswaDashboardAssignmentGroup {
   assignments: StudentDashboardAssignment[];
@@ -83,6 +95,30 @@ const ASSESSMENT_SESSION_PAGE_SIZE = 100;
 type AcademicSearchParams = Promise<Record<string, string | string[] | undefined>>;
 const oneSearchParam = (value: string | string[] | undefined): string =>
   Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
+
+function assignmentDeadline(dueAt: string | null | undefined, now: Date): {
+  label: string;
+  days: number;
+} {
+  if (!dueAt) return { label: 'Tanpa tenggat', days: Number.POSITIVE_INFINITY };
+  const date = new Date(dueAt);
+  if (Number.isNaN(date.getTime())) return { label: 'Tenggat tidak valid', days: Number.POSITIVE_INFINITY };
+  return {
+    label: new Intl.DateTimeFormat('id-ID', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone: 'Asia/Jakarta',
+    }).format(date),
+    days: Math.ceil((date.getTime() - now.getTime()) / 86_400_000),
+  };
+}
+
+function studentTaskStatus(item: StudentDashboardAssignment): 'pending' | 'submitted' | 'graded' {
+  if (item.purpose !== 'remedial' || !item.remedialParticipant) return item.status;
+  if (item.remedialParticipant.status === 'submitted') return 'submitted';
+  if (item.remedialParticipant.status === 'passed') return 'graded';
+  return 'pending';
+}
 
 async function fetchInitialAssessmentSessions(token: string): Promise<{
   data: AssessmentSessionData[];
@@ -175,6 +211,7 @@ export default async function AkademikPage({ searchParams }: { searchParams: Aca
 
   // ── Dashboard Siswa (W2 — mobile-first, 7 bottom-nav tabs). ──────────────
   if (isSiswa) {
+    const initialWorkflowView = resolveAcademicWorkflowView(requestedParams.view, 'student');
     // Fetch siswa-specific data
     // Note: studentId lookup from keycloakId — backend should resolve this
     const studentId = session.keycloakId ?? '';
@@ -334,25 +371,37 @@ export default async function AkademikPage({ searchParams }: { searchParams: Aca
     const realAssignments: SiswaTugas[] | null = assignmentsRes
       ? assignmentsRes.data
           .flatMap((group) => group.assignments)
-          .map((item, index) => ({
-            id: index + 1,
-            uuid: item.id,
-            assessmentSessionId: item.type === 'assessment' ? item.id : undefined,
-            mp: item.subject,
-            title: item.title,
-            type: item.type === 'assessment' ? 'Asesmen' : 'Modul LMS',
-            deadline: 'Aktif',
-            dlDays: 0,
-            status: item.status,
-            guru: item.guru ?? 'Guru mapel',
-            desc:
-              item.type === 'assessment'
-                ? 'Kerjakan asesmen sesuai waktu dan kirim jawaban dari sistem.'
-                : 'Lanjutkan pembelajaran modul sampai selesai.',
-            score: item.status === 'graded' ? (item.progress ?? 0) : undefined,
-            feedback: null,
-            submittedFiles: 0,
-          }))
+          .map((item, index) => {
+            const deadline = assignmentDeadline(item.dueAt, now);
+            return {
+              id: index + 1,
+              uuid: item.id,
+              assessmentSessionId: item.type === 'assessment' ? item.id : undefined,
+              purpose: item.purpose,
+              sessionStatus: item.sessionStatus,
+              dueAt: item.dueAt ?? null,
+              remedialParticipant: item.remedialParticipant ?? null,
+              mp: item.subject,
+              title: item.title,
+              type: item.purpose === 'remedial'
+                ? 'Remedial'
+                : item.type === 'assessment' ? 'Asesmen' : 'Modul LMS',
+              deadline: deadline.label,
+              dlDays: deadline.days,
+              status: studentTaskStatus(item),
+              guru: item.guru ?? 'Guru mapel',
+              desc: item.instructions?.trim() || (
+                item.purpose === 'remedial'
+                  ? 'Kerjakan remedial sesuai tenggat dan pantau status finalisasi dari guru.'
+                  : item.type === 'assessment'
+                    ? 'Kerjakan asesmen sesuai waktu dan kirim jawaban dari sistem.'
+                    : 'Lanjutkan pembelajaran modul sampai selesai.'
+              ),
+              score: item.status === 'graded' ? (item.progress ?? 0) : undefined,
+              feedback: null,
+              submittedFiles: 0,
+            };
+          })
       : null;
 
     return (
@@ -371,6 +420,7 @@ export default async function AkademikPage({ searchParams }: { searchParams: Aca
           realAttStats={realAttStats}
           viewAs={viewAs}
           openNotifications={openNotifications}
+          initialWorkflowView={initialWorkflowView}
         />
       </SiswaRefreshWrapper>
     );
@@ -378,6 +428,7 @@ export default async function AkademikPage({ searchParams }: { searchParams: Aca
 
   // ── Dashboard Guru (IA baru). Role lain → tampilan lama (fallback). ─────────
   if (isGuru) {
+    const initialWorkflowView = resolveAcademicWorkflowView(requestedParams.view, 'teacher');
     const [schedulesRes, activitiesRes, rppRes, lmsRes, semRes, assessmentRes] = await Promise.all([
       apiFetch<{ data: ScheduleItem[] }>('/schedules?limit=500', token),
       apiFetch<{ data: ActivityItem[] }>('/class-activities?limit=200', token),
@@ -466,12 +517,14 @@ export default async function AkademikPage({ searchParams }: { searchParams: Aca
         semester={semester}
         dataWarning={dataWarning || assessmentRes.failed}
         canManageReportCards={!authority.hasRole('SUPER_ADMIN')}
+        initialWorkflowView={initialWorkflowView}
       />
     );
   }
 
   // ── Dashboard KS / Waka Kurikulum (F4 — desktop-first, 7-screen workspace). ─
   if (isKs) {
+    const initialWorkflowView = resolveAcademicWorkflowView(requestedParams.view, 'principal');
     const [schedulesRes, activitiesRes, rppRes, lmsRes, semRes, assessmentRes] = await Promise.all([
       apiFetch<{ data: ScheduleItem[] }>('/schedules?limit=500', token),
       apiFetch<{ data: ActivityItem[] }>('/class-activities?limit=200', token),
@@ -499,12 +552,14 @@ export default async function AkademikPage({ searchParams }: { searchParams: Aca
         academicYear={academicYear}
         semester={semester}
         dataWarning={dataWarning || assessmentRes.failed}
+        initialWorkflowView={initialWorkflowView}
       />
     );
   }
 
   // ── Dashboard Orang Tua (P25 — wired to real APIs, mobile-first, 5 tabs). ────
   if (isOrtu) {
+    const initialWorkflowView = resolveAcademicWorkflowView(requestedParams.view, 'parent');
     // Round 1: fetch announcements + children list
     const [announcementsRes, childrenRes] = await Promise.all([
       apiFetch<{ data: { id: string; title: string; createdAt: string }[] }>(
@@ -652,6 +707,7 @@ export default async function AkademikPage({ searchParams }: { searchParams: Aca
           childRanks={childRanks}
           openNotifications={openNotifications}
           initialStudentId={initialStudentId}
+          initialWorkflowView={initialWorkflowView}
         />
       </OrtuRefreshWrapper>
     );
@@ -869,6 +925,7 @@ export default async function AkademikPage({ searchParams }: { searchParams: Aca
       semester={semesterRes?.number ?? 1}
       dataWarning={ownDataWarning}
       canManageReportCards={!authority.hasRole('SUPER_ADMIN')}
+      initialWorkflowView={resolveAcademicWorkflowView(requestedParams.view, 'teacher')}
     />
   );
 

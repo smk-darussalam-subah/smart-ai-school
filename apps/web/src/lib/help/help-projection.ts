@@ -1,20 +1,17 @@
-import type { HelpArtifact, HelpContentBlock, HelpContext, HelpTopic } from './help-schema';
+import type { HelpArtifact, HelpContentBlock, HelpScreenshot, HelpTopic } from './help-schema';
+import {
+  canAccessHelpEvidenceAuthority,
+  type HelpAuthoritySnapshot,
+} from './help-evidence-authority';
 import { HELP_CATALOG, HELP_TOPIC_BY_ID } from './help-catalog';
 import { HELP_ARTIFACTS, HELP_SCREENSHOTS } from './help-evidence';
+import { isHelpArtifactReady } from './help-artifacts';
+import { isHelpScreenshotReady } from './help-screenshots';
 import type { HelpTopicSummary } from './help-search';
 
 export type { HelpTopicSummary } from './help-search';
 
-export interface HelpAuthoritySnapshot {
-  identityRoles: string[];
-  positionCodes: string[];
-  permissions: string[];
-  contexts: HelpContext[];
-  viewAs: string | null;
-  permissionCheckAvailable: boolean;
-  selectedChildVerified: boolean;
-  childCount: number;
-}
+export type { HelpAuthoritySnapshot } from './help-evidence-authority';
 
 export interface HelpTopicProjection extends HelpTopicSummary {
   version: string;
@@ -66,30 +63,21 @@ export function canAccessHelpArtifact(
   artifact: HelpArtifact,
   authority: HelpAuthoritySnapshot,
 ): boolean {
-  const isSuperAdmin = authority.identityRoles.includes('SUPER_ADMIN') && !authority.viewAs;
-  if (isSuperAdmin && artifact.allowSuperAdminRecovery) return true;
+  return canAccessHelpEvidence(artifact, authority);
+}
 
-  const audienceRestricted = artifact.primaryRoles.length > 0 || artifact.positionCodes.length > 0;
-  const audienceMatch = !audienceRestricted ||
-    intersects(artifact.primaryRoles, authority.identityRoles) ||
-    intersects(artifact.positionCodes, authority.positionCodes);
-  if (!audienceMatch) return false;
-  if (artifact.selectedChildRequired && !authority.selectedChildVerified) return false;
-  if (!artifact.assignmentContexts.every((context) => authority.contexts.includes(context))) return false;
+export function canAccessHelpScreenshot(
+  screenshot: HelpScreenshot,
+  authority: HelpAuthoritySnapshot,
+): boolean {
+  return canAccessHelpEvidence(screenshot, authority);
+}
 
-  if (artifact.permissionsAny.length > 0) {
-    if (!authority.permissionCheckAvailable) return false;
-    const allowed = authority.permissions.includes('*') ||
-      intersects(artifact.permissionsAny, authority.permissions);
-    if (!allowed) return false;
-  }
-  if (artifact.permissionsAll.length > 0) {
-    if (!authority.permissionCheckAvailable) return false;
-    const allowed = authority.permissions.includes('*') ||
-      artifact.permissionsAll.every((permission) => authority.permissions.includes(permission));
-    if (!allowed) return false;
-  }
-  return true;
+function canAccessHelpEvidence(
+  evidence: HelpArtifact | HelpScreenshot,
+  authority: HelpAuthoritySnapshot,
+): boolean {
+  return canAccessHelpEvidenceAuthority(evidence, authority);
 }
 
 export function projectHelpSummaries(authority: HelpAuthoritySnapshot): HelpTopicSummary[] {
@@ -108,17 +96,42 @@ export function projectHelpSummaries(authority: HelpAuthoritySnapshot): HelpTopi
 
 export function projectHelpTopic(topic: HelpTopic, authority: HelpAuthoritySnapshot): HelpTopicProjection | null {
   if (!canProjectHelpTopic(topic, authority)) return null;
-  const readyScreenshots = new Set(
-    HELP_SCREENSHOTS.filter((item) => item.assetStatus === 'ready').map((item) => item.id),
-  );
-  const blocks = topic.blocks.filter((block) => block.kind !== 'screenshot' || readyScreenshots.has(block.screenshotId));
+  const screenshotById = new Map(HELP_SCREENSHOTS.map((item) => [item.id, item]));
+  const projectedScreenshotIds = new Set<string>();
+  const blocks = topic.blocks.filter((block) => {
+    if (block.kind !== 'screenshot') return true;
+    const screenshot = screenshotById.get(block.screenshotId);
+    const allowed = Boolean(
+      screenshot && isHelpScreenshotReady(screenshot) && canAccessHelpScreenshot(screenshot, authority),
+    );
+    if (allowed) projectedScreenshotIds.add(block.screenshotId);
+    return allowed;
+  });
+  for (const screenshotId of topic.screenshotIds) {
+    if (projectedScreenshotIds.has(screenshotId)) continue;
+    const screenshot = screenshotById.get(screenshotId);
+    if (!screenshot || !isHelpScreenshotReady(screenshot) || !canAccessHelpScreenshot(screenshot, authority)) continue;
+    blocks.push({
+      kind: 'screenshot',
+      screenshotId: screenshot.id,
+      caption: screenshot.caption,
+      altText: screenshot.altText,
+      viewport: screenshot.viewport,
+      width: screenshot.width,
+      height: screenshot.height,
+    });
+  }
   const relatedTopics = topic.relatedTopicIds
     .map((id) => HELP_TOPIC_BY_ID.get(id))
     .filter((related): related is HelpTopic => Boolean(related && canProjectHelpTopic(related, authority)))
     .map(({ id, slug, title }) => ({ id, slug, title }));
   const artifacts = HELP_ARTIFACTS
     .filter((artifact) => artifact.topicIds.includes(topic.id) && canAccessHelpArtifact(artifact, authority))
-    .map(({ id, label, status }) => ({ id, label, status }));
+    .map((artifact) => ({
+      id: artifact.id,
+      label: artifact.label,
+      status: artifact.status === 'ready' && !isHelpArtifactReady(artifact) ? 'pending' as const : artifact.status,
+    }));
   const { id, slug, title, summary, route, category, keywords, version, featureStatus, updatedAt, contentOwner } = topic;
   return {
     id,

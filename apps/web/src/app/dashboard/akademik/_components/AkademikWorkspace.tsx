@@ -41,6 +41,10 @@ import {
   buildAssignmentSessionCandidates,
   type AssessmentTeachingAssignment,
 } from './assessment-assignment-candidates';
+import {
+  academicWorkflowPresentation,
+  type AcademicWorkflowView,
+} from '@/lib/academic-workflow-deep-link';
 
 type Assignment = AssessmentTeachingAssignment;
 
@@ -63,6 +67,7 @@ interface Props {
   /** true bila sebagian data inti (nilai/kehadiran) gagal dimuat. */
   dataWarning?: boolean;
   canManageReportCards: boolean;
+  initialWorkflowView?: AcademicWorkflowView | null;
 }
 
 type Screen = 'ringkasan' | 'jadwal' | 'pembelajaran' | 'penilaian' | 'kehadiran' | 'penugasan' | 'capaian' | 'rekap' | 'rapor';
@@ -83,7 +88,9 @@ export default function AkademikWorkspace({
   grades, attendances, assignments, schedules, activities, rpp, lmsModules, todayClasses, assessmentSessions,
   assessmentSessionTotal, assessmentSessionPage, assessmentSessionLimit, academicYear, semester, dataWarning,
   canManageReportCards,
+  initialWorkflowView = null,
 }: Props) {
+  const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
   const approvedRpp = useMemo(() => rpp.filter((r) => r.status === 'approved'), [rpp]);
   const subjects = useMemo(() => {
     const set = new Set<string>();
@@ -101,7 +108,7 @@ export default function AkademikWorkspace({
     return [...m.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [assignments, schedules]);
 
-  const [screen, setScreen] = useState<Screen>('ringkasan');
+  const [screen, setScreen] = useState<Screen>(initialWorkflow.teacherScreen);
   // W2-B-5: Wali kelas detection — fetch real wali classes from /teachers/me/wali-classes
   const [waliClasses, setWaliClasses] = useState<WaliClassItem[]>([]);
   useEffect(() => {
@@ -125,7 +132,7 @@ export default function AkademikWorkspace({
   const [jurnal, setJurnal] = useState<{ classId: string; className: string; subject: string; startLabel: string; jpStart: number } | null>(null);
   const [inputNilai, setInputNilai] = useState(false);
   const [penilaian, setPenilaian] = useState<{ session: TodayClass; mode: 'preview' | 'monitor' | 'analysis'; tab: 'diag' | 'form' | 'fb' } | null>(null);
-  const [penilaianPanel, setPenilaianPanel] = useState<'nilai' | 'sesi' | 'bank' | 'koreksi' | 'remedial'>('nilai');
+  const [penilaianPanel, setPenilaianPanel] = useState<'nilai' | 'sesi' | 'bank' | 'koreksi' | 'remedial'>(initialWorkflow.teacherAssessmentPanel);
   const [penilaianBankOpen, setPenilaianBankOpen] = useState(false);
   const [sessFlow, setSessFlow] = useState<TodayClass | null>(null);
   // Step "Buka Modul Ajar" dari session flow: buka ModulAjarForm DI ATAS modal sesi.
