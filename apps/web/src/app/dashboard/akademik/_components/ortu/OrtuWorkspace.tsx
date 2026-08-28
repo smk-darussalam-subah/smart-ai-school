@@ -29,6 +29,10 @@ import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem } from '../guru-types';
 import { filterByStudentId, type OrtuAssignmentItem, type SppApiItem } from './ortu-mappers';
 import { initialChildIndex, learnerDashboardHref, learnerReportHref } from '../learner-navigation';
+import {
+  academicWorkflowPresentation,
+  type AcademicWorkflowView,
+} from '@/lib/academic-workflow-deep-link';
 
 // ── Types (exported for child components) ───────────────────────────────────
 
@@ -56,16 +60,18 @@ interface OrtuWorkspaceProps {
   childRanks?: Record<string, number | null>;
   openNotifications?: boolean;
   initialStudentId?: string;
+  initialWorkflowView?: AcademicWorkflowView | null;
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function OrtuWorkspace({
-  children: realChildren, grades, attendance, schedule, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, childRanks, openNotifications = false, initialStudentId
+  children: realChildren, grades, attendance, schedule, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, childRanks, openNotifications = false, initialStudentId, initialWorkflowView = null
 }: OrtuWorkspaceProps) {
   const { data: session } = useSession();
   const router = useRouter();
-  const [activeScreen, setActiveScreen] = useState<OrtuScreen>('beranda');
+  const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
+  const [activeScreen, setActiveScreen] = useState<OrtuScreen>(initialWorkflow.parentScreen);
   const [modal, setModal] = useState<ModalState>(openNotifications ? { type: 'pengumuman' } : { type: null });
   const notificationTriggerRef = useRef<HTMLButtonElement>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -106,6 +112,13 @@ export default function OrtuWorkspace({
   const childList = realChildren?.length ? realChildren : [];
   const child = childList[activeChildIndex] ?? childList[0] ?? { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
   const activeStudentId = 'studentId' in child ? child.studentId : undefined;
+  useEffect(() => {
+    if (initialWorkflow.parentFocus !== 'remedial' || activeScreen !== 'beranda' || !activeStudentId) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById('ortu-remedial')?.scrollIntoView({ block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeScreen, activeStudentId, initialWorkflow.parentFocus]);
   const childGrades = filterByStudentId(grades, activeStudentId);
   const childAttendance = filterByStudentId(attendance, activeStudentId);
   const childSchedule = filterByStudentId(schedule, activeStudentId);

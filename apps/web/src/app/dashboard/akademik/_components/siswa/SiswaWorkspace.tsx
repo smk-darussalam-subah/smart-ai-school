@@ -35,6 +35,10 @@ import {
 import { withCompletedModuleProgress } from './siswa-modul-progress';
 import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaXP, SiswaLeaderboardEntry, SiswaModul, SiswaCP, SiswaKehadiranStats, SiswaQuest, SiswaKalenderEvent, BadgeCelebrationData } from './siswa-types';
 import type { AttendanceEntry } from './KehadiranSiswa';
+import {
+  academicWorkflowPresentation,
+  type AcademicWorkflowView,
+} from '@/lib/academic-workflow-deep-link';
 
 export type SiswaScreen = 'beranda' | 'jadwal' | 'modul' | 'nilai' | 'tugas' | 'kehadiran' | 'capaian';
 
@@ -79,6 +83,7 @@ interface SiswaWorkspaceProps {
   realAttStats?: { hadir: number; izin: number; sakit: number; alpha: number; total: number; pct: number } | null;
   viewAs?: string | null;
   openNotifications?: boolean;
+  initialWorkflowView?: AcademicWorkflowView | null;
 }
 
 function initials(name?: string | null): string {
@@ -139,10 +144,11 @@ function toSiswaKalenderEvent(event: SchoolCalendarEvent): SiswaKalenderEvent {
   };
 }
 
-export default function SiswaWorkspace({ grades, attendance, schedule, announcements, realBadges, realXp, realLeaderboard, realAssignments, realModules, realCp, realAttStats, viewAs, openNotifications = false }: SiswaWorkspaceProps) {
+export default function SiswaWorkspace({ grades, attendance, schedule, announcements, realBadges, realXp, realLeaderboard, realAssignments, realModules, realCp, realAttStats, viewAs, openNotifications = false, initialWorkflowView = null }: SiswaWorkspaceProps) {
   const { data: session } = useSession();
   const router = useRouter();
-  const [activeScreen, setActiveScreen] = useState<SiswaScreen>('beranda');
+  const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
+  const [activeScreen, setActiveScreen] = useState<SiswaScreen>(initialWorkflow.studentScreen);
   const [activeModulId, setActiveModulId] = useState<number | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -336,6 +342,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
           <NilaiSiswa
             {...commonProps}
             grades={(grades ?? []) as SiswaNilai[]}
+            initialFilter={initialWorkflow.studentGradeFilter}
           />
         );
       case 'tugas':
@@ -343,6 +350,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
           <TugasSiswa
             {...commonProps}
             tasks={(realAssignments ?? []) as unknown as SiswaTugas[]}
+            initialSourceFilter={initialWorkflow.studentTaskFilter}
           />
         );
       case 'kehadiran':
