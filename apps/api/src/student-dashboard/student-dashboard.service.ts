@@ -157,13 +157,21 @@ export class StudentDashboardService {
           orderBy: [{ createdAt: 'desc' }],
           select: {
             id: true, title: true, type: true, status: true, purpose: true,
-            academicYear: true, semester: true,
+            academicYear: true, semester: true, dueAt: true, instructions: true,
             module: { select: { subject: true, kktp: true } },
             teachingAssignment: { select: { subject: true } },
             remedialParticipants: {
               where: { studentId: s.id, status: { not: 'cancelled' } },
               take: 1,
-              select: { kktpValue: true, kktpProvenance: true },
+              select: {
+                status: true,
+                assignedAt: true,
+                startedAt: true,
+                submittedAt: true,
+                finalizedAt: true,
+                kktpValue: true,
+                kktpProvenance: true,
+              },
             },
             responses: {
               where: { studentId: s.id },
@@ -176,6 +184,9 @@ export class StudentDashboardService {
           const status = !resp ? 'pending' : resp.score !== null ? 'graded' : 'submitted';
           const subject = sess.module?.subject ?? sess.teachingAssignment?.subject ?? null;
           const participant = sess.remedialParticipants[0];
+          const exposeOwnRemedialLifecycle = user.roles.includes('SISWA') &&
+            sess.purpose === 'remedial' &&
+            Boolean(participant);
           const kktp = await resolveKktpThreshold(this.prisma, sess.purpose === 'remedial' && participant
             ? { participantSnapshot: { value: participant.kktpValue, provenance: participant.kktpProvenance } }
             : {
@@ -187,10 +198,25 @@ export class StudentDashboardService {
           return {
             id: sess.id,
             type: 'assessment' as const,
+            purpose: sess.purpose,
             title: sess.title,
             subject: subject ?? '-',
             guru: null,
             status,
+            ...(exposeOwnRemedialLifecycle ? {
+              sessionStatus: sess.status,
+              dueAt: sess.dueAt?.toISOString() ?? null,
+              instructions: sess.instructions,
+              remedialParticipant: participant
+              ? {
+                  status: participant.status,
+                  assignedAt: participant.assignedAt.toISOString(),
+                  startedAt: participant.startedAt?.toISOString() ?? null,
+                  submittedAt: participant.submittedAt?.toISOString() ?? null,
+                  finalizedAt: participant.finalizedAt?.toISOString() ?? null,
+                }
+              : null,
+            } : {}),
             progress: resp?.score ?? 0,
             kktp: kktp.value,
             kktpProvenance: kktp.provenance,

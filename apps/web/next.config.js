@@ -15,6 +15,7 @@ const nextConfig = {
   // in the standalone server output for the authenticated streaming route.
   outputFileTracingIncludes: {
     '/api/help/artifacts/[id]': ['./private/help-artifacts/**/*'],
+    '/api/help/screenshots/[id]': ['./private/help-screenshots/**/*'],
   },
   async rewrites() {
     return [

@@ -148,6 +148,10 @@ export default function TaskDetailModal({ task, onClose, showToast }: Props) {
   );
   const totalQuestions = attempt?.questions.length ?? 0;
   const currentQuestion = attempt?.questions[currentIndex] ?? null;
+  const remedialTerminalStatus = task.purpose === 'remedial' &&
+    (task.remedialParticipant?.status === 'passed' || task.remedialParticipant?.status === 'needs_retry')
+    ? task.remedialParticipant.status
+    : null;
 
   const setAnswer = (questionId: string, answer: AnswerValue) => {
     setAnswers((current) => ({ ...current, [questionId]: answer }));
@@ -239,6 +243,30 @@ export default function TaskDetailModal({ task, onClose, showToast }: Props) {
               <div>
                 <div className="text-sm font-bold text-[var(--text)]">Tugas LMS</div>
                 <p className="mt-1 text-sm text-[var(--muted)]">{task.desc || 'Tugas ini belum berupa asesmen interaktif.'}</p>
+              </div>
+            </div>
+          </div>
+        ) : remedialTerminalStatus ? (
+          <div className={`mt-5 rounded-xl border p-4 ${
+            remedialTerminalStatus === 'passed'
+              ? 'border-emerald-500/25 bg-emerald-500/10'
+              : 'border-amber-500/30 bg-amber-500/10'
+          }`}>
+            <div className="flex items-start gap-3">
+              {remedialTerminalStatus === 'passed'
+                ? <CheckCircle className="mt-0.5 h-5 w-5 text-emerald-500" />
+                : <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-500" />}
+              <div>
+                <div className={`text-sm font-bold ${
+                  remedialTerminalStatus === 'passed' ? 'text-emerald-500' : 'text-amber-500'
+                }`}>
+                  {remedialTerminalStatus === 'passed' ? 'Remedial tuntas' : 'Perlu percobaan berikutnya'}
+                </div>
+                <p className="mt-1 text-sm text-[var(--muted)]">
+                  {remedialTerminalStatus === 'passed'
+                    ? 'Guru telah memfinalisasi remedial ini sebagai tuntas.'
+                    : 'Percobaan ini belum tuntas. Tunggu penugasan remedial berikutnya dari guru.'}
+                </p>
               </div>
             </div>
           </div>

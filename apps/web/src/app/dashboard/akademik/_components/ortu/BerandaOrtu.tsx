@@ -344,7 +344,9 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
         )}
       </div>
 
-      <RemedialOrtu studentId={activeStudentId} />
+      <section id="ortu-remedial" className="scroll-mt-24" aria-label="Status remedial anak">
+        <RemedialOrtu studentId={activeStudentId} />
+      </section>
 
       {/* 8. Announcements */}
       <div className="mb-3.5 rounded-[var(--r)] border border-[var(--border)] bg-[var(--surface)] p-3.5">
