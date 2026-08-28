@@ -1,6 +1,11 @@
 import React from 'react';
 import Link from 'next/link';
-import { ArrowRight, Check, CircleAlert, Info, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Check, CircleAlert, ExternalLink, Info, LockKeyhole, ShieldCheck } from 'lucide-react';
+import {
+  buildVerifiedChildQuery,
+  resolveHelpWorkflowTarget,
+  type HelpWorkflowPersona,
+} from '@/lib/help/help-links';
 import type { HelpTopicProjection } from '@/lib/help/help-projection';
 import type { HelpContentBlock } from '@/lib/help/help-schema';
 import type { HelpTocItem } from '@/lib/help/help-toc';
@@ -12,7 +17,19 @@ const CALLOUT_STYLE = {
   success: { className: 'border-emerald-300 bg-emerald-50 text-emerald-950', icon: ShieldCheck },
 } as const;
 
-function Block({ block, headingId }: { block: HelpContentBlock; headingId?: string }) {
+function Block({
+  block,
+  headingId,
+  selectedChildId,
+  isParentViewer,
+  workflowPersona,
+}: {
+  block: HelpContentBlock;
+  headingId?: string;
+  selectedChildId: string | null;
+  isParentViewer: boolean;
+  workflowPersona: HelpWorkflowPersona;
+}) {
   if (block.kind === 'heading') {
     return block.level === 2
       ? <h2 id={headingId} className="mt-10 scroll-mt-24 text-xl font-bold text-slate-950">{block.text}</h2>
@@ -52,15 +69,89 @@ function Block({ block, headingId }: { block: HelpContentBlock; headingId?: stri
     </aside>;
   }
   if (block.kind === 'faq') return <details className="mt-6 max-w-3xl border-y border-slate-200 py-4"><summary className="min-h-11 cursor-pointer py-2 font-semibold text-slate-950">{block.question}</summary><p className="pb-2 text-sm leading-6 text-slate-700">{block.answer}</p></details>;
-  if (block.kind === 'cta') return <Link href={block.href} className="print:hidden mt-6 inline-flex min-h-11 items-center gap-2 rounded-lg bg-blue-800 px-4 text-sm font-semibold text-white hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-2">{block.label}<ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>;
+  if (block.kind === 'cta') {
+    const target = resolveHelpWorkflowTarget({
+      href: block.href,
+      label: block.label,
+      selectedChildId,
+      preserveSelectedChild: block.preserveSelectedChild && isParentViewer,
+      persona: workflowPersona,
+    });
+    if (!target) {
+      return <aside className="print:hidden mt-6 max-w-3xl border-l-4 border-amber-500 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-950">
+        Pilih anak yang terverifikasi sebelum membuka workflow ini.
+      </aside>;
+    }
+    const linkClassName = 'min-h-11 items-center justify-center gap-2 rounded-lg bg-blue-800 px-4 text-sm font-semibold text-white hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-2';
+    return <section aria-label="Lanjutkan di DIIS" className="print:hidden mt-6 max-w-3xl border-y border-blue-200 bg-blue-50 px-4 py-5 sm:px-5">
+      <p className="text-sm font-bold text-slate-950">Lanjutkan di DIIS</p>
+      <p className="mt-1 text-sm leading-6 text-slate-700">
+        Buka workflow utama tanpa kehilangan panduan pada perangkat desktop.
+      </p>
+      <div className="mt-4">
+        <Link href={target.href} className={`help-workflow-cta-same-tab ${linkClassName}`}>
+          {target.label}<ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </Link>
+        <Link
+          href={target.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`help-workflow-cta-new-tab ${linkClassName}`}
+        >
+          {target.label}<ExternalLink className="h-4 w-4" aria-hidden="true" />
+          <span className="sr-only">(membuka tab baru)</span>
+        </Link>
+      </div>
+      <p className="help-workflow-cta-new-tab mt-2 text-xs leading-5 text-slate-600">
+        Membuka tab baru; panduan ini tetap terbuka.
+      </p>
+    </section>;
+  }
   if (block.kind === 'related-topic') return null;
-  if (block.kind === 'screenshot') return null;
+  if (block.kind === 'screenshot') {
+    const isMobile = block.viewport === 'mobile-390x844';
+    const selectedChildQuery = buildVerifiedChildQuery(selectedChildId);
+    return <figure className={`mt-7 ${isMobile ? 'max-w-[390px]' : 'max-w-4xl'}`}>
+      <div className="overflow-hidden border border-slate-300 bg-slate-100">
+        {/* Authenticated media must retain its selected-child query and bypass the public image optimizer. */}
+        <img
+          src={`/api/help/screenshots/${encodeURIComponent(block.screenshotId)}${selectedChildQuery}`}
+          alt={block.altText}
+          width={block.width}
+          height={block.height}
+          className="h-auto w-full"
+          loading="lazy"
+          decoding="async"
+        />
+      </div>
+      <figcaption className="mt-2 text-sm leading-6 text-slate-600">{block.caption}</figcaption>
+    </figure>;
+  }
   return null;
 }
 
-export default function HelpTopicContent({ topic, toc }: { topic: HelpTopicProjection; toc: HelpTocItem[] }) {
+export default function HelpTopicContent({
+  topic,
+  toc,
+  selectedChildId = null,
+  isParentViewer = false,
+  workflowPersona = 'staff',
+}: {
+  topic: HelpTopicProjection;
+  toc: HelpTocItem[];
+  selectedChildId?: string | null;
+  isParentViewer?: boolean;
+  workflowPersona?: HelpWorkflowPersona;
+}) {
   const headingIds = new Map(toc.map((item) => [item.blockIndex, item.id]));
   return <div>{topic.blocks.map((block, index) => (
-    <Block key={`${block.kind}-${index}`} block={block} headingId={headingIds.get(index)} />
+    <Block
+      key={`${block.kind}-${block.kind === 'screenshot' ? block.screenshotId : index}`}
+      block={block}
+      headingId={headingIds.get(index)}
+      selectedChildId={selectedChildId}
+      isParentViewer={isParentViewer}
+      workflowPersona={workflowPersona}
+    />
   ))}</div>;
 }

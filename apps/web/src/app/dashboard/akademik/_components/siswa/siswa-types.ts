@@ -36,6 +36,16 @@ export interface SiswaTugas {
   id: number;
   uuid?: string;
   assessmentSessionId?: string;
+  purpose?: 'regular' | 'remedial';
+  sessionStatus?: string;
+  dueAt?: string | null;
+  remedialParticipant?: {
+    status: 'assigned' | 'in_progress' | 'submitted' | 'passed' | 'needs_retry';
+    assignedAt: string;
+    startedAt: string | null;
+    submittedAt: string | null;
+    finalizedAt: string | null;
+  } | null;
   mp: string;
   title: string;
   type: string;

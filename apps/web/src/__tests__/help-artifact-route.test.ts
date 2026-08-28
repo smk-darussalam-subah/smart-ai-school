@@ -2,6 +2,7 @@ const mockGetServerSession = jest.fn();
 const mockResolveHelpAuthority = jest.fn();
 const mockFindHelpArtifact = jest.fn();
 const mockStreamHelpArtifact = jest.fn();
+const SYNTHETIC_SHA = 'a'.repeat(64);
 
 jest.mock('next-auth', () => ({ getServerSession: mockGetServerSession }));
 jest.mock('@/lib/auth', () => ({ authOptions: {} }));
@@ -36,6 +37,13 @@ const authority = (patch: Partial<HelpAuthoritySnapshot> = {}): HelpAuthoritySna
 const artifact = (id: string, status: HelpArtifact['status'] = 'ready'): HelpArtifact => ({
   ...HELP_ARTIFACTS.find((item) => item.id === id)!,
   status,
+  sha256: status === 'ready' ? SYNTHETIC_SHA : null,
+  sizeBytes: status === 'ready' ? 13 : null,
+  pageCount: status === 'ready' ? 1 : null,
+  candidateSha: status === 'ready' ? 'b'.repeat(40) : null,
+  generatedAt: status === 'ready' ? '2026-08-28T10:00:00+07:00' : null,
+  privacyReview: status === 'ready' ? 'pass' : 'pending',
+  visualReview: status === 'ready' ? 'pass' : 'pending',
 });
 
 async function get(id: string, query = '', signal?: AbortSignal) {
@@ -75,7 +83,7 @@ describe('Help artifact route authority', () => {
     mockResolveHelpAuthority.mockImplementation(async (_session: unknown, studentId?: string | null) => ({
       authority: authority({
         identityRoles: ['ORANG_TUA'],
-        permissions: ['report.read'],
+        permissions: ['finance.child.read', 'remedial.child.read', 'report.read'],
         contexts: studentId === 'child-owned' ? ['selected-child', 'multi-child'] : ['multi-child'],
         selectedChildVerified: studentId === 'child-owned',
         childCount: 2,
@@ -95,7 +103,7 @@ describe('Help artifact route authority', () => {
     mockResolveHelpAuthority.mockResolvedValue({
       authority: authority({
         identityRoles: ['ORANG_TUA'],
-        permissions: ['report.read'],
+        permissions: ['finance.child.read', 'remedial.child.read', 'report.read'],
         contexts: ['selected-child'],
         selectedChildVerified: true,
         childCount: 1,
@@ -108,7 +116,13 @@ describe('Help artifact route authority', () => {
   });
 
   it('keeps missing files and aborted streams generic while preserving exact safe headers', async () => {
-    mockResolveHelpAuthority.mockResolvedValue({ authority: authority(), topics: [], warning: null });
+    mockResolveHelpAuthority.mockResolvedValue({
+      authority: authority({
+        permissions: ['academic.schedule.read', 'academic.teaching.read', 'ai.chat', 'teacher.attendance.read'],
+      }),
+      topics: [],
+      warning: null,
+    });
     mockStreamHelpArtifact.mockResolvedValueOnce(null);
     expect((await get('artifact.teacher')).status).toBe(404);
 

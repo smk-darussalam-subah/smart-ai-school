@@ -12,6 +12,7 @@ import { projectHelpTopic } from '@/lib/help/help-projection';
 import { buildHelpTableOfContents } from '@/lib/help/help-toc';
 import HelpTopicContent from '../_components/HelpTopicContent';
 import PrintButton from '../_components/PrintButton';
+import { resolveHelpWorkflowPersona } from '@/lib/help/help-links';
 
 export const metadata: Metadata = { title: 'Panduan DIIS' };
 
@@ -49,6 +50,7 @@ export default async function HelpTopicPage({
   const selectedChildQuery = result.authority.selectedChildVerified && query.studentId
     ? `?studentId=${encodeURIComponent(query.studentId)}`
     : '';
+  const workflowPersona = resolveHelpWorkflowPersona(result.authority);
 
   return (
     <article className="help-print-surface mx-auto max-w-5xl bg-white pb-12">
@@ -81,7 +83,13 @@ export default async function HelpTopicPage({
         </nav>
       )}
 
-      <HelpTopicContent topic={topic} toc={toc} />
+      <HelpTopicContent
+        topic={topic}
+        toc={toc}
+        selectedChildId={result.authority.selectedChildVerified ? query.studentId ?? null : null}
+        isParentViewer={result.authority.identityRoles.includes('ORANG_TUA')}
+        workflowPersona={workflowPersona}
+      />
 
       {topic.id === 'topic.official-support' && (
         <section aria-labelledby="official-contact-heading" className="mt-8 max-w-3xl border-y border-slate-200 py-6">

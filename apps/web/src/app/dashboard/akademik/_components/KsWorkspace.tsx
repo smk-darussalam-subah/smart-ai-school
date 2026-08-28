@@ -26,6 +26,10 @@ import { JP_SLOTS, fmtMin, scheduleDayOfWeek, wibTodayISO, wibDateLabel, current
 import { fetchAttendanceHeatmap, fetchMonitoringKbm, fetchRekapAudit, fetchKktpConfigs, saveKktpConfig, fetchTeacherAttendanceToday } from '../actions';
 import type { AssessmentSessionData, TeacherAttendanceSummary } from '../actions';
 import RaporPipelineKs from './ks/RaporPipelineKs';
+import {
+  academicWorkflowPresentation,
+  type AcademicWorkflowView,
+} from '@/lib/academic-workflow-deep-link';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,6 +49,7 @@ interface Props {
   academicYear: string;
   semester: number;
   dataWarning?: boolean;
+  initialWorkflowView?: AcademicWorkflowView | null;
 }
 
 type Screen = 'beranda' | 'modul' | 'sumatif' | 'monitor' | 'rekap' | 'kktp' | 'jadwal' | 'rapor';
@@ -96,9 +101,10 @@ const SCHED_CONFIG = { days: 6, jpPerDay: 8, maxJpGuru: 24 };
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function KsWorkspace({
-  grades, attendances, classes, assignments, rpp, schedules, activities, lmsModules: _lmsModules, realSumatif, subjects, academicYear, semester, dataWarning,
+  grades, attendances, classes, assignments, rpp, schedules, activities, lmsModules: _lmsModules, realSumatif, subjects, academicYear, semester, dataWarning, initialWorkflowView = null,
 }: Props) {
-  const [screen, setScreen] = useState<Screen>('beranda');
+  const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
+  const [screen, setScreen] = useState<Screen>(initialWorkflow.leadershipScreen);
   // Opsi B (mobile nav): auto-center tab aktif saat ganti screen (anti hidden).
   const navRef = useRef<HTMLElement>(null);
   useEffect(() => {
