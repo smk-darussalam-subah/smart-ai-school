@@ -13,6 +13,24 @@ jest.mock('../components/layout/Sidebar', () => ({
   },
 }));
 
+jest.mock('@/components/ui/sheet', () => ({
+  Sheet: function MockSheet({ children }: { children: React.ReactNode }) {
+    return React.createElement('div', null, children);
+  },
+  SheetTrigger: function MockSheetTrigger({ children }: { children: React.ReactNode }) {
+    return React.createElement(React.Fragment, null, children);
+  },
+  SheetContent: function MockSheetContent({ children }: { children: React.ReactNode }) {
+    return React.createElement('section', { role: 'dialog' }, children);
+  },
+  SheetTitle: function MockSheetTitle({ children }: { children: React.ReactNode }) {
+    return React.createElement('h2', null, children);
+  },
+  SheetDescription: function MockSheetDescription({ children }: { children: React.ReactNode }) {
+    return React.createElement('p', null, children);
+  },
+}));
+
 describe('MobileNav', () => {
   it('renders a named navigation trigger with a professional mobile touch target', () => {
     const html = renderToString(React.createElement(MobileNav));
@@ -20,6 +38,8 @@ describe('MobileNav', () => {
     expect(html).toContain('aria-label="Buka menu navigasi"');
     expect(html).toContain('min-h-11');
     expect(html).toContain('min-w-11');
+    expect(html).toContain('Menu navigasi');
+    expect(html).toContain('Navigasi utama sesuai peran dan kewenangan aktif.');
   });
 
   it('hides the real appointment in mobile and desktop chrome during mode tinjau', () => {
