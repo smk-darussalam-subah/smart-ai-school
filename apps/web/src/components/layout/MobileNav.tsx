@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Menu } from 'lucide-react';
 import { identityRoleLabel, positionRoleLabel } from '@/lib/display-shell';
 
@@ -31,6 +31,9 @@ export default function MobileNav({ viewAs = null, permissions = [], permError =
         </SheetTrigger>
         <SheetContent side="left" className="p-0 w-64 border-none">
           <SheetTitle className="sr-only">Menu navigasi</SheetTitle>
+          <SheetDescription className="sr-only">
+            Navigasi utama sesuai peran dan kewenangan aktif.
+          </SheetDescription>
           <Sidebar viewAs={viewAs} permissions={permissions} permError={permError} positionRoles={positionRoles} onNavigate={() => setOpen(false)} className="h-full w-full border-none shadow-none" />
         </SheetContent>
       </Sheet>
