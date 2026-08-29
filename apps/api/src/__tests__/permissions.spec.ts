@@ -268,6 +268,32 @@ describe('PermissionsService', () => {
       );
     });
 
+    it('appointment Kepala Sekolah aktif memberi finance.read kepada stable GURU', async () => {
+      mockRpFindMany.mockResolvedValue([]);
+      mockUpoFindMany.mockResolvedValue([]);
+      mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
+      mockAppointmentFindMany.mockResolvedValue([
+        { position: { permissions: [{ permissionId: 'perm-finance-read' }] } },
+      ]);
+      mockPermFindMany.mockResolvedValue([{ code: 'finance.read' }]);
+
+      expect(await service.hasPermission('kc-ks', ['GURU'], 'finance.read')).toBe(true);
+    });
+
+    it('manual revoke tetap menarik finance.read dari appointment Kepala Sekolah aktif', async () => {
+      mockRpFindMany.mockResolvedValue([]);
+      mockUpoFindMany.mockResolvedValue([
+        { grant: false, permission: { code: 'finance.read' } },
+      ]);
+      mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
+      mockAppointmentFindMany.mockResolvedValue([
+        { position: { permissions: [{ permissionId: 'perm-finance-read' }] } },
+      ]);
+      mockPermFindMany.mockResolvedValue([{ code: 'finance.read' }]);
+
+      expect(await service.hasPermission('kc-ks', ['GURU'], 'finance.read')).toBe(false);
+    });
+
     it('appointment SUSPENDED tidak menambah permission jabatan', async () => {
       mockRpFindMany.mockResolvedValue([]);
       mockUpoFindMany.mockResolvedValue([]);

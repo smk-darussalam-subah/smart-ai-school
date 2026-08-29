@@ -141,10 +141,10 @@ export function Sidebar({ viewAs = null, permissions = [], permError = false, po
   // R-24: Tampilkan badge jabatan tambahan jika ada position roles di luar session
   const extraPositionRoles = visiblePositionRoles(viewAs, roles, positionRoles);
 
-  // Kontrak izin: SUPER_ADMIN = wildcard '*' (lih. lib/permissions.can + auth.service.getMe).
-  // Jaga wildcard secara LOKAL agar menu SA tidak hilang walau /auth/me sempat gagal/seed tertinggal.
+  // Kontrak izin: SUPER_ADMIN = wildcard '*' hanya setelah projection /auth/me berhasil.
+  // Saat projection gagal, item berpermission disembunyikan agar shell dan route sama-sama fail closed.
   const isSuperAdmin = effectiveRoles.includes('SUPER_ADMIN');
-  const effectivePermissions = isSuperAdmin ? ['*'] : permissions;
+  const effectivePermissions = isSuperAdmin && !permError ? ['*'] : permissions;
 
   const isVisible = (item: NavItem): boolean => isNavigationItemVisible(
     item,

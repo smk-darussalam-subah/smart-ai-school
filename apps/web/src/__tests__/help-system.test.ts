@@ -150,6 +150,11 @@ describe('Wave 9 role-aware Help contract', () => {
     };
     expect(canProjectHelpTopic(allPermissionTopic, authority({ permissions: ['academic.teaching.read'] }))).toBe(false);
     expect(canProjectHelpTopic(allPermissionTopic, authority({ permissions: ['academic.teaching.read', 'report.read'] }))).toBe(true);
+    expect(canProjectHelpTopic(allPermissionTopic, authority({
+      identityRoles: ['SUPER_ADMIN'],
+      permissions: [],
+      permissionCheckAvailable: false,
+    }))).toBe(false);
 
     const unavailable = projectHelpTopic(
       HELP_CATALOG.find((topic) => topic.id === 'topic.career-industry')!,
@@ -334,6 +339,7 @@ describe('Wave 9 role-aware Help contract', () => {
     expect(isNavigationItemVisible(rule, ['GURU'], ['academic.teaching.read'], false)).toBe(false);
     expect(isNavigationItemVisible(rule, ['GURU', 'KEPALA_SEKOLAH'], ['academic.final-report.read'], false)).toBe(true);
     expect(isNavigationItemVisible(rule, ['GURU', 'KEPALA_SEKOLAH'], [], true)).toBe(false);
+    expect(isNavigationItemVisible(rule, ['SUPER_ADMIN'], [], true)).toBe(false);
   });
 
   it('keeps private artifacts allowlisted, contained, and non-cacheable', () => {
