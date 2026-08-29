@@ -43,14 +43,17 @@ export function canProjectHelpTopic(topic: HelpTopic, authority: HelpAuthoritySn
     !authority.selectedChildVerified
   ) return false;
 
+  if (
+    !authority.permissionCheckAvailable &&
+    (topic.permissionsAny.length > 0 || topic.permissionsAll.length > 0)
+  ) return false;
+
   if (!isSuperAdmin && topic.permissionsAny.length > 0) {
-    if (!authority.permissionCheckAvailable) return false;
     const allowed = authority.permissions.includes('*') || intersects(topic.permissionsAny, authority.permissions);
     if (!allowed) return false;
   }
 
   if (!isSuperAdmin && topic.permissionsAll.length > 0) {
-    if (!authority.permissionCheckAvailable) return false;
     const allowed = authority.permissions.includes('*') ||
       topic.permissionsAll.every((permission) => authority.permissions.includes(permission));
     if (!allowed) return false;

@@ -26,10 +26,11 @@ export function isNavigationItemVisible(
 ): boolean {
   const isSuperAdmin = effectiveRoles.includes('SUPER_ADMIN');
   if (item.roles && !item.roles.some((role) => effectiveRoles.includes(role))) return false;
+  if (item.permissions && permissionCheckFailed) return false;
   if (
     item.permissions &&
     !isSuperAdmin &&
-    (permissionCheckFailed || !can(permissions, item.permissions))
+    !can(permissions, item.permissions)
   ) return false;
   return true;
 }

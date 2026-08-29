@@ -6,9 +6,8 @@
 // (muat awal) DAN client (saat filter berubah). Graceful null per-sumber.
 // =============================================================================
 
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { apiFetch } from '@/lib/api';
+import { requireExecutiveDashboardAccess } from './executive-authority.server';
 import type {
   Aging,
   ExecFilters,
@@ -116,39 +115,8 @@ function deriveHealth(
   return { score, delta: studentDelta, pilars };
 }
 
-export async function fetchExecutiveBundle(filters: ExecFilters): Promise<ExecutiveData> {
-  const session = await getServerSession(authOptions);
-  const token = session?.accessToken ?? '';
+async function loadExecutiveBundle(token: string, filters: ExecFilters): Promise<ExecutiveData> {
   const qp = toParams(filters);
-
-  const empty: ExecutiveData = {
-    filters: {
-      academicYear: filters.academicYear ?? '',
-      semester: filters.semester ?? 1,
-      majorCode: filters.majorCode,
-    },
-    majors: [],
-    studentsActive: null,
-    health: { score: null, delta: null, pilars: [] },
-    kpi: {
-      studentPct: null,
-      studentDelta: null,
-      studentSpark: [],
-      teacherPct: null,
-      avgGrade: null,
-      sppCollectedPct: null,
-      ppdbConversion: null,
-    },
-    tren: { labels: [], pcts: [] },
-    grades: null,
-    atRisk: null,
-    aging: null,
-    teacher: null,
-    ppdb: null,
-    spp: [],
-    system: { overall: 'unknown', services: [] },
-  };
-  if (!token) return empty;
 
   const [heat, grades, atRisk, aging, teacher, ppdb, sppRows, students, majors, years] =
     await Promise.all([
@@ -230,11 +198,32 @@ export async function fetchExecutiveBundle(filters: ExecFilters): Promise<Execut
   };
 }
 
-/** Daftar tahun ajaran (untuk dropdown filter). */
-export async function fetchAcademicYears(): Promise<string[]> {
-  const session = await getServerSession(authOptions);
-  const token = session?.accessToken ?? '';
-  if (!token) return [];
+async function loadAcademicYears(token: string): Promise<string[]> {
   const years = await apiFetch<AcademicYearRow[]>('/school/academic-years', token);
   return (years ?? []).map((y) => y.code);
+}
+
+/** Muat awal halaman dengan tepat satu resolusi authority. */
+export async function fetchExecutivePageData(filters: ExecFilters): Promise<{
+  initial: ExecutiveData;
+  years: string[];
+}> {
+  const session = await requireExecutiveDashboardAccess();
+  const token = session.accessToken;
+  const [initial, years] = await Promise.all([
+    loadExecutiveBundle(token, filters),
+    loadAcademicYears(token),
+  ]);
+  return { initial, years };
+}
+
+export async function fetchExecutiveBundle(filters: ExecFilters): Promise<ExecutiveData> {
+  const session = await requireExecutiveDashboardAccess();
+  return loadExecutiveBundle(session.accessToken, filters);
+}
+
+/** Daftar tahun ajaran (untuk dropdown filter). */
+export async function fetchAcademicYears(): Promise<string[]> {
+  const session = await requireExecutiveDashboardAccess();
+  return loadAcademicYears(session.accessToken);
 }
