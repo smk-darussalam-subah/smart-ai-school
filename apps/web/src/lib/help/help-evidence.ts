@@ -6,7 +6,35 @@ import {
   type HelpDeck,
   type HelpScreenshot,
 } from './help-schema';
+import generatedAssets from './help-generated-assets.json';
 import { HELP_PERSONA_GUIDES } from './help-personas';
+
+type GeneratedScreenshotAsset = Pick<HelpScreenshot,
+  | 'fileName'
+  | 'sha256'
+  | 'sizeBytes'
+  | 'width'
+  | 'height'
+  | 'candidateSha'
+  | 'themeManifestSha256'
+  | 'capturedAt'
+  | 'privacyReview'
+  | 'visualReview'
+>;
+
+type GeneratedArtifactAsset = Pick<HelpArtifact,
+  | 'fileName'
+  | 'sha256'
+  | 'sizeBytes'
+  | 'pageCount'
+  | 'candidateSha'
+  | 'generatedAt'
+  | 'privacyReview'
+  | 'visualReview'
+>;
+
+const GENERATED_SCREENSHOTS = generatedAssets.screenshots as Record<string, GeneratedScreenshotAsset>;
+const GENERATED_ARTIFACTS = generatedAssets.artifacts as Record<string, GeneratedArtifactAsset>;
 
 type ScreenshotAuthorityInput = Partial<Pick<HelpScreenshot,
   | 'primaryRoles'
@@ -257,7 +285,9 @@ const screenshotInputs: Array<[
   ['shot.period.desktop', 'topic.school-period', '/dashboard/tahun-ajaran', 'super admin', 'desktop-1440x900', 'active period'],
 ];
 
-export const HELP_SCREENSHOTS: HelpScreenshot[] = screenshotInputs.map(([id, topicId, route, persona, viewport, state]) => HelpScreenshotSchema.parse({
+export const HELP_SCREENSHOTS: HelpScreenshot[] = screenshotInputs.map(([id, topicId, route, persona, viewport, state]) => {
+  const generated = GENERATED_SCREENSHOTS[id];
+  return HelpScreenshotSchema.parse({
   id,
   topicId,
   route,
@@ -277,19 +307,20 @@ export const HELP_SCREENSHOTS: HelpScreenshot[] = screenshotInputs.map(([id, top
     'Hapus metadata gambar dan pastikan nama file tidak membawa identitas pengguna.',
   ],
   required: true,
-  assetStatus: 'pending',
-  fileName: null,
-  sha256: null,
-  sizeBytes: null,
-  width: null,
-  height: null,
+  assetStatus: generated ? 'ready' : 'pending',
+  fileName: generated?.fileName ?? null,
+  sha256: generated?.sha256 ?? null,
+  sizeBytes: generated?.sizeBytes ?? null,
+  width: generated?.width ?? null,
+  height: generated?.height ?? null,
   sourceKind: id === 'shot.login.desktop' ? 'shared-auth' : 'application',
-  candidateSha: null,
-  themeManifestSha256: null,
-  capturedAt: null,
-  privacyReview: 'pending',
-  visualReview: 'pending',
-}));
+  candidateSha: generated?.candidateSha ?? null,
+  themeManifestSha256: generated?.themeManifestSha256 ?? null,
+  capturedAt: generated?.capturedAt ?? null,
+  privacyReview: generated?.privacyReview ?? 'pending',
+  visualReview: generated?.visualReview ?? 'pending',
+  });
+});
 
 const ARTIFACT_REQUIRED_PERMISSIONS: Record<string, string[]> = {
   'artifact.administration': [
@@ -319,7 +350,10 @@ const ARTIFACT_REQUIRED_PERMISSIONS: Record<string, string[]> = {
 const artifactInputs = [
   {
     id: 'artifact.complete', label: 'Panduan Lengkap DIIS', fileName: 'panduan-lengkap-diis.pdf',
-    topicIds: ['topic.system-administration'], primaryRoles: ['SUPER_ADMIN'], positionCodes: [],
+    topicIds: Array.from(new Set([
+      ...screenshotInputs.map(([, topicId]) => topicId),
+      'topic.official-support',
+    ])), primaryRoles: ['SUPER_ADMIN'], positionCodes: [],
     assignmentContexts: [], permissionsAny: [], permissionsAll: [],
     selectedChildRequired: false, allowSuperAdminRecovery: true,
   },
@@ -342,24 +376,28 @@ const artifactInputs = [
   }),
 ];
 
-export const HELP_ARTIFACTS: HelpArtifact[] = artifactInputs.map((input) => HelpArtifactSchema.parse({
-  ...input,
-  contentType: 'application/pdf',
-  status: 'pending',
-  sha256: null,
-  sizeBytes: null,
-  pageCount: null,
-  language: 'id-ID',
-  version: '2.0',
-  candidateSha: null,
-  generatedAt: null,
-  privacyReview: 'pending',
-  visualReview: 'pending',
-  assignmentContexts: input.assignmentContexts,
-  permissionsAll: input.permissionsAll ?? [],
-  selectedChildRequired: input.selectedChildRequired,
-  allowSuperAdminRecovery: input.allowSuperAdminRecovery,
-}));
+export const HELP_ARTIFACTS: HelpArtifact[] = artifactInputs.map((input) => {
+  const generated = GENERATED_ARTIFACTS[input.id];
+  return HelpArtifactSchema.parse({
+    ...input,
+    fileName: generated?.fileName ?? input.fileName,
+    contentType: 'application/pdf',
+    status: generated ? 'ready' : 'pending',
+    sha256: generated?.sha256 ?? null,
+    sizeBytes: generated?.sizeBytes ?? null,
+    pageCount: generated?.pageCount ?? null,
+    language: 'id-ID',
+    version: '2.0',
+    candidateSha: generated?.candidateSha ?? null,
+    generatedAt: generated?.generatedAt ?? null,
+    privacyReview: generated?.privacyReview ?? 'pending',
+    visualReview: generated?.visualReview ?? 'pending',
+    assignmentContexts: input.assignmentContexts,
+    permissionsAll: input.permissionsAll ?? [],
+    selectedChildRequired: input.selectedChildRequired,
+    allowSuperAdminRecovery: input.allowSuperAdminRecovery,
+  });
+});
 
 const WAVE9_REPORT = 'docs/audits/WAVE9-ADOPTION-UI-READINESS-HELP-IMPLEMENTATION-2026-08-26.md';
 const WAVE3_REPORT = 'docs/audits/WAVE3-AI-FINAL-STAGING-EVIDENCE-2026-08-06.md';
