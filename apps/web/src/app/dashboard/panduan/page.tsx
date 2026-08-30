@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
-import { BookOpenCheck, FileClock, LifeBuoy, ShieldCheck } from 'lucide-react';
+import { BookOpenCheck, FileCheck2, FileClock, LifeBuoy, ShieldCheck } from 'lucide-react';
 import { authOptions } from '@/lib/auth';
 import { resolveHelpAuthority } from '@/lib/help/help-authority';
 import { normalizeHelpSourceRoute, ROUTE_TOPIC_MAP } from '@/lib/help/help-catalog';
+import { hasReadyHelpArtifact } from '@/lib/help/help-projection';
 import HelpExplorer from './_components/HelpExplorer';
 
 export const metadata: Metadata = { title: 'Panduan DIIS' };
@@ -20,6 +21,7 @@ export default async function HelpPage({
   const result = await resolveHelpAuthority(session, params.studentId ?? null);
   const sourceRoute = normalizeHelpSourceRoute(params.from);
   const contextualTopicId = sourceRoute ? ROUTE_TOPIC_MAP[sourceRoute] : null;
+  const hasReadyPdf = hasReadyHelpArtifact(result.authority);
 
   return (
     <div className="mx-auto max-w-6xl pb-12">
@@ -49,7 +51,21 @@ export default async function HelpPage({
       <section aria-label="Ringkasan bantuan" className="grid border-b border-slate-200 py-6 sm:grid-cols-3">
         <div className="flex gap-3 py-3 sm:pr-5"><ShieldCheck className="h-5 w-5 shrink-0 text-emerald-700" /><div><p className="text-sm font-bold">Sesuai kewenangan</p><p className="mt-1 text-xs leading-5 text-slate-600">Topik difilter di server sebelum dikirim ke browser.</p></div></div>
         <div className="flex gap-3 border-slate-200 py-3 sm:border-x sm:px-5"><LifeBuoy className="h-5 w-5 shrink-0 text-blue-700" /><div><p className="text-sm font-bold">Pemulihan yang jelas</p><p className="mt-1 text-xs leading-5 text-slate-600">State gagal dibedakan dari data kosong.</p></div></div>
-        <div className="flex gap-3 py-3 sm:pl-5"><FileClock className="h-5 w-5 shrink-0 text-slate-700" /><div><p className="text-sm font-bold">PDF belum dibekukan</p><p className="mt-1 text-xs leading-5 text-slate-600">Dokumen final tersedia setelah exact-SHA staging disetujui.</p></div></div>
+        <div className="flex gap-3 py-3 sm:pl-5">
+          {hasReadyPdf ? (
+            <FileCheck2 className="h-5 w-5 shrink-0 text-emerald-700" aria-hidden="true" />
+          ) : (
+            <FileClock className="h-5 w-5 shrink-0 text-slate-700" aria-hidden="true" />
+          )}
+          <div>
+            <p className="text-sm font-bold">{hasReadyPdf ? 'PDF resmi tersedia' : 'PDF sedang disiapkan'}</p>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              {hasReadyPdf
+                ? 'Unduh dokumen yang sesuai kewenangan Anda dari halaman panduan terkait.'
+                : 'Dokumen akan muncul setelah pemeriksaan privasi dan aksesibilitas selesai.'}
+            </p>
+          </div>
+        </div>
       </section>
 
       <div className="pt-8">
