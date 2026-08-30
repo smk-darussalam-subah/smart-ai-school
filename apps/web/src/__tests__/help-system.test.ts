@@ -15,6 +15,7 @@ import {
   canAccessHelpArtifact,
   canAccessHelpScreenshot,
   canProjectHelpTopic,
+  hasReadyHelpArtifact,
   projectHelpSummaries,
   projectHelpTopic,
   serializedProjectionContainsOnly,
@@ -118,6 +119,24 @@ function syntheticPdf(pageCount = 1, catalogMarkerOffset?: number): Buffer {
 }
 
 describe('Wave 9 role-aware Help contract', () => {
+  it('reports ready artifacts only when the current authority can access one', () => {
+    expect(hasReadyHelpArtifact(authority({
+      identityRoles: ['SUPER_ADMIN'],
+      permissions: ['*'],
+    }))).toBe(true);
+    expect(hasReadyHelpArtifact(authority({
+      identityRoles: ['ORANG_TUA'],
+      permissions: ['finance.child.read', 'remedial.child.read', 'report.read'],
+    }))).toBe(false);
+    expect(hasReadyHelpArtifact(authority({
+      identityRoles: ['ORANG_TUA'],
+      permissions: ['finance.child.read', 'remedial.child.read', 'report.read'],
+      contexts: ['selected-child'],
+      selectedChildVerified: true,
+      childCount: 1,
+    }))).toBe(true);
+  });
+
   it('validates generated assets and still requires an explicit final freeze', () => {
     expect(validateHelpSystem()).toEqual([]);
     expect(validateHelpSystem({ finalMode: true })).toEqual(expect.arrayContaining([
