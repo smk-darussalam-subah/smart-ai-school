@@ -485,6 +485,22 @@ describe('Wave 9 role-aware Help contract', () => {
     }
   });
 
+  it('keeps the fourth deck faithful to both external audiences without cross-persona self-service', () => {
+    const externalDeck = HELP_DECK_CONTENT_MAP.find((item) => item.id === 'deck.family');
+    expect(externalDeck).toMatchObject({
+      audience: 'Orang Tua dan Industri',
+      primaryRoles: ['SUPER_ADMIN'],
+      selectedChildRequired: false,
+    });
+    expect(externalDeck?.topicIds).toEqual(expect.arrayContaining([
+      'topic.report-card',
+      'topic.remedial-family',
+      'topic.finance',
+      'topic.career-industry',
+    ]));
+    expect(findHelpScreenshot('shot.industry.desktop')?.consumers).toContain('deck.family');
+  });
+
   it('rejects nested redirects, arbitrary query keys, and external screenshot routes', () => {
     const sample = HELP_SCREENSHOTS[0]!;
     const rejected = [
