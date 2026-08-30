@@ -76,6 +76,12 @@ export function canAccessHelpScreenshot(
   return canAccessHelpEvidence(screenshot, authority);
 }
 
+export function hasReadyHelpArtifact(authority: HelpAuthoritySnapshot): boolean {
+  return HELP_ARTIFACTS.some((artifact) => (
+    isHelpArtifactReady(artifact) && canAccessHelpArtifact(artifact, authority)
+  ));
+}
+
 function canAccessHelpEvidence(
   evidence: HelpArtifact | HelpScreenshot,
   authority: HelpAuthoritySnapshot,
