@@ -188,7 +188,7 @@ const SCREENSHOT_CONSUMERS: Record<string, string[]> = {
   'shot.announcement.staff.desktop': [
     'artifact.complete', 'artifact.waka-kesiswaan', 'artifact.waka-humas', 'artifact.waka-sarpras',
   ],
-  'shot.industry.desktop': ['artifact.complete', 'artifact.industry'],
+  'shot.industry.desktop': ['artifact.complete', 'artifact.industry', 'deck.family'],
   'shot.teacher-attendance.desktop': ['artifact.complete', 'artifact.teacher'],
   'shot.ai.desktop': ['artifact.complete', 'artifact.teacher'],
   'shot.monitoring.desktop': ['artifact.complete', 'artifact.administration', 'artifact.principal', 'deck.foundation'],
@@ -437,10 +437,14 @@ export const HELP_DECK_CONTENT_MAP: HelpDeck[] = [
     selectedChildRequired: false, allowSuperAdminRecovery: true,
   },
   {
-    id: 'deck.family', audience: 'Orang Tua',
-    topicIds: ['topic.start', 'topic.report-card', 'topic.finance', 'topic.remedial-family'],
-    primaryRoles: ['ORANG_TUA'], positionCodes: [], assignmentContexts: ['selected-child'],
-    permissionsAny: [], permissionsAll: ['finance.child.read', 'remedial.child.read', 'report.read'],
-    selectedChildRequired: true, allowSuperAdminRecovery: true,
+    id: 'deck.family', audience: 'Orang Tua dan Industri',
+    topicIds: [
+      'topic.start', 'topic.report-card', 'topic.finance', 'topic.remedial-family', 'topic.career-industry',
+    ],
+    // Deck eksternal dipresentasikan oleh fasilitator internal. Otorisasi ini mencegah
+    // satu audience eksternal menerima screenshot workflow audience eksternal lainnya.
+    primaryRoles: ['SUPER_ADMIN'], positionCodes: [], assignmentContexts: [],
+    permissionsAny: [], permissionsAll: [],
+    selectedChildRequired: false, allowSuperAdminRecovery: true,
   },
 ].map((deck) => HelpDeckSchema.parse(deck));
