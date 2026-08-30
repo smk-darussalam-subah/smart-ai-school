@@ -118,15 +118,26 @@ function syntheticPdf(pageCount = 1, catalogMarkerOffset?: number): Buffer {
 }
 
 describe('Wave 9 role-aware Help contract', () => {
-  it('validates the catalog in Checkpoint A and fails final mode for pending assets', () => {
+  it('validates generated assets and still requires an explicit final freeze', () => {
     expect(validateHelpSystem()).toEqual([]);
     expect(validateHelpSystem({ finalMode: true })).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'freeze.missing-application-sha' }),
       expect.objectContaining({ code: 'freeze.missing-shared-auth-sha' }),
       expect.objectContaining({ code: 'freeze.missing-theme-manifest' }),
-      expect.objectContaining({ code: 'screenshot.pending-final' }),
-      expect.objectContaining({ code: 'artifact.pending-final' }),
     ]));
+    expect(validateHelpSystem({ finalMode: true }).some((issue) => (
+      issue.code === 'screenshot.pending-final' || issue.code === 'artifact.pending-final'
+    ))).toBe(false);
+  });
+
+  it('validates every published Checkpoint B byte against the frozen application', () => {
+    expect(validateHelpSystem({
+      finalMode: true,
+      projectRoot: resolve(process.cwd(), '..', '..'),
+      expectedApplicationSha: '380a0708230d7ac3793e7303c105563de8ed3a4c',
+      expectedSharedAuthSha: '76d64c6582fdf959d5868d89f36a3e36ea02beea',
+      expectedThemeManifestSha256: '038f82f39d8419e5e398b6f63bbe6edf2c7b756cfbd06f792163b6a9c3b514f5',
+    })).toEqual([]);
   });
 
   it('enforces canonical V2 authority metadata and freshness', () => {
@@ -272,7 +283,7 @@ describe('Wave 9 role-aware Help contract', () => {
     expect(student.map((topic) => topic.id)).not.toContain('topic.remedial');
   });
 
-  it('serializes only projected summaries and removes pending screenshot blocks', () => {
+  it('serializes only projected summaries and exposes only authorized ready screenshots', () => {
     const projected = projectHelpSummaries(authority({ contexts: ['teaching-assignment'] }));
     const allowedIds = new Set(projected.map((topic) => topic.id));
     expect(serializedProjectionContainsOnly(projected, allowedIds)).toBe(true);
@@ -281,8 +292,9 @@ describe('Wave 9 role-aware Help contract', () => {
 
     const source = HELP_CATALOG.find((topic) => topic.id === 'topic.teaching-assignment')!;
     const topic = projectHelpTopic(source, authority({ contexts: ['teaching-assignment'] }));
-    expect(topic?.blocks.some((block) => block.kind === 'screenshot')).toBe(false);
-    expect(HELP_SCREENSHOTS.every((item) => item.assetStatus === 'pending')).toBe(true);
+    expect(topic?.blocks.filter((block) => block.kind === 'screenshot').map((block) => block.screenshotId))
+      .toEqual(['shot.teacher.assignment.desktop']);
+    expect(HELP_SCREENSHOTS.every((item) => item.assetStatus === 'ready')).toBe(true);
   });
 
   it('projects ready screenshot blocks only for their own persona contract', () => {
