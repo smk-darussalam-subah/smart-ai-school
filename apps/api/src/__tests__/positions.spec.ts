@@ -171,6 +171,66 @@ describe('PositionsService appointment projections', () => {
     expect(result.positions[0]!.position.code).toBe('WAKA_KURIKULUM');
   });
 
+  it('uses the Jakarta school date for sidebar and position projection at 00:15 WIB', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-30T17:15:00.000Z'));
+    const prisma = mockPrisma();
+    prisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-active', code: '2026/2027' });
+    prisma.appointment.findMany.mockResolvedValue([]);
+    const { service } = await build(prisma);
+
+    try {
+      await service.getMyPositions('kc-user');
+      expect(prisma.appointment.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          effectiveFrom: { lte: new Date('2026-08-31T00:00:00.000Z') },
+          OR: [
+            { effectiveUntil: null },
+            { effectiveUntil: { gte: new Date('2026-08-31T00:00:00.000Z') } },
+          ],
+        }),
+      }));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps due, future, expired, and inclusive-end projections correct on the school date', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-30T17:15:00.000Z'));
+    const prisma = mockPrisma();
+    prisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-active', code: '2026/2027' });
+    const baseAssignment = {
+      positionId: 'pos-waka',
+      majorId: null,
+      kind: 'DEFINITIVE',
+      status: 'ACTIVE',
+      position: { code: 'WAKA_KURIKULUM', name: 'Waka Kurikulum', category: 'STRUKTURAL' },
+      major: null,
+      staff: {
+        niy: 'NIY-1',
+        user: { id: 'user-1', fullName: 'Guru', email: 'guru@example.test' },
+      },
+    };
+    prisma.appointment.findMany.mockResolvedValue([
+      { ...baseAssignment, id: 'due-today', effectiveFrom: new Date('2026-08-31T00:00:00.000Z'), effectiveUntil: null },
+      { ...baseAssignment, id: 'future', effectiveFrom: new Date('2026-09-01T00:00:00.000Z'), effectiveUntil: null },
+      { ...baseAssignment, id: 'expired-yesterday', effectiveFrom: new Date('2026-07-01T00:00:00.000Z'), effectiveUntil: new Date('2026-08-30T00:00:00.000Z') },
+      { ...baseAssignment, id: 'ends-today', effectiveFrom: new Date('2026-07-01T00:00:00.000Z'), effectiveUntil: new Date('2026-08-31T00:00:00.000Z') },
+    ]);
+    const { service } = await build(prisma);
+
+    try {
+      const result = await service.getAssignments();
+      expect(result.assignments.map((item) => [item.id, item.isEffectiveNow])).toEqual([
+        ['due-today', true],
+        ['future', false],
+        ['expired-yesterday', false],
+        ['ends-today', true],
+      ]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('accessCheck reports active appointments and appointment permissions', async () => {
     const prisma = mockPrisma();
     prisma.user.findUnique.mockResolvedValue({
