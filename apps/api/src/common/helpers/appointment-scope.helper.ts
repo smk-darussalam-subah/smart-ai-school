@@ -2,6 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { AuthUser } from '@smk/auth';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { getSchoolDate } from './school-date.helper';
 
 export type ActiveKaprogMajorScope = {
   academicYearId: string;
@@ -25,6 +26,7 @@ export function isKaprogScopedReader(user: AuthUser): boolean {
 export async function resolveActiveKaprogMajorScope(
   prisma: PrismaService,
   user: AuthUser,
+  schoolDate: Date = getSchoolDate(),
 ): Promise<ActiveKaprogMajorScope> {
   const authUser = await prisma.user.findUnique({
     where: { keycloakId: user.keycloakId },
@@ -45,7 +47,6 @@ export async function resolveActiveKaprogMajorScope(
   }
 
   const activeYear = activeYears[0]!;
-  const today = utcToday();
   const appointments = await prisma.appointment.findMany({
     where: {
       status: 'ACTIVE',
@@ -54,10 +55,10 @@ export async function resolveActiveKaprogMajorScope(
       academicYearId: activeYear.id,
       majorId: { not: null },
       major: { isActive: true },
-      effectiveFrom: { lte: today },
+      effectiveFrom: { lte: schoolDate },
       OR: [
         { effectiveUntil: null },
-        { effectiveUntil: { gte: today } },
+        { effectiveUntil: { gte: schoolDate } },
       ],
     },
     select: {
@@ -104,9 +105,4 @@ export async function assertClassInKaprogScope(
   if (!allowedClass) {
     throw new ForbiddenException('Kelas berada di luar scope jurusan KAPROG aktif');
   }
-}
-
-function utcToday(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }

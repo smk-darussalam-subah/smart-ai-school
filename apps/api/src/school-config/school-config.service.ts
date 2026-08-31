@@ -148,9 +148,11 @@ export class SchoolConfigService {
     // BUG FIX: Activating a new TA must also deactivate ALL semesters from the old TA.
     let affectedAppointmentUsers: string[] = [];
     let oldActiveYearId: string | null = null;
+    let activationNow: Date | null = null;
     const result = await this.prisma.$transaction(async (tx) => {
       if (data.isActive) {
         await this.appointmentsService.acquireActivationLock(tx);
+        activationNow = new Date();
         const oldActiveYears = await tx.academicYear.findMany({
           where: { isActive: true },
           select: { id: true },
@@ -168,9 +170,13 @@ export class SchoolConfigService {
       }
       const created = await tx.academicYear.create({ data });
       if (data.isActive) {
+        if (!activationNow) {
+          throw new Error('Waktu aktivasi tahun ajaran belum diambil setelah advisory lock.');
+        }
         const summary = await this.appointmentsService.applyAcademicYearActivation(tx, {
           yearId: created.id,
           oldYearId: oldActiveYearId,
+          now: activationNow,
         });
         affectedAppointmentUsers = summary.affectedKeycloakIds;
         logger.info('[SchoolConfig] appointment cutover applied in academic-year create transaction', {
@@ -200,6 +206,7 @@ export class SchoolConfigService {
     try {
       let affectedAppointmentUsers: string[] = [];
       let oldActiveYearId: string | null = null;
+      let activationNow: Date | null = null;
       const result = await this.prisma.$transaction(async (tx) => {
         const existing = await tx.academicYear.findUnique({
           where: { id },
@@ -211,6 +218,7 @@ export class SchoolConfigService {
         }
         if (data.isActive === true) {
           await this.appointmentsService.acquireActivationLock(tx);
+          activationNow = new Date();
           const oldActiveYears = await tx.academicYear.findMany({
             where: { isActive: true },
             select: { id: true },
@@ -230,9 +238,13 @@ export class SchoolConfigService {
         }
         const updated = await tx.academicYear.update({ where: { id }, data });
         if (data.isActive === true) {
+          if (!activationNow) {
+            throw new Error('Waktu aktivasi tahun ajaran belum diambil setelah advisory lock.');
+          }
           const summary = await this.appointmentsService.applyAcademicYearActivation(tx, {
             yearId: id,
             oldYearId: oldActiveYearId && oldActiveYearId !== id ? oldActiveYearId : null,
+            now: activationNow,
           });
           affectedAppointmentUsers = summary.affectedKeycloakIds;
           logger.info('[SchoolConfig] appointment cutover applied in academic-year update transaction', {
