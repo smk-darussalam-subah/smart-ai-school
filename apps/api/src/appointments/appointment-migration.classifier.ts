@@ -1,4 +1,5 @@
 import { isPositionCode, type UserRole } from '@smk/auth';
+import { getSchoolDate } from '../common/helpers/school-date.helper';
 
 const ELIGIBLE_MIGRATION_ROLES = new Set<UserRole>(['GURU', 'TATA_USAHA']);
 
@@ -38,7 +39,7 @@ export interface StaffPositionMigrationInput {
 
 export function classifyStaffPositionForAppointment(
   row: StaffPositionMigrationInput,
-  asOf: Date = todayUtc(),
+  asOf: Date = getSchoolDate(),
 ): AppointmentMigrationClassification {
   if (row.alreadyMigrated) {
     return { status: 'SKIPPED', reason: 'source StaffPosition sudah memiliki appointment migrasi' };
@@ -107,9 +108,4 @@ function resolveAppointmentStatus(
   if (!row.isActive || (effectiveUntil && effectiveUntil < asOf)) return 'ENDED';
   if (row.academicYearIsActive && effectiveFrom <= asOf) return 'ACTIVE';
   return 'APPROVED';
-}
-
-function todayUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }

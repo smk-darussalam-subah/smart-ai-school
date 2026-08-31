@@ -280,6 +280,32 @@ describe('PermissionsService', () => {
       expect(await service.hasPermission('kc-ks', ['GURU'], 'finance.read')).toBe(true);
     });
 
+    it('resolves appointment permissions with the Jakarta date at 00:15 WIB', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-08-30T17:15:00.000Z'));
+      mockRpFindMany.mockResolvedValue([]);
+      mockUpoFindMany.mockResolvedValue([]);
+      mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
+      mockAppointmentFindMany.mockResolvedValue([
+        { position: { permissions: [{ permissionId: 'perm-review' }] } },
+      ]);
+      mockPermFindMany.mockResolvedValue([{ code: 'report.review' }]);
+
+      try {
+        await expect(service.hasPermission('kc-kaprog', ['GURU'], 'report.review')).resolves.toBe(true);
+        expect(mockAppointmentFindMany).toHaveBeenCalledWith(expect.objectContaining({
+          where: expect.objectContaining({
+            effectiveFrom: { lte: new Date('2026-08-31T00:00:00.000Z') },
+            OR: [
+              { effectiveUntil: null },
+              { effectiveUntil: { gte: new Date('2026-08-31T00:00:00.000Z') } },
+            ],
+          }),
+        }));
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('manual revoke tetap menarik finance.read dari appointment Kepala Sekolah aktif', async () => {
       mockRpFindMany.mockResolvedValue([]);
       mockUpoFindMany.mockResolvedValue([
@@ -382,6 +408,23 @@ describe('PermissionsService', () => {
       expect(mockRpFindMany).toHaveBeenCalledTimes(1);
     });
 
+    it('does not reuse a permission cache entry across a Jakarta school-date boundary', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-08-30T16:59:59.999Z'));
+      mockRpFindMany.mockResolvedValue([{ permission: { code: 'student.read' } }]);
+      mockUpoFindMany.mockResolvedValue([]);
+      mockUserFindUnique.mockResolvedValue(null);
+
+      try {
+        await service.hasPermission('kc-guru', ['GURU'], 'student.read');
+        jest.setSystemTime(new Date('2026-08-30T17:00:00.000Z'));
+        await service.hasPermission('kc-guru', ['GURU'], 'student.read');
+
+        expect(mockRpFindMany).toHaveBeenCalledTimes(2);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('setRolePermissions → seluruh cache dibersihkan (perubahan role berdampak semua user)', async () => {
       mockRpFindMany.mockResolvedValue([{ permission: { code: 'student.read' } }]);
       mockUpoFindMany.mockResolvedValue([]);
@@ -444,6 +487,29 @@ describe('PermissionsService', () => {
           }),
         }),
       );
+    });
+
+    it('resolves appointment authority with the Jakarta date at 00:15 WIB', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-08-30T17:15:00.000Z'));
+      mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
+      mockAppointmentFindMany.mockResolvedValue([
+        { position: { code: 'KAPROG' } },
+      ]);
+
+      try {
+        await expect(service.getActivePositionCodes('kc-user')).resolves.toEqual(new Set(['KAPROG']));
+        expect(mockAppointmentFindMany).toHaveBeenCalledWith(expect.objectContaining({
+          where: expect.objectContaining({
+            effectiveFrom: { lte: new Date('2026-08-31T00:00:00.000Z') },
+            OR: [
+              { effectiveUntil: null },
+              { effectiveUntil: { gte: new Date('2026-08-31T00:00:00.000Z') } },
+            ],
+          }),
+        }));
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('fails closed when no academic year is active', async () => {

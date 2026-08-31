@@ -518,6 +518,100 @@ describe('AppointmentsService appointment authority', () => {
 });
 
 describe('AppointmentsService cutover and history', () => {
+  it('cancels an expired successor instead of activating it after the incumbent ends', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-30T17:15:00.000Z'));
+    const prisma = buildPrismaMock();
+    prisma.appointment.findUnique.mockResolvedValue(
+      transitionTarget({ id: 'incumbent', status: 'ACTIVE' }),
+    );
+    prisma.appointment.findMany.mockResolvedValueOnce([{ id: 'expired-successor' }]);
+    prisma.appointment.findFirst.mockResolvedValueOnce(null);
+    prisma.appointment.update
+      .mockResolvedValueOnce({ id: 'incumbent', status: 'ENDED', endedAt: new Date() })
+      .mockResolvedValueOnce({ id: 'expired-successor', status: 'CANCELLED' });
+    const { service } = await buildService(prisma);
+
+    try {
+      await service.end('incumbent', { reason: 'Pergantian pejabat' }, superAdminActor);
+
+      expect(prisma.appointment.findMany).toHaveBeenCalledWith({
+        where: {
+          replacesAppointmentId: 'incumbent',
+          status: 'APPROVED',
+          kind: 'DEFINITIVE',
+          effectiveUntil: { lt: date('2026-08-31') },
+        },
+        orderBy: [{ effectiveFrom: 'asc' }, { id: 'asc' }],
+        select: { id: true },
+      });
+      expect(prisma.appointment.update).toHaveBeenNthCalledWith(2, {
+        where: { id: 'expired-successor' },
+        data: {
+          status: 'CANCELLED',
+          endedAt: new Date('2026-08-30T17:15:00.000Z'),
+          reason: 'Masa berlaku successor berakhir sebelum aktivasi',
+        },
+      });
+      expect(prisma.appointment.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'expired-successor' },
+          data: expect.objectContaining({ status: 'ACTIVE' }),
+        }),
+      );
+      expect(prisma.appointment.update.mock.invocationCallOrder[1]!).toBeLessThan(
+        prisma.appointment.findFirst.mock.invocationCallOrder[0]!,
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('activates a due successor whose effectiveUntil is exactly the current school date', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-30T17:15:00.000Z'));
+    const prisma = buildPrismaMock();
+    prisma.appointment.findUnique.mockResolvedValue(
+      transitionTarget({ id: 'incumbent', status: 'ACTIVE' }),
+    );
+    prisma.appointment.findMany.mockResolvedValueOnce([]);
+    prisma.appointment.findFirst.mockResolvedValueOnce({
+      id: 'today-successor',
+      staff: { user: { keycloakId: 'kc-today-successor' } },
+    });
+    prisma.appointment.update
+      .mockResolvedValueOnce({ id: 'incumbent', status: 'ENDED', endedAt: new Date() })
+      .mockResolvedValueOnce({ id: 'today-successor', status: 'ACTIVE', activatedAt: new Date() });
+    const { service, permissions } = await buildService(prisma);
+
+    try {
+      await service.end('incumbent', { reason: 'Pergantian pejabat' }, superAdminActor);
+
+      expect(prisma.appointment.findFirst).toHaveBeenCalledWith({
+        where: {
+          replacesAppointmentId: 'incumbent',
+          status: 'APPROVED',
+          kind: 'DEFINITIVE',
+          effectiveFrom: { lte: date('2026-08-31') },
+          OR: [
+            { effectiveUntil: null },
+            { effectiveUntil: { gte: date('2026-08-31') } },
+          ],
+        },
+        orderBy: [{ effectiveFrom: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          staff: { select: { user: { select: { keycloakId: true } } } },
+        },
+      });
+      expect(prisma.appointment.update).toHaveBeenNthCalledWith(2, {
+        where: { id: 'today-successor' },
+        data: { status: 'ACTIVE', activatedAt: new Date('2026-08-30T17:15:00.000Z') },
+      });
+      expect(permissions.invalidateUser).toHaveBeenCalledWith('kc-today-successor');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('ends old-year appointments and activates due new-year appointments in one transaction helper', async () => {
     const prisma = buildPrismaMock();
     prisma.appointment.findMany
@@ -626,6 +720,7 @@ describe('AppointmentsService cutover and history', () => {
   });
 
   it('due activator uses only active academic year, hides identifiers, and invalidates affected users after commit', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-30T17:15:00.000Z'));
     const prisma = buildPrismaMock();
     prisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-active' });
     prisma.appointment.findMany.mockResolvedValueOnce([
@@ -642,26 +737,126 @@ describe('AppointmentsService cutover and history', () => {
     };
     const { service } = await buildService(prisma, permissions);
 
-    const result = await (
-      service.activateDueAppointments as unknown as (ignoredAcademicYearId?: string) => Promise<Record<string, unknown>>
-    )('ay-non-active-or-future');
+    try {
+      const result = await (
+        service.activateDueAppointments as unknown as (ignoredAcademicYearId?: string) => Promise<Record<string, unknown>>
+      )('ay-non-active-or-future');
 
-    expect(result).toEqual({
-      endedCount: 0,
-      cancelledCount: 0,
-      activatedCount: 1,
-      affectedUserCount: 1,
-    });
-    expect(result).not.toHaveProperty('affectedKeycloakIds');
-    expect(result).not.toHaveProperty('staffId');
-    expect(result).not.toHaveProperty('fullName');
-    expect(prisma.$executeRaw).toHaveBeenCalled();
-    expect(prisma.academicYear.findFirst).toHaveBeenCalledWith({
-      where: { isActive: true },
-      select: { id: true },
-    });
-    expect(prisma.academicYear.findUnique).not.toHaveBeenCalled();
-    expect(permissions.invalidateUser).toHaveBeenCalledWith('kc-due');
+      expect(result).toEqual({
+        endedCount: 0,
+        cancelledCount: 0,
+        activatedCount: 1,
+        affectedUserCount: 1,
+      });
+      expect(result).not.toHaveProperty('affectedKeycloakIds');
+      expect(result).not.toHaveProperty('staffId');
+      expect(result).not.toHaveProperty('fullName');
+      expect(prisma.$executeRaw).toHaveBeenCalled();
+      expect(prisma.$executeRaw.mock.invocationCallOrder[0]!).toBeLessThan(
+        prisma.academicYear.findFirst.mock.invocationCallOrder[0]!,
+      );
+      expect(prisma.academicYear.findFirst).toHaveBeenCalledWith({
+        where: { isActive: true },
+        select: { id: true },
+      });
+      expect(prisma.academicYear.findUnique).not.toHaveBeenCalled();
+      expect(prisma.appointment.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          effectiveFrom: { lte: date('2026-08-31') },
+          OR: [
+            { effectiveUntil: null },
+            { effectiveUntil: { gte: date('2026-08-31') } },
+          ],
+        }),
+      }));
+      expect(permissions.invalidateUser).toHaveBeenCalledWith('kc-due');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('captures scheduler time after a deferred activation lock crosses Jakarta midnight', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-30T16:59:59.999Z'));
+    const prisma = buildPrismaMock();
+    let releaseLock: (() => void) | undefined;
+    prisma.$executeRaw.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { releaseLock = resolve; }),
+    );
+    prisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-active' });
+    prisma.appointment.findMany.mockResolvedValueOnce([]);
+    const { service } = await buildService(prisma);
+
+    try {
+      const activation = service.activateDueAppointments();
+      await Promise.resolve();
+      expect(releaseLock).toBeDefined();
+
+      jest.setSystemTime(new Date('2026-08-30T17:00:00.000Z'));
+      releaseLock!();
+      await expect(activation).resolves.toEqual({
+        endedCount: 0,
+        cancelledCount: 0,
+        activatedCount: 0,
+        affectedUserCount: 0,
+      });
+
+      expect(prisma.appointment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            effectiveFrom: { lte: date('2026-08-31') },
+            OR: [
+              { effectiveUntil: null },
+              { effectiveUntil: { gte: date('2026-08-31') } },
+            ],
+          }),
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('due activation is idempotent on a second retry and keeps the four-safe-count contract', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-30T17:15:00.000Z'));
+    const prisma = buildPrismaMock();
+    prisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-active' });
+    prisma.appointment.findMany
+      .mockResolvedValueOnce([{
+        id: 'due-1',
+        kind: 'DEFINITIVE',
+        academicYearId: 'ay-active',
+        replacesAppointmentId: null,
+        staff: { user: { keycloakId: 'kc-due' } },
+      }])
+      .mockResolvedValueOnce([]);
+    const permissions = {
+      getActivePositionCodes: jest.fn().mockResolvedValue(new Set<string>()),
+      invalidateUser: jest.fn(),
+    };
+    const { service } = await buildService(prisma, permissions);
+
+    try {
+      await expect(service.activateDueAppointments()).resolves.toEqual({
+        endedCount: 0,
+        cancelledCount: 0,
+        activatedCount: 1,
+        affectedUserCount: 1,
+      });
+      await expect(service.activateDueAppointments()).resolves.toEqual({
+        endedCount: 0,
+        cancelledCount: 0,
+        activatedCount: 0,
+        affectedUserCount: 0,
+      });
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
+      expect(prisma.$executeRaw.mock.invocationCallOrder[0]!).toBeLessThan(
+        prisma.academicYear.findFirst.mock.invocationCallOrder[0]!,
+      );
+      expect(prisma.appointment.update).toHaveBeenCalledTimes(1);
+      expect(permissions.invalidateUser).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('history returns business appointment state and approvals without technical retry payload', async () => {
@@ -1261,6 +1456,20 @@ describe('classifyStaffPositionForAppointment', () => {
       status: 'MIGRATED',
       appointmentStatus: 'ACTIVE',
     });
+  });
+
+  it('uses the Jakarta school date for the default migration classification', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-30T17:15:00.000Z'));
+    try {
+      expect(classifyStaffPositionForAppointment(row({
+        startDate: date('2026-08-31'),
+      }))).toMatchObject({
+        status: 'MIGRATED',
+        appointmentStatus: 'ACTIVE',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('quarantines historical and non-employee identity roles', () => {
