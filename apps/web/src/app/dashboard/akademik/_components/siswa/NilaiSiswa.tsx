@@ -10,16 +10,17 @@ import type { SiswaNilai } from './siswa-types';
 interface Props {
   grades: SiswaNilai[];
   showToast: (msg: string) => void;
+  initialFilter?: Filter;
 }
 
 type Filter = 'all' | 'tuntas' | 'remedial';
 
-export default function NilaiSiswa({ grades }: Props) {
+export default function NilaiSiswa({ grades, initialFilter = 'all' }: Props) {
   // RESOLVED R-20: Nilai data comes from /grades endpoint (real data, computed client-side).
   // The /analytics/grades/student endpoint exists but provides the same NA computation server-side.
   // Future enhancement: class-average comparison + AI-powered improvement suggestions.
 
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useState<Filter>(initialFilter);
   const [detailGrade, setDetailGrade] = useState<SiswaNilai | null>(null);
   const router = useRouter();
 

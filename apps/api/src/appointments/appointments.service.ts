@@ -9,6 +9,7 @@ import { Prisma } from '@prisma/client';
 import { AuthUser, UserRole } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { getSchoolDate } from '../common/helpers/school-date.helper';
 import {
   AppointmentCandidateQueryDto,
   AppointmentEndDto,
@@ -106,10 +107,11 @@ export class AppointmentsService {
   ) {}
 
   async list(query: AppointmentListQueryDto, actor: AuthUser) {
+    const schoolDate = getSchoolDate();
     const where = this.buildAppointmentWhere(query);
     const summaryWhere = this.buildAppointmentWhere({ ...query, status: undefined });
     const skip = (query.page - 1) * query.limit;
-    const actorContext = await this.getActorContext(actor);
+    const actorContext = await this.getActorContext(actor, schoolDate);
 
     const [data, total, summaryGroups] = await Promise.all([
       this.prisma.appointment.findMany({
@@ -191,13 +193,13 @@ export class AppointmentsService {
               role: item.staff.user.role,
             },
           },
-          isEffectiveNow: this.isEffectiveAppointment(item, this.today()),
+          isEffectiveNow: this.isEffectiveAppointment(item, schoolDate),
           occupancy: occupancy.get(scopeKey) ?? {
             activeCount: 0,
             preparedCount: 0,
             capacity: item.position.maxActiveHolders,
           },
-          allowedActions: this.resolveAllowedActions(item, actorContext),
+          allowedActions: this.resolveAllowedActions(item, actorContext, schoolDate),
         };
       })),
       total,
@@ -208,6 +210,7 @@ export class AppointmentsService {
   }
 
   async getDetail(id: string, actor: AuthUser) {
+    const schoolDate = getSchoolDate();
     const appointment = await this.prisma.appointment.findUnique({
       where: { id },
       select: {
@@ -262,7 +265,7 @@ export class AppointmentsService {
     });
     if (!appointment) throw new NotFoundException('Appointment tidak ditemukan.');
 
-    const actorContext = await this.getActorContext(actor);
+    const actorContext = await this.getActorContext(actor, schoolDate);
     const userIds = Array.from(new Set([
       appointment.requestedByUserId,
       ...appointment.approvals.map((approval) => approval.approverUserId),
@@ -303,8 +306,8 @@ export class AppointmentsService {
       })),
       permissions,
       occupancy,
-      isEffectiveNow: this.isEffectiveAppointment(appointment, this.today()),
-      allowedActions: this.resolveAllowedActions(appointment, actorContext),
+      isEffectiveNow: this.isEffectiveAppointment(appointment, schoolDate),
+      allowedActions: this.resolveAllowedActions(appointment, actorContext, schoolDate),
     };
   }
 
@@ -405,7 +408,7 @@ export class AppointmentsService {
   }
 
   async getPositionCapabilities(actor: AuthUser) {
-    const actorContext = await this.getActorContext(actor);
+    const actorContext = await this.getActorContext(actor, getSchoolDate());
     const positions = await this.prisma.position.findMany({
       where: { isActive: true },
       orderBy: { sortOrder: 'asc' },
@@ -420,9 +423,10 @@ export class AppointmentsService {
   }
 
   async createDraft(dto: CreateAppointmentDto, actor: AuthUser) {
+    const schoolDate = getSchoolDate();
     const actorUser = await this.requireActor(actor);
-    const context = await this.validateContext(dto);
-    await this.assertCanPrepare(actor, context.position.code);
+    const context = await this.validateContext(dto, schoolDate);
+    await this.assertCanPrepare(actor, context.position.code, schoolDate);
     await this.assertReplacementPlan(dto, context.position.maxActiveHolders);
 
     try {
@@ -575,12 +579,14 @@ export class AppointmentsService {
   }
 
   async end(id: string, dto: AppointmentEndDto, actor: AuthUser) {
+    const now = new Date();
+    const schoolDate = getSchoolDate(now);
     const appointment = await this.getTransitionTarget(id);
-    await this.assertCanApprove(actor, appointment.position.code);
+    await this.assertCanApprove(actor, appointment.position.code, schoolDate);
     if (!['ACTIVE', 'SUSPENDED', 'APPROVED'].includes(appointment.status)) {
       throw new ConflictException('Hanya appointment ACTIVE, SUSPENDED, atau APPROVED yang dapat diakhiri.');
     }
-    const effectiveUntil = dto.effectiveUntil ?? this.today();
+    const effectiveUntil = dto.effectiveUntil ?? schoolDate;
     if (effectiveUntil < appointment.effectiveFrom) {
       throw new BadRequestException('Tanggal akhir tidak boleh lebih awal dari tanggal mulai appointment.');
     }
@@ -592,12 +598,12 @@ export class AppointmentsService {
         data: {
           status: 'ENDED',
           effectiveUntil,
-          endedAt: new Date(),
+          endedAt: now,
           reason: dto.reason,
         },
         select: { id: true, status: true, endedAt: true },
       });
-      const successor = await this.activateDueSuccessorInTransaction(tx, id);
+      const successor = await this.activateDueSuccessorInTransaction(tx, id, now, schoolDate);
       if (successor?.staff.user.keycloakId) {
         affectedKeycloakIds.add(successor.staff.user.keycloakId);
       }
@@ -613,25 +619,26 @@ export class AppointmentsService {
   }
 
   async supersede(id: string, dto: AppointmentSupersedeDto, actor: AuthUser) {
+    const now = new Date();
+    const schoolDate = getSchoolDate(now);
     const successor = await this.getTransitionTarget(id);
-    await this.assertCanApprove(actor, successor.position.code);
+    await this.assertCanApprove(actor, successor.position.code, schoolDate);
     if (successor.status !== 'APPROVED') {
       throw new ConflictException('Hanya successor APPROVED yang dapat diaktifkan.');
     }
     if (!successor.replacesAppointmentId) {
       throw new BadRequestException('Supersede memerlukan replacesAppointmentId.');
     }
-    if (successor.effectiveFrom > this.today()) {
+    if (successor.effectiveFrom > schoolDate) {
       throw new ConflictException('Appointment pengganti belum jatuh tempo. Aktivasi manual hanya boleh saat tanggal mulai sudah berlaku.');
     }
-    if (successor.effectiveUntil && successor.effectiveUntil < this.today()) {
+    if (successor.effectiveUntil && successor.effectiveUntil < schoolDate) {
       throw new ConflictException('Appointment pengganti sudah melewati tanggal akhir.');
     }
 
     const replaced = await this.getTransitionTarget(successor.replacesAppointmentId);
     this.assertReplacementScope(successor, replaced);
 
-    const now = new Date();
     const result = await this.prisma.$transaction(async (tx) => {
       if (successor.kind === 'PLT') {
         if (replaced.status !== SUSPENDED_STATUS) {
@@ -688,11 +695,11 @@ export class AppointmentsService {
 
   async applyAcademicYearActivation(
     tx: AppointmentTx,
-    params: { yearId: string; oldYearId: string | null },
+    params: { yearId: string; oldYearId: string | null; now?: Date },
   ): Promise<AppointmentActivationSummary> {
     const affectedKeycloakIds = new Set<string>();
-    const now = new Date();
-    const today = this.today();
+    const now = params.now ?? new Date();
+    const schoolDate = getSchoolDate(now);
     let endedCount = 0;
     let cancelledCount = 0;
     let activatedCount = 0;
@@ -751,10 +758,10 @@ export class AppointmentsService {
       where: {
         academicYearId: params.yearId,
         status: 'APPROVED',
-        effectiveFrom: { lte: today },
+        effectiveFrom: { lte: schoolDate },
         OR: [
           { effectiveUntil: null },
-          { effectiveUntil: { gte: today } },
+          { effectiveUntil: { gte: schoolDate } },
         ],
       },
       orderBy: [{ effectiveFrom: 'asc' }, { id: 'asc' }],
@@ -790,12 +797,13 @@ export class AppointmentsService {
   async activateDueAppointments(): Promise<AppointmentActivationSafeResponse> {
     const summary = await this.prisma.$transaction(async (tx) => {
       await this.acquireActivationLock(tx);
+      const now = new Date();
       const year = await tx.academicYear.findFirst({
         where: { isActive: true },
         select: { id: true },
       });
       if (!year) throw new NotFoundException('Tahun ajaran aktif tidak ditemukan.');
-      return this.applyAcademicYearActivation(tx, { yearId: year.id, oldYearId: null });
+      return this.applyAcademicYearActivation(tx, { yearId: year.id, oldYearId: null, now });
     }).catch((error) => {
       this.rethrowConstraint(error);
       throw error;
@@ -815,13 +823,40 @@ export class AppointmentsService {
   private async activateDueSuccessorInTransaction(
     tx: AppointmentTx,
     endedAppointmentId: string,
+    now: Date,
+    schoolDate: Date,
   ): Promise<{ staff: { user: { keycloakId: string } } } | null> {
+    const expiredSuccessors = await tx.appointment.findMany({
+      where: {
+        replacesAppointmentId: endedAppointmentId,
+        status: 'APPROVED',
+        kind: 'DEFINITIVE',
+        effectiveUntil: { lt: schoolDate },
+      },
+      orderBy: [{ effectiveFrom: 'asc' }, { id: 'asc' }],
+      select: { id: true },
+    });
+    for (const expiredSuccessor of expiredSuccessors) {
+      await tx.appointment.update({
+        where: { id: expiredSuccessor.id },
+        data: {
+          status: 'CANCELLED',
+          endedAt: now,
+          reason: 'Masa berlaku successor berakhir sebelum aktivasi',
+        },
+      });
+    }
+
     const successor = await tx.appointment.findFirst({
       where: {
         replacesAppointmentId: endedAppointmentId,
         status: 'APPROVED',
         kind: 'DEFINITIVE',
-        effectiveFrom: { lte: this.today() },
+        effectiveFrom: { lte: schoolDate },
+        OR: [
+          { effectiveUntil: null },
+          { effectiveUntil: { gte: schoolDate } },
+        ],
       },
       orderBy: [{ effectiveFrom: 'asc' }, { id: 'asc' }],
       select: {
@@ -830,7 +865,7 @@ export class AppointmentsService {
       },
     });
     if (!successor) return null;
-    await this.activateApprovedAppointmentInTransaction(tx, successor.id, new Date());
+    await this.activateApprovedAppointmentInTransaction(tx, successor.id, now);
     return successor;
   }
 
@@ -1305,12 +1340,15 @@ export class AppointmentsService {
     return `${positionId}:${academicYearId}:${majorId ?? 'school'}`;
   }
 
-  private async getActorContext(actor: AuthUser): Promise<AppointmentActorContext> {
+  private async getActorContext(
+    actor: AuthUser,
+    schoolDate: Date = getSchoolDate(),
+  ): Promise<AppointmentActorContext> {
     const isSuperAdmin = actor.roles.includes('SUPER_ADMIN');
     if (isSuperAdmin) return { isSuperAdmin: true, isActiveKepalaSekolah: false };
     const isActiveKepalaSekolah =
       actor.roles.includes('KEPALA_SEKOLAH' as UserRole) ||
-      (await this.actorHasActiveKepalaSekolah(actor));
+      (await this.actorHasActiveKepalaSekolah(actor, schoolDate));
     return { isSuperAdmin: false, isActiveKepalaSekolah };
   }
 
@@ -1333,13 +1371,13 @@ export class AppointmentsService {
   private resolveAllowedActions(
     appointment: AppointmentPolicyShape,
     actorContext: AppointmentActorContext,
+    schoolDate: Date,
   ): AppointmentAllowedAction[] {
     const actions = new Set<AppointmentAllowedAction>(['VIEW_HISTORY']);
     const canPrepare = this.canPreparePosition(actorContext, appointment.position.code);
     const canApprove = this.canApprovePosition(actorContext, appointment.position.code);
-    const today = this.today();
-    const due = appointment.effectiveFrom <= today &&
-      (!appointment.effectiveUntil || appointment.effectiveUntil >= today);
+    const due = appointment.effectiveFrom <= schoolDate &&
+      (!appointment.effectiveUntil || appointment.effectiveUntil >= schoolDate);
 
     if (appointment.status === 'DRAFT' && canPrepare) {
       actions.add('SUBMIT');
@@ -1397,7 +1435,7 @@ export class AppointmentsService {
     return labels[action] ?? 'Aksi appointment';
   }
 
-  private async validateContext(dto: CreateAppointmentDto) {
+  private async validateContext(dto: CreateAppointmentDto, schoolDate: Date) {
     const [staff, position, academicYear] = await Promise.all([
       this.prisma.staff.findUnique({
         where: { id: dto.staffId },
@@ -1452,7 +1490,7 @@ export class AppointmentsService {
     if (dto.effectiveFrom < academicYear.startDate || dto.effectiveFrom > academicYear.endDate) {
       throw new BadRequestException('Tanggal mulai appointment harus berada dalam tahun ajaran.');
     }
-    if (!academicYear.isActive && academicYear.endDate < this.today()) {
+    if (!academicYear.isActive && academicYear.endDate < schoolDate) {
       throw new BadRequestException('Appointment manual hanya dapat dibuat untuk tahun ajaran aktif atau mendatang.');
     }
     if (dto.effectiveUntil && dto.effectiveUntil < dto.effectiveFrom) {
@@ -1723,8 +1761,12 @@ export class AppointmentsService {
     }
   }
 
-  private async assertCanPrepare(actor: AuthUser, targetPositionCode: string): Promise<void> {
-    const actorContext = await this.getActorContext(actor);
+  private async assertCanPrepare(
+    actor: AuthUser,
+    targetPositionCode: string,
+    schoolDate: Date = getSchoolDate(),
+  ): Promise<void> {
+    const actorContext = await this.getActorContext(actor, schoolDate);
     if (this.canPreparePosition(actorContext, targetPositionCode)) return;
     if (targetPositionCode === 'KEPALA_SEKOLAH') {
       throw new ForbiddenException('Hanya SUPER_ADMIN yang dapat menyiapkan appointment Kepala Sekolah.');
@@ -1733,8 +1775,12 @@ export class AppointmentsService {
     throw new ForbiddenException('Appointment hanya dapat disiapkan oleh SUPER_ADMIN atau Kepala Sekolah aktif.');
   }
 
-  private async assertCanApprove(actor: AuthUser, targetPositionCode: string): Promise<void> {
-    const actorContext = await this.getActorContext(actor);
+  private async assertCanApprove(
+    actor: AuthUser,
+    targetPositionCode: string,
+    schoolDate: Date = getSchoolDate(),
+  ): Promise<void> {
+    const actorContext = await this.getActorContext(actor, schoolDate);
     if (this.canApprovePosition(actorContext, targetPositionCode)) return;
     if (targetPositionCode === 'KEPALA_SEKOLAH') {
       throw new ForbiddenException('Hanya SUPER_ADMIN yang dapat menyetujui appointment Kepala Sekolah.');
@@ -1743,8 +1789,8 @@ export class AppointmentsService {
     throw new ForbiddenException('Appointment hanya dapat disetujui oleh SUPER_ADMIN atau Kepala Sekolah aktif.');
   }
 
-  private async actorHasActiveKepalaSekolah(actor: AuthUser): Promise<boolean> {
-    const positions = await this.permissions.getActivePositionCodes(actor.keycloakId);
+  private async actorHasActiveKepalaSekolah(actor: AuthUser, schoolDate: Date): Promise<boolean> {
+    const positions = await this.permissions.getActivePositionCodes(actor.keycloakId, schoolDate);
     return positions.has('KEPALA_SEKOLAH');
   }
 
@@ -1756,12 +1802,6 @@ export class AppointmentsService {
     if (!user) throw new ForbiddenException('Actor tidak ditemukan di database.');
     return user;
   }
-
-  private today(): Date {
-    const now = new Date();
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  }
-
   private rethrowConstraint(error: unknown): void {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&

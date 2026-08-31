@@ -2,6 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
+.help-workflow-cta-same-tab {
+  display: inline-flex;
+}
+
+.help-workflow-cta-new-tab {
+  display: none;
+}
+
+/* Default remains same-tab. Only a fine-pointer browser gets the desktop handoff. */
+@media (min-width: 768px) and (hover: hover) and (pointer: fine) and (display-mode: browser) {
+  .help-workflow-cta-same-tab {
+    display: none;
+  }
+
+  .help-workflow-cta-new-tab {
+    display: inline-flex;
+  }
+}
+
 @layer base {
   :root {
     --color-primary: #1d4ed8;
