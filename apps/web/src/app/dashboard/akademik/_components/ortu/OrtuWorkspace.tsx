@@ -1,16 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Home, CalendarCheck, TrendingUp, Wallet, Award,
   Sun, Moon, Bell, ChevronDown,
-  LogOut, X, User as UserIcon, CircleHelp,
+  LogOut, User as UserIcon, CircleHelp,
 } from 'lucide-react';
 import clsx from 'clsx';
 import ViewAsBanner from '@/components/layout/ViewAsBanner';
+import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import BerandaOrtu from './BerandaOrtu';
 import KehadiranOrtu from './KehadiranOrtu';
 import NilaiOrtu from './NilaiOrtu';
@@ -29,6 +30,10 @@ import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem } from '../guru-types';
 import { filterByStudentId, type OrtuAssignmentItem, type SppApiItem } from './ortu-mappers';
 import { initialChildIndex, learnerDashboardHref, learnerReportHref } from '../learner-navigation';
+import {
+  academicWorkflowPresentation,
+  type AcademicWorkflowView,
+} from '@/lib/academic-workflow-deep-link';
 
 // ── Types (exported for child components) ───────────────────────────────────
 
@@ -56,16 +61,18 @@ interface OrtuWorkspaceProps {
   childRanks?: Record<string, number | null>;
   openNotifications?: boolean;
   initialStudentId?: string;
+  initialWorkflowView?: AcademicWorkflowView | null;
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function OrtuWorkspace({
-  children: realChildren, grades, attendance, schedule, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, childRanks, openNotifications = false, initialStudentId
+  children: realChildren, grades, attendance, schedule, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, childRanks, openNotifications = false, initialStudentId, initialWorkflowView = null
 }: OrtuWorkspaceProps) {
   const { data: session } = useSession();
   const router = useRouter();
-  const [activeScreen, setActiveScreen] = useState<OrtuScreen>('beranda');
+  const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
+  const [activeScreen, setActiveScreen] = useState<OrtuScreen>(initialWorkflow.parentScreen);
   const [modal, setModal] = useState<ModalState>(openNotifications ? { type: 'pengumuman' } : { type: null });
   const notificationTriggerRef = useRef<HTMLButtonElement>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -106,6 +113,13 @@ export default function OrtuWorkspace({
   const childList = realChildren?.length ? realChildren : [];
   const child = childList[activeChildIndex] ?? childList[0] ?? { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
   const activeStudentId = 'studentId' in child ? child.studentId : undefined;
+  useEffect(() => {
+    if (initialWorkflow.parentFocus !== 'remedial' || activeScreen !== 'beranda' || !activeStudentId) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById('ortu-remedial')?.scrollIntoView({ block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeScreen, activeStudentId, initialWorkflow.parentFocus]);
   const childGrades = filterByStudentId(grades, activeStudentId);
   const childAttendance = filterByStudentId(attendance, activeStudentId);
   const childSchedule = filterByStudentId(schedule, activeStudentId);
@@ -200,34 +214,34 @@ export default function OrtuWorkspace({
   };
 
   return (
-    <div className="ortu-app relative min-h-screen bg-[var(--bg)] text-[var(--text)] transition-colors duration-300">
+    <div className="ortu-app relative min-h-screen w-full overflow-x-clip bg-[var(--bg)] text-[var(--text)] transition-colors duration-300">
       {/* Topbar */}
       <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--topbar-bg)] backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[560px] items-center justify-between px-4 py-3.5">
+        <div className="mx-auto flex max-w-[560px] items-center justify-between gap-2 px-4 py-3.5">
           {/* Brand */}
-          <div className="flex items-center gap-2">
-            <div className="flex h-[30px] w-[30px] items-center justify-center rounded-[9px] bg-[var(--grad)] text-[12px] font-extrabold text-white">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-[var(--grad)] text-[12px] font-extrabold text-white">
               DIIS
             </div>
-            <span className="text-[14px] font-extrabold">Orang Tua</span>
+            <span className="max-w-[3.625rem] truncate text-[14px] font-extrabold max-[374px]:sr-only">Orang Tua</span>
           </div>
 
           {/* Right buttons */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 shrink-0 items-center gap-1.5">
             {/* Child selector — T1-02 (C1 fix): dropdown real, bukan toast */}
-            <div className="relative">
+            <div className="relative min-w-0">
               <button
                 onClick={() => childList.length > 0 && setChildSelectorOpen((o) => !o)}
-                className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 transition-colors hover:border-[var(--pri)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
-                aria-label="Pilih anak"
+                className="flex min-h-11 max-w-[6.5rem] cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 transition-colors hover:border-[var(--pri)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
+                aria-label={`Pilih anak. Aktif: ${child.name}`}
                 aria-expanded={childSelectorOpen}
                 disabled={childList.length === 0}
               >
-                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--grad)] text-[10px] font-extrabold text-white">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--grad)] text-[10px] font-extrabold text-white">
                   {initials(child.name)}
                 </div>
-                <span className="text-[12px] font-bold whitespace-nowrap">{child.name.split(' ')[0]}</span>
-                <ChevronDown className="h-[14px] w-[14px] text-[var(--muted)]" />
+                <span className="min-w-0 flex-1 truncate text-[12px] font-bold">{child.name.split(' ')[0]}</span>
+                <ChevronDown className="h-[14px] w-[14px] shrink-0 text-[var(--muted)]" />
               </button>
               {childSelectorOpen && childList.length > 0 && (
                 <div className="absolute right-0 top-full z-30 mt-1.5 min-w-[180px] overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--surface)] shadow-lg">
@@ -261,32 +275,65 @@ export default function OrtuWorkspace({
               <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[var(--rose)] ring-1.5 ring-[var(--topbar-bg)]" />
             </button>
 
-            {/* Theme toggle */}
-            <button
-              onClick={toggleTheme}
-              className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
-              aria-label="Ganti tema"
-            >
-              {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
-            </button>
-
             <Link
               href={activeStudentId ? `/dashboard/panduan?from=/dashboard/akademik&studentId=${encodeURIComponent(activeStudentId)}` : '/dashboard/panduan?from=/dashboard/akademik'}
-              onClick={() => setAccountOpen(false)}
-              className="mb-2 flex min-h-11 w-full items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm font-semibold text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
+              className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
+              aria-label="Panduan orang tua"
             >
-              <CircleHelp className="h-4 w-4" aria-hidden="true" />
-              Panduan orang tua
+              <CircleHelp className="h-[18px] w-[18px]" aria-hidden="true" />
             </Link>
 
             {/* Account */}
-            <button
-              onClick={() => setAccountOpen(true)}
-              className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
-              aria-label="Akun"
-            >
-              <UserIcon className="h-[18px] w-[18px]" />
-            </button>
+            <Sheet open={accountOpen} onOpenChange={setAccountOpen}>
+              <SheetTrigger asChild>
+                <button
+                  className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
+                  aria-label="Akun"
+                >
+                  <UserIcon className="h-[18px] w-[18px]" />
+                </button>
+              </SheetTrigger>
+              <SheetContent
+                side="bottom"
+                className="mx-auto max-h-[88dvh] w-full max-w-[560px] overflow-y-auto rounded-t-2xl border-[var(--border)] bg-[var(--bg2)] p-5 pb-8 text-[var(--text)]"
+              >
+                <SheetTitle className="sr-only">Panel Akun</SheetTitle>
+                <SheetDescription className="sr-only">
+                  Pengaturan akun, tema, notifikasi, dan akses panduan orang tua.
+                </SheetDescription>
+
+                <div className="mb-4 flex items-center gap-3 pr-12">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--grad)] text-lg font-extrabold text-white">
+                    {initials(session?.user?.name ?? 'U')}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-[var(--text)]">{session?.user?.name ?? 'Pengguna'}</p>
+                    <p className="truncate text-xs text-[var(--muted)]">{session?.user?.email ?? ''}</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={toggleTheme}
+                  className="mb-2 flex min-h-11 w-full items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
+                >
+                  <span className="flex items-center gap-2">
+                    {theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                    Tema {theme === 'dark' ? 'Gelap' : 'Terang'}
+                  </span>
+                  <span className="text-xs text-[var(--muted)]">Ketuk untuk ganti</span>
+                </button>
+
+                <PushNotificationToggle onSubscribe={subscribePush} onUnsubscribe={unsubscribePush} onFetchNotifications={fetchMyNotifications} />
+
+                <button
+                  onClick={() => { window.location.href = '/api/auth/federated-logout'; }}
+                  className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-500 transition-colors hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Keluar
+                </button>
+              </SheetContent>
+            </Sheet>
           </div>
         </div>
       </header>
@@ -367,66 +414,6 @@ export default function OrtuWorkspace({
           onClose={() => setModal({ type: null })}
           showToast={showToast}
         />
-      )}
-
-      {/* Account Sheet */}
-      {accountOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center"
-          onClick={() => setAccountOpen(false)}
-        >
-          <div className="absolute inset-0 bg-black/50" />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Panel Akun"
-            className="relative w-full max-w-[560px] rounded-t-2xl border-t border-[var(--border)] bg-[var(--bg2)] p-5 pb-8"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setAccountOpen(false)}
-              aria-label="Tutup"
-              className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-[var(--surface2)]"
-            >
-              <X className="h-4 w-4" />
-            </button>
-
-            {/* User info */}
-            <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--grad)] text-lg font-extrabold text-white">
-                {initials(session?.user?.name ?? 'U')}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-[var(--text)]">{session?.user?.name ?? 'Pengguna'}</p>
-                <p className="truncate text-xs text-[var(--muted)]">{session?.user?.email ?? ''}</p>
-              </div>
-            </div>
-
-            {/* Theme toggle */}
-            <button
-              onClick={toggleTheme}
-              className="mb-2 flex w-full items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface2)]"
-            >
-              <span className="flex items-center gap-2">
-                {theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-                Tema {theme === 'dark' ? 'Gelap' : 'Terang'}
-              </span>
-              <span className="text-xs text-[var(--muted)]">Ketuk untuk ganti</span>
-            </button>
-
-            {/* T3-03: Push notification toggle */}
-            <PushNotificationToggle onSubscribe={subscribePush} onUnsubscribe={unsubscribePush} onFetchNotifications={fetchMyNotifications} />
-
-            {/* Logout */}
-            <button
-              onClick={() => { window.location.href = '/api/auth/federated-logout'; }}
-              className="flex w-full items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-500 transition-colors hover:bg-red-500/20"
-            >
-              <LogOut className="h-4 w-4" />
-              Keluar
-            </button>
-          </div>
-        </div>
       )}
 
       {/* Toast */}

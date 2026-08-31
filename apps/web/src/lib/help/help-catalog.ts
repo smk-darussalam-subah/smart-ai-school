@@ -1,4 +1,5 @@
 import { HelpCatalogSchema, type HelpContentBlock, type HelpTopic } from './help-schema';
+import { academicWorkflowHref } from '@/lib/academic-workflow-deep-link';
 
 type TopicInput = Omit<HelpTopic, 'blocks' | 'version' | 'permissionsAll' | 'featureStatus' | 'updatedAt'> & {
   intro: string;
@@ -12,11 +13,67 @@ type TopicInput = Omit<HelpTopic, 'blocks' | 'version' | 'permissionsAll' | 'fea
   includeCta?: boolean;
 };
 
+const WORKFLOW_CTA_LABELS: Record<string, string> = {
+  'topic.start': 'Buka Beranda',
+  'topic.account-recovery': 'Buka Halaman Masuk',
+  'topic.academic-workspace': 'Buka Ruang Akademik',
+  'topic.teaching-assignment': 'Buka Pengajaran Saya',
+  'topic.wali-class': 'Buka Rapor Kelas',
+  'topic.schedule': 'Buka Jadwal',
+  'topic.module-authoring': 'Buka Modul Ajar',
+  'topic.assessment': 'Buka Bank Soal',
+  'topic.assessment-student': 'Buka Asesmen',
+  'topic.remedial': 'Buka Remedial',
+  'topic.remedial-student': 'Buka Remedial Saya',
+  'topic.remedial-family': 'Buka Status Remedial Anak',
+  'topic.report-card': 'Buka Rapor Resmi',
+  'topic.report-card-operations': 'Buka Operasional Rapor',
+  'topic.semester-closing': 'Buka Penutupan Semester',
+  'topic.student-management': 'Buka Data Siswa',
+  'topic.ppdb': 'Buka PPDB',
+  'topic.class-config': 'Buka Kelas dan Penugasan',
+  'topic.calendar': 'Buka Kalender Sekolah',
+  'topic.finance': 'Buka Keuangan',
+  'topic.announcements': 'Buka Pengumuman',
+  'topic.career-industry': 'Buka Lowongan',
+  'topic.teacher-attendance': 'Buka Presensi Guru',
+  'topic.ai-assistant': 'Buka Asisten AI',
+  'topic.monitoring': 'Buka Monitoring',
+  'topic.executive': 'Buka Dasbor Eksekutif',
+  'topic.appointments': 'Buka Struktur Organisasi',
+  'topic.system-administration': 'Buka Manajemen Pengguna',
+  'topic.school-period': 'Buka Tahun Ajaran',
+};
+
+const WORKFLOW_CTA_HREFS: Partial<Record<string, string>> = {
+  'topic.academic-workspace': academicWorkflowHref('overview'),
+  'topic.teaching-assignment': academicWorkflowHref('teaching'),
+  'topic.module-authoring': academicWorkflowHref('module-authoring'),
+  'topic.assessment': academicWorkflowHref('question-bank'),
+  'topic.assessment-student': academicWorkflowHref('assessment'),
+  'topic.remedial': academicWorkflowHref('remedial'),
+  'topic.remedial-student': academicWorkflowHref('remedial-status'),
+  'topic.remedial-family': academicWorkflowHref('remedial-status'),
+};
+
 function workflowTopic(input: TopicInput): HelpTopic {
   const { intro, steps, checks, authority, recovery, faq, includeCta = true, ...topic } = input;
   const blocks: HelpContentBlock[] = [
     { kind: 'heading', level: 2, text: 'Tujuan' },
     { kind: 'paragraph', text: intro },
+  ];
+  if (includeCta) {
+    const label = WORKFLOW_CTA_LABELS[topic.id];
+    if (!label) throw new Error(`Label CTA workflow belum dipetakan: ${topic.id}`);
+    blocks.push({
+      kind: 'cta',
+      label,
+      href: WORKFLOW_CTA_HREFS[topic.id] ?? topic.route,
+      preserveSelectedChild: topic.primaryRoles.includes('ORANG_TUA') ||
+        topic.assignmentContexts.includes('selected-child'),
+    });
+  }
+  blocks.push(
     { kind: 'heading', level: 2, text: 'Langkah utama' },
     { kind: 'steps', items: steps },
     { kind: 'authority-note', text: authority },
@@ -28,9 +85,8 @@ function workflowTopic(input: TopicInput): HelpTopic {
       title: 'Jika proses tidak berjalan',
       text: recovery,
     },
-  ];
+  );
   if (faq) blocks.push({ kind: 'faq', ...faq });
-  if (includeCta) blocks.push({ kind: 'cta', label: 'Buka fitur', href: topic.route });
   return {
     ...topic,
     permissionsAll: topic.permissionsAll ?? [],
@@ -333,7 +389,7 @@ const topics: HelpTopic[] = [
     id: 'topic.monitoring', slug: 'monitoring-dan-display-sekolah', title: 'Monitoring dan Display Sekolah',
     summary: 'Memantau sesi, memasangkan display, membaca alert, dan menjaga audio serta rotasi layar tetap terpercaya.',
     route: '/dashboard/monitoring', category: 'governance', primaryRoles: ['SUPER_ADMIN', 'TATA_USAHA'], positionCodes: ['KEPALA_SEKOLAH'],
-    permissionsAny: ['operational.monitoring.read'], assignmentContexts: [], keywords: ['monitoring', 'display', 'pairing', 'alert', 'audio'], screenshotIds: ['shot.monitoring.desktop'], relatedTopicIds: [], contentOwner: 'administration',
+    permissionsAny: ['operational.monitoring.read'], assignmentContexts: [], keywords: ['monitoring', 'display', 'pairing', 'alert', 'audio'], screenshotIds: ['shot.monitoring.desktop', 'shot.display.1920', 'shot.display.1366'], relatedTopicIds: [], contentOwner: 'administration',
     intro: 'Monitoring menggabungkan data operasional nyata; display perangkat menggunakan pairing dan credential HttpOnly.',
     steps: ['Periksa ringkasan sesi dan alert.', 'Pasangkan display melalui kode resmi.', 'Verifikasi perangkat aktif dan data agregat.', 'Gunakan kontrol pause/play dan tes audio sebelum penggunaan ruang.'],
     checks: ['Satu tab menjadi audible leader.', 'Alert tidak replay setelah sukses.', 'Credential kedaluwarsa tidak tampil aktif.', 'Tidak ada overlap pada viewport target.'],
@@ -361,7 +417,7 @@ const topics: HelpTopic[] = [
     steps: ['Buka registry Appointment bila berwenang.', 'Pilih tahun, posisi, kandidat, dan scope.', 'Ajukan serta setujui melalui lifecycle.', 'Aktifkan, suspend, resume, end, atau supersede sesuai kondisi.'],
     checks: ['Kandidat memiliki identitas stabil sah.', 'Scope dan tahun benar.', 'History menampilkan actor serta event yang tepat.'],
     authority: 'Kepala Sekolah tidak boleh menetapkan dirinya sendiri. Keputusan tertentu tetap Super Admin atau authority lain sesuai kontrak.',
-    recovery: 'Konflik kapasitas harus diselesaikan dari state server terbaru; jangan menghapus history atau mengubah role Keycloak.',
+    recovery: 'Konflik kapasitas harus diselesaikan dari state server terbaru; jangan menghapus history atau mengubah role Keycloak. Automation aktivasi Appointment harian di production belum aktif dan tetap menjadi prasyarat go-live, sehingga operator wajib mengikuti prosedur aktivasi yang disahkan sampai gate operasional tersebut ditutup.',
   }),
   workflowTopic({
     id: 'topic.system-administration', slug: 'pengguna-audit-dan-kesehatan-sistem', title: 'Pengguna, Audit, dan Kesehatan Sistem',

@@ -1,0 +1,54 @@
+{
+  "applicationSha": "380a0708230d7ac3793e7303c105563de8ed3a4c",
+  "applicationTree": "030ea15047811309c4de1a8f96eee1258333e085",
+  "decks": {
+    "presentasi-internal-sekolah.pptx": {
+      "alternativeDescriptionCount": 4,
+      "embeddedMediaCount": 4,
+      "overflowReview": "pass",
+      "privacyReview": "pass",
+      "sha256": "dada6693ffc1f0dea13d5351d0a7ec7cf08d104a54132295dbfa9a1a1b5b2f94",
+      "sizeBytes": 4205527,
+      "slideCount": 9,
+      "speakerNotesCount": 9,
+      "uniqueMediaHashCount": 4,
+      "visualReview": "pass"
+    },
+    "presentasi-orang-tua-industri.pptx": {
+      "alternativeDescriptionCount": 4,
+      "embeddedMediaCount": 4,
+      "overflowReview": "pass",
+      "privacyReview": "pass",
+      "sha256": "d5206cf238b7012619ec1123970bdadae38ad162664944add371f09b537442ff",
+      "sizeBytes": 4159696,
+      "slideCount": 9,
+      "speakerNotesCount": 9,
+      "uniqueMediaHashCount": 4,
+      "visualReview": "pass"
+    },
+    "presentasi-siswa.pptx": {
+      "alternativeDescriptionCount": 4,
+      "embeddedMediaCount": 4,
+      "overflowReview": "pass",
+      "privacyReview": "pass",
+      "sha256": "fc30f498d70fa26695409308ca8675b125b28f9a5c8efd3735ed92bdd7d4d110",
+      "sizeBytes": 3920340,
+      "slideCount": 9,
+      "speakerNotesCount": 9,
+      "uniqueMediaHashCount": 4,
+      "visualReview": "pass"
+    },
+    "presentasi-yayasan-komite.pptx": {
+      "alternativeDescriptionCount": 4,
+      "embeddedMediaCount": 4,
+      "overflowReview": "pass",
+      "privacyReview": "pass",
+      "sha256": "fdd1495bdcdf8d7f9ee76b608b21d2f06e7fa2e37ff72b0a68707b6a81fe71a0",
+      "sizeBytes": 4146880,
+      "slideCount": 9,
+      "speakerNotesCount": 9,
+      "uniqueMediaHashCount": 4,
+      "visualReview": "pass"
+    }
+  }
+}
