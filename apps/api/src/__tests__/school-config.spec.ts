@@ -241,12 +241,47 @@ describe('SchoolConfigService', () => {
     });
     expect(mockAppointments.applyAcademicYearActivation).toHaveBeenCalledWith(
       prisma,
-      { yearId: 'ay-new', oldYearId: 'ay-old' },
+      { yearId: 'ay-new', oldYearId: 'ay-old', now: expect.any(Date) },
     );
     expect(mockAppointments.acquireActivationLock).toHaveBeenCalledWith(prisma);
     expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.findFirst.mock.invocationCallOrder[0]!);
     expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.updateMany.mock.invocationCallOrder[0]!);
     expect(mockPermissions.invalidateAll).toHaveBeenCalled();
+  });
+
+  it('createAcademicYear captures cutover time after a deferred lock crosses Jakarta midnight', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-30T16:59:59.999Z'));
+    let releaseLock: (() => void) | undefined;
+    mockAY.findUnique.mockResolvedValue(null);
+    mockAY.findMany.mockResolvedValue([]);
+    mockAY.create.mockResolvedValue({ ...AY, id: 'ay-new' });
+    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+    mockAppointments.acquireActivationLock.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { releaseLock = resolve; }),
+    );
+
+    try {
+      const activation = service.createAcademicYear({
+        code: '2027/2028',
+        startDate: new Date('2027-07-12'),
+        endDate: new Date('2028-06-24'),
+        isActive: true,
+      });
+      await Promise.resolve();
+      expect(releaseLock).toBeDefined();
+
+      jest.setSystemTime(new Date('2026-08-30T17:00:00.000Z'));
+      releaseLock!();
+      await activation;
+
+      expect(mockAppointments.applyAcademicYearActivation).toHaveBeenCalledWith(prisma, {
+        yearId: 'ay-new',
+        oldYearId: null,
+        now: new Date('2026-08-30T17:00:00.000Z'),
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('cleanup gagal tetap invalidate cache agar resolver membaca active year baru', async () => {
@@ -290,6 +325,40 @@ describe('SchoolConfigService', () => {
     expect(result).toBeDefined();
     expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.findMany.mock.invocationCallOrder[0]!);
     expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.updateMany.mock.invocationCallOrder[0]!);
+  });
+
+  it('updateAcademicYear captures cutover time after a deferred lock crosses Jakarta midnight', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-30T16:59:59.999Z'));
+    let releaseLock: (() => void) | undefined;
+    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+    mockAY.findUnique.mockResolvedValue({ id: 'ay1', isActive: false });
+    mockAY.count.mockResolvedValue(0);
+    mockSem.count.mockResolvedValue(0);
+    mockAY.findMany.mockResolvedValue([]);
+    mockAY.update.mockResolvedValue({ ...AY, isActive: true });
+    mockAppointments.acquireActivationLock.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { releaseLock = resolve; }),
+    );
+
+    try {
+      const activation = service.updateAcademicYear('ay1', { isActive: true });
+      for (let attempt = 0; attempt < 4 && !releaseLock; attempt += 1) {
+        await Promise.resolve();
+      }
+      expect(releaseLock).toBeDefined();
+
+      jest.setSystemTime(new Date('2026-08-30T17:00:00.000Z'));
+      releaseLock!();
+      await activation;
+
+      expect(mockAppointments.applyAcademicYearActivation).toHaveBeenCalledWith(prisma, {
+        yearId: 'ay1',
+        oldYearId: null,
+        now: new Date('2026-08-30T17:00:00.000Z'),
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('updateAcademicYear → not found → NotFoundException', async () => {

@@ -10,6 +10,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { POSITION_CODES, PRIMARY_ROLES, UserRole } from '@smk/auth';
 import { logger } from '@smk/logger';
+import { getSchoolDate } from '../common/helpers/school-date.helper';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -67,7 +68,7 @@ export class PositionsService {
       : await this.getActiveAcademicYear();
     if (!ay) return { academicYear: null, assignments: [] };
 
-    const today = this.today();
+    const schoolDate = getSchoolDate();
     const assignments = await this.prisma.appointment.findMany({
       where: {
         academicYearId: ay.id,
@@ -96,7 +97,7 @@ export class PositionsService {
       academicYear: ay,
       assignments: assignments.map((assignment) => ({
         ...assignment,
-        isEffectiveNow: this.isEffectiveAppointment(assignment, today),
+        isEffectiveNow: this.isEffectiveAppointment(assignment, schoolDate),
       })),
     };
   }
@@ -121,16 +122,16 @@ export class PositionsService {
     const ay = await this.getActiveAcademicYear();
     if (!ay) return { academicYear: null, positions: [] };
 
-    const today = this.today();
+    const schoolDate = getSchoolDate();
     const positions = await this.prisma.appointment.findMany({
       where: {
         staff: { user: { keycloakId } },
         academicYear: { isActive: true },
         status: 'ACTIVE',
-        effectiveFrom: { lte: today },
+        effectiveFrom: { lte: schoolDate },
         OR: [
           { effectiveUntil: null },
-          { effectiveUntil: { gte: today } },
+          { effectiveUntil: { gte: schoolDate } },
         ],
       },
       select: {
@@ -165,17 +166,17 @@ export class PositionsService {
     }
 
     const ay = await this.getActiveAcademicYear();
-    const today = this.today();
+    const schoolDate = getSchoolDate();
     const activeAppointments = ay
       ? await this.prisma.appointment.findMany({
           where: {
             staff: { userId: user.id },
             academicYear: { isActive: true },
             status: 'ACTIVE',
-            effectiveFrom: { lte: today },
+            effectiveFrom: { lte: schoolDate },
             OR: [
               { effectiveUntil: null },
-              { effectiveUntil: { gte: today } },
+              { effectiveUntil: { gte: schoolDate } },
             ],
           },
           select: {
@@ -248,19 +249,14 @@ export class PositionsService {
     };
   }
 
-  private today(): Date {
-    const now = new Date();
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  }
-
   private isEffectiveAppointment(
     appointment: { status: string; effectiveFrom: Date; effectiveUntil: Date | null },
-    today: Date,
+    schoolDate: Date,
   ): boolean {
     return (
       appointment.status === 'ACTIVE' &&
-      appointment.effectiveFrom <= today &&
-      (!appointment.effectiveUntil || appointment.effectiveUntil >= today)
+      appointment.effectiveFrom <= schoolDate &&
+      (!appointment.effectiveUntil || appointment.effectiveUntil >= schoolDate)
     );
   }
 }

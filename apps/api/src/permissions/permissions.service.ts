@@ -7,10 +7,12 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { UserRole, isPrimaryRole } from '@smk/auth';
 import { logger } from '@smk/logger';
+import { getSchoolDate } from '../common/helpers/school-date.helper';
 
 interface CacheEntry {
   permissions: Set<string>;
   expiresAt: number;
+  schoolDateMs: number;
 }
 
 const ACTIVE_APPOINTMENT_STATUS = 'ACTIVE' as const;
@@ -23,15 +25,21 @@ export class PermissionsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getEffectivePermissions(keycloakId: string, roles: UserRole[]): Promise<Set<string>> {
+    const schoolDate = getSchoolDate();
     const cached = this.cache.get(keycloakId);
-    if (cached && Date.now() < cached.expiresAt) {
+    if (
+      cached &&
+      Date.now() < cached.expiresAt &&
+      cached.schoolDateMs === schoolDate.getTime()
+    ) {
       return cached.permissions;
     }
 
-    const permissions = await this.resolvePermissions(keycloakId, roles);
+    const permissions = await this.resolvePermissions(keycloakId, roles, schoolDate);
     this.cache.set(keycloakId, {
       permissions,
       expiresAt: Date.now() + this.TTL_MS,
+      schoolDateMs: schoolDate.getTime(),
     });
 
     return permissions;
@@ -58,13 +66,15 @@ export class PermissionsService {
     return permissions.has(requiredPermission);
   }
 
-  async getActivePositionCodes(keycloakId: string): Promise<Set<string>> {
+  async getActivePositionCodes(
+    keycloakId: string,
+    schoolDate: Date = getSchoolDate(),
+  ): Promise<Set<string>> {
     const authUserId = await this.findAuthUserId(keycloakId);
     if (!authUserId) return new Set();
     const activeYearId = await this.resolveSingleActiveAcademicYearId();
     if (!activeYearId) return new Set();
 
-    const today = this.today();
     try {
       const appointments = await this.prisma.appointment.findMany({
         where: {
@@ -76,10 +86,10 @@ export class PermissionsService {
           },
           academicYearId: activeYearId,
           position: { isActive: true },
-          effectiveFrom: { lte: today },
+          effectiveFrom: { lte: schoolDate },
           OR: [
             { effectiveUntil: null },
-            { effectiveUntil: { gte: today } },
+            { effectiveUntil: { gte: schoolDate } },
           ],
           AND: [{
             OR: [
@@ -197,7 +207,11 @@ export class PermissionsService {
    * explicit exceptions. POSITION_ASSIGNMENT rows remain historical/TF2 data
    * but no longer grant appointment-derived authority.
    */
-  private async resolvePermissions(keycloakId: string, roles: UserRole[]): Promise<Set<string>> {
+  private async resolvePermissions(
+    keycloakId: string,
+    roles: UserRole[],
+    schoolDate: Date,
+  ): Promise<Set<string>> {
     const permSet = new Set<string>();
     const primaryRoles = roles.filter(isPrimaryRole);
 
@@ -226,7 +240,7 @@ export class PermissionsService {
         : Promise.resolve([] as { grant: boolean; permission: { code: string } }[]),
       authUserId
         && activeYearId
-        ? this.resolveActiveAppointmentPermissionCodes(authUserId, activeYearId)
+        ? this.resolveActiveAppointmentPermissionCodes(authUserId, activeYearId, schoolDate)
         : Promise.resolve([] as string[]),
     ]);
 
@@ -340,8 +354,8 @@ export class PermissionsService {
   private async resolveActiveAppointmentPermissionCodes(
     userId: string,
     activeYearId: string,
+    schoolDate: Date,
   ): Promise<string[]> {
-    const today = this.today();
     try {
       const appointments = await this.prisma.appointment.findMany({
         where: {
@@ -353,10 +367,10 @@ export class PermissionsService {
           },
           academicYearId: activeYearId,
           position: { isActive: true },
-          effectiveFrom: { lte: today },
+          effectiveFrom: { lte: schoolDate },
           OR: [
             { effectiveUntil: null },
-            { effectiveUntil: { gte: today } },
+            { effectiveUntil: { gte: schoolDate } },
           ],
           AND: [{
             OR: [
@@ -417,10 +431,5 @@ export class PermissionsService {
       });
       return null;
     }
-  }
-
-  private today(): Date {
-    const now = new Date();
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   }
 }
