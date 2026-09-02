@@ -7,9 +7,34 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: diis-shared-host-deployment
+  cancel-in-progress: false
+
 jobs:
+  validate-deployment-context:
+    name: Validate deployment context
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout validation contract
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Reject non-deployment refs
+        env:
+          DIIS_GITHUB_REF: ${{ github.ref }}
+          DIIS_DEPLOY_BRANCH: ${{ github.ref_name }}
+          DIIS_EXPECTED_SHA: ${{ github.sha }}
+          DIIS_RUN_ID: ${{ github.run_id }}
+          DIIS_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          bash infrastructure/deploy/validate-deploy-context.sh \
+            "$DIIS_GITHUB_REF" "$DIIS_DEPLOY_BRANCH" "$DIIS_EXPECTED_SHA" \
+            "$DIIS_RUN_ID" "$DIIS_RUN_ATTEMPT"
+
   deploy:
     name: Deploy to ${{ github.ref_name == 'main' && 'Production' || 'Staging' }}
+    needs: validate-deployment-context
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
 
     environment:
@@ -18,20 +43,101 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        env:
+          DIIS_GITHUB_REF: ${{ github.ref }}
+          DIIS_DEPLOY_BRANCH: ${{ github.ref_name }}
+          DIIS_EXPECTED_SHA: ${{ github.sha }}
+          DIIS_RUN_ID: ${{ github.run_id }}
+          DIIS_RUN_ATTEMPT: ${{ github.run_attempt }}
+          DIIS_VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          DIIS_VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          DIIS_VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT || 'mailto:admin@smkdarussalamsubah.sch.id' }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: appuser
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
+          envs: DIIS_GITHUB_REF,DIIS_DEPLOY_BRANCH,DIIS_EXPECTED_SHA,DIIS_RUN_ID,DIIS_RUN_ATTEMPT,DIIS_VAPID_PUBLIC_KEY,DIIS_VAPID_PRIVATE_KEY,DIIS_VAPID_SUBJECT
           script: |
             set -euo pipefail
 
-            BRANCH="${{ github.ref_name }}"
+            case "${DIIS_GITHUB_REF:?}:${DIIS_DEPLOY_BRANCH:?}" in
+              refs/heads/main:main|refs/heads/staging:staging) ;;
+              *) echo "DEPLOY_CONTEXT_REJECTED reason=forbidden-ref"; exit 64 ;;
+            esac
+            [[ "${DIIS_EXPECTED_SHA:?}" =~ ^[0-9a-f]{40}$ ]] || exit 64
+            [[ "${DIIS_RUN_ID:?}" =~ ^[1-9][0-9]*$ ]] || exit 64
+            [[ "${DIIS_RUN_ATTEMPT:?}" =~ ^[1-9][0-9]*$ ]] || exit 64
+            BRANCH="$DIIS_DEPLOY_BRANCH"
+            EXPECTED_SHA="$DIIS_EXPECTED_SHA"
+            RUN_ID="$DIIS_RUN_ID"
+            RUN_ATTEMPT="$DIIS_RUN_ATTEMPT"
+            export DIIS_DEPLOY_RUN_ID="$RUN_ID"
+            export DIIS_DEPLOY_RUN_ATTEMPT="$RUN_ATTEMPT"
             echo "🚀 Deploying branch: ${BRANCH}"
+
+            # Serialize every official deployment before checkout or runtime access.
+            DEPLOY_LOCK_DIR=/home/appuser/.local/state/diis-deploy
+            DEPLOY_LOCK_FILE="$DEPLOY_LOCK_DIR/deploy.lock"
+            DEPLOY_LOCK_METADATA="$DEPLOY_LOCK_DIR/owner"
+            DEPLOY_LOCK_TIMEOUT_SECONDS=300
+            umask 077
+            mkdir -p "$DEPLOY_LOCK_DIR"
+            chmod 700 "$DEPLOY_LOCK_DIR"
+            command -v flock >/dev/null
+            exec 9>"$DEPLOY_LOCK_FILE"
+            if ! flock --wait "$DEPLOY_LOCK_TIMEOUT_SECONDS" 9; then
+              echo "DEPLOY_HOST_LOCK_TIMEOUT run_id=${RUN_ID} branch=${BRANCH} metadata=${DEPLOY_LOCK_METADATA}"
+              exit 73
+            fi
+            printf 'state=active run_id=%s attempt=%s branch=%s sha=%s acquired_at=%s\n' \
+              "$RUN_ID" "$RUN_ATTEMPT" "$BRANCH" "$EXPECTED_SHA" "$(date --iso-8601=seconds)" \
+              >"${DEPLOY_LOCK_METADATA}.tmp"
+            mv -f "${DEPLOY_LOCK_METADATA}.tmp" "$DEPLOY_LOCK_METADATA"
+            echo "DEPLOY_HOST_LOCK_ACQUIRED run_id=${RUN_ID} branch=${BRANCH}"
+
+            NGINX_ROLLBACK_CONFIG=""
+            NGINX_AUTHORITY_CONFIG=""
+            INGRESS_ROLLOUT_HANDOFF=0
+
+            preserve_unconsumed_rollback() {
+              local recovery_dir recovery_path digest_line digest
+              recovery_dir="$DEPLOY_LOCK_DIR/ingress-recovery"
+              mkdir -p "$recovery_dir"
+              chmod 700 "$recovery_dir"
+              recovery_path="$recovery_dir/rollback-${RUN_ID}-${RUN_ATTEMPT}-${EXPECTED_SHA}.conf"
+              mv -f "$NGINX_ROLLBACK_CONFIG" "$recovery_path"
+              chmod 600 "$recovery_path"
+              digest_line=$(sha256sum "$recovery_path")
+              digest=${digest_line%% *}
+              echo "SHARED_INGRESS_RECOVERY_ARTIFACT kind=rollback path=${recovery_path} digest=${digest}"
+            }
+
+            cleanup_deploy_temp() {
+              if [ -n "$NGINX_AUTHORITY_CONFIG" ] && [ -f "$NGINX_AUTHORITY_CONFIG" ]; then
+                rm -f "$NGINX_AUTHORITY_CONFIG"
+              fi
+              if [ -n "$NGINX_ROLLBACK_CONFIG" ] && [ -f "$NGINX_ROLLBACK_CONFIG" ]; then
+                if [ "$INGRESS_ROLLOUT_HANDOFF" -eq 1 ]; then
+                  preserve_unconsumed_rollback || \
+                    echo "SHARED_INGRESS_RECOVERY_PRESERVATION_FAILED source=${NGINX_ROLLBACK_CONFIG}"
+                else
+                  rm -f "$NGINX_ROLLBACK_CONFIG"
+                fi
+              fi
+              printf 'state=released run_id=%s attempt=%s branch=%s sha=%s released_at=%s\n' \
+                "$RUN_ID" "$RUN_ATTEMPT" "$BRANCH" "$EXPECTED_SHA" "$(date --iso-8601=seconds)" \
+                >"${DEPLOY_LOCK_METADATA}.tmp" 2>/dev/null || true
+              mv -f "${DEPLOY_LOCK_METADATA}.tmp" "$DEPLOY_LOCK_METADATA" 2>/dev/null || true
+            }
+            trap cleanup_deploy_temp EXIT
+            trap 'exit 129' HUP
+            trap 'exit 130' INT
+            trap 'exit 143' TERM
 
             # ── Tentukan working-dir dan env-file berdasarkan branch ──────────
             if [ "$BRANCH" = "main" ]; then
@@ -51,18 +157,63 @@ jobs:
               WEB_CONTAINER=smk-staging-web
             fi
 
-            # ── Pull kode terbaru di working-dir yang benar ───────────────────
+            # ── Checkout exact workflow SHA di working-dir yang benar ─────────
             # PENTING: staging menggunakan direktori /opt/diis-staging/ terpisah
             # sehingga git checkout staging TIDAK menyentuh working-tree produksi.
-            #
-            # git stash: VPS working-tree mungkin punya perubahan lokal (mis:
-            # nginx.conf hasil copy dari staging deploy sebelumnya). Stash
-            # memastikan git pull selalu fast-forward tanpa conflict.
             cd "$WORK_DIR"
-            git fetch origin
-            git checkout "$BRANCH"
-            git stash --include-untracked 2>/dev/null || true
-            git pull origin "$BRANCH"
+            CURRENT_BRANCH=$(git branch --show-current)
+            if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
+              echo "DEPLOY_WRONG_BRANCH expected=${BRANCH} actual=${CURRENT_BRANCH:-detached}"
+              exit 1
+            fi
+            if [ -n "$(git status --porcelain=v1 --untracked-files=all)" ]; then
+              echo "DEPLOY_HOST_DRIFT_DETECTED branch=${BRANCH}"
+              git status --short
+              exit 1
+            fi
+
+            if [ "$BRANCH" = "main" ]; then
+              NGINX_ROLLBACK_CONFIG=$(mktemp /tmp/diis-nginx-predeploy.XXXXXX)
+              cp -p infrastructure/nginx/nginx.conf "$NGINX_ROLLBACK_CONFIG"
+            fi
+
+            git fetch --no-tags origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+            REMOTE_SHA=$(git rev-parse "origin/$BRANCH")
+            [[ "$REMOTE_SHA" == "$EXPECTED_SHA" ]] || {
+              echo "DEPLOY_SHA_RACE expected=${EXPECTED_SHA} remote=${REMOTE_SHA}"
+              exit 1
+            }
+            git merge --ff-only "$EXPECTED_SHA"
+            [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]] || {
+              echo "DEPLOY_SHA_MISMATCH expected=${EXPECTED_SHA} actual=$(git rev-parse HEAD)"
+              exit 1
+            }
+            if [ -n "$(git status --porcelain=v1 --untracked-files=all)" ]; then
+              echo "DEPLOY_POST_CHECKOUT_DRIFT branch=${BRANCH}"
+              git status --short
+              exit 1
+            fi
+            echo "DEPLOY_SOURCE_VERIFIED sha=${EXPECTED_SHA} tree=$(git rev-parse 'HEAD^{tree}')"
+
+            INGRESS_SCRIPT="$WORK_DIR/infrastructure/deploy/diis-shared-ingress.sh"
+            test -f "$INGRESS_SCRIPT"
+            NGINX_CONFIG_LINE=$(sha256sum "$WORK_DIR/infrastructure/nginx/nginx.conf")
+            NGINX_CONFIG_SHA=${NGINX_CONFIG_LINE%% *}
+            if [ "$BRANCH" = "main" ]; then
+              bash "$INGRESS_SCRIPT" preflight-production "$NGINX_CONFIG_SHA" "$NGINX_ROLLBACK_CONFIG"
+            else
+              git fetch --no-tags origin 'refs/heads/main:refs/remotes/origin/main'
+              AUTHORITATIVE_MAIN_SHA=$(git rev-parse origin/main)
+              AUTHORITATIVE_MAIN_TREE=$(git rev-parse 'origin/main^{tree}')
+              NGINX_AUTHORITY_CONFIG=$(mktemp /tmp/diis-nginx-main-authority.XXXXXX)
+              git show "${AUTHORITATIVE_MAIN_SHA}:infrastructure/nginx/nginx.conf" \
+                >"$NGINX_AUTHORITY_CONFIG"
+              AUTHORITY_CONFIG_LINE=$(sha256sum "$NGINX_AUTHORITY_CONFIG")
+              AUTHORITY_CONFIG_SHA=${AUTHORITY_CONFIG_LINE%% *}
+              bash "$INGRESS_SCRIPT" preflight-staging \
+                "$AUTHORITATIVE_MAIN_SHA" "$AUTHORITATIVE_MAIN_TREE" \
+                "$AUTHORITY_CONFIG_SHA" "$NGINX_AUTHORITY_CONFIG"
+            fi
 
             # Masuk ke direktori docker (relatif terhadap WORK_DIR)
             cd "$WORK_DIR/infrastructure/docker"
@@ -105,11 +256,11 @@ jobs:
               fi
             }
 
-            if [ -n "${{ secrets.VAPID_PUBLIC_KEY }}" ] && [ -n "${{ secrets.VAPID_PRIVATE_KEY }}" ]; then
-              set_env_var VAPID_PUBLIC_KEY "${{ secrets.VAPID_PUBLIC_KEY }}"
-              set_env_var VAPID_PRIVATE_KEY "${{ secrets.VAPID_PRIVATE_KEY }}"
-              set_env_var VAPID_SUBJECT "${{ secrets.VAPID_SUBJECT || 'mailto:admin@smkdarussalamsubah.sch.id' }}"
-              set_env_var NEXT_PUBLIC_VAPID_PUBLIC_KEY "${{ secrets.VAPID_PUBLIC_KEY }}"
+            if [ -n "${DIIS_VAPID_PUBLIC_KEY:-}" ] && [ -n "${DIIS_VAPID_PRIVATE_KEY:-}" ]; then
+              set_env_var VAPID_PUBLIC_KEY "$DIIS_VAPID_PUBLIC_KEY"
+              set_env_var VAPID_PRIVATE_KEY "$DIIS_VAPID_PRIVATE_KEY"
+              set_env_var VAPID_SUBJECT "${DIIS_VAPID_SUBJECT:-mailto:admin@smkdarussalamsubah.sch.id}"
+              set_env_var NEXT_PUBLIC_VAPID_PUBLIC_KEY "$DIIS_VAPID_PUBLIC_KEY"
               echo "✅ VAPID environment present for ${BRANCH} (values redacted)"
             else
               echo "⚠️ VAPID secrets unavailable for ${BRANCH}; PWA Push remains disabled"
@@ -126,15 +277,8 @@ jobs:
               fi
               echo "✅ STAGING_DATABASE_URL → postgresql://${_USER}:***@postgres:5432/smk_staging_db"
 
-              # ── Pastikan smk-staging-net ada (external di compose.staging.yml) ──
-              # Jaringan ini dibuat di luar compose; compose tidak akan membuatnya.
-              # docker network create idempoten via kondisi if.
-              if ! docker network inspect smk-staging-net >/dev/null 2>&1; then
-                docker network create smk-staging-net
-                echo "✅ smk-staging-net created"
-              else
-                echo "✅ smk-staging-net already exists"
-              fi
+              # Shared ingress dan smk-staging-net adalah infrastructure-owned.
+              # Preflight di atas sudah fail-closed bila topology tidak siap.
 
               # ── Init staging DB (idempoten) ─────────────────────────────────
               echo "🔧 Memastikan smk_staging_db siap..."
@@ -249,78 +393,33 @@ jobs:
               )
             echo "✅ ${API_CONTAINER} healthy!"
 
-            # ── Recreate nginx (ALL branches) ─────────────────────────────
-            # --force-recreate diperlukan karena git mengganti file nginx.conf
-            # dengan inode baru (bukan modifikasi in-place). Tanpa recreate,
-            # container nginx masih membaca inode lama → perubahan nginx.conf
-            # tidak aktif meski nginx -s reload berhasil.
-            #
-            # FIX (2026-07-11): Sebelumnya hanya dijalankan untuk branch main.
-            # Staging deploy TIDAK pernah recreate nginx → server block staging-api
-            # tidak pernah di-load.
-            #
-            # PENTING: nginx adalah container PRODUKSI (smk-nginx) yang di-share
-            # oleh staging via smk-staging-net. Bind mount nginx.conf berasal dari
-            # production working dir (/home/appuser/smart-ai-school/infrastructure/
-            # nginx/nginx.conf). Staging deploy menaruh code di /opt/diis-staging/
-            # sehingga nginx.conf staging TIDAK terlihat oleh container nginx prod.
-            #
-            # Solusi: copy nginx.conf dari staging working dir ke prod working dir,
-            # lalu recreate nginx dari prod compose context.
-            PROD_WORK_DIR=/home/appuser/smart-ai-school
-            PROD_DOCKER_DIR="$PROD_WORK_DIR/infrastructure/docker"
-            PROD_NGINX_DIR="$PROD_WORK_DIR/infrastructure/nginx"
-
-            if [ "$BRANCH" = "staging" ]; then
-              # Copy nginx.conf staging ke prod working dir agar bind mount picks it up
-              cp "$WORK_DIR/infrastructure/nginx/nginx.conf" "$PROD_NGINX_DIR/nginx.conf"
-              echo "✅ nginx.conf staging → prod working dir copied"
-            fi
-
-            # Recreate nginx dari PRODUCTION compose context (container name: smk-nginx)
-            # Retry loop: Docker terkadang error "removal of container is already in progress"
-            # saat --force-recreate dijalankan tepat setelah container sebelumnya dihapus.
-            # 3 percobaan dengan jeda 5 detik cukup untuk race condition resolution.
-            cd "$PROD_DOCKER_DIR"
-            for ATTEMPT in 1 2 3; do
-              if docker compose -f docker-compose.yml --env-file .env \
-                up -d --no-deps --force-recreate nginx 2>&1; then
-                echo "✅ nginx recreated on attempt $ATTEMPT"
-                break
-              else
-                echo "⚠️ nginx recreate attempt $ATTEMPT failed, retrying in 5s..."
-                sleep 5
-                docker rm -f smk-nginx 2>/dev/null || true
-              fi
-            done
-            cd "$WORK_DIR/infrastructure/docker"
-            echo "✅ nginx recreated (prod context, fresh bind mount) — branch: ${BRANCH}"
-
-            # ── Re-heal staging: nginx ↔ smk-staging-net ────────────────────
-            # recreate nginx melepasnya dari smk-staging-net (jaringan staging
-            # SENGAJA di luar compose prod agar deploy main tak bergantung infra
-            # staging). Sambung ulang best-effort: || true agar deploy tak
-            # pernah gagal walau staging-net belum ada. Idempoten.
-            if docker network inspect smk-staging-net >/dev/null 2>&1; then
-              docker network connect smk-staging-net smk-nginx 2>/dev/null \
-                && echo "✅ nginx ↔ smk-staging-net reconnected" \
-                || echo "ℹ️ nginx sudah tersambung ke smk-staging-net (atau dilewati)"
-              docker exec smk-nginx nginx -s reload 2>/dev/null \
-                && echo "✅ nginx reloaded" || true
+            # Staging may verify shared ingress but cannot mutate it. Production
+            # rollout is bounded, validates the candidate, and rolls back on any
+            # recreate, network, nginx, or cross-environment health failure.
+            if [ "$BRANCH" = "main" ]; then
+              INGRESS_ROLLOUT_HANDOFF=1
+              bash "$INGRESS_SCRIPT" rollout-production "$NGINX_CONFIG_SHA" "$NGINX_ROLLBACK_CONFIG"
+              INGRESS_ROLLOUT_HANDOFF=0
             else
-              echo "ℹ️ smk-staging-net tidak ada — lewati re-heal staging"
+              bash "$INGRESS_SCRIPT" post-staging \
+                "$AUTHORITATIVE_MAIN_SHA" "$AUTHORITATIVE_MAIN_TREE" \
+                "$AUTHORITY_CONFIG_SHA" "$NGINX_AUTHORITY_CONFIG"
             fi
 
             echo "✅ Deploy berhasil! Branch: ${BRANCH} → ${API_CONTAINER} / ${WEB_CONTAINER}"
 
       - name: Notify deployment success
         if: success()
+        env:
+          DIIS_DEPLOY_BRANCH: ${{ github.ref_name }}
         run: |
-          echo "Deploy berhasil ke ${{ github.ref_name == 'main' && 'Production' || 'Staging' }}"
+          echo "Deploy berhasil untuk branch ${DIIS_DEPLOY_BRANCH}"
           # TODO: Tambahkan notifikasi WA via n8n webhook
 
       - name: Notify deployment failure
         if: failure()
+        env:
+          DIIS_DEPLOY_BRANCH: ${{ github.ref_name }}
         run: |
-          echo "Deploy GAGAL ke ${{ github.ref_name == 'main' && 'Production' || 'Staging' }}"
+          echo "Deploy GAGAL untuk branch ${DIIS_DEPLOY_BRANCH}"
           # TODO: Tambahkan alert ke WA admin via n8n webhook
