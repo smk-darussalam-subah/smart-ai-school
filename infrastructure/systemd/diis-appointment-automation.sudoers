@@ -1,0 +1,7 @@
+# DIIS appointment automation: exact noninteractive operations for appuser.
+Cmnd_Alias DIIS_APPOINTMENT_AUTOMATION = \
+    /usr/bin/systemctl start diis-appointment-due-activation.service, \
+    /usr/bin/systemctl enable --now diis-appointment-due-activation.timer, \
+    /usr/bin/systemctl disable --now diis-appointment-due-activation.timer
+
+appuser ALL=(root) NOPASSWD: DIIS_APPOINTMENT_AUTOMATION
