@@ -25,9 +25,20 @@ const ELIGIBLE_APPOINTMENT_ROLES = new Set(['GURU', 'TATA_USAHA']);
 const OPEN_REPLACEMENT_STATUSES = ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE'] as const;
 const OPEN_PLT_BLOCKING_STATUSES = ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'ACTIVE'] as const;
 const PREPARED_STATUSES = ['PENDING_APPROVAL', 'APPROVED'] as const;
+const EXPIRABLE_PREPARED_STATUSES = ['DRAFT', 'PENDING_APPROVAL', 'APPROVED'] as const;
 const ACTIVE_CAPACITY_STATUS = 'ACTIVE' as const;
 const SUSPENDED_STATUS = 'SUSPENDED' as const;
+const EXPIRY_RECONCILIATION_STATUSES = [
+  ...EXPIRABLE_PREPARED_STATUSES,
+  ACTIVE_CAPACITY_STATUS,
+  SUSPENDED_STATUS,
+] as const;
 const TERMINAL_STATUSES = ['ENDED', 'REJECTED', 'CANCELLED', 'SUPERSEDED'] as const;
+
+function isOperationalAppointmentStatus(status: string): boolean {
+  return status === ACTIVE_CAPACITY_STATUS || status === SUSPENDED_STATUS;
+}
+
 export const APPOINTMENT_ACTIVATION_LOCK_KEY = 'appointment_due_activation' as const;
 export const APPOINTMENT_ALLOWED_ACTIONS = [
   'SUBMIT',
@@ -98,6 +109,7 @@ type AppointmentActorContext = {
 };
 
 type AppointmentLookupClient = Pick<AppointmentTx, 'appointment'>;
+type AppointmentAuthorityClient = Pick<AppointmentTx, 'appointment' | 'academicYear' | 'user'>;
 
 @Injectable()
 export class AppointmentsService {
@@ -453,29 +465,37 @@ export class AppointmentsService {
   }
 
   async submit(id: string, actor: AuthUser) {
-    const appointment = await this.getTransitionTarget(id);
-    await this.assertCanPrepare(actor, appointment.position.code);
-    if (appointment.status !== 'DRAFT') {
-      throw new ConflictException('Hanya appointment DRAFT yang dapat diajukan.');
-    }
-    await this.assertPltReplacementCanOperate(this.prisma, appointment);
-    await this.assertSubmitDoesNotDuplicateOpenCandidate(appointment);
-
-    return this.updateStatus(id, appointment.staff.user.keycloakId, {
-      status: 'PENDING_APPROVAL',
+    const transition = await this.withLifecycleLock(async (tx, _now, schoolDate) => {
+      const appointment = await this.getTransitionTarget(id, tx);
+      await this.assertCanPrepare(actor, appointment.position.code, schoolDate, tx);
+      this.assertStatus(appointment.status, ['DRAFT'], 'Hanya appointment DRAFT yang dapat diajukan.');
+      this.assertNotExpired(appointment, schoolDate, 'Appointment sudah melewati tanggal akhir.');
+      await this.assertPltReplacementCanOperate(tx, appointment);
+      await this.assertSubmitDoesNotDuplicateOpenCandidate(appointment, tx);
+      await this.casAppointmentStatus(tx, id, ['DRAFT'], { status: 'PENDING_APPROVAL' });
+      const result = { id, status: 'PENDING_APPROVAL' as const, endedAt: null };
+      return { result, keycloakIds: [appointment.staff.user.keycloakId] };
     });
+    this.invalidateUsers(transition.keycloakIds);
+    return transition.result;
   }
 
   async approve(id: string, dto: AppointmentDecisionDto, actor: AuthUser) {
     const actorUser = await this.requireActor(actor);
-    const appointment = await this.getTransitionTarget(id);
-    await this.assertCanApprove(actor, appointment.position.code);
-    if (appointment.status !== 'PENDING_APPROVAL') {
-      throw new ConflictException('Hanya appointment PENDING_APPROVAL yang dapat disetujui.');
-    }
-    await this.assertPltReplacementCanOperate(this.prisma, appointment);
-
-    const result = await this.prisma.$transaction(async (tx) => {
+    const transition = await this.withLifecycleLock(async (tx, now, schoolDate) => {
+      const appointment = await this.getTransitionTarget(id, tx);
+      await this.assertCanApprove(actor, appointment.position.code, schoolDate, tx);
+      this.assertStatus(
+        appointment.status,
+        ['PENDING_APPROVAL'],
+        'Hanya appointment PENDING_APPROVAL yang dapat disetujui.',
+      );
+      this.assertNotExpired(appointment, schoolDate, 'Appointment sudah melewati tanggal akhir dan tidak dapat disetujui.');
+      await this.assertPltReplacementCanOperate(tx, appointment);
+      await this.casAppointmentStatus(tx, id, ['PENDING_APPROVAL'], {
+        status: 'APPROVED',
+        approvedAt: now,
+      });
       await tx.appointmentApproval.create({
         data: {
           appointmentId: id,
@@ -484,29 +504,27 @@ export class AppointmentsService {
           note: dto.note ?? null,
         },
       });
-      return tx.appointment.update({
-        where: { id },
-        data: {
-          status: 'APPROVED',
-          approvedAt: new Date(),
-        },
-        select: { id: true, status: true, approvedAt: true },
-      });
+      const result = { id, status: 'APPROVED' as const, approvedAt: now };
+      return { result, keycloakIds: [appointment.staff.user.keycloakId] };
     });
-
-    this.permissions.invalidateUser(appointment.staff.user.keycloakId);
-    return result;
+    this.invalidateUsers(transition.keycloakIds);
+    return transition.result;
   }
 
   async reject(id: string, dto: AppointmentDecisionDto, actor: AuthUser) {
     const actorUser = await this.requireActor(actor);
-    const appointment = await this.getTransitionTarget(id);
-    await this.assertCanApprove(actor, appointment.position.code);
-    if (appointment.status !== 'PENDING_APPROVAL') {
-      throw new ConflictException('Hanya appointment PENDING_APPROVAL yang dapat ditolak.');
-    }
-
-    const result = await this.prisma.$transaction(async (tx) => {
+    const transition = await this.withLifecycleLock(async (tx, now, schoolDate) => {
+      const appointment = await this.getTransitionTarget(id, tx);
+      await this.assertCanApprove(actor, appointment.position.code, schoolDate, tx);
+      this.assertStatus(
+        appointment.status,
+        ['PENDING_APPROVAL'],
+        'Hanya appointment PENDING_APPROVAL yang dapat ditolak.',
+      );
+      await this.casAppointmentStatus(tx, id, ['PENDING_APPROVAL'], {
+        status: 'REJECTED',
+        endedAt: now,
+      });
       await tx.appointmentApproval.create({
         data: {
           appointmentId: id,
@@ -515,182 +533,169 @@ export class AppointmentsService {
           note: dto.note ?? null,
         },
       });
-      return tx.appointment.update({
-        where: { id },
-        data: { status: 'REJECTED', endedAt: new Date() },
-        select: { id: true, status: true, endedAt: true },
-      });
+      const result = { id, status: 'REJECTED' as const, endedAt: now };
+      return { result, keycloakIds: [appointment.staff.user.keycloakId] };
     });
-
-    this.permissions.invalidateUser(appointment.staff.user.keycloakId);
-    return result;
+    this.invalidateUsers(transition.keycloakIds);
+    return transition.result;
   }
 
   async cancel(id: string, actor: AuthUser) {
-    const appointment = await this.getTransitionTarget(id);
-    await this.assertCanPrepare(actor, appointment.position.code);
-    if (!['DRAFT', 'PENDING_APPROVAL', 'APPROVED'].includes(appointment.status)) {
-      throw new ConflictException('Appointment ini tidak dapat dibatalkan.');
-    }
-
-    const result = await this.updateStatus(id, appointment.staff.user.keycloakId, {
-      status: 'CANCELLED',
-      endedAt: new Date(),
+    const transition = await this.withLifecycleLock(async (tx, now, schoolDate) => {
+      const appointment = await this.getTransitionTarget(id, tx);
+      await this.assertCanPrepare(actor, appointment.position.code, schoolDate, tx);
+      const allowed = ['DRAFT', 'PENDING_APPROVAL', 'APPROVED'];
+      this.assertStatus(appointment.status, allowed, 'Appointment ini tidak dapat dibatalkan.');
+      await this.casAppointmentStatus(tx, id, allowed, { status: 'CANCELLED', endedAt: now });
+      const result = { id, status: 'CANCELLED' as const, endedAt: now };
+      return { result, keycloakIds: [appointment.staff.user.keycloakId] };
     });
-    return result;
+    this.invalidateUsers(transition.keycloakIds);
+    return transition.result;
   }
 
   async suspend(id: string, dto: AppointmentSuspendDto, actor: AuthUser) {
-    const appointment = await this.getTransitionTarget(id);
-    await this.assertCanApprove(actor, appointment.position.code);
-    if (appointment.status !== ACTIVE_CAPACITY_STATUS || appointment.kind !== 'DEFINITIVE') {
-      throw new ConflictException('Hanya appointment definitif ACTIVE yang dapat disuspend.');
-    }
-    if (dto.expectedReturnDate < appointment.effectiveFrom) {
-      throw new BadRequestException('Tanggal kembali tidak boleh lebih awal dari tanggal mulai appointment.');
-    }
-    if (appointment.effectiveUntil && dto.expectedReturnDate > appointment.effectiveUntil) {
-      throw new BadRequestException('Tanggal kembali tidak boleh melewati tanggal akhir appointment.');
-    }
-
-    const result = await this.updateStatus(id, appointment.staff.user.keycloakId, {
-      status: SUSPENDED_STATUS,
-      suspendedAt: new Date(),
-      suspensionUntil: dto.expectedReturnDate,
-      suspensionReason: dto.reason,
+    const transition = await this.withLifecycleLock(async (tx, now, schoolDate) => {
+      const appointment = await this.getTransitionTarget(id, tx);
+      await this.assertCanApprove(actor, appointment.position.code, schoolDate, tx);
+      if (appointment.status !== ACTIVE_CAPACITY_STATUS || appointment.kind !== 'DEFINITIVE') {
+        throw new ConflictException('Hanya appointment definitif ACTIVE yang dapat disuspend.');
+      }
+      this.assertNotExpired(appointment, schoolDate, 'Appointment sudah melewati tanggal akhir dan tidak dapat ditangguhkan.');
+      if (dto.expectedReturnDate < appointment.effectiveFrom) {
+        throw new BadRequestException('Tanggal kembali tidak boleh lebih awal dari tanggal mulai appointment.');
+      }
+      if (appointment.effectiveUntil && dto.expectedReturnDate > appointment.effectiveUntil) {
+        throw new BadRequestException('Tanggal kembali tidak boleh melewati tanggal akhir appointment.');
+      }
+      await this.casAppointmentStatus(tx, id, [ACTIVE_CAPACITY_STATUS], {
+        status: SUSPENDED_STATUS,
+        suspendedAt: now,
+        suspensionUntil: dto.expectedReturnDate,
+        suspensionReason: dto.reason,
+      });
+      const result = { id, status: SUSPENDED_STATUS, endedAt: null };
+      return { result, keycloakIds: [appointment.staff.user.keycloakId] };
     });
-    return result;
+    this.invalidateUsers(transition.keycloakIds);
+    return transition.result;
   }
 
   async resume(id: string, actor: AuthUser) {
-    const appointment = await this.getTransitionTarget(id);
-    await this.assertCanApprove(actor, appointment.position.code);
-    if (appointment.status !== SUSPENDED_STATUS || appointment.kind !== 'DEFINITIVE') {
-      throw new ConflictException('Hanya appointment definitif SUSPENDED yang dapat dilanjutkan kembali.');
-    }
-    await this.assertCanResumeWithinCapacity(appointment);
-
-    const result = await this.updateStatus(id, appointment.staff.user.keycloakId, {
-      status: ACTIVE_CAPACITY_STATUS,
-      suspensionUntil: null,
-      suspensionReason: null,
+    const transition = await this.withLifecycleLock(async (tx, _now, schoolDate) => {
+      const appointment = await this.getTransitionTarget(id, tx);
+      await this.assertCanApprove(actor, appointment.position.code, schoolDate, tx);
+      if (appointment.status !== SUSPENDED_STATUS || appointment.kind !== 'DEFINITIVE') {
+        throw new ConflictException('Hanya appointment definitif SUSPENDED yang dapat dilanjutkan kembali.');
+      }
+      this.assertNotExpired(appointment, schoolDate, 'Appointment sudah melewati tanggal akhir dan tidak dapat dilanjutkan.');
+      await this.assertCanResumeWithinCapacity(appointment, tx);
+      await this.casAppointmentStatus(tx, id, [SUSPENDED_STATUS], {
+        status: ACTIVE_CAPACITY_STATUS,
+        suspensionUntil: null,
+        suspensionReason: null,
+      });
+      const result = { id, status: ACTIVE_CAPACITY_STATUS, endedAt: null };
+      return { result, keycloakIds: [appointment.staff.user.keycloakId] };
     });
-    return result;
+    this.invalidateUsers(transition.keycloakIds);
+    return transition.result;
   }
 
   async end(id: string, dto: AppointmentEndDto, actor: AuthUser) {
-    const now = new Date();
-    const schoolDate = getSchoolDate(now);
-    const appointment = await this.getTransitionTarget(id);
-    await this.assertCanApprove(actor, appointment.position.code, schoolDate);
-    if (!['ACTIVE', 'SUSPENDED', 'APPROVED'].includes(appointment.status)) {
-      throw new ConflictException('Hanya appointment ACTIVE, SUSPENDED, atau APPROVED yang dapat diakhiri.');
-    }
-    const effectiveUntil = dto.effectiveUntil ?? schoolDate;
-    if (effectiveUntil < appointment.effectiveFrom) {
-      throw new BadRequestException('Tanggal akhir tidak boleh lebih awal dari tanggal mulai appointment.');
-    }
-
-    const affectedKeycloakIds = new Set<string>([appointment.staff.user.keycloakId]);
-    const result = await this.prisma.$transaction(async (tx) => {
-      const ended = await tx.appointment.update({
-        where: { id },
-        data: {
-          status: 'ENDED',
-          effectiveUntil,
-          endedAt: now,
-          reason: dto.reason,
-        },
-        select: { id: true, status: true, endedAt: true },
-      });
-      const successor = await this.activateDueSuccessorInTransaction(tx, id, now, schoolDate);
-      if (successor?.staff.user.keycloakId) {
-        affectedKeycloakIds.add(successor.staff.user.keycloakId);
+    const transition = await this.withLifecycleLock(async (tx, now, schoolDate) => {
+      const appointment = await this.getTransitionTarget(id, tx);
+      await this.assertCanApprove(actor, appointment.position.code, schoolDate, tx);
+      const allowed = ['ACTIVE', 'SUSPENDED', 'APPROVED'];
+      this.assertStatus(
+        appointment.status,
+        allowed,
+        'Hanya appointment ACTIVE, SUSPENDED, atau APPROVED yang dapat diakhiri.',
+      );
+      const effectiveUntil = dto.effectiveUntil ?? schoolDate;
+      if (effectiveUntil < appointment.effectiveFrom) {
+        throw new BadRequestException('Tanggal akhir tidak boleh lebih awal dari tanggal mulai appointment.');
       }
-      return ended;
-    }).catch((error) => {
-      this.rethrowConstraint(error);
-      throw error;
+      await this.casAppointmentStatus(tx, id, allowed, {
+        status: 'ENDED',
+        effectiveUntil,
+        endedAt: now,
+        reason: dto.reason,
+      });
+      const affectedKeycloakIds = new Set<string>([appointment.staff.user.keycloakId]);
+      if (appointment.kind === 'DEFINITIVE') {
+        const childSummary = await this.terminateLinkedPlts(tx, [id], now);
+        childSummary.affectedKeycloakIds.forEach((keycloakId) => affectedKeycloakIds.add(keycloakId));
+      }
+      const successorOutcome = await this.activateDueSuccessorInTransaction(tx, id, now, schoolDate);
+      successorOutcome.affectedKeycloakIds.forEach((keycloakId) => affectedKeycloakIds.add(keycloakId));
+      const result = { id, status: 'ENDED' as const, endedAt: now };
+      return { result, keycloakIds: Array.from(affectedKeycloakIds) };
     });
-    for (const keycloakId of affectedKeycloakIds) {
-      this.permissions.invalidateUser(keycloakId);
-    }
-    return result;
+    this.invalidateUsers(transition.keycloakIds);
+    return transition.result;
   }
 
   async supersede(id: string, dto: AppointmentSupersedeDto, actor: AuthUser) {
-    const now = new Date();
-    const schoolDate = getSchoolDate(now);
-    const successor = await this.getTransitionTarget(id);
-    await this.assertCanApprove(actor, successor.position.code, schoolDate);
-    if (successor.status !== 'APPROVED') {
-      throw new ConflictException('Hanya successor APPROVED yang dapat diaktifkan.');
-    }
-    if (!successor.replacesAppointmentId) {
-      throw new BadRequestException('Supersede memerlukan replacesAppointmentId.');
-    }
-    if (successor.effectiveFrom > schoolDate) {
-      throw new ConflictException('Appointment pengganti belum jatuh tempo. Aktivasi manual hanya boleh saat tanggal mulai sudah berlaku.');
-    }
-    if (successor.effectiveUntil && successor.effectiveUntil < schoolDate) {
-      throw new ConflictException('Appointment pengganti sudah melewati tanggal akhir.');
-    }
+    const transition = await this.withLifecycleLock(async (tx, now, schoolDate) => {
+      const successor = await this.getTransitionTarget(id, tx);
+      await this.assertCanApprove(actor, successor.position.code, schoolDate, tx);
+      this.assertStatus(successor.status, ['APPROVED'], 'Hanya successor APPROVED yang dapat diaktifkan.');
+      if (!successor.replacesAppointmentId) {
+        throw new BadRequestException('Supersede memerlukan replacesAppointmentId.');
+      }
+      if (successor.effectiveFrom > schoolDate) {
+        throw new ConflictException('Appointment pengganti belum jatuh tempo. Aktivasi manual hanya boleh saat tanggal mulai sudah berlaku.');
+      }
+      this.assertNotExpired(successor, schoolDate, 'Appointment pengganti sudah melewati tanggal akhir.');
+      const replaced = await this.getTransitionTarget(successor.replacesAppointmentId, tx);
+      this.assertReplacementScope(successor, replaced);
+      const affectedKeycloakIds = new Set<string>([
+        successor.staff.user.keycloakId,
+        replaced.staff.user.keycloakId,
+      ]);
 
-    const replaced = await this.getTransitionTarget(successor.replacesAppointmentId);
-    this.assertReplacementScope(successor, replaced);
-
-    const result = await this.prisma.$transaction(async (tx) => {
       if (successor.kind === 'PLT') {
         if (replaced.status !== SUSPENDED_STATUS) {
           throw new ConflictException('PLT hanya dapat aktif saat appointment definitif sedang SUSPENDED.');
         }
-        return tx.appointment.update({
-          where: { id },
-          data: {
-            status: ACTIVE_CAPACITY_STATUS,
-            activatedAt: now,
-            reason: dto.reason ?? successor.reason,
-          },
-          select: { id: true, status: true, activatedAt: true },
+        await this.casAppointmentStatus(tx, id, ['APPROVED'], {
+          status: ACTIVE_CAPACITY_STATUS,
+          activatedAt: now,
+          reason: dto.reason ?? successor.reason,
         });
-      }
-
-      if (replaced.academicYearId === successor.academicYearId) {
-        if (!['ACTIVE', 'SUSPENDED'].includes(replaced.status)) {
-          throw new ConflictException('Appointment yang digantikan harus ACTIVE atau SUSPENDED.');
-        }
-        // Transaction order safety (Director Decision 2): UPDATE incumbent ke
-        // SUPERSEDED SEBELUM UPDATE successor ke ACTIVE. Jika urutan terbalik,
-        // partial unique index appointment_unique_*_live akan reject (P2002).
-        await tx.appointment.update({
-          where: { id: replaced.id },
-          data: {
+      } else {
+        if (replaced.academicYearId === successor.academicYearId) {
+          this.assertStatus(
+            replaced.status,
+            ['ACTIVE', 'SUSPENDED'],
+            'Appointment yang digantikan harus ACTIVE atau SUSPENDED.',
+          );
+          await this.casAppointmentStatus(tx, replaced.id, ['ACTIVE', 'SUSPENDED'], {
             status: 'SUPERSEDED',
             supersededById: successor.id,
             endedAt: now,
             reason: dto.reason ?? replaced.reason,
-          },
-        });
-      } else if (!['ACTIVE', 'SUSPENDED', 'ENDED', 'SUPERSEDED'].includes(replaced.status)) {
-        throw new ConflictException('Appointment tahun sebelumnya belum berada pada status yang dapat digantikan.');
-      }
-      return tx.appointment.update({
-        where: { id },
-        data: {
+          });
+          if (replaced.kind === 'DEFINITIVE') {
+            const childSummary = await this.terminateLinkedPlts(tx, [replaced.id], now);
+            childSummary.affectedKeycloakIds.forEach((keycloakId) => affectedKeycloakIds.add(keycloakId));
+          }
+        } else if (!['ACTIVE', 'SUSPENDED', 'ENDED', 'SUPERSEDED'].includes(replaced.status)) {
+          throw new ConflictException('Appointment tahun sebelumnya belum berada pada status yang dapat digantikan.');
+        }
+        await this.casAppointmentStatus(tx, id, ['APPROVED'], {
           status: ACTIVE_CAPACITY_STATUS,
           activatedAt: now,
           reason: dto.reason ?? successor.reason,
-        },
-        select: { id: true, status: true, activatedAt: true },
-      });
-    }).catch((error) => {
-      this.rethrowConstraint(error);
-      throw error;
-    });
+        });
+      }
 
-    this.permissions.invalidateUser(successor.staff.user.keycloakId);
-    this.permissions.invalidateUser(replaced.staff.user.keycloakId);
-    return result;
+      const result = { id, status: ACTIVE_CAPACITY_STATUS, activatedAt: now };
+      return { result, keycloakIds: Array.from(affectedKeycloakIds) };
+    });
+    this.invalidateUsers(transition.keycloakIds);
+    return transition.result;
   }
 
   async applyAcademicYearActivation(
@@ -713,20 +718,26 @@ export class AppointmentsService {
         orderBy: { id: 'asc' },
         select: {
           id: true,
+          kind: true,
           staff: { select: { user: { select: { keycloakId: true } } } },
         },
       });
+      const endedDefinitiveIds: string[] = [];
       for (const appointment of oldOperationalAppointments) {
-        await tx.appointment.update({
-          where: { id: appointment.id },
-          data: {
-            status: 'ENDED',
-            endedAt: now,
-            reason: 'Tahun ajaran berganti',
-          },
+        await this.casAppointmentStatus(tx, appointment.id, [ACTIVE_CAPACITY_STATUS, SUSPENDED_STATUS], {
+          status: 'ENDED',
+          endedAt: now,
+          reason: 'Tahun ajaran berganti',
         });
         affectedKeycloakIds.add(appointment.staff.user.keycloakId);
         endedCount += 1;
+        if (appointment.kind === 'DEFINITIVE') endedDefinitiveIds.push(appointment.id);
+      }
+      const linkedPltSummary = await this.terminateLinkedPlts(tx, endedDefinitiveIds, now);
+      endedCount += linkedPltSummary.endedCount;
+      cancelledCount += linkedPltSummary.cancelledCount;
+      for (const keycloakId of linkedPltSummary.affectedKeycloakIds) {
+        affectedKeycloakIds.add(keycloakId);
       }
 
       const oldPreparedAppointments = await tx.appointment.findMany({
@@ -741,17 +752,26 @@ export class AppointmentsService {
         },
       });
       for (const appointment of oldPreparedAppointments) {
-        await tx.appointment.update({
-          where: { id: appointment.id },
-          data: {
-            status: 'CANCELLED',
-            endedAt: now,
-            reason: 'Tahun ajaran berakhir sebelum appointment aktif',
-          },
+        await this.casAppointmentStatus(tx, appointment.id, ['DRAFT', 'PENDING_APPROVAL', 'APPROVED'], {
+          status: 'CANCELLED',
+          endedAt: now,
+          reason: 'Tahun ajaran berakhir sebelum appointment aktif',
         });
         affectedKeycloakIds.add(appointment.staff.user.keycloakId);
         cancelledCount += 1;
       }
+    }
+
+    const expirySummary = await this.reconcileExpiredAppointments(
+      tx,
+      params.yearId,
+      now,
+      schoolDate,
+    );
+    endedCount += expirySummary.endedCount;
+    cancelledCount += expirySummary.cancelledCount;
+    for (const keycloakId of expirySummary.affectedKeycloakIds) {
+      affectedKeycloakIds.add(keycloakId);
     }
 
     const readyAppointments = await tx.appointment.findMany({
@@ -775,8 +795,10 @@ export class AppointmentsService {
     });
 
     for (const appointment of readyAppointments) {
-      const replacedKeycloakId = await this.supersedeCurrentYearIncumbentIfNeeded(tx, appointment, now);
-      if (replacedKeycloakId) affectedKeycloakIds.add(replacedKeycloakId);
+      const replacementSummary = await this.supersedeCurrentYearIncumbentIfNeeded(tx, appointment, now);
+      replacementSummary.affectedKeycloakIds.forEach((keycloakId) => affectedKeycloakIds.add(keycloakId));
+      endedCount += replacementSummary.endedCount;
+      cancelledCount += replacementSummary.cancelledCount;
       await this.activateApprovedAppointmentInTransaction(tx, appointment.id, now);
       affectedKeycloakIds.add(appointment.staff.user.keycloakId);
       activatedCount += 1;
@@ -788,6 +810,188 @@ export class AppointmentsService {
       activatedCount,
       affectedKeycloakIds: Array.from(affectedKeycloakIds),
     };
+  }
+
+  private async reconcileExpiredAppointments(
+    tx: AppointmentTx,
+    yearId: string,
+    now: Date,
+    schoolDate: Date,
+  ): Promise<Omit<AppointmentActivationSummary, 'activatedCount'>> {
+    const stalePltSummary = await this.reconcilePltsWithTerminalParents(tx, yearId, now);
+    const openAppointments = await tx.appointment.findMany({
+      where: {
+        academicYearId: yearId,
+        status: { in: [...EXPIRY_RECONCILIATION_STATUSES] },
+      },
+      orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        kind: true,
+        status: true,
+        effectiveUntil: true,
+        replacesAppointmentId: true,
+        staff: { select: { user: { select: { keycloakId: true } } } },
+      },
+    });
+
+    const directlyExpiredOperationalIds = new Set(
+      openAppointments
+        .filter((appointment) =>
+          isOperationalAppointmentStatus(appointment.status)
+          && appointment.effectiveUntil !== null
+          && appointment.effectiveUntil < schoolDate)
+        .map((appointment) => appointment.id),
+    );
+    const endedIds = new Set(directlyExpiredOperationalIds);
+    const cancelledIds = new Set(
+      openAppointments
+        .filter((appointment) =>
+          EXPIRABLE_PREPARED_STATUSES.some((status) => status === appointment.status)
+          && appointment.effectiveUntil !== null
+          && appointment.effectiveUntil < schoolDate)
+        .map((appointment) => appointment.id),
+    );
+
+    let endedCount = stalePltSummary.endedCount;
+    let cancelledCount = stalePltSummary.cancelledCount;
+    const affectedKeycloakIds = new Set<string>(stalePltSummary.affectedKeycloakIds);
+    const appointmentById = new Map(openAppointments.map((appointment) => [appointment.id, appointment]));
+    const endedDefinitiveIds: string[] = [];
+
+    for (const id of Array.from(endedIds).sort()) {
+      const appointment = appointmentById.get(id);
+      if (!appointment) continue;
+      const ended = await tx.appointment.updateMany({
+        where: {
+          id,
+          status: { in: [ACTIVE_CAPACITY_STATUS, SUSPENDED_STATUS] },
+        },
+        data: {
+          status: 'ENDED',
+          endedAt: now,
+          reason: directlyExpiredOperationalIds.has(id)
+            ? 'Masa berlaku appointment berakhir'
+            : 'Appointment definitif berakhir',
+        },
+      });
+      if (ended.count === 1) {
+        endedCount += 1;
+        affectedKeycloakIds.add(appointment.staff.user.keycloakId);
+        if (appointment.kind === 'DEFINITIVE') endedDefinitiveIds.push(appointment.id);
+      }
+    }
+
+    const linkedPltSummary = await this.terminateLinkedPlts(tx, endedDefinitiveIds, now);
+    endedCount += linkedPltSummary.endedCount;
+    cancelledCount += linkedPltSummary.cancelledCount;
+    for (const keycloakId of linkedPltSummary.affectedKeycloakIds) {
+      affectedKeycloakIds.add(keycloakId);
+    }
+
+    for (const id of Array.from(cancelledIds).sort()) {
+      const appointment = appointmentById.get(id);
+      if (!appointment) continue;
+      const cancelled = await tx.appointment.updateMany({
+        where: {
+          id,
+          status: { in: [...EXPIRABLE_PREPARED_STATUSES] },
+        },
+        data: {
+          status: 'CANCELLED',
+          endedAt: now,
+          reason: 'Masa berlaku appointment berakhir sebelum aktivasi',
+        },
+      });
+      if (cancelled.count === 1) {
+        cancelledCount += 1;
+        affectedKeycloakIds.add(appointment.staff.user.keycloakId);
+      }
+    }
+
+    return {
+      endedCount,
+      cancelledCount,
+      affectedKeycloakIds: Array.from(affectedKeycloakIds),
+    };
+  }
+
+  private async reconcilePltsWithTerminalParents(
+    tx: AppointmentTx,
+    yearId: string,
+    now: Date,
+  ): Promise<Omit<AppointmentActivationSummary, 'activatedCount'>> {
+    const openPlts = await tx.appointment.findMany({
+      where: {
+        academicYearId: yearId,
+        kind: 'PLT',
+        status: { in: [...EXPIRY_RECONCILIATION_STATUSES] },
+        replacesAppointmentId: { not: null },
+      },
+      select: { replacesAppointmentId: true },
+    });
+    const parentIds = Array.from(new Set(
+      openPlts.flatMap((appointment) => appointment.replacesAppointmentId
+        ? [appointment.replacesAppointmentId]
+        : []),
+    ));
+    if (parentIds.length === 0) {
+      return { endedCount: 0, cancelledCount: 0, affectedKeycloakIds: [] };
+    }
+    const terminalParents = await tx.appointment.findMany({
+      where: {
+        id: { in: parentIds },
+        kind: 'DEFINITIVE',
+        status: { in: [...TERMINAL_STATUSES] },
+      },
+      select: { id: true },
+    });
+    return this.terminateLinkedPlts(tx, terminalParents.map((appointment) => appointment.id), now);
+  }
+
+  private async terminateLinkedPlts(
+    tx: AppointmentTx,
+    parentIds: string[],
+    now: Date,
+  ): Promise<Omit<AppointmentActivationSummary, 'activatedCount'>> {
+    if (parentIds.length === 0) {
+      return { endedCount: 0, cancelledCount: 0, affectedKeycloakIds: [] };
+    }
+    const linkedPlts = await tx.appointment.findMany({
+      where: {
+        replacesAppointmentId: { in: parentIds },
+        kind: 'PLT',
+        status: { in: [...EXPIRY_RECONCILIATION_STATUSES] },
+      },
+      orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        status: true,
+        staff: { select: { user: { select: { keycloakId: true } } } },
+      },
+    });
+    let endedCount = 0;
+    let cancelledCount = 0;
+    const affectedKeycloakIds = new Set<string>();
+    for (const appointment of linkedPlts) {
+      if (isOperationalAppointmentStatus(appointment.status)) {
+        await this.casAppointmentStatus(tx, appointment.id, [ACTIVE_CAPACITY_STATUS, SUSPENDED_STATUS], {
+          status: 'ENDED',
+          endedAt: now,
+          reason: 'Appointment definitif berakhir',
+        });
+        endedCount += 1;
+      } else {
+        await this.casAppointmentStatus(tx, appointment.id, ['DRAFT', 'PENDING_APPROVAL', 'APPROVED'], {
+          status: 'CANCELLED',
+          endedAt: now,
+          reason: 'Appointment definitif berakhir sebelum PLT aktif',
+        });
+        cancelledCount += 1;
+      }
+      affectedKeycloakIds.add(appointment.staff.user.keycloakId);
+    }
+    return { endedCount, cancelledCount, affectedKeycloakIds: Array.from(affectedKeycloakIds) };
   }
 
   async acquireActivationLock(tx: AppointmentTx): Promise<void> {
@@ -825,7 +1029,11 @@ export class AppointmentsService {
     endedAppointmentId: string,
     now: Date,
     schoolDate: Date,
-  ): Promise<{ staff: { user: { keycloakId: string } } } | null> {
+  ): Promise<{
+    successor: { staff: { user: { keycloakId: string } } } | null;
+    affectedKeycloakIds: string[];
+  }> {
+    const affectedKeycloakIds = new Set<string>();
     const expiredSuccessors = await tx.appointment.findMany({
       where: {
         replacesAppointmentId: endedAppointmentId,
@@ -834,17 +1042,18 @@ export class AppointmentsService {
         effectiveUntil: { lt: schoolDate },
       },
       orderBy: [{ effectiveFrom: 'asc' }, { id: 'asc' }],
-      select: { id: true },
+      select: {
+        id: true,
+        staff: { select: { user: { select: { keycloakId: true } } } },
+      },
     });
     for (const expiredSuccessor of expiredSuccessors) {
-      await tx.appointment.update({
-        where: { id: expiredSuccessor.id },
-        data: {
-          status: 'CANCELLED',
-          endedAt: now,
-          reason: 'Masa berlaku successor berakhir sebelum aktivasi',
-        },
+      await this.casAppointmentStatus(tx, expiredSuccessor.id, ['APPROVED'], {
+        status: 'CANCELLED',
+        endedAt: now,
+        reason: 'Masa berlaku successor berakhir sebelum aktivasi',
       });
+      affectedKeycloakIds.add(expiredSuccessor.staff.user.keycloakId);
     }
 
     const successor = await tx.appointment.findFirst({
@@ -864,9 +1073,10 @@ export class AppointmentsService {
         staff: { select: { user: { select: { keycloakId: true } } } },
       },
     });
-    if (!successor) return null;
+    if (!successor) return { successor: null, affectedKeycloakIds: Array.from(affectedKeycloakIds) };
     await this.activateApprovedAppointmentInTransaction(tx, successor.id, now);
-    return successor;
+    affectedKeycloakIds.add(successor.staff.user.keycloakId);
+    return { successor, affectedKeycloakIds: Array.from(affectedKeycloakIds) };
   }
 
   private async supersedeCurrentYearIncumbentIfNeeded(
@@ -878,12 +1088,13 @@ export class AppointmentsService {
       replacesAppointmentId: string | null;
     },
     now: Date,
-  ): Promise<string | null> {
+  ): Promise<Omit<AppointmentActivationSummary, 'activatedCount'>> {
+    const emptySummary = { endedCount: 0, cancelledCount: 0, affectedKeycloakIds: [] };
     if (!appointment.replacesAppointmentId) {
       if (appointment.kind === 'PLT') {
         throw new ConflictException('PLT memerlukan appointment definitif yang sedang ditangguhkan.');
       }
-      return null;
+      return emptySummary;
     }
     const replaced = await tx.appointment.findUnique({
       where: { id: appointment.replacesAppointmentId },
@@ -895,7 +1106,7 @@ export class AppointmentsService {
         staff: { select: { user: { select: { keycloakId: true } } } },
       },
     });
-    if (!replaced) return null;
+    if (!replaced) return emptySummary;
     if (appointment.kind === 'PLT') {
       if (replaced.academicYearId !== appointment.academicYearId) {
         throw new ConflictException('PLT harus berada pada tahun ajaran yang sama dengan appointment definitif.');
@@ -903,20 +1114,31 @@ export class AppointmentsService {
       if (replaced.kind !== 'DEFINITIVE' || replaced.status !== SUSPENDED_STATUS) {
         throw new ConflictException('PLT hanya dapat aktif saat appointment definitif sedang SUSPENDED.');
       }
-      return replaced.staff.user.keycloakId;
+      return {
+        endedCount: 0,
+        cancelledCount: 0,
+        affectedKeycloakIds: [replaced.staff.user.keycloakId],
+      };
     }
-    if (replaced.academicYearId !== appointment.academicYearId) return null;
-    if (!['ACTIVE', 'SUSPENDED'].includes(replaced.status)) return null;
+    if (replaced.academicYearId !== appointment.academicYearId) return emptySummary;
+    if (!['ACTIVE', 'SUSPENDED'].includes(replaced.status)) return emptySummary;
 
-    await tx.appointment.update({
-      where: { id: replaced.id },
-      data: {
-        status: 'SUPERSEDED',
-        supersededById: appointment.id,
-        endedAt: now,
-      },
+    await this.casAppointmentStatus(tx, replaced.id, ['ACTIVE', 'SUSPENDED'], {
+      status: 'SUPERSEDED',
+      supersededById: appointment.id,
+      endedAt: now,
     });
-    return replaced.staff.user.keycloakId;
+    const affectedKeycloakIds = new Set<string>([replaced.staff.user.keycloakId]);
+    if (replaced.kind === 'DEFINITIVE') {
+      const childSummary = await this.terminateLinkedPlts(tx, [replaced.id], now);
+      childSummary.affectedKeycloakIds.forEach((keycloakId) => affectedKeycloakIds.add(keycloakId));
+      return {
+        endedCount: childSummary.endedCount,
+        cancelledCount: childSummary.cancelledCount,
+        affectedKeycloakIds: Array.from(affectedKeycloakIds),
+      };
+    }
+    return { endedCount: 0, cancelledCount: 0, affectedKeycloakIds: Array.from(affectedKeycloakIds) };
   }
 
   private async activateApprovedAppointmentInTransaction(
@@ -924,12 +1146,9 @@ export class AppointmentsService {
     appointmentId: string,
     now: Date,
   ): Promise<void> {
-    await tx.appointment.update({
-      where: { id: appointmentId },
-      data: {
-        status: ACTIVE_CAPACITY_STATUS,
-        activatedAt: now,
-      },
+    await this.casAppointmentStatus(tx, appointmentId, ['APPROVED'], {
+      status: ACTIVE_CAPACITY_STATUS,
+      activatedAt: now,
     });
   }
 
@@ -1343,12 +1562,15 @@ export class AppointmentsService {
   private async getActorContext(
     actor: AuthUser,
     schoolDate: Date = getSchoolDate(),
+    client?: AppointmentAuthorityClient,
   ): Promise<AppointmentActorContext> {
     const isSuperAdmin = actor.roles.includes('SUPER_ADMIN');
     if (isSuperAdmin) return { isSuperAdmin: true, isActiveKepalaSekolah: false };
     const isActiveKepalaSekolah =
       actor.roles.includes('KEPALA_SEKOLAH' as UserRole) ||
-      (await this.actorHasActiveKepalaSekolah(actor, schoolDate));
+      (client
+        ? await this.actorHasActiveKepalaSekolahInTransaction(client, actor, schoolDate)
+        : await this.actorHasActiveKepalaSekolah(actor, schoolDate));
     return { isSuperAdmin: false, isActiveKepalaSekolah };
   }
 
@@ -1607,13 +1829,16 @@ export class AppointmentsService {
     }
   }
 
-  private async assertCanResumeWithinCapacity(appointment: AppointmentTransitionTarget): Promise<void> {
+  private async assertCanResumeWithinCapacity(
+    appointment: AppointmentTransitionTarget,
+    client: AppointmentLookupClient = this.prisma,
+  ): Promise<void> {
     const scopeWhere = this.scopeWhere(
       appointment.position.id,
       appointment.academicYearId,
       appointment.majorId,
     );
-    const linkedOpenPlt = await this.prisma.appointment.findFirst({
+    const linkedOpenPlt = await client.appointment.findFirst({
       where: {
         ...scopeWhere,
         replacesAppointmentId: appointment.id,
@@ -1626,7 +1851,7 @@ export class AppointmentsService {
       throw new ConflictException('Masih ada PLT terbuka untuk appointment ini. Batalkan atau akhiri PLT sebelum pemangku definitif kembali.');
     }
 
-    const otherActiveCount = await this.prisma.appointment.count({
+    const otherActiveCount = await client.appointment.count({
       where: {
         ...scopeWhere,
         status: ACTIVE_CAPACITY_STATUS,
@@ -1657,6 +1882,7 @@ export class AppointmentsService {
 
   private async assertSubmitDoesNotDuplicateOpenCandidate(
     appointment: AppointmentTransitionTarget,
+    client: AppointmentLookupClient = this.prisma,
   ): Promise<void> {
     if (appointment.replacesAppointmentId) return;
 
@@ -1666,10 +1892,10 @@ export class AppointmentsService {
       appointment.majorId,
     );
     const [activeCount, preparedCount] = await Promise.all([
-      this.prisma.appointment.count({
+      client.appointment.count({
         where: { ...scopeWhere, status: ACTIVE_CAPACITY_STATUS },
       }),
-      this.prisma.appointment.count({
+      client.appointment.count({
         where: {
           ...scopeWhere,
           status: { in: [...PREPARED_STATUSES] },
@@ -1721,8 +1947,11 @@ export class AppointmentsService {
     };
   }
 
-  private async getTransitionTarget(id: string): Promise<AppointmentTransitionTarget> {
-    const appointment = await this.prisma.appointment.findUnique({
+  private async getTransitionTarget(
+    id: string,
+    client: AppointmentLookupClient = this.prisma,
+  ): Promise<AppointmentTransitionTarget> {
+    const appointment = await client.appointment.findUnique({
       where: { id },
       select: {
         id: true,
@@ -1742,22 +1971,51 @@ export class AppointmentsService {
     return appointment;
   }
 
-  private async updateStatus(
-    id: string,
-    staffKeycloakId: string,
-    data: Prisma.AppointmentUpdateInput,
-  ) {
-    try {
-      const result = await this.prisma.appointment.update({
-        where: { id },
-        data,
-        select: { id: true, status: true, endedAt: true },
-      });
-      this.permissions.invalidateUser(staffKeycloakId);
-      return result;
-    } catch (error) {
+  private async withLifecycleLock<T>(
+    callback: (tx: AppointmentTx, now: Date, schoolDate: Date) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.acquireActivationLock(tx);
+      const now = new Date();
+      return callback(tx, now, getSchoolDate(now));
+    }).catch((error) => {
       this.rethrowConstraint(error);
       throw error;
+    });
+  }
+
+  private async casAppointmentStatus(
+    tx: AppointmentTx,
+    id: string,
+    expectedStatuses: string[],
+    data: Prisma.AppointmentUpdateManyMutationInput,
+  ): Promise<void> {
+    const updated = await tx.appointment.updateMany({
+      where: { id, status: { in: expectedStatuses as Prisma.EnumAppointmentStatusFilter['in'] } },
+      data,
+    });
+    if (updated.count !== 1) {
+      throw new ConflictException('Status Appointment telah berubah. Muat ulang data sebelum mencoba kembali.');
+    }
+  }
+
+  private assertStatus(status: string, expectedStatuses: string[], message: string): void {
+    if (!expectedStatuses.includes(status)) throw new ConflictException(message);
+  }
+
+  private assertNotExpired(
+    appointment: Pick<AppointmentTransitionTarget, 'effectiveUntil'>,
+    schoolDate: Date,
+    message: string,
+  ): void {
+    if (appointment.effectiveUntil && appointment.effectiveUntil < schoolDate) {
+      throw new ConflictException(message);
+    }
+  }
+
+  private invalidateUsers(keycloakIds: Iterable<string>): void {
+    for (const keycloakId of new Set(keycloakIds)) {
+      this.permissions.invalidateUser(keycloakId);
     }
   }
 
@@ -1765,8 +2023,9 @@ export class AppointmentsService {
     actor: AuthUser,
     targetPositionCode: string,
     schoolDate: Date = getSchoolDate(),
+    client?: AppointmentAuthorityClient,
   ): Promise<void> {
-    const actorContext = await this.getActorContext(actor, schoolDate);
+    const actorContext = await this.getActorContext(actor, schoolDate, client);
     if (this.canPreparePosition(actorContext, targetPositionCode)) return;
     if (targetPositionCode === 'KEPALA_SEKOLAH') {
       throw new ForbiddenException('Hanya SUPER_ADMIN yang dapat menyiapkan appointment Kepala Sekolah.');
@@ -1779,8 +2038,9 @@ export class AppointmentsService {
     actor: AuthUser,
     targetPositionCode: string,
     schoolDate: Date = getSchoolDate(),
+    client?: AppointmentAuthorityClient,
   ): Promise<void> {
-    const actorContext = await this.getActorContext(actor, schoolDate);
+    const actorContext = await this.getActorContext(actor, schoolDate, client);
     if (this.canApprovePosition(actorContext, targetPositionCode)) return;
     if (targetPositionCode === 'KEPALA_SEKOLAH') {
       throw new ForbiddenException('Hanya SUPER_ADMIN yang dapat menyetujui appointment Kepala Sekolah.');
@@ -1792,6 +2052,38 @@ export class AppointmentsService {
   private async actorHasActiveKepalaSekolah(actor: AuthUser, schoolDate: Date): Promise<boolean> {
     const positions = await this.permissions.getActivePositionCodes(actor.keycloakId, schoolDate);
     return positions.has('KEPALA_SEKOLAH');
+  }
+
+  private async actorHasActiveKepalaSekolahInTransaction(
+    client: AppointmentAuthorityClient,
+    actor: AuthUser,
+    schoolDate: Date,
+  ): Promise<boolean> {
+    const user = await client.user.findUnique({
+      where: { keycloakId: actor.keycloakId },
+      select: { id: true, isActive: true, deletedAt: true },
+    });
+    if (!user || !user.isActive || user.deletedAt) return false;
+    const activeYear = await client.academicYear.findFirst({
+      where: { isActive: true },
+      select: { id: true },
+    });
+    if (!activeYear) return false;
+    const appointmentCount = await client.appointment.count({
+      where: {
+        status: ACTIVE_CAPACITY_STATUS,
+        staff: { userId: user.id, deletedAt: null },
+        academicYearId: activeYear.id,
+        position: { code: 'KEPALA_SEKOLAH', isActive: true, scopeType: 'NONE' },
+        majorId: null,
+        effectiveFrom: { lte: schoolDate },
+        OR: [
+          { effectiveUntil: null },
+          { effectiveUntil: { gte: schoolDate } },
+        ],
+      },
+    });
+    return appointmentCount > 0;
   }
 
   private async requireActor(actor: AuthUser) {
