@@ -14,7 +14,9 @@ interface UserItem {
   phone: string | null;
   role: string;
   isActive: boolean;
+  deletedAt: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 interface UserListResponse {
@@ -52,7 +54,10 @@ export default async function UsersPage({ searchParams }: Props) {
   const token = session?.accessToken ?? '';
   const sp = await searchParams;
   const requestedRole = isUserIdentityRoleOption(sp.role) ? sp.role : '';
-  const requestedStatus = sp.status === 'active' || sp.status === 'inactive' ? sp.status : '';
+  const requestedStatus =
+    sp.status === 'inactive' || sp.status === 'archived' ? sp.status : 'active';
+  const effectiveStatus =
+    requestedStatus === 'archived' && !roles.includes('SUPER_ADMIN') ? 'active' : requestedStatus;
   const page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
 
   const queryParams = new URLSearchParams();
@@ -60,13 +65,16 @@ export default async function UsersPage({ searchParams }: Props) {
   queryParams.set('page', String(page));
   if (sp.search?.trim()) queryParams.set('search', sp.search.trim());
   if (requestedRole) queryParams.set('role', requestedRole);
-  if (requestedStatus) queryParams.set('isActive', requestedStatus === 'active' ? 'true' : 'false');
+  queryParams.set('status', effectiveStatus);
 
   // TF2-P0-NEW-1 (Opsi B): Hanya fetch /users/grouped di page-level. Fetch
   // /permissions dihapus karena SA-only — TU tidak punya akses dan akan
   // menyebabkan LoadError. Panel permissions di-load lazy oleh SUPER_ADMIN
   // saat klik tombol "Izin" (lihat UsersClient.tsx loadAllPermissions).
-  const usersResult = await apiFetchResult<UserListResponse>(`/users?${queryParams.toString()}`, token);
+  const usersResult = await apiFetchResult<UserListResponse>(
+    `/users?${queryParams.toString()}`,
+    token,
+  );
   if (usersResult.status !== 'success') {
     return <LoadError title="Daftar pengguna belum dapat dimuat" message={usersResult.message} />;
   }
@@ -80,10 +88,14 @@ export default async function UsersPage({ searchParams }: Props) {
       query={{
         search: sp.search ?? '',
         role: requestedRole || 'all',
-        status: requestedStatus || 'all',
+        status: effectiveStatus,
       }}
       isSuperAdmin={roles.includes('SUPER_ADMIN')}
-      canManageUsers={authority.can('user.manage') && (roles.includes('SUPER_ADMIN') || roles.includes('TATA_USAHA'))}
+      canManageUsers={
+        authority.can('user.manage') &&
+        (roles.includes('SUPER_ADMIN') || roles.includes('TATA_USAHA'))
+      }
+      canArchiveUsers={authority.can('user.manage') && roles.includes('SUPER_ADMIN')}
     />
   );
 }

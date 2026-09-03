@@ -1,276 +1,158 @@
-# Runbook: Backup & Restore Database DIIS
+# Runbook Backup dan Verifikasi Pemulihan DIIS
 
-> Terakhir diperbarui: 2026-06-13 | Versi: 1.0
+**Berlaku untuk source:** 2026-09-03
 
-## Ringkasan
+**Pemilik:** Operator infrastruktur
 
-DIIS menggunakan strategi **backup host-cron** (bukan container cron):
-- `appuser` menjalankan `pg_dump` via `docker exec` ke container `smk-postgres`
-- Dump disimpan di `/opt/diis-backups/` (lokal VPS, retensi 14 hari)
-- Opsional: rclone ke remote cloud bila `BACKUP_RCLONE_REMOTE` di-set
-- **Drill restore wajib setiap bulan** — backup yang tidak pernah di-restore tidak terpercaya
+**Status:** `NOT ACTIVE / NOT COMMISSIONED`
 
----
+## Current Verified Runtime
 
-## Setup Awal
+Source Wave 10 pada dokumen ini belum dideploy atau diaktifkan. Gate 0 terakhir
+menemukan backup legacy berjalan pukul 19:00 WIB, disk host hanya 21,32% bebas,
+belum ada salinan encrypted independent-provider, dan restore proof terbaru belum
+mewakili bentuk production saat ini. Workflow n8n pada repository tetap
+`active=false` dan credential monitor belum dikonfigurasi.
 
-### 1. Buat direktori backup
+Jangan menggunakan bagian target di bawah sebagai bukti bahwa backup, off-site,
+monitor, atau restore rehearsal sudah operasional. Operating truth hanya boleh
+diubah oleh laporan commissioning production exact-SHA yang ditinjau independen.
 
-```bash
-# Jalankan sebagai root atau appuser dengan sudo
-sudo mkdir -p /opt/diis-backups
-sudo chown appuser:appuser /opt/diis-backups
-sudo chmod 750 /opt/diis-backups
-```
+## Target Contract Setelah Commissioning
 
-### 2. Pastikan script executable
+- Satu-satunya backup database terjadwal adalah container `smk-pg-backup` pukul
+  02:00 WIB (`Asia/Jakarta`).
+- `scripts/backup-db.sh` hanya membuat titik `pre-change` manual yang terlindungi.
+- n8n hanya memantau telemetry PII-safe pukul 02:45 WIB dan tidak menjalankan
+  backup atau restore.
+- Backup valid hanya setelah dump, local MinIO copy-back, exact object manifest,
+  off-site copy-back, safe counts, dan completion manifest seluruhnya valid.
+- Restore rehearsal hanya boleh memakai container PostgreSQL disposable bertanda
+  pada network terisolasi. Production recovery memakai replacement target baru.
 
-```bash
-chmod +x /home/appuser/smart-ai-school/scripts/backup-db.sh
-chmod +x /home/appuser/smart-ai-school/scripts/restore-drill.sh
-```
+## Batas Kapasitas Gate 0
 
-### 3. Test backup manual pertama kali
+Hard budget lokal wajib tepat `4015794422` bytes (3,74 GiB). Nilai lain ditolak.
+Preflight mencadangkan 65.536 byte metadata di luar estimasi dump. Setelah
+retention dan telemetry ditulis, total MinIO diukur ulang; pelampauan membatalkan
+hanya recovery point baru, memulihkan telemetry sebelumnya, dan menggagalkan run.
+Sebelum write, engine mengukur:
 
-```bash
-# Jalankan sebagai appuser
-cd /home/appuser/smart-ai-school
-bash scripts/backup-db.sh
+1. filesystem temporary backup;
+2. volume MinIO tujuan yang benar melalui mount read-only;
+3. aggregate object backup yang sudah ada;
+4. estimasi database saat itu.
 
-# Cek output
-ls -lh /opt/diis-backups/
-tail -20 /opt/diis-backups/backup.log
-```
+Masing-masing target harus memiliki sedikitnya tiga kali estimasi dan tetap
+minimal 25% bebas setelah operasi. Target yang tidak dapat diobservasi adalah
+failure, bukan alasan untuk melewati guard. Commissioning production juga wajib
+mereclaim sedikitnya 6,49 GiB agar baseline mencapai sasaran 30% bebas.
 
-**Output yang diharapkan:**
-```
-[backup-db 2026-06-13 02:30:00] Mulai backup smk_db → /opt/diis-backups/smk_db_20260613_0230.dump
-[backup-db 2026-06-13 02:30:15] OK — file: smk_db_20260613_0230.dump, ukuran: 4.2M, sha256: abc123...
-[backup-db 2026-06-13 02:30:15] BACKUP_RCLONE_REMOTE tidak di-set — skip rclone (hanya backup lokal)
-[backup-db 2026-06-13 02:30:15] Backup selesai
-```
+## Artefak Satu Restore Point
 
-### 4. Jadwalkan cron (appuser)
+| Artefak                    | Fungsi                                         |
+| -------------------------- | ---------------------------------------------- |
+| `<backupId>.dump`          | PostgreSQL custom-format archive               |
+| `<backupId>.sha256`        | checksum archive                               |
+| `<backupId>.objects.tsv`   | set object exact dan mapping content-addressed |
+| `<backupId>.complete.json` | validity boundary dan safe aggregate           |
 
-```bash
-# Edit crontab sebagai appuser
-crontab -e
+Marker `*.local.json` adalah titik degraded yang belum selesai off-site dan tidak
+boleh dipakai sebagai backup valid.
 
-# Tambahkan baris berikut (02:30 WIB = 19:30 UTC):
-2  19  * * *  /home/appuser/smart-ai-school/scripts/backup-db.sh >> /opt/diis-backups/backup.log 2>&1
-```
+## Alur Harian Target
 
-Verifikasi cron terdaftar:
-```bash
-crontab -l | grep backup-db
-```
+1. Ambil owner lock dengan boot ID, PID, dan process start time. Owner hidup
+   menolak writer kedua; owner mati direclaim secara atomik.
+2. Jalankan capacity guard pada temporary storage dan volume MinIO tujuan,
+   termasuk reserve metadata tetap dan aggregate existing backup.
+3. Inventaris object dibuat canonical sebelum dump.
+4. Buat `pg_dump --format=custom`, validasi `pg_restore --list`, checksum, ukuran,
+   dan safe counts.
+5. Unggah dump dan sidecar ke MinIO lokal, unduh kembali keduanya, lalu cocokkan
+   byte, ukuran, dan SHA-256.
+6. Salin dump serta setiap object ke encrypted independent provider. Object
+   disimpan sebagai blob content-addressed dan dipetakan oleh manifest per backup.
+7. Ulangi inventory dan hash sumber setelah copy. Perubahan selama snapshot
+   membatalkan seluruh run.
+8. Unduh kembali dump, sidecar, manifest, dan setiap blob off-site untuk validasi.
+9. Terbitkan completion manifest terakhir, lalu jalankan retention tervalidasi.
+10. Terbitkan telemetry PII-safe ukuran, growth 7/30 hari, free space,
+    days-to-full, status off-site, dan umur restore proof. Ukur ulang total aktual
+    sebelum `BACKUP_COMPLETE`; pelampauan wajib cleanup sempit dan fail-closed.
 
----
+## Retensi dan Protected Pre-change
 
-## Konfigurasi rclone (Off-VPS Backup)
+- Lokal: tiga daily valid terbaru; `pre-change:protected` tidak dihitung sebagai
+  daily dan tidak boleh dihapus oleh retention biasa.
+- Off-site: 14 daily, 8 weekly, dan 12 monthly.
+- Titik protected tetap hidup tanpa batas sampai rekonsiliasi selesai dan release
+  marker eksplisit diterbitkan.
+- Release hanya melalui `release-prechange-backup.sh` dengan backup ID,
+  reconciliation reference PII-safe, dan confirmation exact.
+- Retention off-site default dry-run; deletion baru berlaku dengan
+  `OFFSITE_RETENTION_APPLY=1` pada commissioning yang disetujui.
+- Completion marker dihapus lebih dulu. Interupsi hanya boleh meninggalkan orphan
+  payload, tidak boleh meninggalkan false-valid restore point.
 
-> Langkah ini opsional tapi sangat dianjurkan untuk keandalan data.
-
-### 1. Install rclone
-
-```bash
-curl https://rclone.org/install.sh | sudo bash
-```
-
-### 2. Konfigurasi remote
-
-```bash
-# Jalankan sebagai appuser — ikuti wizard interaktif
-rclone config
-
-# Contoh: Google Drive
-# n → new remote
-# Name: diis-backup
-# Type: drive (Google Drive)
-# Ikuti wizard OAuth
-```
-
-### 3. Test rclone
-
-```bash
-rclone lsd diis-backup:
-```
-
-### 4. Aktifkan di backup
-
-Tambahkan ke environment cron:
-```bash
-# Edit /etc/environment atau ~/.bashrc appuser
-BACKUP_RCLONE_REMOTE=diis-backup:smk-darussalam-subah-db
-```
-
-Atau langsung di crontab:
-```
-2  19  * * *  BACKUP_RCLONE_REMOTE=diis-backup:smk-darussalam-subah-db /home/appuser/smart-ai-school/scripts/backup-db.sh >> /opt/diis-backups/backup.log 2>&1
-```
-
----
-
-## Drill Restore (Wajib Tiap Bulan)
+Contoh pre-change setelah gate terpisah disetujui:
 
 ```bash
-# Jalankan sebagai appuser di VPS
-cd /home/appuser/smart-ai-school
-bash scripts/restore-drill.sh
+MANUAL_PRECHANGE_CONFIRM=CREATE_PROTECTED_PRECHANGE_BACKUP \
+  bash scripts/backup-db.sh
 ```
 
-**Output laporan yang diharapkan:**
-```
-============================================================
-  LAPORAN DRILL RESTORE — 2026-06-13 10:00:00
-  Dump: smk_db_20260613_0230.dump (4.2M)
-============================================================
+## Restore Rehearsal Disposable
 
---- Jumlah Tabel per Schema ---
-academic|8
-ai_knowledge|2
-audit|1
-auth|5
-finance|1
-notification|3
-ppdb|2
-school|5
-student|2
-teacher|2
+Target harus dibuat khusus, diberi label berikut, dan hanya terhubung ke satu
+network terisolasi:
 
---- Row Count Tabel Kunci ---
-auth.users|47
-student.students|38
-audit.audit_log|1523
-
-============================================================
-  DRILL SELESAI — database sementara akan di-DROP
-============================================================
+```text
+com.diis.restore-target=disposable-v1
+com.diis.restore-data-path=/var/lib/postgresql/data
+com.diis.restore-network=isolated-v1
 ```
 
-Catat tanggal, ukuran dump, dan row count di logbook/tiket setelah drill selesai.
-
----
-
-## Prosedur Restore Darurat (Produksi)
-
-> ⚠️ **HATI-HATI**: Restore produksi = risiko kehilangan data pasca-backup terakhir.
-> Lakukan HANYA bila terjadi kerusakan data yang tidak bisa diperbaiki cara lain.
-> **Koordinasi dengan Director sebelum eksekusi.**
-
-### Langkah 1: Stop API (cegah tulis baru)
+Jalankan dari direktori privat setelah target diverifikasi:
 
 ```bash
-cd /home/appuser/smart-ai-school/infrastructure/docker
-docker compose stop api
+POSTGRES_CONTAINER=diis-restore-disposable-<run> \
+POSTGRES_USER=postgres \
+DUMP_FILE=/private/<backupId>.dump \
+CHECKSUM_FILE=/private/<backupId>.sha256 \
+MANIFEST_FILE=/private/<backupId>.complete.json \
+RESTORE_PROOF_OUTPUT=/private/restore-proof.json \
+RESTORE_LOCK_DIR=/private/restore.lock \
+  bash scripts/restore-drill.sh
 ```
 
-### Langkah 2: Tentukan dump yang akan digunakan
+Script menolak `smk-postgres`, nama/label/network staging atau production, target
+tanpa marker, target multi-network, dan filesystem data target yang tidak dapat
+diobservasi. Proof bulanan baru boleh diterbitkan setelah review terpisah memakai
+`scripts/publish-restore-proof.sh`.
 
-```bash
-ls -lht /opt/diis-backups/smk_db_*.dump | head -5
-# Pilih dump terakhir sebelum insiden
-```
+## Monitor n8n Target
 
-### Langkah 3: Drop + recreate database target
+Workflow `DIIS Backup Completion Monitor` tetap inactive sampai commissioning.
+Setelah aktif melalui gate terpisah, ia membaca tepat
+`postgres/monitor/latest.json` dengan credential read-only dan menghasilkan reason
+code untuk stale completion, telemetry invalid, kapasitas rendah, days-to-full
+pendek, off-site incomplete, atau restore proof hilang/gagal/kedaluwarsa.
 
-```bash
-docker exec smk-postgres psql -U smk_admin -d postgres \
-  -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='smk_db';"
-docker exec smk-postgres psql -U smk_admin -d postgres \
-  -c "DROP DATABASE smk_db;"
-docker exec smk-postgres psql -U smk_admin -d postgres \
-  -c "CREATE DATABASE smk_db OWNER smk_admin;"
-```
+Kanal notifikasi yang kosong harus dilaporkan `disabled`; keadaan itu bukan sukses
+pengiriman alert.
 
-### Langkah 4: Restore
+## Larangan dan Fail-closed
 
-```bash
-DUMP_FILE=/opt/diis-backups/smk_db_YYYYMMDD_HHMM.dump  # ganti dengan nama aktual
+- Tidak ada scheduler kedua, host cron kedua, atau `rclone sync`.
+- Tidak ada credential, token, connection string, atau konfigurasi rclone di Git
+  maupun laporan.
+- Tidak ada restore drill pada cluster, container, volume, atau network aplikasi.
+- Tidak ada `DROP SCHEMA`, replay SQL parsial, atau write ke database aktif.
+- Tidak ada klaim operasional sebelum exact-SHA commissioning, restore proof,
+  cleanup, telemetry, dan independent review lulus.
 
-docker exec -i smk-postgres \
-  pg_restore --username=smk_admin --dbname=smk_db \
-  --no-owner --no-privileges --exit-on-error \
-  < "${DUMP_FILE}"
-```
-
-### Langkah 5: Verifikasi
-
-```bash
-docker exec smk-postgres psql -U smk_admin -d smk_db \
-  -c "SELECT count(*) FROM auth.users;"
-docker exec smk-postgres psql -U smk_admin -d smk_db \
-  -c "SELECT count(*) FROM student.students;"
-```
-
-### Langkah 6: Jalankan Prisma migration (bila restore ke versi lebih lama)
-
-```bash
-docker compose --profile migrate up api-migrate
-```
-
-### Langkah 7: Start API kembali
-
-```bash
-docker compose up -d api
-```
-
-### Langkah 8: Health check
-
-```bash
-curl -s http://localhost:3001/health | jq .
-```
-
----
-
-## Kebijakan Backup
-
-| Item | Nilai |
-|------|-------|
-| Jadwal | 02:30 WIB setiap hari (cron host appuser) |
-| Retensi lokal | 14 hari |
-| Format | pg_dump custom (-Fc) |
-| Enkripsi | Tidak (VPS private, filesystem milik appuser) — pertimbangkan rclone crypt untuk remote |
-| Drill restore | **Wajib tiap bulan, tanggal bebas** |
-| Notifikasi gagal | Log file — cron gagal tidak mengirim notifikasi otomatis; pantau log setiap minggu |
-
----
-
-## Pemantauan Backup
-
-```bash
-# Cek log backup terbaru
-tail -20 /opt/diis-backups/backup.log
-
-# Cek ukuran semua dump
-ls -lht /opt/diis-backups/smk_db_*.dump
-
-# Konfirmasi dump terakhir kurang dari 25 jam
-find /opt/diis-backups -name "smk_db_*.dump" -mtime -1 | wc -l
-# Harus: 1 (atau lebih bila ada drill manual)
-```
-
----
-
-## Troubleshooting
-
-### Backup gagal: container tidak berjalan
-
-```bash
-docker ps --filter "name=smk-postgres"
-# Bila tidak muncul: docker compose up -d postgres
-```
-
-### pg_dump error: permission denied
-
-```bash
-# Pastikan POSTGRES_USER punya hak SUPERUSER atau minimal REPLICATION
-docker exec smk-postgres psql -U smk_admin -c "\du smk_admin"
-```
-
-### Restore gagal: role tidak ditemukan
-
-```bash
-# pg_restore --no-owner --no-privileges menghindari konflik role
-# Bila masih gagal, tambahkan --single-transaction dan cek error spesifik
-```
+Checksum, archive list, capacity, lock, local/off-site copy-back, manifest,
+safe-count reconciliation, telemetry, atau cleanup yang gagal wajib menghentikan
+run. Pertahankan recovery evidence dan newest valid backup; jangan melakukan retry
+atau perbaikan ad hoc tanpa investigasi.

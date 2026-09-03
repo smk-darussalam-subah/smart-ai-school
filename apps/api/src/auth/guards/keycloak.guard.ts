@@ -4,12 +4,7 @@
 // Skip auth: @Public() decorator
 // =============================================================================
 
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { FastifyRequest } from 'fastify';
 import { verifyKeycloakToken, extractAuthUser, AuthUser } from '@smk/auth';
@@ -53,9 +48,14 @@ export class KeycloakGuard implements CanActivate {
 
     // 2J-0 (A4b): user dinonaktifkan/di-soft-delete dari dashboard TIDAK boleh
     // lewat meski token KC masih hidup. (Saklar KC menyusul di 2J-1/2.)
-    if (await this.userStatus.isBlocked(user.keycloakId)) {
+    const authorizationState = await this.userStatus.getAuthorizationState(user.keycloakId);
+    if (authorizationState.blocked || !authorizationState.primaryRole) {
       throw new UnauthorizedException('Akun dinonaktifkan. Hubungi administrator.');
     }
+
+    // Database aplikasi adalah source of truth authority. Token lama tetap sah
+    // sebagai autentikasi, tetapi claim role-nya tidak boleh mempertahankan hak.
+    user = { ...user, roles: [authorizationState.primaryRole] };
 
     {
       // Inject user ke request untuk dipakai controller

@@ -106,7 +106,7 @@ Prinsip Eksekusi Director ditambahkan ke WAYS-OF-WORKING §Prinsip Eksekusi + me
 ## 2026-06-11 (malam) — 2F: CRUD Jadwal + Presensi Guru + RPP
 
 1. **Konflik jadwal = rentang INKLUSIF** — `lt/gt` lama meloloskan overlap tepi;
-   distandarkan `lte/gte` + cek rentang kelas (unique DB hanya jpStart). *Lesson:*
+   distandarkan `lte/gte` + cek rentang kelas (unique DB hanya jpStart). _Lesson:_
    semantik inklusif/eksklusif batas rentang harus eksplisit di tes.
 2. **Presensi luar geofence DICATAT + DIFLAG, tidak ditolak** (kebijakan KamilEdu
    flag_luar_area) — keputusan tindak lanjut di kepala sekolah, bukan sistem.
@@ -127,10 +127,10 @@ Prinsip Eksekusi Director ditambahkan ke WAYS-OF-WORKING §Prinsip Eksekusi + me
 2. **Skill ui-ux-pro-max v2.5.0** = referensi WAJIB pekerjaan frontend (CLAUDE.md).
    Symlink upstream di-resolve; script sinkronisasi upstream dihapus dari vendor.
 3. **Deteksi bentrok jadwal dua lapis**: DB constraint (unique jpStart) + deteksi klien
-   rentang-overlap (guru lintas kelas & kelas dobel). *Diketahui:* unique DB tidak
+   rentang-overlap (guru lintas kelas & kelas dobel). _Diketahui:_ unique DB tidak
    menangkap overlap rentang (1–3 vs 2–4) — kandidat constraint/exclusion server-side.
 4. **Redaksi audit diperkuat** (case-insensitive, substring, nested depth 3) + statusCode
-   @HttpCode-aware. *Lesson:* denylist exact-match case-sensitive adalah ilusi keamanan.
+   @HttpCode-aware. _Lesson:_ denylist exact-match case-sensitive adalah ilusi keamanan.
 
 ---
 
@@ -141,8 +141,9 @@ WAYS-OF-WORKING); queue.md drift. Sesi 2026-06-11 (mandat Director: "sempurnakan
 KamilEdu, tanpa intervensi") melakukan review retrospektif + perbaikan + 2 modul baru.
 
 **Keputusan & temuan kunci:**
+
 1. **PermissionGuard wajib FAIL-CLOSED** — rute ber-@RequirePermission tanpa user = 403,
-   bukan pass. *Lesson:* guard otorisasi tidak boleh mengandalkan urutan guard lain.
+   bukan pass. _Lesson:_ guard otorisasi tidak boleh mengandalkan urutan guard lain.
 2. **Override permission grant=false kini menarik izin role** (semantik schema ditegakkan);
    resolusi override difilter di QUERY (bukan scan tabel di JS); invalidasi cache:
    perubahan role-level → clear-all (350 user, TTL 5 mnt — konsistensi > hit-rate).
@@ -168,31 +169,32 @@ bersifat security (fail-open, revoke tak efektif). SERIAL + review tetap aturan.
 **N-20 — Isolasi staging (bentuk final).** DB logis `smk_staging_db` di container `smk-postgres` yang sama +
 stack `smk-staging-*` (compose project `smk-staging`, port 3100/3101) + `deploy.yml` per-branch (staging
 `/opt/diis-staging`, main `/home/appuser`) + guardrail `GUARD_STAGING_DB` (fail-hard bila target ≠ smk_staging_db).
-*Trade-off (Director):* staging & prod berbagi proses PostgreSQL/Keycloak/Redis — minimal, bukan server baru.
-*Bukti CLOSED-prod:* smk_db 9→9 migration / 14→14 tabel tak berubah; smk_staging_db 9 migration + schema terbentuk.
+_Trade-off (Director):_ staging & prod berbagi proses PostgreSQL/Keycloak/Redis — minimal, bukan server baru.
+_Bukti CLOSED-prod:_ smk_db 9→9 migration / 14→14 tabel tak berubah; smk_staging_db 9 migration + schema terbentuk.
 
 **N-23b — Keycloak production mode + tutup 8080.** `command: start` (tanpa `--import-realm` — anti revert URL
 prod N-26; realm `diis` persist di DB). Env 24.0: `KC_HOSTNAME=auth.smkdarussalamsubah.sch.id`,
 `KC_HOSTNAME_STRICT=false` (admin via tunnel), **`KC_HOSTNAME_STRICT_HTTPS=true`** (WAJIB true di belakang proxy
 TLS — `false` memicu http:// di CSP → mixed-content; lihat N-29b), `KC_HTTP_ENABLED=true`, `KC_PROXY_HEADERS=xforwarded`,
 `KC_CACHE=local` (single-node). Port `127.0.0.1:8080:8080` (loopback — tertutup internet, admin via SSH tunnel).
-Cutover prod via `--force-recreate keycloak` (deploy biasa tak me-restart keycloak — by design). *Bukti:* G1–G5
-+ login browser nyata dikonfirmasi Director.
+Cutover prod via `--force-recreate keycloak` (deploy biasa tak me-restart keycloak — by design). _Bukti:_ G1–G5
+
+- login browser nyata dikonfirmasi Director.
 
 **F-3 — Harden /metrics.** nginx blok publik `api.*`: `location /metrics { return 404; }`. Prometheus scrape
-`api:3001/metrics` via jaringan internal, tak terpengaruh. *Bukti:* curl publik → 404, Prometheus target up.
+`api:3001/metrics` via jaringan internal, tak terpengaruh. _Bukti:_ curl publik → 404, Prometheus target up.
 
-**N-29 — DNS alias collision staging↔prod (regresi N-20).** *Root cause definitif:* Docker Compose **merge**
+**N-29 — DNS alias collision staging↔prod (regresi N-20).** _Root cause definitif:_ Docker Compose **merge**
 networks (bukan replace) → service override `api`/`web` di staging mendaftarkan alias service-name yang SAMA
 (`api`/`web`) di `smk-network` → Docker DNS round-robin → nginx random-route prod→staging → login loop
-(NEXTAUTH_URL staging). *Fix permanen:* nginx upstream menunjuk **container name** `smk-web`/`smk-api`
-(bukan alias service `web`/`api`) → kebal terhadap alias apa pun yang didaftarkan staging. *Pelajaran:* stack
+(NEXTAUTH_URL staging). _Fix permanen:_ nginx upstream menunjuk **container name** `smk-web`/`smk-api`
+(bukan alias service `web`/`api`) → kebal terhadap alias apa pun yang didaftarkan staging. _Pelajaran:_ stack
 berbagi network = berbagi namespace alias; jangan andalkan alias service-name untuk routing kritis — pakai
 nama container eksplisit, dan isolasi network sejak desain.
 
-**N-29b — Admin console spinner.** *Root cause:* `KC_HOSTNAME_STRICT_HTTPS=false` → Keycloak emit `http://`
+**N-29b — Admin console spinner.** _Root cause:_ `KC_HOSTNAME_STRICT_HTTPS=false` → Keycloak emit `http://`
 self-URL → masuk CSP halaman https → browser blokir login-status-iframe sebagai **Mixed Content** → spinner.
-*Fix:* set `true`. *Pelajaran:* di belakang proxy TLS-terminating, strict-https HARUS true meski KC listen HTTP internal.
+_Fix:_ set `true`. _Pelajaran:_ di belakang proxy TLS-terminating, strict-https HARUS true meski KC listen HTTP internal.
 
 **CI merah — dua sebab terpisah** (dirty git working-tree di VPS + label `smk-staging-net`) → keduanya difix.
 
@@ -304,4 +306,16 @@ menyimpang dari dokumen tanpa catatan) adalah temuan utama audit. CLAUDE.md §�
 
 ---
 
-*Dikelola oleh Cowork AI. Update setiap ada keputusan arsitektur baru.*
+---
+
+## 2026-09-03 — Wave 10-A: backup completion dan user archive
+
+**Backup/DR target setelah commissioning.** Satu-satunya backup database terjadwal ditargetkan melalui `pg-backup -> MinIO` pukul 02:00 WIB. Backup memakai custom-format PostgreSQL, checksum, archive validation, safe-count manifest, local copy-back, exact content-addressed object manifest, dan encrypted independent-provider completion sebelum dinyatakan valid. Hard budget lokal tepat 3,74 GiB dan capacity guard mengukur filesystem MinIO/PostgreSQL tujuan. Local retention menyimpan tiga daily; protected pre-change bertahan sampai explicit release. Off-site menyimpan 14 daily/8 weekly/12 monthly. n8n hanya memonitor telemetry setelah grace period dan tetap inactive sampai commissioning. Restore rehearsal hanya pada target disposable bertanda; restore produksi selalu ke database/server replacement, bukan partial schema replay.
+
+**Identity lifecycle.** `User.deletedAt` menjadi archive marker tanpa schema baru. Default registry hanya user aktif; arsip hanya dapat dikelola Super Admin aktif dengan `user.manage`, alasan audit, dan stale-write token. Archive menutup akses DB secara CAS, menginvalidasi cache, menonaktifkan Keycloak, dan mencoba menghentikan sesi. Restore wajib berhasil mengaktifkan Keycloak sebelum DB dibuka. Semua akun Super Admin dan self-archive ditolak. Mutasi role/status yang dapat mengurangi Super Admin aktif diserialisasi oleh PostgreSQL advisory transaction lock dan membaca ulang actor, target, serta count sebelum CAS. Relasi akademik tidak dihapus dan tidak ada purge/hard delete.
+
+**Authentication fail-closed.** Token Keycloak tanpa pasangan `auth.users`, user nonaktif/archived, atau kegagalan lookup DB selalu ditolak. Hasil missing/error tidak dicache agar rekonsiliasi dapat pulih segera. Provisioning tetap workflow terpisah; tidak ada bootstrap publik baru.
+
+**Gate.** Keputusan ini adalah source contract, bukan operating truth. Gate 0 masih mencatat runtime legacy pukul 19:00 WIB, disk 21,32% bebas, belum ada independent off-site, dan monitor belum commissioned. Credential off-site, restore rehearsal, identity reconciliation, Git delivery, staging QA, data nyata, dan commissioning production memerlukan gate terpisah.
+
+_Dikelola oleh Cowork AI. Update setiap ada keputusan arsitektur baru._

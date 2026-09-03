@@ -33,6 +33,24 @@ export async function updateUserActive(userId: string, isActive: boolean) {
   return result;
 }
 
+export async function archiveUserAction(userId: string, reason: string, expectedUpdatedAt: string) {
+  const result = await apiAction(`/users/${userId}/archive`, 'POST', {
+    reason,
+    expectedUpdatedAt,
+  });
+  if (!result.error) revalidatePath('/dashboard/users');
+  return result;
+}
+
+export async function restoreUserAction(userId: string, reason: string, expectedUpdatedAt: string) {
+  const result = await apiAction(`/users/${userId}/restore`, 'POST', {
+    reason,
+    expectedUpdatedAt,
+  });
+  if (!result.error) revalidatePath('/dashboard/users');
+  return result;
+}
+
 export async function grantUserPermission(userId: string, permissionId: string, grant: boolean) {
   return apiAction(`/permissions/users/${userId}/grant`, 'POST', { permissionId, grant });
 }

@@ -41,6 +41,17 @@ jest.mock('../src/permissions/permissions.service', () => ({
   PermissionsService: jest.fn().mockImplementation(() => ({
     hasPermission: jest.fn().mockResolvedValue(true),
     getEffectivePermissions: jest.fn().mockResolvedValue(new Set()),
+    getAuthoritativePrimaryRole: jest.fn().mockImplementation((keycloakId: string) => {
+      const rolesByKeycloakId: Record<string, string> = {
+        'e2e00000-0000-4000-c000-000000000001': 'SUPER_ADMIN',
+        'e2e00000-0000-4000-c000-000000000002': 'GURU',
+        'e2e00000-0000-4000-c000-000000000003': 'TATA_USAHA',
+        'e2e00000-0000-4000-c000-000000000004': 'GURU',
+        'e2e00000-0000-4000-c000-000000000005': 'SISWA',
+        'e2e00000-0000-4000-c000-000000000006': 'ORANG_TUA',
+      };
+      return Promise.resolve(rolesByKeycloakId[keycloakId] ?? null);
+    }),
     getActivePositionCodes: jest.fn().mockImplementation((keycloakId: string) =>
       Promise.resolve(keycloakId === 'e2e00000-0000-4000-c000-000000000002'
         ? new Set(['KEPALA_SEKOLAH'])
