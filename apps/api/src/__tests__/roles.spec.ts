@@ -69,14 +69,22 @@ describe('RolesGuard', () => {
   let guard: RolesGuard;
   let reflector: Reflector;
   const mockGetActivePositionCodes = jest.fn();
+  const mockGetAuthoritativePrimaryRole = jest.fn();
 
   beforeEach(async () => {
     mockGetActivePositionCodes.mockReset();
+    mockGetAuthoritativePrimaryRole.mockReset().mockResolvedValue('GURU');
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RolesGuard,
         Reflector,
-        { provide: PermissionsService, useValue: { getActivePositionCodes: mockGetActivePositionCodes } },
+        {
+          provide: PermissionsService,
+          useValue: {
+            getActivePositionCodes: mockGetActivePositionCodes,
+            getAuthoritativePrimaryRole: mockGetAuthoritativePrimaryRole,
+          },
+        },
       ],
     }).compile();
 
@@ -96,6 +104,7 @@ describe('RolesGuard', () => {
   });
 
   it('@Roles("SUPER_ADMIN") + user SUPER_ADMIN returns true', async () => {
+    mockGetAuthoritativePrimaryRole.mockResolvedValue('SUPER_ADMIN');
     const ctx = buildContext({
       reflector,
       requiredRoles: ['SUPER_ADMIN'],
@@ -115,6 +124,7 @@ describe('RolesGuard', () => {
   });
 
   it('@Roles("GURU", "TATA_USAHA") + user TATA_USAHA returns true', async () => {
+    mockGetAuthoritativePrimaryRole.mockResolvedValue('TATA_USAHA');
     const ctx = buildContext({
       reflector,
       requiredRoles: ['GURU', 'TATA_USAHA'],
@@ -124,6 +134,7 @@ describe('RolesGuard', () => {
   });
 
   it('@Roles("KEPALA_SEKOLAH") + active appointment returns true', async () => {
+    mockGetAuthoritativePrimaryRole.mockResolvedValue('TATA_USAHA');
     mockGetActivePositionCodes.mockResolvedValue(new Set(['KEPALA_SEKOLAH']));
     const ctx = buildContext({
       reflector,
@@ -150,18 +161,26 @@ describe('RolesGuard', () => {
 
   it('@Roles("SUPER_ADMIN", "KEPALA_SEKOLAH") allows active Kepala Sekolah but rejects ordinary stable roles', async () => {
     mockGetActivePositionCodes.mockResolvedValueOnce(new Set());
-    await expect(guard.canActivate(buildContext({
-      reflector,
-      requiredRoles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'],
-      userRoles: ['GURU'],
-    }))).rejects.toThrow(ForbiddenException);
+    await expect(
+      guard.canActivate(
+        buildContext({
+          reflector,
+          requiredRoles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'],
+          userRoles: ['GURU'],
+        }),
+      ),
+    ).rejects.toThrow(ForbiddenException);
 
     mockGetActivePositionCodes.mockResolvedValueOnce(new Set(['KEPALA_SEKOLAH']));
-    await expect(guard.canActivate(buildContext({
-      reflector,
-      requiredRoles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'],
-      userRoles: ['GURU'],
-    }))).resolves.toBe(true);
+    await expect(
+      guard.canActivate(
+        buildContext({
+          reflector,
+          requiredRoles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH'],
+          userRoles: ['GURU'],
+        }),
+      ),
+    ).resolves.toBe(true);
   });
 
   it('@Roles("WAKA_KURIKULUM") without active appointment rejects', async () => {
@@ -182,5 +201,17 @@ describe('RolesGuard', () => {
       userRoles: [],
     });
     await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('menolak token SUPER_ADMIN lama setelah role database menjadi GURU', async () => {
+    mockGetAuthoritativePrimaryRole.mockResolvedValue('GURU');
+    const ctx = buildContext({
+      reflector,
+      requiredRoles: ['SUPER_ADMIN'],
+      userRoles: ['SUPER_ADMIN'],
+    });
+
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+    expect(mockGetAuthoritativePrimaryRole).toHaveBeenCalledWith('kc-user');
   });
 });

@@ -55,10 +55,21 @@ function buildMockContext(options: {
 describe('KeycloakGuard — APP_GUARD Global Protection (FIX-T02)', () => {
   let guard: KeycloakGuard;
   let reflector: Reflector;
+  const userStatus = {
+    isBlocked: jest.fn(),
+    getAuthorizationState: jest.fn(),
+    invalidate: jest.fn(),
+    invalidateAll: jest.fn(),
+  };
 
   beforeEach(async () => {
+    userStatus.isBlocked.mockReset().mockResolvedValue(false);
+    userStatus.getAuthorizationState.mockReset().mockResolvedValue({
+      blocked: false,
+      primaryRole: 'GURU',
+    });
     const module: TestingModule = await Test.createTestingModule({
-      providers: [KeycloakGuard, Reflector, { provide: UserStatusService, useValue: { isBlocked: jest.fn().mockResolvedValue(false), invalidate: jest.fn(), invalidateAll: jest.fn() } }],
+      providers: [KeycloakGuard, Reflector, { provide: UserStatusService, useValue: userStatus }],
     }).compile();
 
     guard = module.get<KeycloakGuard>(KeycloakGuard);
@@ -129,5 +140,46 @@ describe('KeycloakGuard — APP_GUARD Global Protection (FIX-T02)', () => {
 
     const result = await guard.canActivate(ctx);
     expect(result).toBe(true);
+    const request = ctx.switchToHttp().getRequest() as { user?: { roles: string[] } };
+    expect(request.user?.roles).toEqual(['GURU']);
+  });
+
+  it('token valid tetap ditolak saat record aplikasi tidak tersedia', async () => {
+    (verifyKeycloakToken as jest.Mock).mockResolvedValue({ sub: 'kc-orphan' });
+    (extractAuthUser as jest.Mock).mockReturnValue({
+      keycloakId: 'kc-orphan',
+      username: 'orphan',
+      roles: ['GURU'],
+    });
+    userStatus.getAuthorizationState.mockResolvedValue({ blocked: true, primaryRole: null });
+
+    const ctx = buildMockContext({
+      reflector,
+      authHeader: 'Bearer valid-but-unmatched',
+    });
+
+    await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
+    expect(userStatus.getAuthorizationState).toHaveBeenCalledWith('kc-orphan');
+  });
+
+  it('token SUPER_ADMIN lama dinormalisasi ke role database terkini', async () => {
+    (verifyKeycloakToken as jest.Mock).mockResolvedValue({ sub: 'kc-demoted' });
+    (extractAuthUser as jest.Mock).mockReturnValue({
+      keycloakId: 'kc-demoted',
+      username: 'demoted',
+      roles: ['SUPER_ADMIN'],
+    });
+    userStatus.getAuthorizationState.mockResolvedValue({
+      blocked: false,
+      primaryRole: 'GURU',
+    });
+    const context = buildMockContext({
+      reflector,
+      authHeader: 'Bearer stale-super-admin-token',
+    });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    const request = context.switchToHttp().getRequest() as { user?: { roles: string[] } };
+    expect(request.user?.roles).toEqual(['GURU']);
   });
 });

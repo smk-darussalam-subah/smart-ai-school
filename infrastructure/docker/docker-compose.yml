@@ -21,7 +21,7 @@ volumes:
   prometheus_data:
   grafana_data:
   minio_data:
-  backup_bin:      # Persistent volume untuk mc binary (agar tidak re-download setiap restart)
+  backup_bin:      # Pinned backup tools; setiap startup diverifikasi SHA-256.
 
 services:
 
@@ -478,7 +478,7 @@ services:
   # ─── BACKUP OTOMATIS ──────────────────────────────────────────────────────
 
   pg-backup:
-    image: postgres:16-alpine
+    image: postgres:16.4-alpine3.20@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
     container_name: smk-pg-backup
     restart: unless-stopped
     environment:
@@ -490,29 +490,70 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-diis_minio}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       BACKUP_BUCKET: diis-backup
-      BACKUP_RETENTION_DAYS: "7"
+      BACKUP_DAILY_POINTS: "3"
+      BACKUP_MAX_DEGRADED_POINTS: "3"
+      BACKUP_LOCAL_BUDGET_BYTES: ${BACKUP_LOCAL_BUDGET_BYTES:-4015794422}
+      BACKUP_MIN_FREE_PERCENT: "25"
+      BACKUP_SPACE_MULTIPLIER: "3"
+      MINIO_TARGET_PATH: /var/lib/diis-minio-target
+      APP_OBJECT_BUCKET: ${CLASS_ACTIVITY_MEDIA_BUCKET:-diis-class-activities}
+      OFFSITE_CRYPT_REMOTE: ${BACKUP_OFFSITE_CRYPT_REMOTE:-}
+      OFFSITE_CONFIG_FINGERPRINT: ${BACKUP_OFFSITE_CONFIG_FINGERPRINT:-}
+      OFFSITE_EXPECTED_PROVIDER: ${BACKUP_OFFSITE_EXPECTED_PROVIDER:-}
+      OFFSITE_EXPECTED_ORIGIN: ${BACKUP_OFFSITE_EXPECTED_ORIGIN:-}
+      OFFSITE_RETENTION_APPLY: ${BACKUP_OFFSITE_RETENTION_APPLY:-0}
+      RCLONE_CONFIG: /run/diis-secrets/rclone.conf
+      RCLONE_MINIO_REMOTE: "diisminio:"
+      RCLONE_CONFIG_DIISMINIO_TYPE: s3
+      RCLONE_CONFIG_DIISMINIO_PROVIDER: Minio
+      RCLONE_CONFIG_DIISMINIO_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-diis_minio}
+      RCLONE_CONFIG_DIISMINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      RCLONE_CONFIG_DIISMINIO_ENDPOINT: http://minio:9000
+      RCLONE_CONFIG_DIISMINIO_REGION: us-east-1
       TZ: Asia/Jakarta
     volumes:
       - ./scripts/backup.sh:/backup.sh:ro
+      - ./scripts/backup-lib.sh:/backup-lib.sh:ro
+      - ./scripts/offsite-replication.sh:/offsite-replication.sh:ro
+      - ./scripts/restore-objects.sh:/restore-objects.sh:ro
+      - ./scripts/release-prechange-backup.sh:/release-prechange-backup.sh:ro
       - backup_bin:/opt/backup-bin
-    # mc client di-download ke named volume agar persistent lintas restart.
-    # Cron: 0 19 * * * = 02:00 WIB (UTC+7)
+      - minio_data:/var/lib/diis-minio-target:ro
+      - ${RCLONE_CONFIG_HOST_PATH:-/etc/diis/rclone.conf}:/run/diis-secrets/rclone.conf:ro
+    # TZ container adalah Asia/Jakarta; cron 02:00 berarti 02:00 WIB.
     command:
       - sh
       - -c
       - |
-        if [ ! -f /opt/backup-bin/mc ]; then
-          echo '[pg-backup] Mengunduh MinIO client (mc)...'
-          wget -q -O /opt/backup-bin/mc https://dl.min.io/client/mc/release/linux-amd64/mc
-          chmod +x /opt/backup-bin/mc
-          echo '[pg-backup] mc siap di /opt/backup-bin/mc'
+        MC_VERSION='RELEASE.2025-08-13T08-35-41Z'
+        MC_SHA256='01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891'
+        MC_URL="https://dl.min.io/client/mc/release/linux-amd64/archive/mc.$${MC_VERSION}"
+        RCLONE_VERSION='v1.70.3'
+        RCLONE_SHA256='7d69057e69385f6514a9684c7eaa424d972096b130284bb34dd967c4ed4f9dad'
+        RCLONE_URL="https://downloads.rclone.org/$${RCLONE_VERSION}/rclone-$${RCLONE_VERSION}-linux-amd64.zip"
+        mkdir -p /opt/backup-bin
+        chmod 700 /opt/backup-bin
+        if ! echo "$${MC_SHA256}  /opt/backup-bin/mc" | sha256sum -c - >/dev/null 2>&1; then
+          wget -q -O /opt/backup-bin/mc.candidate "$${MC_URL}"
+          echo "$${MC_SHA256}  /opt/backup-bin/mc.candidate" | sha256sum -c -
+          mv /opt/backup-bin/mc.candidate /opt/backup-bin/mc
+          chmod 700 /opt/backup-bin/mc
         fi
+        if ! echo "$${RCLONE_SHA256}  /opt/backup-bin/rclone.zip" | sha256sum -c - >/dev/null 2>&1; then
+          wget -q -O /opt/backup-bin/rclone.zip.candidate "$${RCLONE_URL}"
+          echo "$${RCLONE_SHA256}  /opt/backup-bin/rclone.zip.candidate" | sha256sum -c -
+          mv /opt/backup-bin/rclone.zip.candidate /opt/backup-bin/rclone.zip
+        fi
+        unzip -p /opt/backup-bin/rclone.zip "rclone-$${RCLONE_VERSION}-linux-amd64/rclone" > /opt/backup-bin/rclone.candidate
+        chmod 700 /opt/backup-bin/rclone.candidate
+        /opt/backup-bin/rclone.candidate version | grep -F "rclone $${RCLONE_VERSION}"
+        mv /opt/backup-bin/rclone.candidate /opt/backup-bin/rclone
         /opt/backup-bin/mc alias set myminio "$$MINIO_ENDPOINT" "$$MINIO_ACCESS_KEY" "$$MINIO_SECRET_KEY" --quiet
         /opt/backup-bin/mc mb --ignore-existing myminio/"$$BACKUP_BUCKET"
-        echo "[pg-backup] Bucket '$$BACKUP_BUCKET' siap"
-        printenv | grep -E '^(PGPASSWORD|POSTGRES_HOST|POSTGRES_USER|POSTGRES_DB|MINIO_|BACKUP_|TZ)=' > /etc/backup.env
-        echo "0 19 * * * . /etc/backup.env && sh /backup.sh >> /var/log/backup.log 2>&1" | crontab -
-        echo '[pg-backup] Backup dijadwalkan setiap 02:00 WIB (19:00 UTC). Container siap.'
+        /opt/backup-bin/mc mb --ignore-existing myminio/"$$APP_OBJECT_BUCKET"
+        echo "0 2 * * * PATH=/opt/backup-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin sh /backup.sh >> /var/log/backup.log 2>&1" | crontab -
+        chmod 600 /etc/crontabs/root
+        echo '[pg-backup] Backup dijadwalkan setiap 02:00 WIB. Container siap.'
         crond -f -l 2
     networks:
       - smk-network

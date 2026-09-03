@@ -1,9 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  PermissionOverrideSource,
-  PermissionOverrideStatus,
-  Prisma,
-} from '@prisma/client';
+import { PermissionOverrideSource, PermissionOverrideStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserRole, isPrimaryRole } from '@smk/auth';
 import { logger } from '@smk/logger';
@@ -13,6 +9,7 @@ interface CacheEntry {
   permissions: Set<string>;
   expiresAt: number;
   schoolDateMs: number;
+  primaryRole: UserRole;
 }
 
 const ACTIVE_APPOINTMENT_STATUS = 'ACTIVE' as const;
@@ -24,22 +21,30 @@ export class PermissionsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async getEffectivePermissions(keycloakId: string, roles: UserRole[]): Promise<Set<string>> {
+  async getEffectivePermissions(keycloakId: string, _roles: UserRole[]): Promise<Set<string>> {
     const schoolDate = getSchoolDate();
+    const primaryRole = await this.getAuthoritativePrimaryRole(keycloakId);
+    if (!primaryRole) return new Set();
+
     const cached = this.cache.get(keycloakId);
     if (
       cached &&
       Date.now() < cached.expiresAt &&
-      cached.schoolDateMs === schoolDate.getTime()
+      cached.schoolDateMs === schoolDate.getTime() &&
+      cached.primaryRole === primaryRole
     ) {
       return cached.permissions;
     }
 
-    const permissions = await this.resolvePermissions(keycloakId, roles, schoolDate);
+    const permissions =
+      primaryRole === 'SUPER_ADMIN'
+        ? new Set(['*'])
+        : await this.resolvePermissions(keycloakId, [primaryRole], schoolDate);
     this.cache.set(keycloakId, {
       permissions,
       expiresAt: Date.now() + this.TTL_MS,
       schoolDateMs: schoolDate.getTime(),
+      primaryRole,
     });
 
     return permissions;
@@ -59,11 +64,28 @@ export class PermissionsService {
     this.cache.clear();
   }
 
-  async hasPermission(keycloakId: string, roles: UserRole[], requiredPermission: string): Promise<boolean> {
-    if (roles.includes('SUPER_ADMIN')) return true;
-
+  async hasPermission(
+    keycloakId: string,
+    roles: UserRole[],
+    requiredPermission: string,
+  ): Promise<boolean> {
     const permissions = await this.getEffectivePermissions(keycloakId, roles);
-    return permissions.has(requiredPermission);
+    return permissions.has('*') || permissions.has(requiredPermission);
+  }
+
+  async getAuthoritativePrimaryRole(keycloakId: string): Promise<UserRole | null> {
+    try {
+      const user = await this.prisma.user.findFirst({
+        where: { keycloakId, isActive: true, deletedAt: null },
+        select: { role: true },
+      });
+      return user && isPrimaryRole(user.role) ? user.role : null;
+    } catch (err) {
+      logger.error('[PermissionsService] primary role lookup gagal — akses ditolak', {
+        errorType: err instanceof Error ? err.name : 'unknown',
+      });
+      return null;
+    }
   }
 
   async getActivePositionCodes(
@@ -87,16 +109,15 @@ export class PermissionsService {
           academicYearId: activeYearId,
           position: { isActive: true },
           effectiveFrom: { lte: schoolDate },
-          OR: [
-            { effectiveUntil: null },
-            { effectiveUntil: { gte: schoolDate } },
+          OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: schoolDate } }],
+          AND: [
+            {
+              OR: [
+                { position: { scopeType: 'NONE' }, majorId: null },
+                { position: { scopeType: 'MAJOR' }, major: { isActive: true } },
+              ],
+            },
           ],
-          AND: [{
-            OR: [
-              { position: { scopeType: 'NONE' }, majorId: null },
-              { position: { scopeType: 'MAJOR' }, major: { isActive: true } },
-            ],
-          }],
         },
         select: { position: { select: { code: true } } },
       });
@@ -238,8 +259,7 @@ export class PermissionsService {
             select: { grant: true, permission: { select: { code: true } } },
           })
         : Promise.resolve([] as { grant: boolean; permission: { code: string } }[]),
-      authUserId
-        && activeYearId
+      authUserId && activeYearId
         ? this.resolveActiveAppointmentPermissionCodes(authUserId, activeYearId, schoolDate)
         : Promise.resolve([] as string[]),
     ]);
@@ -368,16 +388,15 @@ export class PermissionsService {
           academicYearId: activeYearId,
           position: { isActive: true },
           effectiveFrom: { lte: schoolDate },
-          OR: [
-            { effectiveUntil: null },
-            { effectiveUntil: { gte: schoolDate } },
+          OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: schoolDate } }],
+          AND: [
+            {
+              OR: [
+                { position: { scopeType: 'NONE' }, majorId: null },
+                { position: { scopeType: 'MAJOR' }, major: { isActive: true } },
+              ],
+            },
           ],
-          AND: [{
-            OR: [
-              { position: { scopeType: 'NONE' }, majorId: null },
-              { position: { scopeType: 'MAJOR' }, major: { isActive: true } },
-            ],
-          }],
         },
         select: {
           position: {
@@ -388,11 +407,13 @@ export class PermissionsService {
         },
       });
 
-      const permissionIds = Array.from(new Set(
-        appointments.flatMap((appointment) =>
-          appointment.position.permissions.map((permission) => permission.permissionId),
+      const permissionIds = Array.from(
+        new Set(
+          appointments.flatMap((appointment) =>
+            appointment.position.permissions.map((permission) => permission.permissionId),
+          ),
         ),
-      ));
+      );
       if (permissionIds.length === 0) return [];
 
       const permissions = await this.prisma.permission.findMany({
@@ -403,9 +424,12 @@ export class PermissionsService {
     } catch (err) {
       // Fail-soft: jika tabel appointments tidak ada atau query error, kembalikan array kosong.
       // Resolver tidak menambahkan appointment permissions, tapi tidak crash.
-      logger.warn('[PermissionsService] resolveActiveAppointmentPermissionCodes gagal (fail-soft)', {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      logger.warn(
+        '[PermissionsService] resolveActiveAppointmentPermissionCodes gagal (fail-soft)',
+        {
+          error: err instanceof Error ? err.message : String(err),
+        },
+      );
       return [];
     }
   }
@@ -420,7 +444,9 @@ export class PermissionsService {
       });
       if (activeYears.length !== 1) {
         if (activeYears.length > 1) {
-          logger.warn('[PermissionsService] multiple active academic years; scoped authority denied');
+          logger.warn(
+            '[PermissionsService] multiple active academic years; scoped authority denied',
+          );
         }
         return null;
       }

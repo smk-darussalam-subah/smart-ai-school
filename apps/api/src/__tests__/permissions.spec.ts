@@ -14,12 +14,29 @@ import { REQUIRED_PERMISSION_KEY } from '../permissions/decorators/require-permi
 import { IS_PUBLIC_KEY } from '../auth/decorators/public.decorator';
 import { Prisma } from '@prisma/client';
 
-const PERM_CODE = { id: 'p1', code: 'student.create', description: 'Buat siswa', module: 'student', createdAt: new Date() };
-const PERM_READ = { id: 'p2', code: 'student.read', description: 'Lihat siswa', module: 'student', createdAt: new Date() };
+const PERM_CODE = {
+  id: 'p1',
+  code: 'student.create',
+  description: 'Buat siswa',
+  module: 'student',
+  createdAt: new Date(),
+};
+const PERM_READ = {
+  id: 'p2',
+  code: 'student.read',
+  description: 'Lihat siswa',
+  module: 'student',
+  createdAt: new Date(),
+};
 
-function buildCtx(user: Record<string, unknown> | null = { keycloakId: 'kc-uuid', roles: ['GURU'] }): ExecutionContext {
+function buildCtx(
+  user: Record<string, unknown> | null = { keycloakId: 'kc-uuid', roles: ['GURU'] },
+): ExecutionContext {
   return {
-    getHandler: () => function h() { return; },
+    getHandler: () =>
+      function h() {
+        return;
+      },
     getClass: () => class C {},
     switchToHttp: () => ({ getRequest: () => ({ user }) }),
   } as unknown as ExecutionContext;
@@ -34,6 +51,7 @@ describe('PermissionsService', () => {
   const mockRpFindMany = jest.fn();
   const mockUpoFindMany = jest.fn();
   const mockUserFindUnique = jest.fn();
+  const mockUserFindFirst = jest.fn();
   const mockPermFindMany = jest.fn();
   const mockPermCreate = jest.fn();
   const mockPermDelete = jest.fn();
@@ -46,27 +64,43 @@ describe('PermissionsService', () => {
   const mockAppointmentFindMany = jest.fn();
 
   beforeEach(async () => {
-    [mockRpFindMany, mockUpoFindMany, mockUserFindUnique, mockPermFindMany,
-      mockPermCreate, mockPermDelete, mockTransaction,
-      mockAyFindMany, mockUpoFindFirst, mockUpoUpdate, mockUpoCreate,
+    [
+      mockRpFindMany,
+      mockUpoFindMany,
+      mockUserFindUnique,
+      mockUserFindFirst,
+      mockPermFindMany,
+      mockPermCreate,
+      mockPermDelete,
+      mockTransaction,
+      mockAyFindMany,
+      mockUpoFindFirst,
+      mockUpoUpdate,
+      mockUpoCreate,
       mockAppointmentFindMany,
-    ].forEach(m => m.mockReset());
+    ].forEach((m) => m.mockReset());
     // Exactly one active year is required for scoped overrides and appointments.
     mockAyFindMany.mockResolvedValue([{ id: 'ay-2026' }]);
     mockAppointmentFindMany.mockResolvedValue([]);
+    mockUserFindFirst.mockResolvedValue({ role: 'GURU' });
 
     const prisma = {
-      permission: { findMany: mockPermFindMany, findUnique: jest.fn(), create: mockPermCreate, delete: mockPermDelete },
+      permission: {
+        findMany: mockPermFindMany,
+        findUnique: jest.fn(),
+        create: mockPermCreate,
+        delete: mockPermDelete,
+      },
       rolePermission: { findMany: mockRpFindMany, deleteMany: jest.fn(), createMany: jest.fn() },
       userPermissionOverride: {
         findMany: mockUpoFindMany,
-        findFirst: mockUpoFindFirst,   // TF2-P1-1: grant/revoke pattern
-        update: mockUpoUpdate,          // TF2-P1-1: grant/revoke pattern
-        create: mockUpoCreate,          // TF2-P1-1: grant/revoke pattern
+        findFirst: mockUpoFindFirst, // TF2-P1-1: grant/revoke pattern
+        update: mockUpoUpdate, // TF2-P1-1: grant/revoke pattern
+        create: mockUpoCreate, // TF2-P1-1: grant/revoke pattern
         upsert: jest.fn(),
         deleteMany: jest.fn(),
       },
-      user: { findUnique: mockUserFindUnique },
+      user: { findUnique: mockUserFindUnique, findFirst: mockUserFindFirst },
       academicYear: { findMany: mockAyFindMany },
       appointment: { findMany: mockAppointmentFindMany },
       $transaction: mockTransaction,
@@ -79,25 +113,45 @@ describe('PermissionsService', () => {
     });
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        PermissionsService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [PermissionsService, { provide: PrismaService, useValue: prisma }],
     }).compile();
     service = module.get(PermissionsService);
   });
 
   describe('hasPermission', () => {
-    it('SUPER_ADMIN selalu true tanpa query DB', async () => {
+    it('SUPER_ADMIN authoritative mendapat wildcard setelah rekonsiliasi DB', async () => {
+      mockUserFindFirst.mockResolvedValue({ role: 'SUPER_ADMIN' });
       const result = await service.hasPermission('kc-sa', ['SUPER_ADMIN'], 'any.permission');
       expect(result).toBe(true);
+      expect(mockRpFindMany).not.toHaveBeenCalled();
+      expect(mockUserFindFirst).toHaveBeenCalledWith({
+        where: { keycloakId: 'kc-sa', isActive: true, deletedAt: null },
+        select: { role: true },
+      });
+    });
+
+    it('claim SUPER_ADMIN lama ditolak setelah role database berubah', async () => {
+      mockUserFindFirst.mockResolvedValue({ role: 'GURU' });
+      mockRpFindMany.mockResolvedValue([]);
+      mockUpoFindMany.mockResolvedValue([]);
+      mockUserFindUnique.mockResolvedValue(null);
+
+      await expect(
+        service.hasPermission('kc-demoted', ['SUPER_ADMIN'], 'permissions.manage'),
+      ).resolves.toBe(false);
+    });
+
+    it('lookup role database gagal ditolak tanpa memakai claim token', async () => {
+      mockUserFindFirst.mockRejectedValue(new Error('db unavailable'));
+
+      await expect(
+        service.hasPermission('kc-sa', ['SUPER_ADMIN'], 'permissions.manage'),
+      ).resolves.toBe(false);
       expect(mockRpFindMany).not.toHaveBeenCalled();
     });
 
     it('GURU punya permission student.read → true', async () => {
-      mockRpFindMany.mockResolvedValue([
-        { permission: { code: 'student.read' } },
-      ]);
+      mockRpFindMany.mockResolvedValue([{ permission: { code: 'student.read' } }]);
       mockUpoFindMany.mockResolvedValue([]);
       mockUserFindUnique.mockResolvedValue(null);
 
@@ -116,9 +170,7 @@ describe('PermissionsService', () => {
 
     it('User override grant → menambah permission di luar role', async () => {
       mockRpFindMany.mockResolvedValue([{ permission: { code: 'student.read' } }]);
-      mockUpoFindMany.mockResolvedValue([
-        { grant: true, permission: { code: 'finance.approve' } },
-      ]);
+      mockUpoFindMany.mockResolvedValue([{ grant: true, permission: { code: 'finance.approve' } }]);
       mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
 
       const result = await service.hasPermission('kc-guru', ['GURU'], 'finance.approve');
@@ -138,9 +190,7 @@ describe('PermissionsService', () => {
 
     it('Override scoped tahun aktif berlaku', async () => {
       mockRpFindMany.mockResolvedValue([]);
-      mockUpoFindMany.mockResolvedValue([
-        { grant: true, permission: { code: 'finance.approve' } },
-      ]);
+      mockUpoFindMany.mockResolvedValue([{ grant: true, permission: { code: 'finance.approve' } }]);
       mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
 
       const result = await service.hasPermission('kc-guru', ['GURU'], 'finance.approve');
@@ -225,9 +275,7 @@ describe('PermissionsService', () => {
         { permission: { code: 'student.read' } },
         { permission: { code: 'student.delete' } },
       ]);
-      mockUpoFindMany.mockResolvedValue([
-        { grant: false, permission: { code: 'student.delete' } },
-      ]);
+      mockUpoFindMany.mockResolvedValue([{ grant: false, permission: { code: 'student.delete' } }]);
       mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
 
       expect(await service.hasPermission('kc-guru', ['GURU'], 'student.delete')).toBe(false);
@@ -291,16 +339,20 @@ describe('PermissionsService', () => {
       mockPermFindMany.mockResolvedValue([{ code: 'report.review' }]);
 
       try {
-        await expect(service.hasPermission('kc-kaprog', ['GURU'], 'report.review')).resolves.toBe(true);
-        expect(mockAppointmentFindMany).toHaveBeenCalledWith(expect.objectContaining({
-          where: expect.objectContaining({
-            effectiveFrom: { lte: new Date('2026-08-31T00:00:00.000Z') },
-            OR: [
-              { effectiveUntil: null },
-              { effectiveUntil: { gte: new Date('2026-08-31T00:00:00.000Z') } },
-            ],
+        await expect(service.hasPermission('kc-kaprog', ['GURU'], 'report.review')).resolves.toBe(
+          true,
+        );
+        expect(mockAppointmentFindMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              effectiveFrom: { lte: new Date('2026-08-31T00:00:00.000Z') },
+              OR: [
+                { effectiveUntil: null },
+                { effectiveUntil: { gte: new Date('2026-08-31T00:00:00.000Z') } },
+              ],
+            }),
           }),
-        }));
+        );
       } finally {
         jest.useRealTimers();
       }
@@ -308,9 +360,7 @@ describe('PermissionsService', () => {
 
     it('manual revoke tetap menarik finance.read dari appointment Kepala Sekolah aktif', async () => {
       mockRpFindMany.mockResolvedValue([]);
-      mockUpoFindMany.mockResolvedValue([
-        { grant: false, permission: { code: 'finance.read' } },
-      ]);
+      mockUpoFindMany.mockResolvedValue([{ grant: false, permission: { code: 'finance.read' } }]);
       mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
       mockAppointmentFindMany.mockResolvedValue([
         { position: { permissions: [{ permissionId: 'perm-finance-read' }] } },
@@ -341,9 +391,7 @@ describe('PermissionsService', () => {
 
     it('override grant=false menarik permission dari appointment aktif', async () => {
       mockRpFindMany.mockResolvedValue([]);
-      mockUpoFindMany.mockResolvedValue([
-        { grant: false, permission: { code: 'report.review' } },
-      ]);
+      mockUpoFindMany.mockResolvedValue([{ grant: false, permission: { code: 'report.review' } }]);
       mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
       mockAppointmentFindMany.mockResolvedValue([
         { position: { permissions: [{ permissionId: 'perm-review' }] } },
@@ -358,19 +406,23 @@ describe('PermissionsService', () => {
       mockUpoFindMany.mockResolvedValue([]);
       mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
       mockAppointmentFindMany
-        .mockResolvedValueOnce([
-          { position: { permissions: [{ permissionId: 'perm-review' }] } },
-        ])
+        .mockResolvedValueOnce([{ position: { permissions: [{ permissionId: 'perm-review' }] } }])
         .mockResolvedValueOnce([]);
       mockPermFindMany.mockResolvedValue([{ code: 'report.review' }]);
 
-      await expect(service.hasPermission('kc-kaprog', ['GURU'], 'report.review')).resolves.toBe(true);
-      await expect(service.hasPermission('kc-kaprog', ['GURU'], 'report.review')).resolves.toBe(true);
+      await expect(service.hasPermission('kc-kaprog', ['GURU'], 'report.review')).resolves.toBe(
+        true,
+      );
+      await expect(service.hasPermission('kc-kaprog', ['GURU'], 'report.review')).resolves.toBe(
+        true,
+      );
       expect(mockAppointmentFindMany).toHaveBeenCalledTimes(1);
 
       service.invalidateAll();
 
-      await expect(service.hasPermission('kc-kaprog', ['GURU'], 'report.review')).resolves.toBe(false);
+      await expect(service.hasPermission('kc-kaprog', ['GURU'], 'report.review')).resolves.toBe(
+        false,
+      );
       expect(mockAppointmentFindMany).toHaveBeenCalledTimes(2);
     });
 
@@ -384,9 +436,11 @@ describe('PermissionsService', () => {
       );
       mockUserFindUnique.mockResolvedValue(null);
 
-      expect(await service.hasPermission('kc-legacy', ['KEPALA_SEKOLAH'], 'report.review')).toBe(false);
+      expect(await service.hasPermission('kc-legacy', ['KEPALA_SEKOLAH'], 'report.review')).toBe(
+        false,
+      );
       expect(mockRpFindMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { role: { in: [] } } }),
+        expect.objectContaining({ where: { role: { in: ['GURU'] } } }),
       );
     });
 
@@ -474,16 +528,15 @@ describe('PermissionsService', () => {
             academicYearId: 'ay-2026',
             position: { isActive: true },
             effectiveFrom: { lte: expect.any(Date) },
-            OR: [
-              { effectiveUntil: null },
-              { effectiveUntil: { gte: expect.any(Date) } },
+            OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: expect.any(Date) } }],
+            AND: [
+              {
+                OR: [
+                  { position: { scopeType: 'NONE' }, majorId: null },
+                  { position: { scopeType: 'MAJOR' }, major: { isActive: true } },
+                ],
+              },
             ],
-            AND: [{
-              OR: [
-                { position: { scopeType: 'NONE' }, majorId: null },
-                { position: { scopeType: 'MAJOR' }, major: { isActive: true } },
-              ],
-            }],
           }),
         }),
       );
@@ -492,21 +545,23 @@ describe('PermissionsService', () => {
     it('resolves appointment authority with the Jakarta date at 00:15 WIB', async () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-08-30T17:15:00.000Z'));
       mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
-      mockAppointmentFindMany.mockResolvedValue([
-        { position: { code: 'KAPROG' } },
-      ]);
+      mockAppointmentFindMany.mockResolvedValue([{ position: { code: 'KAPROG' } }]);
 
       try {
-        await expect(service.getActivePositionCodes('kc-user')).resolves.toEqual(new Set(['KAPROG']));
-        expect(mockAppointmentFindMany).toHaveBeenCalledWith(expect.objectContaining({
-          where: expect.objectContaining({
-            effectiveFrom: { lte: new Date('2026-08-31T00:00:00.000Z') },
-            OR: [
-              { effectiveUntil: null },
-              { effectiveUntil: { gte: new Date('2026-08-31T00:00:00.000Z') } },
-            ],
+        await expect(service.getActivePositionCodes('kc-user')).resolves.toEqual(
+          new Set(['KAPROG']),
+        );
+        expect(mockAppointmentFindMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              effectiveFrom: { lte: new Date('2026-08-31T00:00:00.000Z') },
+              OR: [
+                { effectiveUntil: null },
+                { effectiveUntil: { gte: new Date('2026-08-31T00:00:00.000Z') } },
+              ],
+            }),
           }),
-        }));
+        );
       } finally {
         jest.useRealTimers();
       }
@@ -535,11 +590,15 @@ describe('PermissionsService', () => {
       mockUserFindUnique.mockResolvedValue({ id: 'auth-1' });
       mockAyFindMany.mockResolvedValue([{ id: 'ay-a' }, { id: 'ay-b' }]);
 
-      await expect(service.hasPermission('kc-user', ['GURU'], 'report.review')).resolves.toBe(false);
+      await expect(service.hasPermission('kc-user', ['GURU'], 'report.review')).resolves.toBe(
+        false,
+      );
       expect(mockAppointmentFindMany).not.toHaveBeenCalled();
-      expect(mockUpoFindMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: expect.objectContaining({ OR: [{ academicYearId: null }] }),
-      }));
+      expect(mockUpoFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ OR: [{ academicYearId: null }] }),
+        }),
+      );
     });
   });
 
@@ -717,11 +776,11 @@ describe('PermissionGuard', () => {
       if (key === REQUIRED_PERMISSION_KEY) return ['finance.read', 'finance.child.read'];
       return undefined;
     });
-    mockHasPermission
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true);
+    mockHasPermission.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
 
-    expect(await guard.canActivate(buildCtx({ keycloakId: 'kc-ortu', roles: ['ORANG_TUA'] }))).toBe(true);
+    expect(await guard.canActivate(buildCtx({ keycloakId: 'kc-ortu', roles: ['ORANG_TUA'] }))).toBe(
+      true,
+    );
     expect(mockHasPermission).toHaveBeenCalledWith('kc-ortu', ['ORANG_TUA'], 'finance.read');
     expect(mockHasPermission).toHaveBeenCalledWith('kc-ortu', ['ORANG_TUA'], 'finance.child.read');
   });
@@ -732,8 +791,9 @@ describe('PermissionGuard', () => {
       return undefined;
     });
     mockHasPermission.mockResolvedValue(false);
-    await expect(guard.canActivate(buildCtx({ keycloakId: 'kc-guru', roles: ['GURU'] })))
-      .rejects.toThrow(ForbiddenException);
+    await expect(
+      guard.canActivate(buildCtx({ keycloakId: 'kc-guru', roles: ['GURU'] })),
+    ).rejects.toThrow(ForbiddenException);
   });
 });
 
@@ -756,7 +816,7 @@ describe('PermissionsController', () => {
   };
 
   beforeEach(async () => {
-    Object.values(mockSvc).forEach(m => m.mockReset());
+    Object.values(mockSvc).forEach((m) => m.mockReset());
     const module: TestingModule = await Test.createTestingModule({
       controllers: [PermissionsController],
       providers: [{ provide: PermissionsService, useValue: mockSvc }],
@@ -772,9 +832,13 @@ describe('PermissionsController', () => {
 
   it('createPermission duplikat → BadRequestException', async () => {
     mockSvc.getPermissionByCode.mockResolvedValue(PERM_CODE);
-    await expect(controller.createPermission({
-      code: 'student.create', description: 'desc', module: 'student',
-    })).rejects.toThrow(BadRequestException);
+    await expect(
+      controller.createPermission({
+        code: 'student.create',
+        description: 'desc',
+        module: 'student',
+      }),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it('setRolePermissions → service dipanggil dengan benar', async () => {
@@ -783,13 +847,25 @@ describe('PermissionsController', () => {
   });
 
   it('grantUserPermission → service grant dipanggil', async () => {
-    mockSvc.grantUserPermission.mockResolvedValue({ id: 'o1', userId: 'u1', permissionId: 'p1', grant: true, createdAt: new Date() });
+    mockSvc.grantUserPermission.mockResolvedValue({
+      id: 'o1',
+      userId: 'u1',
+      permissionId: 'p1',
+      grant: true,
+      createdAt: new Date(),
+    });
     await controller.grantUserPermission('u1', { permissionId: 'p1', grant: true });
     expect(mockSvc.grantUserPermission).toHaveBeenCalledWith('u1', 'p1');
   });
 
   it('grantUserPermission grant=false → service revoke dipanggil', async () => {
-    mockSvc.revokeUserPermission.mockResolvedValue({ id: 'o1', userId: 'u1', permissionId: 'p1', grant: false, createdAt: new Date() });
+    mockSvc.revokeUserPermission.mockResolvedValue({
+      id: 'o1',
+      userId: 'u1',
+      permissionId: 'p1',
+      grant: false,
+      createdAt: new Date(),
+    });
     await controller.grantUserPermission('u1', { permissionId: 'p1', grant: false });
     expect(mockSvc.revokeUserPermission).toHaveBeenCalledWith('u1', 'p1');
     expect(mockSvc.grantUserPermission).not.toHaveBeenCalled();
