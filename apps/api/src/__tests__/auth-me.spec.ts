@@ -100,7 +100,21 @@ describe('Test 1 — GET /auth/me tanpa token → 401', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [KeycloakGuard, Reflector, { provide: UserStatusService, useValue: { isBlocked: jest.fn().mockResolvedValue(false), invalidate: jest.fn(), invalidateAll: jest.fn() } }],
+      providers: [
+        KeycloakGuard,
+        Reflector,
+        {
+          provide: UserStatusService,
+          useValue: {
+            isBlocked: jest.fn().mockResolvedValue(false),
+            getAuthorizationState: jest
+              .fn()
+              .mockResolvedValue({ blocked: false, primaryRole: 'GURU' }),
+            invalidate: jest.fn(),
+            invalidateAll: jest.fn(),
+          },
+        },
+      ],
     }).compile();
 
     keycloakGuard = module.get(KeycloakGuard);
@@ -186,15 +200,23 @@ describe('Test 3 — @Roles("SUPER_ADMIN") diakses GURU → ForbiddenException (
   let rolesGuard: RolesGuard;
   let reflector: Reflector;
   const mockGetActivePositionCodes = jest.fn();
+  const mockGetAuthoritativePrimaryRole = jest.fn();
 
   beforeEach(async () => {
     mockGetActivePositionCodes.mockReset();
     mockGetActivePositionCodes.mockResolvedValue(new Set());
+    mockGetAuthoritativePrimaryRole.mockReset().mockResolvedValue('GURU');
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RolesGuard,
         Reflector,
-        { provide: PermissionsService, useValue: { getActivePositionCodes: mockGetActivePositionCodes } },
+        {
+          provide: PermissionsService,
+          useValue: {
+            getActivePositionCodes: mockGetActivePositionCodes,
+            getAuthoritativePrimaryRole: mockGetAuthoritativePrimaryRole,
+          },
+        },
       ],
     }).compile();
 
@@ -213,6 +235,7 @@ describe('Test 3 — @Roles("SUPER_ADMIN") diakses GURU → ForbiddenException (
   });
 
   it('SUPER_ADMIN mengakses endpoint @Roles("SUPER_ADMIN") → lolos', () => {
+    mockGetAuthoritativePrimaryRole.mockResolvedValue('SUPER_ADMIN');
     const ctx = buildRolesContext({
       reflector,
       requiredRoles: ['SUPER_ADMIN'],
@@ -222,6 +245,7 @@ describe('Test 3 — @Roles("SUPER_ADMIN") diakses GURU → ForbiddenException (
   });
 
   it('ORANG_TUA mengakses endpoint @Roles("GURU", "TATA_USAHA") → throws ForbiddenException (403)', () => {
+    mockGetAuthoritativePrimaryRole.mockResolvedValue('ORANG_TUA');
     const ctx = buildRolesContext({
       reflector,
       requiredRoles: ['GURU', 'TATA_USAHA'],
@@ -278,7 +302,9 @@ describe('AuthService — getMe + updateMe', () => {
 
     it('user ditemukan → mengembalikan profil + permissions', async () => {
       prisma.user.findUnique.mockResolvedValue(mockProfile);
-      permissionsService.getEffectivePermissions.mockResolvedValue(new Set(['student.read', 'academic.grade.read']));
+      permissionsService.getEffectivePermissions.mockResolvedValue(
+        new Set(['student.read', 'academic.grade.read']),
+      );
 
       const result = await service.getMe('kc-uuid-1234', ['GURU']);
 
@@ -313,7 +339,9 @@ describe('AuthService — getMe + updateMe', () => {
 
     it('SUPER_ADMIN → semua permission dikembalikan', async () => {
       prisma.user.findUnique.mockResolvedValue({ ...mockProfile, role: 'SUPER_ADMIN' });
-      permissionsService.getEffectivePermissions.mockResolvedValue(new Set(['student.read', 'permissions.manage', 'user.provision']));
+      permissionsService.getEffectivePermissions.mockResolvedValue(
+        new Set(['student.read', 'permissions.manage', 'user.provision']),
+      );
 
       const result = await service.getMe('kc-sa', ['SUPER_ADMIN']);
 

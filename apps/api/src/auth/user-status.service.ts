@@ -6,24 +6,28 @@
 // user nonaktif tetap bisa login. Service ini = sabuk pengaman sisi-API.
 // (Saklar utama di Keycloak menyusul saat KeycloakAdminService hadir — 2J-1/2.)
 //
-// Semantik (sengaja):
-//   • Row ada + (isActive=false ATAU deletedAt terisi) → TOLAK (fail-closed).
-//   • Row TIDAK ada → IZINKAN + log warn — status quo dipertahankan karena
-//     belum ada first-login sync; menolak akan mengunci user KC yang sah
-//     namun belum punya baris auth.users (kondisi nyata saat ini).
-//   • Error DB → IZINKAN + log error — guard ini lapisan tambahan; kegagalan
-//     infrastruktur tidak boleh mematikan seluruh API (KeycloakGuard tetap
-//     memvalidasi token).
+// Semantik fail-closed untuk seluruh route aplikasi terlindungi:
+//   • Row ada + aktif + tidak diarsipkan → IZINKAN.
+//   • Row hilang, nonaktif, diarsipkan, atau lookup DB gagal → TOLAK.
+// Route bootstrap/provisioning publik tetap dipisahkan melalui @Public() dan
+// tidak melewati service ini.
 // Cache TTL 5 menit (pola PermissionsService); updateActive() meng-invalidasi.
 // =============================================================================
 
 import { Injectable } from '@nestjs/common';
+import { UserRole, isPrimaryRole } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface CacheEntry {
   blocked: boolean;
+  primaryRole: UserRole | null;
   expiresAt: number;
+}
+
+export interface UserAuthorizationState {
+  blocked: boolean;
+  primaryRole: UserRole | null;
 }
 
 const TTL_MS = 5 * 60 * 1000;
@@ -36,31 +40,42 @@ export class UserStatusService {
 
   /** true = user DIBLOKIR (nonaktif/soft-deleted). */
   async isBlocked(keycloakId: string): Promise<boolean> {
-    const cached = this.cache.get(keycloakId);
-    if (cached && Date.now() < cached.expiresAt) return cached.blocked;
+    return (await this.getAuthorizationState(keycloakId)).blocked;
+  }
 
-    let blocked = false;
+  /**
+   * Status akun dan primary role dibaca sebagai satu snapshot. Token Keycloak
+   * boleh tertinggal saat sinkronisasi gagal, tetapi authority request tidak.
+   */
+  async getAuthorizationState(keycloakId: string): Promise<UserAuthorizationState> {
+    const cached = this.cache.get(keycloakId);
+    if (cached && Date.now() < cached.expiresAt) {
+      return { blocked: cached.blocked, primaryRole: cached.primaryRole };
+    }
+
     try {
       const user = await this.prisma.user.findUnique({
         where: { keycloakId },
-        select: { isActive: true, deletedAt: true },
+        select: { isActive: true, deletedAt: true, role: true },
       });
       if (!user) {
-        // Status quo: token KC sah tanpa baris DB → izinkan, tapi tercatat.
-        logger.warn('[UserStatus] token sah tanpa baris auth.users', { keycloakId });
-        blocked = false;
-      } else {
-        blocked = !user.isActive || user.deletedAt !== null;
+        logger.warn('[UserStatus] token sah tanpa baris auth.users — akses ditolak');
+        return { blocked: true, primaryRole: null };
       }
-    } catch (err) {
-      logger.error('[UserStatus] lookup gagal — melewatkan pengecekan (lapisan tambahan)', {
-        error: err instanceof Error ? err.message : String(err),
+      const primaryRole = isPrimaryRole(user.role) ? user.role : null;
+      const blocked = !user.isActive || user.deletedAt !== null || primaryRole === null;
+      this.cache.set(keycloakId, {
+        blocked,
+        primaryRole: blocked ? null : primaryRole,
+        expiresAt: Date.now() + TTL_MS,
       });
-      blocked = false;
+      return { blocked, primaryRole: blocked ? null : primaryRole };
+    } catch (err) {
+      logger.error('[UserStatus] lookup gagal — akses ditolak fail-closed', {
+        errorType: err instanceof Error ? err.name : 'unknown',
+      });
+      return { blocked: true, primaryRole: null };
     }
-
-    this.cache.set(keycloakId, { blocked, expiresAt: Date.now() + TTL_MS });
-    return blocked;
   }
 
   /** Panggil saat updateActive/updateRole agar efek instan (tanpa tunggu TTL). */

@@ -1,5 +1,5 @@
 {
-  "name": "DIIS — Backup Daily Monitor (02:00 WIB)",
+  "name": "DIIS Backup Completion Monitor",
   "nodes": [
     {
       "parameters": {
@@ -7,113 +7,85 @@
           "interval": [
             {
               "field": "cronExpression",
-              "expression": "0 19 * * *"
+              "expression": "45 2 * * *"
             }
           ]
         }
       },
-      "id": "bd-trigger-001",
-      "name": "Jadwal Cek Backup",
+      "id": "backup-monitor-schedule",
+      "name": "02:45 WIB setelah grace period",
       "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.1,
-      "position": [240, 300],
-      "notes": "Cron: 0 19 * * * = 19:00 UTC = 02:00 WIB (UTC+7). Dipilih sejajar dengan schedule pg-backup."
-    },
-    {
-      "parameters": {
-        "jsCode": "// Siapkan prefix tanggal untuk filter object MinIO.\n// pg-backup (backup.sh) membuat file dengan format: postgres/YYYY-MM-DD_HH-MM.sql.gz\n// menggunakan $(date +%Y-%m-%d_%H-%M) yang berjalan di UTC.\n// Cron ini trigger pada 19:00 UTC (= 02:00 WIB), jadi date prefix = tanggal UTC saat ini.\nconst now = new Date();\nconst yyyy = now.getUTCFullYear();\nconst mm = String(now.getUTCMonth() + 1).padStart(2, '0');\nconst dd = String(now.getUTCDate()).padStart(2, '0');\nconst datePrefix = `${yyyy}-${mm}-${dd}`;\nconst listUrl = `http://minio:9000/diis-backup?list-type=2&prefix=postgres/${datePrefix}&max-keys=10`;\nreturn [{ json: { datePrefix, listUrl } }];"
-      },
-      "id": "bd-code-date-001",
-      "name": "Siapkan Tanggal",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [460, 300]
+      "typeVersion": 1.2,
+      "position": [280, 300]
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "=http://minio:9000/diis-backup",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "list-type",
-              "value": "2"
-            },
-            {
-              "name": "prefix",
-              "value": "=postgres/{{ $json.datePrefix }}"
-            },
-            {
-              "name": "max-keys",
-              "value": "10"
-            }
-          ]
-        },
+        "url": "http://minio:9000/diis-backup/postgres/monitor/latest.json",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "aws",
         "options": {
-          "response": {
-            "response": {
-              "neverError": true,
-              "responseFormat": "text"
-            }
-          },
+          "response": { "response": { "neverError": true, "responseFormat": "json" } },
           "timeout": 15000
         }
       },
       "credentials": {
         "aws": {
           "id": "REPLACE_WITH_CREDENTIAL_ID",
-          "name": "MinIO Backup Credentials"
+          "name": "MinIO Backup Readonly Credentials"
         }
       },
-      "id": "bd-request-minio-001",
-      "name": "Daftar File MinIO",
+      "id": "backup-monitor-list",
+      "name": "Baca completion manifests",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [680, 300],
-      "onError": "continueRegularOutput",
-      "notes": "Credential 'MinIO Backup Credentials' harus dikonfigurasi di n8n: Credentials → New → AWS → isi Access Key, Secret Key, Region=us-east-1, Custom Endpoint=http://minio:9000"
+      "position": [520, 300]
     },
     {
       "parameters": {
-        "jsCode": "// Parse respons XML dari MinIO S3 ListObjectsV2.\n// Cek apakah ada file backup untuk tanggal hari ini.\nconst responseText = $input.all()[0].json?.data ?? '';\n\n// Ekstrak KeyCount dari XML\nconst keyCountMatch = responseText.match(/<KeyCount>(\\d+)<\\/KeyCount>/);\nconst keyCount = keyCountMatch ? parseInt(keyCountMatch[1], 10) : 0;\n\n// Ekstrak ukuran file pertama jika ada\nconst sizeMatch = responseText.match(/<Size>(\\d+)<\\/Size>/);\nconst sizeBytes = sizeMatch ? parseInt(sizeMatch[1], 10) : 0;\nconst sizeKB = sizeBytes > 0 ? (sizeBytes / 1024).toFixed(1) + ' KiB' : '0 KiB';\n\n// Ekstrak nama file pertama\nconst keyMatch = responseText.match(/<Key>([^<]+)<\\/Key>/);\nconst fileName = keyMatch ? keyMatch[1] : '(tidak ditemukan)';\n\nreturn [{ json: { backupFound: keyCount > 0, fileCount: keyCount, sizeKB, fileName } }];"
+        "jsCode": "const raw = $input.first().json ?? {};\nconst telemetry = raw.data && typeof raw.data === 'object' ? raw.data : raw;\nconst reasons = [];\nconst now = Math.floor(Date.now() / 1000);\nconst createdEpoch = telemetry.createdEpoch;\nconst ageMinutes = Number.isSafeInteger(createdEpoch) ? Math.floor((now - createdEpoch) / 60) : null;\nconst completionFresh = ageMinutes !== null && ageMinutes >= 0 && ageMinutes <= 105;\nif (!completionFresh) reasons.push('COMPLETION_STALE_OR_MISSING');\nconst integerFields = ['backupBytes', 'growth7Bytes', 'growth30Bytes', 'targetTotalBytes', 'targetFreeBytes', 'projectedFreePercent', 'projectedDaysToFull', 'restoreAgeDays'];\nconst integersValid = integerFields.every((key) => typeof telemetry[key] === 'number' && Number.isSafeInteger(telemetry[key]));\nconst rangesValid = integersValid && telemetry.backupBytes >= 0 && telemetry.targetTotalBytes > 0 && telemetry.targetFreeBytes >= 0 && telemetry.targetFreeBytes <= telemetry.targetTotalBytes && telemetry.projectedFreePercent >= 0 && telemetry.projectedFreePercent <= 100 && telemetry.projectedDaysToFull >= -1 && telemetry.restoreAgeDays >= -1;\nconst growthStatusesValid = ['available', 'insufficient_history'].includes(telemetry.growth7Status) && ['available', 'insufficient_history'].includes(telemetry.growth30Status);\nif (telemetry.schemaVersion !== 'diis-backup-telemetry-v1' || !Number.isSafeInteger(createdEpoch) || !rangesValid || !growthStatusesValid) reasons.push('TELEMETRY_INVALID');\nif (telemetry.projectedFreePercent < Number($env.BACKUP_MIN_FREE_PERCENT ?? 25)) reasons.push('CAPACITY_LOW');\nif (telemetry.projectedDaysToFull >= 0 && telemetry.projectedDaysToFull < Number($env.BACKUP_MIN_DAYS_TO_FULL ?? 30)) reasons.push('DAYS_TO_FULL_LOW');\nif (telemetry.offsiteStatus !== 'complete') reasons.push('OFFSITE_INCOMPLETE');\nif (telemetry.restoreStatus !== 'success' || telemetry.restoreAgeDays < 0 || telemetry.restoreAgeDays > Number($env.BACKUP_MAX_RESTORE_AGE_DAYS ?? 35)) reasons.push('RESTORE_PROOF_MISSING_OR_STALE');\nconst notificationChannelStatus = ($env.FONNTE_API_KEY && $env.ADMIN_PHONE_NUMBER) ? 'configured' : 'disabled';\nreturn [{ json: { completionFresh, ageMinutes, backupBytes: integersValid ? telemetry.backupBytes : 0, growth7Bytes: integersValid ? telemetry.growth7Bytes : 0, growth30Bytes: integersValid ? telemetry.growth30Bytes : 0, targetFreeBytes: integersValid ? telemetry.targetFreeBytes : 0, projectedFreePercent: integersValid ? telemetry.projectedFreePercent : 0, projectedDaysToFull: integersValid ? telemetry.projectedDaysToFull : -1, restoreStatus: String(telemetry.restoreStatus ?? 'missing'), restoreAgeDays: integersValid ? telemetry.restoreAgeDays : -1, notificationChannelStatus, reasonCodes: [...new Set(reasons)].sort(), alertRequired: reasons.length > 0 } }];"
       },
-      "id": "bd-code-parse-001",
-      "name": "Cek Ada Backup?",
+      "id": "backup-monitor-evaluate",
+      "name": "Nilai freshness completion",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 300]
+      "position": [760, 300]
     },
     {
       "parameters": {
         "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose"
-          },
           "conditions": [
             {
-              "id": "cond-backup-found",
-              "leftValue": "={{ $json.backupFound }}",
+              "leftValue": "={{ $json.alertRequired }}",
               "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true"
-              }
+              "operator": { "type": "boolean", "operation": "true" }
             }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
+          ]
+        }
       },
-      "id": "bd-if-found-001",
-      "name": "Backup Ada?",
+      "id": "backup-monitor-alert-needed",
+      "name": "Alert diperlukan?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1120, 300]
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.notificationChannelStatus }}",
+              "rightValue": "configured",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "backup-monitor-channel",
+      "name": "Kanal notifikasi aktif?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1240, 420]
     },
     {
       "parameters": {
@@ -121,158 +93,61 @@
         "url": "https://api.fonnte.com/send",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ $env.FONNTE_API_KEY }}"
-            }
-          ]
+          "parameters": [{ "name": "Authorization", "value": "={{ $env.FONNTE_API_KEY }}" }]
         },
         "sendBody": true,
         "contentType": "form-urlencoded",
         "bodyParameters": {
           "parameters": [
-            {
-              "name": "target",
-              "value": "={{ $env.ADMIN_PHONE_NUMBER }}"
-            },
+            { "name": "target", "value": "={{ $env.ADMIN_PHONE_NUMBER }}" },
             {
               "name": "message",
-              "value": "=✅ [DIIS Backup] Backup OK!\nFile: {{ $json.fileName }}\nUkuran: {{ $json.sizeKB }}\nJumlah file: {{ $json.fileCount }}\nWaktu cek: {{ $now.setZone('Asia/Jakarta').toFormat('dd-MM-yyyy HH:mm') }} WIB"
+              "value": "=DIIS Backup Alert: {{ $json.reasonCodes.join(', ') }}. Umur completion {{ $json.ageMinutes ?? 'unknown' }} menit, ruang {{ $json.projectedFreePercent }}%, estimasi penuh {{ $json.projectedDaysToFull }} hari, restore {{ $json.restoreStatus }}/{{ $json.restoreAgeDays }} hari."
             }
           ]
         },
-        "options": {}
+        "options": { "timeout": 15000 }
       },
-      "id": "bd-notif-ok-001",
-      "name": "Notif WA — Backup OK",
+      "id": "backup-monitor-notify",
+      "name": "Kirim alert teredaksi",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1340, 180]
+      "position": [1480, 340]
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://api.fonnte.com/send",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ $env.FONNTE_API_KEY }}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "contentType": "form-urlencoded",
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "target",
-              "value": "={{ $env.ADMIN_PHONE_NUMBER }}"
-            },
-            {
-              "name": "message",
-              "value": "=🚨 [DIIS Alert] Backup GAGAL!\nTidak ada file backup PostgreSQL ditemukan di MinIO untuk tanggal {{ $('Siapkan Tanggal').item.json.datePrefix }}.\nBucket: diis-backup/postgres/\nWaktu cek: {{ $now.setZone('Asia/Jakarta').toFormat('dd-MM-yyyy HH:mm') }} WIB\nSegera cek service pg-backup!"
-            }
-          ]
-        },
-        "options": {}
+        "jsCode": "return [{ json: { monitorStatus: 'alert-undelivered', notificationChannelStatus: 'disabled', completionFresh: false } }];"
       },
-      "id": "bd-notif-fail-001",
-      "name": "Notif WA — Backup GAGAL",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1340, 420]
+      "id": "backup-monitor-disabled",
+      "name": "Catat kanal disabled",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1480, 500]
     }
   ],
-  "pinData": {},
   "connections": {
-    "Jadwal Cek Backup": {
-      "main": [
-        [
-          {
-            "node": "Siapkan Tanggal",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "02:45 WIB setelah grace period": {
+      "main": [[{ "node": "Baca completion manifests", "type": "main", "index": 0 }]]
     },
-    "Siapkan Tanggal": {
-      "main": [
-        [
-          {
-            "node": "Daftar File MinIO",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Baca completion manifests": {
+      "main": [[{ "node": "Nilai freshness completion", "type": "main", "index": 0 }]]
     },
-    "Daftar File MinIO": {
-      "main": [
-        [
-          {
-            "node": "Cek Ada Backup?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Nilai freshness completion": {
+      "main": [[{ "node": "Alert diperlukan?", "type": "main", "index": 0 }]]
     },
-    "Cek Ada Backup?": {
-      "main": [
-        [
-          {
-            "node": "Backup Ada?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Alert diperlukan?": {
+      "main": [[{ "node": "Kanal notifikasi aktif?", "type": "main", "index": 0 }], []]
     },
-    "Backup Ada?": {
+    "Kanal notifikasi aktif?": {
       "main": [
-        [
-          {
-            "node": "Notif WA — Backup OK",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Notif WA — Backup GAGAL",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Kirim alert teredaksi", "type": "main", "index": 0 }],
+        [{ "node": "Catat kanal disabled", "type": "main", "index": 0 }]
       ]
     }
   },
   "active": false,
-  "settings": {
-    "executionOrder": "v1",
-    "timezone": "Asia/Jakarta",
-    "saveManualExecutions": true
-  },
-  "meta": {
-    "templateCredsSetupCompleted": false
-  },
-  "id": "diis-backup-daily-v1",
-  "tags": [
-    {
-      "createdAt": "2026-05-30",
-      "updatedAt": "2026-05-30",
-      "id": "tag-backup",
-      "name": "backup"
-    },
-    {
-      "createdAt": "2026-05-30",
-      "updatedAt": "2026-05-30",
-      "id": "tag-monitoring",
-      "name": "monitoring"
-    }
-  ]
+  "settings": { "executionOrder": "v1", "timezone": "Asia/Jakarta", "saveManualExecutions": true },
+  "meta": { "templateCredsSetupCompleted": false },
+  "id": "diis-backup-completion-monitor-v2",
+  "tags": []
 }

@@ -10,7 +10,9 @@ jest.mock('@smk/auth', () => ({
   ...jest.requireActual('@smk/auth'),
   verifyKeycloakToken: jest.fn().mockResolvedValue({ sub: 'kc-1' }),
   extractAuthUser: jest.fn().mockReturnValue({
-    keycloakId: 'kc-1', username: 'u1', roles: ['GURU'],
+    keycloakId: 'kc-1',
+    username: 'u1',
+    roles: ['GURU'],
   }),
 }));
 
@@ -29,12 +31,17 @@ function buildService(): Promise<UserStatusService> {
       UserStatusService,
       { provide: PrismaService, useValue: { user: { findUnique: mockFindUnique } } },
     ],
-  }).compile().then((m: TestingModule) => m.get(UserStatusService));
+  })
+    .compile()
+    .then((m: TestingModule) => m.get(UserStatusService));
 }
 
 function ctx(): ExecutionContext {
   return {
-    getHandler: () => function h() { return; },
+    getHandler: () =>
+      function h() {
+        return;
+      },
     getClass: () => class C {},
     switchToHttp: () => ({
       getRequest: () => ({ headers: { authorization: 'Bearer tok' }, url: '/x' }),
@@ -47,37 +54,61 @@ describe('UserStatusService (2J-0 A4b)', () => {
 
   it('isActive=false → BLOCKED; deletedAt terisi → BLOCKED', async () => {
     const svc = await buildService();
-    mockFindUnique.mockResolvedValue({ isActive: false, deletedAt: null });
+    mockFindUnique.mockResolvedValue({ isActive: false, deletedAt: null, role: 'GURU' });
     expect(await svc.isBlocked('kc-1')).toBe(true);
 
     svc.invalidate('kc-1');
-    mockFindUnique.mockResolvedValue({ isActive: true, deletedAt: new Date() });
+    mockFindUnique.mockResolvedValue({ isActive: true, deletedAt: new Date(), role: 'GURU' });
     expect(await svc.isBlocked('kc-1')).toBe(true);
   });
 
-  it('aktif normal → tidak diblokir; row hilang → status quo (izinkan + warn)', async () => {
+  it('aktif normal → tidak diblokir; row hilang → ditolak fail-closed tanpa cache', async () => {
     const svc = await buildService();
-    mockFindUnique.mockResolvedValue({ isActive: true, deletedAt: null });
+    mockFindUnique.mockResolvedValue({ isActive: true, deletedAt: null, role: 'GURU' });
     expect(await svc.isBlocked('kc-a')).toBe(false);
     mockFindUnique.mockResolvedValue(null);
+    expect(await svc.isBlocked('kc-tanpa-row')).toBe(true);
+    mockFindUnique.mockResolvedValue({ isActive: true, deletedAt: null, role: 'GURU' });
     expect(await svc.isBlocked('kc-tanpa-row')).toBe(false);
   });
 
-  it('error DB → izinkan (lapisan tambahan, bukan single point of failure)', async () => {
+  it('error DB → ditolak fail-closed dan pulih segera setelah DB kembali', async () => {
     const svc = await buildService();
     mockFindUnique.mockRejectedValue(new Error('db down'));
+    expect(await svc.isBlocked('kc-x')).toBe(true);
+    mockFindUnique.mockResolvedValue({ isActive: true, deletedAt: null, role: 'GURU' });
     expect(await svc.isBlocked('kc-x')).toBe(false);
   });
 
   it('cache TTL: hit kedua tanpa query; invalidate → query ulang', async () => {
     const svc = await buildService();
-    mockFindUnique.mockResolvedValue({ isActive: true, deletedAt: null });
+    mockFindUnique.mockResolvedValue({ isActive: true, deletedAt: null, role: 'GURU' });
     await svc.isBlocked('kc-c');
     await svc.isBlocked('kc-c');
     expect(mockFindUnique).toHaveBeenCalledTimes(1);
     svc.invalidate('kc-c');
     await svc.isBlocked('kc-c');
     expect(mockFindUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it('mengembalikan primary role aplikasi dan menolak role non-primary', async () => {
+    const svc = await buildService();
+    mockFindUnique.mockResolvedValue({ isActive: true, deletedAt: null, role: 'GURU' });
+    await expect(svc.getAuthorizationState('kc-role')).resolves.toEqual({
+      blocked: false,
+      primaryRole: 'GURU',
+    });
+
+    svc.invalidate('kc-role');
+    mockFindUnique.mockResolvedValue({
+      isActive: true,
+      deletedAt: null,
+      role: 'KEPALA_SEKOLAH',
+    });
+    await expect(svc.getAuthorizationState('kc-role')).resolves.toEqual({
+      blocked: true,
+      primaryRole: null,
+    });
   });
 });
 
@@ -94,7 +125,7 @@ describe('KeycloakGuard + UserStatus (integrasi)', () => {
     const guard = module.get(KeycloakGuard);
 
     mockFindUnique.mockReset();
-    mockFindUnique.mockResolvedValue({ isActive: false, deletedAt: null });
+    mockFindUnique.mockResolvedValue({ isActive: false, deletedAt: null, role: 'GURU' });
     await expect(guard.canActivate(ctx())).rejects.toThrow(UnauthorizedException);
     await expect(guard.canActivate(ctx())).rejects.toThrow('Akun dinonaktifkan');
   });
@@ -111,7 +142,23 @@ describe('KeycloakGuard + UserStatus (integrasi)', () => {
     const guard = module.get(KeycloakGuard);
 
     mockFindUnique.mockReset();
-    mockFindUnique.mockResolvedValue({ isActive: true, deletedAt: null });
+    mockFindUnique.mockResolvedValue({ isActive: true, deletedAt: null, role: 'GURU' });
     expect(await guard.canActivate(ctx())).toBe(true);
+  });
+
+  it('token valid tanpa record aplikasi tetap ditolak', async () => {
+    const module = await Test.createTestingModule({
+      providers: [
+        KeycloakGuard,
+        Reflector,
+        UserStatusService,
+        { provide: PrismaService, useValue: { user: { findUnique: mockFindUnique } } },
+      ],
+    }).compile();
+    mockFindUnique.mockReset();
+    mockFindUnique.mockResolvedValue(null);
+    await expect(module.get(KeycloakGuard).canActivate(ctx())).rejects.toThrow(
+      UnauthorizedException,
+    );
   });
 });
