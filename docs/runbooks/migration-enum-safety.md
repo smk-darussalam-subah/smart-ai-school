@@ -32,7 +32,7 @@ ALTER TYPE "auth"."UserRole" ADD VALUE 'BENDAHARA';
 Always create a database backup before running a migration that modifies enum types:
 
 ```bash
-./scripts/backup-db.sh
+MANUAL_PRECHANGE_CONFIRM=CREATE_PROTECTED_PRECHANGE_BACKUP bash scripts/backup-db.sh
 ```
 
 ### 3. Never remove enum values in production
@@ -79,7 +79,8 @@ ALTER TYPE "auth"."UserRole" ADD VALUE IF NOT EXISTS 'OPERATOR_DAPODIK';
 Before creating a migration that modifies PostgreSQL enum types:
 
 - [ ] Every `ADD VALUE` uses `IF NOT EXISTS`
-- [ ] Database backup created (`./scripts/backup-db.sh`)
+- [ ] Protected pre-change backup created through the authoritative container
+      (`MANUAL_PRECHANGE_CONFIRM=CREATE_PROTECTED_PRECHANGE_BACKUP bash scripts/backup-db.sh`)
 - [ ] No `DROP VALUE` statements (use new type migration instead)
 - [ ] Migration tested on staging before production
 - [ ] Application code updated to handle new enum values

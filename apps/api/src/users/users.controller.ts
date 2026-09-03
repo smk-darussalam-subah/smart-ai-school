@@ -13,6 +13,7 @@ import { AuthUser, UserRole } from '@smk/auth';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
+import { Audit } from '../audit-log/decorators/audit.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { UsersService } from './users.service';
 import {
@@ -22,8 +23,12 @@ import {
   OnlineUsersQuerySchema,
   ListLoginEventsQuerySchema,
 } from './dto/list-users.dto';
-import { UpdateUserRoleSchema } from './dto/update-user.dto';
-import { UpdateUserActiveSchema } from './dto/update-user.dto';
+import {
+  UpdateUserActiveSchema,
+  UpdateUserRoleSchema,
+  UserLifecycleDto,
+  UserLifecycleSchema,
+} from './dto/update-user.dto';
 
 @Controller('users')
 @Roles('SUPER_ADMIN', 'TATA_USAHA')
@@ -96,10 +101,10 @@ export class UsersController {
 
   @Get()
   @RequirePermission('user.read')
-  async findAll(@Query() rawQuery: unknown) {
+  async findAll(@Query() rawQuery: unknown, @CurrentUser() actor: AuthUser) {
     const parsed = ListUsersQuerySchema.safeParse(rawQuery);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors);
-    return this.usersService.findAll(parsed.data);
+    return this.usersService.findAll(parsed.data, actor.keycloakId);
   }
 
   /**
@@ -116,8 +121,8 @@ export class UsersController {
 
   @Get(':id')
   @RequirePermission('user.read')
-  async findById(@Param('id', ParseUUIDPipe) id: string) {
-    return this.usersService.findById(id);
+  async findById(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthUser) {
+    return this.usersService.findById(id, actor.keycloakId);
   }
 
   @Patch(':id/role')
@@ -139,5 +144,29 @@ export class UsersController {
     @CurrentUser() actor: AuthUser,
   ) {
     return this.usersService.updateActive(id, dto.isActive, actor.keycloakId);
+  }
+
+  @Post(':id/archive')
+  @Roles('SUPER_ADMIN')
+  @RequirePermission('user.manage')
+  @Audit({ action: 'user.archive', resourceType: 'user', captureBody: true })
+  async archiveUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(UserLifecycleSchema)) dto: UserLifecycleDto,
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.usersService.archiveUser(id, dto, actor.keycloakId);
+  }
+
+  @Post(':id/restore')
+  @Roles('SUPER_ADMIN')
+  @RequirePermission('user.manage')
+  @Audit({ action: 'user.restore', resourceType: 'user', captureBody: true })
+  async restoreUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(UserLifecycleSchema)) dto: UserLifecycleDto,
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.usersService.restoreUser(id, dto, actor.keycloakId);
   }
 }

@@ -1,17 +1,38 @@
 import { z } from 'zod';
 import { PrimaryRoleSchema, UserRole } from '@smk/auth';
 
-export const ListUsersQuerySchema = z.object({
-  role: PrimaryRoleSchema.optional(),
-  search: z.string().max(100).optional(),
-  isActive: z
-    .enum(['true', 'false'])
-    .optional()
-    .transform((v) => (v === undefined ? undefined : v === 'true')),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
-  cursor: z.string().uuid().optional(),
-});
+export const ListUsersQuerySchema = z
+  .object({
+    role: PrimaryRoleSchema.optional(),
+    search: z.string().trim().max(100).optional(),
+    status: z.enum(['active', 'inactive', 'archived']).optional(),
+    isActive: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v === 'true')),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(100).default(20),
+    cursor: z.string().uuid().optional(),
+  })
+  .strict()
+  .superRefine((query, context) => {
+    if (
+      query.status &&
+      query.isActive !== undefined &&
+      ((query.status === 'active' && !query.isActive) ||
+        (query.status !== 'active' && query.isActive))
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['status'],
+        message: 'status bertentangan dengan isActive',
+      });
+    }
+  })
+  .transform((query) => ({
+    ...query,
+    status: query.status ?? (query.isActive === false ? 'inactive' : 'active'),
+  }));
 
 export type ListUsersQuery = z.infer<typeof ListUsersQuerySchema>;
 

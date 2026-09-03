@@ -142,9 +142,7 @@ export class KeycloakAdminService {
       }
     }
 
-    throw new ServiceUnavailableException(
-      'Keycloak Admin API tidak tersedia — operasi dibatalkan',
-    );
+    throw new ServiceUnavailableException('Keycloak Admin API tidak tersedia — operasi dibatalkan');
   }
 
   private async rawFetch(url: string, opts: RequestInit): Promise<Response> {
@@ -154,16 +152,12 @@ export class KeycloakAdminService {
     try {
       const res = await fetch(url, { ...opts, signal: controller.signal });
       if (!res.ok) {
-        throw new ServiceUnavailableException(
-          `Keycloak Auth API error ${res.status}`,
-        );
+        throw new ServiceUnavailableException(`Keycloak Auth API error ${res.status}`);
       }
       return res;
     } catch (err: unknown) {
       if (err instanceof ServiceUnavailableException) throw err;
-      throw new ServiceUnavailableException(
-        'Keycloak Auth API tidak tersedia',
-      );
+      throw new ServiceUnavailableException('Keycloak Auth API tidak tersedia');
     } finally {
       clearTimeout(timeout);
     }
@@ -199,9 +193,7 @@ export class KeycloakAdminService {
       );
     }
 
-    return new ServiceUnavailableException(
-      `Keycloak Admin API error ${status}`,
-    );
+    return new ServiceUnavailableException(`Keycloak Admin API error ${status}`);
   }
 
   private assertStableRealmRole(roleName: string): void {
@@ -264,6 +256,13 @@ export class KeycloakAdminService {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
+      retryAttempt: 1,
+    });
+  }
+
+  async logoutUser(kcId: string): Promise<void> {
+    await this.request(`${ADMIN_URL}/users/${kcId}/logout`, {
+      method: 'POST',
       retryAttempt: 1,
     });
   }
