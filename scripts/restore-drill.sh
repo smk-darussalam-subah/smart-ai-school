@@ -17,6 +17,7 @@ RESTORE_DB="diis_restore_$(date -u +%Y%m%d%H%M%S)_${RANDOM}"
 GATE0_MAX_BACKUP_BYTES=4015794422
 CREATED=false
 LOCK_ACQUIRED=0
+ARCHIVE_LIST_FILE=''
 
 die() { echo "[restore-drill] ERROR: $*" >&2; exit 1; }
 
@@ -31,6 +32,9 @@ cleanup() {
   fi
   if [[ "$LOCK_ACQUIRED" -eq 1 ]]; then
     release_directory_lock "$LOCK_DIR" >/dev/null 2>&1 || cleanup_failed=true
+  fi
+  if [[ -n "$ARCHIVE_LIST_FILE" ]]; then
+    rm -f "$ARCHIVE_LIST_FILE" || cleanup_failed=true
   fi
   if [[ "$cleanup_failed" == true ]]; then
     echo '[restore-drill] ERROR: cleanup database atau lock gagal' >&2
@@ -103,8 +107,13 @@ actual=$(sha256sum "$DUMP_FILE" | awk '{print $1}')
 manifest_sha=$(sed -n 's/.*"sha256":"\([a-f0-9]*\)".*/\1/p' "$MANIFEST_FILE")
 [[ "$manifest_sha" == "$actual" ]] || die 'checksum manifest tidak cocok'
 
-docker exec -i "$CONTAINER" pg_restore --list <"$DUMP_FILE" | grep -q . \
+ARCHIVE_LIST_FILE=$(mktemp)
+chmod 600 "$ARCHIVE_LIST_FILE"
+docker exec -i "$CONTAINER" pg_restore --list <"$DUMP_FILE" >"$ARCHIVE_LIST_FILE" \
   || die 'archive list validation gagal'
+[[ -s "$ARCHIVE_LIST_FILE" ]] || die 'archive list kosong'
+rm -f "$ARCHIVE_LIST_FILE"
+ARCHIVE_LIST_FILE=''
 
 dump_bytes=$(wc -c <"$DUMP_FILE")
 (( dump_bytes <= GATE0_MAX_BACKUP_BYTES )) || die 'dump melebihi budget absolut Gate 0'
