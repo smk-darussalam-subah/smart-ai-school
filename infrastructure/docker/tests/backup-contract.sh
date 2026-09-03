@@ -422,7 +422,8 @@ pass 'live duplicate rejected and SIGKILL stale lock reclaimed'
 restore_base="$TMP/restore"
 restore_fake="$restore_base/bin"
 restore_state="$restore_base/state"
-mkdir -p "$restore_fake" "$restore_state" "$restore_base/proofs"
+restore_tmp="$restore_base/archive-tmp"
+mkdir -p "$restore_fake" "$restore_state" "$restore_base/proofs" "$restore_tmp"
 cat >"$restore_fake/docker" <<'EOF'
 #!/bin/sh
 state=${DOCKER_STATE:?}
@@ -445,7 +446,16 @@ case "$command" in
     args="$*"
     case "$args" in
       *'df -Pk'*) printf '%s\n' '10000000 9999000' ;;
-      *'pg_restore --list'*) printf '%s\n' 'TABLE DATA auth users' ;;
+      *'pg_restore --list'*)
+        if [ "${RESTORE_FAULT:-}" = archive-list ]; then exit 64; fi
+        if [ "${RESTORE_FAULT:-}" = empty-archive-list ]; then exit 0; fi
+        i=0
+        while [ "$i" -lt 5000 ]; do
+          printf '%s\n' 'TABLE DATA auth users'
+          i=$((i + 1))
+        done
+        touch "$state/archive-list-consumed"
+        ;;
       *'pg_restore --username='*)
         if [ "${RESTORE_FAULT:-}" = restore ]; then exit 62; fi
         ;;
@@ -468,8 +478,9 @@ cat >"$restore_base/synthetic.complete.json" <<EOF
 {"schemaVersion":"diis-backup-v1","status":"complete","offsiteStatus":"complete","sha256":"${restore_sha}","tableCount":46,"userCount":40,"studentCount":20}
 EOF
 run_restore() {
-  local name=$1 container=${2:-diis-restore-test} unmarked=${3:-0}
+  local name=$1 container=${2:-diis-restore-test} unmarked=${3:-0} fault=${4:-}
   env PATH="$restore_fake:$PATH" DOCKER_STATE="$restore_state" UNMARKED="$unmarked" \
+    RESTORE_FAULT="$fault" TMPDIR="$restore_tmp" \
     POSTGRES_CONTAINER="$container" POSTGRES_USER=postgres DUMP_FILE="$restore_dump" \
     MANIFEST_FILE="$restore_base/synthetic.complete.json" CHECKSUM_FILE="$restore_base/synthetic.sha256" \
     RESTORE_PROOF_OUTPUT="$restore_base/proofs/$name.json" RESTORE_LOCK_DIR="$restore_base/lock-$name" \
@@ -487,7 +498,29 @@ if ! run_restore success; then
 fi
 assert_grep 'RESTORE_DRILL_COMPLETE' "$restore_base/out-success" 'restore completion missing'
 assert_grep '"status":"success"' "$restore_base/proofs/success.json" 'restore success proof missing'
+[[ -f "$restore_state/archive-list-consumed" ]] \
+  || fail 'restore archive list was not consumed completely'
+[[ -z "$(find "$restore_tmp" -mindepth 1 -maxdepth 1 -print -quit)" ]] \
+  || fail 'restore archive list temp file was not cleaned after success'
 [[ ! -d "$restore_base/lock-success" ]] || fail 'stale restore lock was not reclaimed'
+rm -f "$restore_state/archive-list-consumed"
+if run_restore archive-list-failure diis-restore-test 0 archive-list; then
+  fail 'pg_restore archive-list command failure was accepted'
+fi
+assert_grep 'archive list validation gagal' "$restore_base/err-archive-list-failure" \
+  'archive-list command failure did not fail closed'
+assert_grep '"status":"failed"' "$restore_base/proofs/archive-list-failure.json" \
+  'archive-list command failure proof is not failed'
+if run_restore empty-archive-list diis-restore-test 0 empty-archive-list; then
+  fail 'empty pg_restore archive list was accepted'
+fi
+assert_grep 'archive list kosong' "$restore_base/err-empty-archive-list" \
+  'empty archive list did not fail closed'
+assert_grep '"status":"failed"' "$restore_base/proofs/empty-archive-list.json" \
+  'empty archive-list proof is not failed'
+[[ ! -e "$restore_state/database-created" ]] || fail 'archive-list failure mutated database'
+[[ -z "$(find "$restore_tmp" -mindepth 1 -maxdepth 1 -print -quit)" ]] \
+  || fail 'restore archive list temp file was not cleaned after failure'
 if run_restore production smk-postgres; then fail 'production restore target accepted'; fi
 if run_restore unmarked diis-restore-test 1; then fail 'unmarked restore target accepted'; fi
 [[ ! -e "$restore_state/database-created" ]] || fail 'negative restore mutated database'
