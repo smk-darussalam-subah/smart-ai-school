@@ -4,16 +4,23 @@ Tanggal: 2026-09-03
 Peran: Executor
 Branch: `fix/wave10a-source-20260903`
 Baseline: `origin/develop@3ae4f6d6660189e8691b4c522b380dd2daf1eecd`
-Status: **SOURCE FOLLOW-UP COMPLETE - INDEPENDENT RE-REVIEW REQUIRED**
+Status: **SOURCE CI FOLLOW-UP COMPLETE - INDEPENDENT RE-REVIEW REQUIRED**
 
 ## 1. Batas Eksekusi
 
 Follow-up ini menutup empat belas finding pada
 `WAVE10-B-INDEPENDENT-SOURCE-REVIEW-2026-09-03.md` dalam branch yang sama.
-Tidak ada commit, push, PR, deploy, credential, off-site commissioning, backup
-activation, identity cleanup, data nyata, restore production, atau mutasi runtime
-DIIS. Semua target Docker memakai prefix unik, marker disposable, network
-terisolasi, image digest immutable, dan cleanup otomatis.
+Fase source awal tidak melakukan commit, push, PR, deploy, credential, off-site
+commissioning, backup activation, identity cleanup, data nyata, restore
+production, atau mutasi runtime DIIS. Semua target Docker memakai prefix unik,
+marker disposable, network terisolasi, image digest immutable, dan cleanup
+otomatis.
+
+Setelah approval packaging, PR #637 mengekspos mock E2E yang belum menyediakan
+resolver primary role authoritative. Merge dan relaksasi protection ditahan.
+Follow-up ini menambahkan hanya kontrak mock E2E yang memetakan fixture Keycloak
+ke stable role pada database sintetis. Rerun dengan PostgreSQL disposable dan 46
+migration lulus 1 suite / 29 test; container PostgreSQL dan Redis dibersihkan.
 
 Git packaging, staging, backup commissioning, restore rehearsal lingkungan
 operasional, identity pilot, dan production tetap **HOLD**.
@@ -35,7 +42,7 @@ operasional, identity pilot, dan production tetap **HOLD**.
 | P1-W10B-R11 stale Super Admin token   | `KeycloakGuard`, `RolesGuard`, dan `PermissionsService` memakai primary role dari record aplikasi aktif, bukan claim role token. Demotion menginvalidasi cache sebelum sinkronisasi Keycloak; kegagalan sinkronisasi tetap menghasilkan authority lokal baru dan token `SUPER_ADMIN` lama ditolak. Lookup role gagal atau record hilang berhenti fail-closed. |
 | P1-W10B-R12 private off-site endpoint | Commissioning wajib mengikat expected provider dan exact public origin. Backend/provider dinormalisasi; endpoint custom wajib HTTPS FQDN allowlisted dan alamat IP, loopback, RFC1918, link-local, IPv6 literal, `.local`, `.internal`, serta origin yang tidak cocok ditolak. Provider default dicatat eksplisit tanpa menebak endpoint.                     |
 | P2-W10B-R13 post-write hard budget    | Preflight menyisihkan metadata terikat 65.536 byte. Setelah checksum, marker, dan telemetry ditulis, ukuran remote aktual diukur ulang. Overflow menghapus hanya recovery point baru dan memulihkan telemetry sebelumnya sebelum gagal tertutup; exact-boundary dan post-write overflow diuji.                                                                |
-| P2-W10B-R14 payload digest            | Manifest dibekukan ulang menjadi 40 file, dengan 39 payload file non-self-referential. Path diurutkan ordinal byte/`LC_ALL=C`, setiap baris memakai SHA-256 lowercase, dua spasi, path POSIX, dan LF. PowerShell serta WSL wajib menghasilkan digest akhir yang identik.                                                                                      |
+| P2-W10B-R14 payload digest            | Manifest dibekukan ulang menjadi 41 file, dengan 40 payload file non-self-referential. Path diurutkan ordinal byte/`LC_ALL=C`, setiap baris memakai SHA-256 lowercase, dua spasi, path POSIX, dan LF. PowerShell serta WSL wajib menghasilkan digest akhir yang identik.                                                                                      |
 
 ## 3. Identity Lifecycle
 
@@ -109,6 +116,7 @@ Keycloak.
 | ----------------------------- | --------------------------------------------------------------- |
 | Focused API auth/status/users | 6 suite / 147 test lulus                                        |
 | Focused Web archive           | 1 suite / 5 test lulus                                          |
+| E2E auth/critical paths       | 1 suite / 29 test lulus pada PostgreSQL disposable              |
 | PostgreSQL disposable         | 46/46 migration, concurrency 3/3, restore dan cleanup lulus     |
 | MinIO Docker nyata            | copy-back lulus, corruption terdeteksi, target capacity terbaca |
 | Backup behavioral WSL         | 16/16 lulus                                                     |
@@ -136,7 +144,7 @@ kemudian lulus penuh; kegagalan awal dan final sama-sama membersihkan target.
 
 ## 6. Manifest Literal Executor
 
-Manifest berjumlah **40 file**:
+Manifest berjumlah **41 file**:
 
 1. `apps/api/src/__tests__/auth-guard.spec.ts`
 2. `apps/api/src/__tests__/auth-me.spec.ts`
@@ -154,35 +162,36 @@ Manifest berjumlah **40 file**:
 14. `apps/api/src/users/dto/update-user.dto.ts`
 15. `apps/api/src/users/users.controller.ts`
 16. `apps/api/src/users/users.service.ts`
-17. `apps/web/src/__tests__/users-archive.test.ts`
-18. `apps/web/src/app/dashboard/users/_components/UsersClient.tsx`
-19. `apps/web/src/app/dashboard/users/actions.ts`
-20. `apps/web/src/app/dashboard/users/page.tsx`
-21. `docs/audits/WAVE10-A-SOURCE-REMEDIATION-2026-09-03.md`
-22. `docs/audits/WAVE10-GATE0-READONLY-INVENTORY-2026-09-03.md`
-23. `docs/decision-log.md`
-24. `docs/runbooks/backup-restore.md`
-25. `docs/runbooks/migration-enum-safety.md`
-26. `docs/runbooks/offsite-backup-recovery.md`
-27. `docs/runbooks/restore-database.md`
-28. `infrastructure/docker/docker-compose.yml`
-29. `infrastructure/docker/scripts/backup-lib.sh`
-30. `infrastructure/docker/scripts/backup.sh`
-31. `infrastructure/docker/scripts/offsite-replication.sh`
-32. `infrastructure/docker/scripts/release-prechange-backup.sh`
-33. `infrastructure/docker/scripts/restore-objects.sh`
-34. `infrastructure/docker/tests/backup-contract.sh`
-35. `infrastructure/docker/tests/wave10-minio-integration.sh`
-36. `infrastructure/docker/tests/wave10-postgres-integration.sh`
-37. `infrastructure/n8n/workflows/backup-daily.json`
-38. `scripts/backup-db.sh`
-39. `scripts/publish-restore-proof.sh`
-40. `scripts/restore-drill.sh`
+17. `apps/api/test/app.e2e-spec.ts`
+18. `apps/web/src/__tests__/users-archive.test.ts`
+19. `apps/web/src/app/dashboard/users/_components/UsersClient.tsx`
+20. `apps/web/src/app/dashboard/users/actions.ts`
+21. `apps/web/src/app/dashboard/users/page.tsx`
+22. `docs/audits/WAVE10-A-SOURCE-REMEDIATION-2026-09-03.md`
+23. `docs/audits/WAVE10-GATE0-READONLY-INVENTORY-2026-09-03.md`
+24. `docs/decision-log.md`
+25. `docs/runbooks/backup-restore.md`
+26. `docs/runbooks/migration-enum-safety.md`
+27. `docs/runbooks/offsite-backup-recovery.md`
+28. `docs/runbooks/restore-database.md`
+29. `infrastructure/docker/docker-compose.yml`
+30. `infrastructure/docker/scripts/backup-lib.sh`
+31. `infrastructure/docker/scripts/backup.sh`
+32. `infrastructure/docker/scripts/offsite-replication.sh`
+33. `infrastructure/docker/scripts/release-prechange-backup.sh`
+34. `infrastructure/docker/scripts/restore-objects.sh`
+35. `infrastructure/docker/tests/backup-contract.sh`
+36. `infrastructure/docker/tests/wave10-minio-integration.sh`
+37. `infrastructure/docker/tests/wave10-postgres-integration.sh`
+38. `infrastructure/n8n/workflows/backup-daily.json`
+39. `scripts/backup-db.sh`
+40. `scripts/publish-restore-proof.sh`
+41. `scripts/restore-drill.sh`
 
 Laporan Independent Reviewer tidak termasuk manifest Executor dan tidak diubah.
 `git add .` serta `git add -A` tetap dilarang.
 
-Canonical digest untuk 39 payload file di atas, dengan laporan ini dikecualikan
+Canonical digest untuk 40 payload file di atas, dengan laporan ini dikecualikan
 agar tidak self-referential, dihitung dengan kontrak berikut:
 
 1. Ambil path literal dari manifest, kecuali laporan Executor ini.
@@ -207,7 +216,7 @@ SHA-256 atas `[Text.UTF8Encoding]::new($false).GetBytes($rows)`.
 
 Digest WSL dan PowerShell setelah final completion sweep:
 
-`c354adb0f6fe652f6e316cd80a326ef0ff1cf923ffd0e240974c45fa92e30e91`
+`59ab3a6c6c2019c97f0724c9c8324b21b3a9830c3031db768d47b97eb4c3348d`
 
 ## 7. Residual dan Gate Berikutnya
 
@@ -225,4 +234,4 @@ Digest WSL dan PowerShell setelah final completion sweep:
 
 Gate berikutnya adalah **Independent Source Re-review**. Status keseluruhan tetap:
 
-**SOURCE FOLLOW-UP COMPLETE - PACKAGING/STAGING/COMMISSIONING/PRODUCTION HOLD**
+**SOURCE CI FOLLOW-UP COMPLETE - INDEPENDENT RE-REVIEW/STAGING/COMMISSIONING/PRODUCTION HOLD**
