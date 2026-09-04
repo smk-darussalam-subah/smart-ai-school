@@ -29,6 +29,44 @@ diubah oleh laporan commissioning production exact-SHA yang ditinjau independen.
   off-site copy-back, safe counts, dan completion manifest seluruhnya valid.
 - Restore rehearsal hanya boleh memakai container PostgreSQL disposable bertanda
   pada network terisolasi. Production recovery memakai replacement target baru.
+- Semua instance backup target memakai writer lock host bersama pada
+  `/var/lock/diis-backup/backup.lock`; candidate memakai tool volume fisik unik,
+  scheduler mati, bucket creation mati, dan retention dry-run sampai acceptance.
+
+## Candidate dan Scheduler Handoff
+
+Candidate hanya dibuat melalui `infrastructure/deploy/create-w10d-backup-candidate.sh`.
+Launcher itu mewajibkan attempt ID, project Compose attempt-specific, physical tool
+volume baru, exact MinIO source volume, dan shared `BACKUP_LOCK_HOST_PATH`. Render
+tanpa kedua binding volume harus gagal; `docker_backup_bin` legacy tidak boleh
+dipasang, ditulis, direcreate, atau dihapus. Startup candidate hanya memverifikasi
+bucket existing; scheduler, bucket creation, dan retention apply seluruhnya tetap
+mati. Manual run pertama tetap di bawah host lock deployment.
+
+Setelah manual backup, independent crypt retrieval, DB restore, object restore,
+root-cron classification, serta cleanup lulus, operator membuat private acceptance
+bundle mode `0600`. Bundle harus mengikat seluruh runtime contract: container ID,
+entrypoint, command, working directory, user, restart policy, network mode/names,
+exact full mount set, exact environment-name set, hash seluruh environment values,
+attempt/role identity labels, dan full label hash. Bundle juga mengikat exact
+base/candidate Compose, runtime-manifest helper, dan tool-capture script dari
+reviewed SHA; tool volume wajib membawa attempt ID yang sama.
+
+Jalankan `capture-w10d-candidate-tool-evidence.sh` untuk membuat tool evidence dari
+byte aktual `mc`, `rclone.zip`, dan executable `rclone` beserta versi ter-normalisasi.
+Schema v3 mengekstrak exact `rclone-v1.70.3-linux-amd64/rclone` dari archive
+ber-checksum terpin dan mewajibkan hash entry itu sama dengan executable aktual;
+kesamaan versi saja tidak cukup.
+`w10d-backup-scheduler-handoff.sh` merekam ulang evidence tersebut tepat sebelum
+mutation dan menuntut byte-for-byte match. Changed command, extra mount/network,
+environment drift, label drift, tool hash, atau version drift menahan handoff.
+
+Handoff memverifikasi hash bundle,
+menahan host lock, membekukan dua daemon sebelum crontab berubah, lalu memindahkan
+authority menjadi tepat satu scheduler. Container legacy tidak dihapus; ia
+di-rename dan dihentikan sebagai rollback exact. Signal/kegagalan memulihkan cron
+legacy, mematikan cron candidate, dan melarang retry tersembunyi. Cleanup legacy
+hanya boleh dilakukan pada gate terpisah setelah rollback window berakhir.
 
 ## Batas Kapasitas Gate 0
 
@@ -121,6 +159,7 @@ POSTGRES_USER=postgres \
 DUMP_FILE=/private/<backupId>.dump \
 CHECKSUM_FILE=/private/<backupId>.sha256 \
 MANIFEST_FILE=/private/<backupId>.complete.json \
+PROVENANCE_FILE=/private/<backupId>.offsite-provenance.json \
 RESTORE_PROOF_OUTPUT=/private/restore-proof.json \
 RESTORE_LOCK_DIR=/private/restore.lock \
   bash scripts/restore-drill.sh
@@ -156,3 +195,11 @@ Checksum, archive list, capacity, lock, local/off-site copy-back, manifest,
 safe-count reconciliation, telemetry, atau cleanup yang gagal wajib menghentikan
 run. Pertahankan recovery evidence dan newest valid backup; jangan melakukan retry
 atau perbaikan ad hoc tanpa investigasi.
+
+Creator cleanup tidak boleh mengubah error menjadi success. Partial candidate
+creation harus membuktikan exact container dan attempt tool volume absent lewat
+observasi Docker yang sukses. Sebelum create, listing exact juga wajib membedakan
+absent, present, dan observation error. Error daemon/permission/transient menjadi
+`CANDIDATE_PRECREATE_OBSERVATION_AMBIGUOUS retry=prohibited` sebelum Compose
+mutation. Kegagalan remove atau observasi setelah create menghasilkan
+`CANDIDATE_CLEANUP_AMBIGUOUS retry=prohibited`; jangan menjalankan attempt baru.
