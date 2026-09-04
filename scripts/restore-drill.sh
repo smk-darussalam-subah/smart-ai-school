@@ -11,41 +11,98 @@ DB_USER="${POSTGRES_USER:-postgres}"
 DUMP_FILE="${DUMP_FILE:-}"
 MANIFEST_FILE="${MANIFEST_FILE:-}"
 CHECKSUM_FILE="${CHECKSUM_FILE:-}"
+PROVENANCE_FILE="${PROVENANCE_FILE:-}"
 RESTORE_PROOF_OUTPUT="${RESTORE_PROOF_OUTPUT:-}"
 LOCK_DIR="${RESTORE_LOCK_DIR:-/tmp/diis-restore-drill.lock}"
 RESTORE_DB="diis_restore_$(date -u +%Y%m%d%H%M%S)_${RANDOM}"
 GATE0_MAX_BACKUP_BYTES=4015794422
 CREATED=false
 LOCK_ACQUIRED=0
+LOCK_EXPECTED_TOKEN=''
+PROOF_DIR=''
+PROOF_OUTPUT_VALIDATED=false
+OWNERSHIP_FILE=''
+OWNERSHIP_TMP_FILE=''
 ARCHIVE_LIST_FILE=''
+OFFSITE_PROVENANCE_SHA256=''
+OFFSITE_PROVENANCE_BACKUP_ID=''
+PROOF_DUMP_SHA256=''
+PROOF_OBJECT_MANIFEST_SHA256=''
 
 die() { echo "[restore-drill] ERROR: $*" >&2; exit 1; }
+
+lock_absent() {
+  [[ ! -e "$LOCK_DIR" && ! -L "$LOCK_DIR" ]]
+}
+
+database_absent() {
+  local result
+  result=$(docker exec "$CONTAINER" psql --username="$DB_USER" --dbname=postgres \
+    --tuples-only --no-align --set=ON_ERROR_STOP=1 \
+    --command="SELECT datname FROM pg_database WHERE datname='${RESTORE_DB}';" \
+    2>/dev/null) || return 1
+  [[ -z "${result//[[:space:]]/}" ]]
+}
+
+cleanup_lock() {
+  lock_absent && return 0
+  LOCK_OWNER_TOKEN="$LOCK_EXPECTED_TOKEN"
+  release_directory_lock "$LOCK_DIR" || return 1
+  lock_absent
+}
 
 cleanup() {
   local code=$?
   local cleanup_failed=false
-  trap - EXIT
+  local database_absence=false
+  local lock_absence=false
+  trap - EXIT HUP INT TERM
   if [[ "$CREATED" == true ]]; then
     docker exec "$CONTAINER" psql --username="$DB_USER" --dbname=postgres \
       --set=ON_ERROR_STOP=1 --command="DROP DATABASE IF EXISTS \"${RESTORE_DB}\" WITH (FORCE);" \
       >/dev/null 2>&1 || cleanup_failed=true
+    if database_absent; then
+      database_absence=true
+    else
+      cleanup_failed=true
+    fi
+  else
+    database_absent && database_absence=true || true
   fi
   if [[ "$LOCK_ACQUIRED" -eq 1 ]]; then
-    release_directory_lock "$LOCK_DIR" >/dev/null 2>&1 || cleanup_failed=true
+    cleanup_lock >/dev/null 2>&1 || cleanup_failed=true
+    lock_absent && lock_absence=true || true
+  else
+    lock_absent && lock_absence=true || true
   fi
   if [[ -n "$ARCHIVE_LIST_FILE" ]]; then
     rm -f "$ARCHIVE_LIST_FILE" || cleanup_failed=true
   fi
-  if [[ "$cleanup_failed" == true ]]; then
-    echo '[restore-drill] ERROR: cleanup database atau lock gagal' >&2
-    [[ "$code" -ne 0 ]] || code=70
+  if [[ -n "$OWNERSHIP_FILE" ]]; then
+    rm -f "$OWNERSHIP_FILE" || cleanup_failed=true
+    [[ ! -e "$OWNERSHIP_FILE" && ! -L "$OWNERSHIP_FILE" ]] || cleanup_failed=true
   fi
-  if [[ -n "$RESTORE_PROOF_OUTPUT" ]]; then
+  if [[ -n "$OWNERSHIP_TMP_FILE" ]]; then
+    rm -f "$OWNERSHIP_TMP_FILE" || cleanup_failed=true
+    [[ ! -e "$OWNERSHIP_TMP_FILE" && ! -L "$OWNERSHIP_TMP_FILE" ]] || cleanup_failed=true
+  fi
+  if [[ "$cleanup_failed" == true ]]; then
+    printf '[restore-drill] ERROR: RESTORE_DRILL_CLEANUP_AMBIGUOUS databaseAbsent=%s lockAbsent=%s retry=prohibited\n' \
+      "$database_absence" "$lock_absence" >&2
+    [[ "$code" -ne 0 ]] || code=70
+  else
+    printf '[restore-drill] RESTORE_DRILL_CLEANUP_OK databaseAbsent=%s lockAbsent=%s\n' \
+      "$database_absence" "$lock_absence" >&2
+  fi
+  if [[ "$PROOF_OUTPUT_VALIDATED" == true && -n "$RESTORE_PROOF_OUTPUT" ]]; then
     local proof_status=failed
     [[ "$code" -eq 0 ]] && proof_status=success
     local proof_tmp="${RESTORE_PROOF_OUTPUT}.candidate.$$"
-    printf '{"schemaVersion":"diis-restore-proof-v1","status":"%s","createdEpoch":%s}\n' \
-      "$proof_status" "$(date -u +%s)" >"$proof_tmp" || code=70
+    printf '{"schemaVersion":"diis-restore-proof-v2","status":"%s","backupId":"%s","source":"%s","sourceProvenanceSha256":"%s","dumpSha256":"%s","objectManifestSha256":"%s","createdEpoch":%s}\n' \
+      "$proof_status" "${OFFSITE_PROVENANCE_BACKUP_ID:-unavailable}" \
+      "$([[ -n "$OFFSITE_PROVENANCE_SHA256" ]] && printf independent-crypt || printf unavailable)" \
+      "${OFFSITE_PROVENANCE_SHA256:-unavailable}" "${PROOF_DUMP_SHA256:-unavailable}" \
+      "${PROOF_OBJECT_MANIFEST_SHA256:-unavailable}" "$(date -u +%s)" >"$proof_tmp" || code=70
     chmod 600 "$proof_tmp" || code=70
     mv "$proof_tmp" "$RESTORE_PROOF_OUTPUT" || code=70
   fi
@@ -69,9 +126,30 @@ esac
 [[ -n "$DUMP_FILE" && -f "$DUMP_FILE" ]] || die 'DUMP_FILE custom-format wajib dan harus ada'
 [[ -n "$MANIFEST_FILE" && -f "$MANIFEST_FILE" ]] || die 'MANIFEST_FILE wajib dan harus ada'
 [[ -n "$CHECKSUM_FILE" && -f "$CHECKSUM_FILE" ]] || die 'CHECKSUM_FILE wajib dan harus ada'
-[[ -n "$RESTORE_PROOF_OUTPUT" && -d "$(dirname "$RESTORE_PROOF_OUTPUT")" ]] \
-  || die 'RESTORE_PROOF_OUTPUT pada direktori privat wajib ditentukan'
+[[ -n "$PROVENANCE_FILE" && -f "$PROVENANCE_FILE" ]] \
+  || die 'PROVENANCE_FILE independent crypt wajib dan harus ada'
+[[ -n "$RESTORE_PROOF_OUTPUT" ]] || die 'RESTORE_PROOF_OUTPUT wajib ditentukan'
+proof_dir_input=$(dirname -- "$RESTORE_PROOF_OUTPUT")
+[[ -d "$proof_dir_input" && ! -L "$proof_dir_input" ]] \
+  || die 'RESTORE_PROOF_OUTPUT pada direktori proof privat existing wajib ditentukan'
+PROOF_DIR=$(cd -- "$proof_dir_input" && pwd -P) \
+  || die 'direktori proof privat tidak dapat di-canonicalize'
+[[ -d "$PROOF_DIR" && ! -L "$PROOF_DIR" && "$PROOF_DIR" != "/" ]] \
+  || die 'direktori proof privat tidak valid'
+proof_mode=$(stat -c '%a' "$PROOF_DIR" 2>/dev/null) \
+  || die 'mode direktori proof privat tidak dapat diobservasi'
+[[ "$proof_mode" == 700 ]] \
+  || die 'mode direktori proof privat wajib 0700'
+[[ ! -L "$RESTORE_PROOF_OUTPUT" ]] \
+  || die 'RESTORE_PROOF_OUTPUT symlink dilarang'
+[[ -z "${RESTORE_OWNERSHIP_FILE:-}" ]] \
+  || die 'RESTORE_OWNERSHIP_FILE override dilarang; ownership wajib langsung di proof directory privat'
+PROOF_OUTPUT_VALIDATED=true
 [[ "$RESTORE_DB" =~ ^diis_restore_[0-9]{14}_[0-9]+$ ]] || die 'nama database disposable tidak aman'
+
+validate_offsite_database_inputs "$PROVENANCE_FILE" "$MANIFEST_FILE" "$DUMP_FILE" "$CHECKSUM_FILE"
+PROOF_DUMP_SHA256=$(json_value dumpSha256 "$PROVENANCE_FILE")
+PROOF_OBJECT_MANIFEST_SHA256=$(json_value objectManifestSha256 "$PROVENANCE_FILE")
 
 running=$(docker inspect --format '{{.State.Running}}' "$CONTAINER" 2>/dev/null) \
   || die 'container PostgreSQL disposable tidak dapat diobservasi'
@@ -96,9 +174,7 @@ network_marker=$(docker network inspect --format '{{index .Labels "com.diis.rest
   || die 'marker network restore tidak dapat dibaca'
 [[ "$network_marker" == isolated-v1 ]] || die 'network restore tidak terisolasi atau tidak bertanda'
 
-grep -Eq '"schemaVersion":"diis-backup-v1"' "$MANIFEST_FILE" || die 'manifest schema tidak valid'
-grep -Eq '"status":"complete"' "$MANIFEST_FILE" || die 'backup belum complete'
-grep -Eq '"offsiteStatus":"complete"' "$MANIFEST_FILE" || die 'off-site completion belum terbukti'
+database_absent || die 'nama database disposable sudah ada atau tidak dapat diobservasi'
 
 expected=$(awk 'NR==1 {print $1}' "$CHECKSUM_FILE")
 [[ "$expected" =~ ^[a-f0-9]{64}$ ]] || die 'checksum sidecar tidak valid'
@@ -130,12 +206,33 @@ projected_bytes=$((available_bytes - dump_bytes))
 (( projected_bytes >= 0 && projected_bytes * 100 / total_bytes >= 25 )) \
   || die 'ruang bebas target setelah restore diproyeksikan di bawah 25%'
 
-acquire_directory_lock "$LOCK_DIR"
-LOCK_ACQUIRED=1
+# Register both cleanup obligations before either mutation. The expected lock token
+# is identical to backup-lib.sh's token derivation, so a signal after mkdir/create
+# but before the helper returns still has an ownership value available to cleanup.
+boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || printf unknown)
+self_start=$(awk '{print $22}' "/proc/$$/stat" 2>/dev/null || printf unknown)
+LOCK_EXPECTED_TOKEN="${boot_id}:$$:${self_start}"
+LOCK_OWNER_TOKEN="$LOCK_EXPECTED_TOKEN"
+# Ownership is always derived as a direct child of the canonical, non-symlink
+# proof directory. Arbitrary overrides are rejected above before any mutation.
+OWNERSHIP_FILE="$PROOF_DIR/.diis-restore-${RESTORE_DB}.ownership.$$"
+OWNERSHIP_TMP_FILE="${OWNERSHIP_FILE}.tmp"
+umask 077
+printf 'schemaVersion=diis-restore-ownership-v1\nlockDir=%s\nlockToken=%s\ndatabase=%s\n' \
+  "$LOCK_DIR" "$LOCK_EXPECTED_TOKEN" "$RESTORE_DB" >"$OWNERSHIP_TMP_FILE" \
+  || die 'registrasi ownership cleanup gagal'
+chmod 600 "$OWNERSHIP_TMP_FILE" || die 'permission registrasi ownership cleanup gagal'
+mv "$OWNERSHIP_TMP_FILE" "$OWNERSHIP_FILE" || die 'publish registrasi ownership cleanup gagal'
 
+# Set the cleanup obligations before invoking operations that can be interrupted.
+# They intentionally remain set through the successful path until cleanup proves
+# exact absence of both disposable resources.
+LOCK_ACQUIRED=1
+acquire_directory_lock "$LOCK_DIR"
+
+CREATED=true
 docker exec "$CONTAINER" psql --username="$DB_USER" --dbname=postgres \
   --set=ON_ERROR_STOP=1 --command="CREATE DATABASE \"${RESTORE_DB}\";" >/dev/null
-CREATED=true
 docker exec -i "$CONTAINER" pg_restore --username="$DB_USER" --dbname="$RESTORE_DB" \
   --no-owner --no-privileges --exit-on-error --single-transaction <"$DUMP_FILE"
 
