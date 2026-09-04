@@ -61,6 +61,9 @@ jobs:
           username: appuser
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
+          # Staging uses a no-cache monorepo build; keep the SSH command alive
+          # long enough to finish the build, migration, health-check, and post-check.
+          command_timeout: 20m
           envs: DIIS_GITHUB_REF,DIIS_DEPLOY_BRANCH,DIIS_EXPECTED_SHA,DIIS_RUN_ID,DIIS_RUN_ATTEMPT,DIIS_VAPID_PUBLIC_KEY,DIIS_VAPID_PRIVATE_KEY,DIIS_VAPID_SUBJECT
           script: |
             set -euo pipefail
