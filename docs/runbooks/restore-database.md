@@ -21,8 +21,14 @@
 - Hubungkan hanya ke satu network berlabel
   `com.diis.restore-network=isolated-v1`.
 - Jangan gunakan nama yang memuat `smk`, `production`, atau `staging`.
-- Sediakan direktori privat existing untuk `RESTORE_PROOF_OUTPUT`.
+- Sediakan direktori privat existing mode `0700` untuk `RESTORE_PROOF_OUTPUT`.
+- Jangan set `RESTORE_OWNERSHIP_FILE`. Script menurunkan file ownership sebagai
+  direct child dari canonical proof directory privat yang sudah divalidasi; path
+  arbitrer, absolute/traversal, dan symlink override ditolak sebelum mutasi.
 - Pastikan dump tidak melebihi `4015794422` bytes.
+- Gunakan hanya input yang telah dibuat oleh `prepare-offsite-restore.sh` dan
+  memiliki provenance `source=independent-crypt`; path MinIO lokal ditolak
+  sebagai sumber rehearsal off-site.
 
 Script memeriksa kapasitas dari filesystem data PostgreSQL di dalam target,
 bukan dari lokasi dump. Target harus memiliki ruang sedikitnya tiga kali dump dan
@@ -37,6 +43,7 @@ POSTGRES_USER=postgres \
 DUMP_FILE=/private/recovery/<backupId>.dump \
 CHECKSUM_FILE=/private/recovery/<backupId>.sha256 \
 MANIFEST_FILE=/private/recovery/<backupId>.complete.json \
+PROVENANCE_FILE=/private/recovery/<backupId>.offsite-provenance.json \
 RESTORE_PROOF_OUTPUT=/private/recovery/restore-proof.json \
 RESTORE_LOCK_DIR=/private/recovery/restore.lock \
   bash scripts/restore-drill.sh
@@ -47,8 +54,15 @@ tanpa label, target multi-network, network aplikasi, archive invalid, checksum
 mismatch, dan kapasitas yang tidak dapat dibaca ditolak sebelum mutasi.
 
 Restore memakai database unik `diis_restore_*`, `--exit-on-error`, dan
-`--single-transaction`. Trap harus menghapus database serta lock. Cleanup failure
-menjadikan drill gagal.
+`--single-transaction`. Sebelum lock atau `CREATE DATABASE` dipanggil, script
+mendaftarkan ownership cleanup sebagai direct child dari canonical proof
+directory privat dan menyiapkan token lock yang exact. Karena itu signal/exit
+setelah resource dibuat tetap masuk cleanup meskipun helper belum sempat
+mengembalikan status ke caller. Cleanup selalu melakukan absence probe database
+melalui `pg_database` dan probe exact lock path; kedua hasil harus `true`. Jika
+drop, release, atau observasi gagal, script menulis
+`RESTORE_DRILL_CLEANUP_AMBIGUOUS ... retry=prohibited` dan drill tetap gagal.
+Proof sukses tidak boleh diterbitkan pada status ambiguous.
 
 ## Rekonsiliasi
 
@@ -71,12 +85,20 @@ memiliki marker `.diis-disposable-restore-target-v1`. Script wajib memulihkan
 set exact, memverifikasi setiap hash/ukuran, dan menolak object tambahan. Lihat
 [Off-site Backup Recovery](offsite-backup-recovery.md).
 
+Verifikasi object plaintext hanya boleh berada pada private `mktemp` directory
+dengan `umask 077`. EXIT/HUP/INT/TERM, copy failure, hash/size mismatch, dan proof
+publication failure wajib menghapus file/direktori tersebut dan membuktikan
+absence. Status cleanup ambiguous adalah stop/no-retry condition.
+Final target listing harus berhasil secara mandiri sebelum jumlah object dihitung;
+aturan ini tetap berlaku untuk backup sah dengan `objectCount=0`.
+
 ## Publish Proof Bulanan
 
-`restore-drill.sh` menulis proof PII-safe lokal:
+`restore-drill.sh` menolak sumber selain provenance `independent-crypt` sebelum
+menyentuh target dan menulis proof PII-safe lokal yang terikat ke hash provenance:
 
 ```json
-{ "schemaVersion": "diis-restore-proof-v1", "status": "success", "createdEpoch": 0 }
+{ "schemaVersion": "diis-restore-proof-v2", "status": "success", "source": "independent-crypt", "sourceProvenanceSha256": "<sha256>", "createdEpoch": 0 }
 ```
 
 Setelah independent review, publish dengan target container backup authoritative

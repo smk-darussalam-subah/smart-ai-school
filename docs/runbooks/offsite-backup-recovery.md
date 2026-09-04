@@ -15,6 +15,9 @@ dan independent review terpisah.
   localhost, endpoint lokal, serta provider yang sama/terlarang ditolak.
 - Effective backend type, provider identity, origin publik non-secret, dan mode
   enkripsi diikat ke `OFFSITE_CONFIG_FINGERPRINT` SHA-256 hasil review.
+- Untuk backend `drive`, fingerprint yang sama juga wajib mengikat SHA-256
+  non-secret dari exact `team_drive` dan `root_folder_id`. Nilai kosong,
+  tertukar, atau berubah setelah approval ditolak sebelum write.
 - `OFFSITE_EXPECTED_PROVIDER` dan `OFFSITE_EXPECTED_ORIGIN` berasal dari
   commissioning terpisah. Custom endpoint wajib HTTPS, FQDN publik, cocok persis
   dengan origin yang disetujui, serta bukan IP literal, loopback, RFC1918,
@@ -69,22 +72,70 @@ collection blob adalah prosedur terpisah agar backup lain tidak rusak.
 
 ## Restore Object Exact ke Target Disposable
 
+Ambil seluruh input dari remote crypt yang disetujui—bukan MinIO lokal—ke
+direktori baru mode `0700`:
+
+```bash
+OFFSITE_CRYPT_REMOTE=<approved-crypt-remote>:<prefix> \
+OFFSITE_CONFIG_FINGERPRINT=<approved-fingerprint> \
+OFFSITE_EXPECTED_PROVIDER=<approved-provider> \
+OFFSITE_EXPECTED_ORIGIN=<approved-origin> \
+  sh scripts/prepare-offsite-restore.sh <backupId> /private/<attempt>
+```
+
+Untuk Shared Drive, sertakan `OFFSITE_EXPECTED_TEAM_DRIVE_SHA256` dan
+`OFFSITE_EXPECTED_ROOT_FOLDER_SHA256`. Script mengunduh tepat dump, sidecar,
+completion, dan object manifest untuk satu backup ID, memverifikasi hash/ukuran,
+serta menulis provenance `source=independent-crypt`. Path MinIO lokal bukan
+fallback dan wajib menjadi negative control pada acceptance bundle.
+
+Download memakai `umask 077`. Pada copy, checksum, signal, atau publication
+failure, seluruh exact candidate/final plaintext dan lock harus dihapus serta
+absence diverifikasi. Jika remove atau observasi gagal, status wajib
+`OFFSITE_RESTORE_PLAINTEXT_CLEANUP_AMBIGUOUS retry=prohibited`; hentikan recovery
+dan jangan mengulang attempt.
+
 Destination wajib kosong selain marker
 `.diis-disposable-restore-target-v1`. Gunakan manifest dan completion dari backup
 ID yang sama:
 
 ```bash
+OBJECT_TARGET_CREATE_CONFIRMATION=CREATE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
+  sh scripts/prepare-object-restore-target.sh <attemptId> <isolated-parent-remote>:
+
 OFFSITE_CRYPT_REMOTE=<approved-crypt-remote>:<prefix> \
-OBJECT_RESTORE_TARGET=<isolated-target>:<empty-prefix> \
+OBJECT_RESTORE_TARGET=<isolated-parent-remote>:<attemptId> \
+OBJECT_RESTORE_PROOF_OUTPUT=/private/<backupId>.object-restore-proof.json \
 OBJECT_RESTORE_CONFIRMATION=RESTORE_EXACT_OBJECT_SET_TO_DISPOSABLE_TARGET \
   sh infrastructure/docker/scripts/restore-objects.sh \
+  /private/<backupId>.offsite-provenance.json \
   /private/<backupId>.complete.json \
   /private/<backupId>.objects.tsv
+
+OBJECT_TARGET_CLEANUP_CONFIRMATION=DELETE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
+  sh scripts/cleanup-object-restore-target.sh <attemptId> <isolated-parent-remote>:
+
+OFFSITE_RESTORE_CLEANUP_CONFIRMATION=DELETE_EXACT_DISPOSABLE_OFFSITE_RESTORE_INPUT \
+  sh scripts/cleanup-offsite-restore.sh <backupId> /private/<attempt>
 ```
 
 Script memverifikasi schema/header, manifest hash, setiap blob hash dan ukuran,
 jumlah hasil, serta tidak adanya object tambahan. Mismatch sekecil apa pun menahan
-recovery.
+recovery. Cleanup hanya menerima marker/ID milik attempt exact dan wajib
+membuktikan prefix atau direktori temporary sudah kosong/hilang.
+Final `rclone lsf` wajib selesai sukses sebelum count dihitung, termasuk untuk
+`objectCount=0`; observation error tidak boleh berubah menjadi count nol atau
+proof sukses.
+Restore object memverifikasi copy melalui direktori `mktemp` mode privat dan trap
+EXIT/HUP/INT/TERM. Copy/hash/size/proof failure harus meninggalkan nol plaintext
+temporary; kegagalan cleanup dilaporkan sebagai
+`OBJECT_RESTORE_PLAINTEXT_CLEANUP_AMBIGUOUS retry=prohibited`.
+
+Jika marker creator gagal setelah prefix dibuat, automatic purge wajib diikuti
+successful parent observation. Purge/observation failure adalah
+`OBJECT_TARGET_CLEANUP_AMBIGUOUS retry=prohibited`, bukan absence proof.
+Cleanup responsibility dimulai sebelum `rclone mkdir`, karena provider dapat
+membuat partial prefix lalu mengembalikan error atau menerima signal.
 
 ## Kehilangan VPS atau Provider
 

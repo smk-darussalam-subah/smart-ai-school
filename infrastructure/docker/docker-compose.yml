@@ -21,7 +21,11 @@ volumes:
   prometheus_data:
   grafana_data:
   minio_data:
-  backup_bin:      # Pinned backup tools; setiap startup diverifikasi SHA-256.
+    name: ${MINIO_DATA_VOLUME_NAME:-docker_minio_data}
+  backup_bin:
+    # Physical volume can be approval-bound during recovery commissioning while
+    # preserving the legacy tool volume for rollback. Default keeps current name.
+    name: ${BACKUP_BIN_VOLUME_NAME:-docker_backup_bin}
 
 services:
 
@@ -501,7 +505,12 @@ services:
       OFFSITE_CONFIG_FINGERPRINT: ${BACKUP_OFFSITE_CONFIG_FINGERPRINT:-}
       OFFSITE_EXPECTED_PROVIDER: ${BACKUP_OFFSITE_EXPECTED_PROVIDER:-}
       OFFSITE_EXPECTED_ORIGIN: ${BACKUP_OFFSITE_EXPECTED_ORIGIN:-}
+      OFFSITE_EXPECTED_TEAM_DRIVE_SHA256: ${BACKUP_OFFSITE_EXPECTED_TEAM_DRIVE_SHA256:-}
+      OFFSITE_EXPECTED_ROOT_FOLDER_SHA256: ${BACKUP_OFFSITE_EXPECTED_ROOT_FOLDER_SHA256:-}
       OFFSITE_RETENTION_APPLY: ${BACKUP_OFFSITE_RETENTION_APPLY:-0}
+      BACKUP_SCHEDULE_ENABLED: ${BACKUP_SCHEDULE_ENABLED:-1}
+      BACKUP_BUCKET_CREATION_ALLOWED: ${BACKUP_BUCKET_CREATION_ALLOWED:-1}
+      BACKUP_LOCK_DIR: /var/lock/diis-backup/backup.lock
       RCLONE_CONFIG: /run/diis-secrets/rclone.conf
       RCLONE_MINIO_REMOTE: "diisminio:"
       RCLONE_CONFIG_DIISMINIO_TYPE: s3
@@ -520,6 +529,7 @@ services:
       - backup_bin:/opt/backup-bin
       - minio_data:/var/lib/diis-minio-target:ro
       - ${RCLONE_CONFIG_HOST_PATH:-/etc/diis/rclone.conf}:/run/diis-secrets/rclone.conf:ro
+      - ${BACKUP_LOCK_HOST_PATH:-/var/lock/diis-backup}:/var/lock/diis-backup
     # TZ container adalah Asia/Jakarta; cron 02:00 berarti 02:00 WIB.
     command:
       - sh
@@ -549,11 +559,35 @@ services:
         /opt/backup-bin/rclone.candidate version | grep -F "rclone $${RCLONE_VERSION}"
         mv /opt/backup-bin/rclone.candidate /opt/backup-bin/rclone
         /opt/backup-bin/mc alias set myminio "$$MINIO_ENDPOINT" "$$MINIO_ACCESS_KEY" "$$MINIO_SECRET_KEY" --quiet
-        /opt/backup-bin/mc mb --ignore-existing myminio/"$$BACKUP_BUCKET"
-        /opt/backup-bin/mc mb --ignore-existing myminio/"$$APP_OBJECT_BUCKET"
-        echo "0 2 * * * PATH=/opt/backup-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin sh /backup.sh >> /var/log/backup.log 2>&1" | crontab -
-        chmod 600 /etc/crontabs/root
-        echo '[pg-backup] Backup dijadwalkan setiap 02:00 WIB. Container siap.'
+        case "$${BACKUP_BUCKET_CREATION_ALLOWED}" in
+          1)
+            /opt/backup-bin/mc mb --ignore-existing myminio/"$$BACKUP_BUCKET"
+            /opt/backup-bin/mc mb --ignore-existing myminio/"$$APP_OBJECT_BUCKET"
+            ;;
+          0)
+            /opt/backup-bin/mc stat myminio/"$$BACKUP_BUCKET" >/dev/null
+            /opt/backup-bin/mc stat myminio/"$$APP_OBJECT_BUCKET" >/dev/null
+            ;;
+          *)
+            echo '[pg-backup] BACKUP_BUCKET_CREATION_ALLOWED wajib 0 atau 1.' >&2
+            exit 64
+            ;;
+        esac
+        case "$${BACKUP_SCHEDULE_ENABLED}" in
+          1)
+            echo "0 2 * * * PATH=/opt/backup-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin sh /backup.sh >> /var/log/backup.log 2>&1" | crontab -
+            chmod 600 /etc/crontabs/root
+            echo '[pg-backup] Backup dijadwalkan setiap 02:00 WIB. Container siap.'
+            ;;
+          0)
+            crontab -r 2>/dev/null || true
+            echo '[pg-backup] Scheduler disabled untuk commissioning.'
+            ;;
+          *)
+            echo '[pg-backup] BACKUP_SCHEDULE_ENABLED wajib 0 atau 1.' >&2
+            exit 64
+            ;;
+        esac
         crond -f -l 2
     networks:
       - smk-network
