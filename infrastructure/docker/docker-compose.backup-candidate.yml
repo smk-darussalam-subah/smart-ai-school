@@ -1,0 +1,16 @@
+volumes:
+  backup_bin:
+    name: ${CANDIDATE_BACKUP_BIN_VOLUME_NAME:?candidate tool volume is required}
+  minio_data:
+    name: ${CANDIDATE_MINIO_DATA_VOLUME_NAME:?candidate MinIO source volume is required}
+
+services:
+  pg-backup:
+    container_name: smk-pg-backup-candidate
+    labels:
+      com.diis.w10d.attempt: ${W10D_ATTEMPT_ID:?candidate attempt ID is required}
+      com.diis.w10d.role: backup-candidate
+    environment:
+      BACKUP_SCHEDULE_ENABLED: "0"
+      BACKUP_BUCKET_CREATION_ALLOWED: "0"
+      OFFSITE_RETENTION_APPLY: "0"

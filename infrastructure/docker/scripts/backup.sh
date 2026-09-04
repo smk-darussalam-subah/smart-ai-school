@@ -236,10 +236,15 @@ if $MC cp --quiet "myminio/${BACKUP_BUCKET}/postgres/monitor/restore-latest.json
   restore_status=$(json_value status "$restore_proof")
   restore_epoch=$(json_uint createdEpoch "$restore_proof")
   require_uint restore_created_epoch "$restore_epoch"
-  if [ "$restore_schema" != diis-restore-proof-v1 ] || \
-    { [ "$restore_status" != success ] && [ "$restore_status" != failed ]; }; then
-    backup_die "restore proof monitor tidak valid"
-  fi
+  case "$restore_schema:$restore_status" in
+    diis-restore-proof-v1:success|diis-restore-proof-v1:failed) ;;
+    diis-restore-proof-v2:success|diis-restore-proof-v2:failed)
+      restore_source=$(json_value source "$restore_proof")
+      [ "$restore_source" = independent-crypt ] || [ "$restore_status" = failed ] \
+        || backup_die "restore proof success bukan dari independent crypt"
+      ;;
+    *) backup_die "restore proof monitor tidak valid" ;;
+  esac
   restore_age_days=$(((CREATED_EPOCH - restore_epoch) / 86400))
   [ "$restore_age_days" -ge 0 ] || backup_die "restore proof berasal dari masa depan"
 fi

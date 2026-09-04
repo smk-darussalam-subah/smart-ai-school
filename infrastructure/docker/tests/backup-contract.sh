@@ -7,9 +7,14 @@ BACKUP="$ROOT/infrastructure/docker/scripts/backup.sh"
 LIB="$ROOT/infrastructure/docker/scripts/backup-lib.sh"
 OFFSITE="$ROOT/infrastructure/docker/scripts/offsite-replication.sh"
 OBJECT_RESTORE="$ROOT/infrastructure/docker/scripts/restore-objects.sh"
+OFFSITE_RESTORE_PREPARE="$ROOT/scripts/prepare-offsite-restore.sh"
+OFFSITE_RESTORE_CLEANUP="$ROOT/scripts/cleanup-offsite-restore.sh"
+OBJECT_TARGET_PREPARE="$ROOT/scripts/prepare-object-restore-target.sh"
+OBJECT_TARGET_CLEANUP="$ROOT/scripts/cleanup-object-restore-target.sh"
 PRECHANGE_RELEASE="$ROOT/infrastructure/docker/scripts/release-prechange-backup.sh"
 COMPOSE="$ROOT/infrastructure/docker/docker-compose.yml"
 RESTORE="$ROOT/scripts/restore-drill.sh"
+PUBLISH_RESTORE_PROOF="$ROOT/scripts/publish-restore-proof.sh"
 MONITOR="$ROOT/infrastructure/n8n/workflows/backup-daily.json"
 BACKUP_RUNBOOK="$ROOT/docs/runbooks/backup-restore.md"
 OFFSITE_RUNBOOK="$ROOT/docs/runbooks/offsite-backup-recovery.md"
@@ -158,9 +163,13 @@ case "$command" in
           "${RCLONE_FAKE_FILENAME_MODE:-standard}" "${RCLONE_FAKE_DIRECTORY_MODE:-true}"
         ;;
       independent)
-        printf '[independent]\ntype = %s\nprovider = %s\nendpoint = %s\n' \
-          "${RCLONE_FAKE_BACKEND_TYPE:-b2}" "${RCLONE_FAKE_PROVIDER:-Backblaze}" \
-          "${RCLONE_FAKE_ENDPOINT:-https://api.backblazeb2.com}"
+        printf '[independent]\ntype = %s\nprovider = %s\n' \
+          "${RCLONE_FAKE_BACKEND_TYPE:-b2}" "${RCLONE_FAKE_PROVIDER:-Backblaze}"
+        if [ "${RCLONE_FAKE_ENDPOINT:-https://api.backblazeb2.com}" != __EMPTY__ ]; then
+          printf 'endpoint = %s\n' "${RCLONE_FAKE_ENDPOINT:-https://api.backblazeb2.com}"
+        fi
+        [ -z "${RCLONE_FAKE_TEAM_DRIVE+x}" ] || printf 'team_drive = %s\n' "$RCLONE_FAKE_TEAM_DRIVE"
+        [ -z "${RCLONE_FAKE_ROOT_FOLDER+x}" ] || printf 'root_folder_id = %s\n' "$RCLONE_FAKE_ROOT_FOLDER"
         ;;
       diisminio)
         printf '[diisminio]\ntype = s3\nprovider = Minio\nendpoint = http://minio:9000\n'
@@ -170,30 +179,110 @@ case "$command" in
     esac
     ;;
   lsf)
-    target=$(resolve "$1")
+    target=$(resolve "$1"); shift
     target=${target%/}
+    dirs_only=0
+    while [ "$#" -gt 0 ]; do
+      [ "$1" = --dirs-only ] && dirs_only=1
+      shift
+    done
+    [ "${RCLONE_OBSERVE_FAULT:-}" != always ] || exit 58
+    if [ "${RCLONE_OBSERVE_FAULT:-}" = final-restore ]; then
+      observe_state=${RCLONE_OBSERVE_STATE:?}
+      if [ -f "$observe_state" ]; then exit 67; fi
+      : >"$observe_state"
+    fi
+    if [ "${RCLONE_OBSERVE_FAULT:-}" = after-purge ] && [ -f "${restore_root}/.purge-complete" ]; then
+      exit 59
+    fi
     if [ -f "$target" ]; then basename "$target"; exit 0; fi
     case "$target" in *.json|*.tsv) exit 3 ;; esac
     [ -d "$target" ] || { mkdir -p "$target" 2>/dev/null || true; exit 0; }
-    find "$target" -type f | LC_ALL=C sort | while IFS= read -r file; do
-      printf '%s\n' "${file#"$target"/}"
-    done
+    if [ "$dirs_only" -eq 1 ]; then
+      find "$target" -mindepth 1 -maxdepth 1 -type d | LC_ALL=C sort | while IFS= read -r dir; do
+        printf '%s/\n' "${dir#"$target"/}"
+      done
+    else
+      find "$target" -type f | LC_ALL=C sort | while IFS= read -r file; do
+        printf '%s\n' "${file#"$target"/}"
+      done
+    fi
     ;;
   copyto)
     [ "${FAULT:-}" = offsite ] && exit 54
     src=$(resolve "$1"); dst=$(resolve "$2")
     [ -f "$src" ] || exit 55
     mkdir -p "$(dirname "$dst")"
+    case "$dst" in
+      *.dump.candidate)
+        if [ -n "${OFFSITE_PREPARE_SIGNAL:-}" ]; then
+          cp "$src" "$dst"
+          kill -s "$OFFSITE_PREPARE_SIGNAL" "$PPID"
+          sleep 0.1
+        fi
+        if [ "${OFFSITE_PREPARE_COPY_FAIL_AFTER_WRITE:-0}" = 1 ]; then
+          cp "$src" "$dst"
+          exit 64
+        fi
+        ;;
+    esac
     if printf '%s\n' "$*" | grep -q -- '--immutable' && [ -f "$dst" ] && ! cmp -s "$src" "$dst"; then
       exit 56
     fi
-    cp "$src" "$dst"
+    case "$dst" in
+      */diis-object-restore.*/*)
+        mkdir -p "$(dirname "$dst")"
+        if [ -n "${OBJECT_VERIFY_SIGNAL:-}" ]; then
+          printf residual >"$dst"
+          kill -s "$OBJECT_VERIFY_SIGNAL" "$PPID"
+          sleep 0.1
+        fi
+        if [ "${OBJECT_VERIFY_FAULT:-}" = copy ]; then
+          printf residual >"$dst"
+          exit 62
+        fi
+        cp "$src" "$dst"
+        [ "${OBJECT_VERIFY_FAULT:-}" != hash ] || printf corrupted >"$dst"
+        ;;
+      *) cp "$src" "$dst" ;;
+    esac
+    ;;
+  mkdir)
+    mkdir -p "$(resolve "$1")"
+    if [ -n "${RCLONE_MKDIR_SIGNAL:-}" ]; then
+      kill -s "$RCLONE_MKDIR_SIGNAL" "$PPID"
+      sleep 0.1
+    fi
+    [ "${RCLONE_MKDIR_FAIL_AFTER_CREATE:-0}" != 1 ] || exit 66
+    ;;
+  rcat)
+    dst=$(resolve "$1")
+    mkdir -p "$(dirname "$dst")"
+    if [ -n "${RCLONE_MARKER_SIGNAL:-}" ]; then
+      kill -s "$RCLONE_MARKER_SIGNAL" "$PPID"
+      sleep 0.1
+    fi
+    [ "${RCLONE_MARKER_WRITE_FAIL:-0}" != 1 ] || exit 60
+    cat >"$dst"
     ;;
   cat) cat "$(resolve "$1")" ;;
   deletefile) rm -f "$(resolve "$1")" ;;
-  purge) rm -rf "$(resolve "$1")" ;;
+  purge)
+    [ "${RCLONE_PURGE_FAIL:-0}" != 1 ] || exit 61
+    rm -rf "$(resolve "$1")"
+    [ "${RCLONE_OBSERVE_FAULT:-}" != after-purge ] || touch "${restore_root}/.purge-complete"
+    ;;
   *) exit 57 ;;
 esac
+EOF
+  cat >"$dir/wc" <<'EOF'
+#!/bin/sh
+if [ "${OBJECT_VERIFY_FAULT:-}" = size ] && [ "${1:-}" = -c ]; then
+  value=$(/usr/bin/wc -c)
+  echo $((value + 1))
+else
+  exec /usr/bin/wc "$@"
+fi
 EOF
   chmod +x "$dir"/*
 }
@@ -301,6 +390,40 @@ run_crypt_negative local-name env RCLONE_FAKE_ENDPOINT=https://backup.local OFFS
 run_crypt_negative unapproved-public-origin env RCLONE_FAKE_ENDPOINT=https://s3.example.net
 pass 'crypt provider origin private-range and fingerprint controls fail closed'
 
+drive_team='school-shared-drive-id'
+drive_root='diis-recovery-folder-id'
+drive_team_sha=$(printf '%s' "$drive_team" | "$REAL_SHA" | awk '{print $1}')
+drive_root_sha=$(printf '%s' "$drive_root" | "$REAL_SHA" | awk '{print $1}')
+drive_fingerprint=$(printf '%s' "crypt=crypt;filename=standard;directory=true;backend=drive;provider=google;origin=provider-default;team_drive_sha256=${drive_team_sha};root_folder_sha256=${drive_root_sha}" \
+  | "$REAL_SHA" | awk '{print $1}')
+validate_drive() {
+  local team=$1 root=$2 expected_team=$3 expected_root=$4
+  local base="$TMP/drive-$RANDOM"
+  prepare_backup_case "$base"
+  env PATH="$base/bin:$PATH" RCLONE_SOURCE_ROOT="$base/source" RCLONE_OFFSITE_ROOT="$base/offsite" \
+    RCLONE_RESTORE_ROOT="$base/restore" RCLONE_FAKE_BACKEND_TYPE=drive RCLONE_FAKE_PROVIDER=Google \
+    RCLONE_FAKE_ENDPOINT=__EMPTY__ RCLONE_FAKE_TEAM_DRIVE="$team" RCLONE_FAKE_ROOT_FOLDER="$root" \
+    OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OFFSITE_CONFIG_FINGERPRINT="$drive_fingerprint" \
+    OFFSITE_EXPECTED_PROVIDER=google OFFSITE_EXPECTED_ORIGIN=provider-default \
+    OFFSITE_EXPECTED_TEAM_DRIVE_SHA256="$expected_team" OFFSITE_EXPECTED_ROOT_FOLDER_SHA256="$expected_root" \
+    sh -c '. "$1"; validate_offsite_config' _ "$LIB"
+}
+validate_drive "$drive_team" "$drive_root" "$drive_team_sha" "$drive_root_sha" \
+  || fail 'approved Shared Drive binding was rejected'
+if validate_drive wrong-drive "$drive_root" "$drive_team_sha" "$drive_root_sha" >/dev/null 2>&1; then
+  fail 'swapped Shared Drive binding was accepted'
+fi
+if validate_drive "$drive_team" wrong-folder "$drive_team_sha" "$drive_root_sha" >/dev/null 2>&1; then
+  fail 'swapped root folder binding was accepted'
+fi
+if validate_drive '' "$drive_root" "$drive_team_sha" "$drive_root_sha" >/dev/null 2>&1; then
+  fail 'missing Shared Drive binding was accepted'
+fi
+if validate_drive "$drive_team" "$drive_root" "$(printf '%064d' 0)" "$drive_root_sha" >/dev/null 2>&1; then
+  fail 'post-approval Drive config drift was accepted'
+fi
+pass 'Shared Drive and root folder are both fingerprint-bound and fail closed'
+
 history_base="$TMP/object-history"
 prepare_backup_case "$history_base"
 printf 'version-a' >"$history_base/source/objects/x.txt"
@@ -335,14 +458,34 @@ run_object_snapshot 20260903T000000Z-1003 1788393600
 
 restore_snapshot() {
   local backup_id=$1 target=$2
+  local provenance="$history_base/$backup_id/$backup_id.offsite-provenance.json"
+  local proof="$history_base/$backup_id/$backup_id.object-restore-proof.json"
+  python3 - "$history_base/$backup_id/complete.json" "$provenance" <<'PY'
+import json, sys
+manifest = json.load(open(sys.argv[1], encoding='utf-8'))
+backup_id = manifest['backupId']
+value = {
+  'schemaVersion': 'diis-offsite-restore-input-v1', 'source': 'independent-crypt',
+  'backupId': backup_id, 'offsiteConfigFingerprint': manifest['offsiteConfigFingerprint'],
+  'dumpSha256': manifest['sha256'], 'dumpBytes': manifest['bytes'],
+  'objectManifestSha256': manifest['objectManifestSha256'], 'objectCount': manifest['objectCount'],
+  'dumpFile': f'{backup_id}.dump', 'sidecarFile': f'{backup_id}.sha256',
+  'completionFile': f'{backup_id}.complete.json', 'objectManifestFile': f'{backup_id}.objects.tsv'
+}
+with open(sys.argv[2], 'w', encoding='utf-8') as stream:
+    json.dump(value, stream, separators=(',', ':'))
+    stream.write('\n')
+PY
   mkdir -p "$history_base/restore/$target"
   : >"$history_base/restore/$target/.diis-disposable-restore-target-v1"
   env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
     RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
     OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OBJECT_RESTORE_TARGET="$target:" \
+    OBJECT_RESTORE_PROOF_OUTPUT="$proof" \
     OBJECT_RESTORE_CONFIRMATION=RESTORE_EXACT_OBJECT_SET_TO_DISPOSABLE_TARGET \
-    sh "$OBJECT_RESTORE" "$history_base/$backup_id/complete.json" \
+    sh "$OBJECT_RESTORE" "$provenance" "$history_base/$backup_id/complete.json" \
       "$history_base/$backup_id/$backup_id.objects.tsv" >"$history_base/$target.out"
+  assert_grep '"source":"independent-crypt"' "$proof" 'object restore proof source missing'
 }
 restore_snapshot 20260901T000000Z-1001 restore-a
 restore_snapshot 20260902T000000Z-1002 restore-b
@@ -353,6 +496,298 @@ restore_snapshot 20260903T000000Z-1003 restore-c
 [[ ! -e "$history_base/restore/restore-c/x.txt" && -f "$history_base/restore/restore-c/y.txt" ]] \
   || fail 'backup C did not honor deletion tombstone semantics'
 pass 'three historical object sets restore create update and delete exactly'
+
+negative_target="$history_base/restore/restore-negative"
+mkdir -p "$negative_target"
+: >"$negative_target/.diis-disposable-restore-target-v1"
+sed 's/20260902T000000Z-1002/20260901T000000Z-1001/' \
+  "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.offsite-provenance.json" \
+  >"$history_base/swapped-object-provenance.json"
+if env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
+  RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+  OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OBJECT_RESTORE_TARGET=restore-negative: \
+  OBJECT_RESTORE_PROOF_OUTPUT="$history_base/swapped-object-proof.json" \
+  OBJECT_RESTORE_CONFIRMATION=RESTORE_EXACT_OBJECT_SET_TO_DISPOSABLE_TARGET \
+  sh "$OBJECT_RESTORE" "$history_base/swapped-object-provenance.json" \
+    "$history_base/20260902T000000Z-1002/complete.json" \
+    "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.objects.tsv"; then
+  fail 'swapped object provenance was accepted'
+fi
+[[ "$(find "$negative_target" -type f | wc -l | tr -d '[:space:]')" = 1 ]] \
+  || fail 'swapped object provenance mutated disposable target'
+pass 'swapped object provenance is rejected before object-target mutation'
+
+proof_fault_bin="$history_base/proof-fault-bin"
+mkdir -p "$proof_fault_bin"
+cat >"$proof_fault_bin/mv" <<'SH'
+#!/bin/sh
+case "${OBJECT_PROOF_MV_FAIL:-0}:$*" in
+  1:*object-proof*) exit 63 ;;
+esac
+exec /bin/mv "$@"
+SH
+cat >"$proof_fault_bin/rm" <<'SH'
+#!/bin/sh
+case "${OBJECT_VERIFY_RM_FAIL:-0}:$*" in
+  1:*diis-object-restore.*) exit 64 ;;
+esac
+exec /bin/rm "$@"
+SH
+chmod +x "$proof_fault_bin"/*
+run_object_plaintext_fault() {
+  local case_name=$1 target="restore-plaintext-$1"
+  local temp_dir="$history_base/tmp-$case_name" proof="$history_base/$case_name.object-proof.json"
+  mkdir -p "$history_base/restore/$target" "$temp_dir"
+  : >"$history_base/restore/$target/.diis-disposable-restore-target-v1"
+  env PATH="$proof_fault_bin:$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
+    RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+    OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OBJECT_RESTORE_TARGET="$target:" TMPDIR="$temp_dir" \
+    OBJECT_RESTORE_PROOF_OUTPUT="$proof" \
+    OBJECT_VERIFY_FAULT="${OBJECT_VERIFY_FAULT:-}" OBJECT_VERIFY_SIGNAL="${OBJECT_VERIFY_SIGNAL:-}" \
+    OBJECT_PROOF_MV_FAIL="${OBJECT_PROOF_MV_FAIL:-0}" \
+    OBJECT_VERIFY_RM_FAIL="${OBJECT_VERIFY_RM_FAIL:-0}" \
+    OBJECT_RESTORE_CONFIRMATION=RESTORE_EXACT_OBJECT_SET_TO_DISPOSABLE_TARGET \
+    sh "$OBJECT_RESTORE" \
+      "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.offsite-provenance.json" \
+      "$history_base/20260902T000000Z-1002/complete.json" \
+      "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.objects.tsv"
+}
+for fault in copy hash size; do
+  if OBJECT_VERIFY_FAULT="$fault" run_object_plaintext_fault "$fault"; then
+    fail "$fault object verification fault unexpectedly succeeded"
+  fi
+  [[ -z "$(find "$history_base/tmp-$fault" -mindepth 1 -print -quit)" ]] \
+    || fail "$fault object verification left plaintext temporary data"
+done
+for signal_name in HUP INT TERM; do
+  case_name="signal-${signal_name,,}"
+  if OBJECT_VERIFY_SIGNAL="$signal_name" run_object_plaintext_fault "$case_name"; then
+    fail "$signal_name object verification unexpectedly succeeded"
+  fi
+  [[ -z "$(find "$history_base/tmp-$case_name" -mindepth 1 -print -quit)" ]] \
+    || fail "$signal_name object verification left plaintext temporary data"
+done
+if OBJECT_PROOF_MV_FAIL=1 run_object_plaintext_fault proof; then
+  fail 'object proof publication failure unexpectedly succeeded'
+fi
+[[ -z "$(find "$history_base/tmp-proof" -mindepth 1 -print -quit)" ]] \
+  || fail 'proof publication failure left plaintext temporary data'
+[[ ! -e "$history_base/proof.object-proof.json.candidate."* ]] \
+  || fail 'proof publication failure left candidate proof'
+if OBJECT_VERIFY_RM_FAIL=1 run_object_plaintext_fault rm-failure \
+  >"$history_base/object-rm.out" 2>"$history_base/object-rm.err"; then
+  fail 'object plaintext cleanup rm failure unexpectedly succeeded'
+else
+  rc=$?
+fi
+[[ "$rc" -eq 74 ]] || fail 'object plaintext cleanup failure did not return status 74'
+assert_grep 'OBJECT_RESTORE_PLAINTEXT_CLEANUP_AMBIGUOUS.*retry=prohibited' \
+  "$history_base/object-rm.err" 'object plaintext cleanup ambiguity marker missing'
+pass 'object restore removes private plaintext on faults and signals or reports cleanup ambiguity'
+
+zero_id=20260904T000000Z-2000
+zero_dir="$history_base/$zero_id"
+zero_target=restore-zero-final-observe
+zero_proof="$zero_dir/$zero_id.object-restore-proof.json"
+mkdir -p "$zero_dir" "$history_base/restore/$zero_target"
+: >"$history_base/restore/$zero_target/.diis-disposable-restore-target-v1"
+printf 'diis-object-manifest-v1|%s|exact\n' "$zero_id" >"$zero_dir/$zero_id.objects.tsv"
+zero_object_sha=$($REAL_SHA "$zero_dir/$zero_id.objects.tsv" | awk '{print $1}')
+zero_dump_sha=$(printf zero-dump | $REAL_SHA | awk '{print $1}')
+cat >"$zero_dir/complete.json" <<EOF
+{"schemaVersion":"diis-backup-v1","status":"complete","backupId":"${zero_id}","class":"daily","protectionState":"none","createdAt":"2026-09-04T00:00:00Z","createdEpoch":1788480000,"sha256":"${zero_dump_sha}","bytes":2048,"offsiteStatus":"complete","offsiteConfigFingerprint":"${FINGERPRINT}","objectManifestSha256":"${zero_object_sha}","objectCount":0,"targetTotalBytes":20000000000,"targetFreeBytes":10000000000}
+EOF
+cat >"$zero_dir/$zero_id.offsite-provenance.json" <<EOF
+{"schemaVersion":"diis-offsite-restore-input-v1","source":"independent-crypt","backupId":"${zero_id}","offsiteConfigFingerprint":"${FINGERPRINT}","dumpSha256":"${zero_dump_sha}","dumpBytes":2048,"objectManifestSha256":"${zero_object_sha}","objectCount":0,"objectManifestFile":"${zero_id}.objects.tsv"}
+EOF
+if env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
+  RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+  RCLONE_OBSERVE_FAULT=final-restore RCLONE_OBSERVE_STATE="$zero_dir/final-observe.state" \
+  OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OBJECT_RESTORE_TARGET="$zero_target:" \
+  OBJECT_RESTORE_PROOF_OUTPUT="$zero_proof" \
+  OBJECT_RESTORE_CONFIRMATION=RESTORE_EXACT_OBJECT_SET_TO_DISPOSABLE_TARGET \
+  sh "$OBJECT_RESTORE" "$zero_dir/$zero_id.offsite-provenance.json" \
+    "$zero_dir/complete.json" "$zero_dir/$zero_id.objects.tsv" \
+    >"$zero_dir/out" 2>"$zero_dir/err"; then
+  fail 'zero-object restore accepted failed final target observation'
+fi
+[ ! -e "$zero_proof" ] || fail 'failed zero-object observation published success proof'
+assert_not_grep 'OBJECT_RESTORE_COMPLETE' "$zero_dir/out" \
+  'failed zero-object observation emitted completion marker'
+assert_grep 'tidak dapat diobservasi setelah restore' "$zero_dir/err" \
+  'final target observation failure was not reported'
+pass 'zero-object restore cannot turn final observation failure into success proof'
+
+offsite_restore_dir="$history_base/offsite-restore-input"
+mkdir -m 700 "$offsite_restore_dir"
+env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
+  RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+  OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OFFSITE_CONFIG_FINGERPRINT="$FINGERPRINT" \
+  RCLONE_MINIO_REMOTE=diisminio: sh "$OFFSITE_RESTORE_PREPARE" \
+  20260902T000000Z-1002 "$offsite_restore_dir" >"$history_base/offsite-prepare.out"
+assert_grep 'OFFSITE_RESTORE_INPUT_READY' "$history_base/offsite-prepare.out" \
+  'off-site input readiness marker missing'
+assert_grep '"source":"independent-crypt"' \
+  "$offsite_restore_dir/20260902T000000Z-1002.offsite-provenance.json" \
+  'independent source provenance missing'
+env OFFSITE_RESTORE_CLEANUP_CONFIRMATION=DELETE_EXACT_DISPOSABLE_OFFSITE_RESTORE_INPUT \
+  sh "$OFFSITE_RESTORE_CLEANUP" 20260902T000000Z-1002 "$offsite_restore_dir" \
+  >"$history_base/offsite-cleanup.out"
+[[ ! -e "$offsite_restore_dir" ]] || fail 'off-site restore input cleanup absence failed'
+pass 'restore input is downloaded from exact crypt remote and cleaned by bound backup ID'
+
+offsite_fault_bin="$history_base/offsite-fault-bin"
+mkdir -p "$offsite_fault_bin"
+cat >"$offsite_fault_bin/rm" <<'SH'
+#!/bin/sh
+case "${OFFSITE_RM_FAIL:-0}:$*" in
+  1:*dump.candidate*) exit 65 ;;
+esac
+exec /bin/rm "$@"
+SH
+cat >"$offsite_fault_bin/date" <<'SH'
+#!/bin/sh
+[ "${OFFSITE_DATE_FAIL:-0}" != 1 ] || exit 66
+exec /bin/date "$@"
+SH
+chmod +x "$offsite_fault_bin"/*
+run_offsite_prepare_fault() {
+  local case_name=$1 dest="$history_base/offsite-fault-$1"
+  mkdir -m 700 "$dest"
+  env PATH="$offsite_fault_bin:$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
+    RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+    OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OFFSITE_CONFIG_FINGERPRINT="$FINGERPRINT" \
+    OFFSITE_PREPARE_COPY_FAIL_AFTER_WRITE="${OFFSITE_PREPARE_COPY_FAIL_AFTER_WRITE:-0}" \
+    OFFSITE_PREPARE_SIGNAL="${OFFSITE_PREPARE_SIGNAL:-}" OFFSITE_RM_FAIL="${OFFSITE_RM_FAIL:-0}" \
+    OFFSITE_DATE_FAIL="${OFFSITE_DATE_FAIL:-0}" RCLONE_MINIO_REMOTE=diisminio: \
+    sh "$OFFSITE_RESTORE_PREPARE" 20260902T000000Z-1002 "$dest"
+}
+if OFFSITE_PREPARE_COPY_FAIL_AFTER_WRITE=1 run_offsite_prepare_fault copy; then
+  fail 'off-site partial dump copy unexpectedly succeeded'
+fi
+[[ -z "$(find "$history_base/offsite-fault-copy" -mindepth 1 -print -quit)" ]] \
+  || fail 'off-site partial dump failure left plaintext'
+for signal_name in HUP INT TERM; do
+  case_name="signal-${signal_name,,}"
+  if OFFSITE_PREPARE_SIGNAL="$signal_name" run_offsite_prepare_fault "$case_name"; then
+    fail "$signal_name off-site prepare unexpectedly succeeded"
+  fi
+  [[ -z "$(find "$history_base/offsite-fault-$case_name" -mindepth 1 -print -quit)" ]] \
+    || fail "$signal_name off-site prepare left plaintext"
+done
+if OFFSITE_DATE_FAIL=1 run_offsite_prepare_fault before-provenance; then
+  fail 'pre-provenance publication failure unexpectedly succeeded'
+fi
+[[ -z "$(find "$history_base/offsite-fault-before-provenance" -mindepth 1 -print -quit)" ]] \
+  || fail 'pre-provenance failure left finalized plaintext inputs'
+if OFFSITE_PREPARE_COPY_FAIL_AFTER_WRITE=1 OFFSITE_RM_FAIL=1 \
+  run_offsite_prepare_fault rm-failure >"$history_base/offsite-rm.out" 2>"$history_base/offsite-rm.err"; then
+  fail 'off-site cleanup rm failure unexpectedly succeeded'
+else
+  rc=$?
+fi
+[[ "$rc" -eq 74 ]] || fail 'off-site cleanup rm failure did not return ambiguous status 74'
+assert_grep 'OFFSITE_RESTORE_PLAINTEXT_CLEANUP_AMBIGUOUS.*retry=prohibited' \
+  "$history_base/offsite-rm.err" 'off-site cleanup ambiguity marker missing'
+pass 'off-site prepare removes plaintext on copy publication and signal failures or reports ambiguity'
+
+object_parent='restore-parent:'
+mkdir -p "$history_base/restore/restore-parent"
+attempt_id=w10d-20260903t120000z-a1b2c3d4
+env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
+  RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+  OFFSITE_CRYPT_REMOTE=offsite-crypt:diis \
+  OBJECT_TARGET_CREATE_CONFIRMATION=CREATE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
+  sh "$OBJECT_TARGET_PREPARE" "$attempt_id" "$object_parent" >"$history_base/object-target-prepare.out"
+[[ -f "$history_base/restore/restore-parent/$attempt_id/.diis-disposable-restore-target-v1" ]] \
+  || fail 'disposable object target marker missing'
+env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
+  RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+  OBJECT_TARGET_CLEANUP_CONFIRMATION=DELETE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
+  sh "$OBJECT_TARGET_CLEANUP" "$attempt_id" "$object_parent" >"$history_base/object-target-cleanup.out"
+[[ -z "$(find "$history_base/restore/restore-parent/$attempt_id" -mindepth 1 -print -quit 2>/dev/null)" ]] \
+  || fail 'disposable object target cleanup absence failed'
+pass 'disposable object target create marker cleanup and absence are exact'
+
+if env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
+  RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+  RCLONE_OBSERVE_FAULT=always OFFSITE_CRYPT_REMOTE=offsite-crypt:diis \
+  OBJECT_TARGET_CREATE_CONFIRMATION=CREATE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
+  sh "$OBJECT_TARGET_PREPARE" w10d-20260903t120001z-a1b2c3d5 "$object_parent"; then
+  fail 'failed object target observation was accepted as empty'
+fi
+fault_attempt=w10d-20260903t120002z-a1b2c3d6
+mkdir -p "$history_base/restore/restore-parent/$fault_attempt"
+printf '%s\n' '{"schemaVersion":"diis-disposable-object-target-v1","attemptId":"w10d-20260903t120002z-a1b2c3d6"}' \
+  >"$history_base/restore/restore-parent/$fault_attempt/.diis-disposable-restore-target-v1"
+if env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
+  RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+  RCLONE_OBSERVE_FAULT=after-purge \
+  OBJECT_TARGET_CLEANUP_CONFIRMATION=DELETE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
+  sh "$OBJECT_TARGET_CLEANUP" "$fault_attempt" "$object_parent"; then
+  fail 'failed post-purge observation was accepted as absence proof'
+fi
+pass 'object target observation failures remain failures before create and after purge'
+rm -f "$history_base/restore/.purge-complete"
+
+run_object_creator_failure() {
+  local attempt=$1
+  env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
+    RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+    RCLONE_MARKER_WRITE_FAIL="${RCLONE_MARKER_WRITE_FAIL:-0}" \
+    RCLONE_MARKER_SIGNAL="${RCLONE_MARKER_SIGNAL:-}" RCLONE_PURGE_FAIL="${RCLONE_PURGE_FAIL:-0}" \
+    RCLONE_MKDIR_FAIL_AFTER_CREATE="${RCLONE_MKDIR_FAIL_AFTER_CREATE:-0}" \
+    RCLONE_MKDIR_SIGNAL="${RCLONE_MKDIR_SIGNAL:-}" \
+    RCLONE_OBSERVE_FAULT="${RCLONE_OBSERVE_FAULT:-}" OFFSITE_CRYPT_REMOTE=offsite-crypt:diis \
+    OBJECT_TARGET_CREATE_CONFIRMATION=CREATE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
+    sh "$OBJECT_TARGET_PREPARE" "$attempt" "$object_parent"
+}
+attempt=w10d-20260903t120003z-a1b2c3d7
+if RCLONE_MARKER_WRITE_FAIL=1 run_object_creator_failure "$attempt"; then
+  fail 'marker write failure unexpectedly succeeded'
+fi
+[[ ! -d "$history_base/restore/restore-parent/$attempt" ]] \
+  || fail 'marker write failure left object target after successful cleanup'
+attempt=w10d-20260903t120009z-a1b2c3da
+if RCLONE_MKDIR_FAIL_AFTER_CREATE=1 run_object_creator_failure "$attempt"; then
+  fail 'partial mkdir failure unexpectedly succeeded'
+fi
+[[ ! -d "$history_base/restore/restore-parent/$attempt" ]] \
+  || fail 'partial mkdir failure left object target after cleanup'
+for signal_name in HUP INT TERM; do
+  case "$signal_name" in HUP) second=10 ;; INT) second=11 ;; TERM) second=12 ;; esac
+  attempt="w10d-20260903t1200${second}z-a1b2c3db"
+  if RCLONE_MKDIR_SIGNAL="$signal_name" run_object_creator_failure "$attempt"; then
+    fail "$signal_name partial mkdir unexpectedly succeeded"
+  fi
+  [[ ! -d "$history_base/restore/restore-parent/$attempt" ]] \
+    || fail "$signal_name partial mkdir left target residue"
+done
+for cleanup_case in purge observe; do
+  if [ "$cleanup_case" = purge ]; then
+    attempt=w10d-20260903t120004z-a1b2c3d8
+    RCLONE_MARKER_WRITE_FAIL=1 RCLONE_PURGE_FAIL=1 run_object_creator_failure "$attempt" \
+      >"$history_base/$cleanup_case.out" 2>"$history_base/$cleanup_case.err" && rc=0 || rc=$?
+  else
+    attempt=w10d-20260903t120005z-a1b2c3d8
+    RCLONE_MARKER_WRITE_FAIL=1 RCLONE_OBSERVE_FAULT=after-purge run_object_creator_failure "$attempt" \
+      >"$history_base/$cleanup_case.out" 2>"$history_base/$cleanup_case.err" && rc=0 || rc=$?
+  fi
+  [[ "$rc" -eq 74 ]] || fail "$cleanup_case cleanup did not return ambiguous status 74"
+  assert_grep 'OBJECT_TARGET_CLEANUP_AMBIGUOUS.*retry=prohibited' "$history_base/$cleanup_case.err" \
+    "$cleanup_case object creator ambiguity marker missing"
+done
+signal_index=6
+for signal_name in HUP INT TERM; do
+  attempt="w10d-20260903t12000${signal_index}z-a1b2c3d9"
+  if RCLONE_MARKER_SIGNAL="$signal_name" run_object_creator_failure "$attempt"; then
+    fail "$signal_name object creator unexpectedly succeeded"
+  fi
+  [[ ! -d "$history_base/restore/restore-parent/$attempt" ]] \
+    || fail "$signal_name object creator left target residue"
+  signal_index=$((signal_index + 1))
+done
+pass 'object target creator owns partial mkdir and proves cleanup or emits ambiguous no-retry'
 
 protected_id=20250101T000000Z-9000
 protected_manifest="$history_base/offsite/diis/database/manifests/$protected_id.complete.json"
@@ -424,6 +859,7 @@ restore_fake="$restore_base/bin"
 restore_state="$restore_base/state"
 restore_tmp="$restore_base/archive-tmp"
 mkdir -p "$restore_fake" "$restore_state" "$restore_base/proofs" "$restore_tmp"
+chmod 700 "$restore_base/proofs"
 cat >"$restore_fake/docker" <<'EOF'
 #!/bin/sh
 state=${DOCKER_STATE:?}
@@ -459,8 +895,25 @@ case "$command" in
       *'pg_restore --username='*)
         if [ "${RESTORE_FAULT:-}" = restore ]; then exit 62; fi
         ;;
-      *'CREATE DATABASE'*) touch "$state/database-created" ;;
-      *'DROP DATABASE IF EXISTS'*) rm -f "$state/database-created" ;;
+      *'CREATE DATABASE'*)
+        touch "$state/database-created"
+        if [ "${RESTORE_SIGNAL:-}" = database-create ]; then
+          kill -"${RESTORE_SIGNAL_NAME:-TERM}" "$PPID"
+          exit 0
+        fi
+        if [ "${RESTORE_FAULT:-}" = database-create ]; then exit 66; fi
+        if [ "${RESTORE_BLOCK:-}" = after-lock ]; then
+          touch "$state/create-wait"
+          while [ ! -f "$state/release" ]; do sleep 0.05; done
+        fi
+        ;;
+      *'DROP DATABASE IF EXISTS'*) rm -f "$state/database-created"; : >"$state/database-dropped" ;;
+      *'pg_database'*)
+        if [ "${RESTORE_FAULT:-}" = database-absence ] && [ -e "$state/database-dropped" ]; then
+          exit 68
+        fi
+        if [ -e "$state/database-created" ]; then printf '%s\n' disposable; else printf '\n'; fi
+        ;;
       *'information_schema.tables'*) printf '%s\n' 46 ;;
       *'auth.users'*) printf '%s\n' 40 ;;
       *'student.students'*) printf '%s\n' 20 ;;
@@ -470,24 +923,58 @@ case "$command" in
 esac
 EOF
 chmod +x "$restore_fake/docker"
-restore_dump="$restore_base/synthetic.dump"
+cat >"$restore_fake/mkdir" <<'EOF'
+#!/bin/sh
+if [ "${RESTORE_FAULT:-}" = lock-mkdir ] && [ "${1:-}" = "${RESTORE_LOCK_DIR:-}" ]; then
+  /usr/bin/mkdir "$@"
+  exit 77
+fi
+exec /usr/bin/mkdir "$@"
+EOF
+chmod +x "$restore_fake/mkdir"
+restore_backup_id=20260903T000000Z-7000
+restore_dump="$restore_base/$restore_backup_id.dump"
 dd if=/dev/zero of="$restore_dump" bs=2048 count=1 2>/dev/null
 restore_sha=$($REAL_SHA "$restore_dump" | awk '{print $1}')
-printf '%s  synthetic.dump\n' "$restore_sha" >"$restore_base/synthetic.sha256"
-cat >"$restore_base/synthetic.complete.json" <<EOF
-{"schemaVersion":"diis-backup-v1","status":"complete","offsiteStatus":"complete","sha256":"${restore_sha}","tableCount":46,"userCount":40,"studentCount":20}
+restore_object_sha=$(printf 'diis-object-manifest-v1|%s|exact\n' "$restore_backup_id" | $REAL_SHA | awk '{print $1}')
+printf '%s  %s.dump\n' "$restore_sha" "$restore_backup_id" >"$restore_base/$restore_backup_id.sha256"
+cat >"$restore_base/$restore_backup_id.complete.json" <<EOF
+{"schemaVersion":"diis-backup-v1","status":"complete","backupId":"${restore_backup_id}","class":"daily","protectionState":"none","createdAt":"2026-09-03T00:00:00Z","createdEpoch":1788393600,"dailyKey":"2026-09-03","weeklyKey":"2026-W36","monthlyKey":"2026-09","sha256":"${restore_sha}","bytes":2048,"archiveValidated":true,"offsiteStatus":"complete","offsiteConfigFingerprint":"${FINGERPRINT}","objectStatus":"empty","objectManifestSha256":"${restore_object_sha}","objectCount":0,"tableCount":46,"userCount":40,"studentCount":20,"targetTotalBytes":20000000000,"targetFreeBytes":10000000000,"targetProjectedFreePercent":49}
+EOF
+cat >"$restore_base/$restore_backup_id.offsite-provenance.json" <<EOF
+{"schemaVersion":"diis-offsite-restore-input-v1","source":"independent-crypt","backupId":"${restore_backup_id}","offsiteConfigFingerprint":"${FINGERPRINT}","dumpSha256":"${restore_sha}","dumpBytes":2048,"objectManifestSha256":"${restore_object_sha}","objectCount":0,"dumpFile":"${restore_backup_id}.dump","sidecarFile":"${restore_backup_id}.sha256","completionFile":"${restore_backup_id}.complete.json","objectManifestFile":"${restore_backup_id}.objects.tsv"}
 EOF
 run_restore() {
-  local name=$1 container=${2:-diis-restore-test} unmarked=${3:-0} fault=${4:-}
-  env PATH="$restore_fake:$PATH" DOCKER_STATE="$restore_state" UNMARKED="$unmarked" \
-    RESTORE_FAULT="$fault" TMPDIR="$restore_tmp" \
-    POSTGRES_CONTAINER="$container" POSTGRES_USER=postgres DUMP_FILE="$restore_dump" \
-    MANIFEST_FILE="$restore_base/synthetic.complete.json" CHECKSUM_FILE="$restore_base/synthetic.sha256" \
-    RESTORE_PROOF_OUTPUT="$restore_base/proofs/$name.json" RESTORE_LOCK_DIR="$restore_base/lock-$name" \
-    bash "$RESTORE" >"$restore_base/out-$name" 2>"$restore_base/err-$name"
+  local name=$1 container=${2:-diis-restore-test} unmarked=${3:-0} fault=${4:-} \
+    provenance=${5:-$restore_base/$restore_backup_id.offsite-provenance.json}
+  if [ "${RESTORE_DETACHED:-0}" = 1 ]; then
+    env PATH="$restore_fake:$PATH" DOCKER_STATE="$restore_state" UNMARKED="$unmarked" \
+      RESTORE_FAULT="$fault" TMPDIR="$restore_tmp" \
+      RESTORE_SIGNAL="${RESTORE_SIGNAL:-}" RESTORE_SIGNAL_NAME="${RESTORE_SIGNAL_NAME:-TERM}" \
+      RESTORE_BLOCK="${RESTORE_BLOCK:-}" \
+      POSTGRES_CONTAINER="$container" POSTGRES_USER=postgres DUMP_FILE="$restore_dump" \
+      MANIFEST_FILE="$restore_base/$restore_backup_id.complete.json" \
+      CHECKSUM_FILE="$restore_base/$restore_backup_id.sha256" PROVENANCE_FILE="$provenance" \
+      RESTORE_OWNERSHIP_FILE="${RESTORE_OWNERSHIP_FILE:-}" \
+      RESTORE_PROOF_OUTPUT="${RESTORE_PROOF_OUTPUT:-$restore_base/proofs/$name.json}" RESTORE_LOCK_DIR="$restore_base/lock-$name" \
+      setsid perl -e '$SIG{HUP}="DEFAULT"; $SIG{INT}="DEFAULT"; $SIG{TERM}="DEFAULT"; exec @ARGV' -- \
+      bash "$RESTORE" \
+      >"$restore_base/out-$name" 2>"$restore_base/err-$name"
+  else
+    env PATH="$restore_fake:$PATH" DOCKER_STATE="$restore_state" UNMARKED="$unmarked" \
+      RESTORE_FAULT="$fault" TMPDIR="$restore_tmp" \
+      RESTORE_SIGNAL="${RESTORE_SIGNAL:-}" RESTORE_SIGNAL_NAME="${RESTORE_SIGNAL_NAME:-TERM}" \
+      RESTORE_BLOCK="${RESTORE_BLOCK:-}" \
+      POSTGRES_CONTAINER="$container" POSTGRES_USER=postgres DUMP_FILE="$restore_dump" \
+      MANIFEST_FILE="$restore_base/$restore_backup_id.complete.json" \
+      CHECKSUM_FILE="$restore_base/$restore_backup_id.sha256" PROVENANCE_FILE="$provenance" \
+      RESTORE_OWNERSHIP_FILE="${RESTORE_OWNERSHIP_FILE:-}" \
+      RESTORE_PROOF_OUTPUT="${RESTORE_PROOF_OUTPUT:-$restore_base/proofs/$name.json}" RESTORE_LOCK_DIR="$restore_base/lock-$name" \
+      bash "$RESTORE" >"$restore_base/out-$name" 2>"$restore_base/err-$name"
+  fi
 }
 mkdir -p "$restore_base/lock-success"
-printf '%s\n%s\n%s\n%s\n' stale-boot 999999 stale-start stale-token \
+printf '%s\n%s\n%s\n%s\n%s\n' stale-boot 999999 stale-start stale-token "$(readlink /proc/$$/ns/pid)" \
   >"$restore_base/lock-success/owner"
 if ! run_restore success; then
   cat "$restore_base/out-success" >&2 || true
@@ -498,6 +985,8 @@ if ! run_restore success; then
 fi
 assert_grep 'RESTORE_DRILL_COMPLETE' "$restore_base/out-success" 'restore completion missing'
 assert_grep '"status":"success"' "$restore_base/proofs/success.json" 'restore success proof missing'
+assert_grep '"source":"independent-crypt"' "$restore_base/proofs/success.json" \
+  'restore success proof independent source missing'
 [[ -f "$restore_state/archive-list-consumed" ]] \
   || fail 'restore archive list was not consumed completely'
 [[ -z "$(find "$restore_tmp" -mindepth 1 -maxdepth 1 -print -quit)" ]] \
@@ -523,8 +1012,171 @@ assert_grep '"status":"failed"' "$restore_base/proofs/empty-archive-list.json" \
   || fail 'restore archive list temp file was not cleaned after failure'
 if run_restore production smk-postgres; then fail 'production restore target accepted'; fi
 if run_restore unmarked diis-restore-test 1; then fail 'unmarked restore target accepted'; fi
+sed 's/"source":"independent-crypt"/"source":"minio-local"/' \
+  "$restore_base/$restore_backup_id.offsite-provenance.json" >"$restore_base/local-provenance.json"
+if run_restore local-source diis-restore-test 0 '' "$restore_base/local-provenance.json"; then
+  fail 'local source provenance was accepted by database restore'
+fi
 [[ ! -e "$restore_state/database-created" ]] || fail 'negative restore mutated database'
-pass 'restore requires marked isolated target before mutation'
+pass 'restore requires independent provenance and marked isolated target before mutation'
+
+mkdir -p "$restore_base/outside"
+ln -s "$restore_base/outside" "$restore_base/proofs/ownership-link"
+ownership_outside="$restore_base/outside/ownership"
+ownership_traversal="$restore_base/proofs/../outside/traversal"
+ownership_symlink="$restore_base/proofs/ownership-link/ownership"
+ownership_preexisting="$restore_base/proofs/preexisting-ownership"
+printf 'sentinel-ownership-file\n' >"$ownership_preexisting"
+for ownership_case in outside traversal symlink preexisting; do
+  case "$ownership_case" in
+    outside) ownership_override=$ownership_outside ;;
+    traversal) ownership_override=$ownership_traversal ;;
+    symlink) ownership_override=$ownership_symlink ;;
+    preexisting) ownership_override=$ownership_preexisting ;;
+  esac
+  if RESTORE_OWNERSHIP_FILE="$ownership_override" run_restore "ownership-$ownership_case"; then
+    fail "arbitrary ownership path $ownership_case was accepted"
+  fi
+  assert_grep 'RESTORE_OWNERSHIP_FILE override dilarang' \
+    "$restore_base/err-ownership-$ownership_case" \
+    "ownership $ownership_case override did not fail closed"
+  [[ ! -e "$restore_state/database-created" ]] \
+    || fail "ownership $ownership_case rejection mutated database"
+  [[ ! -d "$restore_base/lock-ownership-$ownership_case" ]] \
+    || fail "ownership $ownership_case rejection created restore lock"
+done
+[[ ! -e "$ownership_outside" && ! -L "$ownership_outside" ]] \
+  || fail 'outside ownership override created a file'
+[[ ! -e "$restore_base/outside/traversal" && ! -L "$restore_base/outside/traversal" ]] \
+  || fail 'traversal ownership override created a file'
+[[ -L "$restore_base/proofs/ownership-link" ]] \
+  || fail 'symlink ownership negative control was altered'
+[[ "$(cat "$ownership_preexisting")" = 'sentinel-ownership-file' ]] \
+  || fail 'pre-existing ownership target was overwritten or removed'
+public_proof_dir="$restore_base/public-proofs"
+mkdir -p "$public_proof_dir"
+chmod 755 "$public_proof_dir"
+if RESTORE_PROOF_OUTPUT="$public_proof_dir/public.json" run_restore public-proof-dir; then
+  fail 'non-private proof directory was accepted'
+fi
+assert_grep 'mode direktori proof privat wajib 0700' \
+  "$restore_base/err-public-proof-dir" 'non-private proof directory did not fail closed'
+[[ ! -e "$public_proof_dir/public.json" ]] \
+  || fail 'non-private proof directory received failure proof'
+[[ ! -e "$restore_state/database-created" ]] \
+  || fail 'non-private proof directory validation mutated database'
+pass 'restore ownership path is direct-child derived and rejects outside, traversal, symlink, pre-existing, and non-private proof roots'
+
+for signal_name in HUP INT TERM; do
+  signal_case="signal-${signal_name,,}-database-create"
+  case "$signal_name" in HUP) expected_signal_rc=129 ;; INT) expected_signal_rc=130 ;; TERM) expected_signal_rc=143 ;; esac
+  if RESTORE_SIGNAL=database-create RESTORE_SIGNAL_NAME="$signal_name" run_restore "$signal_case"; then
+    fail "$signal_name database-create signal unexpectedly succeeded"
+  else
+    signal_rc=$?
+  fi
+  [[ "$signal_rc" -eq "$expected_signal_rc" ]] \
+    || fail "$signal_name database-create signal returned unexpected status $signal_rc"
+  [[ ! -e "$restore_state/database-created" ]] \
+    || fail "$signal_name database-create signal left disposable database"
+  [[ ! -d "$restore_base/lock-$signal_case" ]] \
+    || fail "$signal_name database-create signal left restore lock"
+  [[ -z "$(find "$restore_base/proofs" -maxdepth 1 -name '.diis-restore-*.ownership.*' -print -quit)" ]] \
+    || fail "$signal_name database-create signal left ownership registration"
+  assert_grep 'RESTORE_DRILL_CLEANUP_OK databaseAbsent=true lockAbsent=true' \
+    "$restore_base/err-$signal_case" "$signal_name database cleanup absence proof missing"
+  # The fake sends TERM to the parent to model the signal; remap the trigger for
+  # HUP/INT/TERM by verifying cleanup remains signal-independent at this boundary.
+done
+pass 'restore database ownership is pre-registered and HUP/INT/TERM cleanup proves absence'
+
+for signal_name in HUP INT TERM; do
+  signal_case="signal-${signal_name,,}-lock"
+  case "$signal_name" in HUP) expected_signal_rc=129 ;; INT) expected_signal_rc=130 ;; TERM) expected_signal_rc=143 ;; esac
+  rm -f "$restore_state/create-wait" "$restore_state/release"
+  RESTORE_SIGNAL= RESTORE_BLOCK=after-lock RESTORE_DETACHED=1 run_restore "$signal_case" &
+  restore_pid=$!
+  for _ in $(seq 1 100); do
+    [[ -f "$restore_base/lock-$signal_case/owner" && -f "$restore_state/create-wait" ]] && break
+    sleep 0.05
+  done
+  [[ -f "$restore_base/lock-$signal_case/owner" ]] || fail "$signal_name lock signal did not reach owned boundary"
+  ownership_path=$(find "$restore_base/proofs" -maxdepth 1 -type f -name '.diis-restore-*.ownership.*' -print -quit)
+  [[ -n "$ownership_path" && "$(dirname "$ownership_path")" = "$restore_base/proofs" ]] \
+    || fail "$signal_name ownership registration was not a direct proof-directory child"
+  owner_pid=$(sed -n '2p' "$restore_base/lock-$signal_case/owner")
+  kill -"$signal_name" "$owner_pid" 2>/dev/null || fail "$signal_name lock signal injection failed"
+  touch "$restore_state/release"
+  if wait "$restore_pid"; then
+    fail "$signal_name lock signal unexpectedly succeeded"
+  else
+    signal_rc=$?
+  fi
+  [[ "$signal_rc" -eq "$expected_signal_rc" ]] \
+    || fail "$signal_name lock signal returned unexpected status $signal_rc"
+  [[ ! -e "$restore_state/database-created" ]] \
+    || fail "$signal_name lock signal left disposable database"
+  [[ ! -d "$restore_base/lock-$signal_case" ]] \
+    || fail "$signal_name lock signal left restore lock"
+  [[ -z "$(find "$restore_base/proofs" -maxdepth 1 -name '.diis-restore-*.ownership.*' -print -quit)" ]] \
+    || fail "$signal_name lock signal left ownership registration"
+  assert_grep 'RESTORE_DRILL_CLEANUP_OK databaseAbsent=true lockAbsent=true' \
+    "$restore_base/err-$signal_case" "$signal_name lock cleanup absence proof missing"
+done
+pass 'restore lock ownership is pre-registered and HUP/INT/TERM cleanup proves absence'
+
+if run_restore lock-mkdir-fault diis-restore-test 0 lock-mkdir; then
+  fail 'lock acquisition fault unexpectedly succeeded'
+fi
+assert_grep 'RESTORE_DRILL_CLEANUP_AMBIGUOUS.*databaseAbsent=true.*lockAbsent=false.*retry=prohibited' \
+  "$restore_base/err-lock-mkdir-fault" 'lock acquisition fault did not emit ambiguous no-retry'
+assert_grep '"status":"failed"' "$restore_base/proofs/lock-mkdir-fault.json" \
+  'lock acquisition fault emitted non-failed proof'
+pass 'lock acquisition fault is fail-closed with explicit ambiguous no-retry'
+
+if run_restore database-create-fault diis-restore-test 0 database-create; then
+  fail 'database-create fault unexpectedly succeeded'
+fi
+[[ ! -e "$restore_state/database-created" ]] || fail 'database-create fault left disposable database'
+[[ ! -d "$restore_base/lock-database-create-fault" ]] || fail 'database-create fault left restore lock'
+assert_grep 'RESTORE_DRILL_CLEANUP_OK databaseAbsent=true lockAbsent=true' \
+  "$restore_base/err-database-create-fault" 'database-create fault absence proof missing'
+pass 'database mutation fault is fail-closed with exact cleanup absence proof'
+
+rm -f "$restore_state/database-dropped"
+if run_restore database-absence-fault diis-restore-test 0 database-absence; then
+  fail 'database absence observation fault unexpectedly succeeded'
+fi
+assert_grep 'RESTORE_DRILL_CLEANUP_AMBIGUOUS.*databaseAbsent=false.*retry=prohibited' \
+  "$restore_base/err-database-absence-fault" 'database absence observation fault did not emit ambiguous no-retry'
+assert_grep '"status":"failed"' "$restore_base/proofs/database-absence-fault.json" \
+  'database absence observation fault emitted non-failed proof'
+[[ ! -e "$restore_state/database-created" ]] || fail 'database absence observation fault left disposable database'
+pass 'database absence observation fault is explicit ambiguous no-retry without false success'
+
+publish_fake="$TMP/publish-bin"
+mkdir -p "$publish_fake"
+cat >"$publish_fake/docker" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>"${PUBLISH_LOG:?}"
+exit 0
+SH
+chmod +x "$publish_fake/docker"
+env PATH="$publish_fake:$PATH" PUBLISH_LOG="$TMP/publish.log" PG_BACKUP_CONTAINER=smk-pg-backup \
+  RESTORE_PROOF_FILE="$restore_base/proofs/success.json" \
+  RESTORE_PROOF_PUBLISH_CONFIRMATION=PUBLISH_PII_SAFE_MONTHLY_RESTORE_PROOF \
+  bash "$PUBLISH_RESTORE_PROOF" >/dev/null \
+  || fail 'valid independent restore proof was rejected by publisher'
+sed 's/"source":"independent-crypt"/"source":"minio-local"/' \
+  "$restore_base/proofs/success.json" >"$restore_base/proofs/local-source.json"
+if env PATH="$publish_fake:$PATH" PUBLISH_LOG="$TMP/publish-invalid.log" \
+  PG_BACKUP_CONTAINER=smk-pg-backup RESTORE_PROOF_FILE="$restore_base/proofs/local-source.json" \
+  RESTORE_PROOF_PUBLISH_CONFIRMATION=PUBLISH_PII_SAFE_MONTHLY_RESTORE_PROOF \
+  bash "$PUBLISH_RESTORE_PROOF" >/dev/null 2>&1; then
+  fail 'publisher accepted successful restore proof from local source'
+fi
+[[ ! -e "$TMP/publish-invalid.log" ]] || fail 'invalid restore proof reached Docker publisher mutation'
+pass 'restore proof publisher preserves version 2 independent provenance contract'
 
 assert_grep 'objectManifestSha256' "$LIB" 'object manifest binding missing'
 assert_grep 'objects/blobs' "$OFFSITE" 'content-addressed object blobs missing'
