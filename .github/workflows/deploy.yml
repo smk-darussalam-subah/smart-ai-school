@@ -45,7 +45,42 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Deploy via SSH
+      # Recovery-only staging deliberately has no implicit build/pull, migration,
+      # media provisioning, ingress candidate or backup scheduler side effect.
+      # Send reviewed code in memory: do not checkout/fetch host source to load it.
+      - name: Bind staging executor from exact Actions checkout
+        if: github.ref == 'refs/heads/staging'
+        id: staging-executor
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          printf 'payload=%s\n' "$(base64 -w0 infrastructure/deploy/staging-readiness-deploy.py)" >> "$GITHUB_OUTPUT"
+
+      - name: Guarded recovery-only staging via existing SSH channel
+        if: github.ref == 'refs/heads/staging'
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        env:
+          DIIS_STAGING_EXECUTOR_B64: ${{ steps.staging-executor.outputs.payload }}
+          DIIS_EXPECTED_SHA: ${{ github.sha }}
+          DIIS_APPROVAL_SHA256: ${{ vars.W10D_STAGING_APPROVAL_SHA256 }}
+          DIIS_RUN_ID: ${{ github.run_id }}
+          DIIS_RUN_ATTEMPT: ${{ github.run_attempt }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: appuser
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 20m
+          envs: DIIS_STAGING_EXECUTOR_B64,DIIS_EXPECTED_SHA,DIIS_APPROVAL_SHA256,DIIS_RUN_ID,DIIS_RUN_ATTEMPT
+          script: |
+            set -eu
+            test -n "${DIIS_APPROVAL_SHA256:-}" || { echo 'STAGING_STOP reason=approval-missing'; exit 65; }
+            printf '%s' "$DIIS_STAGING_EXECUTOR_B64" | base64 -d | \
+              python3 - "$DIIS_EXPECTED_SHA" "$DIIS_APPROVAL_SHA256" "$DIIS_RUN_ID" "$DIIS_RUN_ATTEMPT"
+
+      - name: Deploy production via SSH
+        if: github.ref == 'refs/heads/main'
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         env:
           DIIS_GITHUB_REF: ${{ github.ref }}
