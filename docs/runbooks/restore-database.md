@@ -63,6 +63,8 @@ melalui `pg_database` dan probe exact lock path; kedua hasil harus `true`. Jika
 drop, release, atau observasi gagal, script menulis
 `RESTORE_DRILL_CLEANUP_AMBIGUOUS ... retry=prohibited` dan drill tetap gagal.
 Proof sukses tidak boleh diterbitkan pada status ambiguous.
+Proof v3 menyimpan `tableCount`, `userCount`, dan `studentCount` hasil query sebagai
+integer dan publisher/acceptance menolak proof yang tidak sama dengan completion.
 
 ## Rekonsiliasi
 
@@ -81,9 +83,24 @@ Aggregate mismatch tidak boleh diperbaiki dengan SQL ad hoc.
 ## Restore Object
 
 Pulihkan object memakai `restore-objects.sh` ke target disposable kosong yang
-memiliki marker `.diis-disposable-restore-target-v1`. Script wajib memulihkan
-set exact, memverifikasi setiap hash/ukuran, dan menolak object tambahan. Lihat
+memiliki marker `.diis-disposable-restore-target-v3`. Sebelum create, restore, atau
+purge, validator authority yang sama wajib mengobservasi bounded exact konfigurasi
+crypt dan backing source, lalu mengikat source remote/provider/origin/config
+fingerprint/backing hash dan exact target parent/remote/provider/origin/config
+fingerprint ke attempt ID serta `authoritySha256` yang disetujui. Remote source,
+backing, dan target tidak boleh sama pada prefix mana pun; alias, backend lokal,
+fingerprint yang sama, atau pasangan provider+origin yang sama ditolak sebelum
+target dimutasi.
+
+Script wajib memulihkan set exact, memverifikasi setiap hash/ukuran, dan menolak
+object tambahan. Seluruh inventory target memakai bounded capture di direktori
+privat; marker diparse sebagai exact JSON tanpa duplicate/unknown field. Kegagalan
+purge, signal/late exit, residual target, atau kegagalan observasi/parse setelah
+purge dimulai wajib menghasilkan status `74` dengan `retry=prohibited`, tidak boleh
+diperlakukan sebagai absence atau proof sukses. Lihat
 [Off-site Backup Recovery](offsite-backup-recovery.md).
+Creator dan cleanup baru memancarkan READY/REMOVED satu kali setelah file capture
+privat serta direktori observasi berhasil dihapus dan absence lokal terbukti.
 
 Verifikasi object plaintext hanya boleh berada pada private `mktemp` directory
 dengan `umask 077`. EXIT/HUP/INT/TERM, copy failure, hash/size mismatch, dan proof
@@ -91,6 +108,13 @@ publication failure wajib menghapus file/direktori tersebut dan membuktikan
 absence. Status cleanup ambiguous adalah stop/no-retry condition.
 Final target listing harus berhasil secara mandiri sebelum jumlah object dihitung;
 aturan ini tetap berlaku untuk backup sah dengan `objectCount=0`.
+Proof object hanya boleh diterbitkan ke direct child bernama
+`<backupId>.object-restore-proof.json` di bawah satu direktori absolut canonical
+tanpa symlink, owner caller, mode `0700`. Output dan candidate wajib belum ada;
+candidate dibuat exclusive/no-follow mode `0600`, kemudian dipublikasikan secara
+atomik tanpa replace dan diverifikasi mode, owner, serta hash. Path output bebas dari
+environment tidak diterima. Semua plaintext dan file observasi privat harus sudah
+terhapus serta absence-nya terbukti sebelum success proof boleh dipublikasikan.
 
 ## Publish Proof Bulanan
 
@@ -98,7 +122,7 @@ aturan ini tetap berlaku untuk backup sah dengan `objectCount=0`.
 menyentuh target dan menulis proof PII-safe lokal yang terikat ke hash provenance:
 
 ```json
-{ "schemaVersion": "diis-restore-proof-v2", "status": "success", "source": "independent-crypt", "sourceProvenanceSha256": "<sha256>", "createdEpoch": 0 }
+{ "schemaVersion": "diis-restore-proof-v3", "status": "success", "source": "independent-crypt", "sourceProvenanceSha256": "<sha256>", "tableCount": 46, "userCount": 40, "studentCount": 20, "createdEpoch": 0 }
 ```
 
 Setelah independent review, publish dengan target container backup authoritative

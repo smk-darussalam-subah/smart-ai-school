@@ -3,8 +3,18 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+if [[ -n ${W10D_COMPLETION_VALIDATOR+x} \
+  || -n ${W10D_COMPLETION_VALIDATOR_PATH+x} \
+  || -n ${W10D_CAPTURE_HELPER_PATH+x} \
+  || -n ${W10D_DU_PARSER_PATH+x} ]]; then
+  printf '%s\n' 'W10D_RUNTIME_SELECTOR_REJECTED' >&2
+  exit 64
+fi
 # shellcheck source=../infrastructure/docker/scripts/backup-lib.sh
 source "$SCRIPT_DIR/../infrastructure/docker/scripts/backup-lib.sh"
+W10D_COMPLETION_VALIDATOR_PATH="$SCRIPT_DIR/w10d_completion_validation.py"
+W10D_CAPTURE_HELPER_PATH="$SCRIPT_DIR/bounded-command-capture.py"
+W10D_DU_PARSER_PATH="$SCRIPT_DIR/parse-minio-du-observation.py"
 
 CONTAINER="${POSTGRES_CONTAINER:-}"
 DB_USER="${POSTGRES_USER:-postgres}"
@@ -13,6 +23,8 @@ MANIFEST_FILE="${MANIFEST_FILE:-}"
 CHECKSUM_FILE="${CHECKSUM_FILE:-}"
 PROVENANCE_FILE="${PROVENANCE_FILE:-}"
 RESTORE_PROOF_OUTPUT="${RESTORE_PROOF_OUTPUT:-}"
+[ -z "${W10D_COMPLETION_VALIDATOR+x}" ] \
+  || backup_die "override validator completion dilarang"
 LOCK_DIR="${RESTORE_LOCK_DIR:-/tmp/diis-restore-drill.lock}"
 RESTORE_DB="diis_restore_$(date -u +%Y%m%d%H%M%S)_${RANDOM}"
 GATE0_MAX_BACKUP_BYTES=4015794422
@@ -28,6 +40,9 @@ OFFSITE_PROVENANCE_SHA256=''
 OFFSITE_PROVENANCE_BACKUP_ID=''
 PROOF_DUMP_SHA256=''
 PROOF_OBJECT_MANIFEST_SHA256=''
+PROOF_TABLE_COUNT='unavailable'
+PROOF_USER_COUNT='unavailable'
+PROOF_STUDENT_COUNT='unavailable'
 
 die() { echo "[restore-drill] ERROR: $*" >&2; exit 1; }
 
@@ -98,11 +113,18 @@ cleanup() {
     local proof_status=failed
     [[ "$code" -eq 0 ]] && proof_status=success
     local proof_tmp="${RESTORE_PROOF_OUTPUT}.candidate.$$"
-    printf '{"schemaVersion":"diis-restore-proof-v2","status":"%s","backupId":"%s","source":"%s","sourceProvenanceSha256":"%s","dumpSha256":"%s","objectManifestSha256":"%s","createdEpoch":%s}\n' \
-      "$proof_status" "${OFFSITE_PROVENANCE_BACKUP_ID:-unavailable}" \
-      "$([[ -n "$OFFSITE_PROVENANCE_SHA256" ]] && printf independent-crypt || printf unavailable)" \
-      "${OFFSITE_PROVENANCE_SHA256:-unavailable}" "${PROOF_DUMP_SHA256:-unavailable}" \
-      "${PROOF_OBJECT_MANIFEST_SHA256:-unavailable}" "$(date -u +%s)" >"$proof_tmp" || code=70
+    if [[ "$proof_status" == success ]]; then
+      printf '{"schemaVersion":"diis-restore-proof-v3","status":"success","backupId":"%s","source":"independent-crypt","sourceProvenanceSha256":"%s","dumpSha256":"%s","objectManifestSha256":"%s","tableCount":%s,"userCount":%s,"studentCount":%s,"createdEpoch":%s}\n' \
+        "$OFFSITE_PROVENANCE_BACKUP_ID" "$OFFSITE_PROVENANCE_SHA256" "$PROOF_DUMP_SHA256" \
+        "$PROOF_OBJECT_MANIFEST_SHA256" "$PROOF_TABLE_COUNT" "$PROOF_USER_COUNT" \
+        "$PROOF_STUDENT_COUNT" "$(date -u +%s)" >"$proof_tmp" || code=70
+    else
+      printf '{"schemaVersion":"diis-restore-proof-v3","status":"failed","backupId":"%s","source":"%s","sourceProvenanceSha256":"%s","dumpSha256":"%s","objectManifestSha256":"%s","tableCount":"unavailable","userCount":"unavailable","studentCount":"unavailable","createdEpoch":%s}\n' \
+        "${OFFSITE_PROVENANCE_BACKUP_ID:-unavailable}" \
+        "$([[ -n "$OFFSITE_PROVENANCE_SHA256" ]] && printf independent-crypt || printf unavailable)" \
+        "${OFFSITE_PROVENANCE_SHA256:-unavailable}" "${PROOF_DUMP_SHA256:-unavailable}" \
+        "${PROOF_OBJECT_MANIFEST_SHA256:-unavailable}" "$(date -u +%s)" >"$proof_tmp" || code=70
+    fi
     chmod 600 "$proof_tmp" || code=70
     mv "$proof_tmp" "$RESTORE_PROOF_OUTPUT" || code=70
   fi
@@ -250,5 +272,8 @@ expected_students=$(sed -n 's/.*"studentCount":\([0-9]*\).*/\1/p' "$MANIFEST_FIL
 [[ "$table_count" == "$expected_tables" ]] || die 'table count reconciliation gagal'
 [[ "$user_count" == "$expected_users" ]] || die 'user count reconciliation gagal'
 [[ "$student_count" == "$expected_students" ]] || die 'student count reconciliation gagal'
+PROOF_TABLE_COUNT=$table_count
+PROOF_USER_COUNT=$user_count
+PROOF_STUDENT_COUNT=$student_count
 
 echo "RESTORE_DRILL_COMPLETE tables=${table_count} users=${user_count} students=${student_count}"

@@ -4,9 +4,21 @@ set -eu
 umask 077
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+if [ -n "${W10D_COMPLETION_VALIDATOR+x}" ] \
+  || [ -n "${W10D_COMPLETION_VALIDATOR_PATH+x}" ] \
+  || [ -n "${W10D_CAPTURE_HELPER_PATH+x}" ] \
+  || [ -n "${W10D_DU_PARSER_PATH+x}" ]; then
+  printf '%s\n' 'W10D_RUNTIME_SELECTOR_REJECTED' >&2
+  exit 64
+fi
 . "$ROOT/infrastructure/docker/scripts/backup-lib.sh"
+W10D_COMPLETION_VALIDATOR_PATH="$ROOT/scripts/w10d_completion_validation.py"
+W10D_CAPTURE_HELPER_PATH="$ROOT/scripts/bounded-command-capture.py"
+W10D_DU_PARSER_PATH="$ROOT/scripts/parse-minio-du-observation.py"
 
 [ "$#" -eq 2 ] || backup_die "usage: prepare-offsite-restore.sh BACKUP_ID PRIVATE_EMPTY_DIR"
+[ -z "${W10D_COMPLETION_VALIDATOR+x}" ] \
+  || backup_die "override validator completion dilarang"
 BACKUP_ID=$1
 DEST_DIR=$2
 
@@ -23,6 +35,7 @@ require_command stat
 require_command find
 require_command sha256sum
 require_command cmp
+require_command python3
 validate_offsite_config
 
 LOCK_DIR="${DEST_DIR}.lock"
@@ -72,7 +85,10 @@ base=${OFFSITE_CRYPT_REMOTE%/}
 
 rclone copyto "$base/database/manifests/${BACKUP_ID}.complete.json" "$manifest" \
   --immutable --no-traverse
-validate_completion_manifest "$manifest" || backup_die "completion off-site tidak valid"
+rclone copyto "$base/database/current/${BACKUP_ID}.sha256" "$sidecar" \
+  --immutable --no-traverse
+validate_completion_manifest "$manifest" "$sidecar" "${BACKUP_ID}.complete.json" \
+  || backup_die "completion off-site tidak valid"
 [ "$(json_value backupId "$manifest")" = "$BACKUP_ID" ] \
   || backup_die "backupId completion off-site tidak cocok"
 [ "$(json_value offsiteConfigFingerprint "$manifest")" = "$OFFSITE_EFFECTIVE_FINGERPRINT" ] \
@@ -86,7 +102,6 @@ require_uint bytes "$expected_dump_bytes"
 require_uint objectCount "$expected_object_count"
 
 rclone copyto "$base/database/current/${BACKUP_ID}.dump" "$dump" --immutable --no-traverse
-rclone copyto "$base/database/current/${BACKUP_ID}.sha256" "$sidecar" --immutable --no-traverse
 rclone copyto "$base/objects/manifests/${BACKUP_ID}.objects.tsv" "$objects" \
   --immutable --no-traverse
 

@@ -3,18 +3,36 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -n "${W10D_COMPLETION_VALIDATOR+x}" ] \
+  || [ -n "${W10D_COMPLETION_VALIDATOR_PATH+x}" ] \
+  || [ -n "${W10D_CAPTURE_HELPER_PATH+x}" ] \
+  || [ -n "${W10D_DU_PARSER_PATH+x}" ]; then
+  printf '%s\n' 'W10D_RUNTIME_SELECTOR_REJECTED' >&2
+  exit 64
+fi
 . "${SCRIPT_DIR}/backup-lib.sh"
+W10D_COMPLETION_VALIDATOR_PATH="${SCRIPT_DIR}/../../../scripts/w10d_completion_validation.py"
+W10D_CAPTURE_HELPER_PATH="${SCRIPT_DIR}/../../../scripts/bounded-command-capture.py"
+W10D_DU_PARSER_PATH="${SCRIPT_DIR}/../../../scripts/parse-minio-du-observation.py"
 
-[ "$#" -eq 5 ] || backup_die "usage: offsite-replication.sh DUMP SHA MANIFEST TEMP_DIR PRE_OBJECT_LIST"
+[ "$#" -eq 6 ] || backup_die "usage: offsite-replication.sh DUMP SHA MANIFEST TEMP_DIR PRE_OBJECT_LIST EXISTING_OFFSITE_MANIFESTS"
 DUMP_FILE=$1
 SHA_FILE=$2
 COMPLETE_MANIFEST=$3
 TEMP_DIR=$4
 PRE_OBJECT_LIST=$5
+OFFSITE_MANIFEST_EXISTING=$6
 
 require_command rclone
 require_command base64
 require_command cmp
+require_command python3
+require_command awk
+require_command grep
+require_command sort
+require_command cat
+[ -z "${W10D_COMPLETION_VALIDATOR+x}" ] \
+  || backup_die "override validator completion dilarang"
 require_value OFFSITE_CRYPT_REMOTE
 require_value OFFSITE_CONFIG_FINGERPRINT
 require_value OFFSITE_EXPECTED_PROVIDER
@@ -24,10 +42,29 @@ require_value APP_OBJECT_BUCKET
 safe_remote_base "$OFFSITE_CRYPT_REMOTE"
 safe_remote_base "$RCLONE_MINIO_REMOTE"
 [ -f "$PRE_OBJECT_LIST" ] || backup_die "inventory object pra-snapshot tidak tersedia"
+[ -f "$OFFSITE_MANIFEST_EXISTING" ] && [ ! -L "$OFFSITE_MANIFEST_EXISTING" ] \
+  || backup_die "inventory completion off-site pra-mutation tidak tersedia"
 
 validate_offsite_config
 
-rclone lsf "$OFFSITE_CRYPT_REMOTE" --max-depth 1 >/dev/null
+manifest_remote="${OFFSITE_CRYPT_REMOTE%/}/database/manifests"
+offsite_existing_canonical="${TEMP_DIR}/offsite-manifest-existing.rechecked"
+LC_ALL=C sort -u "$OFFSITE_MANIFEST_EXISTING" >"$offsite_existing_canonical"
+cmp -s "$OFFSITE_MANIFEST_EXISTING" "$offsite_existing_canonical" \
+  || backup_die "inventory completion off-site pra-mutation tidak canonical"
+while IFS= read -r object_name; do
+  [ -n "$object_name" ] || continue
+  case "$object_name" in
+    *.complete.json) ;;
+    *) backup_die "nama completion off-site pra-mutation tidak valid" ;;
+  esac
+  case "$object_name" in
+    */*|*'..'*) backup_die "nama completion off-site pra-mutation tidak aman" ;;
+  esac
+done <"$OFFSITE_MANIFEST_EXISTING"
+if grep -Fqx "${BACKUP_ID}.complete.json" "$OFFSITE_MANIFEST_EXISTING"; then
+  backup_die "backupId bertabrakan dengan completion off-site existing"
+fi
 
 db_target="${OFFSITE_CRYPT_REMOTE%/}/database/current/${BACKUP_ID}"
 rclone copyto "$DUMP_FILE" "${db_target}.dump" --immutable --no-traverse
@@ -76,10 +113,11 @@ while IFS= read -r object_path; do
   rm -f "$source_copy" "$remote_copy"
 done <"$PRE_OBJECT_LIST"
 
-rclone lsf "$object_source" --recursive --files-only \
+post_object_raw="${TEMP_DIR}/${BACKUP_ID}.objects.post.raw"
+w10d_capture_command "$post_object_raw" 8388608 rclone lsf "$object_source" \
   --exclude '/tmp/**' --exclude '/cache/**' --exclude '/derived/**' \
-  | LC_ALL=C sort >"$post_object_list" \
   || backup_die "inventory object pasca-snapshot gagal"
+w10d_canonicalize_inventory "$post_object_raw" "$post_object_list"
 cmp -s "$PRE_OBJECT_LIST" "$post_object_list" \
   || backup_die "object berubah selama cutover backup; snapshot dibatalkan"
 
@@ -111,25 +149,35 @@ OBJECT_STATUS=verified
 [ "$OBJECT_COUNT" -gt 0 ] || OBJECT_STATUS=empty
 export OFFSITE_EFFECTIVE_FINGERPRINT OBJECT_MANIFEST_SHA256 OBJECT_COUNT
 write_manifest "$COMPLETE_MANIFEST" complete complete "$OBJECT_STATUS"
-validate_completion_manifest "$COMPLETE_MANIFEST" || backup_die "completion manifest tidak valid"
+validate_completion_manifest "$COMPLETE_MANIFEST" "$SHA_FILE" "${BACKUP_ID}.complete.json" \
+  || backup_die "completion manifest tidak valid"
 rclone copyto "$COMPLETE_MANIFEST" \
   "${OFFSITE_CRYPT_REMOTE%/}/database/manifests/${BACKUP_ID}.complete.json" \
   --immutable --no-traverse
 
-manifest_remote="${OFFSITE_CRYPT_REMOTE%/}/database/manifests"
 retention_dir="${TEMP_DIR}/offsite-manifests"
 mkdir -p "$retention_dir"
-rclone lsf "$manifest_remote" --files-only >"${TEMP_DIR}/offsite-manifest-list"
+offsite_manifest_raw="${TEMP_DIR}/offsite-manifest-with-new.raw"
+offsite_manifest_list="${TEMP_DIR}/offsite-manifest-list"
+cat "$OFFSITE_MANIFEST_EXISTING" >"$offsite_manifest_raw"
+printf '%s\n' "${BACKUP_ID}.complete.json" >>"$offsite_manifest_raw"
+w10d_canonicalize_inventory "$offsite_manifest_raw" "$offsite_manifest_list"
 while IFS= read -r name; do
   [ -n "$name" ] || continue
+  case "$name" in
+    */*|*'..'*) backup_die "nama object completion off-site tidak aman" ;;
+  esac
   case "$name" in *.complete.json) ;; *) continue ;; esac
-  local_manifest="${retention_dir}/$(basename "$name")"
+  object_name=$(basename "$name")
+  object_base=${object_name%.complete.json}
+  local_manifest="${retention_dir}/${object_name}"
+  local_sidecar="${retention_dir}/${object_base}.sha256"
   rclone copyto "${manifest_remote}/${name}" "$local_manifest"
-  validate_completion_manifest "$local_manifest" || backup_die "manifest off-site tidak valid"
+  rclone copyto "${OFFSITE_CRYPT_REMOTE%/}/database/current/${object_base}.sha256" "$local_sidecar"
+  validate_completion_manifest "$local_manifest" "$local_sidecar" "$object_name" \
+    || backup_die "manifest off-site tidak valid"
   backup_id=$(json_value backupId "$local_manifest")
-  echo "$backup_id" | grep -Eq '^[0-9]{8}T[0-9]{6}Z-[0-9]+$' \
-    || backup_die "backupId off-site tidak valid"
-  printf '%s|%s|%s|%s|%s|%s|%s|%s\n' \
+  printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
     "$(json_uint createdEpoch "$local_manifest")" \
     "$(json_value dailyKey "$local_manifest")" \
     "$(json_value weeklyKey "$local_manifest")" \
@@ -137,8 +185,9 @@ while IFS= read -r name; do
     "$(json_value class "$local_manifest")" \
     "$(json_value protectionState "$local_manifest")" \
     "$backup_id" \
-    "$(json_uint bytes "$local_manifest")" >>"${TEMP_DIR}/offsite-retention-rows"
-done <"${TEMP_DIR}/offsite-manifest-list"
+    "$(json_uint bytes "$local_manifest")" \
+    "$object_name" >>"${TEMP_DIR}/offsite-retention-rows"
+done <"$offsite_manifest_list"
 
 daily_seconds=$((14 * 86400))
 weekly_kept=0
@@ -148,15 +197,16 @@ seen_months='|'
 now_epoch=$(date -u '+%s')
 if [ -f "${TEMP_DIR}/offsite-retention-rows" ]; then
   sort -t '|' -k1,1nr "${TEMP_DIR}/offsite-retention-rows" | \
-    while IFS='|' read -r epoch daily_key weekly_key monthly_key class protection backup_id bytes; do
+    while IFS='|' read -r epoch daily_key weekly_key monthly_key class protection backup_id bytes object_name; do
       keep=false
       if [ "$class:$protection" = pre-change:protected ]; then
-        release_candidate="${TEMP_DIR}/${backup_id}.release.json"
-        if rclone cat "${OFFSITE_CRYPT_REMOTE%/}/database/releases/${backup_id}.release.json" \
-          >"$release_candidate" 2>/dev/null; then
+        release_candidate="${TEMP_DIR}/offsite-release-${backup_id}.json"
+        if w10d_capture_command "$release_candidate" 4096 rclone cat \
+          "${OFFSITE_CRYPT_REMOTE%/}/database/releases/${backup_id}.release.json"; then
           validate_prechange_release "$release_candidate" "$backup_id" \
             || backup_die "release marker protected point tidak valid"
         else
+          backup_log "RELEASE_MARKER_UNAVAILABLE backupId=${backup_id} retention=keep" >&2
           keep=true
         fi
       fi
@@ -185,10 +235,11 @@ if [ -f "${TEMP_DIR}/offsite-retention-rows" ]; then
       if [ "$keep" = false ]; then
         backup_log "OFFSITE_RETENTION candidate=${backup_id} mode=${OFFSITE_RETENTION_APPLY:-0}" >&2
         if [ "${OFFSITE_RETENTION_APPLY:-0}" = 1 ]; then
-          rclone deletefile "${manifest_remote}/${backup_id}.complete.json"
-          rclone deletefile "${OFFSITE_CRYPT_REMOTE%/}/database/current/${backup_id}.dump"
-          rclone deletefile "${OFFSITE_CRYPT_REMOTE%/}/database/current/${backup_id}.sha256"
-          rclone deletefile "${OFFSITE_CRYPT_REMOTE%/}/objects/manifests/${backup_id}.objects.tsv"
+          object_base=${object_name%.complete.json}
+          rclone deletefile "${manifest_remote}/${object_name}"
+          rclone deletefile "${OFFSITE_CRYPT_REMOTE%/}/database/current/${object_base}.dump"
+          rclone deletefile "${OFFSITE_CRYPT_REMOTE%/}/database/current/${object_base}.sha256"
+          rclone deletefile "${OFFSITE_CRYPT_REMOTE%/}/objects/manifests/${object_base}.objects.tsv"
         fi
       fi
     done
