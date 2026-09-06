@@ -3,7 +3,17 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -n "${W10D_COMPLETION_VALIDATOR+x}" ] \
+  || [ -n "${W10D_COMPLETION_VALIDATOR_PATH+x}" ] \
+  || [ -n "${W10D_CAPTURE_HELPER_PATH+x}" ] \
+  || [ -n "${W10D_DU_PARSER_PATH+x}" ]; then
+  printf '%s\n' 'W10D_RUNTIME_SELECTOR_REJECTED' >&2
+  exit 64
+fi
 . "${SCRIPT_DIR}/backup-lib.sh"
+W10D_COMPLETION_VALIDATOR_PATH="${SCRIPT_DIR}/../../../scripts/w10d_completion_validation.py"
+W10D_CAPTURE_HELPER_PATH="${SCRIPT_DIR}/../../../scripts/bounded-command-capture.py"
+W10D_DU_PARSER_PATH="${SCRIPT_DIR}/../../../scripts/parse-minio-du-observation.py"
 
 MC=${MC:-/opt/backup-bin/mc}
 RCLONE=${RCLONE:-/opt/backup-bin/rclone}
@@ -40,6 +50,13 @@ require_command psql
 require_command sha256sum
 require_command cmp
 require_command base64
+require_command python3
+require_command awk
+require_command grep
+require_command sort
+require_command cat
+[ -z "${W10D_COMPLETION_VALIDATOR+x}" ] \
+  || backup_die "override validator completion dilarang"
 [ -x "$MC" ] || backup_die "MinIO client terverifikasi tidak tersedia"
 [ -x "$RCLONE" ] || backup_die "rclone terverifikasi tidak tersedia"
 require_value POSTGRES_HOST
@@ -68,31 +85,127 @@ remote="myminio/${BACKUP_BUCKET}/postgres"
 telemetry_remote="${remote}/monitor/latest.json"
 
 read_remote_bytes() {
-  measured=$($MC du --json "$remote" 2>/dev/null \
-    | sed -n 's/.*"size":\([0-9][0-9]*\).*/\1/p' | tail -n 1)
-  measured=${measured:-0}
+  du_file="${TEMP_DIR}/remote-du.json"
+  [ -f "$W10D_DU_PARSER_PATH" ] && [ ! -L "$W10D_DU_PARSER_PATH" ] \
+    || backup_die "parser aggregate MinIO tidak tersedia"
+  [ "$(sha256_file "$W10D_DU_PARSER_PATH")" = "$W10D_DU_PARSER_SHA256" ] \
+    || backup_die "parser aggregate MinIO tidak cocok dengan source reviewed"
+  w10d_capture_command "$du_file" 1048576 "$MC" du --json "$remote" \
+    || backup_die "observasi aggregate MinIO gagal"
+  measured=$(python3 "$W10D_DU_PARSER_PATH" <"$du_file") \
+    || { rm -f "$du_file"; backup_die "observasi aggregate MinIO tidak valid"; }
+  rm -f "$du_file"
   require_uint remote_bytes "$measured"
   printf '%s' "$measured"
 }
 
 remove_new_local_point() {
-  cleanup_status=0
+  cleanup_allowed="${TEMP_DIR}/cleanup-local-allowed"
+  printf '%s\n' \
+    "${remote}/${BACKUP_ID}.complete.json" \
+    "${remote}/${BACKUP_ID}.dump" \
+    "${remote}/${BACKUP_ID}.local.json" \
+    "${remote}/${BACKUP_ID}.sha256" \
+    | LC_ALL=C sort >"$cleanup_allowed"
+
+  cleanup_pre_raw="${TEMP_DIR}/cleanup-local-pre.raw"
+  cleanup_pre="${TEMP_DIR}/cleanup-local-pre.canonical"
+  if ! w10d_capture_command "$cleanup_pre_raw" 65536 \
+    "$MC" find "$remote" --name "${BACKUP_ID}.*"; then
+    printf 'LOCAL_RECOVERY_POINT_CLEANUP_AMBIGUOUS backupId=%s phase=pre-observation retry=prohibited\n' \
+      "$BACKUP_ID" >&2
+    return 74
+  fi
+  if grep -q '[[:cntrl:]]' "$cleanup_pre_raw" \
+    || grep -q '^$' "$cleanup_pre_raw" \
+    || ! LC_ALL=C sort "$cleanup_pre_raw" >"$cleanup_pre" \
+    || ! LC_ALL=C sort -u "$cleanup_pre_raw" >"${cleanup_pre}.unique" \
+    || ! cmp -s "$cleanup_pre" "${cleanup_pre}.unique"; then
+    printf 'LOCAL_RECOVERY_POINT_CLEANUP_AMBIGUOUS backupId=%s phase=pre-parse retry=prohibited\n' \
+      "$BACKUP_ID" >&2
+    return 74
+  fi
+  while IFS= read -r cleanup_observed; do
+    [ -z "$cleanup_observed" ] || grep -Fqx "$cleanup_observed" "$cleanup_allowed" \
+      || {
+        printf 'LOCAL_RECOVERY_POINT_CLEANUP_AMBIGUOUS backupId=%s phase=pre-ownership retry=prohibited\n' \
+          "$BACKUP_ID" >&2
+        return 74
+      }
+  done <"$cleanup_pre"
+
+  cleanup_delete_failed=0
   for candidate in \
     "${remote}/${BACKUP_ID}.complete.json" \
     "${remote}/${BACKUP_ID}.local.json" \
     "${remote}/${BACKUP_ID}.dump" \
     "${remote}/${BACKUP_ID}.sha256"; do
-    if $MC stat "$candidate" >/dev/null 2>&1; then
-      $MC rm --quiet "$candidate" >/dev/null 2>&1 || cleanup_status=1
+    if grep -Fqx "$candidate" "$cleanup_pre"; then
+      "$MC" rm --quiet "$candidate" >/dev/null 2>&1 || cleanup_delete_failed=1
     fi
   done
-  return "$cleanup_status"
+
+  cleanup_post_raw="${TEMP_DIR}/cleanup-local-post.raw"
+  cleanup_post="${TEMP_DIR}/cleanup-local-post.canonical"
+  if ! w10d_capture_command "$cleanup_post_raw" 65536 \
+    "$MC" find "$remote" --name "${BACKUP_ID}.*"; then
+    printf 'LOCAL_RECOVERY_POINT_CLEANUP_AMBIGUOUS backupId=%s phase=post-observation retry=prohibited\n' \
+      "$BACKUP_ID" >&2
+    return 74
+  fi
+  if grep -q '[[:cntrl:]]' "$cleanup_post_raw" \
+    || grep -q '^$' "$cleanup_post_raw" \
+    || ! LC_ALL=C sort "$cleanup_post_raw" >"$cleanup_post" \
+    || ! LC_ALL=C sort -u "$cleanup_post_raw" >"${cleanup_post}.unique" \
+    || ! cmp -s "$cleanup_post" "${cleanup_post}.unique"; then
+    printf 'LOCAL_RECOVERY_POINT_CLEANUP_AMBIGUOUS backupId=%s phase=post-parse retry=prohibited\n' \
+      "$BACKUP_ID" >&2
+    return 74
+  fi
+  if [ "$cleanup_delete_failed" -ne 0 ] || [ -s "$cleanup_post" ]; then
+    printf 'LOCAL_RECOVERY_POINT_CLEANUP_AMBIGUOUS backupId=%s phase=absence-proof retry=prohibited\n' \
+      "$BACKUP_ID" >&2
+    return 74
+  fi
+  return 0
 }
 
-degraded_count=$($MC find "$remote" --name '*.local.json' 2>/dev/null | awk 'NF {n++} END {print n+0}')
+remove_new_local_point_or_stop() {
+  cleanup_context=$1
+  remove_new_local_point && cleanup_rc=0 || cleanup_rc=$?
+  [ "$cleanup_rc" -eq 0 ] && return 0
+  [ "$cleanup_rc" -eq 74 ] && exit 74
+  backup_die "$cleanup_context"
+}
+
+degraded_raw="${TEMP_DIR}/degraded-points.raw"
+degraded_inventory="${TEMP_DIR}/degraded-points.canonical"
+w10d_capture_command "$degraded_raw" 1048576 "$MC" find "$remote" --name '*.local.json' \
+  || backup_die "observasi degraded point gagal"
+w10d_canonicalize_inventory "$degraded_raw" "$degraded_inventory"
+degraded_count=$(awk 'NF {n++} END {print n+0}' "$degraded_inventory")
 max_degraded=${BACKUP_MAX_DEGRADED_POINTS:-3}
 require_uint BACKUP_MAX_DEGRADED_POINTS "$max_degraded"
 [ "$degraded_count" -lt "$max_degraded" ] || backup_die "off-site belum pulih dan local degraded points sudah mencapai batas"
+
+retention_existing_raw="${TEMP_DIR}/retention-existing.raw"
+retention_existing="${TEMP_DIR}/retention-existing.canonical"
+w10d_capture_command "$retention_existing_raw" 1048576 "$MC" find "$remote" --name '*.complete.json' \
+  || backup_die "observasi completion lokal untuk retention gagal"
+w10d_canonicalize_inventory "$retention_existing_raw" "$retention_existing"
+if grep -Fqx "${remote}/${BACKUP_ID}.complete.json" "$retention_existing"; then
+  backup_die "backupId bertabrakan dengan completion existing"
+fi
+
+# Snapshot the off-site completion inventory before the first dump or
+# publication mutation. The shared writer lock prevents another reviewed DIIS
+# writer from changing the retention set during this attempt.
+validate_offsite_config
+offsite_manifest_existing="${TEMP_DIR}/offsite-manifest-existing"
+capture_offsite_completion_inventory "$offsite_manifest_existing"
+if grep -Fqx "${BACKUP_ID}.complete.json" "$offsite_manifest_existing"; then
+  backup_die "backupId bertabrakan dengan completion off-site existing"
+fi
 
 estimate=$(psql --host="$POSTGRES_HOST" --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" \
   --tuples-only --no-align --command='SELECT pg_database_size(current_database());' | tr -d '[:space:]')
@@ -122,10 +235,11 @@ COMPLETE_MANIFEST="${TEMP_DIR}/${BACKUP_ID}.complete.json"
 PRE_OBJECT_LIST="${TEMP_DIR}/${BACKUP_ID}.objects.pre"
 
 object_source="${RCLONE_MINIO_REMOTE%/}/${APP_OBJECT_BUCKET}"
-$RCLONE lsf "$object_source" --recursive --files-only \
+pre_object_raw="${TEMP_DIR}/${BACKUP_ID}.objects.pre.raw"
+w10d_capture_command "$pre_object_raw" 8388608 "$RCLONE" lsf "$object_source" \
   --exclude '/tmp/**' --exclude '/cache/**' --exclude '/derived/**' \
-  | LC_ALL=C sort >"$PRE_OBJECT_LIST" \
   || backup_die "inventory object sebelum snapshot database gagal"
+w10d_canonicalize_inventory "$pre_object_raw" "$PRE_OBJECT_LIST"
 
 backup_log "membuat PostgreSQL custom-format backup"
 pg_dump --host="$POSTGRES_HOST" --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" \
@@ -163,23 +277,46 @@ cmp -s "$SHA_FILE" "$LOCAL_VERIFY_SHA" || backup_die "sidecar checksum MinIO lok
   || backup_die "ukuran dump MinIO lokal tidak cocok"
 
 OBJECT_STATUS=$(RCLONE="$RCLONE" PATH="$(dirname "$RCLONE"):$PATH" \
-  sh "$SCRIPT_DIR/offsite-replication.sh" "$DUMP_FILE" "$SHA_FILE" "$COMPLETE_MANIFEST" "$TEMP_DIR" "$PRE_OBJECT_LIST")
+  sh "$SCRIPT_DIR/offsite-replication.sh" "$DUMP_FILE" "$SHA_FILE" "$COMPLETE_MANIFEST" \
+    "$TEMP_DIR" "$PRE_OBJECT_LIST" "$offsite_manifest_existing")
 [ "$OBJECT_STATUS" = verified ] || [ "$OBJECT_STATUS" = empty ] || backup_die "status object replication tidak valid"
 $MC cp --quiet "$COMPLETE_MANIFEST" "${remote}/${BACKUP_ID}.complete.json"
 $MC rm --quiet "${remote}/${BACKUP_ID}.local.json"
 
 manifest_dir="${TEMP_DIR}/manifests"
 mkdir "$manifest_dir"
-$MC find "$remote" --name '*.complete.json' >"${TEMP_DIR}/manifest-list"
+retention_with_new_raw="${TEMP_DIR}/retention-with-new.raw"
+manifest_list="${TEMP_DIR}/manifest-list"
+cat "$retention_existing" >"$retention_with_new_raw"
+printf '%s\n' "${remote}/${BACKUP_ID}.complete.json" >>"$retention_with_new_raw"
+w10d_canonicalize_inventory "$retention_with_new_raw" "$manifest_list"
 while IFS= read -r object; do
   [ -n "$object" ] || continue
-  local_manifest="${manifest_dir}/$(basename "$object")"
+  case "$object" in
+    "$remote"/*.complete.json) ;;
+    *) backup_die "path object completion local tidak aman" ;;
+  esac
+  printf '%s' "$object" | grep -Eq '^[^[:cntrl:]]+$' \
+    || backup_die "path object completion local mengandung karakter tidak aman"
+  case "$object" in
+    *'..'*|*'//'*) backup_die "path object completion local mengandung dot segment" ;;
+  esac
+  object_name=$(basename "$object")
+  case "$object_name" in
+    *.complete.json) ;;
+    *) backup_die "nama object completion tidak valid" ;;
+  esac
+  object_base=${object_name%.complete.json}
+  local_manifest="${manifest_dir}/${object_name}"
+  local_sidecar="${manifest_dir}/${object_base}.sha256"
   $MC cp --quiet "$object" "$local_manifest"
-  validate_completion_manifest "$local_manifest" || backup_die "manifest retention tidak valid"
+  $MC cp --quiet "${remote}/${object_base}.sha256" "$local_sidecar"
+  validate_completion_manifest "$local_manifest" "$local_sidecar" "$object_name" \
+    || backup_die "manifest retention tidak valid"
   printf '%s|%s|%s|%s\n' "$(json_uint createdEpoch "$local_manifest")" \
     "$(json_value class "$local_manifest")" "$(json_value protectionState "$local_manifest")" \
-    "$object" >>"${TEMP_DIR}/retention-rows"
-done <"${TEMP_DIR}/manifest-list"
+    "$object_name" >>"${TEMP_DIR}/retention-rows"
+done <"$manifest_list"
 
 daily_kept=0
 if [ -f "${TEMP_DIR}/retention-rows" ]; then
@@ -188,22 +325,22 @@ if [ -f "${TEMP_DIR}/retention-rows" ]; then
     if [ "$class" = daily ] && [ "$daily_kept" -lt "${BACKUP_DAILY_POINTS:-3}" ]; then
       daily_kept=$((daily_kept + 1)); keep=true
     elif [ "$class:$protection" = pre-change:protected ]; then
-      backup_id=$(json_value backupId "${manifest_dir}/$(basename "$object")")
-      release_candidate="${TEMP_DIR}/${backup_id}.release.json"
-      if $RCLONE cat \
-        "${OFFSITE_CRYPT_REMOTE%/}/database/releases/${backup_id}.release.json" \
-        >"$release_candidate" 2>/dev/null; then
+      backup_id=$(json_value backupId "${manifest_dir}/$object")
+      release_candidate="${TEMP_DIR}/local-release-${backup_id}.json"
+      if w10d_capture_command "$release_candidate" 4096 "$RCLONE" cat \
+        "${OFFSITE_CRYPT_REMOTE%/}/database/releases/${backup_id}.release.json"; then
         validate_prechange_release "$release_candidate" "$backup_id" \
           || backup_die "release marker protected point tidak valid"
       else
+        backup_log "RELEASE_MARKER_UNAVAILABLE backupId=${backup_id} retention=keep" >&2
         keep=true
       fi
     fi
     if [ "$keep" = false ]; then
-      base=${object%.complete.json}
+      base="${remote}/${object%.complete.json}"
       # Completion is the validity boundary. Remove it first so an interrupted
       # retention pass can only leave harmless orphan data, never a false-valid point.
-      $MC rm --quiet "$object"
+      $MC rm --quiet "${remote}/${object}"
       $MC rm --quiet "${base}.dump" "${base}.sha256"
     fi
   done
@@ -238,7 +375,7 @@ if $MC cp --quiet "myminio/${BACKUP_BUCKET}/postgres/monitor/restore-latest.json
   require_uint restore_created_epoch "$restore_epoch"
   case "$restore_schema:$restore_status" in
     diis-restore-proof-v1:success|diis-restore-proof-v1:failed) ;;
-    diis-restore-proof-v2:success|diis-restore-proof-v2:failed)
+    diis-restore-proof-v3:success|diis-restore-proof-v3:failed)
       restore_source=$(json_value source "$restore_proof")
       [ "$restore_source" = independent-crypt ] || [ "$restore_status" = failed ] \
         || backup_die "restore proof success bukan dari independent crypt"
@@ -259,8 +396,8 @@ metadata_bytes=$((metadata_bytes + $(wc -c <"$COMPLETE_MANIFEST")))
 metadata_bytes=$((metadata_bytes + $(wc -c <"$telemetry_file")))
 [ "$metadata_bytes" -le "$BACKUP_LOCAL_METADATA_RESERVE_BYTES" ] \
   || {
-    remove_new_local_point \
-      || backup_die "metadata melampaui reserve dan recovery point baru gagal dibersihkan"
+    remove_new_local_point_or_stop \
+      "metadata melampaui reserve dan recovery point baru gagal dibersihkan"
     backup_die "metadata backup melampaui reserve yang dibatasi"
   }
 
@@ -277,16 +414,16 @@ before_telemetry_bytes=$(read_remote_bytes)
 telemetry_bytes=$(wc -c <"$telemetry_file" | tr -d '[:space:]')
 require_uint telemetry_bytes "$telemetry_bytes"
 if [ $((before_telemetry_bytes - previous_telemetry_bytes + telemetry_bytes)) -gt "$hard_budget" ]; then
-  remove_new_local_point \
-    || backup_die "telemetry akan melewati budget dan recovery point baru gagal dibersihkan"
+  remove_new_local_point_or_stop \
+    "telemetry akan melewati budget dan recovery point baru gagal dibersihkan"
   backup_die "budget backup lokal akan terlewati oleh telemetry final"
 fi
 
 $MC cp --quiet "$telemetry_file" "$telemetry_remote"
 final_remote_bytes=$(read_remote_bytes)
 if [ "$final_remote_bytes" -gt "$hard_budget" ]; then
-  remove_new_local_point \
-    || backup_die "budget terlewati dan recovery point baru gagal dibersihkan"
+  remove_new_local_point_or_stop \
+    "budget terlewati dan recovery point baru gagal dibersihkan"
   if [ "$had_previous_telemetry" = true ]; then
     $MC cp --quiet "$previous_telemetry" "$telemetry_remote" \
       || backup_die "budget terlewati dan telemetry sebelumnya gagal dipulihkan"

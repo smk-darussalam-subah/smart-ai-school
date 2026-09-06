@@ -215,7 +215,7 @@ WEEKLY_KEY=$(date -u +%G-W%V)
 MONTHLY_KEY=$(date -u +%Y-%m)
 
 cat >"$COMPLETION_FILE" <<EOF
-{"schemaVersion":"diis-backup-v1","status":"complete","backupId":"${BACKUP_ID}","class":"daily","protectionState":"none","createdAt":"${CREATED_AT}","createdEpoch":${CREATED_EPOCH},"dailyKey":"${DAILY_KEY}","weeklyKey":"${WEEKLY_KEY}","monthlyKey":"${MONTHLY_KEY}","sha256":"${DUMP_SHA}","bytes":${DUMP_BYTES},"archiveValidated":true,"offsiteStatus":"complete","offsiteConfigFingerprint":"${OFFSITE_FINGERPRINT}","objectStatus":"empty","objectManifestSha256":"${OBJECT_MANIFEST_SHA}","objectCount":0,"tableCount":${TABLE_COUNT},"userCount":${USER_COUNT},"studentCount":${STUDENT_COUNT},"targetTotalBytes":${TARGET_TOTAL_BYTES},"targetFreeBytes":${TARGET_FREE_BYTES},"targetProjectedFreePercent":${TARGET_PROJECTED_FREE_PERCENT}}
+{"schemaVersion":"diis-backup-v1","status":"complete","backupId":"${BACKUP_ID}","class":"daily","protectionState":"none","createdAt":"${CREATED_AT}","createdEpoch":${CREATED_EPOCH},"dailyKey":"${DAILY_KEY}","weeklyKey":"${WEEKLY_KEY}","monthlyKey":"${MONTHLY_KEY}","sha256":"${DUMP_SHA}","bytes":${DUMP_BYTES},"archiveValidated":true,"offsiteStatus":"complete","offsiteConfigFingerprint":"${OFFSITE_FINGERPRINT}","objectStatus":"empty","objectManifestSha256":"${OBJECT_MANIFEST_SHA}","objectCount":0,"tableCount":${TABLE_COUNT},"userCount":${USER_COUNT},"studentCount":${STUDENT_COUNT},"targetTotalBytes":${TARGET_TOTAL_BYTES},"targetFreeBytes":${TARGET_FREE_BYTES}}
 EOF
 cat >"$PROVENANCE_FILE" <<EOF
 {"schemaVersion":"diis-offsite-restore-input-v1","source":"independent-crypt","backupId":"${BACKUP_ID}","offsiteConfigFingerprint":"${OFFSITE_FINGERPRINT}","dumpSha256":"${DUMP_SHA}","dumpBytes":${DUMP_BYTES},"objectManifestSha256":"${OBJECT_MANIFEST_SHA}","objectCount":0,"dumpFile":"$(basename "$DUMP_FILE")","sidecarFile":"$(basename "$CHECKSUM_FILE")","completionFile":"$(basename "$COMPLETION_FILE")","objectManifestFile":"$(basename "$OBJECT_MANIFEST_FILE")"}
@@ -223,7 +223,7 @@ EOF
 chmod 600 "$DUMP_FILE" "$CHECKSUM_FILE" "$COMPLETION_FILE" "$OBJECT_MANIFEST_FILE" "$PROVENANCE_FILE"
 
 validate_offsite_database_inputs "$PROVENANCE_FILE" "$COMPLETION_FILE" "$DUMP_FILE" "$CHECKSUM_FILE"
-validate_offsite_object_inputs "$PROVENANCE_FILE" "$COMPLETION_FILE" "$OBJECT_MANIFEST_FILE"
+validate_offsite_object_inputs "$PROVENANCE_FILE" "$COMPLETION_FILE" "$OBJECT_MANIFEST_FILE" "$CHECKSUM_FILE"
 PROVENANCE_SHA=$(sha256_file "$PROVENANCE_FILE")
 
 SUCCESS_PROOF="$PROOF_DIR/${BACKUP_ID}.success.restore-proof.json"
@@ -239,7 +239,10 @@ fi
 grep -Fq 'RESTORE_DRILL_COMPLETE' "$TMP/success.out" || fail 'restore completion marker missing'
 grep -Fq 'RESTORE_DRILL_CLEANUP_OK databaseAbsent=true lockAbsent=true' "$TMP/success.err" \
   || fail 'success cleanup absence proof missing'
-assert_proof_value "$SUCCESS_PROOF" schemaVersion diis-restore-proof-v2
+assert_proof_value "$SUCCESS_PROOF" schemaVersion diis-restore-proof-v3
+assert_proof_value "$SUCCESS_PROOF" tableCount "$TABLE_COUNT"
+assert_proof_value "$SUCCESS_PROOF" userCount "$USER_COUNT"
+assert_proof_value "$SUCCESS_PROOF" studentCount "$STUDENT_COUNT"
 assert_proof_value "$SUCCESS_PROOF" status success
 assert_proof_value "$SUCCESS_PROOF" source independent-crypt
 assert_proof_value "$SUCCESS_PROOF" backupId "$BACKUP_ID"

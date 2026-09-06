@@ -1,6 +1,6 @@
 # Runbook Backup dan Verifikasi Pemulihan DIIS
 
-**Berlaku untuk source:** 2026-09-03
+**Berlaku untuk source:** 2026-09-05
 
 **Pemilik:** Operator infrastruktur
 
@@ -8,11 +8,14 @@
 
 ## Current Verified Runtime
 
-Source Wave 10 pada dokumen ini belum dideploy atau diaktifkan. Gate 0 terakhir
-menemukan backup legacy berjalan pukul 19:00 WIB, disk host hanya 21,32% bebas,
-belum ada salinan encrypted independent-provider, dan restore proof terbaru belum
-mewakili bentuk production saat ini. Workflow n8n pada repository tetap
-`active=false` dan credential monitor belum dikonfigurasi.
+Application production telah berada pada tree yang ditinjau, tetapi source recovery
+follow-up dalam dokumen ini belum dipaketkan, dideploy, atau diaktifkan. Gate 1
+terakhir hanya mengobservasi tujuh dump legacy dan nol completion manifest target;
+keadaan itu adalah `legacy-observed`, bukan target-valid, off-site-complete, atau
+restore-proven. Jadwal legacy yang terakhir diverifikasi tetap 19:00 WIB; catatan
+ini hanya current-state evidence dan bukan authority untuk mengubah scheduler.
+Workflow n8n pada repository tetap `active=false` dan credential monitor belum
+dikonfigurasi.
 
 Jangan menggunakan bagian target di bawah sebagai bukti bahwa backup, off-site,
 monitor, atau restore rehearsal sudah operasional. Operating truth hanya boleh
@@ -33,11 +36,111 @@ diubah oleh laporan commissioning production exact-SHA yang ditinjau independen.
   `/var/lock/diis-backup/backup.lock`; candidate memakai tool volume fisik unik,
   scheduler mati, bucket creation mati, dan retention dry-run sampai acceptance.
 
+## Urutan Gate H1, H2, Capacity, dan C1
+
+Semua gate berikut tetap memerlukan approval terpisah dan tidak boleh digabungkan
+menjadi satu otorisasi mutation:
+
+1. **H1 — root-cron read-only.** Jalankan helper klasifikasi root cron yang sudah
+   ditinjau untuk menghasilkan hanya count, status, dan hash. Jangan tampilkan body
+   atau command cron. H1 tidak memasang file dan tidak mengubah cron.
+2. **H2 — lock bootstrap.** Hanya setelah H1 diterima, operator root menjalankan
+   installer hash-bound dengan confirmation exact untuk memasang satu tmpfiles rule
+   dan membuat `/var/lock/diis-backup` sebagai directory canonical, non-symlink,
+   owner/group `appuser:appuser`, mode `0750`. Mode ini memberi operator dan
+   container backup dalam group yang sama akses shared lock tanpa akses user lain.
+   Installer tidak memberi shell atau sudo umum kepada `appuser`; reboot recreation
+   berasal dari rule yang byte/hash-nya sama. Existing target divalidasi read-only;
+   installer tidak memperbaiki owner/mode secara implisit, dan atomic install guard
+   menolak invocation kedua. Eksekusi installer dilarang pada source
+   review.
+3. **Capacity cleanup.** Hanya setelah bukti H1/H2 dan approval cleanup exact,
+   ukur `docker buildx du` pada builder `default` dengan filter `until=1h`,
+   `inuse=false`, DAN `private=true`; prune memakai tiga filter yang identik. Parser
+   JSON ketat menolak duplicate key dan record shared. Lower bound deletable dihitung
+   sebagai private eligible bytes dikurangi penuh `--reserved-space` 8 GiB, tidak
+   pernah dari aggregate reclaimable/upper bound. Required lower bound adalah deficit
+   menuju 24 GiB ditambah margin 2 GiB. Ulangi ukuran dan digest exact
+   setelah host lock serta writer lock; drift berhenti sebelum prune. Jika target 24
+   GiB dan minimum persentase sudah terpenuhi, hasil wajib no-op. Pemeriksaan no-op
+   diulang setelah seluruh lock diperoleh dan tepat sebelum locked eligibility/prune.
+4. **C1 — credential.** Pembuatan/pemasangan credential baru dipertimbangkan setelah
+   source re-review dan capacity cleanup diterima. C1 tidak otomatis mengaktifkan
+   candidate, scheduler, backup, retention, atau restore.
+
+Jalur legacy tunggal mempertahankan pembuatan parent internal terbatas sampai H2
+selesai agar source deployment tidak mematikan scheduler lama. Jalur ini tidak
+shared-host dan tidak boleh diterima sebagai target. Candidate, cleanup, serta
+handoff wajib membawa `BACKUP_LOCK_BOOTSTRAP_REQUIRED=1`; karena itu ketiganya
+menolak parent yang belum dibuat oleh H2. Pada production, ketiganya menolak setiap
+lock selain exact `/var/lock/diis-backup/backup.lock`; test override hanya berlaku
+ketika `DIIS_W10D_TEST_ROOT` menunjuk satu canonical directory owner-caller mode
+`0700` yang merupakan direct child `/tmp`. Seluruh repo, root-prefix, credential,
+lock, evidence, marker, dan release test wajib tetap di bawah root itu. Production
+mode menolak setiap `ALLOW_TEST_*`, `DIIS_TEST_*`, dan inherited acceptance-test
+control sebelum mutation.
+
+Template H2 berikut hanya boleh diisi dari manifest/hash yang sudah disetujui dan
+dijalankan pada gate mutation terpisah; jangan menyalin nilai placeholder:
+
+```bash
+sudo env \
+  LOCK_BOOTSTRAP_CONFIRMATION=INSTALL_EXACT_W10D_BACKUP_LOCK_BOOTSTRAP \
+  EXPECTED_INSTALLER_SHA256=<reviewed-installer-sha256> \
+  EXPECTED_RULE_SHA256=<reviewed-rule-sha256> \
+  RULE_SOURCE=<absolute-reviewed-source>/infrastructure/systemd/diis-backup-lock.conf \
+  bash <absolute-reviewed-source>/infrastructure/deploy/install-w10d-backup-lock-bootstrap.sh
+```
+
+Hasil wajib memverifikasi hash rule, path canonical, owner/group, mode, dan bahwa
+target bukan mountpoint terpisah. Kegagalan atau signal harus meninggalkan nol rule
+atau directory yang dimiliki attempt tersebut.
+Seluruh dependency jalur sukses, rollback, signal, dan verification (`cat`, `awk`,
+`chown`, `mountpoint`, dan dependency lain) harus tersedia sebelum mutation pertama.
+
+Cleanup hanya boleh menjalankan BuildKit-cache prune terfilter. Tidak ada image,
+container, network, volume, atau system-wide prune. Sejak tepat sebelum command
+prune, setiap timeout, signal, exit nonzero, target/persentase gagal, observability
+gagal, no-touch drift, atau lock-release gagal adalah
+`PARTIAL_IRREVERSIBLE ... no_retry=1`; operator wajib berhenti untuk investigasi.
+Seluruh pre-mutation phase mempunyai deadline 5 menit dan setiap observasi eksternal
+memiliki timeout. Waktu UTC dibaca ulang tepat sebelum `prune_started=1`; remaining
+15 menit prune, kill grace, dan 5 menit postcheck harus masih muat di approved window
+serta tidak menyentuh guard band scheduler backup. Expiry atau overlap berhenti
+sebelum prune.
+
+## Immutable pg-backup Runtime Gate
+
+Runtime target dibangun hanya dari `infrastructure/docker/pg-backup.Dockerfile`.
+Recipe tersebut mempertahankan PostgreSQL client beserta seluruh library-nya dari
+exact `postgres:16.4-alpine3.20` digest dan menambahkan interpreter dari exact
+`python:3.12-alpine3.20` digest. Build harus menjalankan validator strict dan
+benar-benar mengeksekusi `pg_dump`, `pg_restore`, `psql`, serta `pg_isready`; sekadar
+menemukan nama binary tidak cukup. Tidak ada `apk add`, package install saat startup,
+download runtime tanpa version/checksum terpin, atau external Dockerfile frontend
+yang dipilih dengan tag mutable.
+
+Image hasil build harus dipublikasikan melalui gate supply-chain terpisah, direview,
+dan diberikan ke Compose sebagai `PG_BACKUP_IMAGE=<registry>@sha256:<64-hex>` yang
+exact. Nilai kosong membuat render gagal; tag tanpa digest ditolak lagi saat startup.
+Gate publikasi juga harus mencatat exact local image ID `sha256:<64-hex>` dan
+RepoDigest yang memuat digest reference tersebut; reference dan ID menjadi satu
+pasangan approval yang tidak dapat dipertukarkan.
+Validator dan helper observasi dipasang read-only pada path `/scripts` dan semua
+operator production-bound menolak selector path dari environment sebelum preflight.
+Build lokal, render Compose, atau hash source bukan approval publish, deploy,
+commissioning, scheduler, backup, maupun restore.
+
 ## Candidate dan Scheduler Handoff
 
 Candidate hanya dibuat melalui `infrastructure/deploy/create-w10d-backup-candidate.sh`.
 Launcher itu mewajibkan attempt ID, project Compose attempt-specific, physical tool
-volume baru, exact MinIO source volume, dan shared `BACKUP_LOCK_HOST_PATH`. Render
+volume baru, exact MinIO source volume, shared `BACKUP_LOCK_HOST_PATH`,
+`EXPECTED_CANDIDATE_IMAGE=<name>@sha256:<64-hex>`, dan
+`EXPECTED_CANDIDATE_IMAGE_ID=sha256:<64-hex>`. Launcher memverifikasi local image ID
+sebelum Compose, lalu membandingkan reference dan image ID container aktual dengan
+pasangan yang sama. RepoDigest tetap diverifikasi pada supply-chain/handoff gate. Base
+image PostgreSQL bukan candidate image. Render
 tanpa kedua binding volume harus gagal; `docker_backup_bin` legacy tidak boleh
 dipasang, ditulis, direcreate, atau dihapus. Startup candidate hanya memverifikasi
 bucket existing; scheduler, bucket creation, dan retention apply seluruhnya tetap
@@ -50,7 +153,24 @@ entrypoint, command, working directory, user, restart policy, network mode/names
 exact full mount set, exact environment-name set, hash seluruh environment values,
 attempt/role identity labels, dan full label hash. Bundle juga mengikat exact
 base/candidate Compose, runtime-manifest helper, dan tool-capture script dari
-reviewed SHA; tool volume wajib membawa attempt ID yang sama.
+reviewed SHA; tool volume wajib membawa attempt ID yang sama. Runtime manifest v5
+juga mengekspose hanya safe recovery bindings: empat flag safety, lock path,
+provider `google`, origin `provider-default`, off-site fingerprint, hash Shared
+Drive/root, auth mode, dan empat hash identity/artifact. Acceptance v6
+membandingkan nilai aktual ini dengan evidence; hash seluruh
+environment saja tidak dianggap cukup.
+
+Seluruh evidence acceptance harus berupa file owner root mode `0600` di parent
+root-owned `0700`. Validator membaca setiap file satu kali dengan no-follow,
+menulis byte yang sama secara exclusive ke snapshot privat, memeriksa expected
+bundle hash di dalam validator, lalu handoff mengulang hash snapshot tepat sebelum
+mutation. Manual completion dan sidecar memakai parser strict yang sama dengan
+preflight, dan bundle mengikat hash kedua file serta producer exit code `0`.
+Completion mewajibkan table count positif, `studentCount <= userCount`, dan
+`targetFreeBytes <= targetTotalBytes`. Klaim projected percentage yang tidak dapat
+dihitung ulang dari field completion dihapus; projection tetap tersedia pada
+telemetry yang memiliki input perhitungannya. Database restore proof v3 membawa
+ketiga exact count hasil query dan acceptance mewajibkan equality dengan completion.
 
 Jalankan `capture-w10d-candidate-tool-evidence.sh` untuk membuat tool evidence dari
 byte aktual `mc`, `rclone.zip`, dan executable `rclone` beserta versi ter-normalisasi.
@@ -86,6 +206,27 @@ minimal 25% bebas setelah operasi. Target yang tidak dapat diobservasi adalah
 failure, bukan alasan untuk melewati guard. Commissioning production juga wajib
 mereclaim sedikitnya 6,49 GiB agar baseline mencapai sasaran 30% bebas.
 
+Readonly summary schema v3 mengobservasi completion target dan dump legacy secara
+terpisah. Inventory ditangkap status-preserving ke temporary directory privat dan
+dihentikan pada batas 1 MiB sebelum dibuffer; setiap marker target dibaca dengan
+batas 128 KiB dan sidecar 4 KiB, lalu parser
+menolak duplicate/unknown/missing key, tipe ambigu termasuk bool-as-int, timestamp/
+backup ID yang tidak konsisten, status/provenance tidak complete, checksum sidecar
+yang tidak cocok, object count/status yang tidak konsisten, dan read failure. Marker
+baru dihitung setelah seluruh validasi lulus. State yang diterima untuk capacity
+preservation hanya:
+
+- `target-complete`: completion target lebih dari nol dan legacy nol;
+- `legacy-observed`: completion target nol dan legacy lebih dari nol;
+- `transition-observed`: keduanya lebih dari nol.
+
+State empty, command error, malformed count/hash, missing container, aggregate nol,
+atau klasifikasi ambigu wajib nonzero dan tidak boleh menulis success JSON ke stdout.
+Output sukses tunggal baru ditulis setelah seluruh validasi akhir dan hanya memuat
+count, aggregate byte, state/reason, path-set hash, serta sorted manifest/sidecar
+content-set hash. Seluruh temporary capture wajib terhapus sebelum success. Legacy tidak pernah diubah
+menjadi completion marker.
+
 ## Artefak Satu Restore Point
 
 | Artefak                    | Fungsi                                         |
@@ -100,7 +241,8 @@ boleh dipakai sebagai backup valid.
 
 ## Alur Harian Target
 
-1. Ambil owner lock dengan boot ID, PID, dan process start time. Owner hidup
+1. Ambil owner lock dengan boot ID, PID, dan process start time. Directory tanpa
+   owner lengkap selalu ambigu dan tidak boleh direclaim. Owner hidup
    menolak writer kedua; owner mati direclaim secara atomik.
 2. Jalankan capacity guard pada temporary storage dan volume MinIO tujuan,
    termasuk reserve metadata tetap dan aggregate existing backup.
@@ -118,6 +260,12 @@ boleh dipakai sebagai backup valid.
 10. Terbitkan telemetry PII-safe ukuran, growth 7/30 hari, free space,
     days-to-full, status off-site, dan umur restore proof. Ukur ulang total aktual
     sebelum `BACKUP_COMPLETE`; pelampauan wajib cleanup sempit dan fail-closed.
+
+Semua subprocess read-only yang memengaruhi keputusan memakai capture dengan
+deadline, byte cap, producer exit status, pipe EOF, dan process-group absence.
+Direct producer exit tidak dianggap sukses selama descendant masih mempertahankan
+stdout. Health/migration Docker probe dan locked pre-prune summary memakai batas
+waktu yang sama; timeout menghapus partial output dan melepaskan writer lock.
 
 ## Retensi dan Protected Pre-change
 
@@ -203,3 +351,21 @@ absent, present, dan observation error. Error daemon/permission/transient menjad
 `CANDIDATE_PRECREATE_OBSERVATION_AMBIGUOUS retry=prohibited` sebelum Compose
 mutation. Kegagalan remove atau observasi setelah create menghasilkan
 `CANDIDATE_CLEANUP_AMBIGUOUS retry=prohibited`; jangan menjalankan attempt baru.
+
+## Hetzner Recovery Layers
+
+Lapisan ini berbeda dan tidak boleh disamakan:
+
+- server deletion protection melindungi penghapusan server;
+- tujuh slot Backup adalah image berotasi yang tetap terikat pada server/provider;
+- individual Backup tidak memiliki protection flag;
+- image Backup terpilih harus dikonversi secara eksplisit menjadi Snapshot sebelum
+  Snapshot hasil konversi dapat diberi protection;
+- restore image hanya ke satu server temporary yang terisolasi dan disposable;
+- independent recovery tetap memakai encrypted application backup database/object
+  di Google Shared Drive.
+
+Hetzner Backup/Snapshot bersifat crash-consistent pada lapisan image kecuali proses
+aplikasi dibekukan dengan prosedur lain; ia bukan bukti application-consistent dan
+tidak menggantikan restore database serta exact object set. Konversi, protection,
+temporary server, dan destruction semuanya adalah provider mutation gate terpisah.
