@@ -47,6 +47,21 @@ assert_not_grep() { ! grep -Eq -- "$1" "$2" || fail "$3"; }
 make_fakes() {
   local dir=$1
   mkdir -p "$dir"
+  cat >"$dir/date" <<'EOF'
+#!/bin/sh
+set -eu
+if [ "${FAULT:-}" = clock-boundary ] && [ "${1:-}" = -u ]; then
+  count_file="${MC_FAKE_ROOT:?}/clock-observations"
+  count=0
+  [ ! -f "$count_file" ] || count=$(cat "$count_file")
+  count=$((count + 1))
+  printf '%s\n' "$count" >"$count_file"
+  shift
+  epoch=$((1798761599 + count - 1))
+  exec /bin/date -u -d "@$epoch" "$@"
+fi
+exec /bin/date "$@"
+EOF
   cat >"$dir/pg_dump" <<'EOF'
 #!/bin/sh
 [ "${FAULT:-}" = dump ] && exit 11
@@ -508,9 +523,9 @@ run_backup() {
 
 assert_grep 'PG_BACKUP_IMAGE' "$COMPOSE" 'backup image must be explicitly bound'
 assert_grep 'PG_BACKUP_IMAGE_REFERENCE' "$COMPOSE" 'backup image digest reference is not propagated'
-assert_grep 'python:3\.12-alpine3\.20@sha256:edf7256d5773b7ca9c41290b7bf6f844c15c6c2168f97473c276acb6789f12ab' \
+assert_grep 'python:3\.12\.14-alpine3\.24@sha256:78e98729f8fc4099e53cffb3fe59fd15b18dfa4ace8c914dee0cefa5320068eb' \
   "$PG_BACKUP_DOCKERFILE" 'pinned Python runtime stage missing'
-assert_grep 'postgres:16\.4-alpine3\.20@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c' \
+assert_grep 'postgres:16\.15-alpine3\.24@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571' \
   "$PG_BACKUP_DOCKERFILE" 'pinned PostgreSQL client stage missing'
 assert_grep 'python3 /scripts/w10d_completion_validation.py --help' "$PG_BACKUP_DOCKERFILE" \
   'real image validator integration assertion missing'
@@ -532,6 +547,15 @@ assert_grep 'BACKUP_COMPLETE' "$TMP/success/out" 'success marker missing'
 [[ ! -d "$TMP/success/lock" ]] || fail 'success lock leaked'
 [[ -z $(find "$TMP/success/tmp" -mindepth 1 -print -quit) ]] || fail 'success temp leaked'
 pass 'success path publishes verified local and off-site completion'
+
+if ! run_backup clock-boundary clock-boundary; then
+  cat "$TMP/clock-boundary/err" >&2; fail 'clock boundary broke completion binding'
+fi
+# One identity snapshot, followed by one independent retention-age observation.
+[[ "$(cat "$TMP/clock-boundary/mc/clock-observations")" == 2 ]] \
+  || fail 'backup identity used multiple UTC clock observations'
+assert_grep 'BACKUP_COMPLETE' "$TMP/clock-boundary/out" 'clock-boundary completion missing'
+pass 'backup identity and retention fields use one clock sample across year rollover'
 
 for fault in dump validation upload offsite disk cleanup local_corrupt du-fail du-empty du-malformed \
   du-partial du-overflow du-duplicate degraded-fail degraded-partial degraded-overflow \

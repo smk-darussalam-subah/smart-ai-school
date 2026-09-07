@@ -125,9 +125,9 @@ assert_grep 'bounded-command-capture.py:/scripts/bounded-command-capture.py:ro' 
   'bounded observation helper is not mounted read-only'
 assert_grep 'parse-minio-du-observation.py:/scripts/parse-minio-du-observation.py:ro' "$COMPOSE" \
   'strict MinIO aggregate parser is not mounted read-only'
-assert_grep 'FROM python:3\.12-alpine3\.20@sha256:edf7256d5773b7ca9c41290b7bf6f844c15c6c2168f97473c276acb6789f12ab' \
+assert_grep 'FROM python:3\.12\.14-alpine3\.24@sha256:78e98729f8fc4099e53cffb3fe59fd15b18dfa4ace8c914dee0cefa5320068eb' \
   "$PG_BACKUP_DOCKERFILE" 'pinned Python runtime base missing'
-assert_grep 'FROM postgres:16\.4-alpine3\.20@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c' \
+assert_grep 'FROM postgres:16\.15-alpine3\.24@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571' \
   "$PG_BACKUP_DOCKERFILE" 'pinned PostgreSQL client base missing'
 assert_grep 'python3 /scripts/w10d_completion_validation.py --help' "$PG_BACKUP_DOCKERFILE" \
   'build-time validator integration assertion missing'

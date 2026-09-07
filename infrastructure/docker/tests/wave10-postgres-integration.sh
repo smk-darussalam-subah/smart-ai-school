@@ -5,6 +5,9 @@ set -Eeuo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=../scripts/backup-lib.sh
 source "$ROOT/infrastructure/docker/scripts/backup-lib.sh"
+W10D_COMPLETION_VALIDATOR_PATH="$ROOT/scripts/w10d_completion_validation.py"
+W10D_CAPTURE_HELPER_PATH="$ROOT/scripts/bounded-command-capture.py"
+W10D_DU_PARSER_PATH="$ROOT/scripts/parse-minio-du-observation.py"
 
 POSTGRES_IMAGE='pgvector/pgvector@sha256:00ba258a66dac104fd5171074a0084462a64a1369d8513f3d0a634e2f24d15bc'
 PREFIX="diis-wave10-proof-$$"
@@ -13,7 +16,8 @@ CONTAINER="${PREFIX}-postgres"
 DATABASE='diis_test_wave10_identity'
 PASSWORD='synthetic-wave10-only'
 TMP=$(mktemp -d)
-BACKUP_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+BACKUP_EPOCH=$(date -u +%s)
+BACKUP_ID="$(date -u -d "@$BACKUP_EPOCH" +%Y%m%dT%H%M%SZ)-$$"
 PROOF_DIR="$TMP/proofs"
 ARCHIVE_TMP_DIR="$TMP/archive-tmp"
 SIGNAL_BIN="$TMP/signal-bin"
@@ -41,7 +45,7 @@ cleanup() {
   trap - EXIT HUP INT TERM
 
   if container_present; then
-    docker rm -f "$CONTAINER" >/dev/null 2>&1 || cleanup_failed=true
+    docker rm -f -v "$CONTAINER" >/dev/null 2>&1 || cleanup_failed=true
   else
     observed_status=$?
     [[ "$observed_status" -eq 1 ]] || cleanup_failed=true
@@ -111,7 +115,10 @@ assert_restore_cleanup() {
 
 assert_proof_value() {
   local proof=$1 key=$2 expected=$3 actual
-  actual=$(json_value "$key" "$proof")
+  case "$key" in
+    tableCount|userCount|studentCount) actual=$(json_uint "$key" "$proof") ;;
+    *) actual=$(json_value "$key" "$proof") ;;
+  esac
   [[ "$actual" == "$expected" ]] \
     || fail "proof $key mismatch: expected=$expected actual=${actual:-missing}"
 }
@@ -144,6 +151,7 @@ chmod 700 "$SIGNAL_BIN/docker"
 
 docker network create --label com.diis.restore-network=isolated-v1 "$NETWORK" >/dev/null
 MSYS_NO_PATHCONV=1 docker run -d --name "$CONTAINER" --network "$NETWORK" \
+  --tmpfs /var/lib/postgresql/data:rw,size=512m \
   --label com.diis.restore-target=disposable-v1 \
   --label com.diis.restore-data-path=/var/lib/postgresql/data \
   -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD="$PASSWORD" -e POSTGRES_DB="$DATABASE" \
@@ -208,11 +216,11 @@ read -r total_kb free_kb < <(docker exec "$CONTAINER" sh -c \
 TARGET_TOTAL_BYTES=$((total_kb * 1024))
 TARGET_FREE_BYTES=$((free_kb * 1024))
 TARGET_PROJECTED_FREE_PERCENT=$(((TARGET_FREE_BYTES - DUMP_BYTES) * 100 / TARGET_TOTAL_BYTES))
-CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-CREATED_EPOCH=$(date -u +%s)
-DAILY_KEY=$(date -u +%Y-%m-%d)
-WEEKLY_KEY=$(date -u +%G-W%V)
-MONTHLY_KEY=$(date -u +%Y-%m)
+CREATED_AT=$(date -u -d "@$BACKUP_EPOCH" +%Y-%m-%dT%H:%M:%SZ)
+CREATED_EPOCH=$BACKUP_EPOCH
+DAILY_KEY=$(date -u -d "@$BACKUP_EPOCH" +%Y-%m-%d)
+WEEKLY_KEY=$(date -u -d "@$BACKUP_EPOCH" +%G-W%V)
+MONTHLY_KEY=$(date -u -d "@$BACKUP_EPOCH" +%Y-%m)
 
 cat >"$COMPLETION_FILE" <<EOF
 {"schemaVersion":"diis-backup-v1","status":"complete","backupId":"${BACKUP_ID}","class":"daily","protectionState":"none","createdAt":"${CREATED_AT}","createdEpoch":${CREATED_EPOCH},"dailyKey":"${DAILY_KEY}","weeklyKey":"${WEEKLY_KEY}","monthlyKey":"${MONTHLY_KEY}","sha256":"${DUMP_SHA}","bytes":${DUMP_BYTES},"archiveValidated":true,"offsiteStatus":"complete","offsiteConfigFingerprint":"${OFFSITE_FINGERPRINT}","objectStatus":"empty","objectManifestSha256":"${OBJECT_MANIFEST_SHA}","objectCount":0,"tableCount":${TABLE_COUNT},"userCount":${USER_COUNT},"studentCount":${STUDENT_COUNT},"targetTotalBytes":${TARGET_TOTAL_BYTES},"targetFreeBytes":${TARGET_FREE_BYTES}}

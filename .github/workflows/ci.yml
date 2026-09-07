@@ -22,7 +22,12 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npx --yes npm@10.5.0 ci
+
+      - name: Verify dependency graph with project npm
+        run: |
+          npx --yes npm@10.5.0 ls thread-stream real-require --all
+          npm run verify:dependency-graph
 
       - name: Generate Prisma client
         # Prisma client types (termasuk $queryRawUnsafe) hanya tersedia

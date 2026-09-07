@@ -74,12 +74,13 @@ chmod 700 "$TEMP_DIR"
 
 BACKUP_CLASS=${BACKUP_CLASS:-daily}
 case "$BACKUP_CLASS" in daily|pre-change) ;; *) backup_die "BACKUP_CLASS tidak valid" ;; esac
-CREATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-CREATED_EPOCH=$(date -u '+%s')
-DAILY_KEY=$(date -u '+%Y-%m-%d')
-WEEKLY_KEY=$(date -u '+%G-W%V')
-MONTHLY_KEY=$(date -u '+%Y-%m')
-BACKUP_ID="$(date -u '+%Y%m%dT%H%M%SZ')-$$"
+# One clock observation binds every identity/retention field, including across
+# second, day, ISO-week and month boundaries. Multiple date calls can disagree.
+BACKUP_TIME_FIELDS=$(date -u '+%Y-%m-%dT%H:%M:%SZ %s %Y-%m-%d %G-W%V %Y-%m %Y%m%dT%H%M%SZ')
+read -r CREATED_AT CREATED_EPOCH DAILY_KEY WEEKLY_KEY MONTHLY_KEY BACKUP_STAMP <<EOF
+$BACKUP_TIME_FIELDS
+EOF
+BACKUP_ID="${BACKUP_STAMP}-$$"
 
 remote="myminio/${BACKUP_BUCKET}/postgres"
 telemetry_remote="${remote}/monitor/latest.json"
