@@ -36,6 +36,13 @@ SAFE_ENV = {'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bi
 COMMAND_DEADLINE = None  # internal wall-clock deadline, never selected by environment
 OWNED_PRODUCERS = {}  # removed only after bounded reap AND process-group absence
 HANDLED_SIGNALS = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
+# One reviewed non-runtime transition, not a general test-file allowlist.
+# Raw NUL-delimited Git output binds path, status, regular mode and both blobs.
+REVIEWED_TEST_DELTA = (
+    b':100644 100644 a03f35802d33e05155cef3ed6623974e8f892a22 '
+    b'8d4930940184ec452cca1bbf36d8d6ce57b89369 M\0'
+    b'apps/api/src/__tests__/deploy-workflow-safety.spec.ts\0'
+)
 
 
 class Stop(Exception):
@@ -326,6 +333,15 @@ class Host:
                 raise
             require(status == b'200', 'health-not-ready')
 
+    def application_delta(self) -> None:
+        # No rename heuristics, text conversion, external diff or quoted filenames.
+        # Any extra record, changed blob, missing terminator or observation error
+        # fails before deployment writes, including unknown apps/packages paths.
+        raw = self.git('diff', '--raw', '-z', '--no-abbrev', '--no-renames',
+                       '--no-ext-diff', '--no-textconv',
+                       self.p['baseSha'], self.p['sourceSha'], '--', 'apps', 'packages')
+        require(raw in (b'', REVIEWED_TEST_DELTA), 'application-or-migration-delta')
+
     def preflight(self) -> None:
         p = self.p
         require(ROOT.resolve(strict=True) == ROOT, 'checkout-path')
@@ -339,8 +355,7 @@ class Host:
         remote = self.git('ls-remote', 'origin', 'refs/heads/staging').split()
         require(len(remote) == 2 and remote[0].decode() == p['sourceSha'], 'remote-sha')
         self.git('merge-base', '--is-ancestor', p['baseSha'], p['sourceSha'])
-        require(not self.git('diff', '--name-only', p['baseSha'], p['sourceSha'], '--',
-                             'apps', 'packages'), 'application-or-migration-delta')
+        self.application_delta()
         self.git('merge-base', '--is-ancestor', p['imageRevision'], p['sourceSha'])
         require(not self.git('diff', '--name-only', p['imageRevision'], p['sourceSha'], '--',
                 'infrastructure/docker/pg-backup.Dockerfile', 'scripts/w10d_completion_validation.py',

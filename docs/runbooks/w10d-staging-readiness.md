@@ -3,11 +3,22 @@
 Status: SOURCE CANDIDATE - NOT DEPLOYED - INDEPENDENT REVIEW REQUIRED.
 
 This is a deliberately narrow staging lane, not the general application release
-pipeline. It rejects any `apps/` or `packages/` delta, missing/pre-existing failed
+pipeline. It rejects runtime changes under `apps/` or `packages/`, missing/pre-existing failed
 migrations, unavailable image, capacity below 24 GiB or 25%, or baseline drift.
 Future application releases require a separately reviewed lane; there is no
 implicit fallback to the old media/build/migrate/ingress workflow on failure.
 Main's existing deployment script is unchanged and reachable only for main.
+
+The only permitted nonempty `apps/`/`packages/` delta is the reviewed modification
+of `apps/api/src/__tests__/deploy-workflow-safety.spec.ts`: regular mode `100644`
+on both sides, status `M`, old blob `a03f35802d33e05155cef3ed6623974e8f892a22`,
+new blob `8d4930940184ec452cca1bbf36d8d6ce57b89369`. The guard compares the entire
+NUL-delimited raw Git diff with this literal transition. No other test path or
+future edit of this file is allowed. Unknown application/package paths, additional
+records, runtime/schema/migration changes, renames, deletion/addition, mode/type
+changes, malformed output and failed Git observation all stop before mutation.
+Git rename detection, external diff and text conversion are disabled for this
+observation. An empty application/package delta remains valid.
 
 ## Deployment preparation is a separate authorization
 
@@ -35,6 +46,12 @@ the operator must have verified and separately installed (where necessary):
 The staging environment currently has no required reviewer. A merge can trigger
 deployment; prepare bindings before separately authorized merge, never assume a
 pending environment approval will stop an incomplete staging deployment.
+
+The BuildKit capacity adapter is version-bound and read-only. The production cleanup
+wrapper invokes the collector/assessor before any prune path and stops with an
+observation-only hold while writer authority, preservation evidence, and a separate
+cleanup approval are absent. The synthetic contract keeps its confined fixture path
+separate; it cannot enable a production prune or override the canonical writer lock.
 
 ## Approval schema (no dummy operational values)
 
@@ -164,3 +181,14 @@ the future authorized staging rehearsal. Current source review cannot certify li
 capacity, credentials, media permission, or exact runtime baseline.
 
 No deployment, publication or commissioning is authorized by this runbook.
+
+## Registry publisher contract
+
+The intended package is private `ghcr.io/smk-darussalam-subah/diis-pg-backup`.
+The only publisher identity is the repository's dedicated CI workflow, with package
+write permission scoped to this package and no host credential reuse. The staging
+puller receives package-read permission only; it never receives publish or repository
+write permission. A publication workflow, package existence, visibility, and both
+identities must be verified by an administrator before image publication approval.
+An anonymous `401` or GitHub `404` is an access/metadata gap, not proof that the
+package is absent. No workflow or package is created by this source session.

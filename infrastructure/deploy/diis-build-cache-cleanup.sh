@@ -26,6 +26,8 @@ BUILDKIT_FILTER_PRIVATE=private=true
 NO_TOUCH_HELPER="$REPO_DIR/scripts/docker-no-touch-digest.py"
 READONLY_HELPER="$REPO_DIR/scripts/production-recovery-readonly-summary.sh"
 ELIGIBILITY_HELPER="$REPO_DIR/scripts/parse-buildkit-eligibility.py"
+CAPACITY_COLLECTOR="$REPO_DIR/scripts/observe-buildkit-capacity.py"
+CAPACITY_ASSESSOR="$REPO_DIR/scripts/assess-buildkit-capacity.py"
 BACKUP_LIB="$REPO_DIR/infrastructure/docker/scripts/backup-lib.sh"
 TEST_BOUNDARY="$REPO_DIR/scripts/w10d-test-boundary.sh"
 BACKUP_WRITER_LOCK=${BACKUP_WRITER_LOCK:-/var/lock/diis-backup/backup.lock}
@@ -78,6 +80,11 @@ done
 for helper in "$NO_TOUCH_HELPER" "$READONLY_HELPER" "$ELIGIBILITY_HELPER" "$BACKUP_LIB"; do
   [ -f "$helper" ] && [ ! -L "$helper" ] || die "reviewed helper unavailable"
 done
+if [ "$W10D_TEST_MODE" = 0 ]; then
+  for helper in "$CAPACITY_COLLECTOR" "$CAPACITY_ASSESSOR"; do
+    [ -f "$helper" ] && [ ! -L "$helper" ] || die "version-bound capacity adapter unavailable"
+  done
+fi
 case "$BACKUP_WRITER_LOCK" in /*) ;; *) die "backup writer lock must be absolute" ;; esac
 [ "$BACKUP_WRITER_LOCK" = /var/lock/diis-backup/backup.lock ] \
   || { [ "$W10D_TEST_MODE" = 1 ] && [ "${ALLOW_TEST_BACKUP_LOCK_PATH:-0}" = 1 ] \
@@ -182,6 +189,43 @@ capture_no_touch() {
 capture_eligibility() {
   local label=$1 raw
   raw="$evidence_dir/${label}-buildkit.ndjson"
+  if [ "$W10D_TEST_MODE" = 0 ]; then
+    local filesystem_metrics filesystem_total filesystem_free
+    filesystem_metrics=$(timeout --signal=TERM --kill-after=5s "$SHORT_OBSERVATION_TIMEOUT" \
+      df -PB1 /var/lib/docker | awk 'NR==2 {printf "%s %s", $2, $4}') \
+      || return 1
+    [[ "$filesystem_metrics" =~ ^[0-9]+\ [0-9]+$ ]] || return 1
+    read -r filesystem_total filesystem_free <<<"$filesystem_metrics"
+    timeout --signal=TERM --kill-after=10s "$ELIGIBILITY_TIMEOUT" \
+      python3 "$CAPACITY_COLLECTOR" >"$raw" || return 1
+    timeout --signal=TERM --kill-after=10s "$ELIGIBILITY_TIMEOUT" \
+      python3 "$CAPACITY_ASSESSOR" --total-bytes "$filesystem_total" \
+      --free-bytes "$filesystem_free" <"$raw" >"$evidence_dir/${label}-eligibility.json" \
+      || return 1
+    # The reviewed adapter is deliberately observation-only until writer authority,
+    # preservation proof and a separate cleanup approval bind the physical action.
+    python3 - "$evidence_dir/${label}-eligibility.json" <<'PY' || return 1
+import json, sys
+value=json.load(open(sys.argv[1], encoding='utf-8'))
+required={
+    'schema','fixtureSha256','observedAt','engineRecordCount','privateRecordCount',
+    'eligibleRecordCount','totalLogicalCacheBytes','eligibleLogicalBytes',
+    'reservationBytes','marginBytes','conservativeLogicalEstimateBytes',
+    'guaranteedReclaimableBytes','cleanupAuthorized','capacityInputProvenance',
+    'filesystemTotalBytes','filesystemFreeBytes','targetFreeBytes',
+    'additionalFreeBytesNeeded','estimateMeetsTarget','verdict',
+}
+if set(value) != required or value['schema'] != 'diis-buildkit-offline-assessment-v1':
+    raise SystemExit(1)
+if value['cleanupAuthorized'] is not False or value['guaranteedReclaimableBytes'] != 0:
+    raise SystemExit(1)
+if value['capacityInputProvenance'] != 'separate-operator-input-not-fixture-bound':
+    raise SystemExit(1)
+if value['verdict'] != 'OBSERVATION ONLY - CLEANUP HOLD':
+    raise SystemExit(1)
+raise SystemExit(1)
+PY
+  fi
   timeout --signal=TERM --kill-after=10s "$ELIGIBILITY_TIMEOUT" \
     docker buildx du \
       --builder "$BUILDKIT_BUILDER" \

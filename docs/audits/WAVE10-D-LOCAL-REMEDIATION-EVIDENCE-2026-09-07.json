@@ -1,0 +1,1710 @@
+{
+  "schemaVersion": "diis-w10d-local-remediation-evidence-v1",
+  "observedAt": "2026-09-07T08:56:08.479Z",
+  "scope": "local source/images/synthetic tests only; no Git packaging, registry publication or live operations",
+  "head": "3ff8e3f3026ad835a56217482a597f530a7f6407",
+  "headTree": "78da4a9ef36c4f1e12932fb51c1d6c70826bd487",
+  "branch": "fix/w10d-prerequisite-closure-20260907",
+  "stagedFiles": [],
+  "sourceManifest": {
+    "preservedPreparation": [
+      {
+        "path": "docs/runbooks/w10d-staging-readiness.md",
+        "bytes": 12945,
+        "sha256": "4c6b5a869169559327293184a3e381841677dcdd8baf52ea52a57936bb1f9ddf",
+        "unchangedSinceApproval": true
+      },
+      {
+        "path": "infrastructure/deploy/diis-build-cache-cleanup.sh",
+        "bytes": 21322,
+        "sha256": "8a3e862d5c113d648c01d77efeea41745f7ad2ccad7a3fc2f9fb92eab22bdda9",
+        "unchangedSinceApproval": true
+      },
+      {
+        "path": "infrastructure/deploy/staging-readiness-deploy.py",
+        "bytes": 35672,
+        "sha256": "fd41b3d71816960a5f36a63824e314035ac9992b48b17bed2ad1d9591aa71d37",
+        "unchangedSinceApproval": true
+      },
+      {
+        "path": "infrastructure/deploy/tests/staging-readiness-contract.py",
+        "bytes": 40425,
+        "sha256": "c2d9f9d63b10b4b6c87f319ff97542010916c8877cbfe3840d25d45452850572",
+        "unchangedSinceApproval": true
+      },
+      {
+        "path": "infrastructure/deploy/tests/buildkit-capacity-adapter-contract.py",
+        "bytes": 15701,
+        "sha256": "e756b3592fd844f6ba7e4009bf128aa3c17ee6608a0c102912f680939b3853c6",
+        "unchangedSinceApproval": true
+      },
+      {
+        "path": "infrastructure/deploy/tests/fixtures/buildkit-v0300-engine2952-redacted-20260907.json",
+        "bytes": 81740,
+        "sha256": "39b1a1cb6d31979acca762e593b0fee4ae953ea36b30fc1db9a35f8e5d8040e5",
+        "unchangedSinceApproval": true
+      },
+      {
+        "path": "scripts/assess-buildkit-capacity.py",
+        "bytes": 6617,
+        "sha256": "06391ea5d7818e49a0fd260fe99c4f29c26ec6a0ea518dfa2203a22705a6cd1d",
+        "unchangedSinceApproval": true
+      },
+      {
+        "path": "scripts/observe-buildkit-capacity.py",
+        "bytes": 8647,
+        "sha256": "f8bbeccad409f2223bccde72a408db978ef0aa99284eb120470bad1b1119d29a",
+        "unchangedSinceApproval": true
+      }
+    ],
+    "imageRecovery": [
+      {
+        "path": "infrastructure/docker/pg-backup.Dockerfile",
+        "bytes": 4725,
+        "sha256": "33fbbd440806e0a879bb3e130469ad7df5122a226f532c24336c13ffd2856e61"
+      },
+      {
+        "path": "infrastructure/docker/scripts/backup.sh",
+        "bytes": 20308,
+        "sha256": "0735b787e7674330d8df1b2f4f21c3d65be49e8c863a22f3b0cdd10391a9cd89"
+      },
+      {
+        "path": "infrastructure/docker/tests/backup-contract.sh",
+        "bytes": 125753,
+        "sha256": "5d6dce9232e8e4975af8b639f99ab3a30b94dce1dae491cc960b132d112b6e09"
+      },
+      {
+        "path": "infrastructure/docker/tests/w10d-gate1-source-followup-contract.sh",
+        "bytes": 35152,
+        "sha256": "b0c00ec0d5b68c5ba8ab8cd4668ea129083c58d712a9307161272710a0236adf"
+      },
+      {
+        "path": "infrastructure/docker/tests/wave10-postgres-integration.sh",
+        "bytes": 14747,
+        "sha256": "76a8caa4ec29a2215b5c91600fa2e3639f4c81cbeeabf4ba6093b196149e656f"
+      },
+      {
+        "path": "infrastructure/docker/tests/w10d-remediated-image-integration.py",
+        "bytes": 10087,
+        "sha256": "aafd02334f2d0646d311d7aa7f30bcf93e4dde7e358fdf40a18c0acb0abcaa01"
+      },
+      {
+        "path": "infrastructure/docker/tests/w10d-remediated-image-lifecycle.py",
+        "bytes": 2574,
+        "sha256": "4ac737358ee0e6898b1769380506dd586244e1f4e5f2728dff178a8c974508d2"
+      }
+    ],
+    "dependencyAuth": [
+      {
+        "path": "package.json",
+        "bytes": 1389,
+        "sha256": "268379b1a5ed2b7c1a5c503c6044fffcf8315b02cbbafd97dad7bb9dfd59c695"
+      },
+      {
+        "path": "package-lock.json",
+        "bytes": 529068,
+        "sha256": "d1449c6244f35cdf0d78344406ff9eabf39ebb9fd7406e2be3d8cc4a196ac18c"
+      },
+      {
+        "path": "apps/web/package.json",
+        "bytes": 1421,
+        "sha256": "2a6da017b7a579034731e33e718641441f37b6b15525a5fc279c3e7f6556383f"
+      },
+      {
+        "path": "apps/web/src/__tests__/w10d-auth-security.test.ts",
+        "bytes": 5988,
+        "sha256": "a40e12976839fd0e4637a03d992d578b0ee0049a63aea085f977a19017ac8afd"
+      },
+      {
+        "path": "apps/api/src/__tests__/w10d-dependency-security.spec.ts",
+        "bytes": 2202,
+        "sha256": "77e7848a576b19f3feb52213525a53491e791653455ad9084ff5bb87c78ee58e"
+      }
+    ]
+  },
+  "priorArtifacts": [
+    {
+      "path": "C:\\Users\\USER\\Documents\\Claude\\Projects\\DIIS\\smart-ai-school-w10d-prerequisite-closure-20260907\\docs\\audits\\WAVE10-D-STAGING-PREREQUISITE-CLOSURE-EXECUTOR-2026-09-07.md",
+      "bytes": 34469,
+      "sha256": "895888a9c117ffd3e890d62beb0ea0bd703e2421a09dbe866348bb24018019d9"
+    },
+    {
+      "path": "C:\\Users\\USER\\Documents\\Claude\\Projects\\DIIS\\smart-ai-school-w10d-prerequisite-closure-20260907\\docs\\audits\\WAVE10-D-STAGING-PREREQUISITE-CLOSURE-INDEPENDENT-REVIEW-2026-09-07.md",
+      "bytes": 11679,
+      "sha256": "bc0f6ce4ec2e497a0e291ab840b23ea4ba4fce3911aab88f42e02fadb840af97"
+    },
+    {
+      "path": "C:\\Users\\USER\\Documents\\Claude\\Projects\\DIIS\\smart-ai-school-w10d-prerequisite-closure-20260907\\docs\\audits\\WAVE10-D-STAGING-PREREQUISITE-TRIAGE-EVIDENCE-2026-09-07.json",
+      "bytes": 89047,
+      "sha256": "54954a99e878ba8b72979f13d0708c42f509909ebe90d58ff1063478b79339cc"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\build-metadata.json",
+      "bytes": 2024,
+      "sha256": "33b077b1033c85f2ee003f658ebd3d1331b00c1fa4481f9ad933d584ea16a4d9"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\build-metadata-r2.json",
+      "bytes": 2027,
+      "sha256": "eef038630d84e1701e50e50e582fa540f8817ab72c9ec723e9c077f5f8edf477"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\build-metadata-r3.json",
+      "bytes": 3180,
+      "sha256": "151b9d19a20b116bcce5e5b7682149370e384186cf843fd4a927f38954229d32"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\grype-candidate.json",
+      "bytes": 267298,
+      "sha256": "bb3457d18daa69efafeb4e0ba93d0cfd4a934563b422d7effc07f8656ae2f463"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\grype-candidate-r2.json",
+      "bytes": 114194,
+      "sha256": "13e5073ea755c78d39a2d84ac616e3ee3125aa6f14391ebc86460f0d2d7f7966"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\grype-candidate-r3.json",
+      "bytes": 116162,
+      "sha256": "5c23d4e4f812434b895a412a659f55f3e8b5208cc6568a1379d2ee0e51ed27d4"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\candidate-sbom.json",
+      "bytes": 441273,
+      "sha256": "6747c05b46a11305f4ae638cfd259c0456cd6781c80ac7a7a2a2850ba68ea331"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\candidate-r2-sbom.json",
+      "bytes": 444063,
+      "sha256": "7fd4186d8291dc195743a9d0fa1cfb1e37004c0ccb535c5dea050020f9d52f9c"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\candidate-r3-sbom.json",
+      "bytes": 452786,
+      "sha256": "e3debf9ab8d322b25a551f55baf17fbb36041ff25ddec9f5262715226b1a065e"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\candidate-r3.tar",
+      "bytes": 136824832,
+      "sha256": "5dfb03bc4a78d32506e25bfea4e16d0f942991b3e70c64b831e23e2a3d3f323d"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\docker-compose",
+      "bytes": 32333754,
+      "sha256": "db1889184726840f75c4f9c001048430d4f25b3be3cb084d3ddd762bc0aed576"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\compose-checksums.txt",
+      "bytes": 4616,
+      "sha256": "fec854bf0723e40aaeaced8f90c56796a4b9c836568c0b5a2c65b0387650dc65"
+    }
+  ],
+  "scanner": {
+    "path": "C:/Users/USER/.codex/tools/diis/grype-0.118.0-w10d/grype.exe",
+    "bytes": 92724736,
+    "sha256": "565446b4bc9fd7cc4a72d1066468650eab6941b19ba804ca4649e504c2c2a024"
+  },
+  "database": {
+    "path": "C:/Users/USER/.codex/tools/diis/grype-0.118.0-w10d/db/6/vulnerability.db",
+    "bytes": 2150555648,
+    "sha256": "b1cc176fba1944294f1c609d9fc878215587b2dca38c372843bc079dd9dbdc89",
+    "built": "2026-09-07T06:38:20Z",
+    "schemaVersion": "v6.1.9"
+  },
+  "scans": [
+    {
+      "name": "grype-candidate.json",
+      "hash": "bb3457d18daa69efafeb4e0ba93d0cfd4a934563b422d7effc07f8656ae2f463",
+      "scanner": "grype",
+      "version": "0.118.0",
+      "rawMatchCount": 54,
+      "severity": {
+        "Critical": 4,
+        "High": 21,
+        "Medium": 21,
+        "Low": 4,
+        "Negligible": 1,
+        "Unknown": 3
+      },
+      "configDigest": "sha256:9e7b22cf3481adaa6f9ca03189cd1a0ada469823a3296e76cf0358168cf7fb53",
+      "dockerV2ManifestDigest": "sha256:c50a46a10adc726eda07c6e0c42cd4f0f5c00d31d6899c77152cb9fa2a605206",
+      "repoDigests": [
+        "diis-pg-backup@sha256:5216b9cfcf06232322e7984ffa3d4c99b5b88274f645bf0e6e888ca88240ba75"
+      ],
+      "platform": "linux/amd64",
+      "imageSize": 338023792,
+      "configAndConvertedManifestBytesVerified": true,
+      "exitCode": 0
+    },
+    {
+      "name": "grype-candidate-r2.json",
+      "hash": "13e5073ea755c78d39a2d84ac616e3ee3125aa6f14391ebc86460f0d2d7f7966",
+      "scanner": "grype",
+      "version": "0.118.0",
+      "rawMatchCount": 20,
+      "severity": {
+        "Critical": 0,
+        "High": 3,
+        "Medium": 13,
+        "Low": 3,
+        "Negligible": 1,
+        "Unknown": 0
+      },
+      "configDigest": "sha256:e2eacf4fba147f9c6e34b27e54465d6a2d93d3c2d9036a15215cc6eccb65e41b",
+      "dockerV2ManifestDigest": "sha256:f1637c21fa150e6ae3dc6c097ceea4590198ea74931aeaa734dad1d0ae81231d",
+      "repoDigests": [
+        "diis-pg-backup@sha256:c0457f29a0b2ff9bdf8f80ce1d57f251a535e3b547889af9ad80a602e299bb3b"
+      ],
+      "platform": "linux/amd64",
+      "imageSize": 344194820,
+      "configAndConvertedManifestBytesVerified": true,
+      "exitCode": 0
+    },
+    {
+      "name": "grype-candidate-r3.json",
+      "hash": "5c23d4e4f812434b895a412a659f55f3e8b5208cc6568a1379d2ee0e51ed27d4",
+      "scanner": "grype",
+      "version": "0.118.0",
+      "rawMatchCount": 20,
+      "severity": {
+        "Critical": 0,
+        "High": 3,
+        "Medium": 13,
+        "Low": 3,
+        "Negligible": 1,
+        "Unknown": 0
+      },
+      "configDigest": "sha256:962f076694d37bd0f0f0f79a13ba51687f28115c59262f37aff459f1af702a0d",
+      "dockerV2ManifestDigest": "sha256:7599f0bdf30986223e9e209226de34deb278115debbc3ffc9efd44ca833f78fe",
+      "repoDigests": [
+        "diis-pg-backup@sha256:a7a17930e9356d0c31b90cb7daa629af667baecd2277ea2e3fd6a9a2d04275f6"
+      ],
+      "platform": "linux/amd64",
+      "imageSize": 347363892,
+      "configAndConvertedManifestBytesVerified": true,
+      "exitCode": 0
+    }
+  ],
+  "finalRawDispositions": [
+    {
+      "id": "CVE-2026-4224",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "High",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": ["3.13.13", "3.14.4", "3.15.0a8"],
+        "state": "fixed",
+        "available": [
+          {
+            "version": "3.13.13",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.14.4",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.15.0a8",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          }
+        ]
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2026-4224.json",
+        "bytes": 4506,
+        "sha256": "ff8d2b4104c48d9adc4416eab9809b91e6da23c9a52776e09a55abed1d9e42c1"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-08-13T00:27:37.326Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.10.21",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.11.0",
+              "lessThan": "3.11.16",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.12.0",
+              "lessThan": "3.12.14",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.13.0",
+              "lessThan": "3.13.13",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.14.0",
+              "lessThan": "3.14.4",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.15.0a1",
+              "lessThan": "3.15.0a8",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2026-4224",
+      "upstreamReferences": [
+        "https://github.com/python/cpython/commit/eb0e8be3a7e11b87d198a2c3af1ed0eccf532768",
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/5M7CGUW3XBRY7II4DK43KF7NQQ3TPZ6R/",
+        "https://github.com/python/cpython/issues/145986",
+        "https://github.com/python/cpython/pull/145987",
+        "https://github.com/python/cpython/commit/196edfb06a7458377d4d0f4b3cd41724c1f3bd4a",
+        "https://github.com/python/cpython/commit/e0a8a6da90597a924b300debe045cdb4628ee1f3",
+        "https://github.com/python/cpython/commit/642865ddf4b232da1f3b1f7abcfa3254c4bfe785",
+        "https://github.com/python/cpython/commit/af856a7177326ac25d9f66cc6dd28b554d914fee",
+        "https://github.com/python/cpython/commit/24ce88b285f56ee11626cf5e472af3cd8cc7c621"
+      ],
+      "disposition": "UPSTREAM_FIXED_VERSION_MATCH_DISPUTED_PENDING_INDEPENDENT_REVIEW",
+      "rationale": "CNA affected range excludes installed Python 3.12.14 (or fixed since 3.12.13); upstream release/backport evidence retained. Raw scanner result is not suppressed."
+    },
+    {
+      "id": "CVE-2026-7210",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "High",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": ["3.13.14", "3.14.6", "3.15.0b2"],
+        "state": "fixed",
+        "available": [
+          {
+            "version": "3.13.14",
+            "date": "2026-06-18",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.14.6",
+            "date": "2026-06-18",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.15.0b2",
+            "date": "2026-06-05",
+            "kind": "first-observed"
+          }
+        ]
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2026-7210.json",
+        "bytes": 4821,
+        "sha256": "8768552b7e3a1479a85a3bcd6f2870feefe261d730453c8f2cab8b05d66ce15e"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-08-14T00:28:32.364Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "modules": ["xml", "expat"],
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.11.16",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.12.0",
+              "lessThan": "3.12.14",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.13.0",
+              "lessThan": "3.13.14",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.14.0",
+              "lessThan": "3.14.6",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.15.0a1",
+              "lessThan": "3.15.0b2",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2026-7210",
+      "upstreamReferences": [
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/PNY5OMBDPM2FRUZTWFFPJ6LISWKV627K/",
+        "https://github.com/python/cpython/pull/149023",
+        "https://github.com/python/cpython/issues/149018",
+        "https://github.com/python/cpython/commit/24b8f12544468e4cedf5bfbe25442fcd495391e4",
+        "https://github.com/python/cpython/commit/3573b3b1ecbd99030a0b18658e1bfece771b2566",
+        "https://github.com/python/cpython/commit/eeea765cb9d8f1fc3d8918b272ac3c477983f27a",
+        "https://github.com/python/cpython/commit/fc9b11ff49cbc82e6f917d07a61517a2b5f3145f",
+        "https://github.com/python/cpython/commit/e37df2a6a71d6538698e2d3188a7c345b827640b",
+        "https://github.com/python/cpython/commit/cbaecf9f16da611a646d507c1cbca265c588fc56",
+        "https://github.com/python/cpython/commit/ea70712d1a8508e14e9677d44f838dab04dc0286"
+      ],
+      "disposition": "UPSTREAM_FIXED_VERSION_MATCH_DISPUTED_PENDING_INDEPENDENT_REVIEW",
+      "rationale": "CNA affected range excludes installed Python 3.12.14 (or fixed since 3.12.13); upstream release/backport evidence retained. Raw scanner result is not suppressed."
+    },
+    {
+      "id": "CVE-2026-3644",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "High",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": ["3.13.13", "3.14.4", "3.15.0a8"],
+        "state": "fixed",
+        "available": [
+          {
+            "version": "3.13.13",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.14.4",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.15.0a8",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          }
+        ]
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2026-3644.json",
+        "bytes": 4790,
+        "sha256": "ae5687e83bd437864eaa3e28bf0c70be54adc8ba54ef49493693783dc69d739a"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-08-13T00:27:41.980Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "modules": ["http.cookies"],
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.10.21",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.11.0",
+              "lessThan": "3.11.16",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.12.0",
+              "lessThan": "3.12.14",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.13.0",
+              "lessThan": "3.13.13",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.14.0",
+              "lessThan": "3.14.4",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.15.0a1",
+              "lessThan": "3.15.0a8",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2026-3644",
+      "upstreamReferences": [
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/H6CADMBCDRFGWCMOXWUIHFJNV43GABJ7/",
+        "https://github.com/python/cpython/commit/57e88c1cf95e1481b94ae57abe1010469d47a6b4",
+        "https://github.com/python/cpython/issues/145599",
+        "https://github.com/python/cpython/pull/145600",
+        "https://github.com/python/cpython/commit/62ceb396fcbe69da1ded3702de586f4072b590dd",
+        "https://github.com/python/cpython/commit/d16ecc6c3626f0e2cc8f08c309c83934e8a979dd",
+        "https://github.com/python/cpython/commit/556aa098e738b127c714866f819b4abe2f7593d8",
+        "https://github.com/python/cpython/commit/dae4b1a21f8df4570e30986affd61bbe4ade4cef",
+        "https://github.com/python/cpython/commit/3974092b037f9a3b000fb15b48ea61ce3b25d330"
+      ],
+      "disposition": "UPSTREAM_FIXED_VERSION_MATCH_DISPUTED_PENDING_INDEPENDENT_REVIEW",
+      "rationale": "CNA affected range excludes installed Python 3.12.14 (or fixed since 3.12.13); upstream release/backport evidence retained. Raw scanner result is not suppressed."
+    },
+    {
+      "id": "CVE-2025-12781",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "Medium",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": ["3.13.10", "3.14.1", "3.15.0a2"],
+        "state": "fixed",
+        "available": [
+          {
+            "version": "3.13.10",
+            "date": "2026-06-18",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.14.1",
+            "date": "2026-06-18",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.15.0a2",
+            "date": "2026-06-18",
+            "kind": "first-observed"
+          }
+        ]
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2025-12781.json",
+        "bytes": 6153,
+        "sha256": "8413c4167d79d0460c9acb8bb3a7c901ab3cbf4cc5bfd708c9a260f0321cfc7c"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-01-22T20:12:56.421Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "modules": ["base64"],
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.13.10",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.14.0",
+              "lessThan": "3.14.1",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.15.0a1",
+              "lessThan": "3.15.0a2",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2025-12781",
+      "upstreamReferences": [
+        "https://github.com/python/cpython/pull/141128",
+        "https://github.com/python/cpython/issues/125346",
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/KRI7GC6S27YV5NJ4FPDALS2WI5ENAFJ6/",
+        "https://github.com/python/cpython/commit/13360efd385d1a7d0659beba03787ea3d063ef9b",
+        "https://github.com/python/cpython/commit/1be80bec7960f5ccd059e75f3dfbd45fca302947",
+        "https://github.com/python/cpython/commit/9060b4abbe475591b6230b23c2afefeff26fcca5",
+        "https://github.com/python/cpython/commit/e95e783dff443b68e8179fdb57737025bf02ba76",
+        "https://github.com/python/cpython/commit/fd17ee026fa9b67f6288cbafe374a3e479fe03a5"
+      ],
+      "disposition": "RESIDUAL_REQUIRES_REVIEW_NO_ACCEPTANCE",
+      "rationale": "Python base64 altchars API is not used by the three image helpers; shell object decoding uses the separately supplied base64 executable. Residual code present; no acceptance."
+    },
+    {
+      "id": "CVE-2026-17084",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "Medium",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": [],
+        "state": ""
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2026-17084.json",
+        "bytes": 4765,
+        "sha256": "c749ab089a79f7458fc4a9f6f774d19a44dec5879155a98ce3fcd6e3992c7ded"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-09-05T00:35:10.510Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "modules": ["stringprep", "idna"],
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.15.0rc2",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2026-17084",
+      "upstreamReferences": [
+        "https://github.com/python/cpython/pull/155293",
+        "https://github.com/python/cpython/issues/155292",
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/EUHHTC6EV7HCLSUHP25C5VHSV4V2MUZN/",
+        "https://github.com/python/cpython/commit/7e109d084d55e7eb25837a5f3b47ef9beee547bc",
+        "https://github.com/python/cpython/commit/5181304bcec9cfc3c15311741c9154cdff2e3fd7",
+        "https://github.com/python/cpython/commit/1e54caa096678a38afcabecabb1ff72400dd6bae"
+      ],
+      "disposition": "RESIDUAL_REQUIRES_REVIEW_NO_ACCEPTANCE",
+      "rationale": "stringprep/IDNA 2003 not called by the three image helpers. No general whole-container unreachability claim; residual retained for review."
+    },
+    {
+      "id": "CVE-2026-19672",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "Medium",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": [],
+        "state": ""
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2026-19672.json",
+        "bytes": 4892,
+        "sha256": "8628cccf0489ec681f09c9adaa57a08148781386cf98e223a0d3829fa76c9174"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-08-27T19:41:14.871Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "modules": ["tarfile"],
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "lessThan": "3.16.0",
+              "status": "affected",
+              "version": "0",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2026-19672",
+      "upstreamReferences": [
+        "https://github.com/python/cpython/pull/156000",
+        "https://github.com/python/cpython/pull/156000",
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/J2WT2ALRWEXQJOB3C7Q2HYWUXP3CINWO/"
+      ],
+      "disposition": "RESIDUAL_REQUIRES_REVIEW_NO_ACCEPTANCE",
+      "rationale": "tarfile extraction is not called by the reviewed image helpers or tool bootstrap; residual module remains. No acceptance."
+    },
+    {
+      "id": "CVE-2026-15806",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "Medium",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": [],
+        "state": ""
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2026-15806.json",
+        "bytes": 6135,
+        "sha256": "bbf4d1276c26ff5ce7b236102f836fb61286d13dfd592fc0553d767a10daa5ac"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-09-02T00:38:15.504Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.15.0rc2",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2026-15806",
+      "upstreamReferences": [
+        "https://github.com/python/cpython/issues/155694",
+        "https://github.com/python/cpython/pull/155696",
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/3OKPE5S75KDNA7FY7AI3PL2MXM2X5RB3/",
+        "https://github.com/python/cpython/commit/a0d023fbd23773e24b35d8368789470e22cda5d8",
+        "https://github.com/python/cpython/commit/a2773a34183b7d94a243bb98fd658926cc5348ce",
+        "https://github.com/python/cpython/commit/a7bb524fef61f77ede01f660ffbd591e1d5837ce",
+        "https://github.com/python/cpython/commit/641be42bb07921ba0f8bffe228b1dc706b092ef6",
+        "https://github.com/python/cpython/commit/851cf9a7142ecbdd39f831055533f58284ad2bcc"
+      ],
+      "disposition": "RESIDUAL_REQUIRES_REVIEW_NO_ACCEPTANCE",
+      "rationale": "HTTPPasswordMgr credential storage not used by the image helpers; provider authentication is via separately pinned rclone. Residual module present. No acceptance."
+    },
+    {
+      "id": "CVE-2025-15366",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "Medium",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": ["3.13.15", "3.14.7", "3.15.0a6"],
+        "state": "fixed",
+        "available": [
+          {
+            "version": "3.13.15",
+            "date": "2026-08-12",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.14.7",
+            "date": "2026-08-12",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.15.0a6",
+            "date": "2026-03-03",
+            "kind": "first-observed"
+          }
+        ]
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2025-15366.json",
+        "bytes": 3779,
+        "sha256": "e3515e286be582e7884dcf4af4b8a433a37ab6639965cc7ea6990acd81f4c183"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-08-06T00:37:36.230Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "modules": ["imaplib"],
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.13.15",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.14.0",
+              "lessThan": "3.14.7",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.15.0a1",
+              "lessThan": "3.15.0a6",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2025-15366",
+      "upstreamReferences": [
+        "https://github.com/python/cpython/issues/143921",
+        "https://github.com/python/cpython/pull/143922",
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/DD7C7JZJYTBXMDOWKCEIEBJLBRU64OMR/",
+        "https://github.com/python/cpython/commit/6262704b134db2a4ba12e85ecfbd968534f28b45",
+        "https://github.com/python/cpython/commit/d0921efb665aff26b378f495e5ff84f7e3fe649d",
+        "https://github.com/python/cpython/commit/f2cd7ef89aa8a0dcbc7283bbd39548b76f2a736a",
+        "https://github.com/python/cpython/commit/298182272a740ce2016aee2f54acbd0bba1944c1",
+        "https://github.com/python/cpython/commit/71926d943c05bde79bd2a866933103541d91b6a2"
+      ],
+      "disposition": "RESIDUAL_REQUIRES_REVIEW_NO_ACCEPTANCE",
+      "rationale": "IMAP module not used by reviewed backup/validator paths; residual module present. No acceptance."
+    },
+    {
+      "id": "CVE-2025-15367",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "Medium",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": ["3.15.0a6"],
+        "state": "fixed",
+        "available": [
+          {
+            "version": "3.15.0a6",
+            "date": "2026-03-03",
+            "kind": "first-observed"
+          }
+        ]
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2025-15367.json",
+        "bytes": 3173,
+        "sha256": "97cf2919773f0bce1eb6b67cdc552890bfe200f0b23e920b561a474948ab9808"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-02-26T14:44:41.341Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "modules": ["poplib"],
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.15.0a6",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2025-15367",
+      "upstreamReferences": [
+        "https://github.com/python/cpython/pull/143924",
+        "https://github.com/python/cpython/issues/143923",
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/CBFBOWVGGUJFSGITQCCBZS4GEYYZ7ZNE/",
+        "https://github.com/python/cpython/commit/b234a2b67539f787e191d2ef19a7cbdce32874e7"
+      ],
+      "disposition": "RESIDUAL_REQUIRES_REVIEW_NO_ACCEPTANCE",
+      "rationale": "POP3 module not used by reviewed backup/validator paths; residual module present. No acceptance."
+    },
+    {
+      "id": "CVE-2025-60876",
+      "package": "busybox",
+      "installedVersion": "1.37.0-r31",
+      "severity": "Medium",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": [],
+        "state": ""
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2025-60876.json",
+        "bytes": 2686,
+        "sha256": "3ead1d5e0b952890aa8541c5e893489ccd28a70e2dcd12173e0482dcade87be0"
+      },
+      "cna": "mitre",
+      "cnaUpdated": "2026-06-02T13:00:28.436Z",
+      "cnaAffected": [
+        {
+          "vendor": "n/a",
+          "product": "n/a",
+          "versions": [
+            {
+              "version": "n/a",
+              "status": "affected"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2025-60876",
+      "upstreamReferences": [
+        "https://lists.busybox.net/pipermail/busybox/attachments/20250823/ccdc96ef/attachment-0001.htm",
+        "https://lists.busybox.net/pipermail/busybox/attachments/20250828/e7f90492/attachment.htm",
+        "https://gist.github.com/subyumatest/41554af6a72aedaacaec026adc311092"
+      ],
+      "disposition": "RESIDUAL_REQUIRES_REVIEW_NO_ACCEPTANCE",
+      "rationale": "BusyBox wget is used for exact reviewed public tool URLs followed by mandatory SHA-256 checks; untrusted URL input is not authorized. Three package matches refer to this one CVE. No claim of distribution backport or automatic acceptance."
+    },
+    {
+      "id": "CVE-2025-60876",
+      "package": "busybox-binsh",
+      "installedVersion": "1.37.0-r31",
+      "severity": "Medium",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": [],
+        "state": ""
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2025-60876.json",
+        "bytes": 2686,
+        "sha256": "3ead1d5e0b952890aa8541c5e893489ccd28a70e2dcd12173e0482dcade87be0"
+      },
+      "cna": "mitre",
+      "cnaUpdated": "2026-06-02T13:00:28.436Z",
+      "cnaAffected": [
+        {
+          "vendor": "n/a",
+          "product": "n/a",
+          "versions": [
+            {
+              "version": "n/a",
+              "status": "affected"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2025-60876",
+      "upstreamReferences": [
+        "https://lists.busybox.net/pipermail/busybox/attachments/20250823/ccdc96ef/attachment-0001.htm",
+        "https://lists.busybox.net/pipermail/busybox/attachments/20250828/e7f90492/attachment.htm",
+        "https://gist.github.com/subyumatest/41554af6a72aedaacaec026adc311092"
+      ],
+      "disposition": "RESIDUAL_REQUIRES_REVIEW_NO_ACCEPTANCE",
+      "rationale": "BusyBox wget is used for exact reviewed public tool URLs followed by mandatory SHA-256 checks; untrusted URL input is not authorized. Three package matches refer to this one CVE. No claim of distribution backport or automatic acceptance."
+    },
+    {
+      "id": "CVE-2025-60876",
+      "package": "ssl_client",
+      "installedVersion": "1.37.0-r31",
+      "severity": "Medium",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": [],
+        "state": ""
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2025-60876.json",
+        "bytes": 2686,
+        "sha256": "3ead1d5e0b952890aa8541c5e893489ccd28a70e2dcd12173e0482dcade87be0"
+      },
+      "cna": "mitre",
+      "cnaUpdated": "2026-06-02T13:00:28.436Z",
+      "cnaAffected": [
+        {
+          "vendor": "n/a",
+          "product": "n/a",
+          "versions": [
+            {
+              "version": "n/a",
+              "status": "affected"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2025-60876",
+      "upstreamReferences": [
+        "https://lists.busybox.net/pipermail/busybox/attachments/20250823/ccdc96ef/attachment-0001.htm",
+        "https://lists.busybox.net/pipermail/busybox/attachments/20250828/e7f90492/attachment.htm",
+        "https://gist.github.com/subyumatest/41554af6a72aedaacaec026adc311092"
+      ],
+      "disposition": "RESIDUAL_REQUIRES_REVIEW_NO_ACCEPTANCE",
+      "rationale": "BusyBox wget is used for exact reviewed public tool URLs followed by mandatory SHA-256 checks; untrusted URL input is not authorized. Three package matches refer to this one CVE. No claim of distribution backport or automatic acceptance."
+    },
+    {
+      "id": "CVE-2026-4519",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "Low",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": ["3.13.13", "3.14.4", "3.15.0a8"],
+        "state": "fixed",
+        "available": [
+          {
+            "version": "3.13.13",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.14.4",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.15.0a8",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          }
+        ]
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2026-4519.json",
+        "bytes": 43080,
+        "sha256": "2a5a5c0937ae7d26f902a213746b3d629d585406748550830aad7ad302ba2eaf"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-08-13T00:27:28.648Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "modules": ["webbrowser"],
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.10.21",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.11.0",
+              "lessThan": "3.11.16",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.12.0",
+              "lessThan": "3.12.14",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.13.0",
+              "lessThan": "3.13.13",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.14.0",
+              "lessThan": "3.14.4",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.15.0a1",
+              "lessThan": "3.15.0a8",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2026-4519",
+      "upstreamReferences": [
+        "https://github.com/python/cpython/pull/143931",
+        "https://github.com/python/cpython/issues/143930",
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/AY5NDSS433JK56Q7Q5IS7B37QFZVVOUS/",
+        "https://github.com/python/cpython/commit/43fe06b96f6a6cf5cfd5bdab20b8649374956866",
+        "https://github.com/python/cpython/commit/82a24a4442312bdcfc4c799885e8b3e00990f02b",
+        "https://github.com/python/cpython/commit/9669a912a0e329c094e992204d6bdb8787024d76",
+        "https://github.com/python/cpython/commit/ad4d5ba32af4d80b0dfa2ba9d8203bfb219e60a5",
+        "https://github.com/python/cpython/commit/ceac1efc66516ac387eef2c9a0ce671895b44f03",
+        "https://github.com/python/cpython/commit/cbba6119391112aba9c5aebf7b94aea447922c48",
+        "https://github.com/python/cpython/commit/3681d47a440865aead912a054d4599087b4270dd",
+        "https://github.com/python/cpython/commit/591ed890270c5697b013bf637029fb3e6cd2d73e",
+        "https://github.com/python/cpython/commit/594b5a05dc9913880ac92eded440defbf32a28d1",
+        "https://github.com/python/cpython/commit/89bfb8e5ed3c7caa241028f1a4eac5f6275a46a4",
+        "https://github.com/python/cpython/commit/96fc5048605863c7b6fd6289643feb0e97edd96c",
+        "https://github.com/python/cpython/commit/cc023511238ad93ecc8796157c6f9139a2bb2932"
+      ],
+      "disposition": "UPSTREAM_FIXED_VERSION_MATCH_DISPUTED_PENDING_INDEPENDENT_REVIEW",
+      "rationale": "CNA affected range excludes installed Python 3.12.14 (or fixed since 3.12.13); upstream release/backport evidence retained. Raw scanner result is not suppressed."
+    },
+    {
+      "id": "CVE-2026-4360",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "Medium",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": [],
+        "state": ""
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2026-4360.json",
+        "bytes": 4617,
+        "sha256": "8f407693301dead4f22da9b3ada9b1b0af9b033cd545647046d87aa777f840d9"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-08-13T00:27:33.412Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "modules": ["tarfile"],
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.10.21",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.11.0",
+              "lessThan": "3.11.16",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.12.0",
+              "lessThan": "3.12.14",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.13.0",
+              "lessThan": "3.13.15",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.14.0",
+              "lessThan": "3.14.7",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.15.0a1",
+              "lessThan": "3.15.0b4",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2026-4360",
+      "upstreamReferences": [
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/TWZW2PC2AZOV6FENIHFSRC63OM7MBGSB/",
+        "https://github.com/python/cpython/pull/151988",
+        "https://github.com/python/cpython/issues/151987",
+        "https://github.com/python/cpython/commit/5e0ef3f1afe892e4f64eb83368db57ac4c40cba0",
+        "https://github.com/python/cpython/commit/7b57e8d51446297b8c7c482d224bc5f1938e4301",
+        "https://github.com/python/cpython/commit/7ccdbaba2c54250a70d7f25632152df7655a5e0a",
+        "https://github.com/python/cpython/commit/eee3ddf0ca10283cc7fea724aae9cd8665f8d15e",
+        "https://github.com/python/cpython/commit/d2b2f5eacab4dd48446b63340613b05dcbbf0b44",
+        "https://github.com/python/cpython/commit/cf23b9153181062150d061468b6d24af33fe214f",
+        "https://github.com/python/cpython/commit/0367912be336348b30572f8029cec4a282782d92"
+      ],
+      "disposition": "UPSTREAM_FIXED_VERSION_MATCH_DISPUTED_PENDING_INDEPENDENT_REVIEW",
+      "rationale": "CNA affected range excludes installed Python 3.12.14 (or fixed since 3.12.13); upstream release/backport evidence retained. Raw scanner result is not suppressed."
+    },
+    {
+      "id": "CVE-2026-6019",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "Medium",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": ["3.13.14", "3.14.5rc1", "3.15.0b1"],
+        "state": "fixed",
+        "available": [
+          {
+            "version": "3.13.14",
+            "date": "2026-06-25",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.14.5rc1",
+            "date": "2026-06-25",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.15.0b1",
+            "date": "2026-06-25",
+            "kind": "first-observed"
+          }
+        ]
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2026-6019.json",
+        "bytes": 3979,
+        "sha256": "e1dd2a3177f415f9d9a31cbc828196be7a8b14d4047ced5faf2c3690c17f0edc"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-06-10T18:58:07.798Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.13.14",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.14.0a1",
+              "lessThan": "3.14.5rc1",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.15.0a1",
+              "lessThan": "3.15.0b1",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2026-6019",
+      "upstreamReferences": [
+        "https://github.com/python/cpython/pull/148848",
+        "https://github.com/python/cpython/issues/90309",
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/IVNWGV2BBNC3RHQAFS22UP4DY56SAXX3/",
+        "https://github.com/python/cpython/commit/76b3923d688c0efc580658476c5f525ec8735104",
+        "https://github.com/python/cpython/commit/3c59b8b53fc75c7f9578d16fb8201ceb43e8f76c",
+        "https://github.com/python/cpython/commit/f795e042043dfe26c42e1971d4502c1cdc4c65b8"
+      ],
+      "disposition": "RESIDUAL_REQUIRES_REVIEW_NO_ACCEPTANCE",
+      "rationale": "http.cookies JavaScript output is not used by the image helpers. No acceptance of present library code."
+    },
+    {
+      "id": "CVE-2026-3446",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "Medium",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": ["3.13.13", "3.14.4", "3.15.0a8"],
+        "state": "fixed",
+        "available": [
+          {
+            "version": "3.13.13",
+            "date": "2026-04-14",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.14.4",
+            "date": "2026-04-14",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.15.0a8",
+            "date": "2026-04-14",
+            "kind": "first-observed"
+          }
+        ]
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2026-3446.json",
+        "bytes": 3899,
+        "sha256": "d877dcb3710a00477e390067ec393bc71db900fc3f66252cfce1ba9d4918705e"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-04-13T16:07:24.229Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "modules": ["base64"],
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "lessThan": "3.13.13",
+              "status": "affected",
+              "version": "0",
+              "versionType": "python"
+            },
+            {
+              "lessThan": "3.14.4",
+              "status": "affected",
+              "version": "3.14.0",
+              "versionType": "python"
+            },
+            {
+              "lessThan": "3.15.0a8",
+              "status": "affected",
+              "version": "3.15.0a1",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2026-3446",
+      "upstreamReferences": [
+        "https://github.com/python/cpython/pull/145267",
+        "https://github.com/python/cpython/issues/145264",
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/F5ZT5ICGJ6CKXVUJ34YBVY7WOZ5SHG53/",
+        "https://github.com/python/cpython/commit/1f9958f909c1b41a4ffc0b613ef8ec8fa5e7c474",
+        "https://github.com/python/cpython/commit/4561f6418a691b3e89aef0901f53fe0dfb7f7c0e",
+        "https://github.com/python/cpython/commit/e31c55121620189a0d1a07b689762d8ca9c1b7fa"
+      ],
+      "disposition": "RESIDUAL_REQUIRES_REVIEW_NO_ACCEPTANCE",
+      "rationale": "Python base64 decoding API not used by image helpers; residual behavior remains present. No acceptance."
+    },
+    {
+      "id": "CVE-2025-13837",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "Medium",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": ["3.13.10", "3.14.1", "3.15.0a3"],
+        "state": "fixed",
+        "available": [
+          {
+            "version": "3.13.10",
+            "date": "2025-12-04",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.14.1",
+            "date": "2025-12-04",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.15.0a3",
+            "date": "2026-04-15",
+            "kind": "first-observed"
+          }
+        ]
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2025-13837.json",
+        "bytes": 3962,
+        "sha256": "472574a8f322640253a36bfa53a74160baede0a1a392a4fba7d8a2b05eef8ecd"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-03-03T14:41:54.597Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "modules": ["plistlib"],
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.10.20",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.11.0",
+              "lessThan": "3.11.15",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.12.0",
+              "lessThan": "3.12.13",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.13.0",
+              "lessThan": "3.13.10",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.14.0",
+              "lessThan": "3.14.1",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.15.0a1",
+              "lessThan": "3.15.0a3",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2025-13837",
+      "upstreamReferences": [
+        "https://github.com/python/cpython/pull/119343",
+        "https://github.com/python/cpython/issues/119342",
+        "https://github.com/python/cpython/commit/694922cf40aa3a28f898b5f5ee08b71b4922df70",
+        "https://github.com/python/cpython/commit/71fa8eb8233b37f16c88b6e3e583b461b205d1ba",
+        "https://github.com/python/cpython/commit/b64441e4852383645af5b435411a6f849dd1b4cb",
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/2X5IBCJXRQAZ5PSERLHMSJFBHFR3QM2C/",
+        "https://github.com/python/cpython/commit/5a8b19677d818fb41ee55f310233772e15aa1a2b",
+        "https://github.com/python/cpython/commit/568342cfc8f002d9a15f30238f26b9d2e0e79036",
+        "https://github.com/python/cpython/commit/cefee7d118a26ef6cd43db59bb9d98ca9a331111"
+      ],
+      "disposition": "UPSTREAM_FIXED_VERSION_MATCH_DISPUTED_PENDING_INDEPENDENT_REVIEW",
+      "rationale": "CNA affected range excludes installed Python 3.12.14 (or fixed since 3.12.13); upstream release/backport evidence retained. Raw scanner result is not suppressed."
+    },
+    {
+      "id": "CVE-2026-15310",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "Low",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": [],
+        "state": ""
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2026-15310.json",
+        "bytes": 3621,
+        "sha256": "7f10b02fd15d1b508e4e03be5dfd2047cb77bfbbb018a5a59bdcb9b272b99d53"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-09-04T00:35:36.029Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.15.0rc2",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2026-15310",
+      "upstreamReferences": [
+        "https://github.com/python/cpython/pull/156003",
+        "https://github.com/python/cpython/issues/156002",
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/YUHXURX2WZGKGNA4ANYBQS2VZRYQ5JNK/",
+        "https://github.com/python/cpython/commit/f897dbf2f36a5935700b7c2d94d4681d2136b7d4",
+        "https://github.com/python/cpython/commit/1b424c0178a01e155fd0267dc28a8fc1159b33a8",
+        "https://github.com/python/cpython/commit/31980e84b9a708424a0a1dfecde3fc991e313f89"
+      ],
+      "disposition": "RESIDUAL_REQUIRES_REVIEW_NO_ACCEPTANCE",
+      "rationale": "zipfile is used by bootstrap, but the archive SHA-256 is verified before ZipFile is opened and the exact reviewed member is selected. Residual decompression behavior remains; explicit risk review required."
+    },
+    {
+      "id": "CVE-2025-13462",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "Low",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": ["3.13.13", "3.14.4", "3.15.0a8"],
+        "state": "fixed",
+        "available": [
+          {
+            "version": "3.13.13",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.14.4",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.15.0a8",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          }
+        ]
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2025-13462.json",
+        "bytes": 4620,
+        "sha256": "6e4af1169d4c99d691cf9476f48edf3ad7a731ee83f5177aeb68d898ff3aec62"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-08-13T00:30:19.927Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "modules": ["tarfile"],
+          "product": "CPython",
+          "repo": "https://github.com/python/cpython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.10.21",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.11.0",
+              "lessThan": "3.11.16",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.12.0",
+              "lessThan": "3.12.14",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.13.0",
+              "lessThan": "3.13.13",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.14.0",
+              "lessThan": "3.14.4",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.15.0a1",
+              "lessThan": "3.15.0a8",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2025-13462",
+      "upstreamReferences": [
+        "https://github.com/python/cpython/pull/143934",
+        "https://github.com/python/cpython/issues/141707",
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/EOMI5I66ZMKQ2INNFT6T7IAIKUGPZYIE/",
+        "https://github.com/python/cpython/commit/42d754e34c06e57ad6b8e7f92f32af679912d8ab",
+        "https://github.com/python/cpython/commit/7ad3093d76a748af55bdb1d2e8aad3638163b017",
+        "https://github.com/python/cpython/commit/ae99fe3a33b43e303a05f012815cef60b611a9c7",
+        "https://github.com/python/cpython/commit/72dde1016493c52abe857fc4a7bf6c40138b4114",
+        "https://github.com/python/cpython/commit/9a23b753552afa28e3a2f4d8863572fc66479406",
+        "https://github.com/python/cpython/commit/d10950739a78f54d0718d88fb5a868374603c084"
+      ],
+      "disposition": "UPSTREAM_FIXED_VERSION_MATCH_DISPUTED_PENDING_INDEPENDENT_REVIEW",
+      "rationale": "CNA affected range excludes installed Python 3.12.14 (or fixed since 3.12.13); upstream release/backport evidence retained. Raw scanner result is not suppressed."
+    },
+    {
+      "id": "CVE-2026-3479",
+      "package": "python",
+      "installedVersion": "3.12.14",
+      "severity": "Negligible",
+      "scannerNamespace": "nvd:cpe",
+      "scannerFix": {
+        "versions": ["3.13.13", "3.14.4", "3.15.0a8"],
+        "state": "fixed",
+        "available": [
+          {
+            "version": "3.13.13",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.14.4",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          },
+          {
+            "version": "3.15.0a8",
+            "date": "2026-04-10",
+            "kind": "first-observed"
+          }
+        ]
+      },
+      "cnaEvidence": {
+        "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\cve-records\\CVE-2026-3479.json",
+        "bytes": 4014,
+        "sha256": "acbf5d9fc2ed21fcf6d85ff873c1a9f9007c047e1816395e3ddf316d823d06c8"
+      },
+      "cna": "PSF",
+      "cnaUpdated": "2026-04-07T22:01:35.724Z",
+      "cnaAffected": [
+        {
+          "defaultStatus": "unaffected",
+          "modules": ["pkgutil"],
+          "product": "CPython",
+          "vendor": "Python Software Foundation",
+          "versions": [
+            {
+              "version": "0",
+              "lessThan": "3.13.13",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.14.0",
+              "lessThan": "3.14.4",
+              "status": "affected",
+              "versionType": "python"
+            },
+            {
+              "version": "3.15.0a1",
+              "lessThan": "3.15.0a8",
+              "status": "affected",
+              "versionType": "python"
+            }
+          ]
+        }
+      ],
+      "cnaReference": "https://cveawg.mitre.org/api/cve/CVE-2026-3479",
+      "upstreamReferences": [
+        "https://github.com/python/cpython/pull/146122",
+        "https://mail.python.org/archives/list/security-announce@python.org/thread/WYLLVQOOCKGK73JM7Z7ZSNOJC4N7BAWY/",
+        "https://github.com/python/cpython/issues/146121",
+        "https://github.com/python/cpython/commit/bcdf231946b1da8bdfbab4c05539bb0cc964a1c7",
+        "https://github.com/python/cpython/commit/5af6ce3e7b643a30a02d22245c1e3f4a8bc0a1fe",
+        "https://github.com/python/cpython/commit/cf59bf76470f3d75ad47d80ffb8ce76b64b5e943",
+        "https://github.com/python/cpython/commit/d786d59a8f7196bb630100a869f28ad13436b59c"
+      ],
+      "disposition": "RESIDUAL_REQUIRES_REVIEW_NO_ACCEPTANCE",
+      "rationale": "Scanner describes upstream-disputed documentation issue. No user-selected pkgutil resource path exists in image helpers. Preserve finding; no suppression."
+    }
+  ],
+  "sbom": {
+    "topLevelKeys": ["source", "attestations", "artifacts", "descriptor"],
+    "packageCount": 71
+  },
+  "dependencyAudit": {
+    "observed": "npm audit --json after clean install",
+    "exitCode": 0,
+    "advisories": 0,
+    "acceptanceOrSuppression": false
+  },
+  "immutableApks": [
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\apks\\libbz2-1.0.8-r6.apk",
+      "bytes": 35467,
+      "sha256": "2737e2b23ed08d4911ee62cd0163b5f4bf0379cacf4dc35b23a00209584c98fd"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\apks\\libcrypto3-3.5.8-r0.apk",
+      "bytes": 1978546,
+      "sha256": "161223a16f042b8e469e9441291e071464fd91d4f4bbe6f496ee8d0abd4e0701"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\apks\\libssl3-3.5.8-r0.apk",
+      "bytes": 379265,
+      "sha256": "aca521e5ae4a321322a9d47ed64a1775f5ab1ffd215d1e9fc0433c58f7bfd037"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\apks\\libuuid-2.42.3-r1.apk",
+      "bytes": 14261,
+      "sha256": "8306e5bb577696c9069fe1dfd9e1dcc39d2d481c6a1b0e707fd03c3e21aa6aa2"
+    },
+    {
+      "path": "C:\\Users\\USER\\.codex\\tools\\diis\\w10d-remediation-20260907\\apks\\sqlite-libs-3.53.4-r0.apk",
+      "bytes": 877769,
+      "sha256": "a8a216e53d22faa3f04d2e3650c1991af66f8d0b42fadff5afcdb9afb60b19e5"
+    }
+  ],
+  "retainedImage": "sha256:a7a17930e9356d0c31b90cb7daa629af667baecd2277ea2e3fd6a9a2d04275f6"
+}

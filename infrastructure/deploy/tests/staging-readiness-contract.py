@@ -112,6 +112,51 @@ class FakeHost:
 
 
 class Contract(unittest.TestCase):
+    def test_reviewed_application_test_transition_only(self):
+        host = m.Host(packet())
+        for raw in (b'', m.REVIEWED_TEST_DELTA):
+            with self.subTest(raw=raw), patch.object(host, 'git', return_value=raw) as observe:
+                host.application_delta()
+                observe.assert_called_once_with(
+                    'diff', '--raw', '-z', '--no-abbrev', '--no-renames',
+                    '--no-ext-diff', '--no-textconv', host.p['baseSha'],
+                    host.p['sourceSha'], '--', 'apps', 'packages')
+
+    def test_application_transition_rejects_runtime_schema_migration_unknown(self):
+        host = m.Host(packet())
+        path = b'apps/api/src/__tests__/deploy-workflow-safety.spec.ts'
+        for other in (b'apps/api/src/main.ts', b'packages/database/prisma/schema.prisma',
+                      b'packages/database/prisma/migrations/unknown/migration.sql',
+                      b'apps/api/src/__tests__/unknown.spec.ts', b'packages/unknown',
+                      path + b'\nunknown'):
+            raw = m.REVIEWED_TEST_DELTA.replace(path, other)
+            for value in (raw, m.REVIEWED_TEST_DELTA + raw):
+                with self.subTest(path=other), patch.object(host, 'git', return_value=value):
+                    with self.assertRaisesRegex(m.Stop, 'application-or-migration-delta'):
+                        host.application_delta()
+
+    def test_application_transition_rejects_mode_status_blob_and_malformed(self):
+        host = m.Host(packet())
+        good = m.REVIEWED_TEST_DELTA
+        for raw in (good.replace(b'100644', b'100755'),
+                    good.replace(b'100644', b'120000', 1),
+                    good.replace(b'100644', b'160000'),
+                    good.replace(b' M\0', b' T\0'), good.replace(b' M\0', b' R100\0'),
+                    good.replace(b' M\0', b' A\0'), good.replace(b' M\0', b' D\0'),
+                    good.replace(b'a03f3580', b'00000000'),
+                    good.replace(b'8d493094', b'11111111'), good[:-1], good + b'\0',
+                    good + good, b'\n', b'garbage', good.replace(b'\0', b'\t')):
+            with self.subTest(raw=raw), patch.object(host, 'git', return_value=raw):
+                with self.assertRaisesRegex(m.Stop, 'application-or-migration-delta'):
+                    host.application_delta()
+
+    def test_application_git_observation_failure_propagates(self):
+        host = m.Host(packet())
+        for reason in ('command-failed', 'command-timeout', 'command-overflow'):
+            with self.subTest(reason=reason), patch.object(host, 'git', side_effect=m.Stop(reason)):
+                with self.assertRaisesRegex(m.Stop, reason):
+                    host.application_delta()
+
     def test_valid_approval(self):
         p = packet()
         self.assertEqual(m.validate(p, p['sourceSha'], int(time.time())), p)
