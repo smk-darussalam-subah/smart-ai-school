@@ -1,5 +1,5 @@
 import { readFileSync } from 'fs';
-import { dirname, resolve } from 'path';
+import { dirname, relative, resolve } from 'path';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
 
 const root = resolve(__dirname, '../../../..');
@@ -26,6 +26,27 @@ describe('W10-D installed dependency security boundary', () => {
     const postcssPath = require.resolve('postcss/package.json', { paths: [nextPath] });
     const installed: { version: string } = JSON.parse(readFileSync(postcssPath, 'utf8'));
     expect(installed.version).toBe('8.5.28');
+  });
+
+  it('keeps the thread-stream worker on its declared real-require 0.2.x edge', () => {
+    const threadEntry = lock.packages['node_modules/thread-stream'] as {
+      version?: string;
+      dependencies?: Record<string, string>;
+    };
+    expect(threadEntry.version).toBe('3.2.0');
+    expect(threadEntry.dependencies?.['real-require']).toBe('^0.2.0');
+    expect(lock.packages['node_modules/real-require']?.version).toBe('0.2.0');
+    expect(lock.packages['node_modules/thread-stream/node_modules/real-require']).toBeUndefined();
+
+    const workerPath = require.resolve('thread-stream/lib/worker.js');
+    const resolvedPackage = require.resolve('real-require/package.json', {
+      paths: [dirname(workerPath)],
+    });
+    const installed: { version: string } = JSON.parse(readFileSync(resolvedPackage, 'utf8'));
+    expect(installed.version).toBe('0.2.0');
+    expect(relative(root, resolvedPackage).replaceAll('\\', '/')).toBe(
+      'node_modules/real-require/package.json',
+    );
   });
 
   it('runs the patched Fastify through Nest and rejects malformed JSON without an open server', async () => {

@@ -21,6 +21,7 @@
     "db:seed": "turbo run db:seed",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "verify:dependency-graph": "node scripts/verify-dependency-graph.cjs",
     "test:smoke:staging": "ts-node --project apps/api/tsconfig.json scripts/smoke-test-staging.ts"
   },
   "devDependencies": {
