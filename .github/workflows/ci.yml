@@ -45,6 +45,8 @@ jobs:
       - name: Staging readiness and deployment contracts (synthetic only)
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/staging-readiness-contract.py
+          PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/source-closure-contract.py
+          PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/verify-source-closure-handoff.py
           bash infrastructure/deploy/tests/deploy-lock-contract.sh
           bash infrastructure/deploy/tests/shared-ingress-contract.sh
 

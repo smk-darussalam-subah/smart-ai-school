@@ -97,6 +97,10 @@ acquire_directory_lock() {
   token="${boot_id}:$$:${self_start}"
 
   if ! mkdir -m 0700 "$lock_dir" 2>/dev/null; then
+    application_marker="${lock_dir}/application-owner.json"
+    if [ -e "$application_marker" ] || [ -L "$application_marker" ]; then
+      backup_die "karantina aplikasi aktif atau ambigu; rekonsiliasi wajib"
+    fi
     owner_file="${lock_dir}/owner"
     # An ownerless directory may be a creator between mkdir(2) and owner
     # publication. It is therefore ambiguous, never stale, and must not be
@@ -111,6 +115,16 @@ acquire_directory_lock() {
     [ -n "$owner_boot" ] && [ -n "$owner_pid" ] && [ -n "$owner_start" ] \
       && [ -n "$owner_namespace" ] \
       || backup_die "status lock ambigu; identitas owner tidak lengkap"
+    # Application deployment owns a persistent, explicitly reconciled
+    # quarantine. It is never an ordinary stale backup lock: guardian death or
+    # a host reboot must not authorize a backup/restore/cleanup writer to move
+    # or replace it. Only the separately approved application reconciliation
+    # lifecycle may retire this sentinel.
+    case "$owner_namespace" in
+      diis-application-quarantine:*)
+        backup_die "karantina aplikasi aktif atau ambigu; rekonsiliasi wajib"
+        ;;
+    esac
     owner_live=false
     case "$owner_pid" in ''|*[!0-9]*) ;;
       *)

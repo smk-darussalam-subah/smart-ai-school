@@ -36,6 +36,8 @@ SAFE_ENV = {'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bi
 COMMAND_DEADLINE = None  # internal wall-clock deadline, never selected by environment
 OWNED_PRODUCERS = {}  # removed only after bounded reap AND process-group absence
 HANDLED_SIGNALS = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
+DEFER_CANCELLATION = False  # application rollback owns a bounded deferral policy
+DEFERRED_SIGNALS = set()  # signal numbers only; never serialized or printed
 # One reviewed non-runtime transition, not a general test-file allowlist.
 # Raw NUL-delimited Git output binds path, status, regular mode and both blobs.
 REVIEWED_TEST_DELTA = (
@@ -56,6 +58,13 @@ class ProducerAmbiguous(Stop):
 def producers_absent() -> None:
     if OWNED_PRODUCERS:
         raise ProducerAmbiguous('command-group-ambiguous-retained-no-retry')
+
+
+def cancellation_point() -> None:
+    """Latch blocked signals; only recovery may defer raising cancellation."""
+    DEFERRED_SIGNALS.update(set(HANDLED_SIGNALS).intersection(signal.sigpending()))
+    if DEFERRED_SIGNALS and not DEFER_CANCELLATION:
+        raise Stop('interrupted')
 
 
 def finish_producer(process, selector) -> None:
@@ -185,7 +194,7 @@ def run(argv: list[str], timeout: float = 30, cap: int = 1048576,
         assert process.stdout is not None
         selector.register(process.stdout, selectors.EVENT_READ)
         while True:
-            require(not set(HANDLED_SIGNALS).intersection(signal.sigpending()), 'interrupted')
+            cancellation_point()
             require(time.monotonic() < deadline, 'command-timeout')
             for key, _ in ([] if eof else selector.select(0.05)):
                 chunk = os.read(key.fd, 65536)
@@ -214,6 +223,7 @@ def run(argv: list[str], timeout: float = 30, cap: int = 1048576,
             raise
         if cleanup_failure is not None:
             raise cleanup_failure
+        cancellation_point()
 
 
 def validate(packet: object, sha: str, now: int) -> dict:
@@ -451,7 +461,11 @@ class Host:
             networks = {'smk-staging-net'} if service == 'web' else {'smk-staging-net', 'smk-network'}
             require(set(value['networks']) == networks, 'app-network-drift')
 
-    def model(self) -> dict:
+    def model(self, image_references=None, expected_sha=None) -> dict:
+        if image_references is None:
+            image_references = {service: self.p['apps'][service]['image'] for service in APP_NAMES}
+        require(type(image_references) is dict and set(image_references) == set(APP_NAMES),
+                'model-image-references')
         args = ['docker', 'compose', '-p', 'smk-staging']
         for f in COMPOSE_FILES:
             args += ['-f', str(ROOT / f)]
@@ -469,7 +483,7 @@ class Host:
                     and not value.get('devices') and not value.get('cap_add'), 'app-model-scope')
             value.pop('build', None)
             value.pop('depends_on', None)
-            value['image'] = self.p['apps'][service]['image']
+            value['image'] = image_references[service]
             value['pull_policy'] = 'never'
             current = self.app_config(name)
             live_env = dict(item.split('=',1) for item in current['env'])
@@ -486,7 +500,7 @@ class Host:
         model = {'services': services, 'networks': {
             'smk-staging-net': {'name': 'smk-staging-net', 'external': True},
             'smk-network': {'name': 'smk-network', 'external': True}}}
-        require(digest(canonical(model)) == self.p['modelSha256'], 'model-binding')
+        require(digest(canonical(model)) == (expected_sha or self.p['modelSha256']), 'model-binding')
         return model
 
     def apply(self, model_file: Path) -> None:
