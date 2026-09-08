@@ -42,6 +42,16 @@ COPY scripts/w10d_completion_validation.py /scripts/w10d_completion_validation.p
 COPY scripts/bounded-command-capture.py /scripts/bounded-command-capture.py
 COPY scripts/parse-minio-du-observation.py /scripts/parse-minio-du-observation.py
 
+# BuildKit downloads fixed HTTPS resources and verifies bytes before extraction.
+# BusyBox wget and Python's BZIP2/LZMA zip readers are not used by this path.
+ADD --checksum=sha256:01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891 https://dl.min.io/client/mc/release/linux-amd64/archive/mc.RELEASE.2025-08-13T08-35-41Z /usr/local/lib/diis-tools/mc
+ADD --checksum=sha256:7d69057e69385f6514a9684c7eaa424d972096b130284bb34dd967c4ed4f9dad https://downloads.rclone.org/v1.70.3/rclone-v1.70.3-linux-amd64.zip /usr/local/lib/diis-tools/rclone.zip
+COPY scripts/build-backup-tools.py /scripts/build-backup-tools.py
+COPY scripts/install-baked-backup-tools.py /scripts/install-baked-backup-tools.py
+RUN python3 /scripts/build-backup-tools.py \
+    && /usr/local/lib/diis-tools/mc --version \
+    && /usr/local/lib/diis-tools/rclone version
+
 # Build-time integration assertion: the exact image that can be published for
 # pg-backup must execute the validator and expose every required client.
 RUN set -eux; \

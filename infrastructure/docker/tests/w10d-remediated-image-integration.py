@@ -13,7 +13,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 MINIO = "minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
-MC = "minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727"
 PENDING_SIGNAL = 0
 CLEANING = False
 
@@ -54,7 +53,7 @@ def main():
     endpoint = context["Endpoints"]["docker"]["Host"]
     if endpoint not in {"unix:///var/run/docker.sock", "npipe:////./pipe/dockerDesktopLinuxEngine"}:
         raise ValueError("remote Docker endpoint rejected")
-    for image in (args.image, MINIO, MC):
+    for image in (args.image, MINIO):
         metadata = json.loads(command("docker", "image", "inspect", image))[0]
         if metadata["Os"] != "linux" or metadata["Architecture"] != "amd64":
             raise ValueError("local image platform mismatch")
@@ -82,13 +81,16 @@ def main():
         name = prefix + "-mc-" + uuid.uuid4().hex[:8]
         owned.append(name)  # Ownership intent precedes create/timeout boundaries.
         return command("docker", "run", "--rm", "-i", "--name", name, "--label", label,
+                       "--memory", "256m", "--cpus", "1", "--pids-limit", "64",
                        "--network", network, "-e",
                        "MC_HOST_fixture=http://synthetic:synthetic-local-only@objects:9000",
-                       MC, *arguments, data=data)
+                       "--entrypoint", "/usr/local/lib/diis-tools/mc", args.image, *arguments, data=data)
 
     try:
         command("docker", "network", "create", "--internal", "--label", label, network)
         command("docker", "run", "-d", "--name", pg, "--label", label, "--network", network,
+                "--memory", "1g", "--cpus", "1", "--pids-limit", "128",
+                "--tmpfs", "/opt/backup-bin:rw,exec,size=256m,mode=0700",
                 "--tmpfs", "/var/lib/postgresql/data:rw,size=512m", "--tmpfs", "/tmp:rw,size=64m",
                 "-e", "POSTGRES_PASSWORD=synthetic-local-only", args.image)
         command("docker", "exec", pg, "sh", "-ec",
@@ -96,11 +98,16 @@ def main():
         smoke = command("docker", "exec", pg, "python3", "-c",
                         "import ssl,bz2,lzma,sqlite3,ctypes,hashlib,zipfile,sys; "
                         "assert sys.version_info[:2]==(3,12); print(sys.version.split()[0],ssl.OPENSSL_VERSION)").decode().strip()
-        for helper in ("w10d_completion_validation.py", "bounded-command-capture.py", "parse-minio-du-observation.py"):
+        for helper in ("w10d_completion_validation.py", "bounded-command-capture.py", "parse-minio-du-observation.py",
+                       "build-backup-tools.py", "install-baked-backup-tools.py"):
             expected = hashlib.sha256((ROOT / "scripts" / helper).read_bytes()).hexdigest()
             actual = command("docker", "exec", pg, "sha256sum", "/scripts/" + helper).decode().split()[0]
             if actual != expected:
                 raise ValueError("candidate helper bytes differ from source")
+        command("docker", "exec", pg, "python3", "/scripts/install-baked-backup-tools.py")
+        command("docker", "exec", pg, "python3", "/scripts/install-baked-backup-tools.py")
+        command("docker", "exec", pg, "/opt/backup-bin/rclone", "version")
+        command("docker", "exec", pg, "/opt/backup-bin/mc", "--version")
         pgsql("CREATE DATABASE fixture_source; CREATE DATABASE fixture_restore;")
         pgsql("CREATE TABLE records(id int PRIMARY KEY, body text NOT NULL); "
               "INSERT INTO records VALUES(1,'synthetic-a'),(2,'synthetic-b');", "fixture_source")
@@ -117,6 +124,7 @@ def main():
             raise ValueError("disposable database absence not proven")
         command("docker", "exec", pg, "sh", "-ec", "rm /tmp/fixture.dump; test ! -e /tmp/fixture.dump")
         command("docker", "run", "-d", "--name", objects, "--label", label, "--network", network,
+                "--memory", "512m", "--cpus", "1", "--pids-limit", "128",
                 "--network-alias", "objects", "--tmpfs", "/data:rw,size=128m",
                 "-e", "MINIO_ROOT_USER=synthetic", "-e", "MINIO_ROOT_PASSWORD=synthetic-local-only",
                 MINIO, "server", "/data")
@@ -137,7 +145,8 @@ def main():
         if hashlib.sha256(mc("cat", "fixture/disposable-restore/sample")).digest() == hashlib.sha256(payload).digest():
             raise ValueError("object corruption negative control failed")
         result = {"image": args.image, "platform": "linux/amd64", "runtime": smoke,
-                  "helperHashes": "3/3", "postgresRestore": "2/2 rows; database/dump absent",
+                  "helperHashes": "5/5", "bakedTools": "install, second no-op, versions, actual mc transport",
+                  "postgresRestore": "2/2 rows; database/dump absent",
                   "dumpSha256": dump_sha, "sampleObjectRestore": "hash verified; corruption detected",
                   "objectSha256": hashlib.sha256(payload).hexdigest(),
                   "scope": "synthetic local transport/client test, not independent-cloud provenance proof"}

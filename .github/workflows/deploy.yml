@@ -52,10 +52,12 @@ jobs:
         if: github.ref == 'refs/heads/staging'
         id: staging-executor
         shell: bash
+        env:
+          DIIS_STAGING_RELEASE_MODE: ${{ vars.W10D_STAGING_RELEASE_MODE || 'recovery-only' }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          printf 'payload=%s\n' "$(base64 -w0 infrastructure/deploy/staging-readiness-deploy.py)" >> "$GITHUB_OUTPUT"
+          python3 infrastructure/deploy/package-staging-executor.py "$DIIS_STAGING_RELEASE_MODE" >> "$GITHUB_OUTPUT"
 
       - name: Guarded recovery-only staging via existing SSH channel
         if: github.ref == 'refs/heads/staging'
@@ -63,7 +65,7 @@ jobs:
         env:
           DIIS_STAGING_EXECUTOR_B64: ${{ steps.staging-executor.outputs.payload }}
           DIIS_EXPECTED_SHA: ${{ github.sha }}
-          DIIS_APPROVAL_SHA256: ${{ vars.W10D_STAGING_APPROVAL_SHA256 }}
+          DIIS_APPROVAL_SHA256: ${{ vars.W10D_STAGING_RELEASE_MODE == 'application' && vars.W10D_STAGING_APPLICATION_APPROVAL_SHA256 || vars.W10D_STAGING_APPROVAL_SHA256 }}
           DIIS_RUN_ID: ${{ github.run_id }}
           DIIS_RUN_ATTEMPT: ${{ github.run_attempt }}
         with:

@@ -531,8 +531,9 @@ assert_grep 'python3 /scripts/w10d_completion_validation.py --help' "$PG_BACKUP_
   'real image validator integration assertion missing'
 assert_not_grep '^# syntax=' "$PG_BACKUP_DOCKERFILE" \
   'Dockerfile still selects a mutable external frontend'
-assert_grep 'MC_SHA256=.01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891.' "$COMPOSE" 'mc checksum missing'
-assert_grep 'RCLONE_SHA256=.7d69057e69385f6514a9684c7eaa424d972096b130284bb34dd967c4ed4f9dad.' "$COMPOSE" 'rclone checksum missing'
+assert_grep 'ADD --checksum=sha256:01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891' "$PG_BACKUP_DOCKERFILE" 'mc checksum missing'
+assert_grep 'ADD --checksum=sha256:7d69057e69385f6514a9684c7eaa424d972096b130284bb34dd967c4ed4f9dad' "$PG_BACKUP_DOCKERFILE" 'rclone checksum missing'
+assert_grep 'python3 /scripts/install-baked-backup-tools.py' "$COMPOSE" 'baked tools required'
 assert_not_grep 'curl.*\|[[:space:]]*(ba)?sh|/release/linux-amd64/mc([[:space:]]|$)' "$COMPOSE" 'mutable installer found'
 pass 'immutable backup supply chain'
 
@@ -1817,6 +1818,27 @@ fi
   && "$(cat "$retention_negative_dump")" = sentinel ]] \
   || fail 'filename-mismatched retention point was deleted before strict validation'
 pass 'retention rejects filename mismatch before any deletion'
+
+prior_boot_lock="$TMP/prior-boot-backup.lock"
+mkdir -m 0700 "$prior_boot_lock"
+printf '%s\n%s\n%s\n%s\n%s\n' prior-boot-id 999999 1 retained-token \
+  "diis-application-quarantine:$(printf application-quarantine | "$REAL_SHA" | awk '{print $1}')" \
+  >"$prior_boot_lock/owner"
+printf '%s\n' '{"schema":"diis-staging-application-lock-v1","state":"quarantined-until-verified-release","retry":"prohibited"}' \
+  >"$prior_boot_lock/application-owner.json"
+prior_owner_sha=$("$REAL_SHA" "$prior_boot_lock/owner" | awk '{print $1}')
+prior_marker_sha=$("$REAL_SHA" "$prior_boot_lock/application-owner.json" | awk '{print $1}')
+if env BACKUP_LOCK_TEST_MODE=1 DIIS_W10D_TEST_ROOT="$TMP" sh -ceu \
+  '. "$1"; acquire_directory_lock "$2"' sh "$LIB" "$prior_boot_lock" \
+  >"$TMP/prior-boot.out" 2>"$TMP/prior-boot.err"; then
+  fail 'prior-boot application quarantine was reclaimed'
+fi
+assert_grep 'karantina aplikasi aktif atau ambigu' "$TMP/prior-boot.err" \
+  'prior-boot application quarantine rejection missing'
+[[ "$("$REAL_SHA" "$prior_boot_lock/owner" | awk '{print $1}')" = "$prior_owner_sha" \
+  && "$("$REAL_SHA" "$prior_boot_lock/application-owner.json" | awk '{print $1}')" = "$prior_marker_sha" ]] \
+  || fail 'rejected prior-boot quarantine bytes changed'
+pass 'prior-boot application quarantine requires explicit reconciliation'
 
 signal_base="$TMP/live-lock"
 prepare_backup_case "$signal_base"
