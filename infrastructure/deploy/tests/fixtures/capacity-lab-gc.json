@@ -1,0 +1,21 @@
+{
+  "hosts": ["unix:///var/run/docker.sock", "tcp://127.0.0.1:2375"],
+  "iptables": false,
+  "bridge": "none",
+  "features": { "containerd-snapshotter": false },
+  "builder": {
+    "gc": {
+      "enabled": true,
+      "policy": [
+        {
+          "reservedSpace": "1MiB",
+          "maxUsedSpace": "8MiB",
+          "minFreeSpace": "64MiB",
+          "keepDuration": "1s",
+          "filter": ["private=\"\""],
+          "all": false
+        }
+      ]
+    }
+  }
+}

@@ -4,7 +4,10 @@ set -Eeuo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-CLEANUP="$ROOT/infrastructure/deploy/diis-build-cache-cleanup.sh"
+# Immutable historical contract. Current cleanup behavior is exercised by
+# capacity-lifecycle-contract.py and the real nested-daemon lab, not these mocks.
+CLEANUP="$ROOT/infrastructure/deploy/tests/fixtures/historical-build-cache-cleanup.sh"
+[ "$(sha256sum "$CLEANUP" | cut -d ' ' -f1)" = 8a3e862d5c113d648c01d77efeea41745f7ad2ccad7a3fc2f9fb92eab22bdda9 ] || exit 65
 HANDOFF="$ROOT/infrastructure/deploy/w10d-backup-scheduler-handoff.sh"
 CANDIDATE_CREATE="$ROOT/infrastructure/deploy/create-w10d-backup-candidate.sh"
 HOST_LOCK_WRAPPER="$ROOT/infrastructure/deploy/run-with-diis-host-lock.sh"
