@@ -389,7 +389,7 @@ fi
 
 telemetry_file="${TEMP_DIR}/backup-telemetry.json"
 cat >"$telemetry_file" <<EOF
-{"schemaVersion":"diis-backup-telemetry-v1","createdEpoch":${CREATED_EPOCH},"backupBytes":${DUMP_BYTES},"growth7Status":"${GROWTH_7_STATUS}","growth7Bytes":${GROWTH_7_BYTES},"growth30Status":"${GROWTH_30_STATUS}","growth30Bytes":${GROWTH_30_BYTES},"targetTotalBytes":${TARGET_TOTAL_BYTES},"targetFreeBytes":${TARGET_FREE_BYTES},"projectedFreePercent":${TARGET_PROJECTED_FREE_PERCENT},"projectedDaysToFull":${DAYS_TO_FULL},"offsiteStatus":"complete","restoreStatus":"${restore_status}","restoreAgeDays":${restore_age_days}}
+{"schemaVersion":"diis-backup-telemetry-v1","createdEpoch":${CREATED_EPOCH},"backupBytes":${DUMP_BYTES},"estimatedDatabaseBytes":${estimate},"growth7Status":"${GROWTH_7_STATUS}","growth7Bytes":${GROWTH_7_BYTES},"growth30Status":"${GROWTH_30_STATUS}","growth30Bytes":${GROWTH_30_BYTES},"targetTotalBytes":${TARGET_TOTAL_BYTES},"targetFreeBytes":${TARGET_FREE_BYTES},"projectedFreePercent":${TARGET_PROJECTED_FREE_PERCENT},"projectedDaysToFull":${DAYS_TO_FULL},"offsiteStatus":"complete","restoreStatus":"${restore_status}","restoreAgeDays":${restore_age_days}}
 EOF
 metadata_bytes=$(wc -c <"$SHA_FILE")
 metadata_bytes=$((metadata_bytes + $(wc -c <"$LOCAL_MANIFEST")))

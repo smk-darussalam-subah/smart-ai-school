@@ -1034,8 +1034,6 @@ class Handoff(unittest.TestCase):
             root = Path(directory)
             (root/'docs/audits').mkdir(parents=True, mode=0o700)
             (root/'infrastructure/deploy').mkdir(parents=True, mode=0o700)
-            validator = root/handoff.SELF_RELATIVE
-            validator.write_bytes(b'validator-bytes')
             contract = root/handoff.CONTRACT_RELATIVE
             contract.parent.mkdir(parents=True, exist_ok=True)
             methods = ''.join(
@@ -1043,29 +1041,102 @@ class Handoff(unittest.TestCase):
                 for index in range(43))
             contract.write_text('import unittest\n\nclass Contract(unittest.TestCase):\n'
                                 + methods, encoding='utf-8')
+            for relative in handoff.FOLLOWUP_MANIFEST:
+                path = root/relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if not path.exists():
+                    path.write_bytes(('current:' + relative.as_posix()).encode())
+
+            legacy_report = root/handoff.LEGACY_REPORT_RELATIVE
+            legacy_report.write_text('historical report\n', encoding='utf-8')
+            legacy_sources = {
+                handoff.SELF_RELATIVE: b'legacy-validator',
+                handoff.CONTRACT_RELATIVE: b'legacy-contract',
+                Path('infrastructure/docker/tests/backup-contract.sh'): b'legacy-backup',
+            }
+            legacy_payload = {
+                'schema': handoff.LEGACY_SCHEMA,
+                'sourceManifestCount': len(legacy_sources),
+                'sourceManifest': [
+                    {'path': path.as_posix(), 'sha256': hashlib.sha256(raw).hexdigest()}
+                    for path, raw in legacy_sources.items()
+                ],
+            }
+            legacy_evidence = root/handoff.LEGACY_EVIDENCE_RELATIVE
+            legacy_evidence.write_text(json.dumps(legacy_payload), encoding='utf-8')
+
             report = root/handoff.REPORT_RELATIVE
             report.write_text('| Source closure contract | 43/43 synthetic |\n', encoding='utf-8')
             evidence = root/handoff.EVIDENCE_RELATIVE
+            manifest = {
+                relative: hashlib.sha256((root/relative).read_bytes()).hexdigest()
+                for relative in handoff.FOLLOWUP_MANIFEST
+            }
             payload = {
                 'schema': handoff.SCHEMA,
-                'sourceManifestCount': 2,
+                'baseline': {
+                    'developSha': handoff.EXPECTED_BASE_SHA,
+                    'developTree': handoff.EXPECTED_BASE_TREE,
+                },
+                'supersedes': {
+                    'evidencePath': handoff.LEGACY_EVIDENCE_RELATIVE.as_posix(),
+                    'evidenceSha256': hashlib.sha256(legacy_evidence.read_bytes()).hexdigest(),
+                    'reportPath': handoff.LEGACY_REPORT_RELATIVE.as_posix(),
+                    'reportSha256': hashlib.sha256(legacy_report.read_bytes()).hexdigest(),
+                    'sourceManifestSha256': handoff.manifest_hash({
+                        path: hashlib.sha256(raw).hexdigest()
+                        for path, raw in legacy_sources.items()
+                    }),
+                },
+                'reportSha256': hashlib.sha256(report.read_bytes()).hexdigest(),
+                'sourceManifestCount': len(manifest),
                 'sourceManifest': [
-                    {'path': handoff.SELF_RELATIVE.as_posix(),
-                     'sha256': hashlib.sha256(validator.read_bytes()).hexdigest()},
-                    {'path': handoff.CONTRACT_RELATIVE.as_posix(),
-                     'sha256': hashlib.sha256(contract.read_bytes()).hexdigest()},
+                    {'path': path.as_posix(), 'sha256': digest}
+                    for path, digest in manifest.items()
                 ],
+                'sourceManifestSha256': handoff.manifest_hash(manifest),
+                'authorizedRebindings': [path.as_posix() for path in legacy_sources],
                 'tests': {'sourceClosure': 43},
+                'holds': ['all-operational-mutations'],
             }
             evidence.write_text(json.dumps(payload), encoding='utf-8')
-            self.assertEqual(handoff.validate(root), {'sourceClosure': 43, 'sourceManifest': 2})
+            self.assertEqual(handoff.validate(root), {
+                'sourceClosure': 43,
+                'sourceManifest': len(handoff.FOLLOWUP_MANIFEST),
+                'authorizedRebindings': 3,
+            })
+
+            bound = root/Path('infrastructure/n8n/README.md')
+            original_bound = bound.read_bytes()
+            bound.write_bytes(original_bound + b' tampered')
+            with self.assertRaisesRegex(handoff.ValidationError,
+                                        'source-manifest-hash-mismatch'):
+                handoff.validate(root)
+            bound.write_bytes(original_bound)
+
+            evidence.unlink()
+            with self.assertRaisesRegex(handoff.ValidationError, 'unreadable-input'):
+                handoff.validate(root)
+            evidence.write_text(json.dumps(payload), encoding='utf-8')
+
+            payload['baseline']['developSha'] = 'f'*40
+            evidence.write_text(json.dumps(payload), encoding='utf-8')
+            with self.assertRaisesRegex(handoff.ValidationError, 'baseline-binding-invalid'):
+                handoff.validate(root)
+            payload['baseline']['developSha'] = handoff.EXPECTED_BASE_SHA
+            evidence.write_text(json.dumps(payload), encoding='utf-8')
+
+            original_legacy = legacy_evidence.read_bytes()
+            legacy_evidence.write_bytes(original_legacy + b' ')
+            with self.assertRaisesRegex(handoff.ValidationError,
+                                        'superseded-evidence-hash-mismatch'):
+                handoff.validate(root)
+            legacy_evidence.write_bytes(original_legacy)
+
             payload['tests']['sourceClosure'] = 42
             evidence.write_text(json.dumps(payload), encoding='utf-8')
             with self.assertRaisesRegex(handoff.ValidationError,
                                         'report-evidence-source-count-mismatch'):
-                handoff.validate(root)
-            report.write_text('| Source closure contract | 42/42 synthetic |\n', encoding='utf-8')
-            with self.assertRaisesRegex(handoff.ValidationError, 'report-source-count-stale'):
                 handoff.validate(root)
 
 
