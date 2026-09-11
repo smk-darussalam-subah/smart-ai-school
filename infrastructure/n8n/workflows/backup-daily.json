@@ -20,30 +20,46 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "http://minio:9000/diis-backup/postgres/monitor/latest.json",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "aws",
-        "options": {
-          "response": { "response": { "neverError": true, "responseFormat": "json" } },
-          "timeout": 15000
-        }
+        "resource": "file",
+        "operation": "download",
+        "bucketName": "diis-backup",
+        "fileKey": "postgres/monitor/latest.json",
+        "binaryPropertyName": "completionManifest"
       },
       "credentials": {
-        "aws": {
+        "s3": {
           "id": "REPLACE_WITH_CREDENTIAL_ID",
-          "name": "MinIO Backup Readonly Credentials"
+          "name": "MinIO Backup Readonly S3 Credential"
         }
       },
       "id": "backup-monitor-list",
       "name": "Baca completion manifests",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [520, 300]
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [520, 300],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
-        "jsCode": "const raw = $input.first().json ?? {};\nconst telemetry = raw.data && typeof raw.data === 'object' ? raw.data : raw;\nconst reasons = [];\nconst now = Math.floor(Date.now() / 1000);\nconst createdEpoch = telemetry.createdEpoch;\nconst ageMinutes = Number.isSafeInteger(createdEpoch) ? Math.floor((now - createdEpoch) / 60) : null;\nconst completionFresh = ageMinutes !== null && ageMinutes >= 0 && ageMinutes <= 105;\nif (!completionFresh) reasons.push('COMPLETION_STALE_OR_MISSING');\nconst integerFields = ['backupBytes', 'growth7Bytes', 'growth30Bytes', 'targetTotalBytes', 'targetFreeBytes', 'projectedFreePercent', 'projectedDaysToFull', 'restoreAgeDays'];\nconst integersValid = integerFields.every((key) => typeof telemetry[key] === 'number' && Number.isSafeInteger(telemetry[key]));\nconst rangesValid = integersValid && telemetry.backupBytes >= 0 && telemetry.targetTotalBytes > 0 && telemetry.targetFreeBytes >= 0 && telemetry.targetFreeBytes <= telemetry.targetTotalBytes && telemetry.projectedFreePercent >= 0 && telemetry.projectedFreePercent <= 100 && telemetry.projectedDaysToFull >= -1 && telemetry.restoreAgeDays >= -1;\nconst growthStatusesValid = ['available', 'insufficient_history'].includes(telemetry.growth7Status) && ['available', 'insufficient_history'].includes(telemetry.growth30Status);\nif (telemetry.schemaVersion !== 'diis-backup-telemetry-v1' || !Number.isSafeInteger(createdEpoch) || !rangesValid || !growthStatusesValid) reasons.push('TELEMETRY_INVALID');\nif (telemetry.projectedFreePercent < Number($env.BACKUP_MIN_FREE_PERCENT ?? 25)) reasons.push('CAPACITY_LOW');\nif (telemetry.projectedDaysToFull >= 0 && telemetry.projectedDaysToFull < Number($env.BACKUP_MIN_DAYS_TO_FULL ?? 30)) reasons.push('DAYS_TO_FULL_LOW');\nif (telemetry.offsiteStatus !== 'complete') reasons.push('OFFSITE_INCOMPLETE');\nif (telemetry.restoreStatus !== 'success' || telemetry.restoreAgeDays < 0 || telemetry.restoreAgeDays > Number($env.BACKUP_MAX_RESTORE_AGE_DAYS ?? 35)) reasons.push('RESTORE_PROOF_MISSING_OR_STALE');\nconst notificationChannelStatus = ($env.FONNTE_API_KEY && $env.ADMIN_PHONE_NUMBER) ? 'configured' : 'disabled';\nreturn [{ json: { completionFresh, ageMinutes, backupBytes: integersValid ? telemetry.backupBytes : 0, growth7Bytes: integersValid ? telemetry.growth7Bytes : 0, growth30Bytes: integersValid ? telemetry.growth30Bytes : 0, targetFreeBytes: integersValid ? telemetry.targetFreeBytes : 0, projectedFreePercent: integersValid ? telemetry.projectedFreePercent : 0, projectedDaysToFull: integersValid ? telemetry.projectedDaysToFull : -1, restoreStatus: String(telemetry.restoreStatus ?? 'missing'), restoreAgeDays: integersValid ? telemetry.restoreAgeDays : -1, notificationChannelStatus, reasonCodes: [...new Set(reasons)].sort(), alertRequired: reasons.length > 0 } }];"
+        "operation": "fromJson",
+        "binaryPropertyName": "completionManifest",
+        "destinationKey": "data",
+        "options": {
+          "encoding": "utf8",
+          "stripBOM": true,
+          "keepSource": "json"
+        }
+      },
+      "id": "backup-monitor-parse",
+      "name": "Parse completion manifest",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [640, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json ?? {};\nconst telemetry = raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data) ? raw.data : {};\nconst policy = Object.freeze({ minFreePercent: 25, minDaysToFull: 30, maxRestoreAgeDays: 35 });\nconst reasons = [];\nconst now = Math.floor(Date.now() / 1000);\nconst createdEpoch = telemetry.createdEpoch;\nconst ageMinutes = Number.isSafeInteger(createdEpoch) ? Math.floor((now - createdEpoch) / 60) : null;\nconst completionFresh = ageMinutes !== null && ageMinutes >= 0 && ageMinutes <= 105;\nif (!completionFresh) reasons.push('COMPLETION_STALE_OR_MISSING');\nconst integerFields = ['backupBytes', 'estimatedDatabaseBytes', 'growth7Bytes', 'growth30Bytes', 'targetTotalBytes', 'targetFreeBytes', 'projectedFreePercent', 'projectedDaysToFull', 'restoreAgeDays'];\nconst integersValid = integerFields.every((key) => typeof telemetry[key] === 'number' && Number.isSafeInteger(telemetry[key]));\nconst rangesValid = integersValid && telemetry.backupBytes >= 0 && telemetry.estimatedDatabaseBytes > 0 && telemetry.targetTotalBytes > 0 && telemetry.targetFreeBytes >= telemetry.estimatedDatabaseBytes && telemetry.targetFreeBytes <= telemetry.targetTotalBytes && telemetry.projectedFreePercent >= 0 && telemetry.projectedFreePercent <= 100 && telemetry.projectedDaysToFull >= -1 && telemetry.restoreAgeDays >= -1;\nconst safeFloorRatio = (value, multiplier, divisor) => {\n  if (!Number.isSafeInteger(value) || !Number.isSafeInteger(divisor) || value < 0 || divisor <= 0) return null;\n  const quotient = (BigInt(value) * BigInt(multiplier)) / BigInt(divisor);\n  return quotient <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(quotient) : null;\n};\nconst projectedFreeBytes = rangesValid ? telemetry.targetFreeBytes - telemetry.estimatedDatabaseBytes : null;\nconst expectedProjectedFreePercent = rangesValid ? safeFloorRatio(projectedFreeBytes, 100, telemetry.targetTotalBytes) : null;\nconst capacityConsistent = rangesValid && expectedProjectedFreePercent !== null && telemetry.projectedFreePercent === expectedProjectedFreePercent;\nconst growthStatusesValid = ['available', 'insufficient_history'].includes(telemetry.growth7Status) && ['available', 'insufficient_history'].includes(telemetry.growth30Status);\nconst growthValuesConsistent = integersValid && growthStatusesValid && (telemetry.growth7Status === 'available' || telemetry.growth7Bytes === 0) && (telemetry.growth30Status === 'available' || telemetry.growth30Bytes === 0);\nconst expectedDaysToFull = integersValid && telemetry.growth30Status === 'available' && telemetry.growth30Bytes > 0 ? safeFloorRatio(telemetry.targetFreeBytes, 30, telemetry.growth30Bytes) : -1;\nconst daysToFullConsistent = integersValid && expectedDaysToFull !== null && telemetry.projectedDaysToFull === expectedDaysToFull;\nconst telemetryValid = telemetry.schemaVersion === 'diis-backup-telemetry-v1' && Number.isSafeInteger(createdEpoch) && rangesValid && capacityConsistent && growthStatusesValid && growthValuesConsistent && daysToFullConsistent;\nif (!telemetryValid) reasons.push('TELEMETRY_INVALID');\nif (Number.isSafeInteger(telemetry.projectedFreePercent) && telemetry.projectedFreePercent < policy.minFreePercent) reasons.push('CAPACITY_LOW');\nif (Number.isSafeInteger(telemetry.projectedDaysToFull) && telemetry.projectedDaysToFull >= 0 && telemetry.projectedDaysToFull < policy.minDaysToFull) reasons.push('DAYS_TO_FULL_LOW');\nif (telemetry.offsiteStatus !== 'complete') reasons.push('OFFSITE_INCOMPLETE');\nif (telemetry.restoreStatus !== 'success' || !Number.isSafeInteger(telemetry.restoreAgeDays) || telemetry.restoreAgeDays < 0 || telemetry.restoreAgeDays > policy.maxRestoreAgeDays) reasons.push('RESTORE_PROOF_MISSING_OR_STALE');\nreturn [{ json: { completionFresh, ageMinutes, backupBytes: integersValid ? telemetry.backupBytes : 0, growth7Bytes: integersValid ? telemetry.growth7Bytes : 0, growth30Bytes: integersValid ? telemetry.growth30Bytes : 0, targetFreeBytes: integersValid ? telemetry.targetFreeBytes : 0, projectedFreePercent: integersValid ? telemetry.projectedFreePercent : 0, projectedDaysToFull: integersValid ? telemetry.projectedDaysToFull : -1, restoreStatus: String(telemetry.restoreStatus ?? 'missing'), restoreAgeDays: integersValid ? telemetry.restoreAgeDays : -1, notificationChannelType: 'smtp', notificationChannelReadiness: 'unbound', monitorFailure: false, reasonCodes: [...new Set(reasons)].sort(), alertRequired: reasons.length > 0 } }];"
       },
       "id": "backup-monitor-evaluate",
       "name": "Nilai freshness completion",
@@ -71,58 +87,81 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "conditions": [
-            {
-              "leftValue": "={{ $json.notificationChannelStatus }}",
-              "rightValue": "configured",
-              "operator": { "type": "string", "operation": "equals" }
-            }
-          ]
+        "operation": "send",
+        "fromEmail": "DIIS Monitoring <admin@smkdarussalamsubah.sch.id>",
+        "toEmail": "admin@smkdarussalamsubah.sch.id",
+        "subject": "=[DIIS W10-D] Backup alert: {{ $json.reasonCodes.join(', ') }}",
+        "emailFormat": "text",
+        "text": "=DIIS Backup Alert\n\nReason: {{ $json.reasonCodes.join(', ') }}\nUmur completion: {{ $json.ageMinutes ?? 'unknown' }} menit\nRuang: {{ $json.projectedFreePercent }}%\nEstimasi penuh: {{ $json.projectedDaysToFull }} hari\nRestore: {{ $json.restoreStatus }}/{{ $json.restoreAgeDays }} hari\n\nPesan ini tidak memuat nama object, credential, atau data pribadi.",
+        "options": {
+          "appendAttribution": false
         }
       },
-      "id": "backup-monitor-channel",
-      "name": "Kanal notifikasi aktif?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [1240, 420]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.fonnte.com/send",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [{ "name": "Authorization", "value": "={{ $env.FONNTE_API_KEY }}" }]
-        },
-        "sendBody": true,
-        "contentType": "form-urlencoded",
-        "bodyParameters": {
-          "parameters": [
-            { "name": "target", "value": "={{ $env.ADMIN_PHONE_NUMBER }}" },
-            {
-              "name": "message",
-              "value": "=DIIS Backup Alert: {{ $json.reasonCodes.join(', ') }}. Umur completion {{ $json.ageMinutes ?? 'unknown' }} menit, ruang {{ $json.projectedFreePercent }}%, estimasi penuh {{ $json.projectedDaysToFull }} hari, restore {{ $json.restoreStatus }}/{{ $json.restoreAgeDays }} hari."
-            }
-          ]
-        },
-        "options": { "timeout": 15000 }
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_WITH_SMTP_CREDENTIAL_ID",
+          "name": "DIIS School SMTP"
+        }
       },
       "id": "backup-monitor-notify",
-      "name": "Kirim alert teredaksi",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1480, 340]
+      "name": "Kirim email alert teredaksi",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1240, 260]
     },
     {
       "parameters": {
-        "jsCode": "return [{ json: { monitorStatus: 'alert-undelivered', notificationChannelStatus: 'disabled', completionFresh: false } }];"
+        "jsCode": "return [{ json: { alertRequired: true, monitorFailure: true, notificationChannelType: 'smtp', notificationChannelReadiness: 'unbound', reasonCodes: ['TELEMETRY_READ_FAILED'], ageMinutes: null, projectedFreePercent: 0, projectedDaysToFull: -1, restoreStatus: 'unknown', restoreAgeDays: -1 } }];"
       },
-      "id": "backup-monitor-disabled",
-      "name": "Catat kanal disabled",
+      "id": "backup-monitor-read-error",
+      "name": "Redaksi kegagalan pembacaan",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1480, 500]
+      "position": [640, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { alertRequired: true, monitorFailure: true, notificationChannelType: 'smtp', notificationChannelReadiness: 'unbound', reasonCodes: ['TELEMETRY_PARSE_FAILED'], ageMinutes: null, projectedFreePercent: 0, projectedDaysToFull: -1, restoreStatus: 'unknown', restoreAgeDays: -1 } }];"
+      },
+      "id": "backup-monitor-parse-error",
+      "name": "Redaksi kegagalan parsing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [760, 500]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "fromEmail": "DIIS Monitoring <admin@smkdarussalamsubah.sch.id>",
+        "toEmail": "admin@smkdarussalamsubah.sch.id",
+        "subject": "=[DIIS W10-D] Backup monitor gagal: {{ $json.reasonCodes.join(', ') }}",
+        "emailFormat": "text",
+        "text": "=DIIS Backup Monitor Failure\n\nReason: {{ $json.reasonCodes.join(', ') }}\nStatus: telemetry tidak dapat dinilai.\n\nPesan ini tidak memuat error mentah, nama object, credential, endpoint, atau data pribadi.",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_WITH_SMTP_CREDENTIAL_ID",
+          "name": "DIIS School SMTP"
+        }
+      },
+      "id": "backup-monitor-error-notify",
+      "name": "Kirim email kegagalan teredaksi",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1000, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "throw new Error('DIIS_BACKUP_MONITOR_FAILED_AFTER_REDACTED_ALERT');"
+      },
+      "id": "backup-monitor-error-terminal",
+      "name": "Tandai monitor gagal",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 500]
     }
   ],
   "connections": {
@@ -130,19 +169,31 @@
       "main": [[{ "node": "Baca completion manifests", "type": "main", "index": 0 }]]
     },
     "Baca completion manifests": {
-      "main": [[{ "node": "Nilai freshness completion", "type": "main", "index": 0 }]]
+      "main": [
+        [{ "node": "Parse completion manifest", "type": "main", "index": 0 }],
+        [{ "node": "Redaksi kegagalan pembacaan", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse completion manifest": {
+      "main": [
+        [{ "node": "Nilai freshness completion", "type": "main", "index": 0 }],
+        [{ "node": "Redaksi kegagalan parsing", "type": "main", "index": 0 }]
+      ]
     },
     "Nilai freshness completion": {
       "main": [[{ "node": "Alert diperlukan?", "type": "main", "index": 0 }]]
     },
     "Alert diperlukan?": {
-      "main": [[{ "node": "Kanal notifikasi aktif?", "type": "main", "index": 0 }], []]
+      "main": [[{ "node": "Kirim email alert teredaksi", "type": "main", "index": 0 }], []]
     },
-    "Kanal notifikasi aktif?": {
-      "main": [
-        [{ "node": "Kirim alert teredaksi", "type": "main", "index": 0 }],
-        [{ "node": "Catat kanal disabled", "type": "main", "index": 0 }]
-      ]
+    "Redaksi kegagalan pembacaan": {
+      "main": [[{ "node": "Kirim email kegagalan teredaksi", "type": "main", "index": 0 }]]
+    },
+    "Redaksi kegagalan parsing": {
+      "main": [[{ "node": "Kirim email kegagalan teredaksi", "type": "main", "index": 0 }]]
+    },
+    "Kirim email kegagalan teredaksi": {
+      "main": [[{ "node": "Tandai monitor gagal", "type": "main", "index": 0 }]]
     }
   },
   "active": false,

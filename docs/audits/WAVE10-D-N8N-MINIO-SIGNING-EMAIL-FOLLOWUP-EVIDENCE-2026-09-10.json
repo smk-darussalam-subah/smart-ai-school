@@ -1,0 +1,291 @@
+{
+  "schema": "diis-w10d-n8n-minio-signing-email-followup-v3",
+  "generatedAtUtc": "2026-09-10T09:37:51Z",
+  "generatedAtWib": "2026-09-10T16:37:51+07:00",
+  "verdict": "SOURCE COMPLETE - INDEPENDENT REVIEW REQUIRED - ALL OPERATIONAL MUTATIONS HOLD",
+  "sourceBinding": {
+    "mergeBaseline": "380080b2d92f064c1221395c9a525a953d94a163",
+    "treeBaseline": "6de3c10f7853b8ee46fe72eaf2f27c4f9cc9da54",
+    "workingCheckout": "0e0b341e47c7badc0d1f35ccca2c67614f161ddf",
+    "dirtyFollowupAuthorized": true
+  },
+  "sourceClosure": {
+    "readerNodeType": "n8n-nodes-base.s3",
+    "readerNodeVersion": 1,
+    "credentialType": "s3",
+    "operation": "download",
+    "bucket": "diis-backup",
+    "key": "postgres/monitor/latest.json",
+    "readerErrorMode": "continueErrorOutput",
+    "parserNodeType": "n8n-nodes-base.extractFromFile",
+    "parserOperation": "fromJson",
+    "parserErrorMode": "continueErrorOutput",
+    "failureAlertMode": "redacted fixed payload then explicit failed execution",
+    "environmentAccessRequired": false,
+    "notificationNodeType": "n8n-nodes-base.emailSend",
+    "notificationChannelType": "smtp",
+    "notificationChannelReadiness": "unbound",
+    "notificationRecipient": "admin@smkdarussalamsubah.sch.id",
+    "fonnteReferenceCountInWorkflow": 0,
+    "workflowActive": false
+  },
+  "telemetryValidation": {
+    "integerFieldsRequired": [
+      "createdEpoch",
+      "backupBytes",
+      "estimatedDatabaseBytes",
+      "growth7Bytes",
+      "growth30Bytes",
+      "targetTotalBytes",
+      "targetFreeBytes",
+      "projectedFreePercent",
+      "projectedDaysToFull",
+      "restoreAgeDays"
+    ],
+    "nonNegativeFields": ["backupBytes"],
+    "positiveFields": ["estimatedDatabaseBytes", "targetTotalBytes"],
+    "signedGrowthAllowedWhenAvailable": true,
+    "insufficientHistoryGrowthValue": 0,
+    "nonPositiveGrowth30DaysToFullValue": -1,
+    "targetTotalBytesMustBePositive": true,
+    "targetFreeBytesMustNotExceedTotal": true,
+    "targetFreeBytesMustCoverEstimatedDatabaseBytes": true,
+    "projectedFreePercentRange": [0, 100],
+    "projectedPercentFormula": "floor(((targetFreeBytes - estimatedDatabaseBytes) * 100) / targetTotalBytes)",
+    "positiveGrowthDaysFormula": "floor((targetFreeBytes * 30) / growth30Bytes)",
+    "derivedArithmetic": "BigInt intermediate with safe-integer output bound",
+    "actualProducerOutputFixture": "PASS: backup.sh output with estimate different from dump accepted",
+    "contradictoryTelemetryReason": "TELEMETRY_INVALID",
+    "negativeGrowthAccepted": true,
+    "unsafeIntegerGrowthRejected": true,
+    "contradictoryGrowthStatusRejected": true,
+    "roundingBoundaryTested": true
+  },
+  "behavioralProof": {
+    "observedAtUtc": "2026-09-10T06:48:31Z",
+    "n8nImage": "n8nio/n8n@sha256:9f1f8e4c093c9924338bd168e3f813f746041d13b337753af0dbdd329e7b50f7",
+    "minioImage": "minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+    "mcImage": "minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727",
+    "platform": "linux/amd64 disposable local Docker",
+    "matrix": [
+      {
+        "case": "healthy signed-negative growth",
+        "executionStatus": "success",
+        "lastNode": "Alert diperlukan?",
+        "smtpDeliveryCount": 0,
+        "result": "PASS"
+      },
+      {
+        "case": "valid alert",
+        "executionStatus": "success",
+        "lastNode": "Kirim email alert teredaksi",
+        "smtpDeliveryCount": 1,
+        "result": "PASS"
+      },
+      {
+        "case": "missing telemetry object",
+        "executionStatus": "error",
+        "lastNode": "Tandai monitor gagal",
+        "smtpDeliveryCount": 1,
+        "result": "PASS"
+      },
+      {
+        "case": "malformed telemetry JSON",
+        "executionStatus": "error",
+        "lastNode": "Tandai monitor gagal",
+        "smtpDeliveryCount": 1,
+        "result": "PASS"
+      },
+      {
+        "case": "S3 authentication failure",
+        "executionStatus": "error",
+        "lastNode": "Tandai monitor gagal",
+        "smtpDeliveryCount": 1,
+        "result": "PASS"
+      },
+      {
+        "case": "SMTP rejection",
+        "executionStatus": "error",
+        "lastNode": "Kirim email alert teredaksi",
+        "smtpDeliveryCount": 0,
+        "result": "PASS"
+      },
+      {
+        "case": "failure mail redaction",
+        "executionStatus": "not applicable",
+        "lastNode": "not applicable",
+        "smtpDeliveryCount": 0,
+        "result": "PASS"
+      },
+      {
+        "case": "cleanup and bounded prefix absence",
+        "executionStatus": "not applicable",
+        "lastNode": "not applicable",
+        "smtpDeliveryCount": 0,
+        "result": "PASS"
+      }
+    ],
+    "cleanupContract": {
+      "commandTimeoutSeconds": 20,
+      "successPlanAfterCleanupOnly": true,
+      "validatedLiteralPrefixOnly": true,
+      "cleanupFailureExitCode": 74,
+      "cleanupFailureSuccessPlanEmitted": false,
+      "signal": "SIGTERM",
+      "signalExitCode": 143,
+      "signalSuccessPlanEmitted": false,
+      "signalResourceAbsence": "PASS",
+      "observationFailureFailsHarness": true
+    },
+    "redactionCheck": "PASS",
+    "externalEmailSent": false,
+    "productionOrStagingDataUsed": false,
+    "providerCredentialUsed": false,
+    "containerRemainderCount": 0,
+    "networkRemainderCount": 0,
+    "volumeRemainderCount": 0
+  },
+  "verification": {
+    "workflowJsonParse": "PASS",
+    "backupContract": "44/44 PASS via Git Bash fail-closed WSL/Linux re-exec and 44/44 PASS via direct WSL",
+    "gitBashExecutionMode": "entrypoint only; security-sensitive POSIX contract re-executes the same script in WSL/Linux",
+    "nativeGitBashPosixClaimed": false,
+    "gitBashMissingWslControl": "PASS; exits 1 before contract state is created",
+    "missingEstimateNegativeCase": "PASS; object without estimatedDatabaseBytes evaluated as TELEMETRY_INVALID",
+    "disposableBehavioralMatrix": "8/8 PASS",
+    "actualProducerConsumerFixture": "PASS",
+    "derivedFormulaMatrix": "PASS: positive zero negative insufficient-history rounding overflow",
+    "cleanupFailureControl": "PASS exit 74 without success plan",
+    "cleanupSignalControl": "PASS SIGTERM exit 143 with absence proof",
+    "bashSyntax": "PASS",
+    "nodeSyntax": "PASS",
+    "gitDiffCheck": "PASS",
+    "conflictMarkerScan": "PASS",
+    "secretScan": "PASS",
+    "stagedFileCount": 0
+  },
+  "fileHashes": {
+    "infrastructure/docker/scripts/backup.sh": "60e599df403f5083348b58a729ae11f5443c4031924a8b423eb8f6d6240f3a01",
+    "infrastructure/n8n/workflows/backup-daily.json": "f0cf4ec47282cd0661c7cecb75e190a300644081b1875084cb509866caac4352",
+    "infrastructure/docker/tests/backup-contract.sh": "8e42bdc0e05fcc04c34e62e01d3a930aff54d608beeb1d2bf95189ca59981ef2",
+    "infrastructure/n8n/README.md": "ddd19f6b1002647bd8e1b72f1db9db457d3a647557100d21f0751cfe212bd377",
+    "infrastructure/docker/tests/n8n-backup-monitor-integration.sh": "b247c7b9dbd02acb7fe915aa3ed70389e569bc040f5b38f97725c1172e8d839c",
+    "infrastructure/docker/tests/fixtures/n8n-smtp-sink.js": "690a13d99e1c878069448012ca38b3c91d135d1b9286fe18af18d1969a4fafcb",
+    "docs/audits/WAVE10-D-CLEANUP-PREPARATION-OWNER-EVIDENCE-AND-LOCAL-BUNDLE-EVIDENCE-2026-09-09.json": "c7ab9cd0131c3b89fa44cb67d5ff002c5c836865b262e0daff45f6afc744dfa4"
+  },
+  "runtimeState": {
+    "vpsWorkflowUpdatedByThisFollowup": false,
+    "backupMonitorPublished": false,
+    "backupMonitorActive": false,
+    "backupMonitorExecutionCount": 0,
+    "existingCredentialType": "aws",
+    "existingCredentialRevoked": false,
+    "s3CredentialBound": false,
+    "smtpCredentialBound": false,
+    "activationAuthorized": false
+  },
+  "offsiteDriveReadiness": {
+    "observedAtUtc": "2026-09-10T01:54:50Z",
+    "observationMode": "Google Drive browser metadata and VPS appuser read-only inspection",
+    "googleWorkspaceAccount": "admin@smkdarussalamsubah.sch.id",
+    "driveType": "Shared drive",
+    "driveOwnerDomain": "smkdarussalamsubah.sch.id",
+    "driveResourceIdSha256": "91316003a91fd04b5113ed07f74237ad69421cf054dd406f14e29d640ab8b855",
+    "destinationFolderResourceIdSha256": "55f4fde146f8d0c01dc9032145dd843bf4735a9dd9d007bb038eb9c6fa9a4e02",
+    "destinationFolderName": "BACKUP_DIIS",
+    "destinationFolderItemCount": 0,
+    "sharedDriveStorageUsedBytes": 0,
+    "serviceAccountRole": "Content Manager",
+    "runtimeBackupContainer": "smk-pg-backup",
+    "runtimeRcloneInstalled": false,
+    "runtimeRcloneConfigReadable": false,
+    "runtimeOffsiteBindingNameCount": 0,
+    "operationalConnectionProven": false,
+    "encryptedCopyProven": false,
+    "disposableRestoreProven": false,
+    "jsonActivationAllowedByThisEvidence": false
+  },
+  "notificationState": {
+    "fonnte": "BLOCKED_TOKEN_INVALID",
+    "waha": "SEPARATE_SESSION_APPROVED_NOT_INSTALLED",
+    "temporaryChannel": "SCHOOL_EMAIL",
+    "recipient": "admin@smkdarussalamsubah.sch.id",
+    "smtpCredentialStatus": "UNBOUND",
+    "scheduledReminderEmailStatus": "AWAITING_ACTION_TIME_CONFIRMATION",
+    "reminderDatesUtc": ["2027-02-06T00:00:00Z", "2027-02-22T00:00:00Z", "2027-03-01T00:00:00Z"]
+  },
+  "reviewerFindingClosure": [
+    {
+      "id": "P1-N8N-READ-PARSE-ALERT",
+      "status": "CLOSED_SOURCE",
+      "proof": "missing, malformed, and auth-failure paths alert once then remain failed"
+    },
+    {
+      "id": "P1-N8N-TELEMETRY-CONSISTENCY",
+      "status": "CLOSED_SOURCE",
+      "proof": "signed growth semantics and strict cross-field capacity validation"
+    },
+    {
+      "id": "P2-N8N-SMTP-BEHAVIOR",
+      "status": "CLOSED_SOURCE",
+      "proof": "accepting and rejecting disposable SMTP paths executed"
+    },
+    {
+      "id": "P2-N8N-README-DRIFT",
+      "status": "CLOSED_SOURCE",
+      "proof": "canonical 02:45 Asia/Jakarta schedule and credential-store instructions"
+    },
+    {
+      "id": "P2-N8N-CHANNEL-STATUS",
+      "status": "CLOSED_SOURCE",
+      "proof": "channel type separated from unbound runtime readiness"
+    },
+    {
+      "id": "P1-IR06-SIGNED-GROWTH",
+      "status": "CLOSED_SOURCE",
+      "proof": "canonical negative growth passes while overflow, status, and days-to-full contradictions fail"
+    },
+    {
+      "id": "P2-IR07-HARNESS-CLEANUP",
+      "status": "CLOSED_SOURCE",
+      "proof": "bounded teardown and prefix absence precede success; cleanup fault and signal controls pass"
+    },
+    {
+      "id": "P1-IR08-PRODUCER-CONSUMER-DERIVATION",
+      "status": "CLOSED_SOURCE",
+      "proof": "producer publishes database estimate; consumer recomputes percent and days with exact canonical formulas and bounded arithmetic"
+    },
+    {
+      "id": "P1-IR09-BACKUP-CONTRACT-FIXTURE-EXECUTION",
+      "status": "CLOSED_SOURCE",
+      "proof": "missing estimatedDatabaseBytes object is evaluated directly; exact Linux contract exits zero at 44/44"
+    },
+    {
+      "id": "P1-IR10-GIT-BASH-HARNESS-PORTABILITY",
+      "status": "CLOSED_SOURCE",
+      "proof": "Git Bash detects non-POSIX permission semantics and fail-closed re-executes the same script in WSL/Linux; entrypoint and direct WSL runs independently exit zero at 44/44"
+    }
+  ],
+  "literalChangedFileManifest": [
+    "infrastructure/docker/scripts/backup.sh",
+    "infrastructure/n8n/workflows/backup-daily.json",
+    "infrastructure/docker/tests/backup-contract.sh",
+    "infrastructure/n8n/README.md",
+    "infrastructure/docker/tests/n8n-backup-monitor-integration.sh",
+    "infrastructure/docker/tests/fixtures/n8n-smtp-sink.js",
+    "docs/audits/WAVE10-D-CLEANUP-PREPARATION-OWNER-EVIDENCE-AND-LOCAL-BUNDLE-EVIDENCE-2026-09-09.json",
+    "docs/audits/WAVE10-D-N8N-MINIO-SIGNING-EMAIL-FOLLOWUP-EXECUTOR-2026-09-10.md",
+    "docs/audits/WAVE10-D-N8N-MINIO-SIGNING-EMAIL-FOLLOWUP-EVIDENCE-2026-09-10.json"
+  ],
+  "holds": [
+    "git packaging commit push PR",
+    "runtime workflow update",
+    "credential creation replacement or revocation",
+    "workflow publish or activation",
+    "WAHA installation",
+    "offsite Google Drive runtime connection",
+    "bundle delivery installation or execution",
+    "native GC change Docker restart or cleanup",
+    "backup restore scheduler handoff staging production or commissioning"
+  ]
+}

@@ -1,5 +1,22 @@
 #!/usr/bin/env bash
 
+case "$(uname -s 2>/dev/null || true)" in
+  MINGW*|MSYS*|CYGWIN*)
+    command -v cygpath >/dev/null 2>&1 && command -v wsl.exe >/dev/null 2>&1 || {
+      printf 'not ok - Git Bash requires WSL for the Linux backup contract\n' >&2
+      exit 1
+    }
+    script_windows=$(cygpath -w "${BASH_SOURCE[0]}") || exit 1
+    script_wsl=$(MSYS2_ARG_CONV_EXCL='*' wsl.exe -e wslpath -u "$script_windows" 2>/dev/null | tr -d '\r') || exit 1
+    [[ -n "$script_wsl" ]] || {
+      printf 'not ok - Git Bash could not resolve the WSL contract path\n' >&2
+      exit 1
+    }
+    export MSYS2_ARG_CONV_EXCL='*'
+    exec wsl.exe -e bash "$script_wsl" "$@"
+    ;;
+esac
+
 set -Eeuo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
@@ -2263,6 +2280,7 @@ assert_grep 'POSTGRES_CONTAINER=diis-restore-disposable' "$RESTORE_RUNBOOK" \
 pass 'runbooks separate current runtime from target contract'
 
 assert_grep 'backupBytes' "$MONITOR" 'backup size telemetry missing'
+assert_grep 'estimatedDatabaseBytes' "$MONITOR" 'database estimate telemetry missing'
 assert_grep 'growth7Bytes' "$MONITOR" '7-day growth telemetry missing'
 assert_grep 'growth30Bytes' "$MONITOR" '30-day growth telemetry missing'
 assert_grep 'projectedDaysToFull' "$MONITOR" 'days-to-full telemetry missing'
@@ -2274,25 +2292,111 @@ pass 'monitor telemetry contract is complete and inactive'
 NODE_BIN=$(command -v node || command -v node.exe || true)
 [[ -n "$NODE_BIN" ]] || fail 'Node.js unavailable for n8n behavior test'
 MONITOR_ARG=$MONITOR
-case "$NODE_BIN" in *.exe) MONITOR_ARG=$(wslpath -w "$MONITOR") ;; esac
-"$NODE_BIN" - "$MONITOR_ARG" <<'EOF' || fail 'n8n telemetry behavior failed'
+PRODUCER_TELEMETRY="$TMP/success/mc/backup/postgres/monitor/latest.json"
+[[ -f "$PRODUCER_TELEMETRY" ]] || fail 'actual producer telemetry fixture missing'
+PRODUCER_TELEMETRY_ARG=$PRODUCER_TELEMETRY
+case "$NODE_BIN" in
+  *.exe)
+    MONITOR_ARG=$(wslpath -w "$MONITOR")
+    PRODUCER_TELEMETRY_ARG=$(wslpath -w "$PRODUCER_TELEMETRY")
+    ;;
+esac
+"$NODE_BIN" - "$MONITOR_ARG" "$PRODUCER_TELEMETRY_ARG" <<'EOF' || fail 'n8n telemetry behavior failed'
 const fs = require('fs');
 const workflow = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const producerTelemetry = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+const readNode = workflow.nodes.find((node) => node.name === 'Baca completion manifests');
+if (!readNode || readNode.type !== 'n8n-nodes-base.s3' || readNode.typeVersion !== 1) {
+  throw new Error('monitor must use the S3-compatible node');
+}
+if (readNode.parameters?.resource !== 'file' || readNode.parameters?.operation !== 'download') {
+  throw new Error('monitor S3 node must be download-only');
+}
+if (readNode.parameters?.bucketName !== 'diis-backup' || readNode.parameters?.fileKey !== 'postgres/monitor/latest.json') {
+  throw new Error('monitor S3 source binding drifted');
+}
+if (readNode.parameters?.binaryPropertyName !== 'completionManifest') {
+  throw new Error('monitor S3 binary field drifted');
+}
+if (!readNode.credentials?.s3 || readNode.credentials?.aws) {
+  throw new Error('monitor must use an S3 credential, not generic AWS signing');
+}
+if (readNode.onError !== 'continueErrorOutput') {
+  throw new Error('monitor S3 failure must use the dedicated error output');
+}
+const parseNode = workflow.nodes.find((node) => node.name === 'Parse completion manifest');
+if (!parseNode || parseNode.type !== 'n8n-nodes-base.extractFromFile' || parseNode.parameters?.operation !== 'fromJson') {
+  throw new Error('monitor JSON extraction node missing');
+}
+if (parseNode.parameters?.binaryPropertyName !== 'completionManifest' || parseNode.parameters?.destinationKey !== 'data') {
+  throw new Error('monitor JSON extraction binding drifted');
+}
+if (parseNode.onError !== 'continueErrorOutput') {
+  throw new Error('monitor parser failure must use the dedicated error output');
+}
+const emailNode = workflow.nodes.find((node) => node.name === 'Kirim email alert teredaksi');
+if (!emailNode || emailNode.type !== 'n8n-nodes-base.emailSend' || !emailNode.credentials?.smtp) {
+  throw new Error('school SMTP notification node missing');
+}
+if (emailNode.parameters?.toEmail !== 'admin@smkdarussalamsubah.sch.id') {
+  throw new Error('school notification recipient drifted');
+}
+const errorEmailNode = workflow.nodes.find((node) => node.name === 'Kirim email kegagalan teredaksi');
+if (!errorEmailNode || errorEmailNode.type !== 'n8n-nodes-base.emailSend' || !errorEmailNode.credentials?.smtp) {
+  throw new Error('redacted failure email node missing');
+}
+if (errorEmailNode.parameters?.toEmail !== 'admin@smkdarussalamsubah.sch.id') {
+  throw new Error('failure notification recipient drifted');
+}
+if (errorEmailNode.parameters?.subject?.includes('$json.error') || errorEmailNode.parameters?.text?.includes('$json.error')) {
+  throw new Error('raw failure data reaches SMTP');
+}
+const readErrorNode = workflow.nodes.find((node) => node.name === 'Redaksi kegagalan pembacaan');
+const parseErrorNode = workflow.nodes.find((node) => node.name === 'Redaksi kegagalan parsing');
+const terminalNode = workflow.nodes.find((node) => node.name === 'Tandai monitor gagal');
+if (!readErrorNode?.parameters?.jsCode.includes("['TELEMETRY_READ_FAILED']")) throw new Error('read failure redaction missing');
+if (!parseErrorNode?.parameters?.jsCode.includes("['TELEMETRY_PARSE_FAILED']")) throw new Error('parse failure redaction missing');
+if (!terminalNode?.parameters?.jsCode.includes('DIIS_BACKUP_MONITOR_FAILED_AFTER_REDACTED_ALERT')) {
+  throw new Error('monitor failure terminal missing');
+}
+const readConnections = workflow.connections['Baca completion manifests']?.main;
+const parseConnections = workflow.connections['Parse completion manifest']?.main;
+if (readConnections?.[1]?.[0]?.node !== 'Redaksi kegagalan pembacaan') throw new Error('S3 error route missing');
+if (parseConnections?.[1]?.[0]?.node !== 'Redaksi kegagalan parsing') throw new Error('parser error route missing');
+if (workflow.connections['Kirim email kegagalan teredaksi']?.main?.[0]?.[0]?.node !== 'Tandai monitor gagal') {
+  throw new Error('failure route can become false success');
+}
+if (JSON.stringify(workflow).includes('FONNTE_API_KEY') || JSON.stringify(workflow).includes('api.fonnte.com')) {
+  throw new Error('disabled Fonnte path remains in backup monitor');
+}
+if (JSON.stringify(workflow).includes('$env')) {
+  throw new Error('backup monitor must not require relaxed n8n environment access');
+}
 const code = workflow.nodes.find((node) => node.name === 'Nilai freshness completion')?.parameters?.jsCode;
 if (!code) throw new Error('monitor evaluator missing');
-const evaluate = (telemetry, env = {}) => new Function('$input', '$env', code)(
-  { first: () => ({ json: telemetry }) }, env,
+const evaluate = (telemetry) => new Function('$input', code)(
+  { first: () => ({ json: { data: telemetry } }) },
 )[0].json;
 const base = {
   schemaVersion: 'diis-backup-telemetry-v1', createdEpoch: Math.floor(Date.now() / 1000) - 3600,
-  backupBytes: 100, growth7Status: 'available', growth7Bytes: 5,
+  backupBytes: 100, estimatedDatabaseBytes: 200, growth7Status: 'available', growth7Bytes: 5,
   growth30Status: 'available', growth30Bytes: 10, targetTotalBytes: 1000,
-  targetFreeBytes: 500, projectedFreePercent: 50, projectedDaysToFull: 1500,
+  targetFreeBytes: 600, projectedFreePercent: 40, projectedDaysToFull: 1800,
   offsiteStatus: 'complete', restoreStatus: 'success', restoreAgeDays: 1,
 };
 const healthy = evaluate(base);
 if (!healthy.completionFresh || healthy.alertRequired || healthy.reasonCodes.length) throw new Error('healthy telemetry rejected');
-const capacity = evaluate({ ...base, projectedFreePercent: 20 });
+if (base.estimatedDatabaseBytes === base.backupBytes) throw new Error('estimate/dump distinction fixture collapsed');
+const actualProducer = evaluate(producerTelemetry);
+if (actualProducer.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('actual producer telemetry rejected');
+if (producerTelemetry.estimatedDatabaseBytes === producerTelemetry.backupBytes) {
+  throw new Error('actual producer fixture does not distinguish estimate from dump bytes');
+}
+if (healthy.notificationChannelType !== 'smtp' || healthy.notificationChannelReadiness !== 'unbound') {
+  throw new Error('notification type and runtime readiness are conflated');
+}
+if ('notificationChannelStatus' in healthy) throw new Error('legacy channel readiness claim remains');
+const capacity = evaluate({ ...base, estimatedDatabaseBytes: 100, targetFreeBytes: 300, projectedFreePercent: 20, projectedDaysToFull: 900 });
 if (!capacity.reasonCodes.includes('CAPACITY_LOW')) throw new Error('capacity alert missing');
 const restore = evaluate({ ...base, restoreStatus: 'failed' });
 if (!restore.reasonCodes.includes('RESTORE_PROOF_MISSING_OR_STALE')) throw new Error('restore alert missing');
@@ -2302,11 +2406,48 @@ const nullMetric = evaluate({ ...base, targetFreeBytes: null });
 if (!nullMetric.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('null telemetry accepted');
 const stringMetric = evaluate({ ...base, growth7Bytes: '5' });
 if (!stringMetric.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('string telemetry accepted');
+const { estimatedDatabaseBytes: _, ...withoutEstimate } = base;
+const missingEstimate = evaluate(withoutEstimate);
+if (!missingEstimate.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('telemetry without canonical database estimate accepted');
 const invalidRange = evaluate({ ...base, projectedFreePercent: 101 });
 if (!invalidRange.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('invalid range accepted');
+const wrongProjectedPercent = evaluate({ ...base, projectedFreePercent: 50 });
+if (!wrongProjectedPercent.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('dump-derived projected percent accepted');
 const invalidGrowth = evaluate({ ...base, growth30Status: 'complete' });
 if (!invalidGrowth.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('invalid growth status accepted');
+const negativeGrowth = evaluate({ ...base, growth7Bytes: -20, growth30Bytes: -50, projectedDaysToFull: -1 });
+if (!negativeGrowth.completionFresh || negativeGrowth.alertRequired || negativeGrowth.reasonCodes.length) {
+  throw new Error('canonical signed negative growth rejected');
+}
+const unavailableNonzero = evaluate({ ...base, growth7Status: 'insufficient_history', growth7Bytes: 1 });
+if (!unavailableNonzero.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('nonzero insufficient-history growth accepted');
+const unavailableDays = evaluate({ ...base, growth30Status: 'insufficient_history', growth30Bytes: 0 });
+if (!unavailableDays.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('insufficient-history days-to-full accepted');
+const unavailableCanonical = evaluate({ ...base, growth30Status: 'insufficient_history', growth30Bytes: 0, projectedDaysToFull: -1 });
+if (unavailableCanonical.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('canonical insufficient-history telemetry rejected');
+const negativeGrowthWithDays = evaluate({ ...base, growth30Bytes: -1 });
+if (!negativeGrowthWithDays.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('negative growth with positive days-to-full accepted');
+const zeroGrowth = evaluate({ ...base, growth30Bytes: 0, projectedDaysToFull: -1 });
+if (zeroGrowth.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('zero growth canonical days-to-full rejected');
+const wrongPositiveDays = evaluate({ ...base, projectedDaysToFull: 1500 });
+if (!wrongPositiveDays.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('non-canonical positive days-to-full accepted');
+const daysRounding = evaluate({ ...base, targetFreeBytes: 601, estimatedDatabaseBytes: 201, projectedFreePercent: 40, growth30Bytes: 7, projectedDaysToFull: 2575 });
+if (daysRounding.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('days-to-full floor rounding rejected');
+const overflowGrowth = evaluate({ ...base, growth7Bytes: Number.MAX_SAFE_INTEGER + 1 });
+if (!overflowGrowth.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('unsafe growth integer accepted');
+const overflowDerivedDays = evaluate({ ...base, targetTotalBytes: Number.MAX_SAFE_INTEGER, targetFreeBytes: Number.MAX_SAFE_INTEGER, estimatedDatabaseBytes: 1, projectedFreePercent: 99, growth30Bytes: 1, projectedDaysToFull: Number.MAX_SAFE_INTEGER });
+if (!overflowDerivedDays.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('overflowing derived days-to-full accepted');
+const contradictoryCapacity = evaluate({ ...base, targetFreeBytes: 1, projectedFreePercent: 99 });
+if (!contradictoryCapacity.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('contradictory capacity accepted');
+const roundingBoundary = evaluate({ ...base, backupBytes: 1, estimatedDatabaseBytes: 1, targetFreeBytes: 506, projectedFreePercent: 50, projectedDaysToFull: 1518 });
+if (roundingBoundary.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('floor rounding contract rejected');
+const flatInput = new Function('$input', code)(
+  { first: () => ({ json: base }) },
+)[0].json;
+if (!flatInput.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('unparsed flat input accepted');
+const arrayInput = evaluate([base]);
+if (!arrayInput.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('array telemetry accepted');
 EOF
-pass 'n8n capacity restore and freshness behavior'
+pass 'n8n S3 signing, school SMTP, capacity, restore, and freshness behavior'
 
 printf '1..%d\n' "$PASSED"
