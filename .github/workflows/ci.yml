@@ -13,10 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -46,7 +48,8 @@ jobs:
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/staging-readiness-contract.py
           PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/source-closure-contract.py
-          PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/verify-source-closure-handoff.py
+          PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/integrated-closure-contract.py
+          PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/verify-integrated-handoff.py
           bash infrastructure/deploy/tests/deploy-lock-contract.sh
           bash infrastructure/deploy/tests/shared-ingress-contract.sh
 
@@ -93,10 +96,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -129,7 +132,7 @@ jobs:
         run: cd apps/api && npx jest --config test/jest-e2e.json --runInBand --forceExit
 
       - name: Upload coverage (semua packages)
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
         if: always()
         with:
           fail_ci_if_error: false
@@ -145,10 +148,10 @@ jobs:
     needs: lint-and-typecheck
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
           cache: 'npm'

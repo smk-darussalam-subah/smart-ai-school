@@ -7,6 +7,8 @@ import re
 import sys
 
 PACKAGE = 'ghcr.io/smk-darussalam-subah/diis-pg-backup'
+PACKAGES = {PACKAGE, 'ghcr.io/smk-darussalam-subah/diis-api',
+            'ghcr.io/smk-darussalam-subah/diis-web'}
 DIGEST = re.compile(r'sha256:[a-f0-9]{64}')
 
 
@@ -41,12 +43,12 @@ def sha(value):
 
 
 def select(binding, digests):
-    if (type(binding) is not dict or binding.get('package') != PACKAGE
+    if (type(binding) is not dict or binding.get('package') not in PACKAGES
             or not DIGEST.fullmatch(str(binding.get('imageId', '')))):
         raise ValueError('registry-binding')
     if type(digests) is not list or not all(type(item) is str for item in digests):
         raise ValueError('registry-digests')
-    prefix = PACKAGE + '@'
+    prefix = binding['package'] + '@'
     matches = [item for item in digests if item.startswith(prefix)
                and DIGEST.fullmatch(item[len(prefix):])]
     if len(matches) != 1:
@@ -64,6 +66,7 @@ def manifest(raw_value, expected_digest):
 
 
 def resolve(binding, root_reference, root_raw):
+    select(binding, [root_reference])
     root_digest = root_reference.rsplit('@', 1)[1]
     value = manifest(root_raw, root_digest)
     if type(value.get('manifests')) is list:
@@ -72,7 +75,7 @@ def resolve(binding, root_reference, root_raw):
                    and DIGEST.fullmatch(str(item.get('digest', '')))]
         if len(choices) != 1:
             raise ValueError('registry-platform-ambiguous')
-        return PACKAGE + '@' + choices[0]['digest']
+        return binding['package'] + '@' + choices[0]['digest']
     if not DIGEST.fullmatch(str(value.get('config', {}).get('digest', ''))):
         raise ValueError('registry-image-manifest')
     return root_reference
@@ -95,25 +98,39 @@ def verify(binding, binding_sha, root_reference, root_raw, platform_reference, p
                    or type(item.get('size')) is not int or item['size'] <= 0 for item in layers)
             or len({item['digest'] for item in layers}) != len(layers)):
         raise ValueError('registry-artifact-identity')
-    if (type(image) is not list or len(image) != 1 or image[0].get('Id') != binding['imageId']
+    allowed_ids = {binding['imageId'], platform_digest, root_reference.rsplit('@', 1)[1]}
+    if (type(image) is not list or len(image) != 1 or image[0].get('Id') not in allowed_ids
             or image[0].get('Os') != 'linux' or image[0].get('Architecture') != 'amd64'
             or platform_reference not in image[0].get('RepoDigests', [])
             or image[0].get('Config', {}).get('Labels', {}).get(
                 'org.opencontainers.image.revision') != binding['sourceSha']):
         raise ValueError('registry-pulled-image')
-    return {
+    receipt = {
         'schema': 'diis-backup-publication-receipt-v1',
         'sourceSha': binding['sourceSha'],
         'buildRunId': binding['buildRunId'],
-        'package': PACKAGE,
+        'package': binding['package'],
         'rootDigest': root_reference.rsplit('@', 1)[1],
         'platformDigest': platform_digest,
         'configDigest': config['digest'],
+        'observedRuntimeImageId': image[0]['Id'],
         'layerDigests': [item['digest'] for item in layers],
         'platform': 'linux/amd64',
         'archiveBindingSha256': binding_sha,
         'roundTripArchiveIdentity': 'verified',
     }
+    if binding['package'] != PACKAGE:
+        expected = 'api' if binding['package'].endswith('/diis-api') else 'web'
+        config = binding.get('publicBuildConfig')
+        if (binding.get('profile') != expected or type(config) is not dict
+                or binding.get('schema') != 'diis-staging-image-artifact-v1'):
+            raise ValueError('registry-application-profile')
+        config_sha = sha(json.dumps(config, sort_keys=True, separators=(',', ':')).encode())
+        if image[0]['Config']['Labels'].get('org.diis.build-config-sha256') != config_sha:
+            raise ValueError('registry-application-config')
+        receipt.update(schema='diis-staging-image-publication-receipt-v1',
+                       profile=expected, publicBuildConfigSha256=config_sha)
+    return receipt
 
 
 def write_exclusive(path, value):

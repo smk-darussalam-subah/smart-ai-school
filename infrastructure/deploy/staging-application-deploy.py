@@ -28,6 +28,14 @@ WRITER_LOCK_CANONICAL_PARENT = Path('/run/lock/diis-backup')
 IMAGE = re.compile(r'ghcr\.io/smk-darussalam-subah/diis-(api|web)@sha256:[a-f0-9]{64}')
 PERSISTENT_WRITER_LIBRARY_SHA256 = \
     'bf881caf29af389e1d0d328e9b5816d570154b72b873ea82aac6d1be418e8e5a'
+PERSISTENT_WRITER_WRAPPER_SHA256 = \
+    '70cf649cc5845827aa4d66c3d4148bb6f6f718b169a93074ad4abd7da803718f'
+LEGACY_WRITER_SHA256 = \
+    'bc530d0a9110319684e7e4b60db56a3da1e1d979d9b1b6d8dc7887c209ff204e'
+PERSISTENT_WRITER_ARTIFACT_SHA256 = hashlib.sha256(
+    (PERSISTENT_WRITER_LIBRARY_SHA256 + '  backup-lib.sh\n'
+     + PERSISTENT_WRITER_WRAPPER_SHA256 + '  legacy-backup-compatibility.sh\n').encode()
+).hexdigest()
 require = core.require
 
 
@@ -36,7 +44,7 @@ def validate(value, sha, now):
         'schema', 'baseline', 'baselineReceipt', 'targetApps', 'targetModelSha256',
         'writerEvidenceSha256'},
         'application-approval-schema')
-    require(value['schema'] == 'diis-staging-application-approval-v1', 'application-version')
+    require(value['schema'] == 'diis-staging-application-approval-v2', 'application-version')
     baseline = core.validate(value['baseline'], sha, now)
     for key in ('targetModelSha256', 'writerEvidenceSha256'):
         require(type(value[key]) is str and core.HASH.fullmatch(value[key]) is not None
@@ -64,7 +72,7 @@ def validate(value, sha, now):
     require(type(value['targetApps']) is dict and set(value['targetApps']) == {'api', 'web'},
             'application-targets')
     for service, target in value['targetApps'].items():
-        require(type(target) is dict and set(target) == {'reference', 'id', 'revision'},
+        require(type(target) is dict and set(target) == {'reference', 'id', 'revision', 'buildConfigSha256'},
                 'application-target-schema')
         require(type(target['reference']) is str and IMAGE.fullmatch(target['reference'])
                 is not None and target['reference'].startswith(
@@ -72,6 +80,9 @@ def validate(value, sha, now):
                 'application-image-reference')
         require(type(target['id']) is str and re.fullmatch(r'sha256:[a-f0-9]{64}', target['id'])
                 is not None and target['revision'] == baseline['sourceSha'], 'application-image-binding')
+        require(type(target['buildConfigSha256']) is str
+                and core.HASH.fullmatch(target['buildConfigSha256']) is not None
+                and target['buildConfigSha256'] != '0' * 64, 'application-build-config-hash')
     return value
 
 
@@ -105,20 +116,74 @@ class Host(core.Host):
         require(not self.git('diff', '--name-only', self.p['baseSha'], self.p['sourceSha'],
                              '--', 'packages/database/prisma'), 'schema-migration-delta')
 
+    def compatible_writer(self):
+        # Fixed, private content-addressed artifact; never dirty the old checkout.
+        parent = core.STATE / 'writer-compatibility'
+        meta = parent.lstat()
+        require(parent.resolve(strict=True) == parent and stat.S_ISDIR(meta.st_mode)
+                and meta.st_uid == os.geteuid() and stat.S_IMODE(meta.st_mode) == 0o700,
+                'writer-artifact-parent')
+        artifact = parent / PERSISTENT_WRITER_ARTIFACT_SHA256
+        library = artifact / 'backup-lib.sh'
+        wrapper = artifact / 'legacy-backup-compatibility.sh'
+        legacy = parent / 'legacy' / LEGACY_WRITER_SHA256 / 'legacy-backup.sh'
+        library_raw = core.private_read(library, 65536)
+        wrapper_raw = core.private_read(wrapper, 65536)
+        legacy_raw = core.private_read(legacy, 65536)
+        expected_library = self.git(
+            'show', self.p['sourceSha'] + ':infrastructure/docker/scripts/backup-lib.sh')
+        expected_wrapper = self.git(
+            'show', self.p['sourceSha'] + ':infrastructure/deploy/legacy-backup-compatibility.sh')
+        require(core.digest(library_raw) == PERSISTENT_WRITER_LIBRARY_SHA256
+                and library_raw == expected_library
+                and core.digest(wrapper_raw) == PERSISTENT_WRITER_WRAPPER_SHA256
+                and wrapper_raw == expected_wrapper
+                and core.digest(legacy_raw) == LEGACY_WRITER_SHA256,
+                'writer-artifact-authority')
+        mounts = core.decode(core.run(['docker', 'inspect', '--format', '{{json .Mounts}}', 'smk-pg-backup']))
+        required_mounts = {
+            '/backup.sh': str(wrapper),
+            '/backup-lib.sh': str(library),
+            '/legacy-backup.sh': str(legacy),
+        }
+        matches = {m.get('Destination'): m for m in mounts
+                   if m.get('Destination') in required_mounts}
+        require(set(matches) == set(required_mounts)
+                and all(matches[destination].get('Type') == 'bind'
+                        and matches[destination].get('Source') == source
+                        and matches[destination].get('RW') is False
+                        for destination, source in required_mounts.items()),
+                'writer-artifact-mount')
+        output = core.run(['docker', 'exec', 'smk-pg-backup', 'sha256sum',
+                           '/backup.sh', '/backup-lib.sh', '/legacy-backup.sh']).decode().splitlines()
+        hashes = {}
+        for line in output:
+            parts = line.split()
+            require(len(parts) == 2 and parts[1] not in hashes, 'writer-runtime-hash-output')
+            hashes[parts[1]] = parts[0]
+        require(hashes == {
+                    '/backup.sh': PERSISTENT_WRITER_WRAPPER_SHA256,
+                    '/backup-lib.sh': PERSISTENT_WRITER_LIBRARY_SHA256,
+                    '/legacy-backup.sh': LEGACY_WRITER_SHA256,
+                },
+                'writer-library-runtime-drift')
+        return core.digest(library_raw)
+
+    def build_configuration(self, service):
+        if service == 'api':
+            return {}
+        values = re.findall(rb'^NEXT_PUBLIC_VAPID_PUBLIC_KEY=([A-Za-z0-9_-]{87})\r?$',
+                            self.environment(), re.M)
+        require(len(values) == 1, 'staging-public-build-key')
+        return {'API_URL': 'http://smk-staging-api:3001',
+                'NEXT_PUBLIC_VAPID_PUBLIC_KEY': values[0].decode('ascii')}
+
     def preflight(self):
         super().preflight()
         evidence = core.private_read(core.STATE / 'staging-writer-evidence.json')
         require(core.digest(evidence) == self.packet['writerEvidenceSha256'], 'writer-evidence-hash')
         value = core.decode(evidence)
-        library = core.ROOT / 'infrastructure/docker/scripts/backup-lib.sh'
-        require(library.is_file() and not library.is_symlink(), 'writer-library-path')
-        raw_library = library.read_bytes()
-        require(0 < len(raw_library) <= 65536, 'writer-library-size')
-        library_sha256 = hashlib.sha256(raw_library).hexdigest()
-        container_hash = core.run(['docker', 'exec', 'smk-pg-backup', 'sha256sum',
-                                   '/backup-lib.sh']).decode().strip().split()
-        require(container_hash == [library_sha256, '/backup-lib.sh'],
-                'writer-library-runtime-drift')
+        library_sha256 = self.compatible_writer()
         validate_writer_evidence(value, self.p, library_sha256)
         # The new build inputs are included as well as those enforced by the core.
         require(not self.git('diff', '--name-only', self.p['imageRevision'], self.p['sourceSha'],
@@ -127,11 +192,15 @@ class Host(core.Host):
         for service, target in self.packet['targetApps'].items():
             image = core.decode(core.run(['docker', 'image', 'inspect', '--format',
                 '{"id":{{json .Id}},"os":{{json .Os}},"arch":{{json .Architecture}},'
-                '"digests":{{json .RepoDigests}},"revision":{{json (index .Config.Labels "org.opencontainers.image.revision")}}}',
+                '"digests":{{json .RepoDigests}},"revision":{{json (index .Config.Labels "org.opencontainers.image.revision")}},'
+                '"buildConfig":{{json (index .Config.Labels "org.diis.build-config-sha256")}}}',
                 target['reference']]))
             require(image['id'] == target['id'] and image['os'] == 'linux'
                     and image['arch'] == 'amd64' and target['reference'] in image['digests']
-                    and image['revision'] == self.p['sourceSha'], 'application-image-unavailable')
+                    and image['revision'] == self.p['sourceSha']
+                    and image['buildConfig'] == target['buildConfigSha256']
+                    == core.digest(core.canonical(self.build_configuration(service))),
+                    'application-image-unavailable')
 
     def verify_compose_baseline(self):
         # Application releases use the prior validated receipt, not mutable tracked image refs.
