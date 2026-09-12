@@ -710,14 +710,15 @@ exit 0
     def test_target_approval_schema_and_immutable_identity(self):
         legacy = load('packet_fixture', 'infrastructure/deploy/tests/staging-readiness-contract.py')
         base = legacy.packet()
-        packet = dict(schema='diis-staging-application-approval-v1', baseline=base,
+        packet = dict(schema='diis-staging-application-approval-v2', baseline=base,
             targetModelSha256='a'*64, writerEvidenceSha256='b'*64,
             baselineReceipt=dict(schema='diis-staging-application-receipt-v1',
                 sourceSha=base['baseSha'], modelSha256=base['modelSha256'],
                 configHashes={'api':'1'*64, 'web':'2'*64},
                 imageReferences={name:'sha256:'+'9'*64 for name in ('api','web')}),
             targetApps={name:dict(reference=f'ghcr.io/smk-darussalam-subah/diis-{name}@sha256:'+'c'*64,
-                        id='sha256:'+'d'*64, revision=base['sourceSha']) for name in ('api','web')})
+                        id='sha256:'+'d'*64, revision=base['sourceSha'],
+                        buildConfigSha256='e'*64) for name in ('api','web')})
         a.validate(packet, base['sourceSha'], int(time.time()))
         for key, value in [('reference','ghcr.io/smk-darussalam-subah/diis-api:latest'),
                            ('revision','0'*40), ('id','sha256:bad')]:

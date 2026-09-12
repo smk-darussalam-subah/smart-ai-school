@@ -23,9 +23,13 @@ FILES = (
     'infrastructure/deploy/staging-readiness-deploy.py',
     'infrastructure/deploy/staging-application-deploy.py',
     'infrastructure/deploy/install-w10d-backup-lock-bootstrap.sh',
+    'infrastructure/deploy/install-w10d-legacy-writer-snapshot.py',
+    'infrastructure/deploy/install-w10d-writer-compatibility.py',
+    'infrastructure/deploy/legacy-backup-compatibility.sh',
     'infrastructure/systemd/diis-backup-lock.conf',
     'infrastructure/docker/scripts/backup-lib.sh',
     'scripts/w10d-test-boundary.sh',
+    'scripts/bounded-command-capture.py',
     'scripts/w10d_completion_validation.py',
 )
 

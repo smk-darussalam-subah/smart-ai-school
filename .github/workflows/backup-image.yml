@@ -10,6 +10,19 @@ on:
       source_sha:
         type: string
         required: true
+      profile:
+        type: choice
+        options: [backup, api, web]
+        default: backup
+        required: true
+      publication_mode:
+        type: choice
+        options: [existing, first]
+        default: existing
+        required: true
+      absence_sha256:
+        type: string
+        description: Hash of independently reviewed organization-admin absence evidence (first only)
       build_run_id:
         type: string
         description: Approved build run (publish only)
@@ -26,7 +39,7 @@ concurrency:
 
 jobs:
   build:
-    if: inputs.operation == 'build' && github.ref == 'refs/heads/develop' && inputs.source_sha == github.sha
+    if: inputs.operation == 'build' && inputs.source_sha == github.sha && ((inputs.profile == 'backup' && github.ref == 'refs/heads/develop') || ((inputs.profile == 'api' || inputs.profile == 'web') && github.ref == 'refs/heads/staging'))
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -36,6 +49,8 @@ jobs:
       - name: Build once, test and scan the same image
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
+          IMAGE_PROFILE: ${{ inputs.profile }}
+          STAGING_VAPID_PUBLIC_KEY: ${{ vars.W10D_STAGING_VAPID_PUBLIC_KEY }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
@@ -47,10 +62,27 @@ jobs:
           curl --fail --location --proto '=https' --tlsv1.2 --max-time 180 -o tools/syft.tar.gz https://github.com/anchore/syft/releases/download/v1.51.1/syft_1.51.1_linux_amd64.tar.gz
           echo '8fcb33017a0dc1058298c923c436d19dfa68ae93968e0b423248542e3afb9fc3  tools/syft.tar.gz' | sha256sum --check --strict
           tar -xzf tools/syft.tar.gz -C tools syft
-          docker build --platform linux/amd64 --label "org.opencontainers.image.revision=$SOURCE_SHA" --label org.opencontainers.image.source=https://github.com/smk-darussalam-subah/smart-ai-school -t diis-reviewed-backup -f infrastructure/docker/pg-backup.Dockerfile .
+          args=()
+          case "$IMAGE_PROFILE" in
+            backup) recipe=infrastructure/docker/pg-backup.Dockerfile ;;
+            api) recipe=apps/api/Dockerfile ;;
+            web)
+              recipe=apps/web/Dockerfile
+              [[ "$STAGING_VAPID_PUBLIC_KEY" =~ ^[A-Za-z0-9_-]{87}$ ]]
+              args+=(--build-arg API_URL=http://smk-staging-api:3001 --build-arg "NEXT_PUBLIC_VAPID_PUBLIC_KEY=$STAGING_VAPID_PUBLIC_KEY")
+              ;;
+            *) exit 64 ;;
+          esac
+          config_hash=$(python3 infrastructure/deploy/staging-image-config.py "$IMAGE_PROFILE")
+          docker build --platform linux/amd64 "${args[@]}" --label "org.opencontainers.image.revision=$SOURCE_SHA" --label "org.diis.build-config-sha256=$config_hash" --label org.opencontainers.image.source=https://github.com/smk-darussalam-subah/smart-ai-school -t diis-reviewed-backup -f "$recipe" .
           image=$(docker image inspect --format '{{.Id}}' diis-reviewed-backup)
           docker image inspect "$image" > evidence/image.json
-          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 512m --cpus 1 --pids-limit 64 --entrypoint sh "$image" -ceu 'pg_dump --version; python3 /scripts/w10d_completion_validation.py --help; /usr/local/lib/diis-tools/mc --version; /usr/local/lib/diis-tools/rclone version'
+          case "$IMAGE_PROFILE" in
+            backup) smoke='pg_dump --version; python3 /scripts/w10d_completion_validation.py --help; /usr/local/lib/diis-tools/mc --version; /usr/local/lib/diis-tools/rclone version' ;;
+            api) smoke='node --check apps/api/dist/main.js' ;;
+            web) smoke='node --check apps/web/server.js; node -e '\''const r=require("/app/apps/web/.next/routes-manifest.json");if(!r.rewrites.afterFiles.some(x=>x.destination==="http://smk-staging-api:3001/api/v1/:path*"))process.exit(1)'\''' ;;
+          esac
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 512m --cpus 1 --pids-limit 64 --entrypoint sh "$image" -ceu "$smoke"
           python3 -c 'import json,sys; print(json.dumps(dict(schema="diis-image-smoke-v1",imageId=sys.argv[1],status="pass",network="none")))' "$image" > evidence/smoke.json
           tools/syft "docker:$image" -o syft-json=evidence/sbom.json
           tools/grype db update
@@ -58,7 +90,7 @@ jobs:
           tools/grype "docker:$image" -o json > evidence/grype.json
           python3 -c 'import hashlib,json,pathlib; db=json.loads(pathlib.Path("evidence/grype-db.json").read_bytes()); files={"grypeExecutableSha256":"tools/grype","syftExecutableSha256":"tools/syft","dbSha256":db["path"]}; print(json.dumps({k:hashlib.file_digest(open(v,"rb"),"sha256").hexdigest() for k,v in files.items()},sort_keys=True))' > evidence/scanner.json
           docker save diis-reviewed-backup -o evidence/image.tar
-          python3 infrastructure/deploy/backup-image-artifact.py bind evidence "$SOURCE_SHA" "$GITHUB_RUN_ID"
+          python3 infrastructure/deploy/backup-image-artifact.py bind evidence "$SOURCE_SHA" "$GITHUB_RUN_ID" "$IMAGE_PROFILE"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: diis-backup-reviewed-artifact
@@ -67,10 +99,10 @@ jobs:
           retention-days: 7
 
   publish:
-    if: inputs.operation == 'publish' && github.ref == 'refs/heads/develop' && inputs.source_sha == github.sha
+    if: inputs.operation == 'publish' && inputs.source_sha == github.sha && ((inputs.profile == 'backup' && github.ref == 'refs/heads/develop') || ((inputs.profile == 'api' || inputs.profile == 'web') && github.ref == 'refs/heads/staging'))
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    environment: backup-image-publication
+    environment: ${{ inputs.profile == 'backup' && 'backup-image-publication' || 'staging-image-publication' }}
     permissions:
       contents: read
       actions: read
@@ -79,24 +111,26 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Verify run, environment and existing private package metadata
+      - name: Verify run, environment and explicit first or existing private package
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ inputs.source_sha }}
           BUILD_RUN: ${{ inputs.build_run_id }}
+          IMAGE_PROFILE: ${{ inputs.profile }}
+          PUBLICATION_MODE: ${{ inputs.publication_mode }}
+          ABSENCE_SHA: ${{ inputs.absence_sha256 }}
+          FIRST_PUBLICATION_EVIDENCE: ${{ vars.W10D_FIRST_PUBLICATION_EVIDENCE_JSON }}
         run: |
           set -euo pipefail
           [[ "$BUILD_RUN" =~ ^[1-9][0-9]*$ ]]
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN" > run.json
-          gh api "repos/$GITHUB_REPOSITORY/environments/backup-image-publication" > gate.json
-          gh api orgs/smk-darussalam-subah/packages/container/diis-pg-backup > metadata-package.json
-          python3 infrastructure/deploy/verify-publication-metadata.py "$SOURCE_SHA" "$BUILD_RUN"
+          python3 infrastructure/deploy/verify-publication-metadata.py collect "$SOURCE_SHA" "$BUILD_RUN" "$IMAGE_PROFILE" "$PUBLICATION_MODE" > preflight.json
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: diis-backup-reviewed-artifact
           path: evidence
           run-id: ${{ inputs.build_run_id }}
           github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
       - name: Publish approved bytes without rebuild
         env:
           PUBLICATION_APPROVAL: ${{ vars.W10D_BACKUP_PUBLICATION_APPROVAL_JSON }}
@@ -104,23 +138,34 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           BUILD_RUN: ${{ inputs.build_run_id }}
           GH_TOKEN: ${{ github.token }}
+          IMAGE_PROFILE: ${{ inputs.profile }}
+          PUBLICATION_MODE: ${{ inputs.publication_mode }}
+          ABSENCE_SHA: ${{ inputs.absence_sha256 }}
+          FIRST_PUBLICATION_EVIDENCE: ${{ vars.W10D_FIRST_PUBLICATION_EVIDENCE_JSON }}
         run: |
           set -euo pipefail
           [[ "$APPROVAL_SHA" =~ ^[a-f0-9]{64}$ ]]
           test "$(printf '%s' "$PUBLICATION_APPROVAL" | sha256sum | cut -d' ' -f1)" = "$APPROVAL_SHA"
-          image=$(python3 infrastructure/deploy/backup-image-artifact.py verify evidence "$SOURCE_SHA" "$BUILD_RUN")
+          config_id=$(python3 infrastructure/deploy/backup-image-artifact.py verify evidence "$SOURCE_SHA" "$BUILD_RUN" "$IMAGE_PROFILE")
+          [[ "$config_id" =~ ^sha256:[a-f0-9]{64}$ ]]
           export DOCKER_CONFIG="$RUNNER_TEMP/diis-publisher-$GITHUB_RUN_ID"
           mkdir -m700 "$DOCKER_CONFIG"
           trap 'docker logout ghcr.io >/dev/null 2>&1; rm -f "$DOCKER_CONFIG/config.json"; rmdir "$DOCKER_CONFIG"' EXIT
           docker load -i evidence/image.tar
-          test "$(docker image inspect --format '{{.Id}}' diis-reviewed-backup)" = "$image"
           docker save diis-reviewed-backup -o "$RUNNER_TEMP/diis-loaded-check.tar"
           python3 infrastructure/deploy/verify-loaded-backup-image.py evidence/image.tar "$RUNNER_TEMP/diis-loaded-check.tar"
           rm "$RUNNER_TEMP/diis-loaded-check.tar"
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          tag="ghcr.io/smk-darussalam-subah/diis-pg-backup:sha-$SOURCE_SHA-run-$BUILD_RUN"
+          case "$IMAGE_PROFILE" in
+            backup) package=diis-pg-backup ;;
+            api) package=diis-api ;;
+            web) package=diis-web ;;
+            *) exit 64 ;;
+          esac
+          tag="ghcr.io/smk-darussalam-subah/$package:sha-$SOURCE_SHA-run-$BUILD_RUN"
           docker tag diis-reviewed-backup "$tag"
-          python3 infrastructure/deploy/backup-image-artifact.py verify evidence "$SOURCE_SHA" "$BUILD_RUN" >/dev/null
+          python3 infrastructure/deploy/backup-image-artifact.py verify evidence "$SOURCE_SHA" "$BUILD_RUN" "$IMAGE_PROFILE" >/dev/null
+          python3 infrastructure/deploy/verify-publication-metadata.py collect "$SOURCE_SHA" "$BUILD_RUN" "$IMAGE_PROFILE" "$PUBLICATION_MODE" >/dev/null
           trap 'rc=$?; echo "REGISTRY_PUBLICATION_AMBIGUOUS retry=prohibited" >&2; exit "$rc"' ERR
           docker push "$tag"
           docker image inspect --format '{{json .RepoDigests}}' "$tag" > "$RUNNER_TEMP/repo-digests.json"
@@ -136,12 +181,12 @@ jobs:
           docker save "$platform_ref" -o "$RUNNER_TEMP/registry-roundtrip.tar"
           python3 infrastructure/deploy/verify-loaded-backup-image.py --registry-roundtrip \
             evidence/image.tar "$RUNNER_TEMP/registry-roundtrip.tar"
-          python3 infrastructure/deploy/backup-image-artifact.py verify evidence "$SOURCE_SHA" "$BUILD_RUN" >/dev/null
+          python3 infrastructure/deploy/backup-image-artifact.py verify evidence "$SOURCE_SHA" "$BUILD_RUN" "$IMAGE_PROFILE" >/dev/null
           python3 infrastructure/deploy/verify-published-backup-image.py verify \
             evidence/binding.json "$root_ref" "$RUNNER_TEMP/root-manifest.json" \
             "$platform_ref" "$RUNNER_TEMP/platform-manifest.json" \
             "$RUNNER_TEMP/registry-image.json" "$RUNNER_TEMP/publication-receipt.json"
-          gh api orgs/smk-darussalam-subah/packages/container/diis-pg-backup --jq '.visibility' | grep -x private
+          python3 infrastructure/deploy/verify-publication-metadata.py post "$IMAGE_PROFILE"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: diis-backup-publication-receipt
