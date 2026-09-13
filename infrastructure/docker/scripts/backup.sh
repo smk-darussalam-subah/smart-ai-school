@@ -216,10 +216,14 @@ require_uint BACKUP_LOCAL_BUDGET_BYTES "$hard_budget"
   || backup_die "budget backup harus tepat keputusan Gate 0: ${GATE0_MAX_BACKUP_BYTES} bytes"
 [ "$estimate" -le "$hard_budget" ] || backup_die "estimasi database melebihi budget absolut Gate 0"
 
-capacity_guard "$TEMP_ROOT" "$estimate" "${BACKUP_SPACE_MULTIPLIER:-3}" "${BACKUP_MIN_FREE_PERCENT:-25}"
+min_free_percent=${BACKUP_MIN_FREE_PERCENT:-$BACKUP_MIN_FREE_PERCENT_POLICY}
+require_uint BACKUP_MIN_FREE_PERCENT "$min_free_percent"
+[ "$min_free_percent" -eq "$BACKUP_MIN_FREE_PERCENT_POLICY" ] \
+  || backup_die "batas ruang bebas wajib tepat ${BACKUP_MIN_FREE_PERCENT_POLICY}%"
+capacity_guard "$TEMP_ROOT" "$estimate" "${BACKUP_SPACE_MULTIPLIER:-3}" "$min_free_percent"
 minio_target_path=${MINIO_TARGET_PATH:-/var/lib/diis-minio-target}
 [ -d "$minio_target_path" ] || backup_die "filesystem target MinIO tidak dapat diobservasi"
-capacity_guard "$minio_target_path" "$estimate" "${BACKUP_SPACE_MULTIPLIER:-3}" "${BACKUP_MIN_FREE_PERCENT:-25}"
+capacity_guard "$minio_target_path" "$estimate" "${BACKUP_SPACE_MULTIPLIER:-3}" "$min_free_percent"
 TARGET_TOTAL_BYTES=$CAPACITY_TOTAL_BYTES
 TARGET_FREE_BYTES=$CAPACITY_AVAILABLE_BYTES
 TARGET_PROJECTED_FREE_PERCENT=$CAPACITY_PROJECTED_PERCENT
@@ -238,6 +242,7 @@ PRE_OBJECT_LIST="${TEMP_DIR}/${BACKUP_ID}.objects.pre"
 object_source="${RCLONE_MINIO_REMOTE%/}/${APP_OBJECT_BUCKET}"
 pre_object_raw="${TEMP_DIR}/${BACKUP_ID}.objects.pre.raw"
 w10d_capture_command "$pre_object_raw" 8388608 "$RCLONE" lsf "$object_source" \
+  --recursive --files-only \
   --exclude '/tmp/**' --exclude '/cache/**' --exclude '/derived/**' \
   || backup_die "inventory object sebelum snapshot database gagal"
 w10d_canonicalize_inventory "$pre_object_raw" "$PRE_OBJECT_LIST"

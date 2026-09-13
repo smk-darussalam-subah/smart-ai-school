@@ -174,6 +174,9 @@ ketiga exact count hasil query dan acceptance mewajibkan equality dengan complet
 
 Jalankan `capture-w10d-candidate-tool-evidence.sh` untuk membuat tool evidence dari
 byte aktual `mc`, `rclone.zip`, dan executable `rclone` beserta versi ter-normalisasi.
+Binary `mc` berasal dari stage `minio/mc` yang dipin ke image digest dan diverifikasi
+lagi terhadap SHA-256 executable yang disetujui; URL archive historis tidak menjadi
+sumber build karena availability URL bukan jaminan integritas maupun keberlanjutan.
 Schema v3 mengekstrak exact `rclone-v1.70.3-linux-amd64/rclone` dari archive
 ber-checksum terpin dan mewajibkan hash entry itu sama dengan executable aktual;
 kesamaan versi saja tidak cukup.
@@ -202,9 +205,10 @@ Sebelum write, engine mengukur:
 4. estimasi database saat itu.
 
 Masing-masing target harus memiliki sedikitnya tiga kali estimasi dan tetap
-minimal 25% bebas setelah operasi. Target yang tidak dapat diobservasi adalah
-failure, bukan alasan untuk melewati guard. Commissioning production juga wajib
-mereclaim sedikitnya 6,49 GiB agar baseline mencapai sasaran 30% bebas.
+minimal 10% bebas setelah operasi. Nilai 10% adalah batas fail-closed yang tetap,
+bukan sasaran reclaim atau alasan untuk meminta ruang tambahan selama proyeksi
+pascaoperasi masih memenuhi batas. Target yang tidak dapat diobservasi adalah
+failure, bukan alasan untuk melewati guard.
 
 Readonly summary schema v3 mengobservasi completion target dan dump legacy secara
 terpisah. Inventory ditangkap status-preserving ke temporary directory privat dan

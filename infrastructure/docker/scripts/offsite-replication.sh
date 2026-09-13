@@ -115,6 +115,7 @@ done <"$PRE_OBJECT_LIST"
 
 post_object_raw="${TEMP_DIR}/${BACKUP_ID}.objects.post.raw"
 w10d_capture_command "$post_object_raw" 8388608 rclone lsf "$object_source" \
+  --recursive --files-only \
   --exclude '/tmp/**' --exclude '/cache/**' --exclude '/derived/**' \
   || backup_die "inventory object pasca-snapshot gagal"
 w10d_canonicalize_inventory "$post_object_raw" "$post_object_list"

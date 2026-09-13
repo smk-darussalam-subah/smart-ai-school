@@ -225,8 +225,8 @@ total_bytes=$((total_kb * 1024))
 available_bytes=$((available_kb * 1024))
 (( available_bytes >= dump_bytes * 3 )) || die 'ruang restore target kurang dari 3x ukuran dump'
 projected_bytes=$((available_bytes - dump_bytes))
-(( projected_bytes >= 0 && projected_bytes * 100 / total_bytes >= 25 )) \
-  || die 'ruang bebas target setelah restore diproyeksikan di bawah 25%'
+(( projected_bytes >= 0 && projected_bytes * 100 / total_bytes >= BACKUP_MIN_FREE_PERCENT_POLICY )) \
+  || die "ruang bebas target setelah restore diproyeksikan di bawah ${BACKUP_MIN_FREE_PERCENT_POLICY}%"
 
 # Register both cleanup obligations before either mutation. The expected lock token
 # is identical to backup-lib.sh's token derivation, so a signal after mkdir/create

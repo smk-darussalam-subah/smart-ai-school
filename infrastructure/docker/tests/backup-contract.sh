@@ -106,7 +106,7 @@ echo 'Filesystem 1024-blocks Used Available Capacity Mounted on'
 if [ "${FAULT:-}" = disk ]; then
   echo 'mock 100 96 4 96% /'
 else
-  echo 'mock 20000000 1000 19999000 1% /'
+  echo "mock ${DF_TOTAL_KB:-20000000} 1000 ${DF_AVAILABLE_KB:-19999000} 1% /"
 fi
 EOF
   cat >"$dir/mc" <<'EOF'
@@ -293,9 +293,13 @@ case "$command" in
     target=$(resolve "$raw_target"); shift
     target=${target%/}
     dirs_only=0
+    files_only=0
+    recursive=0
     manifest_only=0
     while [ "$#" -gt 0 ]; do
       [ "$1" = --dirs-only ] && dirs_only=1
+      [ "$1" = --files-only ] && files_only=1
+      [ "$1" = --recursive ] && recursive=1
       if [ "$1" = --include ]; then
         [ "$2" = '/database/manifests/*.complete.json' ] || exit 68
         manifest_only=1
@@ -320,6 +324,10 @@ case "$command" in
     esac
     case "$raw_target" in
       diisminio:*)
+        if [ "${RCLONE_REQUIRE_OBJECT_FLAGS:-0}" = 1 ] \
+          && { [ "$recursive" -ne 1 ] || [ "$files_only" -ne 1 ]; }; then
+          exit 69
+        fi
         case "${FAULT:-}" in
           object-inventory-fail) exit 58 ;;
           object-inventory-duplicate) printf 'media/sample.jpg\nmedia/sample.jpg\n'; exit 0 ;;
@@ -499,7 +507,14 @@ prepare_backup_case() {
   local base=$1
   mkdir -p "$base/tmp" "$base/minio-target" "$base/mc/backup/postgres" \
     "$base/source/objects/media" "$base/offsite" "$base/restore"
-  printf sample >"$base/source/objects/media/sample.jpg"
+  if [[ "${SEED_NESTED_OBJECTS:-0}" == 1 ]]; then
+    mkdir -p "$base/source/objects/media/2026/class-a" \
+      "$base/source/objects/documents/reports" "$base/source/objects/empty-directory"
+    printf 'nested-image-v1' >"$base/source/objects/media/2026/class-a/photo.bin"
+    printf 'nested-report-v1' >"$base/source/objects/documents/reports/report.bin"
+  else
+    printf sample >"$base/source/objects/media/sample.jpg"
+  fi
   make_fakes "$base/bin"
 }
 
@@ -529,6 +544,7 @@ run_backup() {
     MC_CLEANUP_DELETE_FAULT="${MC_CLEANUP_DELETE_FAULT:-}" \
     MC_FORCE_POST_WRITE_OVER="${MC_FORCE_POST_WRITE_OVER:-0}" \
     RCLONE_CAT_FAULT="${RCLONE_CAT_FAULT:-}" \
+    RCLONE_REQUIRE_OBJECT_FLAGS="${RCLONE_REQUIRE_OBJECT_FLAGS:-0}" \
     DB_ESTIMATE="$estimate" MC_FAKE_ROOT="$base/mc" RCLONE_SOURCE_ROOT="$base/source" \
     RCLONE_OFFSITE_ROOT="$base/offsite" RCLONE_RESTORE_ROOT="$base/restore" \
     POSTGRES_HOST=postgres POSTGRES_USER=test POSTGRES_DB=test BACKUP_BUCKET=backup \
@@ -548,17 +564,45 @@ assert_grep 'python3 /scripts/w10d_completion_validation.py --help' "$PG_BACKUP_
   'real image validator integration assertion missing'
 assert_not_grep '^# syntax=' "$PG_BACKUP_DOCKERFILE" \
   'Dockerfile still selects a mutable external frontend'
-assert_grep 'ADD --checksum=sha256:01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891' "$PG_BACKUP_DOCKERFILE" 'mc checksum missing'
+assert_grep 'quay\.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727 AS mc-runtime' \
+  "$PG_BACKUP_DOCKERFILE" 'pinned MinIO client stage missing'
+assert_not_grep '^FROM minio/mc(@|:)' "$PG_BACKUP_DOCKERFILE" \
+  'unqualified MinIO client image would resolve through the wrong registry'
+assert_grep 'COPY --from=mc-runtime /usr/bin/mc /usr/local/lib/diis-tools/mc' \
+  "$PG_BACKUP_DOCKERFILE" 'mc must come from the immutable client stage'
+assert_grep '01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891' \
+  "$PG_BACKUP_DOCKERFILE" 'mc executable checksum proof missing'
 assert_grep 'ADD --checksum=sha256:7d69057e69385f6514a9684c7eaa424d972096b130284bb34dd967c4ed4f9dad' "$PG_BACKUP_DOCKERFILE" 'rclone checksum missing'
 assert_grep 'python3 /scripts/install-baked-backup-tools.py' "$COMPOSE" 'baked tools required'
 assert_not_grep 'curl.*\|[[:space:]]*(ba)?sh|/release/linux-amd64/mc([[:space:]]|$)' "$COMPOSE" 'mutable installer found'
 pass 'immutable backup supply chain'
 
+[[ "$(grep -h -- '--recursive --files-only' "$BACKUP" "$OFFSITE" | wc -l)" -eq 2 ]] \
+  || fail 'object inventory must be recursive and file-only before and after the database snapshot'
+
 assert_grep '0 2 \* \* \*' "$COMPOSE" '02:00 WIB schedule missing'
 assert_grep 'BACKUP_LOCAL_BUDGET_BYTES.*4015794422' "$COMPOSE" 'Gate 0 absolute budget missing'
+assert_grep 'BACKUP_MIN_FREE_PERCENT:[[:space:]]*"10"' "$COMPOSE" \
+  '10 percent minimum-free policy missing from backup runtime'
+assert_grep '^BACKUP_MIN_FREE_PERCENT_POLICY=10$' "$LIB" \
+  'canonical 10 percent minimum-free policy missing'
 assert_grep 'minio_data:/var/lib/diis-minio-target:ro' "$COMPOSE" 'MinIO target volume observability missing'
 assert_not_grep 'crontab|Cron \(' "$ROOT/scripts/backup-db.sh" 'host wrapper must not define a scheduler'
 pass 'single scheduler and exact capacity authority'
+
+if DF_TOTAL_KB=100000 DF_AVAILABLE_KB=9004 run_backup capacity-nine-percent; then
+  fail 'backup accepted a projected 9 percent free filesystem'
+fi
+assert_grep 'diproyeksikan di bawah 10%' "$TMP/capacity-nine-percent/err" \
+  'backup did not report the canonical 10 percent floor'
+[[ ! -d "$TMP/capacity-nine-percent/lock" ]] || fail '9 percent capacity lock leaked'
+if ! DF_TOTAL_KB=100000 DF_AVAILABLE_KB=10004 run_backup capacity-ten-percent; then
+  cat "$TMP/capacity-ten-percent/err" >&2
+  fail 'backup rejected the exact 10 percent boundary'
+fi
+assert_grep 'BACKUP_COMPLETE' "$TMP/capacity-ten-percent/out" \
+  '10 percent boundary did not complete backup'
+pass 'backup rejects 9 percent and accepts the exact 10 percent boundary'
 
 if ! run_backup success; then cat "$TMP/success/err" >&2; fail 'success path failed'; fi
 assert_grep 'BACKUP_COMPLETE' "$TMP/success/out" 'success marker missing'
@@ -970,6 +1014,83 @@ restore_snapshot 20260903T000000Z-1003 "$attempt_c"
 [[ ! -e "$history_base/restore/restore-parent/$attempt_c/x.txt" && -f "$history_base/restore/restore-parent/$attempt_c/y.txt" ]] \
   || fail 'backup C did not honor deletion tombstone semantics'
 pass 'three historical object sets restore create update and delete exactly'
+
+nested_base="$TMP/nested-object-behavior"
+if ! SEED_NESTED_OBJECTS=1 RCLONE_REQUIRE_OBJECT_FLAGS=1 run_backup nested-object-behavior; then
+  cat "$nested_base/err" >&2
+  fail 'nested object backup failed with recursive file-only enforcement'
+fi
+nested_completion=$(find "$nested_base/offsite/diis/database/manifests" \
+  -type f -name '*.complete.json' -print)
+[[ "$(printf '%s\n' "$nested_completion" | sed '/^$/d' | wc -l | tr -d '[:space:]')" == 1 ]] \
+  || fail 'nested object backup did not publish exactly one completion manifest'
+nested_backup_id=$(basename "$nested_completion" .complete.json)
+nested_input="$nested_base/$nested_backup_id"
+mkdir -p "$nested_input"
+cp "$nested_completion" "$nested_input/$nested_backup_id.complete.json"
+cp "$nested_base/offsite/diis/database/current/$nested_backup_id.sha256" \
+  "$nested_input/$nested_backup_id.sha256"
+cp "$nested_base/offsite/diis/objects/manifests/$nested_backup_id.objects.tsv" \
+  "$nested_input/$nested_backup_id.objects.tsv"
+
+nested_object_manifest="$nested_input/$nested_backup_id.objects.tsv"
+[[ "$(wc -l <"$nested_object_manifest" | tr -d '[:space:]')" == 3 ]] \
+  || fail 'nested object manifest did not contain exactly two object records'
+python3 - "$nested_object_manifest" "$nested_base/source/objects" <<'PY' \
+  || fail 'nested object manifest did not bind the exact source bytes'
+import base64
+import hashlib
+import pathlib
+import sys
+
+
+manifest = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+source = pathlib.Path(sys.argv[2])
+expected = {
+    "documents/reports/report.bin",
+    "media/2026/class-a/photo.bin",
+}
+observed = set()
+for row in manifest[1:]:
+    digest, size, encoded_path = row.split("|", 2)
+    relative = base64.b64decode(encoded_path, validate=True).decode("utf-8")
+    path = source / relative
+    payload = path.read_bytes()
+    assert hashlib.sha256(payload).hexdigest() == digest
+    assert len(payload) == int(size)
+    observed.add(relative)
+assert observed == expected
+PY
+
+primary_history_base=$history_base
+history_base=$nested_base
+nested_attempt=w10d-20260913t160001z-b1111111
+restore_snapshot "$nested_backup_id" "$nested_attempt"
+nested_target="$nested_base/restore/restore-parent/$nested_attempt"
+[[ "$(find "$nested_target" -type f ! -name '.diis-disposable-restore-target-v3' \
+  | wc -l | tr -d '[:space:]')" == 2 ]] \
+  || fail 'nested object restore did not contain exactly two restored files'
+cmp -s "$nested_base/source/objects/media/2026/class-a/photo.bin" \
+  "$nested_target/media/2026/class-a/photo.bin" \
+  || fail 'nested media object restore bytes differ'
+cmp -s "$nested_base/source/objects/documents/reports/report.bin" \
+  "$nested_target/documents/reports/report.bin" \
+  || fail 'nested document object restore bytes differ'
+[[ ! -e "$nested_target/empty-directory" ]] \
+  || fail 'directory entry was incorrectly restored as an object'
+history_base=$primary_history_base
+
+if env RCLONE_SOURCE_ROOT="$nested_base/source" RCLONE_OFFSITE_ROOT="$nested_base/offsite" \
+  RCLONE_RESTORE_ROOT="$nested_base/restore" RCLONE_REQUIRE_OBJECT_FLAGS=1 \
+  "$nested_base/bin/rclone" lsf diisminio:objects --recursive >/dev/null 2>&1; then
+  fail 'nested object inventory accepted an invocation missing --files-only'
+fi
+if env RCLONE_SOURCE_ROOT="$nested_base/source" RCLONE_OFFSITE_ROOT="$nested_base/offsite" \
+  RCLONE_RESTORE_ROOT="$nested_base/restore" RCLONE_REQUIRE_OBJECT_FLAGS=1 \
+  "$nested_base/bin/rclone" lsf diisminio:objects --files-only >/dev/null 2>&1; then
+  fail 'nested object inventory accepted an invocation missing --recursive'
+fi
+pass 'nested object inventory manifest and restore preserve exactly two files and reject missing flags'
 
 negative_attempt=w10d-20260906t030004z-a4444444
 negative_target="$history_base/restore/restore-parent/$negative_attempt"
@@ -1918,7 +2039,7 @@ case "$command" in
   exec)
     args="$*"
     case "$args" in
-      *'df -Pk'*) printf '%s\n' '10000000 9999000' ;;
+      *'df -Pk'*) printf '%s %s\n' "${RESTORE_DF_TOTAL_KB:-10000000}" "${RESTORE_DF_AVAILABLE_KB:-9999000}" ;;
       *'pg_restore --list'*)
         if [ "${RESTORE_FAULT:-}" = archive-list ]; then exit 64; fi
         if [ "${RESTORE_FAULT:-}" = empty-archive-list ]; then exit 0; fi
@@ -1991,6 +2112,8 @@ run_restore() {
   if [ "${RESTORE_DETACHED:-0}" = 1 ]; then
     env PATH="$restore_fake:$PATH" DOCKER_STATE="$restore_state" UNMARKED="$unmarked" \
       RESTORE_FAULT="$fault" TMPDIR="$restore_tmp" \
+      RESTORE_DF_TOTAL_KB="${RESTORE_DF_TOTAL_KB:-10000000}" \
+      RESTORE_DF_AVAILABLE_KB="${RESTORE_DF_AVAILABLE_KB:-9999000}" \
       RESTORE_SIGNAL="${RESTORE_SIGNAL:-}" RESTORE_SIGNAL_NAME="${RESTORE_SIGNAL_NAME:-TERM}" \
       RESTORE_BLOCK="${RESTORE_BLOCK:-}" \
       POSTGRES_CONTAINER="$container" POSTGRES_USER=postgres DUMP_FILE="$restore_dump" \
@@ -2004,6 +2127,8 @@ run_restore() {
   else
     env PATH="$restore_fake:$PATH" DOCKER_STATE="$restore_state" UNMARKED="$unmarked" \
       RESTORE_FAULT="$fault" TMPDIR="$restore_tmp" \
+      RESTORE_DF_TOTAL_KB="${RESTORE_DF_TOTAL_KB:-10000000}" \
+      RESTORE_DF_AVAILABLE_KB="${RESTORE_DF_AVAILABLE_KB:-9999000}" \
       RESTORE_SIGNAL="${RESTORE_SIGNAL:-}" RESTORE_SIGNAL_NAME="${RESTORE_SIGNAL_NAME:-TERM}" \
       RESTORE_BLOCK="${RESTORE_BLOCK:-}" \
       POSTGRES_CONTAINER="$container" POSTGRES_USER=postgres DUMP_FILE="$restore_dump" \
@@ -2036,6 +2161,22 @@ assert_grep '"tableCount":46.*"userCount":40.*"studentCount":20' \
   || fail 'restore archive list temp file was not cleaned after success'
 [[ ! -d "$restore_base/lock-success" ]] || fail 'stale restore lock was not reclaimed'
 rm -f "$restore_state/archive-list-consumed"
+if RESTORE_DF_TOTAL_KB=100000 RESTORE_DF_AVAILABLE_KB=9002 \
+  run_restore capacity-nine-percent; then
+  fail 'restore accepted a projected 9 percent free filesystem'
+fi
+assert_grep 'diproyeksikan di bawah 10%' "$restore_base/err-capacity-nine-percent" \
+  'restore did not report the canonical 10 percent floor'
+[[ ! -e "$restore_state/database-created" ]] || fail '9 percent restore mutated database'
+if ! RESTORE_DF_TOTAL_KB=100000 RESTORE_DF_AVAILABLE_KB=10002 \
+  run_restore capacity-ten-percent; then
+  cat "$restore_base/err-capacity-ten-percent" >&2 || true
+  fail 'restore rejected the exact 10 percent boundary'
+fi
+assert_grep 'RESTORE_DRILL_COMPLETE' "$restore_base/out-capacity-ten-percent" \
+  '10 percent restore boundary did not complete'
+[[ ! -e "$restore_state/database-created" ]] || fail '10 percent restore cleanup left database'
+pass 'restore rejects 9 percent and accepts the exact 10 percent boundary'
 if run_restore archive-list-failure diis-restore-test 0 archive-list; then
   fail 'pg_restore archive-list command failure was accepted'
 fi
@@ -2396,8 +2537,10 @@ if (healthy.notificationChannelType !== 'smtp' || healthy.notificationChannelRea
   throw new Error('notification type and runtime readiness are conflated');
 }
 if ('notificationChannelStatus' in healthy) throw new Error('legacy channel readiness claim remains');
-const capacity = evaluate({ ...base, estimatedDatabaseBytes: 100, targetFreeBytes: 300, projectedFreePercent: 20, projectedDaysToFull: 900 });
+const capacity = evaluate({ ...base, estimatedDatabaseBytes: 100, targetFreeBytes: 190, projectedFreePercent: 9, projectedDaysToFull: 570 });
 if (!capacity.reasonCodes.includes('CAPACITY_LOW')) throw new Error('capacity alert missing');
+const capacityBoundary = evaluate({ ...base, estimatedDatabaseBytes: 100, targetFreeBytes: 200, projectedFreePercent: 10, projectedDaysToFull: 600 });
+if (capacityBoundary.reasonCodes.includes('CAPACITY_LOW')) throw new Error('exact 10 percent capacity boundary rejected');
 const restore = evaluate({ ...base, restoreStatus: 'failed' });
 if (!restore.reasonCodes.includes('RESTORE_PROOF_MISSING_OR_STALE')) throw new Error('restore alert missing');
 const stale = evaluate({ ...base, createdEpoch: Math.floor(Date.now() / 1000) - 7200 });

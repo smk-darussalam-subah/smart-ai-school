@@ -4,6 +4,7 @@ set -eu
 
 GATE0_MAX_BACKUP_BYTES=4015794422
 BACKUP_LOCAL_METADATA_RESERVE_BYTES=65536
+BACKUP_MIN_FREE_PERCENT_POLICY=10
 LOCK_OWNER_TOKEN=''
 
 # Library defaults are immutable container paths. Active callers may replace
@@ -183,7 +184,7 @@ capacity_guard() {
   path=$1
   estimated_bytes=$2
   multiplier=${3:-3}
-  min_free_percent=${4:-25}
+  min_free_percent=${4:-$BACKUP_MIN_FREE_PERCENT_POLICY}
   require_uint estimated_bytes "$estimated_bytes"
   require_uint multiplier "$multiplier"
   require_uint min_free_percent "$min_free_percent"

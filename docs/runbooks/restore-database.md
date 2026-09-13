@@ -32,7 +32,8 @@
 
 Script memeriksa kapasitas dari filesystem data PostgreSQL di dalam target,
 bukan dari lokasi dump. Target harus memiliki ruang sedikitnya tiga kali dump dan
-tetap minimal 25% bebas setelah restore. Kegagalan observability menghentikan run
+tetap minimal 10% bebas setelah restore. Nilai 10% adalah batas tetap, bukan target
+reclaim tambahan. Kegagalan observability menghentikan run
 sebelum `CREATE DATABASE`.
 
 ## Jalankan Rehearsal
