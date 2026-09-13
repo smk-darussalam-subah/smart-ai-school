@@ -490,6 +490,32 @@ class ArtifactInstall(unittest.TestCase):
 
 
 class Handoff(unittest.TestCase):
+    def test_actual_committed_packet_matches_canonical_validator(self):
+        result = d0.validate(ROOT, predecessors=False)
+        self.assertEqual(result['sourceFiles'], 6)
+        self.assertEqual(result['rebindings'], 6)
+
+    def test_actual_packet_rejects_schema_status_restore_and_target_drift(self):
+        original_read = d0.read
+        packet = json.loads(original_read(ROOT, d0.EVIDENCE))
+        mutations = (
+            ('unsupported-field', lambda value: value.update({'unsupported': True})),
+            ('unsupported-status', lambda value: value.update({'operationalStatus': 'CI PASS'})),
+            ('postgres-count', lambda value: value['tests']['postgresSyntheticRestore'].update({'cases': 0})),
+            ('minio-count', lambda value: value['tests']['minioSyntheticRestore'].update({'cases': False})),
+            ('restore-exit', lambda value: value['tests']['postgresSyntheticRestore'].update({'exitCode': 1})),
+            ('restore-not-executed', lambda value: value['tests']['minioSyntheticRestore'].update({'executed': False})),
+            ('target-state', lambda value: value['observations'].update({'executableRestoreTarget': 'accepted'})),
+        )
+        for name, mutate in mutations:
+            value = copy.deepcopy(packet)
+            mutate(value)
+            raw = json.dumps(value).encode('utf-8')
+            def read_packet(root, relative):
+                return raw if relative == d0.EVIDENCE else original_read(root, relative)
+            with self.subTest(case=name), patch.object(d0, 'read', side_effect=read_packet), self.assertRaises(ValueError):
+                d0.validate(ROOT, predecessors=False)
+
     def test_successor_rejects_tamper_missing_wrong_binding_and_extra_path(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory).resolve()

@@ -15,14 +15,14 @@
   },
   "sourceManifest": {
     ".github/workflows/backup-image.yml": "fbe06a69f59a05b2f1f722b99e6c051ad000ae9f41375b0f85961e3e49097d5c",
-    "infrastructure/deploy/tests/integrated-closure-contract.py": "5a3ce146c309b32c1b41c0badc21c3853933fe3da1a6b27f85423056c1cfa43a",
+    "infrastructure/deploy/tests/integrated-closure-contract.py": "d27165f1af7830fd9e7a4e8433bc8008f1389b688fccdf4227d29c526dc4825e",
     "infrastructure/deploy/tests/source-closure-contract.py": "c542cc074ee996f1226e08db2431ca77c6a7a94b6f7ec592ec7e5060d8172c67",
     "infrastructure/deploy/verify-backup-build-trigger.py": "06ccb5ff113678da8fda80ab3ff4deb071dcc60842a41a35ad2f690a55bcb9a5",
     "infrastructure/deploy/verify-integrated-handoff.py": "25b8d423145db844ac00d36205156032f98c2a05628076b580dc53faccf8cdf0",
     "infrastructure/deploy/verify-publication-metadata.py": "f7cc1db9bf509c0990c98a40326880ed2794bd9d052245b801aec07f352ed4bb"
   },
-  "sourceManifestSha256": "e2ea1ff2f3fd3aa50a5d9a244388d12978d1e470bfd9d3b14d44b2420b5b583d",
-  "reportSha256": "87a7cd931d2fdf3ac183a1d16e6b1c26a5f0dc9b66c00e30a2d7636cbee70c7f",
+  "sourceManifestSha256": "7d48dcfdff0ed0c909eb15efc1c2a8673683ba7c7fa52d00cfa63940244fe958",
+  "reportSha256": "d44a9f0505a274391e6f5982479ea21fa83313d1f7685201c27e2a60b90f94e5",
   "rebindings": {
     ".github/workflows/backup-image.yml": {
       "before": "f4f982cfdb649bfd96982daf624fd5035812a3d2294734d715d7a901d424d434",
@@ -30,7 +30,7 @@
     },
     "infrastructure/deploy/tests/integrated-closure-contract.py": {
       "before": "a497cd63bbec7552ab78d0aa1554b3e8e71f29a74614f8d55b927463b6ff5fa5",
-      "after": "5a3ce146c309b32c1b41c0badc21c3853933fe3da1a6b27f85423056c1cfa43a"
+      "after": "d27165f1af7830fd9e7a4e8433bc8008f1389b688fccdf4227d29c526dc4825e"
     },
     "infrastructure/deploy/tests/source-closure-contract.py": {
       "before": "c33537c8360ce024c85dbda04f2d99150f0be14ebf34b9624a11bf1465b74c97",
@@ -71,8 +71,18 @@
     "integratedClosure": {
       "executed": true,
       "exitCode": 0,
-      "cases": 22,
+      "cases": 24,
       "command": "WSL Ubuntu python3 -B infrastructure/deploy/tests/integrated-closure-contract.py"
+    },
+    "actualCanonicalHandoff": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 1,
+      "caseUnit": "actual-packet-validation",
+      "command": "WSL Ubuntu python3 -B infrastructure/deploy/verify-integrated-handoff.py",
+      "sourceFiles": 6,
+      "rebindings": 6,
+      "historicalInputs": 59
     },
     "capacityLifecycle": {
       "executed": true,
@@ -101,6 +111,8 @@
     "postgresSyntheticRestore": {
       "executed": true,
       "exitCode": 0,
+      "cases": 1,
+      "caseUnit": "successful-integration-run",
       "command": "WSL Ubuntu exact infrastructure/docker/tests/wave10-postgres-integration.sh",
       "elapsedSeconds": 18.913,
       "dumpBytes": 247522,
@@ -125,6 +137,8 @@
     "minioSyntheticRestore": {
       "executed": true,
       "exitCode": 0,
+      "cases": 1,
+      "caseUnit": "successful-integration-run",
       "command": "WSL Ubuntu exact infrastructure/docker/tests/wave10-minio-integration.sh",
       "elapsedSeconds": 6.427,
       "dumpBytes": 8207,
@@ -145,13 +159,24 @@
   },
   "observations": {
     "dispatchOutcome": "stopped-before-run",
+    "pr658Correction": {
+      "reviewedPreviousHead": "1cfd33ab1aadf13cf2e75f4c2afd1efd1bf955c4",
+      "reviewerSha256": "de93c3dbf52f4aac0f30ddbb6f549769fb9e73646a20d0ee6c21479a638a811d",
+      "actualPacketRegression": "pass",
+      "negativeMutations": 7,
+      "canonicalValidatorChanged": false,
+      "ciWorkflowChanged": false,
+      "permissionOrEnvironmentChanged": false,
+      "previousCiConclusion": "not-executed-queued-not-pass",
+      "restoreRerun": false
+    },
     "artifactOrPackageCreated": false,
     "publishFromBootstrapTag": false,
     "bootstrapSingleUse": "oldest-exact-workflow-run-only",
     "driveRole": "encrypted-offsite-archive-source",
     "restoreComputePolicy": "existing-school-owned-no-new-cost-only",
     "googleCloudBillingLinked": false,
-    "executableRestoreTarget": "real-backup-target-not-yet-accepted",
+    "executableRestoreTarget": "not-yet-accepted",
     "restoreSourceChangeCount": 0,
     "syntheticLocalRestore": {
       "status": "pass",
@@ -182,6 +207,13 @@
       "tagCreated": false,
       "billableBuildStarted": false
     },
+    "directorInputsStillRequired": [
+      "existing-school-owned encrypted restore filesystem with measured real-backup footprint and at least 25 percent reserve",
+      "secondary recovery custodian and kit location outside VPS and backup Drive",
+      "private Google Workspace SMTP credential provisioning channel for the already-approved mailbox",
+      "WIB maintenance window for D3-D5 writer pause, restart, and rollback",
+      "new exact-SHA approval for one D2 build after merge and candidate review"
+    ],
     "googleDrive": {
       "project": "diis-backup-recovery",
       "serviceAccountStatus": "enabled",
@@ -191,12 +223,5 @@
       "permissionMutation": false
     }
   },
-  "directorInputsStillRequired": [
-    "existing-school-owned encrypted restore filesystem with measured real-backup footprint and at least 25 percent reserve",
-    "secondary recovery custodian and kit location outside VPS and backup Drive",
-    "private Google Workspace SMTP credential provisioning channel for the already-approved mailbox",
-    "WIB maintenance window for D3-D5 writer pause, restart, and rollback",
-    "new exact-SHA approval for one D2 build after merge and candidate review"
-  ],
-  "operationalStatus": "D2 SOURCE AND LOCAL SYNTHETIC RESTORE COMPLETE - MERGE AND OPERATIONS HOLD"
+  "operationalStatus": "SOURCE COMPLETE - INDEPENDENT REVIEW REQUIRED - D2 BUILD AND D3-D6 HOLD"
 }

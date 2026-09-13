@@ -115,7 +115,7 @@ bukan menerima PC ini sebagai target restore backup sekolah.
 | Python syntax, lima file | PASS |
 | Workflow YAML | PASS, 2 jobs |
 | Source closure contract | `44/44 PASS`, termasuk recreate/replay/rerun rejection |
-| Integrated closure contract | `22/22 PASS` |
+| Integrated closure contract | `24/24 PASS`, paket aktual dan tujuh negative mutation |
 | Capacity lifecycle contract | `55/55 PASS` |
 | Staging readiness contract | `49/49 PASS` |
 | Historical predecessor inputs | `59 PASS` |
@@ -135,12 +135,12 @@ dependency, credential, atau runtime yang berubah.
 Aggregate SHA-256 menggunakan path ASCII terurut dan format
 `<sha256><dua spasi><path><LF>`:
 
-`e2ea1ff2f3fd3aa50a5d9a244388d12978d1e470bfd9d3b14d44b2420b5b583d`
+`7d48dcfdff0ed0c909eb15efc1c2a8673683ba7c7fa52d00cfa63940244fe958`
 
 | Path | SHA-256 |
 | --- | --- |
 | `.github/workflows/backup-image.yml` | `fbe06a69f59a05b2f1f722b99e6c051ad000ae9f41375b0f85961e3e49097d5c` |
-| `infrastructure/deploy/tests/integrated-closure-contract.py` | `5a3ce146c309b32c1b41c0badc21c3853933fe3da1a6b27f85423056c1cfa43a` |
+| `infrastructure/deploy/tests/integrated-closure-contract.py` | `d27165f1af7830fd9e7a4e8433bc8008f1389b688fccdf4227d29c526dc4825e` |
 | `infrastructure/deploy/tests/source-closure-contract.py` | `c542cc074ee996f1226e08db2431ca77c6a7a94b6f7ec592ec7e5060d8172c67` |
 | `infrastructure/deploy/verify-backup-build-trigger.py` | `06ccb5ff113678da8fda80ab3ff4deb071dcc60842a41a35ad2f690a55bcb9a5` |
 | `infrastructure/deploy/verify-integrated-handoff.py` | `25b8d423145db844ac00d36205156032f98c2a05628076b580dc53faccf8cdf0` |
@@ -160,6 +160,44 @@ Jumlah final adalah delapan path: enam source di atas ditambah laporan ini dan
 Packaging Git pada gate ini hanya boleh memuat delapan path tersebut dan berhenti sebelum
 merge. Build/tag/publication D2, credential, backup atau restore data nyata, cleanup global,
 staging, VPS, production, n8n, dan scheduler tetap HOLD.
+
+## Koreksi paket aktual PR #658
+
+Reviewer menemukan empat mismatch pada head `1cfd33ab1aadf13cf2e75f4c2afd1efd1bf955c4`.
+Executor sebelumnya menjalankan fixture contract, tetapi tidak menjalankan validator
+canonical atas evidence aktual setelah memperbarui dokumentasi. Ini adalah kegagalan
+verifikasi Executor; hasil fixture tidak membuktikan integritas paket aktual.
+
+Follow-up ini tidak mengubah validator produksi, trigger build, formula backup, maupun
+helper restore. Evidence diselaraskan dengan kontrak strict yang sudah ada:
+
+- Input Director berada pada observations, bukan extra field top-level.
+- operationalStatus menggunakan status source/review/HOLD canonical. Status tersebut
+  bukan bukti CI hijau, merge approval, atau operational authorization.
+- Setiap restore mencatat cases=1 dengan caseUnit=successful-integration-run: satu run
+  final sukses per helper, bukan hitungan assertion atau seluruh percobaan.
+- executableRestoreTarget tetap not-yet-accepted untuk backup nyata; synthetic lokal
+  sukses tidak menerima target nyata atau mengubah batas kapasitas.
+
+Dua regresi tambahan menjalankan paket aktual dan tujuh negative mutation in-memory:
+extra field, status unsupported, count nol/bool, restore gagal/tidak dijalankan, dan target
+yang berubah menjadi accepted. Tidak ada file evidence aktual yang dimutasi oleh test.
+Rerun Ubuntu benar-benar lulus: canonical validator 6 source/6 rebinding/59 historical
+inputs, integrated 24/24, source closure 44/44, capacity 55/55, staging readiness 49/49,
+tanpa skip. Restore PostgreSQL/MinIO tidak
+diulang: semua byte input helper identik; angka sebelumnya tetap bukti run 2026-09-13.
+
+Diff PR terhadap baseline tidak mengubah ci.yml atau capacity-lifecycle.yml; kedua
+workflow tersebut tidak mempunyai environment/reviewer gate. backup-image.yml hanya
+mempertahankan environment gate publikasi yang sudah ada pada baseline. Read-back
+environment adalah metadata saat ini, bukan klaim bahwa tidak pernah ada perubahan
+historis. CI run 34749066299 dan 34749066336 pada head lama masih QUEUED saat koreksi
+dimulai, tanpa job dan tanpa kelulusan. Penyebab antrean tidak terbukti; Executor tidak
+menganggapnya normal, membutuhkan approval, atau lulus berdasarkan dugaan.
+
+Scope paket tetap delapan path. Delta follow-up hanya contract test, laporan ini, dan
+evidence JSON. Review lama dipertahankan eksternal tanpa perubahan. CI kandidat terbaru
+harus benar-benar dieksekusi; sampai itu terbukti, CI dan seluruh release tetap HOLD.
 
 ## Input Director yang masih diperlukan
 
