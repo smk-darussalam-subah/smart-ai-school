@@ -28,6 +28,7 @@ def load(name, relative):
 c = load('diis_staging_core', 'infrastructure/deploy/staging-readiness-deploy.py')
 a = load('application', 'infrastructure/deploy/staging-application-deploy.py')
 m = load('metadata', 'infrastructure/deploy/verify-publication-metadata.py')
+trigger = load('build_trigger', 'infrastructure/deploy/verify-backup-build-trigger.py')
 p = load('artifact', 'infrastructure/deploy/backup-image-artifact.py')
 registry = load('registry', 'infrastructure/deploy/verify-published-backup-image.py')
 sys.path.insert(0,str(ROOT/'infrastructure/deploy'))
@@ -102,6 +103,51 @@ class Publication(unittest.TestCase):
                 wrong if path.endswith('/deployment-branch-policies') else request(path,allow_absent)), \
                 self.assertRaises(ValueError):
             m.collect('a'*40,'12','backup','first')
+
+    def test_bootstrap_build_metadata_requires_exact_tag_and_develop_ancestry(self):
+        source = 'a' * 40
+        tag = trigger.TAG_PREFIX + source
+        run = {'id': 12, 'head_sha': source, 'head_branch': tag, 'event': 'push',
+               'path': '.github/workflows/backup-image.yml', 'conclusion': 'success',
+               'repository': {'full_name': m.REPOSITORY}}
+        gate = {'id': 9, 'can_admins_bypass': False,
+                'deployment_branch_policy': {'protected_branches': False,
+                                             'custom_branch_policies': True},
+                'protection_rules': [{'type': 'required_reviewers',
+                                      'reviewers': [{'id': 1}]}]}
+        branches = {'total_count': 1,
+                    'branch_policies': [{'name': 'develop', 'type': 'branch'}]}
+        package = {'name': m.PACKAGES['backup'], 'visibility': 'private',
+                   'package_type': 'container', 'repository': {'full_name': m.REPOSITORY}}
+        comparison = {'status': 'ahead', 'base_commit': {'sha': source},
+                      'merge_base_commit': {'sha': source}}
+
+        def request(path, allow_absent=False):
+            if '/actions/runs/' in path:
+                return run
+            if path.endswith('/deployment-branch-policies'):
+                return branches
+            if '/environments/' in path:
+                return gate
+            if '/packages/container/' in path:
+                return package
+            if '/git/ref/tags/' in path:
+                return {'object': {'type': 'commit', 'sha': source}}
+            if '/compare/' in path:
+                return comparison
+            raise AssertionError((path, allow_absent))
+
+        with patch.object(m, 'request', side_effect=request):
+            result = m.collect(source, '12', 'backup', 'existing')
+        self.assertEqual(result['buildTrigger'], 'bootstrap-tag')
+        for bad_run in ({**run, 'head_branch': tag + 'x'},
+                        {**run, 'event': 'workflow_dispatch'}):
+            with self.subTest(run=bad_run), self.assertRaises(ValueError):
+                m.verify(bad_run, gate, package, source, '12')
+        with patch.object(m, 'request', side_effect=lambda path, allow_absent=False:
+                {**comparison, 'status': 'diverged'} if '/compare/' in path
+                else request(path, allow_absent)), self.assertRaises(ValueError):
+            m.collect(source, '12', 'backup', 'existing')
 
     def test_api_web_build_only_actual_staging_merge(self):
         gate={'can_admins_bypass':False,'protection_rules':[{'type':'required_reviewers','reviewers':[{'id':1}]}]}
@@ -459,34 +505,70 @@ class Handoff(unittest.TestCase):
                 return {path:hashlib.sha256((root/path).read_bytes()).hexdigest()
                         for path in d0.SOURCE}
 
-            def write_evidence(baseline=None):
+            def baseline_bytes(path):
+                return ('baseline:' + path).encode()
+
+            def rebindings(values):
+                return {
+                    path: {
+                        'before': None if path == 'infrastructure/deploy/verify-backup-build-trigger.py'
+                        else hashlib.sha256(baseline_bytes(path)).hexdigest(),
+                        'after': values[path],
+                    }
+                    for path in d0.SOURCE
+                }
+
+            def write_evidence(baseline=None, binding=None):
                 values=manifest()
                 aggregate=''.join(f'{values[path]}  {path}\n'
                                   for path in sorted(values)).encode()
-                evidence={'schema':'diis-integrated-d0-handoff-v1',
+                evidence={'schema':'diis-w10d-d2-build-bootstrap-handoff-v1',
                     'baseline':baseline or {'sha':d0.BASE,'tree':d0.TREE},
+                    'supersedes': {
+                        'validatorPath': d0.SELF,
+                        'validatorSha256': d0.PREDECESSOR_VALIDATOR_SHA,
+                        'reportPath': d0.PREDECESSOR_REPORT,
+                        'reportSha256': d0.PREDECESSOR_REPORT_SHA,
+                        'evidencePath': d0.PREDECESSOR_EVIDENCE,
+                        'evidenceSha256': d0.PREDECESSOR_EVIDENCE_SHA,
+                        'sourceManifestSha256': d0.PREDECESSOR_MANIFEST_SHA,
+                    },
                     'sourceManifest':values,
                     'sourceManifestSha256':hashlib.sha256(aggregate).hexdigest(),
                     'reportSha256':hashlib.sha256(report.read_bytes()).hexdigest(),
-                    'rebindings':{},
+                    'rebindings':binding or rebindings(values),
                     'tests':{'synthetic':{'executed':True,'exitCode':0,'cases':1,
                                           'command':'synthetic isolated contract'}},
-                    'observations':{},'operationalStatus':'D1-D6 HOLD'}
+                    'observations': {
+                        'dispatchOutcome': 'stopped-before-run',
+                        'artifactOrPackageCreated': False,
+                        'publishFromBootstrapTag': False,
+                        'bootstrapSingleUse': 'oldest-exact-workflow-run-only',
+                        'driveRole': 'encrypted-offsite-archive-source',
+                        'restoreComputePolicy':
+                            'existing-school-owned-no-new-cost-only',
+                        'googleCloudBillingLinked': False,
+                        'executableRestoreTarget': 'not-yet-accepted',
+                    },
+                    'operationalStatus':
+                        'SOURCE COMPLETE - INDEPENDENT REVIEW REQUIRED - D2 BUILD AND D3-D6 HOLD'}
                 target=root/d0.EVIDENCE
                 target.write_text(json.dumps(evidence),encoding='ascii')
 
             def baseline_git(_root,*argv):
                 if argv[0]=='ls-tree':
-                    return b'100644 blob synthetic\tfile\n'
+                    return (b'' if argv[-1] == 'infrastructure/deploy/verify-backup-build-trigger.py'
+                            else b'100644 blob synthetic\tfile\n')
                 if argv[0]=='show':
-                    return (root/argv[-1].split(':',1)[1]).read_bytes()
+                    return baseline_bytes(argv[-1].split(':',1)[1])
                 raise AssertionError(argv)
 
             expected=set(d0.SOURCE)|{d0.REPORT,d0.EVIDENCE}
             write_evidence()
             with patch.object(d0,'git',side_effect=baseline_git), \
                     patch.object(d0,'workspace_paths',return_value=expected):
-                self.assertEqual(d0.validate(root,predecessors=False)['rebindings'],0)
+                self.assertEqual(
+                    d0.validate(root,predecessors=False)['rebindings'], len(d0.SOURCE))
                 changed=root/d0.SOURCE[0]
                 original=changed.read_bytes()
                 changed.write_bytes(original+b'\n')
@@ -500,6 +582,22 @@ class Handoff(unittest.TestCase):
                 write_evidence({'sha':'0'*40,'tree':d0.TREE})
                 with self.assertRaises(ValueError):
                     d0.validate(root,predecessors=False)
+                write_evidence()
+                payload=json.loads((root/d0.EVIDENCE).read_text())
+                payload['rebindings'].pop(next(iter(payload['rebindings'])))
+                (root/d0.EVIDENCE).write_text(json.dumps(payload),encoding='ascii')
+                with self.assertRaises(ValueError):
+                    d0.validate(root,predecessors=False)
+                for key, value in (
+                        ('bootstrapSingleUse', 'replay-allowed'),
+                        ('restoreComputePolicy', 'paid-cloud'),
+                        ('googleCloudBillingLinked', True)):
+                    write_evidence()
+                    payload=json.loads((root/d0.EVIDENCE).read_text())
+                    payload['observations'][key]=value
+                    (root/d0.EVIDENCE).write_text(json.dumps(payload),encoding='ascii')
+                    with self.subTest(observation=key), self.assertRaises(ValueError):
+                        d0.validate(root,predecessors=False)
                 write_evidence()
                 with patch.object(d0,'workspace_paths',return_value=expected|{'unexpected.txt'}), \
                         self.assertRaises(ValueError):
