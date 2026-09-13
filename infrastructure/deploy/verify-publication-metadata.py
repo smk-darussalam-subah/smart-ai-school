@@ -8,10 +8,12 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 REPOSITORY = 'smk-darussalam-subah/smart-ai-school'
 PACKAGES = {'backup': 'diis-pg-backup', 'api': 'diis-api', 'web': 'diis-web'}
+BOOTSTRAP_TAG_PREFIX = 'w10d-backup-build-'
 
 
 def pairs(items):
@@ -30,21 +32,46 @@ def private_package(package, profile='backup'):
         raise ValueError('package-private-linkage')
 
 
+def build_trigger(run, source, profile):
+    expected_branch = 'develop' if profile == 'backup' else 'staging'
+    if run.get('event') == 'workflow_dispatch' and run.get('head_branch') == expected_branch:
+        return 'manual'
+    if (profile == 'backup' and run.get('event') == 'push'
+            and run.get('head_branch') == BOOTSTRAP_TAG_PREFIX + source):
+        return 'bootstrap-tag'
+    raise ValueError('build-run-trigger')
+
+
 def verify(run, gate, package, source, run_id, profile='backup'):
     if profile not in PACKAGES:
         raise ValueError('image-profile')
     if (str(run.get('id')) != run_id or run.get('head_sha') != source
-            or run.get('head_branch') != ('develop' if profile == 'backup' else 'staging')
-            or run.get('event') != 'workflow_dispatch'
             or run.get('path') != '.github/workflows/backup-image.yml'
             or run.get('conclusion') != 'success'
             or run.get('repository', {}).get('full_name') != 'smk-darussalam-subah/smart-ai-school'):
         raise ValueError('build-run-binding')
+    trigger = build_trigger(run, source, profile)
     reviewers = [r for r in gate.get('protection_rules', []) if r.get('type') == 'required_reviewers']
     if (len(reviewers) != 1 or not reviewers[0].get('reviewers')
             or gate.get('can_admins_bypass') is not False):
         raise ValueError('publication-environment-gate')
     private_package(package, profile)
+    return trigger
+
+
+def bootstrap_source_is_on_develop(source, tag):
+    tagged = request(
+        f'repos/{REPOSITORY}/git/ref/tags/{urllib.parse.quote(tag, safe="")}'
+    )
+    target = tagged.get('object') if type(tagged) is dict else None
+    if (type(target) is not dict or target.get('type') != 'commit'
+            or target.get('sha') != source):
+        raise ValueError('bootstrap-tag-binding')
+    comparison = request(f'repos/{REPOSITORY}/compare/{source}...develop')
+    if (type(comparison) is not dict or comparison.get('status') not in ('identical', 'ahead')
+            or comparison.get('merge_base_commit', {}).get('sha') != source
+            or comparison.get('base_commit', {}).get('sha') != source):
+        raise ValueError('bootstrap-develop-ancestry')
 
 
 def first_publication(observation, attestation, expected_hash, source, run_id, profile, now):
@@ -121,9 +148,12 @@ def collect(source, run_id, profile, mode):
         # as observed package metadata. Post-push private linkage is mandatory.
         package = {'name': PACKAGES[profile], 'visibility': 'private', 'package_type': 'container',
                    'repository': {'full_name': REPOSITORY}}
-    verify(run, gate, package, source, run_id, profile)
+    trigger = verify(run, gate, package, source, run_id, profile)
+    if trigger == 'bootstrap-tag':
+        bootstrap_source_is_on_develop(source, BOOTSTRAP_TAG_PREFIX + source)
     return {'schema': 'diis-publication-preflight-v1', 'sourceSha': source,
             'buildRunId': run_id, 'profile': profile, 'mode': mode,
+            'buildTrigger': trigger,
             'environmentId': gate['id'], 'packageState': 'owner-attested-absent' if mode == 'first' else 'existing-private'}
 
 

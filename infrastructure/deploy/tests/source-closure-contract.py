@@ -39,6 +39,7 @@ t = load('installer', 'scripts/install-baked-backup-tools.py')
 b = load('builder', 'scripts/build-backup-tools.py')
 p = load('artifact', 'infrastructure/deploy/backup-image-artifact.py')
 meta = load('metadata', 'infrastructure/deploy/verify-publication-metadata.py')
+trigger = load('build_trigger', 'infrastructure/deploy/verify-backup-build-trigger.py')
 transport = load('transport', 'infrastructure/deploy/package-staging-executor.py')
 loaded = load('loaded', 'infrastructure/deploy/verify-loaded-backup-image.py')
 published = load('published', 'infrastructure/deploy/verify-published-backup-image.py')
@@ -952,6 +953,92 @@ class Publisher(unittest.TestCase):
         with self.assertRaises(ValueError):
             meta.verify({**run, 'event':'pull_request'}, gate, package, 'a'*40, '1')
 
+    def test_backup_build_trigger_binds_manual_and_one_exact_bootstrap_tag(self):
+        source = 'a' * 40
+        run_id = '101'
+        self.assertEqual(
+            trigger.verify('workflow_dispatch', 'refs/heads/develop', source,
+                           'build', source, 'backup', run_id, '1'),
+            {'source_sha': source, 'image_profile': 'backup', 'trigger_mode': 'manual'},
+        )
+        self.assertEqual(
+            trigger.verify('workflow_dispatch', 'refs/heads/staging', source,
+                           'build', source, 'api', run_id, '1')['image_profile'],
+            'api',
+        )
+
+        tag = trigger.TAG_PREFIX + source
+        current = {
+            'id': int(run_id), 'event': 'push', 'head_sha': source,
+            'head_branch': tag, 'path': trigger.WORKFLOW_PATH, 'run_attempt': 1,
+            'repository': {'full_name': trigger.REPOSITORY},
+        }
+        def request(path):
+            if path.endswith('/git/ref/heads/develop'):
+                return {'object': {'type': 'commit', 'sha': source}}
+            if '/git/ref/tags/' in path:
+                return {'object': {'type': 'commit', 'sha': source}}
+            if path.endswith('/actions/runs/' + run_id):
+                return current
+            if '/actions/runs?' in path:
+                return {'total_count': 1, 'workflow_runs': [current]}
+            raise AssertionError(path)
+
+        self.assertEqual(
+            trigger.verify('push', 'refs/tags/' + tag, source, '', '', '',
+                           run_id, '1', requester=request),
+            {'source_sha': source, 'image_profile': 'backup',
+             'trigger_mode': 'bootstrap-tag'},
+        )
+        rejected = (
+            ('push', 'refs/heads/develop', source, '', '', ''),
+            ('push', 'refs/tags/' + tag, source, 'build', '', ''),
+            ('pull_request', 'refs/tags/' + tag, source, '', '', ''),
+            ('workflow_dispatch', 'refs/heads/develop', source, 'publish', source, 'backup'),
+            ('workflow_dispatch', 'refs/heads/staging', source, 'build', source, 'backup'),
+        )
+        for values in rejected:
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                trigger.verify(*values, requester=request)
+        for path, value in (
+                ('heads/develop', {'object': {'type': 'commit', 'sha': 'b' * 40}}),
+                ('tags/', {'object': {'type': 'tag', 'sha': source}})):
+            def wrong(candidate, path=path, value=value):
+                if path in candidate:
+                    return value
+                return request(candidate)
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                trigger.verify('push', 'refs/tags/' + tag, source, '', '', '',
+                               run_id, '1', requester=wrong)
+
+        replay = {**current, 'id': 102}
+        def replay_request(path):
+            if path.endswith('/actions/runs/102'):
+                return replay
+            if '/actions/runs?' in path:
+                return {'total_count': 2, 'workflow_runs': [current, replay]}
+            return request(path)
+        with self.assertRaisesRegex(ValueError, 'bootstrap-replay'):
+            trigger.verify('push', 'refs/tags/' + tag, source, '', '', '',
+                           '102', '1', requester=replay_request)
+        with self.assertRaisesRegex(ValueError, 'bootstrap-run-identity'):
+            trigger.verify('push', 'refs/tags/' + tag, source, '', '', '',
+                           run_id, '2', requester=request)
+        for broken in (
+                {'total_count': 0, 'workflow_runs': []},
+                {'total_count': 101, 'workflow_runs': [current]},
+                {'total_count': 1, 'workflow_runs': [{**current, 'run_attempt': 2}]},
+                {'total_count': 1, 'workflow_runs': [{**current,
+                    'repository': {'full_name': 'other/repository'}}]},
+        ):
+            def broken_request(path, broken=broken):
+                if '/actions/runs?' in path:
+                    return broken
+                return request(path)
+            with self.subTest(history=broken), self.assertRaises(ValueError):
+                trigger.verify('push', 'refs/tags/' + tag, source, '', '', '',
+                               run_id, '1', requester=broken_request)
+
     def test_registry_receipt_rejects_empty_wrong_ambiguous_and_mismatch(self):
         config = 'sha256:'+'a'*64
         binding = {'package': published.PACKAGE, 'imageId': config,
@@ -1019,8 +1106,15 @@ class Publisher(unittest.TestCase):
         uses = re.findall(r'^\s*- uses: ([^\s]+)$', workflow, re.MULTILINE)
         self.assertEqual(len(uses), 5)
         self.assertTrue(all(re.fullmatch(r'[^@]+@[a-f0-9]{40}', item) for item in uses))
-        self.assertIn('on:\n  workflow_dispatch:', workflow)
-        self.assertNotIn('\n  push:', workflow)
+        self.assertIn('\n  workflow_dispatch:', workflow)
+        self.assertIn("  push:\n    tags:\n      - 'w10d-backup-build-*'", workflow)
+        self.assertIn("if: github.event_name == 'workflow_dispatch' && inputs.operation == 'publish'", workflow)
+        self.assertIn('verify-backup-build-trigger.py', workflow)
+        self.assertIn('steps.build-trigger.outputs.source_sha', workflow)
+        self.assertIn('actions: read', workflow)
+        self.assertIn('"$CURRENT_RUN_ID" "$CURRENT_RUN_ATTEMPT"', workflow)
+        self.assertNotIn('packages: write\n', workflow.split('  publish:', 1)[0])
+        self.assertNotIn('branches:', workflow.split('workflow_dispatch:', 1)[0])
 
     def test_approval_invalid_before_artifact_read(self):
         with self.assertRaises(ValueError):
