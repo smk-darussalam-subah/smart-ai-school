@@ -37,6 +37,9 @@ c = load('diis_staging_core', 'infrastructure/deploy/staging-readiness-deploy.py
 a = load('application', 'infrastructure/deploy/staging-application-deploy.py')
 t = load('installer', 'scripts/install-baked-backup-tools.py')
 b = load('builder', 'scripts/build-backup-tools.py')
+sys.path.insert(0, str(ROOT/'infrastructure/deploy'))
+writer = load('writer_installer',
+              'infrastructure/deploy/install-w10d-writer-compatibility.py')
 p = load('artifact', 'infrastructure/deploy/backup-image-artifact.py')
 meta = load('metadata', 'infrastructure/deploy/verify-publication-metadata.py')
 trigger = load('build_trigger', 'infrastructure/deploy/verify-backup-build-trigger.py')
@@ -226,6 +229,24 @@ exit 0
         with self.assertRaises(c.Stop):
             a.validate_writer_evidence(self.writer_evidence(), packet,
                                        '5235dece7fc99e0bce21ab1bfa3d0caeca8637e8ff0e8dbf1e4a14898653886f')
+
+    def test_writer_compatibility_chain_rejects_stale_bindings(self):
+        library = ROOT/'infrastructure/docker/scripts/backup-lib.sh'
+        wrapper = ROOT/'infrastructure/deploy/legacy-backup-compatibility.sh'
+        library_sha = hashlib.sha256(library.read_bytes()).hexdigest()
+        wrapper_sha = hashlib.sha256(wrapper.read_bytes()).hexdigest()
+        stale = {
+            'bf881caf29af389e1d0d328e9b5816d570154b72b873ea82aac6d1be418e8e5a',
+            '70cf649cc5845827aa4d66c3d4148bb6f6f718b169a93074ad4abd7da803718f',
+        }
+        self.assertEqual(library_sha, a.PERSISTENT_WRITER_LIBRARY_SHA256)
+        self.assertEqual(wrapper_sha, a.PERSISTENT_WRITER_WRAPPER_SHA256)
+        self.assertEqual(library_sha, writer.LIBRARY_SHA)
+        self.assertEqual(wrapper_sha, writer.WRAPPER_SHA)
+        self.assertTrue(stale.isdisjoint({library_sha, wrapper_sha}))
+        wrapper_text = wrapper.read_text(encoding='utf-8')
+        self.assertIn('library_sha=' + library_sha, wrapper_text)
+        self.assertTrue(all(value not in wrapper_text for value in stale))
 
     def test_prior_boot_quarantine_blocks_current_and_frozen_compatible_writer(self):
         lock = self.root/'backup.lock'

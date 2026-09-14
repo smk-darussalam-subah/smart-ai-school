@@ -16,9 +16,9 @@ import capacity_bundle
 
 STATE = Path('/home/appuser/.local/state/diis-deploy')
 LIBRARY = 'infrastructure/docker/scripts/backup-lib.sh'
-LIBRARY_SHA = 'bf881caf29af389e1d0d328e9b5816d570154b72b873ea82aac6d1be418e8e5a'
+LIBRARY_SHA = 'a2a665af38a5e187a351397c7d0adf7082205c59c1fd97dbf0dac706cc5edb86'
 WRAPPER = 'infrastructure/deploy/legacy-backup-compatibility.sh'
-WRAPPER_SHA = '70cf649cc5845827aa4d66c3d4148bb6f6f718b169a93074ad4abd7da803718f'
+WRAPPER_SHA = 'ceba770caa09446a83f09ce7dc72d317782d26e2c06121e7730f0bc07042c326'
 ARTIFACT_FILES = {
     'backup-lib.sh': (LIBRARY, LIBRARY_SHA),
     'legacy-backup-compatibility.sh': (WRAPPER, WRAPPER_SHA),

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bind the D2 build-bootstrap follow-up to its reviewed D0 predecessor."""
+"""Bind the writer-compatibility follow-up to reviewed predecessor packets."""
 import hashlib
 import json
 import os
@@ -10,25 +10,65 @@ import subprocess
 import sys
 
 
-BASE = 'b2ee3b369db6b95b09de7cbca6de94dd2e779b8e'
-TREE = '5453bfb7701d4adac7691fbef46a3e80f7782b20'
+BASE = '57c95976d48e6dce1e8a99290125948f0180c180'
+TREE = 'f79ba17f186bd05f3f76a70cf9cbc4759c319dfd'
+ROUNDTRIP_BASE = '2d6d05313ec301dbf30929812193245d7d1153b5'
+ROUNDTRIP_BASE_TREE = 'a624ee4ab494112bee6401960b6684af5e3dad2e'
 ROOT = Path(__file__).resolve().parents[2]
 SELF = 'infrastructure/deploy/verify-integrated-handoff.py'
-REPORT = 'docs/audits/W10-D-D2-BUILD-BOOTSTRAP-FOLLOWUP-2026-09-12.md'
-EVIDENCE = 'docs/audits/W10-D-D2-BUILD-BOOTSTRAP-EVIDENCE-2026-09-12.json'
-PREDECESSOR_REPORT = 'docs/audits/W10-D-INTEGRATED-D0-EXECUTOR-2026-09-11.md'
-PREDECESSOR_EVIDENCE = 'docs/audits/W10-D-INTEGRATED-D0-EVIDENCE-2026-09-11.json'
-PREDECESSOR_VALIDATOR_SHA = 'c9902efdd754805251470804bcd8689ddb8eae24062931abfe00d5a2b86db7df'
-PREDECESSOR_REPORT_SHA = '4b8c4ce0dd35e461443d50b0dfa5d112221bb85c21a1ffa5ab97cfe180a8272e'
-PREDECESSOR_EVIDENCE_SHA = 'a382267cf5a23fce79a46d02a582e89d318a0c515752c762378932323275b0ab'
-PREDECESSOR_MANIFEST_SHA = 'c75c1c81e0889ed1b99f2bac4796e650d6ac30462e1bb8452a57410a62994709'
+REPORT = 'docs/audits/W10D-WRITER-COMPATIBILITY-HANDOFF-EXECUTOR-2026-09-14.md'
+EVIDENCE = 'docs/audits/W10D-WRITER-COMPATIBILITY-HANDOFF-EVIDENCE-2026-09-14.json'
+PREDECESSOR_REPORT = 'docs/audits/W10-D-D2-BUILD-BOOTSTRAP-FOLLOWUP-2026-09-12.md'
+PREDECESSOR_EVIDENCE = 'docs/audits/W10-D-D2-BUILD-BOOTSTRAP-EVIDENCE-2026-09-12.json'
+PREDECESSOR_VALIDATOR_SHA = '25b8d423145db844ac00d36205156032f98c2a05628076b580dc53faccf8cdf0'
+PREDECESSOR_REPORT_SHA = 'd44a9f0505a274391e6f5982479ea21fa83313d1f7685201c27e2a60b90f94e5'
+PREDECESSOR_EVIDENCE_SHA = '0ab4c8ae532b1686e02d21aa25a669dbe6e6cd16df1b241863af46731f3f9a83'
+PREDECESSOR_MANIFEST_SHA = '7d48dcfdff0ed0c909eb15efc1c2a8673683ba7c7fa52d00cfa63940244fe958'
+ROUNDTRIP_REPORT = 'docs/audits/W10D-BACKUP-RESTORE-GDRIVE-ROUNDTRIP-EXECUTOR-2026-09-13.md'
+ROUNDTRIP_EVIDENCE = 'docs/audits/W10D-BACKUP-RESTORE-GDRIVE-ROUNDTRIP-EVIDENCE-2026-09-13.json'
+ROUNDTRIP_RECEIPT_DIR = \
+    'docs/audits/W10D-BACKUP-RESTORE-GDRIVE-ROUNDTRIP-FOLLOWUP-RECEIPTS-2026-09-13'
+ROUNDTRIP_REPORT_SHA = '202857d3436297302add583c7f1cd159b74f54da9928c107a7a186f6e12a6e2a'
+ROUNDTRIP_EVIDENCE_SHA = '538626353e6cdbd0c3a3adc70ae0f583db5bbd5a00c026ef69746f742f0740ff'
+ROUNDTRIP_MANIFEST_SHA = '3b05579d80ce4fb0fee028408d75ff2687480266da1111c14993ffbe7d0aac83'
+ROUNDTRIP_RECEIPT_MANIFEST_SHA = \
+    'ab0db74aea3a47033dcd8f9fb31af94f02142c0d2f4866032f73b05c23df7883'
+WRITER_LIBRARY = 'infrastructure/docker/scripts/backup-lib.sh'
+WRITER_LIBRARY_SHA = 'a2a665af38a5e187a351397c7d0adf7082205c59c1fd97dbf0dac706cc5edb86'
+WRITER_WRAPPER = 'infrastructure/deploy/legacy-backup-compatibility.sh'
+WRITER_WRAPPER_SHA = 'ceba770caa09446a83f09ce7dc72d317782d26e2c06121e7730f0bc07042c326'
+WRITER_ARTIFACT_SHA = '001f40b7c1cdcfca4b5e623bedd646bd86e997e6683faa0245df4102883148ca'
+STALE_WRITER_HASHES = (
+    'bf881caf29af389e1d0d328e9b5816d570154b72b873ea82aac6d1be418e8e5a',
+    '70cf649cc5845827aa4d66c3d4148bb6f6f718b169a93074ad4abd7da803718f',
+)
 SOURCE = (
-    '.github/workflows/backup-image.yml',
+    'infrastructure/deploy/install-w10d-writer-compatibility.py',
+    WRITER_WRAPPER,
+    'infrastructure/deploy/staging-application-deploy.py',
     'infrastructure/deploy/tests/integrated-closure-contract.py',
     'infrastructure/deploy/tests/source-closure-contract.py',
-    'infrastructure/deploy/verify-backup-build-trigger.py',
     SELF,
-    'infrastructure/deploy/verify-publication-metadata.py',
+)
+ROUNDTRIP_SOURCE = (
+    'docs/runbooks/backup-restore.md',
+    'docs/runbooks/restore-database.md',
+    'infrastructure/docker/docker-compose.yml',
+    'infrastructure/docker/pg-backup.Dockerfile',
+    WRITER_LIBRARY,
+    'infrastructure/docker/scripts/backup.sh',
+    'infrastructure/docker/scripts/offsite-replication.sh',
+    'infrastructure/docker/tests/backup-contract.sh',
+    'infrastructure/n8n/workflows/backup-daily.json',
+    'scripts/restore-drill.sh',
+)
+ROUNDTRIP_RECEIPTS = tuple(
+    f'{ROUNDTRIP_RECEIPT_DIR}/{name}' for name in (
+        '01-preflight.json', '02-backup.json', '03-offsite-fetch.json',
+        '04-postgresql-restore.json', '05-object-restore.json',
+        '06-remote-and-resource-cleanup.json', '07-local-cleanup.json',
+        'manifest.json', 'proof-payloads.json',
+    )
 )
 HASH = re.compile(r'[a-f0-9]{64}\Z')
 
@@ -89,6 +129,11 @@ def git(root, *args):
                                    stderr=subprocess.DEVNULL)
 
 
+def git_blob(root, commit, relative):
+    safe_path(relative)
+    return git(root, 'show', f'{commit}:{relative}')
+
+
 def workspace_paths(root):
     modified = git(root, 'diff', '--name-only', '--diff-filter=ACDMRTUXB', BASE, '--')
     untracked = git(root, 'ls-files', '--others', '--exclude-standard')
@@ -108,52 +153,91 @@ def manifest_hash(manifest):
 
 
 def predecessor(root):
-    """Verify D0 from exact Git bytes and execute its historical validator chain."""
+    """Execute the prior D2 validator against exact Git bytes."""
     require(git(root, 'rev-parse', BASE + '^{tree}').decode().strip() == TREE,
             'baseline-tree')
-    validator = git(root, 'show', BASE + ':' + SELF)
+    validator = git_blob(root, BASE, SELF)
     require(sha(validator) == PREDECESSOR_VALIDATOR_SHA, 'predecessor-validator')
+    report = git_blob(root, BASE, PREDECESSOR_REPORT)
+    evidence_raw = git_blob(root, BASE, PREDECESSOR_EVIDENCE)
+    require(sha(report) == PREDECESSOR_REPORT_SHA, 'predecessor-report')
+    require(sha(evidence_raw) == PREDECESSOR_EVIDENCE_SHA, 'predecessor-evidence')
 
-    report = read(root, PREDECESSOR_REPORT)
-    evidence_raw = read(root, PREDECESSOR_EVIDENCE)
-    require(sha(report) == PREDECESSOR_REPORT_SHA
-            and report == git(root, 'show', BASE + ':' + PREDECESSOR_REPORT),
-            'predecessor-report')
-    require(sha(evidence_raw) == PREDECESSOR_EVIDENCE_SHA
-            and evidence_raw == git(root, 'show', BASE + ':' + PREDECESSOR_EVIDENCE),
-            'predecessor-evidence')
-    evidence = parse(evidence_raw, 'predecessor-evidence-json')
-    require(type(evidence) is dict
-            and evidence.get('schema') == 'diis-integrated-d0-handoff-v1'
-            and evidence.get('baseline') == {
-                'sha': 'a8d72b8e2a6e78438e4cef46ad21913ff369d3f0',
-                'tree': '75364250f2a5bbe875fc4bcf3da517c8f456adea',
-            }, 'predecessor-binding')
-    manifest = evidence.get('sourceManifest')
-    require(type(manifest) is dict and manifest, 'predecessor-manifest')
-    for path, digest in manifest.items():
-        safe_path(path)
-        require(type(digest) is str and HASH.fullmatch(digest)
-                and sha(git(root, 'show', BASE + ':' + path)) == digest,
-                'predecessor-manifest-drift')
-    require(manifest_hash(manifest) == PREDECESSOR_MANIFEST_SHA
-            and evidence.get('sourceManifestSha256') == PREDECESSOR_MANIFEST_SHA
-            and evidence.get('reportSha256') == PREDECESSOR_REPORT_SHA,
-            'predecessor-manifest-aggregate')
-
-    scope = {'__file__': str(root / SELF), '__name__': 'd0_predecessor'}
+    scope = {'__file__': str(root / SELF), '__name__': 'd2_predecessor'}
     exec(compile(validator, SELF, 'exec'), scope)
-    require(scope.get('BASE') == evidence['baseline']['sha']
-            and scope.get('TREE') == evidence['baseline']['tree'],
-            'predecessor-validator-binding')
-    return scope['historical'](root)
+    expected = set(scope['SOURCE']) | {scope['REPORT'], scope['EVIDENCE']}
+    scope['workspace_paths'] = lambda _root: expected
+    scope['read'] = lambda _root, relative: git_blob(root, BASE, relative)
+    result = scope['validate'](root, predecessors=True)
+    require(result == {'sourceFiles': 6, 'rebindings': 6, 'historicalInputs': 59},
+            'predecessor-result')
+    return 59 + len(expected)
+
+
+def roundtrip_predecessor(root):
+    """Bind the reviewed 21-path round-trip packet already present in BASE."""
+    require(git(root, 'rev-parse', ROUNDTRIP_BASE + '^{tree}').decode().strip()
+            == ROUNDTRIP_BASE_TREE, 'roundtrip-base-tree')
+    package = set(ROUNDTRIP_SOURCE) | {ROUNDTRIP_REPORT, ROUNDTRIP_EVIDENCE} \
+        | set(ROUNDTRIP_RECEIPTS)
+    changed = set(git(root, 'diff', '--name-only', ROUNDTRIP_BASE, BASE, '--')
+                  .decode('utf-8').splitlines())
+    require(changed == package, 'roundtrip-path-set')
+    report = git_blob(root, BASE, ROUNDTRIP_REPORT)
+    evidence_raw = git_blob(root, BASE, ROUNDTRIP_EVIDENCE)
+    require(sha(report) == ROUNDTRIP_REPORT_SHA, 'roundtrip-report')
+    require(sha(evidence_raw) == ROUNDTRIP_EVIDENCE_SHA, 'roundtrip-evidence')
+    evidence = parse(evidence_raw, 'roundtrip-evidence-json')
+    source = evidence.get('source')
+    require(type(source) is dict and source.get('sha') == ROUNDTRIP_BASE
+            and source.get('tree') == ROUNDTRIP_BASE_TREE
+            and source.get('changedFileCount') == len(ROUNDTRIP_SOURCE)
+            and source.get('aggregateSha256') == ROUNDTRIP_MANIFEST_SHA,
+            'roundtrip-binding')
+    entries = source.get('fileManifest')
+    require(type(entries) is list and len(entries) == len(ROUNDTRIP_SOURCE),
+            'roundtrip-manifest')
+    manifest = {}
+    for entry in entries:
+        require(type(entry) is dict and set(entry) == {'path', 'sha256'},
+                'roundtrip-manifest-entry')
+        path, digest = entry['path'], entry['sha256']
+        safe_path(path)
+        require(path not in manifest and path in ROUNDTRIP_SOURCE
+                and type(digest) is str and HASH.fullmatch(digest)
+                and sha(git_blob(root, BASE, path)) == digest,
+                'roundtrip-manifest-drift')
+        manifest[path] = digest
+    require(set(manifest) == set(ROUNDTRIP_SOURCE)
+            and manifest_hash(manifest) == ROUNDTRIP_MANIFEST_SHA,
+            'roundtrip-manifest-aggregate')
+
+    receipt_path = f'{ROUNDTRIP_RECEIPT_DIR}/manifest.json'
+    receipt_raw = git_blob(root, BASE, receipt_path)
+    require(sha(receipt_raw) == ROUNDTRIP_RECEIPT_MANIFEST_SHA
+            and evidence.get('receiptBundle', {}).get('manifestSha256')
+            == ROUNDTRIP_RECEIPT_MANIFEST_SHA, 'roundtrip-receipt-manifest')
+    receipt = parse(receipt_raw, 'roundtrip-receipt-json')
+    require(receipt.get('schemaVersion') == 'w10d-roundtrip-receipt-manifest-v1'
+            and receipt.get('status') == 'PASS'
+            and receipt.get('receiptCount') == 7, 'roundtrip-receipt-binding')
+    receipt_entries = [receipt.get('proofPayload')] + receipt.get('receipts', [])
+    require(len(receipt_entries) == 8, 'roundtrip-receipt-count')
+    for entry in receipt_entries:
+        require(type(entry) is dict and set(entry) == {'path', 'sha256'},
+                'roundtrip-receipt-entry')
+        path = f"{ROUNDTRIP_RECEIPT_DIR}/{entry['path']}"
+        require(path in ROUNDTRIP_RECEIPTS and type(entry['sha256']) is str
+                and HASH.fullmatch(entry['sha256'])
+                and sha(git_blob(root, BASE, path)) == entry['sha256'],
+                'roundtrip-receipt-drift')
+    return len(package)
 
 
 def expected_rebindings(root, manifest):
     changed = {}
     for path in SOURCE:
-        entry = git(root, 'ls-tree', BASE, '--', path).strip()
-        before = sha(git(root, 'show', BASE + ':' + path)) if entry else None
+        before = sha(git_blob(root, BASE, path))
         if before != manifest[path]:
             changed[path] = {'before': before, 'after': manifest[path]}
     return changed
@@ -165,14 +249,15 @@ def validate(root=ROOT, predecessors=True):
             'successor-workspace-scope')
     evidence = parse(read(root, EVIDENCE), 'successor-evidence-json')
     require(type(evidence) is dict and set(evidence) == {
-        'schema', 'baseline', 'supersedes', 'sourceManifest',
-        'sourceManifestSha256', 'reportSha256', 'rebindings', 'tests',
-        'observations', 'operationalStatus',
+        'schema', 'baseline', 'supersedes', 'roundtripPredecessor',
+        'sourceManifest', 'sourceManifestSha256', 'reportSha256',
+        'rebindings', 'writerChain', 'tests', 'observations',
+        'operationalStatus',
     }, 'successor-schema')
-    require(evidence['schema'] == 'diis-w10d-d2-build-bootstrap-handoff-v1'
+    require(evidence['schema'] == 'diis-w10d-writer-compatibility-handoff-v1'
             and evidence['baseline'] == {'sha': BASE, 'tree': TREE}
             and evidence['operationalStatus']
-            == 'SOURCE COMPLETE - INDEPENDENT REVIEW REQUIRED - D2 BUILD AND D3-D6 HOLD',
+            == 'SOURCE COMPLETE - INDEPENDENT REVIEW REQUIRED - PR659 AND OPERATIONS HOLD',
             'successor-binding')
     require(evidence['supersedes'] == {
         'validatorPath': SELF,
@@ -183,6 +268,17 @@ def validate(root=ROOT, predecessors=True):
         'evidenceSha256': PREDECESSOR_EVIDENCE_SHA,
         'sourceManifestSha256': PREDECESSOR_MANIFEST_SHA,
     }, 'predecessor-declaration')
+    require(evidence['roundtripPredecessor'] == {
+        'baseSha': ROUNDTRIP_BASE,
+        'baseTree': ROUNDTRIP_BASE_TREE,
+        'headSha': BASE,
+        'headTree': TREE,
+        'pathCount': 21,
+        'sourceManifestSha256': ROUNDTRIP_MANIFEST_SHA,
+        'reportSha256': ROUNDTRIP_REPORT_SHA,
+        'evidenceSha256': ROUNDTRIP_EVIDENCE_SHA,
+        'receiptManifestSha256': ROUNDTRIP_RECEIPT_MANIFEST_SHA,
+    }, 'roundtrip-declaration')
 
     manifest = evidence['sourceManifest']
     require(type(manifest) is dict and set(manifest) == set(SOURCE),
@@ -196,6 +292,21 @@ def validate(root=ROOT, predecessors=True):
     require(expected_rebindings(root, manifest) == evidence['rebindings'],
             'rebindings-mismatch')
 
+    library_sha = sha(read(root, WRITER_LIBRARY))
+    wrapper_sha = sha(read(root, WRITER_WRAPPER))
+    artifact_sha = sha((library_sha + '  backup-lib.sh\n'
+                        + wrapper_sha + '  legacy-backup-compatibility.sh\n').encode())
+    require(evidence['writerChain'] == {
+        'libraryPath': WRITER_LIBRARY,
+        'librarySha256': WRITER_LIBRARY_SHA,
+        'wrapperPath': WRITER_WRAPPER,
+        'wrapperSha256': WRITER_WRAPPER_SHA,
+        'artifactSha256': WRITER_ARTIFACT_SHA,
+        'staleBindingsRejected': list(STALE_WRITER_HASHES),
+    } and library_sha == WRITER_LIBRARY_SHA and wrapper_sha == WRITER_WRAPPER_SHA
+            and artifact_sha == WRITER_ARTIFACT_SHA,
+            'writer-chain')
+
     tests = evidence['tests']
     require(type(tests) is dict and tests, 'test-evidence-missing')
     for result in tests.values():
@@ -203,20 +314,19 @@ def validate(root=ROOT, predecessors=True):
                 and result.get('exitCode') == 0 and type(result.get('cases')) is int
                 and result['cases'] > 0 and type(result.get('command')) is str
                 and result['command'], 'test-evidence-invalid')
-    observations = evidence['observations']
-    require(type(observations) is dict
-            and observations.get('dispatchOutcome') == 'stopped-before-run'
-            and observations.get('artifactOrPackageCreated') is False
-            and observations.get('publishFromBootstrapTag') is False
-            and observations.get('bootstrapSingleUse')
-            == 'oldest-exact-workflow-run-only'
-            and observations.get('driveRole') == 'encrypted-offsite-archive-source'
-            and observations.get('restoreComputePolicy')
-            == 'existing-school-owned-no-new-cost-only'
-            and observations.get('googleCloudBillingLinked') is False
-            and observations.get('executableRestoreTarget') == 'not-yet-accepted',
-            'observation-evidence-invalid')
-    historical = predecessor(root) if predecessors else 0
+    require(evidence['observations'] == {
+        'pr659CiFailure': 'reproduced-before-followup',
+        'failureMode': 'writer-library-hash-chain-stale',
+        'backupBehaviorChanged': False,
+        'n8nBehaviorChanged': False,
+        'historicalEvidenceChanged': False,
+        'commitPushPrOrDeployment': False,
+        'operationalMutations': False,
+    }, 'observation-evidence-invalid')
+
+    historical = 0
+    if predecessors:
+        historical = predecessor(root) + roundtrip_predecessor(root)
     return {
         'sourceFiles': len(manifest),
         'rebindings': len(evidence['rebindings']),
@@ -226,7 +336,7 @@ def validate(root=ROOT, predecessors=True):
 
 if __name__ == '__main__':
     try:
-        print('COMMISSIONING_BOOTSTRAP_HANDOFF_VALID '
+        print('WRITER_COMPATIBILITY_HANDOFF_VALID '
               + json.dumps(validate(), sort_keys=True))
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError):
-        sys.exit('COMMISSIONING_BOOTSTRAP_HANDOFF_REJECTED')
+        sys.exit('WRITER_COMPATIBILITY_HANDOFF_REJECTED')

@@ -490,143 +490,97 @@ class ArtifactInstall(unittest.TestCase):
 
 
 class Handoff(unittest.TestCase):
+    def setUp(self):
+        self.expected_paths = set(d0.SOURCE) | {d0.REPORT, d0.EVIDENCE}
+
     def test_actual_committed_packet_matches_canonical_validator(self):
-        result = d0.validate(ROOT, predecessors=False)
+        with patch.object(d0, 'workspace_paths', return_value=self.expected_paths):
+            result = d0.validate(ROOT, predecessors=False)
         self.assertEqual(result['sourceFiles'], 6)
         self.assertEqual(result['rebindings'], 6)
 
-    def test_actual_packet_rejects_schema_status_restore_and_target_drift(self):
+    def test_actual_packet_rejects_schema_status_writer_and_predecessor_drift(self):
         original_read = d0.read
         packet = json.loads(original_read(ROOT, d0.EVIDENCE))
         mutations = (
             ('unsupported-field', lambda value: value.update({'unsupported': True})),
             ('unsupported-status', lambda value: value.update({'operationalStatus': 'CI PASS'})),
-            ('postgres-count', lambda value: value['tests']['postgresSyntheticRestore'].update({'cases': 0})),
-            ('minio-count', lambda value: value['tests']['minioSyntheticRestore'].update({'cases': False})),
-            ('restore-exit', lambda value: value['tests']['postgresSyntheticRestore'].update({'exitCode': 1})),
-            ('restore-not-executed', lambda value: value['tests']['minioSyntheticRestore'].update({'executed': False})),
-            ('target-state', lambda value: value['observations'].update({'executableRestoreTarget': 'accepted'})),
+            ('library-stale', lambda value: value['writerChain'].update(
+                {'librarySha256': d0.STALE_WRITER_HASHES[0]})),
+            ('wrapper-stale', lambda value: value['writerChain'].update(
+                {'wrapperSha256': d0.STALE_WRITER_HASHES[1]})),
+            ('roundtrip-head', lambda value: value['roundtripPredecessor'].update(
+                {'headSha': '0'*40})),
+            ('test-failed', lambda value: next(iter(value['tests'].values())).update(
+                {'exitCode': 1})),
+            ('historical-edited', lambda value: value['observations'].update(
+                {'historicalEvidenceChanged': True})),
         )
         for name, mutate in mutations:
             value = copy.deepcopy(packet)
             mutate(value)
             raw = json.dumps(value).encode('utf-8')
+
             def read_packet(root, relative):
                 return raw if relative == d0.EVIDENCE else original_read(root, relative)
-            with self.subTest(case=name), patch.object(d0, 'read', side_effect=read_packet), self.assertRaises(ValueError):
+
+            with self.subTest(case=name), \
+                    patch.object(d0, 'workspace_paths', return_value=self.expected_paths), \
+                    patch.object(d0, 'read', side_effect=read_packet), \
+                    self.assertRaises(ValueError):
                 d0.validate(ROOT, predecessors=False)
 
     def test_successor_rejects_tamper_missing_wrong_binding_and_extra_path(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory).resolve()
-            for relative in d0.SOURCE:
-                target=root/relative
-                target.parent.mkdir(parents=True,exist_ok=True)
-                target.write_bytes((ROOT/relative).read_bytes())
-            report=root/d0.REPORT
-            report.parent.mkdir(parents=True,exist_ok=True)
-            report.write_bytes(b'# Synthetic handoff fixture\n')
+        original_read = d0.read
+        packet = json.loads(original_read(ROOT, d0.EVIDENCE))
 
-            def manifest():
-                return {path:hashlib.sha256((root/path).read_bytes()).hexdigest()
-                        for path in d0.SOURCE}
+        changed_path = d0.SOURCE[0]
+        changed_raw = original_read(ROOT, changed_path) + b'\n'
 
-            def baseline_bytes(path):
-                return ('baseline:' + path).encode()
+        def tampered_source(root, relative):
+            return changed_raw if relative == changed_path else original_read(root, relative)
 
-            def rebindings(values):
-                return {
-                    path: {
-                        'before': None if path == 'infrastructure/deploy/verify-backup-build-trigger.py'
-                        else hashlib.sha256(baseline_bytes(path)).hexdigest(),
-                        'after': values[path],
-                    }
-                    for path in d0.SOURCE
-                }
+        with patch.object(d0, 'workspace_paths', return_value=self.expected_paths), \
+                patch.object(d0, 'read', side_effect=tampered_source), \
+                self.assertRaises(ValueError):
+            d0.validate(ROOT, predecessors=False)
 
-            def write_evidence(baseline=None, binding=None):
-                values=manifest()
-                aggregate=''.join(f'{values[path]}  {path}\n'
-                                  for path in sorted(values)).encode()
-                evidence={'schema':'diis-w10d-d2-build-bootstrap-handoff-v1',
-                    'baseline':baseline or {'sha':d0.BASE,'tree':d0.TREE},
-                    'supersedes': {
-                        'validatorPath': d0.SELF,
-                        'validatorSha256': d0.PREDECESSOR_VALIDATOR_SHA,
-                        'reportPath': d0.PREDECESSOR_REPORT,
-                        'reportSha256': d0.PREDECESSOR_REPORT_SHA,
-                        'evidencePath': d0.PREDECESSOR_EVIDENCE,
-                        'evidenceSha256': d0.PREDECESSOR_EVIDENCE_SHA,
-                        'sourceManifestSha256': d0.PREDECESSOR_MANIFEST_SHA,
-                    },
-                    'sourceManifest':values,
-                    'sourceManifestSha256':hashlib.sha256(aggregate).hexdigest(),
-                    'reportSha256':hashlib.sha256(report.read_bytes()).hexdigest(),
-                    'rebindings':binding or rebindings(values),
-                    'tests':{'synthetic':{'executed':True,'exitCode':0,'cases':1,
-                                          'command':'synthetic isolated contract'}},
-                    'observations': {
-                        'dispatchOutcome': 'stopped-before-run',
-                        'artifactOrPackageCreated': False,
-                        'publishFromBootstrapTag': False,
-                        'bootstrapSingleUse': 'oldest-exact-workflow-run-only',
-                        'driveRole': 'encrypted-offsite-archive-source',
-                        'restoreComputePolicy':
-                            'existing-school-owned-no-new-cost-only',
-                        'googleCloudBillingLinked': False,
-                        'executableRestoreTarget': 'not-yet-accepted',
-                    },
-                    'operationalStatus':
-                        'SOURCE COMPLETE - INDEPENDENT REVIEW REQUIRED - D2 BUILD AND D3-D6 HOLD'}
-                target=root/d0.EVIDENCE
-                target.write_text(json.dumps(evidence),encoding='ascii')
+        def missing_evidence(root, relative):
+            if relative == d0.EVIDENCE:
+                raise FileNotFoundError(relative)
+            return original_read(root, relative)
 
-            def baseline_git(_root,*argv):
-                if argv[0]=='ls-tree':
-                    return (b'' if argv[-1] == 'infrastructure/deploy/verify-backup-build-trigger.py'
-                            else b'100644 blob synthetic\tfile\n')
-                if argv[0]=='show':
-                    return baseline_bytes(argv[-1].split(':',1)[1])
-                raise AssertionError(argv)
+        with patch.object(d0, 'workspace_paths', return_value=self.expected_paths), \
+                patch.object(d0, 'read', side_effect=missing_evidence), \
+                self.assertRaises(OSError):
+            d0.validate(ROOT, predecessors=False)
 
-            expected=set(d0.SOURCE)|{d0.REPORT,d0.EVIDENCE}
-            write_evidence()
-            with patch.object(d0,'git',side_effect=baseline_git), \
-                    patch.object(d0,'workspace_paths',return_value=expected):
-                self.assertEqual(
-                    d0.validate(root,predecessors=False)['rebindings'], len(d0.SOURCE))
-                changed=root/d0.SOURCE[0]
-                original=changed.read_bytes()
-                changed.write_bytes(original+b'\n')
-                with self.assertRaises(ValueError):
-                    d0.validate(root,predecessors=False)
-                changed.write_bytes(original)
-                evidence=root/d0.EVIDENCE
-                evidence.unlink()
-                with self.assertRaises(OSError):
-                    d0.validate(root,predecessors=False)
-                write_evidence({'sha':'0'*40,'tree':d0.TREE})
-                with self.assertRaises(ValueError):
-                    d0.validate(root,predecessors=False)
-                write_evidence()
-                payload=json.loads((root/d0.EVIDENCE).read_text())
-                payload['rebindings'].pop(next(iter(payload['rebindings'])))
-                (root/d0.EVIDENCE).write_text(json.dumps(payload),encoding='ascii')
-                with self.assertRaises(ValueError):
-                    d0.validate(root,predecessors=False)
-                for key, value in (
-                        ('bootstrapSingleUse', 'replay-allowed'),
-                        ('restoreComputePolicy', 'paid-cloud'),
-                        ('googleCloudBillingLinked', True)):
-                    write_evidence()
-                    payload=json.loads((root/d0.EVIDENCE).read_text())
-                    payload['observations'][key]=value
-                    (root/d0.EVIDENCE).write_text(json.dumps(payload),encoding='ascii')
-                    with self.subTest(observation=key), self.assertRaises(ValueError):
-                        d0.validate(root,predecessors=False)
-                write_evidence()
-                with patch.object(d0,'workspace_paths',return_value=expected|{'unexpected.txt'}), \
-                        self.assertRaises(ValueError):
-                    d0.validate(root,predecessors=False)
+        for name, mutate in (
+                ('baseline', lambda value: value['baseline'].update({'sha': '0'*40})),
+                ('rebindings', lambda value: value['rebindings'].pop(
+                    next(iter(value['rebindings'])))),
+                ('manifest', lambda value: value['sourceManifest'].pop(
+                    next(iter(value['sourceManifest']))))):
+            value = copy.deepcopy(packet)
+            mutate(value)
+            raw = json.dumps(value).encode('utf-8')
+
+            def changed_evidence(root, relative):
+                return raw if relative == d0.EVIDENCE else original_read(root, relative)
+
+            with self.subTest(case=name), \
+                    patch.object(d0, 'workspace_paths', return_value=self.expected_paths), \
+                    patch.object(d0, 'read', side_effect=changed_evidence), \
+                    self.assertRaises(ValueError):
+                d0.validate(ROOT, predecessors=False)
+
+        with patch.object(d0, 'workspace_paths',
+                          return_value=self.expected_paths | {'unexpected.txt'}), \
+                self.assertRaises(ValueError):
+            d0.validate(ROOT, predecessors=False)
+
+    def test_predecessor_packets_execute_from_exact_git_bytes(self):
+        self.assertEqual(d0.predecessor(ROOT), 67)
+        self.assertEqual(d0.roundtrip_predecessor(ROOT), 21)
 if __name__=='__main__':
     unittest.main(verbosity=2)
