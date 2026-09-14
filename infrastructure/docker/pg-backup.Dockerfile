@@ -2,12 +2,14 @@
 # published separately and must be supplied to Compose by digest; this recipe
 # deliberately has no startup package install or mutable download.
 FROM python:3.12.14-alpine3.24@sha256:78e98729f8fc4099e53cffb3fe59fd15b18dfa4ace8c914dee0cefa5320068eb AS python-runtime
+FROM quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727 AS mc-runtime
 FROM postgres:16.15-alpine3.24@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 AS pg-backup
 
 LABEL org.opencontainers.image.title="DIIS pg-backup" \
       org.opencontainers.image.description="Digest-bound PostgreSQL backup runtime with strict evidence validation" \
       org.opencontainers.image.base.postgres="postgres:16.15-alpine3.24@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571" \
-      org.opencontainers.image.base.python="python:3.12.14-alpine3.24@sha256:78e98729f8fc4099e53cffb3fe59fd15b18dfa4ace8c914dee0cefa5320068eb"
+      org.opencontainers.image.base.python="python:3.12.14-alpine3.24@sha256:78e98729f8fc4099e53cffb3fe59fd15b18dfa4ace8c914dee0cefa5320068eb" \
+      org.opencontainers.image.base.mc="quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727"
 
 # Preserve the complete pinned PostgreSQL client runtime and add only the
 # interpreter/runtime files from the separately pinned Python stage.  The two
@@ -44,11 +46,14 @@ COPY scripts/parse-minio-du-observation.py /scripts/parse-minio-du-observation.p
 
 # BuildKit downloads fixed HTTPS resources and verifies bytes before extraction.
 # BusyBox wget and Python's BZIP2/LZMA zip readers are not used by this path.
-ADD --checksum=sha256:01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891 https://dl.min.io/client/mc/release/linux-amd64/archive/mc.RELEASE.2025-08-13T08-35-41Z /usr/local/lib/diis-tools/mc
+COPY --from=mc-runtime /usr/bin/mc /usr/local/lib/diis-tools/mc
 ADD --checksum=sha256:7d69057e69385f6514a9684c7eaa424d972096b130284bb34dd967c4ed4f9dad https://downloads.rclone.org/v1.70.3/rclone-v1.70.3-linux-amd64.zip /usr/local/lib/diis-tools/rclone.zip
 COPY scripts/build-backup-tools.py /scripts/build-backup-tools.py
 COPY scripts/install-baked-backup-tools.py /scripts/install-baked-backup-tools.py
-RUN python3 /scripts/build-backup-tools.py \
+RUN printf '%s  %s\n' \
+      '01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891' \
+      '/usr/local/lib/diis-tools/mc' | sha256sum -c - \
+    && python3 /scripts/build-backup-tools.py \
     && /usr/local/lib/diis-tools/mc --version \
     && /usr/local/lib/diis-tools/rclone version
 

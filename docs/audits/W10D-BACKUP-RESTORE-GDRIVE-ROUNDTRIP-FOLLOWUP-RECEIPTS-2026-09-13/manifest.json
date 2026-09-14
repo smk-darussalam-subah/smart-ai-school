@@ -1,0 +1,40 @@
+{
+  "finalReceiptSha256": "f06a5ba06a791b418041d67184e0bf094d44cf448a82fac7ac5fdc9b1463459c",
+  "proofPayload": {
+    "path": "proof-payloads.json",
+    "sha256": "7ec65ce632ec0e52af9810c091ff1c4bd08531ab5e4abfacef90570b1651183e"
+  },
+  "receiptCount": 7,
+  "receipts": [
+    {
+      "path": "01-preflight.json",
+      "sha256": "4acaf31fb37b315cf5248b268f9b7d8022d68369ee8ec7b09039b1608cc7c691"
+    },
+    {
+      "path": "02-backup.json",
+      "sha256": "06bcec0d53c7d99c697425c3188f87cf5f6741ca36063b7ac0ccf42d83a95f29"
+    },
+    {
+      "path": "03-offsite-fetch.json",
+      "sha256": "fd769bacf681984ba7d1bff9837e6b9e1479e6d59da97d20bf160138d76eae2e"
+    },
+    {
+      "path": "04-postgresql-restore.json",
+      "sha256": "13c6f95d217aec869c87fef79a3f9fbf4ae310b2c22235bb09549d126aa266d3"
+    },
+    {
+      "path": "05-object-restore.json",
+      "sha256": "5414066b108bf5f88e6917ce0945b3ee2b170a727802458a54ccf2f88495fa0d"
+    },
+    {
+      "path": "06-remote-and-resource-cleanup.json",
+      "sha256": "06dd9b87390406f00eea5e4e43af1b756016bf3ea1f26c9cab6b1d75a353a16c"
+    },
+    {
+      "path": "07-local-cleanup.json",
+      "sha256": "f06a5ba06a791b418041d67184e0bf094d44cf448a82fac7ac5fdc9b1463459c"
+    }
+  ],
+  "schemaVersion": "w10d-roundtrip-receipt-manifest-v1",
+  "status": "PASS"
+}

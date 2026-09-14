@@ -10,7 +10,7 @@ library=/backup-lib.sh
 legacy=/legacy-backup.sh
 lock=/var/lock/diis-backup/backup.lock
 expected=bc530d0a9110319684e7e4b60db56a3da1e1d979d9b1b6d8dc7887c209ff204e
-library_sha=bf881caf29af389e1d0d328e9b5816d570154b72b873ea82aac6d1be418e8e5a
+library_sha=a2a665af38a5e187a351397c7d0adf7082205c59c1fd97dbf0dac706cc5edb86
 
 case "${W10D_TEST_MODE:-0}" in
   0) [ -z "${DIIS_W10D_TEST_ROOT:-}" ] && [ -z "${W10D_TEST_RESULT:-}" ] || stop ;;
