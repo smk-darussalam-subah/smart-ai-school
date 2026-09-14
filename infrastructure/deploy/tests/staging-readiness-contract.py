@@ -327,14 +327,15 @@ class Contract(unittest.TestCase):
                 with patch.object(m,'ENV',file):
                     with self.assertRaises(m.Stop):m.Host(p).environment()
 
-    def test_workflow_scope(self):
+    def test_recovery_executor_is_not_wired_into_standard_deploy(self):
         workflow=SOURCE.parents[2]/'.github/workflows/deploy.yml'
         text=workflow.read_text()
-        staging=text.split('- name: Guarded recovery-only staging')[1].split('- name: Deploy production via SSH')[0]
-        self.assertIn("if: github.ref == 'refs/heads/staging'",staging)
-        for forbidden in ('docker exec','docker compose','VAPID','git fetch','git merge'):
-            self.assertNotIn(forbidden,staging)
-        self.assertIn("- name: Deploy production via SSH\n        if: github.ref == 'refs/heads/main'",text)
+        self.assertEqual(text.count('- name: Deploy via SSH'), 1)
+        self.assertIn("if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'",text)
+        self.assertNotIn('Bind staging executor from exact Actions checkout',text)
+        self.assertNotIn('Guarded recovery-only staging via existing SSH channel',text)
+        self.assertNotIn('DIIS_STAGING_RELEASE_MODE',text)
+        self.assertNotIn('DIIS_APPROVAL_SHA256',text)
 
     def test_main_receipt_and_replay(self):
         with tempfile.TemporaryDirectory() as d:

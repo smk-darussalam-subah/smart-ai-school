@@ -1,0 +1,107 @@
+{
+  "schema": "diis-standard-deploy-handoff-v1",
+  "baseline": {
+    "sha": "715121657e3d432f9c7cda82aa8cfefe7b32c199",
+    "tree": "f6eb45f7f19eaca55b9294bac8a3d4652c54bd8f"
+  },
+  "supersedes": {
+    "validatorPath": "infrastructure/deploy/verify-integrated-handoff.py",
+    "validatorSha256": "41c6cfa39defb6ab6b3e1fc10aa53375a4a23a5b7f3a5fb4218cd509b19f2840",
+    "reportPath": "docs/audits/W10D-WRITER-COMPATIBILITY-HANDOFF-EXECUTOR-2026-09-14.md",
+    "reportSha256": "d17cb4c9ca4e714af9c1f5b861aba25d90be9eb19a28ecc80d3a268094ef7528",
+    "evidencePath": "docs/audits/W10D-WRITER-COMPATIBILITY-HANDOFF-EVIDENCE-2026-09-14.json",
+    "evidenceSha256": "9632ae8b735b86118418f8148e53a4926ffe297786ed6cd183560a1233aad69a",
+    "result": {
+      "sourceFiles": 6,
+      "rebindings": 6,
+      "historicalInputs": 88
+    }
+  },
+  "sourceManifest": {
+    ".github/workflows/ci.yml": "e6b3f7c127477d4b1e1bbcd5764b54aae02af941f7410e6e77d7b49f8fb953b9",
+    ".github/workflows/deploy.yml": "5389912793eff111b556faa4dfad63cbd4584248c89cf05bb168a9595290274a",
+    "apps/api/src/__tests__/deploy-workflow-safety.spec.ts": "3d2f0569c2911f4ef3b477141d22c8d490b836543da9cfd47bc1681158c232ed",
+    "infrastructure/deploy/tests/staging-readiness-contract.py": "3d791affdda29ff79aab12c3dfcdc108575ccd3001ed4deed9de16819c231b75",
+    "infrastructure/deploy/tests/standard-deploy-handoff-contract.py": "7451d8c80bbe7333d53aecf66155026cd0870f2d826293f7e05a7cae58f43720",
+    "infrastructure/deploy/verify-standard-deploy-handoff.py": "ebecd60b689f11f182a179fa27e35adb2638eeceba854c28645c980d948215eb"
+  },
+  "sourceManifestSha256": "6c85dc1ffd9c905d7fc2f867a985bfd40e2f22cb3e9c5aebb85cb7dc2487701b",
+  "reportSha256": "738b90aefeb255aef057f3bb2bbcfbd9031018ba87b054b82c3091fd5435890f",
+  "changes": {
+    ".github/workflows/ci.yml": {
+      "status": "modified",
+      "beforeSha256": "588e04bc3d93f4604bcc77f620cc724be5fea126e17ea18d3692ad6390caa20c",
+      "afterSha256": "e6b3f7c127477d4b1e1bbcd5764b54aae02af941f7410e6e77d7b49f8fb953b9"
+    },
+    ".github/workflows/deploy.yml": {
+      "status": "modified",
+      "beforeSha256": "31d030d29c7900f044b65c1f412f5196e8de8b477223bec97b6c03cd31fcc43d",
+      "afterSha256": "5389912793eff111b556faa4dfad63cbd4584248c89cf05bb168a9595290274a"
+    },
+    "apps/api/src/__tests__/deploy-workflow-safety.spec.ts": {
+      "status": "modified",
+      "beforeSha256": "26ddcee7273af472b12e87f1ae509c60fa144bc5b0efa12a65ea4a37cc8225d9",
+      "afterSha256": "3d2f0569c2911f4ef3b477141d22c8d490b836543da9cfd47bc1681158c232ed"
+    },
+    "infrastructure/deploy/tests/staging-readiness-contract.py": {
+      "status": "modified",
+      "beforeSha256": "c2d9f9d63b10b4b6c87f319ff97542010916c8877cbfe3840d25d45452850572",
+      "afterSha256": "3d791affdda29ff79aab12c3dfcdc108575ccd3001ed4deed9de16819c231b75"
+    },
+    "infrastructure/deploy/tests/standard-deploy-handoff-contract.py": {
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "7451d8c80bbe7333d53aecf66155026cd0870f2d826293f7e05a7cae58f43720"
+    },
+    "infrastructure/deploy/verify-standard-deploy-handoff.py": {
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "ebecd60b689f11f182a179fa27e35adb2638eeceba854c28645c980d948215eb"
+    }
+  },
+  "tests": {
+    "deployWorkflowSafety": {
+      "command": "npm test --workspace @smk/api -- --runTestsByPath src/__tests__/deploy-workflow-safety.spec.ts --runInBand --detectOpenHandles",
+      "cases": 6,
+      "exitCode": 0,
+      "executed": true
+    },
+    "stagingReadiness": {
+      "command": "python3 -B infrastructure/deploy/tests/staging-readiness-contract.py",
+      "cases": 49,
+      "exitCode": 0,
+      "executed": true
+    },
+    "sourceClosure": {
+      "command": "python3 -B infrastructure/deploy/tests/source-closure-contract.py",
+      "cases": 45,
+      "exitCode": 0,
+      "executed": true
+    },
+    "integratedClosure": {
+      "command": "python3 -B infrastructure/deploy/tests/integrated-closure-contract.py",
+      "cases": 25,
+      "exitCode": 0,
+      "executed": true
+    },
+    "handoffContract": {
+      "command": "python3 -B infrastructure/deploy/tests/standard-deploy-handoff-contract.py",
+      "cases": 6,
+      "exitCode": 0,
+      "executed": true
+    }
+  },
+  "claims": {
+    "standardStagingDeployRestored": true,
+    "recoveryExecutorsRetainedButNotWired": true,
+    "hostLockRetained": true,
+    "shaBindingRetained": true,
+    "dirtyCheckoutRejected": true,
+    "sharedIngressFailClosedRetained": true,
+    "backupBehaviorChanged": false,
+    "n8nBehaviorChanged": false,
+    "historicalEvidenceChanged": false,
+    "runtimeMutations": false
+  },
+  "operationalStatus": "SOURCE COMPLETE - INDEPENDENT REVIEW REQUIRED - DEPLOYMENT HOLD"
+}
