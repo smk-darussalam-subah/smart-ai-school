@@ -1,0 +1,185 @@
+{
+  "schema": "diis-integrated-d0-handoff-v1",
+  "baseline": {
+    "sha": "a8d72b8e2a6e78438e4cef46ad21913ff369d3f0",
+    "tree": "75364250f2a5bbe875fc4bcf3da517c8f456adea"
+  },
+  "sourceManifest": {
+    ".github/workflows/backup-image.yml": "f4f982cfdb649bfd96982daf624fd5035812a3d2294734d715d7a901d424d434",
+    ".github/workflows/capacity-lifecycle.yml": "a988eb5ec4146013bd57ac5c7e3f9e738187b381c9708235d1a9e4db02674cd8",
+    ".github/workflows/ci.yml": "588e04bc3d93f4604bcc77f620cc724be5fea126e17ea18d3692ad6390caa20c",
+    "docs/audits/W10-D-INTEGRATED-BLOCKER-CLOSURE-LEDGER-2026-09-11.md": "6bafc10a16a13e9c5c55b9fdd5148b22cbce8266f95de239e66f0e6ec9b54602",
+    "docs/runbooks/w10d-integrated-operations.md": "42b1d0da7624c81e852b086e812455f110d54b4a7162072b013c61964a4ccf52",
+    "infrastructure/deploy/backup-image-artifact.py": "a27943f58b70634e0b2919e3162054f29d58ae2e79e8d9e1c09c7749ae7bf3ec",
+    "infrastructure/deploy/capacity_bundle.py": "9450c772aeb15b5125fe1366b50145f8d0607a782344d0804c5ea7b9f4ae9888",
+    "infrastructure/deploy/install-w10d-legacy-writer-snapshot.py": "7de2512085a299b42c16f173b2cbe678179ba3ce2c4934f9162e1bed0a45db1b",
+    "infrastructure/deploy/install-w10d-writer-compatibility.py": "d598cdfb55e572c36fe94f5fe81c04f92295f3e991dbde7c1880359e81a680f2",
+    "infrastructure/deploy/legacy-backup-compatibility.sh": "70cf649cc5845827aa4d66c3d4148bb6f6f718b169a93074ad4abd7da803718f",
+    "infrastructure/deploy/staging-application-deploy.py": "4aa12a61f184b1653ef8e5e44fc8dda60e0169a0f17d05c0f5686d72789954bb",
+    "infrastructure/deploy/staging-image-config.py": "4330eb7a77bcd220b33795efe5aa87378a433d00c0a237f1e515d4bca96cd769",
+    "infrastructure/deploy/tests/integrated-closure-contract.py": "a497cd63bbec7552ab78d0aa1554b3e8e71f29a74614f8d55b927463b6ff5fa5",
+    "infrastructure/deploy/tests/integrated-linux-proof.py": "df50b400cee063a96ad930003d16148ce602b567d52349bfd64dc12b5c6d1fac",
+    "infrastructure/deploy/tests/source-closure-contract.py": "c33537c8360ce024c85dbda04f2d99150f0be14ebf34b9624a11bf1465b74c97",
+    "infrastructure/deploy/verify-integrated-handoff.py": "c9902efdd754805251470804bcd8689ddb8eae24062931abfe00d5a2b86db7df",
+    "infrastructure/deploy/verify-publication-metadata.py": "715107228deaaea517d26a69e721e188e6b39d1b862f3bdc922dbad05ac7ae19",
+    "infrastructure/deploy/verify-published-backup-image.py": "9afeea4ad88624617f380adc044000dd2b4e7d0f71ccaf8ca29b6c40fd88444b"
+  },
+  "sourceManifestSha256": "c75c1c81e0889ed1b99f2bac4796e650d6ac30462e1bb8452a57410a62994709",
+  "reportSha256": "4b8c4ce0dd35e461443d50b0dfa5d112221bb85c21a1ffa5ab97cfe180a8272e",
+  "rebindings": {
+    ".github/workflows/backup-image.yml": {
+      "before": "24f7d4a63366e4a009a16e0bf0aec96a598be17caf5a4c4616645349259226ee",
+      "after": "f4f982cfdb649bfd96982daf624fd5035812a3d2294734d715d7a901d424d434"
+    },
+    ".github/workflows/capacity-lifecycle.yml": {
+      "before": "e0e6c9175806881196d0f0121bf6057af546839ecc6d351c63ea34341266e87e",
+      "after": "a988eb5ec4146013bd57ac5c7e3f9e738187b381c9708235d1a9e4db02674cd8"
+    },
+    ".github/workflows/ci.yml": {
+      "before": "b4f73cd4ea277ddaac5c4d979bf21d1d1937f118697e3be846554bb73436f7d8",
+      "after": "588e04bc3d93f4604bcc77f620cc724be5fea126e17ea18d3692ad6390caa20c"
+    },
+    "infrastructure/deploy/backup-image-artifact.py": {
+      "before": "e789eb24faa139f806a052e4dcfffa190d20809707c46db73dd4293e8f9cdc79",
+      "after": "a27943f58b70634e0b2919e3162054f29d58ae2e79e8d9e1c09c7749ae7bf3ec"
+    },
+    "infrastructure/deploy/capacity_bundle.py": {
+      "before": "bf9cbee2b27ad4cf29eff9d514fd855bc5e3d153e6ec845da3c3f45cfe6779a5",
+      "after": "9450c772aeb15b5125fe1366b50145f8d0607a782344d0804c5ea7b9f4ae9888"
+    },
+    "infrastructure/deploy/staging-application-deploy.py": {
+      "before": "3d51b7ffef9dc6468fad24c9baddae921368db5909459e5ff627e83b509223a4",
+      "after": "4aa12a61f184b1653ef8e5e44fc8dda60e0169a0f17d05c0f5686d72789954bb"
+    },
+    "infrastructure/deploy/tests/source-closure-contract.py": {
+      "before": "c45cccab90c9f2f093d7154731575a8e5be8508998ed716d20d9b4e03490ffee",
+      "after": "c33537c8360ce024c85dbda04f2d99150f0be14ebf34b9624a11bf1465b74c97"
+    },
+    "infrastructure/deploy/verify-publication-metadata.py": {
+      "before": "7484af43c40923ec2edd3fc389441d4b95b0722f82e1d702e6db2191a6ed4aa4",
+      "after": "715107228deaaea517d26a69e721e188e6b39d1b862f3bdc922dbad05ac7ae19"
+    },
+    "infrastructure/deploy/verify-published-backup-image.py": {
+      "before": "d66a7e2223a207bbd6a20b5e35775fa923d44eeedd1048cd33ae13bcaf158101",
+      "after": "9afeea4ad88624617f380adc044000dd2b4e7d0f71ccaf8ca29b6c40fd88444b"
+    }
+  },
+  "tests": {
+    "backupContractWsl": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 44,
+      "command": "WSL Ubuntu bash infrastructure/docker/tests/backup-contract.sh"
+    },
+    "backupContractGitBash": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 44,
+      "command": "Git Bash bash infrastructure/docker/tests/backup-contract.sh"
+    },
+    "sourceClosure": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 43,
+      "command": "WSL Ubuntu python3 -B infrastructure/deploy/tests/source-closure-contract.py"
+    },
+    "capacityLifecycle": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 55,
+      "command": "WSL Ubuntu python3 -B infrastructure/deploy/tests/capacity-lifecycle-contract.py"
+    },
+    "stagingReadiness": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 49,
+      "command": "WSL Ubuntu python3 -B infrastructure/deploy/tests/staging-readiness-contract.py"
+    },
+    "integratedClosure": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 21,
+      "command": "WSL Ubuntu python3 -B infrastructure/deploy/tests/integrated-closure-contract.py"
+    },
+    "integratedLinuxDocker": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 9,
+      "command": "WSL Ubuntu W10D_SYNTHETIC_IMAGE_ID=<immutable-local-id> python3 -B infrastructure/deploy/tests/integrated-linux-proof.py"
+    },
+    "pythonSyntax": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 12,
+      "command": "WSL Ubuntu python3 -B -m py_compile <12 affected Python paths>"
+    },
+    "workflowYaml": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 3,
+      "command": "WSL Ubuntu PyYAML safe_load of three affected workflow files"
+    },
+    "shellSyntax": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 1,
+      "command": "WSL Ubuntu bash -n infrastructure/deploy/legacy-backup-compatibility.sh"
+    },
+    "localBundle": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 18,
+      "command": "WSL Ubuntu capacity_bundle.py verify against private UNRELEASED D0 bundle"
+    }
+  },
+  "observations": {
+    "hostReadOnly": {
+      "observedAt": "2026-09-11T09:02:31.615611Z",
+      "rootCrontab": "ABSENT",
+      "exactBackupProcessAtObservation": false,
+      "filesystemTotalBytes": 80307429376,
+      "filesystemAvailableBytes": 14459756544,
+      "filesystemFreeIncludingReservedBytes": 17782370304,
+      "operatorUsablePercent": "18.005502923396",
+      "legacyBackupSha256": "bc530d0a9110319684e7e4b60db56a3da1e1d979d9b1b6d8dc7887c209ff204e",
+      "legacySchedule": "19:00 UTC / 02:00 Asia/Jakarta",
+      "runtimeMutation": false
+    },
+    "localFeasibility": {
+      "dockerImagePurpose": "synthetic-only",
+      "dockerImageId": "sha256:91727198d4dba854dc43ea26c6fc41222a32b33ce4728bcef765864c16179104",
+      "containerResidue": 0,
+      "networkResidue": 0,
+      "volumeResidue": 0,
+      "temporaryDirectoryResidue": 0,
+      "bundleStatus": "UNRELEASED",
+      "bundleFiles": 18,
+      "bundleSha256": "a3df041e9c3c5a7b671894d174133896fc1a51fc2863c661a3e3e6b64734d4ba",
+      "localWorkstationFreeApproxGiB": "9.66"
+    },
+    "ownerInputs": {
+      "mailbox": "admin@smkdarussalamsubah.sch.id",
+      "mailboxOwner": "Director",
+      "smtpBindingVerified": false,
+      "mailboxReceiptVerified": false,
+      "temporaryNotificationProposal": "school email plus named manual evidence inspection",
+      "restoreTargetApproved": false,
+      "restoreTargetProposal": "school-owned AWS Lightsail Jakarta disposable VM",
+      "costCeilingProposal": "USD 5 / 48 hours excluding tax and transfer",
+      "alternateOperatorNamed": false,
+      "independentRecoveryKitLocationApproved": false
+    },
+    "noTouch": {
+      "gitMutation": false,
+      "remoteWrite": false,
+      "workflowDispatch": false,
+      "imagePublicationOrPull": false,
+      "credentialMutation": false,
+      "backupOrRestore": false,
+      "cleanupOrGc": false,
+      "schedulerOrN8nMutation": false,
+      "stagingOrProductionMutation": false
+    }
+  },
+  "operationalStatus": "D1-D6 HOLD"
+}

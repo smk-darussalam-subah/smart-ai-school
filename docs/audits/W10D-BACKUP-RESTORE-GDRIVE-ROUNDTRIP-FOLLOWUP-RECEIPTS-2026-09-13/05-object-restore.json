@@ -1,0 +1,16 @@
+{
+  "exitCode": 0,
+  "facts": {
+    "backupId": "20260913T165516Z-338684",
+    "byteHashesMatched": true,
+    "commandContract": "infrastructure/docker/scripts/restore-objects.sh",
+    "nestedObjectCount": 2,
+    "objectCount": 2,
+    "proofSha256": "b7e000210892509e5f97903eea190252dc54e2f81acc33482c6992bd08a7c5bd"
+  },
+  "observedAt": "2026-09-13T16:58:37.944202+00:00",
+  "phase": "object-restore",
+  "previousReceiptSha256": "13c6f95d217aec869c87fef79a3f9fbf4ae310b2c22235bb09549d126aa266d3",
+  "schemaVersion": "w10d-roundtrip-phase-receipt-v1",
+  "status": "PASS"
+}

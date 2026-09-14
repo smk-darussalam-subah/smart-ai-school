@@ -1,0 +1,736 @@
+{
+  "schema": "diis-w10d-cleanup-preparation-owner-evidence-local-bundle-v2",
+  "generatedAtUtc": "2026-09-09T11:03:50Z",
+  "generatedAtWib": "2026-09-09T18:03:50+07:00",
+  "verdict": "PREPARATION PARTIAL - RUNTIME AND NOTIFICATION EVIDENCE INCOMPLETE - CLEANUP HOLD",
+  "scope": {
+    "mode": "preparation-only",
+    "promptSha256": "fcd173a8e4d89093568c2a9a8672ef27e32cc95d30d4ad266865afb4cc5df68d",
+    "localArtifactWrites": true,
+    "localDocumentationWrites": true,
+    "hostReadOnlyObservation": true,
+    "hostOrProviderWrites": true,
+    "hostOrProviderWriteScope": "Director owner setup; one MinIO read-only service account; one encrypted n8n credential binding; one canonical backup monitor kept unpublished; one rotation-reminder workflow created and returned to unpublished after the notification channel failed validation",
+    "directorOutOfBandN8nOwnerSetupObserved": true,
+    "sourceChanges": false,
+    "gitWrites": false,
+    "cleanupPerformed": false,
+    "bundleDeliveredOrInstalled": false,
+    "bootstrapOrSchedulerChanged": true,
+    "nativeGcChanged": false,
+    "dockerRestarted": false,
+    "backupOrRestorePerformed": false,
+    "deploymentPerformed": false
+  },
+  "sourceBinding": {
+    "status": "PASS",
+    "sourceCheckedAtUtc": "2026-09-09T09:17:31.2587591Z",
+    "mergeSha": "380080b2d92f064c1221395c9a525a953d94a163",
+    "tree": "6de3c10f7853b8ee46fe72eaf2f27c4f9cc9da54",
+    "parents": [
+      "39f1db9ba49d8c89ceb8c3e13c6850744b9294e1",
+      "0e0b341e47c7badc0d1f35ccca2c67614f161ddf"
+    ],
+    "originDevelop": "380080b2d92f064c1221395c9a525a953d94a163",
+    "localCheckoutSha": "0e0b341e47c7badc0d1f35ccca2c67614f161ddf",
+    "localCheckoutExplanation": "The worktree remains on the reviewed PR head; all source and bundle helper bytes match the merge blobs.",
+    "sourceManifest": {
+      "count": 20,
+      "matchedMergeBlobs": 20,
+      "sha256": "9af6d0cfe93db623c0963d68caf1f46b7cb2751124e20e1168a97aa830b88aae"
+    },
+    "bundleHelperClosure": {
+      "count": 14,
+      "matchedMergeBlobs": 14,
+      "helperSetSha256": "05ab1cbcd73c358413f05a2557d5b19f1b06aab60970ccec5e246160b34c6129"
+    },
+    "ci": [
+      {
+        "runId": 34322438518,
+        "workflow": "CI Pipeline",
+        "headSha": "380080b2d92f064c1221395c9a525a953d94a163",
+        "status": "PASS"
+      },
+      {
+        "runId": 34322438557,
+        "workflow": "Capacity Lifecycle Contract",
+        "headSha": "380080b2d92f064c1221395c9a525a953d94a163",
+        "status": "PASS"
+      }
+    ],
+    "developProtection": {
+      "requiredApprovals": 1,
+      "strictRequiredChecks": true,
+      "adminEnforcement": true,
+      "forcePushAllowed": false,
+      "deletionAllowed": false,
+      "snapshotSha256": "667a0e9bd34675a5c9c09e1440ef3a5f170ec64b3a4f64d1f0760a29abbf7218"
+    },
+    "openPrCount": 0,
+    "mergeShaDeploymentCount": 0
+  },
+  "previousEvidence": {
+    "refreshReportSha256": "ba58f1d20d6a0511f3d01a40416f42cc6e68593d9b01e214b80b3fb1745e0e18",
+    "refreshEvidenceSha256": "919c43bb1be61553232b0fc35183382da25f59b61d6b585f5e8e2f43965ed0ff",
+    "independentReviewSha256": "7b3e82e7ec0e2d65d097de0dfbf1a410ec5fe5b543923778e76ea7c04511d427",
+    "historicalUnreleasedArchiveSha256": "53b45ba3ba9a818d4eabd62af567ad19d58a95a9a6c2520cd672490d541648a1",
+    "historicalUnreleasedManifestSha256": "bdd77a242ba9355d6308868ad5be8ba8240f8e30177348d24c6aee133ebaf486",
+    "historicalFilesPreserved": true
+  },
+  "authority": {
+    "localReleaseCustodian": {
+      "status": "CONFIRMED",
+      "identity": "DIIS W10-D Executor appointed by Director",
+      "scope": "one local RELEASED artifact only; delivery and host execution prohibited",
+      "basis": "Director authorization and bound prompt",
+      "authorizationProvenanceSha256": "0a2a89747a887ee219f62000a006a88fdce94daa90092bd3e748531189fbc281",
+      "localUid": 0,
+      "expires": "end of this preparation task"
+    },
+    "sshObserver": {
+      "status": "PASS_READ_ONLY",
+      "identity": "appuser",
+      "uid": 1000,
+      "hostSha256": "a4173eae2f8569c43ff4796af4a9de9766eefb8bcbf5c00e6c097190ba436153",
+      "machineIdSha256": "da09b80fc491520dbb9ba0685012723e7813267cd4a2f2afc17bbf113ef119b2",
+      "strictHostKeyChecking": true,
+      "observationWindowUtc": {
+        "start": "2026-09-09T09:07:02Z",
+        "end": "2026-09-09T09:13:24Z"
+      },
+      "scope": "status, count, mode, owner, timestamp, size, version and SHA-256 projections only",
+      "expires": "end of this preparation task"
+    },
+    "platformRecoveryAdministrator": {
+      "status": "CONFIRMED_LIMITED_PROOF",
+      "identity": "Director DIIS using the existing Hetzner root console",
+      "basis": "Director attestation and interactive UID 0 proof",
+      "ownerAttestationSha256": "0642391e3cb9e61b9923236da963459c2e6fd09f664e2a44a6705c562196cd64",
+      "scope": "narrow root read-only scheduler and preservation observation",
+      "rootUidObserved": 0,
+      "observationWindowUtc": {
+        "start": "2026-09-09T09:36:35Z",
+        "end": "2026-09-09T09:53:00Z"
+      },
+      "expires": "end of this preparation task",
+      "remainingEvidenceGap": "No reviewed root-confined preservation observer is installed; the root-cron projection lacks a readable canonical hash.",
+      "secretRequested": false
+    },
+    "n8nOwner": {
+      "status": "PASS_CONFIG_CUSTODY",
+      "identity": "Director DIIS / organization owner; account details withheld",
+      "basis": "Director attestation plus authenticated owner UI after owner setup",
+      "scope": "owner-authorized credential custody, unpublished workflow configuration and metadata-only inventory; no backup-monitor activation or execution",
+      "ownerAttestationSha256": "0642391e3cb9e61b9923236da963459c2e6fd09f664e2a44a6705c562196cd64",
+      "observedAtUtc": "2026-09-09T11:03:50Z",
+      "expires": "end of this preparation task",
+      "secretRequested": false
+    }
+  },
+  "targetRuntime": {
+    "status": "PASS_WITH_RUNTIME_BLOCKERS",
+    "observedAtUtc": "2026-09-09T09:13:24Z",
+    "sha": "418846959b90b38e10141cb8df995872802219fe",
+    "tree": "82b088f2344338d3ad1fb0bc3c2affa435d54923",
+    "trackedDirtyCount": 0,
+    "architecture": "amd64",
+    "engine": "29.5.2",
+    "engineCommit": "568f755",
+    "buildx": "0.34.0",
+    "buildxCommit": "3e73561e39785683b31b05eeab1ef645be44ca42",
+    "buildxBinarySha256": "bac6d4838cc38b22ef5975beaadd67ab093c409d595bbae0481ca38ba978aab2",
+    "buildkit": "v0.30.0",
+    "builder": "default",
+    "builderDriver": "docker",
+    "daemonRoot": "/var/lib/docker",
+    "resourceCounts": {
+      "containers": 18,
+      "images": 21,
+      "volumes": 26,
+      "networks": 6
+    }
+  },
+  "effectiveGc": {
+    "evidenceStatus": "PASS",
+    "runtimeCompatibility": "BLOCKED",
+    "observedAtUtc": "2026-09-09T09:12:15Z",
+    "buildxInspectSha256": "ea91dc63053fa6569eb77cb22c223fb75b22b94e3c5f21d242901e2993df166e",
+    "policyProjectionSha256": "29f46f08c20db12e492bdf1c84b456308367407a9ac1e952cb504382c9315bf8",
+    "policyCount": 4,
+    "daemonConfigPresent": false,
+    "daemonConfigReadable": false,
+    "dockerdUnitSha256": "d82c5f51f3ef048653eea83c9b656110344192cc19166880a61c1fb4e3306581",
+    "dockerdCmdlineSha256": "081b5958d350797398d649b7bc6a63ff7a397e4e13762e57c78e1f2b1237287f",
+    "dockerdKnownFlagNames": ["-H"],
+    "dockerdKnownFlagProjectionSha256": "738f05773cd28266112399fd21a2ab3bf1fc5e5ee588cb44f39d238419d71fbc",
+    "dockerActiveEnterTimestampUtc": "2026-08-31T07:43:10Z",
+    "dockerExecMainStartTimestampUtc": "2026-08-31T07:42:59Z",
+    "policies": [
+      {
+        "rule": 0,
+        "all": false,
+        "filters": ["type==source.local", "type==exec.cachemount", "type==source.git.checkout"],
+        "keepDuration": "48h",
+        "maxUsedSpace": "1.029GiB"
+      },
+      {
+        "rule": 1,
+        "all": false,
+        "keepDuration": "1440h",
+        "reservedSpace": "7.451GiB",
+        "maxUsedSpace": "55.88GiB",
+        "minFreeSpace": "13.97GiB"
+      },
+      {
+        "rule": 2,
+        "all": false,
+        "reservedSpace": "7.451GiB",
+        "maxUsedSpace": "55.88GiB",
+        "minFreeSpace": "13.97GiB"
+      },
+      {
+        "rule": 3,
+        "all": true,
+        "reservedSpace": "7.451GiB",
+        "maxUsedSpace": "55.88GiB",
+        "minFreeSpace": "13.97GiB"
+      }
+    ],
+    "activeSweepObserved": null,
+    "sourceGuardResult": "The exact manual-cleanup source rejects any GC Policy header; manual apply is therefore blocked before mutation.",
+    "recommendedPath": "one consolidated source follow-up for a reviewed GC configuration transition plus reader/writer closure, followed by separate exact host-preparation approval",
+    "unsupportedNow": [
+      "hot reload of builder.gc",
+      "generic live GC disable through capacity_gc.py",
+      "daemon restart",
+      "manual cleanup while native GC policies remain visible"
+    ]
+  },
+  "capacity": {
+    "lightObservationAtUtc": "2026-09-09T09:12:15Z",
+    "filesystem": "/var/lib/docker",
+    "totalBytes": 80307429376,
+    "availableBytes": 14579712000,
+    "availableGiB": "13.5784149169921875",
+    "availablePercentExact": "18.15487323313223816867899542116704696948",
+    "availablePercentRounded2": "18.15",
+    "rounding": "decimal half-even to two decimal places for display; exact integer bytes remain authoritative",
+    "targetBytes": 25769803776,
+    "targetGiB": "24",
+    "targetPercent": 30,
+    "releaseMinimumPercent": 25,
+    "shortfallBytes": 11190091776,
+    "shortfallGiB": "10.4215850830078125",
+    "targetMet": false,
+    "priorSnapshotArithmeticCorrection": {
+      "observedAtUtc": "2026-09-09T07:58:05.329547Z",
+      "totalBytes": 80307429376,
+      "availableBytes": 14575595520,
+      "availablePercentIncorrectHistoricalValue": "18.14974732499625",
+      "availablePercentExact": "18.149747331292289327729558030972280040921528002266209657239869662342309663023723",
+      "availablePercentRounded2": "18.15",
+      "historicalFilesModified": false
+    },
+    "policySnapshotReused": true,
+    "policySnapshotObservedAtUtc": "2026-09-09T07:58:05.329547Z",
+    "recommendedConditionalPolicyHours": 72,
+    "logicalBudgetBytes": 12989498298,
+    "guaranteedPhysicalReclaimBytes": 0,
+    "policy72And48CandidateSetsEqual": true,
+    "policy168LogicalEligibleBytes": 7098368,
+    "growthStatus": "INSUFFICIENT_HISTORY"
+  },
+  "writerAndScheduler": {
+    "evidenceStatus": "PARTIAL_ROOT_CRON_HASH_AND_PRESERVATION_READER",
+    "runtimeClosureStatus": "PENDING",
+    "canonicalHostLock": {
+      "present": true,
+      "mode": "0600",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "canonicalBackupLockParentPresent": false,
+    "canonicalBackupLockPresent": false,
+    "bootstrapRuleInstalled": false,
+    "appuserCron": {
+      "status": "ABSENT",
+      "entryCount": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "readableSystemCron": {
+      "status": "PARTIAL_UNIVERSE",
+      "fileCount": 3,
+      "relevantEntryCount": 0,
+      "setSha256": "05b7e40a02af8788d88af2e918ce6052a4a8d9a8ad0237f969d2f0344d7aaea4"
+    },
+    "rootCron": {
+      "status": "PARTIAL_NO_CANONICAL_HASH",
+      "observedThrough": "existing interactive root console",
+      "rootUid": 0,
+      "entryCount": 4,
+      "relevantEntryCount": 0,
+      "canonicalSha256": null,
+      "rawBodiesExported": false,
+      "directReadExitCode": 1,
+      "narrowSudoReadExitCode": 1,
+      "limitation": "The redacted count and relevance projection completed, but the console channel did not yield a reliably readable canonical hash. No raw cron body was exported."
+    },
+    "systemdBackupTimer": {
+      "count": 1,
+      "nameSha256": "b4fde847360e095bcaa7b672ca91f28d1bec47aa0092976df6c7c05824242158",
+      "activeState": "active",
+      "subState": "waiting",
+      "lastTriggerUtc": "2026-09-09T00:00:12Z",
+      "nextTriggerUtc": "2026-09-10T00:00:00Z",
+      "lastTriggerWib": "2026-09-09T07:00:12+07:00",
+      "nextTriggerWib": "2026-09-10T07:00:00+07:00",
+      "timerUnitSha256": "ffab625bb34b890bb0e269dd8ffd49a529fe202d863dfc7d38d61810ef34f79e",
+      "serviceUnitSha256": "ca33f3d166c11ebe8806193df5a5036b9a9c828a6006b10fd7a9fbd3c653b9a2",
+      "execProjectionSha256": "1678c3db203881f68365a93ec51b49fa1ca5f40e420da8c5fdcc35211efb82d2",
+      "executableSha256": "a2b4ce22b54ee837e400915bf3b6c971cd6848d4b79990f09cf314b8d38a1e0e",
+      "mentionsReviewedBackupLibrary": false,
+      "mentionsCanonicalBackupLock": false
+    },
+    "legacyBackupContainer": {
+      "count": 1,
+      "running": true,
+      "containerIdSha256": "7a62726fcdee931eb50446e25d36d552109a058be9442ecf3719623699723f86",
+      "imageIdSha256": "6c78e750a67799f990b8b84dbfa1ae181227af1e51d407a4e005bea9333ace35",
+      "commandSha256": "896eadd6b7e6f09556b6a9a4aea4d2809c0936c01e8d92a4ddcd98403a203f3f",
+      "mountProjectionSha256": "767d0472697099b6b1b9d3a7fbbd51f249ceba18db34b57a30b85385b8b77e6f",
+      "mentionsCanonicalBackupLock": false
+    },
+    "runtimeBackupLibrary": {
+      "present": true,
+      "sha256": "5235dece7fc99e0bce21ab1bfa3d0caeca8637e8ff0e8dbf1e4a14898653886f",
+      "reviewedSha256": "bf881caf29af389e1d0d328e9b5816d570154b72b873ea82aac6d1be418e8e5a",
+      "matchesReviewed": false
+    },
+    "allHostMutatorsUseCanonicalLock": null,
+    "allHostMutatorsHonorBackupQuarantine": null,
+    "quietWindowStatus": "UNDETERMINED"
+  },
+  "preservation": {
+    "evidenceStatus": "MISSING",
+    "runtimeClosureStatus": "PENDING",
+    "runtimeMountRootCount": 1,
+    "directReadableRootCount": 0,
+    "rootSetSha256": "b5e6db8ef02ae78862b9d525e2c9dd46908764c37d46f4040ed4103812b269fd",
+    "contentFileCount": null,
+    "contentBytes": null,
+    "contentSetSha256": null,
+    "completionManifestCount": null,
+    "beforeAfterStable": null,
+    "recoveryValidated": false,
+    "administratorCanProduceProofNow": false,
+    "appuserCanReproduceBackendSnapshotProof": false,
+    "reason": "The mount-derived root is not readable by appuser, and no reviewed root-confined observer path is installed. Root authority was confirmed but is not a substitute for an exact reviewed bounded collector.",
+    "limitsRequired": {
+      "entries": 20000,
+      "aggregateBytes": 8589934592,
+      "bytesPerFile": 268435456,
+      "secondsPerFile": 30,
+      "traversalSeconds": 120
+    }
+  },
+  "n8n": {
+    "evidenceStatus": "PASS_CONFIGURATION_WITH_BLOCKED_RUNTIME",
+    "runtimeClosureStatus": "MONITOR_BOUND_BUT_SIGNED_READ_BLOCKED; ALL MONITORING WORKFLOWS UNPUBLISHED",
+    "architectureStatus": "APPROVED_COMPONENT_BY_DIRECTOR",
+    "observedAtUtc": "2026-09-09T11:03:50Z",
+    "containerCount": 1,
+    "containerRunning": true,
+    "containerIdSha256": "668182ebd934772c2580b3a6f7485f1dd80bf7cdfb6d38e8bc7dd2377521aec7",
+    "imageIdSha256": "d400e405ae0676ebf06c356caed03f436ad31eae4ff03b5ea24afdbe3ad6b582",
+    "loopbackHealthCode": "000",
+    "browserUrlPath": "/home/workflows",
+    "browserState": "OWNER_SETUP_COMPLETE",
+    "projectionSha256": "d1b3e5f0fa2bdffc267afd277c83acab6f30c70756d6f5f75a7bb0ed064d7205",
+    "workflowInventoryStatus": "COMPLETE_TWO_UNPUBLISHED",
+    "paginationComplete": true,
+    "workflowCount": 2,
+    "workflowIdSetSha256": "a0d11eadb2b4fc0514fac458deb99e1717822e26a3f64dea0e51e1e327a9edec",
+    "workflowSourceSha256": "c86da3aecfc84fa10dd94ff5e15db3eff8a9ec7042c5c1980e4169eda3876869",
+    "workflowSourceMatchesMergeAndProduction": true,
+    "workflowName": "DIIS Backup Completion Monitor",
+    "publishedWorkflowCount": 0,
+    "unpublishedWorkflowCount": 2,
+    "activeWorkflowCount": 0,
+    "writerCount": 0,
+    "scheduleProjectionSha256": "339094161b334b2180cfa6f7d5703cbf2d71ed55f0f8252113d04f47ff067087",
+    "scheduleTimezone": "Asia/Jakarta",
+    "scheduledLocalTime": "02:45",
+    "productionExecutionCount": 0,
+    "failedProductionExecutionCount": 0,
+    "inFlightExecutionCount": 0,
+    "credentialCount": 1,
+    "minioCredentialBinding": "BOUND_TO_BACKUP_MONITOR_WHILE_INACTIVE",
+    "minioCredentialIdSha256": "1d17436bdfa9e43ca6688fb01ea516a84cb5fa03d9f039d27f97b4f0aac8bb82",
+    "minioServiceAccount": {
+      "status": "CREATED_ENABLED",
+      "owner": "Director DIIS",
+      "name": "diis-n8n-backup-monitor-readonly",
+      "accessKeySha256": "165aa197ac158e1b9c60740cdf31ec1516c65b53fce2ec9e5366064b6906f6ff",
+      "expiryUtc": "2027-03-08T00:00:00Z",
+      "policyCanonicalSha256": "ac97397c2263191850f88cb83720c1abff9cd725425e1dcf39f6370ab1d72fdc",
+      "statementCount": 1,
+      "actions": ["s3:GetObject"],
+      "resourceCount": 1,
+      "rootCredentialReused": false,
+      "secretReadOrPrinted": false,
+      "temporarySecretFileRemainderCount": 0
+    },
+    "signedTelemetryProbe": {
+      "status": "BLOCKED",
+      "httpStatus": 400,
+      "errorCode": "AuthorizationParametersError",
+      "reason": "The generic HTTP node's AWS credential signer derives an incompatible service scope for the internal minio hostname. Binding exists, but application-level S3 authentication is not valid.",
+      "workflowExecuted": false,
+      "payloadPrinted": false
+    },
+    "rotationContract": {
+      "owner": "Director DIIS",
+      "expiryRecordedWithoutSecret": true,
+      "remindersUtc": [
+        "2027-02-06T00:00:00Z",
+        "2027-02-22T00:00:00Z",
+        "2027-03-01T00:00:00Z"
+      ],
+      "replacementFirst": true,
+      "verifyReplacementWhileMonitorInactive": true,
+      "revokeOldOnlyAfterReplacementProof": true
+    },
+    "rotationReminderWorkflow": {
+      "status": "CREATED_UNPUBLISHED_NOTIFICATION_CHANNEL_BLOCKED",
+      "workflowIdSha256": "70e9a3b55cf650be3d3753e75e96b1e5c6f852a0acd32b21075a478889ca22f3",
+      "sourceSha256": "415293c2366230bbfcbc687f8bdb1104c817f76ae9b2d9d98e1d9366dbe8f2dd",
+      "triggerCount": 3,
+      "active": false,
+      "executionCount": 0,
+      "temporarilyPublishedThenUnpublished": true,
+      "reasonUnpublished": "Fonnte device token failed the official read-only profile probe; leaving the workflow published would create false assurance."
+    },
+    "fonnte": {
+      "environmentTokenPresent": true,
+      "officialDeviceProfileHttpStatus": 200,
+      "authenticated": false,
+      "failureClass": "token_invalid",
+      "messageSent": false,
+      "operationalStatus": "BLOCKED"
+    },
+    "waha": {
+      "sourceReferenceCount": 0,
+      "runtimeContainerCount": 0,
+      "status": "PROPOSED_NOT_INSTALLED",
+      "note": "Director prefers WAHA for WhatsApp. It requires a separately reviewed image/config/session-storage/API-key/pairing/health/rollback packet and capacity decision; no installation was authorized or performed in this handoff."
+    },
+    "executorMutationPerformed": true,
+    "executorMutation": "Imported the exact canonical monitor, created a least-privilege MinIO service account, imported the encrypted n8n credential and bound it while inactive. Created a rotation-reminder workflow, but returned it to unpublished after Fonnte validation failed.",
+    "directorOwnerSetupObserved": true,
+    "credentialsOrPayloadRead": false,
+    "note": "Credential values were transferred only between MinIO and n8n process-local private files and were not printed or written to the repository. All task-owned secret-bearing temporary files were removed. Backup monitor and rotation reminder both finish unpublished with zero executions."
+  },
+  "architectureReadiness": {
+    "observedAtUtc": "2026-09-09T10:02:41Z",
+    "n8nContainer": {
+      "status": "running",
+      "healthcheck": "not_configured",
+      "networkSetSha256": "f2c0400397487ad11baf978a7db471eddca6afc28d5ceb57f6cf36b00650df40"
+    },
+    "minioContainer": {
+      "status": "running",
+      "healthcheck": "not_configured",
+      "networkSetSha256": "f2c0400397487ad11baf978a7db471eddca6afc28d5ceb57f6cf36b00650df40",
+      "internalIpSha256": "4a8b54676185c4b61905d61e52b6cea953b5018c1e3d566ea42a96b53c6139c8",
+      "liveHealthHttpCode": 200,
+      "dataMountType": "volume"
+    },
+    "n8nMinioSharedNetworkCount": 1,
+    "n8nDatabaseConfiguration": "PRESENT_NONEMPTY_REDACTED",
+    "n8nEncryptionKey": "PRESENT_NONEMPTY_REDACTED",
+    "notificationEnvironment": "PRESENT_NONEMPTY_REDACTED",
+    "minioReadOnlyCredential": "PRESENT_BOUND_IN_ENCRYPTED_N8N_STORE",
+    "completionTelemetryObject": "SIGNED_READ_FAILED_BEFORE_OBJECT_CONTENT_ACCESS",
+    "connectivityConclusion": "Container/network and MinIO live-health prerequisites pass. Credential custody and inactive binding pass, but the n8n generic HTTP/AWS signing path fails with AuthorizationParametersError; activation remains prohibited.",
+    "credentialValuesReadOrPrinted": false,
+    "backupOrWorkflowExecutionPerformed": false
+  },
+  "localReleasedBundle": {
+    "evidenceStatus": "PASS",
+    "runtimeClosureStatus": "DELIVERY_AND_HOST_EXECUTION_HOLD",
+    "artifactStatus": "LOCAL_RELEASED_ARTIFACT - DELIVERY_AND_HOST_EXECUTION_HOLD",
+    "platform": "WSL2 Ubuntu private filesystem",
+    "custodyRoot": "/root/.local/share/diis-capacity/w10d-cleanup-preparation-20260909",
+    "bundleRoot": "/root/.local/share/diis-capacity/w10d-cleanup-preparation-20260909/released-bundle",
+    "archivePath": "/root/.local/share/diis-capacity/w10d-cleanup-preparation-20260909/w10d-capacity-lifecycle-RELEASED.tar",
+    "createdAtUtc": "2026-09-09T09:03:48Z",
+    "archiveCreatedAtUtc": "2026-09-09T09:04:32Z",
+    "ownerUid": 0,
+    "directoryMode": "0700",
+    "fileMode": "0600",
+    "directoryModeViolationCount": 0,
+    "fileModeViolationCount": 0,
+    "symlinkCount": 0,
+    "hardlinkCount": 0,
+    "manifest": {
+      "schema": "diis-capacity-bundle-v1",
+      "status": "RELEASED",
+      "sourceSha": "380080b2d92f064c1221395c9a525a953d94a163",
+      "sourceTree": "6de3c10f7853b8ee46fe72eaf2f27c4f9cc9da54",
+      "helperCount": 14,
+      "sha256": "15a4f9238adc340bde4f251777c2154654d1e00bb049cfa79a76fcb540118e33"
+    },
+    "originalBuildManifest": {
+      "status": "UNRELEASED",
+      "sha256": "c372c2510f6ec6c9827354d4b66f9cdba6625ba708cd449942d1d229ffc33923",
+      "retainedOutsideFinalRoot": true
+    },
+    "archive": {
+      "bytes": 215040,
+      "sha256": "868a64599b7dbace7be454c6f45c1de55081c3bc067a58b14ba462f84c32f309",
+      "entryCount": 15,
+      "helperCount": 14,
+      "manifestCount": 1,
+      "pathInventorySha256": "a568abc0012ea914720cc8670de0b9e4fcd86040a586c998a96958552833d52b",
+      "absoluteOrParentTraversalEntryCount": 0
+    },
+    "verification": {
+      "bundleRoot": "BUNDLE_VALID files=14",
+      "extractedRoot": "BUNDLE_VALID files=14",
+      "extractedPathInventorySha256": "a568abc0012ea914720cc8670de0b9e4fcd86040a586c998a96958552833d52b",
+      "launcherSha256": "4c3d0588fd912bc325a953e21b25cb726557552abf34ca9ca52ad6fa8aa46c68",
+      "verifierSha256": "bf9cbee2b27ad4cf29eff9d514fd855bc5e3d153e6ec845da3c3f45cfe6779a5",
+      "verifierMatchesMergeBlob": true,
+      "runObserveOrApplyInvoked": false
+    },
+    "historicalDelta": {
+      "historicalArchiveSha256": "53b45ba3ba9a818d4eabd62af567ad19d58a95a9a6c2520cd672490d541648a1",
+      "helperMapsEqual": true,
+      "changedManifestKeys": ["sourceSha", "sourceTree", "status"],
+      "historicalArtifactModified": false
+    },
+    "authorizationProvenanceSha256": "0a2a89747a887ee219f62000a006a88fdce94daa90092bd3e748531189fbc281",
+    "delivered": false,
+    "installed": false,
+    "executedAgainstHost": false,
+    "supersedeCondition": "Any reviewed change to a helper in the 14-file closure requires a new bundle and makes this artifact SUPERSEDED."
+  },
+  "scheduleAndBudget": {
+    "exactCleanupClockStatus": "UNDETERMINED_PENDING_ROOT_CRON_CANONICAL_HASH_AND_PRESERVATION_READER",
+    "knownBackupTimerWib": "07:00",
+    "quietWindowMinimumMinutes": 15,
+    "candidateTtlSeconds": 600,
+    "postObservedAtSeconds": {
+      "directorHashReview": 120,
+      "lockAndReobservation": 60,
+      "singlePruneBudget": 90,
+      "postcheck": 120,
+      "closureMargin": 90,
+      "total": 480
+    },
+    "pruneBudgetClassification": "PROPOSAL_NOT_MEASURED_PRODUCTION_RUNTIME_OR_SLA",
+    "productionOuterKillTimeout": null,
+    "nativeGcConfigurationOrRestartIncludedInPruneBudget": false,
+    "condition": "n8n now contains one canonical unpublished telemetry monitor, zero active workflows and zero executions. A final window may be proposed only after the root-cron canonical hash and preservation reader evidence are complete; approval expiry must remain inside that quiet window."
+  },
+  "p1ClosureMatrix": [
+    {
+      "id": "P1-PREP-01",
+      "topic": "effective native GC versus manual cleanup guard",
+      "evidenceStatus": "CLOSED_CURRENT_STATE_PROJECTION",
+      "runtimeClosureStatus": "PENDING_SOURCE_AND_HOST_REMEDIATION"
+    },
+    {
+      "id": "P1-PREP-02",
+      "topic": "preservation content proof and appuser re-observation",
+      "evidenceStatus": "MISSING_ADMIN_CONTENT_PROOF",
+      "runtimeClosureStatus": "PENDING_REVIEWED_READER_PATH"
+    },
+    {
+      "id": "P1-PREP-03",
+      "topic": "root scheduler, legacy writer, canonical lock and quarantine",
+      "evidenceStatus": "PARTIAL_ROOT_CRON_COUNT_KNOWN_HASH_MISSING_N8N_ONE_UNPUBLISHED_MONITOR",
+      "runtimeClosureStatus": "PENDING_WRITER_AND_BOOTSTRAP_INSTALLATION"
+    },
+    {
+      "id": "P1-PREP-04",
+      "topic": "merge-bound local RELEASED bundle",
+      "evidenceStatus": "CLOSED_LOCAL_ARTIFACT",
+      "runtimeClosureStatus": "DELIVERY_INSTALLATION_AND_COMPATIBILITY_HOLD"
+    }
+  ],
+  "minimumHostRemediationDraft": {
+    "recommendedRoute": "single consolidated source follow-up for GC transition, preservation reader and writer participation; then one separately approved host-preparation transaction",
+    "steps": [
+      {
+        "order": 1,
+        "action": "Implement and independently review the missing GC transition/rollback, root-confined preservation observer path, and writer participation in one bounded source follow-up.",
+        "owner": "source Executor followed by Independent Reviewer",
+        "target": "capacity/backup helper closure only",
+        "privilege": "local source only",
+        "impact": "no host effect",
+        "beforeCheck": "bind merge/tree and exact affected manifest",
+        "afterCheck": "behavioral failure/signal tests and new 14-helper closure decision",
+        "rollback": "discard unapproved local patch",
+        "reviewedExecutableAvailableNow": false,
+        "status": "HOLD_PENDING_DIRECTOR_DECISION"
+      },
+      {
+        "order": 2,
+        "action": "Collect root cron and bounded preservation projections with the reviewed observer or exact replacement produced by step 1.",
+        "owner": "platform/recovery administrator",
+        "target": "root scheduler universe and mount-derived preservation root",
+        "privilege": "narrow read-only root observer only",
+        "impact": "read I/O only; serialize preservation traversal away from backup",
+        "beforeCheck": "observer hash, 20-minute window, limits 20,000 entries/8 GiB/256 MiB/30s file/120s traversal",
+        "afterCheck": "count/bytes/content-set/completion/stability plus root cron canonical hash",
+        "rollback": "not applicable; no configuration write",
+        "reviewedExecutableAvailableNow": false,
+        "status": "REVIEWED_OBSERVER_MISSING"
+      },
+      {
+        "order": 3,
+        "action": "After exact host approval, install the canonical backup-lock tmpfiles rule and reviewed backup library, then bind every root/container/manual writer to lock plus persistent quarantine.",
+        "owner": "platform/recovery administrator",
+        "target": "/etc/tmpfiles.d/diis-backup-lock.conf and /var/lock/diis-backup",
+        "targetHashes": {
+          "installerSha256": "dccb36bbf568c4868ae3051dfc51de3d6c16d1e82e0f822f6bc33e81d0e38bb5",
+          "ruleSha256": "61c13e1228ad7ad9e48edfab63483ce0be2f8af908584f5e4fd69d3ea9533ac9",
+          "reviewedBackupLibrarySha256": "bf881caf29af389e1d0d328e9b5816d570154b72b873ea82aac6d1be418e8e5a"
+        },
+        "privilege": "exact root install invocation only",
+        "impact": "writer scheduling and backup path; normal legacy backup must remain operational until verified handoff",
+        "beforeCheck": "root cron/n8n inventory, existing target absence/drift, quiet window",
+        "afterCheck": "mode/owner/hash/readback plus real writer denial under quarantine",
+        "rollback": "installer-supported failure cleanup only; runtime writer rollback must be specified by the reviewed follow-up",
+        "reviewedExecutableAvailableNow": "bootstrap only; writer rewiring is not yet available",
+        "status": "HOLD"
+      },
+      {
+        "order": 4,
+        "action": "Apply one exact native-GC configuration transition in a separately approved maintenance window, validate offline, restart the target daemon once, and read back effective policy.",
+        "owner": "platform administrator",
+        "target": "effective Docker daemon builder.gc configuration",
+        "privilege": "exact config install and service restart only",
+        "impact": "shared production and staging Docker daemon; containers, PostgreSQL, Keycloak and backup require before/after health checks",
+        "beforeCheck": "capture original bytes/hash/mode/owner and bind restart/rollback hashes",
+        "afterCheck": "daemon/builder identity, no GC Policy headers for manual gate, all shared services and backup healthy",
+        "rollback": "restore exact original bytes and perform separately approved restart/readback",
+        "reviewedExecutableAvailableNow": false,
+        "status": "HOLD"
+      },
+      {
+        "order": 5,
+        "action": "Deliver and install a newly reviewed superseding bundle only after steps 1-4 produce compatible bytes and separate delivery approval.",
+        "owner": "release custodian and platform operator",
+        "target": "private operator directory outside runtime checkout",
+        "privilege": "appuser-scoped delivery; no production source edit",
+        "impact": "none until observe/apply is separately authorized",
+        "beforeCheck": "exact source/tree/manifest/archive hashes and host compatibility",
+        "afterCheck": "14/14 verify, private modes, no execution",
+        "rollback": "remove only the newly delivered unexecuted artifact under a separately bounded approval",
+        "reviewedExecutableAvailableNow": true,
+        "status": "HOLD_AND_CURRENT_LOCAL_ARTIFACT_MAY_BECOME_SUPERSEDED"
+      },
+      {
+        "order": 6,
+        "action": "Create a fresh candidate and request exact one-operation cleanup approval only after all prior evidence and runtime changes pass.",
+        "owner": "capacity operator and Director",
+        "target": "default builder frozen eligible IDs under the conditional 72-hour policy",
+        "privilege": "appuser Docker access under canonical host and backup exclusion",
+        "impact": "irreversible cache deletion; one prune only",
+        "beforeCheck": "fresh capacity, preservation, no-touch, writer evidence, quiet window and approval hashes",
+        "afterCheck": "physical free bytes, no-touch, preservation, health and daemon terminal receipt",
+        "rollback": "none for deleted cache; ambiguity is no-retry with journal/quarantine retained",
+        "reviewedExecutableAvailableNow": true,
+        "status": "HOLD"
+      }
+    ]
+  },
+  "ownerEvidenceRequest": [
+    {
+      "owner": "Director-designated platform/recovery administrator",
+      "purpose": "complete the root-cron canonical hash and bounded preservation content proof",
+      "minimumPrivilege": "existing root console or exact narrow read-only observer; no broad sudo grant",
+      "output": "counts, states, timestamps, sizes and SHA-256 projections only",
+      "durationMinutes": 20,
+      "cleanup": "none; no files or configuration may be created",
+      "impactIfUnavailable": "P1-PREP-02 remains open and P1-PREP-03 remains only partially evidenced; no cleanup window or writer attestation",
+      "secretRequested": false
+    }
+  ],
+  "findings": [
+    {
+      "id": "P1-PREP-01",
+      "severity": "P1",
+      "status": "OPEN_RUNTIME",
+      "summary": "Four effective default-builder GC policies remain incompatible with the exact manual-cleanup source guard."
+    },
+    {
+      "id": "P1-PREP-02",
+      "severity": "P1",
+      "status": "OPEN_EVIDENCE_AND_RUNTIME",
+      "summary": "Neither a current administrator content proof nor an appuser-reproducible preservation observer path exists."
+    },
+    {
+      "id": "P1-PREP-03",
+      "severity": "P1",
+      "status": "OPEN_EVIDENCE_AND_RUNTIME",
+      "summary": "Root cron has four entries and zero category matches but lacks a canonical hash. n8n holds one bound backup monitor and one rotation reminder, both unpublished with zero executions. The active root timer and legacy backup writer still do not evidence canonical lock or persistent quarantine participation."
+    },
+    {
+      "id": "P1-PREP-04",
+      "severity": "P1",
+      "status": "CLOSED_LOCAL_EVIDENCE_ONLY",
+      "summary": "A merge-bound local RELEASED bundle now exists and verifies, but delivery, installation, host compatibility and execution remain HOLD."
+    },
+    {
+      "id": "P2-PREP-05",
+      "severity": "P2",
+      "status": "OPEN_NONBLOCKING_FOR_ONE_PREPARATION",
+      "summary": "Seven-day growth history remains insufficient for sustained lifecycle claims."
+    },
+    {
+      "id": "P1-PREP-06",
+      "severity": "P1",
+      "status": "OPEN_SOURCE_AND_RUNTIME",
+      "summary": "The exact n8n generic HTTP/AWS credential path returns AuthorizationParametersError for the MinIO telemetry GET. Credential custody and inactive binding pass, but monitor activation is prohibited until an exact source fix and independent review prove S3 signing."
+    },
+    {
+      "id": "P1-PREP-07",
+      "severity": "P1",
+      "status": "OPEN_NOTIFICATION_RUNTIME",
+      "summary": "Fonnte environment configuration exists but the official device-profile endpoint classifies its token as invalid. The rotation reminder was returned to unpublished; no message was sent. WAHA is preferred but absent and not yet authorized for installation."
+    },
+    {
+      "id": "P3-IR06",
+      "severity": "P3",
+      "status": "CLOSED_IN_NEW_EVIDENCE",
+      "summary": "The percentage is recomputed from integer bytes with decimal arithmetic; historical bytes and reports remain unchanged."
+    }
+  ],
+  "directorDecisionsRequired": [
+    "Authorize review and later delivery of one exact root-confined preservation observer plus a canonical root-cron projection; root authority is confirmed but the required reviewed executable is not installed.",
+    "Authorize an exact source follow-up that replaces or corrects the incompatible n8n generic HTTP/AWS signing path, with a synthetic MinIO proof and independent review before backup-monitor activation.",
+    "Choose and authorize the notification lane: a reviewed WAHA deployment packet is recommended; it must bind an exact image digest, persistent session storage, hashed API key, school-owned WhatsApp pairing, health, capacity and rollback. Fonnte remains blocked and email SMTP is absent.",
+    "Choose the recommended consolidated source follow-up for GC transition, preservation reader and writer participation; no source change is authorized by this preparation report.",
+    "After independent review, decide whether to authorize one exact host-preparation packet. Delivery, restart, scheduler changes and cleanup remain separate exact approvals."
+  ],
+  "localChangedFileManifest": [
+    "docs/audits/WAVE10-D-CLEANUP-PREPARATION-OWNER-EVIDENCE-AND-LOCAL-BUNDLE-2026-09-09.md",
+    "docs/audits/WAVE10-D-CLEANUP-PREPARATION-OWNER-EVIDENCE-AND-LOCAL-BUNDLE-EVIDENCE-2026-09-09.json"
+  ],
+  "holds": [
+    "source changes",
+    "bundle delivery/upload/install",
+    "bootstrap",
+    "further credential, WAHA, email or scheduler activation changes",
+    "native GC changes",
+    "Docker restart",
+    "cleanup",
+    "backup or restore",
+    "staging or production deployment",
+    "commissioning",
+    "storage rescale"
+  ]
+}

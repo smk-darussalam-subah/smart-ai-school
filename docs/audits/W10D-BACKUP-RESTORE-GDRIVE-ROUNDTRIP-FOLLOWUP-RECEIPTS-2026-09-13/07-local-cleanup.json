@@ -1,0 +1,14 @@
+{
+  "exitCode": 0,
+  "facts": {
+    "hostAvailableBytes": 65677852672,
+    "hostTotalBytes": 254888898560,
+    "runtimeAbsent": true,
+    "secretMountAbsent": true
+  },
+  "observedAt": "2026-09-13T16:58:48.895031+00:00",
+  "phase": "local-cleanup",
+  "previousReceiptSha256": "06dd9b87390406f00eea5e4e43af1b756016bf3ea1f26c9cab6b1d75a353a16c",
+  "schemaVersion": "w10d-roundtrip-phase-receipt-v1",
+  "status": "PASS"
+}

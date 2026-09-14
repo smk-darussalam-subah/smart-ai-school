@@ -1,0 +1,122 @@
+{
+  "schema": "diis-w10d-writer-compatibility-handoff-v1",
+  "baseline": {
+    "sha": "57c95976d48e6dce1e8a99290125948f0180c180",
+    "tree": "f79ba17f186bd05f3f76a70cf9cbc4759c319dfd"
+  },
+  "supersedes": {
+    "validatorPath": "infrastructure/deploy/verify-integrated-handoff.py",
+    "validatorSha256": "25b8d423145db844ac00d36205156032f98c2a05628076b580dc53faccf8cdf0",
+    "reportPath": "docs/audits/W10-D-D2-BUILD-BOOTSTRAP-FOLLOWUP-2026-09-12.md",
+    "reportSha256": "d44a9f0505a274391e6f5982479ea21fa83313d1f7685201c27e2a60b90f94e5",
+    "evidencePath": "docs/audits/W10-D-D2-BUILD-BOOTSTRAP-EVIDENCE-2026-09-12.json",
+    "evidenceSha256": "0ab4c8ae532b1686e02d21aa25a669dbe6e6cd16df1b241863af46731f3f9a83",
+    "sourceManifestSha256": "7d48dcfdff0ed0c909eb15efc1c2a8673683ba7c7fa52d00cfa63940244fe958"
+  },
+  "roundtripPredecessor": {
+    "baseSha": "2d6d05313ec301dbf30929812193245d7d1153b5",
+    "baseTree": "a624ee4ab494112bee6401960b6684af5e3dad2e",
+    "headSha": "57c95976d48e6dce1e8a99290125948f0180c180",
+    "headTree": "f79ba17f186bd05f3f76a70cf9cbc4759c319dfd",
+    "pathCount": 21,
+    "sourceManifestSha256": "3b05579d80ce4fb0fee028408d75ff2687480266da1111c14993ffbe7d0aac83",
+    "reportSha256": "202857d3436297302add583c7f1cd159b74f54da9928c107a7a186f6e12a6e2a",
+    "evidenceSha256": "538626353e6cdbd0c3a3adc70ae0f583db5bbd5a00c026ef69746f742f0740ff",
+    "receiptManifestSha256": "ab0db74aea3a47033dcd8f9fb31af94f02142c0d2f4866032f73b05c23df7883"
+  },
+  "sourceManifest": {
+    "infrastructure/deploy/install-w10d-writer-compatibility.py": "4c8b2e2a81b333ea39076da6adedd7ce83c34c6e0c360d4489e0a4f7394ff8fb",
+    "infrastructure/deploy/legacy-backup-compatibility.sh": "ceba770caa09446a83f09ce7dc72d317782d26e2c06121e7730f0bc07042c326",
+    "infrastructure/deploy/staging-application-deploy.py": "f6d2db539862066e88284ad5a3decefd8d79507b5388349990fff953c9a4ddcb",
+    "infrastructure/deploy/tests/integrated-closure-contract.py": "4065943748fa13d04a3307fbdd4341554bd4706e6c310d362662cbc48fff47d4",
+    "infrastructure/deploy/tests/source-closure-contract.py": "411dabdf99da6dc03f17d643018dd3758c9caea6653783c250864b8b94c038e3",
+    "infrastructure/deploy/verify-integrated-handoff.py": "41c6cfa39defb6ab6b3e1fc10aa53375a4a23a5b7f3a5fb4218cd509b19f2840"
+  },
+  "sourceManifestSha256": "2d60466603ce885a8d682fc303c8a93f3eda431f76234a9b344dc6efba09e0a0",
+  "reportSha256": "d17cb4c9ca4e714af9c1f5b861aba25d90be9eb19a28ecc80d3a268094ef7528",
+  "rebindings": {
+    "infrastructure/deploy/install-w10d-writer-compatibility.py": {
+      "before": "d598cdfb55e572c36fe94f5fe81c04f92295f3e991dbde7c1880359e81a680f2",
+      "after": "4c8b2e2a81b333ea39076da6adedd7ce83c34c6e0c360d4489e0a4f7394ff8fb"
+    },
+    "infrastructure/deploy/legacy-backup-compatibility.sh": {
+      "before": "70cf649cc5845827aa4d66c3d4148bb6f6f718b169a93074ad4abd7da803718f",
+      "after": "ceba770caa09446a83f09ce7dc72d317782d26e2c06121e7730f0bc07042c326"
+    },
+    "infrastructure/deploy/staging-application-deploy.py": {
+      "before": "4aa12a61f184b1653ef8e5e44fc8dda60e0169a0f17d05c0f5686d72789954bb",
+      "after": "f6d2db539862066e88284ad5a3decefd8d79507b5388349990fff953c9a4ddcb"
+    },
+    "infrastructure/deploy/tests/integrated-closure-contract.py": {
+      "before": "d27165f1af7830fd9e7a4e8433bc8008f1389b688fccdf4227d29c526dc4825e",
+      "after": "4065943748fa13d04a3307fbdd4341554bd4706e6c310d362662cbc48fff47d4"
+    },
+    "infrastructure/deploy/tests/source-closure-contract.py": {
+      "before": "c542cc074ee996f1226e08db2431ca77c6a7a94b6f7ec592ec7e5060d8172c67",
+      "after": "411dabdf99da6dc03f17d643018dd3758c9caea6653783c250864b8b94c038e3"
+    },
+    "infrastructure/deploy/verify-integrated-handoff.py": {
+      "before": "25b8d423145db844ac00d36205156032f98c2a05628076b580dc53faccf8cdf0",
+      "after": "41c6cfa39defb6ab6b3e1fc10aa53375a4a23a5b7f3a5fb4218cd509b19f2840"
+    }
+  },
+  "writerChain": {
+    "libraryPath": "infrastructure/docker/scripts/backup-lib.sh",
+    "librarySha256": "a2a665af38a5e187a351397c7d0adf7082205c59c1fd97dbf0dac706cc5edb86",
+    "wrapperPath": "infrastructure/deploy/legacy-backup-compatibility.sh",
+    "wrapperSha256": "ceba770caa09446a83f09ce7dc72d317782d26e2c06121e7730f0bc07042c326",
+    "artifactSha256": "001f40b7c1cdcfca4b5e623bedd646bd86e997e6683faa0245df4102883148ca",
+    "staleBindingsRejected": [
+      "bf881caf29af389e1d0d328e9b5816d570154b72b873ea82aac6d1be418e8e5a",
+      "70cf649cc5845827aa4d66c3d4148bb6f6f718b169a93074ad4abd7da803718f"
+    ]
+  },
+  "tests": {
+    "sourceClosure": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 45,
+      "command": "WSL Ubuntu python3 -B infrastructure/deploy/tests/source-closure-contract.py"
+    },
+    "capacityLifecycle": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 55,
+      "command": "WSL Ubuntu python3 -B infrastructure/deploy/tests/capacity-lifecycle-contract.py"
+    },
+    "integratedClosure": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 25,
+      "command": "WSL Ubuntu python3 -B infrastructure/deploy/tests/integrated-closure-contract.py"
+    },
+    "stagingReadiness": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 49,
+      "command": "WSL Ubuntu python3 -B infrastructure/deploy/tests/staging-readiness-contract.py"
+    },
+    "canonicalHandoff": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 1,
+      "command": "WSL Ubuntu python3 -B infrastructure/deploy/verify-integrated-handoff.py"
+    },
+    "negativeControls": {
+      "executed": true,
+      "exitCode": 0,
+      "cases": 13,
+      "command": "Integrated handoff tamper, missing, stale-binding, and scope controls"
+    }
+  },
+  "observations": {
+    "pr659CiFailure": "reproduced-before-followup",
+    "failureMode": "writer-library-hash-chain-stale",
+    "backupBehaviorChanged": false,
+    "n8nBehaviorChanged": false,
+    "historicalEvidenceChanged": false,
+    "commitPushPrOrDeployment": false,
+    "operationalMutations": false
+  },
+  "operationalStatus": "SOURCE COMPLETE - INDEPENDENT REVIEW REQUIRED - PR659 AND OPERATIONS HOLD"
+}

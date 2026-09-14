@@ -1,0 +1,125 @@
+{
+  "schemaVersion": "w10d-school-drive-roundtrip-evidence-v2",
+  "status": "PASS",
+  "observedAt": "2026-09-13T16:58:48.895031+00:00",
+  "source": {
+    "sha": "2d6d05313ec301dbf30929812193245d7d1153b5",
+    "tree": "a624ee4ab494112bee6401960b6684af5e3dad2e",
+    "workingTreePatch": "backup-restore-min-free-10-uncommitted",
+    "changedFileCount": 10,
+    "aggregateSha256": "3b05579d80ce4fb0fee028408d75ff2687480266da1111c14993ffbe7d0aac83",
+    "closures": [
+      "minimum-free-policy-bound-to-10-percent",
+      "nested-object-backup-manifest-and-restore-behavioral-proof",
+      "mc-stage-bound-to-quay-immutable-digest"
+    ],
+    "fileManifest": [
+      {"path": "docs/runbooks/backup-restore.md", "sha256": "bfe24b70249e0aa8e7d44cd7ad6890ff7504d5dbf2c421d386fe0cc93974633e"},
+      {"path": "docs/runbooks/restore-database.md", "sha256": "fc5fee7549fa858759a5a42731bd586d879c6c217966f8ae6be9b39366d9f74a"},
+      {"path": "infrastructure/docker/docker-compose.yml", "sha256": "ba2169614eac75525b59d16486c27df7675338ec10d75a5ada4e9f41a1ce7cc2"},
+      {"path": "infrastructure/docker/pg-backup.Dockerfile", "sha256": "40ca5d40f5e11f29537dca51270079685dfd8d65ec5c37832c77e708d1d58a34"},
+      {"path": "infrastructure/docker/scripts/backup-lib.sh", "sha256": "a2a665af38a5e187a351397c7d0adf7082205c59c1fd97dbf0dac706cc5edb86"},
+      {"path": "infrastructure/docker/scripts/backup.sh", "sha256": "4f6f7fcf75a1c4b05982b30de0a53b2760fde99cf8b86877c33e0a910d3e2f93"},
+      {"path": "infrastructure/docker/scripts/offsite-replication.sh", "sha256": "536d4db1b44e075405c1fe87eab340fa180bf9104009528cd2bc68a0af7c8348"},
+      {"path": "infrastructure/docker/tests/backup-contract.sh", "sha256": "8f5a410a92374ba7ace527d5f638ed284d25daca9b99262212d3155c0b44be0e"},
+      {"path": "infrastructure/n8n/workflows/backup-daily.json", "sha256": "82c7ec636956e8f0fb28ea6d1089f9201d099933cda4623bcca6386e022cf4d7"},
+      {"path": "scripts/restore-drill.sh", "sha256": "3bd66fc81baceb3922604fa14b330c3bbcdfe9f78a53fa444e7175b3e37a2328"}
+    ]
+  },
+  "supplyChain": {
+    "mcReference": "quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727",
+    "manifestResolution": "PASS",
+    "linuxAmd64Present": true,
+    "executableSha256": "01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891",
+    "d2ImageBuilt": false,
+    "tagged": false,
+    "published": false
+  },
+  "policy": {
+    "minimumFreePercent": 10,
+    "absoluteBackupBudgetBytes": 4015794422,
+    "spaceMultiplier": 3
+  },
+  "host": {
+    "totalBytesBefore": 254888898560,
+    "availableBytesBefore": 65679015936,
+    "totalBytesAfter": 254888898560,
+    "availableBytesAfter": 65677852672
+  },
+  "offsite": {
+    "provider": "google-drive-shared-drive",
+    "credentialMode": "service-account-file",
+    "credentialValueRecorded": false,
+    "credentialArtifactSha256": "cb4bf2cbd08d74f6752716fbc51961e0675f3f16aae05f519786a589b8454031",
+    "teamDriveIdSha256": "91316003a91fd04b5113ed07f74237ad69421cf054dd406f14e29d640ab8b855",
+    "rootFolderIdSha256": "55f4fde146f8d0c01dc9032145dd843bf4735a9dd9d007bb038eb9c6fa9a4e02",
+    "configFingerprint": "998310e6eb68d97be243914f32bc6e5fcf0a11ab23ae99b936aec548f507b80f",
+    "encryptedUpload": true,
+    "exactPrefixRemoved": true,
+    "boundedParentObservationSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "backup": {
+    "backupId": "20260913T165516Z-338684",
+    "dumpBytes": 3767,
+    "dumpSha256": "a034f4dad6cfdc0bfe71a32512d5cdfa71b47c2ed07e51aa81f48aa7d141494d",
+    "completionSha256": "c6231cbebd9a1b2a0c1f05630458407a7b7c6bc8db3f6b073a1bd0664fadbc53",
+    "objectManifestSha256": "c5508d0a8f65c74d817eab25f1408dfb1b1ca5f5a45017320d045eb51538c807",
+    "safeCounts": {"tables": 3, "users": 3, "students": 2, "objects": 2}
+  },
+  "restore": {
+    "provenanceSha256": "a54cd3ae87ac93052420fc5e732422a58e3d75d98b1e39f5f9241aa24c1773ab",
+    "postgresql": {
+      "status": "PASS",
+      "source": "independent-crypt",
+      "proofSha256": "62a16d12289233ff0007e2ef139b802482e3b03b5b50c073c2f82b1deddf0b91",
+      "databaseRemovedAfterProof": true
+    },
+    "objects": {
+      "status": "PASS",
+      "source": "independent-crypt",
+      "proofSha256": "b7e000210892509e5f97903eea190252dc54e2f81acc33482c6992bd08a7c5bd",
+      "nestedObjectCount": 2,
+      "byteHashesMatched": true,
+      "targetRemovedAfterProof": true
+    }
+  },
+  "receiptBundle": {
+    "directory": "docs/audits/W10D-BACKUP-RESTORE-GDRIVE-ROUNDTRIP-FOLLOWUP-RECEIPTS-2026-09-13",
+    "manifestSha256": "ab0db74aea3a47033dcd8f9fb31af94f02142c0d2f4866032f73b05c23df7883",
+    "receiptCount": 7,
+    "finalReceiptSha256": "f06a5ba06a791b418041d67184e0bf094d44cf448a82fac7ac5fdc9b1463459c",
+    "proofPayloadSha256": "7ec65ce632ec0e52af9810c091ff1c4bd08531ab5e4abfacef90570b1651183e",
+    "chainValidation": "PASS",
+    "crossPhaseBinding": "PASS",
+    "secretPatternScan": "PASS"
+  },
+  "cleanup": {
+    "dockerContainersAbsent": true,
+    "dockerNetworkAbsent": true,
+    "driveSyntheticPrefixAbsent": true,
+    "plaintextRestoreInputAbsent": true,
+    "wslRuntimeAbsent": true,
+    "wslSecretMountAbsent": true,
+    "localMarkerAbsent": true,
+    "secureWindowsCredentialRetained": true
+  },
+  "verification": {
+    "backupContract": "47/47 PASS",
+    "nestedBehavioralRegression": "PASS",
+    "driveRoundtrip": "PASS",
+    "postgresqlRestore": "3 tables, 3 users, 2 students reconciled",
+    "minioObjectRestore": "2/2 nested objects reconciled",
+    "receiptChain": "7/7 PASS"
+  },
+  "executionNotes": [
+    "An earlier follow-up attempt completed backup and restore but stopped at evidence export because the exporter requested a field outside the canonical object-proof schema.",
+    "That attempt invoked automatic targeted cleanup and left no local Docker, WSL secret, or runtime residue; its partial receipts were discarded before the successful rerun.",
+    "The successful rerun used the corrected allowlist and preserved the canonical proof payload plus seven hash-chained phase receipts before cleanup."
+  ],
+  "nonClaims": [
+    "No production data was read or restored.",
+    "No D2 image was built, tagged, or published.",
+    "No staging, VPS, scheduler, n8n, or production runtime was changed.",
+    "The retained Windows credential is not a commissioning or custody acceptance."
+  ]
+}

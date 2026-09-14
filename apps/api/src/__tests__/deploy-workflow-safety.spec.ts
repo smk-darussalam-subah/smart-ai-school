@@ -24,6 +24,25 @@ const candidateRoutingDockerContractPath = path.join(
 );
 const nginxConfigPath = path.join(repositoryRoot, 'infrastructure/nginx/nginx.conf');
 
+function extractRemoteScript(source: string, stepName: string): string {
+  const lines = source.replace(/\r\n/g, '\n').split('\n');
+  const marker = `      - name: ${stepName}`;
+  const starts = lines.flatMap((line, index) => (line === marker ? [index] : []));
+  if (starts.length !== 1) throw new Error(`expected one workflow step: ${stepName}`);
+  const start = starts[0]!;
+  const next = lines.findIndex((line, index) => index > start && /^ {6}- name: /.test(line));
+  const block = lines.slice(start + 1, next === -1 ? lines.length : next);
+  const scriptMarkers = block.flatMap((line, index) =>
+    line === '          script: |' ? [index] : [],
+  );
+  if (scriptMarkers.length !== 1) throw new Error(`expected one remote script: ${stepName}`);
+  const body = block.slice(scriptMarkers[0]! + 1);
+  if (body.some((line) => line.trim() !== '' && !line.startsWith('            '))) {
+    throw new Error(`invalid remote script indentation: ${stepName}`);
+  }
+  return body.map((line) => (line.trim() === '' ? '' : line.slice(12))).join('\n');
+}
+
 describe('deployment workflow safety contract', () => {
   const workflow = readFileSync(workflowPath, 'utf8');
   const ingressScript = readFileSync(ingressScriptPath, 'utf8');
@@ -32,13 +51,14 @@ describe('deployment workflow safety contract', () => {
     const actionUses = [...workflow.matchAll(/^\s*uses:\s+([^#\s]+)(?:\s+#.*)?$/gm)].map(
       (match) => match[1],
     );
-    expect(actionUses).toHaveLength(3);
+    expect(actionUses).toHaveLength(4);
     for (const actionUse of actionUses) {
       expect(actionUse).toMatch(/^[^@\s]+@[0-9a-f]{40}$/);
     }
     expect(actionUses).toEqual([
       'actions/checkout@11d5960a326750d5838078e36cf38b85af677262',
       'actions/checkout@11d5960a326750d5838078e36cf38b85af677262',
+      'appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262',
       'appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262',
     ]);
     expect(workflow).toContain('group: diis-shared-host-deployment');
@@ -70,11 +90,18 @@ describe('deployment workflow safety contract', () => {
     expect(workflow).toContain(
       'envs: DIIS_GITHUB_REF,DIIS_DEPLOY_BRANCH,DIIS_EXPECTED_SHA,DIIS_RUN_ID,DIIS_RUN_ATTEMPT',
     );
-    const remoteScript = workflow.match(
-      / {10}script: \|\r?\n([\s\S]*?)\r?\n {6}- name: Notify deployment success/,
-    )?.[1];
-    expect(remoteScript).toBeDefined();
-    expect(remoteScript).not.toContain('${{ github.');
+    expect(workflow).toContain('DIIS_EXPECTED_SHA: ${{ github.sha }}');
+    const stagingScript = extractRemoteScript(
+      workflow,
+      'Guarded recovery-only staging via existing SSH channel',
+    );
+    const productionScript = extractRemoteScript(workflow, 'Deploy production via SSH');
+    expect(stagingScript).not.toContain('${{ github.');
+    expect(productionScript).not.toContain('${{ github.');
+    expect(stagingScript).toContain('python3 - "$DIIS_EXPECTED_SHA"');
+    expect(stagingScript).not.toContain('BRANCH="$DIIS_DEPLOY_BRANCH"');
+    expect(productionScript).toContain('BRANCH="$DIIS_DEPLOY_BRANCH"');
+    expect(productionScript).not.toContain('python3 - "$DIIS_EXPECTED_SHA"');
     expect(existsSync(deployContextPath)).toBe(true);
 
     if (process.platform !== 'linux') return;

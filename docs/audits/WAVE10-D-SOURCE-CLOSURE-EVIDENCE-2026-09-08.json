@@ -1,0 +1,1739 @@
+{
+  "schema": "diis-w10d-source-closure-evidence-v1",
+  "baseSha": "c9dba5e1f79994071bbc28422a7f628971f02772",
+  "baseTree": "a9fa9592cdb0cf4aa040ac4278bd4ab641e00962",
+  "finalVerificationTimestamp": "2026-09-08T22:39:07+07:00",
+  "followUpReviewSha256": "5a689fd92774694d25a85855711cd29a00d5b36cfc76bbc4ff3b63bd19a28965",
+  "sc05ReviewSha256": "e0050dade0f5556845490f62aad920fd83e1b413b3baee4a7c8dc72851f64cc0",
+  "sc06ReviewSha256": "db018e4b3ef9e0bc76491be389874c1b777f6fa932d486bd45f59bf19de82403",
+  "sc07ReviewSha256": "1d0bf5013c4d41a71efde0cd35256fd864853525ccd162c4cbed9afb83e593fb",
+  "sc09ReviewSha256": "303a78a9d8c13264c37eeda68d81201c0fe3e53cbab0dddb6e9e3dab87a0295b",
+  "sc10ReviewSha256": "7e0e076dac9b147dd99694a09abc4d39ff4e82f222e944ac253a5d032d63c5c0",
+  "followUpClosure": {
+    "P1-SC01": "CLOSED_REAL_RUNNER_REPEATED_SIGNAL_AND_AMBIGUITY_PRIORITY",
+    "P2-SC02": "CLOSED_CANONICAL_BASELINE_AND_SEQUENTIAL_RELEASE_RECEIPT",
+    "P2-SC03": "CLOSED_DIGEST_QUALIFIED_REGISTRY_ROUNDTRIP_RECEIPT",
+    "P1-SC04": "CLOSED_CANONICAL_DIRECTORY_WRITER_LOCK_INTEROPERABILITY",
+    "P1-SC05": "CLOSED_CRASH_DURABLE_BASELINE_COMPATIBLE_GUARDIAN_QUARANTINE",
+    "P1-SC06": "CLOSED_ATOMIC_COMPLETE_PUBLICATION_QUARANTINE_NAMESPACE_AND_RETIREMENT",
+    "P1-SC07": "CLOSED_BOOT_INDEPENDENT_SENTINEL_AND_EXACT_ACTIVE_WRITER_ATTESTATION",
+    "P2-SC08": "CLOSED_REPORT_LEDGER_TEST_COUNT_RECONCILIATION",
+    "P2-SC09": "CLOSED_EXECUTABLE_REPORT_EVIDENCE_MANIFEST_CONSISTENCY_VALIDATOR",
+    "P2-SC10": "CLOSED_DISCOVERED_SOURCE_CONTRACT_COUNT_BINDING"
+  },
+  "sourceManifestCount": 20,
+  "sourceManifest": [
+    {
+      "path": ".github/workflows/backup-image.yml",
+      "sha256": "24f7d4a63366e4a009a16e0bf0aec96a598be17caf5a4c4616645349259226ee"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "b4f73cd4ea277ddaac5c4d979bf21d1d1937f118697e3be846554bb73436f7d8"
+    },
+    {
+      "path": ".github/workflows/deploy.yml",
+      "sha256": "31d030d29c7900f044b65c1f412f5196e8de8b477223bec97b6c03cd31fcc43d"
+    },
+    {
+      "path": "docs/runbooks/w10d-source-closure-release.md",
+      "sha256": "c25991e881ef794bb775c85730a04d76da192c9e22836c0cb852f9a74739bd1f"
+    },
+    {
+      "path": "infrastructure/deploy/backup-image-artifact.py",
+      "sha256": "e789eb24faa139f806a052e4dcfffa190d20809707c46db73dd4293e8f9cdc79"
+    },
+    {
+      "path": "infrastructure/deploy/package-staging-executor.py",
+      "sha256": "54a81bfb2ccac1333ca8c032ec14f201f4da837385d8f55236eeb0a71c014d56"
+    },
+    {
+      "path": "infrastructure/deploy/staging-application-deploy.py",
+      "sha256": "3d51b7ffef9dc6468fad24c9baddae921368db5909459e5ff627e83b509223a4"
+    },
+    {
+      "path": "infrastructure/deploy/staging-readiness-deploy.py",
+      "sha256": "ad69becddca5b4be0efc9e9ef3664afa2e2c7f69f9a710f337983d9d297df04d"
+    },
+    {
+      "path": "infrastructure/deploy/tests/source-closure-contract.py",
+      "sha256": "dcd14874539d16ec439c1117534e2bb1961b9a0d0a59d38c58c82276f3214bf6"
+    },
+    {
+      "path": "infrastructure/deploy/verify-loaded-backup-image.py",
+      "sha256": "8a3fbb8c37314b43d0bd88d2edb9bd0072a8b5f1ed270c68375802196b7e2095"
+    },
+    {
+      "path": "infrastructure/deploy/verify-publication-metadata.py",
+      "sha256": "7484af43c40923ec2edd3fc389441d4b95b0722f82e1d702e6db2191a6ed4aa4"
+    },
+    {
+      "path": "infrastructure/deploy/verify-published-backup-image.py",
+      "sha256": "d66a7e2223a207bbd6a20b5e35775fa923d44eeedd1048cd33ae13bcaf158101"
+    },
+    {
+      "path": "infrastructure/deploy/verify-source-closure-handoff.py",
+      "sha256": "cffbae75d5a9a818ae214c72fe83f61c7d8015179e45803f870fa2dacfab91fd"
+    },
+    {
+      "path": "infrastructure/docker/docker-compose.yml",
+      "sha256": "061193ab6c13cbf301afa6247ba2c9adfca4cbeb5dc51d445875153035201630"
+    },
+    {
+      "path": "infrastructure/docker/pg-backup.Dockerfile",
+      "sha256": "81e29e927a49ef951c2f3e1e4ac62701625daf99ef81cf45ba17bdedaa6a6b2b"
+    },
+    {
+      "path": "infrastructure/docker/scripts/backup-lib.sh",
+      "sha256": "bf881caf29af389e1d0d328e9b5816d570154b72b873ea82aac6d1be418e8e5a"
+    },
+    {
+      "path": "infrastructure/docker/tests/backup-contract.sh",
+      "sha256": "4b8e7f64b9a91e4d8b64662ca5d39b48af6e00b8db8650388f0201433f45bc83"
+    },
+    {
+      "path": "infrastructure/docker/tests/w10d-remediated-image-integration.py",
+      "sha256": "bf074e9af8524dfa4b1d8b888e93622e577791a93824179510c622e86aa5e853"
+    },
+    {
+      "path": "scripts/build-backup-tools.py",
+      "sha256": "5243f0aa8e8c4c2c8744634207f148ca8d5997a23bd6abbc084c67cacccfbbfd"
+    },
+    {
+      "path": "scripts/install-baked-backup-tools.py",
+      "sha256": "1b18bb63987fa5752c2a942d20cb85fbe941334957f2fcffe8903c7e7d41142f"
+    }
+  ],
+  "scanMatches": [
+    {
+      "id": "GHSA-25qr-6mpr-f7qx",
+      "severity": "Critical",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.73.5"],
+      "url": "https://github.com/advisories/GHSA-25qr-6mpr-f7qx"
+    },
+    {
+      "id": "GHSA-jfwf-28xr-xw6q",
+      "severity": "Critical",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.73.5"],
+      "url": "https://github.com/advisories/GHSA-jfwf-28xr-xw6q"
+    },
+    {
+      "id": "GHSA-5cgq-3rg8-m6cv",
+      "severity": "Critical",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.52.0"],
+      "url": "https://github.com/advisories/GHSA-5cgq-3rg8-m6cv"
+    },
+    {
+      "id": "GO-2026-4341",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.12", "1.25.6"],
+      "url": "https://go.dev/cl/736712"
+    },
+    {
+      "id": "GO-2026-4341",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.12", "1.25.6"],
+      "url": "https://go.dev/cl/736712"
+    },
+    {
+      "id": "GHSA-p77j-4mvh-x3m3",
+      "severity": "Critical",
+      "package": "google.golang.org/grpc",
+      "version": "v1.71.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.79.3"],
+      "url": "https://github.com/advisories/GHSA-p77j-4mvh-x3m3"
+    },
+    {
+      "id": "GHSA-p77j-4mvh-x3m3",
+      "severity": "Critical",
+      "package": "google.golang.org/grpc",
+      "version": "v1.73.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.79.3"],
+      "url": "https://github.com/advisories/GHSA-p77j-4mvh-x3m3"
+    },
+    {
+      "id": "GO-2026-4337",
+      "severity": "Critical",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.13", "1.25.7", "1.26.0-rc.3"],
+      "url": "https://groups.google.com/g/golang-announce/c/K09ubi9FQFk"
+    },
+    {
+      "id": "GO-2026-4337",
+      "severity": "Critical",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.13", "1.25.7", "1.26.0-rc.3"],
+      "url": "https://groups.google.com/g/golang-announce/c/K09ubi9FQFk"
+    },
+    {
+      "id": "GHSA-qw24-gh76-8rvv",
+      "severity": "Critical",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.74.3"],
+      "url": "https://github.com/advisories/GHSA-qw24-gh76-8rvv"
+    },
+    {
+      "id": "GO-2026-4981",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.10", "1.26.3"],
+      "url": "https://go.dev/issue/78803"
+    },
+    {
+      "id": "GO-2026-4981",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.10", "1.26.3"],
+      "url": "https://go.dev/issue/78803"
+    },
+    {
+      "id": "GHSA-8rm2-7qqf-34qm",
+      "severity": "High",
+      "package": "github.com/prometheus/prometheus",
+      "version": "v0.303.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.305.2"],
+      "url": "https://github.com/advisories/GHSA-8rm2-7qqf-34qm"
+    },
+    {
+      "id": "GO-2026-4977",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.10", "1.26.3"],
+      "url": "https://go.dev/issue/78987"
+    },
+    {
+      "id": "GO-2026-4986",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.10", "1.26.3"],
+      "url": "https://go.dev/issue/78566"
+    },
+    {
+      "id": "GO-2026-4918",
+      "severity": "High",
+      "package": "golang.org/x/net",
+      "version": "v0.41.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.53.0"],
+      "url": "https://go.dev/cl/761581"
+    },
+    {
+      "id": "GO-2026-4918",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.10", "1.26.3"],
+      "url": "https://go.dev/cl/761581"
+    },
+    {
+      "id": "GO-2026-4918",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.10", "1.26.3"],
+      "url": "https://go.dev/cl/761581"
+    },
+    {
+      "id": "GHSA-vgwf-h737-ff37",
+      "severity": "Critical",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.52.0"],
+      "url": "https://github.com/advisories/GHSA-vgwf-h737-ff37"
+    },
+    {
+      "id": "GO-2026-4601",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.8", "1.26.1"],
+      "url": "https://go.dev/cl/752180"
+    },
+    {
+      "id": "GO-2026-4601",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.8", "1.26.1"],
+      "url": "https://go.dev/cl/752180"
+    },
+    {
+      "id": "GO-2026-5026",
+      "severity": "High",
+      "package": "golang.org/x/net",
+      "version": "v0.41.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.55.0"],
+      "url": "https://go.dev/cl/767220"
+    },
+    {
+      "id": "GO-2026-5026",
+      "severity": "High",
+      "package": "golang.org/x/net",
+      "version": "v0.42.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.55.0"],
+      "url": "https://go.dev/cl/767220"
+    },
+    {
+      "id": "GO-2026-5026",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.13", "1.26.6", "1.27.0-rc.3"],
+      "url": "https://go.dev/cl/767220"
+    },
+    {
+      "id": "GO-2026-5026",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.13", "1.26.6", "1.27.0-rc.3"],
+      "url": "https://go.dev/cl/767220"
+    },
+    {
+      "id": "GHSA-f5wc-c3c7-36mc",
+      "severity": "Critical",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.52.0"],
+      "url": "https://github.com/advisories/GHSA-f5wc-c3c7-36mc"
+    },
+    {
+      "id": "GHSA-pjcq-xvwq-hhpj",
+      "severity": "Medium",
+      "package": "github.com/Azure/go-ntlmssp",
+      "version": "v0.0.0-20221128193559-754e69321358",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.1.1"],
+      "url": "https://github.com/advisories/GHSA-pjcq-xvwq-hhpj"
+    },
+    {
+      "id": "GHSA-mh2q-q3fh-2475",
+      "severity": "High",
+      "package": "go.opentelemetry.io/otel",
+      "version": "v1.36.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.41.0"],
+      "url": "https://github.com/advisories/GHSA-mh2q-q3fh-2475"
+    },
+    {
+      "id": "CVE-2026-4224",
+      "severity": "High",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "fixed",
+      "fixedIn": ["3.13.13", "3.14.4", "3.15.0a8"],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-4224"
+    },
+    {
+      "id": "CVE-2026-7210",
+      "severity": "High",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "fixed",
+      "fixedIn": ["3.13.14", "3.14.6", "3.15.0b2"],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-7210"
+    },
+    {
+      "id": "GHSA-x527-x647-q7gg",
+      "severity": "Critical",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.52.0"],
+      "url": "https://github.com/advisories/GHSA-x527-x647-q7gg"
+    },
+    {
+      "id": "GHSA-rm3j-f69w-wqmq",
+      "severity": "Critical",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.52.0"],
+      "url": "https://github.com/advisories/GHSA-rm3j-f69w-wqmq"
+    },
+    {
+      "id": "GO-2025-4116",
+      "severity": "High",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.43.0"],
+      "url": "https://go.dev/cl/700295"
+    },
+    {
+      "id": "GO-2026-4870",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.9", "1.26.2"],
+      "url": "https://go.dev/cl/763767"
+    },
+    {
+      "id": "GO-2026-4870",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.9", "1.26.2"],
+      "url": "https://go.dev/cl/763767"
+    },
+    {
+      "id": "GO-2025-4009",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/issue/75676"
+    },
+    {
+      "id": "GO-2025-4009",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/issue/75676"
+    },
+    {
+      "id": "GO-2026-4947",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.9", "1.26.2"],
+      "url": "https://go.dev/cl/758320"
+    },
+    {
+      "id": "GO-2026-4947",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.9", "1.26.2"],
+      "url": "https://go.dev/cl/758320"
+    },
+    {
+      "id": "GO-2025-4006",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/cl/709860"
+    },
+    {
+      "id": "GO-2026-5037",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.11", "1.26.4"],
+      "url": "https://go.dev/cl/783621"
+    },
+    {
+      "id": "GO-2026-5037",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.11", "1.26.4"],
+      "url": "https://go.dev/cl/783621"
+    },
+    {
+      "id": "GO-2026-4971",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.10", "1.26.3"],
+      "url": "https://go.dev/issue/79006"
+    },
+    {
+      "id": "GO-2026-4971",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.10", "1.26.3"],
+      "url": "https://go.dev/issue/79006"
+    },
+    {
+      "id": "GO-2026-5972",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.13", "1.26.6", "1.27.0-rc.3"],
+      "url": "https://go.dev/issue/80405"
+    },
+    {
+      "id": "GO-2026-6088",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.13", "1.26.6", "1.27.0-rc.3"],
+      "url": "https://go.dev/issue/80481"
+    },
+    {
+      "id": "GO-2026-6090",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.13", "1.26.6", "1.27.0-rc.3"],
+      "url": "https://go.dev/issue/80528"
+    },
+    {
+      "id": "GO-2026-5972",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.13", "1.26.6", "1.27.0-rc.3"],
+      "url": "https://go.dev/issue/80405"
+    },
+    {
+      "id": "GO-2026-6088",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.13", "1.26.6", "1.27.0-rc.3"],
+      "url": "https://go.dev/issue/80481"
+    },
+    {
+      "id": "GO-2026-6090",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.13", "1.26.6", "1.27.0-rc.3"],
+      "url": "https://go.dev/issue/80528"
+    },
+    {
+      "id": "GO-2026-6089",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.13", "1.26.6", "1.27.0-rc.3"],
+      "url": "https://go.dev/issue/80205"
+    },
+    {
+      "id": "GO-2026-6089",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.13", "1.26.6", "1.27.0-rc.3"],
+      "url": "https://go.dev/issue/80205"
+    },
+    {
+      "id": "GHSA-fqj9-69pf-6pjg",
+      "severity": "High",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.74.4"],
+      "url": "https://github.com/advisories/GHSA-fqj9-69pf-6pjg"
+    },
+    {
+      "id": "GO-2026-4342",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.12", "1.25.6"],
+      "url": "https://go.dev/cl/736713"
+    },
+    {
+      "id": "GHSA-89gr-r52h-f8rx",
+      "severity": "Critical",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.52.0"],
+      "url": "https://github.com/advisories/GHSA-89gr-r52h-f8rx"
+    },
+    {
+      "id": "GO-2026-5970",
+      "severity": "High",
+      "package": "golang.org/x/text",
+      "version": "v0.26.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.39.0"],
+      "url": "https://go.dev/issue/80142"
+    },
+    {
+      "id": "GO-2026-5970",
+      "severity": "High",
+      "package": "golang.org/x/text",
+      "version": "v0.27.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.39.0"],
+      "url": "https://go.dev/issue/80142"
+    },
+    {
+      "id": "GHSA-q4h4-gmj2-qvw2",
+      "severity": "High",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.52.0"],
+      "url": "https://github.com/advisories/GHSA-q4h4-gmj2-qvw2"
+    },
+    {
+      "id": "GHSA-w879-237q-wc7r",
+      "severity": "High",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.52.0"],
+      "url": "https://github.com/advisories/GHSA-w879-237q-wc7r"
+    },
+    {
+      "id": "GO-2025-4155",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.11", "1.25.5"],
+      "url": "https://go.dev/cl/725920"
+    },
+    {
+      "id": "GO-2025-4155",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.11", "1.25.5"],
+      "url": "https://go.dev/cl/725920"
+    },
+    {
+      "id": "CVE-2026-3644",
+      "severity": "High",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "fixed",
+      "fixedIn": ["3.13.13", "3.14.4", "3.15.0a8"],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-3644"
+    },
+    {
+      "id": "GHSA-vp52-pcj8-j9qc",
+      "severity": "High",
+      "package": "google.golang.org/grpc",
+      "version": "v1.71.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.83.1"],
+      "url": "https://github.com/advisories/GHSA-vp52-pcj8-j9qc"
+    },
+    {
+      "id": "GHSA-vp52-pcj8-j9qc",
+      "severity": "High",
+      "package": "google.golang.org/grpc",
+      "version": "v1.73.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.83.1"],
+      "url": "https://github.com/advisories/GHSA-vp52-pcj8-j9qc"
+    },
+    {
+      "id": "GO-2025-3956",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.23.12", "1.24.6"],
+      "url": "https://go.dev/cl/691775"
+    },
+    {
+      "id": "GHSA-j5w8-q4qc-rx2x",
+      "severity": "Medium",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.45.0"],
+      "url": "https://github.com/advisories/GHSA-j5w8-q4qc-rx2x"
+    },
+    {
+      "id": "CVE-2025-12781",
+      "severity": "Medium",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "fixed",
+      "fixedIn": ["3.13.10", "3.14.1", "3.15.0a2"],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-12781"
+    },
+    {
+      "id": "GO-2025-4007",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.9", "1.25.3"],
+      "url": "https://go.dev/issue/75681"
+    },
+    {
+      "id": "GO-2025-4007",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.9", "1.25.3"],
+      "url": "https://go.dev/issue/75681"
+    },
+    {
+      "id": "GO-2026-6355",
+      "severity": "High",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.56.0"],
+      "url": "https://go.dev/issue/81317"
+    },
+    {
+      "id": "GO-2026-6218",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.13", "1.26.6", "1.27.0-rc.3"],
+      "url": "https://go.dev/cl/803681"
+    },
+    {
+      "id": "GO-2026-6218",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.13", "1.26.6", "1.27.0-rc.3"],
+      "url": "https://go.dev/cl/803681"
+    },
+    {
+      "id": "GHSA-cf44-9pgv-m4xc",
+      "severity": "High",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.74.4"],
+      "url": "https://github.com/advisories/GHSA-cf44-9pgv-m4xc"
+    },
+    {
+      "id": "CVE-2026-17084",
+      "severity": "Medium",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "",
+      "fixedIn": [],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-17084"
+    },
+    {
+      "id": "GO-2025-4012",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/issue/75672"
+    },
+    {
+      "id": "GO-2025-4012",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/issue/75672"
+    },
+    {
+      "id": "GO-2026-4440",
+      "severity": "Medium",
+      "package": "golang.org/x/net",
+      "version": "v0.41.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.45.0"],
+      "url": "https://go.dev/cl/709876"
+    },
+    {
+      "id": "GO-2025-4013",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/cl/709853"
+    },
+    {
+      "id": "GO-2025-4013",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/cl/709853"
+    },
+    {
+      "id": "GO-2025-4011",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/issue/75671"
+    },
+    {
+      "id": "GO-2025-4015",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/cl/709859"
+    },
+    {
+      "id": "GO-2025-4011",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/issue/75671"
+    },
+    {
+      "id": "GO-2025-4015",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/cl/709859"
+    },
+    {
+      "id": "GO-2026-4946",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.9", "1.26.2"],
+      "url": "https://go.dev/cl/758061"
+    },
+    {
+      "id": "GO-2026-4946",
+      "severity": "High",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.9", "1.26.2"],
+      "url": "https://go.dev/cl/758061"
+    },
+    {
+      "id": "GHSA-wg65-39gg-5wfj",
+      "severity": "High",
+      "package": "github.com/prometheus/prometheus",
+      "version": "v0.303.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.311.3"],
+      "url": "https://github.com/advisories/GHSA-wg65-39gg-5wfj"
+    },
+    {
+      "id": "GHSA-78mq-xcr3-xm33",
+      "severity": "Medium",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.52.0"],
+      "url": "https://github.com/advisories/GHSA-78mq-xcr3-xm33"
+    },
+    {
+      "id": "GO-2026-4441",
+      "severity": "Medium",
+      "package": "golang.org/x/net",
+      "version": "v0.41.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.45.0"],
+      "url": "https://groups.google.com/g/golang-announce/c/jnQcOYpiR2c"
+    },
+    {
+      "id": "GHSA-45pq-889g-fcgh",
+      "severity": "High",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.75.0"],
+      "url": "https://github.com/advisories/GHSA-45pq-889g-fcgh"
+    },
+    {
+      "id": "GO-2026-6303",
+      "severity": "High",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.55.0"],
+      "url": "https://go.dev/issue/80213"
+    },
+    {
+      "id": "GO-2026-6354",
+      "severity": "High",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.56.0"],
+      "url": "https://go.dev/issue/81316"
+    },
+    {
+      "id": "CVE-2026-19672",
+      "severity": "Medium",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "",
+      "fixedIn": [],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-19672"
+    },
+    {
+      "id": "GO-2025-4008",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/cl/707776"
+    },
+    {
+      "id": "GO-2025-4010",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/issue/75678"
+    },
+    {
+      "id": "GO-2025-4008",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/cl/707776"
+    },
+    {
+      "id": "GO-2025-4010",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.8", "1.25.2"],
+      "url": "https://go.dev/issue/75678"
+    },
+    {
+      "id": "CVE-2026-15806",
+      "severity": "Medium",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "",
+      "fixedIn": [],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-15806"
+    },
+    {
+      "id": "GHSA-2m8m-jhrm-w6j2",
+      "severity": "High",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.75.0"],
+      "url": "https://github.com/advisories/GHSA-2m8m-jhrm-w6j2"
+    },
+    {
+      "id": "GHSA-45gg-vh54-h5m9",
+      "severity": "Medium",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.52.0"],
+      "url": "https://github.com/advisories/GHSA-45gg-vh54-h5m9"
+    },
+    {
+      "id": "GHSA-xhf4-832v-7xcr",
+      "severity": "Medium",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.75.0"],
+      "url": "https://github.com/advisories/GHSA-xhf4-832v-7xcr"
+    },
+    {
+      "id": "GO-2026-4980",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.10", "1.26.3"],
+      "url": "https://go.dev/issue/78981"
+    },
+    {
+      "id": "GO-2026-4980",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.10", "1.26.3"],
+      "url": "https://go.dev/issue/78981"
+    },
+    {
+      "id": "CVE-2025-15366",
+      "severity": "Medium",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "fixed",
+      "fixedIn": ["3.13.15", "3.14.7", "3.15.0a6"],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-15366"
+    },
+    {
+      "id": "GO-2026-4976",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.10", "1.26.3"],
+      "url": "https://go.dev/cl/770541"
+    },
+    {
+      "id": "GO-2026-5856",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.12", "1.26.5", "1.27.0-rc.2"],
+      "url": "https://go.dev/cl/775960"
+    },
+    {
+      "id": "GO-2026-5856",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.12", "1.26.5", "1.27.0-rc.2"],
+      "url": "https://go.dev/cl/775960"
+    },
+    {
+      "id": "GO-2026-5039",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.11", "1.26.4"],
+      "url": "https://go.dev/issue/79346"
+    },
+    {
+      "id": "GO-2026-5039",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.11", "1.26.4"],
+      "url": "https://go.dev/issue/79346"
+    },
+    {
+      "id": "GHSA-5cv4-jp36-h3mw",
+      "severity": "Medium",
+      "package": "golang.org/x/net",
+      "version": "v0.41.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.55.0"],
+      "url": "https://github.com/advisories/GHSA-5cv4-jp36-h3mw"
+    },
+    {
+      "id": "GO-2026-4603",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.8", "1.26.1"],
+      "url": "https://groups.google.com/g/golang-announce/c/EdhZqrQ98hk"
+    },
+    {
+      "id": "GO-2026-4603",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.8", "1.26.1"],
+      "url": "https://groups.google.com/g/golang-announce/c/EdhZqrQ98hk"
+    },
+    {
+      "id": "CVE-2025-15367",
+      "severity": "Medium",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "fixed",
+      "fixedIn": ["3.15.0a6"],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-15367"
+    },
+    {
+      "id": "GO-2026-4982",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.10", "1.26.3"],
+      "url": "https://go.dev/issue/78913"
+    },
+    {
+      "id": "GO-2026-4982",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.10", "1.26.3"],
+      "url": "https://go.dev/issue/78913"
+    },
+    {
+      "id": "GO-2026-6091",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.13", "1.26.6", "1.27.0-rc.3"],
+      "url": "https://go.dev/issue/80435"
+    },
+    {
+      "id": "GO-2026-6091",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.13", "1.26.6", "1.27.0-rc.3"],
+      "url": "https://go.dev/issue/80435"
+    },
+    {
+      "id": "CVE-2025-60876",
+      "severity": "Medium",
+      "package": "busybox",
+      "version": "1.37.0-r31",
+      "type": "apk",
+      "fixState": "",
+      "fixedIn": [],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-60876"
+    },
+    {
+      "id": "CVE-2025-60876",
+      "severity": "Medium",
+      "package": "busybox-binsh",
+      "version": "1.37.0-r31",
+      "type": "apk",
+      "fixState": "",
+      "fixedIn": [],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-60876"
+    },
+    {
+      "id": "CVE-2025-60876",
+      "severity": "Medium",
+      "package": "ssl_client",
+      "version": "1.37.0-r31",
+      "type": "apk",
+      "fixState": "",
+      "fixedIn": [],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-60876"
+    },
+    {
+      "id": "GO-2025-4175",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.11", "1.25.5"],
+      "url": "https://go.dev/cl/723900"
+    },
+    {
+      "id": "GO-2025-4175",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.11", "1.25.5"],
+      "url": "https://go.dev/cl/723900"
+    },
+    {
+      "id": "GO-2026-4865",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.9", "1.26.2"],
+      "url": "https://go.dev/cl/763762"
+    },
+    {
+      "id": "GO-2026-4865",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.9", "1.26.2"],
+      "url": "https://go.dev/cl/763762"
+    },
+    {
+      "id": "GHSA-qpw4-5x99-6vjp",
+      "severity": "Medium",
+      "package": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.52.0"],
+      "url": "https://github.com/advisories/GHSA-qpw4-5x99-6vjp"
+    },
+    {
+      "id": "GHSA-7p4m-qxvv-g567",
+      "severity": "Medium",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.75.0"],
+      "url": "https://github.com/advisories/GHSA-7p4m-qxvv-g567"
+    },
+    {
+      "id": "GO-2026-4340",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.12", "1.25.6"],
+      "url": "https://go.dev/cl/724120"
+    },
+    {
+      "id": "GO-2026-4340",
+      "severity": "Medium",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.24.12", "1.25.6"],
+      "url": "https://go.dev/cl/724120"
+    },
+    {
+      "id": "GHSA-vffh-x6r8-xx99",
+      "severity": "Medium",
+      "package": "github.com/prometheus/prometheus",
+      "version": "v0.303.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.311.2-0.20260410083055-07c6232d159b"],
+      "url": "https://github.com/advisories/GHSA-vffh-x6r8-xx99"
+    },
+    {
+      "id": "CVE-2026-4519",
+      "severity": "Low",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "fixed",
+      "fixedIn": ["3.13.13", "3.14.4", "3.15.0a8"],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-4519"
+    },
+    {
+      "id": "GHSA-8c48-q9wj-3w37",
+      "severity": "Medium",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.75.0"],
+      "url": "https://github.com/advisories/GHSA-8c48-q9wj-3w37"
+    },
+    {
+      "id": "GO-2026-5025",
+      "severity": "Medium",
+      "package": "golang.org/x/net",
+      "version": "v0.41.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.55.0"],
+      "url": "https://go.dev/issue/79571"
+    },
+    {
+      "id": "GO-2026-5027",
+      "severity": "Medium",
+      "package": "golang.org/x/net",
+      "version": "v0.41.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.55.0"],
+      "url": "https://go.dev/issue/79572"
+    },
+    {
+      "id": "GO-2026-5030",
+      "severity": "Medium",
+      "package": "golang.org/x/net",
+      "version": "v0.41.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.55.0"],
+      "url": "https://go.dev/issue/79575"
+    },
+    {
+      "id": "GO-2026-5029",
+      "severity": "Medium",
+      "package": "golang.org/x/net",
+      "version": "v0.41.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.55.0"],
+      "url": "https://go.dev/issue/79574"
+    },
+    {
+      "id": "CVE-2026-4360",
+      "severity": "Medium",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "",
+      "fixedIn": [],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-4360"
+    },
+    {
+      "id": "GHSA-q9hv-hpm4-hj6x",
+      "severity": "Low",
+      "package": "github.com/cloudflare/circl",
+      "version": "v1.6.1",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.6.3"],
+      "url": "https://github.com/advisories/GHSA-q9hv-hpm4-hj6x"
+    },
+    {
+      "id": "GHSA-fw8g-cg8f-9j28",
+      "severity": "Medium",
+      "package": "github.com/prometheus/prometheus",
+      "version": "v0.303.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.311.3"],
+      "url": "https://github.com/advisories/GHSA-fw8g-cg8f-9j28"
+    },
+    {
+      "id": "CVE-2026-6019",
+      "severity": "Medium",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "fixed",
+      "fixedIn": ["3.13.14", "3.14.5rc1", "3.15.0b1"],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-6019"
+    },
+    {
+      "id": "CVE-2026-3446",
+      "severity": "Medium",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "fixed",
+      "fixedIn": ["3.13.13", "3.14.4", "3.15.0a8"],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-3446"
+    },
+    {
+      "id": "CVE-2025-13837",
+      "severity": "Medium",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "fixed",
+      "fixedIn": ["3.13.10", "3.14.1", "3.15.0a3"],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-13837"
+    },
+    {
+      "id": "CVE-2026-15310",
+      "severity": "Low",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "",
+      "fixedIn": [],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-15310"
+    },
+    {
+      "id": "GO-2026-4602",
+      "severity": "Low",
+      "package": "stdlib",
+      "version": "go1.24.4",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.8", "1.26.1"],
+      "url": "https://groups.google.com/g/golang-announce/c/EdhZqrQ98hk"
+    },
+    {
+      "id": "GO-2026-4602",
+      "severity": "Low",
+      "package": "stdlib",
+      "version": "go1.24.6",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.25.8", "1.26.1"],
+      "url": "https://groups.google.com/g/golang-announce/c/EdhZqrQ98hk"
+    },
+    {
+      "id": "CVE-2025-13462",
+      "severity": "Low",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "fixed",
+      "fixedIn": ["3.13.13", "3.14.4", "3.15.0a8"],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-13462"
+    },
+    {
+      "id": "CVE-2026-3479",
+      "severity": "Negligible",
+      "package": "python",
+      "version": "3.12.14",
+      "type": "binary",
+      "fixState": "fixed",
+      "fixedIn": ["3.13.13", "3.14.4", "3.15.0a8"],
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-3479"
+    },
+    {
+      "id": "GHSA-hrxh-6v49-42gf",
+      "severity": "High",
+      "package": "google.golang.org/grpc",
+      "version": "v1.71.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.82.1"],
+      "url": "https://github.com/advisories/GHSA-hrxh-6v49-42gf"
+    },
+    {
+      "id": "GHSA-hrxh-6v49-42gf",
+      "severity": "High",
+      "package": "google.golang.org/grpc",
+      "version": "v1.73.0",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.82.1"],
+      "url": "https://github.com/advisories/GHSA-hrxh-6v49-42gf"
+    },
+    {
+      "id": "GHSA-xmrv-pmrh-hhx2",
+      "severity": "Medium",
+      "package": "github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream",
+      "version": "v1.6.10",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.7.8"],
+      "url": "https://github.com/advisories/GHSA-xmrv-pmrh-hhx2"
+    },
+    {
+      "id": "GHSA-xmrv-pmrh-hhx2",
+      "severity": "Medium",
+      "package": "github.com/aws/aws-sdk-go-v2/service/s3",
+      "version": "v1.72.3",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.97.3"],
+      "url": "https://github.com/advisories/GHSA-xmrv-pmrh-hhx2"
+    },
+    {
+      "id": "GHSA-3x6r-wxxg-53vv",
+      "severity": "Medium",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.75.0"],
+      "url": "https://github.com/advisories/GHSA-3x6r-wxxg-53vv"
+    },
+    {
+      "id": "GHSA-8mxv-9xhp-86h4",
+      "severity": "Medium",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.75.0"],
+      "url": "https://github.com/advisories/GHSA-8mxv-9xhp-86h4"
+    },
+    {
+      "id": "GHSA-8v25-v8p6-qf7v",
+      "severity": "Medium",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.74.4"],
+      "url": "https://github.com/advisories/GHSA-8v25-v8p6-qf7v"
+    },
+    {
+      "id": "GHSA-h4mf-4v27-hggj",
+      "severity": "Medium",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.75.0"],
+      "url": "https://github.com/advisories/GHSA-h4mf-4v27-hggj"
+    },
+    {
+      "id": "GHSA-945v-v9p3-v5xw",
+      "severity": "Low",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.74.4"],
+      "url": "https://github.com/advisories/GHSA-945v-v9p3-v5xw"
+    },
+    {
+      "id": "GHSA-gwfq-86j8-7qhv",
+      "severity": "Low",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.75.0"],
+      "url": "https://github.com/advisories/GHSA-gwfq-86j8-7qhv"
+    },
+    {
+      "id": "GHSA-gx4c-2hqx-cw2r",
+      "severity": "Low",
+      "package": "github.com/rclone/rclone",
+      "version": "v1.70.3+dirty",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["1.74.4"],
+      "url": "https://github.com/advisories/GHSA-gx4c-2hqx-cw2r"
+    },
+    {
+      "id": "GO-2026-5051",
+      "severity": "Unknown",
+      "package": "github.com/cloudsoda/go-smb2",
+      "version": "v0.0.0-20250228001242-d4c70e6251cc",
+      "type": "go-module",
+      "fixState": "fixed",
+      "fixedIn": ["0.0.0-20260609183447-7b96c35f5f4b"],
+      "url": "https://github.com/cloudsoda/go-smb2/commit/7b96c35f5f4babfc9d68a60baf5e85f2303d4a4b"
+    }
+  ],
+  "observations": {
+    "vps": {
+      "timestamp": "2026-09-08T00:56:21Z",
+      "totalBytes": 80307429376,
+      "availableBytes": 14612901888,
+      "rootCron": "UNKNOWN_EXIT_1",
+      "appCron": "UNKNOWN_EXIT_1",
+      "writerLock": "ABSENT",
+      "pullerConfig": "ABSENT",
+      "backupContainerCount": 1,
+      "n8nContainerCount": 1
+    },
+    "github": {
+      "viewer": "sholahuddinzen-cpu",
+      "scopes": ["gist", "read:org", "repo", "workflow"],
+      "packageResponse": 404,
+      "packageVisibility": "UNKNOWN",
+      "defaultWorkflowPermission": "read"
+    },
+    "hetzner": {
+      "serverIdSha256": "eb1c83915199b85c8a2bbcbb0bae224861bf2ecaf753d5ca08a53baf4c36ec69",
+      "currentPlan": "CPX22",
+      "currentDiskGB": 80,
+      "proposedPlan": "CPX32",
+      "proposedDiskGB": 160,
+      "quotedHourlyUSD": 0.067,
+      "quotedMonthlyUSD": 41.99,
+      "excludingVAT": true,
+      "backupAvailableCount": 7,
+      "backupDisplayedAggregateGB": 217.72,
+      "newestBackup": "2026-09-07T10:38:13Z",
+      "oldestBackup": "2026-09-01T10:39:06Z",
+      "rescaleExecuted": false
+    }
+  },
+  "image": {
+    "dockerIndex": "sha256:91727198d4dba854dc43ea26c6fc41222a32b33ce4728bcef765864c16179104",
+    "config": "sha256:690d0524fed7e08bc7ed1e87f8786214b0474900e41040bc79d3ce12cc548951",
+    "manifest": "sha256:ae865b345b4a60b58b3406ed4280c28bf933971e8967eade2a5547a5dac05d0e",
+    "grypeManifest": "sha256:b1d8f1c726765c8d28ecc9fcfcd71f459d3c74331a25f465509cd346e8c781db",
+    "archiveSha256": "feb0a29030d247db65d01a17eb6d8f2cef2438063188c15546e3ac3b7af32e3f",
+    "grypeSha256": "e14a334a5c58dd4acbdcfad90a72be6f43e1ecb0b14f0b44e440f05e852ebfce",
+    "sbomSha256": "0137b858601d333db54ef4870bad3e0a52c100310c8fffa08f84ac84279b0200",
+    "dbSha256": "b1cc176fba1944294f1c609d9fc878215587b2dca38c372843bc079dd9dbdc89",
+    "dbBuilt": "2026-09-07T06:38:20Z",
+    "releaseCandidate": false,
+    "riskAccepted": false
+  },
+  "tests": {
+    "sourceClosure": 43,
+    "staging": 49,
+    "operator": 36,
+    "backup": 44,
+    "gate1": 19,
+    "lock": 2,
+    "ingress": 21,
+    "focusedJest": 6,
+    "imageIntegration": "PASS WSL Linux local Docker Desktop",
+    "remoteCI": "NOT_RUN_NOT_AUTHORIZED"
+  }
+}

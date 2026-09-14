@@ -13,16 +13,29 @@ dan independent review terpisah.
 - Backing remote harus berada pada provider/failure domain independen yang masuk
   allowlist commissioning. `local`, `crypt` bertingkat, alias, MinIO sumber,
   localhost, endpoint lokal, serta provider yang sama/terlarang ditolak.
-- Effective backend type, provider identity, origin publik non-secret, dan mode
-  enkripsi diikat ke `OFFSITE_CONFIG_FINGERPRINT` SHA-256 hasil review.
+- Exact backing remote/prefix yang dibaca dari konfigurasi crypt, effective backend
+  type, provider identity, origin publik non-secret, dan mode enkripsi diikat ke
+  `OFFSITE_CONFIG_FINGERPRINT` SHA-256 hasil review.
 - Untuk backend `drive`, fingerprint yang sama juga wajib mengikat SHA-256
-  non-secret dari exact `team_drive` dan `root_folder_id`. Nilai kosong,
-  tertukar, atau berubah setelah approval ditolak sebelum write.
+  non-secret dari exact `team_drive`, `root_folder_id`, auth mode, principal,
+  project, key identity, dan seluruh byte artifact credential. Nilai kosong,
+  tertukar, atau berubah setelah approval ditolak sebelum write. Rotasi key selalu
+  menghasilkan fingerprint baru dan membutuhkan commissioning review baru.
+- Backend `drive` hanya menerima dedicated Google Service Account file pada exact
+  mount `/run/diis-secrets/google-service-account.json`, mode host `0600`, dan mount
+  container read-only. Default/shared client, OAuth `token`, `client_id`,
+  `client_secret`, inline `service_account_credentials`, impersonation, serta domain
+  user delegation ditolak. Parser hanya menghasilkan hash non-secret; raw JSON,
+  email, project, key ID, dan private key tidak masuk log/evidence.
 - `OFFSITE_EXPECTED_PROVIDER` dan `OFFSITE_EXPECTED_ORIGIN` berasal dari
   commissioning terpisah. Custom endpoint wajib HTTPS, FQDN publik, cocok persis
   dengan origin yang disetujui, serta bukan IP literal, loopback, RFC1918,
   link-local, IPv6 lokal, `.local`, `.internal`, atau namespace privat lain.
   Provider tanpa custom endpoint memakai nilai origin `provider-default`.
+- Pada candidate Google, kedua nilai itu wajib tampil sebagai safe binding aktual
+  `google` dan `provider-default` di runtime manifest v5, acceptance v6, direct
+  candidate verification, serta final handoff pre-mutation check. Missing/wrong
+  provider atau origin menghentikan alur sebelum scheduler mutation.
 - Konfigurasi efektif boleh dibaca untuk validasi, tetapi tidak boleh dicetak atau
   dimasukkan ke evidence.
 - Dump, sidecar, object manifest, dan completion memakai immutable `copyto`.
@@ -46,7 +59,11 @@ kosong dari manifest backup yang dipilih sehingga deletion historis tetap tepat.
 ## Commissioning Remote
 
 1. Pilih akun/provider/region yang independen dari VPS, Hetzner, dan MinIO lokal.
-2. Buat konfigurasi secret-managed berizin sempit di host; jangan simpan di Git.
+2. Untuk Drive, Director menyetujui dedicated Service Account berizin minimum pada
+   destination exact. Admin Google harus memberi attestation eksternal bahwa Domain
+   Wide Delegation dan impersonation tidak dikonfigurasi; isi JSON key saja tidak
+   dapat membuktikan hal ini. Pasang key melalui kanal secret-managed pada path dan
+   mode exact, jangan simpan di Git atau laporan.
 3. Catat hanya fingerprint non-secret yang dihitung source dan cocokkan dengan
    nilai yang disetujui.
 4. Uji remote unreadable, local/same-provider backing, perbedaan huruf provider,
@@ -64,6 +81,10 @@ kosong dari manifest backup yang dipilih sehingga deletion historis tetap tepat.
 Completion `class=pre-change` wajib memiliki `protectionState=protected`. Retention
 tidak boleh menghapus dump, sidecar, object manifest, atau completion hingga marker
 `database/releases/<backupId>.release.json` tersedia dan valid.
+Pembacaan marker dibatasi 4 KiB dan 30 detik melalui bounded capture. JSON wajib
+memiliki exact schema tanpa key duplikat atau field tambahan. Marker kosong/malformed
+menahan backup sebagai error; marker yang tidak dapat diobservasi atau melebihi batas
+tetap mempertahankan protected point dan menghasilkan status `RELEASE_MARKER_UNAVAILABLE`.
 
 Marker release hanya dibuat setelah cohort/recovery direkonsiliasi, melalui script
 resmi dan approval yang menyebut backup ID serta reconciliation reference PII-safe.
@@ -84,10 +105,14 @@ OFFSITE_EXPECTED_ORIGIN=<approved-origin> \
 ```
 
 Untuk Shared Drive, sertakan `OFFSITE_EXPECTED_TEAM_DRIVE_SHA256` dan
-`OFFSITE_EXPECTED_ROOT_FOLDER_SHA256`. Script mengunduh tepat dump, sidecar,
-completion, dan object manifest untuk satu backup ID, memverifikasi hash/ukuran,
-serta menulis provenance `source=independent-crypt`. Path MinIO lokal bukan
-fallback dan wajib menjadi negative control pada acceptance bundle.
+`OFFSITE_EXPECTED_ROOT_FOLDER_SHA256`, `OFFSITE_EXPECTED_AUTH_MODE=service-account-file`,
+`OFFSITE_EXPECTED_PRINCIPAL_SHA256`, `OFFSITE_EXPECTED_PROJECT_SHA256`,
+`OFFSITE_EXPECTED_KEY_IDENTITY_SHA256`, dan
+`OFFSITE_EXPECTED_CREDENTIAL_ARTIFACT_SHA256`. Artifact harus tersedia pada exact
+mount read-only. Script mengunduh tepat dump, sidecar, completion, dan object manifest
+untuk satu backup ID, memverifikasi hash/ukuran, serta menulis provenance
+`source=independent-crypt`. Path MinIO lokal bukan fallback dan wajib menjadi
+negative control pada acceptance bundle.
 
 Download memakai `umask 077`. Pada copy, checksum, signal, atau publication
 failure, seluruh exact candidate/final plaintext dan lock harus dihapus serta
@@ -96,22 +121,70 @@ absence diverifikasi. Jika remove atau observasi gagal, status wajib
 dan jangan mengulang attempt.
 
 Destination wajib kosong selain marker
-`.diis-disposable-restore-target-v1`. Gunakan manifest dan completion dari backup
-ID yang sama:
+`.diis-disposable-restore-target-v3`. Marker strict ini mengikat attempt, exact
+source remote/provider/origin/config fingerprint serta hash backing remote aktual,
+exact target parent/remote/provider/origin/config fingerprint, exact target, dan satu
+`authoritySha256` hasil approval. Create, restore, dan cleanup memakai validator
+authority canonical yang sama. Sebelum mutasi, ketiganya membaca konfigurasi crypt
+source dan backing source ke private capture terpisah dengan batas 64 KiB/30 detik,
+memvalidasi cardinality field, dan menghitung ulang fingerprint commissioning.
+Unavailable, malformed, atau backing/prefix drift berhenti sebelum `mkdir`, copy,
+atau purge. Remote name source, backing, dan target wajib berbeda;
+backend target `local`, `crypt`, atau `alias`, fingerprint yang sama, serta pasangan
+provider+origin yang sama dengan source selalu ditolak. Source tidak menyediakan
+pengecualian otomatis untuk failure domain yang sama.
+
+`OBJECT_TARGET_EXPECTED_CONFIG_FINGERPRINT` adalah SHA-256 atas byte bounded
+`rclone config show <target-remote>` yang direview tanpa mencetak isinya.
+`OBJECT_TARGET_EXPECTED_AUTHORITY_SHA256` adalah hash canonical per-attempt dari
+seluruh binding source dan target di atas. Keduanya berasal dari decision packet,
+bukan dihitung bebas oleh command eksekusi. Gunakan manifest dan completion dari
+backup ID yang sama:
+
+Inventory parent/target dan marker disposable harus dibaca melalui private bounded
+capture. Overflow, timeout, producer nonzero, duplicate marker key, atau kegagalan
+post-purge/post-restore observation tidak boleh menjadi bukti kosong/sukses; setelah
+mutation statusnya adalah explicit ambiguous/no-retry sampai diinspeksi terpisah.
 
 ```bash
+OFFSITE_CRYPT_REMOTE=<approved-crypt-remote>:<prefix> \
+OFFSITE_CONFIG_FINGERPRINT=<approved-source-fingerprint> \
+OFFSITE_EXPECTED_PROVIDER=<approved-source-provider> \
+OFFSITE_EXPECTED_ORIGIN=<approved-source-origin> \
+OBJECT_TARGET_EXPECTED_PROVIDER=<approved-target-provider> \
+OBJECT_TARGET_EXPECTED_ORIGIN=<approved-target-origin> \
+OBJECT_TARGET_EXPECTED_CONFIG_FINGERPRINT=<approved-target-config-fingerprint> \
+OBJECT_TARGET_EXPECTED_AUTHORITY_SHA256=<approved-per-attempt-authority-sha256> \
 OBJECT_TARGET_CREATE_CONFIRMATION=CREATE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
   sh scripts/prepare-object-restore-target.sh <attemptId> <isolated-parent-remote>:
 
 OFFSITE_CRYPT_REMOTE=<approved-crypt-remote>:<prefix> \
-OBJECT_RESTORE_TARGET=<isolated-parent-remote>:<attemptId> \
-OBJECT_RESTORE_PROOF_OUTPUT=/private/<backupId>.object-restore-proof.json \
+OFFSITE_CONFIG_FINGERPRINT=<approved-source-fingerprint> \
+OFFSITE_EXPECTED_PROVIDER=<approved-source-provider> \
+OFFSITE_EXPECTED_ORIGIN=<approved-source-origin> \
+OBJECT_RESTORE_TARGET_PARENT=<isolated-parent-remote>: \
+OBJECT_RESTORE_ATTEMPT_ID=<attemptId> \
+OBJECT_RESTORE_TARGET=<isolated-parent-remote>:/<attemptId> \
+OBJECT_TARGET_EXPECTED_PROVIDER=<approved-target-provider> \
+OBJECT_TARGET_EXPECTED_ORIGIN=<approved-target-origin> \
+OBJECT_TARGET_EXPECTED_CONFIG_FINGERPRINT=<approved-target-config-fingerprint> \
+OBJECT_TARGET_EXPECTED_AUTHORITY_SHA256=<approved-per-attempt-authority-sha256> \
+OBJECT_RESTORE_PROOF_DIR=/private/object-restore-proofs \
 OBJECT_RESTORE_CONFIRMATION=RESTORE_EXACT_OBJECT_SET_TO_DISPOSABLE_TARGET \
   sh infrastructure/docker/scripts/restore-objects.sh \
   /private/<backupId>.offsite-provenance.json \
   /private/<backupId>.complete.json \
+  /private/<backupId>.sha256 \
   /private/<backupId>.objects.tsv
 
+OFFSITE_CRYPT_REMOTE=<approved-crypt-remote>:<prefix> \
+OFFSITE_CONFIG_FINGERPRINT=<approved-source-fingerprint> \
+OFFSITE_EXPECTED_PROVIDER=<approved-source-provider> \
+OFFSITE_EXPECTED_ORIGIN=<approved-source-origin> \
+OBJECT_TARGET_EXPECTED_PROVIDER=<approved-target-provider> \
+OBJECT_TARGET_EXPECTED_ORIGIN=<approved-target-origin> \
+OBJECT_TARGET_EXPECTED_CONFIG_FINGERPRINT=<approved-target-config-fingerprint> \
+OBJECT_TARGET_EXPECTED_AUTHORITY_SHA256=<approved-per-attempt-authority-sha256> \
 OBJECT_TARGET_CLEANUP_CONFIRMATION=DELETE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
   sh scripts/cleanup-object-restore-target.sh <attemptId> <isolated-parent-remote>:
 
@@ -123,6 +196,14 @@ Script memverifikasi schema/header, manifest hash, setiap blob hash dan ukuran,
 jumlah hasil, serta tidak adanya object tambahan. Mismatch sekecil apa pun menahan
 recovery. Cleanup hanya menerima marker/ID milik attempt exact dan wajib
 membuktikan prefix atau direktori temporary sudah kosong/hilang.
+Direktori proof object wajib path absolut canonical, tanpa komponen symlink, mode
+`0700`, dan dimiliki caller. Nama final selalu diturunkan source sebagai
+`<backupId>.object-restore-proof.json`; `OBJECT_RESTORE_PROOF_OUTPUT` ditolak.
+Final dan candidate wajib belum ada. Candidate dibuat exclusive/no-follow mode
+`0600`, lalu dipublikasikan sebagai hard link no-replace pada filesystem yang sama
+dan diverifikasi mode, owner, serta hash sebelum candidate dihapus. Seluruh
+plaintext dan observasi config/marker privat harus terhapus serta absence-nya
+terbukti sebelum success proof dipublikasikan.
 Final `rclone lsf` wajib selesai sukses sebelum count dihitung, termasuk untuk
 `objectCount=0`; observation error tidak boleh berubah menjadi count nol atau
 proof sukses.
@@ -136,6 +217,14 @@ successful parent observation. Purge/observation failure adalah
 `OBJECT_TARGET_CLEANUP_AMBIGUOUS retry=prohibited`, bukan absence proof.
 Cleanup responsibility dimulai sebelum `rclone mkdir`, karena provider dapat
 membuat partial prefix lalu mengembalikan error atau menerima signal.
+Pada standalone cleanup, purge juga berjalan melalui bounded capture. Producer
+nonzero, signal/late exit, partial purge, target yang masih terlihat, overflow,
+parse failure, atau observation failure setelah purge dimulai selalu menghasilkan
+status `74` dan `OBJECT_TARGET_CLEANUP_AMBIGUOUS ... retry=prohibited`.
+Marker `OBJECT_RESTORE_TARGET_READY` dan `OBJECT_RESTORE_TARGET_REMOVED` hanya
+ditulis satu kali dari EXIT finalizer setelah seluruh capture privat dihapus,
+direktori observasi hilang, dan absence lokal terbukti. Kegagalan `rm`, `rmdir`,
+atau absence proof tidak boleh mendahului maupun disertai marker sukses.
 
 ## Kehilangan VPS atau Provider
 
@@ -152,6 +241,39 @@ membuat partial prefix lalu mengembalikan error atau menerima signal.
 
 Image atau Volume pada provider yang sama bukan independent off-site backup dan
 tidak menggantikan dump database serta exact object manifest.
+
+### Pemisahan kontrol Hetzner
+
+Server deletion protection, rotating seven-slot Backup, Snapshot, dan Volume adalah
+kontrol berbeda. Individual Backup tidak dapat diproteksi. Bila Director kelak
+memilih satu Backup sebagai baseline, provider action yang benar adalah konversi
+explicit Backup tersebut menjadi Snapshot, lalu aktifkan protection pada Snapshot
+hasilnya. Satu temporary restore server harus terisolasi, memiliki destruction
+boundary dan cost approval sendiri, lalu dibuktikan terhapus setelah drill.
+
+Image provider bukan application-consistent backup dan tidak menggantikan encrypted
+database dump serta exact object-manifest restore dari Shared Drive. Jangan mengubah
+server protection, membuat Snapshot, membuat server, atau menghapus resource tanpa
+gate provider terpisah.
+
+## Custody Decision yang Masih Kosong
+
+Source tidak mengikat nama individu. Sebelum C1, Director harus menyetujui dan
+mengisi role/owner berikut di decision packet, tanpa memasukkan secret:
+
+| Field keputusan | Nilai yang harus disetujui |
+| --- | --- |
+| Credential custodian | `<ROLE PENDING DIRECTOR DECISION>` |
+| Crypt password/salt custodian | `<ROLE PENDING DIRECTOR DECISION>` |
+| Break-glass envelope custodian | `<ROLE PENDING DIRECTOR DECISION>` |
+| Recovery operator | `<ROLE PENDING DIRECTOR DECISION>` |
+| Revocation/lost-access procedure owner | `<ROLE PENDING DIRECTOR DECISION>` |
+| Rotation cadence | `<CADENCE PENDING DIRECTOR DECISION>` |
+| Quarterly access review owner | `<ROLE PENDING DIRECTOR DECISION>` |
+
+Minimum grant harus memiliki purpose, scope, owner, expiry/review date, dan prosedur
+revocation. Password, salt, key, OAuth token, cookie, recovery code, atau isi
+`rclone.conf` tidak boleh masuk chat, ticket, report, atau repository.
 
 ## Monthly Restore Evidence
 

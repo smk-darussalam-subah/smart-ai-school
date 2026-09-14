@@ -1,0 +1,20 @@
+{
+  "exitCode": 0,
+  "facts": {
+    "configFingerprint": "998310e6eb68d97be243914f32bc6e5fcf0a11ab23ae99b936aec548f507b80f",
+    "credentialArtifactSha256": "cb4bf2cbd08d74f6752716fbc51961e0675f3f16aae05f519786a589b8454031",
+    "credentialValueRecorded": false,
+    "hostAvailableBytes": 65679015936,
+    "hostTotalBytes": 254888898560,
+    "provider": "google-drive-shared-drive",
+    "rootFolderIdSha256": "55f4fde146f8d0c01dc9032145dd843bf4735a9dd9d007bb038eb9c6fa9a4e02",
+    "sourceSha": "2d6d05313ec301dbf30929812193245d7d1153b5",
+    "sourceTree": "a624ee4ab494112bee6401960b6684af5e3dad2e",
+    "teamDriveIdSha256": "91316003a91fd04b5113ed07f74237ad69421cf054dd406f14e29d640ab8b855"
+  },
+  "observedAt": "2026-09-13T16:55:08.317868+00:00",
+  "phase": "preflight",
+  "previousReceiptSha256": "22eb07aa553b990432d637c71c50e72cde0dc07df88d0ebfca3306573beeced3",
+  "schemaVersion": "w10d-roundtrip-phase-receipt-v1",
+  "status": "PASS"
+}

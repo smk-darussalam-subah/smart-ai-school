@@ -1,0 +1,77 @@
+{
+  "schema": "diis-w10d-source-closure-handoff-v2",
+  "baseline": {
+    "developSha": "380080b2d92f064c1221395c9a525a953d94a163",
+    "developTree": "6de3c10f7853b8ee46fe72eaf2f27c4f9cc9da54"
+  },
+  "supersedes": {
+    "evidencePath": "docs/audits/WAVE10-D-SOURCE-CLOSURE-EVIDENCE-2026-09-08.json",
+    "evidenceSha256": "39e8a42ef1c3085981df3a715775a47873a0d60b5b03e5e0a33a0c0bce42ab83",
+    "reportPath": "docs/audits/WAVE10-D-SOURCE-CLOSURE-EXECUTOR-2026-09-08.md",
+    "reportSha256": "f70689b0aef56d60f8c331c14763d2d98e50e2b02e512a30aa57c0a6ebaf7fca",
+    "sourceManifestSha256": "b234d5e353a2dd2c4b544073673c56cafd3204b5e1b1093fdf67be63ef60d4b1"
+  },
+  "reportSha256": "969fd318a145eeacf8f641a40d83a2301e796c9592571c73379a2008364b811f",
+  "sourceManifestCount": 11,
+  "sourceManifest": [
+    {
+      "path": "docs/audits/WAVE10-D-CLEANUP-PREPARATION-OWNER-EVIDENCE-AND-LOCAL-BUNDLE-EVIDENCE-2026-09-09.json",
+      "sha256": "c7ab9cd0131c3b89fa44cb67d5ff002c5c836865b262e0daff45f6afc744dfa4"
+    },
+    {
+      "path": "docs/audits/WAVE10-D-N8N-MINIO-SIGNING-EMAIL-FOLLOWUP-EVIDENCE-2026-09-10.json",
+      "sha256": "df21b51c022f3f59a2663d681333180237e5c308e7eb3ebb491aad2f510d7532"
+    },
+    {
+      "path": "docs/audits/WAVE10-D-N8N-MINIO-SIGNING-EMAIL-FOLLOWUP-EXECUTOR-2026-09-10.md",
+      "sha256": "352a18ed3765740eb53f00a1192ba47aaa45ce7789b7ed792ab8d3df5687d867"
+    },
+    {
+      "path": "infrastructure/deploy/tests/source-closure-contract.py",
+      "sha256": "c45cccab90c9f2f093d7154731575a8e5be8508998ed716d20d9b4e03490ffee"
+    },
+    {
+      "path": "infrastructure/deploy/verify-source-closure-handoff.py",
+      "sha256": "78f1f8cd2bbc6cea975672f9d9e2dee0c97ffae76fcfe8438bb1a3d0b2f467a9"
+    },
+    {
+      "path": "infrastructure/docker/scripts/backup.sh",
+      "sha256": "60e599df403f5083348b58a729ae11f5443c4031924a8b423eb8f6d6240f3a01"
+    },
+    {
+      "path": "infrastructure/docker/tests/backup-contract.sh",
+      "sha256": "8e42bdc0e05fcc04c34e62e01d3a930aff54d608beeb1d2bf95189ca59981ef2"
+    },
+    {
+      "path": "infrastructure/docker/tests/fixtures/n8n-smtp-sink.js",
+      "sha256": "690a13d99e1c878069448012ca38b3c91d135d1b9286fe18af18d1969a4fafcb"
+    },
+    {
+      "path": "infrastructure/docker/tests/n8n-backup-monitor-integration.sh",
+      "sha256": "b247c7b9dbd02acb7fe915aa3ed70389e569bc040f5b38f97725c1172e8d839c"
+    },
+    {
+      "path": "infrastructure/n8n/README.md",
+      "sha256": "ddd19f6b1002647bd8e1b72f1db9db457d3a647557100d21f0751cfe212bd377"
+    },
+    {
+      "path": "infrastructure/n8n/workflows/backup-daily.json",
+      "sha256": "f0cf4ec47282cd0661c7cecb75e190a300644081b1875084cb509866caac4352"
+    }
+  ],
+  "sourceManifestSha256": "e417c97e8307aa868a97fcf801d2422023c86b7d422d60508558f6ff9e06a3c5",
+  "authorizedRebindings": [
+    "infrastructure/deploy/tests/source-closure-contract.py",
+    "infrastructure/deploy/verify-source-closure-handoff.py",
+    "infrastructure/docker/tests/backup-contract.sh"
+  ],
+  "tests": {
+    "sourceClosure": 43
+  },
+  "holds": [
+    "commit push PR merge and protection relaxation",
+    "image publication and credential mutation",
+    "n8n publication activation and host cleanup",
+    "staging offsite backup restore and production"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "exitCode": 0,
+  "facts": {
+    "backupId": "20260913T165516Z-338684",
+    "commandContract": "canonical-cleanup-scripts-and-bounded-observation",
+    "dockerContainersAbsent": true,
+    "dockerNetworkAbsent": true,
+    "driveParentInventorySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "drivePrefixMatchCount": 0,
+    "objectTargetAbsent": true,
+    "plaintextRestoreInputAbsent": true,
+    "proofPayloadSha256": "7ec65ce632ec0e52af9810c091ff1c4bd08531ab5e4abfacef90570b1651183e"
+  },
+  "observedAt": "2026-09-13T16:58:48.797772+00:00",
+  "phase": "remote-and-resource-cleanup",
+  "previousReceiptSha256": "5414066b108bf5f88e6917ce0945b3ee2b170a727802458a54ccf2f88495fa0d",
+  "schemaVersion": "w10d-roundtrip-phase-receipt-v1",
+  "status": "PASS"
+}

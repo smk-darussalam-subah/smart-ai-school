@@ -21,10 +21,11 @@ with open(sys.argv[1], encoding="utf-8") as stream:
     value = json.load(stream)
 required = {
     "schemaVersion", "status", "backupId", "source", "sourceProvenanceSha256",
-    "dumpSha256", "objectManifestSha256", "createdEpoch",
+    "dumpSha256", "objectManifestSha256", "tableCount", "userCount", "studentCount",
+    "createdEpoch",
 }
 assert isinstance(value, dict) and set(value) == required
-assert value["schemaVersion"] == "diis-restore-proof-v2"
+assert value["schemaVersion"] == "diis-restore-proof-v3"
 assert value["status"] in ("success", "failed")
 assert isinstance(value["createdEpoch"], int) and value["createdEpoch"] >= 0
 backup_id = str(value["backupId"])
@@ -33,10 +34,16 @@ if value["status"] == "success":
     assert value["source"] == "independent-crypt"
     for key in ("sourceProvenanceSha256", "dumpSha256", "objectManifestSha256"):
         assert re.fullmatch(r"[a-f0-9]{64}", str(value[key]))
+    for key in ("tableCount", "userCount", "studentCount"):
+        assert type(value[key]) is int and value[key] >= 0
+    assert int(value["tableCount"]) > 0
+    assert int(value["studentCount"]) <= int(value["userCount"])
 else:
     assert value["source"] in ("independent-crypt", "unavailable")
     for key in ("sourceProvenanceSha256", "dumpSha256", "objectManifestSha256"):
         assert value[key] == "unavailable" or re.fullmatch(r"[a-f0-9]{64}", str(value[key]))
+    for key in ("tableCount", "userCount", "studentCount"):
+        assert value[key] == "unavailable" or (type(value[key]) is int and value[key] >= 0)
 PY
 
 candidate="/tmp/diis-restore-proof-$$.json"

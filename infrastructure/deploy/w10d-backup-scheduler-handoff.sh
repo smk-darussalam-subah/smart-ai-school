@@ -3,12 +3,17 @@
 set -Eeuo pipefail
 umask 077
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+TEST_BOUNDARY="$SCRIPT_DIR/../../scripts/w10d-test-boundary.sh"
+[ -f "$TEST_BOUNDARY" ] && [ ! -L "$TEST_BOUNDARY" ] || { printf 'ERROR: test boundary unavailable\n' >&2; exit 1; }
+# shellcheck source=../../scripts/w10d-test-boundary.sh
+. "$TEST_BOUNDARY"
+
 LEGACY_CONTAINER=${LEGACY_CONTAINER:-smk-pg-backup}
 CANDIDATE_CONTAINER=${CANDIDATE_CONTAINER:-smk-pg-backup-candidate}
 LEGACY_HOLD_NAME=${LEGACY_HOLD_NAME:?LEGACY_HOLD_NAME is required}
 ROLLBACK_DIR=${ROLLBACK_DIR:?ROLLBACK_DIR is required}
 REPO_DIR=${REPO_DIR:-/home/appuser/smart-ai-school}
-HOST_LOCK=${HOST_LOCK:-/home/appuser/.local/state/diis-deploy/deploy.lock}
 BACKUP_WRITER_LOCK=${BACKUP_WRITER_LOCK:-/var/lock/diis-backup/backup.lock}
 HANDOFF_CONFIRMATION=${HANDOFF_CONFIRMATION:-}
 EXPECTED_CANDIDATE_IMAGE=${EXPECTED_CANDIDATE_IMAGE:?EXPECTED_CANDIDATE_IMAGE is required}
@@ -16,21 +21,58 @@ EXPECTED_CANDIDATE_IMAGE_ID=${EXPECTED_CANDIDATE_IMAGE_ID:?EXPECTED_CANDIDATE_IM
 EXPECTED_CANDIDATE_TOOL_VOLUME=${EXPECTED_CANDIDATE_TOOL_VOLUME:?EXPECTED_CANDIDATE_TOOL_VOLUME is required}
 EXPECTED_MINIO_VOLUME=${EXPECTED_MINIO_VOLUME:?EXPECTED_MINIO_VOLUME is required}
 EXPECTED_BACKUP_LOCK_HOST_PATH=${EXPECTED_BACKUP_LOCK_HOST_PATH:?EXPECTED_BACKUP_LOCK_HOST_PATH is required}
+EXPECTED_OFFSITE_PROVIDER=${EXPECTED_OFFSITE_PROVIDER:?EXPECTED_OFFSITE_PROVIDER is required}
+EXPECTED_OFFSITE_ORIGIN=${EXPECTED_OFFSITE_ORIGIN:?EXPECTED_OFFSITE_ORIGIN is required}
 EXPECTED_MAIN_SHA=${EXPECTED_MAIN_SHA:?EXPECTED_MAIN_SHA is required}
 EXPECTED_MAIN_TREE=${EXPECTED_MAIN_TREE:?EXPECTED_MAIN_TREE is required}
 ACCEPTANCE_BUNDLE=${ACCEPTANCE_BUNDLE:?ACCEPTANCE_BUNDLE is required}
 EXPECTED_ACCEPTANCE_BUNDLE_SHA256=${EXPECTED_ACCEPTANCE_BUNDLE_SHA256:?EXPECTED_ACCEPTANCE_BUNDLE_SHA256 is required}
 ROOT_CRON_EVIDENCE=${ROOT_CRON_EVIDENCE:?ROOT_CRON_EVIDENCE is required}
 MANUAL_BACKUP_MANIFEST=${MANUAL_BACKUP_MANIFEST:?MANUAL_BACKUP_MANIFEST is required}
+MANUAL_BACKUP_SIDECAR=${MANUAL_BACKUP_SIDECAR:?MANUAL_BACKUP_SIDECAR is required}
 OFFSITE_PROVENANCE=${OFFSITE_PROVENANCE:?OFFSITE_PROVENANCE is required}
 DB_RESTORE_PROOF=${DB_RESTORE_PROOF:?DB_RESTORE_PROOF is required}
 OBJECT_RESTORE_PROOF=${OBJECT_RESTORE_PROOF:?OBJECT_RESTORE_PROOF is required}
 TOOL_EVIDENCE=${TOOL_EVIDENCE:?TOOL_EVIDENCE is required}
+SERVICE_ACCOUNT_EVIDENCE=${SERVICE_ACCOUNT_EVIDENCE:?SERVICE_ACCOUNT_EVIDENCE is required}
 REDACT_HELPER="$REPO_DIR/scripts/docker-container-redacted-manifest.py"
 ACCEPTANCE_HELPER="$REPO_DIR/scripts/validate-w10d-candidate-acceptance.py"
+COMPLETION_LIBRARY="$REPO_DIR/scripts/w10d_completion_validation.py"
 TOOL_CAPTURE_HELPER="$REPO_DIR/scripts/capture-w10d-candidate-tool-evidence.sh"
+SERVICE_ACCOUNT_HELPER="$REPO_DIR/scripts/google-service-account-binding.py"
+SERVICE_ACCOUNT_HOST_FILE=${SERVICE_ACCOUNT_HOST_FILE:-/etc/diis/google-service-account.json}
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+w10d_init_test_boundary || die "test root is not one canonical private direct child of /tmp"
+w10d_bind_host_lock /home/appuser/.local/state/diis-deploy/deploy.lock \
+  || die "host lock must use canonical production identity or confined test override"
+for value in "${DIIS_ACCEPTANCE_TEST_MODE:-}" "${DIIS_ACCEPTANCE_TEST_PAUSE_MARKER:-}" \
+  "${DIIS_ACCEPTANCE_TEST_PAUSE_RELEASE:-}"; do
+  w10d_no_test_value "$value" || die "inherited acceptance test control forbidden"
+done
+if [ "$W10D_TEST_MODE" = 0 ]; then
+  for value in "${ALLOW_TEST_BACKUP_LOCK_PATH:-}" "${ALLOW_TEST_CREDENTIAL_PATH:-}"; do
+    w10d_no_test_value "$value" || die "test control forbidden in production mode"
+  done
+  [ -z "${TEST_BACKUP_LOCK_HOST_PATH:-}" ] && [ -z "${TEST_BACKUP_WRITER_LOCK:-}" ] \
+    || die "test path forbidden in production mode"
+else
+  [ "${ALLOW_TEST_BACKUP_LOCK_PATH:-0}" = 1 ] \
+    && [ "${ALLOW_TEST_CREDENTIAL_PATH:-0}" = 1 ] \
+    || die "explicit test confirmations are required"
+  for path in "$REPO_DIR" "$HOST_LOCK" "$BACKUP_WRITER_LOCK" "$ROLLBACK_DIR" \
+    "$SERVICE_ACCOUNT_HOST_FILE" "$ACCEPTANCE_BUNDLE" "$ROOT_CRON_EVIDENCE" \
+    "$MANUAL_BACKUP_MANIFEST" "$MANUAL_BACKUP_SIDECAR" "$OFFSITE_PROVENANCE" \
+    "$DB_RESTORE_PROOF" "$OBJECT_RESTORE_PROOF" "$TOOL_EVIDENCE" \
+    "$SERVICE_ACCOUNT_EVIDENCE" "${TEST_BACKUP_LOCK_HOST_PATH:-}" \
+    "${TEST_BACKUP_WRITER_LOCK:-}"; do
+    w10d_test_path_confined "$path" || die "test path escapes canonical private test root"
+  done
+fi
+[ "$SERVICE_ACCOUNT_HOST_FILE" = /etc/diis/google-service-account.json ] \
+  || { [ "$W10D_TEST_MODE" = 1 ] && [ "${ALLOW_TEST_CREDENTIAL_PATH:-0}" = 1 ] \
+    && w10d_test_path_confined "$SERVICE_ACCOUNT_HOST_FILE"; } \
+  || die "Service Account host path must be canonical"
 safe_name() { [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$ ]]; }
 for name in "$LEGACY_CONTAINER" "$CANDIDATE_CONTAINER" "$LEGACY_HOLD_NAME" \
   "$EXPECTED_CANDIDATE_TOOL_VOLUME" "$EXPECTED_MINIO_VOLUME"; do
@@ -45,22 +87,52 @@ case "$ROLLBACK_DIR" in /*) ;; *) die "rollback directory must be absolute" ;; e
 case "$EXPECTED_BACKUP_LOCK_HOST_PATH" in /*) ;; *) die "backup lock host path must be absolute" ;; esac
 [ "$BACKUP_WRITER_LOCK" = "$EXPECTED_BACKUP_LOCK_HOST_PATH/backup.lock" ] \
   || die "backup writer lock binding mismatch"
+if [ "$EXPECTED_BACKUP_LOCK_HOST_PATH" != /var/lock/diis-backup ]; then
+  [ "$W10D_TEST_MODE" = 1 ] \
+    && [ "${ALLOW_TEST_BACKUP_LOCK_PATH:-0}" = 1 ] \
+    && [ "${TEST_BACKUP_LOCK_HOST_PATH:-}" = "$EXPECTED_BACKUP_LOCK_HOST_PATH" ] \
+    && [ "${TEST_BACKUP_WRITER_LOCK:-}" = "$BACKUP_WRITER_LOCK" ] \
+    && [[ "$EXPECTED_BACKUP_LOCK_HOST_PATH:$REPO_DIR" == /tmp/*:/tmp/* ]] \
+    || die "backup writer lock must use canonical production identity"
+fi
+[ "$EXPECTED_OFFSITE_PROVIDER" = google ] || die "off-site provider binding invalid"
+[ "$EXPECTED_OFFSITE_ORIGIN" = provider-default ] || die "off-site origin binding invalid"
 [ -d "$ROLLBACK_DIR" ] || die "rollback directory unavailable"
-[ "$(stat -c '%a' "$ROLLBACK_DIR")" = 700 ] || die "rollback directory mode must be 0700"
+[ ! -L "$ROLLBACK_DIR" ] && [ "$(stat -c '%a:%u' "$ROLLBACK_DIR")" = "700:$(id -u)" ] \
+  || die "rollback directory owner or mode invalid"
 [ -z "$(find "$ROLLBACK_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ] \
   || die "rollback directory must be empty"
 
-for path in "$ACCEPTANCE_BUNDLE" "$ROOT_CRON_EVIDENCE" "$MANUAL_BACKUP_MANIFEST" \
-  "$OFFSITE_PROVENANCE" "$DB_RESTORE_PROOF" "$OBJECT_RESTORE_PROOF" "$TOOL_EVIDENCE"; do
+for path in "$ACCEPTANCE_BUNDLE" "$ROOT_CRON_EVIDENCE" "$MANUAL_BACKUP_MANIFEST" "$MANUAL_BACKUP_SIDECAR" \
+  "$OFFSITE_PROVENANCE" "$DB_RESTORE_PROOF" "$OBJECT_RESTORE_PROOF" "$TOOL_EVIDENCE" \
+  "$SERVICE_ACCOUNT_EVIDENCE"; do
   [ -f "$path" ] && [ ! -L "$path" ] || die "required evidence file unavailable"
   [ "$(stat -c '%a' "$path")" = 600 ] || die "evidence file mode must be 0600"
+  evidence_parent=$(dirname "$path")
+  [ -d "$evidence_parent" ] && [ ! -L "$evidence_parent" ] \
+    && [ "$(stat -c '%a:%u' "$evidence_parent")" = "700:$(id -u)" ] \
+    || die "evidence parent owner or mode invalid"
 done
-for command in docker flock pgrep sha256sum stat find python3 git cmp; do
+for command in docker flock pgrep sha256sum stat find python3 git cmp id readlink sort xargs; do
   command -v "$command" >/dev/null 2>&1 || die "$command unavailable"
 done
 [ -f "$REDACT_HELPER" ] || die "redacted rollback helper unavailable"
 [ -f "$ACCEPTANCE_HELPER" ] || die "candidate acceptance helper unavailable"
+[ -f "$COMPLETION_LIBRARY" ] && [ ! -L "$COMPLETION_LIBRARY" ] \
+  || die "strict completion library unavailable"
 [ -f "$TOOL_CAPTURE_HELPER" ] || die "candidate tool capture helper unavailable"
+[ -f "$SERVICE_ACCOUNT_HELPER" ] && [ ! -L "$SERVICE_ACCOUNT_HELPER" ] \
+  || die "Service Account binding helper unavailable"
+[ "$(id -u)" = 0 ] || die "handoff credential revalidation requires exact privileged gate"
+lock_parent=$(dirname "$BACKUP_WRITER_LOCK")
+[ -d "$lock_parent" ] && [ ! -L "$lock_parent" ] || die "backup lock bootstrap unavailable"
+if [ "$lock_parent" = /var/lock/diis-backup ]; then
+  app_uid=$(id -u appuser 2>/dev/null) || die "appuser identity unavailable"
+  app_gid=$(id -g appuser 2>/dev/null) || die "appuser group unavailable"
+  [ "$(readlink -f "$lock_parent")" = /run/lock/diis-backup ] \
+    && [ "$(stat -c '%a:%u:%g' "$lock_parent")" = "750:$app_uid:$app_gid" ] \
+    || die "backup lock bootstrap contract mismatch"
+fi
 
 cd "$REPO_DIR"
 [ "$(git rev-parse HEAD)" = "$EXPECTED_MAIN_SHA" ] || die "checkout SHA mismatch"
@@ -74,6 +146,8 @@ exec 9>"$HOST_LOCK"
 flock -n 9 || die "production host lock is already held"
 # shellcheck source=../docker/scripts/backup-lib.sh
 source "$REPO_DIR/infrastructure/docker/scripts/backup-lib.sh"
+BACKUP_LOCK_BOOTSTRAP_REQUIRED=1
+export BACKUP_LOCK_BOOTSTRAP_REQUIRED
 
 state=precheck
 mutation_started=0
@@ -179,12 +253,34 @@ sh "$TOOL_CAPTURE_HELPER" "$CANDIDATE_CONTAINER" "$EXPECTED_CANDIDATE_TOOL_VOLUM
   "$actual_tool_evidence" >"$ROLLBACK_DIR/candidate-tool-capture.status"
 cmp -s "$TOOL_EVIDENCE" "$actual_tool_evidence" \
   || die "candidate tool bytes or versions drift from approved evidence"
+actual_service_account_evidence="$ROLLBACK_DIR/service-account-evidence.actual.json"
+python3 "$SERVICE_ACCOUNT_HELPER" "$SERVICE_ACCOUNT_HOST_FILE" \
+  --expected-path "$SERVICE_ACCOUNT_HOST_FILE" >"$actual_service_account_evidence" \
+  || die "actual Service Account artifact rejected"
+cmp -s "$SERVICE_ACCOUNT_EVIDENCE" "$actual_service_account_evidence" \
+  || die "actual Service Account identity or artifact drift"
 chmod 600 "$ROLLBACK_DIR"/*
 
-python3 "$ACCEPTANCE_HELPER" "$ACCEPTANCE_BUNDLE" "$EXPECTED_MAIN_SHA" "$EXPECTED_MAIN_TREE" \
+evidence_snapshot="$ROLLBACK_DIR/acceptance-evidence-snapshot"
+mkdir -m 0700 "$evidence_snapshot" || die "acceptance snapshot directory creation failed"
+acceptance_test_args=()
+if [ "$EXPECTED_BACKUP_LOCK_HOST_PATH" != /var/lock/diis-backup ]; then
+  acceptance_test_args=(--test-root "$W10D_CANONICAL_TEST_ROOT" \
+    --test-lock-host-path "$EXPECTED_BACKUP_LOCK_HOST_PATH")
+fi
+env -u DIIS_W10D_TEST_ROOT -u DIIS_ACCEPTANCE_TEST_MODE \
+  -u DIIS_ACCEPTANCE_TEST_PAUSE_MARKER -u DIIS_ACCEPTANCE_TEST_PAUSE_RELEASE \
+  python3 "$ACCEPTANCE_HELPER" --expected-bundle-sha256 "$EXPECTED_ACCEPTANCE_BUNDLE_SHA256" \
+  --snapshot-dir "$evidence_snapshot" --expected-owner-uid "$(id -u)" \
+  "${acceptance_test_args[@]}" \
+  "$ACCEPTANCE_BUNDLE" "$EXPECTED_MAIN_SHA" "$EXPECTED_MAIN_TREE" \
   "$CANDIDATE_CONTAINER" "$REPO_DIR" "$runtime_manifest" "$ROOT_CRON_EVIDENCE" \
-  "$MANUAL_BACKUP_MANIFEST" "$OFFSITE_PROVENANCE" "$DB_RESTORE_PROOF" \
-  "$OBJECT_RESTORE_PROOF" "$actual_tool_evidence" || die "candidate acceptance evidence rejected"
+  "$MANUAL_BACKUP_MANIFEST" "$MANUAL_BACKUP_SIDECAR" "$OFFSITE_PROVENANCE" "$DB_RESTORE_PROOF" \
+  "$OBJECT_RESTORE_PROOF" "$actual_tool_evidence" "$actual_service_account_evidence" \
+  || die "candidate acceptance evidence rejected"
+find "$evidence_snapshot" -maxdepth 1 -type f -print0 | LC_ALL=C sort -z \
+  | xargs -0 sha256sum >"$ROLLBACK_DIR/acceptance-evidence.sha256"
+chmod 600 "$ROLLBACK_DIR/acceptance-evidence.sha256"
 
 [ "$(docker container inspect --format '{{.Config.Image}}' "$CANDIDATE_CONTAINER")" = "$EXPECTED_CANDIDATE_IMAGE" ] \
   || die "candidate image reference mismatch"
@@ -202,7 +298,33 @@ actual_minio_volume=$(docker container inspect --format \
 actual_lock_source=$(docker container inspect --format \
   '{{range .Mounts}}{{if eq .Destination "/var/lock/diis-backup"}}{{.Source}}{{end}}{{end}}' "$CANDIDATE_CONTAINER")
 [ "$actual_lock_source" = "$EXPECTED_BACKUP_LOCK_HOST_PATH" ] || die "candidate lock mount mismatch"
-for binding in 'OFFSITE_RETENTION_APPLY=0' 'BACKUP_BUCKET_CREATION_ALLOWED=0' 'BACKUP_SCHEDULE_ENABLED=0'; do
+legacy_lock_source=$(docker container inspect --format \
+  '{{range .Mounts}}{{if eq .Destination "/var/lock/diis-backup"}}{{.Source}}{{end}}{{end}}' "$LEGACY_CONTAINER")
+[ "$legacy_lock_source" = "$EXPECTED_BACKUP_LOCK_HOST_PATH" ] || die "legacy lock mount mismatch"
+for container in "$CANDIDATE_CONTAINER" "$LEGACY_CONTAINER"; do
+  docker container inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" \
+    | grep -Fqx 'BACKUP_LOCK_DIR=/var/lock/diis-backup/backup.lock' \
+    || die "container lock environment mismatch"
+done
+actual_credential_source=$(docker container inspect --format \
+  '{{range .Mounts}}{{if eq .Destination "/run/diis-secrets/google-service-account.json"}}{{.Source}}{{end}}{{end}}' "$CANDIDATE_CONTAINER")
+actual_credential_rw=$(docker container inspect --format \
+  '{{range .Mounts}}{{if eq .Destination "/run/diis-secrets/google-service-account.json"}}{{.RW}}{{end}}{{end}}' "$CANDIDATE_CONTAINER")
+[ "$actual_credential_source" = "$SERVICE_ACCOUNT_HOST_FILE" ] && [ "$actual_credential_rw" = false ] \
+  || die "candidate Service Account mount drift"
+expected_credential_sha=$(python3 - "$actual_service_account_evidence" <<'PY'
+import json,sys
+print(json.load(open(sys.argv[1],encoding='utf-8'))['credentialArtifactSha256'])
+PY
+)
+actual_credential_sha=$(docker exec "$CANDIDATE_CONTAINER" \
+  sha256sum /run/diis-secrets/google-service-account.json | awk '{print $1}')
+[ "$actual_credential_sha" = "$expected_credential_sha" ] \
+  || die "mounted Service Account bytes drift"
+for binding in 'OFFSITE_RETENTION_APPLY=0' 'BACKUP_BUCKET_CREATION_ALLOWED=0' \
+  'BACKUP_SCHEDULE_ENABLED=0' 'BACKUP_LOCK_BOOTSTRAP_REQUIRED=1' \
+  "OFFSITE_EXPECTED_PROVIDER=$EXPECTED_OFFSITE_PROVIDER" \
+  "OFFSITE_EXPECTED_ORIGIN=$EXPECTED_OFFSITE_ORIGIN"; do
   docker container inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$CANDIDATE_CONTAINER" \
     | grep -Fqx "$binding" || die "candidate safety environment mismatch"
 done
@@ -211,7 +333,10 @@ done
 docker exec "$LEGACY_CONTAINER" crontab -l >"$ROLLBACK_DIR/legacy-root.pre-mutation"
 cmp -s "$ROLLBACK_DIR/legacy-root.cron" "$ROLLBACK_DIR/legacy-root.pre-mutation" \
   || die "legacy cron changed after capture"
-sha256sum "$ROLLBACK_DIR"/* >"$ROLLBACK_DIR/SHA256SUMS"
+sha256sum --check --status "$ROLLBACK_DIR/acceptance-evidence.sha256" \
+  || die "acceptance evidence snapshot drifted before mutation"
+find "$ROLLBACK_DIR" -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
+  | LC_ALL=C sort -z | xargs -0 sha256sum >"$ROLLBACK_DIR/SHA256SUMS"
 chmod 600 "$ROLLBACK_DIR/SHA256SUMS"
 
 mutation_started=1

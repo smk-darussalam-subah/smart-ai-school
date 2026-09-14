@@ -6,10 +6,10 @@ Direktori ini berisi workflow JSON yang siap diimpor ke n8n.
 
 ## Daftar Workflow
 
-| File | Fungsi | Trigger |
-|---|---|---|
-| `workflows/health-check.json` | Monitor endpoint `/health` API, kirim WA jika DOWN | Setiap 5 menit |
-| `workflows/backup-daily.json` | Konfirmasi backup PostgreSQL ada di MinIO, kirim WA status | Setiap hari 02:00 WIB |
+| File                          | Fungsi                                                                           | Trigger               |
+| ----------------------------- | -------------------------------------------------------------------------------- | --------------------- |
+| `workflows/health-check.json` | Monitor endpoint `/health` API, kirim WA jika DOWN                               | Setiap 5 menit        |
+| `workflows/backup-daily.json` | Baca telemetry completion backup dari MinIO, kirim email sekolah bila bermasalah | Setiap hari 02:45 WIB |
 
 ---
 
@@ -18,6 +18,7 @@ Direktori ini berisi workflow JSON yang siap diimpor ke n8n.
 ### 1. Buka n8n
 
 n8n berjalan di internal Docker network. Akses via Nginx reverse proxy:
+
 ```
 https://n8n.smkdarussalamsubah.sch.id
 ```
@@ -39,22 +40,11 @@ Setiap workflow memerlukan konfigurasi tambahan sebelum diaktifkan.
 
 ---
 
-## Variabel Lingkungan yang Dibutuhkan
+## Konfigurasi Workflow Backup
 
-Tambahkan ke service `n8n` di `infrastructure/docker/docker-compose.yml` dan isi nilainya di `.env`:
-
-```env
-# WhatsApp notification via Fonnte
-FONNTE_API_KEY=your-fonnte-api-key-here
-ADMIN_PHONE_NUMBER=6281234567890
-```
-
-| Variabel | Deskripsi | Contoh |
-|---|---|---|
-| `FONNTE_API_KEY` | API key dari dashboard Fonnte | `AbCd1234...` |
-| `ADMIN_PHONE_NUMBER` | Nomor WA tujuan notifikasi (format: 628xxx) | `628123456789` |
-
-Variabel ini diakses dalam workflow via ekspresi `={{ $env.NAMA_VARIABEL }}`.
+Workflow backup tidak membaca environment variables. Credential S3-compatible dan
+SMTP disimpan terenkripsi di credential store n8n. Alamat pengirim dan penerima
+terikat ke `admin@smkdarussalamsubah.sch.id` pada workflow yang direview.
 
 Appointment due activation tidak dijalankan oleh n8n. Gunakan systemd timer pada VPS sesuai `docs/runbooks/appointment-due-activation-systemd.md`.
 
@@ -62,22 +52,31 @@ Appointment due activation tidak dijalankan oleh n8n. Gunakan systemd timer pada
 
 ## Konfigurasi Credential: MinIO (untuk backup-daily)
 
-Workflow `backup-daily.json` menggunakan credential AWS (dengan endpoint MinIO) untuk autentikasi ke MinIO S3 API.
+Workflow `backup-daily.json` menggunakan node S3-compatible n8n. Jangan memakai node HTTP generik dengan credential AWS: autodeteksi service dari hostname internal `minio` menghasilkan scope SigV4 yang bukan `s3`.
 
 ### Langkah setup credential
 
 1. Di n8n, buka **Settings** → **Credentials** → **Add Credential**.
-2. Pilih tipe: **AWS**.
+2. Pilih tipe: **S3**.
 3. Isi field:
-   - **Credential Name**: `MinIO Backup Credentials` _(nama ini harus sama persis)_
-   - **Access Key ID**: nilai `MINIO_ROOT_USER` dari `.env` (default: `smkadmin`)
-   - **Secret Access Key**: nilai `MINIO_ROOT_PASSWORD` dari `.env`
-   - **Region**: `us-east-1` _(nilai apapun, MinIO tidak memeriksa region)_
-   - **Custom Endpoint**: `http://minio:9000`
-   - Centang **Force path style** jika tersedia.
+   - **Credential Name**: `MinIO Backup Readonly S3 Credential` _(nama ini harus sama persis)_
+   - **S3 Endpoint**: `http://minio:9000`
+   - **Region**: `us-east-1`
+   - **Access Key ID / Secret Access Key**: service account khusus monitor, bukan credential root MinIO.
+   - **Force Path Style**: aktif.
+   - **Ignore SSL Issues**: nonaktif.
 4. Klik **Save**.
 
-Setelah credential dibuat, buka workflow `backup-daily` → klik node **Daftar File MinIO** → pada bagian Credential, pilih `MinIO Backup Credentials`.
+Policy service account hanya boleh `s3:GetObject` untuk object telemetry completion yang tepat. Setelah credential dibuat, buka workflow `backup-daily` → klik node **Baca completion manifests** → pilih `MinIO Backup Readonly S3 Credential`.
+
+## Konfigurasi Credential: Email Sekolah (untuk backup-daily)
+
+1. Di n8n, buat credential bertipe **SMTP** bernama `DIIS School SMTP` melalui kanal credential resmi.
+2. Gunakan akun SMTP sekolah yang diizinkan mengirim sebagai
+   `admin@smkdarussalamsubah.sch.id`.
+3. Jangan menaruh password atau app password pada workflow, `.env` contoh, repository, atau laporan.
+4. Recipient backup alert terikat ke `admin@smkdarussalamsubah.sch.id`.
+5. Uji binding saat workflow masih inactive. Aktivasi memerlukan gate commissioning terpisah.
 
 ---
 
@@ -109,38 +108,48 @@ Untuk menguji workflow tanpa menunggu jadwal:
 
 ### Expected output — backup-daily
 
-- Node `Siapkan Tanggal` → `{"datePrefix":"2026-05-30","listUrl":"http://..."}`
-- Node `Daftar File MinIO` → XML S3 ListObjectsV2 response
-- Node `Cek Ada Backup?` → `{"backupFound":true,"fileCount":1,"sizeKB":"225.0 KiB","fileName":"postgres/2026-05-30_19-00.sql.gz"}`
-- Node `Backup Ada?` → output ke true branch → `Notif WA — Backup OK`
+- Node `Baca completion manifests` → binary `completionManifest` dari object telemetry terikat.
+- Node `Parse completion manifest` → JSON di field `data`.
+- Node `Nilai freshness completion` → `alertRequired: false` untuk telemetry valid dan segar.
+- Validator menghitung ulang `projectedFreePercent` dari ruang bebas, estimasi database
+  pra-dump, dan kapasitas total yang diterbitkan producer. Untuk growth 30 hari positif,
+  validator juga menghitung ulang `projectedDaysToFull` dari ruang bebas dan growth;
+  growth nol/negatif atau history yang belum cukup wajib memakai `-1`.
+- Alert bermasalah diarahkan ke `admin@smkdarussalamsubah.sch.id` melalui credential SMTP terenkripsi.
+- Kegagalan S3/parse mengirim payload statis teredaksi, lalu execution berakhir gagal
+  eksplisit. Error mentah tidak boleh masuk subject atau body.
+- Output evaluator memakai `notificationChannelType: smtp` dan
+  `notificationChannelReadiness: unbound`. Readiness hanya boleh menjadi `validated`
+  setelah credential diuji dalam gate commissioning.
+- SMTP rejection harus berakhir gagal eksplisit dan tidak boleh berubah menjadi sukses.
 
 ---
 
 ## Catatan Timing (backup-daily)
 
-Workflow `backup-daily` dan service `pg-backup` keduanya dijadwalkan pada `0 19 * * *` (UTC). 
+Service `pg-backup` berjalan pada 02:00 WIB dan workflow `backup-daily` dijadwalkan pada 02:45 WIB.
 
-- **pg-backup** (Docker cron) mulai pg_dump + upload ke MinIO pada 19:00 UTC.
-- **n8n workflow** juga trigger pada 19:00 UTC untuk memeriksa keberadaan file.
+- **pg-backup** mulai membuat backup pada 02:00 WIB.
+- **n8n workflow** membaca telemetry completion setelah grace period 45 menit.
 
-Jika pg_dump selesai dalam < 1 menit, n8n akan menemukan file. Jika database besar dan dump membutuhkan waktu lebih, pertimbangkan mengubah cron n8n ke `15 19 * * *` (15 menit setelah backup dimulai) untuk menghindari false alert.
+Jadwal canonical hanya `45 2 * * *` pada timezone `Asia/Jakarta`. Jangan mengubah
+jadwal atau memakai ekspresi UTC lama tanpa review baru atas grace period backup.
 
 ---
 
-## Arsitektur Notifikasi
+## Arsitektur Notifikasi Backup
 
 ```
-n8n workflow ──→ Fonnte API (api.fonnte.com) ──→ WhatsApp Admin IT
+n8n workflow ──→ SMTP sekolah ──→ admin@smkdarussalamsubah.sch.id
 ```
 
-Fonnte adalah gateway WhatsApp Indonesia. Pastikan nomor pengirim di akun Fonnte sudah aktif dan verifikasi API key dari dashboard Fonnte.
+WAHA direncanakan sebagai kanal WhatsApp pada sesi instalasi terpisah. Jangan mengaktifkan Fonnte untuk workflow backup: probe 2026-09-09 menunjukkan token existing tidak valid.
 
 ---
 
 ## Referensi
 
 - n8n dokumentasi: https://docs.n8n.io
-- Fonnte API: https://fonnte.com/docs
 - MinIO S3 API (ListObjectsV2): https://min.io/docs/minio/linux/developers/go/API.html
 - Backup script: `infrastructure/docker/scripts/backup.sh`
 - Docker Compose: `infrastructure/docker/docker-compose.yml`

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "diis-w10d-pr653-lockfile-followup-delta-v1",
+  "baseCommit": "6610fcc02e321ba810381ad7f05f39c5e9e3e3e5",
+  "count": 1,
+  "changes": [
+    {
+      "path": "node_modules/thread-stream/node_modules/real-require",
+      "from": "1.0.0",
+      "to": null,
+      "integrityBefore": "sha512-P4nbQYQfePJxRSmY+v/KINxVucm4NF3p3s7pJveMTtom52FR4YGltUQLB8idDXwDDWW+eYrWDFbuzUnjoWHF7g==",
+      "integrityAfter": null,
+      "reason": "Removed invalid nested major; thread-stream@3.2.0 now dedupes to root real-require@0.2.0 satisfying ^0.2.0"
+    }
+  ]
+}
