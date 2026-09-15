@@ -203,6 +203,7 @@ def validate_packet(evidence, report_raw, source_bytes, changes):
                 and type(result['command']) is str and result['command'], 'test-binding')
     require(evidence['claims'] == {
         'standardStagingDeployRestored': True,
+        'exactValidatorRemovedFromSharedCI': True,
         'recoveryExecutorsRetainedButNotWired': True,
         'hostLockRetained': True,
         'shaBindingRetained': True,
@@ -219,10 +220,8 @@ def validate_packet(evidence, report_raw, source_bytes, changes):
     return manifest
 
 
-def validate(root=ROOT, check_predecessor=True):
+def validate_package(root=ROOT, check_predecessor=True):
     root = Path(root).resolve()
-    expected = set(SOURCE) | {REPORT, EVIDENCE}
-    require(workspace_paths(root) == expected, 'workspace-path-set')
     report_raw = read(root, REPORT)
     evidence = parse(read(root, EVIDENCE), 'evidence-json')
     source_bytes = {path: read(root, path) for path in SOURCE}
@@ -233,9 +232,16 @@ def validate(root=ROOT, check_predecessor=True):
     previous = predecessor(root) if check_predecessor else PREDECESSOR_RESULT
     return {
         'sourceFiles': len(SOURCE),
-        'pathCount': len(expected),
+        'pathCount': len(set(SOURCE) | {REPORT, EVIDENCE}),
         'historicalInputs': previous['historicalInputs'] + previous['sourceFiles'] + 2,
     }
+
+
+def validate(root=ROOT, check_predecessor=True):
+    root = Path(root).resolve()
+    expected = set(SOURCE) | {REPORT, EVIDENCE}
+    require(workspace_paths(root) == expected, 'workspace-path-set')
+    return validate_package(root, check_predecessor)
 
 
 if __name__ == '__main__':

@@ -24,7 +24,7 @@ def packet():
 
 class Contract(unittest.TestCase):
     def test_actual_handoff_and_predecessor_chain(self):
-        self.assertEqual(HANDOFF.validate(), {
+        self.assertEqual(HANDOFF.validate_package(), {
             'sourceFiles': 7,
             'pathCount': 9,
             'historicalInputs': 96,
@@ -36,16 +36,34 @@ class Contract(unittest.TestCase):
         with self.assertRaisesRegex(HANDOFF.ValidationError, 'source-byte-drift'):
             HANDOFF.validate_packet(evidence, report, sources, changes)
 
-    def test_capacity_workflow_invokes_successor_validator(self):
-        workflow = HANDOFF.read(ROOT, '.github/workflows/capacity-lifecycle.yml').decode()
-        self.assertIn(
-            'python3 -B infrastructure/deploy/verify-standard-deploy-handoff.py',
-            workflow,
-        )
-        self.assertNotIn(
-            'python3 -B infrastructure/deploy/verify-integrated-handoff.py',
-            workflow,
-        )
+    def test_shared_workflows_invoke_semantic_contract_only(self):
+        for path in ('.github/workflows/ci.yml',
+                     '.github/workflows/capacity-lifecycle.yml'):
+            workflow = HANDOFF.read(ROOT, path).decode()
+            with self.subTest(path=path):
+                self.assertIn(
+                    'infrastructure/deploy/tests/standard-deploy-handoff-contract.py',
+                    workflow,
+                )
+                self.assertNotIn(
+                    'infrastructure/deploy/verify-standard-deploy-handoff.py',
+                    workflow,
+                )
+
+    def test_unrelated_future_path_only_blocks_exact_packaging_gate(self):
+        expected = set(HANDOFF.SOURCE) | {HANDOFF.REPORT, HANDOFF.EVIDENCE}
+        original = HANDOFF.workspace_paths
+        HANDOFF.workspace_paths = lambda _root: expected | {'docs/future-change.md'}
+        try:
+            self.assertEqual(HANDOFF.validate_package(check_predecessor=False), {
+                'sourceFiles': 7,
+                'pathCount': 9,
+                'historicalInputs': 96,
+            })
+            with self.assertRaisesRegex(HANDOFF.ValidationError, 'workspace-path-set'):
+                HANDOFF.validate(check_predecessor=False)
+        finally:
+            HANDOFF.workspace_paths = original
 
     def test_missing_or_extra_source_is_rejected(self):
         evidence, report, sources, changes = packet()

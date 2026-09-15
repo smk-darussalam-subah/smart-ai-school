@@ -18,26 +18,26 @@
     }
   },
   "sourceManifest": {
-    ".github/workflows/capacity-lifecycle.yml": "16b6b9b505d6ea6ffd5cf679540bc6fc5b31bfd566f7ad1cd00a4a1f340e6831",
-    ".github/workflows/ci.yml": "e6b3f7c127477d4b1e1bbcd5764b54aae02af941f7410e6e77d7b49f8fb953b9",
+    ".github/workflows/capacity-lifecycle.yml": "fd574b271cca3332cf4247067cc388afa2a17e307311a9d134d6e850d6aea329",
+    ".github/workflows/ci.yml": "ab71aca11e681fa180842064caf2f81053e45ae1e46d88532c6b1740f6b4ed3c",
     ".github/workflows/deploy.yml": "5389912793eff111b556faa4dfad63cbd4584248c89cf05bb168a9595290274a",
     "apps/api/src/__tests__/deploy-workflow-safety.spec.ts": "3d2f0569c2911f4ef3b477141d22c8d490b836543da9cfd47bc1681158c232ed",
     "infrastructure/deploy/tests/staging-readiness-contract.py": "3d791affdda29ff79aab12c3dfcdc108575ccd3001ed4deed9de16819c231b75",
-    "infrastructure/deploy/tests/standard-deploy-handoff-contract.py": "e95087f34fa4d5e03460f6d8cfa6f915b089c7e0204620055ba1ebc5a635d5f3",
-    "infrastructure/deploy/verify-standard-deploy-handoff.py": "19776a4d937b2d54846f840767f8394c9b3da9966626ac4633516823a3eb3e11"
+    "infrastructure/deploy/tests/standard-deploy-handoff-contract.py": "dedb417e9de2f1a6b8e1874be1d076fde31e6f8da6f912427419aa546d772300",
+    "infrastructure/deploy/verify-standard-deploy-handoff.py": "848fe9f4573a3156608f5dc5a3d6d4109f6ce917dca2021b4081190fd185fb47"
   },
-  "sourceManifestSha256": "19a0eebe6553813fd9ca953fc28cb968ac6d587ad77b04d220cbf7bb350bd04e",
-  "reportSha256": "ed85daac3b87c7b438251c58a0b24a08a8f42d17e98f898f4c24a81525dbfe54",
+  "sourceManifestSha256": "eb78236c21062a0bc973d683273702be214a2bbe2b0789f23d13382ae2fe9a0f",
+  "reportSha256": "af4b70b4f5f4721e2bc84ed4aa27b76748bee6edd159c01682a40d0603ba43db",
   "changes": {
     ".github/workflows/capacity-lifecycle.yml": {
       "status": "modified",
       "beforeSha256": "a988eb5ec4146013bd57ac5c7e3f9e738187b381c9708235d1a9e4db02674cd8",
-      "afterSha256": "16b6b9b505d6ea6ffd5cf679540bc6fc5b31bfd566f7ad1cd00a4a1f340e6831"
+      "afterSha256": "fd574b271cca3332cf4247067cc388afa2a17e307311a9d134d6e850d6aea329"
     },
     ".github/workflows/ci.yml": {
       "status": "modified",
       "beforeSha256": "588e04bc3d93f4604bcc77f620cc724be5fea126e17ea18d3692ad6390caa20c",
-      "afterSha256": "e6b3f7c127477d4b1e1bbcd5764b54aae02af941f7410e6e77d7b49f8fb953b9"
+      "afterSha256": "ab71aca11e681fa180842064caf2f81053e45ae1e46d88532c6b1740f6b4ed3c"
     },
     ".github/workflows/deploy.yml": {
       "status": "modified",
@@ -57,12 +57,12 @@
     "infrastructure/deploy/tests/standard-deploy-handoff-contract.py": {
       "status": "added",
       "beforeSha256": null,
-      "afterSha256": "e95087f34fa4d5e03460f6d8cfa6f915b089c7e0204620055ba1ebc5a635d5f3"
+      "afterSha256": "dedb417e9de2f1a6b8e1874be1d076fde31e6f8da6f912427419aa546d772300"
     },
     "infrastructure/deploy/verify-standard-deploy-handoff.py": {
       "status": "added",
       "beforeSha256": null,
-      "afterSha256": "19776a4d937b2d54846f840767f8394c9b3da9966626ac4633516823a3eb3e11"
+      "afterSha256": "848fe9f4573a3156608f5dc5a3d6d4109f6ce917dca2021b4081190fd185fb47"
     }
   },
   "tests": {
@@ -98,13 +98,14 @@
     },
     "handoffContract": {
       "command": "python3 -B infrastructure/deploy/tests/standard-deploy-handoff-contract.py",
-      "cases": 7,
+      "cases": 8,
       "exitCode": 0,
       "executed": true
     }
   },
   "claims": {
     "standardStagingDeployRestored": true,
+    "exactValidatorRemovedFromSharedCI": true,
     "recoveryExecutorsRetainedButNotWired": true,
     "hostLockRetained": true,
     "shaBindingRetained": true,
