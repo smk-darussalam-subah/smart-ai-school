@@ -49,7 +49,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/staging-readiness-contract.py
           PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/source-closure-contract.py
           PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/integrated-closure-contract.py
-          PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/standard-deploy-handoff-contract.py
+          PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/standard-deploy-compose-handoff-contract.py
           bash infrastructure/deploy/tests/deploy-lock-contract.sh
           bash infrastructure/deploy/tests/shared-ingress-contract.sh
 

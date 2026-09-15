@@ -146,7 +146,6 @@ jobs:
             if [ "$BRANCH" = "main" ]; then
               WORK_DIR=/home/appuser/smart-ai-school
               ENV_FILE=.env
-              COMPOSE_ARGS="-f docker-compose.yml"
               COMPOSE_PROJECT=""
               API_CONTAINER=smk-api
               WEB_CONTAINER=smk-web
@@ -154,7 +153,6 @@ jobs:
               # Staging: direktori terpisah, DB terpisah, compose project terpisah
               WORK_DIR=/opt/diis-staging/smart-ai-school
               ENV_FILE=.env.staging
-              COMPOSE_ARGS="-p smk-staging -f docker-compose.yml -f docker-compose.staging.yml"
               COMPOSE_PROJECT="-p smk-staging"
               API_CONTAINER=smk-staging-api
               WEB_CONTAINER=smk-staging-web
@@ -220,6 +218,8 @@ jobs:
 
             # Masuk ke direktori docker (relatif terhadap WORK_DIR)
             cd "$WORK_DIR/infrastructure/docker"
+            COMPOSE_APPLICATION_HELPER="$WORK_DIR/infrastructure/deploy/compose-application.sh"
+            test -f "$COMPOSE_APPLICATION_HELPER"
 
             # ── Patch env-file: tulis DATABASE_URL dengan password URL-encoded ──
             _PW=$(grep '^POSTGRES_PASSWORD=' "$ENV_FILE" | head -1 | cut -d= -f2-)
@@ -285,8 +285,7 @@ jobs:
 
               # ── Init staging DB (idempoten) ─────────────────────────────────
               echo "🔧 Memastikan smk_staging_db siap..."
-              docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
-                run --rm db-init-staging
+              bash "$COMPOSE_APPLICATION_HELPER" init-staging "$BRANCH" "$ENV_FILE"
 
               echo "✅ smk_staging_db siap"
             fi
@@ -352,18 +351,8 @@ jobs:
 
             # ── Build image (api, web, api-migrate) ──────────────────────────
             # api-migrate harus ikut di-build agar migration files selalu up-to-date.
-            # BUILD_ARG_API_URL: Next.js rewrites() resolve process.env.API_URL at build
-            # time (frozen into routes-manifest.json in standalone mode). Staging MUST
-            # point to smk-staging-api:3001 (not prod api:3001) so SSR proxy works.
-            if [ "$BRANCH" = "staging" ]; then
-              BUILD_ARG_API="--build-arg API_URL=http://smk-staging-api:3001"
-            else
-              BUILD_ARG_API=""
-            fi
-
-            # shellcheck disable=SC2086
-            docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
-              build --no-cache $BUILD_ARG_API api web api-migrate
+            # The adapter owns the exact branch-specific API_URL build argument.
+            bash "$COMPOSE_APPLICATION_HELPER" build-app "$BRANCH" "$ENV_FILE"
 
             # ── Step 1: Jalankan Prisma migration (one-shot, DDL terpisah dari runtime) ──
             # api-migrate: service dengan profile migrate — jalankan prisma migrate deploy lalu exit.
@@ -372,14 +361,12 @@ jobs:
             # akan membuat container smk-postgres baru → conflict dengan prod container.
             # Postgres sudah running (prod stack) dan reachable via smk-network.
             echo "🔄 Running Prisma migration (${BRANCH})..."
-            docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" --profile migrate \
-              run --rm --no-deps api-migrate
+            bash "$COMPOSE_APPLICATION_HELPER" migrate "$BRANCH" "$ENV_FILE"
             echo "✅ Migration selesai"
 
             # ── Step 2: Deploy api & web dengan image baru ─────────────────────
             # --no-deps: jangan start postgres/redis/keycloak (sudah running dari prod stack)
-            docker compose $COMPOSE_ARGS --env-file "$ENV_FILE" \
-              up -d --no-deps api web
+            bash "$COMPOSE_APPLICATION_HELPER" deploy-app "$BRANCH" "$ENV_FILE"
 
             # ── Tunggu api healthy ────────────────────────────────────────────
             echo "⏳ Menunggu ${API_CONTAINER} healthy (NestJS startup)..."
