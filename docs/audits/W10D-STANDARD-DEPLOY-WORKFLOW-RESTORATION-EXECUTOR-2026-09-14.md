@@ -34,20 +34,21 @@ Recovery executors and their behavioral tests remain in the repository for later
 | Branch                  | `fix/restore-standard-deploy-workflow-20260914`                    |
 | Develop SHA             | `715121657e3d432f9c7cda82aa8cfefe7b32c199`                         |
 | Develop tree            | `f6eb45f7f19eaca55b9294bac8a3d4652c54bd8f`                         |
-| Source files            | 6                                                                  |
-| Package paths           | 8                                                                  |
-| Source manifest SHA-256 | `6c85dc1ffd9c905d7fc2f867a985bfd40e2f22cb3e9c5aebb85cb7dc2487701b` |
+| Source files            | 7                                                                  |
+| Package paths           | 9                                                                  |
+| Source manifest SHA-256 | `19a0eebe6553813fd9ca953fc28cb968ac6d587ad77b04d220cbf7bb350bd04e` |
 
 ## Source Manifest
 
 | Path                                                              | SHA-256                                                            |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `.github/workflows/capacity-lifecycle.yml`                        | `16b6b9b505d6ea6ffd5cf679540bc6fc5b31bfd566f7ad1cd00a4a1f340e6831` |
 | `.github/workflows/ci.yml`                                        | `e6b3f7c127477d4b1e1bbcd5764b54aae02af941f7410e6e77d7b49f8fb953b9` |
 | `.github/workflows/deploy.yml`                                    | `5389912793eff111b556faa4dfad63cbd4584248c89cf05bb168a9595290274a` |
 | `apps/api/src/__tests__/deploy-workflow-safety.spec.ts`           | `3d2f0569c2911f4ef3b477141d22c8d490b836543da9cfd47bc1681158c232ed` |
 | `infrastructure/deploy/tests/staging-readiness-contract.py`       | `3d791affdda29ff79aab12c3dfcdc108575ccd3001ed4deed9de16819c231b75` |
-| `infrastructure/deploy/tests/standard-deploy-handoff-contract.py` | `7451d8c80bbe7333d53aecf66155026cd0870f2d826293f7e05a7cae58f43720` |
-| `infrastructure/deploy/verify-standard-deploy-handoff.py`         | `ebecd60b689f11f182a179fa27e35adb2638eeceba854c28645c980d948215eb` |
+| `infrastructure/deploy/tests/standard-deploy-handoff-contract.py` | `e95087f34fa4d5e03460f6d8cfa6f915b089c7e0204620055ba1ebc5a635d5f3` |
+| `infrastructure/deploy/verify-standard-deploy-handoff.py`         | `19776a4d937b2d54846f840767f8394c9b3da9966626ac4633516823a3eb3e11` |
 
 The successor validator executes the previous writer-compatibility validator from the exact baseline Git blob. Its accepted predecessor result remains `6 source / 6 rebindings / 88 historical inputs`. Historical reports and evidence are not edited.
 
@@ -55,15 +56,22 @@ The successor validator executes the previous writer-compatibility validator fro
 
 | Check                                     | Result     |
 | ----------------------------------------- | ---------- |
+| Capacity lifecycle                        | 55/55 PASS |
 | Deploy workflow safety                    | 6/6 PASS   |
 | Staging readiness                         | 49/49 PASS |
 | Source closure                            | 45/45 PASS |
 | Integrated closure                        | 25/25 PASS |
-| Standard deploy handoff negative controls | 6/6 PASS   |
+| Standard deploy handoff negative controls | 7/7 PASS   |
 | `git diff --check`                        | PASS       |
 | Staged files                              | 0          |
 
-The handoff controls reject changed source bytes, missing or extra source files, wrong baseline or predecessor binding, report drift, unauthorized change metadata, and duplicate JSON keys.
+The handoff controls reject changed source bytes, missing or extra source files, wrong baseline or predecessor binding, report drift, unauthorized change metadata, and duplicate JSON keys. It also proves that the Capacity Lifecycle workflow invokes this successor validator and no longer invokes the superseded validator.
+
+## Exact-Head CI Follow-up
+
+The first PR #661 head `ce8f71b5ac91bdd2e674a811934e4feef72cc1f9` exposed one missed CI consumer: Capacity Lifecycle run `34871342950` called the superseded `verify-integrated-handoff.py` and failed closed. Build, lint/type-check, and unit-test checks on that head passed, but the candidate was not merged and no protection or deployment action was taken.
+
+This follow-up changes only that CI consumer and binds the workflow byte into the successor manifest. The old validator remains immutable historical evidence; it is still executed by the successor against the exact baseline blob to verify the predecessor chain.
 
 ## Operational Boundary
 
@@ -71,6 +79,12 @@ The pending staging run created from the previous workflow is not modified, appr
 
 ## Independent Review Handoff
 
-Review the exact eight-path package, verify the source manifest and report/evidence binding, rerun the focused contracts, and confirm that ordinary staging deployment no longer depends on W10-D recovery approval packets while all listed safety controls remain present.
+Review the exact nine-path package, verify the source manifest and report/evidence binding, confirm the CI consumer correction, rerun the focused contracts, and confirm that ordinary staging deployment no longer depends on W10-D recovery approval packets while all listed safety controls remain present.
 
-Recommended next task: GPT-5.6 Terra / medium for the narrow independent source review. Escalate to GPT-5.6 Sol / high only if the predecessor chain, manifest, or workflow semantics drift.
+Rekomendasi model untuk tindak lanjut
+Task berikutnya: Independent exact-PR re-review atas head terbaru PR #661 dan paket literal sembilan path; merge/deployment tetap HOLD.
+Model / effort: GPT-5.6 Terra (`gpt-5.6-terra`) / medium.
+Alasan: delta terbatas pada satu consumer CI dan binding evidence dengan kontrak deterministik yang sudah lulus.
+Syarat kualitas: sembilan blob harus cocok, seluruh exact-head CI hijau, dan predecessor chain tetap 96 historical inputs.
+Eskalasi bila: muncul drift source, hash, atau semantik workflow baru -> GPT-5.6 Sol / high.
+Sesi laporan ini: model/effort aktual tidak terverifikasi.

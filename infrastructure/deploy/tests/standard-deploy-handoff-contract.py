@@ -25,8 +25,8 @@ def packet():
 class Contract(unittest.TestCase):
     def test_actual_handoff_and_predecessor_chain(self):
         self.assertEqual(HANDOFF.validate(), {
-            'sourceFiles': 6,
-            'pathCount': 8,
+            'sourceFiles': 7,
+            'pathCount': 9,
             'historicalInputs': 96,
         })
 
@@ -35,6 +35,17 @@ class Contract(unittest.TestCase):
         sources['.github/workflows/deploy.yml'] += b'\n'
         with self.assertRaisesRegex(HANDOFF.ValidationError, 'source-byte-drift'):
             HANDOFF.validate_packet(evidence, report, sources, changes)
+
+    def test_capacity_workflow_invokes_successor_validator(self):
+        workflow = HANDOFF.read(ROOT, '.github/workflows/capacity-lifecycle.yml').decode()
+        self.assertIn(
+            'python3 -B infrastructure/deploy/verify-standard-deploy-handoff.py',
+            workflow,
+        )
+        self.assertNotIn(
+            'python3 -B infrastructure/deploy/verify-integrated-handoff.py',
+            workflow,
+        )
 
     def test_missing_or_extra_source_is_rejected(self):
         evidence, report, sources, changes = packet()

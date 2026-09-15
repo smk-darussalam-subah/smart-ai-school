@@ -24,6 +24,7 @@ PREDECESSOR_REPORT_SHA = 'd17cb4c9ca4e714af9c1f5b861aba25d90be9eb19a28ecc80d3a26
 PREDECESSOR_EVIDENCE_SHA = '9632ae8b735b86118418f8148e53a4926ffe297786ed6cd183560a1233aad69a'
 PREDECESSOR_RESULT = {'sourceFiles': 6, 'rebindings': 6, 'historicalInputs': 88}
 SOURCE = (
+    '.github/workflows/capacity-lifecycle.yml',
     '.github/workflows/ci.yml',
     '.github/workflows/deploy.yml',
     'apps/api/src/__tests__/deploy-workflow-safety.spec.ts',
@@ -191,8 +192,8 @@ def validate_packet(evidence, report_raw, source_bytes, changes):
     require(evidence['changes'] == changes, 'change-binding')
     tests = evidence['tests']
     require(type(tests) is dict and set(tests) == {
-        'deployWorkflowSafety', 'stagingReadiness', 'sourceClosure',
-        'integratedClosure', 'handoffContract',
+        'capacityLifecycle', 'deployWorkflowSafety', 'stagingReadiness',
+        'sourceClosure', 'integratedClosure', 'handoffContract',
     }, 'test-schema')
     for result in tests.values():
         require(type(result) is dict and set(result) == {
