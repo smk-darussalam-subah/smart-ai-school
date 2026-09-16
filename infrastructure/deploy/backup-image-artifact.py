@@ -86,6 +86,25 @@ def sha(path):
         return hashlib.file_digest(source, 'sha256').hexdigest()
 
 
+def source_image_id(document):
+    source = document.get('source')
+    if type(source) is not dict:
+        raise ValueError('scan-source-binding')
+    identities = []
+    for location in ('target', 'metadata'):
+        metadata = source.get(location, {})
+        if type(metadata) is not dict:
+            raise ValueError('scan-source-binding')
+        identity = metadata.get('imageID')
+        if identity is not None:
+            if type(identity) is not str or not re.fullmatch(r'sha256:[a-f0-9]{64}', identity):
+                raise ValueError('scan-source-binding')
+            identities.append(identity)
+    if not identities or len(set(identities)) != 1:
+        raise ValueError('scan-source-binding')
+    return identities[0]
+
+
 def validate_content(root, source, profile='backup'):
     if profile not in PROFILES:
         raise ValueError('image-profile')
@@ -104,9 +123,9 @@ def validate_content(root, source, profile='backup'):
             or config.get('config', {}).get('Labels', {}).get('org.opencontainers.image.revision') != source):
         raise ValueError('archive-config-binding')
     scan = read(root / 'grype.json')
-    scan_id = scan.get('source', {}).get('target', {}).get('imageID')
+    scan_id = source_image_id(scan)
     sbom = read(root / 'sbom.json')
-    sbom_id = sbom.get('source', {}).get('target', {}).get('imageID')
+    sbom_id = source_image_id(sbom)
     image_ids = {config_id, image['Id']}
     if (type(scan.get('matches')) is not list or scan['descriptor']['name'] != 'grype'
             or scan['descriptor']['version'] != '0.118.0'
