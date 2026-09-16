@@ -75,6 +75,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test -z "$(git status --porcelain)"
+          PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/backup-image-artifact-contract.py
           mkdir -m700 evidence tools
           curl --fail --location --proto '=https' --tlsv1.2 --max-time 180 -o tools/grype.tar.gz https://github.com/anchore/grype/releases/download/v0.118.0/grype_0.118.0_linux_amd64.tar.gz
           echo '1d444c5e7360471815f7158f71935fcecc68a3c417d85c7344f770854300bba2  tools/grype.tar.gz' | sha256sum --check --strict
