@@ -1,0 +1,98 @@
+{
+  "schema": "diis-w10d-d2-artifact-binding-followup-v1",
+  "generatedAt": "2026-09-16T14:34:32+07:00",
+  "status": "SOURCE COMPLETE - INDEPENDENT REVIEW REQUIRED - D2 BUILD RETRY HOLD",
+  "baseline": {
+    "sha": "10c8b6124d5abada746282859ab451a938cf2430",
+    "tree": "97e2583025dfaf9888fabafdc2d7bd893c0bf84e"
+  },
+  "failedRun": {
+    "runId": "35057548378",
+    "runAttempt": 1,
+    "buildJobId": "104670767142",
+    "publishJobId": "104670767983",
+    "conclusion": "failure",
+    "failureMarker": "ARTIFACT_BINDING_STOP",
+    "publishConclusion": "skipped",
+    "publishSteps": 0,
+    "rerun": false,
+    "tagDeletedOrRecreated": false
+  },
+  "rootCause": {
+    "category": "scanner-schema-compatibility",
+    "syftVersion": "1.51.1",
+    "grypeVersion": "0.118.0",
+    "syftIdentityPath": "source.metadata.imageID",
+    "grypeIdentityPath": "source.target.imageID",
+    "oldRequiredSyftPath": "source.target.imageID",
+    "productionFormulaChanged": false,
+    "backupBehaviorChanged": false,
+    "n8nBehaviorChanged": false
+  },
+  "sourceManifest": {
+    ".github/workflows/backup-image.yml": "039882e395434c1148726ef047714e0d7f6a5ce26b598df5566c087d55131b39",
+    "infrastructure/deploy/backup-image-artifact.py": "8c7ac5454ba68036b86a2635d4fa2b6ee630a1ad04cf081a34d87d2f11c496c6",
+    "infrastructure/deploy/tests/backup-image-artifact-contract.py": "3b30be2cc38e301b0d1f7aa92834ea4e8f24f0e7c24b2d154f1b2ef6bad41561"
+  },
+  "sourceManifestSha256": "0b58edfa16aeda81a8ad3ade7c67f76892ec1e8e1f3826920e158ba64df3ec96",
+  "report": {
+    "path": "docs/audits/W10D-D2-ARTIFACT-BINDING-FOLLOWUP-EXECUTOR-2026-09-16.md",
+    "sha256": "da856005916dc5d8e2f2d142388818c463e83ba2daa559223a4fd461725ba690"
+  },
+  "tests": {
+    "focusedArtifactContract": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/backup-image-artifact-contract.py",
+      "cases": 3,
+      "exitCode": 0,
+      "executed": true
+    },
+    "sourceClosure": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/source-closure-contract.py",
+      "cases": 45,
+      "exitCode": 0,
+      "executed": true
+    },
+    "integratedClosure": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/integrated-closure-contract.py",
+      "cases": 25,
+      "exitCode": 0,
+      "executed": true
+    },
+    "workflowShapedBundle": {
+      "command": "local disposable workflow-shaped build, smoke, Syft, Grype, save, and bind",
+      "cases": 1,
+      "exitCode": 0,
+      "executed": true,
+      "boundFiles": 7,
+      "sbomArtifacts": 361,
+      "grypeMatches": 160,
+      "portableImageId": "sha256:efd6c9d3df17a46b92a2bf84fa796906071e848bbd6bd402911a09c485794b86",
+      "syftImageId": "sha256:efd6c9d3df17a46b92a2bf84fa796906071e848bbd6bd402911a09c485794b86",
+      "grypeImageId": "sha256:efd6c9d3df17a46b92a2bf84fa796906071e848bbd6bd402911a09c485794b86"
+    }
+  },
+  "negativeControls": {
+    "missingIdentityRejected": true,
+    "malformedIdentityRejected": true,
+    "nonObjectLocationRejected": true,
+    "conflictingLocationsRejected": true,
+    "crossImageIdentityRejected": true
+  },
+  "cleanup": {
+    "temporaryImageCount": 0,
+    "temporaryDirectoryCount": 0,
+    "containerResidueCount": 0,
+    "artifactUploaded": false
+  },
+  "holds": {
+    "commitPushPrMerge": true,
+    "buildRetryOrNewBuild": true,
+    "tagMutation": true,
+    "artifactUploadOrPublication": true,
+    "credentials": true,
+    "staging": true,
+    "production": true,
+    "backupRestore": true,
+    "n8nScheduler": true
+  }
+}
