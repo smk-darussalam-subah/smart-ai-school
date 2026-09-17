@@ -76,6 +76,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test -z "$(git status --porcelain)"
           PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/backup-image-artifact-contract.py
+          PYTHONDONTWRITEBYTECODE=1 python3 infrastructure/deploy/tests/publisher-cleanup-contract.py
           mkdir -m700 evidence tools
           curl --fail --location --proto '=https' --tlsv1.2 --max-time 180 -o tools/grype.tar.gz https://github.com/anchore/grype/releases/download/v0.118.0/grype_0.118.0_linux_amd64.tar.gz
           echo '1d444c5e7360471815f7158f71935fcecc68a3c417d85c7344f770854300bba2  tools/grype.tar.gz' | sha256sum --check --strict
@@ -169,9 +170,9 @@ jobs:
           test "$(printf '%s' "$PUBLICATION_APPROVAL" | sha256sum | cut -d' ' -f1)" = "$APPROVAL_SHA"
           config_id=$(python3 infrastructure/deploy/backup-image-artifact.py verify evidence "$SOURCE_SHA" "$BUILD_RUN" "$IMAGE_PROFILE")
           [[ "$config_id" =~ ^sha256:[a-f0-9]{64}$ ]]
-          export DOCKER_CONFIG="$RUNNER_TEMP/diis-publisher-$GITHUB_RUN_ID"
+          export DOCKER_CONFIG="${RUNNER_TEMP:?}/diis-publisher-${GITHUB_RUN_ID:?}"
           mkdir -m700 "$DOCKER_CONFIG"
-          trap 'docker logout ghcr.io >/dev/null 2>&1; rm -f "$DOCKER_CONFIG/config.json"; rmdir "$DOCKER_CONFIG"' EXIT
+          trap 'bash infrastructure/deploy/cleanup-publisher.sh "$DOCKER_CONFIG" "$RUNNER_TEMP" "$GITHUB_RUN_ID" "$?"' EXIT
           docker load -i evidence/image.tar
           docker save diis-reviewed-backup -o "$RUNNER_TEMP/diis-loaded-check.tar"
           python3 infrastructure/deploy/verify-loaded-backup-image.py evidence/image.tar "$RUNNER_TEMP/diis-loaded-check.tar"
