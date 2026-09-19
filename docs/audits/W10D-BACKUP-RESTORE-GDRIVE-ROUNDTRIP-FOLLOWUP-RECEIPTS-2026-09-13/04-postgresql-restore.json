@@ -1,0 +1,18 @@
+{
+  "exitCode": 0,
+  "facts": {
+    "backupId": "20260913T165516Z-338684",
+    "commandContract": "scripts/restore-drill.sh",
+    "databaseAbsentAfterProof": true,
+    "lockAbsentAfterProof": true,
+    "proofSha256": "62a16d12289233ff0007e2ef139b802482e3b03b5b50c073c2f82b1deddf0b91",
+    "studentCount": 2,
+    "tableCount": 3,
+    "userCount": 3
+  },
+  "observedAt": "2026-09-13T16:57:57.690655+00:00",
+  "phase": "postgresql-restore",
+  "previousReceiptSha256": "fd769bacf681984ba7d1bff9837e6b9e1479e6d59da97d20bf160138d76eae2e",
+  "schemaVersion": "w10d-roundtrip-phase-receipt-v1",
+  "status": "PASS"
+}

@@ -1,0 +1,7 @@
+{
+  "hosts": ["unix:///var/run/docker.sock", "tcp://127.0.0.1:2375"],
+  "iptables": false,
+  "bridge": "none",
+  "features": { "containerd-snapshotter": false },
+  "builder": { "gc": { "enabled": false } }
+}

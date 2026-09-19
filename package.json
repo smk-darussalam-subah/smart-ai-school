@@ -21,6 +21,7 @@
     "db:seed": "turbo run db:seed",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "verify:dependency-graph": "node scripts/verify-dependency-graph.cjs",
     "test:smoke:staging": "ts-node --project apps/api/tsconfig.json scripts/smoke-test-staging.ts"
   },
   "devDependencies": {
@@ -34,7 +35,10 @@
   },
   "overrides": {
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "fastify": "5.12.1",
+    "postcss": "8.5.28",
+    "pino": "9.14.0"
   },
   "engines": {
     "node": ">=20.0.0",

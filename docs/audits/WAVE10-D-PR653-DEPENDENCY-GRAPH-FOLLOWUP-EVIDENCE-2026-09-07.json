@@ -1,0 +1,145 @@
+{
+  "schemaVersion": "diis-w10d-pr653-dependency-graph-followup-evidence-v1",
+  "observedAt": "2026-09-07T14:03:17.2672830Z",
+  "scope": "local P1-PR653-01 dependency graph closure; all operational gates hold",
+  "repository": "smk-darussalam-subah/smart-ai-school",
+  "pullRequest": 653,
+  "branch": "fix/w10d-prerequisite-closure-20260907",
+  "baseCommit": "6610fcc02e321ba810381ad7f05f39c5e9e3e3e5",
+  "baseTree": "5ac3b7ee23b967bcbcb64ba1371a6f4bcbe3b999",
+  "finding": {
+    "id": "P1-PR653-01",
+    "reviewReportSha256": "f89100f156afa1ebbad369096ac812acd9d44ff5eb7e744a540b9eacf6086fed",
+    "before": {
+      "threadStream": "3.2.0",
+      "declaredRealRequire": "^0.2.0",
+      "resolvedRealRequire": "1.0.0",
+      "scopedNpmLsExitCode": 1
+    },
+    "after": {
+      "threadStream": "3.2.0",
+      "declaredRealRequire": "^0.2.0",
+      "resolvedRealRequire": "0.2.0",
+      "resolvedPath": "node_modules/real-require/package.json",
+      "nestedLockEntryPresent": false,
+      "scopedNpmLsExitCode": 0
+    }
+  },
+  "sourceManifest": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "d02095d153b3b6292aa55cf309770b88ae4fee0ae268aa3aea44cae29dec8dee"
+    },
+    {
+      "path": "apps/api/src/__tests__/w10d-dependency-security.spec.ts",
+      "sha256": "0042ea6e1f8ebb282e9427f7061e81009310821f6fa833fbcf583062a5d553e0"
+    },
+    {
+      "path": "apps/web/package.json",
+      "sha256": "2a6da017b7a579034731e33e718641441f37b6b15525a5fc279c3e7f6556383f"
+    },
+    {
+      "path": "apps/web/src/__tests__/w10d-auth-security.test.ts",
+      "sha256": "a40e12976839fd0e4637a03d992d578b0ee0049a63aea085f977a19017ac8afd"
+    },
+    {
+      "path": "docs/runbooks/w10d-staging-readiness.md",
+      "sha256": "4c6b5a869169559327293184a3e381841677dcdd8baf52ea52a57936bb1f9ddf"
+    },
+    {
+      "path": "infrastructure/deploy/diis-build-cache-cleanup.sh",
+      "sha256": "8a3e862d5c113d648c01d77efeea41745f7ad2ccad7a3fc2f9fb92eab22bdda9"
+    },
+    {
+      "path": "infrastructure/deploy/staging-readiness-deploy.py",
+      "sha256": "fd41b3d71816960a5f36a63824e314035ac9992b48b17bed2ad1d9591aa71d37"
+    },
+    {
+      "path": "infrastructure/deploy/tests/buildkit-capacity-adapter-contract.py",
+      "sha256": "e756b3592fd844f6ba7e4009bf128aa3c17ee6608a0c102912f680939b3853c6"
+    },
+    {
+      "path": "infrastructure/deploy/tests/fixtures/buildkit-v0300-engine2952-redacted-20260907.json",
+      "sha256": "39b1a1cb6d31979acca762e593b0fee4ae953ea36b30fc1db9a35f8e5d8040e5"
+    },
+    {
+      "path": "infrastructure/deploy/tests/staging-readiness-contract.py",
+      "sha256": "c2d9f9d63b10b4b6c87f319ff97542010916c8877cbfe3840d25d45452850572"
+    },
+    {
+      "path": "infrastructure/docker/pg-backup.Dockerfile",
+      "sha256": "33fbbd440806e0a879bb3e130469ad7df5122a226f532c24336c13ffd2856e61"
+    },
+    {
+      "path": "infrastructure/docker/scripts/backup.sh",
+      "sha256": "0735b787e7674330d8df1b2f4f21c3d65be49e8c863a22f3b0cdd10391a9cd89"
+    },
+    {
+      "path": "infrastructure/docker/tests/backup-contract.sh",
+      "sha256": "5d6dce9232e8e4975af8b639f99ab3a30b94dce1dae491cc960b132d112b6e09"
+    },
+    {
+      "path": "infrastructure/docker/tests/w10d-gate1-source-followup-contract.sh",
+      "sha256": "b0c00ec0d5b68c5ba8ab8cd4668ea129083c58d712a9307161272710a0236adf"
+    },
+    {
+      "path": "infrastructure/docker/tests/w10d-remediated-image-integration.py",
+      "sha256": "aafd02334f2d0646d311d7aa7f30bcf93e4dde7e358fdf40a18c0acb0abcaa01"
+    },
+    {
+      "path": "infrastructure/docker/tests/w10d-remediated-image-lifecycle.py",
+      "sha256": "4ac737358ee0e6898b1769380506dd586244e1f4e5f2728dff178a8c974508d2"
+    },
+    {
+      "path": "infrastructure/docker/tests/wave10-postgres-integration.sh",
+      "sha256": "76a8caa4ec29a2215b5c91600fa2e3639f4c81cbeeabf4ba6093b196149e656f"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "f4209237d3223ba3e644f62465fd1c8c1301283cd3922f42d364495a461fb07c"
+    },
+    {
+      "path": "package.json",
+      "sha256": "8bbacf5f8c7e2b3bccb3af17a64ec6d0679612f63850024d631a8f91eebbb380"
+    },
+    {
+      "path": "scripts/assess-buildkit-capacity.py",
+      "sha256": "06391ea5d7818e49a0fd260fe99c4f29c26ec6a0ea518dfa2203a22705a6cd1d"
+    },
+    {
+      "path": "scripts/observe-buildkit-capacity.py",
+      "sha256": "f8bbeccad409f2223bccde72a408db978ef0aa99284eb120470bad1b1119d29a"
+    },
+    {
+      "path": "scripts/verify-dependency-graph.cjs",
+      "sha256": "5808ff3768bd2dc56d8a3909883d41b31ccf84e9c1cfeaf295d159f220401519"
+    }
+  ],
+  "sourceAggregateSha256": "ddde8422f509a48e9c90714455c7786c2aaa66d5083554bae068f554ce79ed67",
+  "verification": {
+    "npm": {
+      "version": "10.5.0",
+      "packageIntegrity": "sha512-Ejxwvfh9YnWVU2yA5FzoYLTW52vxHCz+MHrOFg9Cc8IFgF/6f5AGPAvb5WTay5DIUP1NIfN3VBZ0cLlGO0Ys+A==",
+      "disposableCleanInstallIgnoreScripts": "PASS",
+      "scopedLs": "PASS",
+      "runtimeResolver": "PASS",
+      "fixtureCleanup": "RECYCLED_AND_ABSENT"
+    },
+    "focusedTests": { "suites": 2, "passed": 15, "failed": 0 },
+    "apiTypeCheck": "PASS",
+    "apiLint": "PASS",
+    "npmAudit": { "exitCode": 0, "advisories": 0 },
+    "fullLocalInstall": {
+      "status": "BLOCKED_BY_TOOL_NETWORK",
+      "cause": "Prisma engines postinstall download ECONNRESET on local Node 24",
+      "sourceFailure": false
+    },
+    "remoteCi": "PENDING_FINAL_COMMIT"
+  },
+  "reuse": {
+    "unchangedSourceFiles": 17,
+    "imageRebuilt": false,
+    "recoverySuitesRerun": false,
+    "reason": "Image/recovery/preparation bytes remain identical; exact final image rebuild belongs to publication gate"
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "schema": "diis-standard-deploy-compose-handoff-v1",
+  "baseline": {
+    "sha": "b702aac2c3b84db0c8ae0738449b8d2182e8343d",
+    "tree": "3b265ae1e1a12873964aac940eac8488d9441dd4"
+  },
+  "supersedes": {
+    "validatorPath": "infrastructure/deploy/verify-standard-deploy-handoff.py",
+    "validatorSha256": "848fe9f4573a3156608f5dc5a3d6d4109f6ce917dca2021b4081190fd185fb47",
+    "reportPath": "docs/audits/W10D-STANDARD-DEPLOY-WORKFLOW-RESTORATION-EXECUTOR-2026-09-14.md",
+    "reportSha256": "af4b70b4f5f4721e2bc84ed4aa27b76748bee6edd159c01682a40d0603ba43db",
+    "evidencePath": "docs/audits/W10D-STANDARD-DEPLOY-WORKFLOW-RESTORATION-EVIDENCE-2026-09-14.json",
+    "evidenceSha256": "1a26463b0197d380d66a57d93412f541cfe466128409cd054aba0a6236673148",
+    "result": {
+      "sourceFiles": 7,
+      "pathCount": 9,
+      "historicalInputs": 96
+    }
+  },
+  "sourceManifest": {
+    ".github/workflows/capacity-lifecycle.yml": "57596c12d6d99a3447b60f7ed9b34d57d614a39d76eaa4ab7f24b1496ebd8e57",
+    ".github/workflows/ci.yml": "8a8db48baf51e1eb3474ac97a7435f02bb348779e73a882faee8bba45180d7b5",
+    ".github/workflows/deploy.yml": "908ef81bba275ebb18180fda3430c0fdbeddd01d8924a1ae332dfc69a5204756",
+    "apps/api/src/__tests__/deploy-workflow-safety.spec.ts": "df3c4faf31bc55dd4bb9382c97b640d98ccbe5bc30811627539afd462d151c29",
+    "infrastructure/deploy/compose-application.sh": "0ec9707fb93a9de5f6b4d95f4946b618d9526d31329901855f8b7d1ef236b026",
+    "infrastructure/deploy/tests/compose-application-contract.sh": "98cc333895075722794e0c3280bfc6830237e60d780966118f100a0336a278e1",
+    "infrastructure/deploy/tests/standard-deploy-compose-handoff-contract.py": "0968250e1416b68a2fd2dbad5dbe399cc3a10353fbd8a323c9e7af732c93bf83",
+    "infrastructure/deploy/verify-standard-deploy-compose-handoff.py": "78dd53e3b24076b9ab9b82723ae9ab2751cade435f5529e24597028c593d61ca"
+  },
+  "sourceManifestSha256": "7a9ce54fd6c673cc58027b69c4d144e046140d3d04bddb4e25a7e08085f9b978",
+  "reportSha256": "1675dfadb30e417e7222b5da2f6ba64bf6d91132564a344f8ff8ee0e0979960e",
+  "changes": {
+    ".github/workflows/capacity-lifecycle.yml": {
+      "status": "modified",
+      "beforeSha256": "fd574b271cca3332cf4247067cc388afa2a17e307311a9d134d6e850d6aea329",
+      "afterSha256": "57596c12d6d99a3447b60f7ed9b34d57d614a39d76eaa4ab7f24b1496ebd8e57"
+    },
+    ".github/workflows/ci.yml": {
+      "status": "modified",
+      "beforeSha256": "ab71aca11e681fa180842064caf2f81053e45ae1e46d88532c6b1740f6b4ed3c",
+      "afterSha256": "8a8db48baf51e1eb3474ac97a7435f02bb348779e73a882faee8bba45180d7b5"
+    },
+    ".github/workflows/deploy.yml": {
+      "status": "modified",
+      "beforeSha256": "5389912793eff111b556faa4dfad63cbd4584248c89cf05bb168a9595290274a",
+      "afterSha256": "908ef81bba275ebb18180fda3430c0fdbeddd01d8924a1ae332dfc69a5204756"
+    },
+    "apps/api/src/__tests__/deploy-workflow-safety.spec.ts": {
+      "status": "modified",
+      "beforeSha256": "3d2f0569c2911f4ef3b477141d22c8d490b836543da9cfd47bc1681158c232ed",
+      "afterSha256": "df3c4faf31bc55dd4bb9382c97b640d98ccbe5bc30811627539afd462d151c29"
+    },
+    "infrastructure/deploy/compose-application.sh": {
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "0ec9707fb93a9de5f6b4d95f4946b618d9526d31329901855f8b7d1ef236b026"
+    },
+    "infrastructure/deploy/tests/compose-application-contract.sh": {
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "98cc333895075722794e0c3280bfc6830237e60d780966118f100a0336a278e1"
+    },
+    "infrastructure/deploy/tests/standard-deploy-compose-handoff-contract.py": {
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "0968250e1416b68a2fd2dbad5dbe399cc3a10353fbd8a323c9e7af732c93bf83"
+    },
+    "infrastructure/deploy/verify-standard-deploy-compose-handoff.py": {
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "78dd53e3b24076b9ab9b82723ae9ab2751cade435f5529e24597028c593d61ca"
+    }
+  },
+  "tests": {
+    "composeBehaviorGitBash": {
+      "command": "bash infrastructure/deploy/tests/compose-application-contract.sh",
+      "cases": 5,
+      "exitCode": 0,
+      "executed": true,
+      "note": "Git Bash; seven exact positive calls, nine smuggling negatives, real Compose models"
+    },
+    "composeBehaviorWsl": {
+      "command": "bash infrastructure/deploy/tests/compose-application-contract.sh",
+      "cases": 5,
+      "exitCode": 0,
+      "executed": true,
+      "note": "WSL; seven exact positive calls, nine smuggling negatives, real Compose models"
+    },
+    "deployWorkflowSafety": {
+      "command": "npm test --workspace @smk/api -- --runTestsByPath src/__tests__/deploy-workflow-safety.spec.ts --runInBand --detectOpenHandles",
+      "cases": 7,
+      "exitCode": 0,
+      "executed": true,
+      "note": "Focused Jest suite"
+    },
+    "sourceClosure": {
+      "command": "python3 -B infrastructure/deploy/tests/source-closure-contract.py",
+      "cases": 45,
+      "exitCode": 0,
+      "executed": true,
+      "note": "Ubuntu 24.04 disposable lab with init reaper and Compose 2.40.3"
+    },
+    "integratedClosure": {
+      "command": "python3 -B infrastructure/deploy/tests/integrated-closure-contract.py",
+      "cases": 25,
+      "exitCode": 0,
+      "executed": true,
+      "note": "WSL"
+    },
+    "stagingReadiness": {
+      "command": "python3 -B infrastructure/deploy/tests/staging-readiness-contract.py",
+      "cases": 49,
+      "exitCode": 0,
+      "executed": true,
+      "note": "Ubuntu 24.04 disposable lab with real Compose parser"
+    },
+    "capacityLifecycle": {
+      "command": "python3 -B infrastructure/deploy/tests/capacity-lifecycle-contract.py",
+      "cases": 55,
+      "exitCode": 0,
+      "executed": true,
+      "note": "Ubuntu 24.04 disposable lab"
+    },
+    "handoffContract": {
+      "command": "python3 -B infrastructure/deploy/tests/standard-deploy-compose-handoff-contract.py",
+      "cases": 9,
+      "exitCode": 0,
+      "executed": true,
+      "note": "Exact package, native Windows path normalization, predecessor-chain negative controls"
+    }
+  },
+  "claims": {
+    "applicationComposeParsesWithoutCommissionedBackupImage": true,
+    "backupServiceStillRequiresReviewedImage": true,
+    "placeholderIsNonResolvingAndApplicationScoped": true,
+    "standardDeployBehaviorOtherwiseChanged": false,
+    "backupBehaviorChanged": false,
+    "n8nBehaviorChanged": false,
+    "historicalEvidenceChanged": false,
+    "applicationRuntimeChanged": false,
+    "stagingCheckoutAdvancedBeforeFailure": true,
+    "stagingEnvReconciledBeforeFailure": true,
+    "postFailureRuntimeMutations": false
+  },
+  "operationalStatus": "SOURCE COMPLETE - INDEPENDENT REVIEW REQUIRED - STAGING HOLD"
+}

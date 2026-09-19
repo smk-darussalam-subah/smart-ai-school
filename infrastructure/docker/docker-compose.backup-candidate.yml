@@ -14,3 +14,21 @@ services:
       BACKUP_SCHEDULE_ENABLED: "0"
       BACKUP_BUCKET_CREATION_ALLOWED: "0"
       OFFSITE_RETENTION_APPLY: "0"
+      BACKUP_LOCK_BOOTSTRAP_REQUIRED: "1"
+      OFFSITE_CONFIG_FINGERPRINT: ${EXPECTED_OFFSITE_CONFIG_FINGERPRINT:?expected off-site fingerprint is required}
+      OFFSITE_EXPECTED_PROVIDER: ${EXPECTED_OFFSITE_PROVIDER:?expected off-site provider is required}
+      OFFSITE_EXPECTED_ORIGIN: ${EXPECTED_OFFSITE_ORIGIN:?expected off-site origin is required}
+      OFFSITE_EXPECTED_TEAM_DRIVE_SHA256: ${EXPECTED_TEAM_DRIVE_SHA256:?expected Shared Drive hash is required}
+      OFFSITE_EXPECTED_ROOT_FOLDER_SHA256: ${EXPECTED_ROOT_FOLDER_SHA256:?expected Shared Drive root hash is required}
+      OFFSITE_EXPECTED_AUTH_MODE: service-account-file
+      OFFSITE_EXPECTED_PRINCIPAL_SHA256: ${EXPECTED_SERVICE_ACCOUNT_PRINCIPAL_SHA256:?expected Service Account principal hash is required}
+      OFFSITE_EXPECTED_PROJECT_SHA256: ${EXPECTED_SERVICE_ACCOUNT_PROJECT_SHA256:?expected Service Account project hash is required}
+      OFFSITE_EXPECTED_KEY_IDENTITY_SHA256: ${EXPECTED_SERVICE_ACCOUNT_KEY_IDENTITY_SHA256:?expected Service Account key hash is required}
+      OFFSITE_EXPECTED_CREDENTIAL_ARTIFACT_SHA256: ${EXPECTED_SERVICE_ACCOUNT_ARTIFACT_SHA256:?expected Service Account artifact hash is required}
+    volumes:
+      - type: bind
+        source: /etc/diis/google-service-account.json
+        target: /run/diis-secrets/google-service-account.json
+        read_only: true
+        bind:
+          create_host_path: false

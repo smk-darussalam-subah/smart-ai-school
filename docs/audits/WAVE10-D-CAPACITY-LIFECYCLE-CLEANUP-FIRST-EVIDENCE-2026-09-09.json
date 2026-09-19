@@ -1,0 +1,603 @@
+{
+  "schema": "diis-capacity-lifecycle-handoff-v1",
+  "capturedEpoch": 1788922205.15435,
+  "sourceBase": "39f1db9ba49d8c89ceb8c3e13c6850744b9294e1",
+  "sourceBaseTree": "23970b65a8e4551c37b6478bdc5da5b52445e60f",
+  "branch": "fix/w10d-capacity-lifecycle-20260909",
+  "sourceManifestCount": 20,
+  "sourceManifest": {
+    ".github/workflows/capacity-lifecycle.yml": "e0e6c9175806881196d0f0121bf6057af546839ecc6d351c63ea34341266e87e",
+    "docs/runbooks/w10d-capacity-lifecycle-cleanup-first.md": "a8f7aed68e5dee321a69e7e39bf7ce123874c3d0794de3f5c75f09598489ffaa",
+    "infrastructure/deploy/capacity-gc.candidate.json": "c1597434161fa22823301b0c6af3e3e615096882e72bf22e857aefc5fef823eb",
+    "infrastructure/deploy/capacity_bundle.py": "bf9cbee2b27ad4cf29eff9d514fd855bc5e3d153e6ec845da3c3f45cfe6779a5",
+    "infrastructure/deploy/capacity_gc.py": "ae025a6a3ecbcd805a866051a34aee63e9e3217ae365de9d3f8294d57640ad52",
+    "infrastructure/deploy/capacity_policy.py": "60edbf3145f3d089a653d882161f0f0c773c04bab187869b521aaee6e9e6762d",
+    "infrastructure/deploy/capacity_runtime.py": "0b536f3191f2908f99dc90a35f2a324cff1b40f081f17ec5ccbf79b6a16f781e",
+    "infrastructure/deploy/diis-build-cache-cleanup.sh": "4c3d0588fd912bc325a953e21b25cb726557552abf34ca9ca52ad6fa8aa46c68",
+    "infrastructure/deploy/offsite_reference_plan.py": "ec010bd719a0432e246d1752c3d582c98370cb69c9824c9b725ca6857e0c8bb4",
+    "infrastructure/deploy/verify-capacity-handoff.py": "a8f36da10a2681559523e6d619db7641fe1f232b9d92b8f31d91576518524cd3",
+    "infrastructure/deploy/tests/capacity-export-evidence.py": "9569857adaa869050368f616c96a8cfea987586719c7c6af88b8ba8566aaa75a",
+    "infrastructure/deploy/tests/capacity-lab-completion.py": "8b98fa62abb06270fccbdb80a4b3b4d488a2255354841d8b31aafb9ca496e271",
+    "infrastructure/deploy/tests/capacity-lab-measure.py": "45cfcbe764f9487af8446fc14d8de1132e0c48e5737fc9be66b16ba00834de0c",
+    "infrastructure/deploy/tests/capacity-lifecycle-contract.py": "c059dae4d3d46cb94ec1f76fb361615a871ff0ed50e67b2ae276e44bf1aee04f",
+    "infrastructure/deploy/tests/capacity-lifecycle-lab.py": "afa0919aeba96ff9669b8fec5df06be45b05c02f97aa0e97baed2a728cf1f4d8",
+    "infrastructure/deploy/tests/capacity-run-contracts.py": "e28f223d58538823be10e7a8b27a7d6704b0698fb7b9db6ebea417a3f7a06345",
+    "infrastructure/deploy/tests/fixtures/capacity-lab-daemon.json": "17593c98c8723458fda479b12538071e634812580e0accc40811f5aa3e7cb14f",
+    "infrastructure/deploy/tests/fixtures/capacity-lab-gc.json": "83b543dcdff897d8b4a8a95a6194819e47eb2c27fd35970722db3977c5189e9e",
+    "infrastructure/deploy/tests/fixtures/historical-build-cache-cleanup.sh": "8a3e862d5c113d648c01d77efeea41745f7ad2ccad7a3fc2f9fb92eab22bdda9",
+    "infrastructure/docker/tests/recovery-operator-contract.sh": "e28763dc1402b80eedfd3b3fed8acb3cd740f343e164b30d7b52ddc8cb38f36c"
+  },
+  "sourceManifestSha256": "9af6d0cfe93db623c0963d68caf1f46b7cb2751124e20e1168a97aa830b88aae",
+  "reportSha256": "dc0d1a16131a2e7d1c57a7aa23d133c7057a521b70ed9caf38c3e81dcd0e2863",
+  "hostPacketSha256": "e7992f159bcf3c35f8a2eb49e1b992899284e856b3e031e513f12baa42a0ef60",
+  "changedFiles": [
+    ".github/workflows/capacity-lifecycle.yml",
+    "docs/runbooks/w10d-capacity-lifecycle-cleanup-first.md",
+    "infrastructure/deploy/capacity-gc.candidate.json",
+    "infrastructure/deploy/capacity_bundle.py",
+    "infrastructure/deploy/capacity_gc.py",
+    "infrastructure/deploy/capacity_policy.py",
+    "infrastructure/deploy/capacity_runtime.py",
+    "infrastructure/deploy/diis-build-cache-cleanup.sh",
+    "infrastructure/deploy/offsite_reference_plan.py",
+    "infrastructure/deploy/verify-capacity-handoff.py",
+    "infrastructure/deploy/tests/capacity-export-evidence.py",
+    "infrastructure/deploy/tests/capacity-lab-completion.py",
+    "infrastructure/deploy/tests/capacity-lab-measure.py",
+    "infrastructure/deploy/tests/capacity-lifecycle-contract.py",
+    "infrastructure/deploy/tests/capacity-lifecycle-lab.py",
+    "infrastructure/deploy/tests/capacity-run-contracts.py",
+    "infrastructure/deploy/tests/fixtures/capacity-lab-daemon.json",
+    "infrastructure/deploy/tests/fixtures/capacity-lab-gc.json",
+    "infrastructure/deploy/tests/fixtures/historical-build-cache-cleanup.sh",
+    "infrastructure/docker/tests/recovery-operator-contract.sh",
+    "docs/audits/WAVE10-D-CAPACITY-LIFECYCLE-CLEANUP-FIRST-IMPLEMENTATION-2026-09-09.md",
+    "docs/audits/WAVE10-D-CAPACITY-LIFECYCLE-CLEANUP-FIRST-EVIDENCE-2026-09-09.json",
+    "docs/audits/WAVE10-D-CAPACITY-LIFECYCLE-HOST-APPROVAL-DRAFT-2026-09-09.md"
+  ],
+  "focusedReceipt": {
+    "command": ["python3", "-B", "infrastructure/deploy/tests/capacity-lifecycle-contract.py"],
+    "startedEpoch": 1788921588.445028,
+    "seconds": 15.574413537979126,
+    "exitCode": 0,
+    "cases": 55,
+    "outputSha256": "d29fc7ad1f7cc32fc5606187efc048fd3bfc2706214c0289f007564acb7a64f4",
+    "sourceSha256": "c059dae4d3d46cb94ec1f76fb361615a871ff0ed50e67b2ae276e44bf1aee04f"
+  },
+  "historicalScopedRegressionReceipt": {
+    "schema": "diis-capacity-regression-receipt-v1",
+    "results": [
+      {
+        "command": ["python3", "-B", "infrastructure/deploy/tests/capacity-lifecycle-contract.py"],
+        "startedEpoch": 1788918060.1133523,
+        "seconds": 13.000062465667725,
+        "exitCode": 1,
+        "cases": 45,
+        "outputSha256": "2c8be5acda5b21d7e539af00cd76ded364e3c85d86edde545bcb8da139b8c0a0",
+        "sourceSha256": "ee5068b205cfc23ec7d7e0981ed50878734e9888f2d4ed28e050853be8a7420a"
+      },
+      {
+        "command": [
+          "python3",
+          "-B",
+          "infrastructure/deploy/tests/buildkit-capacity-adapter-contract.py"
+        ],
+        "startedEpoch": 1788918073.1180577,
+        "seconds": 15.500483989715576,
+        "exitCode": 0,
+        "cases": 40,
+        "outputSha256": "c1f009eff55024de8f4f84a2edc5a74c0642a10582a7790575a17101b9b8154b",
+        "sourceSha256": "e756b3592fd844f6ba7e4009bf128aa3c17ee6608a0c102912f680939b3853c6"
+      },
+      {
+        "command": ["bash", "infrastructure/docker/tests/recovery-operator-contract.sh"],
+        "startedEpoch": 1788918088.627027,
+        "seconds": 109.02102017402649,
+        "exitCode": 0,
+        "cases": 36,
+        "outputSha256": "1eea560bcba50caeb31aa24b15a823d2fa5a933f4058e9bb704e70c87bb0342f",
+        "sourceSha256": "e28763dc1402b80eedfd3b3fed8acb3cd740f343e164b30d7b52ddc8cb38f36c"
+      },
+      {
+        "command": ["bash", "infrastructure/docker/tests/backup-contract.sh"],
+        "startedEpoch": 1788918197.6557596,
+        "seconds": 259.6456582546234,
+        "exitCode": 0,
+        "cases": 44,
+        "outputSha256": "c58398a0184e3a18040155d9d299d75c71304c3b35d6e23b9de288889fdd88e6",
+        "sourceSha256": "4b8e7f64b9a91e4d8b64662ca5d39b48af6e00b8db8650388f0201433f45bc83"
+      },
+      {
+        "command": ["python3", "-B", "infrastructure/deploy/tests/source-closure-contract.py"],
+        "startedEpoch": 1788918457.3099587,
+        "seconds": 2.8478634357452393,
+        "exitCode": 0,
+        "cases": 43,
+        "outputSha256": "12bd3263e43dd64b5711aee048b8de7f885a28426e4345f85ff23bf642888152",
+        "sourceSha256": "dcd14874539d16ec439c1117534e2bb1961b9a0d0a59d38c58c82276f3214bf6"
+      },
+      {
+        "command": ["python3", "-B", "infrastructure/deploy/tests/staging-readiness-contract.py"],
+        "startedEpoch": 1788918460.1624846,
+        "seconds": 13.067585945129395,
+        "exitCode": 0,
+        "cases": 49,
+        "outputSha256": "9553191f2852b7c672bd6167a8d3b19cb602a175e577c7699df1dc150b27c902",
+        "sourceSha256": "c2d9f9d63b10b4b6c87f319ff97542010916c8877cbfe3840d25d45452850572"
+      },
+      {
+        "command": ["bash", "infrastructure/deploy/tests/deploy-lock-contract.sh"],
+        "startedEpoch": 1788918473.236472,
+        "seconds": 2.057147264480591,
+        "exitCode": 0,
+        "cases": null,
+        "outputSha256": "b9050a2774dcd2d2103dc82e31a649440e6012608bf434996944552cbec5963f",
+        "sourceSha256": "65d2e76dbf09455bc08ffaea01e1acff1d9f7e0427c0e44af66c64f292bbd21a"
+      },
+      {
+        "command": ["bash", "infrastructure/deploy/tests/shared-ingress-contract.sh"],
+        "startedEpoch": 1788918475.2973015,
+        "seconds": 7.396823406219482,
+        "exitCode": 0,
+        "cases": null,
+        "outputSha256": "f4aff3b86b85e56bd85ecc9186080b86787ceebec31ed35228337d7a7c17e92d",
+        "sourceSha256": "48e92ab955e4563cabce5f39f7b76b5f019dd12b35b5f1954e01aa45eb8cbbc6"
+      },
+      {
+        "command": ["python3", "-B", "infrastructure/deploy/verify-source-closure-handoff.py"],
+        "startedEpoch": 1788918482.7154992,
+        "seconds": 0.2567596435546875,
+        "exitCode": 0,
+        "cases": null,
+        "outputSha256": "3ec90574fda5782e4962a586c46119721239f7643cdc4eb3bb7ed4df931a2f41",
+        "sourceSha256": "cffbae75d5a9a818ae214c72fe83f61c7d8015179e45803f870fa2dacfab91fd"
+      }
+    ]
+  },
+  "historicalFailuresSuperseded": true,
+  "bundleManifest": {
+    "files": {
+      "infrastructure/deploy/capacity-gc.candidate.json": "c1597434161fa22823301b0c6af3e3e615096882e72bf22e857aefc5fef823eb",
+      "infrastructure/deploy/capacity_bundle.py": "bf9cbee2b27ad4cf29eff9d514fd855bc5e3d153e6ec845da3c3f45cfe6779a5",
+      "infrastructure/deploy/capacity_gc.py": "ae025a6a3ecbcd805a866051a34aee63e9e3217ae365de9d3f8294d57640ad52",
+      "infrastructure/deploy/capacity_policy.py": "60edbf3145f3d089a653d882161f0f0c773c04bab187869b521aaee6e9e6762d",
+      "infrastructure/deploy/capacity_runtime.py": "0b536f3191f2908f99dc90a35f2a324cff1b40f081f17ec5ccbf79b6a16f781e",
+      "infrastructure/deploy/diis-build-cache-cleanup.sh": "4c3d0588fd912bc325a953e21b25cb726557552abf34ca9ca52ad6fa8aa46c68",
+      "infrastructure/deploy/install-w10d-backup-lock-bootstrap.sh": "dccb36bbf568c4868ae3051dfc51de3d6c16d1e82e0f822f6bc33e81d0e38bb5",
+      "infrastructure/deploy/offsite_reference_plan.py": "ec010bd719a0432e246d1752c3d582c98370cb69c9824c9b725ca6857e0c8bb4",
+      "infrastructure/deploy/staging-application-deploy.py": "3d51b7ffef9dc6468fad24c9baddae921368db5909459e5ff627e83b509223a4",
+      "infrastructure/deploy/staging-readiness-deploy.py": "ad69becddca5b4be0efc9e9ef3664afa2e2c7f69f9a710f337983d9d297df04d",
+      "infrastructure/docker/scripts/backup-lib.sh": "bf881caf29af389e1d0d328e9b5816d570154b72b873ea82aac6d1be418e8e5a",
+      "infrastructure/systemd/diis-backup-lock.conf": "61c13e1228ad7ad9e48edfab63483ce0be2f8af908584f5e4fd69d3ea9533ac9",
+      "scripts/w10d-test-boundary.sh": "24e72cf87042fd58dd62f39d5451e5f1f3f4df11d3305866a1ffac07743ca2fd",
+      "scripts/w10d_completion_validation.py": "e6260806f44230905e3cb4d00a23114f1386f332ce95ba2b7b459bb33a2a421a"
+    },
+    "schema": "diis-capacity-bundle-v1",
+    "sourceSha": "39f1db9ba49d8c89ceb8c3e13c6850744b9294e1",
+    "sourceTree": "23970b65a8e4551c37b6478bdc5da5b52445e60f",
+    "status": "UNRELEASED"
+  },
+  "bundleSha256": "bdd77a242ba9355d6308868ad5be8ba8240f8e30177348d24c6aee133ebaf486",
+  "archiveSha256": "53b45ba3ba9a818d4eabd62af567ad19d58a95a9a6c2520cd672490d541648a1",
+  "archiveBytes": 235520,
+  "realDaemonEvidence": {
+    "schema": "diis-capacity-lifecycle-evidence-v1",
+    "capturedEpoch": 1788921224.8889518,
+    "sourceBase": "39f1db9ba49d8c89ceb8c3e13c6850744b9294e1",
+    "sourceBaseTree": "23970b65a8e4551c37b6478bdc5da5b52445e60f",
+    "bundleSha256": "c0fa1890d8431ed9e514f3decc461cf9219714d3fbf14f0eff307a0f43d9a00f",
+    "bundleManifest": {
+      "files": {
+        "infrastructure/deploy/capacity-gc.candidate.json": "c1597434161fa22823301b0c6af3e3e615096882e72bf22e857aefc5fef823eb",
+        "infrastructure/deploy/capacity_bundle.py": "5080296fbdc79c1829d166aaa85415251ffd1f407a74a421d396910b3ad1a45f",
+        "infrastructure/deploy/capacity_gc.py": "ae025a6a3ecbcd805a866051a34aee63e9e3217ae365de9d3f8294d57640ad52",
+        "infrastructure/deploy/capacity_policy.py": "60edbf3145f3d089a653d882161f0f0c773c04bab187869b521aaee6e9e6762d",
+        "infrastructure/deploy/capacity_runtime.py": "9c6807322d93e7b6862221b374567e66e0f4d32e55e2d1ac2a8851eceb839385",
+        "infrastructure/deploy/diis-build-cache-cleanup.sh": "4c3d0588fd912bc325a953e21b25cb726557552abf34ca9ca52ad6fa8aa46c68",
+        "infrastructure/deploy/install-w10d-backup-lock-bootstrap.sh": "dccb36bbf568c4868ae3051dfc51de3d6c16d1e82e0f822f6bc33e81d0e38bb5",
+        "infrastructure/deploy/offsite_reference_plan.py": "ec010bd719a0432e246d1752c3d582c98370cb69c9824c9b725ca6857e0c8bb4",
+        "infrastructure/deploy/staging-application-deploy.py": "3d51b7ffef9dc6468fad24c9baddae921368db5909459e5ff627e83b509223a4",
+        "infrastructure/deploy/staging-readiness-deploy.py": "ad69becddca5b4be0efc9e9ef3664afa2e2c7f69f9a710f337983d9d297df04d",
+        "infrastructure/docker/scripts/backup-lib.sh": "bf881caf29af389e1d0d328e9b5816d570154b72b873ea82aac6d1be418e8e5a",
+        "infrastructure/systemd/diis-backup-lock.conf": "61c13e1228ad7ad9e48edfab63483ce0be2f8af908584f5e4fd69d3ea9533ac9",
+        "scripts/w10d-test-boundary.sh": "24e72cf87042fd58dd62f39d5451e5f1f3f4df11d3305866a1ffac07743ca2fd",
+        "scripts/w10d_completion_validation.py": "e6260806f44230905e3cb4d00a23114f1386f332ce95ba2b7b459bb33a2a421a"
+      },
+      "schema": "diis-capacity-bundle-v1",
+      "sourceSha": "39f1db9ba49d8c89ceb8c3e13c6850744b9294e1",
+      "sourceTree": "23970b65a8e4551c37b6478bdc5da5b52445e60f",
+      "status": "UNRELEASED"
+    },
+    "archiveSha256": "d80c8bafc7fe5eaa6d58d9f35216461f98c7a707409770ae72be0a32ae8e16d3",
+    "archiveBytes": 235520,
+    "labContainerIdSha256": "276e77ad77858ac6bcd1b80d3008b9b8076f6ee633ea8e87fdf25ece06b61b06",
+    "labExpiryEpoch": 1788921360,
+    "receipts": [
+      {
+        "artifact": "below-1788920534025875454-execution.json",
+        "rawSha256": "0127a070ff9d02f9ef6bf204d3951fafba2b9bf7eaed581a6b0ba4c445b4d215",
+        "value": {
+          "bundleSha256": "c0fa1890d8431ed9e514f3decc461cf9219714d3fbf14f0eff307a0f43d9a00f",
+          "exitCode": 73,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout": "{\"outcome\":\"CLEANUP_COMPLETED_TARGET_NOT_MET\",\"retry\":\"new-approval-required\"}\n"
+        }
+      },
+      {
+        "artifact": "below-1788920534025875454-receipt.json",
+        "rawSha256": "e4b81afb3c04ad95d38f188dbf95b987a9399ebd50963ebd7bfa73e677803f3f",
+        "value": {
+          "bundleSha256": "c0fa1890d8431ed9e514f3decc461cf9219714d3fbf14f0eff307a0f43d9a00f",
+          "candidateCount": 4,
+          "candidateSha256": "938540057b14772489febd8cc31aa896a16afaf926eba7c6ccf9340f55ace85c",
+          "daemonReceiptSha256": "a60b169763150279bc4b063e1a5f15b36b61469295c44583e5b4e85d96b53319",
+          "deletedCount": 4,
+          "effectiveTargetBytes": 2147483649,
+          "freeBytesAfter": 2112864256,
+          "freeBytesBefore": 2045734912,
+          "guaranteedPhysicalReclaimBytes": 0,
+          "identity": {
+            "builder": "default",
+            "buildkit": "v0.30.0",
+            "buildx": "github.com/docker/buildx v0.34.1 e0b0e77d18d3379bc1e0d55f3b37de288d36fe47",
+            "buildxPath": "/usr/local/libexec/docker/cli-plugins/docker-buildx",
+            "buildxSha256": "f1332ddb9010bd0b72628266c3a906d9a6979848033df4c8d9bd2cd113bae12b",
+            "daemonIdSha256": "806ad3f301db9980e0d76a877a927e13c1d1f707744c08dd47182306c60911f6",
+            "dockerSha256": "d6dfa144a057cfb0089510026dc08245c5b8b087c22d6e6817c350bcb461d5ac",
+            "driver": "docker",
+            "endpoint": "unix:///var/run/docker.sock",
+            "engine": "29.5.2",
+            "engineCommit": "568f755",
+            "filesystemSha256": "b635f018aafcbb8b440bf8de285e4554a5bcc432d23ea3ea41d47c16d5be027a",
+            "hostSha256": "276e77ad77858ac6bcd1b80d3008b9b8076f6ee633ea8e87fdf25ece06b61b06",
+            "mainSha": "963b6f0c672a8c040d5389b0641b4e0daa9faad6",
+            "mainTree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "logicalEligibleBytes": 67108909,
+          "noTouchAfterSha256": "d0ba34180c32f4a45f6ac46562881b627e35729ea383b4f2d87f8b93bdccd239",
+          "noTouchBeforeSha256": "d0ba34180c32f4a45f6ac46562881b627e35729ea383b4f2d87f8b93bdccd239",
+          "operationId": "ac7070d8adcc44249cc01a1d05cc5034",
+          "outcome": "CLEANUP_COMPLETED_TARGET_NOT_MET",
+          "physicalDeltaBytes": 67129344,
+          "preservationAfterSha256": "6bee89209b8afaad168cb54def64941e34134131a941dc19bcf68c219a67f8ab",
+          "preservationBeforeSha256": "6bee89209b8afaad168cb54def64941e34134131a941dc19bcf68c219a67f8ab",
+          "protectedCount": 1,
+          "protectedSetSha256": "c12e074cf40794b72b39c7e3ddfc1eb6c246d25e5104db35fc0e3f6cb9bab092",
+          "pruneCalls": 1,
+          "retry": "new-approval-required",
+          "schema": "diis-capacity-receipt-v1",
+          "sourceSha": "39f1db9ba49d8c89ceb8c3e13c6850744b9294e1",
+          "startedAt": "2026-09-09T02:22:14.773240Z"
+        }
+      },
+      {
+        "artifact": "filter-proof.json",
+        "rawSha256": "e1f58440894a332abab5b29861437db04c1272237bf522a0a80d897193af3f10",
+        "value": {
+          "identity": {
+            "builder": "default",
+            "buildkit": "v0.30.0",
+            "buildx": "github.com/docker/buildx v0.34.1 e0b0e77d18d3379bc1e0d55f3b37de288d36fe47",
+            "buildxPath": "/usr/local/libexec/docker/cli-plugins/docker-buildx",
+            "buildxSha256": "f1332ddb9010bd0b72628266c3a906d9a6979848033df4c8d9bd2cd113bae12b",
+            "daemonIdSha256": "806ad3f301db9980e0d76a877a927e13c1d1f707744c08dd47182306c60911f6",
+            "dockerSha256": "d6dfa144a057cfb0089510026dc08245c5b8b087c22d6e6817c350bcb461d5ac",
+            "driver": "docker",
+            "endpoint": "unix:///var/run/docker.sock",
+            "engine": "29.5.2",
+            "engineCommit": "568f755",
+            "filesystemSha256": "b635f018aafcbb8b440bf8de285e4554a5bcc432d23ea3ea41d47c16d5be027a",
+            "hostSha256": "276e77ad77858ac6bcd1b80d3008b9b8076f6ee633ea8e87fdf25ece06b61b06",
+            "mainSha": "963b6f0c672a8c040d5389b0641b4e0daa9faad6",
+            "mainTree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "oldCount": 0,
+          "oldSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "privateCount": 4,
+          "privateSha256": "ec5437ff002990bf17d1e72ee09ffc52e7df19ea3973eea41a518bb44d7b7cdd"
+        }
+      },
+      {
+        "artifact": "final-lab-proof.json",
+        "rawSha256": "ae437e35d0c9fea193abb55db9aa02eaf30f764c12bfcd12559fc8bd6a63b5ab",
+        "value": {
+          "beforeLogicalBytes": 67108899,
+          "beforeSpace": [2147483648, 2112843776],
+          "concurrentSyntheticRead": {
+            "bytesRead": 67108864,
+            "outputSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "seconds": 0.2863970070029609
+          },
+          "gcActualInspectionSha256": "80ff9131f1ec6901bee75fcd8044fb74a57d454523aea82e46c7b4c281876335",
+          "gcConfigurationSha256": "83b543dcdff897d8b4a8a95a6194819e47eb2c27fd35970722db3977c5189e9e",
+          "gcObservations": [
+            {
+              "count": 4,
+              "logicalBytes": 67108899,
+              "seconds": 0.5644472209969535,
+              "space": [2147483648, 2112827392]
+            },
+            {
+              "count": 2,
+              "logicalBytes": 33554432,
+              "seconds": 1.6046892140002456,
+              "space": [2147483648, 2112827392]
+            }
+          ],
+          "nativeGcPruneCallsByHarness": 0,
+          "observedAt": "2026-09-09T02:24:51.103979Z",
+          "preservation": {
+            "bytes": 88,
+            "contentSetSha256": "64a7c68a6f55dcfb42c02b140f9d1badb1699986835d6efef91816239df1909c",
+            "count": 8,
+            "recoveryValidated": false
+          },
+          "protectedAfterSha256": "384f310ad2a5c7c325caf6f14acfbb6ce47b696d132259a9df5e446371f82417",
+          "protectedBeforeSha256": "384f310ad2a5c7c325caf6f14acfbb6ce47b696d132259a9df5e446371f82417",
+          "replayExitCode": 65,
+          "replayOutputSha256": "d3e258b16cbf3b8def3028d3028b01a91b7922fc0622b746c677ade318f96ee1",
+          "restartRequired": true,
+          "rollbackExactBytesSha256": "17593c98c8723458fda479b12538071e634812580e0accc40811f5aa3e7cb14f",
+          "rollbackReadbackGcDisabled": true,
+          "sameTmpfsNotProductionBenchmark": true,
+          "schema": "diis-capacity-final-lab-proof-v1"
+        }
+      },
+      {
+        "artifact": "measure-1788920512420126271.json",
+        "rawSha256": "c3c8d53007e505d4634892e70cf4a9e12ae6c602fccb7db904889863ed86b871",
+        "value": {
+          "datasetBytes": 33554432,
+          "filesystem": [2147483648, 2012446720],
+          "identity": {
+            "builder": "default",
+            "buildkit": "v0.30.0",
+            "buildx": "github.com/docker/buildx v0.34.1 e0b0e77d18d3379bc1e0d55f3b37de288d36fe47",
+            "buildxPath": "/usr/local/libexec/docker/cli-plugins/docker-buildx",
+            "buildxSha256": "f1332ddb9010bd0b72628266c3a906d9a6979848033df4c8d9bd2cd113bae12b",
+            "daemonIdSha256": "806ad3f301db9980e0d76a877a927e13c1d1f707744c08dd47182306c60911f6",
+            "dockerSha256": "d6dfa144a057cfb0089510026dc08245c5b8b087c22d6e6817c350bcb461d5ac",
+            "driver": "docker",
+            "endpoint": "unix:///var/run/docker.sock",
+            "engine": "29.5.2",
+            "engineCommit": "568f755",
+            "filesystemSha256": "b635f018aafcbb8b440bf8de285e4554a5bcc432d23ea3ea41d47c16d5be027a",
+            "hostSha256": "276e77ad77858ac6bcd1b80d3008b9b8076f6ee633ea8e87fdf25ece06b61b06",
+            "mainSha": "963b6f0c672a8c040d5389b0641b4e0daa9faad6",
+            "mainTree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "rows": [
+            {
+              "cachedSteps": 0,
+              "minimumFreeBytesSampled": 2012508160,
+              "outputSha256": "c7dc3fc486140d4e790fe46f4a547c509594a8c41d916eb12dcffa521d22fa8a",
+              "phase": "cold",
+              "reader": null,
+              "seconds": 1.293968092999421
+            },
+            {
+              "cachedSteps": 1,
+              "minimumFreeBytesSampled": 2012475392,
+              "outputSha256": "581aaac31527a1328171410aa86b5618778a0991c5f14d0dbb41f40fee202100",
+              "phase": "warm",
+              "reader": null,
+              "seconds": 0.7753643760079285
+            },
+            {
+              "cachedSteps": 1,
+              "minimumFreeBytesSampled": 2012446720,
+              "outputSha256": "df01229b87fc06454a63dbf78103676ec87ba2a21feae0d01b9e943a77cf3c47",
+              "phase": "warm-with-reader",
+              "reader": {
+                "digest": "fee52ff4fa8b309c1bf364f321e97d6a7282acd2165b3c6f955c0d4231f7718a",
+                "readBytes": 268435456,
+                "scope": "local-synthetic-read-proxy-not-production-backup",
+                "seconds": 0.5039896079979371
+              },
+              "seconds": 0.8723051220003981
+            }
+          ],
+          "samplingNotContinuousPeak": true,
+          "schema": "diis-synthetic-build-measurement-v1"
+        }
+      },
+      {
+        "artifact": "noop-1788920548398312260-execution.json",
+        "rawSha256": "cc8007bd70dc89d3d1192cf3f113534cb31a4dd766388e137dc0bf7a81790757",
+        "value": {
+          "bundleSha256": "c0fa1890d8431ed9e514f3decc461cf9219714d3fbf14f0eff307a0f43d9a00f",
+          "exitCode": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout": "{\"outcome\":\"NOOP_TARGET_MET\",\"retry\":\"new-approval-required\"}\n"
+        }
+      },
+      {
+        "artifact": "noop-1788920548398312260-receipt.json",
+        "rawSha256": "8871163e9a0bec81ccf4a8fd612bf516ab1665177a487835001a7361b51802df",
+        "value": {
+          "bundleSha256": "c0fa1890d8431ed9e514f3decc461cf9219714d3fbf14f0eff307a0f43d9a00f",
+          "candidateCount": 0,
+          "candidateSha256": "f98c8a1eb956dcede2599de9f36cbdb422277fbb5c9729d197dc299c65438dd1",
+          "effectiveTargetBytes": 21474837,
+          "freeBytesAfter": 2112864256,
+          "freeBytesBefore": 2112864256,
+          "guaranteedPhysicalReclaimBytes": 0,
+          "identity": {
+            "builder": "default",
+            "buildkit": "v0.30.0",
+            "buildx": "github.com/docker/buildx v0.34.1 e0b0e77d18d3379bc1e0d55f3b37de288d36fe47",
+            "buildxPath": "/usr/local/libexec/docker/cli-plugins/docker-buildx",
+            "buildxSha256": "f1332ddb9010bd0b72628266c3a906d9a6979848033df4c8d9bd2cd113bae12b",
+            "daemonIdSha256": "806ad3f301db9980e0d76a877a927e13c1d1f707744c08dd47182306c60911f6",
+            "dockerSha256": "d6dfa144a057cfb0089510026dc08245c5b8b087c22d6e6817c350bcb461d5ac",
+            "driver": "docker",
+            "endpoint": "unix:///var/run/docker.sock",
+            "engine": "29.5.2",
+            "engineCommit": "568f755",
+            "filesystemSha256": "b635f018aafcbb8b440bf8de285e4554a5bcc432d23ea3ea41d47c16d5be027a",
+            "hostSha256": "276e77ad77858ac6bcd1b80d3008b9b8076f6ee633ea8e87fdf25ece06b61b06",
+            "mainSha": "963b6f0c672a8c040d5389b0641b4e0daa9faad6",
+            "mainTree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "logicalEligibleBytes": 0,
+          "noTouchBeforeSha256": "d0ba34180c32f4a45f6ac46562881b627e35729ea383b4f2d87f8b93bdccd239",
+          "operationId": "247640dd50224a54a934bf6f3d326a4e",
+          "outcome": "NOOP_TARGET_MET",
+          "preservationBeforeSha256": "6bee89209b8afaad168cb54def64941e34134131a941dc19bcf68c219a67f8ab",
+          "protectedCount": 1,
+          "protectedSetSha256": "c12e074cf40794b72b39c7e3ddfc1eb6c246d25e5104db35fc0e3f6cb9bab092",
+          "pruneCalls": 0,
+          "retry": "new-approval-required",
+          "schema": "diis-capacity-receipt-v1",
+          "sourceSha": "39f1db9ba49d8c89ceb8c3e13c6850744b9294e1",
+          "startedAt": "2026-09-09T02:22:29.094262Z"
+        }
+      },
+      {
+        "artifact": "normal-1788920519378225515-execution.json",
+        "rawSha256": "c8c2874372d3a8bb43d0d5ad77f5d6c0e43383895a84110eca50bf76a8e3b61d",
+        "value": {
+          "bundleSha256": "c0fa1890d8431ed9e514f3decc461cf9219714d3fbf14f0eff307a0f43d9a00f",
+          "exitCode": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout": "{\"outcome\":\"CLEANUP_COMPLETED_TARGET_MET\",\"retry\":\"new-approval-required\"}\n"
+        }
+      },
+      {
+        "artifact": "normal-1788920519378225515-receipt.json",
+        "rawSha256": "005449cc15ac1b22a18be4dd65902c69661d613c3e3dabae0a0a5da34e004e7d",
+        "value": {
+          "bundleSha256": "c0fa1890d8431ed9e514f3decc461cf9219714d3fbf14f0eff307a0f43d9a00f",
+          "candidateCount": 7,
+          "candidateSha256": "5fa3c49035afc8f858de385677c5265eb62acd7b6f01137584c1a7db03ef1b39",
+          "daemonReceiptSha256": "6991bb5abbe368c34f2c59ef0c4c4e4ccbb16120dfed83865b65b698b1e81943",
+          "deletedCount": 3,
+          "effectiveTargetBytes": 2028945408,
+          "freeBytesAfter": 2045734912,
+          "freeBytesBefore": 2012168192,
+          "guaranteedPhysicalReclaimBytes": 0,
+          "identity": {
+            "builder": "default",
+            "buildkit": "v0.30.0",
+            "buildx": "github.com/docker/buildx v0.34.1 e0b0e77d18d3379bc1e0d55f3b37de288d36fe47",
+            "buildxPath": "/usr/local/libexec/docker/cli-plugins/docker-buildx",
+            "buildxSha256": "f1332ddb9010bd0b72628266c3a906d9a6979848033df4c8d9bd2cd113bae12b",
+            "daemonIdSha256": "806ad3f301db9980e0d76a877a927e13c1d1f707744c08dd47182306c60911f6",
+            "dockerSha256": "d6dfa144a057cfb0089510026dc08245c5b8b087c22d6e6817c350bcb461d5ac",
+            "driver": "docker",
+            "endpoint": "unix:///var/run/docker.sock",
+            "engine": "29.5.2",
+            "engineCommit": "568f755",
+            "filesystemSha256": "b635f018aafcbb8b440bf8de285e4554a5bcc432d23ea3ea41d47c16d5be027a",
+            "hostSha256": "276e77ad77858ac6bcd1b80d3008b9b8076f6ee633ea8e87fdf25ece06b61b06",
+            "mainSha": "963b6f0c672a8c040d5389b0641b4e0daa9faad6",
+            "mainTree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "logicalEligibleBytes": 100663376,
+          "noTouchAfterSha256": "d0ba34180c32f4a45f6ac46562881b627e35729ea383b4f2d87f8b93bdccd239",
+          "noTouchBeforeSha256": "d0ba34180c32f4a45f6ac46562881b627e35729ea383b4f2d87f8b93bdccd239",
+          "operationId": "c86ed2237f7642fcbed4a04ebe481661",
+          "outcome": "CLEANUP_COMPLETED_TARGET_MET",
+          "physicalDeltaBytes": 33566720,
+          "preservationAfterSha256": "6bee89209b8afaad168cb54def64941e34134131a941dc19bcf68c219a67f8ab",
+          "preservationBeforeSha256": "6bee89209b8afaad168cb54def64941e34134131a941dc19bcf68c219a67f8ab",
+          "protectedCount": 1,
+          "protectedSetSha256": "c12e074cf40794b72b39c7e3ddfc1eb6c246d25e5104db35fc0e3f6cb9bab092",
+          "pruneCalls": 1,
+          "retry": "new-approval-required",
+          "schema": "diis-capacity-receipt-v1",
+          "sourceSha": "39f1db9ba49d8c89ceb8c3e13c6850744b9294e1",
+          "startedAt": "2026-09-09T02:22:00.204247Z"
+        }
+      }
+    ],
+    "cleanup": {
+      "status": "PENDING_REMOVAL_CONFIRMATION"
+    }
+  },
+  "postLabHardeningDelta": {
+    "infrastructure/deploy/capacity_bundle.py": {
+      "oldSha256": "5080296fbdc79c1829d166aaa85415251ffd1f407a74a421d396910b3ad1a45f",
+      "newSha256": "bf9cbee2b27ad4cf29eff9d514fd855bc5e3d153e6ec845da3c3f45cfe6779a5",
+      "changedTopLevelDefinitions": ["main"]
+    },
+    "infrastructure/deploy/capacity_runtime.py": {
+      "oldSha256": "9c6807322d93e7b6862221b374567e66e0f4d32e55e2d1ac2a8851eceb839385",
+      "newSha256": "0b536f3191f2908f99dc90a35f2a324cff1b40f081f17ec5ccbf79b6a16f781e",
+      "changedTopLevelDefinitions": ["main", "preservation"]
+    }
+  },
+  "postLabHardeningVerification": "55/55 current contracts; transaction/Backend/policy/process/guardian AST unchanged; no new daemon run after scoped hardening",
+  "finalLabReadback": {
+    "observedEpoch": 1788921222.0762844,
+    "restartNormalizationOnly": [["/container/1/HostConfig/Dns", null, []]],
+    "manualNoTouchGuardUnchanged": true,
+    "rollbackGcDisabled": true,
+    "rollbackConfigSha256": "17593c98c8723458fda479b12538071e634812580e0accc40811f5aa3e7cb14f",
+    "age168hOutputSha256": "92bb7a3c992483a91c16a92bb996474efc7bf8a6286a0609f550e0d1a9b44744",
+    "age168hRows": 2,
+    "daemonVersion": "29.5.2"
+  },
+  "cleanup": {
+    "status": "VERIFIED_REMOVED",
+    "firstLabRemovedAt": "2026-09-09T01:59:48Z",
+    "secondLabRemovedAt": "2026-09-09T02:34:19Z",
+    "containerCount": 0,
+    "taskVolumeCount": 0,
+    "taskImageRemoved": true,
+    "wslLabRootAbsent": true,
+    "permanentAccessUnchanged": true
+  },
+  "retainedRawRoot": "C:/Users/USER/.codex/artifacts/w10d-capacity-lifecycle-final-20260909",
+  "retainedRawHashes": {
+    "capacity-operator-UNRELEASED.tar": "d80c8bafc7fe5eaa6d58d9f35216461f98c7a707409770ae72be0a32ae8e16d3",
+    "capacity-operator-final-UNRELEASED.tar": "53b45ba3ba9a818d4eabd62af567ad19d58a95a9a6c2520cd672490d541648a1",
+    "evidence-precleanup.json": "2459e0db402c788d1b0cbe2148d189cc22bd36b9db4dc3444c5a9291b94550a3",
+    "final-bundle-manifest.json": "bdd77a242ba9355d6308868ad5be8ba8240f8e30177348d24c6aee133ebaf486",
+    "focused-final-55-0.log": "d29fc7ad1f7cc32fc5606187efc048fd3bfc2706214c0289f007564acb7a64f4",
+    "focused-final-55.json": "0ba1b8714dc26849e43408b7429003020e164b175304fb7980948ac6651a21a1",
+    "focused-final-source-0.log": "7537a4c7538b71f844e232b16aefa1947596e59614079171087f1cea91b5764e",
+    "focused-final-source.json": "991deac8919e776aa69c27cda5d9f1e399df7edfa118cbb9a507b789dfaaa4b7",
+    "hygiene.json": "3bb63fab3e0e9d53b1f4f015f7d57abb7f74380b48a8141e5970decb668f7775",
+    "private-lab-json/below-1788920534025875454-approval.json": "27eac78473160e7346c97b682070ae7e0f6994716ab92fa66658ac29e7ddd812",
+    "private-lab-json/below-1788920534025875454-candidate.json": "92861dcc574b895959ee35ee9738835c6c935f91c7f2a81e7127cf4f7e9294b1",
+    "private-lab-json/below-1788920534025875454-execution.json": "0127a070ff9d02f9ef6bf204d3951fafba2b9bf7eaed581a6b0ba4c445b4d215",
+    "private-lab-json/below-1788920534025875454-policy.json": "c615741490e8bf1c3ac195397c1de7628c613f473686782692bc286b49a2e8bc",
+    "private-lab-json/below-1788920534025875454-receipt.json": "e4b81afb3c04ad95d38f188dbf95b987a9399ebd50963ebd7bfa73e677803f3f",
+    "private-lab-json/below-1788920534025875454-writer.json": "bacfe1290c616d31657eeed6e6ffe7d4cf68d1958b34e45241c45e163e5e36ff",
+    "private-lab-json/build-cold.json": "0d83a677e7adbfd3639ae84725924faeb0768ff54972b6dab9fa319325a9ca37",
+    "private-lab-json/filter-proof.json": "e1f58440894a332abab5b29861437db04c1272237bf522a0a80d897193af3f10",
+    "private-lab-json/final-cleanup-readback.json": "f212ae68167b3841062900f62eb73fe27bed35e81916780432731596a0685913",
+    "private-lab-json/final-lab-proof.json": "ae437e35d0c9fea193abb55db9aa02eaf30f764c12bfcd12559fc8bd6a63b5ab",
+    "private-lab-json/gc-drift-1788920827287924886.json": "5809565cc8616a549a4c4a1dc13d31637e1d05602a22ee09e567246213613612",
+    "private-lab-json/lab.json": "371bede3126e58272cf421ae87da1e23acdd8a4b92f84f87a00c8af1892a6871",
+    "private-lab-json/measure-1788920512420126271.json": "c3c8d53007e505d4634892e70cf4a9e12ae6c602fccb7db904889863ed86b871",
+    "private-lab-json/noop-1788920548398312260-approval.json": "ce3fc2b9736489b95ea37fbdd5b432a879fddf88254f7c322d94d1402136e5b6",
+    "private-lab-json/noop-1788920548398312260-candidate.json": "374f164cc12f1570cb37e9e054ae60e7b52907cfc75ad19502604c84e75f6ef9",
+    "private-lab-json/noop-1788920548398312260-execution.json": "cc8007bd70dc89d3d1192cf3f113534cb31a4dd766388e137dc0bf7a81790757",
+    "private-lab-json/noop-1788920548398312260-policy.json": "1ff689e57321b7c434a3cbb0162a6c79ea3a1c2da4245b9c2756a15a6483dc1e",
+    "private-lab-json/noop-1788920548398312260-receipt.json": "8871163e9a0bec81ccf4a8fd612bf516ab1665177a487835001a7361b51802df",
+    "private-lab-json/noop-1788920548398312260-writer.json": "d1f0648f05efcc821143c663e71d4c90eecc236efcdb30213ccd174b3f464c84",
+    "private-lab-json/normal-1788920519378225515-approval.json": "21b601a18dbe2ef9a258c0e11e8e5e866bc232377144faf7e33dff3676520bfe",
+    "private-lab-json/normal-1788920519378225515-candidate.json": "69e61f7c03637048824c53a62ce76740bb3162906ea0db2533695a31d4b77551",
+    "private-lab-json/normal-1788920519378225515-execution.json": "c8c2874372d3a8bb43d0d5ad77f5d6c0e43383895a84110eca50bf76a8e3b61d",
+    "private-lab-json/normal-1788920519378225515-policy.json": "4ac6543ef1fdd152b8d059255fffa6e4eb6232f39c0669db850fa89181713e3b",
+    "private-lab-json/normal-1788920519378225515-receipt.json": "005449cc15ac1b22a18be4dd65902c69661d613c3e3dabae0a0a5da34e004e7d",
+    "private-lab-json/normal-1788920519378225515-writer.json": "39504e2b9eb3cb48312dcf41c90846261620764cbf48fbc072c1c0998fa55872",
+    "private-lab-json/profile.json": "21414f25e7aeb8bc497d6f193c3eca4fe906366e0a0f3fa424092333285e2aac",
+    "private-lab-json/replay-1788920674793574423.json": "4c1836d1cae9983b48b323a5ac7bc937e8f75c92d9420325eec9ccdb1a7b43da",
+    "private-lab-json/replay-1788920816125191759.json": "390424615164bfcd9bd5ea10f8017a0101ecb99d02a453f5ad2121e73f829cbe",
+    "private-lab-json/replay-result.json": "2e6c98ff7e9889ec093340c31798c0be662353b5d3843287b854c51d7f5b6990",
+    "private-lab-json/snapshot.json": "7bc7ed26984f3927fb7a836c002b37179589334ab9155e46f272249c6770f153"
+  },
+  "holds": [
+    "independent review",
+    "Git staging/commit/push/PR",
+    "VPS",
+    "GC activation",
+    "registry",
+    "staging/main release",
+    "backup/restore",
+    "commissioning"
+  ]
+}

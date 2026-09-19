@@ -1,5 +1,22 @@
 #!/usr/bin/env bash
 
+case "$(uname -s 2>/dev/null || true)" in
+  MINGW*|MSYS*|CYGWIN*)
+    command -v cygpath >/dev/null 2>&1 && command -v wsl.exe >/dev/null 2>&1 || {
+      printf 'not ok - Git Bash requires WSL for the Linux backup contract\n' >&2
+      exit 1
+    }
+    script_windows=$(cygpath -w "${BASH_SOURCE[0]}") || exit 1
+    script_wsl=$(MSYS2_ARG_CONV_EXCL='*' wsl.exe -e wslpath -u "$script_windows" 2>/dev/null | tr -d '\r') || exit 1
+    [[ -n "$script_wsl" ]] || {
+      printf 'not ok - Git Bash could not resolve the WSL contract path\n' >&2
+      exit 1
+    }
+    export MSYS2_ARG_CONV_EXCL='*'
+    exec wsl.exe -e bash "$script_wsl" "$@"
+    ;;
+esac
+
 set -Eeuo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
@@ -13,6 +30,7 @@ OBJECT_TARGET_PREPARE="$ROOT/scripts/prepare-object-restore-target.sh"
 OBJECT_TARGET_CLEANUP="$ROOT/scripts/cleanup-object-restore-target.sh"
 PRECHANGE_RELEASE="$ROOT/infrastructure/docker/scripts/release-prechange-backup.sh"
 COMPOSE="$ROOT/infrastructure/docker/docker-compose.yml"
+PG_BACKUP_DOCKERFILE="$ROOT/infrastructure/docker/pg-backup.Dockerfile"
 RESTORE="$ROOT/scripts/restore-drill.sh"
 PUBLISH_RESTORE_PROOF="$ROOT/scripts/publish-restore-proof.sh"
 MONITOR="$ROOT/infrastructure/n8n/workflows/backup-daily.json"
@@ -26,7 +44,7 @@ METADATA_RESERVE=65536
 OFFSITE_EXPECTED_PROVIDER=backblaze
 OFFSITE_EXPECTED_ORIGIN=https://api.backblazeb2.com
 export OFFSITE_EXPECTED_PROVIDER OFFSITE_EXPECTED_ORIGIN
-FINGERPRINT=$(printf '%s' 'crypt=crypt;filename=standard;directory=true;backend=b2;provider=backblaze;origin=https://api.backblazeb2.com' | "$REAL_SHA" | awk '{print $1}')
+FINGERPRINT=$(printf '%s' 'crypt=crypt;remote=independent:encrypted;filename=standard;directory=true;backend=b2;provider=backblaze;origin=https://api.backblazeb2.com' | "$REAL_SHA" | awk '{print $1}')
 PASSED=0
 
 cleanup() {
@@ -46,6 +64,21 @@ assert_not_grep() { ! grep -Eq -- "$1" "$2" || fail "$3"; }
 make_fakes() {
   local dir=$1
   mkdir -p "$dir"
+  cat >"$dir/date" <<'EOF'
+#!/bin/sh
+set -eu
+if [ "${FAULT:-}" = clock-boundary ] && [ "${1:-}" = -u ]; then
+  count_file="${MC_FAKE_ROOT:?}/clock-observations"
+  count=0
+  [ ! -f "$count_file" ] || count=$(cat "$count_file")
+  count=$((count + 1))
+  printf '%s\n' "$count" >"$count_file"
+  shift
+  epoch=$((1798761599 + count - 1))
+  exec /bin/date -u -d "@$epoch" "$@"
+fi
+exec /bin/date "$@"
+EOF
   cat >"$dir/pg_dump" <<'EOF'
 #!/bin/sh
 [ "${FAULT:-}" = dump ] && exit 11
@@ -73,7 +106,7 @@ echo 'Filesystem 1024-blocks Used Available Capacity Mounted on'
 if [ "${FAULT:-}" = disk ]; then
   echo 'mock 100 96 4 96% /'
 else
-  echo 'mock 20000000 1000 19999000 1% /'
+  echo "mock ${DF_TOTAL_KB:-20000000} 1000 ${DF_AVAILABLE_KB:-19999000} 1% /"
 fi
 EOF
   cat >"$dir/mc" <<'EOF'
@@ -87,6 +120,22 @@ command=$1
 shift
 case "$command" in
   du)
+    case "${FAULT:-}" in
+      du-fail) exit 47 ;;
+      du-empty) exit 0 ;;
+      du-malformed) printf '{\n'; exit 0 ;;
+      du-partial)
+        printf '%s\n' '{"prefix":"synthetic","size":1,"objects":1,"status":"success","isVersions":false}'
+        exit 47
+        ;;
+      du-overflow) awk 'BEGIN { for (i=0; i<1100000; i++) printf "x"; printf "\n" }'; exit 0 ;;
+      du-duplicate)
+        printf '%s\n%s\n' \
+          '{"prefix":"synthetic","size":1,"objects":1,"status":"success","isVersions":false}' \
+          '{"prefix":"synthetic","size":1,"objects":1,"status":"success","isVersions":false}'
+        exit 0
+        ;;
+    esac
     target=''
     for arg in "$@"; do case "$arg" in --*) ;; *) target=$arg ;; esac; done
     [ -n "$target" ] || exit 46
@@ -94,7 +143,7 @@ case "$command" in
     size=$(find "$target" -type f -exec sh -c \
       'for file do wc -c <"$file"; done' sh {} + 2>/dev/null \
       | awk '{ total += $1 } END { print total+0 }')
-    printf '{"size":%s}\n' "$size"
+    printf '{"prefix":"synthetic","size":%s,"objects":1,"status":"success","isVersions":false}\n' "$size"
     ;;
   find)
     target=$(resolve "$1")
@@ -104,6 +153,32 @@ case "$command" in
       [ "$1" = --name ] && { pattern=$2; shift 2; continue; }
       shift
     done
+    if printf '%s' "$pattern" | grep -Eq '^[0-9]{8}T[0-9]{6}Z-[0-9]+\.\*$'; then
+      cleanup_observe_state="$root/.cleanup-observe-seen"
+      case "${MC_CLEANUP_OBSERVE_FAULT:-}" in
+        pre-nonzero) exit 69 ;;
+        partial-nonzero)
+          printf 'myminio/backup/postgres/%s.dump\n' "${pattern%.\*}"
+          exit 69
+          ;;
+        overflow) awk 'BEGIN { for (i=0; i<70000; i++) printf "x"; printf "\n" }'; exit 0 ;;
+        post-nonzero)
+          if [ -f "$cleanup_observe_state" ]; then exit 70; fi
+          : >"$cleanup_observe_state"
+          ;;
+      esac
+    fi
+    case "${FAULT:-}:$pattern" in
+      degraded-fail:'*.local.json'|local-retention-fail:'*.complete.json') exit 48 ;;
+      degraded-partial:'*.local.json')
+        printf 'myminio/backup/postgres/synthetic.local.json\n'; exit 48 ;;
+      degraded-overflow:'*.local.json')
+        awk 'BEGIN { for (i=0; i<1100000; i++) printf "x"; printf "\n" }'; exit 0 ;;
+      degraded-duplicate:'*.local.json')
+        printf 'myminio/backup/postgres/synthetic.local.json\nmyminio/backup/postgres/synthetic.local.json\n'; exit 0 ;;
+      local-retention-duplicate:'*.complete.json')
+        printf 'myminio/backup/postgres/synthetic.complete.json\nmyminio/backup/postgres/synthetic.complete.json\n'; exit 0 ;;
+    esac
     [ -d "$target" ] || exit 0
     find "$target" -type f -name "$pattern" | while IFS= read -r file; do
       printf 'myminio/%s\n' "${file#"$root"/}"
@@ -123,13 +198,25 @@ case "$command" in
     else
       cp "$src_path" "$dst_path"
     fi
-    if [ "${FAULT:-}" = post_write_over ] && printf '%s' "$dst" | grep -q '/monitor/latest\.json$'; then
+    if { [ "${FAULT:-}" = post_write_over ] || [ "${MC_FORCE_POST_WRITE_OVER:-0}" = 1 ]; } \
+      && printf '%s' "$dst" | grep -q '/monitor/latest\.json$'; then
       dd if=/dev/zero bs=131072 count=1 >>"$dst_path" 2>/dev/null
     fi
     ;;
   rm)
     [ "${FAULT:-}" = cleanup ] && exit 14
-    for arg in "$@"; do case "$arg" in --*) ;; *) rm -f "$(resolve "$arg")" ;; esac; done
+    for arg in "$@"; do
+      case "$arg" in
+        --*) ;;
+        *)
+          if [ "${MC_CLEANUP_DELETE_FAULT:-}" = partial ] \
+            && printf '%s' "$arg" | grep -q '\.dump$'; then
+            exit 14
+          fi
+          rm -f "$(resolve "$arg")"
+          ;;
+      esac
+    done
     ;;
   stat) [ -f "$(resolve "$1")" ] ;;
   *) exit 45 ;;
@@ -152,17 +239,32 @@ resolve() {
 }
 command=$1
 shift
+if [ -n "${RCLONE_CALL_LOG:-}" ]; then
+  case "$command" in
+    config) printf 'config:%s\n' "${2:-missing}" >>"$RCLONE_CALL_LOG" ;;
+    *) printf '%s\n' "$command" >>"$RCLONE_CALL_LOG" ;;
+  esac
+fi
 case "$command" in
   config)
     [ "${FAULT:-}" = config ] && exit 51
     [ "$1" = show ] || exit 52
     case "$2" in
       offsite-crypt)
+        [ "${RCLONE_SOURCE_CONFIG_FAULT:-}" != crypt-nonzero ] || exit 73
+        if [ "${RCLONE_SOURCE_CONFIG_FAULT:-}" = crypt-duplicate ]; then
+          printf '[offsite-crypt]\ntype = crypt\ntype = crypt\nremote = independent:encrypted\nfilename_encryption = standard\ndirectory_name_encryption = true\n'
+          exit 0
+        fi
+        crypt_backing=${RCLONE_FAKE_CRYPT_BACKING:-independent:encrypted}
+        [ "${RCLONE_SOURCE_CONFIG_FAULT:-}" != crypt-drift ] \
+          || crypt_backing=independent:redirected
         printf '[offsite-crypt]\ntype = crypt\nremote = %s\nfilename_encryption = %s\ndirectory_name_encryption = %s\n' \
-          "${RCLONE_FAKE_CRYPT_BACKING:-independent:encrypted}" \
+          "$crypt_backing" \
           "${RCLONE_FAKE_FILENAME_MODE:-standard}" "${RCLONE_FAKE_DIRECTORY_MODE:-true}"
         ;;
       independent)
+        [ "${RCLONE_SOURCE_CONFIG_FAULT:-}" != backing-nonzero ] || exit 74
         printf '[independent]\ntype = %s\nprovider = %s\n' \
           "${RCLONE_FAKE_BACKEND_TYPE:-b2}" "${RCLONE_FAKE_PROVIDER:-Backblaze}"
         if [ "${RCLONE_FAKE_ENDPOINT:-https://api.backblazeb2.com}" != __EMPTY__ ]; then
@@ -170,35 +272,119 @@ case "$command" in
         fi
         [ -z "${RCLONE_FAKE_TEAM_DRIVE+x}" ] || printf 'team_drive = %s\n' "$RCLONE_FAKE_TEAM_DRIVE"
         [ -z "${RCLONE_FAKE_ROOT_FOLDER+x}" ] || printf 'root_folder_id = %s\n' "$RCLONE_FAKE_ROOT_FOLDER"
+        [ -z "${RCLONE_FAKE_SERVICE_ACCOUNT_FILE+x}" ] || \
+          printf 'service_account_file = %s\n' "$RCLONE_FAKE_SERVICE_ACCOUNT_FILE"
+        [ -z "${RCLONE_FAKE_EXTRA_CONFIG+x}" ] || printf '%s\n' "$RCLONE_FAKE_EXTRA_CONFIG"
         ;;
       diisminio)
         printf '[diisminio]\ntype = s3\nprovider = Minio\nendpoint = http://minio:9000\n'
+        ;;
+      restore-*)
+        printf '[%s]\ntype = %s\nprovider = %s\nendpoint = %s\n' "$2" \
+          "${RCLONE_TARGET_BACKEND_TYPE:-s3}" "${RCLONE_TARGET_PROVIDER:-Minio}" \
+          "${RCLONE_TARGET_ORIGIN:-http://isolated-minio:9000}"
         ;;
       local) printf '[local]\ntype = local\n' ;;
       *) exit 53 ;;
     esac
     ;;
   lsf)
-    target=$(resolve "$1"); shift
+    raw_target=$1
+    target=$(resolve "$raw_target"); shift
     target=${target%/}
     dirs_only=0
+    files_only=0
+    recursive=0
+    manifest_only=0
     while [ "$#" -gt 0 ]; do
       [ "$1" = --dirs-only ] && dirs_only=1
+      [ "$1" = --files-only ] && files_only=1
+      [ "$1" = --recursive ] && recursive=1
+      if [ "$1" = --include ]; then
+        [ "$2" = '/database/manifests/*.complete.json' ] || exit 68
+        manifest_only=1
+        shift 2
+        continue
+      fi
       shift
     done
+    case "${RCLONE_LSF_FAULT:-}" in
+      nonzero) exit 71 ;;
+      overflow) awk 'BEGIN { for (i=0; i<8500000; i++) printf "x"; printf "\n" }'; exit 0 ;;
+      second-overflow)
+        fault_state=${RCLONE_LSF_FAULT_STATE:?}
+        if [ ! -f "$fault_state" ]; then
+          printf '1\n' >"$fault_state"
+        elif [ "$(cat "$fault_state")" = 1 ]; then
+          printf '2\n' >"$fault_state"
+          awk 'BEGIN { for (i=0; i<8500000; i++) printf "x"; printf "\n" }'
+          exit 0
+        fi
+        ;;
+    esac
+    case "$raw_target" in
+      diisminio:*)
+        if [ "${RCLONE_REQUIRE_OBJECT_FLAGS:-0}" = 1 ] \
+          && { [ "$recursive" -ne 1 ] || [ "$files_only" -ne 1 ]; }; then
+          exit 69
+        fi
+        case "${FAULT:-}" in
+          object-inventory-fail) exit 58 ;;
+          object-inventory-duplicate) printf 'media/sample.jpg\nmedia/sample.jpg\n'; exit 0 ;;
+          object-inventory-overflow) awk 'BEGIN { for (i=0; i<8500000; i++) printf "x"; printf "\n" }'; exit 0 ;;
+          object-post-inventory-fail|object-post-inventory-duplicate)
+            object_marker="${restore_root}/.object-inventory-seen"
+            if [ -f "$object_marker" ]; then
+              [ "${FAULT:-}" != object-post-inventory-fail ] || exit 58
+              printf 'media/sample.jpg\nmedia/sample.jpg\n'
+              exit 0
+            fi
+            : >"$object_marker"
+            ;;
+        esac
+        ;;
+      offsite-crypt:*)
+        if [ "$manifest_only" -eq 1 ]; then
+          case "${FAULT:-}" in
+            offsite-retention-fail) exit 58 ;;
+            offsite-retention-partial)
+              printf 'database/manifests/synthetic.complete.json\n'; exit 58 ;;
+            offsite-retention-duplicate)
+              printf 'database/manifests/synthetic.complete.json\ndatabase/manifests/synthetic.complete.json\n'; exit 0 ;;
+          esac
+        fi
+        ;;
+    esac
     [ "${RCLONE_OBSERVE_FAULT:-}" != always ] || exit 58
-    if [ "${RCLONE_OBSERVE_FAULT:-}" = final-restore ]; then
+    case "${RCLONE_OBSERVE_FAULT:-}" in
+      final-restore|final-restore-overflow)
       observe_state=${RCLONE_OBSERVE_STATE:?}
-      if [ -f "$observe_state" ]; then exit 67; fi
+      if [ -f "$observe_state" ]; then
+        [ "${RCLONE_OBSERVE_FAULT:-}" != final-restore ] || exit 67
+        awk 'BEGIN { for (i=0; i<8500000; i++) printf "x"; printf "\n" }'
+        exit 0
+      fi
       : >"$observe_state"
-    fi
+      ;;
+    esac
     if [ "${RCLONE_OBSERVE_FAULT:-}" = after-purge ] && [ -f "${restore_root}/.purge-complete" ]; then
       exit 59
+    fi
+    if [ "${RCLONE_POST_PURGE_DUPLICATE:-0}" = 1 ] \
+      && [ -n "${RCLONE_PURGE_STATE:-}" ] && [ -f "$RCLONE_PURGE_STATE" ]; then
+      printf 'synthetic-residual/\nsynthetic-residual/\n'
+      exit 0
     fi
     if [ -f "$target" ]; then basename "$target"; exit 0; fi
     case "$target" in *.json|*.tsv) exit 3 ;; esac
     [ -d "$target" ] || { mkdir -p "$target" 2>/dev/null || true; exit 0; }
-    if [ "$dirs_only" -eq 1 ]; then
+    if [ "$manifest_only" -eq 1 ]; then
+      manifest_root="${target}/database/manifests"
+      [ -d "$manifest_root" ] || exit 0
+      find "$manifest_root" -type f -name '*.complete.json' | LC_ALL=C sort | while IFS= read -r file; do
+        printf 'database/manifests/%s\n' "${file#"$manifest_root"/}"
+      done
+    elif [ "$dirs_only" -eq 1 ]; then
       find "$target" -mindepth 1 -maxdepth 1 -type d | LC_ALL=C sort | while IFS= read -r dir; do
         printf '%s/\n' "${dir#"$target"/}"
       done
@@ -265,11 +451,41 @@ case "$command" in
     [ "${RCLONE_MARKER_WRITE_FAIL:-0}" != 1 ] || exit 60
     cat >"$dst"
     ;;
-  cat) cat "$(resolve "$1")" ;;
+  cat)
+    case "${RCLONE_CAT_FAULT:-}" in
+      nonzero) exit 72 ;;
+      overflow) awk 'BEGIN { for (i=0; i<5000; i++) printf "x"; printf "\n" }'; exit 0 ;;
+      empty) exit 0 ;;
+      release-nonzero)
+        printf '%s' "$1" | grep -q '/database/releases/' && exit 72
+        ;;
+      release-overflow)
+        if printf '%s' "$1" | grep -q '/database/releases/'; then
+          awk 'BEGIN { for (i=0; i<5000; i++) printf "x"; printf "\n" }'
+          exit 0
+        fi
+        ;;
+    esac
+    cat "$(resolve "$1")"
+    ;;
   deletefile) rm -f "$(resolve "$1")" ;;
   purge)
+    purge_target=$(resolve "$1")
+    [ -z "${RCLONE_PURGE_STATE:-}" ] || : >"$RCLONE_PURGE_STATE"
+    if [ -n "${RCLONE_PURGE_SIGNAL:-}" ]; then
+      rm -f "$purge_target/.diis-disposable-restore-target-v3"
+      cleanup_shell_pid=$(awk '{print $4}' "/proc/$PPID/stat")
+      kill -s "$RCLONE_PURGE_SIGNAL" "$cleanup_shell_pid"
+      sleep 0.1
+      exit 0
+    fi
     [ "${RCLONE_PURGE_FAIL:-0}" != 1 ] || exit 61
-    rm -rf "$(resolve "$1")"
+    if [ "${RCLONE_PURGE_PARTIAL:-0}" = 1 ]; then
+      rm -f "$purge_target/.diis-disposable-restore-target-v3"
+      exit 61
+    fi
+    [ "${RCLONE_PURGE_LEAVE_TARGET:-0}" != 1 ] || exit 0
+    rm -rf "$purge_target"
     [ "${RCLONE_OBSERVE_FAULT:-}" != after-purge ] || touch "${restore_root}/.purge-complete"
     ;;
   *) exit 57 ;;
@@ -291,7 +507,14 @@ prepare_backup_case() {
   local base=$1
   mkdir -p "$base/tmp" "$base/minio-target" "$base/mc/backup/postgres" \
     "$base/source/objects/media" "$base/offsite" "$base/restore"
-  printf sample >"$base/source/objects/media/sample.jpg"
+  if [[ "${SEED_NESTED_OBJECTS:-0}" == 1 ]]; then
+    mkdir -p "$base/source/objects/media/2026/class-a" \
+      "$base/source/objects/documents/reports" "$base/source/objects/empty-directory"
+    printf 'nested-image-v1' >"$base/source/objects/media/2026/class-a/photo.bin"
+    printf 'nested-report-v1' >"$base/source/objects/documents/reports/report.bin"
+  else
+    printf sample >"$base/source/objects/media/sample.jpg"
+  fi
   make_fakes "$base/bin"
 }
 
@@ -302,7 +525,26 @@ run_backup() {
   if [[ "$existing_bytes" -gt 0 ]]; then
     truncate -s "$existing_bytes" "$base/mc/backup/postgres/existing.bin"
   fi
+  if [[ "${SEED_LOCAL_PROTECTED:-0}" == 1 ]]; then
+    local protected_id=20200101T000000Z-8000
+    local protected_dump="$base/mc/backup/postgres/$protected_id.dump"
+    truncate -s 2048 "$protected_dump"
+    local protected_sha protected_object_sha
+    protected_sha=$($REAL_SHA "$protected_dump" | awk '{print $1}')
+    protected_object_sha=$(printf 'diis-object-manifest-v1|%s|exact\n' "$protected_id" \
+      | $REAL_SHA | awk '{print $1}')
+    printf '%s  %s.dump\n' "$protected_sha" "$protected_id" \
+      >"$base/mc/backup/postgres/$protected_id.sha256"
+    printf '{"schemaVersion":"diis-backup-v1","status":"complete","backupId":"%s","class":"pre-change","protectionState":"protected","createdAt":"2020-01-01T00:00:00Z","createdEpoch":1577836800,"dailyKey":"2020-01-01","weeklyKey":"2020-W01","monthlyKey":"2020-01","sha256":"%s","bytes":2048,"archiveValidated":true,"offsiteStatus":"complete","offsiteConfigFingerprint":"%s","objectStatus":"empty","objectManifestSha256":"%s","objectCount":0,"tableCount":46,"userCount":40,"studentCount":20,"targetTotalBytes":20000000000,"targetFreeBytes":10000000000}\n' \
+      "$protected_id" "$protected_sha" "$FINGERPRINT" "$protected_object_sha" \
+      >"$base/mc/backup/postgres/$protected_id.complete.json"
+  fi
   env PATH="$base/bin:$PATH" MC="$base/bin/mc" RCLONE="$base/bin/rclone" FAULT="$fault" \
+    MC_CLEANUP_OBSERVE_FAULT="${MC_CLEANUP_OBSERVE_FAULT:-}" \
+    MC_CLEANUP_DELETE_FAULT="${MC_CLEANUP_DELETE_FAULT:-}" \
+    MC_FORCE_POST_WRITE_OVER="${MC_FORCE_POST_WRITE_OVER:-0}" \
+    RCLONE_CAT_FAULT="${RCLONE_CAT_FAULT:-}" \
+    RCLONE_REQUIRE_OBJECT_FLAGS="${RCLONE_REQUIRE_OBJECT_FLAGS:-0}" \
     DB_ESTIMATE="$estimate" MC_FAKE_ROOT="$base/mc" RCLONE_SOURCE_ROOT="$base/source" \
     RCLONE_OFFSITE_ROOT="$base/offsite" RCLONE_RESTORE_ROOT="$base/restore" \
     POSTGRES_HOST=postgres POSTGRES_USER=test POSTGRES_DB=test BACKUP_BUCKET=backup \
@@ -312,17 +554,55 @@ run_backup() {
     BACKUP_LOCAL_BUDGET_BYTES="$GATE0_BUDGET" sh "$BACKUP" >"$base/out" 2>"$base/err"
 }
 
-assert_grep 'postgres:16\.4-alpine3\.20@sha256:[a-f0-9]{64}' "$COMPOSE" 'backup image must be immutable'
-assert_grep 'MC_SHA256=.01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891.' "$COMPOSE" 'mc checksum missing'
-assert_grep 'RCLONE_SHA256=.7d69057e69385f6514a9684c7eaa424d972096b130284bb34dd967c4ed4f9dad.' "$COMPOSE" 'rclone checksum missing'
+assert_grep 'PG_BACKUP_IMAGE' "$COMPOSE" 'backup image must be explicitly bound'
+assert_grep 'PG_BACKUP_IMAGE_REFERENCE' "$COMPOSE" 'backup image digest reference is not propagated'
+assert_grep 'python:3\.12\.14-alpine3\.24@sha256:78e98729f8fc4099e53cffb3fe59fd15b18dfa4ace8c914dee0cefa5320068eb' \
+  "$PG_BACKUP_DOCKERFILE" 'pinned Python runtime stage missing'
+assert_grep 'postgres:16\.15-alpine3\.24@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571' \
+  "$PG_BACKUP_DOCKERFILE" 'pinned PostgreSQL client stage missing'
+assert_grep 'python3 /scripts/w10d_completion_validation.py --help' "$PG_BACKUP_DOCKERFILE" \
+  'real image validator integration assertion missing'
+assert_not_grep '^# syntax=' "$PG_BACKUP_DOCKERFILE" \
+  'Dockerfile still selects a mutable external frontend'
+assert_grep 'quay\.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727 AS mc-runtime' \
+  "$PG_BACKUP_DOCKERFILE" 'pinned MinIO client stage missing'
+assert_not_grep '^FROM minio/mc(@|:)' "$PG_BACKUP_DOCKERFILE" \
+  'unqualified MinIO client image would resolve through the wrong registry'
+assert_grep 'COPY --from=mc-runtime /usr/bin/mc /usr/local/lib/diis-tools/mc' \
+  "$PG_BACKUP_DOCKERFILE" 'mc must come from the immutable client stage'
+assert_grep '01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891' \
+  "$PG_BACKUP_DOCKERFILE" 'mc executable checksum proof missing'
+assert_grep 'ADD --checksum=sha256:7d69057e69385f6514a9684c7eaa424d972096b130284bb34dd967c4ed4f9dad' "$PG_BACKUP_DOCKERFILE" 'rclone checksum missing'
+assert_grep 'python3 /scripts/install-baked-backup-tools.py' "$COMPOSE" 'baked tools required'
 assert_not_grep 'curl.*\|[[:space:]]*(ba)?sh|/release/linux-amd64/mc([[:space:]]|$)' "$COMPOSE" 'mutable installer found'
 pass 'immutable backup supply chain'
 
+[[ "$(grep -h -- '--recursive --files-only' "$BACKUP" "$OFFSITE" | wc -l)" -eq 2 ]] \
+  || fail 'object inventory must be recursive and file-only before and after the database snapshot'
+
 assert_grep '0 2 \* \* \*' "$COMPOSE" '02:00 WIB schedule missing'
 assert_grep 'BACKUP_LOCAL_BUDGET_BYTES.*4015794422' "$COMPOSE" 'Gate 0 absolute budget missing'
+assert_grep 'BACKUP_MIN_FREE_PERCENT:[[:space:]]*"10"' "$COMPOSE" \
+  '10 percent minimum-free policy missing from backup runtime'
+assert_grep '^BACKUP_MIN_FREE_PERCENT_POLICY=10$' "$LIB" \
+  'canonical 10 percent minimum-free policy missing'
 assert_grep 'minio_data:/var/lib/diis-minio-target:ro' "$COMPOSE" 'MinIO target volume observability missing'
 assert_not_grep 'crontab|Cron \(' "$ROOT/scripts/backup-db.sh" 'host wrapper must not define a scheduler'
 pass 'single scheduler and exact capacity authority'
+
+if DF_TOTAL_KB=100000 DF_AVAILABLE_KB=9004 run_backup capacity-nine-percent; then
+  fail 'backup accepted a projected 9 percent free filesystem'
+fi
+assert_grep 'diproyeksikan di bawah 10%' "$TMP/capacity-nine-percent/err" \
+  'backup did not report the canonical 10 percent floor'
+[[ ! -d "$TMP/capacity-nine-percent/lock" ]] || fail '9 percent capacity lock leaked'
+if ! DF_TOTAL_KB=100000 DF_AVAILABLE_KB=10004 run_backup capacity-ten-percent; then
+  cat "$TMP/capacity-ten-percent/err" >&2
+  fail 'backup rejected the exact 10 percent boundary'
+fi
+assert_grep 'BACKUP_COMPLETE' "$TMP/capacity-ten-percent/out" \
+  '10 percent boundary did not complete backup'
+pass 'backup rejects 9 percent and accepts the exact 10 percent boundary'
 
 if ! run_backup success; then cat "$TMP/success/err" >&2; fail 'success path failed'; fi
 assert_grep 'BACKUP_COMPLETE' "$TMP/success/out" 'success marker missing'
@@ -330,12 +610,42 @@ assert_grep 'BACKUP_COMPLETE' "$TMP/success/out" 'success marker missing'
 [[ -z $(find "$TMP/success/tmp" -mindepth 1 -print -quit) ]] || fail 'success temp leaked'
 pass 'success path publishes verified local and off-site completion'
 
-for fault in dump validation upload offsite disk cleanup local_corrupt; do
+if ! run_backup clock-boundary clock-boundary; then
+  cat "$TMP/clock-boundary/err" >&2; fail 'clock boundary broke completion binding'
+fi
+# One identity snapshot, followed by one independent retention-age observation.
+[[ "$(cat "$TMP/clock-boundary/mc/clock-observations")" == 2 ]] \
+  || fail 'backup identity used multiple UTC clock observations'
+assert_grep 'BACKUP_COMPLETE' "$TMP/clock-boundary/out" 'clock-boundary completion missing'
+pass 'backup identity and retention fields use one clock sample across year rollover'
+
+for fault in dump validation upload offsite disk cleanup local_corrupt du-fail du-empty du-malformed \
+  du-partial du-overflow du-duplicate degraded-fail degraded-partial degraded-overflow \
+  degraded-duplicate local-retention-fail local-retention-duplicate object-inventory-fail \
+  object-inventory-overflow object-inventory-duplicate object-post-inventory-fail \
+  object-post-inventory-duplicate offsite-retention-fail offsite-retention-partial \
+  offsite-retention-duplicate; do
   if run_backup "$fault" "$fault"; then fail "$fault fault unexpectedly succeeded"; fi
   [[ ! -d "$TMP/$fault/lock" ]] || fail "$fault lock leaked"
+  case "$fault" in
+    du-fail|du-empty|du-malformed|du-partial|du-overflow|du-duplicate|degraded-fail|\
+    degraded-partial|degraded-overflow|degraded-duplicate|local-retention-fail|\
+    local-retention-duplicate|object-inventory-fail|object-inventory-overflow|\
+    object-inventory-duplicate|offsite-retention-fail|offsite-retention-partial|\
+    offsite-retention-duplicate)
+      [[ -z $(find "$TMP/$fault/mc/backup/postgres" -mindepth 1 -print -quit) ]] \
+        || fail "$fault published recovery point after observation failure" ;;
+    object-post-inventory-fail|object-post-inventory-duplicate)
+      [[ -z $(find "$TMP/$fault/mc/backup/postgres" -name '*.complete.json' -print -quit) ]] \
+        || fail "$fault published local completion after post-snapshot observation failure"
+      [[ -z $(find "$TMP/$fault/offsite" -name '*.complete.json' -print -quit) ]] \
+        || fail "$fault published off-site completion after post-snapshot observation failure" ;;
+  esac
 done
 assert_grep 'checksum tidak cocok.*local-verify' "$TMP/local_corrupt/err" 'local corruption was not detected'
-pass 'dump validation upload offsite disk cleanup and local corruption fail closed'
+assert_grep 'observasi aggregate MinIO' "$TMP/du-malformed/err" 'malformed MinIO aggregate was not rejected'
+assert_grep 'inventory object sebelum snapshot' "$TMP/object-inventory-fail/err" 'object inventory failure was not rejected'
+pass 'dump validation upload offsite disk cleanup local corruption and observation failures fail closed'
 
 if run_backup budget-over '' 4015794423; then fail 'over-budget estimate unexpectedly succeeded'; fi
 exact_preflight_existing=$((GATE0_BUDGET - 2048 - METADATA_RESERVE))
@@ -356,6 +666,61 @@ fi
 [[ ! -e "$TMP/budget-post-write/mc/backup/postgres/monitor/latest.json" ]] \
   || fail 'invalid post-write telemetry was not removed'
 pass 'Gate 0 budget includes bounded metadata and post-write actual total'
+
+for cleanup_case in pre-observation partial-output overflow partial-delete post-observation; do
+  case "$cleanup_case" in
+    pre-observation)
+      MC_CLEANUP_OBSERVE_FAULT=pre-nonzero MC_FORCE_POST_WRITE_OVER=1 \
+        run_backup "cleanup-$cleanup_case" '' 2048 "$post_write_existing" && cleanup_rc=0 || cleanup_rc=$?
+      ;;
+    partial-output)
+      MC_CLEANUP_OBSERVE_FAULT=partial-nonzero MC_FORCE_POST_WRITE_OVER=1 \
+        run_backup "cleanup-$cleanup_case" '' 2048 "$post_write_existing" && cleanup_rc=0 || cleanup_rc=$?
+      ;;
+    overflow)
+      MC_CLEANUP_OBSERVE_FAULT=overflow MC_FORCE_POST_WRITE_OVER=1 \
+        run_backup "cleanup-$cleanup_case" '' 2048 "$post_write_existing" && cleanup_rc=0 || cleanup_rc=$?
+      ;;
+    partial-delete)
+      MC_CLEANUP_DELETE_FAULT=partial MC_FORCE_POST_WRITE_OVER=1 \
+        run_backup "cleanup-$cleanup_case" '' 2048 "$post_write_existing" && cleanup_rc=0 || cleanup_rc=$?
+      ;;
+    post-observation)
+      MC_CLEANUP_OBSERVE_FAULT=post-nonzero MC_FORCE_POST_WRITE_OVER=1 \
+        run_backup "cleanup-$cleanup_case" '' 2048 "$post_write_existing" && cleanup_rc=0 || cleanup_rc=$?
+      ;;
+  esac
+  if [[ "$cleanup_rc" -ne 74 ]]; then
+    sed -n '1,120p' "$TMP/cleanup-$cleanup_case/err" >&2
+    fail "$cleanup_case local cleanup returned status $cleanup_rc instead of ambiguous status 74"
+  fi
+  assert_grep 'LOCAL_RECOVERY_POINT_CLEANUP_AMBIGUOUS.*retry=prohibited' \
+    "$TMP/cleanup-$cleanup_case/err" "$cleanup_case local cleanup ambiguity marker missing"
+  [[ ! -d "$TMP/cleanup-$cleanup_case/lock" ]] || fail "$cleanup_case cleanup leaked writer lock"
+  [[ -z $(find "$TMP/cleanup-$cleanup_case/tmp" -mindepth 1 -print -quit) ]] \
+    || fail "$cleanup_case cleanup leaked private temporary state"
+done
+[[ -n $(find "$TMP/cleanup-partial-delete/mc/backup/postgres" -maxdepth 1 -name '*.dump' -print -quit) ]] \
+  || fail 'partial local deletion did not retain an observable owned recovery artifact'
+pass 'local recovery-point cleanup is bounded tri-state and ambiguous-no-retry on every unproven absence'
+
+if ! SEED_LOCAL_PROTECTED=1 RCLONE_CAT_FAULT=release-overflow \
+  run_backup local-release-overflow; then
+  cat "$TMP/local-release-overflow/err" >&2
+  fail 'bounded local release-marker overflow did not conservatively keep the protected point'
+fi
+[[ -f "$TMP/local-release-overflow/mc/backup/postgres/20200101T000000Z-8000.complete.json" ]] \
+  || fail 'local retention deleted protected point after oversized release observation'
+assert_grep 'RELEASE_MARKER_UNAVAILABLE.*retention=keep' "$TMP/local-release-overflow/err" \
+  'local release observation did not preserve unavailable state'
+if SEED_LOCAL_PROTECTED=1 RCLONE_CAT_FAULT=empty run_backup local-release-empty; then
+  fail 'empty release marker was treated as unavailable instead of invalid'
+fi
+[[ -f "$TMP/local-release-empty/mc/backup/postgres/20200101T000000Z-8000.complete.json" ]] \
+  || fail 'invalid empty release marker deleted protected local point'
+assert_grep 'release marker protected point tidak valid' "$TMP/local-release-empty/err" \
+  'empty release marker did not preserve invalid-versus-unavailable distinction'
+pass 'local protected retention bounds release markers and keeps points on unavailable evidence'
 
 run_crypt_negative() {
   local name=$1; shift
@@ -388,25 +753,42 @@ run_crypt_negative link-local-v6 env RCLONE_FAKE_ENDPOINT='https://[fe80::1]' OF
 run_crypt_negative internal-name env RCLONE_FAKE_ENDPOINT=https://backup.internal OFFSITE_EXPECTED_ORIGIN=https://backup.internal
 run_crypt_negative local-name env RCLONE_FAKE_ENDPOINT=https://backup.local OFFSITE_EXPECTED_ORIGIN=https://backup.local
 run_crypt_negative unapproved-public-origin env RCLONE_FAKE_ENDPOINT=https://s3.example.net
+run_crypt_negative drive-auth-on-b2 env OFFSITE_EXPECTED_AUTH_MODE=service-account-file
 pass 'crypt provider origin private-range and fingerprint controls fail closed'
 
 drive_team='school-shared-drive-id'
 drive_root='diis-recovery-folder-id'
 drive_team_sha=$(printf '%s' "$drive_team" | "$REAL_SHA" | awk '{print $1}')
 drive_root_sha=$(printf '%s' "$drive_root" | "$REAL_SHA" | awk '{print $1}')
-drive_fingerprint=$(printf '%s' "crypt=crypt;filename=standard;directory=true;backend=drive;provider=google;origin=provider-default;team_drive_sha256=${drive_team_sha};root_folder_sha256=${drive_root_sha}" \
+drive_principal_sha=$(printf '%s' 'synthetic-backup-principal' | "$REAL_SHA" | awk '{print $1}')
+drive_project_sha=$(printf '%s' 'synthetic-backup-project' | "$REAL_SHA" | awk '{print $1}')
+drive_key_sha=$(printf '%s' 'synthetic-key-identity' | "$REAL_SHA" | awk '{print $1}')
+drive_credential_template="$TMP/synthetic-google-service-account.json"
+printf '%s\n' '{"type":"service_account","project_id":"synthetic-inert-project","private_key_id":"0000000000000000000000000000000000000000","private_key":"SYNTHETIC-NOT-A-KEY","client_email":"synthetic-inert@example.invalid"}' \
+  >"$drive_credential_template"
+chmod 600 "$drive_credential_template"
+drive_credential_sha=$("$REAL_SHA" "$drive_credential_template" | awk '{print $1}')
+drive_fingerprint=$(printf '%s' "crypt=crypt;remote=independent:encrypted;filename=standard;directory=true;backend=drive;provider=google;origin=provider-default;team_drive_sha256=${drive_team_sha};root_folder_sha256=${drive_root_sha};auth=service-account-file;principal_sha256=${drive_principal_sha};project_sha256=${drive_project_sha};key_identity_sha256=${drive_key_sha};credential_artifact_sha256=${drive_credential_sha}" \
   | "$REAL_SHA" | awk '{print $1}')
 validate_drive() {
-  local team=$1 root=$2 expected_team=$3 expected_root=$4
+  local team=$1 root=$2 expected_team=$3 expected_root=$4 extra_config=${5:-}
   local base="$TMP/drive-$RANDOM"
   prepare_backup_case "$base"
+  cp "$drive_credential_template" "$base/service-account.json"
+  chmod 600 "$base/service-account.json"
   env PATH="$base/bin:$PATH" RCLONE_SOURCE_ROOT="$base/source" RCLONE_OFFSITE_ROOT="$base/offsite" \
     RCLONE_RESTORE_ROOT="$base/restore" RCLONE_FAKE_BACKEND_TYPE=drive RCLONE_FAKE_PROVIDER=Google \
     RCLONE_FAKE_ENDPOINT=__EMPTY__ RCLONE_FAKE_TEAM_DRIVE="$team" RCLONE_FAKE_ROOT_FOLDER="$root" \
+    RCLONE_FAKE_SERVICE_ACCOUNT_FILE="$base/service-account.json" RCLONE_FAKE_EXTRA_CONFIG="$extra_config" \
     OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OFFSITE_CONFIG_FINGERPRINT="$drive_fingerprint" \
     OFFSITE_EXPECTED_PROVIDER=google OFFSITE_EXPECTED_ORIGIN=provider-default \
     OFFSITE_EXPECTED_TEAM_DRIVE_SHA256="$expected_team" OFFSITE_EXPECTED_ROOT_FOLDER_SHA256="$expected_root" \
-    sh -c '. "$1"; validate_offsite_config' _ "$LIB"
+    OFFSITE_EXPECTED_AUTH_MODE=service-account-file \
+    OFFSITE_EXPECTED_PRINCIPAL_SHA256="$drive_principal_sha" \
+    OFFSITE_EXPECTED_PROJECT_SHA256="$drive_project_sha" \
+    OFFSITE_EXPECTED_KEY_IDENTITY_SHA256="$drive_key_sha" \
+    OFFSITE_EXPECTED_CREDENTIAL_ARTIFACT_SHA256="$drive_credential_sha" \
+    sh -c '. "$1"; validate_offsite_config "$2"' _ "$LIB" "$base/service-account.json"
 }
 validate_drive "$drive_team" "$drive_root" "$drive_team_sha" "$drive_root_sha" \
   || fail 'approved Shared Drive binding was rejected'
@@ -422,31 +804,148 @@ fi
 if validate_drive "$drive_team" "$drive_root" "$(printf '%064d' 0)" "$drive_root_sha" >/dev/null 2>&1; then
   fail 'post-approval Drive config drift was accepted'
 fi
-pass 'Shared Drive and root folder are both fingerprint-bound and fail closed'
+for forbidden in 'token = synthetic-redacted' 'client_id = synthetic-redacted' \
+  'client_secret = synthetic-redacted' 'service_account_credentials = synthetic-redacted' \
+  'impersonate = synthetic@example.invalid'; do
+  if validate_drive "$drive_team" "$drive_root" "$drive_team_sha" "$drive_root_sha" "$forbidden" \
+    >/dev/null 2>&1; then
+    fail "forbidden Drive authentication key was accepted: ${forbidden%% =*}"
+  fi
+done
+pass 'Shared Drive root folder Service Account artifact and forbidden auth paths fail closed'
 
 history_base="$TMP/object-history"
 prepare_backup_case "$history_base"
+object_parent='restore-parent:'
+object_target_provider=minio
+object_target_origin=http://isolated-minio:9000
+object_target_config_fingerprint_for() {
+  local parent=$1
+  local remote_name=${parent%%:*}
+  printf '[%s]\ntype = s3\nprovider = Minio\nendpoint = http://isolated-minio:9000\n' "$remote_name" \
+    | "$REAL_SHA" | awk '{print $1}'
+}
+object_target_config_fingerprint=$(object_target_config_fingerprint_for "$object_parent")
+object_target_authority_sha() {
+  local attempt=$1
+  local parent=${2:-$object_parent}
+  local config_fingerprint
+  config_fingerprint=${3:-$(object_target_config_fingerprint_for "$parent")}
+  local target="${parent%/}/${attempt}"
+  local remote_name=${parent%%:*}
+  remote_name=${remote_name,,}
+  printf '%s\n' \
+    'schemaVersion=diis-object-target-authority-v2' \
+    "attemptId=${attempt}" \
+    'sourceRemote=offsite-crypt:diis' \
+    "sourceProvider=${OFFSITE_EXPECTED_PROVIDER}" \
+    "sourceOrigin=${OFFSITE_EXPECTED_ORIGIN}" \
+    "sourceConfigFingerprint=${FINGERPRINT}" \
+    "sourceBackingSha256=$(printf '%s' 'independent:encrypted' | "$REAL_SHA" | awk '{print $1}')" \
+    "targetParent=${parent}" \
+    "target=${target}" \
+    "targetRemote=${remote_name}" \
+    "targetProvider=${object_target_provider}" \
+    "targetOrigin=${object_target_origin}" \
+    "targetConfigFingerprint=${config_fingerprint}" \
+    | "$REAL_SHA" | awk '{print $1}'
+}
+run_target_prepare() {
+  local attempt=$1 parent=${2:-$object_parent}
+  local authority config_fingerprint
+  config_fingerprint=$(object_target_config_fingerprint_for "$parent")
+  authority=$(object_target_authority_sha "$attempt" "$parent" "$config_fingerprint")
+  env PATH="${OBJECT_TARGET_FAULT_BIN:+$OBJECT_TARGET_FAULT_BIN:}$history_base/bin:$PATH" \
+    RCLONE_SOURCE_ROOT="$history_base/source" \
+    RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+    OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OFFSITE_CONFIG_FINGERPRINT="$FINGERPRINT" \
+    OFFSITE_EXPECTED_PROVIDER="$OFFSITE_EXPECTED_PROVIDER" OFFSITE_EXPECTED_ORIGIN="$OFFSITE_EXPECTED_ORIGIN" \
+    OBJECT_TARGET_EXPECTED_PROVIDER="$object_target_provider" \
+    OBJECT_TARGET_EXPECTED_ORIGIN="$object_target_origin" \
+    OBJECT_TARGET_EXPECTED_CONFIG_FINGERPRINT="$config_fingerprint" \
+    OBJECT_TARGET_EXPECTED_AUTHORITY_SHA256="$authority" \
+    RCLONE_TARGET_BACKEND_TYPE="${RCLONE_TARGET_BACKEND_TYPE:-s3}" \
+    RCLONE_TARGET_PROVIDER="${RCLONE_TARGET_PROVIDER:-Minio}" \
+    RCLONE_TARGET_ORIGIN="${RCLONE_TARGET_ORIGIN:-http://isolated-minio:9000}" \
+    RCLONE_MARKER_WRITE_FAIL="${RCLONE_MARKER_WRITE_FAIL:-0}" \
+    RCLONE_MARKER_SIGNAL="${RCLONE_MARKER_SIGNAL:-}" \
+    RCLONE_PURGE_FAIL="${RCLONE_PURGE_FAIL:-0}" \
+    RCLONE_MKDIR_FAIL_AFTER_CREATE="${RCLONE_MKDIR_FAIL_AFTER_CREATE:-0}" \
+    RCLONE_MKDIR_SIGNAL="${RCLONE_MKDIR_SIGNAL:-}" \
+    RCLONE_LSF_FAULT="${RCLONE_LSF_FAULT:-}" \
+    RCLONE_LSF_FAULT_STATE="${RCLONE_LSF_FAULT_STATE:-}" \
+    RCLONE_OBSERVE_FAULT="${RCLONE_OBSERVE_FAULT:-}" \
+    RCLONE_SOURCE_CONFIG_FAULT="${RCLONE_SOURCE_CONFIG_FAULT:-}" \
+    RCLONE_CALL_LOG="${RCLONE_CALL_LOG:-}" \
+    OBJECT_LOCAL_CLEANUP_FAULT="${OBJECT_LOCAL_CLEANUP_FAULT:-}" \
+    TMPDIR="${OBJECT_TARGET_TMPDIR:-${TMPDIR:-/tmp}}" \
+    OBJECT_TARGET_CREATE_CONFIRMATION=CREATE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
+    sh "$OBJECT_TARGET_PREPARE" "$attempt" "$parent"
+}
+run_target_cleanup() {
+  local attempt=$1 parent=${2:-$object_parent}
+  local authority config_fingerprint
+  config_fingerprint=$(object_target_config_fingerprint_for "$parent")
+  authority=$(object_target_authority_sha "$attempt" "$parent" "$config_fingerprint")
+  env PATH="${OBJECT_TARGET_FAULT_BIN:+$OBJECT_TARGET_FAULT_BIN:}$history_base/bin:$PATH" \
+    RCLONE_SOURCE_ROOT="$history_base/source" \
+    RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+    OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OFFSITE_CONFIG_FINGERPRINT="$FINGERPRINT" \
+    OFFSITE_EXPECTED_PROVIDER="$OFFSITE_EXPECTED_PROVIDER" OFFSITE_EXPECTED_ORIGIN="$OFFSITE_EXPECTED_ORIGIN" \
+    OBJECT_TARGET_EXPECTED_PROVIDER="$object_target_provider" \
+    OBJECT_TARGET_EXPECTED_ORIGIN="$object_target_origin" \
+    OBJECT_TARGET_EXPECTED_CONFIG_FINGERPRINT="$config_fingerprint" \
+    OBJECT_TARGET_EXPECTED_AUTHORITY_SHA256="$authority" \
+    RCLONE_PURGE_FAIL="${RCLONE_PURGE_FAIL:-0}" \
+    RCLONE_PURGE_PARTIAL="${RCLONE_PURGE_PARTIAL:-0}" \
+    RCLONE_PURGE_LEAVE_TARGET="${RCLONE_PURGE_LEAVE_TARGET:-0}" \
+    RCLONE_PURGE_SIGNAL="${RCLONE_PURGE_SIGNAL:-}" \
+    RCLONE_PURGE_STATE="${RCLONE_PURGE_STATE:-}" \
+    RCLONE_POST_PURGE_DUPLICATE="${RCLONE_POST_PURGE_DUPLICATE:-0}" \
+    RCLONE_OBSERVE_FAULT="${RCLONE_OBSERVE_FAULT:-}" \
+    RCLONE_SOURCE_CONFIG_FAULT="${RCLONE_SOURCE_CONFIG_FAULT:-}" \
+    RCLONE_CALL_LOG="${RCLONE_CALL_LOG:-}" \
+    OBJECT_LOCAL_CLEANUP_FAULT="${OBJECT_LOCAL_CLEANUP_FAULT:-}" \
+    TMPDIR="${OBJECT_TARGET_TMPDIR:-${TMPDIR:-/tmp}}" \
+    OBJECT_TARGET_CLEANUP_CONFIRMATION=DELETE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
+    sh "$OBJECT_TARGET_CLEANUP" "$attempt" "$parent"
+}
 printf 'version-a' >"$history_base/source/objects/x.txt"
 run_object_snapshot() {
   local backup_id=$1 epoch=$2
   local run_dir="$history_base/$backup_id"
+  local created_at daily_key weekly_key monthly_key
+  created_at=$(date -u -d "@$epoch" '+%Y-%m-%dT%H:%M:%SZ')
+  daily_key=$(date -u -d "@$epoch" '+%Y-%m-%d')
+  weekly_key=$(date -u -d "@$epoch" '+%G-W%V')
+  monthly_key=$(date -u -d "@$epoch" '+%Y-%m')
   mkdir -p "$run_dir"
-  dd if=/dev/zero of="$run_dir/database.dump" bs=2048 count=1 2>/dev/null
+  chmod 700 "$run_dir"
+  dd if=/dev/zero of="$run_dir/$backup_id.dump" bs=2048 count=1 2>/dev/null
   local dump_sha
-  dump_sha=$($REAL_SHA "$run_dir/database.dump" | awk '{print $1}')
+  dump_sha=$($REAL_SHA "$run_dir/$backup_id.dump" | awk '{print $1}')
   printf '%s  %s.dump\n' "$dump_sha" "$backup_id" >"$run_dir/database.sha256"
+  cp "$run_dir/database.sha256" "$run_dir/${backup_id}.sha256"
   find "$history_base/source/objects" -type f | sed "s#^$history_base/source/objects/##" \
     | LC_ALL=C sort >"$run_dir/pre.list"
+  if [ -d "$history_base/offsite/diis/database/manifests" ]; then
+    find "$history_base/offsite/diis/database/manifests" -type f -name '*.complete.json' \
+      -exec basename {} \; | LC_ALL=C sort >"$run_dir/existing-offsite.list"
+  else
+    : >"$run_dir/existing-offsite.list"
+  fi
   env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
     RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+    RCLONE_CAT_FAULT="${RCLONE_CAT_FAULT:-}" \
     OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OFFSITE_CONFIG_FINGERPRINT="$FINGERPRINT" \
     RCLONE_MINIO_REMOTE=diisminio: APP_OBJECT_BUCKET=objects BACKUP_ID="$backup_id" \
-    BACKUP_CLASS=daily CREATED_AT=2026-09-03T00:00:00Z CREATED_EPOCH="$epoch" \
-    DAILY_KEY=2026-09-03 WEEKLY_KEY=2026-W36 MONTHLY_KEY=2026-09 \
+    BACKUP_CLASS=daily CREATED_AT="$created_at" CREATED_EPOCH="$epoch" \
+    DAILY_KEY="$daily_key" WEEKLY_KEY="$weekly_key" MONTHLY_KEY="$monthly_key" \
     DUMP_SHA256="$dump_sha" DUMP_BYTES=2048 TABLE_COUNT=46 USER_COUNT=40 STUDENT_COUNT=20 \
     TARGET_TOTAL_BYTES=20000000000 TARGET_FREE_BYTES=10000000000 TARGET_PROJECTED_FREE_PERCENT=49 \
-    sh "$OFFSITE" "$run_dir/database.dump" "$run_dir/database.sha256" \
-      "$run_dir/complete.json" "$run_dir" "$run_dir/pre.list" >"$run_dir/status"
+    sh "$OFFSITE" "$run_dir/$backup_id.dump" "$run_dir/database.sha256" \
+      "$run_dir/$backup_id.complete.json" "$run_dir" "$run_dir/pre.list" \
+      "$run_dir/existing-offsite.list" >"$run_dir/status"
 }
 
 run_object_snapshot 20260901T000000Z-1001 1788220800
@@ -457,10 +956,13 @@ rm "$history_base/source/objects/x.txt"
 run_object_snapshot 20260903T000000Z-1003 1788393600
 
 restore_snapshot() {
-  local backup_id=$1 target=$2
+  local backup_id=$1 attempt=$2
   local provenance="$history_base/$backup_id/$backup_id.offsite-provenance.json"
-  local proof="$history_base/$backup_id/$backup_id.object-restore-proof.json"
-  python3 - "$history_base/$backup_id/complete.json" "$provenance" <<'PY'
+  local proof_dir="$history_base/$backup_id/proofs"
+  local proof="$proof_dir/$backup_id.object-restore-proof.json"
+  local authority
+  authority=$(object_target_authority_sha "$attempt")
+  python3 - "$history_base/$backup_id/$backup_id.complete.json" "$provenance" <<'PY'
 import json, sys
 manifest = json.load(open(sys.argv[1], encoding='utf-8'))
 backup_id = manifest['backupId']
@@ -476,40 +978,144 @@ with open(sys.argv[2], 'w', encoding='utf-8') as stream:
     json.dump(value, stream, separators=(',', ':'))
     stream.write('\n')
 PY
-  mkdir -p "$history_base/restore/$target"
-  : >"$history_base/restore/$target/.diis-disposable-restore-target-v1"
+  mkdir -m 700 "$proof_dir"
+  run_target_prepare "$attempt" >"$history_base/$attempt.prepare.out"
   env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
     RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
-    OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OBJECT_RESTORE_TARGET="$target:" \
-    OBJECT_RESTORE_PROOF_OUTPUT="$proof" \
+    OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OFFSITE_CONFIG_FINGERPRINT="$FINGERPRINT" \
+    OFFSITE_EXPECTED_PROVIDER="$OFFSITE_EXPECTED_PROVIDER" OFFSITE_EXPECTED_ORIGIN="$OFFSITE_EXPECTED_ORIGIN" \
+    OBJECT_RESTORE_TARGET_PARENT="$object_parent" OBJECT_RESTORE_ATTEMPT_ID="$attempt" \
+    OBJECT_RESTORE_TARGET="${object_parent%/}/${attempt}" OBJECT_RESTORE_PROOF_DIR="$proof_dir" \
+    OBJECT_TARGET_EXPECTED_PROVIDER="$object_target_provider" \
+    OBJECT_TARGET_EXPECTED_ORIGIN="$object_target_origin" \
+    OBJECT_TARGET_EXPECTED_CONFIG_FINGERPRINT="$object_target_config_fingerprint" \
+    OBJECT_TARGET_EXPECTED_AUTHORITY_SHA256="$authority" \
+    RCLONE_LSF_FAULT="${RCLONE_LSF_FAULT:-}" \
+    RCLONE_LSF_FAULT_STATE="${RCLONE_LSF_FAULT_STATE:-}" \
+    RCLONE_OBSERVE_FAULT="${RCLONE_OBSERVE_FAULT:-}" \
+    RCLONE_OBSERVE_STATE="${RCLONE_OBSERVE_STATE:-}" \
+    RCLONE_SOURCE_CONFIG_FAULT="${RCLONE_SOURCE_CONFIG_FAULT:-}" \
+    RCLONE_CALL_LOG="${RCLONE_CALL_LOG:-}" \
     OBJECT_RESTORE_CONFIRMATION=RESTORE_EXACT_OBJECT_SET_TO_DISPOSABLE_TARGET \
-    sh "$OBJECT_RESTORE" "$provenance" "$history_base/$backup_id/complete.json" \
-      "$history_base/$backup_id/$backup_id.objects.tsv" >"$history_base/$target.out"
+    sh "$OBJECT_RESTORE" "$provenance" "$history_base/$backup_id/$backup_id.complete.json" \
+      "$history_base/$backup_id/${backup_id}.sha256" \
+      "$history_base/$backup_id/$backup_id.objects.tsv" >"$history_base/$attempt.out"
   assert_grep '"source":"independent-crypt"' "$proof" 'object restore proof source missing'
 }
-restore_snapshot 20260901T000000Z-1001 restore-a
-restore_snapshot 20260902T000000Z-1002 restore-b
-restore_snapshot 20260903T000000Z-1003 restore-c
-[[ "$(cat "$history_base/restore/restore-a/x.txt")" == version-a ]] || fail 'backup A did not restore x v1'
-[[ "$(cat "$history_base/restore/restore-b/x.txt")" == version-b ]] || fail 'backup B did not restore x v2'
-[[ -f "$history_base/restore/restore-b/y.txt" ]] || fail 'backup B omitted y'
-[[ ! -e "$history_base/restore/restore-c/x.txt" && -f "$history_base/restore/restore-c/y.txt" ]] \
+attempt_a=w10d-20260906t030001z-a1111111
+attempt_b=w10d-20260906t030002z-a2222222
+attempt_c=w10d-20260906t030003z-a3333333
+restore_snapshot 20260901T000000Z-1001 "$attempt_a"
+restore_snapshot 20260902T000000Z-1002 "$attempt_b"
+restore_snapshot 20260903T000000Z-1003 "$attempt_c"
+[[ "$(cat "$history_base/restore/restore-parent/$attempt_a/x.txt")" == version-a ]] || fail 'backup A did not restore x v1'
+[[ "$(cat "$history_base/restore/restore-parent/$attempt_b/x.txt")" == version-b ]] || fail 'backup B did not restore x v2'
+[[ -f "$history_base/restore/restore-parent/$attempt_b/y.txt" ]] || fail 'backup B omitted y'
+[[ ! -e "$history_base/restore/restore-parent/$attempt_c/x.txt" && -f "$history_base/restore/restore-parent/$attempt_c/y.txt" ]] \
   || fail 'backup C did not honor deletion tombstone semantics'
 pass 'three historical object sets restore create update and delete exactly'
 
-negative_target="$history_base/restore/restore-negative"
-mkdir -p "$negative_target"
-: >"$negative_target/.diis-disposable-restore-target-v1"
+nested_base="$TMP/nested-object-behavior"
+if ! SEED_NESTED_OBJECTS=1 RCLONE_REQUIRE_OBJECT_FLAGS=1 run_backup nested-object-behavior; then
+  cat "$nested_base/err" >&2
+  fail 'nested object backup failed with recursive file-only enforcement'
+fi
+nested_completion=$(find "$nested_base/offsite/diis/database/manifests" \
+  -type f -name '*.complete.json' -print)
+[[ "$(printf '%s\n' "$nested_completion" | sed '/^$/d' | wc -l | tr -d '[:space:]')" == 1 ]] \
+  || fail 'nested object backup did not publish exactly one completion manifest'
+nested_backup_id=$(basename "$nested_completion" .complete.json)
+nested_input="$nested_base/$nested_backup_id"
+mkdir -p "$nested_input"
+cp "$nested_completion" "$nested_input/$nested_backup_id.complete.json"
+cp "$nested_base/offsite/diis/database/current/$nested_backup_id.sha256" \
+  "$nested_input/$nested_backup_id.sha256"
+cp "$nested_base/offsite/diis/objects/manifests/$nested_backup_id.objects.tsv" \
+  "$nested_input/$nested_backup_id.objects.tsv"
+
+nested_object_manifest="$nested_input/$nested_backup_id.objects.tsv"
+[[ "$(wc -l <"$nested_object_manifest" | tr -d '[:space:]')" == 3 ]] \
+  || fail 'nested object manifest did not contain exactly two object records'
+python3 - "$nested_object_manifest" "$nested_base/source/objects" <<'PY' \
+  || fail 'nested object manifest did not bind the exact source bytes'
+import base64
+import hashlib
+import pathlib
+import sys
+
+
+manifest = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+source = pathlib.Path(sys.argv[2])
+expected = {
+    "documents/reports/report.bin",
+    "media/2026/class-a/photo.bin",
+}
+observed = set()
+for row in manifest[1:]:
+    digest, size, encoded_path = row.split("|", 2)
+    relative = base64.b64decode(encoded_path, validate=True).decode("utf-8")
+    path = source / relative
+    payload = path.read_bytes()
+    assert hashlib.sha256(payload).hexdigest() == digest
+    assert len(payload) == int(size)
+    observed.add(relative)
+assert observed == expected
+PY
+
+primary_history_base=$history_base
+history_base=$nested_base
+nested_attempt=w10d-20260913t160001z-b1111111
+restore_snapshot "$nested_backup_id" "$nested_attempt"
+nested_target="$nested_base/restore/restore-parent/$nested_attempt"
+[[ "$(find "$nested_target" -type f ! -name '.diis-disposable-restore-target-v3' \
+  | wc -l | tr -d '[:space:]')" == 2 ]] \
+  || fail 'nested object restore did not contain exactly two restored files'
+cmp -s "$nested_base/source/objects/media/2026/class-a/photo.bin" \
+  "$nested_target/media/2026/class-a/photo.bin" \
+  || fail 'nested media object restore bytes differ'
+cmp -s "$nested_base/source/objects/documents/reports/report.bin" \
+  "$nested_target/documents/reports/report.bin" \
+  || fail 'nested document object restore bytes differ'
+[[ ! -e "$nested_target/empty-directory" ]] \
+  || fail 'directory entry was incorrectly restored as an object'
+history_base=$primary_history_base
+
+if env RCLONE_SOURCE_ROOT="$nested_base/source" RCLONE_OFFSITE_ROOT="$nested_base/offsite" \
+  RCLONE_RESTORE_ROOT="$nested_base/restore" RCLONE_REQUIRE_OBJECT_FLAGS=1 \
+  "$nested_base/bin/rclone" lsf diisminio:objects --recursive >/dev/null 2>&1; then
+  fail 'nested object inventory accepted an invocation missing --files-only'
+fi
+if env RCLONE_SOURCE_ROOT="$nested_base/source" RCLONE_OFFSITE_ROOT="$nested_base/offsite" \
+  RCLONE_RESTORE_ROOT="$nested_base/restore" RCLONE_REQUIRE_OBJECT_FLAGS=1 \
+  "$nested_base/bin/rclone" lsf diisminio:objects --files-only >/dev/null 2>&1; then
+  fail 'nested object inventory accepted an invocation missing --recursive'
+fi
+pass 'nested object inventory manifest and restore preserve exactly two files and reject missing flags'
+
+negative_attempt=w10d-20260906t030004z-a4444444
+negative_target="$history_base/restore/restore-parent/$negative_attempt"
+negative_proof_dir="$history_base/negative-proofs"
+mkdir -m 700 "$negative_proof_dir"
+run_target_prepare "$negative_attempt" >/dev/null
+negative_authority=$(object_target_authority_sha "$negative_attempt")
 sed 's/20260902T000000Z-1002/20260901T000000Z-1001/' \
   "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.offsite-provenance.json" \
   >"$history_base/swapped-object-provenance.json"
 if env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
   RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
-  OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OBJECT_RESTORE_TARGET=restore-negative: \
-  OBJECT_RESTORE_PROOF_OUTPUT="$history_base/swapped-object-proof.json" \
+  OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OFFSITE_CONFIG_FINGERPRINT="$FINGERPRINT" \
+  OFFSITE_EXPECTED_PROVIDER="$OFFSITE_EXPECTED_PROVIDER" OFFSITE_EXPECTED_ORIGIN="$OFFSITE_EXPECTED_ORIGIN" \
+  OBJECT_RESTORE_TARGET_PARENT="$object_parent" OBJECT_RESTORE_ATTEMPT_ID="$negative_attempt" \
+  OBJECT_RESTORE_TARGET="${object_parent%/}/${negative_attempt}" \
+  OBJECT_RESTORE_PROOF_DIR="$negative_proof_dir" \
+  OBJECT_TARGET_EXPECTED_PROVIDER="$object_target_provider" \
+  OBJECT_TARGET_EXPECTED_ORIGIN="$object_target_origin" \
+  OBJECT_TARGET_EXPECTED_CONFIG_FINGERPRINT="$object_target_config_fingerprint" \
+  OBJECT_TARGET_EXPECTED_AUTHORITY_SHA256="$negative_authority" \
   OBJECT_RESTORE_CONFIRMATION=RESTORE_EXACT_OBJECT_SET_TO_DISPOSABLE_TARGET \
   sh "$OBJECT_RESTORE" "$history_base/swapped-object-provenance.json" \
-    "$history_base/20260902T000000Z-1002/complete.json" \
+    "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.complete.json" \
+    "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.sha256" \
     "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.objects.tsv"; then
   fail 'swapped object provenance was accepted'
 fi
@@ -517,41 +1123,176 @@ fi
   || fail 'swapped object provenance mutated disposable target'
 pass 'swapped object provenance is rejected before object-target mutation'
 
+run_object_proof_preflight() {
+  local case_name=$1 attempt=$2 proof_dir=$3 authority
+  authority=$(object_target_authority_sha "$attempt")
+  run_target_prepare "$attempt" >/dev/null
+  local -a optional_env=()
+  if [[ -n ${TEST_LEGACY_PROOF_OUTPUT+x} ]]; then
+    optional_env+=("OBJECT_RESTORE_PROOF_OUTPUT=$TEST_LEGACY_PROOF_OUTPUT")
+  fi
+  env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
+    RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+    OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OFFSITE_CONFIG_FINGERPRINT="$FINGERPRINT" \
+    OFFSITE_EXPECTED_PROVIDER="$OFFSITE_EXPECTED_PROVIDER" OFFSITE_EXPECTED_ORIGIN="$OFFSITE_EXPECTED_ORIGIN" \
+    OBJECT_RESTORE_TARGET_PARENT="$object_parent" OBJECT_RESTORE_ATTEMPT_ID="$attempt" \
+    OBJECT_RESTORE_TARGET="${object_parent%/}/${attempt}" OBJECT_RESTORE_PROOF_DIR="$proof_dir" \
+    OBJECT_TARGET_EXPECTED_PROVIDER="$object_target_provider" \
+    OBJECT_TARGET_EXPECTED_ORIGIN="$object_target_origin" \
+    OBJECT_TARGET_EXPECTED_CONFIG_FINGERPRINT="$object_target_config_fingerprint" \
+    OBJECT_TARGET_EXPECTED_AUTHORITY_SHA256="$authority" \
+    OBJECT_RESTORE_CONFIRMATION=RESTORE_EXACT_OBJECT_SET_TO_DISPOSABLE_TARGET \
+    "${optional_env[@]}" sh "$OBJECT_RESTORE" \
+      "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.offsite-provenance.json" \
+      "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.complete.json" \
+      "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.sha256" \
+      "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.objects.tsv" \
+      >"$history_base/proof-preflight-$case_name.out" \
+      2>"$history_base/proof-preflight-$case_name.err"
+}
+assert_proof_preflight_rejected() {
+  local case_name=$1 attempt=$2 proof_dir=$3
+  if run_object_proof_preflight "$case_name" "$attempt" "$proof_dir"; then
+    fail "$case_name unsafe proof path unexpectedly succeeded"
+  fi
+  [[ "$(find "$history_base/restore/restore-parent/$attempt" -type f | wc -l | tr -d '[:space:]')" = 1 ]] \
+    || fail "$case_name unsafe proof path reached object mutation"
+}
+proof_path_root="$history_base/proof-path-negative"
+mkdir -m 700 "$proof_path_root"
+legacy_sentinel="$history_base/legacy-proof-sentinel"
+printf sentinel >"$legacy_sentinel"
+TEST_LEGACY_PROOF_OUTPUT="$legacy_sentinel" assert_proof_preflight_rejected legacy-output \
+  w10d-20260906t034001z-d1111111 "$proof_path_root"
+[[ "$(cat "$legacy_sentinel")" == sentinel ]] || fail 'legacy arbitrary proof output was overwritten'
+unset TEST_LEGACY_PROOF_OUTPUT
+
+proof_other="$history_base/proof-path-other"
+mkdir -m 700 "$proof_other"
+assert_proof_preflight_rejected traversal w10d-20260906t034002z-d2222222 \
+  "$proof_path_root/../proof-path-other"
+proof_real="$history_base/proof-path-real"
+mkdir -m 700 "$proof_real"
+ln -s "$proof_real" "$history_base/proof-path-link"
+assert_proof_preflight_rejected symlink-parent w10d-20260906t034003z-d3333333 \
+  "$history_base/proof-path-link"
+proof_wrong_mode="$history_base/proof-path-mode"
+mkdir -m 755 "$proof_wrong_mode"
+assert_proof_preflight_rejected wrong-mode w10d-20260906t034004z-d4444444 "$proof_wrong_mode"
+proof_wrong_owner="$history_base/proof-path-owner"
+mkdir -m 700 "$proof_wrong_owner"
+if [[ "$(id -u)" -eq 0 ]]; then
+  chown 65534 "$proof_wrong_owner"
+  assert_proof_preflight_rejected wrong-owner w10d-20260906t034005z-d5555555 "$proof_wrong_owner"
+else
+  assert_grep 'final_stat\.st_uid != os\.geteuid' "$LIB" \
+    'proof directory owner validation missing when non-root test cannot synthesize another owner'
+fi
+
+preexisting_final_dir="$history_base/proof-path-existing-final"
+mkdir -m 700 "$preexisting_final_dir"
+printf sentinel >"$preexisting_final_dir/20260902T000000Z-1002.object-restore-proof.json"
+assert_proof_preflight_rejected existing-final w10d-20260906t034006z-d6666666 "$preexisting_final_dir"
+[[ "$(cat "$preexisting_final_dir/20260902T000000Z-1002.object-restore-proof.json")" == sentinel ]] \
+  || fail 'pre-existing final proof was changed'
+preexisting_final_link_dir="$history_base/proof-path-final-link"
+mkdir -m 700 "$preexisting_final_link_dir"
+ln -s "$legacy_sentinel" \
+  "$preexisting_final_link_dir/20260902T000000Z-1002.object-restore-proof.json"
+assert_proof_preflight_rejected symlink-final w10d-20260906t034007z-d7777777 \
+  "$preexisting_final_link_dir"
+preexisting_candidate_dir="$history_base/proof-path-existing-candidate"
+mkdir -m 700 "$preexisting_candidate_dir"
+printf sentinel >"$preexisting_candidate_dir/.20260902T000000Z-1002.object-restore-proof.candidate"
+assert_proof_preflight_rejected existing-candidate w10d-20260906t034008z-d8888888 \
+  "$preexisting_candidate_dir"
+[[ "$(cat "$preexisting_candidate_dir/.20260902T000000Z-1002.object-restore-proof.candidate")" == sentinel ]] \
+  || fail 'pre-existing candidate proof was changed'
+preexisting_candidate_link_dir="$history_base/proof-path-candidate-link"
+mkdir -m 700 "$preexisting_candidate_link_dir"
+ln -s "$legacy_sentinel" \
+  "$preexisting_candidate_link_dir/.20260902T000000Z-1002.object-restore-proof.candidate"
+assert_proof_preflight_rejected symlink-candidate w10d-20260906t034009z-d9999999 \
+  "$preexisting_candidate_link_dir"
+pass 'object restore proof is derived exclusively under one canonical private caller-owned directory'
+
 proof_fault_bin="$history_base/proof-fault-bin"
 mkdir -p "$proof_fault_bin"
-cat >"$proof_fault_bin/mv" <<'SH'
+cat >"$proof_fault_bin/ln" <<'SH'
 #!/bin/sh
-case "${OBJECT_PROOF_MV_FAIL:-0}:$*" in
-  1:*object-proof*) exit 63 ;;
+case "${OBJECT_PROOF_LINK_FAIL:-0}:$*" in
+  1:*.object-restore-proof.*) exit 63 ;;
 esac
-exec /bin/mv "$@"
+exec /bin/ln "$@"
 SH
 cat >"$proof_fault_bin/rm" <<'SH'
 #!/bin/sh
 case "${OBJECT_VERIFY_RM_FAIL:-0}:$*" in
   1:*diis-object-restore.*) exit 64 ;;
 esac
+case "${OBJECT_FINAL_EVIDENCE_RM_FAIL:-0}:$*" in
+  1:*target-config.raw*|1:*target-marker.json*) exit 66 ;;
+esac
+case "${OBJECT_PROOF_CANDIDATE_RM_FAIL:-0}:$*" in
+  1:*.object-restore-proof.candidate*) exit 65 ;;
+esac
 exec /bin/rm "$@"
 SH
 chmod +x "$proof_fault_bin"/*
+fault_attempt_for() {
+  local case_name=$1 suffix
+  suffix=$(printf '%s' "$case_name" | "$REAL_SHA" | awk '{print substr($1,1,8)}')
+  printf 'w10d-20260906t031000z-%s' "$suffix"
+}
 run_object_plaintext_fault() {
-  local case_name=$1 target="restore-plaintext-$1"
-  local temp_dir="$history_base/tmp-$case_name" proof="$history_base/$case_name.object-proof.json"
-  mkdir -p "$history_base/restore/$target" "$temp_dir"
-  : >"$history_base/restore/$target/.diis-disposable-restore-target-v1"
+  local case_name=$1 attempt temp_dir proof_dir authority requested_source_fault requested_call_log
+  requested_source_fault=${RCLONE_SOURCE_CONFIG_FAULT:-}
+  requested_call_log=${RCLONE_CALL_LOG:-}
+  attempt=$(fault_attempt_for "$case_name")
+  temp_dir="$history_base/tmp-$case_name"
+  proof_dir="$history_base/proof-$case_name"
+  authority=$(object_target_authority_sha "$attempt")
+  mkdir -m 700 "$temp_dir" "$proof_dir"
+  RCLONE_LSF_FAULT= RCLONE_LSF_FAULT_STATE= RCLONE_OBSERVE_FAULT= \
+    RCLONE_SOURCE_CONFIG_FAULT= RCLONE_CALL_LOG= \
+    run_target_prepare "$attempt" >/dev/null
   env PATH="$proof_fault_bin:$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
     RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
-    OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OBJECT_RESTORE_TARGET="$target:" TMPDIR="$temp_dir" \
-    OBJECT_RESTORE_PROOF_OUTPUT="$proof" \
+    OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OFFSITE_CONFIG_FINGERPRINT="$FINGERPRINT" \
+    OFFSITE_EXPECTED_PROVIDER="$OFFSITE_EXPECTED_PROVIDER" OFFSITE_EXPECTED_ORIGIN="$OFFSITE_EXPECTED_ORIGIN" \
+    OBJECT_RESTORE_TARGET_PARENT="$object_parent" OBJECT_RESTORE_ATTEMPT_ID="$attempt" \
+    OBJECT_RESTORE_TARGET="${object_parent%/}/${attempt}" OBJECT_RESTORE_PROOF_DIR="$proof_dir" \
+    OBJECT_TARGET_EXPECTED_PROVIDER="$object_target_provider" \
+    OBJECT_TARGET_EXPECTED_ORIGIN="$object_target_origin" \
+    OBJECT_TARGET_EXPECTED_CONFIG_FINGERPRINT="$object_target_config_fingerprint" \
+    OBJECT_TARGET_EXPECTED_AUTHORITY_SHA256="$authority" TMPDIR="$temp_dir" \
     OBJECT_VERIFY_FAULT="${OBJECT_VERIFY_FAULT:-}" OBJECT_VERIFY_SIGNAL="${OBJECT_VERIFY_SIGNAL:-}" \
-    OBJECT_PROOF_MV_FAIL="${OBJECT_PROOF_MV_FAIL:-0}" \
+    OBJECT_PROOF_LINK_FAIL="${OBJECT_PROOF_LINK_FAIL:-0}" \
+    OBJECT_PROOF_CANDIDATE_RM_FAIL="${OBJECT_PROOF_CANDIDATE_RM_FAIL:-0}" \
+    OBJECT_FINAL_EVIDENCE_RM_FAIL="${OBJECT_FINAL_EVIDENCE_RM_FAIL:-0}" \
     OBJECT_VERIFY_RM_FAIL="${OBJECT_VERIFY_RM_FAIL:-0}" \
+    RCLONE_LSF_FAULT="${RCLONE_LSF_FAULT:-}" \
+    RCLONE_LSF_FAULT_STATE="${RCLONE_LSF_FAULT_STATE:-}" \
+    RCLONE_SOURCE_CONFIG_FAULT="$requested_source_fault" \
+    RCLONE_CALL_LOG="$requested_call_log" \
     OBJECT_RESTORE_CONFIRMATION=RESTORE_EXACT_OBJECT_SET_TO_DISPOSABLE_TARGET \
     sh "$OBJECT_RESTORE" \
       "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.offsite-provenance.json" \
-      "$history_base/20260902T000000Z-1002/complete.json" \
+      "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.complete.json" \
+      "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.sha256" \
       "$history_base/20260902T000000Z-1002/20260902T000000Z-1002.objects.tsv"
 }
+if RCLONE_LSF_FAULT=overflow run_object_plaintext_fault pre-inventory-overflow \
+  >"$history_base/pre-inventory-overflow.out" 2>"$history_base/pre-inventory-overflow.err"; then
+  fail 'oversized pre-restore target inventory unexpectedly succeeded'
+fi
+pre_overflow_attempt=$(fault_attempt_for pre-inventory-overflow)
+[[ "$(find "$history_base/restore/restore-parent/$pre_overflow_attempt" -type f | wc -l | tr -d '[:space:]')" = 1 ]] \
+  || fail 'oversized pre-restore inventory mutated disposable object target'
+[[ -z "$(find "$history_base/tmp-pre-inventory-overflow" -mindepth 1 -print -quit)" ]] \
+  || fail 'oversized pre-restore inventory left private temporary state'
+pass 'object restore preflight bounds target inventory before first object mutation'
+
 for fault in copy hash size; do
   if OBJECT_VERIFY_FAULT="$fault" run_object_plaintext_fault "$fault"; then
     fail "$fault object verification fault unexpectedly succeeded"
@@ -567,13 +1308,40 @@ for signal_name in HUP INT TERM; do
   [[ -z "$(find "$history_base/tmp-$case_name" -mindepth 1 -print -quit)" ]] \
     || fail "$signal_name object verification left plaintext temporary data"
 done
-if OBJECT_PROOF_MV_FAIL=1 run_object_plaintext_fault proof; then
+if OBJECT_PROOF_LINK_FAIL=1 run_object_plaintext_fault proof; then
   fail 'object proof publication failure unexpectedly succeeded'
 fi
 [[ -z "$(find "$history_base/tmp-proof" -mindepth 1 -print -quit)" ]] \
   || fail 'proof publication failure left plaintext temporary data'
-[[ ! -e "$history_base/proof.object-proof.json.candidate."* ]] \
+[[ ! -e "$history_base/proof-proof/.20260902T000000Z-1002.object-restore-proof.candidate" ]] \
   || fail 'proof publication failure left candidate proof'
+if OBJECT_PROOF_CANDIDATE_RM_FAIL=1 run_object_plaintext_fault proof-cleanup \
+  >"$history_base/proof-cleanup.out" 2>"$history_base/proof-cleanup.err"; then
+  fail 'object proof candidate cleanup failure unexpectedly succeeded'
+else
+  proof_cleanup_rc=$?
+fi
+[[ "$proof_cleanup_rc" -eq 74 ]] || fail 'proof candidate cleanup failure did not return status 74'
+proof_cleanup_dir="$history_base/proof-proof-cleanup"
+[[ ! -e "$proof_cleanup_dir/20260902T000000Z-1002.object-restore-proof.json" ]] \
+  || fail 'proof cleanup failure left a published success proof'
+assert_grep 'OBJECT_RESTORE_(PROOF_PUBLICATION|PLAINTEXT_CLEANUP)_AMBIGUOUS.*retry=prohibited' \
+  "$history_base/proof-cleanup.err" 'proof candidate cleanup ambiguity marker missing'
+/bin/rm -f "$proof_cleanup_dir/.20260902T000000Z-1002.object-restore-proof.candidate"
+if OBJECT_FINAL_EVIDENCE_RM_FAIL=1 run_object_plaintext_fault final-evidence-cleanup \
+  >"$history_base/final-evidence-cleanup.out" 2>"$history_base/final-evidence-cleanup.err"; then
+  fail 'final local evidence cleanup failure unexpectedly succeeded'
+else
+  final_evidence_cleanup_rc=$?
+fi
+[[ "$final_evidence_cleanup_rc" -eq 74 ]] \
+  || fail 'final local evidence cleanup failure did not return status 74'
+final_evidence_proof_dir="$history_base/proof-final-evidence-cleanup"
+[[ ! -e "$final_evidence_proof_dir/20260902T000000Z-1002.object-restore-proof.json" ]] \
+  || fail 'final local evidence cleanup failure left a published success proof'
+assert_grep 'OBJECT_RESTORE_PLAINTEXT_CLEANUP_AMBIGUOUS.*pre-publication-evidence.*retry=prohibited' \
+  "$history_base/final-evidence-cleanup.err" \
+  'final local evidence cleanup ambiguity marker missing'
 if OBJECT_VERIFY_RM_FAIL=1 run_object_plaintext_fault rm-failure \
   >"$history_base/object-rm.out" 2>"$history_base/object-rm.err"; then
   fail 'object plaintext cleanup rm failure unexpectedly succeeded'
@@ -587,15 +1355,19 @@ pass 'object restore removes private plaintext on faults and signals or reports 
 
 zero_id=20260904T000000Z-2000
 zero_dir="$history_base/$zero_id"
-zero_target=restore-zero-final-observe
-zero_proof="$zero_dir/$zero_id.object-restore-proof.json"
-mkdir -p "$zero_dir" "$history_base/restore/$zero_target"
-: >"$history_base/restore/$zero_target/.diis-disposable-restore-target-v1"
+zero_attempt=w10d-20260906t032001z-b1111111
+zero_proof_dir="$zero_dir/proofs-observe"
+zero_proof="$zero_proof_dir/$zero_id.object-restore-proof.json"
+mkdir -p "$zero_dir"
+mkdir -m 700 "$zero_proof_dir"
+run_target_prepare "$zero_attempt" >/dev/null
+zero_authority=$(object_target_authority_sha "$zero_attempt")
 printf 'diis-object-manifest-v1|%s|exact\n' "$zero_id" >"$zero_dir/$zero_id.objects.tsv"
 zero_object_sha=$($REAL_SHA "$zero_dir/$zero_id.objects.tsv" | awk '{print $1}')
 zero_dump_sha=$(printf zero-dump | $REAL_SHA | awk '{print $1}')
-cat >"$zero_dir/complete.json" <<EOF
-{"schemaVersion":"diis-backup-v1","status":"complete","backupId":"${zero_id}","class":"daily","protectionState":"none","createdAt":"2026-09-04T00:00:00Z","createdEpoch":1788480000,"sha256":"${zero_dump_sha}","bytes":2048,"offsiteStatus":"complete","offsiteConfigFingerprint":"${FINGERPRINT}","objectManifestSha256":"${zero_object_sha}","objectCount":0,"targetTotalBytes":20000000000,"targetFreeBytes":10000000000}
+printf '%s  %s.dump\n' "$zero_dump_sha" "$zero_id" >"$zero_dir/$zero_id.sha256"
+cat >"$zero_dir/$zero_id.complete.json" <<EOF
+{"schemaVersion":"diis-backup-v1","status":"complete","backupId":"${zero_id}","class":"daily","protectionState":"none","createdAt":"2026-09-04T00:00:00Z","createdEpoch":1788480000,"dailyKey":"2026-09-04","weeklyKey":"2026-W36","monthlyKey":"2026-09","sha256":"${zero_dump_sha}","bytes":2048,"archiveValidated":true,"offsiteStatus":"complete","offsiteConfigFingerprint":"${FINGERPRINT}","objectStatus":"empty","objectManifestSha256":"${zero_object_sha}","objectCount":0,"tableCount":46,"userCount":40,"studentCount":20,"targetTotalBytes":20000000000,"targetFreeBytes":10000000000}
 EOF
 cat >"$zero_dir/$zero_id.offsite-provenance.json" <<EOF
 {"schemaVersion":"diis-offsite-restore-input-v1","source":"independent-crypt","backupId":"${zero_id}","offsiteConfigFingerprint":"${FINGERPRINT}","dumpSha256":"${zero_dump_sha}","dumpBytes":2048,"objectManifestSha256":"${zero_object_sha}","objectCount":0,"objectManifestFile":"${zero_id}.objects.tsv"}
@@ -603,20 +1375,61 @@ EOF
 if env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
   RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
   RCLONE_OBSERVE_FAULT=final-restore RCLONE_OBSERVE_STATE="$zero_dir/final-observe.state" \
-  OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OBJECT_RESTORE_TARGET="$zero_target:" \
-  OBJECT_RESTORE_PROOF_OUTPUT="$zero_proof" \
+  OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OFFSITE_CONFIG_FINGERPRINT="$FINGERPRINT" \
+  OFFSITE_EXPECTED_PROVIDER="$OFFSITE_EXPECTED_PROVIDER" OFFSITE_EXPECTED_ORIGIN="$OFFSITE_EXPECTED_ORIGIN" \
+  OBJECT_RESTORE_TARGET_PARENT="$object_parent" OBJECT_RESTORE_ATTEMPT_ID="$zero_attempt" \
+  OBJECT_RESTORE_TARGET="${object_parent%/}/${zero_attempt}" OBJECT_RESTORE_PROOF_DIR="$zero_proof_dir" \
+  OBJECT_TARGET_EXPECTED_PROVIDER="$object_target_provider" \
+  OBJECT_TARGET_EXPECTED_ORIGIN="$object_target_origin" \
+  OBJECT_TARGET_EXPECTED_CONFIG_FINGERPRINT="$object_target_config_fingerprint" \
+  OBJECT_TARGET_EXPECTED_AUTHORITY_SHA256="$zero_authority" \
   OBJECT_RESTORE_CONFIRMATION=RESTORE_EXACT_OBJECT_SET_TO_DISPOSABLE_TARGET \
   sh "$OBJECT_RESTORE" "$zero_dir/$zero_id.offsite-provenance.json" \
-    "$zero_dir/complete.json" "$zero_dir/$zero_id.objects.tsv" \
+    "$zero_dir/$zero_id.complete.json" "$zero_dir/$zero_id.sha256" \
+    "$zero_dir/$zero_id.objects.tsv" \
     >"$zero_dir/out" 2>"$zero_dir/err"; then
   fail 'zero-object restore accepted failed final target observation'
+else
+  zero_observe_rc=$?
 fi
+[[ "$zero_observe_rc" -eq 74 ]] || fail 'failed final target observation did not return status 74'
 [ ! -e "$zero_proof" ] || fail 'failed zero-object observation published success proof'
 assert_not_grep 'OBJECT_RESTORE_COMPLETE' "$zero_dir/out" \
   'failed zero-object observation emitted completion marker'
-assert_grep 'tidak dapat diobservasi setelah restore' "$zero_dir/err" \
-  'final target observation failure was not reported'
-pass 'zero-object restore cannot turn final observation failure into success proof'
+assert_grep 'OBJECT_RESTORE_TARGET_OBSERVATION_AMBIGUOUS.*retry=prohibited' "$zero_dir/err" \
+  'final target observation ambiguity was not reported'
+
+zero_overflow_attempt=w10d-20260906t032002z-b2222222
+zero_overflow_proof_dir="$zero_dir/proofs-overflow"
+mkdir -m 700 "$zero_overflow_proof_dir"
+run_target_prepare "$zero_overflow_attempt" >/dev/null
+zero_overflow_authority=$(object_target_authority_sha "$zero_overflow_attempt")
+if env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
+  RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+  RCLONE_OBSERVE_FAULT=final-restore-overflow RCLONE_OBSERVE_STATE="$zero_dir/final-overflow.state" \
+  OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OFFSITE_CONFIG_FINGERPRINT="$FINGERPRINT" \
+  OFFSITE_EXPECTED_PROVIDER="$OFFSITE_EXPECTED_PROVIDER" OFFSITE_EXPECTED_ORIGIN="$OFFSITE_EXPECTED_ORIGIN" \
+  OBJECT_RESTORE_TARGET_PARENT="$object_parent" OBJECT_RESTORE_ATTEMPT_ID="$zero_overflow_attempt" \
+  OBJECT_RESTORE_TARGET="${object_parent%/}/${zero_overflow_attempt}" \
+  OBJECT_RESTORE_PROOF_DIR="$zero_overflow_proof_dir" \
+  OBJECT_TARGET_EXPECTED_PROVIDER="$object_target_provider" \
+  OBJECT_TARGET_EXPECTED_ORIGIN="$object_target_origin" \
+  OBJECT_TARGET_EXPECTED_CONFIG_FINGERPRINT="$object_target_config_fingerprint" \
+  OBJECT_TARGET_EXPECTED_AUTHORITY_SHA256="$zero_overflow_authority" \
+  OBJECT_RESTORE_CONFIRMATION=RESTORE_EXACT_OBJECT_SET_TO_DISPOSABLE_TARGET \
+  sh "$OBJECT_RESTORE" "$zero_dir/$zero_id.offsite-provenance.json" \
+    "$zero_dir/$zero_id.complete.json" "$zero_dir/$zero_id.sha256" \
+    "$zero_dir/$zero_id.objects.tsv" >"$zero_dir/overflow.out" 2>"$zero_dir/overflow.err"; then
+  fail 'zero-object restore accepted oversized final target observation'
+else
+  zero_overflow_rc=$?
+fi
+[[ "$zero_overflow_rc" -eq 74 ]] || fail 'oversized final observation did not return status 74'
+[ ! -e "$zero_overflow_proof_dir/$zero_id.object-restore-proof.json" ] \
+  || fail 'oversized final observation published success proof'
+assert_grep 'OBJECT_RESTORE_TARGET_OBSERVATION_AMBIGUOUS.*retry=prohibited' "$zero_dir/overflow.err" \
+  'oversized final target observation ambiguity was not reported'
+pass 'object restore target observations are bounded and cannot turn unavailable or oversized output into proof'
 
 offsite_restore_dir="$history_base/offsite-restore-input"
 mkdir -m 700 "$offsite_restore_dir"
@@ -691,56 +1504,239 @@ assert_grep 'OFFSITE_RESTORE_PLAINTEXT_CLEANUP_AMBIGUOUS.*retry=prohibited' \
   "$history_base/offsite-rm.err" 'off-site cleanup ambiguity marker missing'
 pass 'off-site prepare removes plaintext on copy publication and signal failures or reports ambiguity'
 
-object_parent='restore-parent:'
 mkdir -p "$history_base/restore/restore-parent"
 attempt_id=w10d-20260903t120000z-a1b2c3d4
-env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
-  RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
-  OFFSITE_CRYPT_REMOTE=offsite-crypt:diis \
-  OBJECT_TARGET_CREATE_CONFIRMATION=CREATE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
-  sh "$OBJECT_TARGET_PREPARE" "$attempt_id" "$object_parent" >"$history_base/object-target-prepare.out"
-[[ -f "$history_base/restore/restore-parent/$attempt_id/.diis-disposable-restore-target-v1" ]] \
+run_target_prepare "$attempt_id" >"$history_base/object-target-prepare.out"
+[[ -f "$history_base/restore/restore-parent/$attempt_id/.diis-disposable-restore-target-v3" ]] \
   || fail 'disposable object target marker missing'
-env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
-  RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
-  OBJECT_TARGET_CLEANUP_CONFIRMATION=DELETE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
-  sh "$OBJECT_TARGET_CLEANUP" "$attempt_id" "$object_parent" >"$history_base/object-target-cleanup.out"
+[[ "$(grep -c '^OBJECT_RESTORE_TARGET_READY ' "$history_base/object-target-prepare.out")" -eq 1 ]] \
+  || fail 'clean target create did not emit exactly one final success marker'
+run_target_cleanup "$attempt_id" >"$history_base/object-target-cleanup.out"
 [[ -z "$(find "$history_base/restore/restore-parent/$attempt_id" -mindepth 1 -print -quit 2>/dev/null)" ]] \
   || fail 'disposable object target cleanup absence failed'
+[[ "$(grep -c '^OBJECT_RESTORE_TARGET_REMOVED ' "$history_base/object-target-cleanup.out")" -eq 1 ]] \
+  || fail 'clean target cleanup did not emit exactly one final success marker'
 pass 'disposable object target create marker cleanup and absence are exact'
 
-if env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
-  RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
-  RCLONE_OBSERVE_FAULT=always OFFSITE_CRYPT_REMOTE=offsite-crypt:diis \
-  OBJECT_TARGET_CREATE_CONFIRMATION=CREATE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
-  sh "$OBJECT_TARGET_PREPARE" w10d-20260903t120001z-a1b2c3d5 "$object_parent"; then
+run_target_authority_negative() {
+  local name=$1 attempt=$2 parent=$3 target_provider=$4 target_origin=$5 \
+    target_fingerprint=$6 target_authority=$7
+  shift 7
+  if env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
+    RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
+    OFFSITE_CRYPT_REMOTE=offsite-crypt:diis OFFSITE_CONFIG_FINGERPRINT="$FINGERPRINT" \
+    OFFSITE_EXPECTED_PROVIDER="$OFFSITE_EXPECTED_PROVIDER" OFFSITE_EXPECTED_ORIGIN="$OFFSITE_EXPECTED_ORIGIN" \
+    OBJECT_TARGET_EXPECTED_PROVIDER="$target_provider" OBJECT_TARGET_EXPECTED_ORIGIN="$target_origin" \
+    OBJECT_TARGET_EXPECTED_CONFIG_FINGERPRINT="$target_fingerprint" \
+    OBJECT_TARGET_EXPECTED_AUTHORITY_SHA256="$target_authority" \
+    OBJECT_TARGET_CREATE_CONFIRMATION=CREATE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
+    "$@" sh "$OBJECT_TARGET_PREPARE" "$attempt" "$parent" \
+    >"$history_base/authority-$name.out" 2>"$history_base/authority-$name.err"; then
+    fail "$name target authority unexpectedly succeeded"
+  fi
+}
+same_root_attempt=w10d-20260906t033001z-c1111111
+run_target_authority_negative same-source-root "$same_root_attempt" 'offsite-crypt:' \
+  minio http://isolated-minio:9000 "$(printf '%064d' 1)" "$(printf '%064d' 2)"
+[ ! -e "$history_base/offsite/$same_root_attempt" ] \
+  || fail 'same source remote root reached target mutation'
+same_child_attempt=w10d-20260906t033002z-c2222222
+run_target_authority_negative same-source-child "$same_child_attempt" 'offsite-crypt:diis' \
+  minio http://isolated-minio:9000 "$(printf '%064d' 1)" "$(printf '%064d' 2)"
+[ ! -e "$history_base/offsite/diis/$same_child_attempt" ] \
+  || fail 'same source remote child reached target mutation'
+same_slash_attempt=w10d-20260906t033003z-c3333333
+run_target_authority_negative same-source-trailing-slash "$same_slash_attempt" 'offsite-crypt:diis/' \
+  minio http://isolated-minio:9000 "$(printf '%064d' 1)" "$(printf '%064d' 2)"
+[ ! -e "$history_base/offsite/diis/$same_slash_attempt" ] \
+  || fail 'same source trailing-slash variant reached target mutation'
+
+alias_attempt=w10d-20260906t033004z-c4444444
+alias_parent='restore-alias:'
+alias_config_sha=$(printf '[restore-alias]\ntype = alias\nprovider = Minio\nendpoint = http://isolated-minio:9000\n' \
+  | "$REAL_SHA" | awk '{print $1}')
+run_target_authority_negative alias-backend "$alias_attempt" "$alias_parent" \
+  minio http://isolated-minio:9000 "$alias_config_sha" "$(printf '%064d' 3)" \
+  env RCLONE_TARGET_BACKEND_TYPE=alias
+[ ! -e "$history_base/restore/restore-alias/$alias_attempt" ] \
+  || fail 'alias target reached mutation'
+same_origin_attempt=w10d-20260906t033005z-c5555555
+same_origin_parent='restore-shadow:'
+same_origin_config_sha=$(printf '[restore-shadow]\ntype = s3\nprovider = Backblaze\nendpoint = https://api.backblazeb2.com\n' \
+  | "$REAL_SHA" | awk '{print $1}')
+run_target_authority_negative same-provider-origin "$same_origin_attempt" "$same_origin_parent" \
+  backblaze https://api.backblazeb2.com "$same_origin_config_sha" "$(printf '%064d' 4)" \
+  env RCLONE_TARGET_PROVIDER=Backblaze RCLONE_TARGET_ORIGIN=https://api.backblazeb2.com
+[ ! -e "$history_base/restore/restore-shadow/$same_origin_attempt" ] \
+  || fail 'same provider and origin alias reached mutation'
+
+replay_attempt=w10d-20260906t033006z-c6666666
+replay_parent='restore-replay:'
+run_target_prepare "$replay_attempt" >/dev/null
+mkdir -p "$history_base/restore/restore-replay/$replay_attempt"
+cp "$history_base/restore/restore-parent/$replay_attempt/.diis-disposable-restore-target-v3" \
+  "$history_base/restore/restore-replay/$replay_attempt/.diis-disposable-restore-target-v3"
+if run_target_cleanup "$replay_attempt" "$replay_parent" \
+  >"$history_base/replay.out" 2>"$history_base/replay.err"; then
+  fail 'marker copied to another approved parent was accepted'
+fi
+[ -f "$history_base/restore/restore-replay/$replay_attempt/.diis-disposable-restore-target-v3" ] \
+  || fail 'replayed marker target was mutated before authority rejection'
+run_target_cleanup "$replay_attempt" >/dev/null
+rm -rf "$history_base/restore/restore-replay/$replay_attempt"
+pass 'source and target authority rejects same remote aliases drift and marker replay before mutation'
+
+source_fault_index=1
+for source_fault in crypt-drift backing-nonzero crypt-duplicate; do
+  source_prepare_attempt="w10d-20260906t04100${source_fault_index}z-f111111${source_fault_index}"
+  source_prepare_log="$history_base/source-prepare-$source_fault.calls"
+  if RCLONE_SOURCE_CONFIG_FAULT="$source_fault" RCLONE_CALL_LOG="$source_prepare_log" \
+    run_target_prepare "$source_prepare_attempt" \
+    >"$history_base/source-prepare-$source_fault.out" \
+    2>"$history_base/source-prepare-$source_fault.err"; then
+    fail "$source_fault source authority unexpectedly allowed target create"
+  fi
+  assert_grep '^config:offsite-crypt$' "$source_prepare_log" \
+    "$source_fault target create did not observe active source crypt config"
+  assert_not_grep '^mkdir$' "$source_prepare_log" \
+    "$source_fault target create reached remote mutation"
+  assert_not_grep 'OBJECT_RESTORE_TARGET_READY' "$history_base/source-prepare-$source_fault.out" \
+    "$source_fault target create emitted a false success marker"
+  [ ! -e "$history_base/restore/restore-parent/$source_prepare_attempt" ] \
+    || fail "$source_fault target create left remote state"
+
+  source_cleanup_attempt="w10d-20260906t04200${source_fault_index}z-f222222${source_fault_index}"
+  run_target_prepare "$source_cleanup_attempt" >/dev/null
+  source_cleanup_log="$history_base/source-cleanup-$source_fault.calls"
+  if RCLONE_SOURCE_CONFIG_FAULT="$source_fault" RCLONE_CALL_LOG="$source_cleanup_log" \
+    run_target_cleanup "$source_cleanup_attempt" \
+    >"$history_base/source-cleanup-$source_fault.out" \
+    2>"$history_base/source-cleanup-$source_fault.err"; then
+    fail "$source_fault source authority unexpectedly allowed target purge"
+  fi
+  assert_grep '^config:offsite-crypt$' "$source_cleanup_log" \
+    "$source_fault target cleanup did not observe active source crypt config"
+  assert_not_grep '^purge$' "$source_cleanup_log" \
+    "$source_fault target cleanup reached remote purge"
+  assert_not_grep 'OBJECT_RESTORE_TARGET_REMOVED' "$history_base/source-cleanup-$source_fault.out" \
+    "$source_fault target cleanup emitted a false success marker"
+  [ -f "$history_base/restore/restore-parent/$source_cleanup_attempt/.diis-disposable-restore-target-v3" ] \
+    || fail "$source_fault target cleanup mutated target before authority rejection"
+  run_target_cleanup "$source_cleanup_attempt" >/dev/null
+
+  source_restore_case="source-$source_fault"
+  source_restore_attempt=$(fault_attempt_for "$source_restore_case")
+  source_restore_log="$history_base/source-restore-$source_fault.calls"
+  if RCLONE_SOURCE_CONFIG_FAULT="$source_fault" RCLONE_CALL_LOG="$source_restore_log" \
+    run_object_plaintext_fault "$source_restore_case" \
+    >"$history_base/source-restore-$source_fault.out" \
+    2>"$history_base/source-restore-$source_fault.err"; then
+    fail "$source_fault source authority unexpectedly allowed object restore"
+  fi
+  assert_grep '^config:offsite-crypt$' "$source_restore_log" \
+    "$source_fault object restore did not observe active source crypt config"
+  assert_not_grep '^copyto$' "$source_restore_log" \
+    "$source_fault object restore reached object mutation"
+  [ "$(find "$history_base/restore/restore-parent/$source_restore_attempt" -type f | wc -l | tr -d '[:space:]')" = 1 ] \
+    || fail "$source_fault object restore changed the disposable target"
+  [ ! -e "$history_base/proof-$source_restore_case/20260902T000000Z-1002.object-restore-proof.json" ] \
+    || fail "$source_fault object restore published a success proof"
+  run_target_cleanup "$source_restore_attempt" >/dev/null
+  source_fault_index=$((source_fault_index + 1))
+done
+pass 'create restore and purge observe bounded effective source crypt and backing authority before mutation'
+
+if RCLONE_OBSERVE_FAULT=always \
+  run_target_prepare w10d-20260903t120001z-a1b2c3d5; then
   fail 'failed object target observation was accepted as empty'
 fi
-fault_attempt=w10d-20260903t120002z-a1b2c3d6
-mkdir -p "$history_base/restore/restore-parent/$fault_attempt"
-printf '%s\n' '{"schemaVersion":"diis-disposable-object-target-v1","attemptId":"w10d-20260903t120002z-a1b2c3d6"}' \
-  >"$history_base/restore/restore-parent/$fault_attempt/.diis-disposable-restore-target-v1"
-if env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
-  RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
-  RCLONE_OBSERVE_FAULT=after-purge \
-  OBJECT_TARGET_CLEANUP_CONFIRMATION=DELETE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
-  sh "$OBJECT_TARGET_CLEANUP" "$fault_attempt" "$object_parent"; then
-  fail 'failed post-purge observation was accepted as absence proof'
+overflow_attempt=w10d-20260903t120013z-a1b2c3de
+if RCLONE_LSF_FAULT=overflow run_target_prepare "$overflow_attempt"; then
+  fail 'oversized parent inventory was accepted before object target create'
 fi
-pass 'object target observation failures remain failures before create and after purge'
+[ ! -d "$history_base/restore/restore-parent/$overflow_attempt" ] \
+  || fail 'oversized parent inventory reached object target mutation'
+fault_attempt=w10d-20260903t120002z-a1b2c3d6
+run_target_prepare "$fault_attempt" >/dev/null
+if RCLONE_OBSERVE_FAULT=after-purge run_target_cleanup "$fault_attempt" \
+  >"$history_base/cleanup-observe.out" 2>"$history_base/cleanup-observe.err"; then
+  fail 'failed post-purge observation was accepted as absence proof'
+else
+  cleanup_observe_rc=$?
+fi
+[[ "$cleanup_observe_rc" -eq 74 ]] || fail 'post-purge observation failure did not return status 74'
+assert_grep 'OBJECT_TARGET_CLEANUP_AMBIGUOUS.*retry=prohibited' \
+  "$history_base/cleanup-observe.err" 'post-purge observation ambiguity marker missing'
+assert_not_grep 'OBJECT_RESTORE_TARGET_REMOVED' "$history_base/cleanup-observe.out" \
+  'post-purge observation failure emitted a false cleanup success marker'
+pass 'object target observation failures and overflow remain bounded failures before create and after purge'
 rm -f "$history_base/restore/.purge-complete"
+
+run_standalone_cleanup_fault() {
+  local case_name=$1 attempt=$2
+  run_target_prepare "$attempt" >/dev/null
+  printf residual >"$history_base/restore/restore-parent/$attempt/residual.bin"
+  case "$case_name" in
+    purge-nonzero)
+      RCLONE_PURGE_FAIL=1 run_target_cleanup "$attempt" \
+        >"$history_base/standalone-$case_name.out" 2>"$history_base/standalone-$case_name.err" \
+        && standalone_rc=0 || standalone_rc=$?
+      ;;
+    partial-purge)
+      RCLONE_PURGE_PARTIAL=1 run_target_cleanup "$attempt" \
+        >"$history_base/standalone-$case_name.out" 2>"$history_base/standalone-$case_name.err" \
+        && standalone_rc=0 || standalone_rc=$?
+      ;;
+    target-still-present)
+      RCLONE_PURGE_LEAVE_TARGET=1 run_target_cleanup "$attempt" \
+        >"$history_base/standalone-$case_name.out" 2>"$history_base/standalone-$case_name.err" \
+        && standalone_rc=0 || standalone_rc=$?
+      ;;
+    purge-signal)
+      RCLONE_PURGE_SIGNAL=TERM run_target_cleanup "$attempt" \
+        >"$history_base/standalone-$case_name.out" 2>"$history_base/standalone-$case_name.err" \
+        && standalone_rc=0 || standalone_rc=$?
+      ;;
+    post-purge-parse)
+      RCLONE_PURGE_STATE="$history_base/purge-parse.state" RCLONE_POST_PURGE_DUPLICATE=1 \
+        run_target_cleanup "$attempt" \
+        >"$history_base/standalone-$case_name.out" 2>"$history_base/standalone-$case_name.err" \
+        && standalone_rc=0 || standalone_rc=$?
+      ;;
+    *) fail "unknown standalone cleanup case $case_name" ;;
+  esac
+  if [[ "$standalone_rc" -eq 0 ]]; then
+    fail "$case_name standalone cleanup fault unexpectedly succeeded"
+  fi
+  [[ "$standalone_rc" -eq 74 ]] \
+    || fail "$case_name standalone cleanup did not return ambiguous status 74"
+  assert_grep 'OBJECT_TARGET_CLEANUP_AMBIGUOUS.*phase=.*retry=prohibited' \
+    "$history_base/standalone-$case_name.err" \
+    "$case_name standalone cleanup ambiguity marker missing"
+}
+standalone_attempt=w10d-20260906t035001z-e1111111
+run_standalone_cleanup_fault purge-nonzero "$standalone_attempt"
+rm -rf "$history_base/restore/restore-parent/$standalone_attempt"
+standalone_attempt=w10d-20260906t035002z-e2222222
+run_standalone_cleanup_fault partial-purge "$standalone_attempt"
+[[ -f "$history_base/restore/restore-parent/$standalone_attempt/residual.bin" ]] \
+  || fail 'partial purge did not leave observable residual for negative control'
+rm -rf "$history_base/restore/restore-parent/$standalone_attempt"
+standalone_attempt=w10d-20260906t035003z-e3333333
+run_standalone_cleanup_fault target-still-present "$standalone_attempt"
+rm -rf "$history_base/restore/restore-parent/$standalone_attempt"
+standalone_attempt=w10d-20260906t035004z-e4444444
+purge_parse_state="$history_base/purge-parse.state"
+run_standalone_cleanup_fault post-purge-parse "$standalone_attempt"
+rm -f "$purge_parse_state"
+standalone_attempt=w10d-20260906t035005z-e5555555
+run_standalone_cleanup_fault purge-signal "$standalone_attempt"
+rm -rf "$history_base/restore/restore-parent/$standalone_attempt"
+pass 'standalone target cleanup maps purge partial residual signal observation and parse uncertainty to status 74 no-retry'
 
 run_object_creator_failure() {
   local attempt=$1
-  env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
-    RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
-    RCLONE_MARKER_WRITE_FAIL="${RCLONE_MARKER_WRITE_FAIL:-0}" \
-    RCLONE_MARKER_SIGNAL="${RCLONE_MARKER_SIGNAL:-}" RCLONE_PURGE_FAIL="${RCLONE_PURGE_FAIL:-0}" \
-    RCLONE_MKDIR_FAIL_AFTER_CREATE="${RCLONE_MKDIR_FAIL_AFTER_CREATE:-0}" \
-    RCLONE_MKDIR_SIGNAL="${RCLONE_MKDIR_SIGNAL:-}" \
-    RCLONE_OBSERVE_FAULT="${RCLONE_OBSERVE_FAULT:-}" OFFSITE_CRYPT_REMOTE=offsite-crypt:diis \
-    OBJECT_TARGET_CREATE_CONFIRMATION=CREATE_EXACT_DISPOSABLE_OBJECT_RESTORE_TARGET \
-    sh "$OBJECT_TARGET_PREPARE" "$attempt" "$object_parent"
+  run_target_prepare "$attempt"
 }
 attempt=w10d-20260903t120003z-a1b2c3d7
 if RCLONE_MARKER_WRITE_FAIL=1 run_object_creator_failure "$attempt"; then
@@ -754,6 +1750,16 @@ if RCLONE_MKDIR_FAIL_AFTER_CREATE=1 run_object_creator_failure "$attempt"; then
 fi
 [[ ! -d "$history_base/restore/restore-parent/$attempt" ]] \
   || fail 'partial mkdir failure left object target after cleanup'
+attempt=w10d-20260903t120014z-a1b2c3df
+if RCLONE_LSF_FAULT=second-overflow RCLONE_LSF_FAULT_STATE="$history_base/second-lsf.state" \
+  run_object_creator_failure "$attempt" >"$history_base/second-lsf.out" \
+  2>"$history_base/second-lsf.err"; then
+  fail 'oversized post-create target observation unexpectedly succeeded'
+fi
+assert_not_grep 'OBJECT_RESTORE_TARGET_READY' "$history_base/second-lsf.out" \
+  'failed post-create observation emitted a false create success marker'
+[[ ! -d "$history_base/restore/restore-parent/$attempt" ]] \
+  || fail 'oversized post-create observation left object target after cleanup'
 for signal_name in HUP INT TERM; do
   case "$signal_name" in HUP) second=10 ;; INT) second=11 ;; TERM) second=12 ;; esac
   attempt="w10d-20260903t1200${second}z-a1b2c3db"
@@ -776,6 +1782,8 @@ for cleanup_case in purge observe; do
   [[ "$rc" -eq 74 ]] || fail "$cleanup_case cleanup did not return ambiguous status 74"
   assert_grep 'OBJECT_TARGET_CLEANUP_AMBIGUOUS.*retry=prohibited' "$history_base/$cleanup_case.err" \
     "$cleanup_case object creator ambiguity marker missing"
+  assert_not_grep 'OBJECT_RESTORE_TARGET_READY' "$history_base/$cleanup_case.out" \
+    "$cleanup_case creator cleanup ambiguity emitted a false success marker"
 done
 signal_index=6
 for signal_name in HUP INT TERM; do
@@ -789,21 +1797,133 @@ for signal_name in HUP INT TERM; do
 done
 pass 'object target creator owns partial mkdir and proves cleanup or emits ambiguous no-retry'
 
-protected_id=20250101T000000Z-9000
+object_target_local_fault_bin="$history_base/object-target-local-fault-bin"
+mkdir -p "$object_target_local_fault_bin"
+cat >"$object_target_local_fault_bin/rm" <<'SH'
+#!/bin/sh
+case "${OBJECT_LOCAL_CLEANUP_FAULT:-}:$*" in
+  rm-create:*diis-object-target-create.*/source-crypt-config.raw*|\
+  rm-cleanup:*diis-object-target-cleanup.*/source-crypt-config.raw*) exit 75 ;;
+esac
+exec /bin/rm "$@"
+SH
+cat >"$object_target_local_fault_bin/rmdir" <<'SH'
+#!/bin/sh
+case "${OBJECT_LOCAL_CLEANUP_FAULT:-}:$*" in
+  rmdir-create:*diis-object-target-create.*|rmdir-cleanup:*diis-object-target-cleanup.*) exit 76 ;;
+esac
+exec /bin/rmdir "$@"
+SH
+chmod +x "$object_target_local_fault_bin"/*
+
+local_fault_index=1
+for local_fault in rm-create rmdir-create; do
+  local_attempt="w10d-20260906t04300${local_fault_index}z-f333333${local_fault_index}"
+  local_tmp="$history_base/local-$local_fault"
+  mkdir -p "$local_tmp"
+  if OBJECT_TARGET_FAULT_BIN="$object_target_local_fault_bin" \
+    OBJECT_LOCAL_CLEANUP_FAULT="$local_fault" OBJECT_TARGET_TMPDIR="$local_tmp" \
+    run_target_prepare "$local_attempt" >"$history_base/$local_fault.out" \
+    2>"$history_base/$local_fault.err"; then
+    fail "$local_fault target creator unexpectedly succeeded"
+  else
+    local_fault_rc=$?
+  fi
+  [[ "$local_fault_rc" -eq 74 ]] || fail "$local_fault target creator did not return status 74"
+  assert_grep 'OBJECT_TARGET_CLEANUP_AMBIGUOUS.*phase=local-evidence.*retry=prohibited' \
+    "$history_base/$local_fault.err" "$local_fault target creator ambiguity marker missing"
+  assert_not_grep 'OBJECT_RESTORE_TARGET_READY' "$history_base/$local_fault.out" \
+    "$local_fault target creator emitted success before local evidence cleanup"
+  /bin/rm -rf "$local_tmp"
+  run_target_cleanup "$local_attempt" >/dev/null
+  local_fault_index=$((local_fault_index + 1))
+done
+
+for local_fault in rm-cleanup rmdir-cleanup; do
+  local_attempt="w10d-20260906t04400${local_fault_index}z-f444444${local_fault_index}"
+  run_target_prepare "$local_attempt" >/dev/null
+  local_tmp="$history_base/local-$local_fault"
+  mkdir -p "$local_tmp"
+  if OBJECT_TARGET_FAULT_BIN="$object_target_local_fault_bin" \
+    OBJECT_LOCAL_CLEANUP_FAULT="$local_fault" OBJECT_TARGET_TMPDIR="$local_tmp" \
+    run_target_cleanup "$local_attempt" >"$history_base/$local_fault.out" \
+    2>"$history_base/$local_fault.err"; then
+    fail "$local_fault target cleanup unexpectedly succeeded"
+  else
+    local_fault_rc=$?
+  fi
+  [[ "$local_fault_rc" -eq 74 ]] || fail "$local_fault target cleanup did not return status 74"
+  assert_grep 'OBJECT_TARGET_CLEANUP_AMBIGUOUS.*phase=local-evidence.*retry=prohibited' \
+    "$history_base/$local_fault.err" "$local_fault target cleanup ambiguity marker missing"
+  assert_not_grep 'OBJECT_RESTORE_TARGET_REMOVED' "$history_base/$local_fault.out" \
+    "$local_fault target cleanup emitted success before local evidence cleanup"
+  [ ! -e "$history_base/restore/restore-parent/$local_attempt" ] \
+    || fail "$local_fault remote target absence proof failed"
+  /bin/rm -rf "$local_tmp"
+  local_fault_index=$((local_fault_index + 1))
+done
+pass 'target lifecycle emits success only after local rm rmdir and absence cleanup are proven'
+
+marker_overflow_attempt=w10d-20260903t120015z-a1b2c3e0
+run_target_prepare "$marker_overflow_attempt" >/dev/null
+if RCLONE_CAT_FAULT=overflow run_target_cleanup "$marker_overflow_attempt"; then
+  fail 'oversized disposable target marker was accepted'
+fi
+[ -d "$history_base/restore/restore-parent/$marker_overflow_attempt" ] \
+  || fail 'oversized marker failure mutated disposable target'
+rm -rf "$history_base/restore/restore-parent/$marker_overflow_attempt"
+
+marker_duplicate_attempt=w10d-20260903t120016z-a1b2c3e1
+run_target_prepare "$marker_duplicate_attempt" >/dev/null
+marker_duplicate_path="$history_base/restore/restore-parent/$marker_duplicate_attempt/.diis-disposable-restore-target-v3"
+sed "s/\"attemptId\":\"$marker_duplicate_attempt\"/\"attemptId\":\"$marker_duplicate_attempt\",\"attemptId\":\"$marker_duplicate_attempt\"/" \
+  "$marker_duplicate_path" >"${marker_duplicate_path}.tmp"
+mv "${marker_duplicate_path}.tmp" "$marker_duplicate_path"
+if run_target_cleanup "$marker_duplicate_attempt"; then
+  fail 'duplicate-key disposable target marker was accepted'
+fi
+[ -d "$history_base/restore/restore-parent/$marker_duplicate_attempt" ] \
+  || fail 'invalid marker failure mutated disposable target'
+rm -rf "$history_base/restore/restore-parent/$marker_duplicate_attempt"
+pass 'disposable target marker reads are bounded strict and fail before purge on malformed evidence'
+
+protected_id=20200101T000000Z-9000
 protected_manifest="$history_base/offsite/diis/database/manifests/$protected_id.complete.json"
 mkdir -p "$(dirname "$protected_manifest")"
+mkdir -p "$history_base/offsite/diis/database/current"
 for index in $(seq 1 14); do
-  old_id="2025$(printf '%02d' "$index")01T000000Z-$((9000 + index))"
   old_epoch=$((1704067200 + index * 2678400))
-  printf '{"schemaVersion":"diis-backup-v1","status":"complete","backupId":"%s","class":"daily","protectionState":"none","createdAt":"2025-01-01T00:00:00Z","createdEpoch":%s,"dailyKey":"2025-01-01","weeklyKey":"2025-W%02d","monthlyKey":"2025-%02d","sha256":"%064d","bytes":2048,"archiveValidated":true,"offsiteStatus":"complete","offsiteConfigFingerprint":"%s","objectStatus":"empty","objectManifestSha256":"%064d","objectCount":0,"tableCount":46,"userCount":40,"studentCount":20,"targetTotalBytes":20000000000,"targetFreeBytes":10000000000,"targetProjectedFreePercent":49}\n' \
-    "$old_id" "$old_epoch" "$index" "$index" 1 "$FINGERPRINT" 2 \
+  old_stamp=$(date -u -d "@$old_epoch" '+%Y%m%dT%H%M%SZ')
+  old_id="${old_stamp}-$((9000 + index))"
+  old_created_at=$(date -u -d "@$old_epoch" '+%Y-%m-%dT%H:%M:%SZ')
+  old_daily_key=$(date -u -d "@$old_epoch" '+%Y-%m-%d')
+  old_weekly_key=$(date -u -d "@$old_epoch" '+%G-W%V')
+  old_monthly_key=$(date -u -d "@$old_epoch" '+%Y-%m')
+  old_dump_sha=$(printf 'retention-dump-%s' "$old_id" | $REAL_SHA | awk '{print $1}')
+  old_object_sha=$(printf 'retention-object-manifest-%s' "$old_id" | $REAL_SHA | awk '{print $1}')
+  printf '{"schemaVersion":"diis-backup-v1","status":"complete","backupId":"%s","class":"daily","protectionState":"none","createdAt":"%s","createdEpoch":%s,"dailyKey":"%s","weeklyKey":"%s","monthlyKey":"%s","sha256":"%s","bytes":2048,"archiveValidated":true,"offsiteStatus":"complete","offsiteConfigFingerprint":"%s","objectStatus":"empty","objectManifestSha256":"%s","objectCount":0,"tableCount":46,"userCount":40,"studentCount":20,"targetTotalBytes":20000000000,"targetFreeBytes":10000000000}\n' \
+    "$old_id" "$old_created_at" "$old_epoch" "$old_daily_key" "$old_weekly_key" "$old_monthly_key" "$old_dump_sha" "$FINGERPRINT" "$old_object_sha" \
     >"$history_base/offsite/diis/database/manifests/$old_id.complete.json"
+  printf '%s  %s.dump\n' "$old_dump_sha" "$old_id" \
+    >"$history_base/offsite/diis/database/current/$old_id.sha256"
 done
-printf '{"schemaVersion":"diis-backup-v1","status":"complete","backupId":"%s","class":"pre-change","protectionState":"protected","createdAt":"2025-01-01T00:00:00Z","createdEpoch":1609459200,"dailyKey":"2021-01-01","weeklyKey":"2021-W01","monthlyKey":"2021-01","sha256":"%064d","bytes":2048,"archiveValidated":true,"offsiteStatus":"complete","offsiteConfigFingerprint":"%s","objectStatus":"empty","objectManifestSha256":"%064d","objectCount":0,"tableCount":46,"userCount":40,"studentCount":20,"targetTotalBytes":20000000000,"targetFreeBytes":10000000000,"targetProjectedFreePercent":49}\n' \
-  "$protected_id" 3 "$FINGERPRINT" 4 >"$protected_manifest"
+protected_epoch=1577836800
+protected_created_at=$(date -u -d "@$protected_epoch" '+%Y-%m-%dT%H:%M:%SZ')
+protected_daily_key=$(date -u -d "@$protected_epoch" '+%Y-%m-%d')
+protected_weekly_key=$(date -u -d "@$protected_epoch" '+%G-W%V')
+protected_monthly_key=$(date -u -d "@$protected_epoch" '+%Y-%m')
+protected_dump_sha=$(printf 'retention-protected-dump-%s' "$protected_id" | $REAL_SHA | awk '{print $1}')
+protected_object_sha=$(printf 'retention-protected-object-manifest-%s' "$protected_id" | $REAL_SHA | awk '{print $1}')
+printf '{"schemaVersion":"diis-backup-v1","status":"complete","backupId":"%s","class":"pre-change","protectionState":"protected","createdAt":"%s","createdEpoch":%s,"dailyKey":"%s","weeklyKey":"%s","monthlyKey":"%s","sha256":"%s","bytes":2048,"archiveValidated":true,"offsiteStatus":"complete","offsiteConfigFingerprint":"%s","objectStatus":"empty","objectManifestSha256":"%s","objectCount":0,"tableCount":46,"userCount":40,"studentCount":20,"targetTotalBytes":20000000000,"targetFreeBytes":10000000000}\n' \
+  "$protected_id" "$protected_created_at" "$protected_epoch" "$protected_daily_key" "$protected_weekly_key" "$protected_monthly_key" "$protected_dump_sha" "$FINGERPRINT" "$protected_object_sha" >"$protected_manifest"
+printf '%s  %s.dump\n' "$protected_dump_sha" "$protected_id" \
+  >"$history_base/offsite/diis/database/current/$protected_id.sha256"
 OFFSITE_RETENTION_APPLY=1 run_object_snapshot 20260904T000000Z-1004 1788480000
 [[ -f "$protected_manifest" ]] || fail 'protected pre-change point was deleted by ordinary retention'
-pass 'protected pre-change survives age and weekly monthly slot pressure'
+RCLONE_CAT_FAULT=release-overflow OFFSITE_RETENTION_APPLY=1 \
+  run_object_snapshot 20260904T010000Z-1007 1788483600
+[[ -f "$protected_manifest" ]] || fail 'oversized release marker observation deleted protected point'
+pass 'protected pre-change survives age slot pressure and unavailable or oversized release observation'
 
 env PATH="$history_base/bin:$PATH" RCLONE_SOURCE_ROOT="$history_base/source" \
   RCLONE_OFFSITE_ROOT="$history_base/offsite" RCLONE_RESTORE_ROOT="$history_base/restore" \
@@ -819,6 +1939,44 @@ release_remote="$history_base/offsite/diis/database/releases/$protected_id.relea
 OFFSITE_RETENTION_APPLY=1 run_object_snapshot 20260905T000000Z-1005 1788566400
 [[ ! -f "$protected_manifest" ]] || fail 'released pre-change point remained retention-protected'
 pass 'protected pre-change releases only after validated reconciliation marker'
+
+retention_negative_id=20200001T000000Z-9999
+retention_negative_manifest="$history_base/offsite/diis/database/manifests/$retention_negative_id.complete.json"
+retention_negative_sidecar="$history_base/offsite/diis/database/current/$retention_negative_id.sha256"
+retention_negative_dump="$history_base/offsite/diis/database/current/$retention_negative_id.dump"
+cp "$history_base/offsite/diis/database/manifests/20260905T000000Z-1005.complete.json" \
+  "$retention_negative_manifest"
+retention_negative_sha=$(printf retention-negative | $REAL_SHA | awk '{print $1}')
+printf '%s  %s.dump\n' "$retention_negative_sha" "$retention_negative_id" >"$retention_negative_sidecar"
+printf sentinel >"$retention_negative_dump"
+if OFFSITE_RETENTION_APPLY=1 run_object_snapshot 20260906T000000Z-1006 1788652800; then
+  fail 'filename-mismatched retention point was accepted'
+fi
+[[ -f "$retention_negative_manifest" && -f "$retention_negative_sidecar" \
+  && "$(cat "$retention_negative_dump")" = sentinel ]] \
+  || fail 'filename-mismatched retention point was deleted before strict validation'
+pass 'retention rejects filename mismatch before any deletion'
+
+prior_boot_lock="$TMP/prior-boot-backup.lock"
+mkdir -m 0700 "$prior_boot_lock"
+printf '%s\n%s\n%s\n%s\n%s\n' prior-boot-id 999999 1 retained-token \
+  "diis-application-quarantine:$(printf application-quarantine | "$REAL_SHA" | awk '{print $1}')" \
+  >"$prior_boot_lock/owner"
+printf '%s\n' '{"schema":"diis-staging-application-lock-v1","state":"quarantined-until-verified-release","retry":"prohibited"}' \
+  >"$prior_boot_lock/application-owner.json"
+prior_owner_sha=$("$REAL_SHA" "$prior_boot_lock/owner" | awk '{print $1}')
+prior_marker_sha=$("$REAL_SHA" "$prior_boot_lock/application-owner.json" | awk '{print $1}')
+if env BACKUP_LOCK_TEST_MODE=1 DIIS_W10D_TEST_ROOT="$TMP" sh -ceu \
+  '. "$1"; acquire_directory_lock "$2"' sh "$LIB" "$prior_boot_lock" \
+  >"$TMP/prior-boot.out" 2>"$TMP/prior-boot.err"; then
+  fail 'prior-boot application quarantine was reclaimed'
+fi
+assert_grep 'karantina aplikasi aktif atau ambigu' "$TMP/prior-boot.err" \
+  'prior-boot application quarantine rejection missing'
+[[ "$("$REAL_SHA" "$prior_boot_lock/owner" | awk '{print $1}')" = "$prior_owner_sha" \
+  && "$("$REAL_SHA" "$prior_boot_lock/application-owner.json" | awk '{print $1}')" = "$prior_marker_sha" ]] \
+  || fail 'rejected prior-boot quarantine bytes changed'
+pass 'prior-boot application quarantine requires explicit reconciliation'
 
 signal_base="$TMP/live-lock"
 prepare_backup_case "$signal_base"
@@ -881,7 +2039,7 @@ case "$command" in
   exec)
     args="$*"
     case "$args" in
-      *'df -Pk'*) printf '%s\n' '10000000 9999000' ;;
+      *'df -Pk'*) printf '%s %s\n' "${RESTORE_DF_TOTAL_KB:-10000000}" "${RESTORE_DF_AVAILABLE_KB:-9999000}" ;;
       *'pg_restore --list'*)
         if [ "${RESTORE_FAULT:-}" = archive-list ]; then exit 64; fi
         if [ "${RESTORE_FAULT:-}" = empty-archive-list ]; then exit 0; fi
@@ -925,7 +2083,11 @@ EOF
 chmod +x "$restore_fake/docker"
 cat >"$restore_fake/mkdir" <<'EOF'
 #!/bin/sh
-if [ "${RESTORE_FAULT:-}" = lock-mkdir ] && [ "${1:-}" = "${RESTORE_LOCK_DIR:-}" ]; then
+if [ "${RESTORE_FAULT:-}" = lock-mkdir ]; then
+  target=''
+  for argument in "$@"; do case "$argument" in -*) ;; *) target=$argument ;; esac; done
+fi
+if [ "${RESTORE_FAULT:-}" = lock-mkdir ] && [ "$target" = "${RESTORE_LOCK_DIR:-}" ]; then
   /usr/bin/mkdir "$@"
   exit 77
 fi
@@ -939,7 +2101,7 @@ restore_sha=$($REAL_SHA "$restore_dump" | awk '{print $1}')
 restore_object_sha=$(printf 'diis-object-manifest-v1|%s|exact\n' "$restore_backup_id" | $REAL_SHA | awk '{print $1}')
 printf '%s  %s.dump\n' "$restore_sha" "$restore_backup_id" >"$restore_base/$restore_backup_id.sha256"
 cat >"$restore_base/$restore_backup_id.complete.json" <<EOF
-{"schemaVersion":"diis-backup-v1","status":"complete","backupId":"${restore_backup_id}","class":"daily","protectionState":"none","createdAt":"2026-09-03T00:00:00Z","createdEpoch":1788393600,"dailyKey":"2026-09-03","weeklyKey":"2026-W36","monthlyKey":"2026-09","sha256":"${restore_sha}","bytes":2048,"archiveValidated":true,"offsiteStatus":"complete","offsiteConfigFingerprint":"${FINGERPRINT}","objectStatus":"empty","objectManifestSha256":"${restore_object_sha}","objectCount":0,"tableCount":46,"userCount":40,"studentCount":20,"targetTotalBytes":20000000000,"targetFreeBytes":10000000000,"targetProjectedFreePercent":49}
+{"schemaVersion":"diis-backup-v1","status":"complete","backupId":"${restore_backup_id}","class":"daily","protectionState":"none","createdAt":"2026-09-03T00:00:00Z","createdEpoch":1788393600,"dailyKey":"2026-09-03","weeklyKey":"2026-W36","monthlyKey":"2026-09","sha256":"${restore_sha}","bytes":2048,"archiveValidated":true,"offsiteStatus":"complete","offsiteConfigFingerprint":"${FINGERPRINT}","objectStatus":"empty","objectManifestSha256":"${restore_object_sha}","objectCount":0,"tableCount":46,"userCount":40,"studentCount":20,"targetTotalBytes":20000000000,"targetFreeBytes":10000000000}
 EOF
 cat >"$restore_base/$restore_backup_id.offsite-provenance.json" <<EOF
 {"schemaVersion":"diis-offsite-restore-input-v1","source":"independent-crypt","backupId":"${restore_backup_id}","offsiteConfigFingerprint":"${FINGERPRINT}","dumpSha256":"${restore_sha}","dumpBytes":2048,"objectManifestSha256":"${restore_object_sha}","objectCount":0,"dumpFile":"${restore_backup_id}.dump","sidecarFile":"${restore_backup_id}.sha256","completionFile":"${restore_backup_id}.complete.json","objectManifestFile":"${restore_backup_id}.objects.tsv"}
@@ -950,6 +2112,8 @@ run_restore() {
   if [ "${RESTORE_DETACHED:-0}" = 1 ]; then
     env PATH="$restore_fake:$PATH" DOCKER_STATE="$restore_state" UNMARKED="$unmarked" \
       RESTORE_FAULT="$fault" TMPDIR="$restore_tmp" \
+      RESTORE_DF_TOTAL_KB="${RESTORE_DF_TOTAL_KB:-10000000}" \
+      RESTORE_DF_AVAILABLE_KB="${RESTORE_DF_AVAILABLE_KB:-9999000}" \
       RESTORE_SIGNAL="${RESTORE_SIGNAL:-}" RESTORE_SIGNAL_NAME="${RESTORE_SIGNAL_NAME:-TERM}" \
       RESTORE_BLOCK="${RESTORE_BLOCK:-}" \
       POSTGRES_CONTAINER="$container" POSTGRES_USER=postgres DUMP_FILE="$restore_dump" \
@@ -963,6 +2127,8 @@ run_restore() {
   else
     env PATH="$restore_fake:$PATH" DOCKER_STATE="$restore_state" UNMARKED="$unmarked" \
       RESTORE_FAULT="$fault" TMPDIR="$restore_tmp" \
+      RESTORE_DF_TOTAL_KB="${RESTORE_DF_TOTAL_KB:-10000000}" \
+      RESTORE_DF_AVAILABLE_KB="${RESTORE_DF_AVAILABLE_KB:-9999000}" \
       RESTORE_SIGNAL="${RESTORE_SIGNAL:-}" RESTORE_SIGNAL_NAME="${RESTORE_SIGNAL_NAME:-TERM}" \
       RESTORE_BLOCK="${RESTORE_BLOCK:-}" \
       POSTGRES_CONTAINER="$container" POSTGRES_USER=postgres DUMP_FILE="$restore_dump" \
@@ -987,12 +2153,30 @@ assert_grep 'RESTORE_DRILL_COMPLETE' "$restore_base/out-success" 'restore comple
 assert_grep '"status":"success"' "$restore_base/proofs/success.json" 'restore success proof missing'
 assert_grep '"source":"independent-crypt"' "$restore_base/proofs/success.json" \
   'restore success proof independent source missing'
+assert_grep '"tableCount":46.*"userCount":40.*"studentCount":20' \
+  "$restore_base/proofs/success.json" 'restore success proof exact counts missing'
 [[ -f "$restore_state/archive-list-consumed" ]] \
   || fail 'restore archive list was not consumed completely'
 [[ -z "$(find "$restore_tmp" -mindepth 1 -maxdepth 1 -print -quit)" ]] \
   || fail 'restore archive list temp file was not cleaned after success'
 [[ ! -d "$restore_base/lock-success" ]] || fail 'stale restore lock was not reclaimed'
 rm -f "$restore_state/archive-list-consumed"
+if RESTORE_DF_TOTAL_KB=100000 RESTORE_DF_AVAILABLE_KB=9002 \
+  run_restore capacity-nine-percent; then
+  fail 'restore accepted a projected 9 percent free filesystem'
+fi
+assert_grep 'diproyeksikan di bawah 10%' "$restore_base/err-capacity-nine-percent" \
+  'restore did not report the canonical 10 percent floor'
+[[ ! -e "$restore_state/database-created" ]] || fail '9 percent restore mutated database'
+if ! RESTORE_DF_TOTAL_KB=100000 RESTORE_DF_AVAILABLE_KB=10002 \
+  run_restore capacity-ten-percent; then
+  cat "$restore_base/err-capacity-ten-percent" >&2 || true
+  fail 'restore rejected the exact 10 percent boundary'
+fi
+assert_grep 'RESTORE_DRILL_COMPLETE' "$restore_base/out-capacity-ten-percent" \
+  '10 percent restore boundary did not complete'
+[[ ! -e "$restore_state/database-created" ]] || fail '10 percent restore cleanup left database'
+pass 'restore rejects 9 percent and accepts the exact 10 percent boundary'
 if run_restore archive-list-failure diis-restore-test 0 archive-list; then
   fail 'pg_restore archive-list command failure was accepted'
 fi
@@ -1176,7 +2360,7 @@ if env PATH="$publish_fake:$PATH" PUBLISH_LOG="$TMP/publish-invalid.log" \
   fail 'publisher accepted successful restore proof from local source'
 fi
 [[ ! -e "$TMP/publish-invalid.log" ]] || fail 'invalid restore proof reached Docker publisher mutation'
-pass 'restore proof publisher preserves version 2 independent provenance contract'
+pass 'restore proof publisher preserves version 3 independent provenance and count contract'
 
 assert_grep 'objectManifestSha256' "$LIB" 'object manifest binding missing'
 assert_grep 'objects/blobs' "$OFFSITE" 'content-addressed object blobs missing'
@@ -1194,13 +2378,26 @@ cat >"$release_contract/valid.json" <<'EOF'
 EOF
 sed 's/20260903T000000Z-1234/20260903T000000Z-9999/' \
   "$release_contract/valid.json" >"$release_contract/wrong-id.json"
+: >"$release_contract/empty.json"
+python3 - "$release_contract/valid.json" "$release_contract/duplicate.json" \
+  "$release_contract/unknown.json" <<'PY'
+from pathlib import Path
+import sys
+
+valid = Path(sys.argv[1]).read_text(encoding="utf-8").strip()
+Path(sys.argv[2]).write_text(valid[:-1] + ',"backupId":"20260903T000000Z-1234"}\n', encoding="utf-8")
+Path(sys.argv[3]).write_text(valid[:-1] + ',"unexpected":true}\n', encoding="utf-8")
+PY
 (
   # shellcheck source=../scripts/backup-lib.sh
   source "$LIB"
   validate_prechange_release "$release_contract/valid.json" '20260903T000000Z-1234'
   ! validate_prechange_release "$release_contract/wrong-id.json" '20260903T000000Z-1234'
+  ! validate_prechange_release "$release_contract/empty.json" '20260903T000000Z-1234'
+  ! validate_prechange_release "$release_contract/duplicate.json" '20260903T000000Z-1234'
+  ! validate_prechange_release "$release_contract/unknown.json" '20260903T000000Z-1234'
 ) || fail 'release marker content validation failed'
-pass 'protected release marker is content-bound to backup identity'
+pass 'protected release marker is strict-schema content-bound to backup identity'
 
 for runbook in "$BACKUP_RUNBOOK" "$OFFSITE_RUNBOOK" "$RESTORE_RUNBOOK"; do
   assert_grep 'NOT ACTIVE / NOT COMMISSIONED' "$runbook" 'runbook must state current runtime hold'
@@ -1211,11 +2408,20 @@ assert_grep 'exact content-addressed object manifest|content-addressed' "$BACKUP
   'runbook omits exact object history contract'
 assert_grep 'filename_encryption=standard' "$OFFSITE_RUNBOOK" \
   'off-site runbook omits required filename encryption'
+assert_grep 'Service Account file' "$OFFSITE_RUNBOOK" \
+  'off-site runbook omits dedicated Service Account auth'
+assert_grep 'Individual Backup tidak dapat diproteksi' "$OFFSITE_RUNBOOK" \
+  'off-site runbook falsely implies individual Backup protection'
+assert_grep 'Credential custodian' "$OFFSITE_RUNBOOK" \
+  'off-site runbook omits custody decision fields'
+assert_grep 'H1.*root-cron read-only|H1 — root-cron read-only' "$BACKUP_RUNBOOK" \
+  'backup runbook omits H1 read-only gate'
 assert_grep 'POSTGRES_CONTAINER=diis-restore-disposable' "$RESTORE_RUNBOOK" \
   'restore runbook does not require explicit disposable target'
 pass 'runbooks separate current runtime from target contract'
 
 assert_grep 'backupBytes' "$MONITOR" 'backup size telemetry missing'
+assert_grep 'estimatedDatabaseBytes' "$MONITOR" 'database estimate telemetry missing'
 assert_grep 'growth7Bytes' "$MONITOR" '7-day growth telemetry missing'
 assert_grep 'growth30Bytes' "$MONITOR" '30-day growth telemetry missing'
 assert_grep 'projectedDaysToFull' "$MONITOR" 'days-to-full telemetry missing'
@@ -1227,26 +2433,114 @@ pass 'monitor telemetry contract is complete and inactive'
 NODE_BIN=$(command -v node || command -v node.exe || true)
 [[ -n "$NODE_BIN" ]] || fail 'Node.js unavailable for n8n behavior test'
 MONITOR_ARG=$MONITOR
-case "$NODE_BIN" in *.exe) MONITOR_ARG=$(wslpath -w "$MONITOR") ;; esac
-"$NODE_BIN" - "$MONITOR_ARG" <<'EOF' || fail 'n8n telemetry behavior failed'
+PRODUCER_TELEMETRY="$TMP/success/mc/backup/postgres/monitor/latest.json"
+[[ -f "$PRODUCER_TELEMETRY" ]] || fail 'actual producer telemetry fixture missing'
+PRODUCER_TELEMETRY_ARG=$PRODUCER_TELEMETRY
+case "$NODE_BIN" in
+  *.exe)
+    MONITOR_ARG=$(wslpath -w "$MONITOR")
+    PRODUCER_TELEMETRY_ARG=$(wslpath -w "$PRODUCER_TELEMETRY")
+    ;;
+esac
+"$NODE_BIN" - "$MONITOR_ARG" "$PRODUCER_TELEMETRY_ARG" <<'EOF' || fail 'n8n telemetry behavior failed'
 const fs = require('fs');
 const workflow = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const producerTelemetry = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+const readNode = workflow.nodes.find((node) => node.name === 'Baca completion manifests');
+if (!readNode || readNode.type !== 'n8n-nodes-base.s3' || readNode.typeVersion !== 1) {
+  throw new Error('monitor must use the S3-compatible node');
+}
+if (readNode.parameters?.resource !== 'file' || readNode.parameters?.operation !== 'download') {
+  throw new Error('monitor S3 node must be download-only');
+}
+if (readNode.parameters?.bucketName !== 'diis-backup' || readNode.parameters?.fileKey !== 'postgres/monitor/latest.json') {
+  throw new Error('monitor S3 source binding drifted');
+}
+if (readNode.parameters?.binaryPropertyName !== 'completionManifest') {
+  throw new Error('monitor S3 binary field drifted');
+}
+if (!readNode.credentials?.s3 || readNode.credentials?.aws) {
+  throw new Error('monitor must use an S3 credential, not generic AWS signing');
+}
+if (readNode.onError !== 'continueErrorOutput') {
+  throw new Error('monitor S3 failure must use the dedicated error output');
+}
+const parseNode = workflow.nodes.find((node) => node.name === 'Parse completion manifest');
+if (!parseNode || parseNode.type !== 'n8n-nodes-base.extractFromFile' || parseNode.parameters?.operation !== 'fromJson') {
+  throw new Error('monitor JSON extraction node missing');
+}
+if (parseNode.parameters?.binaryPropertyName !== 'completionManifest' || parseNode.parameters?.destinationKey !== 'data') {
+  throw new Error('monitor JSON extraction binding drifted');
+}
+if (parseNode.onError !== 'continueErrorOutput') {
+  throw new Error('monitor parser failure must use the dedicated error output');
+}
+const emailNode = workflow.nodes.find((node) => node.name === 'Kirim email alert teredaksi');
+if (!emailNode || emailNode.type !== 'n8n-nodes-base.emailSend' || !emailNode.credentials?.smtp) {
+  throw new Error('school SMTP notification node missing');
+}
+if (emailNode.parameters?.toEmail !== 'admin@smkdarussalamsubah.sch.id') {
+  throw new Error('school notification recipient drifted');
+}
+const errorEmailNode = workflow.nodes.find((node) => node.name === 'Kirim email kegagalan teredaksi');
+if (!errorEmailNode || errorEmailNode.type !== 'n8n-nodes-base.emailSend' || !errorEmailNode.credentials?.smtp) {
+  throw new Error('redacted failure email node missing');
+}
+if (errorEmailNode.parameters?.toEmail !== 'admin@smkdarussalamsubah.sch.id') {
+  throw new Error('failure notification recipient drifted');
+}
+if (errorEmailNode.parameters?.subject?.includes('$json.error') || errorEmailNode.parameters?.text?.includes('$json.error')) {
+  throw new Error('raw failure data reaches SMTP');
+}
+const readErrorNode = workflow.nodes.find((node) => node.name === 'Redaksi kegagalan pembacaan');
+const parseErrorNode = workflow.nodes.find((node) => node.name === 'Redaksi kegagalan parsing');
+const terminalNode = workflow.nodes.find((node) => node.name === 'Tandai monitor gagal');
+if (!readErrorNode?.parameters?.jsCode.includes("['TELEMETRY_READ_FAILED']")) throw new Error('read failure redaction missing');
+if (!parseErrorNode?.parameters?.jsCode.includes("['TELEMETRY_PARSE_FAILED']")) throw new Error('parse failure redaction missing');
+if (!terminalNode?.parameters?.jsCode.includes('DIIS_BACKUP_MONITOR_FAILED_AFTER_REDACTED_ALERT')) {
+  throw new Error('monitor failure terminal missing');
+}
+const readConnections = workflow.connections['Baca completion manifests']?.main;
+const parseConnections = workflow.connections['Parse completion manifest']?.main;
+if (readConnections?.[1]?.[0]?.node !== 'Redaksi kegagalan pembacaan') throw new Error('S3 error route missing');
+if (parseConnections?.[1]?.[0]?.node !== 'Redaksi kegagalan parsing') throw new Error('parser error route missing');
+if (workflow.connections['Kirim email kegagalan teredaksi']?.main?.[0]?.[0]?.node !== 'Tandai monitor gagal') {
+  throw new Error('failure route can become false success');
+}
+if (JSON.stringify(workflow).includes('FONNTE_API_KEY') || JSON.stringify(workflow).includes('api.fonnte.com')) {
+  throw new Error('disabled Fonnte path remains in backup monitor');
+}
+if (JSON.stringify(workflow).includes('$env')) {
+  throw new Error('backup monitor must not require relaxed n8n environment access');
+}
 const code = workflow.nodes.find((node) => node.name === 'Nilai freshness completion')?.parameters?.jsCode;
 if (!code) throw new Error('monitor evaluator missing');
-const evaluate = (telemetry, env = {}) => new Function('$input', '$env', code)(
-  { first: () => ({ json: telemetry }) }, env,
+const evaluate = (telemetry) => new Function('$input', code)(
+  { first: () => ({ json: { data: telemetry } }) },
 )[0].json;
 const base = {
   schemaVersion: 'diis-backup-telemetry-v1', createdEpoch: Math.floor(Date.now() / 1000) - 3600,
-  backupBytes: 100, growth7Status: 'available', growth7Bytes: 5,
+  backupBytes: 100, estimatedDatabaseBytes: 200, growth7Status: 'available', growth7Bytes: 5,
   growth30Status: 'available', growth30Bytes: 10, targetTotalBytes: 1000,
-  targetFreeBytes: 500, projectedFreePercent: 50, projectedDaysToFull: 1500,
+  targetFreeBytes: 600, projectedFreePercent: 40, projectedDaysToFull: 1800,
   offsiteStatus: 'complete', restoreStatus: 'success', restoreAgeDays: 1,
 };
 const healthy = evaluate(base);
 if (!healthy.completionFresh || healthy.alertRequired || healthy.reasonCodes.length) throw new Error('healthy telemetry rejected');
-const capacity = evaluate({ ...base, projectedFreePercent: 20 });
+if (base.estimatedDatabaseBytes === base.backupBytes) throw new Error('estimate/dump distinction fixture collapsed');
+const actualProducer = evaluate(producerTelemetry);
+if (actualProducer.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('actual producer telemetry rejected');
+if (producerTelemetry.estimatedDatabaseBytes === producerTelemetry.backupBytes) {
+  throw new Error('actual producer fixture does not distinguish estimate from dump bytes');
+}
+if (healthy.notificationChannelType !== 'smtp' || healthy.notificationChannelReadiness !== 'unbound') {
+  throw new Error('notification type and runtime readiness are conflated');
+}
+if ('notificationChannelStatus' in healthy) throw new Error('legacy channel readiness claim remains');
+const capacity = evaluate({ ...base, estimatedDatabaseBytes: 100, targetFreeBytes: 190, projectedFreePercent: 9, projectedDaysToFull: 570 });
 if (!capacity.reasonCodes.includes('CAPACITY_LOW')) throw new Error('capacity alert missing');
+const capacityBoundary = evaluate({ ...base, estimatedDatabaseBytes: 100, targetFreeBytes: 200, projectedFreePercent: 10, projectedDaysToFull: 600 });
+if (capacityBoundary.reasonCodes.includes('CAPACITY_LOW')) throw new Error('exact 10 percent capacity boundary rejected');
 const restore = evaluate({ ...base, restoreStatus: 'failed' });
 if (!restore.reasonCodes.includes('RESTORE_PROOF_MISSING_OR_STALE')) throw new Error('restore alert missing');
 const stale = evaluate({ ...base, createdEpoch: Math.floor(Date.now() / 1000) - 7200 });
@@ -1255,11 +2549,48 @@ const nullMetric = evaluate({ ...base, targetFreeBytes: null });
 if (!nullMetric.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('null telemetry accepted');
 const stringMetric = evaluate({ ...base, growth7Bytes: '5' });
 if (!stringMetric.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('string telemetry accepted');
+const { estimatedDatabaseBytes: _, ...withoutEstimate } = base;
+const missingEstimate = evaluate(withoutEstimate);
+if (!missingEstimate.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('telemetry without canonical database estimate accepted');
 const invalidRange = evaluate({ ...base, projectedFreePercent: 101 });
 if (!invalidRange.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('invalid range accepted');
+const wrongProjectedPercent = evaluate({ ...base, projectedFreePercent: 50 });
+if (!wrongProjectedPercent.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('dump-derived projected percent accepted');
 const invalidGrowth = evaluate({ ...base, growth30Status: 'complete' });
 if (!invalidGrowth.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('invalid growth status accepted');
+const negativeGrowth = evaluate({ ...base, growth7Bytes: -20, growth30Bytes: -50, projectedDaysToFull: -1 });
+if (!negativeGrowth.completionFresh || negativeGrowth.alertRequired || negativeGrowth.reasonCodes.length) {
+  throw new Error('canonical signed negative growth rejected');
+}
+const unavailableNonzero = evaluate({ ...base, growth7Status: 'insufficient_history', growth7Bytes: 1 });
+if (!unavailableNonzero.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('nonzero insufficient-history growth accepted');
+const unavailableDays = evaluate({ ...base, growth30Status: 'insufficient_history', growth30Bytes: 0 });
+if (!unavailableDays.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('insufficient-history days-to-full accepted');
+const unavailableCanonical = evaluate({ ...base, growth30Status: 'insufficient_history', growth30Bytes: 0, projectedDaysToFull: -1 });
+if (unavailableCanonical.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('canonical insufficient-history telemetry rejected');
+const negativeGrowthWithDays = evaluate({ ...base, growth30Bytes: -1 });
+if (!negativeGrowthWithDays.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('negative growth with positive days-to-full accepted');
+const zeroGrowth = evaluate({ ...base, growth30Bytes: 0, projectedDaysToFull: -1 });
+if (zeroGrowth.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('zero growth canonical days-to-full rejected');
+const wrongPositiveDays = evaluate({ ...base, projectedDaysToFull: 1500 });
+if (!wrongPositiveDays.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('non-canonical positive days-to-full accepted');
+const daysRounding = evaluate({ ...base, targetFreeBytes: 601, estimatedDatabaseBytes: 201, projectedFreePercent: 40, growth30Bytes: 7, projectedDaysToFull: 2575 });
+if (daysRounding.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('days-to-full floor rounding rejected');
+const overflowGrowth = evaluate({ ...base, growth7Bytes: Number.MAX_SAFE_INTEGER + 1 });
+if (!overflowGrowth.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('unsafe growth integer accepted');
+const overflowDerivedDays = evaluate({ ...base, targetTotalBytes: Number.MAX_SAFE_INTEGER, targetFreeBytes: Number.MAX_SAFE_INTEGER, estimatedDatabaseBytes: 1, projectedFreePercent: 99, growth30Bytes: 1, projectedDaysToFull: Number.MAX_SAFE_INTEGER });
+if (!overflowDerivedDays.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('overflowing derived days-to-full accepted');
+const contradictoryCapacity = evaluate({ ...base, targetFreeBytes: 1, projectedFreePercent: 99 });
+if (!contradictoryCapacity.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('contradictory capacity accepted');
+const roundingBoundary = evaluate({ ...base, backupBytes: 1, estimatedDatabaseBytes: 1, targetFreeBytes: 506, projectedFreePercent: 50, projectedDaysToFull: 1518 });
+if (roundingBoundary.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('floor rounding contract rejected');
+const flatInput = new Function('$input', code)(
+  { first: () => ({ json: base }) },
+)[0].json;
+if (!flatInput.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('unparsed flat input accepted');
+const arrayInput = evaluate([base]);
+if (!arrayInput.reasonCodes.includes('TELEMETRY_INVALID')) throw new Error('array telemetry accepted');
 EOF
-pass 'n8n capacity restore and freshness behavior'
+pass 'n8n S3 signing, school SMTP, capacity, restore, and freshness behavior'
 
 printf '1..%d\n' "$PASSED"

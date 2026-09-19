@@ -3,7 +3,17 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -n "${W10D_COMPLETION_VALIDATOR+x}" ] \
+  || [ -n "${W10D_COMPLETION_VALIDATOR_PATH+x}" ] \
+  || [ -n "${W10D_CAPTURE_HELPER_PATH+x}" ] \
+  || [ -n "${W10D_DU_PARSER_PATH+x}" ]; then
+  printf '%s\n' 'W10D_RUNTIME_SELECTOR_REJECTED' >&2
+  exit 64
+fi
 . "${SCRIPT_DIR}/backup-lib.sh"
+W10D_COMPLETION_VALIDATOR_PATH="${SCRIPT_DIR}/../../../scripts/w10d_completion_validation.py"
+W10D_CAPTURE_HELPER_PATH="${SCRIPT_DIR}/../../../scripts/bounded-command-capture.py"
+W10D_DU_PARSER_PATH="${SCRIPT_DIR}/../../../scripts/parse-minio-du-observation.py"
 
 [ "$#" -eq 2 ] || backup_die "usage: release-prechange-backup.sh BACKUP_ID RECONCILIATION_REF"
 BACKUP_ID=$1
@@ -16,6 +26,9 @@ echo "$RECONCILIATION_REF" | grep -Eq '^[A-Z0-9][A-Z0-9._/-]{5,79}$' \
   || backup_die "konfirmasi release protected point tidak cocok"
 require_command rclone
 require_command cmp
+require_command python3
+[ -z "${W10D_COMPLETION_VALIDATOR+x}" ] \
+  || backup_die "override validator completion dilarang"
 require_value OFFSITE_CRYPT_REMOTE
 safe_remote_base "$OFFSITE_CRYPT_REMOTE"
 
@@ -23,9 +36,13 @@ temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/diis-prechange-release.XXXXXX")
 cleanup() { rm -rf "$temp_dir"; }
 trap cleanup EXIT HUP INT TERM
 manifest="$temp_dir/manifest.json"
+sidecar="$temp_dir/${BACKUP_ID}.sha256"
 rclone copyto \
   "${OFFSITE_CRYPT_REMOTE%/}/database/manifests/${BACKUP_ID}.complete.json" "$manifest"
-validate_completion_manifest "$manifest" || backup_die "protected completion manifest tidak valid"
+rclone copyto \
+  "${OFFSITE_CRYPT_REMOTE%/}/database/current/${BACKUP_ID}.sha256" "$sidecar"
+validate_completion_manifest "$manifest" "$sidecar" "${BACKUP_ID}.complete.json" \
+  || backup_die "protected completion manifest tidak valid"
 [ "$(json_value class "$manifest")" = pre-change ] \
   && [ "$(json_value protectionState "$manifest")" = protected ] \
   || backup_die "backup bukan protected pre-change point"

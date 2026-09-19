@@ -1,0 +1,19 @@
+{
+  "exitCode": 0,
+  "facts": {
+    "backupId": "20260913T165516Z-338684",
+    "commandContract": "infrastructure/docker/scripts/backup.sh",
+    "completionSha256": "c6231cbebd9a1b2a0c1f05630458407a7b7c6bc8db3f6b073a1bd0664fadbc53",
+    "dumpBytes": 3767,
+    "dumpSha256": "a034f4dad6cfdc0bfe71a32512d5cdfa71b47c2ed07e51aa81f48aa7d141494d",
+    "encryptedUpload": true,
+    "objectCount": 2,
+    "objectManifestSha256": "c5508d0a8f65c74d817eab25f1408dfb1b1ca5f5a45017320d045eb51538c807",
+    "recursiveFilesOnly": true
+  },
+  "observedAt": "2026-09-13T16:57:55.513659+00:00",
+  "phase": "backup",
+  "previousReceiptSha256": "4acaf31fb37b315cf5248b268f9b7d8022d68369ee8ec7b09039b1608cc7c691",
+  "schemaVersion": "w10d-roundtrip-phase-receipt-v1",
+  "status": "PASS"
+}

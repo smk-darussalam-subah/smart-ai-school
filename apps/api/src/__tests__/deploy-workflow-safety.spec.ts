@@ -22,6 +22,15 @@ const candidateRoutingDockerContractPath = path.join(
   repositoryRoot,
   'infrastructure/deploy/tests/candidate-routing-docker-contract.sh',
 );
+const composeApplicationHelperPath = path.join(
+  repositoryRoot,
+  'infrastructure/deploy/compose-application.sh',
+);
+const composeApplicationContractPath = path.join(
+  repositoryRoot,
+  'infrastructure/deploy/tests/compose-application-contract.sh',
+);
+const composePath = path.join(repositoryRoot, 'infrastructure/docker/docker-compose.yml');
 const nginxConfigPath = path.join(repositoryRoot, 'infrastructure/nginx/nginx.conf');
 
 describe('deployment workflow safety contract', () => {
@@ -75,6 +84,7 @@ describe('deployment workflow safety contract', () => {
     )?.[1];
     expect(remoteScript).toBeDefined();
     expect(remoteScript).not.toContain('${{ github.');
+    expect(remoteScript).toContain('BRANCH="$DIIS_DEPLOY_BRANCH"');
     expect(existsSync(deployContextPath)).toBe(true);
 
     if (process.platform !== 'linux') return;
@@ -173,12 +183,60 @@ describe('deployment workflow safety contract', () => {
     }
 
     const preflight = workflow.indexOf('bash "$INGRESS_SCRIPT" preflight-staging');
-    const imageBuild = workflow.indexOf('build --no-cache $BUILD_ARG_API');
-    const appDeploy = workflow.indexOf('up -d --no-deps api web');
+    const imageBuild = workflow.indexOf(
+      'bash "$COMPOSE_APPLICATION_HELPER" build-app "$BRANCH" "$ENV_FILE"',
+    );
+    const appDeploy = workflow.indexOf(
+      'bash "$COMPOSE_APPLICATION_HELPER" deploy-app "$BRANCH" "$ENV_FILE"',
+    );
     const postcheck = workflow.indexOf('bash "$INGRESS_SCRIPT" post-staging');
     expect(preflight).toBeGreaterThan(-1);
     expect(preflight).toBeLessThan(imageBuild);
     expect(postcheck).toBeGreaterThan(appDeploy);
+  });
+
+  it('keeps application deploy independent from the uncommissioned backup image', () => {
+    expect(existsSync(composeApplicationHelperPath)).toBe(true);
+    expect(existsSync(composeApplicationContractPath)).toBe(true);
+    const helper = readFileSync(composeApplicationHelperPath, 'utf8');
+    const compose = readFileSync(composePath, 'utf8');
+
+    expect(helper).toContain('registry.invalid/diis/pg-backup@sha256:');
+    expect(helper).toContain('[ "$#" -eq 3 ] || reject \'invalid-arity\'');
+    expect(helper).toContain("reject 'unsupported-operation'");
+    expect(helper).toContain(
+      'exec docker compose "${compose_args[@]}" --env-file "$env_file" "${command_args[@]}"',
+    );
+    expect(workflow).toContain(
+      'COMPOSE_APPLICATION_HELPER="$WORK_DIR/infrastructure/deploy/compose-application.sh"',
+    );
+    expect(workflow.match(/bash "\$COMPOSE_APPLICATION_HELPER"/g)).toHaveLength(4);
+    for (const operation of ['init-staging', 'build-app', 'migrate', 'deploy-app']) {
+      expect(workflow).toContain(
+        `bash "$COMPOSE_APPLICATION_HELPER" ${operation} "$BRANCH" "$ENV_FILE"`,
+      );
+    }
+    expect(workflow).not.toContain('COMPOSE_ARGS=');
+    expect(workflow).not.toContain('BUILD_ARG_API=');
+    expect(compose).toContain(
+      '${PG_BACKUP_IMAGE:?reviewed digest-pinned pg-backup image is required}',
+    );
+
+    if (process.platform !== 'linux') return;
+
+    const result = spawnSync('/usr/bin/env', ['bash', composeApplicationContractPath], {
+      encoding: 'utf8',
+    });
+    expect(result.status).toBe(0);
+    for (const marker of [
+      'APPROVED_OPERATIONS_EXACT_OK',
+      'COMMAND_SMUGGLING_MATRIX_REJECTED_OK',
+      'DIRECT_BACKUP_GUARD_RETAINED_OK',
+      'REAL_COMPOSE_APPLICATION_MODELS_OK',
+      'COMPOSE_APPLICATION_CONTRACT_PASS cases=5',
+    ]) {
+      expect(result.stdout).toContain(marker);
+    }
   });
 
   it('routes production ingress changes through the transactional helper', () => {
