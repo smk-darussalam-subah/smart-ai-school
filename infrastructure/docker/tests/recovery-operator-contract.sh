@@ -864,6 +864,10 @@ esac
 SH
 cat >"$handoff_bin/pgrep" <<'SH'
 #!/bin/sh
+case "${HANDOFF_PGREP_MODE:-none}:$*" in
+  'candidate-literal:'*'(/backup\.sh|offsite-replication\.sh|pg_dump)'*) exit 0 ;;
+  'writer:-x pg_dump') exit 0 ;;
+esac
 exit 1
 SH
 cat >"$handoff_bin/docker" <<'SH'
@@ -995,6 +999,7 @@ run_handoff() {
     HANDOFF_HOLD_AT="$hold_at" HANDOFF_SIGNAL="${HANDOFF_SIGNAL:-}" \
     HANDOFF_RCLONE_SHA="${HANDOFF_RCLONE_SHA:-}" \
     HANDOFF_RCLONE_VERSION="${HANDOFF_RCLONE_VERSION:-}" \
+    HANDOFF_PGREP_MODE="${HANDOFF_PGREP_MODE:-none}" \
     HANDOFF_PROVIDER="${HANDOFF_PROVIDER-google}" HANDOFF_ORIGIN="${HANDOFF_ORIGIN-provider-default}" \
     HANDOFF_LEGACY_LOCK_SOURCE="${HANDOFF_LEGACY_LOCK_SOURCE:-}" \
     HANDOFF_LOCK_ENV="${HANDOFF_LOCK_ENV:-}" \
@@ -1038,6 +1043,23 @@ fi
 [ "$(cat "$state/count")" = 0 ] || fail 'inherited handoff test control reached mutation'
 assert_rollback_state "$state"
 pass 'handoff rejects inherited acceptance test controls before mutation'
+
+state="$TMP/handoff-candidate-startup-literals"; init_handoff_state "$state"
+HANDOFF_PGREP_MODE=candidate-literal run_handoff "$state" >"$state/out" 2>"$state/err" \
+  || { cat "$state/err" >&2; fail 'candidate startup command text was mistaken for an active writer'; }
+assert_grep 'HANDOFF_OK.*schedulerCount=1' "$state/out" \
+  'strict process detection did not permit an idle candidate startup command'
+
+state="$TMP/handoff-active-pg-dump"; init_handoff_state "$state"
+if HANDOFF_PGREP_MODE=writer run_handoff "$state" >"$state/out" 2>"$state/err"; then
+  fail 'handoff accepted an active pg_dump writer'
+fi
+assert_grep 'backup writer is active despite acquired writer lock' "$state/err" \
+  'active writer rejection missing'
+[ "$(cat "$state/count")" = 0 ] || fail 'active writer detection reached mutation boundary'
+assert_rollback_state "$state"
+pass 'handoff distinguishes candidate startup literals from an actual backup writer'
+
 for boundary in $(seq 1 8); do
   state="$TMP/handoff-fail-$boundary"; init_handoff_state "$state"
   if run_handoff "$state" "$boundary" >"$state/out" 2>"$state/err"; then

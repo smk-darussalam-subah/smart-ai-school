@@ -159,6 +159,11 @@ container_exists() { docker container inspect "$1" >/dev/null 2>&1; }
 container_running() {
   [ "$(docker container inspect --format '{{.State.Running}}' "$1" 2>/dev/null)" = true ]
 }
+backup_writer_process_active() {
+  pgrep -x pg_dump >/dev/null 2>&1 \
+    || pgrep -f '^sh /backup\.sh([[:space:]]|$)' >/dev/null 2>&1 \
+    || pgrep -f '^sh .*/offsite-replication\.sh([[:space:]]|$)' >/dev/null 2>&1
+}
 cron_count() {
   docker exec "$1" sh -c "crontab -l 2>/dev/null | awk 'NF && \$1 !~ /^#/ {n++} END {print n+0}'"
 }
@@ -237,7 +242,7 @@ container_running "$LEGACY_CONTAINER" || die "legacy container not running"
 container_running "$CANDIDATE_CONTAINER" || die "candidate container not running"
 [ "$(cron_count "$LEGACY_CONTAINER")" = 1 ] || die "legacy must have exactly one scheduler"
 [ "$(cron_count "$CANDIDATE_CONTAINER")" = 0 ] || die "candidate must start scheduler-disabled"
-if pgrep -af '(/backup\.sh|offsite-replication\.sh|pg_dump)' | grep -v -F "$$" >/dev/null 2>&1; then
+if backup_writer_process_active; then
   die "backup writer is active despite acquired writer lock"
 fi
 
