@@ -11,6 +11,7 @@ import { usePathname } from 'next/navigation';
 import React from 'react';
 import { CircleHelp, PanelLeft, LogOut } from 'lucide-react';
 import { identityRoleLabel, positionRoleLabel } from '@/lib/display-shell';
+import LogoutButton from '@/components/shared/LogoutButton';
 
 function initials(name?: string | null): string {
   if (!name) return 'U';
@@ -59,13 +60,12 @@ export default function TopBar({ viewAs = null, onToggleSidebar, sidebarExpanded
           <span className="text-sm font-medium text-gray-700 max-w-[140px] truncate">
             {session?.user?.name ?? 'Pengguna'}
           </span>
-          <button
-            onClick={() => { window.location.href = '/api/auth/federated-logout'; }}
+          <LogoutButton
             aria-label="Keluar"
             className="ml-1 flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700"
           >
-            <LogOut className="w-4 h-4" />
-          </button>
+            <LogOut className="w-4 h-4" aria-hidden="true" />
+          </LogoutButton>
         </div>
       </div>
     </header>

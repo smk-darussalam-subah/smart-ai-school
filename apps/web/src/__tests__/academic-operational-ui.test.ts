@@ -7,7 +7,7 @@ function source(relativePath: string): string {
 }
 
 type WorkerEvent = {
-  data?: { json: () => unknown };
+  data?: unknown;
   notification?: { data?: { url?: unknown }; close: () => void };
   request?: {
     method: string;
@@ -22,6 +22,7 @@ type WorkerHandler = (event: WorkerEvent) => void;
 
 function loadServiceWorkerHarness() {
   const listeners = new Map<string, WorkerHandler[]>();
+  const cacheEntries = new Map<string, { text: () => Promise<string> }>();
   const shownNotifications: Array<{ title: string; options: { data?: { url?: string } } }> = [];
   const openWindow = jest.fn().mockResolvedValue(undefined);
   const sandboxSelf = {
@@ -35,6 +36,9 @@ function loadServiceWorkerHarness() {
         shownNotifications.push({ title, options });
         return Promise.resolve();
       }),
+      pushManager: {
+        getSubscription: jest.fn().mockResolvedValue({ endpoint: 'https://fcm.googleapis.com/fcm/send/test' }),
+      },
     },
     clients: {
       claim: jest.fn(),
@@ -45,23 +49,29 @@ function loadServiceWorkerHarness() {
   const sandbox = {
     self: sandboxSelf,
     caches: {
-      open: jest.fn().mockResolvedValue({ addAll: jest.fn(), put: jest.fn() }),
+      open: jest.fn().mockResolvedValue({
+        addAll: jest.fn(),
+        put: jest.fn((key: string, response: { text: () => Promise<string> }) => {
+          cacheEntries.set(key, response);
+        }),
+        match: jest.fn((key: string) => Promise.resolve(cacheEntries.get(key))),
+      }),
       keys: jest.fn().mockResolvedValue([]),
       delete: jest.fn().mockResolvedValue(true),
       match: jest.fn().mockResolvedValue(undefined),
     },
-    fetch: jest.fn().mockResolvedValue({
-      status: 200,
-      clone() {
-        return this;
-      },
-    }),
+    fetch: jest.fn(async (input: string) => input === '/api/backend/push/verify-delivery'
+      ? { ok: true, json: async () => ({ deliver: true }) }
+      : { status: 200, clone() { return this; } }),
     Response: class Response {
       body: unknown;
       init: unknown;
       constructor(body?: unknown, init?: unknown) {
         this.body = body;
         this.init = init;
+      }
+      async text(): Promise<string> {
+        return typeof this.body === 'string' ? this.body : '';
       }
     },
     URL,
@@ -86,17 +96,39 @@ function loadServiceWorkerHarness() {
   };
 
   return {
-    async pushUrl(payload: unknown): Promise<string | undefined> {
-      await runEvent('push', {
-        data: payload === undefined ? undefined : { json: () => payload },
+    async enablePush(): Promise<void> {
+      await runEvent('message', {
+        data: {
+          type: 'DIIS_CLAIM_PUSH_RECONCILIATION',
+          version: 2,
+          attemptId: 'attempt-academic-0001',
+        },
       });
-      return shownNotifications.at(-1)?.options.data?.url;
+      await runEvent('message', {
+        data: {
+          type: 'DIIS_APPLY_PUSH_RECONCILIATION',
+          version: 2,
+          attemptId: 'attempt-academic-0001',
+          state: 'signed-in',
+        },
+      });
+    },
+    async pushUrl(payload: unknown): Promise<string | undefined> {
+      const previousCount = shownNotifications.length;
+      await runEvent('push', {
+        data: { json: () => ({
+          ...(payload && typeof payload === 'object' ? payload : {}),
+          deliveryProof: 'a'.repeat(64),
+        }) },
+      });
+      return shownNotifications.length > previousCount ? shownNotifications.at(-1)?.options.data?.url : undefined;
     },
     async pushMalformedJson(): Promise<string | undefined> {
+      const previousCount = shownNotifications.length;
       await runEvent('push', {
         data: { json: () => { throw new Error('bad payload'); } },
       });
-      return shownNotifications.at(-1)?.options.data?.url;
+      return shownNotifications.length > previousCount ? shownNotifications.at(-1)?.options.data?.url : undefined;
     },
     async clickTarget(url: unknown): Promise<string | undefined> {
       await runEvent('notificationclick', {
@@ -308,10 +340,11 @@ describe('academic operational UI contracts', () => {
     expect(ortuWorkspace).toContain('aria-label="Notifikasi dan pengumuman"');
     expect(sw).toContain("self.addEventListener('push'");
     expect(sw).toContain('showNotification');
-    expect(sw).toContain('function safeSameOriginPath');
+    expect(sw).toContain('function normalizeNotificationTarget');
     expect(sw).toContain("candidate.startsWith('//')");
     expect(sw).toContain("candidate.includes('\\\\')");
     expect(sw).toContain('new URL(candidate, self.location.origin)');
+    expect(sw).toContain("event.data.type === 'DIIS_SKIP_WAITING'");
     expect(sw).toContain("self.addEventListener('notificationclick'");
     expect(sw).toContain('clients.openWindow(targetUrl)');
   });
@@ -324,13 +357,13 @@ describe('academic operational UI contracts', () => {
       url: 'https://staging.smkdarussalamsubah.sch.id/dashboard/rapor',
       mode: 'navigate',
       destination: 'document',
-    })).resolves.toBe(false);
+    })).resolves.toBe(true);
     await expect(sw.fetchHandled({
       method: 'GET',
       url: 'https://staging.smkdarussalamsubah.sch.id/consent',
       mode: 'navigate',
       destination: 'document',
-    })).resolves.toBe(false);
+    })).resolves.toBe(true);
     await expect(sw.fetchHandled({
       method: 'GET',
       url: 'https://staging.smkdarussalamsubah.sch.id/api/v1/report-cards',
@@ -338,28 +371,31 @@ describe('academic operational UI contracts', () => {
     })).resolves.toBe(false);
     await expect(sw.fetchHandled({
       method: 'GET',
-      url: 'https://staging.smkdarussalamsubah.sch.id/manifest.json',
+      url: 'https://staging.smkdarussalamsubah.sch.id/manifest.webmanifest',
       destination: 'manifest',
     })).resolves.toBe(true);
   });
 
   it('sanitizes service-worker notification URLs behaviorally', async () => {
     const sw = loadServiceWorkerHarness();
+    await sw.enablePush();
 
-    await expect(sw.pushUrl({ url: '/dashboard/rapor?studentId=s1#nilai' }))
-      .resolves.toBe('/dashboard/rapor?studentId=s1#nilai');
+    await expect(sw.pushUrl({ url: '/dashboard/rapor?studentId=11111111-1111-4111-8111-111111111111' }))
+      .resolves.toBe('/dashboard/rapor?studentId=11111111-1111-4111-8111-111111111111');
     await expect(sw.pushUrl({ url: '//evil.example/steal' }))
       .resolves.toBe('/dashboard');
     await expect(sw.pushUrl({ url: 'https://evil.example/dashboard' }))
       .resolves.toBe('/dashboard');
     await expect(sw.pushUrl({ url: '/dashboard\\rapor' }))
       .resolves.toBe('/dashboard');
+    await expect(sw.pushUrl({ url: '/dashboard/%252e%252e/api' }))
+      .resolves.toBe('/dashboard');
     await expect(sw.pushUrl({ url: '/%E0%A4%A' }))
       .resolves.toBe('/dashboard');
     await expect(sw.pushUrl(undefined))
       .resolves.toBe('/dashboard');
     await expect(sw.pushMalformedJson())
-      .resolves.toBe('/dashboard');
+      .resolves.toBeUndefined();
     await expect(sw.clickTarget('//evil.example/steal'))
       .resolves.toBe('/dashboard');
     await expect(sw.clickTarget('/dashboard/rapor'))

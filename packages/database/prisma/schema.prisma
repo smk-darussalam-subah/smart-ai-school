@@ -2203,7 +2203,7 @@ model PushSubscription {
   keys      Json     @db.JsonB  // { p256dh: string, auth: string }
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@unique([userId, endpoint])
+  @@unique([endpoint])
   @@index([userId])
   @@map("push_subscriptions")
   @@schema("notification")
