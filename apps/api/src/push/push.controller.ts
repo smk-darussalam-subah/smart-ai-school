@@ -3,14 +3,14 @@
 // Subscribe/unsubscribe push notifications + notification list.
 // =============================================================================
 
-import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { AuthUser } from '@smk/auth';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { PushService } from './push.service';
-import { SubscribeSchema, UnsubscribeSchema } from './dto/push.dto';
+import { SubscribeSchema, UnsubscribeSchema, VerifyPushDeliverySchema } from './dto/push.dto';
 
 @Controller('push')
 export class PushController {
@@ -36,6 +36,18 @@ export class PushController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.service.unsubscribe(dto as Parameters<typeof this.service.unsubscribe>[0], user);
+  }
+
+  @Roles('SISWA', 'ORANG_TUA', 'GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN')
+  @RequirePermission(['lms.read', 'report.read'])
+  @Post('verify-delivery')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  verifyDelivery(
+    @Body(ZodPipe(VerifyPushDeliverySchema)) dto: unknown,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.verifyDelivery(dto as Parameters<typeof this.service.verifyDelivery>[0], user);
   }
 
   @Roles('SISWA', 'ORANG_TUA')

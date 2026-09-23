@@ -22,6 +22,7 @@ import PengumumanModal from './PengumumanModal';
 import DayDetailModal from './DayDetailModal';
 import PayDetailModal from './PayDetailModal';
 import PushNotificationToggle from '@/components/shared/PushNotificationToggle';
+import LogoutButton from '@/components/shared/LogoutButton';
 import { fetchMyNotifications, subscribePush, unsubscribePush } from '../../actions';
 import { initials } from './ortu-data';
 import type { OrtuChild, OrtuNilai, OrtuPengumuman } from './ortu-types';
@@ -325,13 +326,12 @@ export default function OrtuWorkspace({
 
                 <PushNotificationToggle onSubscribe={subscribePush} onUnsubscribe={unsubscribePush} onFetchNotifications={fetchMyNotifications} />
 
-                <button
-                  onClick={() => { window.location.href = '/api/auth/federated-logout'; }}
+                <LogoutButton
                   className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-500 transition-colors hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                 >
-                  <LogOut className="h-4 w-4" />
+                  <LogOut className="h-4 w-4" aria-hidden="true" />
                   Keluar
-                </button>
+                </LogoutButton>
               </SheetContent>
             </Sheet>
           </div>
