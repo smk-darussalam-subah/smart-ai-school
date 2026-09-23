@@ -89,3 +89,9 @@ export const UnsubscribeSchema = z.object({
   endpoint: PushEndpointSchema,
 }).strict();
 export type UnsubscribeDto = z.infer<typeof UnsubscribeSchema>;
+
+export const VerifyPushDeliverySchema = z.object({
+  endpoint: PushEndpointSchema,
+  proof: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+export type VerifyPushDeliveryDto = z.infer<typeof VerifyPushDeliverySchema>;

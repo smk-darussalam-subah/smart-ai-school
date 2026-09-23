@@ -28,6 +28,7 @@ import TaskDetailModal from './TaskDetailModal';
 import DayDetailModal from './DayDetailModal';
 import BadgeDetailModal from './BadgeDetailModal';
 import PushNotificationToggle from '@/components/shared/PushNotificationToggle';
+import LogoutButton from '@/components/shared/LogoutButton';
 import { fetchMyNotifications, subscribePush, unsubscribePush, fetchDailyQuests, fetchPersonalCalendar } from '../../actions';
 import {
   normalizeAnnouncements,
@@ -613,13 +614,12 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             <PushNotificationToggle onSubscribe={subscribePush} onUnsubscribe={unsubscribePush} onFetchNotifications={fetchMyNotifications} />
 
             {/* Logout */}
-            <button
-              onClick={() => { window.location.href = '/api/auth/federated-logout'; }}
+            <LogoutButton
               className="flex w-full items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-500 transition-colors hover:bg-red-500/20"
             >
-              <LogOut className="h-4 w-4" />
+              <LogOut className="h-4 w-4" aria-hidden="true" />
               Keluar
-            </button>
+            </LogoutButton>
           </div>
         </div>
       )}

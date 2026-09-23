@@ -155,7 +155,7 @@ describe('middleware — protected dynamic paths keep nonce (N21 non-regression)
 describe('middleware — public PWA assets', () => {
   beforeEach(() => { capturedReqHeaders = undefined; });
 
-  it.each(['/sw.js', '/manifest.json'])('serves %s without redirecting unauthenticated users', async (path) => {
+  it.each(['/sw.js', '/manifest.webmanifest', '/offline.html'])('serves %s without redirecting unauthenticated users', async (path) => {
     await middleware(makeRequest(path));
 
     expect(capturedRedirectUrl).toBeUndefined();
