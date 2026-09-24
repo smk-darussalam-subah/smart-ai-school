@@ -6,7 +6,10 @@ import BerandaSiswa from '../app/dashboard/akademik/_components/siswa/BerandaSis
 import { ModuleCard } from '../app/dashboard/akademik/_components/siswa/ModulSiswa';
 import type { SiswaModul } from '../app/dashboard/akademik/_components/siswa/siswa-types';
 import { withCompletedModuleProgress } from '../app/dashboard/akademik/_components/siswa/siswa-modul-progress';
-import type { ModalState, SiswaScreen } from '../app/dashboard/akademik/_components/siswa/SiswaWorkspace';
+import type {
+  ModalState,
+  SiswaScreen,
+} from '../app/dashboard/akademik/_components/siswa/SiswaWorkspace';
 
 const modules: SiswaModul[] = [
   {
@@ -78,27 +81,31 @@ describe('student LMS progress freshness', () => {
 
   it('renders the confirmed completion explicitly in the module list and home confirmation', () => {
     const completedModule = withCompletedModuleProgress(modules, new Set(['module-active']))[0]!;
-    const cardMarkup = renderToStaticMarkup(createElement(ModuleCard, {
-      module: completedModule,
-      isPending: false,
-      onOpen: () => undefined,
-      onComplete: () => undefined,
-    }));
-    const homeMarkup = renderToStaticMarkup(createElement(BerandaSiswa, {
-      showToast: (_message: string) => undefined,
-      go: (_screen: SiswaScreen) => undefined,
-      setModal: (_modal: ModalState) => undefined,
-      setBadgeCelebration: (_data: { show: boolean; badgeName?: string }) => undefined,
-      setActiveModulId: (_id: number | null) => undefined,
-      grades: [],
-      tasks: [],
-      badges: [],
-      modules: [completedModule],
-      recentlyCompletedModule: completedModule,
-      quest: { title: 'Quest', tasks: [] },
-      xp: { level: 1, current: 0, next: 100 },
-      kehStats: { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, pct: 0 },
-    }));
+    const cardMarkup = renderToStaticMarkup(
+      createElement(ModuleCard, {
+        module: completedModule,
+        isPending: false,
+        onOpen: () => undefined,
+        onComplete: () => undefined,
+      }),
+    );
+    const homeMarkup = renderToStaticMarkup(
+      createElement(BerandaSiswa, {
+        showToast: (_message: string) => undefined,
+        go: (_screen: SiswaScreen) => undefined,
+        setModal: (_modal: ModalState) => undefined,
+        setBadgeCelebration: (_data: { show: boolean; badgeName?: string }) => undefined,
+        setActiveModulId: (_id: number | null) => undefined,
+        grades: [],
+        tasks: [],
+        badges: [],
+        modules: [completedModule],
+        recentlyCompletedModule: completedModule,
+        quest: { title: 'Quest', tasks: [] },
+        xp: { level: 1, current: 0, next: 100 },
+        kehStats: { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, pct: 0 },
+      }),
+    );
 
     expect(cardMarkup).toContain('Selesai');
     expect(cardMarkup).toContain('100%');
@@ -116,10 +123,17 @@ describe('student LMS progress freshness', () => {
       onComplete,
     });
     const buttons = collectElements(card).filter((element) => element.type === 'button');
-    const completeButton = buttons.find((button) => textFromNode(button.props.children).includes('Tandai Selesai'));
+    const completeButton = buttons.find((button) =>
+      textFromNode(button.props.children).includes('Tandai Selesai'),
+    );
 
     expect(buttons).toHaveLength(2);
-    expect(buttons.every((button) => !collectElements(button.props.children).some((element) => element.type === 'button'))).toBe(true);
+    expect(
+      buttons.every(
+        (button) =>
+          !collectElements(button.props.children).some((element) => element.type === 'button'),
+      ),
+    ).toBe(true);
     expect(completeButton).toBeDefined();
 
     completeButton?.props.onClick?.();
@@ -138,8 +152,33 @@ describe('student LMS progress freshness', () => {
     expect(moduleDetail).not.toContain('Modul Detail screen');
     expect(lessonModal).not.toContain('Lesson Session Modal');
     expect(taskDetail).toContain('startAssessmentResponse');
-    expect(taskDetail).toContain('autosaveAssessmentResponse');
-    const submitCalls = [...taskDetail.matchAll(/submitAssessmentResponse\([^;]+;/g)].map((match) => match[0]);
-    expect(submitCalls).toEqual(['submitAssessmentResponse(task.assessmentSessionId!, answers);']);
+    expect(taskDetail).toContain("postAssessmentRequest(task.assessmentSessionId, 'autosave'");
+    expect(taskDetail).toContain("postAssessmentRequest(task.assessmentSessionId, 'submit'");
+    expect(taskDetail).toContain('pendingSubmitRef.current = true');
+    expect(taskDetail).not.toContain('queuedAt: submitRequestedAt');
+    expect(taskDetail).toContain('signals: queuedSignals.map');
+    expect(taskDetail).toContain("result.data?.lateSubmissionStatus === 'pending'");
+    expect(taskDetail).toContain('DIIS akan mencoba lagi otomatis dengan jeda bertahap');
+    expect(taskDetail).toContain("sendRuntimeSignal('visibility_hidden'");
+    expect(taskDetail).toContain("sendRuntimeSignal('fullscreen_exit'");
+    expect(taskDetail).toContain("sendRuntimeSignal('exit_attempt'");
+    expect(taskDetail).toContain(
+      'Jawaban aman di perangkat dan akan dikirim saat koneksi kembali.',
+    );
+    expect(taskDetail.indexOf('if (!result.success)')).toBeLessThan(
+      taskDetail.indexOf('setSubmitted(true)'),
+    );
+  });
+
+  it('exposes connection and integrity incidents in the teacher monitor without automatic cheating verdicts', () => {
+    const monitor = fs.readFileSync(
+      path.join(__dirname, '../app/dashboard/akademik/_components/PenilaianSesiModal.tsx'),
+      'utf8',
+    );
+
+    expect(monitor).toContain('connectionStatus');
+    expect(monitor).toContain('incidentCount');
+    expect(monitor).toContain('Keluar layar penuh');
+    expect(monitor).toContain('bukan keputusan otomatis tentang kecurangan');
   });
 });

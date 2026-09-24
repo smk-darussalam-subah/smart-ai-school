@@ -24,6 +24,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AutosaveResponseDto,
+  AssessmentRuntimeSignalDto,
   CancelRemedialSessionDto,
   CreateRemedialSessionDto,
   CreateAssessmentSessionDto,
@@ -32,6 +33,7 @@ import {
   GradeEssayDto,
   ListAssessmentSessionDto,
   RemedialCandidatesQueryDto,
+  ReviewLateSubmissionDto,
   RetryRemedialParticipantDto,
   SubmitResponseDto,
   UpdateAssessmentSessionDto,
@@ -65,6 +67,16 @@ const OUTBOX_STALE_EMITTING_MS = 5 * 60_000;
 const OUTBOX_WORKER_INTERVAL_MS = 30_000;
 const REMEDIAL_REMINDER_INTERVAL_MS = 60_000;
 const REMEDIAL_REMINDER_WINDOW_MS = 24 * 60 * 60_000;
+const ASSESSMENT_INTEGRITY_INCIDENT_TYPES = [
+  'fullscreen_exit',
+  'visibility_hidden',
+  'window_blur',
+  'pagehide',
+  'exit_attempt',
+  'offline_submit_review_required',
+  'offline_submit_accepted',
+  'offline_submit_rejected',
+] as const;
 
 type RemedialAssignmentContext = {
   id: string;
@@ -99,13 +111,29 @@ interface GradeSyncSummary {
 }
 
 const SESSION_SELECT = {
-  id: true, moduleId: true, teachingAssignmentId: true, teacherId: true, classId: true, title: true,
-  type: true, status: true, questions: true,
-  purpose: true, dueAt: true, instructions: true, cancelledAt: true, cancelReason: true,
+  id: true,
+  moduleId: true,
+  teachingAssignmentId: true,
+  teacherId: true,
+  classId: true,
+  title: true,
+  type: true,
+  status: true,
+  questions: true,
+  purpose: true,
+  dueAt: true,
+  instructions: true,
+  cancelledAt: true,
+  cancelReason: true,
   gradeTarget: true,
-  durationMinutes: true, randomizeOrder: true, // U2 Wave 1
-  startedAt: true, completedAt: true,
-  academicYear: true, semester: true, createdAt: true, updatedAt: true,
+  durationMinutes: true,
+  randomizeOrder: true, // U2 Wave 1
+  startedAt: true,
+  completedAt: true,
+  academicYear: true,
+  semester: true,
+  createdAt: true,
+  updatedAt: true,
   module: { select: { id: true, title: true, subject: true } },
   teachingAssignment: { select: { id: true, subject: true } },
   teacher: { select: { id: true, user: { select: { fullName: true } } } },
@@ -147,6 +175,15 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly notificationService?: NotificationService,
   ) {}
 
+  private async lockAssessmentSession(
+    tx: Prisma.TransactionClient,
+    sessionId: string,
+  ): Promise<void> {
+    await tx.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`assessment-session:${sessionId}`}, 0))`,
+    );
+  }
+
   private isReviewer(user: AuthUser): boolean {
     return user.roles.some((r) => (REVIEWER_ROLES as readonly string[]).includes(r));
   }
@@ -163,7 +200,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     return teacher.id;
   }
 
-  private async resolveStudent(keycloakId: string): Promise<{ id: string; classId: string | null }> {
+  private async resolveStudent(
+    keycloakId: string,
+  ): Promise<{ id: string; classId: string | null }> {
     const student = await this.prisma.student.findFirst({
       where: { user: { keycloakId }, deletedAt: null },
       select: { id: true, classId: true },
@@ -174,7 +213,10 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     this.runAssessmentOutboxWorker('startup');
-    this.outboxWorkerTimer = setInterval(() => this.runAssessmentOutboxWorker('interval'), OUTBOX_WORKER_INTERVAL_MS);
+    this.outboxWorkerTimer = setInterval(
+      () => this.runAssessmentOutboxWorker('interval'),
+      OUTBOX_WORKER_INTERVAL_MS,
+    );
     this.outboxWorkerTimer.unref?.();
     this.runRemedialReminderScanner('startup');
     this.remedialReminderTimer = setInterval(
@@ -198,21 +240,31 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
   private runAssessmentOutboxWorker(source: 'startup' | 'interval' | 'completion'): void {
     if (this.outboxWorkerRunning) return;
     this.outboxWorkerRunning = true;
-    this.dispatchAssessmentEventOutbox().catch((error: unknown) => {
-      logger.warn('[AssessmentService] assessment outbox dispatch skipped', { source, error: this.errorMessage(error) });
-    }).finally(() => {
-      this.outboxWorkerRunning = false;
-    });
+    this.dispatchAssessmentEventOutbox()
+      .catch((error: unknown) => {
+        logger.warn('[AssessmentService] assessment outbox dispatch skipped', {
+          source,
+          error: this.errorMessage(error),
+        });
+      })
+      .finally(() => {
+        this.outboxWorkerRunning = false;
+      });
   }
 
   private runRemedialReminderScanner(source: 'startup' | 'interval' | 'manual'): void {
     if (this.remedialReminderRunning) return;
     this.remedialReminderRunning = true;
-    this.scanRemedialDueReminders().catch((error: unknown) => {
-      logger.warn('[AssessmentService] remedial reminder scan skipped', { source, error: this.errorMessage(error) });
-    }).finally(() => {
-      this.remedialReminderRunning = false;
-    });
+    this.scanRemedialDueReminders()
+      .catch((error: unknown) => {
+        logger.warn('[AssessmentService] remedial reminder scan skipped', {
+          source,
+          error: this.errorMessage(error),
+        });
+      })
+      .finally(() => {
+        this.remedialReminderRunning = false;
+      });
   }
 
   async scanRemedialDueReminders(limit = 50): Promise<{
@@ -253,7 +305,10 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         return { count: logIds.length, logIds };
       });
       notificationCount += result.count;
-      const handoff = await this.enqueueCommittedNotificationLogs(result.logIds, 'remedial_due_reminder');
+      const handoff = await this.enqueueCommittedNotificationLogs(
+        result.logIds,
+        'remedial_due_reminder',
+      );
       queuedCount += handoff.queuedCount;
       pendingRecoveryCount += Math.max(0, handoff.requestedCount - handoff.queuedCount);
     }
@@ -262,7 +317,12 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       sessionCount: sessions.length,
       notificationCount,
       notificationHandoff: {
-        status: pendingRecoveryCount > 0 ? 'pending_recovery' as const : notificationCount > 0 ? 'queued' as const : 'none' as const,
+        status:
+          pendingRecoveryCount > 0
+            ? ('pending_recovery' as const)
+            : notificationCount > 0
+              ? ('queued' as const)
+              : ('none' as const),
         requestedCount: notificationCount,
         queuedCount,
         pendingRecoveryCount,
@@ -270,14 +330,23 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private gradeTargetFor(type: string, requested?: 'uh' | 'uts' | 'uas' | null): 'uh' | 'uts' | 'uas' | null {
+  private gradeTargetFor(
+    type: string,
+    requested?: 'uh' | 'uts' | 'uas' | null,
+  ): 'uh' | 'uts' | 'uas' | null {
     if (type === 'diagnostik') return null;
     if (type === 'formatif') return 'uh';
     if (type === 'sumatif' && (requested === 'uts' || requested === 'uas')) return requested;
     throw new BadRequestException('Target nilai asesmen tidak valid');
   }
 
-  private async assertTeachingScope(teacherId: string, subject: string, classId: string, academicYear: string, _semester: number) {
+  private async assertTeachingScope(
+    teacherId: string,
+    subject: string,
+    classId: string,
+    academicYear: string,
+    _semester: number,
+  ) {
     const assignment = await this.prisma.teachingAssignment.findFirst({
       where: {
         teacherId,
@@ -290,12 +359,16 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       select: { id: true, classId: true, subject: true, academicYear: true },
     });
     if (!assignment) {
-      throw new ForbiddenException('Guru tidak memiliki penugasan mengajar untuk konteks asesmen ini');
+      throw new ForbiddenException(
+        'Guru tidak memiliki penugasan mengajar untuk konteks asesmen ini',
+      );
     }
     return assignment;
   }
 
-  private async resolveActiveAcademicYearCode(db: Prisma.TransactionClient | PrismaService = this.prisma): Promise<string> {
+  private async resolveActiveAcademicYearCode(
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<string> {
     const activeYears = await db.academicYear.findMany({
       where: { isActive: true },
       select: { code: true },
@@ -308,12 +381,16 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     return activeYears[0]!.code;
   }
 
-  private async acquireAcademicYearCutoverLock(db: Prisma.TransactionClient | PrismaService): Promise<void> {
+  private async acquireAcademicYearCutoverLock(
+    db: Prisma.TransactionClient | PrismaService,
+  ): Promise<void> {
     const raw = db as { $executeRaw?: unknown };
     if (typeof raw.$executeRaw !== 'function') {
       throw new ConflictException('Academic period lock tidak tersedia untuk transaksi ini');
     }
-    await db.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${APPOINTMENT_ACTIVATION_LOCK_KEY}))`);
+    await db.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${APPOINTMENT_ACTIVATION_LOCK_KEY}))`,
+    );
   }
 
   private async assertWritablePeriodInTransaction(
@@ -330,7 +407,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     const teacherId = await this.resolveTeacherId(user.keycloakId, db);
     if (assignment.teacherId !== teacherId) {
-      throw new ForbiddenException('Guru hanya dapat mengelola remedial untuk penugasan mengajarnya sendiri');
+      throw new ForbiddenException(
+        'Guru hanya dapat mengelola remedial untuk penugasan mengajarnya sendiri',
+      );
     }
 
     const activeAcademicYear = await this.resolveActiveAcademicYearCode(db);
@@ -357,7 +436,12 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
 
   private async lockGradeSnapshot(
     db: Prisma.TransactionClient | PrismaService,
-    grade: { studentId: string; academicYear: string; semester: number; assignment: { classId: string } },
+    grade: {
+      studentId: string;
+      academicYear: string;
+      semester: number;
+      assignment: { classId: string };
+    },
   ): Promise<void> {
     const raw = db as { $executeRaw?: unknown };
     if (typeof raw.$executeRaw !== 'function') return;
@@ -377,7 +461,12 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
 
   private async lockGradeSnapshots(
     db: Prisma.TransactionClient | PrismaService,
-    grades: Array<{ studentId: string; academicYear: string; semester: number; assignment: { classId: string } }>,
+    grades: Array<{
+      studentId: string;
+      academicYear: string;
+      semester: number;
+      assignment: { classId: string };
+    }>,
   ): Promise<void> {
     const ordered = [...grades].sort((left, right) =>
       this.gradeSnapshotLockKey(left).localeCompare(this.gradeSnapshotLockKey(right)),
@@ -408,7 +497,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       refSuffix: string;
       subject: string;
       body: string;
-      participantStatus: Array<'assigned' | 'in_progress' | 'submitted' | 'passed' | 'needs_retry' | 'cancelled'>;
+      participantStatus: Array<
+        'assigned' | 'in_progress' | 'submitted' | 'passed' | 'needs_retry' | 'cancelled'
+      >;
       participantId?: string;
     },
   ): Promise<Prisma.NotificationLogCreateManyInput[]> {
@@ -465,13 +556,19 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private async enqueueCommittedNotificationLogs(ids: string[], source: string): Promise<NotificationHandoffResult> {
+  private async enqueueCommittedNotificationLogs(
+    ids: string[],
+    source: string,
+  ): Promise<NotificationHandoffResult> {
     if (ids.length === 0) return { status: 'none', requestedCount: 0, queuedCount: 0 };
     if (!this.notificationService) {
-      logger.warn('[AssessmentService] notification service unavailable; committed logs deferred to recovery', {
-        source,
-        count: ids.length,
-      });
+      logger.warn(
+        '[AssessmentService] notification service unavailable; committed logs deferred to recovery',
+        {
+          source,
+          count: ids.length,
+        },
+      );
       return { status: 'pending_recovery', requestedCount: ids.length, queuedCount: 0 };
     }
     try {
@@ -546,12 +643,15 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     return user.id;
   }
 
-  private async resolveKktpForGrade(grade: {
-    sourceAssessmentSessionId: string | null;
-    assignment: { subject: string };
-    academicYear: string;
-    semester: number;
-  }, db: Prisma.TransactionClient | PrismaService = this.prisma): Promise<{ value: number; source: PersistedKktpProvenance }> {
+  private async resolveKktpForGrade(
+    grade: {
+      sourceAssessmentSessionId: string | null;
+      assignment: { subject: string };
+      academicYear: string;
+      semester: number;
+    },
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<{ value: number; source: PersistedKktpProvenance }> {
     let moduleKktp: number | null = null;
     if (grade.sourceAssessmentSessionId) {
       const session = await db.assessmentSession.findUnique({
@@ -573,12 +673,15 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     return { value: kktp.value, source: kktp.provenance };
   }
 
-  private async assertNoLockedReportForGrade(grade: {
-    studentId: string;
-    academicYear: string;
-    semester: number;
-    assignment: { classId: string };
-  }, db: Prisma.TransactionClient | PrismaService = this.prisma): Promise<void> {
+  private async assertNoLockedReportForGrade(
+    grade: {
+      studentId: string;
+      academicYear: string;
+      semester: number;
+      assignment: { classId: string };
+    },
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<void> {
     const locked = await db.reportCard.findFirst({
       where: {
         studentId: grade.studentId,
@@ -590,36 +693,57 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       select: { id: true, status: true },
     });
     if (locked) {
-      throw new ConflictException(`Rapor sudah ${locked.status}; finalisasi remedial ditolak agar snapshot resmi tidak berubah diam-diam`);
+      throw new ConflictException(
+        `Rapor sudah ${locked.status}; finalisasi remedial ditolak agar snapshot resmi tidak berubah diam-diam`,
+      );
     }
   }
 
-  private async assertStudentCanAccessSession(session: {
-    id: string;
-    purpose: string;
-    classId: string | null;
-  }, student: { id: string; classId: string | null }): Promise<{ remedialParticipantId: string | null }> {
+  private async assertStudentCanAccessSession(
+    session: {
+      id: string;
+      purpose: string;
+      classId: string | null;
+    },
+    student: { id: string; classId: string | null },
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<{
+    remedialParticipantId: string | null;
+    remedialParticipantStatus: string | null;
+  }> {
     if ((session.purpose ?? 'regular') === 'regular') {
-      if (session.classId === student.classId) return { remedialParticipantId: null };
+      if (session.classId === student.classId) {
+        return { remedialParticipantId: null, remedialParticipantStatus: null };
+      }
       throw new ForbiddenException('Sesi tidak tersedia untuk kelas Anda');
     }
 
-    const participant = await this.prisma.remedialParticipant.findFirst({
+    const participant = await db.remedialParticipant.findFirst({
       where: { sessionId: session.id, studentId: student.id, status: { not: 'cancelled' } },
-      select: { id: true },
+      select: { id: true, status: true },
     });
     if (!participant) throw new ForbiddenException('Sesi remedial tidak ditugaskan kepada Anda');
-    return { remedialParticipantId: participant.id };
+    return {
+      remedialParticipantId: participant.id,
+      remedialParticipantStatus: participant.status,
+    };
   }
 
   private isRemedialReviewer(user: AuthUser): boolean {
-    return user.roles.some((role) => ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'].includes(role));
+    return user.roles.some((role) =>
+      ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'].includes(role),
+    );
   }
 
   private decimalToNumber(value: unknown): number {
     if (typeof value === 'number') return value;
     if (typeof value === 'string') return Number(value);
-    if (value && typeof value === 'object' && 'toNumber' in value && typeof (value as { toNumber: unknown }).toNumber === 'function') {
+    if (
+      value &&
+      typeof value === 'object' &&
+      'toNumber' in value &&
+      typeof (value as { toNumber: unknown }).toNumber === 'function'
+    ) {
       return (value as { toNumber(): number }).toNumber();
     }
     return Number(value);
@@ -661,7 +785,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (questions.length !== ids.length) {
-      throw new ForbiddenException('Semua soal sesi harus berasal dari Bank Soal guru dan mapel yang sama');
+      throw new ForbiddenException(
+        'Semua soal sesi harus berasal dari Bank Soal guru dan mapel yang sama',
+      );
     }
     const byId = new Map(questions.map((question) => [question.id, question]));
     return [...selections]
@@ -669,7 +795,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       .map((selection) => dbQuestionToSnapshot(byId.get(selection.questionId)!, selection.points));
   }
 
-  private sanitizeSessionForStudent<T extends { questions: Prisma.JsonValue; [key: string]: unknown }>(session: T) {
+  private sanitizeSessionForStudent<
+    T extends { questions: Prisma.JsonValue; [key: string]: unknown },
+  >(session: T) {
     const questions = parseSnapshotQuestions(session.questions);
     const { questions: _questions, ...rest } = session;
     return {
@@ -684,14 +812,25 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     // Verify module exists and is owned by this teacher (or reviewer)
     const mod = await this.prisma.lmsModule.findUnique({
       where: { id: dto.moduleId },
-      select: { id: true, teacherId: true, subject: true, title: true, academicYear: true, semester: true, kktp: true, classId: true },
+      select: {
+        id: true,
+        teacherId: true,
+        subject: true,
+        title: true,
+        academicYear: true,
+        semester: true,
+        kktp: true,
+        classId: true,
+      },
     });
     if (!mod) throw new NotFoundException('Modul LMS tidak ditemukan');
     if (!this.isReviewer(user) && mod.teacherId !== teacherId) {
       throw new ForbiddenException('Anda bukan pemilik modul LMS ini');
     }
     if (!mod.classId) {
-      throw new BadRequestException('Modul LMS harus memiliki kelas sebelum dibuat menjadi asesmen siswa');
+      throw new BadRequestException(
+        'Modul LMS harus memiliki kelas sebelum dibuat menjadi asesmen siswa',
+      );
     }
     if (dto.classId !== undefined && dto.classId !== null && dto.classId !== mod.classId) {
       throw new BadRequestException('Kelas asesmen harus sama dengan kelas Modul LMS');
@@ -699,9 +838,22 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     if (dto.academicYear !== mod.academicYear || dto.semester !== mod.semester) {
       throw new BadRequestException('Tahun ajaran dan semester asesmen harus mengikuti Modul LMS');
     }
-    const assignment = await this.assertTeachingScope(teacherId, mod.subject, mod.classId, mod.academicYear, mod.semester);
-    const snapshot = await this.buildQuestionSnapshot(teacherId, mod.subject, dto.questionSelections);
-    const gradeTarget = this.gradeTargetFor(dto.type, dto.gradeTarget ?? (dto.type === 'formatif' ? 'uh' : null));
+    const assignment = await this.assertTeachingScope(
+      teacherId,
+      mod.subject,
+      mod.classId,
+      mod.academicYear,
+      mod.semester,
+    );
+    const snapshot = await this.buildQuestionSnapshot(
+      teacherId,
+      mod.subject,
+      dto.questionSelections,
+    );
+    const gradeTarget = this.gradeTargetFor(
+      dto.type,
+      dto.gradeTarget ?? (dto.type === 'formatif' ? 'uh' : null),
+    );
 
     return this.prisma.$transaction(async (tx) => {
       await this.assertWritablePeriodInTransaction(tx, {
@@ -737,12 +889,14 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       ...(query.status ? { status: query.status } : {}),
       ...(query.purpose ? { purpose: query.purpose } : {}),
       ...(query.type ? { type: query.type } : {}),
-      ...(query.subject ? {
-        OR: [
-          { module: { is: { subject: query.subject } } },
-          { teachingAssignment: { is: { subject: query.subject } } },
-        ],
-      } : {}),
+      ...(query.subject
+        ? {
+            OR: [
+              { module: { is: { subject: query.subject } } },
+              { teachingAssignment: { is: { subject: query.subject } } },
+            ],
+          }
+        : {}),
       ...(query.classId ? { classId: query.classId } : {}),
       ...(query.academicYear ? { academicYear: query.academicYear } : {}),
       ...(query.semester ? { semester: query.semester } : {}),
@@ -767,7 +921,12 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       const purpose = query.purpose;
       const visibility: Prisma.AssessmentSessionWhereInput[] = [];
       if ((!purpose || purpose === 'regular') && student.classId) {
-        visibility.push({ ...filters, ...statusFilter, purpose: 'regular', classId: student.classId });
+        visibility.push({
+          ...filters,
+          ...statusFilter,
+          purpose: 'regular',
+          classId: student.classId,
+        });
       }
       if (!purpose || purpose === 'remedial') {
         visibility.push({
@@ -777,16 +936,24 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           remedialParticipants: { some: { studentId: student.id, status: { not: 'cancelled' } } },
         });
       }
-      const result = visibility.length === 0
-        ? { data: [], total: 0, page: query.page, limit: query.limit }
-        : await this.page({ OR: visibility }, skip, query);
-      return { ...result, data: result.data.map((session) => this.sanitizeSessionForStudent(session)) };
+      const result =
+        visibility.length === 0
+          ? { data: [], total: 0, page: query.page, limit: query.limit }
+          : await this.page({ OR: visibility }, skip, query);
+      return {
+        ...result,
+        data: result.data.map((session) => this.sanitizeSessionForStudent(session)),
+      };
     }
 
     throw new ForbiddenException('Akses ditolak');
   }
 
-  private async page(where: Prisma.AssessmentSessionWhereInput, skip: number, query: ListAssessmentSessionDto) {
+  private async page(
+    where: Prisma.AssessmentSessionWhereInput,
+    skip: number,
+    query: ListAssessmentSessionDto,
+  ) {
     const [data, total] = await Promise.all([
       this.prisma.assessmentSession.findMany({
         where,
@@ -800,7 +967,11 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     return { data, total, page: query.page, limit: query.limit };
   }
 
-  private async pageRemedials(where: Prisma.AssessmentSessionWhereInput, skip: number, query: ListAssessmentSessionDto) {
+  private async pageRemedials(
+    where: Prisma.AssessmentSessionWhereInput,
+    skip: number,
+    query: ListAssessmentSessionDto,
+  ) {
     const [data, total] = await Promise.all([
       this.prisma.assessmentSession.findMany({
         where,
@@ -873,13 +1044,14 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     const sourceGradeIds = sessions
       .map((session) => session.remedialParticipants[0]?.sourceGradeId)
       .filter((id): id is string => Boolean(id));
-    const attempts = sourceGradeIds.length === 0
-      ? []
-      : await this.prisma.remedialParticipant.findMany({
-          where: { studentId: query.studentId, sourceGradeId: { in: sourceGradeIds } },
-          orderBy: [{ assignedAt: 'asc' }, { id: 'asc' }],
-          select: { id: true, sourceGradeId: true },
-        });
+    const attempts =
+      sourceGradeIds.length === 0
+        ? []
+        : await this.prisma.remedialParticipant.findMany({
+            where: { studentId: query.studentId, sourceGradeId: { in: sourceGradeIds } },
+            orderBy: [{ assignedAt: 'asc' }, { id: 'asc' }],
+            select: { id: true, sourceGradeId: true },
+          });
     const attemptNumberById = new Map<string, number>();
     const attemptCountByGrade = new Map<string, number>();
     for (const attempt of attempts) {
@@ -978,7 +1150,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     if (user.roles.includes('SISWA')) {
       const student = await this.resolveStudent(user.keycloakId);
       const activeOrCompleted = session.status === 'active' || session.status === 'completed';
-      let visible = activeOrCompleted && session.purpose === 'regular' && session.classId === student.classId;
+      let visible =
+        activeOrCompleted && session.purpose === 'regular' && session.classId === student.classId;
       if (activeOrCompleted && session.purpose === 'remedial') {
         const participant = await this.prisma.remedialParticipant.findFirst({
           where: { sessionId: session.id, studentId: student.id, status: { not: 'cancelled' } },
@@ -1010,24 +1183,38 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (!existing) throw new NotFoundException('Sesi asesmen tidak ditemukan');
-    if (existing.purpose !== 'regular') throw new ConflictException('Gunakan endpoint remedial untuk mengubah sesi remedial');
+    if (existing.purpose !== 'regular')
+      throw new ConflictException('Gunakan endpoint remedial untuk mengubah sesi remedial');
     if (existing.status !== 'draft') {
       throw new ConflictException(`Sesi berstatus '${existing.status}' tidak bisa diedit`);
     }
     if (!existing.module) throw new ConflictException('Sesi reguler tidak memiliki Modul LMS');
     if (!existing.module.classId) {
-      throw new BadRequestException('Modul LMS harus memiliki kelas sebelum dibuat menjadi asesmen siswa');
+      throw new BadRequestException(
+        'Modul LMS harus memiliki kelas sebelum dibuat menjadi asesmen siswa',
+      );
     }
-    if (dto.classId !== undefined && dto.classId !== null && dto.classId !== existing.module.classId) {
+    if (
+      dto.classId !== undefined &&
+      dto.classId !== null &&
+      dto.classId !== existing.module.classId
+    ) {
       throw new BadRequestException('Kelas asesmen harus sama dengan kelas Modul LMS');
     }
-    const assignment = await this.assertTeachingScope(teacherId, existing.module.subject, existing.module.classId, existing.academicYear, existing.semester);
+    const assignment = await this.assertTeachingScope(
+      teacherId,
+      existing.module.subject,
+      existing.module.classId,
+      existing.academicYear,
+      existing.semester,
+    );
     const snapshot = dto.questionSelections
       ? await this.buildQuestionSnapshot(teacherId, existing.module.subject, dto.questionSelections)
       : undefined;
-    const gradeTarget = dto.gradeTarget !== undefined
-      ? this.gradeTargetFor(existing.type, dto.gradeTarget)
-      : undefined;
+    const gradeTarget =
+      dto.gradeTarget !== undefined
+        ? this.gradeTargetFor(existing.type, dto.gradeTarget)
+        : undefined;
     return this.prisma.$transaction(async (tx) => {
       await this.assertWritablePeriodInTransaction(tx, {
         academicYear: existing.academicYear,
@@ -1069,14 +1256,23 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (!existing) throw new NotFoundException('Sesi asesmen tidak ditemukan');
-    if ((existing.purpose ?? 'regular') !== 'regular') throw new ConflictException('Gunakan endpoint remedial untuk mengaktifkan sesi remedial');
+    if ((existing.purpose ?? 'regular') !== 'regular')
+      throw new ConflictException('Gunakan endpoint remedial untuk mengaktifkan sesi remedial');
     if (existing.status !== 'draft') {
-      throw new ConflictException(`Hanya sesi 'draft' yang bisa dimulai (sekarang '${existing.status}')`);
+      throw new ConflictException(
+        `Hanya sesi 'draft' yang bisa dimulai (sekarang '${existing.status}')`,
+      );
     }
     if (!existing.module) throw new ConflictException('Sesi reguler tidak memiliki Modul LMS');
     const classId = existing.classId ?? existing.module.classId;
     if (!classId) throw new BadRequestException('Sesi asesmen wajib memiliki kelas');
-    const assignment = await this.assertTeachingScope(teacherId, existing.module.subject, classId, existing.academicYear, existing.semester);
+    const assignment = await this.assertTeachingScope(
+      teacherId,
+      existing.module.subject,
+      classId,
+      existing.academicYear,
+      existing.semester,
+    );
     return this.prisma.$transaction(async (tx) => {
       await this.assertWritablePeriodInTransaction(tx, {
         academicYear: existing.academicYear,
@@ -1107,48 +1303,61 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
   async completeSession(id: string, user: AuthUser) {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
     const { session, gradingSummary } = await this.prisma.$transaction(async (tx) => {
+      await this.lockAssessmentSession(tx, id);
       const existing = await tx.assessmentSession.findFirst({
         where: { id, teacherId },
         select: {
-          id: true, status: true, title: true, type: true, teacherId: true,
-          moduleId: true, classId: true, academicYear: true, semester: true,
-          purpose: true, teachingAssignmentId: true,
-          questions: true, gradeTarget: true,
+          id: true,
+          status: true,
+          title: true,
+          type: true,
+          teacherId: true,
+          moduleId: true,
+          classId: true,
+          academicYear: true,
+          semester: true,
+          purpose: true,
+          teachingAssignmentId: true,
+          questions: true,
+          gradeTarget: true,
           module: { select: { subject: true, teacherId: true } },
           teachingAssignment: { select: { subject: true } },
         },
       });
       if (!existing) throw new NotFoundException('Sesi asesmen tidak ditemukan');
       if (existing.status !== 'active') {
-        throw new ConflictException(`Hanya sesi 'active' yang bisa diselesaikan (sekarang '${existing.status}')`);
+        throw new ConflictException(
+          `Hanya sesi 'active' yang bisa diselesaikan (sekarang '${existing.status}')`,
+        );
       }
       await this.assertWritablePeriodInTransaction(tx, {
         academicYear: existing.academicYear,
         semester: existing.semester,
       });
 
-      const grading = (existing.purpose ?? 'regular') === 'regular'
-        ? await this.syncGradesForCompletedSession(existing, tx)
-        : {
-            gradedCount: 0,
-            pendingManualCount: 0,
-            skippedCount: 0,
-            gradeTarget: null,
-            gradeEvents: [],
-            assessmentEvent: {
-              sessionId: existing.id,
-              title: existing.title,
-              type: existing.type,
-              teacherId: existing.teacherId,
-              classId: existing.classId,
-              moduleId: existing.moduleId,
-              subject: existing.teachingAssignment?.subject ?? 'Remedial',
-              academicYear: existing.academicYear,
-              semester: existing.semester,
+      const grading =
+        (existing.purpose ?? 'regular') === 'regular'
+          ? await this.syncGradesForCompletedSession(existing, tx)
+          : ({
               gradedCount: 0,
+              pendingManualCount: 0,
               skippedCount: 0,
-            },
-          } satisfies GradeSyncSummary;
+              gradeTarget: null,
+              gradeEvents: [],
+              assessmentEvent: {
+                sessionId: existing.id,
+                title: existing.title,
+                type: existing.type,
+                teacherId: existing.teacherId,
+                classId: existing.classId,
+                moduleId: existing.moduleId,
+                subject: existing.teachingAssignment?.subject ?? 'Remedial',
+                academicYear: existing.academicYear,
+                semester: existing.semester,
+                gradedCount: 0,
+                skippedCount: 0,
+              },
+            } satisfies GradeSyncSummary);
       const updated = await tx.assessmentSession.updateMany({
         where: { id, status: 'active' },
         data: { status: 'completed', completedAt: new Date() },
@@ -1164,27 +1373,38 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.runAssessmentOutboxWorker('completion');
-    const { gradeEvents: _gradeEvents, assessmentEvent: _assessmentEvent, ...publicSummary } = gradingSummary;
+    const {
+      gradeEvents: _gradeEvents,
+      assessmentEvent: _assessmentEvent,
+      ...publicSummary
+    } = gradingSummary;
     return { ...session, gradingSummary: publicSummary };
   }
 
-  private async syncGradesForCompletedSession(session: {
-    id: string;
-    title: string;
-    type: string;
-    moduleId: string | null;
-    classId: string | null;
-    academicYear: string;
-    semester: number;
-    questions: Prisma.JsonValue;
-    gradeTarget: string | null;
-    module: { subject: string; teacherId: string } | null;
-  }, db: Prisma.TransactionClient | PrismaService = this.prisma): Promise<GradeSyncSummary> {
+  private async syncGradesForCompletedSession(
+    session: {
+      id: string;
+      title: string;
+      type: string;
+      moduleId: string | null;
+      classId: string | null;
+      academicYear: string;
+      semester: number;
+      questions: Prisma.JsonValue;
+      gradeTarget: string | null;
+      module: { subject: string; teacherId: string } | null;
+    },
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<GradeSyncSummary> {
     if (!session.module || !session.moduleId) {
       throw new ConflictException('Sesi reguler tidak memiliki Modul LMS untuk sinkronisasi Grade');
     }
     const responses = await db.assessmentResponse.findMany({
-      where: { sessionId: session.id, submittedAt: { not: null } },
+      where: {
+        sessionId: session.id,
+        submittedAt: { not: null },
+        OR: [{ lateSubmissionStatus: null }, { lateSubmissionStatus: 'accepted' }],
+      },
       select: { id: true, studentId: true, score: true, itemScores: true },
     });
 
@@ -1196,23 +1416,27 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         gradeTarget: null,
         gradeEvents: [],
         assessmentEvent: {
-        sessionId: session.id,
-        title: session.title,
-        type: session.type,
-        teacherId: session.module.teacherId,
-        classId: session.classId,
-        moduleId: session.moduleId,
-        subject: session.module.subject,
-        academicYear: session.academicYear,
-        semester: session.semester,
-        gradedCount: responses.filter((response) => response.score != null).length,
-        skippedCount: 0,
+          sessionId: session.id,
+          title: session.title,
+          type: session.type,
+          teacherId: session.module.teacherId,
+          classId: session.classId,
+          moduleId: session.moduleId,
+          subject: session.module.subject,
+          academicYear: session.academicYear,
+          semester: session.semester,
+          gradedCount: responses.filter((response) => response.score != null).length,
+          skippedCount: 0,
         },
       };
       await this.enqueueAssessmentEvents(summary, db);
       return summary;
     }
-    if (session.gradeTarget !== 'uh' && session.gradeTarget !== 'uts' && session.gradeTarget !== 'uas') {
+    if (
+      session.gradeTarget !== 'uh' &&
+      session.gradeTarget !== 'uts' &&
+      session.gradeTarget !== 'uas'
+    ) {
       throw new ConflictException('Target nilai asesmen tidak valid');
     }
 
@@ -1227,7 +1451,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       },
       select: { id: true, academicYear: true },
     });
-    if (!assignment) throw new ConflictException('TeachingAssignment tidak ditemukan untuk sinkronisasi Grade');
+    if (!assignment)
+      throw new ConflictException('TeachingAssignment tidak ditemukan untuk sinkronisasi Grade');
 
     const teacherUser = await db.teacher.findUnique({
       where: { id: session.module.teacherId },
@@ -1241,7 +1466,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
 
     for (const response of responses) {
       const itemScores = Array.isArray(response.itemScores)
-        ? response.itemScores as unknown as AssessmentItemScore[]
+        ? (response.itemScores as unknown as AssessmentItemScore[])
         : [];
       if (itemScores.some((item) => item.status === 'manual_pending')) {
         pendingManualCount++;
@@ -1304,17 +1529,17 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       gradeTarget: session.gradeTarget,
       gradeEvents,
       assessmentEvent: {
-      sessionId: session.id,
-      title: session.title,
-      type: session.type,
-      teacherId: session.module.teacherId,
-      classId: session.classId,
-      moduleId: session.moduleId,
-      subject: session.module.subject,
-      academicYear: session.academicYear,
-      semester: session.semester,
-      gradedCount,
-      skippedCount: skippedCount + pendingManualCount,
+        sessionId: session.id,
+        title: session.title,
+        type: session.type,
+        teacherId: session.module.teacherId,
+        classId: session.classId,
+        moduleId: session.moduleId,
+        subject: session.module.subject,
+        academicYear: session.academicYear,
+        semester: session.semester,
+        gradedCount,
+        skippedCount: skippedCount + pendingManualCount,
       },
     };
     await this.enqueueAssessmentEvents(summary, db);
@@ -1325,11 +1550,16 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     summary: GradeSyncSummary,
     db: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<void> {
-    const outbox = (db as unknown as {
-      assessmentEventOutbox?: {
-        createMany(args: { data: Prisma.AssessmentEventOutboxCreateManyInput[]; skipDuplicates: boolean }): Promise<unknown>;
-      };
-    }).assessmentEventOutbox;
+    const outbox = (
+      db as unknown as {
+        assessmentEventOutbox?: {
+          createMany(args: {
+            data: Prisma.AssessmentEventOutboxCreateManyInput[];
+            skipDuplicates: boolean;
+          }): Promise<unknown>;
+        };
+      }
+    ).assessmentEventOutbox;
     if (!outbox) return;
     const events: Prisma.AssessmentEventOutboxCreateManyInput[] = [
       ...summary.gradeEvents.map((payload) => ({
@@ -1340,7 +1570,10 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       {
         eventType: EVENTS.ASSESSMENT_COMPLETED,
         dedupeKey: `${EVENTS.ASSESSMENT_COMPLETED}:${summary.assessmentEvent.sessionId}`,
-        payload: { ...summary.assessmentEvent, deliveryMode: 'outbox' } as unknown as Prisma.InputJsonValue,
+        payload: {
+          ...summary.assessmentEvent,
+          deliveryMode: 'outbox',
+        } as unknown as Prisma.InputJsonValue,
       },
     ];
     if (events.length === 0) return;
@@ -1405,7 +1638,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
   }
 
   private nextOutboxAttemptAt(attemptNumber: number): Date {
-    const delayMs = Math.min(60 * 60_000, 60_000 * (2 ** Math.max(0, attemptNumber - 1)));
+    const delayMs = Math.min(60 * 60_000, 60_000 * 2 ** Math.max(0, attemptNumber - 1));
     return new Date(Date.now() + delayMs);
   }
 
@@ -1431,97 +1664,104 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
-    if (session.status !== 'active') {
-      throw new ConflictException('Sesi tidak aktif — tidak bisa dimulai');
-    }
-    const { remedialParticipantId } = await this.assertStudentCanAccessSession(session, student);
+    await this.assertStudentCanAccessSession(session, student);
 
     const questions = parseSnapshotQuestions(session.questions);
-    // Cek apakah sudah submit (submittedAt != null berarti sudah selesai)
-    const existing = await this.prisma.assessmentResponse.findUnique({
-      where: { sessionId_studentId: { sessionId, studentId: student.id } },
-      select: { id: true, startedAt: true, submittedAt: true, answers: true, questionOrder: true },
-    });
-    if (existing?.submittedAt) {
-      throw new ConflictException('Anda sudah mengirimkan jawaban untuk sesi ini');
-    }
-    const now = new Date();
-
-    // Jika sudah ada record in-progress (startedAt != null, submittedAt null), kembalikan
-    if (existing && existing.startedAt && !existing.submittedAt) {
-      const ordered = orderSnapshotForAttempt(questions, existing.questionOrder);
-      return {
-        responseId: existing.id,
-        startedAt: existing.startedAt,
-        durationMinutes: session.durationMinutes,
-        answers: existing.answers ?? {},
-        questions: ordered.map(sanitizeQuestionForStudent),
-      };
-    }
-    // Buat record in-progress baru
+    // Decide resume or create only while holding the lifecycle lock shared by
+    // completion and remedial cancellation.
     const questionOrder = session.randomizeOrder
       ? shuffleQuestionIds(questions)
       : questions.map((question) => question.id);
-    let response: { id: string; startedAt: Date | null; questionOrder: string[] };
-    try {
-      response = await this.prisma.$transaction(async (tx) => {
-        await this.assertWritablePeriodInTransaction(tx, {
-          academicYear: session.academicYear,
-          semester: session.semester,
-        });
-        const created = await tx.assessmentResponse.create({
-          data: {
-            sessionId,
-            studentId: student.id,
-            startedAt: now,
-            submittedAt: null,
-            questionOrder,
-            answers: {},
-          },
-          select: { id: true, startedAt: true, questionOrder: true },
-        });
-        if (remedialParticipantId) {
-          await tx.remedialParticipant.updateMany({
-            where: { id: remedialParticipantId, status: 'assigned' },
-            data: { status: 'in_progress', startedAt: now },
-          });
-        }
-        return created;
+    const response = await this.prisma.$transaction(async (tx) => {
+      await this.lockAssessmentSession(tx, sessionId);
+      const currentSession = await tx.assessmentSession.findUnique({
+        where: { id: sessionId },
+        select: {
+          id: true,
+          status: true,
+          purpose: true,
+          classId: true,
+          academicYear: true,
+          semester: true,
+        },
       });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        const raced = await this.prisma.assessmentResponse.findUnique({
-          where: { sessionId_studentId: { sessionId, studentId: student.id } },
-          select: { id: true, startedAt: true, submittedAt: true, answers: true, questionOrder: true },
+      if (!currentSession) throw new NotFoundException('Sesi asesmen tidak ditemukan');
+
+      const currentAccess = await this.assertStudentCanAccessSession(currentSession, student, tx);
+
+      const currentResponse = await tx.assessmentResponse.findUnique({
+        where: { sessionId_studentId: { sessionId, studentId: student.id } },
+        select: {
+          id: true,
+          startedAt: true,
+          submittedAt: true,
+          answers: true,
+          questionOrder: true,
+          clientRevision: true,
+          lastMutationId: true,
+        },
+      });
+      if (currentResponse?.submittedAt) {
+        throw new ConflictException('Anda sudah mengirimkan jawaban untuk sesi ini');
+      }
+      if (currentResponse?.startedAt && ['active', 'completed'].includes(currentSession.status)) {
+        return currentResponse;
+      }
+      if (currentSession.status !== 'active') {
+        throw new ConflictException('Sesi tidak aktif — tidak bisa dimulai');
+      }
+      if (
+        currentSession.purpose === 'remedial' &&
+        currentAccess.remedialParticipantStatus !== 'assigned'
+      ) {
+        throw new ConflictException('Status peserta remedial tidak dapat memulai pengerjaan baru');
+      }
+
+      await this.assertWritablePeriodInTransaction(tx, {
+        academicYear: currentSession.academicYear,
+        semester: currentSession.semester,
+      });
+      const startedAt = new Date();
+      const created = await tx.assessmentResponse.create({
+        data: {
+          sessionId,
+          studentId: student.id,
+          startedAt,
+          submittedAt: null,
+          questionOrder,
+          answers: {},
+        },
+        select: { id: true, startedAt: true, questionOrder: true },
+      });
+      if (currentAccess.remedialParticipantId) {
+        const participant = await tx.remedialParticipant.updateMany({
+          where: { id: currentAccess.remedialParticipantId, status: 'assigned' },
+          data: { status: 'in_progress', startedAt },
         });
-        if (raced && !raced.submittedAt) {
-          if (remedialParticipantId) {
-            await this.prisma.remedialParticipant.updateMany({
-              where: { id: remedialParticipantId, status: 'assigned' },
-              data: { status: 'in_progress', startedAt: raced.startedAt ?? now },
-            });
-          }
-          const ordered = orderSnapshotForAttempt(questions, raced.questionOrder);
-          return {
-            responseId: raced.id,
-            startedAt: raced.startedAt,
-            durationMinutes: session.durationMinutes,
-            answers: raced.answers ?? {},
-            questions: ordered.map(sanitizeQuestionForStudent),
-          };
+        if (participant.count !== 1) {
+          throw new ConflictException('Status peserta remedial berubah; mulai ulang ditolak');
         }
       }
-      throw error;
-    }
+      return {
+        ...created,
+        submittedAt: null,
+        answers: {},
+        clientRevision: 0,
+        lastMutationId: null,
+      };
+    });
 
-    const questionsForStudent = orderSnapshotForAttempt(questions, response.questionOrder)
-      .map(sanitizeQuestionForStudent);
+    const questionsForStudent = orderSnapshotForAttempt(questions, response.questionOrder).map(
+      sanitizeQuestionForStudent,
+    );
 
     return {
       responseId: response.id,
-      startedAt: response.startedAt ?? now,
+      startedAt: response.startedAt,
       durationMinutes: session.durationMinutes,
-      answers: {},
+      answers: response.answers ?? {},
+      revision: response.clientRevision,
+      mutationId: response.lastMutationId,
       questions: questionsForStudent,
     };
   }
@@ -1550,10 +1790,27 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
 
     const existing = await this.prisma.assessmentResponse.findUnique({
       where: { sessionId_studentId: { sessionId, studentId: student.id } },
-      select: { id: true, startedAt: true, submittedAt: true, itemScores: true },
+      select: {
+        id: true,
+        startedAt: true,
+        submittedAt: true,
+        score: true,
+        timeSpentSec: true,
+        answers: true,
+        itemScores: true,
+        clientRevision: true,
+        lastMutationId: true,
+        lastSavedAt: true,
+      },
     });
     if (!existing?.startedAt) throw new ConflictException('Mulai asesmen terlebih dahulu');
     if (existing.submittedAt) throw new ConflictException('Jawaban sudah dikirim');
+    if (
+      session.durationMinutes &&
+      Date.now() > existing.startedAt.getTime() + (session.durationMinutes + 1) * 60_000
+    ) {
+      throw new ConflictException('Waktu pengerjaan telah habis; autosave tidak diterima');
+    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.assertWritablePeriodInTransaction(tx, {
@@ -1561,18 +1818,93 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         semester: session.semester,
       });
       return tx.assessmentResponse.updateMany({
-        where: { id: existing.id, submittedAt: null },
-        data: { answers: dto.answers as Prisma.InputJsonValue },
+        where: { id: existing.id, submittedAt: null, clientRevision: { lt: dto.revision } },
+        data: {
+          answers: dto.answers as Prisma.InputJsonValue,
+          clientRevision: dto.revision,
+          lastMutationId: dto.mutationId,
+          lastSavedAt: new Date(),
+        },
       });
     });
-    if (updated.count !== 1) throw new ConflictException('Jawaban sudah dikirim dari tab lain');
-    return { saved: true, savedAt: new Date() };
+    if (updated.count === 1)
+      return { saved: true, superseded: false, revision: dto.revision, savedAt: new Date() };
+
+    const current = await this.prisma.assessmentResponse.findUnique({
+      where: { id: existing.id },
+      select: { submittedAt: true, clientRevision: true, lastMutationId: true, lastSavedAt: true },
+    });
+    if (current?.submittedAt) throw new ConflictException('Jawaban sudah dikirim dari tab lain');
+    return {
+      saved: current?.clientRevision === dto.revision && current.lastMutationId === dto.mutationId,
+      superseded:
+        (current?.clientRevision ?? 0) > dto.revision ||
+        (current?.clientRevision === dto.revision && current.lastMutationId !== dto.mutationId),
+      revision: current?.clientRevision ?? existing.clientRevision,
+      savedAt: current?.lastSavedAt ?? existing.lastSavedAt,
+    };
+  }
+
+  async recordRuntimeSignal(sessionId: string, dto: AssessmentRuntimeSignalDto, user: AuthUser) {
+    const student = await this.resolveStudent(user.keycloakId);
+    const response = await this.prisma.assessmentResponse.findUnique({
+      where: { sessionId_studentId: { sessionId, studentId: student.id } },
+      select: { id: true, submittedAt: true },
+    });
+    if (!response) throw new ConflictException('Tidak ada pengerjaan asesmen');
+
+    const receivedAt = new Date();
+    if (dto.type === 'heartbeat') {
+      const updated = await this.prisma.assessmentResponse.updateMany({
+        where: { id: response.id, submittedAt: null },
+        data: { lastHeartbeatAt: receivedAt },
+      });
+      return {
+        recorded: updated.count === 1,
+        closed: updated.count === 0,
+        delayed: false,
+        type: dto.type,
+        receivedAt,
+      };
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const activeUpdate = await tx.assessmentResponse.updateMany({
+        where: { id: response.id, submittedAt: null },
+        data: { lastHeartbeatAt: receivedAt },
+      });
+      let delayed = false;
+      if (activeUpdate.count === 0) {
+        const closed = await tx.assessmentResponse.findUnique({
+          where: { id: response.id },
+          select: { submittedAt: true },
+        });
+        if (!closed?.submittedAt) {
+          throw new ConflictException('Status pengerjaan berubah; sinyal tidak direkam');
+        }
+        delayed = true;
+      }
+      await tx.assessmentIntegrityEvent.createMany({
+        data: [
+          {
+            responseId: response.id,
+            clientEventId: dto.eventId,
+            type: dto.type,
+            occurredAt: new Date(dto.occurredAt),
+            receivedAfterSubmit: delayed,
+          },
+        ],
+        skipDuplicates: true,
+      });
+      return { recorded: true, closed: delayed, delayed, type: dto.type, receivedAt };
+    });
   }
 
   /** SISWA submit jawaban untuk sesi active di kelasnya. U2 Wave 1: timer enforcement. */
   async submitResponse(sessionId: string, dto: SubmitResponseDto, user: AuthUser) {
+    const submittedSignals = dto.signals ?? [];
     const student = await this.resolveStudent(user.keycloakId);
-    const session = await this.prisma.assessmentSession.findUnique({
+    const accessSession = await this.prisma.assessmentSession.findUnique({
       where: { id: sessionId },
       select: {
         id: true,
@@ -1581,90 +1913,404 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         classId: true,
         questions: true,
         durationMinutes: true,
+        dueAt: true,
+        completedAt: true,
         academicYear: true,
         semester: true,
       },
     });
-    if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
-    if (session.status !== 'active') {
+    if (!accessSession) throw new NotFoundException('Sesi asesmen tidak ditemukan');
+    if (accessSession.status !== 'active' && accessSession.status !== 'completed') {
       throw new ConflictException('Sesi tidak aktif — tidak menerima respons');
     }
-    const { remedialParticipantId } = await this.assertStudentCanAccessSession(session, student);
+    const { remedialParticipantId } = await this.assertStudentCanAccessSession(
+      accessSession,
+      student,
+    );
 
-    // Cek apakah sudah submit atau punya record in-progress
-    const existing = await this.prisma.assessmentResponse.findUnique({
-      where: { sessionId_studentId: { sessionId, studentId: student.id } },
-      select: { id: true, startedAt: true, submittedAt: true, itemScores: true },
-    });
-    if (existing?.submittedAt) {
-      throw new ConflictException('Anda sudah mengirimkan jawaban untuk sesi ini');
-    }
-
-    // Timer memakai startedAt server-side dari record in-progress.
-    if (!existing?.startedAt) {
-      throw new ConflictException('Mulai asesmen terlebih dahulu');
-    }
-    const startedAt = existing.startedAt;
-    const now = new Date();
-
-    // U2 Wave 1: Timer enforcement — reject if elapsed > durationMinutes + 1min grace
-    if (session.durationMinutes) {
-      const elapsedMin = (now.getTime() - startedAt.getTime()) / 60_000;
-      if (elapsedMin > session.durationMinutes + 1) {
-        throw new ConflictException('Waktu pengerjaan telah habis');
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockAssessmentSession(tx, sessionId);
+      const session = await tx.assessmentSession.findUnique({
+        where: { id: sessionId },
+        select: {
+          id: true,
+          status: true,
+          purpose: true,
+          classId: true,
+          questions: true,
+          durationMinutes: true,
+          dueAt: true,
+          completedAt: true,
+          academicYear: true,
+          semester: true,
+        },
+      });
+      if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
+      if (session.status !== 'active' && session.status !== 'completed') {
+        throw new ConflictException('Sesi tidak aktif — tidak menerima respons');
       }
-    }
 
-    const timeSpentSec = Math.round((now.getTime() - startedAt.getTime()) / 1000);
-    const questions = parseSnapshotQuestions(session.questions);
-    validateAnswersForSnapshot(dto.answers as AssessmentAnswerMap, questions);
-    const previousItemScores = Array.isArray(existing.itemScores)
-      ? existing.itemScores as unknown as AssessmentItemScore[]
-      : [];
-    const scored = scoreAnswers(dto.answers as AssessmentAnswerMap, questions, previousItemScores);
-
-    // Jika ada record in-progress, update; jika tidak, create baru
-    if (existing) {
-      return this.prisma.$transaction(async (tx) => {
-        await this.assertWritablePeriodInTransaction(tx, {
-          academicYear: session.academicYear,
-          semester: session.semester,
+      const existing = await tx.assessmentResponse.findUnique({
+        where: { sessionId_studentId: { sessionId, studentId: student.id } },
+        select: {
+          id: true,
+          startedAt: true,
+          submittedAt: true,
+          score: true,
+          timeSpentSec: true,
+          answers: true,
+          itemScores: true,
+          clientRevision: true,
+          lastMutationId: true,
+          lateSubmissionStatus: true,
+          lateMutationId: true,
+          lateSubmittedAt: true,
+        },
+      });
+      if (existing?.submittedAt) {
+        const matchesNormal = existing.lastMutationId === dto.mutationId;
+        const matchesLate = existing.lateMutationId === dto.mutationId;
+        if (!matchesNormal && !matchesLate) {
+          throw new ConflictException('Anda sudah mengirimkan jawaban untuk sesi ini');
+        }
+        await tx.assessmentIntegrityEvent.createMany({
+          data: submittedSignals.map((signal) => ({
+            responseId: existing.id,
+            clientEventId: signal.eventId,
+            type: signal.type,
+            occurredAt: new Date(signal.occurredAt),
+            receivedAfterSubmit: true,
+          })),
+          skipDuplicates: true,
         });
+        return existing;
+      }
+      if (!existing?.startedAt) throw new ConflictException('Mulai asesmen terlebih dahulu');
+
+      const now = new Date();
+      const questions = parseSnapshotQuestions(session.questions);
+      validateAnswersForSnapshot(dto.answers as AssessmentAnswerMap, questions);
+      if (dto.revision < existing.clientRevision) {
+        throw new ConflictException('Jawaban versi lama tidak dapat dikirim');
+      }
+      const timeSpentSec = Math.round((now.getTime() - existing.startedAt.getTime()) / 1000);
+      const durationDeadline = session.durationMinutes
+        ? new Date(existing.startedAt.getTime() + (session.durationMinutes + 1) * 60_000)
+        : null;
+      const isLate =
+        (durationDeadline ? now > durationDeadline : false) ||
+        (session.dueAt ? now > session.dueAt : false) ||
+        session.status === 'completed' ||
+        Boolean(session.completedAt);
+
+      await this.assertWritablePeriodInTransaction(tx, {
+        academicYear: session.academicYear,
+        semester: session.semester,
+      });
+
+      if (isLate) {
         const updated = await tx.assessmentResponse.updateMany({
-          where: { id: existing.id, submittedAt: null },
+          where: {
+            id: existing.id,
+            submittedAt: null,
+            OR: [
+              { clientRevision: { lt: dto.revision } },
+              { clientRevision: dto.revision, lastMutationId: dto.mutationId },
+              { clientRevision: 0, lastMutationId: null },
+            ],
+          },
           data: {
-            answers: dto.answers as Prisma.InputJsonValue,
             submittedAt: now,
             timeSpentSec,
-            score: scored.score,
-            itemScores: scored.itemScores as Prisma.InputJsonValue,
+            clientRevision: dto.revision,
+            lastMutationId: dto.mutationId,
+            lastSavedAt: now,
+            lastHeartbeatAt: now,
+            lateSubmissionStatus: 'pending',
+            lateAnswers: dto.answers as Prisma.InputJsonValue,
+            lateRevision: dto.revision,
+            lateMutationId: dto.mutationId,
+            lateSubmittedAt: now,
           },
         });
-        if (updated.count !== 1) throw new ConflictException('Jawaban sudah dikirim dari tab lain');
-        if (remedialParticipantId) {
-          const participantUpdated = await tx.remedialParticipant.updateMany({
-            where: { id: remedialParticipantId, status: { in: ['assigned', 'in_progress'] } },
-            data: { status: 'submitted', submittedAt: now, rawScore: scored.score },
-          });
-          if (participantUpdated.count !== 1) throw new ConflictException('Peserta remedial sudah diproses');
+        if (updated.count !== 1) {
+          throw new ConflictException('Jawaban berubah di tab lain; muat ulang sebelum mengirim');
         }
+        await tx.assessmentIntegrityEvent.createMany({
+          data: [
+            ...submittedSignals.map((signal) => ({
+              responseId: existing.id,
+              clientEventId: signal.eventId,
+              type: signal.type,
+              occurredAt: new Date(signal.occurredAt),
+              receivedAfterSubmit: false,
+            })),
+            {
+              responseId: existing.id,
+              clientEventId: dto.mutationId,
+              type: 'offline_submit_review_required',
+              occurredAt: now,
+              receivedAfterSubmit: false,
+            },
+          ],
+          skipDuplicates: true,
+        });
         return tx.assessmentResponse.findUniqueOrThrow({
           where: { id: existing.id },
           select: {
-            id: true, sessionId: true, score: true, itemScores: true, submittedAt: true, startedAt: true, timeSpentSec: true,
+            id: true,
+            sessionId: true,
+            score: true,
+            submittedAt: true,
+            startedAt: true,
+            timeSpentSec: true,
+            lateSubmissionStatus: true,
+            lateSubmittedAt: true,
           },
         });
+      }
+
+      const previousItemScores = Array.isArray(existing.itemScores)
+        ? (existing.itemScores as unknown as AssessmentItemScore[])
+        : [];
+      const scored = scoreAnswers(
+        dto.answers as AssessmentAnswerMap,
+        questions,
+        previousItemScores,
+      );
+      const updated = await tx.assessmentResponse.updateMany({
+        where: {
+          id: existing.id,
+          submittedAt: null,
+          OR: [
+            { clientRevision: { lt: dto.revision } },
+            { clientRevision: dto.revision, lastMutationId: dto.mutationId },
+            { clientRevision: 0, lastMutationId: null },
+          ],
+        },
+        data: {
+          answers: dto.answers as Prisma.InputJsonValue,
+          submittedAt: now,
+          timeSpentSec,
+          score: scored.score,
+          itemScores: scored.itemScores as Prisma.InputJsonValue,
+          clientRevision: dto.revision,
+          lastMutationId: dto.mutationId,
+          lastSavedAt: now,
+          lastHeartbeatAt: now,
+        },
       });
+      if (updated.count !== 1) {
+        throw new ConflictException('Jawaban berubah di tab lain; muat ulang sebelum mengirim');
+      }
+      await tx.assessmentIntegrityEvent.createMany({
+        data: submittedSignals.map((signal) => ({
+          responseId: existing.id,
+          clientEventId: signal.eventId,
+          type: signal.type,
+          occurredAt: new Date(signal.occurredAt),
+          receivedAfterSubmit: false,
+        })),
+        skipDuplicates: true,
+      });
+      if (remedialParticipantId) {
+        const participantUpdated = await tx.remedialParticipant.updateMany({
+          where: { id: remedialParticipantId, status: { in: ['assigned', 'in_progress'] } },
+          data: { status: 'submitted', submittedAt: now, rawScore: scored.score },
+        });
+        if (participantUpdated.count !== 1) {
+          throw new ConflictException('Peserta remedial sudah diproses');
+        }
+      }
+      return tx.assessmentResponse.findUniqueOrThrow({
+        where: { id: existing.id },
+        select: {
+          id: true,
+          sessionId: true,
+          score: true,
+          itemScores: true,
+          submittedAt: true,
+          startedAt: true,
+          timeSpentSec: true,
+        },
+      });
+    });
+  }
+
+  /** GURU pemilik / KS: putuskan kandidat submit offline yang diterima setelah batas waktu. */
+  async reviewLateSubmission(
+    sessionId: string,
+    responseId: string,
+    dto: ReviewLateSubmissionDto,
+    user: AuthUser,
+  ) {
+    const session = await this.prisma.assessmentSession.findUnique({
+      where: { id: sessionId },
+      select: {
+        id: true,
+        teacherId: true,
+        title: true,
+        type: true,
+        status: true,
+        purpose: true,
+        moduleId: true,
+        classId: true,
+        academicYear: true,
+        semester: true,
+        questions: true,
+        gradeTarget: true,
+        module: { select: { subject: true, teacherId: true } },
+      },
+    });
+    if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
+    if (!this.isReviewer(user)) {
+      const teacherId = await this.resolveTeacherId(user.keycloakId);
+      if (session.teacherId !== teacherId) throw new ForbiddenException('Bukan sesi Anda');
     }
 
-    throw new ConflictException('Mulai asesmen terlebih dahulu');
+    const reviewedAt = new Date();
+    const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockAssessmentSession(tx, sessionId);
+      const currentSession = await tx.assessmentSession.findUnique({
+        where: { id: sessionId },
+        select: { status: true },
+      });
+      if (!currentSession) throw new NotFoundException('Sesi asesmen tidak ditemukan');
+      await this.assertWritablePeriodInTransaction(tx, {
+        academicYear: session.academicYear,
+        semester: session.semester,
+      });
+      const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id"
+        FROM "academic"."assessment_responses"
+        WHERE "id" = ${responseId}::uuid
+          AND "session_id" = ${sessionId}::uuid
+        FOR UPDATE
+      `);
+      if (locked.length !== 1) throw new NotFoundException('Respons tidak ditemukan');
+
+      const response = await tx.assessmentResponse.findUnique({
+        where: { id: responseId },
+        select: {
+          id: true,
+          sessionId: true,
+          studentId: true,
+          lateSubmissionStatus: true,
+          lateAnswers: true,
+          lateRevision: true,
+          lateSubmittedAt: true,
+        },
+      });
+      if (!response || response.sessionId !== sessionId) {
+        throw new NotFoundException('Respons tidak ditemukan');
+      }
+      if (response.lateSubmissionStatus !== 'pending' || !response.lateAnswers) {
+        throw new ConflictException('Kandidat terlambat sudah diputuskan atau tidak tersedia');
+      }
+
+      let score: number | null = null;
+      let itemScores: AssessmentItemScore[] | null = null;
+      if (dto.decision === 'accept') {
+        const questions = parseSnapshotQuestions(session.questions);
+        const answers = response.lateAnswers as unknown as AssessmentAnswerMap;
+        validateAnswersForSnapshot(answers, questions);
+        const scored = scoreAnswers(answers, questions, []);
+        score = scored.score;
+        itemScores = scored.itemScores;
+      }
+
+      const updated = await tx.assessmentResponse.updateMany({
+        where: { id: responseId, sessionId, lateSubmissionStatus: 'pending' },
+        data:
+          dto.decision === 'accept'
+            ? {
+                answers: response.lateAnswers as Prisma.InputJsonValue,
+                score,
+                itemScores: itemScores as unknown as Prisma.InputJsonValue,
+                lateSubmissionStatus: 'accepted',
+                lateReviewedAt: reviewedAt,
+                lateReviewedBy: user.keycloakId,
+                lateReviewNote: dto.note,
+              }
+            : {
+                lateSubmissionStatus: 'rejected',
+                lateReviewedAt: reviewedAt,
+                lateReviewedBy: user.keycloakId,
+                lateReviewNote: dto.note,
+              },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException('Kandidat terlambat telah diputuskan oleh pengguna lain');
+      }
+
+      await tx.assessmentIntegrityEvent.create({
+        data: {
+          responseId,
+          clientEventId: randomUUID(),
+          type: dto.decision === 'accept' ? 'offline_submit_accepted' : 'offline_submit_rejected',
+          occurredAt: reviewedAt,
+          receivedAfterSubmit: true,
+        },
+      });
+
+      if (dto.decision === 'accept' && session.purpose === 'remedial') {
+        await tx.remedialParticipant.updateMany({
+          where: {
+            sessionId,
+            studentId: response.studentId,
+            status: { in: ['assigned', 'in_progress'] },
+          },
+          data: { status: 'submitted', submittedAt: reviewedAt, rawScore: score },
+        });
+      }
+      if (
+        dto.decision === 'accept' &&
+        currentSession.status === 'completed' &&
+        session.purpose === 'regular'
+      ) {
+        await this.syncGradesForCompletedSession(session, tx);
+      }
+
+      const reviewedResponse = await tx.assessmentResponse.findUniqueOrThrow({
+        where: { id: responseId },
+        select: {
+          id: true,
+          score: true,
+          submittedAt: true,
+          lateSubmissionStatus: true,
+          lateSubmittedAt: true,
+          lateReviewedAt: true,
+          lateReviewNote: true,
+        },
+      });
+      return {
+        response: reviewedResponse,
+        gradeSynced:
+          dto.decision === 'accept' &&
+          currentSession.status === 'completed' &&
+          session.purpose === 'regular',
+      };
+    });
+    if (result.gradeSynced) {
+      this.runAssessmentOutboxWorker('completion');
+    }
+    return result.response;
   }
 
   /** GURU pemilik / KS / SA: lihat semua respons untuk sesi (realtime monitor). */
   async getResults(sessionId: string, user: AuthUser) {
     const session = await this.prisma.assessmentSession.findUnique({
       where: { id: sessionId },
-      select: { id: true, teacherId: true, classId: true, title: true, type: true, status: true, purpose: true, questions: true },
+      select: {
+        id: true,
+        teacherId: true,
+        classId: true,
+        title: true,
+        type: true,
+        status: true,
+        purpose: true,
+        questions: true,
+      },
     });
     if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
 
@@ -1678,38 +2324,64 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         where: { sessionId },
         orderBy: [{ submittedAt: 'desc' }],
         select: {
-          id: true, score: true, submittedAt: true,
-          startedAt: true, timeSpentSec: true, // U2 Wave 1
+          id: true,
+          score: true,
+          submittedAt: true,
+          startedAt: true,
+          timeSpentSec: true, // U2 Wave 1
           answers: true,
           itemScores: true,
+          lateSubmissionStatus: true,
+          lateSubmittedAt: true,
+          lateReviewedAt: true,
+          lateReviewNote: true,
           student: { select: { nis: true, user: { select: { fullName: true } } } },
         },
       }),
       session.purpose === 'remedial'
-        ? this.prisma.remedialParticipant.count({ where: { sessionId, status: { not: 'cancelled' } } })
+        ? this.prisma.remedialParticipant.count({
+            where: { sessionId, status: { not: 'cancelled' } },
+          })
         : session.classId
-        ? this.prisma.student.count({ where: { classId: session.classId, deletedAt: null, status: 'active' } })
-        : Promise.resolve(null),
+          ? this.prisma.student.count({
+              where: { classId: session.classId, deletedAt: null, status: 'active' },
+            })
+          : Promise.resolve(null),
     ]);
 
     const questions = parseSnapshotQuestions(session.questions);
-    const submittedResponses = responses.filter((response) => response.submittedAt);
+    const submittedResponses = responses.filter(
+      (response) =>
+        response.submittedAt &&
+        response.lateSubmissionStatus !== 'pending' &&
+        response.lateSubmissionStatus !== 'rejected',
+    );
+    const pendingLateResponses = responses.filter(
+      (response) => response.lateSubmissionStatus === 'pending',
+    );
     const finalResponses = submittedResponses.filter((response) => {
       const itemScores = Array.isArray(response.itemScores)
-        ? response.itemScores as unknown as AssessmentItemScore[]
+        ? (response.itemScores as unknown as AssessmentItemScore[])
         : [];
       return response.score != null && !itemScores.some((item) => item.status === 'manual_pending');
     });
     const submitted = submittedResponses.length;
-    const avgScore = finalResponses.length > 0
-      ? Math.round(finalResponses.reduce((sum, r) => sum + (r.score ?? 0), 0) / finalResponses.length)
-      : null;
-    const essayQuestions = questions.filter((question): question is Extract<StoredQuestionSnapshot, { type: 'essay' }> => question.type === 'essay');
+    const avgScore =
+      finalResponses.length > 0
+        ? Math.round(
+            finalResponses.reduce((sum, r) => sum + (r.score ?? 0), 0) / finalResponses.length,
+          )
+        : null;
+    const essayQuestions = questions.filter(
+      (question): question is Extract<StoredQuestionSnapshot, { type: 'essay' }> =>
+        question.type === 'essay',
+    );
 
     return {
       session: { id: session.id, title: session.title, type: session.type, status: session.status },
       classStudentCount,
       submitted,
+      pendingLateReviewCount: pendingLateResponses.length,
       finalCount: finalResponses.length,
       pendingManualCount: submittedResponses.length - finalResponses.length,
       avgScore,
@@ -1722,11 +2394,15 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         startedAt: r.startedAt, // U2 Wave 1
         timeSpentSec: r.timeSpentSec, // U2 Wave 1
         itemScores: r.itemScores,
+        lateSubmissionStatus: r.lateSubmissionStatus,
+        lateSubmittedAt: r.lateSubmittedAt,
+        lateReviewedAt: r.lateReviewedAt,
+        lateReviewNote: r.lateReviewNote,
       })),
       essayCorrections: submittedResponses.flatMap((response) => {
         const answers = (response.answers ?? {}) as unknown as AssessmentAnswerMap;
         const itemScores = Array.isArray(response.itemScores)
-          ? response.itemScores as unknown as AssessmentItemScore[]
+          ? (response.itemScores as unknown as AssessmentItemScore[])
           : [];
         return essayQuestions.map((question) => {
           const itemScore = itemScores.find((item) => item.questionId === question.id);
@@ -1748,7 +2424,12 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** U2 Wave 2: GURU menilai essay dengan rubrik (per-criteria weighted scoring). */
-  async gradeEssayResponse(sessionId: string, responseId: string, dto: GradeEssayDto, user: AuthUser) {
+  async gradeEssayResponse(
+    sessionId: string,
+    responseId: string,
+    dto: GradeEssayDto,
+    user: AuthUser,
+  ) {
     // Verify session ownership
     const session = await this.prisma.assessmentSession.findUnique({
       where: { id: sessionId },
@@ -1778,12 +2459,19 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       if (!classId) throw new BadRequestException('Sesi asesmen wajib memiliki kelas');
       const subject = session.module?.subject ?? session.teachingAssignment?.subject;
       if (!subject) throw new ConflictException('Konteks mapel sesi tidak valid');
-      await this.assertTeachingScope(teacherId, subject, classId, session.academicYear, session.semester);
+      await this.assertTeachingScope(
+        teacherId,
+        subject,
+        classId,
+        session.academicYear,
+        session.semester,
+      );
     }
 
     const questions = parseSnapshotQuestions(session.questions);
     const question = questions.find((item) => item.id === dto.questionId);
-    if (!question || question.type !== 'essay') throw new NotFoundException('Soal esai tidak ditemukan dalam snapshot sesi');
+    if (!question || question.type !== 'essay')
+      throw new NotFoundException('Soal esai tidak ditemukan dalam snapshot sesi');
     const rubric = question.rubric;
     if (rubric.length === 0) {
       throw new ConflictException('Soal ini tidak memiliki rubrik penilaian');
@@ -1806,11 +2494,15 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       criteriaResults[criteria.id] = { score, weight, maxScore };
     }
 
-    const totalScore = maxWeightedSum > 0
-      ? Math.round((weightedSum / maxWeightedSum) * 100)
-      : 0;
+    const totalScore = maxWeightedSum > 0 ? Math.round((weightedSum / maxWeightedSum) * 100) : 0;
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockAssessmentSession(tx, sessionId);
+      const currentSession = await tx.assessmentSession.findUnique({
+        where: { id: sessionId },
+        select: { status: true },
+      });
+      if (!currentSession) throw new NotFoundException('Sesi asesmen tidak ditemukan');
       await this.assertWritablePeriodInTransaction(tx, {
         academicYear: session.academicYear,
         semester: session.semester,
@@ -1827,16 +2519,29 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       // Re-read after locking so concurrent essay graders merge the latest scores.
       const response = await tx.assessmentResponse.findUnique({
         where: { id: responseId },
-        select: { id: true, sessionId: true, answers: true, itemScores: true, submittedAt: true },
+        select: {
+          id: true,
+          sessionId: true,
+          answers: true,
+          itemScores: true,
+          submittedAt: true,
+          lateSubmissionStatus: true,
+        },
       });
       if (!response || response.sessionId !== sessionId) {
         throw new NotFoundException('Respons tidak ditemukan');
       }
       if (!response.submittedAt) throw new ConflictException('Respons belum dikirim');
+      if (
+        response.lateSubmissionStatus === 'pending' ||
+        response.lateSubmissionStatus === 'rejected'
+      ) {
+        throw new ConflictException('Respons terlambat harus diterima guru sebelum dapat dinilai');
+      }
 
       const existingAnswers = (response.answers ?? {}) as unknown as AssessmentAnswerMap;
       const previousItemScores = Array.isArray(response.itemScores)
-        ? response.itemScores as unknown as AssessmentItemScore[]
+        ? (response.itemScores as unknown as AssessmentItemScore[])
         : [];
       const manualItem: AssessmentItemScore = {
         questionId: question.id,
@@ -1845,7 +2550,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         points: Math.round((totalScore / 100) * question.points * 100) / 100,
         maxPoints: question.points,
         scorePct: totalScore,
-        rubricScores: Object.fromEntries(Object.entries(criteriaResults).map(([id, value]) => [id, value.score])),
+        rubricScores: Object.fromEntries(
+          Object.entries(criteriaResults).map(([id, value]) => [id, value.score]),
+        ),
       };
       const nextItemScores = [
         ...previousItemScores.filter((item) => item.questionId !== dto.questionId),
@@ -1860,16 +2567,23 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           itemScores: scored.itemScores as Prisma.InputJsonValue,
         },
         select: {
-          id: true, sessionId: true, score: true, itemScores: true, submittedAt: true,
+          id: true,
+          sessionId: true,
+          score: true,
+          itemScores: true,
+          submittedAt: true,
         },
       });
-      if (session.status === 'completed' && session.purpose === 'regular') {
+      if (currentSession.status === 'completed' && session.purpose === 'regular') {
         await this.syncGradesForCompletedSession(session, tx);
       }
-      return updatedResponse;
+      return {
+        response: updatedResponse,
+        gradeSynced: currentSession.status === 'completed' && session.purpose === 'regular',
+      };
     });
-    if (session.status === 'completed' && session.purpose === 'regular') this.runAssessmentOutboxWorker('completion');
-    return updated;
+    if (updated.gradeSynced) this.runAssessmentOutboxWorker('completion');
+    return updated.response;
   }
 
   /** U2 Wave 3: Analisis Hasil — item analysis + score distribution + ketuntasan. */
@@ -1878,8 +2592,16 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     const session = await this.prisma.assessmentSession.findUnique({
       where: { id: sessionId },
       select: {
-        id: true, title: true, type: true, status: true, teacherId: true,
-        purpose: true, questions: true, classId: true, academicYear: true, semester: true,
+        id: true,
+        title: true,
+        type: true,
+        status: true,
+        teacherId: true,
+        purpose: true,
+        questions: true,
+        classId: true,
+        academicYear: true,
+        semester: true,
         module: { select: { subject: true, kktp: true } },
         teachingAssignment: { select: { subject: true } },
       },
@@ -1894,13 +2616,24 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     // Fetch all submitted responses
     const responses = await this.prisma.assessmentResponse.findMany({
       where: { sessionId, submittedAt: { not: null } },
-      select: { id: true, score: true, answers: true, itemScores: true },
+      select: {
+        id: true,
+        score: true,
+        answers: true,
+        itemScores: true,
+        lateSubmissionStatus: true,
+      },
     });
     const finalResponses = responses.filter((response) => {
       const itemScores = Array.isArray(response.itemScores)
-        ? response.itemScores as unknown as AssessmentItemScore[]
+        ? (response.itemScores as unknown as AssessmentItemScore[])
         : [];
-      return response.score != null && !itemScores.some((item) => item.status === 'manual_pending');
+      return (
+        response.score != null &&
+        response.lateSubmissionStatus !== 'pending' &&
+        response.lateSubmissionStatus !== 'rejected' &&
+        !itemScores.some((item) => item.status === 'manual_pending')
+      );
     });
 
     const subject = session.module?.subject ?? session.teachingAssignment?.subject ?? null;
@@ -1915,23 +2648,24 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     const totalStudents = finalResponses.length;
 
     // Summary stats
-    const avgScore = totalStudents > 0
-      ? Math.round(scores.reduce((a, b) => a + b, 0) / totalStudents)
-      : 0;
+    const avgScore =
+      totalStudents > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / totalStudents) : 0;
     const minScore = totalStudents > 0 ? Math.min(...scores) : 0;
     const maxScore = totalStudents > 0 ? Math.max(...scores) : 0;
     const sortedScores = [...scores].sort((a, b) => a - b);
-    const medianScore = totalStudents > 0
-      ? (totalStudents % 2 === 0
-        ? Math.round((sortedScores[totalStudents / 2 - 1]! + sortedScores[totalStudents / 2]!) / 2)
-        : sortedScores[Math.floor(totalStudents / 2)]!)
-      : 0;
+    const medianScore =
+      totalStudents > 0
+        ? totalStudents % 2 === 0
+          ? Math.round(
+              (sortedScores[totalStudents / 2 - 1]! + sortedScores[totalStudents / 2]!) / 2,
+            )
+          : sortedScores[Math.floor(totalStudents / 2)]!
+        : 0;
 
     // Ketuntasan
     const tuntas = kktp.value === null ? 0 : scores.filter((s) => s >= kktp.value!).length;
-    const ketuntasanPct = totalStudents > 0 && kktp.value !== null
-      ? Math.round((tuntas / totalStudents) * 100)
-      : 0;
+    const ketuntasanPct =
+      totalStudents > 0 && kktp.value !== null ? Math.round((tuntas / totalStudents) * 100) : 0;
 
     // Score distribution buckets
     const buckets = [
@@ -1970,9 +2704,13 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         }
 
         const previousItemScores = Array.isArray(r.itemScores)
-          ? r.itemScores as unknown as AssessmentItemScore[]
+          ? (r.itemScores as unknown as AssessmentItemScore[])
           : [];
-        const scored = scoreAnswers({ [question.id]: studentAnswer } as AssessmentAnswerMap, [question], previousItemScores);
+        const scored = scoreAnswers(
+          { [question.id]: studentAnswer } as AssessmentAnswerMap,
+          [question],
+          previousItemScores,
+        );
         const itemScore = scored.itemScores[0];
         if (!itemScore || itemScore.status === 'manual_pending' || itemScore.scorePct == null) {
           blankCount++;
@@ -1987,9 +2725,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       }
 
       // Difficulty index = correctCount / totalResponses (0-1)
-      const difficultyIndex = totalStudents > 0
-        ? Math.round((correctCount / totalStudents) * 100) / 100
-        : 0;
+      const difficultyIndex =
+        totalStudents > 0 ? Math.round((correctCount / totalStudents) * 100) / 100 : 0;
 
       // Discrimination index: point-biserial correlation
       // r_pb = (M1 - M0) / Sy * sqrt(p * q)
@@ -2000,12 +2737,12 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       if (p > 0 && p < 1 && totalStudents > 1) {
         const correctScores = totalScores.filter((_, i) => perQuestionCorrect[i] === 1);
         const wrongScores = totalScores.filter((_, i) => perQuestionCorrect[i] === 0);
-        const m1 = correctScores.length > 0
-          ? correctScores.reduce((a, b) => a + b, 0) / correctScores.length
-          : 0;
-        const m0 = wrongScores.length > 0
-          ? wrongScores.reduce((a, b) => a + b, 0) / wrongScores.length
-          : 0;
+        const m1 =
+          correctScores.length > 0
+            ? correctScores.reduce((a, b) => a + b, 0) / correctScores.length
+            : 0;
+        const m0 =
+          wrongScores.length > 0 ? wrongScores.reduce((a, b) => a + b, 0) / wrongScores.length : 0;
 
         // Standard deviation of total scores
         const meanY = totalScores.reduce((a, b) => a + b, 0) / totalStudents;
@@ -2013,9 +2750,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         const sy = Math.sqrt(variance);
 
         if (sy > 0) {
-          discriminationIndex = Math.round(
-            ((m1 - m0) / sy) * Math.sqrt(p * qProp) * 100,
-          ) / 100;
+          discriminationIndex = Math.round(((m1 - m0) / sy) * Math.sqrt(p * qProp) * 100) / 100;
         }
       }
 
@@ -2073,11 +2808,11 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       return session;
     };
 
-    // Pre-verify, then poll every 3s. Stop after 2 hours (240 polls).
+    // Pre-verify, then poll every 3s. Stop after 6 hours; the client may reconnect sooner.
     let verified = false;
     return new Observable<MessageEvent>((subscriber) => {
       let pollCount = 0;
-      const maxPolls = 240; // 2 hours at 3s interval
+      const maxPolls = 7_200;
 
       const poll = async () => {
         if (!verified) {
@@ -2096,36 +2831,102 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
             where: { sessionId },
             orderBy: [{ submittedAt: 'desc' }],
             select: {
-              id: true, score: true, submittedAt: true, startedAt: true, timeSpentSec: true,
+              id: true,
+              score: true,
+              submittedAt: true,
+              startedAt: true,
+              timeSpentSec: true,
+              clientRevision: true,
+              lastSavedAt: true,
+              lastHeartbeatAt: true,
+              lateSubmissionStatus: true,
+              lateSubmittedAt: true,
+              _count: {
+                select: {
+                  integrityEvents: {
+                    where: { type: { in: [...ASSESSMENT_INTEGRITY_INCIDENT_TYPES] } },
+                  },
+                },
+              },
+              integrityEvents: {
+                where: { type: { in: [...ASSESSMENT_INTEGRITY_INCIDENT_TYPES] } },
+                orderBy: { receivedAt: 'desc' },
+                take: 1,
+                select: { type: true, receivedAt: true, receivedAfterSubmit: true },
+              },
               student: { select: { nis: true, user: { select: { fullName: true } } } },
             },
           }),
           session.classId
-            ? this.prisma.student.count({ where: { classId: session.classId, deletedAt: null, status: 'active' } })
+            ? this.prisma.student.count({
+                where: { classId: session.classId, deletedAt: null, status: 'active' },
+              })
             : Promise.resolve(0),
         ]);
 
-        const submitted = responses.filter((r) => r.submittedAt !== null);
+        const submitted = responses.filter(
+          (r) =>
+            r.submittedAt !== null &&
+            r.lateSubmissionStatus !== 'pending' &&
+            r.lateSubmissionStatus !== 'rejected',
+        );
+        const pendingLateReview = responses.filter((r) => r.lateSubmissionStatus === 'pending');
         const inProgress = responses.filter((r) => r.submittedAt === null);
         const notStarted = Math.max(0, classStudentCount - responses.length);
 
-        const avgScore = submitted.length > 0
-          ? Math.round(submitted.reduce((sum, r) => sum + (r.score ?? 0), 0) / submitted.length)
-          : 0;
+        const avgScore =
+          submitted.length > 0
+            ? Math.round(submitted.reduce((sum, r) => sum + (r.score ?? 0), 0) / submitted.length)
+            : 0;
 
         const data = {
           sessionStatus: session.status,
           classStudentCount,
           selesai: submitted.length,
+          pendingLateReview: pendingLateReview.length,
           sedang: inProgress.length,
           belum: notStarted,
           rata: avgScore,
-          roster: responses.map((r) => ({
-            name: r.student.user.fullName,
-            status: r.submittedAt ? 'Selesai' : 'Sedang mengerjakan',
-            nilai: r.score ?? 0,
-            waktu: r.timeSpentSec ? `${Math.floor(r.timeSpentSec / 60)}m ${r.timeSpentSec % 60}s` : '—',
-          })),
+          roster: responses.map((r) => {
+            const heartbeatAgeMs = r.lastHeartbeatAt
+              ? Date.now() - r.lastHeartbeatAt.getTime()
+              : null;
+            const connectionStatus = r.submittedAt
+              ? 'completed'
+              : heartbeatAgeMs === null
+                ? 'connecting'
+                : heartbeatAgeMs <= 30_000
+                  ? 'online'
+                  : heartbeatAgeMs <= 60_000
+                    ? 'stale'
+                    : 'offline';
+            const latestIncident = r.integrityEvents[0] ?? null;
+            return {
+              responseId: r.id,
+              name: r.student.user.fullName,
+              status:
+                r.lateSubmissionStatus === 'pending'
+                  ? 'Menunggu keputusan guru'
+                  : r.lateSubmissionStatus === 'rejected'
+                    ? 'Ditolak guru'
+                    : r.submittedAt
+                      ? 'Selesai'
+                      : 'Sedang mengerjakan',
+              nilai: r.score ?? 0,
+              waktu: r.timeSpentSec
+                ? `${Math.floor(r.timeSpentSec / 60)}m ${r.timeSpentSec % 60}s`
+                : '—',
+              revision: r.clientRevision,
+              lastSavedAt: r.lastSavedAt,
+              connectionStatus,
+              incidentCount: r._count.integrityEvents,
+              lastIncidentType: latestIncident?.type ?? null,
+              lastIncidentAt: latestIncident?.receivedAt ?? null,
+              lastIncidentDelayed: latestIncident?.receivedAfterSubmit ?? false,
+              lateSubmissionStatus: r.lateSubmissionStatus,
+              lateSubmittedAt: r.lateSubmittedAt,
+            };
+          }),
           // Also include students who haven't started
           notStartedNames: [] as string[], // would need class roster join
         };
@@ -2185,12 +2986,19 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
 
     if (user.roles.includes('SISWA')) {
       const student = await this.resolveStudent(user.keycloakId);
-      const result = await this.page({
-        ...filters,
-        status: query.status ?? { in: ['active', 'completed'] as const },
-        remedialParticipants: { some: { studentId: student.id, status: { not: 'cancelled' } } },
-      }, skip, query);
-      return { ...result, data: result.data.map((session) => this.sanitizeSessionForStudent(session)) };
+      const result = await this.page(
+        {
+          ...filters,
+          status: query.status ?? { in: ['active', 'completed'] as const },
+          remedialParticipants: { some: { studentId: student.id, status: { not: 'cancelled' } } },
+        },
+        skip,
+        query,
+      );
+      return {
+        ...result,
+        data: result.data.map((session) => this.sanitizeSessionForStudent(session)),
+      };
     }
 
     throw new ForbiddenException('Akses ditolak');
@@ -2213,7 +3021,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       },
       select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true },
     });
-    if (!assignment) throw new ForbiddenException('TeachingAssignment tidak ditemukan untuk konteks remedial ini');
+    if (!assignment)
+      throw new ForbiddenException('TeachingAssignment tidak ditemukan untuk konteks remedial ini');
     await this.assertRemedialManageAssignment(assignment, user);
 
     const grades = await this.prisma.grade.findMany({
@@ -2280,7 +3089,12 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     }
 
     const start = (query.page - 1) * query.limit;
-    return { data: candidates.slice(start, start + query.limit), total: candidates.length, page: query.page, limit: query.limit };
+    return {
+      data: candidates.slice(start, start + query.limit),
+      total: candidates.length,
+      page: query.page,
+      limit: query.limit,
+    };
   }
 
   async createRemedialSession(dto: CreateRemedialSessionDto, user: AuthUser) {
@@ -2299,10 +3113,13 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         academicYear: true,
         updatedAt: true,
         sourceAssessmentSessionId: true,
-        assignment: { select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true } },
+        assignment: {
+          select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true },
+        },
       },
     });
-    if (grades.length !== uniqueGradeIds.length) throw new NotFoundException('Sebagian nilai sumber tidak ditemukan');
+    if (grades.length !== uniqueGradeIds.length)
+      throw new NotFoundException('Sebagian nilai sumber tidak ditemukan');
 
     const first = grades[0]!;
     for (const grade of grades) {
@@ -2312,7 +3129,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         grade.academicYear !== first.academicYear ||
         grade.type !== first.type
       ) {
-        throw new BadRequestException('Satu sesi remedial hanya boleh berasal dari satu konteks nilai yang sama');
+        throw new BadRequestException(
+          'Satu sesi remedial hanya boleh berasal dari satu konteks nilai yang sama',
+        );
       }
     }
     await this.assertRemedialManageAssignment(first.assignment, user);
@@ -2335,7 +3154,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       const kktp = await this.resolveKktpForGrade(grade);
       const sourceScore = this.decimalToNumber(grade.score);
       if (sourceScore >= kktp.value) {
-        throw new ConflictException('Nilai sumber sudah memenuhi KKTP sehingga tidak dapat dibuat remedial');
+        throw new ConflictException(
+          'Nilai sumber sudah memenuhi KKTP sehingga tidak dapat dibuat remedial',
+        );
       }
       await this.assertNoLockedReportForGrade({
         studentId: grade.studentId,
@@ -2364,7 +3185,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           academicYear: true,
           updatedAt: true,
           sourceAssessmentSessionId: true,
-          assignment: { select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true } },
+          assignment: {
+            select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true },
+          },
         },
       });
       if (freshGrades.length !== uniqueGradeIds.length) {
@@ -2372,7 +3195,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       }
       const freshById = new Map(freshGrades.map((grade) => [grade.id, grade]));
       const firstFresh = freshById.get(first.id);
-      if (!firstFresh) throw new ConflictException('Nilai sumber remedial berubah saat sesi dibuat');
+      if (!firstFresh)
+        throw new ConflictException('Nilai sumber remedial berubah saat sesi dibuat');
       const transactionalParticipants: Prisma.RemedialParticipantCreateManyInput[] = [];
       for (const grade of grades) {
         const fresh = freshById.get(grade.id);
@@ -2384,18 +3208,25 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           fresh.academicYear !== first.academicYear ||
           fresh.type !== first.type
         ) {
-          throw new ConflictException('Nilai sumber berubah saat sesi remedial dibuat; muat ulang kandidat');
+          throw new ConflictException(
+            'Nilai sumber berubah saat sesi remedial dibuat; muat ulang kandidat',
+          );
         }
-        await this.assertNoLockedReportForGrade({
-          studentId: fresh.studentId,
-          academicYear: fresh.academicYear,
-          semester: fresh.semester,
-          assignment: { classId: fresh.assignment.classId },
-        }, tx);
+        await this.assertNoLockedReportForGrade(
+          {
+            studentId: fresh.studentId,
+            academicYear: fresh.academicYear,
+            semester: fresh.semester,
+            assignment: { classId: fresh.assignment.classId },
+          },
+          tx,
+        );
         const kktp = await this.resolveKktpForGrade(fresh, tx);
         const sourceScore = this.decimalToNumber(fresh.score);
         if (sourceScore >= kktp.value) {
-          throw new ConflictException('Nilai sumber sudah memenuhi KKTP sehingga tidak dapat dibuat remedial');
+          throw new ConflictException(
+            'Nilai sumber sudah memenuhi KKTP sehingga tidak dapat dibuat remedial',
+          );
         }
         transactionalParticipants.push({
           sessionId: '00000000-0000-0000-0000-000000000000',
@@ -2449,9 +3280,15 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         select: { id: true },
       });
       await tx.remedialParticipant.createMany({
-        data: transactionalParticipants.map((participant) => ({ ...participant, sessionId: created.id })),
+        data: transactionalParticipants.map((participant) => ({
+          ...participant,
+          sessionId: created.id,
+        })),
       });
-      return tx.assessmentSession.findUniqueOrThrow({ where: { id: created.id }, select: REMEDIAL_SESSION_SELECT });
+      return tx.assessmentSession.findUniqueOrThrow({
+        where: { id: created.id },
+        select: REMEDIAL_SESSION_SELECT,
+      });
     });
   }
 
@@ -2466,13 +3303,16 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         teacherId: true,
         academicYear: true,
         semester: true,
-        teachingAssignment: { select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true } },
+        teachingAssignment: {
+          select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true },
+        },
       },
     });
     if (!existing || existing.purpose !== 'remedial' || !existing.teachingAssignment) {
       throw new NotFoundException('Sesi remedial tidak ditemukan');
     }
-    if (existing.status !== 'draft') throw new ConflictException(`Sesi remedial '${existing.status}' tidak dapat diedit`);
+    if (existing.status !== 'draft')
+      throw new ConflictException(`Sesi remedial '${existing.status}' tidak dapat diedit`);
     await this.assertRemedialManageAssignment(existing.teachingAssignment, user);
     return this.prisma.$transaction(async (tx) => {
       await this.acquireAcademicYearCutoverLock(tx);
@@ -2486,7 +3326,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           teacherId: true,
           academicYear: true,
           semester: true,
-          teachingAssignment: { select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true } },
+          teachingAssignment: {
+            select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true },
+          },
         },
       });
       if (!current || current.purpose !== 'remedial' || !current.teachingAssignment) {
@@ -2496,7 +3338,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         throw new ConflictException(`Sesi remedial '${current.status}' tidak dapat diedit`);
       }
       if (current.updatedAt.getTime() !== existing.updatedAt.getTime()) {
-        throw new ConflictException('Sesi remedial sudah diubah oleh permintaan lain; muat ulang sebelum menyimpan');
+        throw new ConflictException(
+          'Sesi remedial sudah diubah oleh permintaan lain; muat ulang sebelum menyimpan',
+        );
       }
       await this.assertWritablePeriodInTransaction(tx, {
         academicYear: current.academicYear,
@@ -2504,7 +3348,12 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       });
       await this.assertRemedialManageAssignment(current.teachingAssignment, user, tx);
       const snapshot = dto.questionSelections
-        ? await this.buildQuestionSnapshot(current.teachingAssignment.teacherId, current.teachingAssignment.subject, dto.questionSelections, tx)
+        ? await this.buildQuestionSnapshot(
+            current.teachingAssignment.teacherId,
+            current.teachingAssignment.subject,
+            dto.questionSelections,
+            tx,
+          )
         : undefined;
       if (dto.dueAt !== undefined) {
         await this.suppressPendingRemedialNotifications(
@@ -2531,7 +3380,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           ...(dto.randomizeOrder !== undefined ? { randomizeOrder: dto.randomizeOrder } : {}),
         },
       });
-      if (updated.count !== 1) throw new ConflictException('Sesi remedial sudah diproses oleh permintaan lain');
+      if (updated.count !== 1)
+        throw new ConflictException('Sesi remedial sudah diproses oleh permintaan lain');
       return tx.assessmentSession.findUniqueOrThrow({
         where: { id },
         select: REMEDIAL_SESSION_SELECT,
@@ -2548,15 +3398,21 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         purpose: true,
         academicYear: true,
         semester: true,
-        teachingAssignment: { select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true } },
+        teachingAssignment: {
+          select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true },
+        },
         _count: { select: { remedialParticipants: true } },
       },
     });
     if (!existing || existing.purpose !== 'remedial' || !existing.teachingAssignment) {
       throw new NotFoundException('Sesi remedial tidak ditemukan');
     }
-    if (existing.status !== 'draft') throw new ConflictException(`Hanya sesi remedial draft yang dapat diaktifkan (sekarang '${existing.status}')`);
-    if (existing._count.remedialParticipants < 1) throw new ConflictException('Sesi remedial wajib memiliki peserta');
+    if (existing.status !== 'draft')
+      throw new ConflictException(
+        `Hanya sesi remedial draft yang dapat diaktifkan (sekarang '${existing.status}')`,
+      );
+    if (existing._count.remedialParticipants < 1)
+      throw new ConflictException('Sesi remedial wajib memiliki peserta');
     await this.assertRemedialManageAssignment(existing.teachingAssignment, user);
     const result = await this.prisma.$transaction(async (tx) => {
       await this.acquireAcademicYearCutoverLock(tx);
@@ -2569,8 +3425,12 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         where: { id, status: 'draft' },
         data: { status: 'active', startedAt: new Date() },
       });
-      if (updated.count !== 1) throw new ConflictException('Sesi remedial sudah diproses oleh permintaan lain');
-      const session = await tx.assessmentSession.findUniqueOrThrow({ where: { id }, select: REMEDIAL_SESSION_SELECT });
+      if (updated.count !== 1)
+        throw new ConflictException('Sesi remedial sudah diproses oleh permintaan lain');
+      const session = await tx.assessmentSession.findUniqueOrThrow({
+        where: { id },
+        select: REMEDIAL_SESSION_SELECT,
+      });
       const logs = await this.buildRemedialNotificationLogs(tx, {
         sessionId: id,
         refType: 'remedial_assignment',
@@ -2579,14 +3439,18 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         body: `Remedial ${session.title} sudah aktif. Buka DIIS untuk melihat tugas remedial.`,
         participantStatus: ['assigned', 'in_progress'],
       });
-      if (logs.length > 0) await tx.notificationLog.createMany({ data: logs, skipDuplicates: true });
+      if (logs.length > 0)
+        await tx.notificationLog.createMany({ data: logs, skipDuplicates: true });
       const logIds = await this.committedPendingNotificationLogIds(tx, logs);
       return {
         session,
         logIds,
       };
     });
-    const notificationHandoff = await this.enqueueCommittedNotificationLogs(result.logIds, 'remedial_assignment');
+    const notificationHandoff = await this.enqueueCommittedNotificationLogs(
+      result.logIds,
+      'remedial_assignment',
+    );
     return { ...result.session, notificationHandoff };
   }
 
@@ -2599,7 +3463,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         purpose: true,
         academicYear: true,
         semester: true,
-        teachingAssignment: { select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true } },
+        teachingAssignment: {
+          select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true },
+        },
       },
     });
     if (!existing || existing.purpose !== 'remedial' || !existing.teachingAssignment) {
@@ -2611,6 +3477,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     await this.assertRemedialManageAssignment(existing.teachingAssignment, user);
     const userId = await this.resolveAuthUserId(user.keycloakId);
     await this.prisma.$transaction(async (tx) => {
+      await this.lockAssessmentSession(tx, id);
       await this.acquireAcademicYearCutoverLock(tx);
       await this.assertWritablePeriodInTransaction(tx, {
         academicYear: existing.academicYear,
@@ -2626,10 +3493,16 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           cancelReason: dto.reason ?? null,
         },
       });
-      if (updated.count !== 1) throw new ConflictException('Sesi remedial sudah diproses oleh permintaan lain');
+      if (updated.count !== 1)
+        throw new ConflictException('Sesi remedial sudah diproses oleh permintaan lain');
       await tx.remedialParticipant.updateMany({
         where: { sessionId: id, status: { notIn: ['passed', 'cancelled'] } },
-        data: { status: 'cancelled', cancelledAt: new Date(), cancelledBy: userId, cancelReason: dto.reason ?? null },
+        data: {
+          status: 'cancelled',
+          cancelledAt: new Date(),
+          cancelledBy: userId,
+          cancelReason: dto.reason ?? null,
+        },
       });
       await this.suppressPendingRemedialNotifications(
         tx,
@@ -2638,10 +3511,17 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         'Sesi remedial dibatalkan',
       );
     });
-    return this.prisma.assessmentSession.findUniqueOrThrow({ where: { id }, select: REMEDIAL_SESSION_SELECT });
+    return this.prisma.assessmentSession.findUniqueOrThrow({
+      where: { id },
+      select: REMEDIAL_SESSION_SELECT,
+    });
   }
 
-  async finalizeRemedialParticipant(sessionId: string, dto: FinalizeRemedialParticipantDto, user: AuthUser) {
+  async finalizeRemedialParticipant(
+    sessionId: string,
+    dto: FinalizeRemedialParticipantDto,
+    user: AuthUser,
+  ) {
     const userId = await this.resolveAuthUserId(user.keycloakId);
     const result = await this.prisma.$transaction(async (tx) => {
       const participant = await tx.remedialParticipant.findFirst({
@@ -2660,7 +3540,15 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
               type: true,
               academicYear: true,
               semester: true,
-              teachingAssignment: { select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true } },
+              teachingAssignment: {
+                select: {
+                  id: true,
+                  teacherId: true,
+                  classId: true,
+                  subject: true,
+                  academicYear: true,
+                },
+              },
             },
           },
           sourceGrade: {
@@ -2672,14 +3560,25 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
               updatedAt: true,
               academicYear: true,
               semester: true,
-              assignment: { select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true } },
+              assignment: {
+                select: {
+                  id: true,
+                  teacherId: true,
+                  classId: true,
+                  subject: true,
+                  academicYear: true,
+                },
+              },
             },
           },
         },
       });
-      if (!participant || !participant.session.teachingAssignment) throw new NotFoundException('Peserta remedial tidak ditemukan');
+      if (!participant || !participant.session.teachingAssignment)
+        throw new NotFoundException('Peserta remedial tidak ditemukan');
       if (participant.session.status !== 'active' && participant.session.status !== 'completed') {
-        throw new ConflictException('Remedial hanya dapat difinalisasi dari sesi aktif atau selesai');
+        throw new ConflictException(
+          'Remedial hanya dapat difinalisasi dari sesi aktif atau selesai',
+        );
       }
       await this.acquireAcademicYearCutoverLock(tx);
       await this.assertWritablePeriodInTransaction(tx, {
@@ -2688,9 +3587,14 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       });
       await this.assertRemedialManageAssignment(participant.session.teachingAssignment, user, tx);
       await this.lockGradeSnapshots(tx, [participant.sourceGrade]);
-      if (participant.status !== 'submitted') throw new ConflictException('Peserta remedial belum mengirim jawaban');
-      if (participant.sourceGrade.updatedAt.getTime() !== participant.sourceGradeUpdatedAt.getTime()) {
-        throw new ConflictException('Nilai sumber berubah sejak remedial ditugaskan; buat retry/remedial baru dari snapshot terbaru');
+      if (participant.status !== 'submitted')
+        throw new ConflictException('Peserta remedial belum mengirim jawaban');
+      if (
+        participant.sourceGrade.updatedAt.getTime() !== participant.sourceGradeUpdatedAt.getTime()
+      ) {
+        throw new ConflictException(
+          'Nilai sumber berubah sejak remedial ditugaskan; buat retry/remedial baru dari snapshot terbaru',
+        );
       }
       await this.assertNoLockedReportForGrade(participant.sourceGrade, tx);
 
@@ -2698,11 +3602,13 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         where: { sessionId_studentId: { sessionId, studentId: participant.sourceGrade.studentId } },
         select: { id: true, score: true, submittedAt: true, itemScores: true },
       });
-      if (!response?.submittedAt || response.score == null) throw new ConflictException('Respons remedial belum siap difinalisasi');
+      if (!response?.submittedAt || response.score == null)
+        throw new ConflictException('Respons remedial belum siap difinalisasi');
       const itemScores = Array.isArray(response.itemScores)
-        ? response.itemScores as unknown as AssessmentItemScore[]
+        ? (response.itemScores as unknown as AssessmentItemScore[])
         : [];
-      if (itemScores.some((item) => item.status === 'manual_pending')) throw new ConflictException('Koreksi esai remedial belum lengkap');
+      if (itemScores.some((item) => item.status === 'manual_pending'))
+        throw new ConflictException('Koreksi esai remedial belum lengkap');
 
       const rawScore = response.score;
       const kktpValue = this.decimalToNumber(participant.kktpValue);
@@ -2718,7 +3624,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           finalizedBy: userId,
         },
       });
-      if (updatedParticipant.count !== 1) throw new ConflictException('Peserta remedial sudah difinalisasi oleh permintaan lain');
+      if (updatedParticipant.count !== 1)
+        throw new ConflictException('Peserta remedial sudah difinalisasi oleh permintaan lain');
 
       if (passed && this.decimalToNumber(participant.sourceGrade.score) < kktpValue) {
         const updatedGrade = await tx.grade.updateMany({
@@ -2729,35 +3636,41 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
             submittedBy: userId,
           },
         });
-        if (updatedGrade.count !== 1) throw new ConflictException('Nilai sumber berubah saat finalisasi remedial berlangsung');
-        await this.enqueueAssessmentEvents({
-          gradedCount: 1,
-          pendingManualCount: 0,
-          skippedCount: 0,
-          gradeTarget: participant.sourceGrade.type,
-          gradeEvents: [{
-            gradeId: participant.sourceGrade.id,
-            studentId: participant.sourceGrade.studentId,
-            subject: participant.sourceGrade.assignment.subject,
-            score: String(kktpValue),
-            type: participant.sourceGrade.type,
-            semester: participant.sourceGrade.semester,
-            academicYear: participant.sourceGrade.academicYear,
-          }],
-          assessmentEvent: {
-            sessionId: participant.session.id,
-            title: participant.session.title,
-            type: participant.session.type,
-            teacherId: participant.session.teacherId,
-            classId: participant.session.teachingAssignment.classId,
-            moduleId: null,
-            subject: participant.session.teachingAssignment.subject,
-            academicYear: participant.session.academicYear,
-            semester: participant.session.semester,
+        if (updatedGrade.count !== 1)
+          throw new ConflictException('Nilai sumber berubah saat finalisasi remedial berlangsung');
+        await this.enqueueAssessmentEvents(
+          {
             gradedCount: 1,
+            pendingManualCount: 0,
             skippedCount: 0,
+            gradeTarget: participant.sourceGrade.type,
+            gradeEvents: [
+              {
+                gradeId: participant.sourceGrade.id,
+                studentId: participant.sourceGrade.studentId,
+                subject: participant.sourceGrade.assignment.subject,
+                score: String(kktpValue),
+                type: participant.sourceGrade.type,
+                semester: participant.sourceGrade.semester,
+                academicYear: participant.sourceGrade.academicYear,
+              },
+            ],
+            assessmentEvent: {
+              sessionId: participant.session.id,
+              title: participant.session.title,
+              type: participant.session.type,
+              teacherId: participant.session.teacherId,
+              classId: participant.session.teachingAssignment.classId,
+              moduleId: null,
+              subject: participant.session.teachingAssignment.subject,
+              academicYear: participant.session.academicYear,
+              semester: participant.session.semester,
+              gradedCount: 1,
+              skippedCount: 0,
+            },
           },
-        }, tx);
+          tx,
+        );
       }
 
       const outcomeLogs = await this.buildRemedialNotificationLogs(tx, {
@@ -2771,12 +3684,16 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           : `Remedial ${participant.session.title} sudah difinalisasi dan belum tuntas. Guru akan menyiapkan tindak lanjut melalui DIIS.`,
         participantStatus: [finalStatus],
       });
-      if (outcomeLogs.length > 0) await tx.notificationLog.createMany({ data: outcomeLogs, skipDuplicates: true });
+      if (outcomeLogs.length > 0)
+        await tx.notificationLog.createMany({ data: outcomeLogs, skipDuplicates: true });
       const logIds = await this.committedPendingNotificationLogIds(tx, outcomeLogs);
 
       const participantResult = await tx.remedialParticipant.findUniqueOrThrow({
         where: { id: participant.id },
-        include: { sourceGrade: true, student: { select: { nis: true, user: { select: { fullName: true } } } } },
+        include: {
+          sourceGrade: true,
+          student: { select: { nis: true, user: { select: { fullName: true } } } },
+        },
       });
       return {
         participant: participantResult,
@@ -2784,11 +3701,18 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       };
     });
     this.runAssessmentOutboxWorker('completion');
-    const notificationHandoff = await this.enqueueCommittedNotificationLogs(result.logIds, 'remedial_result');
+    const notificationHandoff = await this.enqueueCommittedNotificationLogs(
+      result.logIds,
+      'remedial_result',
+    );
     return { ...result.participant, notificationHandoff };
   }
 
-  async retryRemedialParticipant(sessionId: string, dto: RetryRemedialParticipantDto, user: AuthUser) {
+  async retryRemedialParticipant(
+    sessionId: string,
+    dto: RetryRemedialParticipantDto,
+    user: AuthUser,
+  ) {
     const previous = await this.prisma.remedialParticipant.findFirst({
       where: { id: dto.participantId, sessionId },
       select: {
@@ -2806,15 +3730,26 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
             semester: true,
             updatedAt: true,
             sourceAssessmentSessionId: true,
-            assignment: { select: { id: true, teacherId: true, classId: true, subject: true, academicYear: true } },
+            assignment: {
+              select: {
+                id: true,
+                teacherId: true,
+                classId: true,
+                subject: true,
+                academicYear: true,
+              },
+            },
           },
         },
       },
     });
     if (!previous) throw new NotFoundException('Peserta remedial tidak ditemukan');
-    if (previous.status !== 'needs_retry') throw new ConflictException('Retry hanya dapat dibuat untuk remedial yang belum lulus');
+    if (previous.status !== 'needs_retry')
+      throw new ConflictException('Retry hanya dapat dibuat untuk remedial yang belum lulus');
     if (previous.sourceGrade.updatedAt.getTime() !== previous.sourceGradeUpdatedAt.getTime()) {
-      throw new ConflictException('Nilai sumber berubah sejak remedial terakhir; buat remedial baru dari kandidat terbaru');
+      throw new ConflictException(
+        'Nilai sumber berubah sejak remedial terakhir; buat remedial baru dari kandidat terbaru',
+      );
     }
     await this.assertRemedialManageAssignment(previous.sourceGrade.assignment, user);
     const kktp = await this.resolveKktpForGrade(previous.sourceGrade);
@@ -2869,7 +3804,10 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           kktpProvenance: kktp.source,
         },
       });
-      return tx.assessmentSession.findUniqueOrThrow({ where: { id: session.id }, select: REMEDIAL_SESSION_SELECT });
+      return tx.assessmentSession.findUniqueOrThrow({
+        where: { id: session.id },
+        select: REMEDIAL_SESSION_SELECT,
+      });
     });
   }
 
@@ -2924,13 +3862,14 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
 
     // Hitung jumlah yang sudah dinilai (score !== null)
     const sessionIds = sessions.map((s) => s.id);
-    const gradedCounts = sessionIds.length > 0
-      ? await this.prisma.assessmentResponse.groupBy({
-          by: ['sessionId'],
-          where: { sessionId: { in: sessionIds }, score: { not: null } },
-          _count: { _all: true },
-        })
-      : [];
+    const gradedCounts =
+      sessionIds.length > 0
+        ? await this.prisma.assessmentResponse.groupBy({
+            by: ['sessionId'],
+            where: { sessionId: { in: sessionIds }, score: { not: null } },
+            _count: { _all: true },
+          })
+        : [];
     const gradedMap = new Map<string, number>();
     for (const g of gradedCounts) gradedMap.set(g.sessionId, g._count._all);
 
@@ -2963,8 +3902,13 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     const session = await this.prisma.assessmentSession.findUnique({
       where: { id: sessionId },
       select: {
-        id: true, title: true, type: true, status: true,
-        teacherId: true, classId: true, completedAt: true,
+        id: true,
+        title: true,
+        type: true,
+        status: true,
+        teacherId: true,
+        classId: true,
+        completedAt: true,
         module: { select: { subject: true } },
         class: { select: { id: true, name: true } },
       },
@@ -2987,19 +3931,28 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           })
         : [],
       this.prisma.assessmentResponse.findMany({
-          where: { sessionId },
-          select: {
-            id: true, studentId: true, score: true, submittedAt: true, startedAt: true,
-            student: { select: { id: true, nis: true, user: { select: { fullName: true } } } },
-          },
-        }),
+        where: { sessionId },
+        select: {
+          id: true,
+          studentId: true,
+          score: true,
+          submittedAt: true,
+          startedAt: true,
+          student: { select: { id: true, nis: true, user: { select: { fullName: true } } } },
+        },
+      }),
     ]);
 
     const responseMap = new Map(responses.map((r) => [r.studentId, r]));
     // Bila tak ada roster kelas, pakai siswa yang ada respons
-    const rosterSource = classStudents.length > 0
-      ? classStudents.map((s) => ({ id: s.id, nis: s.nis, user: { fullName: s.user.fullName } }))
-      : responses.map((r) => ({ id: r.student.id, nis: r.student.nis, user: { fullName: r.student.user.fullName } }));
+    const rosterSource =
+      classStudents.length > 0
+        ? classStudents.map((s) => ({ id: s.id, nis: s.nis, user: { fullName: s.user.fullName } }))
+        : responses.map((r) => ({
+            id: r.student.id,
+            nis: r.student.nis,
+            user: { fullName: r.student.user.fullName },
+          }));
 
     const students = rosterSource.map((stu) => {
       const resp = responseMap.get(stu.id);
@@ -3007,7 +3960,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       if (resp?.submittedAt) {
         // Terlambat bila ada deadline (completedAt) dan submit setelahnya
         const deadline = session.completedAt ?? null;
-        status = deadline && new Date(resp.submittedAt) > new Date(deadline) ? 'Terlambat' : 'Terkumpul';
+        status =
+          deadline && new Date(resp.submittedAt) > new Date(deadline) ? 'Terlambat' : 'Terkumpul';
       }
       return {
         name: stu.user.fullName,
