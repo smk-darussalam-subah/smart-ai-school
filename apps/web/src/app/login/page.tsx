@@ -3,14 +3,20 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { signIn } from 'next-auth/react';
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { AlertCircle, ArrowRight, LoaderCircle, ShieldCheck, WifiOff } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowRight,
+  CircleHelp,
+  LoaderCircle,
+  ShieldCheck,
+  WifiOff,
+} from 'lucide-react';
 import { resolveLoginNotice, safeLoginCallback } from './login-ui';
 
 function LoginContent() {
   const searchParams = useSearchParams();
-  const buttonRef = useRef<HTMLButtonElement>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
@@ -25,7 +31,6 @@ function LoginContent() {
     update();
     window.addEventListener('online', update);
     window.addEventListener('offline', update);
-    buttonRef.current?.focus();
     return () => {
       window.removeEventListener('online', update);
       window.removeEventListener('offline', update);
@@ -58,71 +63,61 @@ function LoginContent() {
       : notice;
 
   return (
-    <main className="grid min-h-screen bg-slate-50 text-slate-950 lg:grid-cols-[minmax(0,1fr)_28rem]">
-      <section className="hidden border-r border-slate-200 bg-white px-10 py-12 lg:flex lg:flex-col lg:justify-between">
-        <div className="flex items-center gap-3">
-          <Image
-            src="/icon-192.png"
-            alt="Mark DIIS"
-            width={44}
-            height={44}
-            className="h-11 w-11 rounded-lg"
-            priority
-          />
-          <div>
-            <p className="font-jakarta text-lg font-bold">DIIS</p>
-            <p className="text-sm text-slate-600">SMK Darussalam Subah</p>
-          </div>
-        </div>
-        <div className="max-w-xl">
-          <p className="mb-3 text-xs font-semibold uppercase text-emerald-800">
-            Ruang kerja sekolah
+    <main className="grid min-h-dvh bg-white text-slate-950 lg:grid-cols-[minmax(0,1.25fr)_minmax(26rem,0.75fr)]">
+      <section className="relative min-h-52 overflow-hidden bg-smk-emerald-deep lg:min-h-dvh">
+        <Image
+          src="/landing/school-front.jpg"
+          alt="Gerbang SMK Darussalam Subah"
+          fill
+          sizes="(min-width: 1024px) 62vw, 100vw"
+          className="object-cover object-[center_58%] lg:object-center"
+          priority
+        />
+        <div className="absolute inset-0 bg-smk-emerald-deep/15" aria-hidden="true" />
+
+        <div className="absolute inset-x-0 bottom-0 bg-smk-emerald-deep/90 px-5 py-4 text-white sm:px-8 lg:px-12 lg:py-10">
+          <p className="font-jakarta text-lg font-bold sm:text-xl lg:max-w-xl lg:text-4xl lg:leading-tight">
+            Ruang digital untuk keseharian sekolah.
           </p>
-          <h1 className="font-jakarta text-4xl font-bold leading-tight text-slate-950">
-            Satu akses untuk pekerjaan sekolah yang terotorisasi.
-          </h1>
-          <p className="mt-4 max-w-lg text-base leading-7 text-slate-600">
-            Gunakan akun sekolah. Menu dan data akan mengikuti peran identitas, Appointment aktif,
-            serta penugasan akademik Anda.
+          <p className="mt-1 hidden max-w-xl text-sm leading-6 text-emerald-50 sm:block lg:mt-3 lg:text-base lg:leading-7">
+            Akses pembelajaran, layanan, dan pekerjaan sekolah dari satu tempat yang mengikuti peran
+            Anda.
           </p>
-        </div>
-        <div className="flex items-center gap-2 text-sm text-slate-600">
-          <ShieldCheck className="h-5 w-5 text-emerald-700" aria-hidden="true" />
-          Sesi dilindungi oleh akun sekolah dan kebijakan privasi DIIS.
         </div>
       </section>
 
-      <section className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-8">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 flex items-center gap-3 lg:hidden">
+      <section className="flex min-h-[calc(100dvh-13rem)] items-center justify-center bg-[#f7faf8] px-5 py-10 sm:px-10 lg:min-h-dvh lg:px-12">
+        <div className="w-full max-w-md">
+          <div className="flex items-center gap-3.5">
             <Image
               src="/icon-192.png"
-              alt="Mark DIIS"
-              width={44}
-              height={44}
-              className="h-11 w-11 rounded-lg"
+              alt="Logo DIIS"
+              width={52}
+              height={52}
+              className="h-[52px] w-[52px] rounded-xl shadow-soft-sm"
               priority
             />
             <div>
-              <p className="font-jakarta text-lg font-bold">DIIS</p>
-              <p className="text-sm text-slate-600">SMK Darussalam Subah</p>
+              <p className="font-jakarta text-xl font-bold leading-tight text-smk-ink">DIIS</p>
+              <p className="mt-0.5 text-sm text-smk-ink-soft">SMK Darussalam Subah</p>
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-            <p className="text-xs font-semibold uppercase text-emerald-800">Akun sekolah</p>
-            <h2 className="mt-2 font-jakarta text-2xl font-bold">Masuk ke DIIS</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Anda akan diarahkan ke layanan akun SMK Darussalam Subah.
+          <div className="mt-10">
+            <h1 className="max-w-sm font-jakarta text-3xl font-bold leading-tight text-smk-ink sm:text-4xl">
+              Senang melihat Anda kembali.
+            </h1>
+            <p className="mt-3 max-w-sm text-base leading-7 text-smk-ink-soft">
+              Masuk untuk melanjutkan aktivitas sekolah Anda di DIIS.
             </p>
 
             {currentNotice && (
               <div
                 role="alert"
-                className={`mt-5 flex gap-3 rounded-lg border px-4 py-3 text-sm ${
+                className={`mt-6 flex gap-3 rounded-lg px-4 py-3 text-sm leading-6 ${
                   currentNotice.tone === 'error'
-                    ? 'border-red-200 bg-red-50 text-red-800'
-                    : 'border-amber-200 bg-amber-50 text-amber-900'
+                    ? 'bg-red-50 text-red-900 ring-1 ring-inset ring-red-200'
+                    : 'bg-amber-50 text-amber-950 ring-1 ring-inset ring-amber-200'
                 }`}
               >
                 {isOnline ? (
@@ -135,11 +130,10 @@ function LoginContent() {
             )}
 
             <button
-              ref={buttonRef}
               type="button"
               onClick={handleLogin}
               disabled={isLoading || !isOnline}
-              className="mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white transition-colors hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-7 inline-flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-lg bg-smk-emerald px-5 text-base font-semibold text-white shadow-soft-sm transition-[background-color,box-shadow,transform] duration-200 hover:bg-smk-emerald-deep hover:shadow-soft-md active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-smk-emerald focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isLoading ? (
                 <>
@@ -151,19 +145,33 @@ function LoginContent() {
                 </>
               ) : (
                 <>
-                  Masuk dengan akun sekolah <ArrowRight className="h-5 w-5" aria-hidden="true" />
+                  Lanjut dengan akun sekolah
+                  <ArrowRight className="h-5 w-5" aria-hidden="true" />
                 </>
               )}
             </button>
 
-            <p className="mt-5 text-sm leading-6 text-slate-600">
-              Jangan membagikan kata sandi atau kode masuk.
-            </p>
-            <Link href="/login/bantuan" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-blue-800 hover:text-blue-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-2">
-              Bantuan masuk
-            </Link>
+            <div className="mt-5 flex items-start gap-2.5 text-sm leading-6 text-smk-ink-soft">
+              <ShieldCheck
+                className="mt-0.5 h-5 w-5 shrink-0 text-smk-emerald"
+                aria-hidden="true"
+              />
+              <p>Satu akun sekolah untuk akses yang sesuai dengan peran dan tugas Anda.</p>
+            </div>
+
+            <div className="mt-7 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 border-t border-emerald-900/10 pt-5">
+              <p className="text-sm text-slate-600">Jaga kata sandi dan kode masuk Anda.</p>
+              <Link
+                href="/login/bantuan"
+                className="inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-md text-sm font-semibold text-smk-emerald underline-offset-4 hover:text-smk-emerald-deep hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-smk-emerald focus-visible:ring-offset-2"
+              >
+                <CircleHelp className="h-4 w-4" aria-hidden="true" />
+                Bantuan masuk
+              </Link>
+            </div>
           </div>
-          <p className="mt-6 text-center text-xs text-slate-500">
+
+          <p className="mt-10 text-xs text-slate-500">
             &copy; {new Date().getFullYear()} SMK Darussalam Subah
           </p>
         </div>
