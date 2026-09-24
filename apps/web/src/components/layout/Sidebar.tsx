@@ -13,6 +13,7 @@ import {
 } from '@/lib/navigation-authority';
 import { visiblePositionRoles } from '@/lib/sidebar-position-roles';
 import { identityRoleLabel, isShellRouteActive, positionRoleLabel } from '@/lib/display-shell';
+import LogoutButton from '@/components/shared/LogoutButton';
 import {
   Home, BarChart3, BookOpen, BookMarked, CalendarDays, CalendarRange, ClipboardCheck, GraduationCap,
   Backpack, FileText, Users, ClipboardList, Wallet, Briefcase, MapPin, School,
@@ -254,14 +255,12 @@ export function Sidebar({ viewAs = null, permissions = [], permError = false, po
           <CircleHelp className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
           Panduan
         </Link>
-        <button
-          type="button"
-          onClick={() => { window.location.href = '/api/auth/federated-logout'; }}
+        <LogoutButton
           className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700"
         >
-          <LogOut className="w-[18px] h-[18px] shrink-0" />
+          <LogOut className="w-[18px] h-[18px] shrink-0" aria-hidden="true" />
           Keluar
-        </button>
+        </LogoutButton>
       </div>
     </aside>
   );

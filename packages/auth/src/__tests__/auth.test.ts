@@ -242,6 +242,7 @@ describe('extractAuthUser()', () => {
       expect(user.username).toBe('guru_budi');
       expect(user.fullName).toBe('Budi Santoso');
       expect(user.roles).toEqual(['GURU']);
+      expect(user.tokenIssuedAt).toBe(payload.iat);
     });
 
     it('full name digabung dari given_name + family_name', () => {

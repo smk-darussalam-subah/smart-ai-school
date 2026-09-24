@@ -3,7 +3,8 @@
 // Subscribe/unsubscribe push endpoints + notification list for SISWA/ORTU.
 // =============================================================================
 
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { logger } from '@smk/logger';
@@ -16,6 +17,8 @@ import {
   SubscribeSchema,
   UnsubscribeDto,
   UnsubscribeSchema,
+  VerifyPushDeliveryDto,
+  VerifyPushDeliverySchema,
 } from './dto/push.dto';
 
 interface PushLogInput {
@@ -61,6 +64,10 @@ function readVapidConfig(): { subject: string; publicKey: string; privateKey: st
   return { subject, publicKey: publicKey.trim(), privateKey: privateKey.trim() };
 }
 
+function deliveryProof(privateKey: string, userId: string, endpoint: string): Buffer {
+  return createHmac('sha256', privateKey).update(userId).update('\0').update(endpoint).digest();
+}
+
 function staleSubscriptionStatus(error: unknown): number | null {
   if (!error || typeof error !== 'object') return null;
   const statusCode = (error as { statusCode?: unknown }).statusCode;
@@ -103,25 +110,41 @@ export class PushService {
   /** Save a push subscription for the current user */
   async subscribe(dto: SubscribeDto, user: AuthUser) {
     const input = parseSubscribeDto(dto);
-    const userId = await resolveUserId(this.prisma, user.keycloakId);
-    // Upsert: if subscription with same endpoint exists for this user, update keys
-    const existing = await this.prisma.pushSubscription.findUnique({
-      where: { userId_endpoint: { userId, endpoint: input.endpoint } },
-      select: { id: true },
-    });
-    if (existing) {
-      return this.prisma.pushSubscription.update({
-        where: { id: existing.id },
-        data: { keys: input.keys as Prisma.InputJsonValue },
-      });
+    if (!Number.isSafeInteger(user.tokenIssuedAt) || (user.tokenIssuedAt ?? 0) <= 0) {
+      throw new UnauthorizedException('Sesi autentikasi tidak memiliki urutan binding yang valid');
     }
-    return this.prisma.pushSubscription.create({
-      data: {
-        userId,
-        endpoint: input.endpoint,
-        keys: input.keys as Prisma.InputJsonValue,
-      },
-    });
+    const userId = await resolveUserId(this.prisma, user.keycloakId);
+    const bindingIssuedAt = user.tokenIssuedAt!;
+    const storedKeys = JSON.stringify({ ...input.keys, bindingIssuedAt });
+
+    // The verified JWT issue time is a monotonic account-binding version. The
+    // conditional UPSERT prevents a delayed request from an older login from
+    // taking an endpoint back after a newer account session has claimed it.
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      INSERT INTO "notification"."push_subscriptions" AS current_subscription
+        ("user_id", "endpoint", "keys")
+      VALUES
+        (${userId}::uuid, ${input.endpoint}, ${storedKeys}::jsonb)
+      ON CONFLICT ("endpoint") DO UPDATE SET
+        "user_id" = EXCLUDED."user_id",
+        "keys" = EXCLUDED."keys"
+      WHERE CASE
+              WHEN current_subscription."keys"->>'bindingIssuedAt' ~ '^[0-9]+$'
+                THEN (current_subscription."keys"->>'bindingIssuedAt')::bigint
+              ELSE 0
+            END < ${bindingIssuedAt}
+         OR (
+              current_subscription."user_id" = EXCLUDED."user_id"
+              AND CASE
+                    WHEN current_subscription."keys"->>'bindingIssuedAt' ~ '^[0-9]+$'
+                      THEN (current_subscription."keys"->>'bindingIssuedAt')::bigint
+                    ELSE 0
+                  END = ${bindingIssuedAt}
+            )
+      RETURNING "id"
+    `);
+
+    return { reconciled: rows.length === 1 };
   }
 
   /** Remove a push subscription */
@@ -132,6 +155,21 @@ export class PushService {
       where: { userId, endpoint: input.endpoint },
     });
     return { unsubscribed: true };
+  }
+
+  async verifyDelivery(dto: VerifyPushDeliveryDto, user: AuthUser): Promise<{ deliver: boolean }> {
+    const input = VerifyPushDeliverySchema.safeParse(dto);
+    if (!input.success) return { deliver: false };
+    const vapid = readVapidConfig();
+    if (!vapid) return { deliver: false };
+    const userId = await resolveUserId(this.prisma, user.keycloakId);
+    const owner = await this.prisma.pushSubscription.findFirst({
+      where: { endpoint: input.data.endpoint, userId },
+      select: { id: true },
+    });
+    if (!owner) return { deliver: false };
+    const expected = deliveryProof(vapid.privateKey, userId, input.data.endpoint);
+    return { deliver: timingSafeEqual(expected, Buffer.from(input.data.proof, 'hex')) };
   }
 
   async dispatchNotificationLog(input: PushLogInput): Promise<{ attempted: number; staleRemoved: number }> {
@@ -150,12 +188,12 @@ export class PushService {
     }
     webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey);
     const targetHref = await this.resolveNotificationTargetHrefByLog(input.logId, input.userId);
-    const payload = JSON.stringify({
+    const payload = {
       title: input.title,
       body: input.body,
       url: targetHref,
-      tag: `report-card:${input.logId}`,
-    });
+      tag: 'report-card',
+    };
     let attempted = 0;
     let staleRemoved = 0;
     for (const subscription of subscriptions) {
@@ -168,10 +206,11 @@ export class PushService {
       }
       attempted++;
       try {
+        const proof = deliveryProof(vapid.privateKey, input.userId, endpoint).toString('hex');
         await webpush.sendNotification({
           endpoint,
           keys,
-        }, payload, {
+        }, JSON.stringify({ ...payload, deliveryProof: proof }), {
           TTL: 60 * 60 * 24,
           topic: 'report-card',
         });
