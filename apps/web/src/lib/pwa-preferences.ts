@@ -22,7 +22,9 @@ export interface IndexedDbLike {
   deleteDatabase(name: string): IDBOpenDBRequest;
 }
 
-export type IndexedDbDeletionStatus = 'deleted' | 'blocked' | 'error' | 'timeout';
+export type IndexedDbDeletionStatus = 'deleted' | 'blocked' | 'error' | 'timeout' | 'unavailable';
+
+const KNOWN_OWNED_INDEXED_DATABASES = ['diis-assessment-outbox-v1'];
 
 export interface IndexedDbCleanupResult {
   complete: boolean;
@@ -54,17 +56,16 @@ function storageKeys(storage: StorageLike): string[] {
   return keys;
 }
 
-export function isInstalledExperience(
-  dependencies: InstalledExperienceDependencies = {},
-): boolean {
-  const standalone = dependencies.displayModeStandalone ?? (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(display-mode: standalone)').matches
-  );
-  const iosStandalone = dependencies.navigatorStandalone ?? (
-    typeof navigator !== 'undefined' && Boolean((navigator as Navigator & { standalone?: boolean }).standalone)
-  );
+export function isInstalledExperience(dependencies: InstalledExperienceDependencies = {}): boolean {
+  const standalone =
+    dependencies.displayModeStandalone ??
+    (typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(display-mode: standalone)').matches);
+  const iosStandalone =
+    dependencies.navigatorStandalone ??
+    (typeof navigator !== 'undefined' &&
+      Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
   return standalone || iosStandalone;
 }
 
@@ -146,20 +147,29 @@ export async function purgeOwnedIndexedDatabases(
   factory?: IndexedDbLike,
   options: IndexedDbCleanupOptions = {},
 ): Promise<IndexedDbCleanupResult> {
-  if (!factory?.databases) return { complete: true, deleted: [], incomplete: [] };
+  if (!factory) {
+    return {
+      complete: false,
+      deleted: [],
+      incomplete: [{ name: 'indexedDB', status: 'unavailable' }],
+    };
+  }
   const timeoutMs = options.attemptTimeoutMs ?? 250;
   const retryDelayMs = options.retryDelayMs ?? 50;
   const requestClosure = options.requestClosure ?? defaultClosureRequest;
 
   try {
-    const names = ownedDatabaseNames(await factory.databases());
+    const enumerableNames = factory.databases ? ownedDatabaseNames(await factory.databases()) : [];
+    const names = factory.databases ? enumerableNames : KNOWN_OWNED_INDEXED_DATABASES;
     if (names.length === 0) return { complete: true, deleted: [], incomplete: [] };
 
     await requestClosure(names);
-    const firstPass = await Promise.all(names.map(async (name) => ({
-      name,
-      status: await deleteDatabase(factory, name, timeoutMs),
-    })));
+    const firstPass = await Promise.all(
+      names.map(async (name) => ({
+        name,
+        status: await deleteDatabase(factory, name, timeoutMs),
+      })),
+    );
     const retryNames = firstPass
       .filter(({ status }) => status !== 'deleted')
       .map(({ name }) => name);
@@ -168,16 +178,21 @@ export async function purgeOwnedIndexedDatabases(
     if (retryNames.length > 0) {
       await requestClosure(retryNames);
       await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-      const retries = new Map(await Promise.all(retryNames.map(async (name) => [
-        name,
-        await deleteDatabase(factory, name, timeoutMs),
-      ] as const)));
-      results = firstPass.map((entry) => (
-        retries.has(entry.name) ? { name: entry.name, status: retries.get(entry.name)! } : entry
-      ));
+      const retries = new Map(
+        await Promise.all(
+          retryNames.map(
+            async (name) => [name, await deleteDatabase(factory, name, timeoutMs)] as const,
+          ),
+        ),
+      );
+      results = firstPass.map((entry) =>
+        retries.has(entry.name) ? { name: entry.name, status: retries.get(entry.name)! } : entry,
+      );
     }
 
-    const remaining = new Set(ownedDatabaseNames(await factory.databases()));
+    const remaining = new Set(
+      factory.databases ? ownedDatabaseNames(await factory.databases()) : [],
+    );
     const deleted = results
       .filter(({ name, status }) => status === 'deleted' && !remaining.has(name))
       .map(({ name }) => name);
@@ -185,7 +200,7 @@ export async function purgeOwnedIndexedDatabases(
       .filter(({ name, status }) => status !== 'deleted' || remaining.has(name))
       .map(({ name, status }) => ({
         name,
-        status: remaining.has(name) && status === 'deleted' ? 'still-present' as const : status,
+        status: remaining.has(name) && status === 'deleted' ? ('still-present' as const) : status,
       }));
 
     return { complete: incomplete.length === 0, deleted, incomplete };

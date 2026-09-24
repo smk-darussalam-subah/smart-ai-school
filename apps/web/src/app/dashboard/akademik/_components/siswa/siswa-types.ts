@@ -52,6 +52,7 @@ export interface SiswaTugas {
   deadline: string;
   dlDays: number;
   status: 'pending' | 'submitted' | 'graded';
+  lateSubmissionStatus?: 'pending' | 'accepted' | 'rejected' | null;
   guru: string;
   desc: string;
   score?: number;
@@ -217,23 +218,23 @@ export interface BadgeCelebrationData {
 export const MAPEL_COLORS: Record<string, string> = {
   'Pemrograman Web': '#10b981',
   'Basis Data': '#0ea5e9',
-  'Matematika': '#a78bfa',
+  Matematika: '#a78bfa',
   'B.Indonesia': '#ec4899',
   'B.Inggris': '#f59e0b',
-  'Fisika': '#ef4444',
-  'PJOK': '#14b8a6',
-  'PKn': '#8b5cf6',
+  Fisika: '#ef4444',
+  PJOK: '#14b8a6',
+  PKn: '#8b5cf6',
 };
 
 export const MAPEL_ICONS: Record<string, string> = {
   'Pemrograman Web': 'code-2',
   'Basis Data': 'database',
-  'Matematika': 'calculator',
+  Matematika: 'calculator',
   'B.Indonesia': 'book-open',
   'B.Inggris': 'languages',
-  'Fisika': 'atom',
-  'PJOK': 'dumbbell',
-  'PKn': 'landmark',
+  Fisika: 'atom',
+  PJOK: 'dumbbell',
+  PKn: 'landmark',
 };
 
 export function mpColor(mp: string): string {

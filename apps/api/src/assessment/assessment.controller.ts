@@ -5,8 +5,20 @@
 // =============================================================================
 
 import {
-  BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, HttpStatus,
-  Param, ParseUUIDPipe, Patch, Post, Query, Sse, UnauthorizedException,
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  Sse,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { AuthUser } from '@smk/auth';
@@ -18,8 +30,14 @@ import { RequirePermission } from '../permissions/decorators/require-permission.
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { AssessmentService } from './assessment.service';
 import {
-  AutosaveResponseSchema, CreateAssessmentSessionSchema, GradeEssaySchema, ListAssessmentSessionSchema,
-  SubmitResponseSchema, UpdateAssessmentSessionSchema,
+  AssessmentRuntimeSignalSchema,
+  AutosaveResponseSchema,
+  CreateAssessmentSessionSchema,
+  GradeEssaySchema,
+  ListAssessmentSessionSchema,
+  ReviewLateSubmissionSchema,
+  SubmitResponseSchema,
+  UpdateAssessmentSessionSchema,
 } from './dto/assessment.dto';
 
 @Controller('assessment/sessions')
@@ -148,7 +166,29 @@ export class AssessmentController {
     @Body(ZodPipe(GradeEssaySchema)) dto: unknown,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.service.gradeEssayResponse(id, responseId, dto as Parameters<typeof this.service.gradeEssayResponse>[2], user);
+    return this.service.gradeEssayResponse(
+      id,
+      responseId,
+      dto as Parameters<typeof this.service.gradeEssayResponse>[2],
+      user,
+    );
+  }
+
+  @Roles('GURU', 'KEPALA_SEKOLAH')
+  @RequirePermission('lms.own.manage')
+  @Patch(':id/responses/:responseId/late-submission')
+  reviewLateSubmission(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('responseId', ParseUUIDPipe) responseId: string,
+    @Body(ZodPipe(ReviewLateSubmissionSchema)) dto: unknown,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.reviewLateSubmission(
+      id,
+      responseId,
+      dto as Parameters<typeof this.service.reviewLateSubmission>[2],
+      user,
+    );
   }
 
   @Roles('SISWA')
@@ -160,7 +200,27 @@ export class AssessmentController {
     @Body(ZodPipe(AutosaveResponseSchema)) dto: unknown,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.service.autosaveResponse(id, dto as Parameters<typeof this.service.autosaveResponse>[1], user);
+    return this.service.autosaveResponse(
+      id,
+      dto as Parameters<typeof this.service.autosaveResponse>[1],
+      user,
+    );
+  }
+
+  @Roles('SISWA')
+  @RequirePermission('lms.progress.manage')
+  @Post(':id/runtime-signal')
+  @HttpCode(HttpStatus.OK)
+  recordRuntimeSignal(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(AssessmentRuntimeSignalSchema)) dto: unknown,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.recordRuntimeSignal(
+      id,
+      dto as Parameters<typeof this.service.recordRuntimeSignal>[1],
+      user,
+    );
   }
 
   @Roles('SISWA')
@@ -172,6 +232,10 @@ export class AssessmentController {
     @Body(ZodPipe(SubmitResponseSchema)) dto: unknown,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.service.submitResponse(id, dto as Parameters<typeof this.service.submitResponse>[1], user);
+    return this.service.submitResponse(
+      id,
+      dto as Parameters<typeof this.service.submitResponse>[1],
+      user,
+    );
   }
 }

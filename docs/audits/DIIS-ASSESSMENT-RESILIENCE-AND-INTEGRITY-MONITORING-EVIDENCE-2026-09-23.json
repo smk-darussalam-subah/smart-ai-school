@@ -1,0 +1,245 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-24T11:48:58+07:00",
+  "status": "SOURCE_COMPLETE_INDEPENDENT_REREVIEW_REQUIRED_STAGING_HOLD",
+  "baseline": {
+    "sha": "31e9ee5582328f4c3bb3fd747b007d124b51a85d",
+    "tree": "300359a73eaa4ed5f807745e937ea4fc60ae48f4"
+  },
+  "reviewInput": {
+    "path": "docs/audits/DIIS-ASSESSMENT-RESILIENCE-INDEPENDENT-SOURCE-REREVIEW-5-2026-09-24.md",
+    "sha256": "05688dfe5e04cc7f76d562e7b5af04eafc46c73c06edb20e44055a21f61fff26",
+    "modifiedByExecutor": false
+  },
+  "policy": {
+    "deviceTimeAuthoritative": false,
+    "serverStartRequired": true,
+    "latePayloadAcceptedIntoQuarantine": true,
+    "latePayloadAutoGraded": false,
+    "teacherDecisionRequired": true,
+    "teacherDecisionNoteRequired": true,
+    "states": ["pending", "accepted", "rejected"]
+  },
+  "sourceManifest": {
+    "pathCount": 21,
+    "aggregateAlgorithm": "sha256(utf8(concat(lowercase_sha256 + two_spaces + path + lf))) after case-sensitive ASCII-byte path sort",
+    "aggregateSha256": "3f82e65fe8d59670a87020637c99b40aecde1a28956e55c8a24a86c1c2ed5167",
+    "files": [
+      {
+        "path": "apps/api/src/__tests__/assessment-resilience-postgres.spec.ts",
+        "sha256": "80908cb0557b2d5c2c840c952d248cc1d18d94886fcb67e7b7021d8ca9cf8e56"
+      },
+      {
+        "path": "apps/api/src/__tests__/assessment-u2.spec.ts",
+        "sha256": "98a479274a98fea0f72143e8770008a8f480d27db2905c77dcbc4a6f8870333f"
+      },
+      {
+        "path": "apps/api/src/__tests__/student-dashboard.spec.ts",
+        "sha256": "6ee54cef898f4f8d52b788c2da1b2cb37e8b5159ac5a5d746b6b6048c09ede11"
+      },
+      {
+        "path": "apps/api/src/assessment/assessment.controller.ts",
+        "sha256": "6daf13ae506907df7f3de83aa8db023f52918778974bc9d19925e48f879b81f7"
+      },
+      {
+        "path": "apps/api/src/assessment/assessment.service.ts",
+        "sha256": "49f3ecb251ca950def013dd2a517dad0a463a3f991de13d92329b76bc1f0a9c1"
+      },
+      {
+        "path": "apps/api/src/assessment/dto/assessment.dto.ts",
+        "sha256": "b7c0fd8d6f462fb54ce51efef491527e1dccdd106002eeed2cca0703c7de3bc2"
+      },
+      {
+        "path": "apps/api/src/student-dashboard/student-dashboard.service.ts",
+        "sha256": "f74ccbbee02e303c05a88ffa639d7c9438348949222e3f4b8483b379dbb17a0d"
+      },
+      {
+        "path": "apps/web/src/__tests__/academic-operational-ui.test.ts",
+        "sha256": "61a3452d9cb5291af7a76ee8b9fc545fc56e6c18edddd4aa99a6b3389f6898ff"
+      },
+      {
+        "path": "apps/web/src/__tests__/assessment-offline.test.ts",
+        "sha256": "fa34ca8cd555f5b5556ed344b57888cfd93c4f9ce0459cc6ed2677f2d180ff86"
+      },
+      {
+        "path": "apps/web/src/__tests__/pwa-runtime-security.test.ts",
+        "sha256": "d0a0b8b3978d7419b394cfe1e96ccd25f26bd902cfce6b7af2def377d6c61ed0"
+      },
+      {
+        "path": "apps/web/src/__tests__/siswa-modul-progress.test.ts",
+        "sha256": "58f00393e8ed9d3f01cc8269085697a30058564c639f6fbbc057b43161680427"
+      },
+      {
+        "path": "apps/web/src/app/dashboard/akademik/_components/PenilaianSesiModal.tsx",
+        "sha256": "76beaef41a63f2311dfe242aeac7061ac1a020c235dde4170f8cd25ea02c032e"
+      },
+      {
+        "path": "apps/web/src/app/dashboard/akademik/_components/siswa/TaskDetailModal.tsx",
+        "sha256": "9c1f00190b8e76efcbd810d75e586db22426acf813268d4de87589e4cc3139cd"
+      },
+      {
+        "path": "apps/web/src/app/dashboard/akademik/_components/siswa/siswa-types.ts",
+        "sha256": "b089959ab3fd2b619663e58ee19f890ed0ecb41d2ebf5e2b4e41ba9d64b99ea0"
+      },
+      {
+        "path": "apps/web/src/app/dashboard/akademik/actions.ts",
+        "sha256": "acafe221411a4d7a46d3240aaf34886e9c758667398a78e7718c68d4b878ca07"
+      },
+      {
+        "path": "apps/web/src/app/dashboard/akademik/page.tsx",
+        "sha256": "c48d738a76c531cca7adb533e197f1e092c1d42255b06d11159bee4a740ba275"
+      },
+      {
+        "path": "apps/web/src/lib/assessment-offline.ts",
+        "sha256": "8d25a6662d6b9dabbd70021a90cbfea35b536d1a645a2435898370e1685f256b"
+      },
+      {
+        "path": "apps/web/src/lib/pwa-logout.ts",
+        "sha256": "e16e483df3ad8dd7b24c735153e6fe6bb813a2f193c08846a60b2aaa79367497"
+      },
+      {
+        "path": "apps/web/src/lib/pwa-preferences.ts",
+        "sha256": "d8dde15b42ba1f31005cc308ed2def2287a95babc48928f628a79075d4e5ec84"
+      },
+      {
+        "path": "packages/database/prisma/migrations/20260923000001_assessment_resilience_monitoring/migration.sql",
+        "sha256": "d62e8d078b840e46fcdeab02a91fac89c91904ba37579fc1baeb620207edefab"
+      },
+      {
+        "path": "packages/database/prisma/schema.prisma",
+        "sha256": "d582f23c09f838714727587c9a7ff6ecd0b524ac1a5dee9006a5ad73ab571130"
+      }
+    ]
+  },
+  "findingClosure": {
+    "P1_R01_server_authoritative_deadline": "CLOSED",
+    "P1_R02_persistence_truthfulness": "CLOSED",
+    "P1_R03_pending_submit_cas": "CLOSED",
+    "P1_R04_logout_cleanup": "CLOSED",
+    "P2_R05_automatic_retry": "CLOSED",
+    "P2_R06_integrity_signal_drain": "CLOSED",
+    "P2_R07_signal_submit_ordering": "CLOSED",
+    "P1_R08_late_essay_grade_guard": "CLOSED",
+    "P1_R09_completion_reconciliation_race": "CLOSED",
+    "P2_R10_bounded_signal_submit": "CLOSED",
+    "P2_R11_signal_queue_read_truthfulness": "CLOSED",
+    "P1_R12_combined_draft_queue_failure_truthfulness": "CLOSED",
+    "P2_E01_actual_service_postgres_race_proof": "CLOSED",
+    "P1_R13_started_unsubmitted_reload_projection": "CLOSED",
+    "P1_R14_completed_session_existing_attempt_resume": "CLOSED",
+    "P2_E02_canonical_manifest_aggregate": "CLOSED",
+    "P1_R15_start_completion_transaction_race": "CLOSED",
+    "P1_R16_cancel_remedial_start_transaction_race": "CLOSED"
+  },
+  "followupDelta": {
+    "pathCount": 3,
+    "paths": [
+      "apps/api/src/__tests__/assessment-resilience-postgres.spec.ts",
+      "apps/api/src/__tests__/assessment-u2.spec.ts",
+      "apps/api/src/assessment/assessment.service.ts"
+    ]
+  },
+  "verification": {
+    "focusedApiUnit": { "suitesPassed": 1, "testsPassed": 57 },
+    "focusedPostgresBehavior": { "suitesPassed": 1, "testsPassed": 8 },
+    "focusedWeb": {
+      "suitesPassed": 1,
+      "testsPassed": 21,
+      "rerunInCurrentFollowup": false,
+      "sourceInputsUnchanged": true,
+      "provenance": "Independent Source Re-review 4"
+    },
+    "typeCheck": { "api": "PASS" },
+    "scopedLint": { "exactFollowupPaths": 3, "result": "PASS" },
+    "postgresDisposable": {
+      "migrationsApplied": 48,
+      "initialProbe": {
+        "result": "STOPPED_BEFORE_DATABASE_CREATION",
+        "reason": "premature readiness probe",
+        "cleanup": "PASS"
+      },
+      "lateColumns": 8,
+      "concurrentDecisionCas": "PASS",
+      "completionThenLateReviewGradeOutbox": "PASS",
+      "submitThenCompletionGradeOutbox": "PASS",
+      "completionBeforeNewStart": {
+        "result": "PASS",
+        "responseCount": 0
+      },
+      "newStartBeforeCompletion": {
+        "result": "PASS",
+        "responseCount": 1,
+        "resumableAfterCompletion": true
+      },
+      "cancelBeforeRemedialStart": {
+        "result": "PASS",
+        "responseCount": 0,
+        "sessionStatus": "cancelled",
+        "participantStatus": "cancelled"
+      },
+      "remedialStartBeforeCancel": {
+        "result": "PASS",
+        "responseCount": 1,
+        "sessionStatus": "cancelled",
+        "participantStatus": "cancelled"
+      },
+      "actualAssessmentServiceMethods": [
+        "completeSession",
+        "reviewLateSubmission",
+        "submitResponse",
+        "startResponse",
+        "cancelRemedialSession"
+      ],
+      "actualTables": [
+        "academic.assessment_sessions",
+        "academic.assessment_responses",
+        "academic.remedial_participants",
+        "academic.grades",
+        "academic.assessment_event_outbox"
+      ],
+      "proofTables": 0,
+      "invalidStatusRejected": "PASS",
+      "cleanup": {
+        "result": "PASS",
+        "fixtureUsers": 0,
+        "sessions": 0,
+        "responses": 0,
+        "remedialParticipants": 0,
+        "outbox": 0,
+        "integrityEvents": 0,
+        "grades": 0,
+        "containerRemaining": 0
+      }
+    },
+    "historicalVerification": {
+      "rerunInCurrentFollowup": false,
+      "fullApi": {
+        "suitesPassed": 74,
+        "suitesSkippedBaseline": 3,
+        "testsPassed": 1407,
+        "testsSkippedBaseline": 15
+      },
+      "fullWeb": { "suitesPassed": 56, "testsPassed": 473, "execution": "serial" },
+      "databaseTypeCheck": "PASS",
+      "broadLint": { "api": "PASS", "web": "PASS" },
+      "build": {
+        "api": "PASS",
+        "web": "PASS",
+        "database": "PASS",
+        "webPages": "50/50"
+      },
+      "prismaValidate": "PASS"
+    },
+    "diffCheck": "PASS",
+    "secretScan": "PASS",
+    "stagedFiles": 0
+  },
+  "nonClaims": [
+    "No commit, push, pull request, staging deployment, or production mutation was performed.",
+    "No real student data was used.",
+    "Installed-PWA staging QA was not performed in this source gate.",
+    "Full API, full Web, build, broad Web checks, database type-check, and Prisma validation were not rerun for the narrow R16 follow-up.",
+    "Browser PWA cannot enforce an OS-level kiosk lock.",
+    "Executor verification is not an independent source-review verdict."
+  ]
+}

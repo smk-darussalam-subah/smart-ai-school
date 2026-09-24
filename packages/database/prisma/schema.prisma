@@ -1052,16 +1052,46 @@ model AssessmentResponse {
   score       Int?
   startedAt   DateTime? @map("started_at") // U2: kapan siswa mulai mengerjakan
   timeSpentSec Int?     @map("time_spent_sec") // U2: total detik yang dihabiskan
-  submittedAt DateTime? @map("submitted_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+  clientRevision  Int       @default(0) @map("client_revision")
+  lastMutationId  String?   @map("last_mutation_id") @db.Uuid
+  lastSavedAt     DateTime? @map("last_saved_at")
+  lastHeartbeatAt DateTime? @map("last_heartbeat_at")
+  submittedAt     DateTime? @map("submitted_at")
+  lateSubmissionStatus String?  @map("late_submission_status") @db.VarChar(20)
+  lateAnswers          Json?    @map("late_answers") @db.JsonB
+  lateRevision         Int?     @map("late_revision")
+  lateMutationId       String?  @map("late_mutation_id") @db.Uuid
+  lateSubmittedAt      DateTime? @map("late_submitted_at")
+  lateReviewedAt       DateTime? @map("late_reviewed_at")
+  lateReviewedBy       String?  @map("late_reviewed_by") @db.VarChar(255)
+  lateReviewNote       String?  @map("late_review_note") @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  session  AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  student  Student           @relation(fields: [studentId], references: [id])
+  session         AssessmentSession          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student         Student                    @relation(fields: [studentId], references: [id])
+  integrityEvents AssessmentIntegrityEvent[]
 
   @@unique([sessionId, studentId])
   @@index([studentId])
   @@map("assessment_responses")
+  @@schema("academic")
+}
+
+model AssessmentIntegrityEvent {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  responseId    String   @map("response_id") @db.Uuid
+  clientEventId String   @unique @map("client_event_id") @db.Uuid
+  type          String   @db.VarChar(40)
+  occurredAt    DateTime @map("occurred_at")
+  receivedAt    DateTime @default(now()) @map("received_at")
+  receivedAfterSubmit Boolean @default(false) @map("received_after_submit")
+
+  response AssessmentResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@index([responseId, receivedAt])
+  @@index([type, receivedAt])
+  @@map("assessment_integrity_events")
   @@schema("academic")
 }
 

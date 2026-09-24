@@ -64,6 +64,7 @@ interface StudentDashboardAssignment {
   subject: string;
   guru: string | null;
   status: 'pending' | 'submitted' | 'graded';
+  lateSubmissionStatus?: 'pending' | 'accepted' | 'rejected' | null;
   progress?: number;
   kktp?: number;
   purpose?: 'regular' | 'remedial';
@@ -96,13 +97,17 @@ type AcademicSearchParams = Promise<Record<string, string | string[] | undefined
 const oneSearchParam = (value: string | string[] | undefined): string =>
   Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
 
-function assignmentDeadline(dueAt: string | null | undefined, now: Date): {
+function assignmentDeadline(
+  dueAt: string | null | undefined,
+  now: Date,
+): {
   label: string;
   days: number;
 } {
   if (!dueAt) return { label: 'Tanpa tenggat', days: Number.POSITIVE_INFINITY };
   const date = new Date(dueAt);
-  if (Number.isNaN(date.getTime())) return { label: 'Tenggat tidak valid', days: Number.POSITIVE_INFINITY };
+  if (Number.isNaN(date.getTime()))
+    return { label: 'Tenggat tidak valid', days: Number.POSITIVE_INFINITY };
   return {
     label: new Intl.DateTimeFormat('id-ID', {
       dateStyle: 'medium',
@@ -144,7 +149,11 @@ async function fetchInitialAssessmentSessions(token: string): Promise<{
   };
 }
 
-export default async function AkademikPage({ searchParams }: { searchParams: AcademicSearchParams }) {
+export default async function AkademikPage({
+  searchParams,
+}: {
+  searchParams: AcademicSearchParams;
+}) {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
   const requestedParams = await searchParams;
@@ -383,20 +392,24 @@ export default async function AkademikPage({ searchParams }: { searchParams: Aca
               remedialParticipant: item.remedialParticipant ?? null,
               mp: item.subject,
               title: item.title,
-              type: item.purpose === 'remedial'
-                ? 'Remedial'
-                : item.type === 'assessment' ? 'Asesmen' : 'Modul LMS',
+              type:
+                item.purpose === 'remedial'
+                  ? 'Remedial'
+                  : item.type === 'assessment'
+                    ? 'Asesmen'
+                    : 'Modul LMS',
               deadline: deadline.label,
               dlDays: deadline.days,
               status: studentTaskStatus(item),
+              lateSubmissionStatus: item.lateSubmissionStatus ?? null,
               guru: item.guru ?? 'Guru mapel',
-              desc: item.instructions?.trim() || (
-                item.purpose === 'remedial'
+              desc:
+                item.instructions?.trim() ||
+                (item.purpose === 'remedial'
                   ? 'Kerjakan remedial sesuai tenggat dan pantau status finalisasi dari guru.'
                   : item.type === 'assessment'
                     ? 'Kerjakan asesmen sesuai waktu dan kirim jawaban dari sistem.'
-                    : 'Lanjutkan pembelajaran modul sampai selesai.'
-              ),
+                    : 'Lanjutkan pembelajaran modul sampai selesai.'),
               score: item.status === 'graded' ? (item.progress ?? 0) : undefined,
               feedback: null,
               submittedFiles: 0,
@@ -727,7 +740,13 @@ export default async function AkademikPage({ searchParams }: { searchParams: Aca
       assignments={assignmentsRes.data}
       assignmentTotal={assignmentsRes.total}
       options={
-        assignmentOptionsRes ?? { teachers: [], classes: [], subjects: [], academicYears: [], scope: { type: 'global', labels: [] } }
+        assignmentOptionsRes ?? {
+          teachers: [],
+          classes: [],
+          subjects: [],
+          academicYears: [],
+          scope: { type: 'global', labels: [] },
+        }
       }
       canManageAssignments={canEditAssignment}
       canDeleteAssignments={
@@ -737,7 +756,8 @@ export default async function AkademikPage({ searchParams }: { searchParams: Aca
         schedule: authority.can('academic.schedule.read'),
         report: authority.can('report.read'),
         activities: authority.can('activity.read'),
-        reviewRpp: authority.can('rpp.curriculum.review') ||
+        reviewRpp:
+          authority.can('rpp.curriculum.review') ||
           authority.can('rpp.final.approve') ||
           (authority.hasRole('SUPER_ADMIN') && authority.can('rpp.read')),
       }}

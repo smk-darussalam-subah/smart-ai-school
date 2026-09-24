@@ -10,6 +10,7 @@ import { DIIS_PUSH_STATE_CACHE, setPushDeliveryState } from './push';
 export const DIIS_CACHE_PREFIX = 'diis-pwa-';
 export const FEDERATED_LOGOUT_URL = '/api/auth/federated-logout';
 const CLEANUP_TIMEOUT_MS = 2500;
+const PUBLIC_SHELL_CACHE_SUFFIX = '-static';
 
 interface PushSubscriptionLike {
   endpoint: string;
@@ -53,11 +54,19 @@ function browserStorage(kind: 'localStorage' | 'sessionStorage'): StorageLike | 
   }
 }
 
-async function purgeOwnedCaches(cacheStorage?: Pick<CacheStorage, 'keys' | 'delete'>): Promise<boolean> {
+async function purgeOwnedCaches(
+  cacheStorage?: Pick<CacheStorage, 'keys' | 'delete'>,
+): Promise<boolean> {
   if (!cacheStorage) return true;
   const names = await cacheStorage.keys();
   const results = await Promise.allSettled(
-    names.filter((name) => name.startsWith(DIIS_CACHE_PREFIX) && name !== DIIS_PUSH_STATE_CACHE)
+    names
+      .filter(
+        (name) =>
+          name.startsWith(DIIS_CACHE_PREFIX) &&
+          name !== DIIS_PUSH_STATE_CACHE &&
+          !name.endsWith(PUBLIC_SHELL_CACHE_SUFFIX),
+      )
       .map((name) => cacheStorage.delete(name)),
   );
   return results.every((result) => result.status === 'fulfilled' && result.value === true);
@@ -71,14 +80,17 @@ async function readCurrentSubscription(
     const registration = await getRegistration();
     return {
       complete: true,
-      subscription: await registration?.pushManager?.getSubscription() ?? null,
+      subscription: (await registration?.pushManager?.getSubscription()) ?? null,
     };
   } catch {
     return { complete: false, subscription: null };
   }
 }
 
-async function runBounded<T>(task: Promise<T>, timeoutMs: number): Promise<{
+async function runBounded<T>(
+  task: Promise<T>,
+  timeoutMs: number,
+): Promise<{
   timedOut: boolean;
   value?: T;
 }> {
@@ -97,22 +109,18 @@ async function runBounded<T>(task: Promise<T>, timeoutMs: number): Promise<{
 export async function cleanupSharedDeviceSession(
   dependencies: SharedDeviceCleanupDependencies = {},
 ): Promise<SharedDeviceCleanupResult> {
-  const getRegistration = dependencies.getRegistration ?? (
-    typeof navigator !== 'undefined' && 'serviceWorker' in navigator
+  const getRegistration =
+    dependencies.getRegistration ??
+    (typeof navigator !== 'undefined' && 'serviceWorker' in navigator
       ? () => navigator.serviceWorker.getRegistration()
-      : undefined
-  );
-  const cacheStorage = dependencies.cacheStorage ?? (
-    typeof caches !== 'undefined' ? caches : undefined
-  );
-  const fetcher = dependencies.fetcher ?? (
-    typeof fetch !== 'undefined' ? fetch : undefined
-  );
+      : undefined);
+  const cacheStorage =
+    dependencies.cacheStorage ?? (typeof caches !== 'undefined' ? caches : undefined);
+  const fetcher = dependencies.fetcher ?? (typeof fetch !== 'undefined' ? fetch : undefined);
   const local = dependencies.localStorage ?? browserStorage('localStorage');
   const session = dependencies.sessionStorage ?? browserStorage('sessionStorage');
-  const indexedDb = dependencies.indexedDb ?? (
-    typeof indexedDB !== 'undefined' ? indexedDB : undefined
-  );
+  const indexedDb =
+    dependencies.indexedDb ?? (typeof indexedDB !== 'undefined' ? indexedDB : undefined);
 
   const cleanup = (async (): Promise<SharedDeviceCleanupResult> => {
     purgeUserStorage(local, session);
@@ -124,14 +132,16 @@ export async function cleanupSharedDeviceSession(
 
     if (subscriptionRead.subscription) {
       if (fetcher) {
-        subscriptionTasks.push(fetcher('/api/backend/push/unsubscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ endpoint: subscriptionRead.subscription.endpoint }),
-          cache: 'no-store',
-          credentials: 'same-origin',
-          keepalive: true,
-        }).then((response) => response.ok));
+        subscriptionTasks.push(
+          fetcher('/api/backend/push/unsubscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: subscriptionRead.subscription.endpoint }),
+            cache: 'no-store',
+            credentials: 'same-origin',
+            keepalive: true,
+          }).then((response) => response.ok),
+        );
       } else {
         subscriptionTasks.push(Promise.resolve(false));
       }
@@ -143,9 +153,14 @@ export async function cleanupSharedDeviceSession(
       indexedDbPromise,
       ...subscriptionTasks,
     ]);
-    const indexedDbCleanup = indexedDbResult.status === 'fulfilled'
-      ? indexedDbResult.value
-      : { complete: false, deleted: [], incomplete: [{ name: 'cleanup', status: 'error' as const }] };
+    const indexedDbCleanup =
+      indexedDbResult.status === 'fulfilled'
+        ? indexedDbResult.value
+        : {
+            complete: false,
+            deleted: [],
+            incomplete: [{ name: 'cleanup', status: 'error' as const }],
+          };
     const serverUnsubscribed = subscriptionRead.subscription
       ? subscriptionResults[0]?.status === 'fulfilled' && subscriptionResults[0].value === true
       : null;
@@ -153,8 +168,10 @@ export async function cleanupSharedDeviceSession(
       ? subscriptionResults[1]?.status === 'fulfilled' && subscriptionResults[1].value === true
       : null;
     const cacheComplete = cacheResult.status === 'fulfilled' && cacheResult.value === true;
-    const pushComplete = subscriptionRead.complete
-      && (!subscriptionRead.subscription || (serverUnsubscribed === true && browserUnsubscribed === true));
+    const pushComplete =
+      subscriptionRead.complete &&
+      (!subscriptionRead.subscription ||
+        (serverUnsubscribed === true && browserUnsubscribed === true));
     return {
       complete: cacheComplete && indexedDbCleanup.complete && pushComplete,
       timedOut: false,
@@ -179,17 +196,20 @@ export async function cleanupSharedDeviceSession(
       serverUnsubscribed: null,
       browserUnsubscribed: null,
     },
-    indexedDb: { complete: false, deleted: [], incomplete: [{ name: 'cleanup', status: 'timeout' }] },
+    indexedDb: {
+      complete: false,
+      deleted: [],
+      incomplete: [{ name: 'cleanup', status: 'timeout' }],
+    },
   };
 }
 
 let logoutInFlight: Promise<void> | null = null;
 
-function cleanupSuppressedPush(value: unknown): boolean {
+function completedSharedDeviceCleanup(value: unknown): value is SharedDeviceCleanupResult {
   if (!value || typeof value !== 'object') return false;
   const cleanup = value as Partial<SharedDeviceCleanupResult>;
-  if (cleanup.complete === true) return true;
-  return cleanup.push?.serverUnsubscribed === true || cleanup.push?.browserUnsubscribed === true;
+  return cleanup.complete === true;
 }
 
 export function beginSharedDeviceLogout(
@@ -206,7 +226,15 @@ export function beginSharedDeviceLogout(
     } catch {
       cleanupResult = undefined;
     }
-    if (!locallySuppressed && !cleanupSuppressedPush(cleanupResult)) {
+    if (!completedSharedDeviceCleanup(cleanupResult)) {
+      throw new Error('Data privat belum dapat dibersihkan untuk logout');
+    }
+    if (
+      !locallySuppressed &&
+      cleanupResult.push.serverUnsubscribed !== true &&
+      cleanupResult.push.browserUnsubscribed !== true &&
+      cleanupResult.push.registrationRead !== true
+    ) {
       throw new Error('Notifikasi belum dapat diamankan untuk logout');
     }
     navigate(FEDERATED_LOGOUT_URL);
