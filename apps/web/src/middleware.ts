@@ -46,7 +46,8 @@ const PUBLIC_EXACT: readonly string[] = [
   '/spmb',
   '/privacy',
   '/sw.js',
-  '/manifest.json',
+  '/manifest.webmanifest',
+  '/offline.html',
   '/apple-touch-icon.png',
   '/icon-192.png',
   '/icon-512.png',
@@ -74,7 +75,7 @@ export function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
-const STATIC_INTERACTIVE: readonly string[] = ['/', '/spmb', '/login', '/auth', '/health'];
+const STATIC_INTERACTIVE: readonly string[] = ['/', '/spmb', '/login', '/auth', '/health', '/offline.html'];
 
 function isPublicStaticPage(pathname: string): boolean {
   if (STATIC_INTERACTIVE.includes(pathname)) return true;

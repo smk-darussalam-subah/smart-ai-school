@@ -120,6 +120,8 @@ export interface AuthUser {
   username: string;
   roles: UserRole[];
   fullName: string;
+  /** Verified JWT iat, used only for monotonic security bindings. */
+  tokenIssuedAt?: number;
 }
 
 // ── JWKS Client untuk verifikasi token ──────────────────────────────────────
@@ -185,6 +187,7 @@ export function extractAuthUser(payload: KeycloakTokenPayload): AuthUser {
     username: payload.preferred_username || payload.sub,
     roles: validRoles,
     fullName: [payload.given_name, payload.family_name].filter(Boolean).join(' ') || payload.preferred_username || '',
+    tokenIssuedAt: payload.iat,
   };
 }
 

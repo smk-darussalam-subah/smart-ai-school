@@ -987,9 +987,14 @@ export async function importQuestionsCsv(
 export async function subscribePush(dto: {
   endpoint: string;
   keys: { p256dh: string; auth: string };
-}): Promise<boolean> {
+}): Promise<'bound' | 'superseded' | 'failed'> {
   const r = await apiCall('/push/subscribe', 'POST', dto);
-  return r.success;
+  if (!r.success) return 'failed';
+  const reconciled = r.data
+    && typeof r.data === 'object'
+    && 'reconciled' in r.data
+    && r.data.reconciled === true;
+  return reconciled ? 'bound' : 'superseded';
 }
 
 /** T3-03: Unsubscribe from push notifications via POST /push/unsubscribe. */
