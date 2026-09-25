@@ -30,8 +30,8 @@ export function Footer() {
               </span>
             </div>
             <p className="text-[13px] leading-relaxed max-w-[30ch] text-[#7aab9a]">
-              Jl. Lapangan Selatan No. 05, Kemiri Barat, Subah, Batang, Jawa Tengah.
-              Yayasan Wakaf Darussalam.
+              Jl. Lapangan Selatan No. 05, Kemiri Barat, Subah, Batang, Jawa Tengah. Yayasan Wakaf
+              Darussalam.
             </p>
           </div>
 
@@ -47,7 +47,7 @@ export function Footer() {
             ].map((l) => (
               <a
                 key={l}
-                href="#jurusan"
+                href="/#jurusan"
                 className="block py-1.5 text-[13px] text-[#9fc3b4] hover:text-smk-lime transition-colors"
               >
                 {l}
@@ -62,9 +62,10 @@ export function Footer() {
             </h4>
             {[
               { label: 'SPMB 2027/2028', href: SPMB_URL, ext: false },
-              { label: 'Profil Sekolah', href: '#profil', ext: false },
+              { label: 'Tentang DIIS', href: '/diis', ext: false },
+              { label: 'Profil Sekolah', href: '/#profil', ext: false },
               { label: 'Portal Siswa', href: '/login', ext: false },
-              { label: 'Video Profil', href: '#video', ext: false },
+              { label: 'Video Profil', href: '/#video', ext: false },
               { label: 'Kebijakan Privasi', href: '/privacy', ext: false },
             ].map((l) => (
               <a
@@ -117,7 +118,7 @@ export function Footer() {
         {/* Bottom bar */}
         <div className="border-t border-white/8 pt-5 flex flex-col sm:flex-row justify-between gap-2 text-[12px] text-[#5a8a78]">
           <span>
-            © 2025 SMK Darussalam Subah · Yayasan Wakaf Darussalam ·{' '}
+            © 2026 SMK Darussalam Subah · Yayasan Wakaf Darussalam ·{' '}
             <abbr title="Nomor Pokok Sekolah Nasional">NPSN</abbr> 20350670
           </span>
           <span>Didukung ekosistem DIIS — Smart AI School.</span>
