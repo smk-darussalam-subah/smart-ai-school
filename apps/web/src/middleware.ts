@@ -43,6 +43,7 @@ function buildCsp(nonce: string, isPublicStatic: boolean): string {
 
 const PUBLIC_EXACT: readonly string[] = [
   '/',
+  '/diis',
   '/spmb',
   '/privacy',
   '/sw.js',
@@ -67,6 +68,7 @@ const PUBLIC_PREFIXES = [
   '/ruang-guru',
   '/_next',
   '/favicon',
+  '/diis/',
 ] as const;
 
 export function isPublicPath(pathname: string): boolean {
@@ -77,6 +79,7 @@ export function isPublicPath(pathname: string): boolean {
 
 const STATIC_INTERACTIVE: readonly string[] = [
   '/',
+  '/diis',
   '/spmb',
   '/login',
   '/auth',
