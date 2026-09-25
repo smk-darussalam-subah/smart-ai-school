@@ -45,14 +45,6 @@ const nextConfig = {
       },
     ];
   },
-  async rewrites() {
-    return [
-      {
-        source: '/api/backend/:path*',
-        destination: `${process.env.API_URL || 'http://localhost:3001'}/api/v1/:path*`,
-      },
-    ];
-  },
 };
 
 // Env-gated: withSentryConfig hanya aktif jika SENTRY_DSN tersedia.
