@@ -6,6 +6,7 @@ import { MarqueeStrip } from '@/components/landing/MarqueeStrip';
 import { Jurusan } from '@/components/landing/Jurusan';
 import { VisiMisi } from '@/components/landing/VisiMisi';
 import { Keunggulan } from '@/components/landing/Keunggulan';
+import { DiisTeaser } from '@/components/landing/DiisTeaser';
 import { VideoProfile } from '@/components/landing/VideoProfile';
 import { WhyUs } from '@/components/landing/WhyUs';
 import { Ekstrakurikuler } from '@/components/landing/Ekstrakurikuler';
@@ -59,10 +60,7 @@ const jsonLd = {
   url: 'https://smkdarussalamsubah.sch.id',
   telephone: '+62877-7556-4779',
   email: 'smkdarussalamsubah.08@gmail.com',
-  sameAs: [
-    'https://instagram.com/smkdarussalamsubah',
-    'https://facebook.com/smkdarussalamsubah',
-  ],
+  sameAs: ['https://instagram.com/smkdarussalamsubah', 'https://facebook.com/smkdarussalamsubah'],
   address: {
     '@type': 'PostalAddress',
     streetAddress: 'Jl. Lapangan Selatan No. 05, Kemiri Barat',
@@ -117,42 +115,47 @@ export default function LandingPage() {
             <Keunggulan />
           </ScrollReveal>
 
-          {/* 6. VideoProfile */}
+          {/* 6. DIIS */}
+          <ScrollReveal delay={60}>
+            <DiisTeaser />
+          </ScrollReveal>
+
+          {/* 7. VideoProfile */}
           <ScrollReveal delay={60}>
             <VideoProfile />
           </ScrollReveal>
 
-          {/* 7. WhyUs */}
+          {/* 8. WhyUs */}
           <ScrollReveal delay={60}>
             <WhyUs />
           </ScrollReveal>
 
-          {/* 8. Ekstrakurikuler */}
+          {/* 9. Ekstrakurikuler */}
           <ScrollReveal delay={60}>
             <Ekstrakurikuler />
           </ScrollReveal>
 
-          {/* 9. Galeri */}
+          {/* 10. Galeri */}
           <ScrollReveal delay={60}>
             <Galeri />
           </ScrollReveal>
 
-          {/* 10. SPMBSection */}
+          {/* 11. SPMBSection */}
           <ScrollReveal delay={60}>
             <SPMBSection />
           </ScrollReveal>
 
-          {/* 11. Stats */}
+          {/* 12. Stats */}
           <ScrollReveal delay={60}>
             <Stats />
           </ScrollReveal>
 
-          {/* 12. Testimoni */}
+          {/* 13. Testimoni */}
           <ScrollReveal delay={60}>
             <Testimoni />
           </ScrollReveal>
 
-          {/* 13. CtaPPDB */}
+          {/* 14. CtaPPDB */}
           <ScrollReveal delay={40}>
             <CtaPPDB />
           </ScrollReveal>

@@ -58,7 +58,9 @@ function makeRequest(pathname: string) {
 // tidak masuk STATIC_INTERACTIVE, token=null → NextResponse.next().
 
 describe('middleware — CSP nonce in requestHeaders (N21)', () => {
-  beforeEach(() => { capturedReqHeaders = undefined; });
+  beforeEach(() => {
+    capturedReqHeaders = undefined;
+  });
 
   it('sets Content-Security-Policy in requestHeaders', async () => {
     await middleware(makeRequest('/api/auth/callback'));
@@ -79,7 +81,7 @@ describe('middleware — CSP nonce in requestHeaders (N21)', () => {
     await middleware(makeRequest('/api/auth/callback'));
 
     const nonce = capturedReqHeaders!.get('x-nonce')!;
-    const csp   = capturedReqHeaders!.get('Content-Security-Policy')!;
+    const csp = capturedReqHeaders!.get('Content-Security-Policy')!;
     expect(csp).toContain(`nonce-${nonce}`);
   });
 
@@ -99,13 +101,15 @@ describe('middleware — CSP nonce in requestHeaders (N21)', () => {
 // ── N21a: Route statis interaktif → unsafe-inline, bukan nonce ───────────────
 
 describe('middleware — static interactive pages get unsafe-inline (N21a)', () => {
-  beforeEach(() => { capturedReqHeaders = undefined; });
+  beforeEach(() => {
+    capturedReqHeaders = undefined;
+  });
 
   function scriptSrc(csp: string): string {
-    return csp.split(';').find(d => d.trim().startsWith('script-src')) ?? '';
+    return csp.split(';').find((d) => d.trim().startsWith('script-src')) ?? '';
   }
 
-  it.each(['/login', '/health', '/', '/jurusan/tkro', '/display/pair', '/display/room'])(
+  it.each(['/login', '/health', '/', '/diis', '/jurusan/tkro', '/display/pair', '/display/room'])(
     '%s (static) script-src gets unsafe-inline, no nonce, no strict-dynamic',
     async (path) => {
       await middleware(makeRequest(path));
@@ -114,7 +118,7 @@ describe('middleware — static interactive pages get unsafe-inline (N21a)', () 
       expect(src).toContain("'unsafe-inline'");
       expect(src).not.toContain('strict-dynamic');
       expect(src).not.toMatch(/nonce-[A-Za-z0-9+/]+=*/);
-    }
+    },
   );
 
   it('isPublicStaticPage("/login") === true (N21a core assertion)', async () => {
@@ -135,10 +139,12 @@ describe('middleware — static interactive pages get unsafe-inline (N21a)', () 
 // ── Sanity: dynamic protected paths tetap strict-dynamic ─────────────────────
 
 describe('middleware — protected dynamic paths keep nonce (N21 non-regression)', () => {
-  beforeEach(() => { capturedReqHeaders = undefined; });
+  beforeEach(() => {
+    capturedReqHeaders = undefined;
+  });
 
   function scriptSrc(csp: string): string {
-    return csp.split(';').find(d => d.trim().startsWith('script-src')) ?? '';
+    return csp.split(';').find((d) => d.trim().startsWith('script-src')) ?? '';
   }
 
   // /api/auth/* adalah public path → tidak redirect ke /login → next() terpanggil
@@ -153,32 +159,60 @@ describe('middleware — protected dynamic paths keep nonce (N21 non-regression)
 });
 
 describe('middleware — public PWA assets', () => {
-  beforeEach(() => { capturedReqHeaders = undefined; });
-
-  it.each(['/sw.js', '/manifest.webmanifest', '/offline.html'])('serves %s without redirecting unauthenticated users', async (path) => {
-    await middleware(makeRequest(path));
-
-    expect(capturedRedirectUrl).toBeUndefined();
-    expect(capturedReqHeaders).toBeDefined();
+  beforeEach(() => {
+    capturedReqHeaders = undefined;
   });
+
+  it.each(['/sw.js', '/manifest.webmanifest', '/offline.html'])(
+    'serves %s without redirecting unauthenticated users',
+    async (path) => {
+      await middleware(makeRequest(path));
+
+      expect(capturedRedirectUrl).toBeUndefined();
+      expect(capturedReqHeaders).toBeDefined();
+    },
+  );
+});
+
+describe('middleware — public DIIS experience', () => {
+  beforeEach(() => {
+    capturedReqHeaders = undefined;
+  });
+
+  it.each(['/diis', '/diis/product-overview.webp', '/diis/student-experience.webp'])(
+    'serves %s without redirecting unauthenticated users',
+    async (path) => {
+      await middleware(makeRequest(path));
+
+      expect(capturedRedirectUrl).toBeUndefined();
+      expect(capturedReqHeaders).toBeDefined();
+    },
+  );
 });
 
 describe('middleware - learner OAuth landing (React #310 regression)', () => {
-  beforeEach(() => { capturedReqHeaders = undefined; });
-
-  it.each(['SISWA', 'ORANG_TUA'])('redirects a %s account before the App Router mounts', async (role) => {
-    mockedGetToken.mockResolvedValue({ roles: [role] } as Awaited<ReturnType<typeof getToken>>);
-
-    await middleware(makeRequest('/dashboard'));
-
-    expect(capturedRedirectUrl).toBe('http://localhost:3000/dashboard/akademik');
-    expect(capturedReqHeaders).toBeUndefined();
+  beforeEach(() => {
+    capturedReqHeaders = undefined;
   });
+
+  it.each(['SISWA', 'ORANG_TUA'])(
+    'redirects a %s account before the App Router mounts',
+    async (role) => {
+      mockedGetToken.mockResolvedValue({ roles: [role] } as Awaited<ReturnType<typeof getToken>>);
+
+      await middleware(makeRequest('/dashboard'));
+
+      expect(capturedRedirectUrl).toBe('http://localhost:3000/dashboard/akademik');
+      expect(capturedReqHeaders).toBeUndefined();
+    },
+  );
 
   it.each(['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA'])(
     'keeps a mixed SISWA + %s account on the standard dashboard',
     async (role) => {
-      mockedGetToken.mockResolvedValue({ roles: ['SISWA', role] } as Awaited<ReturnType<typeof getToken>>);
+      mockedGetToken.mockResolvedValue({ roles: ['SISWA', role] } as Awaited<
+        ReturnType<typeof getToken>
+      >);
 
       await middleware(makeRequest('/dashboard'));
 
@@ -187,17 +221,24 @@ describe('middleware - learner OAuth landing (React #310 regression)', () => {
     },
   );
 
-  it.each(['SISWA', 'ORANG_TUA'])('keeps a %s + INDUSTRI account on the standard dashboard', async (role) => {
-    mockedGetToken.mockResolvedValue({ roles: [role, 'INDUSTRI'] } as Awaited<ReturnType<typeof getToken>>);
+  it.each(['SISWA', 'ORANG_TUA'])(
+    'keeps a %s + INDUSTRI account on the standard dashboard',
+    async (role) => {
+      mockedGetToken.mockResolvedValue({ roles: [role, 'INDUSTRI'] } as Awaited<
+        ReturnType<typeof getToken>
+      >);
 
-    await middleware(makeRequest('/dashboard'));
+      await middleware(makeRequest('/dashboard'));
 
-    expect(capturedRedirectUrl).toBeUndefined();
-    expect(capturedReqHeaders).toBeDefined();
-  });
+      expect(capturedRedirectUrl).toBeUndefined();
+      expect(capturedReqHeaders).toBeDefined();
+    },
+  );
 
   it('does not redirect an INDUSTRI-only account to the akademik workspace', async () => {
-    mockedGetToken.mockResolvedValue({ roles: ['INDUSTRI'] } as Awaited<ReturnType<typeof getToken>>);
+    mockedGetToken.mockResolvedValue({ roles: ['INDUSTRI'] } as Awaited<
+      ReturnType<typeof getToken>
+    >);
 
     await middleware(makeRequest('/dashboard'));
 
