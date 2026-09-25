@@ -305,7 +305,15 @@ export interface OfficialReportSections {
   reportCardId: string;
   snapshotStatus: string;
   identity: { studentName: string; nis: string };
-  muatanLokal: { subjects: { name: string; na: number; kktp: number | null; kktpProvenance?: string | null; predikat: string }[] };
+  muatanLokal: {
+    subjects: {
+      name: string;
+      na: number;
+      kktp: number | null;
+      kktpProvenance?: string | null;
+      predikat: string;
+    }[];
+  };
   attendance: { hadir: number; izin: number; sakit: number; alpha: number; total: number };
   development: { description: string; spiritual: string; social: string; academic: string };
   approval: {
@@ -319,7 +327,11 @@ export interface OfficialReportSections {
 }
 
 /** Read every official section from one immutable report-card snapshot. */
-export async function fetchOfficialReportSections(studentId: string, year: string, semester: number) {
+export async function fetchOfficialReportSections(
+  studentId: string,
+  year: string,
+  semester: number,
+) {
   const r = await apiCall(
     `/report-cards/${studentId}/official-sections?year=${encodeURIComponent(year)}&semester=${semester}`,
     'GET',
@@ -669,13 +681,31 @@ export async function startAssessmentResponse(sessionId: string) {
 }
 
 /** U2 Wave 1: SISWA submit jawaban dengan timer enforcement. */
-export async function autosaveAssessmentResponse(sessionId: string, answers: unknown) {
-  const r = await apiCall(`/assessment/sessions/${sessionId}/autosave`, 'POST', { answers });
+export async function autosaveAssessmentResponse(
+  sessionId: string,
+  answers: unknown,
+  revision: number,
+  mutationId: string,
+) {
+  const r = await apiCall(`/assessment/sessions/${sessionId}/autosave`, 'POST', {
+    answers,
+    revision,
+    mutationId,
+  });
   return r;
 }
 
-export async function submitAssessmentResponse(sessionId: string, answers: unknown) {
-  const r = await apiCall(`/assessment/sessions/${sessionId}/submit`, 'POST', { answers });
+export async function submitAssessmentResponse(
+  sessionId: string,
+  answers: unknown,
+  revision: number,
+  mutationId: string,
+) {
+  const r = await apiCall(`/assessment/sessions/${sessionId}/submit`, 'POST', {
+    answers,
+    revision,
+    mutationId,
+  });
   revalidatePath('/dashboard/akademik');
   return r;
 }
@@ -688,6 +718,20 @@ export async function gradeEssayResponse(
 ) {
   const r = await apiCall(
     `/assessment/sessions/${sessionId}/responses/${responseId}/grade-essay`,
+    'PATCH',
+    data,
+  );
+  revalidatePath('/dashboard/akademik');
+  return r;
+}
+
+export async function reviewLateAssessmentSubmission(
+  sessionId: string,
+  responseId: string,
+  data: { decision: 'accept' | 'reject'; note: string },
+) {
+  const r = await apiCall(
+    `/assessment/sessions/${sessionId}/responses/${responseId}/late-submission`,
     'PATCH',
     data,
   );
@@ -719,6 +763,7 @@ export interface AssessmentResultsData {
   submitted: number;
   finalCount: number;
   pendingManualCount: number;
+  pendingLateReviewCount: number;
   avgScore: number | null;
   responses: Array<{
     id: string;
@@ -729,6 +774,10 @@ export interface AssessmentResultsData {
     startedAt: string | null;
     timeSpentSec: number | null;
     itemScores: unknown;
+    lateSubmissionStatus: 'pending' | 'accepted' | 'rejected' | null;
+    lateSubmittedAt: string | null;
+    lateReviewedAt: string | null;
+    lateReviewNote: string | null;
   }>;
   essayCorrections: AssessmentEssayCorrection[];
 }
@@ -843,7 +892,11 @@ export async function fetchRemedialCandidates(params: {
   search?: string;
   page?: number;
   limit?: number;
-}): Promise<{ success: boolean; data?: { data: RemedialCandidateData[]; total: number; page: number; limit: number }; error?: string }> {
+}): Promise<{
+  success: boolean;
+  data?: { data: RemedialCandidateData[]; total: number; page: number; limit: number };
+  error?: string;
+}> {
   const searchParams = new URLSearchParams({
     classId: params.classId,
     subject: params.subject,
@@ -856,7 +909,10 @@ export async function fetchRemedialCandidates(params: {
   if (params.search) searchParams.set('search', params.search);
   const r = await apiCall(`/assessment/remedials/candidates?${searchParams.toString()}`, 'GET');
   if (!r.success) return { success: false, error: r.error };
-  return { success: true, data: r.data as { data: RemedialCandidateData[]; total: number; page: number; limit: number } };
+  return {
+    success: true,
+    data: r.data as { data: RemedialCandidateData[]; total: number; page: number; limit: number },
+  };
 }
 
 export async function fetchRemedialSessions(params: {
@@ -867,7 +923,11 @@ export async function fetchRemedialSessions(params: {
   classId?: string;
   academicYear?: string;
   semester?: number;
-}): Promise<{ success: boolean; data?: { data: AssessmentSessionData[]; total: number; page: number; limit: number }; error?: string }> {
+}): Promise<{
+  success: boolean;
+  data?: { data: AssessmentSessionData[]; total: number; page: number; limit: number };
+  error?: string;
+}> {
   const searchParams = new URLSearchParams();
   searchParams.set('page', String(params.page ?? 1));
   searchParams.set('limit', String(params.limit ?? 50));
@@ -878,7 +938,10 @@ export async function fetchRemedialSessions(params: {
   if (params.semester) searchParams.set('semester', String(params.semester));
   const r = await apiCall(`/assessment/remedials?${searchParams.toString()}`, 'GET');
   if (!r.success) return { success: false, error: r.error };
-  return { success: true, data: r.data as { data: AssessmentSessionData[]; total: number; page: number; limit: number } };
+  return {
+    success: true,
+    data: r.data as { data: AssessmentSessionData[]; total: number; page: number; limit: number },
+  };
 }
 
 export async function fetchFamilyRemedials(params: {
@@ -918,7 +981,9 @@ export async function activateRemedialSession(sessionId: string) {
 }
 
 export async function cancelRemedialSession(sessionId: string, reason?: string) {
-  const r = await apiCall(`/assessment/remedials/${sessionId}/cancel`, 'PATCH', { ...(reason?.trim() ? { reason: reason.trim() } : {}) });
+  const r = await apiCall(`/assessment/remedials/${sessionId}/cancel`, 'PATCH', {
+    ...(reason?.trim() ? { reason: reason.trim() } : {}),
+  });
   revalidatePath('/dashboard/akademik');
   return r;
 }
@@ -929,15 +994,18 @@ export async function finalizeRemedialParticipant(sessionId: string, participant
   return r;
 }
 
-export async function retryRemedialParticipant(sessionId: string, data: {
-  participantId: string;
-  title?: string;
-  questionSelections: QuestionSelectionData[];
-  dueAt?: string;
-  instructions?: string;
-  durationMinutes?: number;
-  randomizeOrder?: boolean;
-}) {
+export async function retryRemedialParticipant(
+  sessionId: string,
+  data: {
+    participantId: string;
+    title?: string;
+    questionSelections: QuestionSelectionData[];
+    dueAt?: string;
+    instructions?: string;
+    durationMinutes?: number;
+    randomizeOrder?: boolean;
+  },
+) {
   const r = await apiCall(`/assessment/remedials/${sessionId}/retry`, 'POST', data);
   revalidatePath('/dashboard/akademik');
   return r;
@@ -990,10 +1058,8 @@ export async function subscribePush(dto: {
 }): Promise<'bound' | 'superseded' | 'failed'> {
   const r = await apiCall('/push/subscribe', 'POST', dto);
   if (!r.success) return 'failed';
-  const reconciled = r.data
-    && typeof r.data === 'object'
-    && 'reconciled' in r.data
-    && r.data.reconciled === true;
+  const reconciled =
+    r.data && typeof r.data === 'object' && 'reconciled' in r.data && r.data.reconciled === true;
   return reconciled ? 'bound' : 'superseded';
 }
 

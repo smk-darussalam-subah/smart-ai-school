@@ -9,10 +9,7 @@ import {
   DIIS_CACHE_PREFIX,
   FEDERATED_LOGOUT_URL,
 } from '../lib/pwa-logout';
-import {
-  normalizeReleaseSummary,
-  registerDiisServiceWorker,
-} from '../lib/pwa-runtime';
+import { normalizeReleaseSummary, registerDiisServiceWorker } from '../lib/pwa-runtime';
 import {
   completePwaOnboarding,
   isInstalledExperience,
@@ -71,16 +68,27 @@ interface WorkerTestApi {
   readPushStateRecord(): Promise<{ state: string; attemptId: string | null }>;
   readPushDeliveryState(): Promise<string>;
   claimPushReconciliation(attemptId: string): Promise<{
-    status: string; state: string; attemptId: string | null;
+    status: string;
+    state: string;
+    attemptId: string | null;
   }>;
-  applyPushReconciliation(state: string, attemptId: string): Promise<{
-    status: string; state: string; attemptId: string | null;
+  applyPushReconciliation(
+    state: string,
+    attemptId: string,
+  ): Promise<{
+    status: string;
+    state: string;
+    attemptId: string | null;
   }>;
   abortPushReconciliation(attemptId: string): Promise<{
-    status: string; state: string; attemptId: string | null;
+    status: string;
+    state: string;
+    attemptId: string | null;
   }>;
   forcePushDeliveryState(state: string): Promise<{
-    status: string; state: string; attemptId: string | null;
+    status: string;
+    state: string;
+    attemptId: string | null;
   }>;
 }
 
@@ -101,21 +109,25 @@ function loadWorker() {
   const put = jest.fn(async (request: RequestInfo | URL, response: Response) => {
     cacheEntries.set(String(request), response.clone());
   });
-  const stateMatch = jest.fn(async (request: RequestInfo | URL) => cacheEntries.get(String(request))?.clone());
+  const stateMatch = jest.fn(async (request: RequestInfo | URL) =>
+    cacheEntries.get(String(request))?.clone(),
+  );
   const cacheDelete = jest.fn().mockResolvedValue(true);
   const claim = jest.fn().mockResolvedValue(undefined);
   const skipWaiting = jest.fn().mockResolvedValue(undefined);
   const match = jest.fn().mockResolvedValue(undefined);
   const cacheKeys = jest.fn().mockResolvedValue([]);
-  const fetchMock = jest.fn(async (input: RequestInfo | URL) => (
+  const fetchMock = jest.fn(async (input: RequestInfo | URL) =>
     String(input) === '/api/backend/push/verify-delivery'
       ? new Response(JSON.stringify({ deliver: true }), {
-        status: 200, headers: { 'Content-Type': 'application/json' },
-      })
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
       : new Response('asset', {
-        status: 200, headers: { 'Content-Type': 'application/javascript' },
-      })
-  ));
+          status: 200,
+          headers: { 'Content-Type': 'application/javascript' },
+        }),
+  );
   const sandboxSelf: Record<string, unknown> = {
     location: { origin: 'https://staging.smkdarussalamsubah.sch.id' },
     skipWaiting,
@@ -128,7 +140,9 @@ function loadWorker() {
     registration: {
       showNotification: jest.fn().mockResolvedValue(undefined),
       pushManager: {
-        getSubscription: jest.fn().mockResolvedValue({ endpoint: 'https://fcm.googleapis.com/fcm/send/test' }),
+        getSubscription: jest
+          .fn()
+          .mockResolvedValue({ endpoint: 'https://fcm.googleapis.com/fcm/send/test' }),
       },
     },
   };
@@ -163,14 +177,18 @@ function loadWorker() {
     await dispatchEvent(type, data);
   }
 
-  async function fetchEvent(request: Record<string, unknown>): Promise<{ handled: boolean; response?: Response }> {
+  async function fetchEvent(
+    request: Record<string, unknown>,
+  ): Promise<{ handled: boolean; response?: Response }> {
     const handler = listeners.get('fetch');
     if (!handler) throw new Error('Missing fetch handler');
     let responsePromise: Promise<Response> | undefined;
     handler({
       request,
       waitUntil: () => undefined,
-      respondWith: (promise) => { responsePromise = Promise.resolve(promise); },
+      respondWith: (promise) => {
+        responsePromise = Promise.resolve(promise);
+      },
     });
     return {
       handled: Boolean(responsePromise),
@@ -189,7 +207,8 @@ function loadWorker() {
     skipWaiting,
     match,
     fetchMock,
-    showNotification: (sandboxSelf.registration as { showNotification: jest.Mock }).showNotification,
+    showNotification: (sandboxSelf.registration as { showNotification: jest.Mock })
+      .showNotification,
     sandbox,
     dispatchEvent,
     waitEvent,
@@ -204,11 +223,14 @@ async function sendWorkerStateCommand(
   let acknowledgement: Record<string, unknown> | undefined;
   await worker.waitEvent('message', {
     data: { version: worker.api.PUSH_STATE_PROTOCOL_VERSION, ...data },
-    ports: [{
-      postMessage: (value: unknown) => {
-        if (value && typeof value === 'object') acknowledgement = value as Record<string, unknown>;
+    ports: [
+      {
+        postMessage: (value: unknown) => {
+          if (value && typeof value === 'object')
+            acknowledgement = value as Record<string, unknown>;
+        },
       },
-    }],
+    ],
   });
   if (!acknowledgement) throw new Error('Missing push-state acknowledgement');
   return acknowledgement;
@@ -220,14 +242,16 @@ function createWorkerReconciliation(
 ) {
   let index = 0;
   return {
-    setDeliveryState: async (state: 'signed-in' | 'signed-out') => (
-      await sendWorkerStateCommand(worker, {
-        type: 'DIIS_SET_PUSH_DELIVERY_STATE',
-        state,
-      })
-    ).status === 'applied',
+    setDeliveryState: async (state: 'signed-in' | 'signed-out') =>
+      (
+        await sendWorkerStateCommand(worker, {
+          type: 'DIIS_SET_PUSH_DELIVERY_STATE',
+          state,
+        })
+      ).status === 'applied',
     claimReconciliation: async (requestedAttemptId?: string) => {
-      const attemptId = attemptIds[index] ?? requestedAttemptId ?? `attempt-${String(index + 1).padStart(10, '0')}`;
+      const attemptId =
+        attemptIds[index] ?? requestedAttemptId ?? `attempt-${String(index + 1).padStart(10, '0')}`;
       index += 1;
       const acknowledgement = await sendWorkerStateCommand(worker, {
         type: 'DIIS_CLAIM_PUSH_RECONCILIATION',
@@ -259,7 +283,12 @@ describe('DIIS install identity and response policy', () => {
     const layout = source('app/layout.tsx');
 
     expect(value).toMatchObject({
-      id: '/', name: 'DIIS', short_name: 'DIIS', scope: '/', start_url: '/dashboard', display: 'standalone',
+      id: '/',
+      name: 'DIIS',
+      short_name: 'DIIS',
+      scope: '/',
+      start_url: '/dashboard',
+      display: 'standalone',
     });
     expect(value.description).toContain('SMK Darussalam Subah');
     expect(value).not.toHaveProperty('orientation');
@@ -274,13 +303,16 @@ describe('DIIS install identity and response policy', () => {
     const entries = await nextConfig.headers();
     const bySource = new Map(entries.map((entry) => [entry.source, entry.headers]));
 
-    expect(bySource.get('/sw.js')).toEqual(expect.arrayContaining([
-      { key: 'Content-Type', value: 'application/javascript; charset=utf-8' },
-      { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
-      { key: 'Service-Worker-Allowed', value: '/' },
-    ]));
+    expect(bySource.get('/sw.js')).toEqual(
+      expect.arrayContaining([
+        { key: 'Content-Type', value: 'application/javascript; charset=utf-8' },
+        { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+        { key: 'Service-Worker-Allowed', value: '/' },
+      ]),
+    );
     expect(bySource.get('/manifest.webmanifest')).toContainEqual({
-      key: 'Content-Type', value: 'application/manifest+json; charset=utf-8',
+      key: 'Content-Type',
+      value: 'application/manifest+json; charset=utf-8',
     });
     expect(bySource.has('/offline.html')).toBe(true);
   });
@@ -293,9 +325,15 @@ describe('DIIS install identity and response policy', () => {
   });
 
   it('treats only an installed experience as the private-device notification surface', () => {
-    expect(isInstalledExperience({ displayModeStandalone: true, navigatorStandalone: false })).toBe(true);
-    expect(isInstalledExperience({ displayModeStandalone: false, navigatorStandalone: true })).toBe(true);
-    expect(isInstalledExperience({ displayModeStandalone: false, navigatorStandalone: false })).toBe(false);
+    expect(isInstalledExperience({ displayModeStandalone: true, navigatorStandalone: false })).toBe(
+      true,
+    );
+    expect(isInstalledExperience({ displayModeStandalone: false, navigatorStandalone: true })).toBe(
+      true,
+    );
+    expect(
+      isInstalledExperience({ displayModeStandalone: false, navigatorStandalone: false }),
+    ).toBe(false);
   });
 
   it('keeps one origin subscription active when browser and installed clients share a registration', async () => {
@@ -351,17 +389,20 @@ describe('DIIS install identity and response policy', () => {
       toJSON: () => ({ keys: { p256dh: 'old', auth: 'old' } }),
     } as unknown as PushSubscription;
 
-    await expect(initializePushSubscription({
-      installed: true,
-      supported: true,
-      permission: 'granted',
-      ensureRegistration: async () => ({
-        pushManager: { getSubscription: async () => subscription },
-      } as unknown as ServiceWorkerRegistration),
-      registerOnServer: async () => 'failed',
-      claimReconciliation: async () => 'attempt-failed',
-      applyReconciliationState: async () => 'applied',
-    })).resolves.toBe('reconcile-failed');
+    await expect(
+      initializePushSubscription({
+        installed: true,
+        supported: true,
+        permission: 'granted',
+        ensureRegistration: async () =>
+          ({
+            pushManager: { getSubscription: async () => subscription },
+          }) as unknown as ServiceWorkerRegistration,
+        registerOnServer: async () => 'failed',
+        claimReconciliation: async () => 'attempt-failed',
+        applyReconciliationState: async () => 'applied',
+      }),
+    ).resolves.toBe('reconcile-failed');
     expect(unsubscribe).not.toHaveBeenCalled();
   });
 
@@ -374,17 +415,20 @@ describe('DIIS install identity and response policy', () => {
       toJSON: () => ({ keys: { p256dh: 'new', auth: 'new' } }),
     } as unknown as PushSubscription;
 
-    await expect(initializePushSubscription({
-      installed: true,
-      supported: true,
-      permission: 'granted',
-      ensureRegistration: async () => ({
-        pushManager: { getSubscription: async () => subscription },
-      } as unknown as ServiceWorkerRegistration),
-      registerOnServer: async () => 'superseded',
-      claimReconciliation: async () => 'attempt-superseded',
-      applyReconciliationState,
-    })).resolves.toBe('reconcile-failed');
+    await expect(
+      initializePushSubscription({
+        installed: true,
+        supported: true,
+        permission: 'granted',
+        ensureRegistration: async () =>
+          ({
+            pushManager: { getSubscription: async () => subscription },
+          }) as unknown as ServiceWorkerRegistration,
+        registerOnServer: async () => 'superseded',
+        claimReconciliation: async () => 'attempt-superseded',
+        applyReconciliationState,
+      }),
+    ).resolves.toBe('reconcile-failed');
     expect(applyReconciliationState).toHaveBeenCalledWith('signed-out', 'attempt-superseded');
     expect(unsubscribe).not.toHaveBeenCalled();
   });
@@ -397,30 +441,38 @@ describe('DIIS install identity and response policy', () => {
       toJSON: () => ({ keys: { p256dh: 'ambiguous', auth: 'ambiguous' } }),
     } as unknown as PushSubscription;
 
-    await expect(initializePushSubscription({
-      installed: true,
-      supported: true,
-      permission: 'granted',
-      ensureRegistration: async () => ({
-        pushManager: { getSubscription: async () => subscription },
-      } as unknown as ServiceWorkerRegistration),
-      registerOnServer: async () => 'superseded',
-      claimReconciliation: async () => 'attempt-ambiguous',
-      applyReconciliationState: async () => 'failed',
-      abortReconciliation: async () => 'applied',
-    })).resolves.toBe('reconcile-failed');
+    await expect(
+      initializePushSubscription({
+        installed: true,
+        supported: true,
+        permission: 'granted',
+        ensureRegistration: async () =>
+          ({
+            pushManager: { getSubscription: async () => subscription },
+          }) as unknown as ServiceWorkerRegistration,
+        registerOnServer: async () => 'superseded',
+        claimReconciliation: async () => 'attempt-ambiguous',
+        applyReconciliationState: async () => 'failed',
+        abortReconciliation: async () => 'applied',
+      }),
+    ).resolves.toBe('reconcile-failed');
     expect(unsubscribe).not.toHaveBeenCalled();
   });
 
   it('ignores a stale superseded response after a newer account binding succeeds', async () => {
     let resolveOld: ((value: 'superseded') => void) | undefined;
     let resolveNew: ((value: 'bound') => void) | undefined;
-    const oldResult = new Promise<'superseded'>((resolve) => { resolveOld = resolve; });
-    const newResult = new Promise<'bound'>((resolve) => { resolveNew = resolve; });
+    const oldResult = new Promise<'superseded'>((resolve) => {
+      resolveOld = resolve;
+    });
+    const newResult = new Promise<'bound'>((resolve) => {
+      resolveNew = resolve;
+    });
     const oldUnsubscribe = jest.fn().mockResolvedValue(true);
     const newUnsubscribe = jest.fn().mockResolvedValue(true);
     let currentAttempt = '';
-    const claimReconciliation = jest.fn()
+    const claimReconciliation = jest
+      .fn()
       .mockImplementationOnce(async () => {
         currentAttempt = 'attempt-old';
         return currentAttempt;
@@ -429,15 +481,16 @@ describe('DIIS install identity and response policy', () => {
         currentAttempt = 'attempt-new';
         return currentAttempt;
       });
-    const applyReconciliationState = jest.fn(async (
-      _state: 'signed-in' | 'signed-out',
-      attemptId: string,
-    ) => attemptId === currentAttempt ? 'applied' as const : 'stale' as const);
-    const subscription = (endpoint: string, unsubscribe: jest.Mock) => ({
-      endpoint,
-      unsubscribe,
-      toJSON: () => ({ keys: { p256dh: 'key', auth: 'auth' } }),
-    } as unknown as PushSubscription);
+    const applyReconciliationState = jest.fn(
+      async (_state: 'signed-in' | 'signed-out', attemptId: string) =>
+        attemptId === currentAttempt ? ('applied' as const) : ('stale' as const),
+    );
+    const subscription = (endpoint: string, unsubscribe: jest.Mock) =>
+      ({
+        endpoint,
+        unsubscribe,
+        toJSON: () => ({ keys: { p256dh: 'key', auth: 'auth' } }),
+      }) as unknown as PushSubscription;
 
     const oldAttempt = reconcilePushSubscription({
       subscription: subscription('https://push.example.test/old', oldUnsubscribe),
@@ -471,27 +524,27 @@ describe('DIIS install identity and response policy', () => {
     const unregisterOnServer = jest.fn().mockResolvedValue(false);
 
     const setDeliveryState = jest.fn().mockResolvedValue(false);
-    await expect(suppressPushSubscription(
-      subscription,
-      unregisterOnServer,
-      setDeliveryState,
-    )).resolves.toBe(false);
+    await expect(
+      suppressPushSubscription(subscription, unregisterOnServer, setDeliveryState),
+    ).resolves.toBe(false);
     subscription.unsubscribe = jest.fn().mockResolvedValue(true);
-    await expect(suppressPushSubscription(
-      subscription,
-      unregisterOnServer,
-      setDeliveryState,
-    )).resolves.toBe(true);
+    await expect(
+      suppressPushSubscription(subscription, unregisterOnServer, setDeliveryState),
+    ).resolves.toBe(true);
   });
 
   it('treats a missing registration as safely signed-out but never as signed-in', async () => {
-    await expect(setPushDeliveryState('signed-out', {
-      getRegistration: async () => undefined,
-    })).resolves.toBe(true);
+    await expect(
+      setPushDeliveryState('signed-out', {
+        getRegistration: async () => undefined,
+      }),
+    ).resolves.toBe(true);
 
-    await expect(setPushDeliveryState('signed-in', {
-      getRegistration: async () => undefined,
-    })).resolves.toBe(false);
+    await expect(
+      setPushDeliveryState('signed-in', {
+        getRegistration: async () => undefined,
+      }),
+    ).resolves.toBe(false);
   });
 
   it('requires an active-worker acknowledgement before accepting signed-out suppression', async () => {
@@ -528,25 +581,34 @@ describe('DIIS install identity and response policy', () => {
     });
     const unregister = jest.fn().mockResolvedValue(false);
 
-    await expect(setPushDeliveryState('signed-out', {
-      getRegistration: async () => ({
-        active: { postMessage } as unknown as ServiceWorker,
-        pushManager: { getSubscription: jest.fn() },
-        unregister,
-      } as unknown as ServiceWorkerRegistration),
-      createMessageChannel,
-      acknowledgementTimeoutMs: 10,
-    })).resolves.toBe(true);
-    expect(postMessage).toHaveBeenCalledWith({
-      type: 'DIIS_SET_PUSH_DELIVERY_STATE',
-      action: 'force',
-      version: DIIS_PUSH_STATE_PROTOCOL_VERSION,
-      state: 'signed-out',
-    }, expect.any(Array));
+    await expect(
+      setPushDeliveryState('signed-out', {
+        getRegistration: async () =>
+          ({
+            active: { postMessage } as unknown as ServiceWorker,
+            pushManager: { getSubscription: jest.fn() },
+            unregister,
+          }) as unknown as ServiceWorkerRegistration,
+        createMessageChannel,
+        acknowledgementTimeoutMs: 10,
+      }),
+    ).resolves.toBe(true);
+    expect(postMessage).toHaveBeenCalledWith(
+      {
+        type: 'DIIS_SET_PUSH_DELIVERY_STATE',
+        action: 'force',
+        version: DIIS_PUSH_STATE_PROTOCOL_VERSION,
+        state: 'signed-out',
+      },
+      expect.any(Array),
+    );
     expect(unregister).not.toHaveBeenCalled();
-    await expect(setPushDeliveryState('signed-in', {
-      getRegistration: async () => ({ active: { postMessage } } as unknown as ServiceWorkerRegistration),
-    })).resolves.toBe(false);
+    await expect(
+      setPushDeliveryState('signed-in', {
+        getRegistration: async () =>
+          ({ active: { postMessage } }) as unknown as ServiceWorkerRegistration,
+      }),
+    ).resolves.toBe(false);
     expect(postMessage).toHaveBeenCalledTimes(1);
   });
 
@@ -560,23 +622,27 @@ describe('DIIS install identity and response policy', () => {
     const unsubscribe = jest.fn().mockResolvedValue(false);
     const postMessage = jest.fn();
 
-    await expect(setPushDeliveryState('signed-out', {
-      getRegistration: async () => ({
-        active: { postMessage } as unknown as ServiceWorker,
-        pushManager: { getSubscription: async () => ({ unsubscribe }) },
-        unregister,
-      } as unknown as ServiceWorkerRegistration),
-      createMessageChannel: () => ({
-        port1: {
-          onmessage: null,
-          onmessageerror: null,
-          start: jest.fn(),
-          close: jest.fn(),
-        },
-        port2: { close: jest.fn() },
-      } as unknown as MessageChannel),
-      acknowledgementTimeoutMs: 5,
-    })).resolves.toBe(true);
+    await expect(
+      setPushDeliveryState('signed-out', {
+        getRegistration: async () =>
+          ({
+            active: { postMessage } as unknown as ServiceWorker,
+            pushManager: { getSubscription: async () => ({ unsubscribe }) },
+            unregister,
+          }) as unknown as ServiceWorkerRegistration,
+        createMessageChannel: () =>
+          ({
+            port1: {
+              onmessage: null,
+              onmessageerror: null,
+              start: jest.fn(),
+              close: jest.fn(),
+            },
+            port2: { close: jest.fn() },
+          }) as unknown as MessageChannel,
+        acknowledgementTimeoutMs: 5,
+      }),
+    ).resolves.toBe(true);
     expect(postMessage).toHaveBeenCalledTimes(1);
     expect(unsubscribe).toHaveBeenCalledTimes(1);
     expect(unregister).toHaveBeenCalledTimes(1);
@@ -585,9 +651,13 @@ describe('DIIS install identity and response policy', () => {
   });
 
   it('does not trust a cached signed-out marker when registration lookup fails', async () => {
-    await expect(setPushDeliveryState('signed-out', {
-      getRegistration: async () => { throw new Error('registration lookup failed'); },
-    })).resolves.toBe(false);
+    await expect(
+      setPushDeliveryState('signed-out', {
+        getRegistration: async () => {
+          throw new Error('registration lookup failed');
+        },
+      }),
+    ).resolves.toBe(false);
   });
 });
 
@@ -598,7 +668,11 @@ describe('DIIS service-worker behavior', () => {
 
     expect(worker.addAll).toHaveBeenCalledWith(worker.api.PRECACHE_URLS);
     expect(worker.api.PRECACHE_URLS).toEqual([
-      '/offline.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png',
+      '/offline.html',
+      '/manifest.webmanifest',
+      '/icon-192.png',
+      '/icon-512.png',
+      '/apple-touch-icon.png',
     ]);
     expect(worker.skipWaiting).not.toHaveBeenCalled();
 
@@ -619,10 +693,12 @@ describe('DIIS service-worker behavior', () => {
       version: 'DIIS PWA 1.0',
       requiresLogin: false,
     });
-    expect(normalizeReleaseSummary({
-      ...worker.api.RELEASE_SUMMARY,
-      features: ['x'.repeat(121)],
-    })).toBeNull();
+    expect(
+      normalizeReleaseSummary({
+        ...worker.api.RELEASE_SUMMARY,
+        features: ['x'.repeat(121)],
+      }),
+    ).toBeNull();
   });
 
   it('deletes only obsolete DIIS caches during activation', async () => {
@@ -644,9 +720,16 @@ describe('DIIS service-worker behavior', () => {
 
   it('suppresses push by default and after logout, then enables it only after reconciliation', async () => {
     const worker = loadWorker();
-    const push = () => worker.waitEvent('push', {
-      data: { json: () => ({ title: 'Pembaruan', body: 'Ada pembaruan.', deliveryProof: DELIVERY_PROOF }) },
-    });
+    const push = () =>
+      worker.waitEvent('push', {
+        data: {
+          json: () => ({
+            title: 'Pembaruan',
+            body: 'Ada pembaruan.',
+            deliveryProof: DELIVERY_PROOF,
+          }),
+        },
+      });
 
     await push();
     expect(worker.showNotification).not.toHaveBeenCalled();
@@ -657,7 +740,9 @@ describe('DIIS service-worker behavior', () => {
     expect(worker.showNotification).not.toHaveBeenCalled();
     const attemptId = await protocol.claimReconciliation();
     expect(attemptId).not.toBeNull();
-    await expect(protocol.applyReconciliationState('signed-in', attemptId!)).resolves.toBe('applied');
+    await expect(protocol.applyReconciliationState('signed-in', attemptId!)).resolves.toBe(
+      'applied',
+    );
     await push();
     expect(worker.showNotification).toHaveBeenCalledTimes(1);
 
@@ -690,21 +775,32 @@ describe('DIIS service-worker behavior', () => {
       unsubscribe: jest.fn().mockResolvedValue(true),
       toJSON: () => ({ keys: { p256dh: 'current', auth: 'current' } }),
     } as unknown as PushSubscription;
-    const push = () => worker.waitEvent('push', {
-      data: { json: () => ({ title: 'Private update', body: 'Old owner payload', deliveryProof: DELIVERY_PROOF }) },
-    });
+    const push = () =>
+      worker.waitEvent('push', {
+        data: {
+          json: () => ({
+            title: 'Private update',
+            body: 'Old owner payload',
+            deliveryProof: DELIVERY_PROOF,
+          }),
+        },
+      });
 
     const firstAttempt = await protocol.claimReconciliation();
-    await expect(protocol.applyReconciliationState('signed-in', firstAttempt!)).resolves.toBe('applied');
+    await expect(protocol.applyReconciliationState('signed-in', firstAttempt!)).resolves.toBe(
+      'applied',
+    );
     await push();
     expect(worker.showNotification).toHaveBeenCalledTimes(1);
 
-    await expect(reconcilePushSubscription({
-      subscription,
-      registerOnServer: async () => 'superseded',
-      claimReconciliation: protocol.claimReconciliation,
-      applyReconciliationState: protocol.applyReconciliationState,
-    })).resolves.toBe('reconcile-failed');
+    await expect(
+      reconcilePushSubscription({
+        subscription,
+        registerOnServer: async () => 'superseded',
+        claimReconciliation: protocol.claimReconciliation,
+        applyReconciliationState: protocol.applyReconciliationState,
+      }),
+    ).resolves.toBe('reconcile-failed');
     await push();
     expect(worker.showNotification).toHaveBeenCalledTimes(1);
     expect(subscription.unsubscribe).not.toHaveBeenCalled();
@@ -714,10 +810,13 @@ describe('DIIS service-worker behavior', () => {
     const worker = loadWorker();
     const oldAttemptId = 'attempt-old-account-0001';
     await sendWorkerStateCommand(worker, {
-      type: 'DIIS_CLAIM_PUSH_RECONCILIATION', attemptId: oldAttemptId,
+      type: 'DIIS_CLAIM_PUSH_RECONCILIATION',
+      attemptId: oldAttemptId,
     });
     await sendWorkerStateCommand(worker, {
-      type: 'DIIS_APPLY_PUSH_RECONCILIATION', state: 'signed-in', attemptId: oldAttemptId,
+      type: 'DIIS_APPLY_PUSH_RECONCILIATION',
+      state: 'signed-in',
+      attemptId: oldAttemptId,
     });
     const subscription = {
       endpoint: 'https://fcm.googleapis.com/fcm/send/test',
@@ -725,29 +824,40 @@ describe('DIIS service-worker behavior', () => {
       toJSON: () => ({ keys: { p256dh: 'key', auth: 'auth' } }),
     } as unknown as PushSubscription;
     const registerOnServer = jest.fn();
-    await expect(reconcilePushSubscription({
-      subscription,
-      registerOnServer,
-      claimReconciliation: async () => null,
-      abortReconciliation: async () => 'failed',
-    })).resolves.toBe('reconcile-failed');
+    await expect(
+      reconcilePushSubscription({
+        subscription,
+        registerOnServer,
+        claimReconciliation: async () => null,
+        abortReconciliation: async () => 'failed',
+      }),
+    ).resolves.toBe('reconcile-failed');
     expect(registerOnServer).not.toHaveBeenCalled();
     await expect(worker.api.readPushStateRecord()).resolves.toEqual({
-      state: 'signed-in', attemptId: oldAttemptId,
+      state: 'signed-in',
+      attemptId: oldAttemptId,
     });
 
-    worker.fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ deliver: false }), {
-      status: 200, headers: { 'Content-Type': 'application/json' },
-    }));
+    worker.fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ deliver: false }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
     await worker.waitEvent('push', {
       data: { json: () => ({ title: 'Private A', deliveryProof: DELIVERY_PROOF }) },
     });
     expect(worker.showNotification).not.toHaveBeenCalled();
-    expect(worker.fetchMock).toHaveBeenCalledWith('/api/backend/push/verify-delivery',
+    expect(worker.fetchMock).toHaveBeenCalledWith(
+      '/api/backend/push/verify-delivery',
       expect.objectContaining({
-        method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        redirect: 'error',
         body: JSON.stringify({ endpoint: subscription.endpoint, proof: DELIVERY_PROOF }),
-      }));
+      }),
+    );
     expect(subscription.unsubscribe).not.toHaveBeenCalled();
   });
 
@@ -761,9 +871,12 @@ describe('DIIS service-worker behavior', () => {
     await worker.waitEvent('push', {
       data: { json: () => ({ title: 'Network failed', deliveryProof: DELIVERY_PROOF }) },
     });
-    worker.fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ deliver: false }), {
-      status: 403, headers: { 'Content-Type': 'application/json' },
-    }));
+    worker.fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ deliver: false }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
     await worker.waitEvent('push', {
       data: { json: () => ({ title: 'Session denied', deliveryProof: DELIVERY_PROOF }) },
     });
@@ -784,8 +897,12 @@ describe('DIIS service-worker behavior', () => {
     if (!originalPut) throw new Error('Missing cache put implementation');
     let releaseSignedIn: (() => void) | undefined;
     let markSignedInStarted: (() => void) | undefined;
-    const signedInStarted = new Promise<void>((resolve) => { markSignedInStarted = resolve; });
-    const signedInGate = new Promise<void>((resolve) => { releaseSignedIn = resolve; });
+    const signedInStarted = new Promise<void>((resolve) => {
+      markSignedInStarted = resolve;
+    });
+    const signedInGate = new Promise<void>((resolve) => {
+      releaseSignedIn = resolve;
+    });
     worker.put.mockImplementation(async (request: RequestInfo | URL, response: Response) => {
       const body = await response.clone().text();
       if (body.includes('"state":"signed-in"')) {
@@ -818,7 +935,13 @@ describe('DIIS service-worker behavior', () => {
     await Promise.resolve();
     expect(claimBAck).not.toHaveBeenCalled();
     const pushAfterClaimB = worker.dispatchEvent('push', {
-      data: { json: () => ({ title: 'Old owner update', body: 'Private payload', deliveryProof: DELIVERY_PROOF }) },
+      data: {
+        json: () => ({
+          title: 'Old owner update',
+          body: 'Private payload',
+          deliveryProof: DELIVERY_PROOF,
+        }),
+      },
     });
 
     releaseSignedIn?.();
@@ -827,12 +950,14 @@ describe('DIIS service-worker behavior', () => {
       state: 'signed-out',
       attemptId: attemptB,
     });
-    expect(claimBAck).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'claim',
-      status: 'applied',
-      state: 'signed-out',
-      attemptId: attemptB,
-    }));
+    expect(claimBAck).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'claim',
+        status: 'applied',
+        state: 'signed-out',
+        attemptId: attemptB,
+      }),
+    );
     expect(worker.showNotification).not.toHaveBeenCalled();
   });
 
@@ -843,14 +968,18 @@ describe('DIIS service-worker behavior', () => {
     const originalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
     Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
-      get: () => { throw new Error('storage denied'); },
+      get: () => {
+        throw new Error('storage denied');
+      },
     });
     try {
       const attemptA = await windowA.claimReconciliation();
       const attemptB = await windowB.claimReconciliation();
       expect(attemptA).toBe('attempt-window-a-0002');
       expect(attemptB).toBe('attempt-window-b-0002');
-      await expect(windowB.applyReconciliationState('signed-out', attemptB!)).resolves.toBe('applied');
+      await expect(windowB.applyReconciliationState('signed-out', attemptB!)).resolves.toBe(
+        'applied',
+      );
       await expect(windowA.applyReconciliationState('signed-in', attemptA!)).resolves.toBe('stale');
       await expect(worker.api.readPushStateRecord()).resolves.toEqual({
         state: 'signed-out',
@@ -869,13 +998,18 @@ describe('DIIS service-worker behavior', () => {
     const windowB = createWorkerReconciliation(worker, ['attempt-window-b-0003']);
     let releaseOld: ((result: 'bound') => void) | undefined;
     let signalOldServer: (() => void) | undefined;
-    const oldServerEntered = new Promise<void>((resolve) => { signalOldServer = resolve; });
-    const oldServerResult = new Promise<'bound'>((resolve) => { releaseOld = resolve; });
-    const makeSubscription = (endpoint: string) => ({
-      endpoint,
-      unsubscribe: jest.fn().mockResolvedValue(true),
-      toJSON: () => ({ keys: { p256dh: 'key', auth: 'auth' } }),
-    } as unknown as PushSubscription);
+    const oldServerEntered = new Promise<void>((resolve) => {
+      signalOldServer = resolve;
+    });
+    const oldServerResult = new Promise<'bound'>((resolve) => {
+      releaseOld = resolve;
+    });
+    const makeSubscription = (endpoint: string) =>
+      ({
+        endpoint,
+        unsubscribe: jest.fn().mockResolvedValue(true),
+        toJSON: () => ({ keys: { p256dh: 'key', auth: 'auth' } }),
+      }) as unknown as PushSubscription;
     const oldSubscription = makeSubscription('https://push.example.test/window-a');
     const newSubscription = makeSubscription('https://push.example.test/window-b');
 
@@ -915,8 +1049,12 @@ describe('DIIS service-worker behavior', () => {
     } as unknown as PushSubscription;
     let claimWritten: (() => void) | undefined;
     let releaseOld: (() => void) | undefined;
-    const written = new Promise<void>((resolve) => { claimWritten = resolve; });
-    const delayedAck = new Promise<void>((resolve) => { releaseOld = resolve; });
+    const written = new Promise<void>((resolve) => {
+      claimWritten = resolve;
+    });
+    const delayedAck = new Promise<void>((resolve) => {
+      releaseOld = resolve;
+    });
 
     const old = reconcilePushSubscription({
       subscription,
@@ -930,18 +1068,23 @@ describe('DIIS service-worker behavior', () => {
       abortReconciliation: newer.abortReconciliation,
     });
     await written;
-    await expect(reconcilePushSubscription({
-      subscription,
-      registerOnServer: async () => 'bound',
-      ...newer,
-    })).resolves.toBe('subscribed');
+    await expect(
+      reconcilePushSubscription({
+        subscription,
+        registerOnServer: async () => 'bound',
+        ...newer,
+      }),
+    ).resolves.toBe('subscribed');
     releaseOld?.();
     await expect(old).resolves.toBe('reconcile-failed');
     await expect(worker.api.readPushStateRecord()).resolves.toEqual({
-      state: 'signed-in', attemptId: 'attempt-new-owner-0001',
+      state: 'signed-in',
+      attemptId: 'attempt-new-owner-0001',
     });
     expect(unsubscribe).not.toHaveBeenCalled();
-    await worker.waitEvent('push', { data: { json: () => ({ title: 'New owner update', deliveryProof: DELIVERY_PROOF }) } });
+    await worker.waitEvent('push', {
+      data: { json: () => ({ title: 'New owner update', deliveryProof: DELIVERY_PROOF }) },
+    });
     expect(worker.showNotification).toHaveBeenCalledTimes(1);
   });
 
@@ -957,33 +1100,46 @@ describe('DIIS service-worker behavior', () => {
     } as unknown as PushSubscription;
     let applyWritten: (() => void) | undefined;
     let releaseOld: (() => void) | undefined;
-    const written = new Promise<void>((resolve) => { applyWritten = resolve; });
-    const delayedAck = new Promise<void>((resolve) => { releaseOld = resolve; });
+    const written = new Promise<void>((resolve) => {
+      applyWritten = resolve;
+    });
+    const delayedAck = new Promise<void>((resolve) => {
+      releaseOld = resolve;
+    });
 
     const old = reconcilePushSubscription({
       subscription,
       registerOnServer: async () => 'bound',
       ...older,
       applyReconciliationState: async (state, attemptId) => {
-        await sendWorkerStateCommand(worker, { type: 'DIIS_APPLY_PUSH_RECONCILIATION', state, attemptId });
+        await sendWorkerStateCommand(worker, {
+          type: 'DIIS_APPLY_PUSH_RECONCILIATION',
+          state,
+          attemptId,
+        });
         applyWritten?.();
         await delayedAck;
         return 'failed';
       },
     });
     await written;
-    await expect(reconcilePushSubscription({
-      subscription,
-      registerOnServer: async () => 'bound',
-      ...newer,
-    })).resolves.toBe('subscribed');
+    await expect(
+      reconcilePushSubscription({
+        subscription,
+        registerOnServer: async () => 'bound',
+        ...newer,
+      }),
+    ).resolves.toBe('subscribed');
     releaseOld?.();
     await expect(old).resolves.toBe('reconcile-failed');
     await expect(worker.api.readPushStateRecord()).resolves.toEqual({
-      state: 'signed-in', attemptId: 'attempt-new-owner-0002',
+      state: 'signed-in',
+      attemptId: 'attempt-new-owner-0002',
     });
     expect(unsubscribe).not.toHaveBeenCalled();
-    await worker.waitEvent('push', { data: { json: () => ({ title: 'New owner update', deliveryProof: DELIVERY_PROOF }) } });
+    await worker.waitEvent('push', {
+      data: { json: () => ({ title: 'New owner update', deliveryProof: DELIVERY_PROOF }) },
+    });
     expect(worker.showNotification).toHaveBeenCalledTimes(1);
   });
 
@@ -997,26 +1153,39 @@ describe('DIIS service-worker behavior', () => {
         unsubscribe,
         toJSON: () => ({ keys: { p256dh: 'key', auth: 'auth' } }),
       } as unknown as PushSubscription;
-      await expect(reconcilePushSubscription({
-        subscription,
-        registerOnServer: async () => 'bound',
-        ...protocol,
-        claimReconciliation: lostAction === 'claim'
-          ? async (attemptId) => {
-            await sendWorkerStateCommand(worker, { type: 'DIIS_CLAIM_PUSH_RECONCILIATION', attemptId });
-            return null;
-          }
-          : protocol.claimReconciliation,
-        applyReconciliationState: lostAction === 'apply'
-          ? async (state, attemptId) => {
-            await sendWorkerStateCommand(worker, { type: 'DIIS_APPLY_PUSH_RECONCILIATION', state, attemptId });
-            return 'failed' as const;
-          }
-          : protocol.applyReconciliationState,
-      })).resolves.toBe('reconcile-failed');
+      await expect(
+        reconcilePushSubscription({
+          subscription,
+          registerOnServer: async () => 'bound',
+          ...protocol,
+          claimReconciliation:
+            lostAction === 'claim'
+              ? async (attemptId) => {
+                  await sendWorkerStateCommand(worker, {
+                    type: 'DIIS_CLAIM_PUSH_RECONCILIATION',
+                    attemptId,
+                  });
+                  return null;
+                }
+              : protocol.claimReconciliation,
+          applyReconciliationState:
+            lostAction === 'apply'
+              ? async (state, attemptId) => {
+                  await sendWorkerStateCommand(worker, {
+                    type: 'DIIS_APPLY_PUSH_RECONCILIATION',
+                    state,
+                    attemptId,
+                  });
+                  return 'failed' as const;
+                }
+              : protocol.applyReconciliationState,
+        }),
+      ).resolves.toBe('reconcile-failed');
       await expect(worker.api.readPushDeliveryState()).resolves.toBe('signed-out');
       expect(unsubscribe).not.toHaveBeenCalled();
-      await worker.waitEvent('push', { data: { json: () => ({ title: 'Private update', deliveryProof: DELIVERY_PROOF }) } });
+      await worker.waitEvent('push', {
+        data: { json: () => ({ title: 'Private update', deliveryProof: DELIVERY_PROOF }) },
+      });
       expect(worker.showNotification).not.toHaveBeenCalled();
     }
   });
@@ -1057,12 +1226,13 @@ describe('DIIS service-worker behavior', () => {
     expect(older).not.toBeNull();
     expect(newer).not.toBeNull();
     expect(older).not.toBe(newer);
-    await expect(applyPushReconciliationState('signed-out', newer!, dependencies))
-      .resolves.toBe('applied');
-    await expect(applyPushReconciliationState('signed-in', older!, dependencies))
-      .resolves.toBe('stale');
-    await expect(abortPushReconciliationAttempt(older!, dependencies))
-      .resolves.toBe('stale');
+    await expect(applyPushReconciliationState('signed-out', newer!, dependencies)).resolves.toBe(
+      'applied',
+    );
+    await expect(applyPushReconciliationState('signed-in', older!, dependencies)).resolves.toBe(
+      'stale',
+    );
+    await expect(abortPushReconciliationAttempt(older!, dependencies)).resolves.toBe('stale');
     await expect(worker.api.readPushStateRecord()).resolves.toEqual({
       state: 'signed-out',
       attemptId: newer,
@@ -1076,15 +1246,19 @@ describe('DIIS service-worker behavior', () => {
       type: 'DIIS_CLAIM_PUSH_RECONCILIATION',
       attemptId,
     });
-    await expect(sendWorkerStateCommand(worker, {
-      type: 'DIIS_SET_PUSH_DELIVERY_STATE',
-      state: 'signed-out',
-    })).resolves.toMatchObject({ status: 'applied', attemptId: null });
-    await expect(sendWorkerStateCommand(worker, {
-      type: 'DIIS_APPLY_PUSH_RECONCILIATION',
-      state: 'signed-in',
-      attemptId,
-    })).resolves.toMatchObject({ status: 'stale', state: 'signed-in', attemptId });
+    await expect(
+      sendWorkerStateCommand(worker, {
+        type: 'DIIS_SET_PUSH_DELIVERY_STATE',
+        state: 'signed-out',
+      }),
+    ).resolves.toMatchObject({ status: 'applied', attemptId: null });
+    await expect(
+      sendWorkerStateCommand(worker, {
+        type: 'DIIS_APPLY_PUSH_RECONCILIATION',
+        state: 'signed-in',
+        attemptId,
+      }),
+    ).resolves.toMatchObject({ status: 'stale', state: 'signed-in', attemptId });
     await expect(worker.api.readPushStateRecord()).resolves.toEqual({
       state: 'signed-out',
       attemptId: null,
@@ -1094,37 +1268,80 @@ describe('DIIS service-worker behavior', () => {
   it('allows only exact mandatory assets and hashed static files into cache handling', () => {
     const worker = loadWorker();
     const request = (url: string, destination = '', extra: Record<string, unknown> = {}) => ({
-      method: 'GET', url, destination, mode: 'cors', headers: new Headers(), ...extra,
+      method: 'GET',
+      url,
+      destination,
+      mode: 'cors',
+      headers: new Headers(),
+      ...extra,
     });
     const origin = 'https://staging.smkdarussalamsubah.sch.id';
 
-    expect(worker.api.classifyRequest(request(`${origin}/manifest.webmanifest`, 'manifest'))?.kind).toBe('static');
-    expect(worker.api.classifyRequest(request(`${origin}/_next/static/chunks/app/page-a1b2c3d4.js`, 'script'))?.kind).toBe('static');
+    expect(
+      worker.api.classifyRequest(request(`${origin}/manifest.webmanifest`, 'manifest'))?.kind,
+    ).toBe('static');
+    expect(
+      worker.api.classifyRequest(
+        request(`${origin}/_next/static/chunks/app/page-a1b2c3d4.js`, 'script'),
+      )?.kind,
+    ).toBe('static');
     expect(worker.api.classifyRequest(request(`${origin}/api/v1/students`))).toBeNull();
-    expect(worker.api.classifyRequest(request(`${origin}/dashboard?_rsc=secret`, '', { mode: 'navigate' }))).toBeNull();
-    expect(worker.api.classifyRequest(request(`${origin}/login`, 'document', { mode: 'navigate' }))).toBeNull();
-    expect(worker.api.classifyRequest(request(`${origin}/dashboard`, 'document', { mode: 'navigate' }))?.kind).toBe('navigation');
-    expect(worker.api.classifyRequest(request('https://evil.example/_next/static/chunks/a-a1b2c3d4.js', 'script'))).toBeNull();
-    expect(worker.api.classifyRequest({ ...request(`${origin}/icon-192.png`, 'image'), method: 'POST' })).toBeNull();
+    expect(
+      worker.api.classifyRequest(
+        request(`${origin}/dashboard?_rsc=secret`, '', { mode: 'navigate' }),
+      ),
+    ).toBeNull();
+    expect(
+      worker.api.classifyRequest(request(`${origin}/login`, 'document', { mode: 'navigate' })),
+    ).toBeNull();
+    expect(
+      worker.api.classifyRequest(request(`${origin}/dashboard`, 'document', { mode: 'navigate' }))
+        ?.kind,
+    ).toBe('navigation');
+    expect(
+      worker.api.classifyRequest(
+        request('https://evil.example/_next/static/chunks/a-a1b2c3d4.js', 'script'),
+      ),
+    ).toBeNull();
+    expect(
+      worker.api.classifyRequest({ ...request(`${origin}/icon-192.png`, 'image'), method: 'POST' }),
+    ).toBeNull();
   });
 
   it('validates response status and content type before writing a static response', () => {
     const worker = loadWorker();
-    expect(worker.api.isCacheableResponse(new Response('ok', {
-      status: 200, headers: { 'Content-Type': 'application/javascript' },
-    }), 'script')).toBe(true);
-    expect(worker.api.isCacheableResponse(new Response('html', {
-      status: 200, headers: { 'Content-Type': 'text/html' },
-    }), 'script')).toBe(false);
-    expect(worker.api.isCacheableResponse(new Response('bad', { status: 404 }), 'mandatory')).toBe(false);
+    expect(
+      worker.api.isCacheableResponse(
+        new Response('ok', {
+          status: 200,
+          headers: { 'Content-Type': 'application/javascript' },
+        }),
+        'script',
+      ),
+    ).toBe(true);
+    expect(
+      worker.api.isCacheableResponse(
+        new Response('html', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' },
+        }),
+        'script',
+      ),
+    ).toBe(false);
+    expect(worker.api.isCacheableResponse(new Response('bad', { status: 404 }), 'mandatory')).toBe(
+      false,
+    );
   });
 
   it('never caches navigation HTML and falls back to the PII-free shell when offline', async () => {
     const worker = loadWorker();
     worker.fetchMock.mockRejectedValueOnce(new Error('offline'));
-    worker.match.mockResolvedValueOnce(new Response('offline shell', {
-      status: 200, headers: { 'Content-Type': 'text/html' },
-    }));
+    worker.match.mockResolvedValueOnce(
+      new Response('offline shell', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      }),
+    );
 
     const result = await worker.fetchEvent({
       method: 'GET',
@@ -1159,9 +1376,12 @@ describe('DIIS service-worker behavior', () => {
   it('normalizes only the producer-backed academic and report targets', () => {
     const worker = loadWorker();
     const studentId = '11111111-1111-4111-8111-111111111111';
-    expect(worker.api.normalizeNotificationTarget('/dashboard/akademik')).toBe('/dashboard/akademik');
-    expect(worker.api.normalizeNotificationTarget(`/dashboard/rapor?studentId=${studentId}`))
-      .toBe(`/dashboard/rapor?studentId=${studentId}`);
+    expect(worker.api.normalizeNotificationTarget('/dashboard/akademik')).toBe(
+      '/dashboard/akademik',
+    );
+    expect(worker.api.normalizeNotificationTarget(`/dashboard/rapor?studentId=${studentId}`)).toBe(
+      `/dashboard/rapor?studentId=${studentId}`,
+    );
   });
 
   it('bounds and sanitizes malformed notification fields without executing payload content', () => {
@@ -1190,11 +1410,17 @@ describe('global registration and shared-device logout', () => {
   function memoryStorage(entries: Record<string, string>): StorageLike {
     const values = new Map(Object.entries(entries));
     return {
-      get length() { return values.size; },
+      get length() {
+        return values.size;
+      },
       key: (index) => [...values.keys()][index] ?? null,
       getItem: (key) => values.get(key) ?? null,
-      setItem: (key, value) => { values.set(key, value); },
-      removeItem: (key) => { values.delete(key); },
+      setItem: (key, value) => {
+        values.set(key, value);
+      },
+      removeItem: (key) => {
+        values.delete(key);
+      },
     };
   }
 
@@ -1224,11 +1450,14 @@ describe('global registration and shared-device logout', () => {
     const fetcher = jest.fn().mockResolvedValue(new Response(null, { status: 200 }));
     const deleteCache = jest.fn().mockResolvedValue(true);
     const cacheStorage = {
-      keys: jest.fn().mockResolvedValue([
-        `${DIIS_CACHE_PREFIX}v2`,
-        DIIS_PUSH_STATE_CACHE,
-        'unrelated-cache',
-      ]),
+      keys: jest
+        .fn()
+        .mockResolvedValue([
+          `${DIIS_CACHE_PREFIX}v2`,
+          `${DIIS_CACHE_PREFIX}v4-static`,
+          DIIS_PUSH_STATE_CACHE,
+          'unrelated-cache',
+        ]),
       delete: deleteCache,
     } as Pick<CacheStorage, 'keys' | 'delete'>;
     const local = memoryStorage({
@@ -1244,19 +1473,32 @@ describe('global registration and shared-device logout', () => {
 
     const cleanup = await cleanupSharedDeviceSession({
       getRegistration: async () => ({
-        pushManager: { getSubscription: async () => ({ endpoint: 'https://push.example.test/capability', unsubscribe }) },
+        pushManager: {
+          getSubscription: async () => ({
+            endpoint: 'https://push.example.test/capability',
+            unsubscribe,
+          }),
+        },
       }),
       cacheStorage,
       localStorage: local,
       sessionStorage: session,
       fetcher: fetcher as typeof fetch,
+      indexedDb: {
+        databases: jest.fn().mockResolvedValue([]),
+        deleteDatabase: jest.fn(),
+      } as unknown as IndexedDbLike,
       timeoutMs: 100,
     });
 
     expect(deleteCache).toHaveBeenCalledWith(`${DIIS_CACHE_PREFIX}v2`);
+    expect(deleteCache).not.toHaveBeenCalledWith(`${DIIS_CACHE_PREFIX}v4-static`);
     expect(deleteCache).not.toHaveBeenCalledWith(DIIS_PUSH_STATE_CACHE);
     expect(deleteCache).not.toHaveBeenCalledWith('unrelated-cache');
-    expect(fetcher).toHaveBeenCalledWith('/api/backend/push/unsubscribe', expect.objectContaining({ method: 'POST' }));
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/backend/push/unsubscribe',
+      expect.objectContaining({ method: 'POST' }),
+    );
     expect(unsubscribe).toHaveBeenCalledTimes(1);
     expect(local.getItem('diis-ai-session-id')).toBeNull();
     expect(local.getItem('diis-theme')).toBe('dark');
@@ -1268,16 +1510,20 @@ describe('global registration and shared-device logout', () => {
   });
 
   it('deletes owned IndexedDB state only after a verified absence check', async () => {
-    const databases = jest.fn()
+    const databases = jest
+      .fn()
       .mockResolvedValueOnce([{ name: 'diis-private-state' }, { name: 'other-product' }])
       .mockResolvedValueOnce([{ name: 'other-product' }]);
     const deleteDatabase = jest.fn(() => databaseRequest('success'));
     const requestClosure = jest.fn();
 
-    await expect(purgeOwnedIndexedDatabases(
-      { databases, deleteDatabase } as IndexedDbLike,
-      { attemptTimeoutMs: 5, retryDelayMs: 0, requestClosure },
-    )).resolves.toEqual({
+    await expect(
+      purgeOwnedIndexedDatabases({ databases, deleteDatabase } as IndexedDbLike, {
+        attemptTimeoutMs: 5,
+        retryDelayMs: 0,
+        requestClosure,
+      }),
+    ).resolves.toEqual({
       complete: true,
       deleted: ['diis-private-state'],
       incomplete: [],
@@ -1287,31 +1533,50 @@ describe('global registration and shared-device logout', () => {
     expect(requestClosure).toHaveBeenCalledWith(['diis-private-state']);
   });
 
+  it('deletes the known assessment database when enumeration is unavailable', async () => {
+    const deleteDatabase = jest.fn(() => databaseRequest('success'));
+    const result = await purgeOwnedIndexedDatabases({ deleteDatabase } as IndexedDbLike, {
+      attemptTimeoutMs: 5,
+      retryDelayMs: 0,
+      requestClosure: jest.fn(),
+    });
+
+    expect(result).toEqual({
+      complete: true,
+      deleted: ['diis-assessment-outbox-v1'],
+      incomplete: [],
+    });
+    expect(deleteDatabase).toHaveBeenCalledWith('diis-assessment-outbox-v1');
+  });
+
   it.each([
     ['blocked', 'blocked'],
     ['error', 'error'],
     ['timeout', 'timeout'],
-  ] as const)('reports %s IndexedDB deletion as incomplete after one bounded retry', async (outcome, status) => {
-    const factory = {
-      databases: jest.fn().mockResolvedValue([{ name: 'diis-private-state' }]),
-      deleteDatabase: jest.fn(() => databaseRequest(outcome)),
-    } as IndexedDbLike;
-    const requestClosure = jest.fn();
+  ] as const)(
+    'reports %s IndexedDB deletion as incomplete after one bounded retry',
+    async (outcome, status) => {
+      const factory = {
+        databases: jest.fn().mockResolvedValue([{ name: 'diis-private-state' }]),
+        deleteDatabase: jest.fn(() => databaseRequest(outcome)),
+      } as IndexedDbLike;
+      const requestClosure = jest.fn();
 
-    const result = await purgeOwnedIndexedDatabases(factory, {
-      attemptTimeoutMs: 5,
-      retryDelayMs: 0,
-      requestClosure,
-    });
+      const result = await purgeOwnedIndexedDatabases(factory, {
+        attemptTimeoutMs: 5,
+        retryDelayMs: 0,
+        requestClosure,
+      });
 
-    expect(result).toEqual({
-      complete: false,
-      deleted: [],
-      incomplete: [{ name: 'diis-private-state', status }],
-    });
-    expect(factory.deleteDatabase).toHaveBeenCalledTimes(2);
-    expect(requestClosure).toHaveBeenCalledTimes(2);
-  });
+      expect(result).toEqual({
+        complete: false,
+        deleted: [],
+        incomplete: [{ name: 'diis-private-state', status }],
+      });
+      expect(factory.deleteDatabase).toHaveBeenCalledTimes(2);
+      expect(requestClosure).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it('does not claim success when a database remains after a successful delete event', async () => {
     const factory = {
@@ -1319,11 +1584,13 @@ describe('global registration and shared-device logout', () => {
       deleteDatabase: jest.fn(() => databaseRequest('success')),
     } as IndexedDbLike;
 
-    await expect(purgeOwnedIndexedDatabases(factory, {
-      attemptTimeoutMs: 5,
-      retryDelayMs: 0,
-      requestClosure: jest.fn(),
-    })).resolves.toEqual({
+    await expect(
+      purgeOwnedIndexedDatabases(factory, {
+        attemptTimeoutMs: 5,
+        retryDelayMs: 0,
+        requestClosure: jest.fn(),
+      }),
+    ).resolves.toEqual({
       complete: false,
       deleted: [],
       incomplete: [{ name: 'diis-private-state', status: 'still-present' }],
@@ -1386,9 +1653,12 @@ describe('global registration and shared-device logout', () => {
     expect(local.getItem('diis-ai-session-id')).toBeNull();
   });
 
-  it('navigates once and coalesces concurrent logout attempts when the signed-out guard succeeds', async () => {
+  it('navigates once only after private cleanup completes and coalesces concurrent attempts', async () => {
     const navigate = jest.fn();
-    const cleanup = jest.fn().mockRejectedValue(new Error('cleanup failed'));
+    const cleanup = jest.fn().mockResolvedValue({
+      complete: true,
+      push: { registrationRead: true, serverUnsubscribed: null, browserUnsubscribed: null },
+    });
     const suppressDelivery = jest.fn().mockResolvedValue(true);
     const first = beginSharedDeviceLogout(navigate, cleanup, suppressDelivery);
     const second = beginSharedDeviceLogout(navigate, cleanup, suppressDelivery);
@@ -1400,6 +1670,24 @@ describe('global registration and shared-device logout', () => {
     expect(navigate).toHaveBeenCalledWith(FEDERATED_LOGOUT_URL);
   });
 
+  it('blocks account transition when assessment cleanup fails even if push is suppressed', async () => {
+    const navigate = jest.fn();
+    const cleanup = jest.fn().mockResolvedValue({
+      complete: false,
+      push: { registrationRead: true, serverUnsubscribed: true, browserUnsubscribed: true },
+      indexedDb: {
+        complete: false,
+        deleted: [],
+        incomplete: [{ name: 'diis-assessment-outbox-v1', status: 'blocked' }],
+      },
+    });
+
+    await expect(beginSharedDeviceLogout(navigate, cleanup, async () => true)).rejects.toThrow(
+      'Data privat belum dapat dibersihkan untuk logout',
+    );
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it('blocks navigation when neither the signed-out guard nor cleanup suppresses push delivery', async () => {
     const navigate = jest.fn();
     const cleanup = jest.fn().mockResolvedValue({
@@ -1408,8 +1696,9 @@ describe('global registration and shared-device logout', () => {
     });
     const suppressDelivery = jest.fn().mockResolvedValue(false);
 
-    await expect(beginSharedDeviceLogout(navigate, cleanup, suppressDelivery))
-      .rejects.toThrow('Notifikasi belum dapat diamankan untuk logout');
+    await expect(beginSharedDeviceLogout(navigate, cleanup, suppressDelivery)).rejects.toThrow(
+      'Data privat belum dapat dibersihkan untuk logout',
+    );
     expect(navigate).not.toHaveBeenCalled();
   });
 
@@ -1421,7 +1710,7 @@ describe('global registration and shared-device logout', () => {
       source('app/dashboard/akademik/_components/ortu/OrtuWorkspace.tsx'),
     ];
     for (const surface of surfaces) {
-      expect(surface).toContain("@/components/shared/LogoutButton");
+      expect(surface).toContain('@/components/shared/LogoutButton');
       expect(surface).not.toContain("window.location.href = '/api/auth/federated-logout'");
     }
     const runtime = source('components/pwa/PwaRuntime.tsx');
