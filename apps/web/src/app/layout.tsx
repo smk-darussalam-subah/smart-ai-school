@@ -19,6 +19,7 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://smkdarussalamsubah.sch.id'),
   title: {
     default: 'DIIS | SMK Darussalam Subah',
     template: '%s | DIIS',
