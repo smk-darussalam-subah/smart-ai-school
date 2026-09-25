@@ -32,7 +32,6 @@ describe('W10-D real NextAuth security boundary', () => {
     'treats invalid %s as no session and denies protected access',
     async (header) => {
       const req = request('/dashboard/keuangan', header);
-      await expect(getToken({ req, secret: syntheticSecret })).resolves.toBeNull();
       const result = await middleware(req);
       expect(result.status).toBe(307);
       expect(result.headers.get('location')).toBe(

@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-24T17:56:45+07:00",
+  "verdict": "SOURCE COMPLETE - INDEPENDENT REVIEW AND STAGING HOLD",
+  "repository": "smk-darussalam-subah/smart-ai-school",
+  "branch": "fix/pwa-auth-proxy-followup-20260924",
+  "baseline": {
+    "ref": "origin/develop",
+    "sha": "beea4243574fe59f398d78d16be583d66321e441",
+    "tree": "7f2c34076aeb3174e057487a6100cdb5d7d779f8"
+  },
+  "sourceManifest": {
+    "count": 5,
+    "aggregateAlgorithm": "sha256 of UTF-8 LF-separated '<sha256>  <path>' lines with trailing LF",
+    "aggregateSha256": "807782275db3b7330abb662f7be7d110be0f1371af046e4e64a0e91ac66aff5e",
+    "files": [
+      {
+        "path": "apps/web/next.config.js",
+        "sha256": "3299b872530979f3d45bb707ad4ceb13e2fb559df3937152f24ab5f0445bb91a"
+      },
+      {
+        "path": "apps/web/src/app/api/backend/[...path]/route.ts",
+        "sha256": "7a7b29a4085aa3c879644e8428412c87dba4d5bc1043006808448ee7d019b8c9"
+      },
+      {
+        "path": "apps/web/src/middleware.ts",
+        "sha256": "452e6303543c449bf1cd3c3f91881733bf899a55008a6f1469d1efc890e6b4b3"
+      },
+      {
+        "path": "apps/web/src/__tests__/api-backend-proxy-auth.test.ts",
+        "sha256": "f4945d68dee9e376d10436e350f01ae16e1bef440eeb65c9dbeaddfe847aeba7"
+      },
+      {
+        "path": "apps/web/src/__tests__/w10d-auth-security.test.ts",
+        "sha256": "396f3ec05a133bf14d924c55aa6ee09c9f38b969ca37c4587623d15dc9c48e54"
+      }
+    ]
+  },
+  "verification": {
+    "focusedJest": {
+      "status": "PASS",
+      "suites": 5,
+      "tests": 106
+    },
+    "finalAuthProxyRegression": {
+      "status": "PASS",
+      "suites": 1,
+      "tests": 7
+    },
+    "webTypeCheck": "PASS",
+    "webLint": "PASS",
+    "webBuild": {
+      "status": "PASS",
+      "pages": 50,
+      "dynamicBackendRoutePresent": true
+    },
+    "standaloneRuntime": {
+      "status": "PASS",
+      "syntheticOnly": true,
+      "validEncryptedCookieProducedBearer": true,
+      "postMethodPreserved": true,
+      "bodyPreserved": true,
+      "malformedCookieProducedAuthorization": false,
+      "rewriteBypassRemoved": true
+    },
+    "prettier": "PASS",
+    "diffCheck": "PASS",
+    "secretScan": "PASS",
+    "stagedFiles": 0,
+    "temporaryListeners": 0,
+    "dependencyAuditVulnerabilities": 0,
+    "dependencyOrLockfileChanged": false
+  },
+  "negativeControls": {
+    "missingCookieDeniedBearer": true,
+    "tokenWithoutAccessTokenDeniedBearer": true,
+    "malformedCookieFailsClosed": true,
+    "malformedBearerFailsClosedInMiddleware": true,
+    "explicitAuthorizationPreserved": true,
+    "validSessionCookieNotForwarded": true,
+    "malformedSessionCookieNotForwarded": true,
+    "explicitBearerCookieNotForwarded": true,
+    "callerProxyIdentityHeadersDropped": true,
+    "callerCdnIdentityHeadersDropped": true,
+    "arbitraryCustomHeadersDropped": true,
+    "requiredApplicationHeadersPreserved": true,
+    "backendRewriteReintroductionRejected": true
+  },
+  "mutations": {
+    "commit": false,
+    "push": false,
+    "pullRequest": false,
+    "staging": false,
+    "production": false
+  },
+  "nextGate": "Independent source review of five source paths and two handoff artifacts"
+}
