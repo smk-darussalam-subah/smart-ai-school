@@ -1,27 +1,50 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { Menu, X } from 'lucide-react';
 
 const SPMB_URL = '/spmb';
 
 const navLinks = [
   { href: '#jurusan', label: 'Jurusan' },
   { href: '#kenapa', label: 'Kenapa Kami' },
+  { href: '/diis', label: 'DIIS' },
   { href: '#video', label: 'Profil' },
   { href: '#kontak', label: 'Kontak' },
 ] as const;
 
-export function LandingNav() {
+interface LandingNavProps {
+  activePage?: 'diis';
+}
+
+export function LandingNav({ activePage }: LandingNavProps = {}) {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  const resolveHref = (href: string) => {
+    if (activePage === 'diis' && href.startsWith('#')) return `/${href}`;
+    return href;
+  };
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setOpen(false);
+      menuButtonRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open]);
 
   return (
     <header
@@ -54,13 +77,14 @@ export function LandingNav() {
         {/* Desktop links */}
         <div className="hidden md:flex items-center gap-7 text-[14px] font-medium text-smk-ink/80">
           {navLinks.map((l) => (
-            <a
+            <Link
               key={l.href}
-              href={l.href}
-              className="hover:text-smk-emerald transition-colors py-1"
+              href={resolveHref(l.href)}
+              aria-current={activePage === 'diis' && l.href === '/diis' ? 'page' : undefined}
+              className="hover:text-smk-emerald transition-colors py-1 aria-[current=page]:font-bold aria-[current=page]:text-smk-emerald aria-[current=page]:underline aria-[current=page]:decoration-smk-lime aria-[current=page]:decoration-2 aria-[current=page]:underline-offset-8"
             >
               {l.label}
-            </a>
+            </Link>
           ))}
         </div>
 
@@ -69,17 +93,25 @@ export function LandingNav() {
           href={SPMB_URL}
           className="hidden md:inline-flex items-center gap-1.5 font-semibold text-[14px] px-5 py-2.5 rounded-full bg-smk-emerald-deep text-white hover:bg-smk-emerald hover:-translate-y-px transition-all"
         >
-          Daftar SPMB <span aria-hidden className="text-smk-lime">→</span>
+          Daftar SPMB{' '}
+          <span aria-hidden className="text-smk-lime">
+            →
+          </span>
         </a>
 
         {/* Mobile hamburger */}
         <button
+          ref={menuButtonRef}
           className="md:hidden flex items-center justify-center w-9 h-9 rounded-lg text-smk-ink hover:bg-smk-ink/5 transition-colors"
           aria-label={open ? 'Tutup menu' : 'Buka menu'}
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
         >
-          <span className="text-xl leading-none">{open ? '✕' : '☰'}</span>
+          {open ? (
+            <X aria-hidden="true" className="h-5 w-5" />
+          ) : (
+            <Menu aria-hidden="true" className="h-5 w-5" />
+          )}
         </button>
       </nav>
 
@@ -87,21 +119,25 @@ export function LandingNav() {
       {open && (
         <div className="md:hidden bg-smk-cream border-t border-smk-ink/8 px-5 pb-5 pt-3">
           {navLinks.map((l) => (
-            <a
+            <Link
               key={l.href}
-              href={l.href}
+              href={resolveHref(l.href)}
+              aria-current={activePage === 'diis' && l.href === '/diis' ? 'page' : undefined}
               onClick={() => setOpen(false)}
-              className="flex items-center text-smk-ink font-medium text-base py-3 border-b border-smk-ink/6 hover:text-smk-emerald transition-colors last:border-0"
+              className="flex min-h-12 items-center text-smk-ink font-medium text-base py-3 border-b border-smk-ink/6 hover:text-smk-emerald transition-colors last:border-0 aria-[current=page]:font-bold aria-[current=page]:text-smk-emerald"
             >
               {l.label}
-            </a>
+            </Link>
           ))}
           <a
             href={SPMB_URL}
             onClick={() => setOpen(false)}
             className="mt-4 flex items-center justify-center gap-2 font-semibold text-[15px] px-5 py-3.5 rounded-full bg-smk-emerald-deep text-white"
           >
-            Daftar SPMB <span aria-hidden className="text-smk-lime">→</span>
+            Daftar SPMB{' '}
+            <span aria-hidden className="text-smk-lime">
+              →
+            </span>
           </a>
         </div>
       )}
