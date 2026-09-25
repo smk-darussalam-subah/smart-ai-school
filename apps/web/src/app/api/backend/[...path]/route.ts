@@ -10,17 +10,29 @@
 // Client component fetch `/api/backend/school/profile` → route handler ini
 // → forward ke `${API_URL}/api/v1/school/profile` → return JSON response.
 //
-// Headers yang di-forward: Authorization, Content-Type, Accept, Cookie,
-// dan semua header x-* custom.
+// Request headers memakai allowlist ketat. Cookie sesi web dan header identitas
+// proxy dari caller tidak pernah melewati boundary Next.js -> NestJS.
 // =============================================================================
 
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getToken } from 'next-auth/jwt';
+import { NextRequest } from 'next/server';
 
 const API_BASE = process.env.API_URL ?? 'http://localhost:3001';
 
-// Headers yang TIDAK boleh di-forward ke backend (hop-by-hop atau Next.js internal)
-const STRIP_HEADERS = new Set([
+const REQUEST_HEADER_ALLOWLIST = new Set([
+  'accept',
+  'accept-language',
+  'authorization',
+  'content-type',
+  'if-match',
+  'if-modified-since',
+  'if-none-match',
+  'if-unmodified-since',
+  'range',
+]);
+
+// Response headers yang tidak boleh diteruskan ke browser.
+const RESPONSE_STRIP_HEADERS = new Set([
   'host',
   'connection',
   'keep-alive',
@@ -32,29 +44,40 @@ const STRIP_HEADERS = new Set([
   'proxy-connection',
 ]);
 
-function copyForwardableHeaders(reqHeaders: Headers): Record<string, string> {
+function copyAllowedRequestHeaders(reqHeaders: Headers): Record<string, string> {
   const out: Record<string, string> = {};
   reqHeaders.forEach((value, key) => {
     const lower = key.toLowerCase();
-    if (!STRIP_HEADERS.has(lower)) {
+    if (REQUEST_HEADER_ALLOWLIST.has(lower)) {
       out[key] = value;
     }
   });
   return out;
 }
 
-async function buildBackendRequestHeaders(reqHeaders: Headers): Promise<Record<string, string>> {
-  const out = copyForwardableHeaders(reqHeaders);
+function copyResponseHeaders(responseHeaders: Headers): Record<string, string> {
+  const out: Record<string, string> = {};
+  responseHeaders.forEach((value, key) => {
+    if (!RESPONSE_STRIP_HEADERS.has(key.toLowerCase())) out[key] = value;
+  });
+  return out;
+}
+
+async function buildBackendRequestHeaders(request: NextRequest): Promise<Record<string, string>> {
+  const out = copyAllowedRequestHeaders(request.headers);
   const hasAuthorization = Object.keys(out).some((key) => key.toLowerCase() === 'authorization');
   if (!hasAuthorization) {
-    const session = await getServerSession(authOptions).catch(() => null);
-    if (session?.accessToken) out.Authorization = `Bearer ${session.accessToken}`;
+    const token = await getToken({
+      req: request,
+      secret: process.env.NEXTAUTH_SECRET,
+    }).catch(() => null);
+    if (token?.accessToken) out.Authorization = `Bearer ${token.accessToken}`;
   }
   return out;
 }
 
 async function proxyRequest(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> },
 ): Promise<Response> {
   const { path } = await params;
@@ -64,12 +87,15 @@ async function proxyRequest(
   try {
     const backendRes = await fetch(backendUrl, {
       method: request.method,
-      headers: await buildBackendRequestHeaders(request.headers),
-      body: request.method !== 'GET' && request.method !== 'HEAD' ? await request.arrayBuffer() : undefined,
+      headers: await buildBackendRequestHeaders(request),
+      body:
+        request.method !== 'GET' && request.method !== 'HEAD'
+          ? await request.arrayBuffer()
+          : undefined,
     });
 
     // Forward response headers (strip hop-by-hop)
-    const responseHeaders = copyForwardableHeaders(backendRes.headers);
+    const responseHeaders = copyResponseHeaders(backendRes.headers);
 
     return new Response(backendRes.body, {
       status: backendRes.status,
@@ -79,7 +105,9 @@ async function proxyRequest(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console
-    console.error(`[api-backend-proxy] ${request.method} /${backendPath} → ${backendUrl} FAILED: ${message}`);
+    console.error(
+      `[api-backend-proxy] ${request.method} /${backendPath} → ${backendUrl} FAILED: ${message}`,
+    );
     return Response.json(
       { statusCode: 502, message: `Backend unreachable: ${message}` },
       { status: 502 },

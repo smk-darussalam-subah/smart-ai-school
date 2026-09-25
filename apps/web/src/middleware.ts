@@ -75,7 +75,14 @@ export function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
-const STATIC_INTERACTIVE: readonly string[] = ['/', '/spmb', '/login', '/auth', '/health', '/offline.html'];
+const STATIC_INTERACTIVE: readonly string[] = [
+  '/',
+  '/spmb',
+  '/login',
+  '/auth',
+  '/health',
+  '/offline.html',
+];
 
 function isPublicStaticPage(pathname: string): boolean {
   if (STATIC_INTERACTIVE.includes(pathname)) return true;
@@ -96,7 +103,7 @@ export async function middleware(request: NextRequest) {
   const token = await getToken({
     req: request,
     secret: process.env.NEXTAUTH_SECRET,
-  });
+  }).catch(() => null);
 
   if ((pathname === '/login' || pathname === '/auth') && token) {
     const res = NextResponse.redirect(new URL('/dashboard', request.url));
