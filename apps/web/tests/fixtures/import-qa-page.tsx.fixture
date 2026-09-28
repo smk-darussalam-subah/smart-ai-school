@@ -1,0 +1,96 @@
+'use client';
+
+import { useRef, useState, type ComponentProps } from 'react';
+import AddUserDialog from '../../dashboard/users/_components/AddUserDialog';
+import StudentImportDialog from '../../dashboard/siswa/_components/StudentImportDialog';
+
+type Scenario = 'ok' | 'partial' | 'reject' | 'network' | 'slow';
+
+export default function ImportQaPage() {
+  const [studentOpen, setStudentOpen] = useState(false);
+  const [scenario, setScenario] = useState<Scenario>('ok');
+  const [calls, setCalls] = useState(0);
+  const attempts = useRef(0);
+  const record = () => setCalls(++attempts.current);
+
+  const userAction: NonNullable<ComponentProps<typeof AddUserDialog>['bulkAction']> = async (
+    rows,
+  ) => {
+    record();
+    if (scenario === 'network') throw new Error('synthetic network failure');
+    if (scenario === 'reject') return { error: 'synthetic rejected', status: 400 };
+    if (scenario === 'slow') await new Promise((resolve) => setTimeout(resolve, 500));
+    return {
+      data: {
+        results: rows.map((_, index) => ({
+          index,
+          status: scenario === 'partial' && index === 0 ? ('error' as const) : ('ok' as const),
+          error: index === 0 && scenario === 'partial' ? 'synthetic failure' : undefined,
+        })),
+        summary: {
+          ok: rows.length - (scenario === 'partial' ? 1 : 0),
+          fail: scenario === 'partial' ? 1 : 0,
+          total: rows.length,
+        },
+      },
+      status: 200,
+    };
+  };
+
+  const studentAction: NonNullable<
+    ComponentProps<typeof StudentImportDialog>['bulkAction']
+  > = async (rows) => {
+    record();
+    if (scenario === 'network') throw new Error('synthetic network failure');
+    if (scenario === 'reject') return { success: false, error: 'synthetic rejected', status: 400 };
+    if (scenario === 'slow') await new Promise((resolve) => setTimeout(resolve, 500));
+    return {
+      success: true,
+      data: {
+        results: rows.map((_, index) => ({
+          index,
+          status: scenario === 'partial' && index === 0 ? ('error' as const) : ('ok' as const),
+          error: index === 0 && scenario === 'partial' ? 'synthetic failure' : undefined,
+        })),
+      },
+    };
+  };
+
+  return (
+    <main className="mx-auto max-w-3xl space-y-4 p-6">
+      <h1 className="text-xl font-semibold">Synthetic importer QA</h1>
+      <div className="flex flex-wrap gap-3">
+        <AddUserDialog isSuperAdmin bulkAction={userAction} />
+        <button
+          type="button"
+          className="rounded border px-3 py-2"
+          onClick={() => setStudentOpen(true)}
+        >
+          Impor Siswa
+        </button>
+      </div>
+      <label className="block">
+        Skenario API
+        <select
+          aria-label="Skenario API"
+          className="ml-2 rounded border px-2 py-1"
+          value={scenario}
+          onChange={(event) => setScenario(event.target.value as Scenario)}
+        >
+          <option value="ok">ok</option>
+          <option value="partial">partial</option>
+          <option value="reject">reject</option>
+          <option value="network">network</option>
+          <option value="slow">slow</option>
+        </select>
+      </label>
+      <output aria-label="Jumlah panggilan API">{calls}</output>
+      <StudentImportDialog
+        open={studentOpen}
+        onOpenChange={setStudentOpen}
+        classes={[{ id: '11111111-1111-4111-8111-111111111111', name: 'X RPL 1' }]}
+        bulkAction={studentAction}
+      />
+    </main>
+  );
+}
