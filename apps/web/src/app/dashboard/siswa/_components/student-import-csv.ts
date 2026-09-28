@@ -1,5 +1,11 @@
-export const STUDENT_IMPORT_MAX_ROWS = 500;
-export const STUDENT_IMPORT_CHUNK_SIZE = 50;
+import {
+  IMPORT_MAX_ROWS,
+  isIsoCalendarDate,
+  parseImportCsv,
+  type ImportRow,
+} from '@/lib/operational-import';
+
+export const STUDENT_IMPORT_MAX_ROWS = IMPORT_MAX_ROWS;
 
 export const STUDENT_CSV_COLUMNS = [
   'nis',
@@ -15,20 +21,11 @@ export const STUDENT_CSV_COLUMNS = [
   'consentConfirmed',
 ] as const;
 
-export const STUDENT_TEMPLATE_ROWS = [
-  ['20260001', 'Ahmad Rizky', 'L', 'X RPL 1', '2026-07-15', 'active', 'Siti Aminah', '+6281234567890', 'siti.aminah@example.com', 'true', 'true'],
-  ['20260002', 'Nadia Putri', 'P', 'X DKV 1', '2026-07-15', 'active', 'Budi Santoso', '+6289876543210', '', 'true', 'true'],
-] as const;
+export const STUDENT_TEMPLATE_ROWS: readonly (readonly string[])[] = [];
 
 export const STUDENT_TEMPLATE_HEADER = STUDENT_CSV_COLUMNS.join(',');
 
-function escapeCsvCell(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
-}
-
-export const STUDENT_TEMPLATE_BODY = STUDENT_TEMPLATE_ROWS
-  .map((row) => row.map(escapeCsvCell).join(','))
-  .join('\n');
+export const STUDENT_TEMPLATE_BODY = '';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -43,6 +40,7 @@ export interface ImportClassOption {
 export interface StudentParsedRow {
   raw: Record<string, string>;
   error: string | null;
+  sourceRow: number;
 }
 
 export interface StudentImportRowResult {
@@ -51,51 +49,16 @@ export interface StudentImportRowResult {
 }
 
 export function parseStudentCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = '';
-  let inQuote = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (inQuote) {
-      if (c === '"') {
-        if (line[i + 1] === '"') {
-          cur += '"';
-          i++;
-        } else {
-          inQuote = false;
-        }
-      } else {
-        cur += c;
-      }
-    } else if (c === ',') {
-      out.push(cur);
-      cur = '';
-    } else if (c === '"') {
-      inQuote = true;
-    } else {
-      cur += c;
-    }
-  }
-  out.push(cur);
-  return out;
+  const result = parseImportCsv(`${STUDENT_CSV_COLUMNS.join(',')}\n${line}`, STUDENT_CSV_COLUMNS);
+  return STUDENT_CSV_COLUMNS.map((column) => result.rows[0]?.raw[column] ?? '');
 }
 
 export function parseStudentCsv(text: string): Record<string, string>[] {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
-  if (lines.length < 2) return [];
-  const headers = parseStudentCsvLine(lines[0]!).map((h) => h.trim());
-  return lines.slice(1).map((line) => {
-    const cells = parseStudentCsvLine(line);
-    const row: Record<string, string> = {};
-    headers.forEach((h, i) => {
-      row[h] = (cells[i] ?? '').trim();
-    });
-    return row;
-  });
+  return parseImportCsv(text, STUDENT_CSV_COLUMNS).rows.map((row) => row.raw);
 }
 
 export function countStudentCsvRows(text: string): number {
-  return parseStudentCsv(text).length;
+  return parseImportCsv(text, STUDENT_CSV_COLUMNS).dataCount ?? 0;
 }
 
 export function isStudentImportOverLimit(text: string): boolean {
@@ -138,29 +101,39 @@ export function validateStudentRaw(
   if (!findClassId(className, classes)) return 'kelas tidak ditemukan';
   if (!joinedAt) return 'tanggal masuk kosong';
   if (!DATE_RE.test(joinedAt)) return 'tanggal masuk harus YYYY-MM-DD';
+  if (!isIsoCalendarDate(joinedAt)) return 'tanggal masuk tidak valid';
   if (!STATUS_VALUES.includes(status)) return 'status tidak valid';
   if (!parentName) return 'nama wali kosong';
   if (!parentPhone) return 'telepon wali kosong';
+  if (!/^\+62\d{8,14}$/.test(parentPhone)) return 'telepon wali harus format +62';
   if (parentEmail && !EMAIL_RE.test(parentEmail)) return 'email wali tidak valid';
+  if (
+    row.reuseWaliByPhone &&
+    !/^(?:true|false|ya|tidak|yes|no|0|1|setuju)$/i.test(row.reuseWaliByPhone.trim())
+  )
+    return 'reuse wali harus boolean';
   if (!boolValue(row.consentConfirmed || '')) return 'consent belum dikonfirmasi';
   return null;
 }
 
-export function parseStudentImport(
-  text: string,
+export function parseStudentImport(text: string, classes: ImportClassOption[]): StudentParsedRow[] {
+  return prepareStudentRows(parseImportCsv(text, STUDENT_CSV_COLUMNS).rows, classes);
+}
+
+export function prepareStudentRows(
+  rows: ImportRow[],
   classes: ImportClassOption[],
 ): StudentParsedRow[] {
-  const rows = parseStudentCsv(text);
   const nisCounts = new Map<string, number>();
-  rows.forEach((row) => {
-    const nis = (row.nis || '').trim();
+  rows.forEach(({ raw }) => {
+    const nis = (raw.nis || '').trim();
     if (nis) nisCounts.set(nis, (nisCounts.get(nis) ?? 0) + 1);
   });
 
-  return rows.map((raw) => {
+  return rows.map(({ raw, sourceRow }) => {
     const nis = (raw.nis || '').trim();
     const duplicateSet = nis && (nisCounts.get(nis) ?? 0) > 1 ? new Set([nis]) : undefined;
-    return { raw, error: validateStudentRaw(raw, classes, duplicateSet) };
+    return { raw, sourceRow, error: validateStudentRaw(raw, classes, duplicateSet) };
   });
 }
 
@@ -168,7 +141,9 @@ export function getRetryableStudentImportRows<T extends StudentImportRowResult>(
   parsed: StudentParsedRow[],
   results: T[],
 ): Array<{ row: StudentParsedRow; index: number }> {
-  const okIndexes = new Set(results.filter((result) => result.status === 'ok').map((result) => result.sourceIndex));
+  const okIndexes = new Set(
+    results.filter((result) => result.status === 'ok').map((result) => result.sourceIndex),
+  );
   return parsed
     .map((row, index) => ({ row, index }))
     .filter((item) => !item.row.error && !okIndexes.has(item.index));
