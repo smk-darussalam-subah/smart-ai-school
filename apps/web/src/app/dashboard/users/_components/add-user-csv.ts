@@ -14,64 +14,53 @@ export const CSV_COLUMNS = [
   'address',
 ] as const;
 
-export const TEMPLATE_ROWS = [
-  ['GURU', 'Ahmad Fauzi', 'L', 'ahmad.fauzi@smkdarussalamsubah.sch.id', '081234567890', '1985-01-01', 'Y0012', 'GTY', 'Jl. Merdeka No. 1, Subah'],
-  ['TATA_USAHA', 'Budi Santoso', 'L', 'budi.santoso@smkdarussalamsubah.sch.id', '081211112222', '1988-07-20', 'Y0101', 'PTY', 'Jl. Raya Subah No. 9'],
-  ['INDUSTRI', 'PT Maju Jaya - Rina', 'P', 'rina@majujaya.example', '081255556666', '', '', '', 'Kawasan Industri Batang'],
-] as const;
+export const TEMPLATE_ROWS: readonly (readonly string[])[] = [];
 
 export const TEMPLATE_HEADER = CSV_COLUMNS.join(',');
 
-function escapeCsvCell(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
-}
-
-export const TEMPLATE_BODY = TEMPLATE_ROWS
-  .map((row) => row.map(escapeCsvCell).join(','))
-  .join('\n');
+export const TEMPLATE_BODY = '';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function parseCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = '';
-  let inQuote = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (inQuote) {
-      if (c === '"') {
-        if (line[i + 1] === '"') {
-          cur += '"';
-          i++;
-        } else {
-          inQuote = false;
-        }
-      } else {
-        cur += c;
-      }
-    } else if (c === ',') {
-      out.push(cur);
-      cur = '';
-    } else if (c === '"') {
-      inQuote = true;
-    } else {
-      cur += c;
-    }
+import { isIsoCalendarDate, parseImportCsv, type ImportRow } from '@/lib/operational-import';
+
+export interface UserParsedRow extends ImportRow {
+  error: string | null;
+}
+
+export function prepareUserRows(rows: ImportRow[], isSuperAdmin: boolean): UserParsedRow[] {
+  const emailCounts = new Map<string, number>();
+  const niyCounts = new Map<string, number>();
+  for (const { raw } of rows) {
+    const email = (raw.email ?? '').trim().toLowerCase();
+    const niy = (raw.niy ?? '').trim().toLowerCase();
+    if (email) emailCounts.set(email, (emailCounts.get(email) ?? 0) + 1);
+    if (niy) niyCounts.set(niy, (niyCounts.get(niy) ?? 0) + 1);
   }
-  out.push(cur);
-  return out;
+  return rows.map(({ sourceRow, raw }) => {
+    const email = (raw.email ?? '').trim().toLowerCase();
+    const niy = (raw.niy ?? '').trim().toLowerCase();
+    return {
+      sourceRow,
+      raw,
+      error:
+        validateRaw(raw) ||
+        (!isSuperAdmin && raw.role === 'TATA_USAHA'
+          ? 'hanya Super Admin dapat membuat Tata Usaha'
+          : null) ||
+        (email && (emailCounts.get(email) ?? 0) > 1 ? 'email duplikat dalam file' : null) ||
+        (niy && (niyCounts.get(niy) ?? 0) > 1 ? 'NIY duplikat dalam file' : null),
+    };
+  });
+}
+
+export function parseCsvLine(line: string): string[] {
+  const result = parseImportCsv(`${CSV_COLUMNS.join(',')}\n${line}`, CSV_COLUMNS);
+  return CSV_COLUMNS.map((column) => result.rows[0]?.raw[column] ?? '');
 }
 
 export function parseCsv(text: string): Record<string, string>[] {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length < 2) return [];
-  const headers = parseCsvLine(lines[0]!).map((h) => h.trim());
-  return lines.slice(1).map((line) => {
-    const cells = parseCsvLine(line);
-    const row: Record<string, string> = {};
-    headers.forEach((h, i) => { row[h] = (cells[i] ?? '').trim(); });
-    return row;
-  });
+  return parseImportCsv(text, CSV_COLUMNS).rows.map((row) => row.raw);
 }
 
 export function toProvisionRow(r: Record<string, string>): Record<string, unknown> {
@@ -92,10 +81,15 @@ export function validateRaw(r: Record<string, string>): string | null {
   const email = (r.email || '').trim();
   if (!email) return 'email kosong';
   if (!EMAIL_RE.test(email)) return 'email tidak valid';
+  const phone = (r.phone || '').trim();
+  if (phone && !/^(?:\+62|0)\d{8,14}$/.test(phone)) return 'nomor telepon tidak valid';
+  const birthDate = (r.birthDate || '').trim();
+  if (birthDate && !isIsoCalendarDate(birthDate)) return 'tanggal lahir tidak valid';
   const staff = STAFF_ROLES.includes(role);
   const status = (r.employmentStatus || '').trim();
   if (staff && !status) return 'status kepegawaian kosong';
-  if (staff && status && !['GTY', 'GTT', 'PTY', 'PTT'].includes(status)) return 'status tidak valid';
+  if (staff && status && !['GTY', 'GTT', 'PTY', 'PTT'].includes(status))
+    return 'status tidak valid';
   if (!staff && ((r.niy || '').trim() || status)) return 'Industri tidak boleh niy/status';
   return null;
 }
