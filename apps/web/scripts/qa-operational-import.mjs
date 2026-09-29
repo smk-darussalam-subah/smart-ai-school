@@ -1,3 +1,5 @@
+/* global Buffer, File, console, document, getComputedStyle, innerHeight, innerWidth, process, setTimeout, window */
+
 import { createRequire } from 'node:module';
 import { copyFile, mkdir, readFile, rmdir, stat, unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -22,7 +24,7 @@ const userHeader = 'role,fullName,gender,email,phone,birthDate,niy,employmentSta
 const studentHeader =
   'nis,namaSiswa,jenisKelamin,kelas,tanggalMasuk,status,namaWali,teleponWali,emailWali,reuseWaliByPhone,consentConfirmed';
 const studentRows = [
-  '00001,QAIMP Siswa A,L,X RPL 1,2026-07-15,active,QAIMP Wali,+6281234567890,,true,true',
+  '00001,QAIMP Siswa Dengan Nama Panjang,L,X RPL 1,2026-07-15,active,QAIMP Wali Dengan Nama Panjang,+6281234567890,,true,true',
   '00002,QAIMP Siswa B,P,X RPL 1,2026-07-15,active,QAIMP Wali,+6281234567890,,true,true',
 ];
 let assertions = 0;
@@ -83,15 +85,125 @@ function duplicateEntry(bytes) {
   return output;
 }
 
+async function measureImportGeometry(dialog) {
+  return dialog
+    .locator('table')
+    .first()
+    .evaluate((table) => {
+      const box = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+          tag: element.tagName,
+          className: typeof element.className === 'string' ? element.className : '',
+          clientWidth: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+          left: Math.round(rect.left * 100) / 100,
+          right: Math.round(rect.right * 100) / 100,
+          width: Math.round(rect.width * 100) / 100,
+          overflowX: style.overflowX,
+          minWidth: style.minWidth,
+          maxWidth: style.maxWidth,
+        };
+      };
+      const ancestors = [];
+      let current = table.parentElement;
+      while (current && ancestors.length < 10) {
+        ancestors.push(current);
+        current = current.parentElement;
+      }
+      const scrollContainer = ancestors.find((element) => {
+        const overflowX = getComputedStyle(element).overflowX;
+        return overflowX === 'auto' || overflowX === 'scroll';
+      });
+      const ownerDialog = table.closest('[role="dialog"]');
+      const lastHeader = table.querySelector('thead th:last-child');
+      return {
+        viewport: { width: innerWidth, height: innerHeight },
+        document: {
+          clientWidth: document.documentElement.clientWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+        },
+        body: {
+          clientWidth: document.body.clientWidth,
+          scrollWidth: document.body.scrollWidth,
+        },
+        dialog: ownerDialog ? box(ownerDialog) : null,
+        scrollContainer: scrollContainer ? box(scrollContainer) : null,
+        table: box(table),
+        lastHeader: lastHeader ? box(lastHeader) : null,
+        ancestors: ancestors.map(box),
+      };
+    });
+}
+
 async function expectNoOverflow(page, dialog, label) {
+  const immediate = await page.evaluate(() => ({
+    viewportWidth: innerWidth,
+    documentWidth: document.documentElement.scrollWidth,
+    bodyWidth: document.body.scrollWidth,
+  }));
+  const geometry = await measureImportGeometry(dialog);
+  process.stdout.write(`GEOMETRY ${label} ${JSON.stringify({ immediate, ...geometry })}\n`);
+  const tolerance = 1;
   check(
-    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    immediate.documentWidth <= immediate.viewportWidth + tolerance &&
+      immediate.bodyWidth <= immediate.viewportWidth + tolerance &&
+      geometry.document.scrollWidth <= geometry.viewport.width + tolerance &&
+      geometry.body.scrollWidth <= geometry.viewport.width + tolerance,
     `${label}: page fits`,
   );
   check(
-    await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+    geometry.dialog &&
+      geometry.dialog.left >= -tolerance &&
+      geometry.dialog.right <= geometry.viewport.width + tolerance &&
+      geometry.dialog.scrollWidth <= geometry.dialog.clientWidth + tolerance,
     `${label}: dialog fits`,
   );
+  check(
+    geometry.scrollContainer &&
+      geometry.scrollContainer.left >= -tolerance &&
+      geometry.scrollContainer.right <= geometry.viewport.width + tolerance,
+    `${label}: preview container fits`,
+  );
+  if (
+    geometry.scrollContainer &&
+    geometry.scrollContainer.scrollWidth > geometry.scrollContainer.clientWidth + tolerance
+  ) {
+    const scrollProof = await dialog
+      .locator('table')
+      .first()
+      .evaluate((table) => {
+        let container = table.parentElement;
+        while (container) {
+          const overflowX = getComputedStyle(container).overflowX;
+          if (
+            (overflowX === 'auto' || overflowX === 'scroll') &&
+            container.scrollWidth > container.clientWidth
+          ) {
+            const start = container.scrollLeft;
+            container.scrollLeft = container.scrollWidth;
+            const end = container.scrollLeft;
+            const containerRect = container.getBoundingClientRect();
+            const lastHeader = table.querySelector('thead th:last-child');
+            const lastRect = lastHeader?.getBoundingClientRect();
+            container.scrollLeft = start;
+            return {
+              start,
+              end,
+              lastVisible:
+                Boolean(lastRect) &&
+                lastRect.left >= containerRect.left - 1 &&
+                lastRect.right <= containerRect.right + 1,
+            };
+          }
+          container = container.parentElement;
+        }
+        return { start: 0, end: 0, lastVisible: false };
+      });
+    check(scrollProof.end > scrollProof.start, `${label}: preview scrolls internally`);
+    check(scrollProof.lastVisible, `${label}: final column remains reachable`);
+  }
 }
 
 async function runUserDialog(page, width) {
@@ -100,7 +212,7 @@ async function runUserDialog(page, width) {
   await dialog.getByRole('button', { name: 'Import Massal' }).click();
   await setFile(
     dialog,
-    `${userHeader}\nGURU,QAIMP Guru,L,qaimp@example.test,,2026-02-30,N001,GTY,`,
+    `${userHeader}\nGURU,QAIMP Guru Dengan Nama Panjang Untuk Pemeriksaan Layout,L,qaimp-guru-dengan-alamat-panjang@example.test,,2026-02-30,N001,GTY,`,
   );
   await dialog.getByText('tanggal lahir tidak valid').waitFor();
   check(
@@ -113,6 +225,7 @@ async function runUserDialog(page, width) {
     await dialog.getByRole('button', { name: /Impor.*pengguna/ }).isDisabled(),
     `${width}: edit invalidates validation`,
   );
+  await expectNoOverflow(page, dialog, `${width} user editor`);
   await dialog.getByRole('button', { name: 'Validasi Ulang' }).click();
   check(
     await dialog.getByRole('button', { name: /Impor.*pengguna/ }).isEnabled(),
@@ -121,6 +234,13 @@ async function runUserDialog(page, width) {
   await dialog.getByRole('button', { name: /Impor.*pengguna/ }).click();
   let confirm = page.getByRole('dialog').last();
   await confirm.getByText(/Pastikan data yang diinput sudah benar/).waitFor();
+  await confirm.getByRole('button', { name: 'Cek Lagi' }).focus();
+  check(
+    await confirm
+      .getByRole('button', { name: 'Cek Lagi' })
+      .evaluate((button) => button === document.activeElement),
+    `${width}: confirmation action receives keyboard focus`,
+  );
   check(
     (await page.locator('output[aria-label="Jumlah panggilan API"]').textContent()) === '0',
     `${width}: confirmation precedes request`,
@@ -202,6 +322,7 @@ async function runStudentDialog(page, width) {
     (await dialog.getByRole('button', { name: 'Impor 1 siswa' }).count()) === 0,
     `${width}: student edit has no submit before revalidation`,
   );
+  await expectNoOverflow(page, dialog, `${width} student editor`);
   await dialog.getByRole('button', { name: 'Validasi Ulang' }).click();
   check(
     await dialog.getByRole('button', { name: 'Impor 1 siswa' }).isEnabled(),
@@ -220,6 +341,7 @@ async function runStudentDialog(page, width) {
   await dialog.getByRole('button', { name: 'Impor 2 siswa' }).click();
   await page.getByRole('dialog').last().getByRole('button', { name: 'Submit' }).click();
   await dialog.getByText('synthetic failure').first().waitFor();
+  await expectNoOverflow(page, dialog, `${width} student partial result`);
   check(
     await dialog.getByRole('button', { name: 'Coba lagi 1 gagal' }).isEnabled(),
     'partial result maps one failed row',
