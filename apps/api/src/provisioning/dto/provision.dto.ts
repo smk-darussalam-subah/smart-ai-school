@@ -13,25 +13,29 @@ const GenderSchema = z.enum(['L', 'P']);
 const EmploymentStatusSchema = z.enum(['GTY', 'GTT', 'PTY', 'PTT']);
 const StudentStatusSchema = z.enum(['active', 'inactive', 'graduated', 'dropped']);
 
-export const ProvisionUserSchema = z.object({
-  role: PrimaryRoleSchema,
-  fullName: z.string().min(1, 'fullName wajib diisi'),
-  gender: GenderSchema,
-  email: z.string().email().optional(),
-  phone: z.string().optional(),
-  birthDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'birthDate harus format YYYY-MM-DD')
-    .optional(),
-  address: z.string().max(500).optional(),
-  niy: z.string().min(1).max(50).optional(),
-  employmentStatus: EmploymentStatusSchema.optional(),
-}).strict()
+export const ProvisionUserSchema = z
+  .object({
+    role: PrimaryRoleSchema,
+    fullName: z.string().min(1, 'fullName wajib diisi'),
+    gender: GenderSchema,
+    email: z.string().email().optional(),
+    phone: z.string().optional(),
+    birthDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'birthDate harus format YYYY-MM-DD')
+      .optional(),
+    address: z.string().max(500).optional(),
+    niy: z.string().min(1).max(50).optional(),
+    employmentStatus: EmploymentStatusSchema.optional(),
+  })
+  .strict()
   // Aturan email/phone per-role (sama seperti sebelumnya).
   .refine(
     (dto) => {
       if (dto.role === 'SISWA') return false;
-      const needsEmail = (['GURU', 'TATA_USAHA', 'SUPER_ADMIN', 'INDUSTRI'] as string[]).includes(dto.role);
+      const needsEmail = (['GURU', 'TATA_USAHA', 'SUPER_ADMIN', 'INDUSTRI'] as string[]).includes(
+        dto.role,
+      );
       const needsPhone = dto.role === 'ORANG_TUA';
       if (needsEmail && !dto.email) return false;
       if (needsPhone && !dto.phone) return false;
@@ -39,9 +43,11 @@ export const ProvisionUserSchema = z.object({
     },
     (dto) => {
       if (dto.role === 'SISWA') {
-        return { message: 'Role SISWA tidak diterima di /provision/users — gunakan /provision/students' };
+        return {
+          message: 'Role SISWA tidak diterima di /provision/users — gunakan /provision/students',
+        };
       }
-      return { message: `${dto.role} memerlukan ${(dto.role === 'ORANG_TUA' ? 'phone' : 'email')}` };
+      return { message: `${dto.role} memerlukan ${dto.role === 'ORANG_TUA' ? 'phone' : 'email'}` };
     },
   )
   // Pegawai dengan identity GURU/TATA_USAHA wajib status kepegawaian; jabatan berasal dari Appointment.
@@ -65,44 +71,56 @@ export const ProvisionUserSchema = z.object({
 export type ProvisionUserDto = z.infer<typeof ProvisionUserSchema>;
 
 // Import massal: array baris mentah (divalidasi per-baris di service agar skip-invalid).
-export const ProvisionUsersBulkSchema = z.object({
-  users: z.array(z.record(z.unknown())).min(1, 'Minimal 1 baris').max(500, 'Maksimal 500 baris per impor'),
-}).strict();
+export const ProvisionUsersBulkSchema = z
+  .object({
+    users: z
+      .array(z.record(z.unknown()))
+      .min(1, 'Minimal 1 baris')
+      .max(36, 'Maksimal 36 baris per impor'),
+  })
+  .strict();
 
 export type ProvisionUsersBulkDto = z.infer<typeof ProvisionUsersBulkSchema>;
 
-export const ProvisionStudentSchema = z.object({
-  siswa: z.object({
-    nis: z.string().min(1, 'NIS wajib diisi').max(20),
-    fullName: z.string().min(1, 'fullName wajib diisi'),
-    classId: z.string().uuid('classId wajib dipilih dan harus UUID kelas valid'),
-    email: z.string().email().optional(),
-    gender: GenderSchema.optional(),
-    joinedAt: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'joinedAt harus format YYYY-MM-DD')
-      .optional(),
-    status: StudentStatusSchema.optional(),
-  }),
-  ppdbLeadId: z.string().uuid().optional(),
-  ortu: z.object({
-    name: z.string().min(1, 'nama ortu wajib diisi'),
-    phone: phoneE164,
-    email: z.string().email().optional(),
-  }),
-  reuseParentByPhone: z.boolean().optional(),
-  consent: z.literal(true, {
-    errorMap: () => ({ message: 'consent harus bernilai true — operator wajib konfirmasi persetujuan data' }),
-  }),
-}).strict();
+export const ProvisionStudentSchema = z
+  .object({
+    siswa: z.object({
+      nis: z.string().min(1, 'NIS wajib diisi').max(20),
+      fullName: z.string().min(1, 'fullName wajib diisi'),
+      classId: z.string().uuid('classId wajib dipilih dan harus UUID kelas valid'),
+      email: z.string().email().optional(),
+      gender: GenderSchema.optional(),
+      joinedAt: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, 'joinedAt harus format YYYY-MM-DD')
+        .optional(),
+      status: StudentStatusSchema.optional(),
+    }),
+    ppdbLeadId: z.string().uuid().optional(),
+    ortu: z.object({
+      name: z.string().min(1, 'nama ortu wajib diisi'),
+      phone: phoneE164,
+      email: z.string().email().optional(),
+    }),
+    reuseParentByPhone: z.boolean().optional(),
+    consent: z.literal(true, {
+      errorMap: () => ({
+        message: 'consent harus bernilai true — operator wajib konfirmasi persetujuan data',
+      }),
+    }),
+  })
+  .strict();
 
 export type ProvisionStudentDto = z.infer<typeof ProvisionStudentSchema>;
 
 // Import siswa diproses per-baris agar baris valid tetap bisa lanjut.
-// Maksimum request dibuat lebih kecil dari import user karena provisioning siswa
-// membuat dua akun potensial (siswa + wali) dan perlu kompensasi Keycloak.
-export const ProvisionStudentsBulkSchema = z.object({
-  students: z.array(z.record(z.unknown())).min(1, 'Minimal 1 baris').max(100, 'Maksimal 100 baris per request'),
-}).strict();
+export const ProvisionStudentsBulkSchema = z
+  .object({
+    students: z
+      .array(z.record(z.unknown()))
+      .min(1, 'Minimal 1 baris')
+      .max(36, 'Maksimal 36 baris per request'),
+  })
+  .strict();
 
 export type ProvisionStudentsBulkDto = z.infer<typeof ProvisionStudentsBulkSchema>;
