@@ -57,6 +57,7 @@ import {
 } from '../actions';
 import {
   CSV_COLUMNS,
+  USER_IMPORT_COLUMNS,
   STAFF_ROLES,
   TEMPLATE_HEADER,
   TEMPLATE_ROWS,
@@ -67,6 +68,7 @@ import {
 import {
   downloadCsvTemplate,
   downloadImportTemplate,
+  IMPORT_MAX_ROWS,
   isConfirmedImportRejection,
   mapImportResults,
   parseImportFile,
@@ -271,7 +273,7 @@ export default function AddUserDialog({
     setEditingIndex(null);
     setConfirmOpen(false);
     setFileName(file.name);
-    const result = await parseImportFile(file, CSV_COLUMNS, 'Pengguna');
+    const result = await parseImportFile(file, USER_IMPORT_COLUMNS, 'Pengguna');
     if (current !== generation.current) return;
     setDataCount(result.dataCount ?? result.rows.length);
     setParsed(prepareUserRows(result.rows, isSuperAdmin));
@@ -301,7 +303,7 @@ export default function AddUserDialog({
       ambiguous ||
       hasInvalid ||
       retryable.length === 0 ||
-      parsed.length > 36
+      parsed.length > IMPORT_MAX_ROWS
     )
       return;
     submittingRef.current = true;
@@ -346,7 +348,11 @@ export default function AddUserDialog({
 
   const downloadTemplate = async () => {
     try {
-      await downloadImportTemplate(CSV_COLUMNS, 'Pengguna', 'template-import-pengguna.xlsx');
+      await downloadImportTemplate(
+        USER_IMPORT_COLUMNS,
+        'Pengguna',
+        'template-import-pengguna.xlsx',
+      );
     } catch {
       setError('Template XLSX gagal dibuat. Coba unduh ulang.');
     }
@@ -675,7 +681,7 @@ export default function AddUserDialog({
             <div className="grid gap-2 sm:grid-cols-3">
               {[
                 ['1', 'Unduh template', 'Isi sesuai kolom.'],
-                ['2', 'Unggah file', 'XLSX atau CSV, maksimal 36 baris.'],
+                ['2', 'Unggah file', `XLSX atau CSV, maksimal ${IMPORT_MAX_ROWS} baris.`],
                 ['3', 'Periksa & impor', 'Baris error ditandai.'],
               ].map(([n, h, s]) => (
                 <div

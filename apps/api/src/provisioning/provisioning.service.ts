@@ -14,12 +14,12 @@ import {
 } from '@nestjs/common';
 import { UserRole } from '@smk/auth';
 import { logger } from '@smk/logger';
-import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { UserStatusService } from '../auth/user-status.service';
 import { normalizeOrThrow } from '../common/helpers/phone';
+import { generateTemporaryPassword } from '../common/helpers/temp-password';
 import {
   ProvisionUserDto,
   ProvisionStudentDto,
@@ -39,36 +39,12 @@ function syntheticEmailOrtu(phoneE164: string): string {
   return `${noPlus}@ortu.${DOMAIN}`;
 }
 
-function generateTempPassword(): string {
-  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-  const lower = 'abcdefghjkmnpqrstuvwxyz';
-  const digit = '23456789';
-  const special = '!@#$%^&*?';
-  const all = upper + lower + digit + special;
-  const password = [
-    upper[randomBytes(1)[0]! % upper.length]!,
-    lower[randomBytes(1)[0]! % lower.length]!,
-    digit[randomBytes(1)[0]! % digit.length]!,
-    special[randomBytes(1)[0]! % special.length]!,
-  ];
-  const fillBytes = randomBytes(8);
-  for (let i = 0; i < fillBytes.length; i++) {
-    password.push(all[fillBytes[i]! % all.length]!);
-  }
-  const shuffleBytes = randomBytes(password.length);
-  for (let i = password.length - 1; i > 0; i--) {
-    const j = shuffleBytes[i]! % (i + 1);
-    [password[i], password[j]] = [password[j]!, password[i]!];
-  }
-  return password.join('');
-}
-
 function parseJsonRecord(value: string | null | undefined): Record<string, unknown> {
   if (!value) return {};
   try {
     const parsed: unknown = JSON.parse(value);
     return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
+      ? (parsed as Record<string, unknown>)
       : {};
   } catch {
     return {};
@@ -78,7 +54,8 @@ function parseJsonRecord(value: string | null | undefined): Record<string, unkno
 function readEnrolledStudentId(notes: string | null | undefined): string | null {
   const parsed = parseJsonRecord(notes);
   const enrollment = parsed.enrollment;
-  if (typeof enrollment !== 'object' || enrollment === null || Array.isArray(enrollment)) return null;
+  if (typeof enrollment !== 'object' || enrollment === null || Array.isArray(enrollment))
+    return null;
   const studentId = (enrollment as Record<string, unknown>).studentId;
   return typeof studentId === 'string' && studentId.trim() ? studentId : null;
 }
@@ -139,9 +116,7 @@ export class ProvisioningService {
       const allowed: UserRole[] = ['GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI'];
       if (allowed.includes(role)) return;
     }
-    throw new ForbiddenException(
-      `Anda tidak diizinkan membuat akun dengan role ${role}`,
-    );
+    throw new ForbiddenException(`Anda tidak diizinkan membuat akun dengan role ${role}`);
   }
 
   private deriveUsername(dto: ProvisionUserDto): string {
@@ -166,7 +141,7 @@ export class ProvisioningService {
 
     const username = this.deriveUsername(dto);
     const email = this.deriveEmail(dto);
-    const tempPw = generateTempPassword();
+    const tempPw = generateTemporaryPassword();
     const nameParts = dto.fullName.split(' ');
     const firstName = nameParts[0]!;
     const lastName = nameParts.slice(1).join(' ') || firstName;
@@ -180,7 +155,8 @@ export class ProvisioningService {
         : Promise.resolve(null),
     ]);
 
-    if (kcExisting) throw new ConflictException(`Username "${username}" sudah digunakan di Keycloak`);
+    if (kcExisting)
+      throw new ConflictException(`Username "${username}" sudah digunakan di Keycloak`);
     if (dbEmail) throw new ConflictException(`Email "${email}" sudah digunakan`);
     if (dbNiy) throw new ConflictException(`NIY "${dto.niy}" sudah digunakan`);
 
@@ -350,11 +326,11 @@ export class ProvisioningService {
     const ortuPhone = normalizeOrThrow(dto.ortu.phone);
     const ortuEmail = dto.ortu.email || syntheticEmailOrtu(ortuPhone);
     const ortuUsername = ortuPhone;
-    const ortuTempPw = generateTempPassword();
+    const ortuTempPw = generateTemporaryPassword();
 
     const siswaEmail = dto.siswa.email || syntheticEmailNis(dto.siswa.nis);
     const siswaUsername = dto.siswa.nis;
-    const siswaTempPw = generateTempPassword();
+    const siswaTempPw = generateTemporaryPassword();
 
     const siswaNameParts = dto.siswa.fullName.split(' ');
     const siswaFirst = siswaNameParts[0]!;
@@ -384,7 +360,9 @@ export class ProvisioningService {
       : null;
     if (dto.ppdbLeadId && !ppdbLead) throw new NotFoundException('Lead PPDB tidak ditemukan');
     if (ppdbLead && ppdbLead.status !== 'accepted') {
-      throw new ConflictException('Lead PPDB harus berstatus accepted sebelum didaftarkan sebagai siswa');
+      throw new ConflictException(
+        'Lead PPDB harus berstatus accepted sebelum didaftarkan sebagai siswa',
+      );
     }
     if (ppdbLead && readEnrolledStudentId(ppdbLead.notes)) {
       throw new ConflictException('Lead PPDB sudah didaftarkan sebagai siswa');
@@ -397,7 +375,8 @@ export class ProvisioningService {
     ]);
 
     if (nisExisting) throw new ConflictException(`NIS "${dto.siswa.nis}" sudah terdaftar`);
-    if (kcSiswaExisting) throw new ConflictException(`Username "${siswaUsername}" sudah digunakan di Keycloak`);
+    if (kcSiswaExisting)
+      throw new ConflictException(`Username "${siswaUsername}" sudah digunakan di Keycloak`);
 
     const createdKcIds: string[] = [];
 
@@ -533,7 +512,12 @@ export class ProvisioningService {
   async provisionOrtu(
     input: { name: string; phone: string; email?: string; reuseByPhone: boolean },
     actor: Actor,
-  ): Promise<{ userId: string; keycloakId: string; isNew: boolean; tempCredentials: TempCredential[] }> {
+  ): Promise<{
+    userId: string;
+    keycloakId: string;
+    isNew: boolean;
+    tempCredentials: TempCredential[];
+  }> {
     this.authorize(actor, 'ORANG_TUA');
 
     const ortuPhone = normalizeOrThrow(input.phone);
@@ -546,7 +530,12 @@ export class ProvisioningService {
         select: { id: true, keycloakId: true },
       });
       if (existing) {
-        return { userId: existing.id, keycloakId: existing.keycloakId, isNew: false, tempCredentials: [] };
+        return {
+          userId: existing.id,
+          keycloakId: existing.keycloakId,
+          isNew: false,
+          tempCredentials: [],
+        };
       }
     }
 
@@ -557,7 +546,7 @@ export class ProvisioningService {
       );
     }
 
-    const tempPw = generateTempPassword();
+    const tempPw = generateTemporaryPassword();
     const nameParts = input.name.split(' ');
     const firstName = nameParts[0]!;
     const lastName = nameParts.slice(1).join(' ') || firstName;

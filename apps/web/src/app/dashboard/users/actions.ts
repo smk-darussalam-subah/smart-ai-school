@@ -51,6 +51,16 @@ export async function restoreUserAction(userId: string, reason: string, expected
   return result;
 }
 
+export interface PasswordResetResult {
+  username: string;
+  temporaryPassword: string;
+  requiresPasswordChange: true;
+}
+
+export async function resetUserPasswordAction(userId: string) {
+  return apiAction<PasswordResetResult>(`/users/${userId}/password-reset`, 'PATCH');
+}
+
 export async function grantUserPermission(userId: string, permissionId: string, grant: boolean) {
   return apiAction(`/permissions/users/${userId}/grant`, 'POST', { permissionId, grant });
 }

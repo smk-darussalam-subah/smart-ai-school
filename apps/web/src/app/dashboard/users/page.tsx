@@ -96,6 +96,10 @@ export default async function UsersPage({ searchParams }: Props) {
         (roles.includes('SUPER_ADMIN') || roles.includes('TATA_USAHA'))
       }
       canArchiveUsers={authority.can('user.manage') && roles.includes('SUPER_ADMIN')}
+      canResetPasswords={
+        authority.can('user.password.reset') &&
+        (roles.includes('SUPER_ADMIN') || roles.includes('TATA_USAHA'))
+      }
     />
   );
 }

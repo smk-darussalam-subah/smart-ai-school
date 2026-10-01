@@ -1,6 +1,62 @@
 export const IMPORT_MAX_ROWS = 36;
 export const IMPORT_MAX_BYTES = 2 * 1024 * 1024;
 
+export type ImportCellKind = 'text' | 'identifier' | 'date' | 'boolean';
+export interface ImportColumnDefinition {
+  key: string;
+  kind: ImportCellKind;
+}
+export type ImportColumns = readonly (string | ImportColumnDefinition)[];
+
+function columnDefinitions(columns: ImportColumns): ImportColumnDefinition[] {
+  return columns.map((column) =>
+    typeof column === 'string' ? { key: column, kind: 'text' } : column,
+  );
+}
+
+function excelColumn(index: number): string {
+  let current = index + 1;
+  let result = '';
+  while (current > 0) {
+    current--;
+    result = String.fromCharCode(65 + (current % 26)) + result;
+    current = Math.floor(current / 26);
+  }
+  return result;
+}
+
+function safeCellValue(value: unknown): string {
+  if (value instanceof Date) return '[date]';
+  if (typeof value === 'string') return `[text:${value.length}]`;
+  return `[${typeof value}]`;
+}
+
+function calendarDate(value: Date): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeCell(value: unknown, definition: ImportColumnDefinition): string | null {
+  if (value == null || value === '') return '';
+  if (definition.kind === 'date' && value instanceof Date && !Number.isNaN(value.getTime())) {
+    return calendarDate(value);
+  }
+  if (definition.kind === 'boolean' && typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (definition.kind === 'identifier' && /^[+-]?\d+(?:\.\d+)?e[+-]?\d+$/i.test(text)) return null;
+  if (definition.kind === 'date' && text && !isIsoCalendarDate(text)) return null;
+  if (definition.kind === 'boolean' && text) {
+    const normalized = text.toLowerCase();
+    if (['true', 'ya', 'yes', '1', 'setuju'].includes(normalized)) return 'true';
+    if (['false', 'tidak', 'no', '0'].includes(normalized)) return 'false';
+    return null;
+  }
+  return text;
+}
+
 export function isIsoCalendarDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
@@ -57,7 +113,7 @@ export function checkImportFile(file: File): string | null {
   return null;
 }
 
-export function parseImportCsv(text: string, columns: readonly string[]): ImportParseResult {
+export function parseImportCsv(text: string, columns: ImportColumns): ImportParseResult {
   const records: Array<{ sourceRow: number; cells: string[] }> = [];
   const errors: ImportIssue[] = [];
   let cells: string[] = [];
@@ -130,20 +186,21 @@ export function parseImportCsv(text: string, columns: readonly string[]): Import
 
 export function rowsFromCells(
   records: Array<{ sourceRow: number; cells: readonly unknown[] }>,
-  columns: readonly string[],
+  columns: ImportColumns,
+  sheet = 'Data',
 ): ImportParseResult {
+  const definitions = columnDefinitions(columns);
+  const keys = definitions.map(({ key }) => key);
   const errors: ImportIssue[] = [];
   const [header, ...data] = records;
   if (!header) return { rows: [], errors: [{ message: 'File kosong atau header tidak ada.' }] };
   const names = header.cells.map((cell) =>
     typeof cell === 'string' ? cell.replace(/^\uFEFF/, '').trim() : cell,
   );
-  if (names.length !== columns.length || names.some((name, i) => name !== columns[i])) {
+  if (names.length !== keys.length || names.some((name, i) => name !== keys[i])) {
     return {
       rows: [],
-      errors: [
-        { sourceRow: header.sourceRow, message: `Header harus persis: ${columns.join(',')}` },
-      ],
+      errors: [{ sourceRow: header.sourceRow, message: `Header harus persis: ${keys.join(',')}` }],
     };
   }
   if (data.length === 0) return { rows: [], errors: [{ message: 'File hanya berisi header.' }] };
@@ -155,23 +212,21 @@ export function rowsFromCells(
     };
   }
   const rows = data.map(({ sourceRow, cells }) => {
-    if (cells.length !== columns.length)
-      errors.push({ sourceRow, message: `Jumlah kolom harus ${columns.length}.` });
+    if (cells.length !== keys.length)
+      errors.push({ sourceRow, message: `Jumlah kolom harus ${keys.length}.` });
     const raw: Record<string, string> = {};
-    columns.forEach((column, index) => {
+    definitions.forEach((definition, index) => {
       const value = cells[index];
-      if (value != null && typeof value !== 'string') {
-        errors.push({ sourceRow, column, message: `Format kolom ${column} harus Text.` });
-      }
-      const text = typeof value === 'string' ? value.trim() : '';
-      if (/^[+-]?\d+(?:\.\d+)?e[+-]?\d+$/i.test(text)) {
+      const normalized = normalizeCell(value, definition);
+      if (normalized === null) {
+        const cell = `${excelColumn(index)}${sourceRow}`;
         errors.push({
           sourceRow,
-          column,
-          message: `Format kolom ${column} harus Text, bukan notasi ilmiah.`,
+          column: definition.key,
+          message: `Sheet ${sheet}, cell ${cell}, kolom ${definition.key}: nilai ${safeCellValue(value)} tidak sesuai tipe ${definition.kind}. Perbaiki nilai atau gunakan template resmi.`,
         });
       }
-      raw[column] = text;
+      raw[definition.key] = normalized ?? '';
     });
     return { sourceRow, raw };
   });
@@ -180,7 +235,7 @@ export function rowsFromCells(
 
 export async function parseImportFile(
   file: File,
-  columns: readonly string[],
+  columns: ImportColumns,
   sheet: string,
 ): Promise<ImportParseResult> {
   const fileError = checkImportFile(file);
@@ -215,7 +270,7 @@ export async function parseImportFile(
     const records = sheets[0].data
       .map((cells, index) => ({ sourceRow: index + 1, cells }))
       .filter(({ cells }) => cells.some((value) => value != null && String(value).trim() !== ''));
-    return rowsFromCells(records, columns);
+    return rowsFromCells(records, columns, sheet);
   } catch (error) {
     const message =
       error instanceof Error && /^(XLSX|Struktur|Formula|Link)/.test(error.message)
@@ -226,17 +281,41 @@ export async function parseImportFile(
 }
 
 export async function downloadImportTemplate(
-  columns: readonly string[],
+  columns: ImportColumns,
   sheet: string,
   name: string,
 ): Promise<void> {
   const { default: writeExcelFile } = await import('write-excel-file/browser');
-  const data = [columns.map((value) => ({ value, type: String }))];
+  const data = buildImportTemplateData(columns);
   await writeExcelFile(data, { sheet }).toFile(name);
 }
 
-export function downloadCsvTemplate(columns: readonly string[], name: string): void {
-  const blob = new Blob([`${columns.join(',')}\n`], { type: 'text/csv;charset=utf-8' });
+export function buildImportTemplateData(columns: ImportColumns) {
+  const definitions = columnDefinitions(columns);
+  const header = definitions.map(({ key }) => ({
+    value: key,
+    type: String,
+    fontWeight: 'bold' as const,
+  }));
+  const blankRows = Array.from({ length: IMPORT_MAX_ROWS }, () =>
+    definitions.map(({ kind }) =>
+      kind === 'date'
+        ? { value: undefined, type: Date, format: 'yyyy-mm-dd' }
+        : { value: '', type: String, format: '@' },
+    ),
+  );
+  return [header, ...blankRows];
+}
+
+export function downloadCsvTemplate(columns: ImportColumns, name: string): void {
+  const blob = new Blob(
+    [
+      `${columnDefinitions(columns)
+        .map(({ key }) => key)
+        .join(',')}\n`,
+    ],
+    { type: 'text/csv;charset=utf-8' },
+  );
   downloadImportBlob(blob, name);
 }
 
