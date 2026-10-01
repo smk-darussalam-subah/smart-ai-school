@@ -703,6 +703,20 @@ describe('ProvisioningService', () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it.each([
+      ['2026-02-29', false],
+      ['2026-02-31', false],
+      ['2024-02-29', true],
+      ['2026-07-15', true],
+    ])('validates joinedAt calendar date %s', (joinedAt, valid) => {
+      const result = ProvisionStudentSchema.safeParse({
+        siswa: { nis: '12345', fullName: 'Siswa', classId: CLASS_ID, joinedAt },
+        ortu: { name: 'Ortu', phone: '+6281234567890' },
+        consent: true,
+      });
+      expect(result.success).toBe(valid);
+    });
   });
 
   // ── 2J-4: ProvisionUserSchema (gender + NIY/status per-role) ─────────────────
@@ -828,6 +842,15 @@ describe('ProvisioningService', () => {
           role: 'KEPALA_SEKOLAH',
         }).success,
       ).toBe(false);
+    });
+
+    it.each([
+      ['2026-02-29', false],
+      ['2026-02-31', false],
+      ['2024-02-29', true],
+      ['1990-12-31', true],
+    ])('validates birthDate calendar date %s', (birthDate, valid) => {
+      expect(ProvisionUserSchema.safeParse({ ...guru, birthDate }).success).toBe(valid);
     });
 
     it('gender hilang → invalid', () => {

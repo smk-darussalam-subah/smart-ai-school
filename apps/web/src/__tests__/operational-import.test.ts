@@ -1,5 +1,6 @@
 import {
   checkImportFile,
+  buildImportTemplateData,
   IMPORT_MAX_ROWS,
   isConfirmedImportRejection,
   mapImportResults,
@@ -8,6 +9,7 @@ import {
 } from '@/lib/operational-import';
 import readExcelFile from 'read-excel-file/node';
 import writeExcelFile from 'write-excel-file/node';
+import { strFromU8, unzipSync } from 'fflate';
 
 const columns = ['nis', 'name', 'note'] as const;
 const header = columns.join(',');
@@ -130,18 +132,51 @@ describe('operational import parser', () => {
     expect(parsed.rows[0]?.sourceRow).toBe(2);
   });
 
-  it('menolak tipe angka, tanggal, boolean, dan notasi ilmiah pada sel XLSX', () => {
+  it('memvalidasi sel berdasarkan makna field, bukan satu tipe Excel untuk semua kolom', () => {
+    const typedColumns = [
+      { key: 'nis', kind: 'identifier' as const },
+      { key: 'joinedAt', kind: 'date' as const },
+      { key: 'consent', kind: 'boolean' as const },
+    ];
     const result = rowsFromCells(
       [
-        { sourceRow: 1, cells: columns },
-        { sourceRow: 3, cells: [1, new Date('2026-01-01'), true] },
-        { sourceRow: 4, cells: ['1e+10', 'QAIMP', ''] },
+        { sourceRow: 1, cells: ['nis', 'joinedAt', 'consent'] },
+        { sourceRow: 3, cells: ['0001', new Date(2026, 0, 2), true] },
       ],
-      columns,
+      typedColumns,
+      'Siswa',
     );
-    expect(result.rows).toEqual([]);
-    expect(result.errors).toHaveLength(4);
-    expect(result.errors.map((issue) => issue.column)).toEqual(['nis', 'name', 'note', 'nis']);
+    expect(result.errors).toEqual([]);
+    expect(result.rows[0]?.raw).toEqual({ nis: '0001', joinedAt: '2026-01-02', consent: 'true' });
+
+    const invalid = rowsFromCells(
+      [
+        { sourceRow: 1, cells: ['nis', 'joinedAt', 'consent'] },
+        { sourceRow: 2, cells: [123, '2026-02-30', 'mungkin'] },
+        { sourceRow: 3, cells: ['1e+10', '2026-01-01', false] },
+      ],
+      typedColumns,
+      'Siswa',
+    );
+    expect(invalid.rows).toEqual([]);
+    expect(invalid.errors).toHaveLength(4);
+    expect(invalid.errors[0]?.message).toContain('cell A2');
+    expect(invalid.errors[0]?.message).not.toContain('123');
+  });
+
+  it('membangun file template dengan tepat 36 baris kosong dan format identifier/tanggal', async () => {
+    const data = buildImportTemplateData([
+      { key: 'nis', kind: 'identifier' },
+      { key: 'joinedAt', kind: 'date' },
+    ]);
+    expect(data).toHaveLength(IMPORT_MAX_ROWS + 1);
+    expect(data[1]?.[0]).toMatchObject({ value: '', format: '@' });
+    expect(data[1]?.[1]).toMatchObject({ type: Date, format: 'yyyy-mm-dd' });
+    const buffer = await writeExcelFile(data, { sheet: 'Siswa' }).toBuffer();
+    const files = unzipSync(new Uint8Array(buffer));
+    const worksheet = strFromU8(files['xl/worksheets/sheet1.xml']!);
+    expect(worksheet).toContain('<row r="37"');
+    expect(worksheet.match(/<row r=/g) ?? []).toHaveLength(IMPORT_MAX_ROWS + 1);
   });
 
   it('hanya penolakan sebelum proses yang boleh dicoba ulang dari preview', () => {
