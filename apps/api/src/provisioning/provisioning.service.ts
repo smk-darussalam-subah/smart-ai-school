@@ -27,6 +27,7 @@ import {
   ProvisionStudentSchema,
   STAFF_ROLES,
 } from './dto/provision.dto';
+import { ClassesService } from '../classes/classes.service';
 
 const DOMAIN = 'smkdarussalamsubah.sch.id';
 
@@ -106,6 +107,7 @@ export class ProvisioningService {
     private readonly kc: KeycloakAdminService,
     private readonly permissions: PermissionsService,
     private readonly userStatus: UserStatusService,
+    private readonly classes: ClassesService,
   ) {}
 
   // ── Otorisasi penerbit ──────────────────────────────────────────────────────
@@ -378,6 +380,11 @@ export class ProvisioningService {
     if (kcSiswaExisting)
       throw new ConflictException(`Username "${siswaUsername}" sudah digunakan di Keycloak`);
 
+    const studentStatus = dto.siswa.status ?? 'active';
+    if (studentStatus === 'active') {
+      await this.classes.assertOperationalSeatAvailablePreflight(dto.siswa.classId);
+    }
+
     const createdKcIds: string[] = [];
 
     try {
@@ -419,6 +426,9 @@ export class ProvisioningService {
 
       // Step 4: DB transaction
       const result = await this.prisma.$transaction(async (tx) => {
+        if (studentStatus === 'active') {
+          await this.classes.assertOperationalSeatAvailable(tx, dto.siswa.classId);
+        }
         let parentId: string | undefined = existingOrtuUser?.id;
 
         const consentAt = new Date();
@@ -461,7 +471,7 @@ export class ProvisioningService {
             nis: dto.siswa.nis,
             classId: dto.siswa.classId,
             parentId: parentId || null,
-            status: dto.siswa.status ?? 'active',
+            status: studentStatus,
             joinedAt: dto.siswa.joinedAt ? new Date(dto.siswa.joinedAt) : new Date(),
           },
         });

@@ -36,6 +36,7 @@ import { PermissionsService } from '../permissions/permissions.service';
 import { UserStatusService } from '../auth/user-status.service';
 import { UserRole } from '@smk/auth';
 import { logger } from '@smk/logger';
+import { ClassesService } from '../classes/classes.service';
 
 const SA_ACTOR: Actor = { keycloakId: 'kc-sa', roles: ['SUPER_ADMIN'] as UserRole[] };
 const TU_ACTOR: Actor = { keycloakId: 'kc-tu', roles: ['TATA_USAHA'] as UserRole[] };
@@ -117,6 +118,10 @@ function mockPrisma(): PrismaMock {
 async function buildService(
   kcMock: ReturnType<typeof mockKc>,
   prismaMock: ReturnType<typeof mockPrisma>,
+  classesMock = {
+    assertOperationalSeatAvailablePreflight: jest.fn().mockResolvedValue(undefined),
+    assertOperationalSeatAvailable: jest.fn().mockResolvedValue(undefined),
+  },
 ) {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
@@ -128,6 +133,10 @@ async function buildService(
         useValue: { invalidateUser: jest.fn(), invalidateAll: jest.fn() },
       },
       { provide: UserStatusService, useValue: { invalidate: jest.fn(), invalidateAll: jest.fn() } },
+      {
+        provide: ClassesService,
+        useValue: classesMock,
+      },
     ],
   }).compile();
   return module.get(ProvisioningService);
@@ -154,7 +163,11 @@ describe('ProvisioningService', () => {
         role: 'GURU',
       });
 
-      const svc = await buildService(kc, prisma);
+      const classes = {
+        assertOperationalSeatAvailablePreflight: jest.fn().mockResolvedValue(undefined),
+        assertOperationalSeatAvailable: jest.fn().mockResolvedValue(undefined),
+      };
+      const svc = await buildService(kc, prisma, classes);
 
       const result = await svc.provisionUser(
         {
@@ -456,7 +469,11 @@ describe('ProvisioningService', () => {
       );
       prisma.student.create.mockResolvedValue({ id: 'st-1', nis: '12345' });
 
-      const svc = await buildService(kc, prisma);
+      const classes = {
+        assertOperationalSeatAvailablePreflight: jest.fn().mockResolvedValue(undefined),
+        assertOperationalSeatAvailable: jest.fn().mockResolvedValue(undefined),
+      };
+      const svc = await buildService(kc, prisma, classes);
 
       const result = await svc.provisionStudent(
         {
@@ -469,6 +486,158 @@ describe('ProvisioningService', () => {
 
       expect(kc.createUser).toHaveBeenCalledTimes(2);
       expect(result.tempCredentials).toHaveLength(2); // ortu + siswa
+      expect(classes.assertOperationalSeatAvailablePreflight).toHaveBeenCalledWith(CLASS_ID);
+      expect(classes.assertOperationalSeatAvailable).toHaveBeenCalledWith(prisma, CLASS_ID);
+    });
+
+    it('kelas aktif yang sudah penuh ditolak sebelum membuat akun Keycloak', async () => {
+      const kc = mockKc();
+      kc.findByUsername.mockResolvedValue(null);
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue(null);
+      prisma.student.findUnique.mockResolvedValue(null);
+      const classes = {
+        assertOperationalSeatAvailablePreflight: jest
+          .fn()
+          .mockRejectedValue(new ConflictException('Kelas penuh')),
+        assertOperationalSeatAvailable: jest.fn(),
+      };
+      const svc = await buildService(kc, prisma, classes);
+
+      await expect(
+        svc.provisionStudent(
+          {
+            siswa: { nis: 'FULL-1', fullName: 'Siswa Aktif', classId: CLASS_ID },
+            ortu: { name: 'Ortu', phone: '+6281234567890' },
+            consent: true,
+          },
+          SA_ACTOR,
+        ),
+      ).rejects.toThrow('Kelas penuh');
+
+      expect(kc.createUser).not.toHaveBeenCalled();
+      expect(classes.assertOperationalSeatAvailable).not.toHaveBeenCalled();
+    });
+
+    it.each(['inactive', 'graduated', 'dropped'] as const)(
+      'status %s tidak mengonsumsi kursi operasional',
+      async (status) => {
+        const kc = mockKc();
+        let createCount = 0;
+        kc.createUser.mockImplementation(() => Promise.resolve(`kc-historical-${++createCount}`));
+        kc.findByUsername.mockResolvedValue(null);
+        kc.assignRealmRole.mockResolvedValue(undefined);
+        kc.setTempPassword.mockResolvedValue(undefined);
+        const prisma = mockPrisma();
+        prisma.user.findFirst.mockResolvedValue(null);
+        prisma.student.findUnique.mockResolvedValue(null);
+        prisma.user.create.mockImplementation((args: { data: Record<string, unknown> }) =>
+          Promise.resolve({ ...args.data, id: 'u-historical', keycloakId: args.data.keycloakId }),
+        );
+        prisma.student.create.mockResolvedValue({ id: 'st-historical' });
+        const classes = {
+          assertOperationalSeatAvailablePreflight: jest.fn(),
+          assertOperationalSeatAvailable: jest.fn(),
+        };
+        const svc = await buildService(kc, prisma, classes);
+
+        await svc.provisionStudent(
+          {
+            siswa: { nis: `HIST-${status}`, fullName: 'Siswa Historis', classId: CLASS_ID, status },
+            ortu: { name: 'Ortu', phone: '+6281234567890' },
+            consent: true,
+          },
+          SA_ACTOR,
+        );
+
+        expect(classes.assertOperationalSeatAvailablePreflight).not.toHaveBeenCalled();
+        expect(classes.assertOperationalSeatAvailable).not.toHaveBeenCalled();
+        expect(prisma.student.create).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ status }) }),
+        );
+      },
+    );
+
+    it('race kapasitas final tetap dikompensasi setelah identitas Keycloak dibuat', async () => {
+      const kc = mockKc();
+      let createCount = 0;
+      kc.createUser.mockImplementation(() => Promise.resolve(`kc-race-${++createCount}`));
+      kc.findByUsername.mockResolvedValue(null);
+      kc.assignRealmRole.mockResolvedValue(undefined);
+      kc.setTempPassword.mockResolvedValue(undefined);
+      kc.deleteUser.mockResolvedValue(undefined);
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue(null);
+      prisma.student.findUnique.mockResolvedValue(null);
+      const classes = {
+        assertOperationalSeatAvailablePreflight: jest.fn().mockResolvedValue(undefined),
+        assertOperationalSeatAvailable: jest
+          .fn()
+          .mockRejectedValue(new ConflictException('Kelas penuh saat commit')),
+      };
+      const svc = await buildService(kc, prisma, classes);
+
+      await expect(
+        svc.provisionStudent(
+          {
+            siswa: { nis: 'RACE-1', fullName: 'Siswa Race', classId: CLASS_ID },
+            ortu: { name: 'Ortu Race', phone: '+6281234567890' },
+            consent: true,
+          },
+          SA_ACTOR,
+        ),
+      ).rejects.toThrow('Kelas penuh saat commit');
+
+      expect(kc.deleteUser).toHaveBeenCalledTimes(2);
+      expect(kc.deleteUser).toHaveBeenCalledWith('kc-race-1');
+      expect(kc.deleteUser).toHaveBeenCalledWith('kc-race-2');
+    });
+
+    it('mencatat setiap kegagalan kompensasi pada race kapasitas yang tersisa', async () => {
+      const kc = mockKc();
+      let createCount = 0;
+      kc.createUser.mockImplementation(() => Promise.resolve(`kc-orphan-${++createCount}`));
+      kc.findByUsername.mockResolvedValue(null);
+      kc.assignRealmRole.mockResolvedValue(undefined);
+      kc.setTempPassword.mockResolvedValue(undefined);
+      kc.deleteUser.mockRejectedValue(new Error('Keycloak cleanup unavailable'));
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue(null);
+      prisma.student.findUnique.mockResolvedValue(null);
+      const classes = {
+        assertOperationalSeatAvailablePreflight: jest.fn().mockResolvedValue(undefined),
+        assertOperationalSeatAvailable: jest
+          .fn()
+          .mockRejectedValue(new ConflictException('Kelas penuh saat commit')),
+      };
+      const svc = await buildService(kc, prisma, classes);
+
+      await expect(
+        svc.provisionStudent(
+          {
+            siswa: { nis: 'RACE-ORPHAN', fullName: 'Siswa Race', classId: CLASS_ID },
+            ortu: { name: 'Ortu Race', phone: '+6281234567890' },
+            consent: true,
+          },
+          SA_ACTOR,
+        ),
+      ).rejects.toThrow('Kelas penuh saat commit');
+
+      const errorCalls = (logger.error as jest.Mock).mock.calls.filter(
+        (call) => call[0] === '[Provision] gagal kompensasi deleteUser KC (student saga)',
+      );
+      expect(errorCalls).toEqual(
+        expect.arrayContaining([
+          expect.arrayContaining([
+            expect.any(String),
+            expect.objectContaining({ kcId: 'kc-orphan-1' }),
+          ]),
+          expect.arrayContaining([
+            expect.any(String),
+            expect.objectContaining({ kcId: 'kc-orphan-2' }),
+          ]),
+        ]),
+      );
     });
 
     it('ortu existing (input 0812 match DB +628...) → 1 createUser saja', async () => {

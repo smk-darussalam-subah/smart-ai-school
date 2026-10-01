@@ -49,17 +49,24 @@ import { AcademicPeriodService } from '../academic-period/academic-period.servic
 import { WaLogService } from '../wa-log/wa-log.service';
 import { AuthUser } from '@smk/auth';
 import { EVENTS } from '../events/events.types';
+import { ClassesService } from '../classes/classes.service';
 
 // ── Auth fixture ─────────────────────────────────────────────────────────────
 
 const TU_USER: AuthUser = {
-  keycloakId: 'kc-tu', email: 'tu@smk.sch.id',
-  username: 'tu', fullName: 'Sari Wulandari', roles: ['TATA_USAHA'],
+  keycloakId: 'kc-tu',
+  email: 'tu@smk.sch.id',
+  username: 'tu',
+  fullName: 'Sari Wulandari',
+  roles: ['TATA_USAHA'],
 };
 
 const GURU_USER: AuthUser = {
-  keycloakId: 'kc-guru', email: 'guru@smk.sch.id',
-  username: 'guru1', fullName: 'Agus Setiawan', roles: ['GURU'],
+  keycloakId: 'kc-guru',
+  email: 'guru@smk.sch.id',
+  username: 'guru1',
+  fullName: 'Agus Setiawan',
+  roles: ['GURU'],
 };
 
 // ── Mock factories ────────────────────────────────────────────────────────────
@@ -73,70 +80,75 @@ function buildMockNotificationService() {
 }
 
 function buildMockPrismaForStudent() {
-  return {
-    user:    { findUnique: jest.fn() },
+  const prisma = {
+    user: { findUnique: jest.fn() },
     teacher: { findUnique: jest.fn() },
     student: {
-      create:     jest.fn(),
-      findFirst:  jest.fn(),
+      create: jest.fn(),
+      findFirst: jest.fn(),
       findUnique: jest.fn(),
-      update:     jest.fn(),
-      findMany:   jest.fn(),
-      count:      jest.fn(),
+      update: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
     },
+    $queryRaw: jest.fn().mockResolvedValue([{ acquired: true }]),
+  };
+  return {
+    ...prisma,
+    $transaction: jest.fn((callback: (tx: typeof prisma) => unknown) => callback(prisma)),
   };
 }
 
 function buildMockPrismaForGrade() {
   return {
-    $transaction:       jest.fn(),
-    academicYear:       { findFirst: jest.fn() },
-    user:               { findUnique: jest.fn() },
-    teacher:            { findUnique: jest.fn() },
-    student:            { findUnique: jest.fn(), findMany: jest.fn() },
+    $transaction: jest.fn(),
+    academicYear: { findFirst: jest.fn() },
+    user: { findUnique: jest.fn() },
+    teacher: { findUnique: jest.fn() },
+    student: { findUnique: jest.fn(), findMany: jest.fn() },
     teachingAssignment: { findUnique: jest.fn() },
     grade: {
-      findMany:   jest.fn(),
-      findFirst:  jest.fn(),
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
       findUnique: jest.fn(),
-      create:     jest.fn(),
-      update:     jest.fn(),
-      count:      jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      count: jest.fn(),
     },
   };
 }
 
 function buildMockPrismaForAttendance() {
   return {
-    $transaction:       jest.fn(),
-    academicYear:       { findFirst: jest.fn() },
-    user:               { findUnique: jest.fn() },
-    teacher:            { findUnique: jest.fn() },
-    student:            { findUnique: jest.fn(), findMany: jest.fn() },
+    $transaction: jest.fn(),
+    academicYear: { findFirst: jest.fn() },
+    user: { findUnique: jest.fn() },
+    teacher: { findUnique: jest.fn() },
+    student: { findUnique: jest.fn(), findMany: jest.fn() },
     teachingAssignment: { findFirst: jest.fn(), findMany: jest.fn() },
-    class:              { findUnique: jest.fn() },
+    class: { findUnique: jest.fn() },
     attendance: {
-      findMany:   jest.fn(),
+      findMany: jest.fn(),
       findUnique: jest.fn(),
-      create:     jest.fn(),
-      count:      jest.fn(),
+      create: jest.fn(),
+      count: jest.fn(),
     },
   };
 }
 
 function buildMockPrismaForFinance() {
   const prisma = {
-    user:       { findUnique: jest.fn() },
-    student:    { findUnique: jest.fn(), findMany: jest.fn() },
+    user: { findUnique: jest.fn() },
+    student: { findUnique: jest.fn(), findMany: jest.fn() },
     sppPayment: {
-      create:     jest.fn(),
-      findMany:   jest.fn(),
+      create: jest.fn(),
+      findMany: jest.fn(),
       findUnique: jest.fn(),
-      update:     jest.fn(),
+      update: jest.fn(),
       updateMany: jest.fn(),
       findUniqueOrThrow: jest.fn(),
-      count:      jest.fn(),
-      groupBy:    jest.fn(),
+      count: jest.fn(),
+      groupBy: jest.fn(),
     },
     notificationLog: { createMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   };
@@ -148,7 +160,7 @@ function buildMockPrismaForFinance() {
 
 function buildMockPrismaForListener() {
   return {
-    user:    { findUnique: jest.fn() },
+    user: { findUnique: jest.fn() },
     student: { findUnique: jest.fn() },
   };
 }
@@ -156,11 +168,11 @@ function buildMockPrismaForListener() {
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
 const STUDENT_UUID = 'student-uuid-001';
-const GRADE_UUID   = 'grade-uuid-001';
-const ATT_UUID     = 'att-uuid-001';
-const PAY_UUID     = 'pay-uuid-001';
-const CLASS_UUID   = 'class-uuid-001';
-const ASSIGN_UUID  = 'assign-uuid-001';
+const GRADE_UUID = 'grade-uuid-001';
+const ATT_UUID = 'att-uuid-001';
+const PAY_UUID = 'pay-uuid-001';
+const CLASS_UUID = 'class-uuid-001';
+const ASSIGN_UUID = 'assign-uuid-001';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION A: Producer tests
@@ -174,29 +186,36 @@ describe('StudentService — event producer', () => {
   let emitter: ReturnType<typeof buildMockEventEmitter>;
 
   const MOCK_STUDENT = {
-    id:        STUDENT_UUID,
-    userId:    'user-uuid-001',
-    parentId:  'user-uuid-ortu',
-    nis:       '2024001',
-    status:    'active',
-    joinedAt:  new Date(),
-    classId:   CLASS_UUID,
+    id: STUDENT_UUID,
+    userId: 'user-uuid-001',
+    parentId: 'user-uuid-ortu',
+    nis: '2024001',
+    status: 'active',
+    joinedAt: new Date(),
+    classId: CLASS_UUID,
     deletedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
-    user:  { id: 'user-uuid-001', fullName: 'Budi Santoso', email: 'budi@smk.sch.id', phone: null },
+    user: { id: 'user-uuid-001', fullName: 'Budi Santoso', email: 'budi@smk.sch.id', phone: null },
     class: { id: CLASS_UUID, name: 'X RPL 1', majorCode: 'RPL', grade: 10 },
   };
 
   beforeEach(async () => {
-    prisma  = buildMockPrismaForStudent();
+    prisma = buildMockPrismaForStudent();
     emitter = buildMockEventEmitter();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StudentService,
-        { provide: PrismaService,  useValue: prisma },
-        { provide: EventEmitter2,  useValue: emitter },
-        { provide: (await import('../provisioning/provisioning.service')).ProvisioningService, useValue: { provisionOrtu: jest.fn() } },
+        { provide: PrismaService, useValue: prisma },
+        { provide: EventEmitter2, useValue: emitter },
+        {
+          provide: (await import('../provisioning/provisioning.service')).ProvisioningService,
+          useValue: { provisionOrtu: jest.fn() },
+        },
+        {
+          provide: ClassesService,
+          useValue: { assertOperationalSeatAvailable: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
     service = module.get(StudentService);
@@ -207,7 +226,10 @@ describe('StudentService — event producer', () => {
     prisma.student.create.mockResolvedValue(MOCK_STUDENT);
 
     await service.create({
-      userId: 'user-uuid-001', nis: '2024001', joinedAt: new Date(), classId: CLASS_UUID,
+      userId: 'user-uuid-001',
+      nis: '2024001',
+      joinedAt: new Date(),
+      classId: CLASS_UUID,
     } as never);
 
     expect(emitter.emit).toHaveBeenCalledTimes(1);
@@ -215,15 +237,22 @@ describe('StudentService — event producer', () => {
       EVENTS.STUDENT_ENROLLED,
       expect.objectContaining({
         studentId: STUDENT_UUID,
-        nis:       '2024001',
-        fullName:  'Budi Santoso',
-        parentId:  'user-uuid-ortu',
+        nis: '2024001',
+        fullName: 'Budi Santoso',
+        parentId: 'user-uuid-ortu',
       }),
     );
   });
 
   it('update() emit student.statusChanged saat status benar-benar berubah', async () => {
-    prisma.student.findFirst.mockResolvedValue({ id: STUDENT_UUID, status: 'active' });
+    prisma.student.findUnique.mockResolvedValue({ userId: 'user-uuid-001' });
+    prisma.student.findFirst.mockResolvedValue({
+      id: STUDENT_UUID,
+      status: 'active',
+      parentId: 'user-uuid-ortu',
+      classId: CLASS_UUID,
+      user: { isActive: true, deletedAt: null },
+    });
     prisma.student.update.mockResolvedValue({ ...MOCK_STUDENT, status: 'graduated' });
 
     await service.update(STUDENT_UUID, { status: 'graduated' } as never);
@@ -240,7 +269,14 @@ describe('StudentService — event producer', () => {
   });
 
   it('update() TIDAK emit student.statusChanged jika status tidak berubah', async () => {
-    prisma.student.findFirst.mockResolvedValue({ id: STUDENT_UUID, status: 'active' });
+    prisma.student.findUnique.mockResolvedValue({ userId: 'user-uuid-001' });
+    prisma.student.findFirst.mockResolvedValue({
+      id: STUDENT_UUID,
+      status: 'active',
+      parentId: 'user-uuid-ortu',
+      classId: CLASS_UUID,
+      user: { isActive: true, deletedAt: null },
+    });
     prisma.student.update.mockResolvedValue(MOCK_STUDENT);
 
     await service.update(STUDENT_UUID, { classId: CLASS_UUID } as never);
@@ -249,7 +285,14 @@ describe('StudentService — event producer', () => {
   });
 
   it('update() TIDAK emit saat status sama (dto.status === existing.status)', async () => {
-    prisma.student.findFirst.mockResolvedValue({ id: STUDENT_UUID, status: 'active' });
+    prisma.student.findUnique.mockResolvedValue({ userId: 'user-uuid-001' });
+    prisma.student.findFirst.mockResolvedValue({
+      id: STUDENT_UUID,
+      status: 'active',
+      parentId: 'user-uuid-ortu',
+      classId: CLASS_UUID,
+      user: { isActive: true, deletedAt: null },
+    });
     prisma.student.update.mockResolvedValue(MOCK_STUDENT);
 
     await service.update(STUDENT_UUID, { status: 'active' } as never);
@@ -266,31 +309,31 @@ describe('GradeService — event producer', () => {
   let emitter: ReturnType<typeof buildMockEventEmitter>;
 
   const MOCK_GRADE = {
-    id:           GRADE_UUID,
-    studentId:    STUDENT_UUID,
+    id: GRADE_UUID,
+    studentId: STUDENT_UUID,
     assignmentId: ASSIGN_UUID,
-    semester:     1,
+    semester: 1,
     academicYear: '2025/2026',
-    score:        { toString: () => '85.00' },
-    type:         'uts' as GradeType,
-    notes:        null,
-    submittedBy:  'user-uuid-guru',
-    createdAt:    new Date(),
-    updatedAt:    new Date(),
+    score: { toString: () => '85.00' },
+    type: 'uts' as GradeType,
+    notes: null,
+    submittedBy: 'user-uuid-guru',
+    createdAt: new Date(),
+    updatedAt: new Date(),
     student: { id: STUDENT_UUID, nis: '2024001', user: { fullName: 'Budi' } },
     assignment: {
-      id:          ASSIGN_UUID,
-      subject:     'Matematika',
-      teacherId:   'teacher-uuid-001',
-      classId:     CLASS_UUID,
+      id: ASSIGN_UUID,
+      subject: 'Matematika',
+      teacherId: 'teacher-uuid-001',
+      classId: CLASS_UUID,
       academicYear: '2025/2026',
-      class:   { id: CLASS_UUID, name: 'X RPL 1' },
+      class: { id: CLASS_UUID, name: 'X RPL 1' },
       teacher: { id: 'teacher-uuid-001', user: { fullName: 'Agus' } },
     },
   };
 
   beforeEach(async () => {
-    prisma  = buildMockPrismaForGrade();
+    prisma = buildMockPrismaForGrade();
     emitter = buildMockEventEmitter();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -341,12 +384,12 @@ describe('GradeService — event producer', () => {
     expect(emitter.emit).toHaveBeenCalledWith(
       EVENTS.GRADE_SUBMITTED,
       expect.objectContaining({
-        gradeId:      GRADE_UUID,
-        studentId:    STUDENT_UUID,
-        subject:      'Matematika',
-        score:        '85.00',
-        type:         'uts',
-        semester:     1,
+        gradeId: GRADE_UUID,
+        studentId: STUDENT_UUID,
+        subject: 'Matematika',
+        score: '85.00',
+        type: 'uts',
+        semester: 1,
         academicYear: '2025/2026',
       }),
     );
@@ -365,13 +408,13 @@ describe('AttendanceService — event producer (filter alpha/sakit)', () => {
   function setupBulkDTO(records: { studentId: string; status: AttStatus }[]) {
     return {
       classId: CLASS_UUID,
-      date:    '2025-07-21',
+      date: '2025-07-21',
       records,
     };
   }
 
   beforeEach(async () => {
-    prisma  = buildMockPrismaForAttendance();
+    prisma = buildMockPrismaForAttendance();
     emitter = buildMockEventEmitter();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -401,23 +444,27 @@ describe('AttendanceService — event producer (filter alpha/sakit)', () => {
       isActive: true,
     });
     prisma.student.findMany.mockImplementation((args: { where?: { id?: { in?: string[] } } }) =>
-      Promise.resolve((args.where?.id?.in ?? []).map((id) => ({ id }))));
+      Promise.resolve((args.where?.id?.in ?? []).map((id) => ({ id }))),
+    );
   });
 
   function makeAttRecord(id: string, studentId: string, status: string) {
     return {
-      id, studentId, classId: CLASS_UUID,
-      date: new Date('2025-07-21'), status, notes: null,
-      recordedBy: 'user-uuid-guru', createdAt: new Date(),
+      id,
+      studentId,
+      classId: CLASS_UUID,
+      date: new Date('2025-07-21'),
+      status,
+      notes: null,
+      recordedBy: 'user-uuid-guru',
+      createdAt: new Date(),
       student: { id: studentId, nis: '2024001', user: { fullName: 'Budi' } },
-      class:   { id: CLASS_UUID, name: 'X RPL 1', majorCode: 'RPL' },
+      class: { id: CLASS_UUID, name: 'X RPL 1', majorCode: 'RPL' },
     };
   }
 
   it('emit attendance.recorded untuk status alpha', async () => {
-    prisma.$transaction.mockResolvedValue([
-      makeAttRecord(ATT_UUID, STUDENT_UUID, 'alpha'),
-    ]);
+    prisma.$transaction.mockResolvedValue([makeAttRecord(ATT_UUID, STUDENT_UUID, 'alpha')]);
 
     await service.bulkCreate(
       setupBulkDTO([{ studentId: STUDENT_UUID, status: 'alpha' }]),
@@ -432,9 +479,7 @@ describe('AttendanceService — event producer (filter alpha/sakit)', () => {
   });
 
   it('emit attendance.recorded untuk status sakit', async () => {
-    prisma.$transaction.mockResolvedValue([
-      makeAttRecord(ATT_UUID, STUDENT_UUID, 'sakit'),
-    ]);
+    prisma.$transaction.mockResolvedValue([makeAttRecord(ATT_UUID, STUDENT_UUID, 'sakit')]);
 
     await service.bulkCreate(
       setupBulkDTO([{ studentId: STUDENT_UUID, status: 'sakit' }]),
@@ -449,9 +494,7 @@ describe('AttendanceService — event producer (filter alpha/sakit)', () => {
   });
 
   it('TIDAK emit untuk status hadir', async () => {
-    prisma.$transaction.mockResolvedValue([
-      makeAttRecord(ATT_UUID, STUDENT_UUID, 'hadir'),
-    ]);
+    prisma.$transaction.mockResolvedValue([makeAttRecord(ATT_UUID, STUDENT_UUID, 'hadir')]);
 
     await service.bulkCreate(
       setupBulkDTO([{ studentId: STUDENT_UUID, status: 'hadir' }]),
@@ -462,9 +505,7 @@ describe('AttendanceService — event producer (filter alpha/sakit)', () => {
   });
 
   it('TIDAK emit untuk status izin', async () => {
-    prisma.$transaction.mockResolvedValue([
-      makeAttRecord(ATT_UUID, STUDENT_UUID, 'izin'),
-    ]);
+    prisma.$transaction.mockResolvedValue([makeAttRecord(ATT_UUID, STUDENT_UUID, 'izin')]);
 
     await service.bulkCreate(
       setupBulkDTO([{ studentId: STUDENT_UUID, status: 'izin' }]),
@@ -485,7 +526,7 @@ describe('AttendanceService — event producer (filter alpha/sakit)', () => {
     await service.bulkCreate(
       setupBulkDTO([
         { studentId: 'student-1', status: 'hadir' },
-        { studentId: 'student-2', status: 'izin'  },
+        { studentId: 'student-2', status: 'izin' },
         { studentId: 'student-3', status: 'alpha' },
         { studentId: 'student-4', status: 'sakit' },
       ]),
@@ -508,30 +549,39 @@ describe('FinanceService — event producer (payment.received)', () => {
 
   function mockPayment(status: string) {
     return {
-      id:         PAY_UUID,
-      studentId:  STUDENT_UUID,
-      month:      7,
-      year:       2025,
-      amount:     { toString: () => '250000' },
+      id: PAY_UUID,
+      studentId: STUDENT_UUID,
+      month: 7,
+      year: 2025,
+      amount: { toString: () => '250000' },
       status,
-      paidAt:     status === 'paid' || status === 'late' ? new Date() : null,
-      receiptNo:  'RCP-001',
+      paidAt: status === 'paid' || status === 'late' ? new Date() : null,
+      receiptNo: 'RCP-001',
       recordedBy: 'user-uuid-tu',
       approvedBy: null,
       approvedAt: null,
-      createdAt:  new Date(),
-      updatedAt:  new Date(),
-      student:    { id: STUDENT_UUID, nis: '2024001', user: { fullName: 'Budi', phone: '081234567890' }, parent: { phone: '081234567891' } },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      student: {
+        id: STUDENT_UUID,
+        nis: '2024001',
+        user: { fullName: 'Budi', phone: '081234567890' },
+        parent: { phone: '081234567891' },
+      },
     };
   }
 
   const CREATE_DTO = {
-    studentId: STUDENT_UUID, month: 7, year: 2025, amount: 250000,
-    status: 'paid' as const, receiptNo: 'RCP-001',
+    studentId: STUDENT_UUID,
+    month: 7,
+    year: 2025,
+    amount: 250000,
+    status: 'paid' as const,
+    receiptNo: 'RCP-001',
   };
 
   beforeEach(async () => {
-    prisma  = buildMockPrismaForFinance();
+    prisma = buildMockPrismaForFinance();
     emitter = buildMockEventEmitter();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -573,13 +623,25 @@ describe('FinanceService — event producer (payment.received)', () => {
     await service.approve(PAY_UUID, TU_USER);
 
     expect(emitter.emit).not.toHaveBeenCalled();
-    expect(prisma.notificationLog.createMany).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.arrayContaining([
-        expect.objectContaining({ refType: 'payment', refId: `${PAY_UUID}:+6281234567890`, recipient: '+6281234567890', status: 'pending' }),
-        expect.objectContaining({ refType: 'payment', refId: `${PAY_UUID}:+6281234567891`, recipient: '+6281234567891', status: 'pending' }),
-      ]),
-      skipDuplicates: true,
-    }));
+    expect(prisma.notificationLog.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            refType: 'payment',
+            refId: `${PAY_UUID}:+6281234567890`,
+            recipient: '+6281234567890',
+            status: 'pending',
+          }),
+          expect.objectContaining({
+            refType: 'payment',
+            refId: `${PAY_UUID}:+6281234567891`,
+            recipient: '+6281234567891',
+            status: 'pending',
+          }),
+        ]),
+        skipDuplicates: true,
+      }),
+    );
   });
 
   it('TIDAK emit saat create karena pembayaran manual selalu unpaid', async () => {
@@ -618,14 +680,17 @@ describe('NotificationListener — konsumer event', () => {
 
   beforeEach(async () => {
     notifService = buildMockNotificationService();
-    prisma       = buildMockPrismaForListener();
+    prisma = buildMockPrismaForListener();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         NotificationListener,
         { provide: NotificationService, useValue: notifService },
-        { provide: PrismaService,       useValue: prisma },
-        { provide: WaLogService, useValue: { logWaNotification: jest.fn().mockResolvedValue(undefined) } },
+        { provide: PrismaService, useValue: prisma },
+        {
+          provide: WaLogService,
+          useValue: { logWaNotification: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 
@@ -641,18 +706,18 @@ describe('NotificationListener — konsumer event', () => {
 
       await listener.handleStudentEnrolled({
         studentId: STUDENT_UUID,
-        nis:       '2024001',
-        fullName:  'Budi Santoso',
-        parentId:  'user-uuid-ortu',
+        nis: '2024001',
+        fullName: 'Budi Santoso',
+        parentId: 'user-uuid-ortu',
       });
 
       expect(notifService.notify).toHaveBeenCalledTimes(1);
       expect(notifService.notify).toHaveBeenCalledWith(
         expect.objectContaining({
           channel: 'whatsapp',
-          to:      '6281234567890',
+          to: '6281234567890',
           refType: 'student',
-          refId:   STUDENT_UUID,
+          refId: STUDENT_UUID,
         }),
       );
     });
@@ -660,9 +725,9 @@ describe('NotificationListener — konsumer event', () => {
     it('notify() dipanggil meski parentId null (no parent)', async () => {
       await listener.handleStudentEnrolled({
         studentId: STUDENT_UUID,
-        nis:       '2024001',
-        fullName:  'Budi Santoso',
-        parentId:  null,
+        nis: '2024001',
+        fullName: 'Budi Santoso',
+        parentId: null,
       });
 
       // Harus tetap dipanggil — LogAdapter aman
@@ -677,7 +742,9 @@ describe('NotificationListener — konsumer event', () => {
 
       await listener.handleStudentEnrolled({
         studentId: STUDENT_UUID,
-        nis: '2024001', fullName: 'Budi', parentId: 'user-uuid-ortu',
+        nis: '2024001',
+        fullName: 'Budi',
+        parentId: 'user-uuid-ortu',
       });
 
       expect(notifService.notify).toHaveBeenCalledWith(
@@ -697,10 +764,10 @@ describe('NotificationListener — konsumer event', () => {
 
       await listener.handleStudentStatusChanged({
         studentId: STUDENT_UUID,
-        nis:       '2024001',
-        fullName:  'Budi Santoso',
-        userId:    'user-uuid-student',
-        parentId:  'user-uuid-ortu',
+        nis: '2024001',
+        fullName: 'Budi Santoso',
+        userId: 'user-uuid-student',
+        parentId: 'user-uuid-ortu',
         oldStatus: 'active',
         newStatus: 'graduated',
       });
@@ -710,7 +777,7 @@ describe('NotificationListener — konsumer event', () => {
       const refIds = calls.map((c) => c[0].refId);
       // Siswa dan OT punya refId berbeda (idempotensi per penerima)
       const studentRefId = `${STUDENT_UUID}:status:graduated`;
-      const ortuRefId    = `${STUDENT_UUID}:status:graduated:ortu`;
+      const ortuRefId = `${STUDENT_UUID}:status:graduated:ortu`;
       expect(refIds).toContain(studentRefId);
       expect(refIds).toContain(ortuRefId);
     });
@@ -721,19 +788,19 @@ describe('NotificationListener — konsumer event', () => {
   describe('handleGradeSubmitted', () => {
     it('notify() dengan refType=grade + refId=gradeId', async () => {
       prisma.student.findUnique.mockResolvedValue({
-        userId:   'user-uuid-student',
+        userId: 'user-uuid-student',
         parentId: 'user-uuid-ortu',
-        user:     { phone: '6281234567890', fullName: 'Budi' },
-        parent:   { phone: '6282222222222' },
+        user: { phone: '6281234567890', fullName: 'Budi' },
+        parent: { phone: '6282222222222' },
       });
 
       await listener.handleGradeSubmitted({
-        gradeId:      GRADE_UUID,
-        studentId:    STUDENT_UUID,
-        subject:      'Matematika',
-        score:        '85.00',
-        type:         'uts',
-        semester:     1,
+        gradeId: GRADE_UUID,
+        studentId: STUDENT_UUID,
+        subject: 'Matematika',
+        score: '85.00',
+        type: 'uts',
+        semester: 1,
         academicYear: '2025/2026',
       });
 
@@ -741,7 +808,7 @@ describe('NotificationListener — konsumer event', () => {
       expect(notifService.notify).toHaveBeenCalledWith(
         expect.objectContaining({
           refType: 'grade',
-          refId:   GRADE_UUID,
+          refId: GRADE_UUID,
         }),
       );
     });
@@ -752,26 +819,26 @@ describe('NotificationListener — konsumer event', () => {
   describe('handleAttendanceRecorded', () => {
     it('notify() dengan refType=attendance + refId=attendanceId (alpha)', async () => {
       prisma.student.findUnique.mockResolvedValue({
-        userId:   'user-uuid-student',
+        userId: 'user-uuid-student',
         parentId: 'user-uuid-ortu',
-        user:     { phone: null, fullName: 'Budi' },
-        parent:   { phone: '6281234567890' },
+        user: { phone: null, fullName: 'Budi' },
+        parent: { phone: '6281234567890' },
       });
 
       await listener.handleAttendanceRecorded({
         attendanceId: ATT_UUID,
-        studentId:    STUDENT_UUID,
-        classId:      CLASS_UUID,
-        date:         '2025-07-21',
-        status:       'alpha',
+        studentId: STUDENT_UUID,
+        classId: CLASS_UUID,
+        date: '2025-07-21',
+        status: 'alpha',
       });
 
       expect(notifService.notify).toHaveBeenCalledTimes(1);
       expect(notifService.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          to:      '6281234567890',
+          to: '6281234567890',
           refType: 'attendance',
-          refId:   ATT_UUID,
+          refId: ATT_UUID,
         }),
       );
     });
@@ -782,19 +849,19 @@ describe('NotificationListener — konsumer event', () => {
   describe('handlePaymentReceived', () => {
     it('notify() untuk siswa + OT dengan refType=payment + refId=paymentId', async () => {
       prisma.student.findUnique.mockResolvedValue({
-        userId:   'user-uuid-student',
+        userId: 'user-uuid-student',
         parentId: 'user-uuid-ortu',
-        user:     { phone: '6281111111111', fullName: 'Budi' },
-        parent:   { phone: '6282222222222' },
+        user: { phone: '6281111111111', fullName: 'Budi' },
+        parent: { phone: '6282222222222' },
       });
 
       await listener.handlePaymentReceived({
-        paymentId:  PAY_UUID,
-        studentId:  STUDENT_UUID,
-        month:      7,
-        year:       2025,
-        amount:     '250000',
-        receiptNo:  'RCP-001',
+        paymentId: PAY_UUID,
+        studentId: STUDENT_UUID,
+        month: 7,
+        year: 2025,
+        amount: '250000',
+        receiptNo: 'RCP-001',
       });
 
       expect(notifService.notify).toHaveBeenCalledTimes(2);
@@ -806,33 +873,39 @@ describe('NotificationListener — konsumer event', () => {
 
     it('TIDAK menyentuh BOS — tidak ada path ke BOS', async () => {
       prisma.student.findUnique.mockResolvedValue({
-        userId:   'user-uuid-student',
+        userId: 'user-uuid-student',
         parentId: null,
-        user:     { phone: null, fullName: 'Budi' },
-        parent:   null,
+        user: { phone: null, fullName: 'Budi' },
+        parent: null,
       });
 
       await listener.handlePaymentReceived({
-        paymentId: PAY_UUID, studentId: STUDENT_UUID,
-        month: 7, year: 2025, amount: '250000', receiptNo: null,
+        paymentId: PAY_UUID,
+        studentId: STUDENT_UUID,
+        month: 7,
+        year: 2025,
+        amount: '250000',
+        receiptNo: null,
       });
 
       // Hanya notify() yang dipanggil — tidak ada call BOS-related
       // Memverifikasi: satu-satunya efek samping adalah notifService.notify
       const callMethods = Object.keys(
         Object.fromEntries(
-          Object.entries(prisma).filter(([, v]) => typeof v === 'object' && v !== null)
+          Object.entries(prisma)
+            .filter(([, v]) => typeof v === 'object' && v !== null)
             .flatMap(([, obj]) =>
-              Object.entries(obj as Record<string, unknown>).map(([method]) => [method, true])
-            )
-        )
+              Object.entries(obj as Record<string, unknown>).map(([method]) => [method, true]),
+            ),
+        ),
       );
       // sppPayment / bosAccount / bosTransaction tidak boleh ada di prisma mock calls
       // (prisma mock untuk listener tidak include sppPayment — hanya user+student)
       expect(notifService.notify).toHaveBeenCalled();
       // Tidak ada model BOS dipanggil (prisma mock tidak punya bosAccount/bosTransaction)
-      const bos = (prisma as Record<string, unknown>)['bosAccount']
-        ?? (prisma as Record<string, unknown>)['bosTransaction'];
+      const bos =
+        (prisma as Record<string, unknown>)['bosAccount'] ??
+        (prisma as Record<string, unknown>)['bosTransaction'];
       expect(bos).toBeUndefined();
       void callMethods; // suppress unused warning
     });
@@ -855,12 +928,17 @@ describe('NotificationListener — konsumer event', () => {
         payload: Record<string, unknown>,
       ) => {
         prisma.student.findUnique.mockResolvedValue({
-          userId: 'u1', parentId: null, user: { phone: null, fullName: 'X' }, parent: null,
+          userId: 'u1',
+          parentId: null,
+          user: { phone: null, fullName: 'X' },
+          parent: null,
         });
         prisma.user.findUnique.mockResolvedValue({ phone: null });
 
         return handler(payload as never).then(() => {
-          const calls = notifService.notify.mock.calls as Array<[{ refType?: string; refId?: string }]>;
+          const calls = notifService.notify.mock.calls as Array<
+            [{ refType?: string; refId?: string }]
+          >;
           calls.forEach((call) => {
             expect(call[0]).toHaveProperty('refType');
             expect(call[0]).toHaveProperty('refId');
@@ -871,10 +949,15 @@ describe('NotificationListener — konsumer event', () => {
       };
 
       // Verifikasi handler grade.submitted sertakan refType+refId
-      return verifyIdempotencyFields(
-        (p) => listener.handleGradeSubmitted(p),
-        { gradeId: GRADE_UUID, studentId: STUDENT_UUID, subject: 'Mat', score: '80', type: 'uts', semester: 1, academicYear: '2025/2026' },
-      );
+      return verifyIdempotencyFields((p) => listener.handleGradeSubmitted(p), {
+        gradeId: GRADE_UUID,
+        studentId: STUDENT_UUID,
+        subject: 'Mat',
+        score: '80',
+        type: 'uts',
+        semester: 1,
+        academicYear: '2025/2026',
+      });
     });
   });
 });

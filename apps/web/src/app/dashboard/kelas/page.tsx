@@ -17,6 +17,7 @@ export interface ClassRow {
   teacherId: string | null;
   isActive: boolean;
   waliKelas: { id: string; fullName: string } | null;
+  homeroomStatus: 'assigned' | 'unassigned' | 'needs_replacement';
   studentCount: number;
 }
 
@@ -29,29 +30,30 @@ export interface Major {
 export interface StaffCandidate {
   id: string;
   fullName: string;
-  email: string;
-  role: string;
 }
-
-const STAFF_ROLES = ['GURU', 'TATA_USAHA', 'KEPALA_SEKOLAH'];
 
 export default async function KelasPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
   const authority = await resolveDashboardAuthority(session);
-  if (!CLASS_CONFIG_DISCOVERABILITY_RULE.permissions.every((permission) => authority.can(permission)) ||
-    !authority.hasRole(...CLASS_CONFIG_DISCOVERABILITY_RULE.roles)) {
+  if (
+    !CLASS_CONFIG_DISCOVERABILITY_RULE.permissions.every((permission) =>
+      authority.can(permission),
+    ) ||
+    !authority.hasRole(...CLASS_CONFIG_DISCOVERABILITY_RULE.roles)
+  ) {
     redirect('/dashboard');
   }
 
   const token = session?.accessToken ?? '';
 
-  const canManage = authority.can('academic.teaching.manage') && authority.hasRole('SUPER_ADMIN', 'TATA_USAHA');
-  const [classesRes, majorsRes, groupedRes] = await Promise.all([
+  const canManage =
+    authority.can('academic.teaching.manage') && authority.hasRole('SUPER_ADMIN', 'TATA_USAHA');
+  const [classesRes, majorsRes, homeroomCandidatesRes] = await Promise.all([
     apiFetch<{ data: ClassRow[]; total: number }>('/classes?includeInactive=true&limit=100', token),
     apiFetch<Major[]>('/school/majors?activeOnly=true', token),
     canManage
-      ? apiFetch<{ groups: { role: string; users: StaffCandidate[] }[] }>('/users/grouped?limit=100', token)
+      ? apiFetch<StaffCandidate[]>('/classes/homeroom-candidates', token)
       : Promise.resolve(null),
   ]);
 
@@ -59,9 +61,7 @@ export default async function KelasPage() {
 
   const classes = classesRes?.data ?? [];
   const majors = Array.isArray(majorsRes) ? majorsRes : [];
-  const teachers: StaffCandidate[] = (groupedRes?.groups ?? [])
-    .filter((g) => STAFF_ROLES.includes(g.role))
-    .flatMap((g) => g.users.map((u) => ({ ...u, role: g.role })));
+  const teachers = Array.isArray(homeroomCandidatesRes) ? homeroomCandidatesRes : [];
 
   const isSuperAdmin = authority.hasRole('SUPER_ADMIN');
 

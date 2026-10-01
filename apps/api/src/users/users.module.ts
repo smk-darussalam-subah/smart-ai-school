@@ -4,9 +4,10 @@ import { PermissionModule } from '../permissions/permissions.module';
 import { KeycloakAdminModule } from '../keycloak-admin/keycloak-admin.module';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
+import { ClassesModule } from '../classes/classes.module';
 
 @Module({
-  imports: [AuthModule, PermissionModule, KeycloakAdminModule],
+  imports: [AuthModule, PermissionModule, KeycloakAdminModule, ClassesModule],
   controllers: [UsersController],
   providers: [UsersService],
 })

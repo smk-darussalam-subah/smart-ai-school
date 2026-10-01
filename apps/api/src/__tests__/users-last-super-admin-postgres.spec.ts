@@ -5,6 +5,7 @@ import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
+import { ClassesService } from '../classes/classes.service';
 
 const databaseUrl = process.env.WAVE10_IDENTITY_DATABASE_URL;
 const describePostgres = databaseUrl ? describe : describe.skip;
@@ -52,17 +53,22 @@ describePostgres('UsersService last active Super Admin PostgreSQL concurrency', 
   const userStatus = {
     invalidate: jest.fn(),
   } as unknown as UserStatusService;
+  const classes = {
+    assertOperationalSeatForUserActivation: jest.fn().mockResolvedValue(undefined),
+  } as unknown as ClassesService;
   const serviceA = new UsersService(
     prismaA as unknown as PrismaService,
     userStatus,
     keycloak,
     permissions,
+    classes,
   );
   const serviceB = new UsersService(
     prismaB as unknown as PrismaService,
     userStatus,
     keycloak,
     permissions,
+    classes,
   );
   const userIds: string[] = [];
   let adminA: { id: string; keycloakId: string };
