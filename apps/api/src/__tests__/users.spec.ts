@@ -22,6 +22,7 @@ import { THROTTLER_LIMIT, THROTTLER_TTL } from '@nestjs/throttler/dist/throttler
 import { GroupedUsersQuerySchema, ListUsersQuerySchema } from '../users/dto/list-users.dto';
 import { AUDIT_KEY } from '../audit-log/decorators/audit.decorator';
 import { REQUIRED_PERMISSION_KEY } from '../permissions/decorators/require-permission.decorator';
+import { ClassesService } from '../classes/classes.service';
 
 const SA_USER: AuthUser = {
   keycloakId: 'kc-sa',
@@ -64,6 +65,7 @@ describe('UsersService', () => {
   const mockExecuteRaw = jest.fn();
   const mockQueryRaw = jest.fn();
   const mockTransaction = jest.fn();
+  const mockClassFindFirst = jest.fn();
   const mockKc = {
     assignRealmRole: jest.fn(),
     removeRealmRole: jest.fn(),
@@ -83,6 +85,9 @@ describe('UsersService', () => {
     invalidate: jest.fn(),
     invalidateAll: jest.fn(),
   };
+  const mockClasses = {
+    assertOperationalSeatForUserActivation: jest.fn(),
+  };
 
   beforeEach(async () => {
     [
@@ -95,8 +100,10 @@ describe('UsersService', () => {
       mockExecuteRaw,
       mockQueryRaw,
       mockTransaction,
+      mockClassFindFirst,
     ].forEach((m) => m.mockReset());
     mockFindFirst.mockResolvedValue({ id: 'actor-sa', role: 'SUPER_ADMIN' });
+    mockClassFindFirst.mockResolvedValue(null);
     mockKc.assignRealmRole.mockReset();
     mockKc.removeRealmRole.mockReset();
     mockKc.setEnabled.mockReset();
@@ -108,6 +115,8 @@ describe('UsersService', () => {
     mockPerms.invalidateAll.mockReset();
     mockPerms.getEffectivePermissions.mockReset();
     mockUserStatus.invalidate.mockReset();
+    mockClasses.assertOperationalSeatForUserActivation.mockReset();
+    mockClasses.assertOperationalSeatForUserActivation.mockResolvedValue(undefined);
 
     const prisma = {
       user: {
@@ -118,6 +127,7 @@ describe('UsersService', () => {
         update: mockUpdate,
         updateMany: mockUpdateMany,
       },
+      class: { findFirst: mockClassFindFirst },
       $executeRaw: mockExecuteRaw,
       $queryRaw: mockQueryRaw,
       $transaction: mockTransaction,
@@ -133,6 +143,7 @@ describe('UsersService', () => {
         { provide: UserStatusService, useValue: mockUserStatus },
         { provide: KeycloakAdminService, useValue: mockKc },
         { provide: PermissionsService, useValue: mockPerms },
+        { provide: ClassesService, useValue: mockClasses },
         UsersService,
         { provide: PrismaService, useValue: prisma },
       ],
@@ -526,6 +537,17 @@ describe('UsersService', () => {
       expect(mockUpdate).not.toHaveBeenCalled();
       expect(mockKc.assignRealmRole).not.toHaveBeenCalled();
     });
+
+    it('menolak perubahan role guru yang masih menjadi wali kelas aktif', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ role: 'GURU' }));
+      mockKc.getUserRealmRoles.mockResolvedValue(['GURU']);
+      mockClassFindFirst.mockResolvedValue({ name: 'X TJKT 1', academicYear: '2026/2027' });
+
+      await expect(service.updateRole('u-001', 'TATA_USAHA', 'kc-sa')).rejects.toThrow(
+        'Ganti atau kosongkan wali kelas terlebih dahulu',
+      );
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
   });
 
   // ── updateActive ─────────────────────────────────────────────────────────
@@ -605,7 +627,24 @@ describe('UsersService', () => {
 
       expect(result.isActive).toBe(true);
       expect(result.keycloakSyncPending).toBeFalsy();
+      expect(mockClasses.assertOperationalSeatForUserActivation).toHaveBeenCalledWith(
+        expect.anything(),
+        'u-001',
+      );
       expect(mockKc.setEnabled).toHaveBeenCalledWith('kc-001', true);
+    });
+
+    it('menolak aktivasi sebelum Keycloak bila kelas siswa sudah penuh', async () => {
+      mockFindUnique.mockResolvedValue(
+        makeUser({ keycloakId: 'kc-001', isActive: false, role: 'SISWA' }),
+      );
+      mockClasses.assertOperationalSeatForUserActivation.mockRejectedValue(
+        new ConflictException('Kelas X TJKT 1 sudah penuh (36/36).'),
+      );
+
+      await expect(service.updateActive('u-001', true, 'kc-sa')).rejects.toThrow('sudah penuh');
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockKc.setEnabled).not.toHaveBeenCalled();
     });
 
     it('user tidak ditemukan → NotFoundException', async () => {
@@ -652,6 +691,16 @@ describe('UsersService', () => {
       );
       expect(mockUpdate).not.toHaveBeenCalled();
       expect(mockKc.setEnabled).not.toHaveBeenCalled();
+    });
+
+    it('menolak menonaktifkan guru yang masih menjadi wali kelas aktif', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ role: 'GURU', isActive: true }));
+      mockClassFindFirst.mockResolvedValue({ name: 'XI DKV 1', academicYear: '2026/2027' });
+
+      await expect(service.updateActive('u-001', false, 'kc-sa')).rejects.toThrow(
+        'Ganti atau kosongkan wali kelas terlebih dahulu',
+      );
+      expect(mockUpdate).not.toHaveBeenCalled();
     });
   });
 
@@ -857,7 +906,17 @@ describe('UsersService', () => {
       expect(mockKc.setEnabled).not.toHaveBeenCalled();
     });
 
-    it('restore mengaktifkan Keycloak lebih dulu lalu membuka DB dengan CAS', async () => {
+    it('menolak mengarsipkan guru yang masih menjadi wali kelas aktif', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ role: 'GURU' }));
+      mockClassFindFirst.mockResolvedValue({ name: 'XII AKL 1', academicYear: '2026/2027' });
+
+      await expect(service.archiveUser('u-001', lifecycle, 'kc-sa')).rejects.toThrow(
+        'Ganti atau kosongkan wali kelas terlebih dahulu',
+      );
+      expect(mockUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('restore memeriksa kapasitas lalu mengaktifkan Keycloak sebelum membuka DB dengan CAS', async () => {
       mockFindUnique
         .mockResolvedValueOnce(makeUser({ isActive: false, deletedAt: NOW }))
         .mockResolvedValueOnce(makeUser({ isActive: true, deletedAt: null }));
@@ -866,6 +925,10 @@ describe('UsersService', () => {
 
       const result = await service.restoreUser('u-001', lifecycle, 'kc-sa');
 
+      expect(mockClasses.assertOperationalSeatForUserActivation).toHaveBeenCalledWith(
+        expect.anything(),
+        'u-001',
+      );
       expect(mockKc.setEnabled).toHaveBeenCalledWith('kc-001', true);
       expect(mockUpdateMany).toHaveBeenCalledWith(
         expect.objectContaining({

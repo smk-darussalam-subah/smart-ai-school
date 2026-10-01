@@ -2,22 +2,36 @@
 
 import { useState, useEffect } from 'react';
 import {
-  School, Plus, Edit3, Trash2, Power, AlertCircle, Loader2,
+  School,
+  Plus,
+  Edit3,
+  Trash2,
+  Power,
+  AlertCircle,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { TablePagination } from '@/components/ui/table-pagination';
 import { createClassAction, updateClassAction, deleteClassAction } from '../actions';
 import type { ClassRow, Major, StaffCandidate } from '../page';
-import { NO_WALI_KELAS_VALUE, waliKelasPayloadValue, waliKelasSelectValue } from '../kelas-ui';
+import {
+  NEEDS_REPLACEMENT_VALUE,
+  NO_WALI_KELAS_VALUE,
+  waliKelasPayloadValue,
+  waliKelasSelectValue,
+} from '../kelas-ui';
 
 interface Props {
   classes: ClassRow[];
@@ -37,7 +51,15 @@ interface ClassForm {
 }
 
 const EMPTY_FORM: ClassForm = {
-  name: '', majorCode: '', grade: '10', academicYear: (() => { const y = new Date().getUTCFullYear(); return new Date().getUTCMonth() >= 6 ? `${y}/${y+1}` : `${y-1}/${y}`; })(), capacity: '36', teacherId: '',
+  name: '',
+  majorCode: '',
+  grade: '10',
+  academicYear: (() => {
+    const y = new Date().getUTCFullYear();
+    return new Date().getUTCMonth() >= 6 ? `${y}/${y + 1}` : `${y - 1}/${y}`;
+  })(),
+  capacity: '36',
+  teacherId: '',
 };
 
 const GRADES = [10, 11, 12];
@@ -52,12 +74,13 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
   const [form, setForm] = useState<ClassForm>(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<ClassRow | null>(null);
 
-  const filtered = filterGrade === 'all'
-    ? classes
-    : classes.filter((c) => c.grade === Number(filterGrade));
+  const filtered =
+    filterGrade === 'all' ? classes : classes.filter((c) => c.grade === Number(filterGrade));
 
   // Reset ke halaman 1 saat filter berubah
-  useEffect(() => { setCurrentPage(1); }, [filterGrade]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterGrade]);
 
   const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
@@ -75,7 +98,7 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
       grade: String(c.grade),
       academicYear: c.academicYear,
       capacity: String(c.capacity),
-      teacherId: c.teacherId ?? '',
+      teacherId: c.homeroomStatus === 'assigned' ? (c.teacherId ?? '') : '',
     });
     setShowForm(true);
   };
@@ -95,7 +118,10 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
       ? await updateClassAction(editingId, body)
       : await createClassAction(body);
     setBusy(false);
-    if (result.error) { toast.error(result.error); return; }
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
     toast.success(editingId ? 'Kelas berhasil diperbarui.' : 'Kelas berhasil dibuat.');
     setShowForm(false);
   };
@@ -104,13 +130,21 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
     setBusy(true);
     const result = await updateClassAction(c.id, { isActive: !c.isActive });
     setBusy(false);
-    if (result.error) { toast.error(result.error); return; }
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
     toast.success(`Kelas ${c.name} ${!c.isActive ? 'diaktifkan' : 'dinonaktifkan'}.`);
   };
 
   const handleAssignAdvisor = async (classId: string, teacherId: string) => {
-    const result = await updateClassAction(classId, { teacherId: waliKelasPayloadValue(teacherId) });
-    if (result.error) { toast.error(result.error); return; }
+    const result = await updateClassAction(classId, {
+      teacherId: waliKelasPayloadValue(teacherId),
+    });
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
     toast.success('Wali kelas berhasil diperbarui.');
   };
 
@@ -121,7 +155,10 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
     setBusy(false);
     const deletedName = deleteTarget.name;
     setDeleteTarget(null);
-    if (result.error) { toast.error(result.error); return; }
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
     toast.success(`Kelas ${deletedName} dihapus.`);
   };
 
@@ -131,13 +168,17 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
       <div className="flex items-center justify-between">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold text-[#0f2e25]">
-            <School className="h-6 w-6 text-emerald-600" />Manajemen Kelas
+            <School className="h-6 w-6 text-emerald-600" />
+            Manajemen Kelas
           </h1>
-          <p className="mt-1 text-sm text-[#6b8079]">Kelola kelas, wali kelas, dan kapasitas rombel.</p>
+          <p className="mt-1 text-sm text-[#6b8079]">
+            Kelola kelas, wali kelas, dan kapasitas rombel.
+          </p>
         </div>
         {canManage && (
           <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700">
-            <Plus className="h-4 w-4" />Tambah Kelas
+            <Plus className="h-4 w-4" />
+            Tambah Kelas
           </Button>
         )}
       </div>
@@ -146,10 +187,16 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold text-[#6b8079]">Filter Tingkat:</span>
         <Select value={filterGrade} onValueChange={(v: string) => setFilterGrade(v)}>
-          <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua</SelectItem>
-            {GRADES.map((g) => (<SelectItem key={g} value={String(g)}>Kelas {g}</SelectItem>))}
+            {GRADES.map((g) => (
+              <SelectItem key={g} value={String(g)}>
+                Kelas {g}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <span className="ml-auto text-sm text-[#9bb0a8]">{filtered.length} kelas</span>
@@ -184,29 +231,50 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
                   <td className="px-4 py-3 text-[#355a4e]">{c.majorCode}</td>
                   <td className="px-4 py-3 text-center text-[#355a4e]">{c.grade}</td>
                   <td className="px-4 py-3 text-[#6b8079]">{c.academicYear}</td>
-                  <td className="px-4 py-3 text-center text-[#6b8079]">{c.studentCount}/{c.capacity}</td>
+                  <td className="px-4 py-3 text-center text-[#6b8079]">
+                    {c.studentCount}/{c.capacity}
+                  </td>
                   <td className="px-4 py-3">
                     {canManage ? (
                       <Select
-                      value={waliKelasSelectValue(c.teacherId)}
-                      onValueChange={(v: string) => handleAssignAdvisor(c.id, v)}
-                    >
-                      <SelectTrigger className="h-8 w-44">
-                        <SelectValue placeholder="— pilih wali —" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NO_WALI_KELAS_VALUE}>— kosongkan —</SelectItem>
-                        {teachers.map((t) => (
-                          <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>
-                        ))}
-                      </SelectContent>
+                        value={waliKelasSelectValue(c.teacherId, c.homeroomStatus)}
+                        onValueChange={(v: string) => handleAssignAdvisor(c.id, v)}
+                      >
+                        <SelectTrigger
+                          className={`h-9 w-48 ${c.homeroomStatus === 'needs_replacement' ? 'border-amber-400 bg-amber-50 text-amber-800' : ''}`}
+                          aria-label={`Wali kelas ${c.name}`}
+                        >
+                          <SelectValue placeholder="Pilih wali kelas" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {c.homeroomStatus === 'needs_replacement' && (
+                            <SelectItem value={NEEDS_REPLACEMENT_VALUE} disabled>
+                              Perlu pengganti
+                            </SelectItem>
+                          )}
+                          <SelectItem value={NO_WALI_KELAS_VALUE}>Belum ditetapkan</SelectItem>
+                          {teachers.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              {t.fullName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
                       </Select>
+                    ) : c.homeroomStatus === 'needs_replacement' ? (
+                      <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-700">
+                        <AlertTriangle className="h-4 w-4" />
+                        Perlu pengganti
+                      </span>
                     ) : (
-                      <span className="text-sm text-[#355a4e]">{c.waliKelas?.fullName ?? '-'}</span>
+                      <span className="text-sm text-[#355a4e]">
+                        {c.waliKelas?.fullName ?? 'Belum ditetapkan'}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${c.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                    <span
+                      className={`rounded-md px-2 py-0.5 text-xs font-bold ${c.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}
+                    >
                       {c.isActive ? 'Aktif' : 'Nonaktif'}
                     </span>
                   </td>
@@ -214,16 +282,28 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
                     <div className="flex items-center justify-center gap-1">
                       {canManage && (
                         <>
-                          <button onClick={() => openEdit(c)} className="rounded-lg p-1.5 text-[#6b8079] hover:bg-[#f4f7f5] hover:text-emerald-600" title="Edit">
+                          <button
+                            onClick={() => openEdit(c)}
+                            className="rounded-lg p-1.5 text-[#6b8079] hover:bg-[#f4f7f5] hover:text-emerald-600"
+                            title="Edit"
+                          >
                             <Edit3 className="h-4 w-4" />
                           </button>
-                          <button onClick={() => handleToggleActive(c)} className="rounded-lg p-1.5 text-[#6b8079] hover:bg-[#f4f7f5] hover:text-amber-600" title={c.isActive ? 'Nonaktifkan' : 'Aktifkan'}>
+                          <button
+                            onClick={() => handleToggleActive(c)}
+                            className="rounded-lg p-1.5 text-[#6b8079] hover:bg-[#f4f7f5] hover:text-amber-600"
+                            title={c.isActive ? 'Nonaktifkan' : 'Aktifkan'}
+                          >
                             <Power className="h-4 w-4" />
                           </button>
                         </>
                       )}
                       {isSuperAdmin && (
-                        <button onClick={() => setDeleteTarget(c)} className="rounded-lg p-1.5 text-[#6b8079] hover:bg-rose-50 hover:text-rose-600" title="Hapus">
+                        <button
+                          onClick={() => setDeleteTarget(c)}
+                          className="rounded-lg p-1.5 text-[#6b8079] hover:bg-rose-50 hover:text-rose-600"
+                          title="Hapus"
+                        >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       )}
@@ -236,7 +316,12 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
         </table>
       </div>
 
-      <TablePagination page={currentPage} limit={PAGE_SIZE} total={filtered.length} onPage={setCurrentPage} />
+      <TablePagination
+        page={currentPage}
+        limit={PAGE_SIZE}
+        total={filtered.length}
+        onPage={setCurrentPage}
+      />
 
       {/* Create/Edit Modal */}
       <Dialog open={showForm} onOpenChange={(v: boolean) => !v && setShowForm(false)}>
@@ -247,24 +332,48 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label htmlFor="name">Nama Kelas</Label>
-              <Input id="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="mis: X TJKT 1" required />
+              <Input
+                id="name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="mis: X TJKT 1"
+                required
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="majorCode">Jurusan</Label>
-                <Select value={form.majorCode} onValueChange={(v: string) => setForm({ ...form, majorCode: v })}>
-                  <SelectTrigger id="majorCode"><SelectValue placeholder="Pilih jurusan" /></SelectTrigger>
+                <Select
+                  value={form.majorCode}
+                  onValueChange={(v: string) => setForm({ ...form, majorCode: v })}
+                >
+                  <SelectTrigger id="majorCode">
+                    <SelectValue placeholder="Pilih jurusan" />
+                  </SelectTrigger>
                   <SelectContent>
-                    {majors.map((m) => (<SelectItem key={m.code} value={m.code}>{m.code} — {m.name}</SelectItem>))}
+                    {majors.map((m) => (
+                      <SelectItem key={m.code} value={m.code}>
+                        {m.code} — {m.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
                 <Label htmlFor="grade">Tingkat</Label>
-                <Select value={form.grade} onValueChange={(v: string) => setForm({ ...form, grade: v })}>
-                  <SelectTrigger id="grade"><SelectValue /></SelectTrigger>
+                <Select
+                  value={form.grade}
+                  onValueChange={(v: string) => setForm({ ...form, grade: v })}
+                >
+                  <SelectTrigger id="grade">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {GRADES.map((g) => (<SelectItem key={g} value={String(g)}>Kelas {g}</SelectItem>))}
+                    {GRADES.map((g) => (
+                      <SelectItem key={g} value={String(g)}>
+                        Kelas {g}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -272,28 +381,52 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="academicYear">Tahun Ajaran</Label>
-                <Input id="academicYear" value={form.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} placeholder="2026/2027" required />
+                <Input
+                  id="academicYear"
+                  value={form.academicYear}
+                  onChange={(e) => setForm({ ...form, academicYear: e.target.value })}
+                  placeholder="2026/2027"
+                  required
+                />
               </div>
               <div>
                 <Label htmlFor="capacity">Kapasitas</Label>
-                <Input id="capacity" type="number" min={1} max={60} value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} required />
+                <Input
+                  id="capacity"
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={form.capacity}
+                  onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+                  required
+                />
               </div>
             </div>
             <div>
               <Label htmlFor="teacherId">Wali Kelas (opsional)</Label>
               <Select
                 value={waliKelasSelectValue(form.teacherId)}
-                onValueChange={(v: string) => setForm({ ...form, teacherId: waliKelasPayloadValue(v) ?? '' })}
+                onValueChange={(v: string) =>
+                  setForm({ ...form, teacherId: waliKelasPayloadValue(v) ?? '' })
+                }
               >
-                <SelectTrigger id="teacherId"><SelectValue placeholder="— pilih wali kelas —" /></SelectTrigger>
+                <SelectTrigger id="teacherId">
+                  <SelectValue placeholder="— pilih wali kelas —" />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NO_WALI_KELAS_VALUE}>— kosongkan —</SelectItem>
-                  {teachers.map((t) => (<SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>))}
+                  <SelectItem value={NO_WALI_KELAS_VALUE}>Belum ditetapkan</SelectItem>
+                  {teachers.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.fullName}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Batal</Button>
+              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                Batal
+              </Button>
               <Button type="submit" disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 {editingId ? 'Simpan' : 'Buat Kelas'}
@@ -308,17 +441,25 @@ export default function KelasClient({ classes, majors, teachers, isSuperAdmin, c
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-rose-600">
-              <AlertCircle className="h-5 w-5" />Konfirmasi Hapus
+              <AlertCircle className="h-5 w-5" />
+              Konfirmasi Hapus
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-[#355a4e]">
-            Hapus kelas <b>{deleteTarget?.name}</b>? Tindakan ini tidak bisa dibatalkan.
-            Jika kelas masih memiliki siswa/absensi/jadwal, hapus akan ditolak — gunakan
-            tombol Nonaktifkan sebagai gantinya.
+            Hapus kelas <b>{deleteTarget?.name}</b>? Tindakan ini tidak bisa dibatalkan. Jika kelas
+            masih memiliki siswa/absensi/jadwal, hapus akan ditolak — gunakan tombol Nonaktifkan
+            sebagai gantinya.
           </p>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setDeleteTarget(null)}>Batal</Button>
-            <Button type="button" onClick={handleDelete} disabled={busy} className="bg-rose-600 hover:bg-rose-700">
+            <Button type="button" variant="outline" onClick={() => setDeleteTarget(null)}>
+              Batal
+            </Button>
+            <Button
+              type="button"
+              onClick={handleDelete}
+              disabled={busy}
+              className="bg-rose-600 hover:bg-rose-700"
+            >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Hapus Permanen
             </Button>

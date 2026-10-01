@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { UsersService } from '../users/users.service';
+import { ClassesService } from '../classes/classes.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserStatusService } from '../auth/user-status.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -110,6 +111,9 @@ describePostgres('Guru BK capacity PostgreSQL proof', () => {
       { invalidate: jest.fn() } as unknown as UserStatusService,
       keycloak as unknown as KeycloakAdminService,
       { invalidateUser: jest.fn() } as unknown as PermissionsService,
+      {
+        assertOperationalSeatForUserActivation: jest.fn().mockResolvedValue(undefined),
+      } as unknown as ClassesService,
     );
   }
 

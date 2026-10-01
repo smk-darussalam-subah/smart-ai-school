@@ -25,6 +25,7 @@ import {
   OnlineUsersQuery,
   ListLoginEventsQuery,
 } from './dto/list-users.dto';
+import { ClassesService } from '../classes/classes.service';
 
 const USER_SELECT = {
   id: true,
@@ -54,6 +55,7 @@ export class UsersService {
     private readonly userStatus: UserStatusService,
     private readonly kc: KeycloakAdminService,
     private readonly permissions: PermissionsService,
+    private readonly classes: ClassesService,
   ) {}
 
   private isMissingAtomicWrite(error: unknown): boolean {
@@ -69,6 +71,24 @@ export class UsersService {
     await tx.$executeRaw(
       Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${USER_IDENTITY_MUTATION_LOCK}))`,
     );
+  }
+
+  private async assertNoOperationalHomeroomAssignment(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<void> {
+    const homeroom = await tx.class.findFirst({
+      where: {
+        isActive: true,
+        teacher: { is: { userId } },
+      },
+      select: { name: true, academicYear: true },
+    });
+    if (homeroom) {
+      throw new ConflictException(
+        `Guru masih menjadi wali kelas ${homeroom.name} (${homeroom.academicYear}). Ganti atau kosongkan wali kelas terlebih dahulu.`,
+      );
+    }
   }
 
   async findAll(query: ListUsersQuery, actorKeycloakId?: string) {
@@ -411,6 +431,10 @@ export class UsersService {
           );
         }
 
+        if (lockedUser.role === 'GURU' && role !== 'GURU') {
+          await this.assertNoOperationalHomeroomAssignment(tx, lockedUser.id);
+        }
+
         const oldRole = lockedUser.role as UserRole;
         if (oldRole === role) {
           const existing = await tx.user.findUnique({ where: { id }, select: USER_SELECT });
@@ -542,6 +566,7 @@ export class UsersService {
               keycloakId: true,
               fullName: true,
               role: true,
+              isActive: true,
               deletedAt: true,
               updatedAt: true,
             },
@@ -568,6 +593,12 @@ export class UsersService {
           ['SUPER_ADMIN', 'TATA_USAHA'].includes(lockedUser.role)
         ) {
           throw new ForbiddenException('Tata Usaha tidak dapat mengubah status akun istimewa');
+        }
+
+        if (!isActive) {
+          await this.assertNoOperationalHomeroomAssignment(tx, lockedUser.id);
+        } else if (!lockedUser.isActive) {
+          await this.classes.assertOperationalSeatForUserActivation(tx, lockedUser.id);
         }
 
         if (lockedUser.role === 'SUPER_ADMIN' && !isActive) {
@@ -678,6 +709,8 @@ export class UsersService {
           );
         }
 
+        await this.assertNoOperationalHomeroomAssignment(tx, target.id);
+
         const archivedAt = new Date();
         const claimed = await tx.user.updateMany({
           where: { id, deletedAt: null, updatedAt: expectedUpdatedAt },
@@ -759,6 +792,8 @@ export class UsersService {
             'Data pengguna telah berubah. Segarkan daftar sebelum memulihkan.',
           );
         }
+
+        await this.classes.assertOperationalSeatForUserActivation(tx, target.id);
 
         try {
           await this.kc.setEnabled(target.keycloakId, true);

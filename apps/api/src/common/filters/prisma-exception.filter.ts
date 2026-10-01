@@ -6,17 +6,12 @@
 //
 // Peta:
 //   P2002 → 409 Conflict      (unique constraint violated)
-//   P2003 → 409 Conflict      (FK restrict — ada data terkait, tidak bisa hapus)
+//   P2003 → 409 Conflict      (foreign-key constraint)
 //   P2025 → 404 Not Found     (record tidak ditemukan saat update/delete)
 //   lainnya → 500 + log
 // =============================================================================
 
-import {
-  ArgumentsHost,
-  Catch,
-  ExceptionFilter,
-  HttpStatus,
-} from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { captureException } from '@sentry/nestjs';
@@ -31,7 +26,7 @@ const PRISMA_HTTP_MAP: Record<string, { status: number; error: string; message: 
   P2003: {
     status: HttpStatus.CONFLICT,
     error: 'Conflict',
-    message: 'Tidak bisa dihapus: ada data terkait yang bergantung pada record ini',
+    message: 'Data terkait tidak valid atau masih digunakan oleh record lain',
   },
   P2025: {
     status: HttpStatus.NOT_FOUND,
