@@ -12,8 +12,8 @@ const databaseUrl = process.env['CLASS_HOMEROOM_DATABASE_URL'];
 const describePostgres = databaseUrl ? describe : describe.skip;
 
 describePostgres('class occupancy and homeroom PostgreSQL proof', () => {
-  const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
-  const service = new ClassesService(prisma as PrismaService);
+  let prisma: PrismaClient;
+  let service: ClassesService;
   const suffix = 'class-proof-20261001';
   const classId = '71000000-0000-4000-8000-000000000001';
   const archivedClassId = '71000000-0000-4000-8000-000000000002';
@@ -29,6 +29,8 @@ describePostgres('class occupancy and homeroom PostgreSQL proof', () => {
   let archivedStudentId = '';
 
   beforeAll(async () => {
+    prisma = new PrismaClient({ datasources: { db: { url: databaseUrl! } } });
+    service = new ClassesService(prisma as PrismaService);
     await prisma.$connect();
     await prisma.user.createMany({
       data: [
