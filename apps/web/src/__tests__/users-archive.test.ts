@@ -31,8 +31,16 @@ jest.mock('../app/dashboard/users/_components/UserAccessDialog', () => ({
   default: () => null,
 }));
 
-import { archiveUserAction, restoreUserAction } from '../app/dashboard/users/actions';
+import {
+  archiveUserAction,
+  resetUserPasswordAction,
+  restoreUserAction,
+} from '../app/dashboard/users/actions';
 import UsersClient from '../app/dashboard/users/_components/UsersClient';
+import {
+  canDismissPasswordReset,
+  canOfferPasswordReset,
+} from '../app/dashboard/users/_components/password-reset-policy';
 
 const baseUser: {
   id: string;
@@ -71,6 +79,7 @@ function renderUsers(
       isSuperAdmin,
       canManageUsers: true,
       canArchiveUsers: isSuperAdmin,
+      canResetPasswords: true,
     }),
   );
 }
@@ -133,5 +142,58 @@ describe('Manajemen Pengguna archive/restore', () => {
     expect(html).not.toContain('Diarsipkan');
     expect(html).not.toContain('Arsipkan');
     expect(html).not.toContain('Pulihkan');
+  });
+
+  it('menawarkan reset hanya untuk akun aktif non-Super Admin dan mengirim request tanpa password', async () => {
+    expect(renderUsers('active')).toContain('Reset sandi');
+    expect(renderUsers('active', { ...baseUser, role: 'SUPER_ADMIN' })).not.toContain(
+      'Reset sandi',
+    );
+    expect(renderUsers('inactive', { ...baseUser, isActive: false })).not.toContain('Reset sandi');
+
+    apiAction.mockResolvedValue({ data: { requiresPasswordChange: true } });
+    await resetUserPasswordAction(baseUser.id);
+    expect(apiAction).toHaveBeenCalledWith(`/users/${baseUser.id}/password-reset`, 'PATCH');
+  });
+
+  it('menyamakan target reset Tata Usaha dengan policy API', () => {
+    for (const targetRole of ['GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI']) {
+      expect(
+        canOfferPasswordReset({
+          canResetPasswords: true,
+          isSuperAdmin: false,
+          targetRole,
+          targetIsActive: true,
+          targetIsArchived: false,
+        }),
+      ).toBe(true);
+    }
+    for (const targetRole of ['SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_SEKOLAH']) {
+      expect(
+        canOfferPasswordReset({
+          canResetPasswords: true,
+          isSuperAdmin: false,
+          targetRole,
+          targetIsActive: true,
+          targetIsArchived: false,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it('menolak semua upaya menutup dialog sampai reset yang tertunda selesai', async () => {
+    let resolve: (() => void) | undefined;
+    let inFlight = true;
+    const pending = new Promise<void>((done) => {
+      resolve = () => {
+        inFlight = false;
+        done();
+      };
+    });
+
+    expect(canDismissPasswordReset(inFlight)).toBe(false);
+    resolve?.();
+    await pending;
+    expect(canDismissPasswordReset(inFlight)).toBe(true);
   });
 });

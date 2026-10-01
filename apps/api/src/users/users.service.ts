@@ -13,6 +13,11 @@ import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { UserRole, PRIMARY_ROLES, isPrimaryRole, type PrimaryRole } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { Prisma } from '@prisma/client';
+import { generateTemporaryPassword } from '../common/helpers/temp-password';
+import {
+  acquireUserMutationLocks,
+  createKeycloakMutationTransactionOptions,
+} from './user-mutation-coordination';
 import {
   ListUsersQuery,
   GroupedUsersQuery,
@@ -35,6 +40,12 @@ const USER_SELECT = {
 } as const;
 
 const USER_IDENTITY_MUTATION_LOCK = 'users:last-active-super-admin';
+const PASSWORD_RESET_KEYCLOAK_CALL_COUNT = 3;
+// Cold role cache: resolve+write for the new role, then resolve+delete for the old role.
+const ROLE_SYNC_KEYCLOAK_CALL_COUNT = 4;
+const STATUS_SYNC_KEYCLOAK_CALL_COUNT = 1;
+const ARCHIVE_KEYCLOAK_CALL_COUNT = 2;
+const RESTORE_KEYCLOAK_CALL_COUNT = 2;
 
 @Injectable()
 export class UsersService {
@@ -141,6 +152,86 @@ export class UsersService {
     return actor;
   }
 
+  async resetPassword(id: string, actorKeycloakId: string) {
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        const actorIdentity = await tx.user.findFirst({
+          where: { keycloakId: actorKeycloakId },
+          select: { id: true },
+        });
+        if (!actorIdentity) {
+          throw new ForbiddenException('Permintaan reset tidak dapat diproses');
+        }
+        await acquireUserMutationLocks(tx, [actorIdentity.id, id]);
+
+        const actor = await tx.user.findFirst({
+          where: { keycloakId: actorKeycloakId, isActive: true, deletedAt: null },
+          select: { id: true, role: true },
+        });
+        if (!actor || !['SUPER_ADMIN', 'TATA_USAHA'].includes(actor.role)) {
+          throw new ForbiddenException('Permintaan reset tidak dapat diproses');
+        }
+
+        const target = await tx.user.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            keycloakId: true,
+            email: true,
+            role: true,
+            isActive: true,
+            deletedAt: true,
+          },
+        });
+        if (!target || !target.isActive || target.deletedAt || actor.id === target.id) {
+          throw new BadRequestException('Permintaan reset tidak dapat diproses');
+        }
+        if (target.role === 'SUPER_ADMIN') {
+          throw new ForbiddenException('Permintaan reset tidak dapat diproses');
+        }
+        const tataUsahaTargets = ['GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI'];
+        if (actor.role === 'TATA_USAHA' && !tataUsahaTargets.includes(target.role)) {
+          throw new ForbiddenException('Permintaan reset tidak dapat diproses');
+        }
+
+        const keycloakUser = await this.kc.findByEmail(target.email);
+        if (
+          !keycloakUser ||
+          keycloakUser.id !== target.keycloakId ||
+          !keycloakUser.enabled ||
+          !keycloakUser.username?.trim()
+        ) {
+          throw new ServiceUnavailableException('Permintaan reset belum dapat diproses');
+        }
+
+        const temporaryPassword = generateTemporaryPassword();
+        try {
+          await this.kc.logoutUser(target.keycloakId);
+          await this.kc.setTempPassword(target.keycloakId, temporaryPassword);
+        } catch {
+          throw new ServiceUnavailableException('Permintaan reset belum dapat diproses');
+        }
+        return {
+          targetKeycloakId: target.keycloakId,
+          username: keycloakUser.username,
+          temporaryPassword,
+          requiresPasswordChange: true as const,
+        };
+      },
+      createKeycloakMutationTransactionOptions({
+        callCount: PASSWORD_RESET_KEYCLOAK_CALL_COUNT,
+      }),
+    );
+
+    this.userStatus.invalidate(result.targetKeycloakId);
+    this.permissions.invalidateUser(result.targetKeycloakId);
+    return {
+      username: result.username,
+      temporaryPassword: result.temporaryPassword,
+      requiresPasswordChange: result.requiresPasswordChange,
+    };
+  }
+
   // ── findGrouped ──────────────────────────────────────────────────────────────
 
   private readonly ROLE_ORDER: readonly PrimaryRole[] = PRIMARY_ROLES;
@@ -213,9 +304,9 @@ export class UsersService {
    * TF-4 P1 fix: updateRole() sekarang DB-first + KC sync best-effort (fail-soft).
    *
    * Strategi lama: KC-first → bila KC throw, seluruh operasi gagal & DB tidak ter-update.
-   * Strategi baru: DB update dulu (single source of truth) → cache invalidate →
-   * KC sync best-effort. Bila KC gagal, operasi tetap sukses dengan flag
-   * `keycloakSyncPending: true` di response agar frontend bisa tampilkan toast warning.
+   * Strategi baru: claim DB dan KC sync berjalan di bawah ownership transaksi yang sama.
+   * Bila KC gagal, DB tetap menjadi source of truth dan response membawa
+   * `keycloakSyncPending: true`; cache baru dibersihkan setelah commit.
    *
    * Fail-soft pattern mengikuti positions.service.ts:228-237, 293-303 (reference terbukti).
    * Lihat academic-lifecycle.md §14.1 untuk prinsip fail-soft DIIS.
@@ -281,90 +372,108 @@ export class UsersService {
       }
     }
 
-    const transition = await this.prisma.$transaction(async (tx) => {
-      await this.acquireIdentityMutationLock(tx);
+    const transition = await this.prisma.$transaction(
+      async (tx) => {
+        await this.acquireIdentityMutationLock(tx);
+        await acquireUserMutationLocks(tx, [actorUser.id, id]);
 
-      const [lockedActor, lockedUser] = await Promise.all([
-        tx.user.findFirst({
-          where: { keycloakId: actor, isActive: true, deletedAt: null },
-          select: { id: true, role: true },
-        }),
-        tx.user.findUnique({
-          where: { id },
-          select: {
-            id: true,
-            keycloakId: true,
-            fullName: true,
-            role: true,
-            deletedAt: true,
-            updatedAt: true,
-          },
-        }),
-      ]);
+        const [lockedActor, lockedUser] = await Promise.all([
+          tx.user.findFirst({
+            where: { keycloakId: actor, isActive: true, deletedAt: null },
+            select: { id: true, role: true },
+          }),
+          tx.user.findUnique({
+            where: { id },
+            select: {
+              id: true,
+              keycloakId: true,
+              fullName: true,
+              role: true,
+              deletedAt: true,
+              updatedAt: true,
+            },
+          }),
+        ]);
 
-      if (!lockedActor || lockedActor.role !== 'SUPER_ADMIN') {
-        throw new ForbiddenException('Hanya Super Admin yang dapat mengubah role identitas');
-      }
-      if (lockedActor.id === id) {
-        throw new ForbiddenException('Super Admin tidak dapat mengubah role akunnya sendiri');
-      }
-      if (!lockedUser) throw new NotFoundException('User tidak ditemukan');
-      if (lockedUser.deletedAt) {
-        throw new ConflictException('Pengguna diarsipkan. Pulihkan akun sebelum mengubah role.');
-      }
-      if (lockedUser.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
-        throw new ConflictException(
-          'Data pengguna berubah atau telah diarsipkan. Muat ulang daftar.',
-        );
-      }
-
-      const oldRole = lockedUser.role as UserRole;
-      if (oldRole === role) {
-        const existing = await tx.user.findUnique({ where: { id }, select: USER_SELECT });
-        return { updated: existing!, oldRole, changed: false };
-      }
-
-      if (oldRole === 'SUPER_ADMIN' && role !== 'SUPER_ADMIN') {
-        const remainingSuperAdmins = await tx.user.count({
-          where: {
-            role: 'SUPER_ADMIN',
-            isActive: true,
-            deletedAt: null,
-            id: { not: id },
-          },
-        });
-        if (remainingSuperAdmins === 0) {
+        if (!lockedActor || lockedActor.role !== 'SUPER_ADMIN') {
+          throw new ForbiddenException('Hanya Super Admin yang dapat mengubah role identitas');
+        }
+        if (lockedActor.id === id) {
+          throw new ForbiddenException('Super Admin tidak dapat mengubah role akunnya sendiri');
+        }
+        if (!lockedUser) throw new NotFoundException('User tidak ditemukan');
+        if (lockedUser.deletedAt) {
+          throw new ConflictException('Pengguna diarsipkan. Pulihkan akun sebelum mengubah role.');
+        }
+        if (lockedUser.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
           throw new ConflictException(
-            'Tidak dapat mengubah role Super Admin terakhir — sistem akan terkunci',
+            'Data pengguna berubah atau telah diarsipkan. Muat ulang daftar.',
           );
         }
-      }
 
-      const updated = await tx.user
-        .update({
-          where: { id, deletedAt: null, updatedAt: expectedUpdatedAt },
-          data: { role },
-          select: USER_SELECT,
-        })
-        .catch((error: unknown) => {
-          if (this.isMissingAtomicWrite(error)) {
+        const oldRole = lockedUser.role as UserRole;
+        if (oldRole === role) {
+          const existing = await tx.user.findUnique({ where: { id }, select: USER_SELECT });
+          return { updated: existing!, oldRole, changed: false, keycloakSyncPending: false };
+        }
+
+        if (oldRole === 'SUPER_ADMIN' && role !== 'SUPER_ADMIN') {
+          const remainingSuperAdmins = await tx.user.count({
+            where: {
+              role: 'SUPER_ADMIN',
+              isActive: true,
+              deletedAt: null,
+              id: { not: id },
+            },
+          });
+          if (remainingSuperAdmins === 0) {
             throw new ConflictException(
-              'Data pengguna berubah atau telah diarsipkan. Muat ulang daftar.',
+              'Tidak dapat mengubah role Super Admin terakhir — sistem akan terkunci',
             );
           }
-          throw error;
-        });
+        }
 
-      return { updated, oldRole, changed: true };
-    });
+        const updated = await tx.user
+          .update({
+            where: { id, deletedAt: null, updatedAt: expectedUpdatedAt },
+            data: { role },
+            select: USER_SELECT,
+          })
+          .catch((error: unknown) => {
+            if (this.isMissingAtomicWrite(error)) {
+              throw new ConflictException(
+                'Data pengguna berubah atau telah diarsipkan. Muat ulang daftar.',
+              );
+            }
+            throw error;
+          });
 
-    const { updated, oldRole, changed } = transition;
+        let keycloakSyncPending = false;
+        try {
+          await this.kc.assignRealmRole(lockedUser.keycloakId, role);
+          if (isPrimaryRole(oldRole)) {
+            await this.kc.removeRealmRole(lockedUser.keycloakId, oldRole);
+          }
+        } catch (kcErr) {
+          logger.warn('[UsersService] KC role sync gagal (fail-soft — DB sudah benar)', {
+            userId: id,
+            oldRole,
+            newRole: role,
+            error: kcErr instanceof Error ? kcErr.message : String(kcErr),
+          });
+          keycloakSyncPending = true;
+        }
+
+        return { updated, oldRole, changed: true, keycloakSyncPending };
+      },
+      createKeycloakMutationTransactionOptions({ callCount: ROLE_SYNC_KEYCLOAK_CALL_COUNT }),
+    );
+
+    const { updated, oldRole, changed, keycloakSyncPending } = transition;
     if (!changed) return updated;
 
-    // Cache invalidation WAJIB setelah DB commit, sebelum KC sync.
-    // Memastikan permintaan berikutnya ditolak/izinkan berdasarkan status DB baru.
-    this.permissions.invalidateUser(user.keycloakId);
-    this.userStatus.invalidate(user.keycloakId);
+    this.permissions.invalidateUser(updated.keycloakId);
+    this.userStatus.invalidate(updated.keycloakId);
 
     logger.info(`User role updated: ${user.fullName} ${oldRole} → ${role}`, {
       actor,
@@ -372,23 +481,6 @@ export class UsersService {
       oldRole,
       newRole: role,
     });
-
-    // TF-4: KC sync best-effort (fail-soft). Bila gagal, return flag ke frontend.
-    let keycloakSyncPending = false;
-    try {
-      await this.kc.assignRealmRole(user.keycloakId, role);
-      if (isPrimaryRole(oldRole)) {
-        await this.kc.removeRealmRole(user.keycloakId, oldRole);
-      }
-    } catch (kcErr) {
-      logger.warn('[UsersService] KC role sync gagal (fail-soft — DB sudah benar)', {
-        userId: id,
-        oldRole,
-        newRole: role,
-        error: kcErr instanceof Error ? kcErr.message : String(kcErr),
-      });
-      keycloakSyncPending = true;
-    }
 
     return { ...updated, keycloakSyncPending };
   }
@@ -399,9 +491,9 @@ export class UsersService {
    * Strategi lama: KC-first → bila KC throw, seluruh operasi gagal & DB tidak ter-update.
    * Akibatnya: user tetap aktif di DB saat KC down, bisa login dengan token lama.
    *
-   * Strategi baru: DB update dulu (single source of truth untuk status user) →
-   * cache invalidate → KC sync best-effort. Bila KC gagal, operasi tetap sukses dengan
-   * flag `keycloakSyncPending: true` di response.
+   * Strategi baru: claim DB dan KC sync berjalan di bawah ownership transaksi yang sama.
+   * Bila KC gagal, DB tetap menjadi source of truth dan response membawa
+   * `keycloakSyncPending: true`; cache baru dibersihkan setelah commit.
    *
    * Fail-soft pattern mengikuti positions.service.ts:228-237 (reference terbukti).
    * Lihat academic-lifecycle.md §14.1 untuk prinsip fail-soft DIIS.
@@ -433,102 +525,106 @@ export class UsersService {
       throw new ConflictException('Pengguna diarsipkan. Gunakan tindakan Pulihkan.');
     }
     const expectedUpdatedAt = user.updatedAt;
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await this.acquireIdentityMutationLock(tx);
+    const transition = await this.prisma.$transaction(
+      async (tx) => {
+        await this.acquireIdentityMutationLock(tx);
+        await acquireUserMutationLocks(tx, [actorUser.id, id]);
 
-      const [lockedActor, lockedUser] = await Promise.all([
-        tx.user.findFirst({
-          where: { keycloakId: actor, isActive: true, deletedAt: null },
-          select: { id: true, role: true },
-        }),
-        tx.user.findUnique({
-          where: { id },
-          select: {
-            id: true,
-            keycloakId: true,
-            fullName: true,
-            role: true,
-            deletedAt: true,
-            updatedAt: true,
-          },
-        }),
-      ]);
+        const [lockedActor, lockedUser] = await Promise.all([
+          tx.user.findFirst({
+            where: { keycloakId: actor, isActive: true, deletedAt: null },
+            select: { id: true, role: true },
+          }),
+          tx.user.findUnique({
+            where: { id },
+            select: {
+              id: true,
+              keycloakId: true,
+              fullName: true,
+              role: true,
+              deletedAt: true,
+              updatedAt: true,
+            },
+          }),
+        ]);
 
-      if (!lockedActor || !['SUPER_ADMIN', 'TATA_USAHA'].includes(lockedActor.role)) {
-        throw new ForbiddenException('Aktor tidak berwenang mengubah status akun');
-      }
-      if (lockedActor.id === id && !isActive) {
-        throw new ForbiddenException('Pengguna tidak dapat menonaktifkan akunnya sendiri');
-      }
-      if (!lockedUser) throw new NotFoundException('User tidak ditemukan');
-      if (lockedUser.deletedAt) {
-        throw new ConflictException('Pengguna diarsipkan. Gunakan tindakan Pulihkan.');
-      }
-      if (lockedUser.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
-        throw new ConflictException(
-          'Data pengguna berubah atau telah diarsipkan. Muat ulang daftar.',
-        );
-      }
-      if (
-        lockedActor.role === 'TATA_USAHA' &&
-        ['SUPER_ADMIN', 'TATA_USAHA'].includes(lockedUser.role)
-      ) {
-        throw new ForbiddenException('Tata Usaha tidak dapat mengubah status akun istimewa');
-      }
-
-      if (lockedUser.role === 'SUPER_ADMIN' && !isActive) {
-        const remainingSuperAdmins = await tx.user.count({
-          where: {
-            role: 'SUPER_ADMIN',
-            isActive: true,
-            deletedAt: null,
-            id: { not: id },
-          },
-        });
-        if (remainingSuperAdmins === 0) {
+        if (!lockedActor || !['SUPER_ADMIN', 'TATA_USAHA'].includes(lockedActor.role)) {
+          throw new ForbiddenException('Aktor tidak berwenang mengubah status akun');
+        }
+        if (lockedActor.id === id && !isActive) {
+          throw new ForbiddenException('Pengguna tidak dapat menonaktifkan akunnya sendiri');
+        }
+        if (!lockedUser) throw new NotFoundException('User tidak ditemukan');
+        if (lockedUser.deletedAt) {
+          throw new ConflictException('Pengguna diarsipkan. Gunakan tindakan Pulihkan.');
+        }
+        if (lockedUser.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
           throw new ConflictException(
-            'Tidak dapat menonaktifkan Super Admin terakhir — sistem akan terkunci',
+            'Data pengguna berubah atau telah diarsipkan. Muat ulang daftar.',
           );
         }
-      }
+        if (
+          lockedActor.role === 'TATA_USAHA' &&
+          ['SUPER_ADMIN', 'TATA_USAHA'].includes(lockedUser.role)
+        ) {
+          throw new ForbiddenException('Tata Usaha tidak dapat mengubah status akun istimewa');
+        }
 
-      return tx.user
-        .update({
-          where: { id, deletedAt: null, updatedAt: expectedUpdatedAt },
-          data: { isActive },
-          select: USER_SELECT,
-        })
-        .catch((error: unknown) => {
-          if (this.isMissingAtomicWrite(error)) {
+        if (lockedUser.role === 'SUPER_ADMIN' && !isActive) {
+          const remainingSuperAdmins = await tx.user.count({
+            where: {
+              role: 'SUPER_ADMIN',
+              isActive: true,
+              deletedAt: null,
+              id: { not: id },
+            },
+          });
+          if (remainingSuperAdmins === 0) {
             throw new ConflictException(
-              'Data pengguna berubah atau telah diarsipkan. Muat ulang daftar.',
+              'Tidak dapat menonaktifkan Super Admin terakhir — sistem akan terkunci',
             );
           }
-          throw error;
-        });
-    });
+        }
 
-    // Cache invalidation WAJIB setelah DB commit, sebelum KC sync.
-    // Memastikan KeycloakGuard & permission checks berikutnya membaca status DB baru.
+        const updated = await tx.user
+          .update({
+            where: { id, deletedAt: null, updatedAt: expectedUpdatedAt },
+            data: { isActive },
+            select: USER_SELECT,
+          })
+          .catch((error: unknown) => {
+            if (this.isMissingAtomicWrite(error)) {
+              throw new ConflictException(
+                'Data pengguna berubah atau telah diarsipkan. Muat ulang daftar.',
+              );
+            }
+            throw error;
+          });
+
+        let keycloakSyncPending = false;
+        try {
+          await this.kc.setEnabled(lockedUser.keycloakId, isActive);
+        } catch (kcErr) {
+          logger.warn('[UsersService] KC enabled sync gagal (fail-soft — DB sudah benar)', {
+            userId: id,
+            isActive,
+            error: kcErr instanceof Error ? kcErr.message : String(kcErr),
+          });
+          keycloakSyncPending = true;
+        }
+
+        return { updated, keycloakSyncPending };
+      },
+      createKeycloakMutationTransactionOptions({ callCount: STATUS_SYNC_KEYCLOAK_CALL_COUNT }),
+    );
+    const { updated, keycloakSyncPending } = transition;
+
     this.userStatus.invalidate(updated.keycloakId);
 
     logger.info(`User ${isActive ? 'activated' : 'deactivated'}: ${user.fullName}`, {
       actor,
       userId: id,
     });
-
-    // TF-4: KC sync best-effort (fail-soft). Bila gagal, return flag ke frontend.
-    let keycloakSyncPending = false;
-    try {
-      await this.kc.setEnabled(user.keycloakId, isActive);
-    } catch (kcErr) {
-      logger.warn('[UsersService] KC enabled sync gagal (fail-soft — DB sudah benar)', {
-        userId: id,
-        isActive,
-        error: kcErr instanceof Error ? kcErr.message : String(kcErr),
-      });
-      keycloakSyncPending = true;
-    }
 
     return { ...updated, keycloakSyncPending };
   }
@@ -544,48 +640,71 @@ export class UsersService {
     }
 
     const expectedUpdatedAt = new Date(input.expectedUpdatedAt);
-    const target = await this.prisma.user.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        keycloakId: true,
-        fullName: true,
-        role: true,
-        deletedAt: true,
-        updatedAt: true,
-      },
-    });
-    if (!target) throw new NotFoundException('User tidak ditemukan');
-    if (target.role === 'SUPER_ADMIN') {
-      throw new ForbiddenException('Akun Super Admin tidak boleh diarsipkan');
-    }
-    if (target.deletedAt) {
-      throw new ConflictException('Pengguna sudah diarsipkan');
-    }
-    if (target.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
-      throw new ConflictException(
-        'Data pengguna telah berubah. Segarkan daftar sebelum mengarsipkan.',
-      );
-    }
+    const transition = await this.prisma.$transaction(
+      async (tx) => {
+        await acquireUserMutationLocks(tx, [actor.id, id]);
+        const [lockedActor, target] = await Promise.all([
+          tx.user.findFirst({
+            where: { id: actor.id, role: 'SUPER_ADMIN', isActive: true, deletedAt: null },
+            select: { id: true },
+          }),
+          tx.user.findUnique({
+            where: { id },
+            select: {
+              id: true,
+              keycloakId: true,
+              fullName: true,
+              role: true,
+              deletedAt: true,
+              updatedAt: true,
+            },
+          }),
+        ]);
+        if (!lockedActor) {
+          throw new ForbiddenException(
+            'Hanya Super Admin aktif yang dapat mengelola arsip pengguna',
+          );
+        }
+        if (!target) throw new NotFoundException('User tidak ditemukan');
+        if (target.role === 'SUPER_ADMIN') {
+          throw new ForbiddenException('Akun Super Admin tidak boleh diarsipkan');
+        }
+        if (target.deletedAt) {
+          throw new ConflictException('Pengguna sudah diarsipkan');
+        }
+        if (target.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+          throw new ConflictException(
+            'Data pengguna telah berubah. Segarkan daftar sebelum mengarsipkan.',
+          );
+        }
 
-    const archivedAt = new Date();
-    const claimed = await this.prisma.user.updateMany({
-      where: { id, deletedAt: null, updatedAt: expectedUpdatedAt },
-      data: { isActive: false, deletedAt: archivedAt, updatedAt: archivedAt },
-    });
-    if (claimed.count !== 1) {
-      throw new ConflictException('Permintaan arsip sudah usang atau sedang diproses');
-    }
+        const archivedAt = new Date();
+        const claimed = await tx.user.updateMany({
+          where: { id, deletedAt: null, updatedAt: expectedUpdatedAt },
+          data: { isActive: false, deletedAt: archivedAt, updatedAt: archivedAt },
+        });
+        if (claimed.count !== 1) {
+          throw new ConflictException('Permintaan arsip sudah usang atau sedang diproses');
+        }
+        const archived = await tx.user.findUnique({ where: { id }, select: USER_SELECT });
+        const [disableResult, logoutResult] = await Promise.allSettled([
+          this.kc.setEnabled(target.keycloakId, false),
+          this.kc.logoutUser(target.keycloakId),
+        ]);
+        return {
+          target,
+          archived: archived!,
+          keycloakSyncPending: disableResult.status === 'rejected',
+          sessionTerminationPending: logoutResult.status === 'rejected',
+        };
+      },
+      createKeycloakMutationTransactionOptions({ callCount: ARCHIVE_KEYCLOAK_CALL_COUNT }),
+    );
+    const { target, archived, keycloakSyncPending, sessionTerminationPending } = transition;
 
     this.userStatus.invalidate(target.keycloakId);
     this.permissions.invalidateUser(target.keycloakId);
 
-    const [disableResult, logoutResult] = await Promise.allSettled([
-      this.kc.setEnabled(target.keycloakId, false),
-      this.kc.logoutUser(target.keycloakId),
-    ]);
-    const keycloakSyncPending = disableResult.status === 'rejected';
-    const sessionTerminationPending = logoutResult.status === 'rejected';
     if (keycloakSyncPending || sessionTerminationPending) {
       logger.warn('[UsersService] arsip tersimpan tetapi sinkronisasi Keycloak tertunda', {
         keycloakSyncPending,
@@ -593,9 +712,8 @@ export class UsersService {
       });
     }
 
-    const archived = await this.prisma.user.findUnique({ where: { id }, select: USER_SELECT });
     return {
-      ...archived!,
+      ...archived,
       keycloakSyncPending,
       sessionTerminationPending,
       reasonRecorded: true,
@@ -607,59 +725,78 @@ export class UsersService {
     input: { reason: string; expectedUpdatedAt: string },
     actorKeycloakId: string,
   ) {
-    await this.assertActiveSuperAdmin(actorKeycloakId);
+    const actor = await this.assertActiveSuperAdmin(actorKeycloakId);
     const expectedUpdatedAt = new Date(input.expectedUpdatedAt);
-    const target = await this.prisma.user.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        keycloakId: true,
-        deletedAt: true,
-        updatedAt: true,
-      },
-    });
-    if (!target) throw new NotFoundException('User tidak ditemukan');
-    if (!target.deletedAt) {
-      throw new ConflictException('Pengguna tidak berada di arsip');
-    }
-    if (target.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
-      throw new ConflictException(
-        'Data pengguna telah berubah. Segarkan daftar sebelum memulihkan.',
-      );
-    }
-
-    try {
-      await this.kc.setEnabled(target.keycloakId, true);
-    } catch {
-      throw new ServiceUnavailableException(
-        'Keycloak belum dapat mengaktifkan akun. Pengguna tetap diarsipkan dan aman.',
-      );
-    }
-
-    const restoredAt = new Date();
-    const claimed = await this.prisma.user.updateMany({
-      where: { id, deletedAt: { not: null }, updatedAt: expectedUpdatedAt },
-      data: { isActive: true, deletedAt: null, updatedAt: restoredAt },
-    });
-    if (claimed.count !== 1) {
-      const current = await this.prisma.user.findUnique({
-        where: { id },
-        select: { deletedAt: true },
-      });
-      if (current?.deletedAt) {
-        try {
-          await this.kc.setEnabled(target.keycloakId, false);
-        } catch {
-          logger.error('[UsersService] kompensasi restore Keycloak gagal');
+    const transition = await this.prisma.$transaction(
+      async (tx) => {
+        await acquireUserMutationLocks(tx, [actor.id, id]);
+        const [lockedActor, target] = await Promise.all([
+          tx.user.findFirst({
+            where: { id: actor.id, role: 'SUPER_ADMIN', isActive: true, deletedAt: null },
+            select: { id: true },
+          }),
+          tx.user.findUnique({
+            where: { id },
+            select: {
+              id: true,
+              keycloakId: true,
+              deletedAt: true,
+              updatedAt: true,
+            },
+          }),
+        ]);
+        if (!lockedActor) {
+          throw new ForbiddenException(
+            'Hanya Super Admin aktif yang dapat mengelola arsip pengguna',
+          );
         }
-      }
-      throw new ConflictException('Permintaan pemulihan sudah usang atau sedang diproses');
-    }
+        if (!target) throw new NotFoundException('User tidak ditemukan');
+        if (!target.deletedAt) {
+          throw new ConflictException('Pengguna tidak berada di arsip');
+        }
+        if (target.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+          throw new ConflictException(
+            'Data pengguna telah berubah. Segarkan daftar sebelum memulihkan.',
+          );
+        }
+
+        try {
+          await this.kc.setEnabled(target.keycloakId, true);
+        } catch {
+          throw new ServiceUnavailableException(
+            'Keycloak belum dapat mengaktifkan akun. Pengguna tetap diarsipkan dan aman.',
+          );
+        }
+
+        const restoredAt = new Date();
+        const claimed = await tx.user.updateMany({
+          where: { id, deletedAt: { not: null }, updatedAt: expectedUpdatedAt },
+          data: { isActive: true, deletedAt: null, updatedAt: restoredAt },
+        });
+        if (claimed.count !== 1) {
+          const current = await tx.user.findUnique({
+            where: { id },
+            select: { deletedAt: true },
+          });
+          if (current?.deletedAt) {
+            try {
+              await this.kc.setEnabled(target.keycloakId, false);
+            } catch {
+              logger.error('[UsersService] kompensasi restore Keycloak gagal');
+            }
+          }
+          throw new ConflictException('Permintaan pemulihan sudah usang atau sedang diproses');
+        }
+        const restored = await tx.user.findUnique({ where: { id }, select: USER_SELECT });
+        return { target, restored: restored! };
+      },
+      createKeycloakMutationTransactionOptions({ callCount: RESTORE_KEYCLOAK_CALL_COUNT }),
+    );
+    const { target, restored } = transition;
 
     this.userStatus.invalidate(target.keycloakId);
     this.permissions.invalidateUser(target.keycloakId);
-    const restored = await this.prisma.user.findUnique({ where: { id }, select: USER_SELECT });
-    return { ...restored!, keycloakSyncPending: false, reasonRecorded: true };
+    return { ...restored, keycloakSyncPending: false, reasonRecorded: true };
   }
 
   // ── Consent Status (admin) ─────────────────────────────────────────────────
