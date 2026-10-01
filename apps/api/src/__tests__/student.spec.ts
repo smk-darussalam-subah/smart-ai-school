@@ -16,11 +16,7 @@ jest.mock('@smk/logger', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { StudentService } from '../student/student.service';
 import { StudentController } from '../student/student.controller';
@@ -28,6 +24,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProvisioningService } from '../provisioning/provisioning.service';
 import { CreateStudentSchema } from '../student/dto/create-student.dto';
 import { AuthUser } from '@smk/auth';
+import { ClassesService } from '../classes/classes.service';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -68,8 +65,8 @@ const MOCK_ORTU_DB_USER = { id: 'ortu-db-user-id' };
 
 const MOCK_STUDENT = {
   id: 'student-uuid-001',
-  userId: 'siswa-db-user-id',   // matches MOCK_SISWA_DB_USER.id
-  parentId: 'ortu-db-user-id',  // matches MOCK_ORTU_DB_USER.id
+  userId: 'siswa-db-user-id', // matches MOCK_SISWA_DB_USER.id
+  parentId: 'ortu-db-user-id', // matches MOCK_ORTU_DB_USER.id
   nis: '20250001',
   status: 'active',
   joinedAt: new Date('2025-07-14'),
@@ -77,7 +74,12 @@ const MOCK_STUDENT = {
   deletedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
-  user: { id: 'siswa-db-user-id', fullName: 'Budi Santoso', email: 'siswa@smk.sch.id', phone: null },
+  user: {
+    id: 'siswa-db-user-id',
+    fullName: 'Budi Santoso',
+    email: 'siswa@smk.sch.id',
+    phone: null,
+  },
   class: { id: 'class-uuid-001', name: 'X TKJ 1', majorCode: 'TKJ', grade: 10 },
 };
 
@@ -116,6 +118,7 @@ function buildPrisma() {
       findMany: jest.fn(),
     },
     $transaction: jest.fn(),
+    $queryRaw: jest.fn(),
   };
 }
 
@@ -124,6 +127,7 @@ function buildPrisma() {
 describe('StudentService', () => {
   let service: StudentService;
   let prisma: ReturnType<typeof buildPrisma>;
+  const classes = { assertOperationalSeatAvailable: jest.fn() };
 
   beforeEach(async () => {
     prisma = buildPrisma();
@@ -134,11 +138,18 @@ describe('StudentService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
         { provide: ProvisioningService, useValue: { provisionOrtu: jest.fn() } },
+        { provide: ClassesService, useValue: classes },
       ],
     }).compile();
 
     service = module.get(StudentService);
     jest.clearAllMocks();
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma),
+    );
+    prisma.$queryRaw.mockResolvedValue([{ acquired: true }]);
+    prisma.student.findUnique.mockResolvedValue({ userId: MOCK_STUDENT.userId });
+    classes.assertOperationalSeatAvailable.mockResolvedValue(undefined);
     prisma.academicYear.findFirst.mockResolvedValue({ code: '2025/2026' });
     prisma.class.findMany.mockResolvedValue([]);
   });
@@ -150,7 +161,10 @@ describe('StudentService', () => {
       prisma.student.findMany.mockResolvedValue([MOCK_STUDENT]);
       prisma.student.count.mockResolvedValue(1);
 
-      const result = await service.findAll({ page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, SA_USER);
+      const result = await service.findAll(
+        { page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' },
+        SA_USER,
+      );
 
       expect(result.data).toHaveLength(1);
       expect(result.total).toBe(1);
@@ -165,7 +179,10 @@ describe('StudentService', () => {
       prisma.student.findMany.mockResolvedValue([]);
       prisma.student.count.mockResolvedValue(0);
 
-      await service.findAll({ classId: 'class-uuid-001', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, SA_USER);
+      await service.findAll(
+        { classId: 'class-uuid-001', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' },
+        SA_USER,
+      );
 
       expect(prisma.student.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { deletedAt: null, classId: 'class-uuid-001' } }),
@@ -176,7 +193,10 @@ describe('StudentService', () => {
       prisma.student.findMany.mockResolvedValue([]);
       prisma.student.count.mockResolvedValue(0);
 
-      await service.findAll({ status: 'active', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, SA_USER);
+      await service.findAll(
+        { status: 'active', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' },
+        SA_USER,
+      );
 
       expect(prisma.student.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { deletedAt: null, status: 'active' } }),
@@ -187,7 +207,10 @@ describe('StudentService', () => {
       prisma.student.findMany.mockResolvedValue([MOCK_STUDENT]);
       prisma.student.count.mockResolvedValue(1);
 
-      await service.findAll({ search: 'Budi', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, SA_USER);
+      await service.findAll(
+        { search: 'Budi', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' },
+        SA_USER,
+      );
 
       const callArg = prisma.student.findMany.mock.calls[0][0];
       expect(callArg.where.OR).toBeDefined();
@@ -219,7 +242,10 @@ describe('StudentService', () => {
       prisma.student.findMany.mockResolvedValue([MOCK_STUDENT]);
       prisma.student.count.mockResolvedValue(1);
 
-      await service.findAll({ page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, GURU_USER);
+      await service.findAll(
+        { page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' },
+        GURU_USER,
+      );
 
       expect(prisma.student.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -238,7 +264,10 @@ describe('StudentService', () => {
       prisma.student.findMany.mockResolvedValue([]);
       prisma.student.count.mockResolvedValue(0);
 
-      await service.findAll({ classId: 'class-uuid-WALI', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, GURU_USER);
+      await service.findAll(
+        { classId: 'class-uuid-WALI', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' },
+        GURU_USER,
+      );
 
       expect(prisma.student.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -254,7 +283,16 @@ describe('StudentService', () => {
       prisma.class.findMany.mockResolvedValue([{ id: 'class-uuid-WALI' }]);
 
       await expect(
-        service.findAll({ classId: 'class-uuid-OTHER', page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, GURU_USER),
+        service.findAll(
+          {
+            classId: 'class-uuid-OTHER',
+            page: 1,
+            limit: 20,
+            sortBy: 'createdAt',
+            sortOrder: 'desc',
+          },
+          GURU_USER,
+        ),
       ).rejects.toThrow(ForbiddenException);
       expect(prisma.student.findMany).not.toHaveBeenCalled();
       expect(prisma.student.count).not.toHaveBeenCalled();
@@ -336,9 +374,7 @@ describe('StudentService', () => {
     it('student tidak ada / soft-deleted → NotFoundException', async () => {
       prisma.student.findFirst.mockResolvedValue(null);
 
-      await expect(service.findById('non-existent', SA_USER)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.findById('non-existent', SA_USER)).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -398,10 +434,24 @@ describe('StudentService', () => {
 
       const result = await service.create(dto);
 
-      expect(prisma.student.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: dto }),
-      );
+      expect(prisma.student.create).toHaveBeenCalledWith(expect.objectContaining({ data: dto }));
       expect(result).toEqual(MOCK_STUDENT);
+    });
+
+    it('mengunci kapasitas kelas untuk siswa operasional baru', async () => {
+      prisma.user.findUnique.mockResolvedValue({ isActive: true, deletedAt: null });
+      prisma.student.create.mockResolvedValue(MOCK_STUDENT);
+
+      await service.create({
+        userId: 'siswa-db-user-id',
+        nis: '20250001',
+        classId: 'class-uuid-001',
+        parentId: 'parent-db-user-id',
+        status: 'active',
+        joinedAt: new Date('2025-07-14'),
+      });
+
+      expect(classes.assertOperationalSeatAvailable).toHaveBeenCalledWith(prisma, 'class-uuid-001');
     });
   });
 
@@ -423,6 +473,25 @@ describe('StudentService', () => {
 
       await expect(service.update('non-existent', { status: 'active' })).rejects.toThrow(
         NotFoundException,
+      );
+    });
+
+    it('perpindahan siswa aktif memeriksa kapasitas kelas tujuan tanpa menghitung dirinya', async () => {
+      prisma.student.findFirst.mockResolvedValue({
+        id: 'student-uuid-001',
+        status: 'active',
+        parentId: 'ortu-db-user-id',
+        classId: 'class-old',
+        user: { isActive: true, deletedAt: null },
+      });
+      prisma.student.update.mockResolvedValue({ ...MOCK_STUDENT, classId: 'class-new' });
+
+      await service.update('student-uuid-001', { classId: 'class-new' });
+
+      expect(classes.assertOperationalSeatAvailable).toHaveBeenCalledWith(
+        prisma,
+        'class-new',
+        'student-uuid-001',
       );
     });
   });
@@ -464,7 +533,7 @@ describe('StudentService', () => {
       // Langkah 1: soft delete berhasil
       prisma.student.findFirst
         .mockResolvedValueOnce({ id: 'student-uuid-001' }) // cek existence di remove()
-        .mockResolvedValueOnce(null);                       // findById: record ter-filter karena deletedAt set
+        .mockResolvedValueOnce(null); // findById: record ter-filter karena deletedAt set
       prisma.student.update.mockResolvedValue({
         id: 'student-uuid-001',
         nis: '20250001',
@@ -495,7 +564,10 @@ describe('StudentService', () => {
       // Langkah 2: findAll — DB mengembalikan kosong (soft-deleted tidak lolos filter)
       prisma.student.findMany.mockResolvedValue([]);
       prisma.student.count.mockResolvedValue(0);
-      const list = await service.findAll({ page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }, SA_USER);
+      const list = await service.findAll(
+        { page: 1, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' },
+        SA_USER,
+      );
 
       expect(list.data).toHaveLength(0);
       expect(list.total).toBe(0);
@@ -548,9 +620,7 @@ describe('StudentService', () => {
     it('student tidak ditemukan → NotFoundException', async () => {
       prisma.student.findFirst.mockResolvedValue(null);
 
-      await expect(service.findGrades('non-existent', SA_USER)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.findGrades('non-existent', SA_USER)).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -589,9 +659,9 @@ describe('StudentService', () => {
       prisma.student.findFirst.mockResolvedValue({ ...STUDENT_SLIM, parentId: 'other-parent' });
       prisma.user.findUnique.mockResolvedValue(MOCK_ORTU_DB_USER);
 
-      await expect(
-        service.findAttendance('student-uuid-001', ORANGTUA_USER),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(service.findAttendance('student-uuid-001', ORANGTUA_USER)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('student tidak ditemukan untuk attendance → NotFoundException', async () => {
@@ -626,9 +696,9 @@ describe('StudentService', () => {
         parentId: 'ortu-db-user-id',
       });
 
-      await expect(
-        service.update('student-uuid-001', { parentId: null }),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.update('student-uuid-001', { parentId: null })).rejects.toThrow(
+        BadRequestException,
+      );
 
       expect(prisma.student.update).not.toHaveBeenCalled();
     });
@@ -701,13 +771,18 @@ describe('StudentService', () => {
         prisma as unknown as import('../prisma/prisma.service').PrismaService,
         { emit: jest.fn() } as unknown as EventEmitter2,
         PROVISIONING_MOCK as unknown as ProvisioningService,
+        classes as unknown as ClassesService,
       );
 
       await expect(
-        svcWithProv.assignParent('student-uuid-001', {
-          ortu: { name: 'Ortu', phone: '+6281234567890' },
-          consent: true,
-        }, ACTOR as unknown as import('../provisioning/provisioning.service').Actor),
+        svcWithProv.assignParent(
+          'student-uuid-001',
+          {
+            ortu: { name: 'Ortu', phone: '+6281234567890' },
+            consent: true,
+          },
+          ACTOR as unknown as import('../provisioning/provisioning.service').Actor,
+        ),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -718,13 +793,18 @@ describe('StudentService', () => {
         prisma as unknown as import('../prisma/prisma.service').PrismaService,
         { emit: jest.fn() } as unknown as EventEmitter2,
         PROVISIONING_MOCK as unknown as ProvisioningService,
+        classes as unknown as ClassesService,
       );
 
       await expect(
-        svcWithProv.assignParent('non-existent', {
-          ortu: { name: 'Ortu', phone: '+6281234567890' },
-          consent: true,
-        }, ACTOR as unknown as import('../provisioning/provisioning.service').Actor),
+        svcWithProv.assignParent(
+          'non-existent',
+          {
+            ortu: { name: 'Ortu', phone: '+6281234567890' },
+            consent: true,
+          },
+          ACTOR as unknown as import('../provisioning/provisioning.service').Actor,
+        ),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -741,22 +821,29 @@ describe('StudentService', () => {
         isNew: true,
         tempCredentials: [{ username: '+6281234567890', tempPassword: 'Abc123' }],
       });
-      prisma.$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => {
-        prisma.user.update.mockResolvedValue({});
-        prisma.student.update.mockResolvedValue({ ...MOCK_STUDENT, parentId: 'new-ortu-id' });
-        return cb(prisma);
-      });
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: typeof prisma) => Promise<unknown>) => {
+          prisma.user.update.mockResolvedValue({});
+          prisma.student.update.mockResolvedValue({ ...MOCK_STUDENT, parentId: 'new-ortu-id' });
+          return cb(prisma);
+        },
+      );
 
       const svcWithProv = new (await import('../student/student.service')).StudentService(
         prisma as unknown as import('../prisma/prisma.service').PrismaService,
         { emit: jest.fn() } as unknown as EventEmitter2,
         PROVISIONING_MOCK as unknown as ProvisioningService,
+        classes as unknown as ClassesService,
       );
 
-      const result = await svcWithProv.assignParent('student-uuid-001', {
-        ortu: { name: 'Ortu Baru', phone: '+6281234567890' },
-        consent: true,
-      }, ACTOR as unknown as import('../provisioning/provisioning.service').Actor);
+      const result = await svcWithProv.assignParent(
+        'student-uuid-001',
+        {
+          ortu: { name: 'Ortu Baru', phone: '+6281234567890' },
+          consent: true,
+        },
+        ACTOR as unknown as import('../provisioning/provisioning.service').Actor,
+      );
 
       expect(result.ortu.isNew).toBe(true);
       expect(result.tempCredentials).toHaveLength(1);
@@ -787,8 +874,12 @@ describe('StudentController', () => {
             remove: jest.fn().mockResolvedValue({ id: 'x', nis: '001', deletedAt: new Date() }),
             findGrades: jest.fn().mockResolvedValue([]),
             findAttendance: jest.fn().mockResolvedValue([]),
-            findWithoutParent: jest.fn().mockResolvedValue({ data: [], total: 0, page: 1, limit: 20 }),
-            assignParent: jest.fn().mockResolvedValue({ student: MOCK_STUDENT, ortu: {}, tempCredentials: [] }),
+            findWithoutParent: jest
+              .fn()
+              .mockResolvedValue({ data: [], total: 0, page: 1, limit: 20 }),
+            assignParent: jest
+              .fn()
+              .mockResolvedValue({ student: MOCK_STUDENT, ortu: {}, tempCredentials: [] }),
           },
         },
       ],
@@ -873,11 +964,10 @@ describe('StudentController', () => {
   it('assignParent — delegasi ke service dengan actor dari CurrentUser', async () => {
     const dto = { ortu: { name: 'Ortu', phone: '+6281234567890' }, consent: true as const };
     await controller.assignParent('student-uuid-001', dto, SA_USER);
-    expect(service.assignParent).toHaveBeenCalledWith(
-      'student-uuid-001',
-      dto,
-      { keycloakId: SA_USER.keycloakId, roles: SA_USER.roles },
-    );
+    expect(service.assignParent).toHaveBeenCalledWith('student-uuid-001', dto, {
+      keycloakId: SA_USER.keycloakId,
+      roles: SA_USER.roles,
+    });
   });
 });
 
@@ -912,7 +1002,20 @@ describe('StudentModule', () => {
     const module = await Test.createTestingModule({
       controllers: [StudentController],
       providers: [
-        { provide: StudentService, useValue: { findAll: jest.fn(), findById: jest.fn(), create: jest.fn(), update: jest.fn(), remove: jest.fn(), findGrades: jest.fn(), findAttendance: jest.fn(), findWithoutParent: jest.fn(), assignParent: jest.fn() } },
+        {
+          provide: StudentService,
+          useValue: {
+            findAll: jest.fn(),
+            findById: jest.fn(),
+            create: jest.fn(),
+            update: jest.fn(),
+            remove: jest.fn(),
+            findGrades: jest.fn(),
+            findAttendance: jest.fn(),
+            findWithoutParent: jest.fn(),
+            assignParent: jest.fn(),
+          },
+        },
         { provide: PrismaService, useValue: prisma },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
         { provide: ProvisioningService, useValue: { provisionOrtu: jest.fn() } },
