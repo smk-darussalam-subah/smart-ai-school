@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import { PrimaryRoleSchema } from '@smk/auth';
 import { phoneE164 } from '../../common/helpers/phone';
+import { isIsoCalendarDate } from '../../common/helpers/iso-calendar-date';
 
 // Role pegawai internal yayasan → wajib NIY + status kepegawaian (punya baris school.staff).
 export const STAFF_ROLES = ['GURU', 'TATA_USAHA'] as const;
@@ -12,6 +13,10 @@ export const STAFF_ROLES = ['GURU', 'TATA_USAHA'] as const;
 const GenderSchema = z.enum(['L', 'P']);
 const EmploymentStatusSchema = z.enum(['GTY', 'GTT', 'PTY', 'PTT']);
 const StudentStatusSchema = z.enum(['active', 'inactive', 'graduated', 'dropped']);
+const IsoCalendarDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Tanggal harus format YYYY-MM-DD')
+  .refine(isIsoCalendarDate, 'Tanggal kalender tidak valid');
 
 export const ProvisionUserSchema = z
   .object({
@@ -20,10 +25,7 @@ export const ProvisionUserSchema = z
     gender: GenderSchema,
     email: z.string().email().optional(),
     phone: z.string().optional(),
-    birthDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'birthDate harus format YYYY-MM-DD')
-      .optional(),
+    birthDate: IsoCalendarDateSchema.optional(),
     address: z.string().max(500).optional(),
     niy: z.string().min(1).max(50).optional(),
     employmentStatus: EmploymentStatusSchema.optional(),
@@ -90,10 +92,7 @@ export const ProvisionStudentSchema = z
       classId: z.string().uuid('classId wajib dipilih dan harus UUID kelas valid'),
       email: z.string().email().optional(),
       gender: GenderSchema.optional(),
-      joinedAt: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, 'joinedAt harus format YYYY-MM-DD')
-        .optional(),
+      joinedAt: IsoCalendarDateSchema.optional(),
       status: StudentStatusSchema.optional(),
     }),
     ppdbLeadId: z.string().uuid().optional(),

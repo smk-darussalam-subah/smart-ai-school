@@ -31,6 +31,8 @@ import {
   StudentEnrolledPayload,
   StudentStatusChangedPayload,
 } from '../events/events.types';
+import { ClassesService } from '../classes/classes.service';
+import { acquireUserMutationLocks } from '../users/user-mutation-coordination';
 
 // ── Select shapes ────────────────────────────────────────────────────────────
 
@@ -45,7 +47,17 @@ const STUDENT_BASE_SELECT = {
   deletedAt: true,
   createdAt: true,
   updatedAt: true,
-  user: { select: { id: true, fullName: true, email: true, phone: true, gender: true, isActive: true, consentAt: true } },
+  user: {
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+      phone: true,
+      gender: true,
+      isActive: true,
+      consentAt: true,
+    },
+  },
   parent: { select: { id: true, fullName: true } },
   class: { select: { id: true, name: true, majorCode: true, grade: true } },
 } as const;
@@ -93,6 +105,7 @@ export class StudentService {
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
     private readonly provisioning: ProvisioningService,
+    private readonly classes: ClassesService,
   ) {}
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -110,10 +123,7 @@ export class StudentService {
     if (requestUser.roles.includes('SISWA') && student.userId !== authUserId) {
       throw new ForbiddenException('Siswa hanya bisa mengakses data diri sendiri');
     }
-    if (
-      requestUser.roles.includes('ORANG_TUA') &&
-      student.parentId !== authUserId
-    ) {
+    if (requestUser.roles.includes('ORANG_TUA') && student.parentId !== authUserId) {
       throw new ForbiddenException('Orang tua hanya bisa mengakses data anak sendiri');
     }
   }
@@ -197,10 +207,13 @@ export class StudentService {
 
     // orderBy dari whitelist (fullName via relasi user).
     const orderBy =
-      sortBy === 'fullName' ? { user: { fullName: sortOrder } }
-      : sortBy === 'nis' ? { nis: sortOrder }
-      : sortBy === 'status' ? { status: sortOrder }
-      : { createdAt: sortOrder };
+      sortBy === 'fullName'
+        ? { user: { fullName: sortOrder } }
+        : sortBy === 'nis'
+          ? { nis: sortOrder }
+          : sortBy === 'status'
+            ? { status: sortOrder }
+            : { createdAt: sortOrder };
 
     const [data, total] = await Promise.all([
       this.prisma.student.findMany({
@@ -335,17 +348,30 @@ export class StudentService {
   }
 
   async create(dto: CreateStudentDto) {
-    const student = await this.prisma.student.create({
-      data: dto,
-      select: STUDENT_BASE_SELECT,
+    const student = await this.prisma.$transaction(async (tx) => {
+      await acquireUserMutationLocks(tx, [dto.userId]);
+      if (dto.classId && dto.status === 'active') {
+        const user = await tx.user.findUnique({
+          where: { id: dto.userId },
+          select: { isActive: true, deletedAt: true },
+        });
+        if (user?.isActive && user.deletedAt === null) {
+          await this.classes.assertOperationalSeatAvailable(tx, dto.classId);
+        }
+      }
+
+      return tx.student.create({
+        data: dto,
+        select: STUDENT_BASE_SELECT,
+      });
     });
 
     // Emit student.enrolled — fire-and-forget (tidak boleh gagalkan transaksi)
     const enrollPayload: StudentEnrolledPayload = {
       studentId: student.id,
-      nis:       student.nis,
-      fullName:  student.user.fullName,
-      parentId:  student.parentId,
+      nis: student.nis,
+      fullName: student.user.fullName,
+      parentId: student.parentId,
     };
     this.eventEmitter.emit(EVENTS.STUDENT_ENROLLED, enrollPayload);
 
@@ -353,30 +379,60 @@ export class StudentService {
   }
 
   async update(id: string, dto: UpdateStudentDto) {
-    const existing = await this.prisma.student.findFirst({
-      where: { id, deletedAt: null },
-      select: { id: true, status: true, parentId: true },
-    });
-    if (!existing) throw new NotFoundException('Student tidak ditemukan');
+    const { existing, updated } = await this.prisma.$transaction(async (tx) => {
+      const identity = await tx.student.findUnique({
+        where: { id },
+        select: { userId: true },
+      });
+      if (!identity) throw new NotFoundException('Student tidak ditemukan');
+      await acquireUserMutationLocks(tx, [identity.userId]);
 
-    if (dto.parentId === null && existing.parentId !== null) {
-      throw new BadRequestException('Tidak boleh menghapus orang tua siswa yang sudah terdaftar');
-    }
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM student.students WHERE id = ${id}::uuid FOR UPDATE`,
+      );
+      const current = await tx.student.findFirst({
+        where: { id, deletedAt: null },
+        select: {
+          id: true,
+          status: true,
+          parentId: true,
+          classId: true,
+          user: { select: { isActive: true, deletedAt: true } },
+        },
+      });
+      if (!current) throw new NotFoundException('Student tidak ditemukan');
 
-    const updated = await this.prisma.student.update({
-      where: { id },
-      data: dto,
-      select: STUDENT_BASE_SELECT,
+      if (dto.parentId === null && current.parentId !== null) {
+        throw new BadRequestException('Tidak boleh menghapus orang tua siswa yang sudah terdaftar');
+      }
+
+      const nextClassId = dto.classId === undefined ? current.classId : dto.classId;
+      const nextStatus = dto.status ?? current.status;
+      if (
+        nextClassId &&
+        nextStatus === 'active' &&
+        current.user.isActive &&
+        current.user.deletedAt === null
+      ) {
+        await this.classes.assertOperationalSeatAvailable(tx, nextClassId, current.id);
+      }
+
+      const next = await tx.student.update({
+        where: { id },
+        data: dto,
+        select: STUDENT_BASE_SELECT,
+      });
+      return { existing: current, updated: next };
     });
 
     // Emit student.statusChanged hanya jika status benar-benar berubah
     if (dto.status && dto.status !== existing.status) {
       const statusPayload: StudentStatusChangedPayload = {
         studentId: updated.id,
-        nis:       updated.nis,
-        fullName:  updated.user.fullName,
-        userId:    updated.userId,
-        parentId:  updated.parentId,
+        nis: updated.nis,
+        fullName: updated.user.fullName,
+        userId: updated.userId,
+        parentId: updated.parentId,
         oldStatus: existing.status,
         newStatus: dto.status,
       };
@@ -471,7 +527,9 @@ export class StudentService {
     });
     if (!student) throw new NotFoundException('Student tidak ditemukan');
     if (student.parentId) {
-      throw new BadRequestException('Student sudah memiliki orang tua — gunakan update biasa untuk mengganti');
+      throw new BadRequestException(
+        'Student sudah memiliki orang tua — gunakan update biasa untuk mengganti',
+      );
     }
 
     const ortuPhone = normalizeOrThrow(dto.ortu.phone);
@@ -507,7 +565,11 @@ export class StudentService {
 
     return {
       student: updated,
-      ortu: { userId: ortuResult.userId, keycloakId: ortuResult.keycloakId, isNew: ortuResult.isNew },
+      ortu: {
+        userId: ortuResult.userId,
+        keycloakId: ortuResult.keycloakId,
+        isNew: ortuResult.isNew,
+      },
       tempCredentials: ortuResult.tempCredentials,
     };
   }

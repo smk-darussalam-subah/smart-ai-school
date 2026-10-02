@@ -18,7 +18,11 @@ import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { UsersController } from '../users/users.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '@smk/auth';
+import { THROTTLER_LIMIT, THROTTLER_TTL } from '@nestjs/throttler/dist/throttler.constants';
 import { GroupedUsersQuerySchema, ListUsersQuerySchema } from '../users/dto/list-users.dto';
+import { AUDIT_KEY } from '../audit-log/decorators/audit.decorator';
+import { REQUIRED_PERMISSION_KEY } from '../permissions/decorators/require-permission.decorator';
+import { ClassesService } from '../classes/classes.service';
 
 const SA_USER: AuthUser = {
   keycloakId: 'kc-sa',
@@ -59,12 +63,16 @@ describe('UsersService', () => {
   const mockUpdate = jest.fn();
   const mockUpdateMany = jest.fn();
   const mockExecuteRaw = jest.fn();
+  const mockQueryRaw = jest.fn();
   const mockTransaction = jest.fn();
+  const mockClassFindFirst = jest.fn();
   const mockKc = {
     assignRealmRole: jest.fn(),
     removeRealmRole: jest.fn(),
     setEnabled: jest.fn(),
     logoutUser: jest.fn(),
+    findByEmail: jest.fn(),
+    setTempPassword: jest.fn(),
     getUserRealmRoles: jest.fn(),
   };
   const mockPerms = {
@@ -77,6 +85,9 @@ describe('UsersService', () => {
     invalidate: jest.fn(),
     invalidateAll: jest.fn(),
   };
+  const mockClasses = {
+    assertOperationalSeatForUserActivation: jest.fn(),
+  };
 
   beforeEach(async () => {
     [
@@ -87,18 +98,25 @@ describe('UsersService', () => {
       mockUpdate,
       mockUpdateMany,
       mockExecuteRaw,
+      mockQueryRaw,
       mockTransaction,
+      mockClassFindFirst,
     ].forEach((m) => m.mockReset());
     mockFindFirst.mockResolvedValue({ id: 'actor-sa', role: 'SUPER_ADMIN' });
+    mockClassFindFirst.mockResolvedValue(null);
     mockKc.assignRealmRole.mockReset();
     mockKc.removeRealmRole.mockReset();
     mockKc.setEnabled.mockReset();
     mockKc.logoutUser.mockReset();
+    mockKc.findByEmail.mockReset();
+    mockKc.setTempPassword.mockReset();
     mockKc.getUserRealmRoles.mockReset();
     mockPerms.invalidateUser.mockReset();
     mockPerms.invalidateAll.mockReset();
     mockPerms.getEffectivePermissions.mockReset();
     mockUserStatus.invalidate.mockReset();
+    mockClasses.assertOperationalSeatForUserActivation.mockReset();
+    mockClasses.assertOperationalSeatForUserActivation.mockResolvedValue(undefined);
 
     const prisma = {
       user: {
@@ -109,10 +127,13 @@ describe('UsersService', () => {
         update: mockUpdate,
         updateMany: mockUpdateMany,
       },
+      class: { findFirst: mockClassFindFirst },
       $executeRaw: mockExecuteRaw,
+      $queryRaw: mockQueryRaw,
       $transaction: mockTransaction,
     };
     mockExecuteRaw.mockResolvedValue(1);
+    mockQueryRaw.mockResolvedValue([{ acquired: true }]);
     mockTransaction.mockImplementation(async (callback: (tx: typeof prisma) => Promise<unknown>) =>
       callback(prisma),
     );
@@ -122,6 +143,7 @@ describe('UsersService', () => {
         { provide: UserStatusService, useValue: mockUserStatus },
         { provide: KeycloakAdminService, useValue: mockKc },
         { provide: PermissionsService, useValue: mockPerms },
+        { provide: ClassesService, useValue: mockClasses },
         UsersService,
         { provide: PrismaService, useValue: prisma },
       ],
@@ -342,6 +364,10 @@ describe('UsersService', () => {
       expect(mockKc.assignRealmRole).toHaveBeenCalledWith('kc-001', 'TATA_USAHA');
       expect(mockKc.removeRealmRole).toHaveBeenCalledWith('kc-001', 'GURU');
       expect(mockPerms.invalidateUser).toHaveBeenCalledWith('kc-001');
+      expect(mockTransaction).toHaveBeenLastCalledWith(expect.any(Function), {
+        maxWait: 5_000,
+        timeout: 95_000,
+      });
     });
 
     it('role sama → early-return tanpa menyentuh KC maupun update DB', async () => {
@@ -375,6 +401,10 @@ describe('UsersService', () => {
       expect(result.keycloakSyncPending).toBe(true);
       // Cache invalidation tetap dipanggil.
       expect(mockPerms.invalidateUser).toHaveBeenCalledWith('kc-001');
+      expect(mockTransaction).toHaveBeenLastCalledWith(expect.any(Function), {
+        maxWait: 5_000,
+        timeout: 95_000,
+      });
     });
 
     it('demotion Super Admin tetap mencabut authority lokal saat sinkronisasi KC gagal', async () => {
@@ -495,6 +525,29 @@ describe('UsersService', () => {
       expect(mockKc.assignRealmRole).not.toHaveBeenCalled();
       expect(mockPerms.invalidateUser).not.toHaveBeenCalled();
     });
+
+    it('role change berhenti bila ownership target sedang dipegang operasi lain', async () => {
+      mockFindUnique.mockResolvedValue(makeUser());
+      mockKc.getUserRealmRoles.mockResolvedValue(['GURU']);
+      mockQueryRaw.mockResolvedValue([{ acquired: false }]);
+
+      await expect(service.updateRole('u-001', 'TATA_USAHA', 'kc-sa')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockKc.assignRealmRole).not.toHaveBeenCalled();
+    });
+
+    it('menolak perubahan role guru yang masih menjadi wali kelas aktif', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ role: 'GURU' }));
+      mockKc.getUserRealmRoles.mockResolvedValue(['GURU']);
+      mockClassFindFirst.mockResolvedValue({ name: 'X TJKT 1', academicYear: '2026/2027' });
+
+      await expect(service.updateRole('u-001', 'TATA_USAHA', 'kc-sa')).rejects.toThrow(
+        'Ganti atau kosongkan wali kelas terlebih dahulu',
+      );
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
   });
 
   // ── updateActive ─────────────────────────────────────────────────────────
@@ -518,6 +571,10 @@ describe('UsersService', () => {
       // TF-4: DB-first → DB update dipanggil sebelum KC sync.
       expect(mockUpdate).toHaveBeenCalled();
       expect(mockKc.setEnabled).toHaveBeenCalledWith('kc-001', false);
+      expect(mockTransaction).toHaveBeenLastCalledWith(expect.any(Function), {
+        maxWait: 5_000,
+        timeout: 35_000,
+      });
     });
 
     // TF-4 P1: core bug fix — fail-soft untuk KC enabled sync.
@@ -570,7 +627,24 @@ describe('UsersService', () => {
 
       expect(result.isActive).toBe(true);
       expect(result.keycloakSyncPending).toBeFalsy();
+      expect(mockClasses.assertOperationalSeatForUserActivation).toHaveBeenCalledWith(
+        expect.anything(),
+        'u-001',
+      );
       expect(mockKc.setEnabled).toHaveBeenCalledWith('kc-001', true);
+    });
+
+    it('menolak aktivasi sebelum Keycloak bila kelas siswa sudah penuh', async () => {
+      mockFindUnique.mockResolvedValue(
+        makeUser({ keycloakId: 'kc-001', isActive: false, role: 'SISWA' }),
+      );
+      mockClasses.assertOperationalSeatForUserActivation.mockRejectedValue(
+        new ConflictException('Kelas X TJKT 1 sudah penuh (36/36).'),
+      );
+
+      await expect(service.updateActive('u-001', true, 'kc-sa')).rejects.toThrow('sudah penuh');
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockKc.setEnabled).not.toHaveBeenCalled();
     });
 
     it('user tidak ditemukan → NotFoundException', async () => {
@@ -607,6 +681,149 @@ describe('UsersService', () => {
       expect(mockKc.setEnabled).not.toHaveBeenCalled();
       expect(mockUserStatus.invalidate).not.toHaveBeenCalled();
     });
+
+    it('status change berhenti bila ownership target sedang dipegang operasi lain', async () => {
+      mockFindUnique.mockResolvedValue(makeUser());
+      mockQueryRaw.mockResolvedValue([{ acquired: false }]);
+
+      await expect(service.updateActive('u-001', false, 'kc-sa')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockKc.setEnabled).not.toHaveBeenCalled();
+    });
+
+    it('menolak menonaktifkan guru yang masih menjadi wali kelas aktif', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ role: 'GURU', isActive: true }));
+      mockClassFindFirst.mockResolvedValue({ name: 'XI DKV 1', academicYear: '2026/2027' });
+
+      await expect(service.updateActive('u-001', false, 'kc-sa')).rejects.toThrow(
+        'Ganti atau kosongkan wali kelas terlebih dahulu',
+      );
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resetPassword', () => {
+    it.each([
+      ['pegawai', 'GURU', 'guru1@smk.sch.id'],
+      ['siswa', 'SISWA', '2026001'],
+      ['orang tua', 'ORANG_TUA', '+6281234567890'],
+    ])('mengembalikan username Keycloak otoritatif untuk %s', async (_label, role, username) => {
+      mockFindFirst.mockResolvedValue({ id: 'actor-tu', role: 'TATA_USAHA' });
+      mockFindUnique.mockResolvedValue(makeUser({ role }));
+      mockKc.findByEmail.mockResolvedValue({ id: 'kc-001', username, enabled: true });
+      mockKc.logoutUser.mockResolvedValue(undefined);
+      mockKc.setTempPassword.mockResolvedValue(undefined);
+
+      const result = await service.resetPassword('u-001', 'kc-tu');
+
+      expect(mockKc.logoutUser).toHaveBeenCalledWith('kc-001');
+      expect(mockKc.setTempPassword).toHaveBeenCalledWith('kc-001', expect.any(String));
+      expect(result).toMatchObject({ username, requiresPasswordChange: true });
+      expect(result.temporaryPassword).toHaveLength(12);
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockTransaction).toHaveBeenLastCalledWith(expect.any(Function), {
+        maxWait: 5_000,
+        timeout: 75_000,
+      });
+    });
+
+    it('menolak reset konkuren sebelum credential kedua diterbitkan', async () => {
+      let finishReset: (() => void) | undefined;
+      mockQueryRaw
+        .mockResolvedValueOnce([{ acquired: true }])
+        .mockResolvedValueOnce([{ acquired: true }])
+        .mockResolvedValueOnce([{ acquired: false }]);
+      mockFindFirst.mockResolvedValue({ id: 'actor-sa', role: 'SUPER_ADMIN' });
+      mockFindUnique.mockResolvedValue(makeUser());
+      mockKc.findByEmail.mockResolvedValue({
+        id: 'kc-001',
+        username: 'guru1@smk.sch.id',
+        enabled: true,
+      });
+      mockKc.logoutUser.mockResolvedValue(undefined);
+      mockKc.setTempPassword.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finishReset = resolve;
+          }),
+      );
+
+      const first = service.resetPassword('u-001', 'kc-sa');
+      while (!finishReset) await Promise.resolve();
+      await expect(service.resetPassword('u-001', 'kc-sa')).rejects.toThrow(ConflictException);
+      finishReset();
+      await expect(first).resolves.toMatchObject({ username: 'guru1@smk.sch.id' });
+
+      expect(mockKc.setTempPassword).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['unknown', null],
+      ['disabled', makeUser({ isActive: false })],
+      ['archived', makeUser({ deletedAt: NOW, isActive: false })],
+    ])('menolak target %s dengan respons generik', async (_label, target) => {
+      mockFindFirst.mockResolvedValue({ id: 'actor-sa', role: 'SUPER_ADMIN' });
+      mockFindUnique.mockResolvedValue(target);
+      await expect(service.resetPassword('u-001', 'kc-sa')).rejects.toThrow(
+        'Permintaan reset tidak dapat diproses',
+      );
+      expect(mockKc.setTempPassword).not.toHaveBeenCalled();
+    });
+
+    it('menolak self reset, target Super Admin, dan target administratif untuk Tata Usaha', async () => {
+      mockFindFirst.mockResolvedValue({ id: 'u-001', role: 'SUPER_ADMIN' });
+      mockFindUnique.mockResolvedValue(makeUser());
+      await expect(service.resetPassword('u-001', 'kc-sa')).rejects.toThrow(BadRequestException);
+
+      mockFindFirst.mockResolvedValue({ id: 'actor-sa', role: 'SUPER_ADMIN' });
+      mockFindUnique.mockResolvedValue(makeUser({ role: 'SUPER_ADMIN' }));
+      await expect(service.resetPassword('u-001', 'kc-sa')).rejects.toThrow(ForbiddenException);
+
+      mockFindFirst.mockResolvedValue({ id: 'actor-tu', role: 'TATA_USAHA' });
+      mockFindUnique.mockResolvedValue(makeUser({ role: 'TATA_USAHA' }));
+      await expect(service.resetPassword('u-001', 'kc-tu')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('menolak aktor aktif tanpa kewenangan administratif', async () => {
+      mockFindFirst.mockResolvedValue({ id: 'actor-guru', role: 'GURU' });
+
+      await expect(service.resetPassword('u-001', 'kc-guru')).rejects.toThrow(ForbiddenException);
+      expect(mockFindUnique).not.toHaveBeenCalled();
+      expect(mockKc.setTempPassword).not.toHaveBeenCalled();
+    });
+
+    it('fail-closed bila identitas Keycloak berbeda atau pemutusan sesi/reset gagal', async () => {
+      mockFindFirst.mockResolvedValue({ id: 'actor-sa', role: 'SUPER_ADMIN' });
+      mockFindUnique.mockResolvedValue(makeUser());
+      mockKc.findByEmail.mockResolvedValue({ id: 'kc-other', enabled: true });
+      await expect(service.resetPassword('u-001', 'kc-sa')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+
+      mockKc.findByEmail.mockResolvedValue({
+        id: 'kc-001',
+        username: 'guru1@smk.sch.id',
+        enabled: true,
+      });
+      mockKc.logoutUser.mockRejectedValue(new Error('KC unavailable'));
+      await expect(service.resetPassword('u-001', 'kc-sa')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+      expect(mockKc.setTempPassword).not.toHaveBeenCalled();
+    });
+
+    it('membaca ulang authority target setelah actor dan target lock dimiliki', async () => {
+      mockFindFirst
+        .mockResolvedValueOnce({ id: 'actor-tu', role: 'TATA_USAHA' })
+        .mockResolvedValueOnce({ id: 'actor-tu', role: 'TATA_USAHA' });
+      mockFindUnique.mockResolvedValue(makeUser({ role: 'TATA_USAHA' }));
+
+      await expect(service.resetPassword('u-001', 'kc-tu')).rejects.toThrow(ForbiddenException);
+      expect(mockKc.findByEmail).not.toHaveBeenCalled();
+      expect(mockKc.setTempPassword).not.toHaveBeenCalled();
+    });
   });
 
   describe('archiveUser / restoreUser', () => {
@@ -636,6 +853,10 @@ describe('UsersService', () => {
       expect(mockUserStatus.invalidate).toHaveBeenCalledWith('kc-001');
       expect(mockPerms.invalidateUser).toHaveBeenCalledWith('kc-001');
       expect(result).toMatchObject({ keycloakSyncPending: false, sessionTerminationPending: true });
+      expect(mockTransaction).toHaveBeenLastCalledWith(expect.any(Function), {
+        maxWait: 5_000,
+        timeout: 55_000,
+      });
     });
 
     it('menolak self archive, seluruh akun Super Admin, request stale, dan race berulang', async () => {
@@ -672,7 +893,30 @@ describe('UsersService', () => {
       );
     });
 
-    it('restore mengaktifkan Keycloak lebih dulu lalu membuka DB dengan CAS', async () => {
+    it('archive dan restore berhenti bila ownership target sedang dipegang operasi lain', async () => {
+      mockQueryRaw.mockResolvedValue([{ acquired: false }]);
+
+      await expect(service.archiveUser('u-001', lifecycle, 'kc-sa')).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(service.restoreUser('u-001', lifecycle, 'kc-sa')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(mockUpdateMany).not.toHaveBeenCalled();
+      expect(mockKc.setEnabled).not.toHaveBeenCalled();
+    });
+
+    it('menolak mengarsipkan guru yang masih menjadi wali kelas aktif', async () => {
+      mockFindUnique.mockResolvedValue(makeUser({ role: 'GURU' }));
+      mockClassFindFirst.mockResolvedValue({ name: 'XII AKL 1', academicYear: '2026/2027' });
+
+      await expect(service.archiveUser('u-001', lifecycle, 'kc-sa')).rejects.toThrow(
+        'Ganti atau kosongkan wali kelas terlebih dahulu',
+      );
+      expect(mockUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('restore memeriksa kapasitas lalu mengaktifkan Keycloak sebelum membuka DB dengan CAS', async () => {
       mockFindUnique
         .mockResolvedValueOnce(makeUser({ isActive: false, deletedAt: NOW }))
         .mockResolvedValueOnce(makeUser({ isActive: true, deletedAt: null }));
@@ -681,6 +925,10 @@ describe('UsersService', () => {
 
       const result = await service.restoreUser('u-001', lifecycle, 'kc-sa');
 
+      expect(mockClasses.assertOperationalSeatForUserActivation).toHaveBeenCalledWith(
+        expect.anything(),
+        'u-001',
+      );
       expect(mockKc.setEnabled).toHaveBeenCalledWith('kc-001', true);
       expect(mockUpdateMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -689,6 +937,10 @@ describe('UsersService', () => {
         }),
       );
       expect(result).toMatchObject({ isActive: true, deletedAt: null, keycloakSyncPending: false });
+      expect(mockTransaction).toHaveBeenLastCalledWith(expect.any(Function), {
+        maxWait: 5_000,
+        timeout: 55_000,
+      });
     });
 
     it('restore tetap archived bila Keycloak gagal dan mengompensasi CAS stale', async () => {
@@ -830,6 +1082,7 @@ describe('UsersController', () => {
   const mockUpdateActive = jest.fn();
   const mockArchiveUser = jest.fn();
   const mockRestoreUser = jest.fn();
+  const mockResetPassword = jest.fn();
   const mockFindGrouped = jest.fn();
   const mockGetEffectivePermissions = jest.fn();
 
@@ -841,6 +1094,7 @@ describe('UsersController', () => {
       mockUpdateActive,
       mockArchiveUser,
       mockRestoreUser,
+      mockResetPassword,
       mockFindGrouped,
       mockGetEffectivePermissions,
     ].forEach((m) => m.mockReset());
@@ -865,6 +1119,7 @@ describe('UsersController', () => {
             updateActive: mockUpdateActive,
             archiveUser: mockArchiveUser,
             restoreUser: mockRestoreUser,
+            resetPassword: mockResetPassword,
             findGrouped: mockFindGrouped,
             getEffectivePermissions: mockGetEffectivePermissions,
           },
@@ -957,6 +1212,38 @@ describe('UsersController', () => {
 
       expect(mockArchiveUser).toHaveBeenCalledWith('u-001', lifecycle, 'kc-sa');
       expect(mockRestoreUser).toHaveBeenCalledWith('u-001', lifecycle, 'kc-sa');
+    });
+  });
+
+  describe('password reset', () => {
+    it('mengikat permission, rate limit, dan audit tanpa request body', () => {
+      const handler = UsersController.prototype.resetPassword;
+      expect(Reflect.getMetadata(REQUIRED_PERMISSION_KEY, handler)).toBe('user.password.reset');
+      expect(Reflect.getMetadata(`${THROTTLER_LIMIT}default`, handler)).toBe(5);
+      expect(Reflect.getMetadata(`${THROTTLER_TTL}default`, handler)).toBe(60_000);
+      expect(Reflect.getMetadata(AUDIT_KEY, handler)).toEqual({
+        action: 'user.password.reset',
+        resourceType: 'user',
+      });
+    });
+
+    it('meneruskan actor dan tidak menerima password dari request', async () => {
+      mockResetPassword.mockResolvedValue({
+        username: 'guru1@smk.sch.id',
+        temporaryPassword: 'Temporary1!',
+        requiresPasswordChange: true,
+      });
+
+      const result = await controller.resetPassword(
+        '00000000-0000-0000-0000-000000000001',
+        SA_USER,
+      );
+
+      expect(mockResetPassword).toHaveBeenCalledWith(
+        '00000000-0000-0000-0000-000000000001',
+        'kc-sa',
+      );
+      expect(result.requiresPasswordChange).toBe(true);
     });
   });
 

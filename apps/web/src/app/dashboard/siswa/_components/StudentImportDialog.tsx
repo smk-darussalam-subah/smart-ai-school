@@ -32,6 +32,7 @@ import {
   getRetryableStudentImportRows,
   prepareStudentRows,
   STUDENT_CSV_COLUMNS,
+  STUDENT_IMPORT_COLUMNS,
   toStudentProvisionRow,
   type ImportClassOption,
   type StudentParsedRow,
@@ -182,7 +183,7 @@ export default function StudentImportDialog({
     setEditingIndex(null);
     setConfirmOpen(false);
     setError('');
-    const result = await parseImportFile(file, STUDENT_CSV_COLUMNS, 'Siswa');
+    const result = await parseImportFile(file, STUDENT_IMPORT_COLUMNS, 'Siswa');
     if (current !== generation.current) return;
     setDataCount(result.dataCount ?? result.rows.length);
     setParsed(prepareStudentRows(result.rows, classes));
@@ -264,7 +265,7 @@ export default function StudentImportDialog({
 
   const downloadTemplate = async () => {
     try {
-      await downloadImportTemplate(STUDENT_CSV_COLUMNS, 'Siswa', 'template-import-siswa.xlsx');
+      await downloadImportTemplate(STUDENT_IMPORT_COLUMNS, 'Siswa', 'template-import-siswa.xlsx');
     } catch {
       setError('Template XLSX gagal dibuat. Coba unduh ulang.');
     }

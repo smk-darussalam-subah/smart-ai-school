@@ -2,6 +2,7 @@ import {
   IMPORT_MAX_ROWS,
   isIsoCalendarDate,
   parseImportCsv,
+  type ImportColumnDefinition,
   type ImportRow,
 } from '@/lib/operational-import';
 
@@ -20,6 +21,20 @@ export const STUDENT_CSV_COLUMNS = [
   'reuseWaliByPhone',
   'consentConfirmed',
 ] as const;
+
+export const STUDENT_IMPORT_COLUMNS: readonly ImportColumnDefinition[] = STUDENT_CSV_COLUMNS.map(
+  (key) => ({
+    key,
+    kind:
+      key === 'nis' || key === 'teleponWali'
+        ? 'identifier'
+        : key === 'tanggalMasuk'
+          ? 'date'
+          : key === 'reuseWaliByPhone' || key === 'consentConfirmed'
+            ? 'boolean'
+            : 'text',
+  }),
+);
 
 export const STUDENT_TEMPLATE_ROWS: readonly (readonly string[])[] = [];
 

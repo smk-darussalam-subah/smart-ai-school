@@ -15,6 +15,10 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { logger } from '@smk/logger';
+import {
+  KEYCLOAK_ADMIN_REQUEST_TIMEOUT_MS,
+  KEYCLOAK_ADMIN_RETRY_ATTEMPT,
+} from './keycloak-admin.constants';
 import { isPositionCode } from '@smk/auth';
 import {
   KcUserRepresentation,
@@ -53,13 +57,20 @@ export class KeycloakAdminService {
     params.append('client_id', CLIENT_ID);
     params.append('client_secret', CLIENT_SECRET);
 
-    const res = await this.rawFetch(TOKEN_URL, {
+    const data = await this.rawJson<KcTokenResponse>(TOKEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString(),
     });
-
-    const data = (await res.json()) as KcTokenResponse;
+    if (
+      typeof data.access_token !== 'string' ||
+      data.access_token.length === 0 ||
+      typeof data.expires_in !== 'number' ||
+      !Number.isFinite(data.expires_in) ||
+      data.expires_in <= 0
+    ) {
+      throw new ServiceUnavailableException('Respons token Keycloak tidak valid');
+    }
     this.tokenCache = {
       accessToken: data.access_token,
       expiresAt: Date.now() + (data.expires_in - 30) * 1000,
@@ -78,7 +89,7 @@ export class KeycloakAdminService {
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10_000);
+      const timeout = setTimeout(() => controller.abort(), KEYCLOAK_ADMIN_REQUEST_TIMEOUT_MS);
 
       try {
         const token = await this.getAccessToken();
@@ -145,18 +156,23 @@ export class KeycloakAdminService {
     throw new ServiceUnavailableException('Keycloak Admin API tidak tersedia — operasi dibatalkan');
   }
 
-  private async rawFetch(url: string, opts: RequestInit): Promise<Response> {
+  private async rawJson<T>(url: string, opts: RequestInit): Promise<T> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10_000);
+    const timeout = setTimeout(() => controller.abort(), KEYCLOAK_ADMIN_REQUEST_TIMEOUT_MS);
 
     try {
       const res = await fetch(url, { ...opts, signal: controller.signal });
       if (!res.ok) {
         throw new ServiceUnavailableException(`Keycloak Auth API error ${res.status}`);
       }
-      return res;
+      return (await res.json()) as T;
     } catch (err: unknown) {
       if (err instanceof ServiceUnavailableException) throw err;
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new ServiceUnavailableException(
+          'Keycloak Auth API tidak tersedia — operasi dibatalkan',
+        );
+      }
       throw new ServiceUnavailableException('Keycloak Auth API tidak tersedia');
     } finally {
       clearTimeout(timeout);
@@ -225,7 +241,7 @@ export class KeycloakAdminService {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'password', value: password, temporary: true }),
-      retryAttempt: 1,
+      retryAttempt: KEYCLOAK_ADMIN_RETRY_ATTEMPT,
     });
   }
 
@@ -256,14 +272,14 @@ export class KeycloakAdminService {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
-      retryAttempt: 1,
+      retryAttempt: KEYCLOAK_ADMIN_RETRY_ATTEMPT,
     });
   }
 
   async logoutUser(kcId: string): Promise<void> {
     await this.request(`${ADMIN_URL}/users/${kcId}/logout`, {
       method: 'POST',
-      retryAttempt: 1,
+      retryAttempt: KEYCLOAK_ADMIN_RETRY_ATTEMPT,
     });
   }
 
@@ -278,7 +294,7 @@ export class KeycloakAdminService {
   async findByEmail(email: string): Promise<KcUserRepresentation | null> {
     const { data } = await this.request<KcUserRepresentation[]>(
       `${ADMIN_URL}/users?email=${encodeURIComponent(email)}&exact=true`,
-      { method: 'GET', retryAttempt: 1 },
+      { method: 'GET', retryAttempt: KEYCLOAK_ADMIN_RETRY_ATTEMPT },
     );
     return (data as unknown as KcUserRepresentation[])?.[0] ?? null;
   }
