@@ -23,7 +23,8 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "verify:dependency-graph": "node scripts/verify-dependency-graph.cjs",
     "test:smoke:staging": "ts-node --project apps/api/tsconfig.json scripts/smoke-test-staging.ts",
-    "class:reconciliation:plan": "ts-node --project apps/api/tsconfig.json scripts/plan-class-reconciliation.ts"
+    "class:reconciliation:plan": "ts-node --project apps/api/tsconfig.json scripts/plan-class-reconciliation.ts",
+    "class:reconciliation:apply": "ts-node --project apps/api/tsconfig.json scripts/apply-class-reconciliation.ts"
   },
   "devDependencies": {
     "turbo": "^2.0.0",
