@@ -1,0 +1,6 @@
+dd2f5631d320254f3a5359d31d77119802cac78dfd5054c47ef6a5d0eba12a9b  apps/api/src/__tests__/class-reconciliation-apply-postgres.spec.ts
+8f16773487a57e4bcb372a4ab71d3ab8f8aabfb62cb095041c171b7044fc687d  apps/api/src/__tests__/class-reconciliation-apply.spec.ts
+b0e00786dadc9d2c11ff749779ce154adbaed3458b70cb2a716d90d65ee48f9d  apps/api/src/__tests__/class-reconciliation-cli.spec.ts
+19a9f4acb654577b5bf560440b9e08216651f944144e43664cca4724168fabbb  apps/api/src/classes/class-reconciliation-apply.ts
+9a70461a74092dae835dd80db98a7501e3b6f6aaceb93cf85abf4ca788c164f3  package.json
+55260d926acf18fec69c5e4008ec19f1cf44a86acd6cccd2018ffc97a434cd09  scripts/apply-class-reconciliation.ts
