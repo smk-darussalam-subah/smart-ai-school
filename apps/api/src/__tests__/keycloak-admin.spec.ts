@@ -8,8 +8,13 @@ jest.mock('@smk/logger', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ServiceUnavailableException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+  ConflictException,
+} from '@nestjs/common';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
+import { KEYCLOAK_ADMIN_REQUEST_TIMEOUT_MS } from '../keycloak-admin/keycloak-admin.constants';
 import { logger } from '@smk/logger';
 
 const BASE_URL = 'http://localhost:8080';
@@ -46,7 +51,8 @@ function mockTokenRes() {
 
 function mockUser(id: string, username: string) {
   return {
-    id, username,
+    id,
+    username,
     email: `${username}@test.com`,
     firstName: 'Test',
     lastName: 'User',
@@ -83,6 +89,10 @@ describe('KeycloakAdminService', () => {
     service = await buildService();
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   afterAll(() => {
     global.fetch = originalFetch;
   });
@@ -114,13 +124,50 @@ describe('KeycloakAdminService', () => {
     expect(tokenCount).toBe(1);
   });
 
+  it('deadline token tetap aktif sampai body JSON selesai dibaca', async () => {
+    jest.useFakeTimers();
+    fetchMock().mockImplementation((_url: string, opts?: RequestInit) => {
+      const signal = opts?.signal;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          new Promise<never>((_resolve, reject) => {
+            signal?.addEventListener(
+              'abort',
+              () => {
+                const error = new Error('aborted');
+                error.name = 'AbortError';
+                reject(error);
+              },
+              { once: true },
+            );
+          }),
+      } as unknown as Response);
+    });
+
+    const request = service.findByEmail('deadline@example.invalid');
+    const rejection = expect(request).rejects.toThrow(ServiceUnavailableException);
+    await jest.advanceTimersByTimeAsync(KEYCLOAK_ADMIN_REQUEST_TIMEOUT_MS);
+
+    await rejection;
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+  });
+
+  it('menolak payload token yang tidak lengkap sebelum request admin', async () => {
+    fetchMock().mockResolvedValueOnce(jsonResponse({ access_token: '', expires_in: 0 }));
+
+    await expect(service.findByEmail('invalid-token@example.invalid')).rejects.toThrow(
+      'Respons token Keycloak tidak valid',
+    );
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+  });
+
   // ── createUser ──────────────────────────────────────────────────────────────
 
   it('createUser → parse header Location → return kcId', async () => {
     respondToToken();
-    fetchMock().mockResolvedValueOnce(
-      emptyResponse(201, `${ADMIN_URL}/users/kc-new-user-123`),
-    );
+    fetchMock().mockResolvedValueOnce(emptyResponse(201, `${ADMIN_URL}/users/kc-new-user-123`));
 
     const kcId = await service.createUser({
       username: 'testuser',
@@ -145,7 +192,11 @@ describe('KeycloakAdminService', () => {
 
     await expect(
       service.createUser({
-        username: 'test', email: 't@t.com', firstName: 'A', lastName: 'B', enabled: true,
+        username: 'test',
+        email: 't@t.com',
+        firstName: 'A',
+        lastName: 'B',
+        enabled: true,
       }),
     ).rejects.toThrow(ServiceUnavailableException);
 
@@ -164,7 +215,11 @@ describe('KeycloakAdminService', () => {
 
     await expect(
       service.createUser({
-        username: 'dup', email: 'dup@test.com', firstName: 'A', lastName: 'B', enabled: true,
+        username: 'dup',
+        email: 'dup@test.com',
+        firstName: 'A',
+        lastName: 'B',
+        enabled: true,
       }),
     ).rejects.toThrow(ConflictException);
 
@@ -222,14 +277,54 @@ describe('KeycloakAdminService', () => {
     expect(mappingPOSTCalled).toBe(true);
   });
 
+  it('cold-cache role replacement uses four independently retried admin operations', async () => {
+    let tokenFetches = 0;
+    let adminAttempts = 0;
+
+    fetchMock().mockImplementation((url: string, opts?: RequestInit) => {
+      if (url === TOKEN_URL) {
+        tokenFetches++;
+        return Promise.resolve(jsonResponse(mockTokenRes()));
+      }
+
+      adminAttempts++;
+      if (adminAttempts % 2 === 1) {
+        return Promise.resolve(textResponse('Unauthorized', 401));
+      }
+      if (url === `${ADMIN_URL}/roles/TATA_USAHA`) {
+        return Promise.resolve(jsonResponse(mockRole('TATA_USAHA')));
+      }
+      if (url === `${ADMIN_URL}/roles/GURU`) {
+        return Promise.resolve(jsonResponse(mockRole('GURU')));
+      }
+      if (
+        url === `${ADMIN_URL}/users/kc-1/role-mappings/realm` &&
+        (opts?.method === 'POST' || opts?.method === 'DELETE')
+      ) {
+        return Promise.resolve(emptyResponse(204));
+      }
+      throw new Error(`Unexpected Keycloak request: ${opts?.method ?? 'GET'} ${url}`);
+    });
+
+    await service.assignRealmRole('kc-1', 'TATA_USAHA');
+    await service.removeRealmRole('kc-1', 'GURU');
+
+    expect(adminAttempts).toBe(8);
+    expect(tokenFetches).toBe(5);
+  });
+
   it('assignRealmRole menolak position code sebelum memanggil Keycloak', async () => {
-    await expect(service.assignRealmRole('kc-1', 'WAKA_KURIKULUM')).rejects.toThrow(BadRequestException);
+    await expect(service.assignRealmRole('kc-1', 'WAKA_KURIKULUM')).rejects.toThrow(
+      BadRequestException,
+    );
 
     expect(fetchMock()).not.toHaveBeenCalled();
   });
 
   it('createRealmRoleIfNotExists menolak KEPALA_SEKOLAH sebagai realm role', async () => {
-    await expect(service.createRealmRoleIfNotExists('KEPALA_SEKOLAH')).rejects.toThrow(BadRequestException);
+    await expect(service.createRealmRoleIfNotExists('KEPALA_SEKOLAH')).rejects.toThrow(
+      BadRequestException,
+    );
 
     expect(fetchMock()).not.toHaveBeenCalled();
   });
@@ -246,9 +341,9 @@ describe('KeycloakAdminService', () => {
       return Promise.resolve(emptyResponse(204));
     });
 
-    await expect(
-      service.setTempPassword('kc-x', 'SuperSecret123!'),
-    ).rejects.toThrow(ServiceUnavailableException);
+    await expect(service.setTempPassword('kc-x', 'SuperSecret123!')).rejects.toThrow(
+      ServiceUnavailableException,
+    );
 
     const allCalls = errorSpy.mock.calls.flatMap((c) => c.map(String));
     const combined = allCalls.join(' ');

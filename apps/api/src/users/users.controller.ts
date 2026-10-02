@@ -9,6 +9,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthUser, UserRole } from '@smk/auth';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -144,6 +145,14 @@ export class UsersController {
     @CurrentUser() actor: AuthUser,
   ) {
     return this.usersService.updateActive(id, dto.isActive, actor.keycloakId);
+  }
+
+  @Patch(':id/password-reset')
+  @RequirePermission('user.password.reset')
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @Audit({ action: 'user.password.reset', resourceType: 'user' })
+  async resetPassword(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthUser) {
+    return this.usersService.resetPassword(id, actor.keycloakId);
   }
 
   @Post(':id/archive')

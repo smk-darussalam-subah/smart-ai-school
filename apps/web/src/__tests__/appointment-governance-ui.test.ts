@@ -76,10 +76,11 @@ function item(overrides: Partial<AppointmentListItem> = {}): AppointmentListItem
 }
 
 describe('appointment governance operational UI contracts', () => {
-  const strukturClientSource = () => fs.readFileSync(
-    path.join(__dirname, '../app/dashboard/struktur-organisasi/_components/StrukturClient.tsx'),
-    'utf8',
-  );
+  const strukturClientSource = () =>
+    fs.readFileSync(
+      path.join(__dirname, '../app/dashboard/struktur-organisasi/_components/StrukturClient.tsx'),
+      'utf8',
+    );
 
   it('uses human action labels for approval paths', () => {
     expect(ACTION_LABELS.APPROVE).toBe('Setujui');
@@ -87,56 +88,89 @@ describe('appointment governance operational UI contracts', () => {
   });
 
   it('requires major only for major-scoped positions', () => {
-    expect(validateAppointmentDraft(draft(), { scopeType: 'MAJOR' }))
-      .toContain('Pilih jurusan untuk jabatan ini.');
-    expect(validateAppointmentDraft(draft({ majorId: 'major-1' }), { scopeType: 'MAJOR' }))
-      .not.toContain('Pilih jurusan untuk jabatan ini.');
+    expect(validateAppointmentDraft(draft(), { scopeType: 'MAJOR' })).toContain(
+      'Pilih jurusan untuk jabatan ini.',
+    );
+    expect(
+      validateAppointmentDraft(draft({ majorId: 'major-1' }), { scopeType: 'MAJOR' }),
+    ).not.toContain('Pilih jurusan untuk jabatan ini.');
   });
 
   it('maps major-scoped payload without replacing staffId with userId', () => {
-    expect(buildAppointmentCreatePayload(draft({ majorId: 'major-1' }), { scopeType: 'MAJOR' }))
-      .toMatchObject({ staffId: 'staff-1', majorId: 'major-1' });
+    expect(
+      buildAppointmentCreatePayload(draft({ majorId: 'major-1' }), { scopeType: 'MAJOR' }),
+    ).toMatchObject({ staffId: 'staff-1', majorId: 'major-1' });
   });
 
   it('approval inbox only shows records actionable for the actor', () => {
-    expect(actionableAppointments([item(), item({ id: 'read-only', allowedActions: ['VIEW_HISTORY'] })]))
-      .toHaveLength(1);
+    expect(
+      actionableAppointments([item(), item({ id: 'read-only', allowedActions: ['VIEW_HISTORY'] })]),
+    ).toHaveLength(1);
   });
 
   it('prefills replacement drafts from the source appointment without selecting a staff member', () => {
-    expect(buildAppointmentReplacementDraft(item({ status: 'ACTIVE' }), 'CREATE_SUCCESSOR', 'fallback-year'))
-      .toMatchObject({
-        academicYearId: 'fallback-year',
-        positionId: 'pos-1',
-        majorId: '',
-        staffId: '',
-        kind: 'DEFINITIVE',
-        replacesAppointmentId: 'appt-1',
-      });
+    expect(
+      buildAppointmentReplacementDraft(
+        item({ status: 'ACTIVE' }),
+        'CREATE_SUCCESSOR',
+        'fallback-year',
+      ),
+    ).toMatchObject({
+      academicYearId: 'fallback-year',
+      positionId: 'pos-1',
+      majorId: '',
+      staffId: '',
+      kind: 'DEFINITIVE',
+      replacesAppointmentId: 'appt-1',
+    });
   });
 
   it('defaults successor preparation to the next available academic year', () => {
-    expect(selectSuccessorAcademicYearId([
-      { id: 'ay-2026', code: '2026/2027', startDate: '2026-07-01', endDate: '2027-06-30', isActive: true },
-      { id: 'ay-2027', code: '2027/2028', startDate: '2027-07-01', endDate: '2028-06-30', isActive: false },
-    ], 'ay-2026', 'ay-2026')).toBe('ay-2027');
+    expect(
+      selectSuccessorAcademicYearId(
+        [
+          {
+            id: 'ay-2026',
+            code: '2026/2027',
+            startDate: '2026-07-01',
+            endDate: '2027-06-30',
+            isActive: true,
+          },
+          {
+            id: 'ay-2027',
+            code: '2027/2028',
+            startDate: '2027-07-01',
+            endDate: '2028-06-30',
+            isActive: false,
+          },
+        ],
+        'ay-2026',
+        'ay-2026',
+      ),
+    ).toBe('ay-2027');
   });
 
   it('prefills PLT drafts with the suspended appointment and return date when available', () => {
-    expect(buildAppointmentReplacementDraft(item({ status: 'SUSPENDED', suspensionUntil: '2026-09-30' }), 'CREATE_PLT', 'fallback-year'))
-      .toMatchObject({
-        kind: 'PLT',
-        replacesAppointmentId: 'appt-1',
-        effectiveUntil: '2026-09-30',
-      });
+    expect(
+      buildAppointmentReplacementDraft(
+        item({ status: 'SUSPENDED', suspensionUntil: '2026-09-30' }),
+        'CREATE_PLT',
+        'fallback-year',
+      ),
+    ).toMatchObject({
+      kind: 'PLT',
+      replacesAppointmentId: 'appt-1',
+      effectiveUntil: '2026-09-30',
+    });
   });
 
   it('keeps PLT replacement in the suspended appointment year', () => {
-    expect(buildAppointmentReplacementDraft(item({ status: 'SUSPENDED' }), 'CREATE_PLT', 'ay-next'))
-      .toMatchObject({
-        academicYearId: 'ay-1',
-        kind: 'PLT',
-      });
+    expect(
+      buildAppointmentReplacementDraft(item({ status: 'SUSPENDED' }), 'CREATE_PLT', 'ay-next'),
+    ).toMatchObject({
+      academicYearId: 'ay-1',
+      kind: 'PLT',
+    });
   });
 
   it('keeps Radix dialogs described', () => {
@@ -144,6 +178,26 @@ describe('appointment governance operational UI contracts', () => {
 
     expect(source).toContain('DialogDescription');
     expect(source).toContain('<Label htmlFor={id}>{label}</Label>');
+  });
+
+  it.each([
+    [0, '0/2'],
+    [1, '1/2'],
+    [2, '2/2'],
+  ])('renders Guru BK occupancy %s of two holders', (activeCount, expected) => {
+    const guruBk = item({
+      position: {
+        id: 'pos-bk',
+        code: 'GURU_BK',
+        name: 'Guru Bimbingan Konseling',
+        category: 'FUNGSIONAL',
+        scopeType: 'NONE',
+        maxActiveHolders: 2,
+      },
+      occupancy: { activeCount, preparedCount: 0, capacity: 2 },
+    });
+    expect(`${guruBk.occupancy.activeCount}/${guruBk.position.maxActiveHolders}`).toBe(expected);
+    expect(strukturClientSource()).toContain('{active.length}/{position.maxActiveHolders}');
   });
 
   it('resets lifecycle dialog form state behaviorally', () => {

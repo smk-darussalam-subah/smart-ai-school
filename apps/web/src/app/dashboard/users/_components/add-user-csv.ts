@@ -22,7 +22,17 @@ export const TEMPLATE_BODY = '';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-import { isIsoCalendarDate, parseImportCsv, type ImportRow } from '@/lib/operational-import';
+import {
+  isIsoCalendarDate,
+  parseImportCsv,
+  type ImportColumnDefinition,
+  type ImportRow,
+} from '@/lib/operational-import';
+
+export const USER_IMPORT_COLUMNS: readonly ImportColumnDefinition[] = CSV_COLUMNS.map((key) => ({
+  key,
+  kind: key === 'phone' || key === 'niy' ? 'identifier' : key === 'birthDate' ? 'date' : 'text',
+}));
 
 export interface UserParsedRow extends ImportRow {
   error: string | null;

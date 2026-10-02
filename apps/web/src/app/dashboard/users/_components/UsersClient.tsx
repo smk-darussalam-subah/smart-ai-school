@@ -2,7 +2,15 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Archive, Briefcase, Loader2, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
+import {
+  Archive,
+  Briefcase,
+  KeyRound,
+  Loader2,
+  RefreshCw,
+  RotateCcw,
+  ShieldCheck,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -49,9 +57,12 @@ import {
   fetchPermissionCatalog,
   archiveUserAction,
   restoreUserAction,
+  resetUserPasswordAction,
+  type PasswordResetResult,
 } from '../actions';
 import AddUserDialog from './AddUserDialog';
 import UserAccessDialog from './UserAccessDialog';
+import { canDismissPasswordReset, canOfferPasswordReset } from './password-reset-policy';
 import type { PermissionItem } from '../page';
 import { USER_IDENTITY_ROLE_OPTIONS, USERS_SEARCH_DEBOUNCE_MS } from '../users-ui';
 
@@ -107,6 +118,7 @@ interface Props {
   isSuperAdmin: boolean;
   canManageUsers: boolean;
   canArchiveUsers: boolean;
+  canResetPasswords: boolean;
 }
 
 function syncMessage(data: unknown, success: string): string {
@@ -127,6 +139,7 @@ export default function UsersClient({
   isSuperAdmin,
   canManageUsers,
   canArchiveUsers,
+  canResetPasswords,
 }: Props) {
   const router = useRouter();
   const { setParams, isPending } = useQueryState();
@@ -151,6 +164,11 @@ export default function UsersClient({
   const [lifecycleReason, setLifecycleReason] = useState('');
   const [lifecycleError, setLifecycleError] = useState('');
   const lifecycleInFlightRef = useRef(false);
+  const resetRequestSeq = useRef(0);
+  const [resetTarget, setResetTarget] = useState<UserItem | null>(null);
+  const [resetCredential, setResetCredential] = useState<PasswordResetResult | null>(null);
+  const [resetError, setResetError] = useState('');
+  const resetBusy = Boolean(resetTarget && busyAction === `password:${resetTarget.id}`);
 
   const applySearch = (value: string) => {
     setSearch(value);
@@ -322,6 +340,36 @@ export default function UsersClient({
       lifecycleInFlightRef.current = false;
       setBusyAction(null);
     }
+  };
+
+  const submitPasswordReset = async () => {
+    if (!resetTarget || busyAction) return;
+    const request = ++resetRequestSeq.current;
+    setBusyAction(`password:${resetTarget.id}`);
+    setResetError('');
+    try {
+      const result = await resetUserPasswordAction(resetTarget.id);
+      if (request !== resetRequestSeq.current) return;
+      if (result.error || !result.data) {
+        setResetError(result.error ?? 'Permintaan reset belum dapat diproses.');
+        return;
+      }
+      setResetCredential(result.data);
+    } catch {
+      if (request === resetRequestSeq.current) {
+        setResetError('Permintaan reset belum dapat diproses.');
+      }
+    } finally {
+      if (request === resetRequestSeq.current) setBusyAction(null);
+    }
+  };
+
+  const closePasswordReset = () => {
+    if (!canDismissPasswordReset(resetBusy)) return;
+    resetRequestSeq.current++;
+    setResetTarget(null);
+    setResetCredential(null);
+    setResetError('');
   };
 
   const activeConfirm = confirmTarget?.kind === 'active' ? confirmTarget : null;
@@ -540,6 +588,27 @@ export default function UsersClient({
                                 {user.isActive ? 'Nonaktifkan' : 'Aktifkan'}
                               </Button>
                             )}
+                            {canOfferPasswordReset({
+                              canResetPasswords,
+                              isSuperAdmin,
+                              targetRole: user.role,
+                              targetIsActive: user.isActive,
+                              targetIsArchived: isArchived,
+                            }) ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="min-h-11"
+                                disabled={busyAction === `password:${user.id}`}
+                                onClick={() => {
+                                  setResetTarget(user);
+                                  setResetCredential(null);
+                                  setResetError('');
+                                }}
+                              >
+                                <KeyRound className="mr-1.5 h-4 w-4" /> Reset sandi
+                              </Button>
+                            ) : null}
                             {canArchiveUsers && !isArchived && user.role !== 'SUPER_ADMIN' ? (
                               <Button
                                 size="sm"
@@ -581,6 +650,89 @@ export default function UsersClient({
       </Card>
 
       <UserAccessDialog userId={accessCheckUser} onClose={() => setAccessCheckUser(null)} />
+
+      <Dialog
+        open={resetTarget !== null}
+        onOpenChange={(open: boolean) => {
+          if (!open && canDismissPasswordReset(resetBusy)) closePasswordReset();
+        }}
+      >
+        <DialogContent
+          className="max-w-md"
+          closeDisabled={resetBusy}
+          onEscapeKeyDown={(event: Event) => {
+            if (resetBusy) event.preventDefault();
+          }}
+          onPointerDownOutside={(event: Event) => {
+            if (resetBusy) event.preventDefault();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {resetCredential ? 'Kata sandi sementara siap' : 'Reset kata sandi pengguna?'}
+            </DialogTitle>
+            <DialogDescription>
+              {resetCredential
+                ? 'Tampilkan hanya kepada pengguna yang tepat. Nilai ini tidak akan ditampilkan kembali setelah dialog ditutup.'
+                : `${resetTarget?.fullName ?? 'Pengguna'} akan keluar dari seluruh sesi dan wajib mengganti kata sandi saat masuk berikutnya.`}
+            </DialogDescription>
+          </DialogHeader>
+          {resetCredential ? (
+            <div className="space-y-3">
+              <div className="rounded-lg border bg-slate-50 p-3">
+                <p className="text-xs text-slate-500">Nama pengguna</p>
+                <p className="break-all font-medium">{resetCredential.username}</p>
+              </div>
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                <p className="text-xs text-amber-800">Kata sandi sementara sekali pakai</p>
+                <p
+                  className="mt-1 break-all font-mono text-lg font-semibold text-slate-950"
+                  aria-label="Kata sandi sementara"
+                >
+                  {resetCredential.temporaryPassword}
+                </p>
+              </div>
+              <p className="text-sm text-slate-600">
+                Jangan kirim melalui grup, tangkapan layar, atau kanal publik.
+              </p>
+            </div>
+          ) : null}
+          {resetError ? (
+            <p
+              role="alert"
+              className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
+            >
+              {resetError}
+            </p>
+          ) : null}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11"
+              onClick={closePasswordReset}
+              disabled={resetBusy}
+            >
+              {resetCredential ? 'Selesai dan hapus tampilan' : 'Batal'}
+            </Button>
+            {!resetCredential ? (
+              <Button
+                type="button"
+                className="min-h-11"
+                onClick={() => void submitPasswordReset()}
+                disabled={Boolean(busyAction)}
+              >
+                {resetBusy ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <KeyRound className="mr-2 h-4 w-4" />
+                )}
+                Terbitkan kata sandi sementara
+              </Button>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={lifecycleTarget !== null}

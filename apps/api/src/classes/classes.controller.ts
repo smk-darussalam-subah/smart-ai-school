@@ -40,6 +40,12 @@ export class ClassesController {
     return this.service.findAll(parsed.data);
   }
 
+  @Roles('SUPER_ADMIN', 'TATA_USAHA')
+  @Get('homeroom-candidates')
+  findHomeroomCandidates() {
+    return this.service.findHomeroomCandidates();
+  }
+
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'WAKA_KESISWAAN')
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
