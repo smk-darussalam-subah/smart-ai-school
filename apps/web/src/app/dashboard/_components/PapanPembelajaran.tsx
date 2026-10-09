@@ -1,7 +1,7 @@
 'use client';
 
 // =============================================================================
-// PapanPembelajaran (2L-B2, Fase 1) — matriks rombel × JP (1–8) untuk hari ini.
+// PapanPembelajaran (2L-B2, Fase 1) — matriks rombel × JP sesuai pola bel hari ini.
 // Sumber data NYATA: GET /schedules?dayOfWeek=<hari ini> (jadwal terencana).
 //
 // Fase 1 menampilkan: ada jadwal (emerald) vs tidak ada jadwal (abu) + detail
@@ -12,9 +12,10 @@
 
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
+import { useBellPattern } from '@/components/providers/BellPatternProvider';
 import { Card } from '@/components/ui/card';
 import { LayoutGrid } from 'lucide-react';
-import { JP_SLOTS, JP_COUNT, jpStartLabel, wibNow, currentJp } from '@/lib/bell-times';
+import { jpStartLabel, wibNow, currentJp } from '@/lib/bell-times';
 
 export interface PapanCell {
   subject: string;
@@ -45,14 +46,16 @@ function mpAbbrev(mp: string): string {
 }
 
 export default function PapanPembelajaran({ rows, dayLabel, onCellClick, absenPerJp, onAbsenClick }: { rows: PapanRow[]; dayLabel: string; onCellClick?: (row: PapanRow, jp: number, cell: PapanCell) => void; absenPerJp?: (number | null)[]; onAbsenClick?: (jp: number) => void }) {
+  const JP_SLOTS = useBellPattern().slots;
+  const JP_COUNT = JP_SLOTS.length;
   // JP berjalan dihitung di klien (WIB) agar konsisten & tak memicu mismatch SSR.
   const [nowJp, setNowJp] = useState(0);
   useEffect(() => {
-    const tick = () => setNowJp(currentJp(wibNow().minutes));
+    const tick = () => setNowJp(currentJp(wibNow().minutes, JP_SLOTS));
     tick();
     const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
-  }, []);
+  }, [JP_SLOTS]);
 
   return (
     <Card className="p-4 h-full flex flex-col">
@@ -89,7 +92,7 @@ export default function PapanPembelajaran({ rows, dayLabel, onCellClick, absenPe
                   )}
                 >
                   <div className="text-[10px] font-semibold leading-none">JP{s.jp}</div>
-                  <div className="text-[9px] leading-none mt-0.5">{jpStartLabel(s.jp)}</div>
+                  <div className="text-[9px] leading-none mt-0.5">{jpStartLabel(s.jp, JP_SLOTS)}</div>
                 </div>
               ))}
             </div>
@@ -105,7 +108,7 @@ export default function PapanPembelajaran({ rows, dayLabel, onCellClick, absenPe
                     const cell = row.cells[i] ?? null;
                     const jp = i + 1;
                     const tipText = cell
-                      ? `JP${jp} (${jpStartLabel(jp)}) · ${cell.subject} · ${cell.teacher}${cell.room ? ` · ${cell.room}` : ''}`
+                      ? `JP${jp} (${jpStartLabel(jp, JP_SLOTS)}) · ${cell.subject} · ${cell.teacher}${cell.room ? ` · ${cell.room}` : ''}`
                       : `JP${jp} · Tidak ada jadwal`;
                     const clickable = cell && onCellClick;
                     return (
@@ -130,7 +133,7 @@ export default function PapanPembelajaran({ rows, dayLabel, onCellClick, absenPe
                         <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] leading-tight text-white opacity-0 shadow-lg transition-opacity duration-100 group-hover:opacity-100">
                           {cell ? (
                             <>
-                              <div className="font-semibold">JP{jp} · {jpStartLabel(jp)}</div>
+                              <div className="font-semibold">JP{jp} · {jpStartLabel(jp, JP_SLOTS)}</div>
                               <div className="font-bold">{cell.subject}</div>
                               <div className="text-slate-300">{cell.teacher}{cell.room ? ` · ${cell.room}` : ''}</div>
                             </>

@@ -20,6 +20,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { AuthUser } from '@smk/auth';
+import { Audit } from '../audit-log/decorators/audit.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
@@ -54,9 +55,10 @@ export class ScheduleController {
   @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
   @RequirePermission('academic.schedule.manage')
   @Post()
+  @Audit({ action: 'schedule.create', resourceType: 'Schedule', captureBody: false })
   @HttpCode(HttpStatus.CREATED)
-  create(@Body(ZodPipe(CreateScheduleSchema)) dto: CreateScheduleDto) {
-    return this.service.create(dto);
+  create(@Body(ZodPipe(CreateScheduleSchema)) dto: CreateScheduleDto, @CurrentUser() user: AuthUser) {
+    return this.service.create(dto, user);
   }
 
   /** PATCH /schedules/:id — ubah slot (hari/JP/ruang/semester); re-cek konflik. */
@@ -66,16 +68,17 @@ export class ScheduleController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body(ZodPipe(UpdateScheduleSchema)) dto: UpdateScheduleDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.service.update(id, dto);
+    return this.service.update(id, dto, user);
   }
 
   /** DELETE /schedules/:id — hard delete (template mingguan tanpa dependen). */
   @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
   @RequirePermission('academic.schedule.manage')
   @Delete(':id')
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.remove(id);
+  remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.service.remove(id, user);
   }
 
   /** T3-02 B8: GET /schedules/auto-generate — preview auto-scheduling result.

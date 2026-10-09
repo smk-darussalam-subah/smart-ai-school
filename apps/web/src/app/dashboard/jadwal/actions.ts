@@ -52,6 +52,8 @@ export interface ScheduleListParams {
   page: number;
   limit: number;
   classId?: string;
+  teacherId?: string;
+  dayOfWeek?: number;
   academicYear?: string;
   semester?: number;
 }
@@ -62,6 +64,8 @@ export async function fetchScheduleList(params: ScheduleListParams) {
     limit: String(params.limit),
   });
   if (params.classId) query.set('classId', params.classId);
+  if (params.teacherId) query.set('teacherId', params.teacherId);
+  if (params.dayOfWeek) query.set('dayOfWeek', String(params.dayOfWeek));
   if (params.academicYear) query.set('academicYear', params.academicYear);
   if (params.semester) query.set('semester', String(params.semester));
   return fetchApi(`/schedules?${query.toString()}`, 'GET');

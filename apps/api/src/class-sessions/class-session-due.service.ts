@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { logger } from '@smk/logger';
 import { BellScheduleService } from '../bell-schedule/bell-schedule.service';
+import { isScheduleOperational } from '../schedule/schedule-validity';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -78,11 +79,17 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
             version = version + 1,
             updated_at = CURRENT_TIMESTAMP
         WHERE id IN (
-          SELECT id FROM academic.class_sessions
-          WHERE status IN ('SCHEDULED'::academic."ClassSessionStatus", 'REASSIGNED'::academic."ClassSessionStatus")
-            AND scheduled_end_at <= ${now}
-          ORDER BY scheduled_end_at
-          FOR UPDATE SKIP LOCKED
+          SELECT cs.id FROM academic.class_sessions cs
+          WHERE cs.status IN ('SCHEDULED'::academic."ClassSessionStatus", 'REASSIGNED'::academic."ClassSessionStatus")
+            AND cs.scheduled_end_at <= ${now}
+            AND NOT EXISTS (
+              SELECT 1 FROM academic.schedules s
+              JOIN academic.schedule_concurrency_groups g ON g.id = s.concurrency_group_id
+              WHERE s.id = cs.schedule_id AND (g.expires_on < cs.service_date OR
+                (g.mode = 'AUTHORIZED_EXCEPTION' AND g.expires_on IS NULL))
+            )
+          ORDER BY cs.scheduled_end_at
+          FOR UPDATE OF cs SKIP LOCKED
           LIMIT ${CLAIM_LIMIT}
         )
         RETURNING id
@@ -302,11 +309,12 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
     if (holiday) return 'HOLIDAY';
     const schedule = await tx.schedule.findUnique({
       where: { id: session.scheduleId },
-      select: { classId: true, teachingAssignmentId: true },
+      select: { classId: true, teachingAssignmentId: true, concurrencyGroup: { select: { mode: true, expiresOn: true } } },
     });
     if (!schedule || schedule.classId !== session.classId || schedule.teachingAssignmentId !== session.teachingAssignmentId) {
       return 'STALE_SCHEDULE_SOURCE';
     }
+    if (!isScheduleOperational(schedule.concurrencyGroup, session.serviceDate.toISOString().slice(0, 10))) return 'EXPIRED_CONCURRENCY';
     try {
       const bell = await this.bells.resolveForDate(session.serviceDate, 'SCHOOL', tx);
       if (bell.id !== session.bellScheduleProfileId) return 'STALE_BELL_PROFILE';

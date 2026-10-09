@@ -5,8 +5,9 @@ import {
   Flame, UserCheck, TrendingUp, ClipboardList, Award, CalendarClock,
   PlayCircle, ChevronRight, Target, CheckCircle,
 } from 'lucide-react';
+import { useBellPattern } from '@/components/providers/BellPatternProvider';
 import { wibNow, currentJp } from '@/lib/bell-times';
-import { mpColor, mpIcon, JP_LABELS, JP_MAP, resolveSchedule } from './siswa-data';
+import { mpColor, mpIcon, studentDayPattern, resolveSchedule } from './siswa-data';
 import type { SiswaScreen, ModalState } from './SiswaWorkspace';
 import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaModul, SiswaQuest, SiswaXP, SiswaKehadiranStats } from './siswa-types';
 
@@ -32,7 +33,9 @@ interface Props {
 export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, recentlyCompletedModule, quest, xp, kehStats, schedule, userName, studentClassName }: Props) {
   const now = wibNow();
   const dow = now.jsDay; // 0=Sunday → SCHED[0] undefined → shows "Libur"
-  const currentJpIdx = currentJp(now.minutes);
+  const bell = useBellPattern();
+  const { JP_LABELS, JP_MAP } = studentDayPattern(bell.profile, now.jsDay);
+  const currentJpIdx = currentJp(now.minutes, bell.slots);
 
   // Derived stats
   const avgNilai = useMemo(() => {
@@ -53,7 +56,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
   const qCirc = 2 * Math.PI * 22;
 
   // Today's schedule — resolveSchedule uses API data if available, falls back to SIM
-  const { schedule: schedData, isSim: isSimSchedule } = resolveSchedule(schedule);
+  const { schedule: schedData, isSim: isSimSchedule } = resolveSchedule(schedule, bell.profile);
   const daySched = schedData[dow] || {};
   const hasSched = Object.keys(daySched).length > 0;
 
@@ -261,7 +264,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
               JP_MAP.map(([, idx]) => {
                 const slot = daySched[idx];
                 if (!slot) return null;
-                const isDone = idx < (currentJpIdx === 0 ? -1 : JP_MAP.findIndex(([j]) => j === currentJpIdx));
+                const isDone = idx < (currentJpIdx === 0 ? -1 : (JP_MAP.find(([j]) => j === currentJpIdx)?.[1] ?? -1));
                 const isNow = currentJpIdx > 0 && JP_MAP[currentJpIdx - 1]?.[1] === idx;
                 const dotCls = isDone ? 'bg-emerald-500' : isNow ? 'bg-amber-500 animate-pulse' : 'bg-transparent border-2 border-[var(--dim)]';
                 const t = JP_LABELS[idx]![1].split('–');

@@ -10,6 +10,7 @@ import { AuthUser } from '@smk/auth';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
 import { BellScheduleService } from '../bell-schedule/bell-schedule.service';
+import { isScheduleOperational } from '../schedule/schedule-validity';
 import {
   isGuruOnly,
   resolveTeacherId,
@@ -125,10 +126,13 @@ export class ClassSessionService {
   async materialize(date: string, actorId = 'system') {
     const dateValue = this.asDate(date);
     const dayOfWeek = this.dayOfWeek(date);
-    if (dayOfWeek === 0) return { date, createdCount: 0, totalCount: 0, suppressed: 'SUNDAY' };
+    if (dayOfWeek === 0) return { date, createdCount: 0, totalCount: 0, suppressed: 'SUNDAY', skippedExpiredCount: 0 };
 
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${MATERIALIZE_LOCK}), hashtext(${date}))`);
+      // Bell and schedule writers use this lock. Acquire it before *all* inputs:
+      // reading bell/period first can persist a stale snapshot after a writer commits.
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('academic:schedule:mutation:v1'))`);
       const period = await this.resolvePeriod(tx, dateValue);
       const holiday = await tx.academicCalendar.findFirst({
         where: {
@@ -139,10 +143,10 @@ export class ClassSessionService {
         },
         select: { id: true },
       });
-      if (holiday) return { date, createdCount: 0, totalCount: 0, suppressed: 'HOLIDAY' };
+      if (holiday) return { date, createdCount: 0, totalCount: 0, suppressed: 'HOLIDAY', skippedExpiredCount: 0 };
 
       const bell = await this.bells.resolveForDate(dateValue, 'SCHOOL', tx);
-      const schedules = await tx.schedule.findMany({
+      const candidates = await tx.schedule.findMany({
         where: {
           academicYear: period.academicYear.code,
           semester: period.semester.number,
@@ -155,6 +159,7 @@ export class ClassSessionService {
           jpStart: true,
           jpEnd: true,
           room: true,
+          concurrencyGroup: { select: { mode: true, expiresOn: true } },
           class: { select: { name: true } },
           teachingAssignment: {
             select: {
@@ -169,6 +174,8 @@ export class ClassSessionService {
         orderBy: [{ jpStart: 'asc' }, { classId: 'asc' }],
       });
 
+      const schedules = candidates.filter((schedule) => isScheduleOperational(schedule.concurrencyGroup, date));
+      const skippedExpiredCount = candidates.length - schedules.length;
       const rows: Prisma.ClassSessionCreateManyInput[] = schedules.map((schedule) => {
         if (
           schedule.teachingAssignment.classId !== schedule.classId
@@ -227,7 +234,8 @@ export class ClassSessionService {
           skipDuplicates: true,
         });
       }
-      return { date, createdCount: created.count, totalCount: sessions.length, suppressed: null };
+      return { date, createdCount: created.count, totalCount: sessions.length,
+        suppressed: skippedExpiredCount ? 'EXPIRED_CONCURRENCY' : null, skippedExpiredCount };
     });
   }
 
@@ -236,6 +244,8 @@ export class ClassSessionService {
       await this.lockSession(tx, id);
       const session = await this.findTransitionSession(tx, id);
       this.assertOwnSession(session, user);
+      if (!isScheduleOperational(session.schedule?.concurrencyGroup, session.serviceDate.toISOString().slice(0, 10)))
+        throw new ConflictException('Persetujuan jadwal bersamaan kedaluwarsa; sesi belum dapat dimulai.');
       const identity = this.transitionIdentity('start', id, user.keycloakId, dto);
       await this.lockTransitionIdentity(tx, identity.eventKey);
       const replay = await this.findReplay(tx, identity);
@@ -434,6 +444,7 @@ export class ClassSessionService {
       include: {
         assignedTeacher: { select: { user: { select: { keycloakId: true } } } },
         academicYear: { select: { code: true } },
+        schedule: { select: { concurrencyGroup: { select: { mode: true, expiresOn: true } } } },
       },
     });
     if (!session) throw new NotFoundException('Sesi pembelajaran tidak ditemukan');

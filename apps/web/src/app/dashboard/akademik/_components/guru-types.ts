@@ -8,7 +8,7 @@ export interface ScheduleItem {
   jpEnd: number;
   room?: string | null;
   class: { id: string; name: string; grade: number; majorCode: string };
-  teachingAssignment: { subject: string; teacher?: { user?: { fullName?: string } } };
+  teachingAssignment: { subject: string; teacher?: { id?: string; user?: { fullName?: string } } };
 }
 
 export interface ActivityItem {

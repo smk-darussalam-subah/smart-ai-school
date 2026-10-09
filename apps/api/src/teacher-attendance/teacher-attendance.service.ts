@@ -1,278 +1,211 @@
-// =============================================================================
-// TeacherAttendanceService — Presensi Guru GPS (referensi KamilEdu Modul 8)
-//
-// Geofence: koordinat sekolah di SchoolProfile (latitude/longitude nullable =
-// geofence NONAKTIF). outsideGeofence = true bila:
-//   (a) jarak haversine > geofenceRadiusM, ATAU
-//   (b) sekolah ber-geofence tapi koordinat check-in tidak dikirim.
-// Presensi TIDAK ditolak saat luar area — dicatat + diflag (kebijakan KamilEdu:
-// flag_luar_area), keputusan tindak lanjut di tangan kepala sekolah.
-// =============================================================================
-
-import {
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+// Compatibility adapter: all teacher clients share the unified, idempotent staff ledger.
+// Legacy rows remain in custody, but no second attendance write path is allowed.
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { AuthUser } from '@smk/auth';
+import type { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
-import { haversineMeters } from './haversine';
+import {
+  RECEIPT_SELECT,
+  StaffAttendanceService,
+} from '../staff-attendance/staff-attendance.service';
+import { schoolDate } from '../staff-attendance/attendance-rules';
+import { AttendanceQuerySchema } from '../staff-attendance/staff-attendance.dto';
 import {
   CheckInDto,
   CheckOutDto,
   ListTeacherAttendanceQueryDto,
 } from './dto/teacher-attendance.dto';
 
-const ELEVATED = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'] as const;
-
-const ATTENDANCE_SELECT = {
-  id: true, teacherId: true, date: true,
-  checkInAt: true, checkOutAt: true,
-  latIn: true, lngIn: true, latOut: true, lngOut: true,
-  distanceInM: true, outsideGeofence: true,
-  photoUrl: true, notes: true, createdAt: true,
-  teacher: {
-    select: { id: true, user: { select: { fullName: true, staff: { select: { niy: true } } } } },
+const ELEVATED = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'];
+const SELECT = {
+  ...RECEIPT_SELECT,
+  notes: true,
+  createdAt: true,
+  legacyTeacherAttendanceId: true,
+  user: {
+    select: { fullName: true, staff: { select: { niy: true } }, teacher: { select: { id: true } } },
   },
 } as const;
-
-/**
- * W3-7: School-local date in Asia/Jakarta (WIB, UTC+7).
- *
- * SMK Darussalam Subah operates in WIB. Between 00:00 and 06:59 WIB the UTC calendar
- * day is still the previous day, which caused early-morning check-ins to be recorded
- * against the wrong school date. We compute the local YYYY-MM-DD via
- * Intl.DateTimeFormat (no extra dependency) and return it as UTC midnight so the
- * existing `[teacherId, date]` unique constraint and `date gte/lte` query filters
- * keep working against a stable day-aligned value.
- */
-function todaySchoolLocalDate(now: Date = new Date()): Date {
-  // en-CA yields ISO 8601 YYYY-MM-DD. timeZone Asia/Jakarta converts correctly.
-  const localYmd = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Jakarta',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(now);
-  return new Date(`${localYmd}T00:00:00.000Z`);
-}
+type RecordRow = Prisma.StaffAttendanceGetPayload<{ select: typeof SELECT }>;
 
 @Injectable()
 export class TeacherAttendanceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly staff: StaffAttendanceService,
+  ) {}
 
-  private isElevated(user: AuthUser): boolean {
-    return user.roles.some((r) => (ELEVATED as readonly string[]).includes(r));
-  }
-
-  /** keycloakId → Teacher.id (404 bila user bukan guru terdaftar). */
-  private async resolveTeacherId(keycloakId: string): Promise<string> {
+  private async teacher(keycloakId: string) {
     const teacher = await this.prisma.teacher.findFirst({
-      where: { user: { keycloakId }, deletedAt: null },
-      select: { id: true },
+      where: { deletedAt: null, user: { keycloakId, isActive: true, deletedAt: null } },
+      select: { id: true, userId: true },
     });
-    if (!teacher) {
-      throw new NotFoundException('Profil guru tidak ditemukan untuk akun ini');
-    }
-    return teacher.id;
+    if (!teacher) throw new NotFoundException('Profil guru aktif tidak ditemukan untuk akun ini');
+    return teacher;
   }
 
-  /** Hitung jarak + flag geofence terhadap SchoolProfile. */
-  private async evaluateGeofence(
-    lat?: number | null,
-    lng?: number | null,
-  ): Promise<{ distanceInM: number | null; outsideGeofence: boolean }> {
-    const profile = await this.prisma.schoolProfile.findFirst({
-      select: { latitude: true, longitude: true, geofenceRadiusM: true },
-    });
-
-    const schoolLat = profile?.latitude ? Number(profile.latitude) : null;
-    const schoolLng = profile?.longitude ? Number(profile.longitude) : null;
-
-    // Geofence nonaktif (sekolah belum set koordinat) → tidak ada flag
-    if (schoolLat === null || schoolLng === null) {
-      return { distanceInM: null, outsideGeofence: false };
-    }
-    // Geofence aktif tapi koordinat tidak dikirim → tak terverifikasi = flag
-    if (lat === null || lat === undefined || lng === null || lng === undefined) {
-      return { distanceInM: null, outsideGeofence: true };
-    }
-
-    const distance = haversineMeters(lat, lng, schoolLat, schoolLng);
+  private legacy(row: RecordRow, photoUrl: string | null = null) {
     return {
-      distanceInM: distance,
-      outsideGeofence: distance > (profile?.geofenceRadiusM ?? 300),
+      ...row,
+      user: undefined,
+      legacyTeacherAttendanceId: undefined,
+      teacherId: row.user.teacher?.id,
+      outsideGeofence: row.locationInStatus === 'OUTSIDE',
+      photoUrl, // Only an exact, ownership-checked migrated association may provide this.
+      teacher: {
+        id: row.user.teacher?.id,
+        user: { fullName: row.user.fullName, staff: row.user.staff },
+      },
     };
   }
 
+  private async legacyById(id: string) {
+    const row = await this.prisma.staffAttendance.findUniqueOrThrow({ where: { id }, select: SELECT });
+    return (await this.legacyRows([row]))[0]!;
+  }
+
+  private async legacyRows(rows: RecordRow[]) {
+    const ids = rows.flatMap((row) => row.legacyTeacherAttendanceId ? [row.legacyTeacherAttendanceId] : []);
+    const originals = ids.length ? await this.prisma.teacherAttendance.findMany({
+      where: { id: { in: ids } }, select: { id: true, teacherId: true, date: true, photoUrl: true },
+    }) : [];
+    const lookup = new Map(originals.map((row) => [row.id, row]));
+    return rows.map((row) => {
+      const original = row.legacyTeacherAttendanceId ? lookup.get(row.legacyTeacherAttendanceId) : null;
+      const photo = original && original.teacherId === row.user.teacher?.id &&
+        original.date.getTime() === row.date.getTime() ? original.photoUrl : null;
+      return this.legacy(row, photo);
+    });
+  }
+
   async checkIn(dto: CheckInDto, user: AuthUser) {
-    const teacherId = await this.resolveTeacherId(user.keycloakId);
-    const date = todaySchoolLocalDate();
-
-    const existing = await this.prisma.teacherAttendance.findUnique({
-      where: { teacherId_date: { teacherId, date } },
-      select: { id: true },
-    });
-    if (existing) {
-      throw new ConflictException('Sudah check-in hari ini');
-    }
-
-    const { distanceInM, outsideGeofence } = await this.evaluateGeofence(dto.lat, dto.lng);
-
-    return this.prisma.teacherAttendance.create({
-      data: {
-        teacherId,
-        date,
-        checkInAt: new Date(),
-        latIn: dto.lat ?? null,
-        lngIn: dto.lng ?? null,
-        distanceInM,
-        outsideGeofence,
-        photoUrl: dto.photoUrl ?? null,
-        notes: dto.notes ?? null,
-      },
-      select: ATTENDANCE_SELECT,
-    });
+    await this.teacher(user.keycloakId);
+    const { notes, photoUrl: _photo, ...location } = dto;
+    const result = await this.staff.record(location, user, false, notes);
+    return this.legacyById(result.receipt.id);
   }
 
   async checkOut(dto: CheckOutDto, user: AuthUser) {
-    const teacherId = await this.resolveTeacherId(user.keycloakId);
-    const date = todaySchoolLocalDate();
-
-    const existing = await this.prisma.teacherAttendance.findUnique({
-      where: { teacherId_date: { teacherId, date } },
-      select: { id: true, checkOutAt: true },
-    });
-    if (!existing) throw new NotFoundException('Belum check-in hari ini');
-    if (existing.checkOutAt) throw new ConflictException('Sudah check-out hari ini');
-
-    return this.prisma.teacherAttendance.update({
-      where: { id: existing.id },
-      data: {
-        checkOutAt: new Date(),
-        latOut: dto.lat ?? null,
-        lngOut: dto.lng ?? null,
-      },
-      select: ATTENDANCE_SELECT,
-    });
+    await this.teacher(user.keycloakId);
+    const result = await this.staff.record(dto, user, true);
+    return this.legacyById(result.receipt.id);
   }
 
-  /** Status hari ini milik guru ybs (untuk state tombol UI). */
   async myToday(user: AuthUser) {
-    const teacherId = await this.resolveTeacherId(user.keycloakId);
-    const today = todaySchoolLocalDate();
-    const record = await this.prisma.teacherAttendance.findUnique({
-      where: { teacherId_date: { teacherId, date: today } },
-      select: ATTENDANCE_SELECT,
-    });
-    return { date: today.toISOString().slice(0, 10), record };
+    await this.teacher(user.keycloakId);
+    const context = await this.staff.context(user);
+    return {
+      date: context.date,
+      record: context.receipt ? await this.legacyById(context.receipt.id) : null,
+      arrival: context.arrival,
+    };
   }
 
-  /** Rekap: staf bebas filter; GURU dipaksa miliknya sendiri DI QUERY. */
   async findAll(query: ListTeacherAttendanceQueryDto, user: AuthUser) {
-    const where: Prisma.TeacherAttendanceWhereInput = {};
-
-    if (this.isElevated(user)) {
-      if (query.teacherId) where.teacherId = query.teacherId;
+    const elevated = user.roles.some((role) => ELEVATED.includes(role));
+    const where: Prisma.StaffAttendanceWhereInput = {
+      user: { teacher: { is: { deletedAt: null } } },
+    };
+    if (elevated) {
+      if (query.teacherId)
+        where.user = { teacher: { is: { id: query.teacherId, deletedAt: null } } };
     } else if (user.roles.includes('GURU')) {
-      where.teacherId = await this.resolveTeacherId(user.keycloakId);
-    } else {
-      throw new ForbiddenException('Akses ditolak');
-    }
-
-    if (query.from || query.to) {
+      where.userId = (await this.teacher(user.keycloakId)).userId;
+    } else throw new ForbiddenException('Akses ditolak');
+    if (query.from || query.to)
       where.date = {
-        ...(query.from ? { gte: new Date(`${query.from}T00:00:00Z`) } : {}),
-        ...(query.to ? { lte: new Date(`${query.to}T00:00:00Z`) } : {}),
+        ...(query.from ? { gte: new Date(query.from) } : {}),
+        ...(query.to ? { lte: new Date(query.to) } : {}),
       };
-    }
-    if (query.outsideOnly) where.outsideGeofence = true;
-
-    const skip = (query.page - 1) * query.limit;
+    if (query.outsideOnly) where.locationInStatus = 'OUTSIDE'; // Unknown GPS is not proof of outside.
     const [data, total] = await Promise.all([
-      this.prisma.teacherAttendance.findMany({
+      this.prisma.staffAttendance.findMany({
         where,
         orderBy: [{ date: 'desc' }, { checkInAt: 'desc' }],
-        skip,
+        skip: (query.page - 1) * query.limit,
         take: query.limit,
-        select: ATTENDANCE_SELECT,
+        select: SELECT,
       }),
-      this.prisma.teacherAttendance.count({ where }),
+      this.prisma.staffAttendance.count({ where }),
     ]);
-
-    return { data, total, page: query.page, limit: query.limit };
+    return {
+      data: await this.legacyRows(data),
+      total,
+      page: query.page,
+      limit: query.limit,
+    };
   }
 
-  /**
-   * P1 (S-05): Today's teacher attendance summary for KS/SA dashboard.
-   * Returns counts + roster of all teachers with their check-in status for today.
-   * Reuses existing TeacherAttendance records (from 2F GPS presensi).
-   */
   async todaySummary() {
-    const date = todaySchoolLocalDate();
-
-    // All active teachers
-    const teachers = await this.prisma.teacher.findMany({
-      where: { deletedAt: null },
-      select: {
-        id: true,
-        user: {
-          select: {
-            fullName: true,
-          },
-        },
-        assignments: {
-          where: {},
-          select: { subject: true },
-          take: 1,
+    const date = schoolDate(new Date());
+    const query = AttendanceQuerySchema.parse({
+      from: date,
+      to: date,
+      unit: 'TEACHER',
+      limit: 100,
+    });
+    const first = await this.staff.report(query);
+    const rows = [...first.data];
+    for (let page = 2; rows.length < first.total; page++) {
+      const next = await this.staff.report({ ...query, page });
+      if (!next.data.length) break;
+      rows.push(...next.data);
+    }
+    const assignments = await this.prisma.teachingAssignment.findMany({
+      where: {
+        teacherId: { in: rows.map((row) => row.employee.teacher!.id) },
+        academicYear: {
+          in: (
+            await this.prisma.academicYear.findMany({
+              where: { isActive: true },
+              select: { code: true },
+            })
+          ).map((year) => year.code),
         },
       },
+      select: { teacherId: true, subject: true },
     });
-
-    // Today's attendance records
-    const records = await this.prisma.teacherAttendance.findMany({
-      where: { date },
-      select: {
-        teacherId: true,
-        checkInAt: true,
-        checkOutAt: true,
-        outsideGeofence: true,
-      },
-    });
-
-    const recordMap = new Map(records.map((r) => [r.teacherId, r]));
-
-    const roster = teachers.map((t) => {
-      const rec = recordMap.get(t.id);
-      const nama = t.user?.fullName ?? '—';
-      const inisial = nama.split(' ').map((w) => w[0]).slice(0, 2).join('');
-      const mapel = t.assignments[0]?.subject ?? '—';
-      return {
-        teacherId: t.id,
-        nama,
-        inisial,
-        mapel,
-        status: rec ? (rec.checkOutAt ? 'Selesai' : 'Hadir') : 'Belum',
-        checkInAt: rec?.checkInAt ?? null,
-        checkOutAt: rec?.checkOutAt ?? null,
-        outsideGeofence: rec?.outsideGeofence ?? false,
-      };
-    });
-
-    const hadir = roster.filter((r) => r.status === 'Hadir' || r.status === 'Selesai').length;
-    const selesai = roster.filter((r) => r.status === 'Selesai').length;
-    const belum = roster.filter((r) => r.status === 'Belum').length;
-    const outside = roster.filter((r) => r.outsideGeofence).length;
-
+    const subjects = new Map<string, Set<string>>();
+    for (const assignment of assignments) {
+      const current = subjects.get(assignment.teacherId) ?? new Set<string>();
+      current.add(assignment.subject);
+      subjects.set(assignment.teacherId, current);
+    }
+    const roster = rows.map((row) => ({
+      teacherId: row.employee.teacher!.id,
+      nama: row.employee.fullName,
+      inisial: row.employee.fullName
+        .split(' ')
+        .slice(0, 2)
+        .map((word) => word[0])
+        .join(''),
+      mapel: [...(subjects.get(row.employee.teacher!.id) ?? [])].sort().join(', ') || '—',
+      status: row.receipt
+        ? row.receipt.checkOutAt
+          ? 'Selesai'
+          : 'Hadir'
+        : row.status === 'NOT_DUE'
+          ? 'Belum waktunya'
+          : row.status === 'NOT_SCHEDULED'
+            ? 'Tidak ada jadwal'
+            : row.status === 'NOT_REQUIRED'
+              ? 'Tidak terikat jam'
+              : row.status === 'UNKNOWN'
+                ? 'Perlu verifikasi'
+                : 'Belum',
+      checkInAt: row.receipt?.checkInAt ?? null,
+      checkOutAt: row.receipt?.checkOutAt ?? null,
+      outsideGeofence: row.receipt?.locationInStatus === 'OUTSIDE',
+      locationStatus: row.receipt?.locationInStatus ?? null,
+      arrival: row.arrival,
+    }));
     return {
-      date: date.toISOString().slice(0, 10),
-      total: teachers.length,
-      hadir,
-      selesai,
-      belum,
-      outsideGeofence: outside,
+      date,
+      total: roster.length,
+      hadir: roster.filter((row) => row.status === 'Hadir' || row.status === 'Selesai').length,
+      selesai: roster.filter((row) => row.status === 'Selesai').length,
+      belum: roster.filter((row) => row.status === 'Belum').length,
+      outsideGeofence: roster.filter((row) => row.outsideGeofence).length,
       roster,
     };
   }

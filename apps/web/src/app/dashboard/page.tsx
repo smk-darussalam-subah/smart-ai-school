@@ -83,11 +83,11 @@ function buildPapanRows(list: ScheduleApi[]): PapanRow[] {
       entry = {
         className: schedule.class.name,
         grade: schedule.class.grade,
-        cells: Array(12).fill(null),
+        cells: Array(Math.max(0, ...list.map((item) => item.jpEnd))).fill(null),
       };
       byClass.set(schedule.classId, entry);
     }
-    for (let jp = schedule.jpStart; jp <= schedule.jpEnd && jp <= 12; jp += 1) {
+    for (let jp = schedule.jpStart; jp <= schedule.jpEnd; jp += 1) {
       const index = jp - 1;
       if (index >= 0 && entry.cells[index] === null) {
         entry.cells[index] = {

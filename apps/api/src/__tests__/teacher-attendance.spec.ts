@@ -1,173 +1,96 @@
-// =============================================================================
-// 2F-2: Presensi Guru — haversine, geofence flag, check-in/out, ownership query
-// =============================================================================
-
-jest.mock('@smk/logger', () => ({
-  logger: { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() },
-  auditLog: jest.fn(),
-}));
-
-import { Test, TestingModule } from '@nestjs/testing';
+jest.mock('@smk/logger', () => ({ logger: { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() }, auditLog: jest.fn() }));
+import { Test } from '@nestjs/testing';
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { AuthUser } from '@smk/auth';
+import type { AuthUser } from '@smk/auth';
 import { TeacherAttendanceService } from '../teacher-attendance/teacher-attendance.service';
-import { haversineMeters } from '../teacher-attendance/haversine';
+import { StaffAttendanceService } from '../staff-attendance/staff-attendance.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { haversineMeters } from '../teacher-attendance/haversine';
+import { CheckInSchema } from '../teacher-attendance/dto/teacher-attendance.dto';
 
-const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
-const SA: AuthUser = { keycloakId: 'kc-sa', username: 'admin', roles: ['SUPER_ADMIN'] } as AuthUser;
-
-// SMK Darussalam Subah (approx) sebagai titik sekolah uji
-const SCHOOL = { latitude: '-6.971000', longitude: '109.834000', geofenceRadiusM: 300 };
-
+const GURU = { keycloakId: 'kc-guru', roles: ['GURU'] } as AuthUser;
+const SA = { keycloakId: 'kc-sa', roles: ['SUPER_ADMIN'] } as AuthUser;
 describe('haversineMeters', () => {
-  it('jarak titik sama = 0; ~111 km per derajat lintang', () => {
-    expect(haversineMeters(-6.971, 109.834, -6.971, 109.834)).toBe(0);
-    const d = haversineMeters(-6.971, 109.834, -5.971, 109.834);
-    expect(d).toBeGreaterThan(110_000);
-    expect(d).toBeLessThan(112_000);
-  });
-
-  it('±0.001° (~111 m) masih presisi puluhan meter', () => {
-    const d = haversineMeters(-6.971, 109.834, -6.970, 109.834);
-    expect(d).toBeGreaterThan(100);
-    expect(d).toBeLessThan(125);
+  it('preserves geographic distance including zero coordinates', () => {
+    expect(haversineMeters(0, 0, 0, 0)).toBe(0);
+    expect(haversineMeters(0, 0, 1, 0)).toBeGreaterThan(110000);
+    expect(haversineMeters(0, 0, 1, 0)).toBeLessThan(112000);
   });
 });
-
-describe('TeacherAttendanceService', () => {
+describe('TeacherAttendanceService unified compatibility', () => {
+  const findTeacher = jest.fn();
+  const findMany = jest.fn();
+  const count = jest.fn();
+  const findUniqueOrThrow = jest.fn();
+  const legacyPhotos = jest.fn();
+  const record = jest.fn();
+  const context = jest.fn();
   let service: TeacherAttendanceService;
-  const teacherFindFirst = jest.fn();
-  const profileFindFirst = jest.fn();
-  const taFindUnique = jest.fn();
-  const taCreate = jest.fn();
-  const taUpdate = jest.fn();
-  const taFindMany = jest.fn();
-  const taCount = jest.fn();
-
+  const row = { id: 'attendance-1', userId: 'user-1', date: new Date('2026-10-06'), checkInAt: new Date('2026-10-06T00:31Z'),
+    checkOutAt: null, locationInStatus: 'UNVERIFIED', user: { fullName: 'Synthetic teacher', staff: null, teacher: { id: 'teacher-1' } } };
   beforeEach(async () => {
-    [teacherFindFirst, profileFindFirst, taFindUnique, taCreate, taUpdate, taFindMany, taCount]
-      .forEach((m) => m.mockReset());
-    teacherFindFirst.mockResolvedValue({ id: 'teacher-1' });
-    profileFindFirst.mockResolvedValue(SCHOOL);
-    taCreate.mockImplementation((args: { data: Record<string, unknown> }) =>
-      Promise.resolve({ id: 'att-1', ...args.data }));
-    taUpdate.mockResolvedValue({ id: 'att-1' });
-
-    const prisma = {
-      teacher: { findFirst: teacherFindFirst },
-      schoolProfile: { findFirst: profileFindFirst },
-      teacherAttendance: {
-        findUnique: taFindUnique, create: taCreate, update: taUpdate,
-        findMany: taFindMany, count: taCount,
-      },
-    };
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [TeacherAttendanceService, { provide: PrismaService, useValue: prisma }],
-    }).compile();
+    jest.resetAllMocks();
+    findTeacher.mockResolvedValue({ id: 'teacher-1', userId: 'user-1' });
+    findMany.mockResolvedValue([]); count.mockResolvedValue(0); findUniqueOrThrow.mockResolvedValue(row); legacyPhotos.mockResolvedValue([]);
+    record.mockResolvedValue({ receipt: row, replayed: false });
+    context.mockResolvedValue({ date: '2026-10-06', receipt: row, arrival: {} });
+    const module = await Test.createTestingModule({ providers: [
+      TeacherAttendanceService,
+      { provide: PrismaService, useValue: { teacher: { findFirst: findTeacher }, teacherAttendance: { findMany: legacyPhotos }, staffAttendance: { findMany, count, findUniqueOrThrow } } },
+      { provide: StaffAttendanceService, useValue: { record, context } },
+    ] }).compile();
     service = module.get(TeacherAttendanceService);
   });
-
-  it('check-in DALAM radius → outsideGeofence=false, jarak terisi', async () => {
-    taFindUnique.mockResolvedValue(null);
-    await service.checkIn({ lat: -6.9712, lng: 109.8342 }, GURU);
-    const data = taCreate.mock.calls[0][0].data;
-    expect(data.outsideGeofence).toBe(false);
-    expect(data.distanceInM).toBeLessThan(300);
+  it('delegates check-in/out to the same durable staff service; unknown GPS is not outside', async () => {
+    const first = await service.checkIn({ locationFailure: 'POLICY_BLOCKED', notes: 'Synthetic legacy note' }, GURU);
+    expect(record).toHaveBeenCalledWith({ locationFailure: 'POLICY_BLOCKED' }, GURU, false, 'Synthetic legacy note');
+    expect(first.outsideGeofence).toBe(false);
+    expect(first.locationInStatus).toBe('UNVERIFIED');
+    await service.checkOut({ locationFailure: 'POLICY_BLOCKED' }, GURU);
+    expect(record).toHaveBeenLastCalledWith({ locationFailure: 'POLICY_BLOCKED' }, GURU, true);
   });
-
-  it('check-in LUAR radius (~1.1 km) → diflag, TIDAK ditolak', async () => {
-    taFindUnique.mockResolvedValue(null);
-    await service.checkIn({ lat: -6.981, lng: 109.834 }, GURU);
-    const data = taCreate.mock.calls[0][0].data;
-    expect(data.outsideGeofence).toBe(true);
-    expect(data.distanceInM).toBeGreaterThan(1000);
-    expect(taCreate).toHaveBeenCalled(); // tetap tercatat
+  it('replays a check-in instead of writing a second ledger row', async () => {
+    record.mockResolvedValue({ receipt: row, replayed: true });
+    expect((await service.checkIn({}, GURU)).id).toBe(row.id);
   });
-
-  it('geofence aktif + koordinat TIDAK dikirim → flag (tak terverifikasi)', async () => {
-    taFindUnique.mockResolvedValue(null);
-    await service.checkIn({}, GURU);
-    expect(taCreate.mock.calls[0][0].data.outsideGeofence).toBe(true);
-    expect(taCreate.mock.calls[0][0].data.distanceInM).toBeNull();
-  });
-
-  it('sekolah TANPA koordinat (geofence nonaktif) → tidak diflag', async () => {
-    profileFindFirst.mockResolvedValue({ latitude: null, longitude: null, geofenceRadiusM: 300 });
-    taFindUnique.mockResolvedValue(null);
-    await service.checkIn({}, GURU);
-    expect(taCreate.mock.calls[0][0].data.outsideGeofence).toBe(false);
-  });
-
-  it('check-in dobel di hari sama → 409', async () => {
-    taFindUnique.mockResolvedValue({ id: 'att-x' });
-    await expect(service.checkIn({}, GURU)).rejects.toThrow(ConflictException);
-  });
-
-  it('check-out tanpa check-in → 404; check-out dobel → 409', async () => {
-    taFindUnique.mockResolvedValue(null);
-    await expect(service.checkOut({}, GURU)).rejects.toThrow(NotFoundException);
-    taFindUnique.mockResolvedValue({ id: 'att-1', checkOutAt: new Date() });
+  it('propagates checkout-without-checkin and missing identity', async () => {
+    record.mockRejectedValue(new ConflictException('Belum masuk'));
     await expect(service.checkOut({}, GURU)).rejects.toThrow(ConflictException);
-  });
-
-  it('user tanpa profil guru → 404 (bukan crash)', async () => {
-    teacherFindFirst.mockResolvedValue(null);
+    findTeacher.mockResolvedValue(null);
     await expect(service.checkIn({}, GURU)).rejects.toThrow(NotFoundException);
   });
-
-  it('findAll GURU → teacherId DIPAKSA milik sendiri di QUERY', async () => {
-    taFindMany.mockResolvedValue([]);
-    taCount.mockResolvedValue(0);
-    await service.findAll({ teacherId: 'teacher-LAIN', outsideOnly: false, page: 1, limit: 31 }, GURU);
-    expect(taFindMany.mock.calls[0][0].where.teacherId).toBe('teacher-1');
+  it('forces teacher ownership in the database query, ignoring another teacher filter', async () => {
+    await service.findAll({ teacherId: 'other', outsideOnly: false, page: 1, limit: 31 }, GURU);
+    expect(findMany.mock.calls[0][0].where.userId).toBe('user-1');
   });
-
-  it('findAll SA → bebas filter teacherId + outsideOnly', async () => {
-    taFindMany.mockResolvedValue([]);
-    taCount.mockResolvedValue(0);
-    await service.findAll({ teacherId: 't-9', outsideOnly: true, page: 1, limit: 31 }, SA);
-    const where = taFindMany.mock.calls[0][0].where;
-    expect(where.teacherId).toBe('t-9');
-    expect(where.outsideGeofence).toBe(true);
+  it('elevated teacher filtering and actual outside-only remain query-scoped', async () => {
+    await service.findAll({ teacherId: 'other', outsideOnly: true, page: 1, limit: 31 }, SA);
+    expect(findMany.mock.calls[0][0].where).toMatchObject({ user: { teacher: { is: { id: 'other' } } }, locationInStatus: 'OUTSIDE' });
   });
-
-  it('findAll role tanpa hak (SISWA) → Forbidden', async () => {
-    const siswa = { keycloakId: 'kc-s', username: 's', roles: ['SISWA'] } as AuthUser;
-    await expect(service.findAll({ outsideOnly: false, page: 1, limit: 31 }, siswa))
-      .rejects.toThrow(ForbiddenException);
+  it('denies a student, and reads today from the authoritative WIB staff context', async () => {
+    await expect(service.findAll({ outsideOnly: false, page: 1, limit: 31 }, { roles: ['SISWA'] } as AuthUser)).rejects.toThrow(ForbiddenException);
+    expect(await service.myToday(GURU)).toMatchObject({ date: '2026-10-06', record: { id: row.id } });
   });
-
-  // ── W3-7: Asia/Jakarta school-local date ────────────────────────────────────
-  // Early-morning WIB (00:30) is still the previous UTC day. The service must
-  // record the WIB calendar date so the unique [teacherId, date] constraint
-  // matches later that same school day.
-  it('W3-7: check-in 00:30 WIB (UTC-7 jam) → tanggal sekolah lokal WIB, bukan UTC kemarin', async () => {
-    // 2026-07-19 00:30:00 WIB = 2026-07-18 17:30:00 UTC → UTC day = 18, WIB day = 19
-    // Note: Intl is not in Jest's fakeable API list, so it stays real.
-    jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-07-18T17:30:00.000Z'));
-    try {
-      taFindUnique.mockResolvedValue(null);
-      await service.checkIn({}, GURU);
-      const recordedDate = taCreate.mock.calls[0][0].data.date as Date;
-      expect(recordedDate.toISOString().slice(0, 10)).toBe('2026-07-19');
-    } finally {
-      jest.useRealTimers();
-    }
+  it('legacy input cannot bypass paired GPS, failure, finite accuracy, or identity/time validation', () => {
+    expect(CheckInSchema.safeParse({ lat: 0 }).success).toBe(false);
+    expect(CheckInSchema.safeParse({ lat: 0, lng: 0, locationFailure: 'POLICY_BLOCKED' }).success).toBe(false);
+    expect(CheckInSchema.safeParse({ userId: 'someone-else' }).success).toBe(false);
   });
-
-  it('W3-7: check-in 07:30 WIB → tanggal sekolah lokal yang sama', async () => {
-    // 2026-07-19 07:30:00 WIB = 2026-07-19 00:30:00 UTC → UTC day = 19, WIB day = 19
-    jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-07-19T00:30:00.000Z'));
-    try {
-      taFindUnique.mockResolvedValue(null);
-      await service.checkIn({}, GURU);
-      const recordedDate = taCreate.mock.calls[0][0].data.date as Date;
-      expect(recordedDate.toISOString().slice(0, 10)).toBe('2026-07-19');
-    } finally {
-      jest.useRealTimers();
-    }
+  it('projects exact historical photo associations in one batch, never from a foreign teacher/date', async () => {
+    findMany.mockResolvedValue([
+      { ...row, legacyTeacherAttendanceId: 'legacy-own' },
+      { ...row, id: 'foreign', legacyTeacherAttendanceId: 'legacy-foreign' },
+      { ...row, id: 'wrong-date', legacyTeacherAttendanceId: 'legacy-date' },
+      { ...row, id: 'new', legacyTeacherAttendanceId: null },
+    ]);
+    legacyPhotos.mockResolvedValue([
+      { id: 'legacy-own', teacherId: 'teacher-1', date: row.date, photoUrl: '/media/historical-own.jpg' },
+      { id: 'legacy-foreign', teacherId: 'teacher-2', date: row.date, photoUrl: '/media/foreign.jpg' },
+      { id: 'legacy-date', teacherId: 'teacher-1', date: new Date('2026-10-05'), photoUrl: '/media/other-date.jpg' },
+    ]);
+    const result = await service.findAll({ page: 1, limit: 31, outsideOnly: false }, GURU);
+    expect(result.data.map((entry) => entry.photoUrl)).toEqual(['/media/historical-own.jpg', null, null, null]);
+    expect(legacyPhotos).toHaveBeenCalledTimes(1);
+    expect(result.data[0]?.legacyTeacherAttendanceId).toBeUndefined();
   });
 });

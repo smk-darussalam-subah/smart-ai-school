@@ -12,6 +12,10 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { ScheduleService } from '../schedule/schedule.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
+import { BellScheduleService } from '../bell-schedule/bell-schedule.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import type { AuthUser } from '@smk/auth';
+const ACTOR = { keycloakId: 'synthetic-admin', roles: ['SUPER_ADMIN'] } as AuthUser;
 
 const EXISTING = {
   id: 'sch-1', classId: 'c1', teachingAssignmentId: 'ta-1',
@@ -48,7 +52,12 @@ describe('ScheduleService 2F-1 (update/remove/overlap-inklusif)', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScheduleService,
+        { provide: PermissionsService, useValue: {
+          getAuthoritativePrimaryRole: jest.fn().mockResolvedValue('SUPER_ADMIN'),
+          hasFreshPermission: jest.fn().mockResolvedValue(true),
+        } },
         { provide: PrismaService, useValue: prisma },
+        { provide: BellScheduleService, useValue: { assertWeeklyRange: jest.fn().mockResolvedValue(undefined), instructionDaysForPeriod: jest.fn().mockResolvedValue(new Map([1,2,3,4,5,6].map((day) => [day, new Set([1,2,3,4,5,6,7,8])])) ) } },
         {
           provide: AcademicPeriodService,
           useValue: {
@@ -70,7 +79,7 @@ describe('ScheduleService 2F-1 (update/remove/overlap-inklusif)', () => {
     await expect(service.create({
       classId: 'c1', teachingAssignmentId: 'ta-1', dayOfWeek: 1,
       jpStart: 1, jpEnd: 3, room: null, academicYear: '2026/2027', semester: 1,
-    })).rejects.toThrow(ConflictException);
+    }, ACTOR)).rejects.toThrow(ConflictException);
 
     const guruWhere = findFirst.mock.calls[1][0].where;
     expect(guruWhere.jpStart).toEqual({ lte: 3 });
@@ -83,7 +92,7 @@ describe('ScheduleService 2F-1 (update/remove/overlap-inklusif)', () => {
     await expect(service.create({
       classId: 'c1', teachingAssignmentId: 'ta-1', dayOfWeek: 1,
       jpStart: 2, jpEnd: 4, room: null, academicYear: '2026/2027', semester: 1,
-    })).rejects.toThrow(ConflictException);
+    }, ACTOR)).rejects.toThrow(ConflictException);
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -93,7 +102,7 @@ describe('ScheduleService 2F-1 (update/remove/overlap-inklusif)', () => {
     findFirst.mockResolvedValue(null);
     update.mockResolvedValue({ ...EXISTING, dayOfWeek: 3 });
 
-    await service.update('sch-1', { dayOfWeek: 3 });
+    await service.update('sch-1', { dayOfWeek: 3 }, ACTOR);
 
     for (const call of findFirst.mock.calls) {
       const w = call[0].where;
@@ -104,21 +113,21 @@ describe('ScheduleService 2F-1 (update/remove/overlap-inklusif)', () => {
 
   it('update: jpEnd < jpStart hasil merge partial → BadRequest', async () => {
     findUnique.mockResolvedValue({ ...EXISTING, jpStart: 3, jpEnd: 4 });
-    await expect(service.update('sch-1', { jpEnd: 2 })).rejects.toThrow('jpEnd harus >= jpStart');
+    await expect(service.update('sch-1', { jpEnd: 2 }, ACTOR)).rejects.toThrow('jpEnd harus >= jpStart');
   });
 
   it('update: id tak ada → NotFound; remove: id tak ada → NotFound', async () => {
     findUnique.mockResolvedValue(null);
-    await expect(service.update('nope', { dayOfWeek: 2 })).rejects.toThrow(NotFoundException);
-    await expect(service.remove('nope')).rejects.toThrow(NotFoundException);
+    await expect(service.update('nope', { dayOfWeek: 2 }, ACTOR)).rejects.toThrow(NotFoundException);
+    await expect(service.remove('nope', ACTOR)).rejects.toThrow(NotFoundException);
   });
 
   it('remove: hard delete + respons eksplisit', async () => {
     findUnique.mockResolvedValue({ id: 'sch-1' });
     del.mockResolvedValue({ id: 'sch-1' });
-    expect(await service.remove('sch-1')).toEqual({ deleted: true, id: 'sch-1' });
+    expect(await service.remove('sch-1', ACTOR)).toEqual({ deleted: true, id: 'sch-1' });
     expect(transaction).toHaveBeenCalledTimes(1);
-    expect(executeRaw).toHaveBeenCalledTimes(1);
+    expect(executeRaw).toHaveBeenCalledTimes(2);
     expect(executeRaw.mock.invocationCallOrder[0]!).toBeLessThan(del.mock.invocationCallOrder[0]!);
   });
 });
