@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useContext, useMemo } from 'react';
 import { patternForPeriod, profileForDate, segmentsForDay, slotsForDay, type BellProfile, type BellPeriod } from '@/lib/bell-patterns';
 import { wibTodayISO, scheduleDayOfWeek } from '@/lib/bell-times';
 const BellContext = createContext<BellProfile[]>([]);
