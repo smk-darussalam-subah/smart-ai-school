@@ -73,9 +73,9 @@ export class PermissionsService {
     return permissions.has('*') || permissions.has(requiredPermission);
   }
 
-  async getAuthoritativePrimaryRole(keycloakId: string): Promise<UserRole | null> {
+  async getAuthoritativePrimaryRole(keycloakId: string, db: Prisma.TransactionClient = this.prisma): Promise<UserRole | null> {
     try {
-      const user = await this.prisma.user.findFirst({
+      const user = await db.user.findFirst({
         where: { keycloakId, isActive: true, deletedAt: null },
         select: { role: true },
       });
@@ -91,14 +91,15 @@ export class PermissionsService {
   async getActivePositionCodes(
     keycloakId: string,
     schoolDate: Date = getSchoolDate(),
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<Set<string>> {
-    const authUserId = await this.findAuthUserId(keycloakId);
+    const authUserId = await this.findAuthUserId(keycloakId, db);
     if (!authUserId) return new Set();
-    const activeYearId = await this.resolveSingleActiveAcademicYearId();
+    const activeYearId = await this.resolveSingleActiveAcademicYearId(db);
     if (!activeYearId) return new Set();
 
     try {
-      const appointments = await this.prisma.appointment.findMany({
+      const appointments = await db.appointment.findMany({
         where: {
           status: ACTIVE_APPOINTMENT_STATUS,
           staff: {
@@ -228,26 +229,36 @@ export class PermissionsService {
    * explicit exceptions. POSITION_ASSIGNMENT rows remain historical/TF2 data
    * but no longer grant appointment-derived authority.
    */
+  /** No token authority or cache at a mutation's serialization point. */
+  async hasFreshPermission(keycloakId: string, permission: string, db: Prisma.TransactionClient): Promise<boolean> {
+    const role = await this.getAuthoritativePrimaryRole(keycloakId, db);
+    if (!role) return false;
+    if (role === 'SUPER_ADMIN') return true;
+    const permissions = await this.resolvePermissions(keycloakId, [role], getSchoolDate(), db);
+    return permissions.has('*') || permissions.has(permission);
+  }
+
   private async resolvePermissions(
     keycloakId: string,
     roles: UserRole[],
     schoolDate: Date,
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<Set<string>> {
     const permSet = new Set<string>();
     const primaryRoles = roles.filter(isPrimaryRole);
 
-    const authUserId = await this.findAuthUserId(keycloakId);
+    const authUserId = await this.findAuthUserId(keycloakId, db);
 
     // TF2-P1-1: Ambil active academic year untuk filter override.
-    const activeYearId = await this.resolveSingleActiveAcademicYearId();
+    const activeYearId = await this.resolveSingleActiveAcademicYearId(db);
 
     const [rolePermissions, userOverrides, appointmentPermissions] = await Promise.all([
-      this.prisma.rolePermission.findMany({
+      db.rolePermission.findMany({
         where: { role: { in: primaryRoles } },
         select: { permission: { select: { code: true } } },
       }),
       authUserId
-        ? this.prisma.userPermissionOverride.findMany({
+        ? db.userPermissionOverride.findMany({
             where: {
               userId: authUserId,
               status: PermissionOverrideStatus.ACTIVE,
@@ -260,7 +271,7 @@ export class PermissionsService {
           })
         : Promise.resolve([] as { grant: boolean; permission: { code: string } }[]),
       authUserId && activeYearId
-        ? this.resolveActiveAppointmentPermissionCodes(authUserId, activeYearId, schoolDate)
+        ? this.resolveActiveAppointmentPermissionCodes(authUserId, activeYearId, schoolDate, db)
         : Promise.resolve([] as string[]),
     ]);
 
@@ -363,8 +374,8 @@ export class PermissionsService {
     }
   }
 
-  private async findAuthUserId(keycloakId: string): Promise<string | null> {
-    const user = await this.prisma.user.findUnique({
+  private async findAuthUserId(keycloakId: string, db: Prisma.TransactionClient = this.prisma): Promise<string | null> {
+    const user = await db.user.findUnique({
       where: { keycloakId },
       select: { id: true },
     });
@@ -375,9 +386,10 @@ export class PermissionsService {
     userId: string,
     activeYearId: string,
     schoolDate: Date,
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<string[]> {
     try {
-      const appointments = await this.prisma.appointment.findMany({
+      const appointments = await db.appointment.findMany({
         where: {
           status: ACTIVE_APPOINTMENT_STATUS,
           staff: {
@@ -416,7 +428,7 @@ export class PermissionsService {
       );
       if (permissionIds.length === 0) return [];
 
-      const permissions = await this.prisma.permission.findMany({
+      const permissions = await db.permission.findMany({
         where: { id: { in: permissionIds } },
         select: { code: true },
       });
@@ -435,9 +447,9 @@ export class PermissionsService {
   }
 
   /** Appointment authority is undefined unless exactly one academic year is active. */
-  private async resolveSingleActiveAcademicYearId(): Promise<string | null> {
+  private async resolveSingleActiveAcademicYearId(db: Prisma.TransactionClient = this.prisma): Promise<string | null> {
     try {
-      const activeYears = await this.prisma.academicYear.findMany({
+      const activeYears = await db.academicYear.findMany({
         where: { isActive: true },
         select: { id: true },
         take: 2,

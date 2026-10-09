@@ -72,6 +72,8 @@ const PUBLIC_PREFIXES = [
 ] as const;
 
 export function isPublicPath(pathname: string): boolean {
+  if (['/local-preview/jp-presensi', '/local-preview/jp-presensi/period'].includes(pathname) &&
+    process.env.NODE_ENV === 'development' && process.env.DIIS_LOCAL_PREVIEW === 'true') return true;
   if (PUBLIC_EXACT.includes(pathname)) return true;
   if (pathname.startsWith('/jurusan/')) return true;
   return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));

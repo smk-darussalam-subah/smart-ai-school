@@ -8,6 +8,9 @@ import { apiFetch } from '@/lib/api';
 import { HeartbeatProvider } from '@/components/HeartbeatProvider';
 import { LoginEventRecorder } from '@/components/LoginEventRecorder';
 import { CURRENT_CONSENT_VERSION } from '@/lib/constants';
+import { BellPatternProvider } from '@/components/providers/BellPatternProvider';
+import type { BellTimingCatalog } from '@/lib/bell-patterns';
+import { AttendanceEngine } from '@/components/attendance/AttendanceEngine';
 
 export default async function DashboardLayout({
   children,
@@ -32,9 +35,10 @@ export default async function DashboardLayout({
 
   // Ambil effective permissions dari backend
   const token = session.accessToken ?? '';
-  const [meData, posData] = await Promise.all([
+  const [meData, posData, bellCatalog] = await Promise.all([
     apiFetch<{ permissions: string[] }>('/auth/me', token),
     apiFetch<{ academicYear: unknown; positions: { status: 'ACTIVE'; position: { code: string; name: string } }[] }>('/positions/my-positions', token),
+    apiFetch<BellTimingCatalog>('/bell-schedules/catalog', token),
   ]);
   // R-24: Sidebar gets position codes only from active effective appointments.
   const positionRoles: string[] = (posData?.positions ?? []).map((p) => p.position.code);
@@ -55,12 +59,16 @@ export default async function DashboardLayout({
 
   return (
     <DashboardProviders session={session}>
+      <BellPatternProvider profiles={(bellCatalog?.profiles ?? []).map((profile) => ({ ...profile, revokedAt: null, provenance: '' }))} periods={bellCatalog?.periods ?? []}>
+      <AttendanceEngine enabled={!viewAs && (userPermissions.includes('*') || userPermissions.includes('staff.attendance.checkin'))}>
       <HeartbeatProvider>
         <LoginEventRecorder />
         <AppShell viewAs={viewAs} permissions={userPermissions} permError={permError} hideChrome={hideChrome} positionRoles={positionRoles}>
           {children}
         </AppShell>
       </HeartbeatProvider>
+      </AttendanceEngine>
+      </BellPatternProvider>
     </DashboardProviders>
   );
 }

@@ -1,5 +1,14 @@
 import { z } from 'zod';
 
+export const ConcurrencySchema = z.object({
+  anchorScheduleId: z.string().uuid(),
+  mode: z.enum(['JOINT_CLASS', 'AUTHORIZED_EXCEPTION']),
+  reason: z.string().trim().min(10).max(500),
+  expiresOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+}).strict().refine((value) => value.mode !== 'AUTHORIZED_EXCEPTION' || Boolean(value.expiresOn), {
+  message: 'Pengecualian wajib memiliki tanggal berakhir', path: ['expiresOn'],
+});
+
 export const CreateScheduleSchema = z
   .object({
     classId:              z.string().uuid(),
@@ -13,6 +22,7 @@ export const CreateScheduleSchema = z
     room:                 z.string().max(50).nullable().optional(),
     academicYear:         z.string().regex(/^\d{4}\/\d{4}$/, 'Format: YYYY/YYYY'),
     semester:             z.number().int().min(1).max(2),
+    concurrency: ConcurrencySchema.optional(),
   })
   .strict()
   .refine((d) => d.jpEnd >= d.jpStart, {

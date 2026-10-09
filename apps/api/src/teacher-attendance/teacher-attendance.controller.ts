@@ -18,6 +18,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
+import { Audit } from '../audit-log/decorators/audit.decorator';
 import { TeacherAttendanceService } from './teacher-attendance.service';
 import {
   CheckInDto,
@@ -34,6 +35,7 @@ export class TeacherAttendanceController {
   @Roles('GURU')
   @RequirePermission('teacher.attendance.checkin')
   @Post('check-in')
+  @Audit({ action: 'teacherAttendance.checkIn', captureBody: false })
   @HttpCode(HttpStatus.CREATED)
   checkIn(
     @Body(ZodPipe(CheckInSchema)) dto: CheckInDto,
@@ -45,6 +47,7 @@ export class TeacherAttendanceController {
   @Roles('GURU')
   @RequirePermission('teacher.attendance.checkin')
   @Post('check-out')
+  @Audit({ action: 'teacherAttendance.checkOut', captureBody: false })
   @HttpCode(HttpStatus.OK)
   checkOut(
     @Body(ZodPipe(CheckOutSchema)) dto: CheckOutDto,

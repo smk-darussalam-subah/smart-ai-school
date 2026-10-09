@@ -51,6 +51,7 @@ model User {
   parent      Student[]  @relation("ParentStudent")
   leads       PpdbLead[] @relation("AssignedLeads")
   semesterClosures SemesterClosure[]
+  staffAttendances StaffAttendance[]
 
   @@index([role])
   @@index([isActive])
@@ -523,6 +524,7 @@ model Schedule {
   room                 String?  @db.VarChar(50)      // nullable — sekolah kecil mungkin belum pakai
   academicYear         String   @map("academic_year") @db.VarChar(9)
   semester             Int
+  concurrencyGroupId   String?  @map("concurrency_group_id") @db.Uuid
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
@@ -530,6 +532,7 @@ model Schedule {
   class              Class              @relation(fields: [classId], references: [id])
   teachingAssignment TeachingAssignment @relation(fields: [teachingAssignmentId], references: [id])
   classSessions      ClassSession[]
+  concurrencyGroup   ScheduleConcurrencyGroup? @relation(fields: [concurrencyGroupId], references: [id])
 
   // Satu kelas tidak bisa punya dua jadwal di slot JP yang sama.
   // + 2G-2: exclusion constraint "schedules_class_jp_range_excl" (raw SQL,
@@ -537,7 +540,94 @@ model Schedule {
   //   Prisma tidak bisa mengekspresikan EXCLUDE, jangan di-drop saat db pull.
   @@unique([classId, dayOfWeek, jpStart, academicYear, semester])
   @@index([teachingAssignmentId])
+  @@index([concurrencyGroupId])
   @@map("schedules")
+  @@schema("academic")
+}
+
+// Draft-only foundation. These rows are never read by operational schedule consumers.
+model SchedulingVersion {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  academicYearId    String   @map("academic_year_id") @db.Uuid
+  semesterNumber    Int      @map("semester_number")
+  versionNumber     Int      @map("version_number")
+  status            String   @default("DRAFT") @db.VarChar(20)
+  sourceType        String   @default("MANUAL") @map("source_type") @db.VarChar(20)
+  name              String   @db.VarChar(120)
+  effectiveFrom     DateTime @map("effective_from") @db.Date
+  effectiveUntil    DateTime @map("effective_until") @db.Date
+  scopeJson         Json     @map("scope_json")
+  inputSnapshotJson Json     @map("input_snapshot_json")
+  inputDigest       String   @map("input_digest") @db.VarChar(64)
+  revision          Int      @default(0)
+  createdBy         String   @map("created_by") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  archivedAt        DateTime? @map("archived_at")
+
+  semester Semester @relation(fields: [academicYearId, semesterNumber], references: [academicYearId, number], onDelete: Restrict, onUpdate: Restrict, map: "scheduling_versions_period_fk")
+  slots    SchedulingVersionSlot[]
+  receipts SchedulingMutationReceipt[]
+
+  @@unique([academicYearId, semesterNumber, versionNumber], map: "scheduling_versions_period_version_key")
+  @@index([academicYearId, semesterNumber, status])
+  @@map("scheduling_versions")
+  @@schema("academic")
+}
+
+model SchedulingVersionSlot {
+  id                 String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  versionId          String  @map("version_id") @db.Uuid
+  assignmentId       String  @map("assignment_id") @db.Uuid
+  sessionIndex       Int     @map("session_index")
+  dayOfWeek          Int     @map("day_of_week")
+  jpStart            Int     @map("jp_start")
+  jpEnd              Int     @map("jp_end")
+  roomLabel          String? @map("room_label") @db.VarChar(50)
+  concurrencyGroupId String? @map("concurrency_group_id") @db.Uuid
+  locked             Boolean @default(false)
+
+  // Scalar master references intentionally avoid blocking legacy assignment/group deletion.
+  version SchedulingVersion @relation(fields: [versionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([versionId, assignmentId, sessionIndex], map: "scheduling_version_slots_assignment_session_key")
+  @@map("scheduling_version_slots")
+  @@schema("academic")
+}
+
+model SchedulingMutationReceipt {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  versionId    String   @map("version_id") @db.Uuid
+  actorId      String   @map("actor_id") @db.Uuid
+  operation    String   @db.VarChar(30)
+  keyHash      String   @map("key_hash") @db.VarChar(64)
+  requestHash  String   @map("request_hash") @db.VarChar(64)
+  responseJson Json     @map("response_json")
+  createdAt    DateTime @default(now()) @map("created_at")
+  version      SchedulingVersion @relation(fields: [versionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([actorId, operation, keyHash])
+  @@map("scheduling_mutation_receipts")
+  @@schema("academic")
+}
+
+// Explicit, approved ownership of simultaneous teaching. A group never relaxes class conflicts.
+model ScheduleConcurrencyGroup {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teacherId    String   @map("teacher_id") @db.Uuid
+  mode         String   @db.VarChar(30)
+  reason       String   @db.VarChar(500)
+  approvedBy   String   @map("approved_by") @db.VarChar(255)
+  dayOfWeek    Int      @map("day_of_week")
+  jpStart      Int      @map("jp_start")
+  jpEnd        Int      @map("jp_end")
+  academicYear String   @map("academic_year") @db.VarChar(9)
+  semester     Int
+  expiresOn    DateTime? @map("expires_on") @db.Date
+  createdAt    DateTime @default(now()) @map("created_at")
+  schedules    Schedule[]
+
+  @@map("schedule_concurrency_groups")
   @@schema("academic")
 }
 
@@ -593,6 +683,7 @@ model BellScheduleProfile {
 model BellScheduleSegment {
   id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   profileId   String          @map("profile_id") @db.Uuid
+  dayOfWeek   Int             @default(0) @map("day_of_week") // 0 = preserved legacy common pattern
   jpNumber    Int?            @map("jp_number")
   label       String          @db.VarChar(80)
   type        BellSegmentType
@@ -603,8 +694,8 @@ model BellScheduleSegment {
 
   profile BellScheduleProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
-  @@unique([profileId, sortOrder])
-  @@unique([profileId, jpNumber])
+  @@unique([profileId, dayOfWeek, sortOrder])
+  @@unique([profileId, dayOfWeek, jpNumber])
   @@index([profileId, startMinute])
   @@map("bell_schedule_segments")
   @@schema("school")
@@ -1556,10 +1647,70 @@ model SchoolProfile {
   latitude        Decimal? @db.Decimal(9, 6)
   longitude       Decimal? @db.Decimal(9, 6)
   geofenceRadiusM Int      @default(300) @map("geofence_radius_m")
+  attendanceMode String   @default("REVIEW") @map("attendance_mode") @db.VarChar(10)
+  attendanceAccuracyM Int @default(100) @map("attendance_accuracy_m")
+  attendanceStartMinute Int @default(420) @map("attendance_start_minute")
+  attendanceTeacherLeadMin Int @default(15) @map("attendance_teacher_lead_min")
+  attendanceTeacherLeadTarget Int @default(30) @map("attendance_teacher_lead_target")
+  attendanceEndMinute Int @default(900) @map("attendance_end_minute")
+  attendanceWorkingDays Int[] @default([1, 2, 3, 4, 5, 6]) @map("attendance_working_days")
+  attendancePromptCooldown Int @default(30) @map("attendance_prompt_cooldown")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@map("school_profile")
+  @@schema("school")
+}
+
+// Unified staff attendance. Legacy teacher attendance remains intact for custody.
+model StaffAttendance {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  date DateTime @db.Date
+  checkInAt DateTime @map("check_in_at")
+  checkOutAt DateTime? @map("check_out_at")
+  arrivalBasis String? @map("arrival_basis") @db.VarChar(20)
+  expectedArrivalAt DateTime? @map("expected_arrival_at")
+  recommendedArrivalAt DateTime? @map("recommended_arrival_at")
+  firstTeachingAt DateTime? @map("first_teaching_at")
+  locationInStatus String @map("location_in_status") @db.VarChar(30)
+  locationOutStatus String? @map("location_out_status") @db.VarChar(30)
+  locationInReason String? @map("location_in_reason") @db.VarChar(60)
+  locationOutReason String? @map("location_out_reason") @db.VarChar(60)
+  distanceInM Int? @map("distance_in_m")
+  distanceOutM Int? @map("distance_out_m")
+  accuracyInM Float? @map("accuracy_in_m")
+  accuracyOutM Float? @map("accuracy_out_m")
+  latIn Decimal? @map("lat_in") @db.Decimal(9, 6)
+  lngIn Decimal? @map("lng_in") @db.Decimal(9, 6)
+  latOut Decimal? @map("lat_out") @db.Decimal(9, 6)
+  lngOut Decimal? @map("lng_out") @db.Decimal(9, 6)
+  notes String? @db.Text
+  legacyTeacherAttendanceId String? @unique @map("legacy_teacher_attendance_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user User @relation(fields: [userId], references: [id])
+  events StaffAttendanceEvent[]
+
+  @@unique([userId, date])
+  @@index([date])
+  @@map("staff_attendance")
+  @@schema("school")
+}
+
+model StaffAttendanceEvent {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  attendanceId String @map("attendance_id") @db.Uuid
+  actorId String @map("actor_id") @db.VarChar(255)
+  kind String @db.VarChar(30)
+  reason String @db.VarChar(500)
+  before Json?
+  after Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  attendance StaffAttendance @relation(fields: [attendanceId], references: [id])
+
+  @@index([attendanceId, createdAt])
+  @@map("staff_attendance_events")
   @@schema("school")
 }
 
@@ -1613,6 +1764,7 @@ model Semester {
   closure        SemesterClosure? @relation("SemesterClosureSource")
   nextClosure    SemesterClosure? @relation("SemesterClosureNext")
   classSessions ClassSession[]
+  schedulingVersions SchedulingVersion[]
 
   @@unique([academicYearId, number])
   @@map("semesters")

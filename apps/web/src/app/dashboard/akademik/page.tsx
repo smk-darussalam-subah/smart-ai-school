@@ -11,7 +11,8 @@ import type {
   SiswaModul,
   SiswaTugas,
 } from './_components/siswa/siswa-types';
-import { scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-times';
+import { slotsForDay, type BellProfile } from '@/lib/bell-patterns';
+import { wibTodayISO, scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-times';
 import AcademicOperationsWorkspace from './_components/AcademicOperationsWorkspace';
 import AcademicRoleModeSwitcher from './_components/AcademicRoleModeSwitcher';
 import AcademicDataNotice from '../_components/AcademicDataNotice';
@@ -160,6 +161,8 @@ export default async function AkademikPage({
   const openNotifications = oneSearchParam(requestedParams.panel) === 'notifications';
   const initialStudentId = oneSearchParam(requestedParams.studentId).trim();
   const token = session?.accessToken ?? '';
+  const bellProfile = await apiFetch<BellProfile>('/bell-schedules/resolve?scope=SCHOOL&date=' + wibTodayISO(), token);
+  const dailySlots = slotsForDay(bellProfile, scheduleDayOfWeek());
   const authority = await resolveDashboardAuthority(session);
   const roles = authority.roles;
   const viewAs = await getActiveViewAs(session);
@@ -454,7 +457,7 @@ export default async function AkademikPage({
     const schedules = schedulesRes?.data ?? [];
     const { minutes } = wibNow();
     const dow = scheduleDayOfWeek();
-    const nowJp = currentJp(minutes);
+    const nowJp = currentJp(minutes, dailySlots);
 
     // R-13: Build a map of classId → latest assessment session for penilaian/feedback status.
     // A session with status 'active' or 'completed' and responses > 0 means penilaian is available.
@@ -499,7 +502,7 @@ export default async function AkademikPage({
         room: s.room ?? null,
         jpStart: s.jpStart,
         jpEnd: s.jpEnd,
-        startLabel: jpStartLabel(s.jpStart),
+        startLabel: jpStartLabel(s.jpStart, dailySlots),
         isNow: nowJp >= s.jpStart && nowJp <= s.jpEnd,
         moduleId: moduleByClassSubject.get(`${s.classId}|${s.teachingAssignment?.subject ?? ''}`),
         // R-13: Link assessment session if exists for this class+subject
@@ -892,7 +895,7 @@ export default async function AkademikPage({
   }
   const { minutes } = wibNow();
   const today = scheduleDayOfWeek();
-  const nowJp = currentJp(minutes);
+  const nowJp = currentJp(minutes, dailySlots);
   const ownTodayClasses: TodayClass[] = ownSchedules
     .filter((schedule) => schedule.dayOfWeek === today)
     .sort((left, right) => left.jpStart - right.jpStart)
@@ -903,7 +906,7 @@ export default async function AkademikPage({
       room: schedule.room ?? null,
       jpStart: schedule.jpStart,
       jpEnd: schedule.jpEnd,
-      startLabel: jpStartLabel(schedule.jpStart),
+      startLabel: jpStartLabel(schedule.jpStart, dailySlots),
       isNow: nowJp >= schedule.jpStart && nowJp <= schedule.jpEnd,
       moduleId: moduleByClassSubject.get(
         `${schedule.classId}|${schedule.teachingAssignment?.subject ?? ''}`,

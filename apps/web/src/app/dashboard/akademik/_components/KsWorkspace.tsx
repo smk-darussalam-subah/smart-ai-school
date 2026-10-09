@@ -22,7 +22,8 @@ import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem, ActivityItem, RppItem, ClassRef, LmsModuleItem } from './guru-types';
 import { resolveProfileFramework } from './modul-ajar-profile';
 import { KKTP_DEFAULT } from '@/lib/academic';
-import { JP_SLOTS, fmtMin, scheduleDayOfWeek, wibTodayISO, wibDateLabel, currentJp, wibNow } from '@/lib/bell-times';
+import { useBellPattern } from '@/components/providers/BellPatternProvider';
+import { fmtMin, scheduleDayOfWeek, wibTodayISO, wibDateLabel, currentJp, wibNow } from '@/lib/bell-times';
 import { fetchAttendanceHeatmap, fetchMonitoringKbm, fetchRekapAudit, fetchKktpConfigs, saveKktpConfig, fetchTeacherAttendanceToday } from '../actions';
 import type { AssessmentSessionData, TeacherAttendanceSummary } from '../actions';
 import RaporPipelineKs from './ks/RaporPipelineKs';
@@ -91,7 +92,7 @@ function sumatifStatus(status: string): SumatifStatus {
 }
 
 // Scheduling structural config (NOT simulasi — these are real school parameters)
-const SCHED_CONFIG = { days: 6, jpPerDay: 8, maxJpGuru: 24 };
+const SCHED_CONFIG = { days: 6, maxJpGuru: 24 };
 
 // U6: SIM_HEALTH, SIM_TREN_*, SIM_RPP_SLOW removed — refactored to honest empty states
 // P0: SIM_SUMATIF fake array → type-only (SumatifItem). SIM_SCHED_CONFLICTS → empty.
@@ -417,7 +418,8 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, activeSumatif, b
 function PapanHeatmap({ schedules, classes }: { schedules: ScheduleItem[]; classes: ClassRef[] }) {
   const dow = scheduleDayOfWeek();
   const { minutes } = wibNow();
-  const liveJp = currentJp(minutes);
+  const JP_SLOTS = useBellPattern().slots;
+  const liveJp = currentJp(minutes, JP_SLOTS);
   const todaySched = schedules.filter((s) => s.dayOfWeek === dow);
 
   const grid = useMemo(() => {
@@ -606,7 +608,8 @@ function GuruHadirModal({ data, onClose }: { data: TeacherAttendanceSummary | nu
 function KelasBerjalanModal({ schedules, classes, onClose }: { schedules: ScheduleItem[]; classes: ClassRef[]; onClose: () => void }) {
   const dow = scheduleDayOfWeek();
   const { minutes } = wibNow();
-  const liveJp = currentJp(minutes);
+  const JP_SLOTS = useBellPattern().slots;
+  const liveJp = currentJp(minutes, JP_SLOTS);
   const todaySched = schedules.filter((s) => s.dayOfWeek === dow);
 
   const data = classes.map((cls) => {
@@ -818,7 +821,8 @@ function MonitoringKbmKs({ kelasMapel, attendances: _attendances, schedules, cla
     return m;
   }, [todaySched]);
   const { minutes } = wibNow();
-  const liveJp = currentJp(minutes);
+  const JP_SLOTS = useBellPattern().slots;
+  const liveJp = currentJp(minutes, JP_SLOTS);
 
   return (
     <div className="space-y-4">
@@ -1206,6 +1210,10 @@ function JadwalTugasKs({ schedules, classes, pendingRpp, activeSumatif }: {
   const [selClass, setSelClass] = useState<string>('all');
   const filtered = selClass === 'all' ? schedules : schedules.filter((s) => s.classId === selClass);
 
+  const bell = useBellPattern();
+  const JP_SLOTS = bell.weeklySlots;
+  const dailyCounts = [1,2,3,4,5,6].map((day) => bell.slotsForDay(day).length);
+  const jpRange = dailyCounts.length ? `${Math.min(...dailyCounts)}–${Math.max(...dailyCounts)}` : '—';
   const matrixRows = JP_SLOTS.map((slot) => ({
     slot,
     cells: [1, 2, 3, 4, 5, 6].map((d) => filtered.find((s) => s.dayOfWeek === d && slot.jp >= s.jpStart && slot.jp <= s.jpEnd) ?? null),
@@ -1215,12 +1223,17 @@ function JadwalTugasKs({ schedules, classes, pendingRpp, activeSumatif }: {
 
   // Beban Mengajar per Guru
   const guruLoad = useMemo(() => {
-    const m = new Map<string, number>();
+    const m = new Map<string, { name: string; jp: number }>();
+    const physicalSlots = new Set<string>();
     for (const s of schedules) {
       const name = s.teachingAssignment.teacher?.user?.fullName ?? '—';
-      m.set(name, (m.get(name) ?? 0) + (s.jpEnd - s.jpStart + 1));
+      const teacherKey = s.teachingAssignment.teacher?.id ?? `unknown:${s.id}`;
+      for (let jp = s.jpStart; jp <= s.jpEnd; jp++) {
+        const key = `${teacherKey}|${s.dayOfWeek}|${jp}`;
+        if (!physicalSlots.has(key)) { m.set(teacherKey, { name, jp: (m.get(teacherKey)?.jp ?? 0) + 1 }); physicalSlots.add(key); }
+      }
     }
-    return [...m.entries()].map(([name, jp]) => ({ name, jp })).sort((a, b) => b.jp - a.jp);
+    return [...m.values()].sort((a, b) => b.jp - a.jp);
   }, [schedules]);
   const over24 = guruLoad.filter((g) => g.jp > SCHED_CONFIG.maxJpGuru).length;
 
@@ -1250,7 +1263,7 @@ function JadwalTugasKs({ schedules, classes, pendingRpp, activeSumatif }: {
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><SlidersHorizontal className="h-4 w-4 text-emerald-600" />Struktur Jadwal</h4>
         <div className="mt-3 grid grid-cols-3 gap-3 lg:grid-cols-6">
-          {[['Hari Aktif', `${SCHED_CONFIG.days}`], ['JP/Hari', `${SCHED_CONFIG.jpPerDay}`], ['Total JP/Minggu', `${SCHED_CONFIG.days * SCHED_CONFIG.jpPerDay}`], ['Rombel', `${classes.length}`], ['Guru', `${guruLoad.length}`], ['Max JP/Guru', `${SCHED_CONFIG.maxJpGuru}`]].map(([label, val]) => (
+          {[['Hari Aktif', `${SCHED_CONFIG.days}`], ['JP/Hari', jpRange], ['Total JP/Minggu', `${dailyCounts.reduce((sum, count) => sum + count, 0)}`], ['Rombel', `${classes.length}`], ['Guru', `${guruLoad.length}`], ['Max JP/Guru', `${SCHED_CONFIG.maxJpGuru}`]].map(([label, val]) => (
             <div key={label} className="rounded-xl bg-[#f4f7f5] px-3 py-2.5 text-center"><div className="text-[20px] font-extrabold text-[#0f2e25]">{val}</div><div className="text-[10.5px] font-medium text-[#6b8079]">{label}</div></div>
           ))}
         </div>
@@ -1303,7 +1316,7 @@ function JadwalTugasKs({ schedules, classes, pendingRpp, activeSumatif }: {
             <tbody>
               {matrixRows.map(({ slot, cells }) => (
                 <tr key={slot.jp}>
-                  <td className="px-2 py-2 text-[10.5px] font-extrabold text-emerald-700">JP {slot.jp}<span className="block font-medium text-[#9bb0a8]">{fmtMin(slot.startMin)}</span></td>
+                  <td className="px-2 py-2 text-[10.5px] font-extrabold text-emerald-700">JP {slot.jp}</td>
                   {cells.map((c, i) => c ? (
                     <td key={i} className="rounded-md border border-emerald-200 bg-emerald-50/40 px-2 py-1.5 text-center">
                       <b className="text-[10.5px] text-[#0f2e25]">{c.teachingAssignment?.subject?.slice(0, 8) ?? '—'}</b>
