@@ -1,7 +1,8 @@
 'use client';
 
 import { X } from 'lucide-react';
-import { JP_SLOTS, fmtMin } from '@/lib/bell-times';
+import { useBellPattern } from '@/components/providers/BellPatternProvider';
+import { fmtMin } from '@/lib/bell-times';
 import type { AttendanceCellStatus } from '@/lib/academic';
 import { ATT_STATUS_LABELS } from './ortu-data';
 
@@ -25,6 +26,9 @@ function statusColor(status: AttendanceCellStatus): string {
 }
 
 export default function DayDetailModal({ day, status, month, year, onClose }: DayDetailModalProps) {
+  const monthIndex = ['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'agu', 'sep', 'okt', 'nov', 'des'].findIndex((prefix) => month.toLowerCase().startsWith(prefix));
+  const date = year + '-' + String(monthIndex + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+  const JP_SLOTS = useBellPattern(date, new Date(date + 'T00:00:00Z').getUTCDay()).slots;
   const isEmpty = status === 'empty' || status === 'future';
   const color = statusColor(status);
   const label = ATT_STATUS_LABELS[status] ?? status;

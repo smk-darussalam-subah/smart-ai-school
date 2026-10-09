@@ -30,6 +30,13 @@ import { BellScheduleService } from './bell-schedule.service';
 export class BellScheduleController {
   constructor(private readonly service: BellScheduleService) {}
 
+  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU', 'SISWA', 'ORANG_TUA')
+  @RequirePermission(['academic.schedule.read', 'student.own.read', 'student.child.read'])
+  @Get('catalog')
+  catalog() {
+    return this.service.timingCatalog();
+  }
+
   @Roles('SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU')
   @RequirePermission('academic.schedule.read')
   @Get()
@@ -66,15 +73,16 @@ export class BellScheduleController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body(ZodPipe(UpdateBellProfileSchema)) dto: UpdateBellProfileDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.service.update(id, dto);
+    return this.service.update(id, dto, user.keycloakId);
   }
 
   @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
   @RequirePermission('academic.schedule.manage')
   @Audit({ action: 'bellSchedule.revoke', resourceType: 'bell_schedule', captureBody: false })
   @Delete(':id')
-  revoke(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.revoke(id);
+  revoke(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.service.revoke(id, user.keycloakId);
   }
 }

@@ -8,7 +8,7 @@ import type { Pembayaran } from '@/lib/academic';
 import type { AttendanceItem } from '@/lib/api';
 import { generateCalendar, fmtDateShort } from '@/lib/academic';
 import type { CalendarCell } from '@/lib/academic';
-import { JP_SLOTS, fmtMin } from '@/lib/bell-times';
+import { type JpSlot, fmtMin } from '@/lib/bell-times';
 import type { ScheduleItem } from '../guru-types';
 import type { OrtuWAHistory, OrtuKehadiranStats } from './ortu-types';
 
@@ -192,15 +192,15 @@ export interface OrtuScheduleSlotMapped {
  * Filter ScheduleItem API untuk hari (dayOfWeek 1=Senin..6=Sabtu, 0=Minggu=libur)
  * dan petakan ke slot ringkas untuk ditampilkan di Beranda/Kehadiran.
  */
-export function mapTodaySchedule(items: ScheduleItem[], dayOfWeek: number): OrtuScheduleSlotMapped[] {
+export function mapTodaySchedule(items: ScheduleItem[], dayOfWeek: number, JP_SLOTS: JpSlot[] = []): OrtuScheduleSlotMapped[] {
   if (dayOfWeek === 0) return [];
   return items
     .filter((s) => s.dayOfWeek === dayOfWeek)
     .map((s) => {
       // Estimasi rentang waktu dari JP via bell-times (sumber tunggal).
       // jpStart/jpEnd → label "07:30–08:10" bila tersedia di JP_SLOTS.
-      const startMin = jpStartMin(s.jpStart);
-      const endMin = jpEndMin(s.jpEnd);
+      const startMin = jpStartMin(s.jpStart, JP_SLOTS);
+      const endMin = jpEndMin(s.jpEnd, JP_SLOTS);
       const timeRange = startMin != null && endMin != null
         ? `${fmtMin(startMin)}\u2013${fmtMin(endMin)}`
         : '';
@@ -217,10 +217,10 @@ export function mapTodaySchedule(items: ScheduleItem[], dayOfWeek: number): Ortu
 }
 
 // Import JP_SLOTS lokal (bukan di top-level agar tree-shaking tetap bersih).
-function jpStartMin(jp: number): number | null {
+function jpStartMin(jp: number, JP_SLOTS: JpSlot[]): number | null {
   return JP_SLOTS.find((s) => s.jp === jp)?.startMin ?? null;
 }
-function jpEndMin(jp: number): number | null {
+function jpEndMin(jp: number, JP_SLOTS: JpSlot[]): number | null {
   return JP_SLOTS.find((s) => s.jp === jp)?.endMin ?? null;
 }
 

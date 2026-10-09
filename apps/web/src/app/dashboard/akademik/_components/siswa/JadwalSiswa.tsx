@@ -2,8 +2,9 @@
 
 import { useState, useMemo } from 'react';
 import { CalendarClock, MapPin, Bell } from 'lucide-react';
+import { useBellPattern } from '@/components/providers/BellPatternProvider';
 import { wibNow, currentJp } from '@/lib/bell-times';
-import { JP_LABELS, JP_MAP, resolveSchedule } from './siswa-data';
+import { studentDayPattern, resolveSchedule, scheduledInstructionMinutes } from './siswa-data';
 import type { SiswaScreen, ModalState } from './SiswaWorkspace';
 import type { SiswaKalenderEvent } from './siswa-types';
 
@@ -21,10 +22,12 @@ const HARI: [string, number][] = [['Senin', 1], ['Selasa', 2], ['Rabu', 3], ['Ka
 export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, setModal, kalender, studentClassName }: Props) {
   const now = wibNow();
   const todayDow = now.jsDay; // 0=Sunday → no schedule → shows "Libur"
-  const currentJpIdx = currentJp(now.minutes);
+  const bell = useBellPattern();
+  const currentJpIdx = currentJp(now.minutes, bell.slots);
 
   const [selectedDay, setSelectedDay] = useState(todayDow);
-  const { schedule: schedData, isSim: isSimSchedule } = resolveSchedule(schedule);
+  const { JP_LABELS, JP_MAP } = studentDayPattern(bell.profile, selectedDay);
+  const { schedule: schedData, isSim: isSimSchedule, timingAvailable } = resolveSchedule(schedule, bell.profile);
   const daySched = schedData[selectedDay] || {};
   const hasSched = Object.keys(daySched).length > 0;
 
@@ -36,16 +39,17 @@ export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, 
     return count;
   }, [schedData]);
 
-  const totalHours = Math.round((totalSched * 40) / 6) / 10;
+  const totalMinutes = scheduledInstructionMinutes(schedData, bell.profile);
+  const totalHours = totalMinutes == null ? null : Math.round(totalMinutes / 6) / 10;
 
   return (
     <div>
       {/* Top Summary */}
       <div className="px-5 py-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-extrabold tracking-tight">Jadwal Pelajaran</h1>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h1 className="text-xl font-extrabold tracking-tight sm:text-2xl">Jadwal Pelajaran</h1>
           <span className="rounded-full bg-emerald-500/12 px-3 py-1.5 text-[11px] font-extrabold text-emerald-500">
-            {totalSched} JP · {totalHours} jam/minggu
+            {timingAvailable ? `${totalSched} JP · ${totalHours == null ? 'Waktu belum tersedia' : `${totalHours} jam/minggu`}` : 'Waktu JP belum tersedia'}
           </span>
         </div>
         {isSimSchedule && (
@@ -92,7 +96,9 @@ export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, 
 
       {/* Schedule Grid */}
       <div className="px-5 py-4 space-y-2">
-        {hasSched ? (
+        {!timingAvailable ? (
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-[var(--text)]" role="status">Waktu JP belum dapat dimuat. Jadwal tidak dianggap libur; coba muat ulang atau hubungi admin untuk memeriksa konfigurasi bel.</p>
+        ) : hasSched ? (
           JP_MAP.map(([, idx]) => {
             const slot = daySched[idx];
             if (!slot) {
@@ -111,7 +117,7 @@ export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, 
               );
             }
 
-            const isDone = idx < (currentJpIdx === 0 ? -1 : JP_MAP.findIndex(([j]) => j === currentJpIdx));
+            const isDone = idx < (currentJpIdx === 0 ? -1 : (JP_MAP.find(([j]) => j === currentJpIdx)?.[1] ?? -1));
             const isNow = currentJpIdx > 0 && JP_MAP[currentJpIdx - 1]?.[1] === idx;
             const guruShort = slot.g.split(',')[0] ?? slot.g;
 

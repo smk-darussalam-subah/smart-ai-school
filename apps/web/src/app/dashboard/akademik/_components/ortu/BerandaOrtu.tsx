@@ -1,4 +1,5 @@
 'use client';
+import { useBellPattern } from '@/components/providers/BellPatternProvider';
 
 import { useEffect, useState } from 'react';
 import {
@@ -74,8 +75,9 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
   const nilai: OrtuNilai[] = grades?.length ? (grades as OrtuNilai[]) : [];
   const avg = avgNa(nilai);
   const stats = computeAttStats(attendance);           // ganti SIM_KEH_STATS
+  const bell = useBellPattern();
   const dow = scheduleDayOfWeek();
-  const todaySched = mapTodaySchedule(schedule, dow);   // ganti SIM_SCHEDULE
+  const todaySched = mapTodaySchedule(schedule, dow, bell.slots);   // ganti SIM_SCHEDULE
   const isLibur = dow === 0 || todaySched.length === 0;
 
   // Pembayaran real
@@ -233,7 +235,7 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
             return (
               <div key={i} className="flex gap-2.5 border-b border-[var(--border)] py-2 last:border-0">
                 <div className="min-w-[80px] pt-0.5 text-right text-[10px] font-bold text-[var(--muted)]">
-                  {jpTimeRange(slot.jp)}
+                  {jpTimeRange(slot.jp, bell.slots)}
                 </div>
                 <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ background: c }} />
                 <div className="min-w-0 flex-1">

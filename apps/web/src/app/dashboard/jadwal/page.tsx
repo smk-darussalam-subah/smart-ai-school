@@ -6,7 +6,8 @@ import { apiFetchResult } from '@/lib/api';
 import JadwalMatrix, { type ScheduleItem } from './_components/JadwalMatrix';
 import AcademicDataNotice from '../_components/AcademicDataNotice';
 import TodayClassSessions, { type TodayClassSession } from './_components/TodayClassSessions';
-import BellScheduleManager, { type BellScheduleProfile } from './_components/BellScheduleManager';
+import BellScheduleManager from './_components/BellPatternEditor';
+import type { BellProfile as BellScheduleProfile } from '@/lib/bell-patterns';
 
 interface ListResponse {
   data: ScheduleItem[];
@@ -171,6 +172,7 @@ export default async function JadwalPage() {
         initialAcademicYear={initialAcademicYear}
         initialSemester={initialSemester}
         isStaff={isStaff}
+        canApproveConcurrency={canManage && authority.hasRole('SUPER_ADMIN', 'WAKA_KURIKULUM')}
         canManage={canManage}
       />
     </div>
