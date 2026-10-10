@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -32,7 +32,9 @@ import LogoutButton from '@/components/shared/LogoutButton';
 import { fetchMyNotifications, subscribePush, unsubscribePush, fetchDailyQuests, fetchPersonalCalendar } from '../../actions';
 import {
   normalizeAnnouncements,
+  scheduleClassName,
 } from './siswa-data';
+import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import { withCompletedModuleProgress } from './siswa-modul-progress';
 import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaXP, SiswaLeaderboardEntry, SiswaModul, SiswaCP, SiswaKehadiranStats, SiswaQuest, SiswaKalenderEvent, BadgeCelebrationData } from './siswa-types';
 import type { AttendanceEntry } from './KehadiranSiswa';
@@ -74,6 +76,7 @@ interface SiswaWorkspaceProps {
   grades?: unknown[];
   attendance?: unknown[];
   schedule?: unknown[];
+  scheduleState?: LearnerScheduleState;
   announcements?: unknown[];
   realBadges?: SiswaBadge[] | null;
   realXp?: SiswaXP | null;
@@ -145,7 +148,7 @@ function toSiswaKalenderEvent(event: SchoolCalendarEvent): SiswaKalenderEvent {
   };
 }
 
-export default function SiswaWorkspace({ grades, attendance, schedule, announcements, realBadges, realXp, realLeaderboard, realAssignments, realModules, realCp, realAttStats, viewAs, openNotifications = false, initialWorkflowView = null }: SiswaWorkspaceProps) {
+export default function SiswaWorkspace({ grades, attendance, schedule, scheduleState = 'ready', announcements, realBadges, realXp, realLeaderboard, realAssignments, realModules, realCp, realAttStats, viewAs, openNotifications = false, initialWorkflowView = null }: SiswaWorkspaceProps) {
   const { data: session } = useSession();
   const router = useRouter();
   const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
@@ -279,9 +282,9 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
     { key: 'capaian', label: 'Capaian', icon: Award },
   ];
 
-  // R-01: Derive user name and class name from session/leaderboard for child components
+  // Own schedule supplies class even when the student has no leaderboard entry.
   const userName = session?.user?.name ?? null;
-  const studentClassName = realLeaderboard?.find((e) => e.me)?.kelas ?? null;
+  const studentClassName = scheduleClassName(schedule) ?? realLeaderboard?.find((e) => e.me)?.kelas ?? null;
   const attendanceEntries = (attendance ?? [])
     .map(toAttendanceEntry)
     .filter((entry): entry is AttendanceEntry => entry !== null);
@@ -312,6 +315,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
             xp={realXp ?? { level: 1, current: 0, next: 500 }}
             kehStats={realAttStats ?? { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, pct: 0 }}
             schedule={schedule || []}
+            scheduleState={scheduleState}
             userName={userName}
             studentClassName={studentClassName}
           />
@@ -321,6 +325,7 @@ export default function SiswaWorkspace({ grades, attendance, schedule, announcem
           <JadwalSiswa
             {...commonProps}
             schedule={schedule || []}
+            scheduleState={scheduleState}
             kalender={realCalendar ?? []}
             studentClassName={studentClassName}
           />

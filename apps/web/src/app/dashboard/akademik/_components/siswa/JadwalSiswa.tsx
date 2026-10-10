@@ -1,15 +1,18 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { CalendarClock, MapPin, Bell } from 'lucide-react';
 import { useBellPattern } from '@/components/providers/BellPatternProvider';
-import { wibNow, currentJp } from '@/lib/bell-times';
-import { studentDayPattern, resolveSchedule, scheduledInstructionMinutes } from './siswa-data';
+import { wibNow } from '@/lib/bell-times';
+import { studentDayPattern, resolveSchedule, scheduledInstructionMinutes, studentLessonPhase } from './siswa-data';
+import LearnerScheduleNotice from '../LearnerScheduleNotice';
+import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import type { SiswaScreen, ModalState } from './SiswaWorkspace';
 import type { SiswaKalenderEvent } from './siswa-types';
 
 interface Props {
   schedule: unknown[];
+  scheduleState?: LearnerScheduleState;
   showToast: (msg: string) => void;
   go: (screen: SiswaScreen) => void;
   setModal: (modal: ModalState) => void;
@@ -19,11 +22,10 @@ interface Props {
 
 const HARI: [string, number][] = [['Senin', 1], ['Selasa', 2], ['Rabu', 3], ['Kamis', 4], ['Jumat', 5], ['Sabtu', 6]];
 
-export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, setModal, kalender, studentClassName }: Props) {
+export default function JadwalSiswa({ schedule, scheduleState = 'ready', showToast: _showToast, go: _go, setModal, kalender, studentClassName }: Props) {
   const now = wibNow();
   const todayDow = now.jsDay; // 0=Sunday → no schedule → shows "Libur"
   const bell = useBellPattern();
-  const currentJpIdx = currentJp(now.minutes, bell.slots);
 
   const [selectedDay, setSelectedDay] = useState(todayDow);
   const { JP_LABELS, JP_MAP } = studentDayPattern(bell.profile, selectedDay);
@@ -49,7 +51,7 @@ export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, 
         <div className="flex flex-wrap items-start justify-between gap-2">
           <h1 className="text-xl font-extrabold tracking-tight sm:text-2xl">Jadwal Pelajaran</h1>
           <span className="rounded-full bg-emerald-500/12 px-3 py-1.5 text-[11px] font-extrabold text-emerald-500">
-            {timingAvailable ? `${totalSched} JP · ${totalHours == null ? 'Waktu belum tersedia' : `${totalHours} jam/minggu`}` : 'Waktu JP belum tersedia'}
+            {scheduleState !== 'ready' ? 'Jadwal belum tersedia' : timingAvailable ? `${totalSched} JP · ${totalHours == null ? 'Waktu belum tersedia' : `${totalHours} jam/minggu`}` : 'Waktu JP belum tersedia'}
           </span>
         </div>
         {isSimSchedule && (
@@ -73,6 +75,8 @@ export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, 
 
             return (
               <button
+                type="button"
+                aria-pressed={isActive}
                 key={dow}
                 onClick={() => setSelectedDay(dow)}
                 className={`relative flex-shrink-0 rounded-xl px-4 py-2.5 text-center transition-all ${
@@ -84,7 +88,7 @@ export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, 
                 }`}
               >
                 <div className="text-[11px] font-bold">{label}</div>
-                <div className="mt-0.5 text-[10px] font-semibold opacity-75">{schedCount} JP</div>
+                <div className="mt-0.5 text-[10px] font-semibold opacity-75">{scheduleState === 'ready' && timingAvailable ? `${schedCount} JP` : '—'}</div>
                 {isToday && !isActive && (
                   <div className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[var(--bg)] bg-emerald-500" />
                 )}
@@ -96,10 +100,10 @@ export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, 
 
       {/* Schedule Grid */}
       <div className="px-5 py-4 space-y-2">
-        {!timingAvailable ? (
+        {scheduleState !== 'ready' ? <LearnerScheduleNotice state={scheduleState} /> : !timingAvailable ? (
           <p className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-[var(--text)]" role="status">Waktu JP belum dapat dimuat. Jadwal tidak dianggap libur; coba muat ulang atau hubungi admin untuk memeriksa konfigurasi bel.</p>
         ) : hasSched ? (
-          JP_MAP.map(([, idx]) => {
+          JP_MAP.map(([jp, idx]) => {
             const slot = daySched[idx];
             if (!slot) {
               const jpLabel = JP_LABELS[idx]![0];
@@ -117,8 +121,9 @@ export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, 
               );
             }
 
-            const isDone = idx < (currentJpIdx === 0 ? -1 : (JP_MAP.find(([j]) => j === currentJpIdx)?.[1] ?? -1));
-            const isNow = currentJpIdx > 0 && JP_MAP[currentJpIdx - 1]?.[1] === idx;
+            const phase = studentLessonPhase(now, selectedDay, bell.slotsForDay(selectedDay).find((slot) => slot.jp === jp));
+            const isDone = phase === 'finished';
+            const isNow = phase === 'current';
             const guruShort = slot.g.split(',')[0] ?? slot.g;
 
             return (
@@ -144,14 +149,14 @@ export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, 
                     }`}
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="text-base font-bold">{slot.mp}</div>
-                    <div className="mt-1 flex items-center gap-3 text-xs text-[var(--muted)]">
-                      <span className="flex items-center gap-1">
-                        <MapPin className="h-3 w-3" />
-                        {slot.ruang}
+                    <div className="break-words text-sm font-bold [overflow-wrap:anywhere] sm:text-base">{slot.mp}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 break-words text-xs text-[var(--muted)]">
+                      <span className="flex min-w-0 max-w-full items-center gap-1">
+                        <MapPin className="h-3 w-3 shrink-0" />
+                        <span className="min-w-0 [overflow-wrap:anywhere]">{slot.ruang}</span>
                       </span>
                       <span className="text-[11px] font-semibold text-[var(--muted)]">·</span>
-                      <span className="text-xs font-semibold text-[var(--muted)]">{guruShort}</span>
+                      <span className="min-w-0 max-w-full break-words text-xs font-semibold text-[var(--muted)] [overflow-wrap:anywhere]">{guruShort}</span>
                     </div>
                     {isNow && (
                       <div className="mt-2">
@@ -182,7 +187,7 @@ export default function JadwalSiswa({ schedule, showToast: _showToast, go: _go, 
         ) : (
           <div className="py-12 text-center text-[var(--dim)]">
             <div className="mx-auto mb-3 h-12 w-12 opacity-50">📅</div>
-            <div className="text-lg">Libur — tidak ada jadwal hari ini</div>
+            <div className="text-sm">Belum ada jadwal untuk hari yang dipilih</div>
           </div>
         )}
       </div>
