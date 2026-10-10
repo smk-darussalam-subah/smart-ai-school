@@ -41,6 +41,7 @@ import {
   type StudentDashboardAssignmentGroup as OrtuStudentDashboardAssignmentGroup,
 } from './_components/ortu/ortu-mappers';
 import { resolveAcademicWorkflowView } from '@/lib/academic-workflow-deep-link';
+import { childSchedulePath, OWN_STUDENT_SCHEDULE_PATH } from '@/lib/learner-schedule';
 
 type Assignment = TeachingAssignmentItem;
 interface ClassItem {
@@ -247,7 +248,7 @@ export default async function AkademikPage({
         `/attendance?dateFrom=${attendanceMonth.dateFrom}&dateTo=${attendanceMonth.dateTo}&limit=200`,
         token,
       ),
-      apiFetch<{ data: ScheduleItem[] }>(`/schedules?studentId=${studentId}&limit=100`, token),
+      apiFetch<{ data: ScheduleItem[] }>(OWN_STUDENT_SCHEDULE_PATH, token),
       apiFetch<{ data: { id: string; title: string; createdAt: string }[] }>(
         '/announcements?limit=5',
         token,
@@ -626,14 +627,18 @@ export default async function AkademikPage({
 
     // Round 2: fetch child-specific data (all in parallel, fail-soft → null)
     const childDataPromise = Promise.all(
-      childIds.map(async (studentId) => {
+      children.map(async (child) => {
+        const studentId = child.id;
+        const schedulePath = childSchedulePath(child.class?.id);
         const [gradesRes, attendanceRes, scheduleRes, badgesRes, waLogRes] = await Promise.all([
           apiFetch<PaginatedResponse<GradeItem>>(`/grades?studentId=${studentId}&limit=100`, token),
           apiFetch<PaginatedResponse<AttendanceItem>>(
             `/attendance?studentId=${studentId}&limit=200`,
             token,
           ),
-          apiFetch<{ data: ScheduleItem[] }>(`/schedules?studentId=${studentId}&limit=100`, token),
+          schedulePath
+            ? apiFetch<{ data: ScheduleItem[] }>(schedulePath, token)
+            : Promise.resolve({ data: [] as ScheduleItem[] }),
           apiFetch<OrtuBadgeApiItem[]>(`/badges/student/${studentId}`, token),
           apiFetch<{
             data: Array<{
