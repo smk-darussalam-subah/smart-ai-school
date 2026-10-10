@@ -20,11 +20,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { JP_SLOTS } from '@/lib/bell-times';
+import { useBellPeriod } from '@/components/providers/BellPatternProvider';
 import {
   createSchedule,
   deleteSchedule,
   searchScheduleAssignments,
+  fetchScheduleList,
   updateSchedule,
 } from '../actions';
 import type { ScheduleItem } from './JadwalMatrix';
@@ -34,7 +35,7 @@ export interface AssignmentOption {
   id: string;
   subject: string;
   academicYear: string;
-  teacher: { user: { fullName: string } };
+  teacher: { id: string; user: { fullName: string } };
   class: { id: string; name: string };
 }
 
@@ -44,6 +45,9 @@ interface Props {
   schedule: ScheduleItem | null;
   academicYear?: string;
   onSaved: () => void;
+  canApproveConcurrency?: boolean;
+  initialSemester?: number;
+  previewOnly?: boolean;
 }
 
 const DAYS = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -54,6 +58,9 @@ export default function JadwalFormDialog({
   schedule,
   academicYear,
   onSaved,
+  canApproveConcurrency = false,
+  initialSemester = 1,
+  previewOnly = false,
 }: Props) {
   const isEdit = Boolean(schedule);
   const [loading, setLoading] = useState(false);
@@ -62,13 +69,62 @@ export default function JadwalFormDialog({
   const [jpStart, setJpStart] = useState('1');
   const [jpEnd, setJpEnd] = useState('2');
   const [room, setRoom] = useState('');
-  const [semester, setSemester] = useState('1');
+  const [semester, setSemester] = useState(String(schedule?.semester ?? initialSemester));
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [assignmentSearch, setAssignmentSearch] = useState('');
   const [assignmentOptions, setAssignmentOptions] = useState<AssignmentOption[]>([]);
   const [assignmentTotal, setAssignmentTotal] = useState(0);
   const [loadingAssignments, setLoadingAssignments] = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState<AssignmentOption | null>(null);
+  const bell = useBellPeriod(schedule?.academicYear ?? selectedAssignment?.academicYear ?? academicYear, Number(semester));
+  const JP_SLOTS = bell.validSlotsForDay(Number(dayOfWeek));
+  const [mode, setMode] = useState('NORMAL');
+  const [anchorId, setAnchorId] = useState('');
+  const [anchors, setAnchors] = useState<ScheduleItem[]>([]);
+  const [concurrencyReason, setConcurrencyReason] = useState('');
+  const [expiresOn, setExpiresOn] = useState('');
+  useEffect(() => {
+    setMode('NORMAL');
+    setAnchorId('');
+    setConcurrencyReason('');
+    setExpiresOn('');
+  }, [open]);
+  useEffect(() => {
+    let cancelled = false;
+    setAnchors([]);
+    setAnchorId('');
+    if (!open || mode === 'NORMAL' || !selectedAssignment) return;
+    void fetchScheduleList({
+      page: 1,
+      limit: 500,
+      teacherId: selectedAssignment.teacher.id,
+      academicYear: selectedAssignment.academicYear,
+      semester: Number(semester),
+      dayOfWeek: Number(dayOfWeek),
+    })
+      .then((result) => {
+        if (cancelled) return;
+        if (!result.success) {
+          setError(result.error || 'Jadwal acuan gagal dimuat.');
+          return;
+        }
+        const items = (result.data as { data: ScheduleItem[] }).data;
+        setAnchors(
+          items.filter(
+            (item) =>
+              item.classId !== selectedAssignment.class.id &&
+              item.jpStart === Number(jpStart) &&
+              item.jpEnd === Number(jpEnd),
+          ),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setError('Koneksi gagal saat memuat jadwal acuan.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, mode, selectedAssignment, semester, dayOfWeek, jpStart, jpEnd]);
 
   useEffect(() => {
     if (!open) return;
@@ -80,8 +136,8 @@ export default function JadwalFormDialog({
     setJpStart(String(schedule?.jpStart ?? 1));
     setJpEnd(String(schedule?.jpEnd ?? 2));
     setRoom(schedule?.room ?? '');
-    setSemester(String(schedule?.semester ?? 1));
-  }, [open, schedule]);
+    setSemester(String(schedule?.semester ?? initialSemester));
+  }, [open, schedule, initialSemester]);
 
   useEffect(() => {
     if (!open || isEdit || selectedAssignment) return;
@@ -113,8 +169,28 @@ export default function JadwalFormDialog({
     setError('');
     const start = Number(jpStart);
     const end = Number(jpEnd);
+    if (
+      mode !== 'NORMAL' &&
+      (!anchorId ||
+        concurrencyReason.trim().length < 10 ||
+        (mode === 'AUTHORIZED_EXCEPTION' && !expiresOn))
+    ) {
+      setError(
+        'Pilih jadwal acuan, isi alasan minimal 10 karakter, dan tanggal berakhir untuk pengecualian.',
+      );
+      return;
+    }
+    if (!JP_SLOTS.some((slot) => slot.jp === start) || !JP_SLOTS.some((slot) => slot.jp === end)) {
+      setError('Rentang JP tidak tersedia sepanjang semester pilihan. Konfigurasikan bel dahulu.');
+      return;
+    }
     if (end < start) {
       setError('JP selesai tidak boleh mendahului JP mulai.');
+      return;
+    }
+
+    if (previewOnly) {
+      setError('Validasi pratinjau selesai. Tidak ada data disimpan atau permintaan mutasi dikirim.');
       return;
     }
 
@@ -137,6 +213,16 @@ export default function JadwalFormDialog({
             room: normalizeRoomInput(room),
             academicYear: selectedAssignment.academicYear,
             semester: Number(semester),
+            ...(mode !== 'NORMAL'
+              ? {
+                  concurrency: {
+                    anchorScheduleId: anchorId,
+                    mode,
+                    reason: concurrencyReason.trim(),
+                    ...(expiresOn ? { expiresOn } : {}),
+                  },
+                }
+              : {}),
           })
         : { success: false as const, error: 'Pilih penugasan mengajar terlebih dahulu.' };
     setLoading(false);
@@ -157,12 +243,15 @@ export default function JadwalFormDialog({
           if (!loading) onOpenChange(nextOpen);
         }}
       >
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
+        <DialogContent
+          className="max-h-[94dvh] w-[calc(100%_-_2rem)] overflow-y-auto sm:max-w-2xl"
+          closeDisabled={loading}
+        >
+          <DialogHeader className="pr-10">
             <DialogTitle>{isEdit ? 'Edit Slot Jadwal' : 'Tambah Slot Jadwal'}</DialogTitle>
             <DialogDescription>
               {schedule
-                ? `${schedule.teachingAssignment.subject} · ${schedule.class.name}. Konflik tetap diperiksa server.`
+                ? `${schedule.teachingAssignment.subject} · ${schedule.class.name}. ${previewOnly ? 'Pratinjau pilihan JP; konflik server diuji terpisah.' : 'Konflik tetap diperiksa server.'}`
                 : 'Pilih penugasan yang sah, lalu tentukan hari, rentang JP, dan ruang.'}
             </DialogDescription>
           </DialogHeader>
@@ -185,6 +274,7 @@ export default function JadwalFormDialog({
                       type="button"
                       variant="outline"
                       size="sm"
+                      className="min-h-11"
                       onClick={() => setSelectedAssignment(null)}
                     >
                       Ganti
@@ -198,7 +288,7 @@ export default function JadwalFormDialog({
                         id="assignment-search"
                         value={assignmentSearch}
                         onChange={(event) => setAssignmentSearch(event.target.value)}
-                        className="pl-9 pr-9"
+                        className="min-h-11 pl-9 pr-9 text-base sm:text-sm"
                         placeholder="Cari kelas, mapel, atau nama guru"
                         autoComplete="off"
                       />
@@ -251,11 +341,11 @@ export default function JadwalFormDialog({
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Hari</Label>
                 <Select value={dayOfWeek} onValueChange={setDayOfWeek}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Hari" className="min-h-11 text-base sm:text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -270,7 +360,7 @@ export default function JadwalFormDialog({
               <div className="space-y-1.5">
                 <Label>Semester</Label>
                 <Select value={semester} onValueChange={setSemester}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Semester" className="min-h-11 text-base sm:text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -281,6 +371,9 @@ export default function JadwalFormDialog({
               </div>
             </div>
 
+            <p className="text-xs leading-relaxed text-slate-600" role="status">
+              {bell.problem || (bell.varies ? 'Waktu JP bervariasi selama semester. Pilihan hanya memuat JP yang tersedia pada setiap tanggal hari tersebut; waktu harian mengikuti profil efektif.' : 'JP dan waktu mengikuti semester pilihan, bukan tanggal hari ini.')}
+            </p>
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <Label>JP Mulai</Label>
@@ -291,13 +384,13 @@ export default function JadwalFormDialog({
                     if (Number(jpEnd) < Number(value)) setJpEnd(value);
                   }}
                 >
-                  <SelectTrigger aria-label="JP mulai">
+                  <SelectTrigger className="min-h-11 text-base sm:text-sm" aria-label="JP mulai">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {JP_SLOTS.map((slot) => (
                       <SelectItem key={slot.jp} value={String(slot.jp)}>
-                        {jpOptionLabel(slot)}
+                        {slot.timingVaries ? `JP ${slot.jp} · Waktu bervariasi` : jpOptionLabel(slot)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -306,13 +399,13 @@ export default function JadwalFormDialog({
               <div className="space-y-1.5">
                 <Label>JP Selesai</Label>
                 <Select value={jpEnd} onValueChange={setJpEnd}>
-                  <SelectTrigger aria-label="JP selesai">
+                  <SelectTrigger className="min-h-11 text-base sm:text-sm" aria-label="JP selesai">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {JP_SLOTS.filter((slot) => slot.jp >= Number(jpStart)).map((slot) => (
                       <SelectItem key={slot.jp} value={String(slot.jp)}>
-                        {jpOptionLabel(slot)}
+                        {slot.timingVaries ? `JP ${slot.jp} · Waktu bervariasi` : jpOptionLabel(slot)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -322,6 +415,7 @@ export default function JadwalFormDialog({
                 <Label htmlFor="room">Ruang</Label>
                 <Input
                   id="room"
+                  className="min-h-11 text-base sm:text-sm"
                   placeholder="Contoh: LAB 1"
                   maxLength={100}
                   value={room}
@@ -331,19 +425,91 @@ export default function JadwalFormDialog({
               </div>
             </div>
 
+            {!isEdit && canApproveConcurrency && (
+              <fieldset className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
+                <legend className="px-1 text-sm font-semibold text-slate-900">
+                  Pola pelaksanaan
+                </legend>
+                <select
+                  aria-label="Pola pelaksanaan"
+                  className="h-11 w-full rounded-lg border bg-white px-3 text-base sm:text-sm"
+                  value={mode}
+                  onChange={(event) => setMode(event.target.value)}
+                >
+                  <option value="NORMAL">Normal · satu guru, satu kelas</option>
+                  <option value="JOINT_CLASS">Kelas gabungan resmi</option>
+                  <option value="AUTHORIZED_EXCEPTION">Pengecualian bersamaan sementara</option>
+                </select>
+                {mode !== 'NORMAL' && (
+                  <>
+                    <p className="text-xs leading-relaxed text-slate-600">
+                      {mode === 'JOINT_CLASS'
+                        ? 'Mapel, guru, hari, JP, dan lokasi harus sama. Kehadiran serta penilaian siswa tetap per kelas.'
+                        : 'Tidak dianggap kelas gabungan. Risiko pelaksanaan dan tindak lanjut wajib dijelaskan; berlaku sampai tanggal yang disetujui.'}
+                    </p>
+                    <label className="grid gap-1 text-xs text-slate-600">
+                      Jadwal acuan
+                      <select
+                        className="h-11 rounded-lg border bg-white px-3 text-base sm:text-sm"
+                        value={anchorId}
+                        onChange={(event) => setAnchorId(event.target.value)}
+                      >
+                        <option value="">Pilih kelas pada guru/hari/JP yang sama</option>
+                        {anchors.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.class.name} · {item.teachingAssignment.subject} ·{' '}
+                            {item.room || 'tanpa ruang'}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {!anchors.length && (
+                      <p className="text-xs text-amber-800">
+                        Belum ada jadwal acuan pada rentang ini. Simpan kelas pertama sebagai jadwal
+                        normal dahulu.
+                      </p>
+                    )}
+                    <label className="grid gap-1 text-xs text-slate-600">
+                      Alasan persetujuan
+                      <textarea
+                        className="rounded-lg border bg-white p-2 text-base sm:text-sm"
+                        value={concurrencyReason}
+                        onChange={(event) => setConcurrencyReason(event.target.value)}
+                        maxLength={500}
+                      />
+                    </label>
+                    {mode === 'AUTHORIZED_EXCEPTION' && (
+                      <label className="grid gap-1 text-xs text-slate-600">
+                        Berlaku sampai
+                        <input
+                          type="date"
+                          className="h-11 rounded-lg border bg-white px-3 text-base sm:text-sm"
+                          value={expiresOn}
+                          onChange={(event) => setExpiresOn(event.target.value)}
+                        />
+                      </label>
+                    )}
+                    <p className="text-xs text-blue-700">
+                      Persetujuan tercatat atas akun Anda. Konflik kelas tetap ditolak.
+                    </p>
+                  </>
+                )}
+              </fieldset>
+            )}
             {error && (
-              <p className="text-sm text-destructive" role="alert">
+              <p className={previewOnly && error.startsWith('Validasi pratinjau') ? 'text-sm text-blue-700' : 'text-sm text-destructive'} role={previewOnly && error.startsWith('Validasi pratinjau') ? 'status' : 'alert'}>
                 {error}
               </p>
             )}
 
             <div className="flex items-center justify-between gap-2">
               <div>
-                {isEdit && (
+                {isEdit && !previewOnly && (
                   <Button
                     type="button"
                     variant="destructive"
                     size="sm"
+                    className="min-h-11"
                     disabled={loading}
                     onClick={() => setConfirmDelete(true)}
                   >
@@ -356,13 +522,18 @@ export default function JadwalFormDialog({
                   type="button"
                   variant="outline"
                   disabled={loading}
+                  className="min-h-11"
                   onClick={() => onOpenChange(false)}
                 >
                   Batal
                 </Button>
-                <Button type="submit" disabled={loading || (!isEdit && !selectedAssignment)}>
+                <Button
+                  className="min-h-11"
+                  type="submit"
+                  disabled={loading || !JP_SLOTS.length || (!isEdit && !selectedAssignment)}
+                >
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {loading ? 'Menyimpan…' : isEdit ? 'Simpan' : 'Tambah'}
+                  {loading ? 'Menyimpan…' : previewOnly ? 'Uji validasi' : isEdit ? 'Simpan' : 'Tambah'}
                 </Button>
               </div>
             </div>

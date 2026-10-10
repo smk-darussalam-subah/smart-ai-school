@@ -17,7 +17,7 @@ export const AutoGenerateScheduleQuerySchema = z.object({
   academicYear: AcademicYearCodeSchema,
   semester: SemesterNumberSchema,
   days: z.coerce.number().int().min(1).max(6).default(6),
-  jpPerDay: z.coerce.number().int().min(1).max(12).default(8),
+  jpPerDay: z.coerce.number().int().min(1).max(16).optional(), // legacy hint; authoritative daily bell wins
   maxJpGuru: z.coerce.number().int().min(1).max(48).default(24),
 }).strict();
 

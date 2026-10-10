@@ -46,6 +46,8 @@ import { ScheduleController } from '../schedule/schedule.controller';
 import { ScheduleModule }     from '../schedule/schedule.module';
 import { PrismaService }      from '../prisma/prisma.service';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
+import { BellScheduleService } from '../bell-schedule/bell-schedule.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { AuthUser }           from '@smk/auth';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -158,8 +160,13 @@ describe('ScheduleService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScheduleService,
+        { provide: PermissionsService, useValue: {
+          getAuthoritativePrimaryRole: jest.fn().mockResolvedValue('SUPER_ADMIN'),
+          hasFreshPermission: jest.fn().mockResolvedValue(true),
+        } },
         { provide: PrismaService, useValue: prisma },
         { provide: AcademicPeriodService, useValue: academicPeriod },
+        { provide: BellScheduleService, useValue: { assertWeeklyRange: jest.fn().mockResolvedValue(undefined), instructionDaysForPeriod: jest.fn().mockResolvedValue(new Map([1,2,3,4,5,6].map((day) => [day, new Set([1,2,3,4,5,6,7,8])])) ) } },
       ],
     }).compile();
     service = module.get(ScheduleService);
@@ -191,9 +198,9 @@ describe('ScheduleService', () => {
 
     it('SA input jadwal valid → create dipanggil, data dikembalikan', async () => {
       setupValidCreate();
-      const result = await service.create(CREATE_DTO);
+      const result = await service.create(CREATE_DTO, SA_USER);
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-      expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
       expect(prisma.schedule.create).toHaveBeenCalledTimes(1);
       expect(result).toEqual(MOCK_SCHEDULE);
 
@@ -203,13 +210,13 @@ describe('ScheduleService', () => {
 
     it('teachingAssignmentId tidak ada → BadRequestException', async () => {
       prisma.teachingAssignment.findUnique.mockResolvedValue(null);
-      await expect(service.create(CREATE_DTO)).rejects.toThrow(BadRequestException);
+      await expect(service.create(CREATE_DTO, SA_USER)).rejects.toThrow(BadRequestException);
       expect(prisma.schedule.create).not.toHaveBeenCalled();
     });
 
     it('classId tidak sesuai teachingAssignment → BadRequestException', async () => {
       setupValidCreate({ taClassId: 'class-uuid-BEDA' });
-      await expect(service.create(CREATE_DTO)).rejects.toThrow(BadRequestException);
+      await expect(service.create(CREATE_DTO, SA_USER)).rejects.toThrow(BadRequestException);
       expect(prisma.schedule.create).not.toHaveBeenCalled();
     });
 
@@ -217,7 +224,7 @@ describe('ScheduleService', () => {
       // assignment punya 2024/2025, dto kirim 2025/2026 → inkonsisten → 400
       setupValidCreate({ taAcademicYear: '2024/2025' });
       await expect(
-        service.create({ ...CREATE_DTO, academicYear: '2025/2026' }),
+        service.create({ ...CREATE_DTO, academicYear: '2025/2026' }, SA_USER),
       ).rejects.toThrow(BadRequestException);
       // gagal cepat: cek konflik tidak boleh dijalankan
       expect(prisma.schedule.findFirst).not.toHaveBeenCalled();
@@ -226,13 +233,13 @@ describe('ScheduleService', () => {
 
     it('konflik guru (slot JP overlap) → ConflictException', async () => {
       setupValidCreate({ guruConflict: true });
-      await expect(service.create(CREATE_DTO)).rejects.toThrow(ConflictException);
+      await expect(service.create(CREATE_DTO, SA_USER)).rejects.toThrow(ConflictException);
       expect(prisma.schedule.create).not.toHaveBeenCalled();
     });
 
     it('konflik ruang (slot JP overlap, room non-null) → ConflictException', async () => {
       setupValidCreate({ roomConflict: true });
-      await expect(service.create(CREATE_DTO)).rejects.toThrow(ConflictException);
+      await expect(service.create(CREATE_DTO, SA_USER)).rejects.toThrow(ConflictException);
       expect(prisma.schedule.create).not.toHaveBeenCalled();
     });
 
@@ -245,7 +252,7 @@ describe('ScheduleService', () => {
       prisma.schedule.findFirst.mockResolvedValue(null); // guru tidak conflict
       prisma.schedule.create.mockResolvedValue(MOCK_SCHEDULE);
 
-      await service.create({ ...CREATE_DTO, room: null });
+      await service.create({ ...CREATE_DTO, room: null }, SA_USER);
 
       // findFirst 2× (2F-1: cek rentang kelas + cek guru) — room check di-skip
       expect(prisma.schedule.findFirst).toHaveBeenCalledTimes(2);
@@ -258,7 +265,7 @@ describe('ScheduleService', () => {
       });
       prisma.schedule.create.mockRejectedValue(p2002);
 
-      await expect(service.create(CREATE_DTO)).rejects.toThrow(
+      await expect(service.create(CREATE_DTO, SA_USER)).rejects.toThrow(
         Prisma.PrismaClientKnownRequestError,
       );
     });
@@ -306,16 +313,16 @@ describe('ScheduleService', () => {
 
       const results = await Promise.allSettled([
         service.create({ classId: 'class-1', teachingAssignmentId: 'ta-1', dayOfWeek: 1,
-          jpStart: 1, jpEnd: 2, room: null, academicYear: '2026/2027', semester: 1 }),
+          jpStart: 1, jpEnd: 2, room: null, academicYear: '2026/2027', semester: 1 }, SA_USER),
         service.create({ classId: 'class-2', teachingAssignmentId: 'ta-2', dayOfWeek: 1,
-          jpStart: 1, jpEnd: 2, room: null, academicYear: '2026/2027', semester: 1 }),
+          jpStart: 1, jpEnd: 2, room: null, academicYear: '2026/2027', semester: 1 }, SA_USER),
       ]);
 
       expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
       const rejected = results.find((result) => result.status === 'rejected');
       expect(rejected?.status === 'rejected' ? rejected.reason : null).toBeInstanceOf(ConflictException);
       expect(created).toHaveLength(1);
-      expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(4);
     });
   });
 
@@ -512,6 +519,14 @@ describe('ScheduleService', () => {
     });
 
     describe('SISWA ownership', () => {
+      it('SISWA foreign class and teacher hints cannot broaden authenticated own-class scope', async () => {
+        prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-siswa' });
+        prisma.student.findUnique.mockResolvedValue({ classId: 'class-uuid-001' });
+        await service.findAll({ ...BASE_QUERY, classId: 'class-foreign', teacherId: 'teacher-foreign' }, SISWA_USER);
+        const where = prisma.schedule.findMany.mock.calls[0][0].where;
+        expect(where.classId).toBe('class-uuid-001');
+        expect(where.teachingAssignmentId).toBeUndefined();
+      });
       it('SISWA hanya kelas sendiri — where.classId = student.classId', async () => {
         prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-siswa' });
         prisma.student.findUnique.mockResolvedValue({ classId: 'class-uuid-001' });
@@ -545,6 +560,23 @@ describe('ScheduleService', () => {
     });
 
     describe('ORANG_TUA ownership', () => {
+      it('selected child class does not combine schedules of different children', async () => {
+        prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-ortu' });
+        prisma.student.findMany.mockResolvedValue([
+          { classId: 'class-uuid-001' }, { classId: 'class-uuid-002' },
+        ]);
+        await service.findAll({ ...BASE_QUERY, classId: 'class-uuid-002' }, ORANGTUA_USER);
+        expect(prisma.schedule.findMany.mock.calls[0][0].where.classId).toBe('class-uuid-002');
+      });
+
+      it('foreign child class is forbidden before schedules are read', async () => {
+        prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-ortu' });
+        prisma.student.findMany.mockResolvedValue([{ classId: 'class-uuid-001' }]);
+        await expect(service.findAll({ ...BASE_QUERY, classId: 'class-foreign' }, ORANGTUA_USER))
+          .rejects.toThrow(ForbiddenException);
+        expect(prisma.schedule.findMany).not.toHaveBeenCalled();
+      });
+
       it('ORANG_TUA hanya kelas anak — where.classId = { in: childClassIds }', async () => {
         prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-ortu' });
         prisma.student.findMany.mockResolvedValue([
@@ -597,6 +629,7 @@ describe('ScheduleController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ScheduleController],
       providers: [
+        { provide: PermissionsService, useValue: { hasPermission: jest.fn().mockResolvedValue(true) } },
         {
           provide: ScheduleService,
           useValue: {
@@ -641,8 +674,8 @@ describe('ScheduleController', () => {
   });
 
   it('create — body valid → delegasi ke service', async () => {
-    await controller.create(CREATE_DTO);
-    expect(service.create).toHaveBeenCalledWith(CREATE_DTO);
+    await controller.create(CREATE_DTO, SA_USER);
+    expect(service.create).toHaveBeenCalledWith(CREATE_DTO, SA_USER);
   });
 
   it('KAPROG is available only on the schedule list read route', () => {

@@ -22,6 +22,17 @@ describe('overlaps', () => {
 });
 
 describe('detectConflicts', () => {
+  it('suppresses only exact approved joint sessions, and expired/partial/invalid groups stay conflicts', () => {
+    const group = { mode: 'JOINT_CLASS', expiresOn: null };
+    const a = slot({ id: 'a', concurrencyGroupId: 'group', concurrencyGroup: group, room: 'LAPANGAN' });
+    const b = slot({ id: 'b', classId: 'c2', concurrencyGroupId: 'group', concurrencyGroup: group, room: 'LAPANGAN' });
+    expect(detectConflicts([a,b]).size).toBe(0);
+    expect(detectConflicts([a,{ ...b, jpEnd: 3 }]).size).toBe(2);
+    expect(detectConflicts([a,{ ...b, room: 'ROOM B' }]).size).toBe(2);
+    expect(detectConflicts([a,{ ...b, concurrencyGroup: null }]).size).toBe(2);
+    const expired = { mode: 'AUTHORIZED_EXCEPTION', expiresOn: '2000-01-01' };
+    expect(detectConflicts([{ ...a, concurrencyGroup: expired },{ ...b, concurrencyGroup: expired }]).size).toBe(2);
+  });
   it('guru sama, hari sama, kelas beda, JP overlap → kedua slot ditandai', () => {
     const items = [
       slot({ id: 'a', classId: 'c1', jpStart: 1, jpEnd: 3 }),

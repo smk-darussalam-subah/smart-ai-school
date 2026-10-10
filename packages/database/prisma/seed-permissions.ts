@@ -12,6 +12,9 @@ interface PermissionDef {
 }
 
 const PERMISSIONS: PermissionDef[] = [
+  { code: 'staff.attendance.checkin', description: 'Presensi mandiri pegawai aktif', module: 'attendance' },
+  { code: 'staff.attendance.read', description: 'Baca rekap presensi pegawai', module: 'attendance' },
+  { code: 'staff.attendance.manage', description: 'Koreksi dan kebijakan presensi pegawai', module: 'attendance' },
   { code: 'student.create', description: 'Membuat data siswa baru', module: 'student' },
   { code: 'student.read', description: 'Melihat data siswa', module: 'student' },
   { code: 'student.update', description: 'Mengubah data siswa', module: 'student' },
@@ -28,6 +31,8 @@ const PERMISSIONS: PermissionDef[] = [
   { code: 'academic.teaching.manage', description: 'Mengelola teaching assignment', module: 'academic' },
   { code: 'academic.schedule.read', description: 'Melihat jadwal', module: 'academic' },
   { code: 'academic.schedule.manage', description: 'Mengelola jadwal', module: 'academic' },
+  { code: 'academic.schedule.draft.read', description: 'Melihat draft jadwal internal', module: 'academic' },
+  { code: 'academic.schedule.edit', description: 'Mengubah draft jadwal internal', module: 'academic' },
   { code: 'academic.remedial.manage', description: 'Mengelola remedial pada TeachingAssignment sendiri', module: 'academic' },
   { code: 'academic.remedial.read', description: 'Melihat registry remedial sesuai kewenangan', module: 'academic' },
   { code: 'remedial.own.read', description: 'Melihat remedial sendiri (SISWA)', module: 'academic' },
@@ -86,6 +91,7 @@ const PERMISSIONS: PermissionDef[] = [
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   SUPER_ADMIN: PERMISSIONS.map((p) => p.code),
   TATA_USAHA: [
+    'staff.attendance.checkin', 'staff.attendance.read',
     'student.create', 'student.read', 'student.update', 'student.delete',
     'ppdb.create', 'ppdb.read', 'ppdb.update',
     'finance.create', 'finance.read', 'finance.update',
@@ -98,6 +104,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'user.provision', 'user.read', 'user.manage',
   ],
   GURU: [
+    'staff.attendance.checkin',
     'academic.grade.create', 'academic.grade.read', 'academic.grade.update',
     'academic.attendance.create', 'academic.attendance.read',
     'academic.teaching.read', 'academic.schedule.read',

@@ -25,7 +25,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { JP_SLOTS, fmtMin } from '@/lib/bell-times';
+import { fmtMin } from '@/lib/bell-times';
+import { useBellPeriod } from '@/components/providers/BellPatternProvider';
 
 export interface ScheduleItem {
   id: string;
@@ -36,6 +37,8 @@ export interface ScheduleItem {
   room?: string | null;
   academicYear: string;
   semester: number;
+  concurrencyGroupId?: string | null;
+  concurrencyGroup?: { id: string; mode: string; expiresOn: string | null } | null;
   class: { id: string; name: string; majorCode: string; grade: number };
   teachingAssignment: {
     id: string;
@@ -66,6 +69,7 @@ interface Props {
   initialSemester: number;
   isStaff: boolean;
   canManage?: boolean;
+  canApproveConcurrency?: boolean;
 }
 
 const DAYS = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -101,6 +105,7 @@ export default function JadwalMatrix({
   initialSemester,
   isStaff,
   canManage = false,
+  canApproveConcurrency = false,
 }: Props) {
   const [schedules, setSchedules] = useState(initialSchedules);
   const [total, setTotal] = useState(initialTotal);
@@ -108,6 +113,8 @@ export default function JadwalMatrix({
   const [classFilter, setClassFilter] = useState('all');
   const [academicYear, setAcademicYear] = useState(initialAcademicYear || 'all');
   const [semester, setSemester] = useState(String(initialSemester));
+  const bell = useBellPeriod(academicYear, Number(semester));
+  const JP_SLOTS = bell.weeklySlots.map((jp) => ({ jp }));
   const [classSearch, setClassSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -179,7 +186,7 @@ export default function JadwalMatrix({
       <header className="flex flex-col gap-3 border-b border-slate-200 pb-5 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-sm font-medium text-emerald-700">Operasional Akademik</p>
-          <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold text-slate-950">
+          <h1 className="mt-1 flex items-center gap-2 text-xl font-semibold text-slate-950 sm:text-2xl">
             <CalendarDays className="h-6 w-6" /> Jadwal Pelajaran
           </h1>
           <p className="mt-1 text-sm text-slate-600">
@@ -192,7 +199,7 @@ export default function JadwalMatrix({
           </p>
         </div>
         {canManage && (
-          <Button onClick={openCreate}>
+          <Button onClick={openCreate} disabled={!bell.available}>
             <Plus className="mr-2 h-4 w-4" /> Tambah Slot
           </Button>
         )}
@@ -283,6 +290,9 @@ export default function JadwalMatrix({
           </Button>
         </div>
       )}
+      <p className="text-xs leading-relaxed text-slate-600" role="status">
+        {bell.problem || (bell.varies ? 'Waktu JP bervariasi sepanjang semester pilihan; periksa waktu pada tanggal pelaksanaan.' : 'Pola JP mengikuti tahun ajaran dan semester pilihan.')}
+      </p>
       {!matrixComplete && (
         <div
           className="border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
@@ -307,7 +317,7 @@ export default function JadwalMatrix({
               )}
             </CardContent>
           </Card>
-        ) : !matrixMode ? (
+        ) : !matrixMode || !bell.available ? (
           <ListView
             items={schedules}
             conflicts={conflicts}
@@ -334,20 +344,37 @@ export default function JadwalMatrix({
                     <tr key={slot.jp}>
                       <th scope="row" className="align-top text-left font-medium text-slate-500">
                         <span className="block">JP {slot.jp}</span>
-                        <span className="block text-[10px] font-normal">
-                          {fmtMin(slot.startMin)}–{fmtMin(slot.endMin)}
-                        </span>
+                        <span className="block text-[10px] font-normal">Sesuai pola hari</span>
                       </th>
                       {DAYS.map((_, dayIndex) => {
                         const day = dayIndex + 1;
+                        const timing = bell
+                          .slotsForDay(day)
+                          .find((period) => period.jp === slot.jp);
                         const item = cellOf(day, slot.jp);
+                        if (!timing && !item)
+                          return (
+                            <td
+                              key={day}
+                              className="bg-slate-100 text-center text-slate-400"
+                              aria-label="JP tidak tersedia"
+                            >
+                              —
+                            </td>
+                          );
                         if (!item)
                           return (
                             <td
                               key={day}
                               className="h-11 rounded bg-slate-50"
                               aria-label={`${DAYS[dayIndex]} JP ${slot.jp} kosong`}
-                            />
+                            >
+                              {timing && (
+                                <span className="text-[10px] text-slate-400">
+                                  {timing.timingVaries ? 'Waktu bervariasi' : `${fmtMin(timing.startMin)}–${fmtMin(timing.endMin)}`}
+                                </span>
+                              )}
+                            </td>
                           );
                         if (item.jpStart !== slot.jp) return null;
                         const conflict = conflicts.get(item.id);
@@ -422,10 +449,12 @@ export default function JadwalMatrix({
 
       {canManage && (
         <JadwalFormDialog
+          canApproveConcurrency={canApproveConcurrency}
           open={formOpen}
           onOpenChange={setFormOpen}
           schedule={editing}
           academicYear={academicYear === 'all' ? undefined : academicYear}
+          initialSemester={semester === 'all' ? initialSemester : Number(semester)}
           onSaved={() => void reload()}
         />
       )}
@@ -476,6 +505,13 @@ function ListView({
                       </span>
                       {schedule.room && (
                         <span className="block text-[11px] text-slate-500">{schedule.room}</span>
+                      )}
+                      {schedule.concurrencyGroup && (
+                        <span className="mt-1 block text-[11px] font-medium text-blue-700">
+                          {schedule.concurrencyGroup.mode === 'JOINT_CLASS'
+                            ? 'Kelas gabungan resmi'
+                            : 'Pengecualian sementara'}
+                        </span>
                       )}
                     </div>
                     <div className="flex shrink-0 items-center gap-1">

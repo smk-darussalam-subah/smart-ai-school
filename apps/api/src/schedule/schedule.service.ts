@@ -36,6 +36,9 @@ import { CreateScheduleDto } from './dto/create-schedule.dto';
 import { UpdateScheduleDto } from './dto/update-schedule.dto';
 import { ListScheduleQuery } from './dto/list-schedule.dto';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
+import { BellScheduleService } from '../bell-schedule/bell-schedule.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import { acquireIdentityMutationLock, assertFreshMutationAuthority } from '../common/helpers/identity-mutation-lock';
 
 const SCHEDULE_MUTATION_LOCK_KEY = 'academic:schedule:mutation:v1';
 
@@ -51,6 +54,8 @@ const SCHEDULE_SELECT = {
   room:                 true,
   academicYear:         true,
   semester:             true,
+  concurrencyGroupId:   true,
+  concurrencyGroup: { select: { id: true, mode: true, expiresOn: true } },
   createdAt:            true,
   updatedAt:            true,
   class: {
@@ -77,6 +82,8 @@ export class ScheduleService {
   constructor(
     private prisma: PrismaService,
     private readonly academicPeriod: AcademicPeriodService,
+    private readonly bellSchedule: BellScheduleService,
+    private readonly permissions: PermissionsService = new PermissionsService(prisma),
   ) {}
 
   private async acquireMutationLock(tx: Prisma.TransactionClient): Promise<void> {
@@ -162,7 +169,10 @@ export class ScheduleService {
       where.classId = myClassId;
     } else if (isOrangTuaOnly(user)) {
       const childClassIds = await this.resolveChildClassIds(user.keycloakId);
-      where.classId = { in: childClassIds };
+      if (query.classId && !childClassIds.includes(query.classId)) {
+        throw new ForbiddenException('Kelas bukan milik anak yang terdaftar untuk akun ini');
+      }
+      where.classId = query.classId ?? { in: childClassIds };
     } else {
       // ELEVATED (SA/KS/TU): filter opsional
       if (query.classId)   where.classId = query.classId;
@@ -202,14 +212,14 @@ export class ScheduleService {
 
   // ── create ───────────────────────────────────────────────────────────────────
 
-  async create(dto: CreateScheduleDto) {
+  async create(dto: CreateScheduleDto, actor: AuthUser) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireMutationLock(tx);
 
     // 1. Validasi teachingAssignmentId → ambil teacherId, classId, academicYear
     const assignment = await tx.teachingAssignment.findUnique({
       where: { id: dto.teachingAssignmentId },
-      select: { id: true, teacherId: true, classId: true, academicYear: true },
+      select: { id: true, teacherId: true, classId: true, academicYear: true, subject: true },
     });
     if (!assignment) {
       throw new BadRequestException(
@@ -230,6 +240,10 @@ export class ScheduleService {
       academicYear: dto.academicYear,
       semester: dto.semester,
     });
+    await this.bellSchedule.assertWeeklyRange(tx, dto.academicYear, dto.semester, dto.dayOfWeek, dto.jpStart, dto.jpEnd);
+    await assertFreshMutationAuthority(tx, this.permissions, actor.keycloakId,
+      'academic.schedule.manage', ['SUPER_ADMIN', 'TATA_USAHA'], ['WAKA_KURIKULUM']);
+    const groupId = dto.concurrency ? await this.resolveConcurrency(tx, dto, assignment, actor) : null;
 
     // 1b. Cek konflik RENTANG kelas (2F-1; unique DB hanya jpStart)
     await this.assertNoClassRangeConflict({
@@ -250,6 +264,7 @@ export class ScheduleService {
     const guruConflict = await tx.schedule.findFirst({
       where: {
         teachingAssignmentId: { in: guruTaIds },
+        ...(groupId ? { OR: [{ concurrencyGroupId: null }, { concurrencyGroupId: { not: groupId } }] } : {}),
         dayOfWeek:            dto.dayOfWeek,
         academicYear:         dto.academicYear,
         semester:             dto.semester,
@@ -273,6 +288,7 @@ export class ScheduleService {
       const roomConflict = await tx.schedule.findFirst({
         where: {
           room:         dto.room,
+          ...(groupId && dto.concurrency?.mode === 'JOINT_CLASS' ? { OR: [{ concurrencyGroupId: null }, { concurrencyGroupId: { not: groupId } }] } : {}),
           dayOfWeek:    dto.dayOfWeek,
           academicYear: dto.academicYear,
           semester:     dto.semester,
@@ -300,10 +316,55 @@ export class ScheduleService {
         room:                 dto.room ?? null,
         academicYear:         dto.academicYear,
         semester:             dto.semester,
+        concurrencyGroupId:   groupId,
       },
       select: SCHEDULE_SELECT,
     });
     });
+  }
+
+  private async resolveConcurrency(
+    tx: Prisma.TransactionClient, dto: CreateScheduleDto,
+    assignment: { teacherId: string; subject: string }, actor?: AuthUser,
+  ) {
+    await acquireIdentityMutationLock(tx);
+    const role = actor ? await this.permissions.getAuthoritativePrimaryRole(actor.keycloakId, tx) : null;
+    const positions = actor && role ? await this.permissions.getActivePositionCodes(actor.keycloakId, undefined, tx) : new Set<string>();
+    if (!actor || !role || (role !== 'SUPER_ADMIN' && !positions.has('WAKA_KURIKULUM')) ||
+      !await this.permissions.hasFreshPermission(actor.keycloakId, 'academic.schedule.manage', tx)) {
+      throw new ForbiddenException('Persetujuan jadwal bersamaan hanya oleh Super Admin atau Wakasek Kurikulum aktif');
+    }
+    const request = dto.concurrency!;
+    const anchor = await tx.schedule.findUnique({
+      where: { id: request.anchorScheduleId },
+      include: { teachingAssignment: { select: { teacherId: true, subject: true } }, concurrencyGroup: true },
+    });
+    if (!anchor || anchor.teachingAssignment.teacherId !== assignment.teacherId ||
+      anchor.dayOfWeek !== dto.dayOfWeek || anchor.jpStart !== dto.jpStart || anchor.jpEnd !== dto.jpEnd ||
+      anchor.academicYear !== dto.academicYear || anchor.semester !== dto.semester || anchor.classId === dto.classId) {
+      throw new ConflictException('Jadwal acuan harus milik guru yang sama, kelas berbeda, dan rentang hari/JP/periode persis sama');
+    }
+    if (request.mode === 'JOINT_CLASS' && (!dto.room?.trim() || dto.room !== anchor.room || assignment.subject !== anchor.teachingAssignment.subject)) {
+      throw new ConflictException('Kelas gabungan wajib memiliki mapel dan lokasi yang sama');
+    }
+    const expiresOn = request.expiresOn ? new Date(`${request.expiresOn}T00:00:00.000Z`) : null;
+    if (expiresOn && (Number.isNaN(expiresOn.getTime()) || expiresOn.toISOString().slice(0, 10) !== request.expiresOn ||
+      expiresOn < new Date(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date()) + 'T00:00:00Z'))) {
+      throw new BadRequestException('Tanggal berakhir pengecualian harus valid dan belum lewat');
+    }
+    if (anchor.concurrencyGroup) {
+      if (anchor.concurrencyGroup.mode !== request.mode || (anchor.concurrencyGroup.expiresOn && anchor.concurrencyGroup.expiresOn < new Date(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date()) + 'T00:00:00Z'))) {
+        throw new ConflictException('Kelompok acuan berbeda mode atau sudah kedaluwarsa');
+      }
+      return anchor.concurrencyGroup.id;
+    }
+    const group = await tx.scheduleConcurrencyGroup.create({
+      data: { teacherId: assignment.teacherId, mode: request.mode, reason: request.reason,
+        approvedBy: actor.keycloakId, dayOfWeek: dto.dayOfWeek, jpStart: dto.jpStart, jpEnd: dto.jpEnd,
+        academicYear: dto.academicYear, semester: dto.semester, expiresOn },
+    });
+    await tx.schedule.update({ where: { id: anchor.id }, data: { concurrencyGroupId: group.id } });
+    return group.id;
   }
   // ── 2F-1: cek konflik rentang KELAS (unique DB hanya menjaga jpStart) ───────
   private async assertNoClassRangeConflict(params: {
@@ -330,7 +391,7 @@ export class ScheduleService {
   }
 
   // ── 2F-1: update slot (hari/JP/ruang/semester) dengan re-cek konflik ────────
-  async update(id: string, dto: UpdateScheduleDto) {
+  async update(id: string, dto: UpdateScheduleDto, actor: AuthUser) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireMutationLock(tx);
 
@@ -339,10 +400,12 @@ export class ScheduleService {
       select: {
         id: true, classId: true, teachingAssignmentId: true, dayOfWeek: true,
         jpStart: true, jpEnd: true, room: true, academicYear: true, semester: true,
+        concurrencyGroupId: true,
         teachingAssignment: { select: { teacherId: true } },
       },
     });
     if (!existing) throw new NotFoundException('Jadwal tidak ditemukan');
+    if (existing.concurrencyGroupId) throw new ConflictException('Slot kelompok bersamaan tidak dapat diubah sendiri. Hapus dan susun ulang kelompok dengan persetujuan baru.');
 
     const next = {
       dayOfWeek: dto.dayOfWeek ?? existing.dayOfWeek,
@@ -354,6 +417,7 @@ export class ScheduleService {
     if (next.jpEnd < next.jpStart) {
       throw new BadRequestException('jpEnd harus >= jpStart');
     }
+    await this.bellSchedule.assertWeeklyRange(tx, existing.academicYear, next.semester, next.dayOfWeek, next.jpStart, next.jpEnd);
     await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
       academicYear: existing.academicYear,
       semester: existing.semester,
@@ -364,6 +428,8 @@ export class ScheduleService {
         semester: next.semester,
       });
     }
+    await assertFreshMutationAuthority(tx, this.permissions, actor.keycloakId,
+      'academic.schedule.manage', ['SUPER_ADMIN', 'TATA_USAHA'], ['WAKA_KURIKULUM']);
 
     await this.assertNoClassRangeConflict({
       classId: existing.classId, dayOfWeek: next.dayOfWeek,
@@ -419,7 +485,7 @@ export class ScheduleService {
   }
 
   // ── 2F-1: hapus slot (hard delete — template mingguan tanpa dependen FK) ────
-  async remove(id: string) {
+  async remove(id: string, actor: AuthUser) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireMutationLock(tx);
       const existing = await tx.schedule.findUnique({
@@ -431,6 +497,8 @@ export class ScheduleService {
         academicYear: existing.academicYear,
         semester: existing.semester,
       });
+      await assertFreshMutationAuthority(tx, this.permissions, actor.keycloakId,
+        'academic.schedule.manage', ['SUPER_ADMIN', 'TATA_USAHA'], ['WAKA_KURIKULUM']);
       await tx.schedule.delete({ where: { id } });
       return { deleted: true, id };
     });
@@ -443,10 +511,10 @@ export class ScheduleService {
    *  Returns generated slots (preview) without persisting — caller calls create() per slot. */
   async autoGenerate(academicYear: string, semester: number, config: { days?: number; jpPerDay?: number; maxJpGuru?: number }) {
     const DAYS = config.days ?? 6; // Senin–Sabtu
-    const JP_PER_DAY = config.jpPerDay ?? 8;
     const MAX_JP_GURU = config.maxJpGuru ?? 24;
     return this.prisma.$transaction(async (tx) => {
       await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, { academicYear, semester });
+      const dayJps = await this.bellSchedule.instructionDaysForPeriod(tx, academicYear, semester);
       const year = await tx.academicYear.findUnique({
         where: { code: academicYear },
         select: { id: true },
@@ -488,10 +556,10 @@ export class ScheduleService {
       for (const s of existing) {
         for (let jp = s.jpStart; jp <= s.jpEnd; jp++) {
           classSlots.add(`${s.classId}|${s.dayOfWeek}|${jp}`);
-          teacherSlots.add(`${s.teachingAssignment.teacherId}|${s.dayOfWeek}|${jp}`);
+          const teacherKey = `${s.teachingAssignment.teacherId}|${s.dayOfWeek}|${jp}`;
+          if (!teacherSlots.has(teacherKey)) teacherJpCount.set(s.teachingAssignment.teacherId, (teacherJpCount.get(s.teachingAssignment.teacherId) ?? 0) + 1);
+          teacherSlots.add(teacherKey);
         }
-        const cur = teacherJpCount.get(s.teachingAssignment.teacherId) ?? 0;
-        teacherJpCount.set(s.teachingAssignment.teacherId, cur + (s.jpEnd - s.jpStart + 1));
       }
 
       // Greedy: for each assignment, try to place hoursPerWeek JP slots
@@ -506,7 +574,8 @@ export class ScheduleService {
         let placed = 0;
 
         outer: for (let day = 1; day <= DAYS && placed < a.hoursPerWeek; day++) {
-          for (let jp = 1; jp <= JP_PER_DAY && placed < a.hoursPerWeek; jp++) {
+          for (const jp of [...(dayJps.get(day) ?? [])].sort((a, b) => a - b)) {
+            if (placed >= a.hoursPerWeek) break;
             const classKey = `${classId}|${day}|${jp}`;
             const teacherKey = `${a.teacherId}|${day}|${jp}`;
 

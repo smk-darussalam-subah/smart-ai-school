@@ -1,6 +1,9 @@
 'use client';
+import { useBellPattern } from '@/components/providers/BellPatternProvider';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import LearnerScheduleNotice from '../LearnerScheduleNotice';
+import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import {
   CalendarCheck, CalendarClock, Wallet, TrendingUp, Megaphone,
   MessageCircle, ChevronRight, TrendingDown, UserCircle, Phone, Mail,
@@ -12,7 +15,7 @@ import type { OrtuScreen, ModalState } from './OrtuWorkspace';
 import type { OrtuChild, OrtuNilai } from './ortu-types';
 import type { ScheduleItem } from '../guru-types';
 import {
-  mpColor, gradeCls, avgNa, initials, jpTimeRange,
+  mpColor, gradeCls, avgNa, initials,
 } from './ortu-data';
 import {
   mapSppToPembayaran, mapWaLog, mapTodaySchedule, computeAttStats,
@@ -31,6 +34,7 @@ interface BerandaOrtuProps {
   children: OrtuChild[];
   activeChildIndex: number;
   schedule: ScheduleItem[];
+  scheduleState?: LearnerScheduleState;
   spp: SppApiItem[];
   waLog: WaLogApiItem[];
   attendance: AttendanceItem[];
@@ -54,7 +58,7 @@ const RING_CIRC = 2 * Math.PI * RING_R;
 
 const EMPTY_CHILD: OrtuChild = { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
 
-export default function BerandaOrtu({ showToast: _showToast, go, setModal, grades, announcements, children, activeChildIndex, schedule, spp, waLog, attendance, rank, activeStudentId }: BerandaOrtuProps) {
+export default function BerandaOrtu({ showToast: _showToast, go, setModal, grades, announcements, children, activeChildIndex, schedule, scheduleState = 'ready', spp, waLog, attendance, rank, activeStudentId }: BerandaOrtuProps) {
   // U4: Fetch wali kelas / teachers for contact info
   const [waliKelas, setWaliKelas] = useState<{ name: string; subject: string; phone: string | null; email: string | null } | null>(null);
   useEffect(() => {
@@ -74,9 +78,10 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
   const nilai: OrtuNilai[] = grades?.length ? (grades as OrtuNilai[]) : [];
   const avg = avgNa(nilai);
   const stats = computeAttStats(attendance);           // ganti SIM_KEH_STATS
+  const bell = useBellPattern();
   const dow = scheduleDayOfWeek();
-  const todaySched = mapTodaySchedule(schedule, dow);   // ganti SIM_SCHEDULE
-  const isLibur = dow === 0 || todaySched.length === 0;
+  const todaySched = mapTodaySchedule(schedule, dow, bell.slots);   // ganti SIM_SCHEDULE
+  const hasTodaySchedule = dow !== 0 && todaySched.length > 0;
 
   // Pembayaran real
   const pembayaran = mapSppToPembayaran(spp);
@@ -137,7 +142,7 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
         </div>
       </div>
 
-      {/* 3. Attendance snapshot */}
+      {/* 3. Monthly attendance availability is independent of schedule fetch/empty state. */}
       <div className="mb-3.5 rounded-[var(--r)] border border-[var(--border)] bg-[var(--surface)] p-3.5">
         <div className="mb-2.5 flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
@@ -173,9 +178,9 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
           <div className="flex-1">
             <b
               className="text-[13px]"
-              style={{ color: isLibur ? 'var(--muted)' : 'var(--em)' }}
+              style={{ color: stats.total > 0 ? 'var(--em)' : 'var(--muted)' }}
             >
-              {isLibur ? 'Libur' : stats.total > 0 ? 'Tercatat' : 'Belum ada data'}
+              {stats.total > 0 ? 'Tercatat' : 'Belum ada data'}
             </b>
             <p className="mt-0.5 text-[10.5px] text-[var(--muted)]">
               Bulan ini: {stats.hadir} hadir · {stats.izin} izin · {stats.sakit} sakit · {stats.alpha} alpha
@@ -223,22 +228,22 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
             {['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'][dow]}
           </span>
         </div>
-        {isLibur ? (
+        {scheduleState !== 'ready' ? <LearnerScheduleNotice state={scheduleState} /> : !hasTodaySchedule ? (
           <div className="py-6 text-center text-[12px] font-semibold text-[var(--dim)]">
-            Libur — tidak ada jadwal
+            Belum ada jadwal untuk hari ini
           </div>
         ) : (
           todaySched.map((slot, i) => {
             const c = mpColor(slot.mapel);
             return (
               <div key={i} className="flex gap-2.5 border-b border-[var(--border)] py-2 last:border-0">
-                <div className="min-w-[80px] pt-0.5 text-right text-[10px] font-bold text-[var(--muted)]">
-                  {jpTimeRange(slot.jp)}
+                <div className="w-24 shrink-0 pt-0.5 text-right text-xs font-bold tabular-nums text-[var(--muted)]">
+                  {slot.timeRange || 'Waktu JP belum tersedia'}
                 </div>
                 <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ background: c }} />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-bold">{slot.mapel}</div>
-                  <div className="text-[10.5px] font-medium text-[var(--muted)]">
+                  <div className="break-words text-[13px] font-bold">{slot.mapel}</div>
+                  <div className="break-words text-xs font-medium text-[var(--muted)]">
                     {slot.guru.split(',')[0]} · {slot.room}
                   </div>
                 </div>

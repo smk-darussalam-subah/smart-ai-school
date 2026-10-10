@@ -1,9 +1,10 @@
+import React from 'react';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getActiveViewAs } from '@/lib/view-as';
 import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
 import { redirect } from 'next/navigation';
-import { apiFetch, PaginatedResponse, GradeItem, AttendanceItem } from '@/lib/api';
+import { apiFetch, apiFetchResult, PaginatedResponse, GradeItem, AttendanceItem } from '@/lib/api';
 import type {
   SiswaBadge,
   SiswaXP,
@@ -11,7 +12,8 @@ import type {
   SiswaModul,
   SiswaTugas,
 } from './_components/siswa/siswa-types';
-import { scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-times';
+import { slotsForDay, type BellProfile } from '@/lib/bell-patterns';
+import { wibTodayISO, scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-times';
 import AcademicOperationsWorkspace from './_components/AcademicOperationsWorkspace';
 import AcademicRoleModeSwitcher from './_components/AcademicRoleModeSwitcher';
 import AcademicDataNotice from '../_components/AcademicDataNotice';
@@ -40,6 +42,7 @@ import {
   type StudentDashboardAssignmentGroup as OrtuStudentDashboardAssignmentGroup,
 } from './_components/ortu/ortu-mappers';
 import { resolveAcademicWorkflowView } from '@/lib/academic-workflow-deep-link';
+import { childSchedulePath, OWN_STUDENT_SCHEDULE_PATH, readLearnerSchedule } from '@/lib/learner-schedule';
 
 type Assignment = TeachingAssignmentItem;
 interface ClassItem {
@@ -160,6 +163,8 @@ export default async function AkademikPage({
   const openNotifications = oneSearchParam(requestedParams.panel) === 'notifications';
   const initialStudentId = oneSearchParam(requestedParams.studentId).trim();
   const token = session?.accessToken ?? '';
+  const bellProfile = await apiFetch<BellProfile>('/bell-schedules/resolve?scope=SCHOOL&date=' + wibTodayISO(), token);
+  const dailySlots = slotsForDay(bellProfile, scheduleDayOfWeek());
   const authority = await resolveDashboardAuthority(session);
   const roles = authority.roles;
   const viewAs = await getActiveViewAs(session);
@@ -244,7 +249,7 @@ export default async function AkademikPage({
         `/attendance?dateFrom=${attendanceMonth.dateFrom}&dateTo=${attendanceMonth.dateTo}&limit=200`,
         token,
       ),
-      apiFetch<{ data: ScheduleItem[] }>(`/schedules?studentId=${studentId}&limit=100`, token),
+      apiFetchResult<{ data: ScheduleItem[] }>(OWN_STUDENT_SCHEDULE_PATH, token),
       apiFetch<{ data: { id: string; title: string; createdAt: string }[] }>(
         '/announcements?limit=5',
         token,
@@ -417,12 +422,14 @@ export default async function AkademikPage({
           })
       : null;
 
+    const ownedSchedule = readLearnerSchedule(scheduleRes);
     return (
       <SiswaRefreshWrapper>
         <SiswaWorkspace
           grades={gradesRes?.data ?? []}
           attendance={attendanceRes?.data ?? []}
-          schedule={scheduleRes?.data ?? []}
+          schedule={ownedSchedule.data}
+          scheduleState={ownedSchedule.state}
           announcements={announcementsRes?.data ?? []}
           realBadges={realBadges}
           realXp={realXp}
@@ -454,7 +461,7 @@ export default async function AkademikPage({
     const schedules = schedulesRes?.data ?? [];
     const { minutes } = wibNow();
     const dow = scheduleDayOfWeek();
-    const nowJp = currentJp(minutes);
+    const nowJp = currentJp(minutes, dailySlots);
 
     // R-13: Build a map of classId → latest assessment session for penilaian/feedback status.
     // A session with status 'active' or 'completed' and responses > 0 means penilaian is available.
@@ -499,7 +506,7 @@ export default async function AkademikPage({
         room: s.room ?? null,
         jpStart: s.jpStart,
         jpEnd: s.jpEnd,
-        startLabel: jpStartLabel(s.jpStart),
+        startLabel: jpStartLabel(s.jpStart, dailySlots),
         isNow: nowJp >= s.jpStart && nowJp <= s.jpEnd,
         moduleId: moduleByClassSubject.get(`${s.classId}|${s.teachingAssignment?.subject ?? ''}`),
         // R-13: Link assessment session if exists for this class+subject
@@ -623,14 +630,18 @@ export default async function AkademikPage({
 
     // Round 2: fetch child-specific data (all in parallel, fail-soft → null)
     const childDataPromise = Promise.all(
-      childIds.map(async (studentId) => {
+      children.map(async (child) => {
+        const studentId = child.id;
+        const schedulePath = childSchedulePath(child.class?.id);
         const [gradesRes, attendanceRes, scheduleRes, badgesRes, waLogRes] = await Promise.all([
           apiFetch<PaginatedResponse<GradeItem>>(`/grades?studentId=${studentId}&limit=100`, token),
           apiFetch<PaginatedResponse<AttendanceItem>>(
             `/attendance?studentId=${studentId}&limit=200`,
             token,
           ),
-          apiFetch<{ data: ScheduleItem[] }>(`/schedules?studentId=${studentId}&limit=100`, token),
+          schedulePath
+            ? apiFetchResult<{ data: ScheduleItem[] }>(schedulePath, token)
+            : Promise.resolve({ status: 'success' as const, httpStatus: 200, data: { data: [] as ScheduleItem[] } }),
           apiFetch<OrtuBadgeApiItem[]>(`/badges/student/${studentId}`, token),
           apiFetch<{
             data: Array<{
@@ -643,10 +654,13 @@ export default async function AkademikPage({
             }>;
           }>(`/wa-log/student/${studentId}?limit=20`, token),
         ]);
+        const childSchedule = readLearnerSchedule(scheduleRes);
         return {
+          studentId,
+          scheduleState: schedulePath ? childSchedule.state : 'unassigned' as const,
           grades: tagWithStudentId(gradesRes?.data, studentId),
           attendance: tagWithStudentId(attendanceRes?.data, studentId),
-          schedule: tagWithStudentId(scheduleRes?.data, studentId),
+          schedule: tagWithStudentId(childSchedule.data, studentId),
           badges: tagWithStudentId(badgesRes ?? [], studentId),
           waLog: tagWithStudentId(waLogRes?.data, studentId),
         };
@@ -710,6 +724,7 @@ export default async function AkademikPage({
           grades={gradesDataOrtu}
           attendance={attendanceDataOrtu}
           schedule={scheduleDataOrtu}
+          scheduleStates={Object.fromEntries(childData.map((item) => [item.studentId, item.scheduleState]))}
           announcements={announcementsRes?.data ?? []}
           spp={sppDataOrtu}
           assignments={assignmentsDataOrtu}
@@ -892,7 +907,7 @@ export default async function AkademikPage({
   }
   const { minutes } = wibNow();
   const today = scheduleDayOfWeek();
-  const nowJp = currentJp(minutes);
+  const nowJp = currentJp(minutes, dailySlots);
   const ownTodayClasses: TodayClass[] = ownSchedules
     .filter((schedule) => schedule.dayOfWeek === today)
     .sort((left, right) => left.jpStart - right.jpStart)
@@ -903,7 +918,7 @@ export default async function AkademikPage({
       room: schedule.room ?? null,
       jpStart: schedule.jpStart,
       jpEnd: schedule.jpEnd,
-      startLabel: jpStartLabel(schedule.jpStart),
+      startLabel: jpStartLabel(schedule.jpStart, dailySlots),
       isNow: nowJp >= schedule.jpStart && nowJp <= schedule.jpEnd,
       moduleId: moduleByClassSubject.get(
         `${schedule.classId}|${schedule.teachingAssignment?.subject ?? ''}`,

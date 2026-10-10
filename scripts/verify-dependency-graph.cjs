@@ -3,7 +3,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
+const { readFileSync, realpathSync } = require('node:fs');
 const { dirname, relative, resolve } = require('node:path');
 
 const root = resolve(__dirname, '..');
@@ -29,7 +29,9 @@ const resolvedPackage = require.resolve('real-require/package.json', {
   paths: [dirname(workerPath)],
 });
 const actual = JSON.parse(readFileSync(resolvedPackage, 'utf8'));
-const relativePackage = relative(root, resolvedPackage).replaceAll('\\', '/');
+// Compare against the canonical installed root, including supported worktree junctions.
+const installedRoot = realpathSync(resolve(root, 'node_modules'));
+const relativePackage = 'node_modules/' + relative(installedRoot, realpathSync(resolvedPackage)).replaceAll('\\', '/');
 
 assert.equal(actual.version, '0.2.0', 'worker resolves an incompatible real-require version');
 assert.equal(

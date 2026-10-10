@@ -29,6 +29,7 @@ import type { OrtuChild, OrtuNilai, OrtuPengumuman } from './ortu-types';
 import type { AttendanceCellStatus, Pembayaran } from '@/lib/academic';
 import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem } from '../guru-types';
+import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import { filterByStudentId, type OrtuAssignmentItem, type SppApiItem } from './ortu-mappers';
 import { initialChildIndex, learnerDashboardHref, learnerReportHref } from '../learner-navigation';
 import {
@@ -52,6 +53,7 @@ interface OrtuWorkspaceProps {
   grades?: GradeItem[];
   attendance?: AttendanceItem[];
   schedule?: Array<ScheduleItem & { studentId?: string }>;
+  scheduleStates?: Record<string, LearnerScheduleState>;
   announcements?: { id: string; title: string; createdAt: string }[];
   spp?: SppApiItem[];
   assignments?: OrtuAssignmentItem[];
@@ -68,7 +70,7 @@ interface OrtuWorkspaceProps {
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function OrtuWorkspace({
-  children: realChildren, grades, attendance, schedule, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, childRanks, openNotifications = false, initialStudentId, initialWorkflowView = null
+  children: realChildren, grades, attendance, schedule, scheduleStates, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, childRanks, openNotifications = false, initialStudentId, initialWorkflowView = null
 }: OrtuWorkspaceProps) {
   const { data: session } = useSession();
   const router = useRouter();
@@ -169,6 +171,7 @@ export default function OrtuWorkspace({
             children={childList}
             activeChildIndex={Math.min(activeChildIndex, Math.max(childList.length - 1, 0))}
             schedule={childSchedule}
+            scheduleState={activeStudentId ? scheduleStates?.[activeStudentId] ?? 'ready' : 'unassigned'}
             spp={childSpp ?? []}
             waLog={childWaLog ?? []}
             attendance={childAttendance ?? []}

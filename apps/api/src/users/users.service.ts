@@ -14,6 +14,7 @@ import { UserRole, PRIMARY_ROLES, isPrimaryRole, type PrimaryRole } from '@smk/a
 import { logger } from '@smk/logger';
 import { Prisma } from '@prisma/client';
 import { generateTemporaryPassword } from '../common/helpers/temp-password';
+import { acquireIdentityMutationLock } from '../common/helpers/identity-mutation-lock';
 import {
   acquireUserMutationLocks,
   createKeycloakMutationTransactionOptions,
@@ -40,7 +41,6 @@ const USER_SELECT = {
   updatedAt: true,
 } as const;
 
-const USER_IDENTITY_MUTATION_LOCK = 'users:last-active-super-admin';
 const PASSWORD_RESET_KEYCLOAK_CALL_COUNT = 3;
 // Cold role cache: resolve+write for the new role, then resolve+delete for the old role.
 const ROLE_SYNC_KEYCLOAK_CALL_COUNT = 4;
@@ -68,9 +68,7 @@ export class UsersService {
   }
 
   private async acquireIdentityMutationLock(tx: Prisma.TransactionClient): Promise<void> {
-    await tx.$executeRaw(
-      Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${USER_IDENTITY_MUTATION_LOCK}))`,
-    );
+    await acquireIdentityMutationLock(tx);
   }
 
   private async assertNoOperationalHomeroomAssignment(

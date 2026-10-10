@@ -43,6 +43,19 @@ describe('Wave 8.5 canonical auth and shell contract', () => {
     expect(isShellRouteActive('/dashboard/akademik', '/dashboard')).toBe(false);
   });
 
+  it('opens only the exact synthetic preview routes in opted-in development, never production', () => {
+    const original = process.env;
+    try {
+      for (const [mode, flag, allowed] of [['production', 'true', false], ['development', 'true', true], ['development', 'false', false]] as const) {
+        process.env = { ...original, NODE_ENV: mode, DIIS_LOCAL_PREVIEW: flag };
+        expect(isPublicPath('/local-preview/jp-presensi')).toBe(allowed);
+        expect(isPublicPath('/local-preview/jp-presensi/period')).toBe(allowed);
+        expect(isPublicPath('/local-preview/jp-presensi/unapproved')).toBe(false);
+        expect(isPublicPath('/dashboard/jadwal')).toBe(false);
+      }
+    } finally { process.env = original; }
+  });
+
   it('keeps branding assets and the paired display boundary public', () => {
     expect(isPublicPath('/icon-192.png')).toBe(true);
     expect(isPublicPath('/icon-512.png')).toBe(true);

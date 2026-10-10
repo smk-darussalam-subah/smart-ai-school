@@ -17,6 +17,7 @@ import { TeachingAssignmentModule } from './teaching-assignment/teaching-assignm
 import { GradeModule } from './grade/grade.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { ScheduleModule } from './schedule/schedule.module';
+import { SchedulingModule } from './scheduling/scheduling.module';
 import { NotificationModule } from './notification/notification.module';
 import { FinanceModule } from './finance/finance.module';
 import { RagModule } from './rag/rag.module';
@@ -33,6 +34,7 @@ import { UsersModule } from './users/users.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { ClassesModule } from './classes/classes.module';
 import { TeacherAttendanceModule } from './teacher-attendance/teacher-attendance.module';
+import { StaffAttendanceModule } from './staff-attendance/staff-attendance.module';
 import { RppModule } from './rpp/rpp.module';
 import { ReportCardsModule } from './report-cards/report-cards.module';
 import { ClassActivitiesModule } from './class-activities/class-activities.module';
@@ -76,6 +78,7 @@ import { OperationalMonitoringModule } from './operational-monitoring/operationa
     GradeModule,
     AttendanceModule,
     ScheduleModule,
+    SchedulingModule,
     NotificationModule,
     FinanceModule,
     RagModule,
@@ -86,6 +89,7 @@ import { OperationalMonitoringModule } from './operational-monitoring/operationa
     AnnouncementsModule,
     ClassesModule,
     TeacherAttendanceModule,
+    StaffAttendanceModule,
     RppModule,
     ReportCardsModule,
     ClassActivitiesModule,

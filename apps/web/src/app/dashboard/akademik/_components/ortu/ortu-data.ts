@@ -2,7 +2,7 @@
 // P6: All SIMULASI constants purged — data comes from real API endpoints.
 
 import { KKTP_DEFAULT } from '@/lib/academic';
-import { JP_SLOTS, fmtMin } from '@/lib/bell-times';
+import { type JpSlot, fmtMin } from '@/lib/bell-times';
 import type { OrtuNilai, OrtuLeaderboardEntry } from './ortu-types';
 
 // ── Mapel Colors & helpers ──────────────────────────────────────────────────
@@ -32,7 +32,7 @@ export function initials(name: string): string {
 }
 
 /** Label waktu untuk JP dari JP_SLOTS. */
-export function jpTimeRange(jp: number): string {
+export function jpTimeRange(jp: number, JP_SLOTS: JpSlot[] = []): string {
   const slot = JP_SLOTS.find((s) => s.jp === jp);
   if (!slot) return '';
   return `${fmtMin(slot.startMin)}\u2013${fmtMin(slot.endMin)}`;

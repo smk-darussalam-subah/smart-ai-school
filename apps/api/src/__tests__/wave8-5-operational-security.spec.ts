@@ -94,6 +94,7 @@ describe('Wave 8.5 bell resolver and strict DTO boundary', () => {
           segments: [
             {
               jpNumber: 1,
+              dayOfWeek: 0,
               label: 'JP1',
               type: 'INSTRUCTION',
               startMinute: 450,
@@ -102,6 +103,7 @@ describe('Wave 8.5 bell resolver and strict DTO boundary', () => {
             },
             {
               jpNumber: 2,
+              dayOfWeek: 0,
               label: 'JP2',
               type: 'INSTRUCTION',
               startMinute: 490,

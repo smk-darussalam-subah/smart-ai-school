@@ -14,6 +14,9 @@ export interface ConflictCheckItem {
   jpEnd: number;
   academicYear: string;
   semester: number;
+  room?: string | null;
+  concurrencyGroupId?: string | null;
+  concurrencyGroup?: { mode: string; expiresOn: string | null } | null;
   class: { name: string };
   teachingAssignment: {
     subject: string;
@@ -47,7 +50,14 @@ export function detectConflicts(items: ConflictCheckItem[]): Map<string, string[
 
       if (
         a.teachingAssignment.teacher.id === b.teachingAssignment.teacher.id &&
-        a.classId !== b.classId
+        a.classId !== b.classId &&
+        !(a.concurrencyGroupId && a.concurrencyGroupId === b.concurrencyGroupId &&
+          a.concurrencyGroup && b.concurrencyGroup && a.concurrencyGroup.mode === b.concurrencyGroup.mode &&
+          ['JOINT_CLASS', 'AUTHORIZED_EXCEPTION'].includes(a.concurrencyGroup.mode) &&
+          a.jpStart === b.jpStart && a.jpEnd === b.jpEnd &&
+          (a.concurrencyGroup.mode !== 'JOINT_CLASS' || a.teachingAssignment.subject === b.teachingAssignment.subject && Boolean(a.room) && a.room === b.room) &&
+          (a.concurrencyGroup.mode !== 'AUTHORIZED_EXCEPTION' || a.concurrencyGroup.expiresOn != null) &&
+          (!a.concurrencyGroup?.expiresOn || a.concurrencyGroup.expiresOn.slice(0, 10) >= new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)))
       ) {
         const t = a.teachingAssignment.teacher.user.fullName;
         push(a.id, `Guru ${t} bentrok dengan ${b.class.name} (JP ${b.jpStart}–${b.jpEnd})`);

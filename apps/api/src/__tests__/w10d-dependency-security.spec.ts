@@ -1,8 +1,13 @@
-import { readFileSync } from 'fs';
+import { readFileSync, realpathSync } from 'fs';
 import { dirname, relative, resolve } from 'path';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
 
 const root = resolve(__dirname, '../../../..');
+// DIIS worktrees may use a junction to the same locked installation.
+const installedRoot = realpathSync(resolve(root, 'node_modules'));
+function expectRootRealRequire(resolvedPackage: string): void {
+  expect(relative(installedRoot, realpathSync(resolvedPackage)).replaceAll('\\', '/')).toBe('real-require/package.json');
+}
 const lock: { packages: Record<string, { version?: string }> } = JSON.parse(
   readFileSync(resolve(root, 'package-lock.json'), 'utf8'),
 );
@@ -44,9 +49,13 @@ describe('W10-D installed dependency security boundary', () => {
     });
     const installed: { version: string } = JSON.parse(readFileSync(resolvedPackage, 'utf8'));
     expect(installed.version).toBe('0.2.0');
-    expect(relative(root, resolvedPackage).replaceAll('\\', '/')).toBe(
-      'node_modules/real-require/package.json',
-    );
+    expectRootRealRequire(resolvedPackage);
+  });
+
+  it('still rejects nested or foreign dependency locations under junction-aware resolution', () => {
+    // Existing files make the negative controls exercise realpath, not invented paths.
+    expect(() => expectRootRealRequire(require.resolve('thread-stream/package.json'))).toThrow();
+    expect(() => expectRootRealRequire(resolve(root, 'package-lock.json'))).toThrow();
   });
 
   it('runs the patched Fastify through Nest and rejects malformed JSON without an open server', async () => {

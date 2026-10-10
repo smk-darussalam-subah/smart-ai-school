@@ -298,6 +298,13 @@ describe('Wave 8.5 class session CAS, ownership, and boundaries', () => {
 
     await service.materialize('2026-08-24');
 
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(2);
+    expect(tx.$executeRaw.mock.calls[1]?.[0].strings.join('')).toContain('academic:schedule:mutation:v1');
+    const scheduleLockOrder = tx.$executeRaw.mock.invocationCallOrder[1]!;
+    for (const read of [tx.academicYear.findMany, tx.semester.findMany,
+      tx.academicCalendar.findFirst, bells.resolveForDate, tx.schedule.findMany]) {
+      expect(scheduleLockOrder).toBeLessThan(read.mock.invocationCallOrder[0]!);
+    }
     const call = alertCreateMany.mock.calls[0]?.[0];
     expect(call.skipDuplicates).toBe(true);
     expect(call.data.map((row: { stage: string }) => row.stage)).toEqual([

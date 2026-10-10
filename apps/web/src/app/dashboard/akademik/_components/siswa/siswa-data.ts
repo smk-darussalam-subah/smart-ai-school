@@ -2,7 +2,8 @@
 // P6: All SIMULASI constants purged — data comes from real API endpoints.
 // Import dari lib/bell-times untuk konstanta resmi.
 
-import { BELL_SEGMENTS, JP_SLOTS, fmtMin } from '@/lib/bell-times';
+import { fmtMin, type JpSlot } from '@/lib/bell-times';
+import { segmentsForDay, type BellProfile } from '@/lib/bell-patterns';
 import type { SiswaPengumuman } from './siswa-types';
 
 // ── Mapel Colors & Icons ─────────────────────────────────────────────────
@@ -56,22 +57,12 @@ export type SimSchedule = Record<number, Record<number, SimSchedSlot>>;
 
 // ── JP Labels & Time Ranges (derived from BELL_SEGMENTS — sumber tunggal) ──
 // Filter out Briefing segment to match mockup index structure (0=JP1, 3=Istirahat)
-const SISWA_SEGMENTS = BELL_SEGMENTS.filter((s) => !s.label.includes('Briefing'));
-
-/** JP labels + time ranges, indexed same as mockup (0=JP1, 3=Istirahat, 7=Ishoma) */
-export const JP_LABELS: [string, string][] = SISWA_SEGMENTS.map((s) => {
-  const label = s.isJp
-    ? `JP ${s.label.replace('JP', '').trim()}`
-    : s.label.replace(' 1', '');
-  const range = `${fmtMin(s.startMin)}–${fmtMin(s.endMin)}`;
-  return [label, range];
-});
-
-/** JP number → segment index mapping (e.g., JP 1 → 0, JP 4 → 4, JP 7 → 8) */
-export const JP_MAP: [number, number][] = JP_SLOTS.map((slot) => [
-  slot.jp,
-  SISWA_SEGMENTS.findIndex((s) => s.label === `JP${slot.jp}`),
-]);
+export function studentDayPattern(profile: BellProfile | null, day: number) {
+  const segments = segmentsForDay(profile, day).filter((segment) => segment.type === 'INSTRUCTION' || segment.type === 'BREAK');
+  const JP_LABELS: [string, string][] = segments.map((segment) => [segment.label, fmtMin(segment.startMinute) + '–' + fmtMin(segment.endMinute)]);
+  const JP_MAP: [number, number][] = segments.flatMap((segment, index) => segment.type === 'INSTRUCTION' ? [[segment.jpNumber!, index] as [number, number]] : []);
+  return { JP_LABELS, JP_MAP };
+}
 
 // ── API Announcements Normalize ────────────────────────────────────────────
 
@@ -99,21 +90,39 @@ export interface ApiScheduleItem {
   dayOfWeek: number;
   jpStart: number;
   jpEnd: number;
-  room: string | null;
-  teachingAssignment?: { subject: string };
+  room?: string | null;
+  class?: { id?: string; name?: string };
+  teachingAssignment?: { subject: string; teacher?: { user?: { fullName?: string | null } } };
+}
+
+/** Resolve only the authenticated student's returned class, never a leaderboard peer. */
+export function scheduleClassName(items: unknown[] = []): string | null {
+  const names = new Set(items.flatMap((item) => {
+    if (!item || typeof item !== 'object' || !('class' in item)) return [];
+    const klass = item.class;
+    if (!klass || typeof klass !== 'object' || !('name' in klass) || typeof klass.name !== 'string') return [];
+    const name = klass.name.trim();
+    return name ? [name] : [];
+  }));
+  return names.size === 1 ? [...names][0]! : null;
+}
+
+/** Other weekdays must not inherit today's live/finished highlight. */
+export function studentLessonPhase(now: { jsDay: number; minutes: number }, day: number, slot?: JpSlot): 'current' | 'finished' | 'upcoming' {
+  if (!slot || day !== now.jsDay || now.minutes < slot.startMin) return 'upcoming';
+  return now.minutes < slot.endMin ? 'current' : 'finished';
 }
 
 /** Transform API ScheduleItem[] to component schedule format. */
-export function transformApiSchedule(items: ApiScheduleItem[]): SimSchedule {
+export function transformApiSchedule(items: ApiScheduleItem[], profile: BellProfile | null = null): SimSchedule {
   const result: SimSchedule = {};
   for (const item of items) {
     if (!result[item.dayOfWeek]) result[item.dayOfWeek] = {};
-    for (let jp = item.jpStart; jp <= item.jpEnd; jp++) {
-      const idx = JP_MAP.find(([j]) => j === jp)?.[1];
-      if (idx != null) {
+    for (const [jp, idx] of studentDayPattern(profile, item.dayOfWeek).JP_MAP) {
+      if (jp >= item.jpStart && jp <= item.jpEnd) {
         result[item.dayOfWeek]![idx] = {
           mp: item.teachingAssignment?.subject ?? '—',
-          g: '—',
+          g: item.teachingAssignment?.teacher?.user?.fullName?.trim() || '—',
           ruang: item.room ?? '—',
         };
       }
@@ -123,9 +132,30 @@ export function transformApiSchedule(items: ApiScheduleItem[]): SimSchedule {
 }
 
 /** Resolve schedule: use API data if available, fall back to empty. */
-export function resolveSchedule(apiSchedule?: unknown[]): { schedule: SimSchedule; isSim: boolean } {
+export function resolveSchedule(apiSchedule?: unknown[], profile: BellProfile | null = null): { schedule: SimSchedule; isSim: boolean; timingAvailable: boolean } {
   if (apiSchedule && apiSchedule.length > 0) {
-    return { schedule: transformApiSchedule(apiSchedule as ApiScheduleItem[]), isSim: false };
+    const items = apiSchedule as ApiScheduleItem[];
+    const timingAvailable = profile != null && items.every((item) => {
+      const numbers = studentDayPattern(profile, item.dayOfWeek).JP_MAP.map(([jp]) => jp);
+      return Number.isInteger(item.jpStart) && Number.isInteger(item.jpEnd) && item.jpStart > 0 && item.jpEnd >= item.jpStart &&
+        numbers.filter((jp) => jp >= item.jpStart && jp <= item.jpEnd).length === item.jpEnd - item.jpStart + 1;
+    });
+    return { schedule: transformApiSchedule(items, profile), isSim: false, timingAvailable };
   }
-  return { schedule: {}, isSim: false };
+  return { schedule: {}, isSim: false, timingAvailable: profile != null };
+}
+
+/** Sum only scheduled instruction segments; breaks/ceremonies never count. */
+export function scheduledInstructionMinutes(schedule: SimSchedule, profile: BellProfile | null): number | null {
+  if (!profile) return null;
+  let minutes = 0;
+  for (const [day, slots] of Object.entries(schedule)) {
+    const segments = segmentsForDay(profile, Number(day)).filter((segment) => segment.type === 'INSTRUCTION' || segment.type === 'BREAK');
+    for (const index of Object.keys(slots)) {
+      const segment = segments[Number(index)];
+      if (!segment || segment.type !== 'INSTRUCTION') return null;
+      minutes += segment.endMinute - segment.startMinute;
+    }
+  }
+  return minutes;
 }

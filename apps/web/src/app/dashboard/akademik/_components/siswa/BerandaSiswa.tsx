@@ -5,8 +5,11 @@ import {
   Flame, UserCheck, TrendingUp, ClipboardList, Award, CalendarClock,
   PlayCircle, ChevronRight, Target, CheckCircle,
 } from 'lucide-react';
-import { wibNow, currentJp } from '@/lib/bell-times';
-import { mpColor, mpIcon, JP_LABELS, JP_MAP, resolveSchedule } from './siswa-data';
+import { useBellPattern } from '@/components/providers/BellPatternProvider';
+import { wibNow } from '@/lib/bell-times';
+import { mpColor, mpIcon, studentDayPattern, resolveSchedule, studentLessonPhase } from './siswa-data';
+import LearnerScheduleNotice from '../LearnerScheduleNotice';
+import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import type { SiswaScreen, ModalState } from './SiswaWorkspace';
 import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaModul, SiswaQuest, SiswaXP, SiswaKehadiranStats } from './siswa-types';
 
@@ -25,14 +28,16 @@ interface Props {
   xp: SiswaXP;
   kehStats: SiswaKehadiranStats;
   schedule?: unknown[];
+  scheduleState?: LearnerScheduleState;
   userName?: string | null;
   studentClassName?: string | null;
 }
 
-export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, recentlyCompletedModule, quest, xp, kehStats, schedule, userName, studentClassName }: Props) {
+export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, recentlyCompletedModule, quest, xp, kehStats, schedule, scheduleState = 'ready', userName, studentClassName }: Props) {
   const now = wibNow();
   const dow = now.jsDay; // 0=Sunday → SCHED[0] undefined → shows "Libur"
-  const currentJpIdx = currentJp(now.minutes);
+  const bell = useBellPattern();
+  const { JP_LABELS, JP_MAP } = studentDayPattern(bell.profile, now.jsDay);
 
   // Derived stats
   const avgNilai = useMemo(() => {
@@ -52,8 +57,8 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
   const qPct = qTotal > 0 ? Math.round((qDone / qTotal) * 100) : 0;
   const qCirc = 2 * Math.PI * 22;
 
-  // Today's schedule — resolveSchedule uses API data if available, falls back to SIM
-  const { schedule: schedData, isSim: isSimSchedule } = resolveSchedule(schedule);
+  // Today's schedule uses owned API data, never a simulated fallback.
+  const { schedule: schedData, isSim: isSimSchedule, timingAvailable } = resolveSchedule(schedule, bell.profile);
   const daySched = schedData[dow] || {};
   const hasSched = Object.keys(daySched).length > 0;
 
@@ -257,12 +262,15 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
             </button>
           </div>
           <div className="space-y-2">
-            {hasSched ? (
-              JP_MAP.map(([, idx]) => {
+            {scheduleState !== 'ready' ? <LearnerScheduleNotice state={scheduleState} /> : !timingAvailable ? (
+              <p role="status" className="p-3 text-sm text-[var(--muted)]">Waktu JP belum dapat dimuat. Coba muat ulang atau hubungi admin sekolah.</p>
+            ) : hasSched ? (
+              JP_MAP.map(([jp, idx]) => {
                 const slot = daySched[idx];
                 if (!slot) return null;
-                const isDone = idx < (currentJpIdx === 0 ? -1 : JP_MAP.findIndex(([j]) => j === currentJpIdx));
-                const isNow = currentJpIdx > 0 && JP_MAP[currentJpIdx - 1]?.[1] === idx;
+                const phase = studentLessonPhase(now, dow, bell.slots.find((slot) => slot.jp === jp));
+                const isDone = phase === 'finished';
+                const isNow = phase === 'current';
                 const dotCls = isDone ? 'bg-emerald-500' : isNow ? 'bg-amber-500 animate-pulse' : 'bg-transparent border-2 border-[var(--dim)]';
                 const t = JP_LABELS[idx]![1].split('–');
                 const guruShort = slot.g.split(',')[0] ?? slot.g;
@@ -279,9 +287,9 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                     </div>
                     <div className={`mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full border-2 border-[var(--bg)] shadow-[0_0_0_2px_var(--em)] ${dotCls}`} />
                     <div className="flex-1 min-w-0">
-                      <div className={`text-[13px] font-bold ${isNow ? 'text-base' : ''}`}>{slot.mp}</div>
-                      <div className={`mt-0.5 flex items-center gap-2 text-[11px] font-semibold ${isNow ? 'text-amber-500' : 'text-[var(--muted)]'}`}>
-                        <span>{guruShort}</span>·<span>{slot.ruang}</span>
+                      <div className={`break-words text-[13px] font-bold [overflow-wrap:anywhere] ${isNow ? 'sm:text-base' : ''}`}>{slot.mp}</div>
+                      <div className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 break-words text-xs font-semibold ${isNow ? 'text-amber-500' : 'text-[var(--muted)]'}`}>
+                        <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">{guruShort}</span>·<span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">{slot.ruang}</span>
                       </div>
                       {isNow && (
                         <span className="mt-1 inline-block rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-extrabold text-amber-500">
@@ -305,7 +313,7 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
             ) : (
               <div className="py-6 text-center text-[var(--dim)]">
                 <div className="mx-auto mb-2 h-8 w-8 opacity-50">📅</div>
-                <div className="text-sm">Libur — tidak ada jadwal hari ini</div>
+                <div className="text-sm">Belum ada jadwal untuk hari ini</div>
               </div>
             )}
           </div>

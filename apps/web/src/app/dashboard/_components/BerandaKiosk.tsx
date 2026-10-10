@@ -9,7 +9,7 @@
 // terang + bar auto-hide). Data dari API nyata (lib/kiosk untuk tema/quote).
 // =============================================================================
 
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import {
@@ -61,7 +61,11 @@ function fmtPct(v: number | null): string { return v === null || v === undefined
 // P5 (S-14): SIM_ABSEN_PER_JP removed — computed from real attendance data.
 // P5 (S-13): Alert bar computed from real schedule gaps.
 
+import { useBellPattern } from '@/components/providers/BellPatternProvider';
+
 export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda, health, canManageKiosk }: BerandaKioskProps) {
+  const bell = useBellPattern();
+  const segments = useMemo(() => bell.segments.filter((segment) => segment.type === 'INSTRUCTION' || segment.type === 'BREAK').map((segment) => ({ label: segment.label, startMin: segment.startMinute, endMin: segment.endMinute, isJp: segment.type === 'INSTRUCTION' })), [bell.segments]);
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
   const [linkMsg, setLinkMsg] = useState('');
@@ -92,10 +96,10 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda,
     const tick = () => {
       const d = new Date(); const m = wibNow(d).minutes;
       const wib = new Date(d.getTime() + 7 * 60 * 60 * 1000);
-      setNow({ time: `${String(wib.getUTCHours()).padStart(2, '0')}:${String(wib.getUTCMinutes()).padStart(2, '0')}`, date: wibDateLabel(d), jpStatus: jpStatusLabel(m), jp: currentJp(m), mins: m });
+      setNow({ time: `${String(wib.getUTCHours()).padStart(2, '0')}:${String(wib.getUTCMinutes()).padStart(2, '0')}`, date: wibDateLabel(d), jpStatus: jpStatusLabel(m, segments), jp: currentJp(m, bell.slots), mins: m });
     };
     tick(); const id = setInterval(tick, 1000); return () => clearInterval(id);
-  }, []);
+  }, [bell.slots, segments]);
 
   // Auto-refresh data tiap 60s + indikator "diperbarui X dtk lalu".
   const [updatedAgo, setUpdatedAgo] = useState(0);
@@ -147,8 +151,8 @@ export default function BerandaKiosk({ firstName, papanRows, kpi, chart, agenda,
   const timeOfDay = now.mins === 0 ? 'datang' : hour < 11 ? 'pagi' : hour < 15 ? 'siang' : hour < 18 ? 'sore' : 'malam';
   const KIOSK_GREETS = ['Guru & Karyawan Hebat', 'Pahlawan Pendidikan', 'Insan Pembelajar', 'Pendidik Inspiratif'];
   const greetTitle = kiosk ? `Selamat ${timeOfDay}, ${KIOSK_GREETS[dayIdx % KIOSK_GREETS.length]}! 👋` : `Halo, ${firstName} 👋`;
-  const brk = currentBreak(now.mins);
-  const nb = nextBreak(now.mins);
+  const brk = currentBreak(now.mins, segments);
+  const nb = nextBreak(now.mins, segments);
   const breakLine = brk
     ? `🍵 Waktu ${brk.label} (${fmtMin(brk.startMin)}–${fmtMin(brk.endMin)}) — selamat beristirahat.`
     : nb ? `Istirahat berikutnya: ${nb.label} pukul ${fmtMin(nb.startMin)}.` : 'Semangat mengajar hari ini! 💪';
@@ -678,6 +682,7 @@ function StudentList({ items }: { items: { name: string; className: string; stat
 
 // ── Session drill-down modal (cell click dari Papan Pembelajaran) ────────────────
 function SessionModal({ data, onClose }: { data: { row: PapanRow; jp: number; cell: PapanCell }; onClose: () => void }) {
+  const bell = useBellPattern();
   const { row, jp, cell } = data;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -689,7 +694,7 @@ function SessionModal({ data, onClose }: { data: { row: PapanRow; jp: number; ce
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl">
         <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
-          <h3 className="font-bold text-gray-900 flex-1">{row.className} · JP-{jp} ({jpStartLabel(jp)})</h3>
+          <h3 className="font-bold text-gray-900 flex-1">{row.className} · JP-{jp} ({jpStartLabel(jp, bell.slots)})</h3>
           <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-gray-100 text-gray-400 flex items-center justify-center" aria-label="Tutup"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-5 text-sm text-gray-700 space-y-1.5">
@@ -708,6 +713,7 @@ function SessionModal({ data, onClose }: { data: { row: PapanRow; jp: number; ce
 
 // P5 (S-14): Absen per JP drill-down — honest empty-state until KBM per-JP module
 function AbsenJpModal({ jp, onClose }: { jp: number; onClose: () => void }) {
+  const bell = useBellPattern();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey);
@@ -721,7 +727,7 @@ function AbsenJpModal({ jp, onClose }: { jp: number; onClose: () => void }) {
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl">
         <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
-          <h3 className="font-bold text-gray-900 flex-1">Tidak Hadir · JP-{jp} ({jpStartLabel(jp)})</h3>
+          <h3 className="font-bold text-gray-900 flex-1">Tidak Hadir · JP-{jp} ({jpStartLabel(jp, bell.slots)})</h3>
           <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-gray-100 text-gray-400 flex items-center justify-center" aria-label="Tutup"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-5 text-sm text-gray-700">
