@@ -2,7 +2,7 @@
 // P6: All SIMULASI constants purged — data comes from real API endpoints.
 // Import dari lib/bell-times untuk konstanta resmi.
 
-import { fmtMin } from '@/lib/bell-times';
+import { fmtMin, type JpSlot } from '@/lib/bell-times';
 import { segmentsForDay, type BellProfile } from '@/lib/bell-patterns';
 import type { SiswaPengumuman } from './siswa-types';
 
@@ -90,8 +90,27 @@ export interface ApiScheduleItem {
   dayOfWeek: number;
   jpStart: number;
   jpEnd: number;
-  room: string | null;
-  teachingAssignment?: { subject: string };
+  room?: string | null;
+  class?: { id?: string; name?: string };
+  teachingAssignment?: { subject: string; teacher?: { user?: { fullName?: string | null } } };
+}
+
+/** Resolve only the authenticated student's returned class, never a leaderboard peer. */
+export function scheduleClassName(items: unknown[] = []): string | null {
+  const names = new Set(items.flatMap((item) => {
+    if (!item || typeof item !== 'object' || !('class' in item)) return [];
+    const klass = item.class;
+    if (!klass || typeof klass !== 'object' || !('name' in klass) || typeof klass.name !== 'string') return [];
+    const name = klass.name.trim();
+    return name ? [name] : [];
+  }));
+  return names.size === 1 ? [...names][0]! : null;
+}
+
+/** Other weekdays must not inherit today's live/finished highlight. */
+export function studentLessonPhase(now: { jsDay: number; minutes: number }, day: number, slot?: JpSlot): 'current' | 'finished' | 'upcoming' {
+  if (!slot || day !== now.jsDay || now.minutes < slot.startMin) return 'upcoming';
+  return now.minutes < slot.endMin ? 'current' : 'finished';
 }
 
 /** Transform API ScheduleItem[] to component schedule format. */
@@ -99,12 +118,11 @@ export function transformApiSchedule(items: ApiScheduleItem[], profile: BellProf
   const result: SimSchedule = {};
   for (const item of items) {
     if (!result[item.dayOfWeek]) result[item.dayOfWeek] = {};
-    for (let jp = item.jpStart; jp <= item.jpEnd; jp++) {
-      const idx = studentDayPattern(profile, item.dayOfWeek).JP_MAP.find(([j]) => j === jp)?.[1];
-      if (idx != null) {
+    for (const [jp, idx] of studentDayPattern(profile, item.dayOfWeek).JP_MAP) {
+      if (jp >= item.jpStart && jp <= item.jpEnd) {
         result[item.dayOfWeek]![idx] = {
           mp: item.teachingAssignment?.subject ?? '—',
-          g: '—',
+          g: item.teachingAssignment?.teacher?.user?.fullName?.trim() || '—',
           ruang: item.room ?? '—',
         };
       }
@@ -116,7 +134,13 @@ export function transformApiSchedule(items: ApiScheduleItem[], profile: BellProf
 /** Resolve schedule: use API data if available, fall back to empty. */
 export function resolveSchedule(apiSchedule?: unknown[], profile: BellProfile | null = null): { schedule: SimSchedule; isSim: boolean; timingAvailable: boolean } {
   if (apiSchedule && apiSchedule.length > 0) {
-    return { schedule: transformApiSchedule(apiSchedule as ApiScheduleItem[], profile), isSim: false, timingAvailable: profile != null };
+    const items = apiSchedule as ApiScheduleItem[];
+    const timingAvailable = profile != null && items.every((item) => {
+      const numbers = studentDayPattern(profile, item.dayOfWeek).JP_MAP.map(([jp]) => jp);
+      return Number.isInteger(item.jpStart) && Number.isInteger(item.jpEnd) && item.jpStart > 0 && item.jpEnd >= item.jpStart &&
+        numbers.filter((jp) => jp >= item.jpStart && jp <= item.jpEnd).length === item.jpEnd - item.jpStart + 1;
+    });
+    return { schedule: transformApiSchedule(items, profile), isSim: false, timingAvailable };
   }
   return { schedule: {}, isSim: false, timingAvailable: profile != null };
 }

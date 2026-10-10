@@ -1,9 +1,10 @@
+import React from 'react';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getActiveViewAs } from '@/lib/view-as';
 import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
 import { redirect } from 'next/navigation';
-import { apiFetch, PaginatedResponse, GradeItem, AttendanceItem } from '@/lib/api';
+import { apiFetch, apiFetchResult, PaginatedResponse, GradeItem, AttendanceItem } from '@/lib/api';
 import type {
   SiswaBadge,
   SiswaXP,
@@ -41,7 +42,7 @@ import {
   type StudentDashboardAssignmentGroup as OrtuStudentDashboardAssignmentGroup,
 } from './_components/ortu/ortu-mappers';
 import { resolveAcademicWorkflowView } from '@/lib/academic-workflow-deep-link';
-import { childSchedulePath, OWN_STUDENT_SCHEDULE_PATH } from '@/lib/learner-schedule';
+import { childSchedulePath, OWN_STUDENT_SCHEDULE_PATH, readLearnerSchedule } from '@/lib/learner-schedule';
 
 type Assignment = TeachingAssignmentItem;
 interface ClassItem {
@@ -248,7 +249,7 @@ export default async function AkademikPage({
         `/attendance?dateFrom=${attendanceMonth.dateFrom}&dateTo=${attendanceMonth.dateTo}&limit=200`,
         token,
       ),
-      apiFetch<{ data: ScheduleItem[] }>(OWN_STUDENT_SCHEDULE_PATH, token),
+      apiFetchResult<{ data: ScheduleItem[] }>(OWN_STUDENT_SCHEDULE_PATH, token),
       apiFetch<{ data: { id: string; title: string; createdAt: string }[] }>(
         '/announcements?limit=5',
         token,
@@ -421,12 +422,14 @@ export default async function AkademikPage({
           })
       : null;
 
+    const ownedSchedule = readLearnerSchedule(scheduleRes);
     return (
       <SiswaRefreshWrapper>
         <SiswaWorkspace
           grades={gradesRes?.data ?? []}
           attendance={attendanceRes?.data ?? []}
-          schedule={scheduleRes?.data ?? []}
+          schedule={ownedSchedule.data}
+          scheduleState={ownedSchedule.state}
           announcements={announcementsRes?.data ?? []}
           realBadges={realBadges}
           realXp={realXp}
@@ -637,8 +640,8 @@ export default async function AkademikPage({
             token,
           ),
           schedulePath
-            ? apiFetch<{ data: ScheduleItem[] }>(schedulePath, token)
-            : Promise.resolve({ data: [] as ScheduleItem[] }),
+            ? apiFetchResult<{ data: ScheduleItem[] }>(schedulePath, token)
+            : Promise.resolve({ status: 'success' as const, httpStatus: 200, data: { data: [] as ScheduleItem[] } }),
           apiFetch<OrtuBadgeApiItem[]>(`/badges/student/${studentId}`, token),
           apiFetch<{
             data: Array<{
@@ -651,10 +654,13 @@ export default async function AkademikPage({
             }>;
           }>(`/wa-log/student/${studentId}?limit=20`, token),
         ]);
+        const childSchedule = readLearnerSchedule(scheduleRes);
         return {
+          studentId,
+          scheduleState: schedulePath ? childSchedule.state : 'unassigned' as const,
           grades: tagWithStudentId(gradesRes?.data, studentId),
           attendance: tagWithStudentId(attendanceRes?.data, studentId),
-          schedule: tagWithStudentId(scheduleRes?.data, studentId),
+          schedule: tagWithStudentId(childSchedule.data, studentId),
           badges: tagWithStudentId(badgesRes ?? [], studentId),
           waLog: tagWithStudentId(waLogRes?.data, studentId),
         };
@@ -718,6 +724,7 @@ export default async function AkademikPage({
           grades={gradesDataOrtu}
           attendance={attendanceDataOrtu}
           schedule={scheduleDataOrtu}
+          scheduleStates={Object.fromEntries(childData.map((item) => [item.studentId, item.scheduleState]))}
           announcements={announcementsRes?.data ?? []}
           spp={sppDataOrtu}
           assignments={assignmentsDataOrtu}
