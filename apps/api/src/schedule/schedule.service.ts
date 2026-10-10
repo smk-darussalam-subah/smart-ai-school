@@ -169,7 +169,10 @@ export class ScheduleService {
       where.classId = myClassId;
     } else if (isOrangTuaOnly(user)) {
       const childClassIds = await this.resolveChildClassIds(user.keycloakId);
-      where.classId = { in: childClassIds };
+      if (query.classId && !childClassIds.includes(query.classId)) {
+        throw new ForbiddenException('Kelas bukan milik anak yang terdaftar untuk akun ini');
+      }
+      where.classId = query.classId ?? { in: childClassIds };
     } else {
       // ELEVATED (SA/KS/TU): filter opsional
       if (query.classId)   where.classId = query.classId;

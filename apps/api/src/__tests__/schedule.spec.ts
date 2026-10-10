@@ -519,6 +519,14 @@ describe('ScheduleService', () => {
     });
 
     describe('SISWA ownership', () => {
+      it('SISWA foreign class and teacher hints cannot broaden authenticated own-class scope', async () => {
+        prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-siswa' });
+        prisma.student.findUnique.mockResolvedValue({ classId: 'class-uuid-001' });
+        await service.findAll({ ...BASE_QUERY, classId: 'class-foreign', teacherId: 'teacher-foreign' }, SISWA_USER);
+        const where = prisma.schedule.findMany.mock.calls[0][0].where;
+        expect(where.classId).toBe('class-uuid-001');
+        expect(where.teachingAssignmentId).toBeUndefined();
+      });
       it('SISWA hanya kelas sendiri — where.classId = student.classId', async () => {
         prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-siswa' });
         prisma.student.findUnique.mockResolvedValue({ classId: 'class-uuid-001' });
@@ -552,6 +560,23 @@ describe('ScheduleService', () => {
     });
 
     describe('ORANG_TUA ownership', () => {
+      it('selected child class does not combine schedules of different children', async () => {
+        prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-ortu' });
+        prisma.student.findMany.mockResolvedValue([
+          { classId: 'class-uuid-001' }, { classId: 'class-uuid-002' },
+        ]);
+        await service.findAll({ ...BASE_QUERY, classId: 'class-uuid-002' }, ORANGTUA_USER);
+        expect(prisma.schedule.findMany.mock.calls[0][0].where.classId).toBe('class-uuid-002');
+      });
+
+      it('foreign child class is forbidden before schedules are read', async () => {
+        prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-ortu' });
+        prisma.student.findMany.mockResolvedValue([{ classId: 'class-uuid-001' }]);
+        await expect(service.findAll({ ...BASE_QUERY, classId: 'class-foreign' }, ORANGTUA_USER))
+          .rejects.toThrow(ForbiddenException);
+        expect(prisma.schedule.findMany).not.toHaveBeenCalled();
+      });
+
       it('ORANG_TUA hanya kelas anak — where.classId = { in: childClassIds }', async () => {
         prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid-ortu' });
         prisma.student.findMany.mockResolvedValue([
@@ -604,6 +629,7 @@ describe('ScheduleController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ScheduleController],
       providers: [
+        { provide: PermissionsService, useValue: { hasPermission: jest.fn().mockResolvedValue(true) } },
         {
           provide: ScheduleService,
           useValue: {
