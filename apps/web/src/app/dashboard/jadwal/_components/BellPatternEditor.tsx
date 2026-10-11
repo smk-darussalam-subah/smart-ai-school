@@ -25,17 +25,21 @@ const minute = (time: string) => {
   return hour! * 60 + min!;
 };
 const field =
-  'h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-base sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500';
+  'h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-base sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:[color-scheme:dark]';
+const dialogTheme =
+  'dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:[&_.text-slate-500]:text-slate-400 dark:[&_.text-rose-700]:text-rose-300 dark:[&_.bg-white]:bg-slate-900 dark:[&_.bg-white:hover]:bg-slate-800 dark:[&_.bg-white:hover]:text-slate-100 [&_button]:min-h-11';
 export default function BellPatternEditor({
   profiles,
   canManage,
   loadError,
   previewSave,
+  embedded = false,
 }: {
   profiles: BellProfile[];
   canManage: boolean;
   loadError: string | null;
   previewSave?: (profile: BellProfile) => Promise<void>;
+  embedded?: boolean;
 }) {
   const [selected, setSelected] = useState(profiles[0]?.id ?? 'new');
   const original = profiles.find((profile) => profile.id === selected) ?? null;
@@ -165,8 +169,9 @@ export default function BellPatternEditor({
   }
   return (
     <section
-      className="overflow-hidden rounded-2xl border border-slate-200 bg-white text-sm shadow-sm [&_button]:min-h-11"
-      aria-labelledby="jp-config-title"
+      className="overflow-hidden rounded-2xl border border-slate-200 bg-white text-sm text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:[&_input]:[color-scheme:dark] dark:[&_.bg-white]:bg-slate-900 dark:[&_.bg-white:hover]:bg-slate-800 dark:[&_.bg-slate-50]:bg-slate-950 dark:[&_.bg-slate-100]:bg-slate-800 dark:[&_.bg-blue-50]:bg-blue-950 dark:[&_.bg-amber-50]:bg-amber-950 dark:[&_.bg-rose-50]:bg-rose-950 dark:[&_.text-slate-400]:text-slate-400 dark:[&_.text-slate-500]:text-slate-400 dark:[&_.text-slate-600]:text-slate-300 dark:[&_.text-slate-800]:text-slate-100 dark:[&_.text-slate-900]:text-slate-100 dark:[&_.text-slate-950]:text-slate-100 dark:[&_.text-blue-600]:text-blue-300 dark:[&_.text-blue-700]:text-blue-200 dark:[&_.text-blue-800]:text-blue-200 dark:[&_.text-blue-900]:text-blue-100 dark:[&_.text-amber-800]:text-amber-200 dark:[&_.text-rose-700]:text-rose-200 dark:[&_.border-slate-100]:border-slate-700 dark:[&_.border-slate-200]:border-slate-700 [&_button]:min-h-11"
+      aria-labelledby={embedded ? undefined : 'jp-config-title'}
+      aria-label={embedded ? 'Pola JP per hari' : undefined}
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 sm:gap-4 sm:p-5">
         <div className="flex items-center gap-3">
@@ -174,12 +179,11 @@ export default function BellPatternEditor({
             <Settings2 size={22} />
           </span>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
-              Langkah 1 · Sumber waktu sekolah
-            </p>
-            <h2 id="jp-config-title" className="mt-1 text-base font-bold text-slate-950 sm:text-lg">
-              Konfigurasi Jam Pelajaran
-            </h2>
+            {!embedded && (
+              <h2 id="jp-config-title" className="text-base font-bold text-slate-950 sm:text-lg">
+                Konfigurasi Jam Pelajaran
+              </h2>
+            )}
             <p className="mt-1 text-sm text-slate-500">
               Atur pola setiap hari sebelum menyusun jadwal mengajar.
             </p>
@@ -274,7 +278,7 @@ export default function BellPatternEditor({
               'min-w-20 whitespace-nowrap border-b-2 px-3 py-3 text-xs font-semibold focus-visible:ring-2 focus-visible:ring-blue-500 sm:min-w-24 sm:px-4 sm:text-sm ' +
               (day === index + 1
                 ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:bg-slate-50')
+                : 'border-transparent text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800')
             }
           >
             {label}
@@ -422,7 +426,7 @@ export default function BellPatternEditor({
                         type="time"
                         value={fmtMin(row.startMinute)}
                         disabled={!canManage}
-                        className="min-h-11 w-24 rounded border border-slate-200 p-1.5 text-sm"
+                        className="min-h-11 w-24 rounded border border-slate-200 bg-white p-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                         onChange={(event) =>
                           replaceDay(
                             rows.map((item, position) =>
@@ -440,7 +444,7 @@ export default function BellPatternEditor({
                         type="time"
                         value={fmtMin(row.endMinute)}
                         disabled={!canManage}
-                        className="min-h-11 w-24 rounded border border-slate-200 p-1.5 text-sm"
+                        className="min-h-11 w-24 rounded border border-slate-200 bg-white p-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                         onChange={(event) =>
                           replaceDay(
                             rows.map((item, position) =>
@@ -530,7 +534,7 @@ export default function BellPatternEditor({
             </div>
           )}
         </div>
-        <aside className="border-t border-slate-100 bg-slate-50/70 p-5 lg:border-l lg:border-t-0">
+        <aside className="border-t border-slate-100 bg-slate-50/70 p-5 lg:border-l lg:border-t-0 dark:border-slate-700 dark:bg-slate-950">
           <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
             <CalendarClock size={17} className="text-blue-600" />
             Pembuat pola cepat
@@ -681,7 +685,9 @@ export default function BellPatternEditor({
           if (!busy) setConfirm(value);
         }}
       >
-        <DialogContent className="max-h-[94dvh] w-[calc(100%_-_2rem)] overflow-y-auto">
+        <DialogContent
+          className={`max-h-[94dvh] w-[calc(100%_-_2rem)] overflow-y-auto ${dialogTheme}`}
+        >
           <DialogHeader>
             <DialogTitle>Tinjau konfigurasi JP</DialogTitle>
             <DialogDescription>
@@ -725,7 +731,7 @@ export default function BellPatternEditor({
       >
         <DialogContent
           closeDisabled={busy}
-          className="max-h-[94dvh] w-[calc(100%_-_2rem)] overflow-y-auto"
+          className={`max-h-[94dvh] w-[calc(100%_-_2rem)] overflow-y-auto ${dialogTheme}`}
         >
           <DialogHeader>
             <DialogTitle>Cabut profil bel?</DialogTitle>
@@ -773,7 +779,9 @@ export default function BellPatternEditor({
         </DialogContent>
       </Dialog>
       <Dialog open={copyOpen} onOpenChange={setCopyOpen}>
-        <DialogContent className="max-h-[94dvh] w-[calc(100%_-_2rem)] overflow-y-auto">
+        <DialogContent
+          className={`max-h-[94dvh] w-[calc(100%_-_2rem)] overflow-y-auto ${dialogTheme}`}
+        >
           <DialogHeader>
             <DialogTitle>Salin pola {SCHOOL_DAYS[day - 1]}</DialogTitle>
             <DialogDescription>

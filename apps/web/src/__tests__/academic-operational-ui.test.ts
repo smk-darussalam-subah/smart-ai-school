@@ -237,7 +237,9 @@ describe('academic operational UI contracts', () => {
   it('uses native buttons for every editable schedule entry', () => {
     const scheduleMatrix = source('app/dashboard/jadwal/_components/JadwalMatrix.tsx');
 
-    expect(scheduleMatrix.match(/aria-label=\{`Edit jadwal/g)).toHaveLength(2);
+    // Both detail and compact cards retain explicit edit labels; overlap summaries open all details.
+    expect(scheduleMatrix.match(/`Edit jadwal/g)).toHaveLength(2);
+    expect(scheduleMatrix).toContain('Lihat seluruh ${group.length} slot bertumpuk');
     expect(scheduleMatrix).toContain('focus-visible:ring-2');
     expect(scheduleMatrix).not.toMatch(/<td[^>]*onClick=/);
     expect(scheduleMatrix).not.toMatch(/<div[^>]*onClick=/);

@@ -24,6 +24,7 @@ const REQUEST_HEADER_ALLOWLIST = new Set([
   'accept-language',
   'authorization',
   'content-type',
+  'idempotency-key',
   'if-match',
   'if-modified-since',
   'if-none-match',
@@ -33,6 +34,10 @@ const REQUEST_HEADER_ALLOWLIST = new Set([
 
 // Response headers yang tidak boleh diteruskan ke browser.
 const RESPONSE_STRIP_HEADERS = new Set([
+  // fetch decodes upstream compression; these describe the old encoded bytes.
+  // Forwarding them makes browsers decompress JSON twice or truncate the body.
+  'content-encoding',
+  'content-length',
   'host',
   'connection',
   'keep-alive',

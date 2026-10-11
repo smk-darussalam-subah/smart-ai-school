@@ -20,3 +20,11 @@ export function schedulingPolicy() {
     maxOccurrenceDays: ceiling('SMART_SCHEDULER_MAX_DRAFT_DAYS', 370, 3660),
   };
 }
+
+export function schedulingImportPolicy() {
+  const policy = schedulingPolicy();
+  if (process.env.SMART_SCHEDULER_IMPORT_ENABLED !== 'true') {
+    throw new ServiceUnavailableException('Impor draft jadwal belum diaktifkan');
+  }
+  return policy;
+}

@@ -3,6 +3,8 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
+import { readSchedulingSubjects, WorkspaceAssignmentSchema } from './_components/scheduling-workspace';
+import { z } from 'zod';
 
 const API_BASE = process.env.API_URL ?? 'http://localhost:3001';
 const PATH = '/dashboard/jadwal';
@@ -84,6 +86,43 @@ export async function searchScheduleAssignments(params: {
   if (params.search?.trim()) query.set('search', params.search.trim());
   if (params.academicYear) query.set('academicYear', params.academicYear);
   return fetchApi(`/teaching-assignments?${query.toString()}`, 'GET');
+}
+
+/** Minimal scheduling projection: no email, NIY or unrelated assignment data leaves this server action. */
+export async function fetchSchedulingAssignments(params: {
+  academicYear: string;
+  page: number;
+  limit: number;
+}) {
+  const query = new URLSearchParams({
+    academicYear: params.academicYear,
+    page: String(params.page),
+    limit: String(params.limit),
+  });
+  const result = await fetchApi(`/teaching-assignments?${query}`, 'GET');
+  if (!result.success) return result;
+  const parsed = z
+    .object({
+      data: z.array(WorkspaceAssignmentSchema),
+      total: z.number().int().nonnegative(),
+      page: z.number().int().positive(),
+    })
+    .safeParse(result.data);
+  if (!parsed.success)
+    return { success: false as const, error: 'Data penugasan belum dapat dibaca. Muat ulang.' };
+  return { success: true as const, data: parsed.data };
+}
+
+/** Reuse the authenticated catalog route; do not derive or invent subject codes from assignments. */
+export async function fetchSchedulingSubjectCatalog() {
+  try {
+    const data = await readSchedulingSubjects((offset, limit) =>
+      fetchApi(`/subjects?offset=${offset}&limit=${limit}`, 'GET'),
+    );
+    return { success: true as const, data };
+  } catch {
+    return { success: false as const, error: 'Katalog Mata Pelajaran belum dapat dimuat. Dokumen memakai nama lengkap tanpa kode. Coba muat ulang.' };
+  }
 }
 
 export async function startClassSession(id: string, idempotencyKey: string) {
