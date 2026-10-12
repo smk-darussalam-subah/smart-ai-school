@@ -9,6 +9,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { AuthUser } from '@smk/auth';
 import { SchedulingService } from '../scheduling/scheduling.service';
 import { SchedulingController } from '../scheduling/scheduling.controller';
+import { SchedulingImportController } from '../scheduling/scheduling-import.controller';
 import { SchedulingAudit } from '../scheduling/scheduling-audit';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PermissionGuard } from '../permissions/permissions.guard';
@@ -24,7 +25,8 @@ import { ClassesService } from '../classes/classes.service';
 import { digest } from '../scheduling/scheduling-input-snapshot';
 
 const url = process.env.WAVE1A_PROOF_DATABASE_URL;
-if (url && !/^postgresql:\/\/wave1a_local:wave1a_local@127\.0\.0\.1:55441\/diis_wave1a_[a-z0-9_]+$/.test(url)) {
+if (url && !/^postgresql:\/\/wave1a_local:wave1a_local@127\.0\.0\.1:55441\/diis_wave1a_[a-z0-9_]+$/.test(url) &&
+    !(process.env.WAVE1B_PROOF_DATABASE_URL === url && /^postgresql:\/\/wave1b_local:wave1b_local@127\.0\.0\.1:55443\/diis_wave1b_[a-z0-9_]+$/.test(url))) {
   throw new Error('Wave 1A proof only accepts its dedicated disposable database');
 }
 const fixtureDate = process.env.WAVE1A_PROOF_CLOCK_DATE ?? '2026-10-06';
@@ -155,7 +157,7 @@ proof('Wave 1A actual API/services and task-owned PostgreSQL', () => {
       scheduledEndAt: new Date(date(-1)+'T05:15:00Z'),
     } });
     const module = await Test.createTestingModule({
-      controllers: [SchedulingController], providers: [{ provide: SchedulingService, useValue: service }],
+      controllers: [SchedulingController, SchedulingImportController], providers: [{ provide: SchedulingService, useValue: service }],
     }).compile();
     app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
     app.setGlobalPrefix('api/v1');
@@ -442,5 +444,125 @@ proof('Wave 1A actual API/services and task-owned PostgreSQL', () => {
       await expect(service.create({...body(),effectiveUntil:'2035-01-01'},admin.auth.keycloakId,key())).rejects.toThrow('Rentang occurrence');
       expect(await domainCounts()).toEqual(before);
     } finally { delete process.env.SMART_SCHEDULER_MAX_DRAFT_SLOTS; }
+  });
+
+  describe('Wave 1B actual import transactions', () => {
+    beforeEach(() => { process.env.SMART_SCHEDULER_IMPORT_ENABLED = 'true'; });
+    afterEach(() => { delete process.env.SMART_SCHEDULER_IMPORT_ENABLED; });
+    const request = () => ({ draft: body(), file: { format: 'CSV', sheet: 1, headerRow: 1, delimiter: ',',
+      contentBase64: Buffer.from('Penugasan,Hari,Mulai,Selesai\n'+assignmentIds[0]+',Senin,1,3\n'+assignmentIds[1]+',Senin,4,6\n'+assignmentIds[2]+',Senin,7,9').toString('base64') },
+      mapping: { columns: { assignment: 0, day: 1, jpStart: 2, jpEnd: 3 }, assignments: [] } });
+    const commitBody = async () => { const r=request(); const p=await service.previewImport(r,admin.auth.keycloakId); expect(p.commitAllowed).toBe(true); return { ...r,expectedPreviewDigest:p.previewDigest }; };
+    it.each(['inspect','catalog','preview','malformed','blank','invalid-columns'])('pure import %s writes no table', async (kind) => {
+      const r=request(), before=await allTableBytes();
+      const endpoint=['malformed','blank','invalid-columns'].includes(kind)?'preview':kind;
+      let payload: Record<string, unknown>=kind==='inspect'?r.file:kind==='catalog'?r.draft:r;
+      if(kind==='malformed') payload={...r,publish:true};
+      if(kind==='blank') payload={...r,file:{...r.file,contentBase64:Buffer.from('A,B,C,D\n,,,').toString('base64')}};
+      if(kind==='invalid-columns') payload={...r,mapping:{...r.mapping,columns:{...r.mapping.columns,jpEnd:31}}};
+      const response=await app.inject({method:'POST',url:'/api/v1/scheduling/imports/'+endpoint,
+        headers:{'x-wave1a-user':admin.auth.keycloakId},payload});
+      expect(response.statusCode).toBe(kind==='malformed'?400:201);
+      if(kind==='blank'||kind==='invalid-columns') expect(response.json().commitAllowed).toBe(false);
+      await new Promise((r)=>setTimeout(r,10)); expect(await allTableBytes()).toBe(before);
+    });
+    it('atomic IMPORT preserves operational/history bytes and only retains minimal provenance', async () => {
+      const original=await legacyBytes(), before=await domainCounts(), dto=await commitBody();
+      const ack=await service.commitImport(dto,admin.auth.keycloakId,key());
+      expect(await domainCounts()).toEqual(before.map((n,i)=>n+(i===1?3:1)));
+      const root=await prisma.schedulingVersion.findUniqueOrThrow({where:{id:ack.id},include:{slots:true}});
+      expect(root.sourceType).toBe('IMPORT'); expect(root.status).toBe('DRAFT'); expect(root.slots).toHaveLength(3);
+      expect(Object.keys(root.importProvenance as object).sort()).toEqual(['fileSha256','format','mappingDigest','parserVersion','rowCount']);
+      expect(JSON.stringify(root.importProvenance)).not.toContain(dto.file.contentBase64);
+      expect((await service.get(ack.id,admin.auth.keycloakId)).precheck.publishable).toBe(false);
+      expect(await legacyBytes()).toBe(original);
+    });
+    it('concurrent key replay creates exactly one IMPORT root/slot set/audit/receipt; request mismatch fails', async () => {
+      const dto=await commitBody(), k=key(), before=await domainCounts();
+      const result=await Promise.all([service.commitImport(dto,admin.auth.keycloakId,k),service.commitImport(dto,admin.auth.keycloakId,k)]);
+      expect(result[0]!.id).toBe(result[1]!.id); expect(result.map((r)=>r.replayed).sort()).toEqual([false,true]);
+      expect(await domainCounts()).toEqual(before.map((n,i)=>n+(i===1?3:1)));
+      await expect(service.commitImport({...dto,draft:{...dto.draft,name:'Different'}},admin.auth.keycloakId,k)).rejects.toBeInstanceOf(ConflictException);
+      await service.rename(result[0]!.id,{expectedRevision:0,name:'Renamed import'},admin.auth.keycloakId,key());
+      expect((await service.commitImport(dto,admin.auth.keycloakId,k)).revision).toBe(0);
+    });
+    it.each(['assignment','bell','mapping','clock'])('stale %s cannot commit a trusted-looking preview digest', async (kind) => {
+      const dto=await commitBody(), before=await domainCounts();
+      try {
+        if(kind==='assignment') await prisma.teachingAssignment.update({where:{id:assignmentIds[0]},data:{hoursPerWeek:4}});
+        if(kind==='bell') await prisma.bellScheduleSegment.updateMany({where:{jpNumber:1},data:{startMinute:421}});
+        if(kind==='mapping') dto.mapping.columns.jpStart=1;
+        if(kind==='clock') jest.setSystemTime(new Date(date(1)+'T00:31:00Z'));
+        await expect(service.commitImport(dto,admin.auth.keycloakId,key())).rejects.toThrow();
+        expect(await domainCounts()).toEqual(before);
+      } finally {
+        if(kind==='assignment') await prisma.teachingAssignment.update({where:{id:assignmentIds[0]},data:{hoursPerWeek:3}});
+        if(kind==='bell') await prisma.bellScheduleSegment.updateMany({where:{jpNumber:1},data:{startMinute:420}});
+        if(kind==='clock') jest.setSystemTime(new Date(fixtureDate+'T00:31:00Z'));
+      }
+    });
+    it.each(['audit','receipt'])('%s failure rolls back import root+every slot+receipt', async (kind) => {
+      const dto=await commitBody(), before=await domainCounts();
+      if(kind==='audit') jest.spyOn(audit,'record').mockRejectedValueOnce(new Error('Synthetic import audit failure'));
+      else {
+        await prisma.$executeRawUnsafe(`CREATE FUNCTION academic.wave1b_receipt_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Synthetic import receipt failure'; END $$`);
+        await prisma.$executeRawUnsafe('CREATE TRIGGER wave1b_receipt_fail BEFORE INSERT ON academic.scheduling_mutation_receipts FOR EACH ROW EXECUTE FUNCTION academic.wave1b_receipt_fail()');
+      }
+      try { await expect(service.commitImport(dto,admin.auth.keycloakId,key())).rejects.toThrow(); expect(await domainCounts()).toEqual(before); }
+      finally { if(kind==='receipt') { await prisma.$executeRawUnsafe('DROP TRIGGER wave1b_receipt_fail ON academic.scheduling_mutation_receipts'); await prisma.$executeRawUnsafe('DROP FUNCTION academic.wave1b_receipt_fail()'); } }
+    });
+    it.each(['disable','role','flag'])('%s while commit waits rechecks authority/flag, including replay', async (kind) => {
+      const actor=await employee(), dto=await commitBody(), k=key();
+      await service.commitImport(dto,actor.auth.keycloakId,k);
+      const before=await domainCounts(), held=await hold('academic:schedule:mutation:v1');
+      const pending=service.commitImport(dto,actor.auth.keycloakId,k).then(()=>null,(e:unknown)=>e);
+      try {
+        await waiter('academic:schedule:mutation:v1');
+        if(kind==='disable') await users.updateActive(actor.user.id,false,admin.auth.keycloakId);
+        if(kind==='role') await users.updateRole(actor.user.id,'GURU',admin.auth.keycloakId);
+        if(kind==='flag') process.env.SMART_SCHEDULER_IMPORT_ENABLED='false';
+      } finally { held.release();await held.completion; }
+      expect(await pending).toBeInstanceOf(Error); expect(await domainCounts()).toEqual(before);
+    });
+    it('real HTTP import guards, absent key, and off flag fail closed', async () => {
+      const dto=await commitBody(), teacher=await employee('GURU');
+      for(const endpoint of ['inspect','catalog','preview','commit']) {
+        const payload=endpoint==='inspect'?dto.file:endpoint==='catalog'?dto.draft:dto;
+        expect((await app.inject({method:'POST',url:'/api/v1/scheduling/imports/'+endpoint,headers:{'x-wave1a-user':teacher.auth.keycloakId},payload})).statusCode).toBe(403);
+      }
+      expect((await app.inject({method:'POST',url:'/api/v1/scheduling/imports/commit',headers:{'x-wave1a-user':admin.auth.keycloakId},payload:dto})).statusCode).toBe(400);
+      process.env.SMART_SCHEDULER_IMPORT_ENABLED='false';
+      expect((await app.inject({method:'POST',url:'/api/v1/scheduling/imports/inspect',headers:{'x-wave1a-user':admin.auth.keycloakId},payload:dto.file})).statusCode).toBe(503);
+    });
+    it.each(['disable','role'] as const)('import winning authority lock commits before %s and subsequent replay fails', async (action) => {
+      const actor=await employee(), dto=await commitBody(), entered=deferred(), release=deferred();
+      const extended=prisma.$extends({query:{schedulingVersion:{async create({args,query}) {
+        entered.release(); await release.promise; return query(args);
+      }}}});
+      const controlled=new SchedulingService(extended as unknown as PrismaService,permissions,period,audit);
+      const k=key(), pending=controlled.commitImport(dto,actor.auth.keycloakId,k);
+      let revoke:Promise<unknown>|undefined;
+      try {
+        await Promise.race([entered.promise,pending.then(()=>{throw new Error('Must pause in identity lock');})]);
+        revoke=action==='disable'?users.updateActive(actor.user.id,false,admin.auth.keycloakId):users.updateRole(actor.user.id,'GURU',admin.auth.keycloakId);
+        await waiter('users:last-active-super-admin');
+      } finally {release.release();}
+      const ack=await pending; await revoke;
+      expect(await prisma.schedulingVersionSlot.count({where:{versionId:ack.id}})).toBe(3);
+      const before=await domainCounts();
+      await expect(service.commitImport(dto,actor.auth.keycloakId,k)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(await domainCounts()).toEqual(before);
+    });
+    it('import read transaction rejects an injected database write', async () => {
+      const before=await allTableBytes();
+      const controlled=new SchedulingService(db,permissions,{acquireCutoverLock:async(tx:Prisma.TransactionClient)=>{
+        await tx.auditLog.create({data:{actorRoles:[],action:'must-fail-import',method:'TEST',path:'/',statusCode:200,outcome:'success'}});
+      }} as unknown as AcademicPeriodService,audit);
+      await expect(controlled.previewImport(request(),admin.auth.keycloakId)).rejects.toThrow(/read.only/i);
+      expect(await allTableBytes()).toBe(before);
+    });
+    it.each([null,{}, {fileSha256:null,format:null,parserVersion:null,rowCount:null,mappingDigest:null}])('DB cannot label IMPORT with invalid provenance %p', async (value) => {
+      const d=await create(); await expect(prisma.$executeRaw(Prisma.sql`UPDATE academic.scheduling_versions SET source_type='IMPORT', import_provenance=${JSON.stringify(value)}::jsonb WHERE id=${d.id}::uuid`)).rejects.toThrow();
+    });
   });
 });

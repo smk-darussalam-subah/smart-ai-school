@@ -20,7 +20,7 @@ jest.mock('@/app/dashboard/akademik/_components/siswa/SiswaRefreshWrapper', () =
 jest.mock('@/app/dashboard/akademik/_components/ortu/OrtuRefreshWrapper', () => ({ __esModule: true, default: () => null }));
 import AcademicPage from '@/app/dashboard/akademik/page';
 
-type WorkspaceProps = { schedule?: unknown[]; scheduleState?: string; scheduleStates?: Record<string, string> };
+type WorkspaceProps = { children?: unknown[]; childrenState?: string; grades?: unknown[]; attendance?: unknown[]; schedule?: unknown[]; scheduleState?: string; scheduleStates?: Record<string, string> };
 async function workspaceProps(): Promise<WorkspaceProps> {
   const element = await AcademicPage({ searchParams: Promise.resolve({}) });
   const wrapper = element as React.ReactElement<{ children: React.ReactElement<WorkspaceProps> }>;
@@ -46,17 +46,43 @@ describe('real SSR page schedule-state wiring', () => {
   it('keeps ready/error/unassigned per child, without fetching schedules for an unassigned child', async () => {
     mockSession.mockResolvedValue({ accessToken: 'synthetic', roles: ['ORANG_TUA'] });
     mockAuthority.mockResolvedValue({ roles: ['ORANG_TUA'], hasRole: () => false, can: () => false });
-    mockApiFetch.mockImplementation(async (url: string) => url === '/students/my-children' ? { data: [
+    const children = { data: [
       { id: 'child-a', class: { id: 'class-a', name: 'A' }, user: { fullName: 'Anak A' } },
       { id: 'child-b', class: { id: 'class-b', name: 'B' }, user: { fullName: 'Anak B' } },
       { id: 'child-c', class: null, user: { fullName: 'Anak C' } },
-    ] } : null);
-    mockApiFetchResult.mockImplementation(async (url: string) => url.includes('class-a')
+    ] };
+    mockApiFetchResult.mockImplementation(async (url: string) => url === '/students/my-children'
+      ? { status: 'success', httpStatus: 200, data: children }
+      : url.includes('class-a')
       ? { status: 'success', httpStatus: 200, data: { data: [{ id: 'only-child-a' }] } }
       : { status: 'requestError', httpStatus: 429, message: 'synthetic' });
     const props = await workspaceProps();
     expect(props.scheduleStates).toEqual({ 'child-a': 'ready', 'child-b': 'error', 'child-c': 'unassigned' });
     expect(props.schedule).toEqual([{ id: 'only-child-a', studentId: 'child-a' }]);
-    expect(mockApiFetchResult).toHaveBeenCalledTimes(2);
+    expect(props.childrenState).toBe('ready');
+    expect(mockApiFetchResult).toHaveBeenCalledTimes(3);
+  });
+  it.each(['forbidden', 'unavailable', 'requestError', 'notFound'] as const)('keeps %s child-read separate from missing class placement', async (status) => {
+    mockSession.mockResolvedValue({ accessToken: 'synthetic', roles: ['ORANG_TUA'] });
+    mockAuthority.mockResolvedValue({ roles: ['ORANG_TUA'], hasRole: () => false, can: () => false });
+    mockApiFetchResult.mockResolvedValue({ status, httpStatus: status === 'forbidden' ? 403 : 500, message: 'synthetic' });
+    const props = await workspaceProps();
+    expect(props.childrenState).toBe(status === 'forbidden' ? 'denied' : 'error');
+    expect(props.children).toEqual([]);
+    expect(props.schedule).toEqual([]);
+    expect(props.scheduleStates).toEqual({});
+    expect(props.grades).toEqual([]);
+    expect(props.attendance).toEqual([]);
+    expect(mockApiFetchResult).toHaveBeenCalledWith('/students/my-children', 'synthetic');
+    expect(mockApiFetchResult.mock.calls.some(([url]) => String(url).startsWith('/schedules'))).toBe(false);
+    expect(mockApiFetch.mock.calls.some(([url]) => /studentId=|my-children|leaderboard|student-dashboard/.test(String(url)))).toBe(false);
+  });
+  it('keeps a successful empty child list honest', async () => {
+    mockSession.mockResolvedValue({ accessToken: 'synthetic', roles: ['ORANG_TUA'] });
+    mockAuthority.mockResolvedValue({ roles: ['ORANG_TUA'], hasRole: () => false, can: () => false });
+    const props = await workspaceProps();
+    expect(props.childrenState).toBe('empty');
+    expect(props.children).toEqual([]);
+    expect(props.scheduleStates).toEqual({});
   });
 });

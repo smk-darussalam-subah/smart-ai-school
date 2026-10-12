@@ -69,12 +69,13 @@ export default async function JadwalPage() {
     authority.hasRole('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM');
   const canReadOptions = isStaff && authority.can('academic.teaching.read');
 
-  const [activeSemesterRes, academicYearsRes, optionsRes] = await Promise.all([
+  const [activeSemesterRes, academicYearsRes, optionsRes, schoolProfileRes] = await Promise.all([
     apiFetchResult<ActiveSemester>('/school/semesters/active', token),
     apiFetchResult<AcademicYearItem[]>('/school/academic-years', token),
     canReadOptions
       ? apiFetchResult<ActiveOptions>('/teaching-assignments/options/active', token)
       : Promise.resolve(null),
+    apiFetchResult<{ name: string }>('/school/profile', token),
   ]);
 
   if (activeSemesterRes.status === 'notFound') {
@@ -147,23 +148,9 @@ export default async function JadwalPage() {
 
   return (
     <div className="space-y-4">
-      {canReadSessions && (
-        <TodayClassSessions
-          sessions={sessions}
-          loadError={sessionLoadError}
-          canManage={canManage}
-          teachers={teacherOptions}
-        />
-      )}
-      {bellProfilesRes && (
-        <BellScheduleManager
-          profiles={bellProfiles}
-          canManage={canManage}
-          loadError={bellLoadError}
-        />
-      )}
       {optionWarning && <AcademicDataNotice href="/dashboard/jadwal" message={optionWarning} />}
       <JadwalMatrix
+        schoolName={schoolProfileRes.status === 'success' ? schoolProfileRes.data.name : undefined}
         initialSchedules={schedulesRes.data.data}
         initialTotal={schedulesRes.data.total}
         initialPage={schedulesRes.data.page ?? 1}
@@ -174,6 +161,32 @@ export default async function JadwalPage() {
         isStaff={isStaff}
         canApproveConcurrency={canManage && authority.hasRole('SUPER_ADMIN', 'WAKA_KURIKULUM')}
         canManage={canManage}
+        canReadAssignments={isStaff && authority.can('academic.teaching.read')}
+        importAccess={
+          authority.hasRole('SUPER_ADMIN') && authority.can('academic.schedule.draft.read')
+            ? { canEdit: authority.can('academic.schedule.edit') }
+            : undefined
+        }
+        bellConfiguration={
+          bellProfilesRes ? (
+            <BellScheduleManager
+              embedded
+              profiles={bellProfiles}
+              canManage={canManage}
+              loadError={bellLoadError}
+            />
+          ) : undefined
+        }
+        todaySessions={
+          canReadSessions ? (
+            <TodayClassSessions
+              sessions={sessions}
+              loadError={sessionLoadError}
+              canManage={canManage}
+              teachers={teacherOptions}
+            />
+          ) : undefined
+        }
       />
     </div>
   );
