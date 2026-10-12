@@ -5,6 +5,7 @@ import { getActiveViewAs } from '@/lib/view-as';
 import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
 import { redirect } from 'next/navigation';
 import { apiFetch, apiFetchResult, PaginatedResponse, GradeItem, AttendanceItem } from '@/lib/api';
+import { readParentChildren } from '@/lib/parent-children';
 import type {
   SiswaBadge,
   SiswaXP,
@@ -586,7 +587,7 @@ export default async function AkademikPage({
         '/announcements?limit=5',
         token,
       ),
-      apiFetch<{
+      apiFetchResult<{
         data: Array<{
           id: string;
           nis: string;
@@ -597,7 +598,8 @@ export default async function AkademikPage({
       }>('/students/my-children', token),
     ]);
 
-    const children = childrenRes?.data ?? [];
+    const childRead = readParentChildren(childrenRes);
+    const children = childRead.data;
     const childIds = children.map((child) => child.id);
     type OrtuBadgeApiItem = {
       id: string;
@@ -721,6 +723,7 @@ export default async function AkademikPage({
       <OrtuRefreshWrapper>
         <OrtuWorkspace
           children={ortuChildren}
+          childrenState={childRead.state}
           grades={gradesDataOrtu}
           attendance={attendanceDataOrtu}
           schedule={scheduleDataOrtu}

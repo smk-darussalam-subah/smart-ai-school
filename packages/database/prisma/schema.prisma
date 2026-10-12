@@ -553,6 +553,7 @@ model SchedulingVersion {
   versionNumber     Int      @map("version_number")
   status            String   @default("DRAFT") @db.VarChar(20)
   sourceType        String   @default("MANUAL") @map("source_type") @db.VarChar(20)
+  importProvenance  Json?    @map("import_provenance")
   name              String   @db.VarChar(120)
   effectiveFrom     DateTime @map("effective_from") @db.Date
   effectiveUntil    DateTime @map("effective_until") @db.Date

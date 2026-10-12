@@ -13,13 +13,16 @@ import {
   PrecheckDraftSchema, RenameDraftSchema, ReplaceDraftSchema, parseDraft,
 } from './dto/scheduling-draft.dto';
 import { SchedulingAudit } from './scheduling-audit';
-import { schedulingPolicy } from './scheduling-feature-policy';
+import { schedulingImportPolicy, schedulingPolicy } from './scheduling-feature-policy';
+import { ImportCommitSchema, ImportFileSchema, ImportPreview, ImportPreviewSchema } from './dto/scheduling-import.dto';
+import { parseImportFile } from './scheduling-import-parser';
+import { mapImportRows } from './scheduling-import-mapping';
 import { DraftScope, captureSchedulingInput, digest, jsonValue } from './scheduling-input-snapshot';
 import { validateDraft } from './scheduling-validator';
 
 const DOMAIN_LOCK = 'academic:schedule:mutation:v1';
 type Root = Prisma.SchedulingVersionGetPayload<{ include: { slots: true } }>;
-type Operation = 'CREATE' | 'RENAME' | 'REPLACE_SLOTS' | 'ARCHIVE';
+type Operation = 'CREATE' | 'RENAME' | 'REPLACE_SLOTS' | 'ARCHIVE' | 'IMPORT';
 const AcknowledgmentSchema = z.object({
   id: z.string().uuid(), revision: z.number().int(), status: z.enum(['DRAFT', 'ARCHIVED']),
   inputDigest: z.string(), acknowledgmentOnly: z.literal(true),
@@ -102,9 +105,99 @@ export class SchedulingService {
       const input = await captureSchedulingInput(tx, scope);
       const currentInputDigest = digest(input);
       return { id: root.id, name: root.name, status: root.status, versionNumber: root.versionNumber,
+        sourceType: root.sourceType, importProvenance: root.importProvenance,
         revision: root.revision, scope, slots: root.slots, inputDigest: root.inputDigest,
         currentInputDigest, stale: root.inputDigest !== currentInputDigest,
         precheck: validateDraft(scope, input, root.slots, getSchoolDate().toISOString().slice(0, 10)) };
+    });
+  }
+
+  /** Read-only file inspection; no upload storage, audit body or student data. */
+  async inspectImport(raw: unknown, actor: string) {
+    schedulingImportPolicy();
+    const file = parseDraft(ImportFileSchema, raw);
+    return this.read(actor, async () => {
+      schedulingImportPolicy();
+      const parsed = await parseImportFile(file);
+      return { headers: parsed.headers, sheets: parsed.sheets, rowCount: parsed.rows.length,
+        fileSha256: parsed.fileSha256, sample: parsed.rows.slice(0, 5) };
+    });
+  }
+
+  async importCatalog(raw: unknown, actor: string) {
+    schedulingImportPolicy();
+    const draft = parseDraft(CreateDraftSchema, raw);
+    this.size(draft.classIds); this.dates(draft);
+    return this.read(actor, async (tx) => {
+      schedulingImportPolicy();
+      const input = await captureSchedulingInput(tx, draft);
+      const check = validateDraft(draft, input, [], getSchoolDate().toISOString().slice(0, 10));
+      if (check.errors.length) throw new ConflictException(check);
+      const assignments = await tx.teachingAssignment.findMany({
+        where: { id: { in: input.assignments.filter((a) => draft.classIds.includes(a.classId)).map((a) => a.id) } },
+        select: { id: true, subject: true, hoursPerWeek: true,
+          class: { select: { name: true } }, teacher: { select: { user: { select: { fullName: true } } } } },
+        orderBy: { id: 'asc' },
+      });
+      return { assignments: assignments.map((a) => ({ id: a.id, subject: a.subject, targetJp: a.hoursPerWeek,
+        className: a.class.name, teacherName: a.teacher.user.fullName })), published: false };
+    });
+  }
+
+  private async importCheck(tx: Prisma.TransactionClient, dto: ImportPreview) {
+    schedulingImportPolicy();
+    const parsed = await parseImportFile(dto.file);
+    const input = await captureSchedulingInput(tx, dto.draft);
+    const mapped = mapImportRows(parsed, dto.mapping, input, dto.draft.classIds);
+    this.size(dto.draft.classIds, mapped.slots);
+    const today = getSchoolDate().toISOString().slice(0, 10);
+    const precheck = validateDraft(dto.draft, input, mapped.slots, today);
+    const errors = [...mapped.errors, ...precheck.errors.map((issue) => ({ ...issue,
+      row: issue.slot === undefined ? 0 : mapped.rowNumbers[issue.slot] ?? 0 }))];
+    const inputDigest = digest(input);
+    // This is a stale-data binding, NEVER a bearer/approval token. All checks rerun on commit.
+    const previewDigest = digest({ dto, fileSha256: parsed.fileSha256, inputDigest, today });
+    return { input, slots: mapped.slots, preview: { previewDigest, inputDigest, rowCount: parsed.rows.length,
+      parsedSlotCount: mapped.slots.length, sources: mapped.sources, errors, warnings: precheck.warnings,
+      coverage: precheck.coverage, slots: mapped.slots, notVerified: precheck.notVerified,
+      solverStatus: null, publishable: false, commitAllowed: errors.length === 0 },
+    provenance: { fileSha256: parsed.fileSha256, format: dto.file.format, parserVersion: 1,
+      rowCount: parsed.rows.length, mappingDigest: digest({ mapping: dto.mapping,
+        sheet: dto.file.sheet, headerRow: dto.file.headerRow, delimiter: dto.file.delimiter }) } };
+  }
+
+  async previewImport(raw: unknown, actor: string) {
+    schedulingImportPolicy();
+    const dto = parseDraft(ImportPreviewSchema, raw);
+    this.size(dto.draft.classIds); this.dates(dto.draft);
+    return this.read(actor, async (tx) => (await this.importCheck(tx, dto)).preview);
+  }
+
+  /** Single atomic root+all-slots+provenance+audit+receipt. Never writes the active schedule. */
+  async commitImport(raw: unknown, actor: string, key: string) {
+    schedulingImportPolicy();
+    const dto = parseDraft(ImportCommitSchema, raw);
+    this.size(dto.draft.classIds); this.dates(dto.draft);
+    return this.mutate('IMPORT', null, dto, actor, key, async (tx) => {
+      const { expectedPreviewDigest, ...request } = dto;
+      const checked = await this.importCheck(tx, request);
+      if (checked.preview.previewDigest !== expectedPreviewDigest) {
+        throw new ConflictException('Pratinjau sudah berubah. Validasi ulang sebelum menyimpan.');
+      }
+      if (!checked.preview.commitAllowed) throw new ConflictException(checked.preview);
+      await this.period.assertWritableSemesterId(tx, checked.input.period!.id);
+      const max = await tx.schedulingVersion.aggregate({
+        where: { academicYearId: dto.draft.academicYearId, semesterNumber: dto.draft.semesterNumber }, _max: { versionNumber: true },
+      });
+      return tx.schedulingVersion.create({ data: {
+        academicYearId: dto.draft.academicYearId, semesterNumber: dto.draft.semesterNumber,
+        versionNumber: (max._max.versionNumber ?? 0) + 1, name: dto.draft.name,
+        effectiveFrom: new Date(dto.draft.effectiveFrom), effectiveUntil: new Date(dto.draft.effectiveUntil),
+        scopeJson: { classIds: dto.draft.classIds }, sourceType: 'IMPORT',
+        importProvenance: jsonValue(checked.provenance), inputSnapshotJson: jsonValue(checked.input),
+        inputDigest: checked.preview.inputDigest, createdBy: actor,
+        slots: { create: checked.slots },
+      }, include: { slots: true } });
     });
   }
   /** Zero-write validation including invalid/error paths; no stamp or preview token. */
@@ -193,6 +286,7 @@ export class SchedulingService {
     const requestHash = digest({ id, request });
     return this.prisma.$transaction(async (tx) => {
       await this.locks(tx, actor, 'academic.schedule.edit', id ?? undefined, true);
+      if (operation === 'IMPORT') schedulingImportPolicy();
       const root = id ? await this.root(tx, id) : null;
       const receipt = await tx.schedulingMutationReceipt.findUnique({
         where: { actorId_operation_keyHash: { actorId: actor, operation, keyHash } },

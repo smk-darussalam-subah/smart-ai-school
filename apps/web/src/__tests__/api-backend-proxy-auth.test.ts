@@ -69,6 +69,21 @@ afterAll(() => {
 });
 
 describe('API backend proxy authorization', () => {
+  it('preserves draft idempotency without trusting caller identity headers', async () => {
+    const request = await requestWithToken({ accessToken: 'synthetic-access-token' }, undefined, {
+      'Idempotency-Key': 'synthetic-draft-operation-01',
+      'x-forwarded-for': '203.0.113.24',
+      'x-arbitrary-client-value': 'blocked',
+    });
+    await POST(request, proxyContext());
+    const headers = forwardedHeaders();
+    expect(headers.get('idempotency-key')).toBe('synthetic-draft-operation-01');
+    expect(headers.get('authorization')).toBe('Bearer synthetic-access-token');
+    expect(headers.has('cookie')).toBe(false);
+    expect(headers.has('x-forwarded-for')).toBe(false);
+    expect(headers.has('x-arbitrary-client-value')).toBe(false);
+  });
+
   it('does not retain a rewrite that bypasses the authenticated route handler', () => {
     const nextConfig = fs.readFileSync(path.resolve(__dirname, '../../next.config.js'), 'utf8');
     expect(nextConfig).not.toMatch(/source:\s*['"]\/api\/backend\/?:path\*/);

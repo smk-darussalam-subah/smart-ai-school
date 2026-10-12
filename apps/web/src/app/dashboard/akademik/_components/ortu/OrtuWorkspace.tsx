@@ -30,6 +30,8 @@ import type { AttendanceCellStatus, Pembayaran } from '@/lib/academic';
 import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem } from '../guru-types';
 import type { LearnerScheduleState } from '@/lib/learner-schedule';
+import type { ParentChildrenState } from '@/lib/parent-children';
+import ParentChildrenNotice from './ParentChildrenNotice';
 import { filterByStudentId, type OrtuAssignmentItem, type SppApiItem } from './ortu-mappers';
 import { initialChildIndex, learnerDashboardHref, learnerReportHref } from '../learner-navigation';
 import {
@@ -50,6 +52,7 @@ export interface ModalState {
 
 interface OrtuWorkspaceProps {
   children?: OrtuChild[];
+  childrenState?: ParentChildrenState;
   grades?: GradeItem[];
   attendance?: AttendanceItem[];
   schedule?: Array<ScheduleItem & { studentId?: string }>;
@@ -70,7 +73,7 @@ interface OrtuWorkspaceProps {
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function OrtuWorkspace({
-  children: realChildren, grades, attendance, schedule, scheduleStates, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, childRanks, openNotifications = false, initialStudentId, initialWorkflowView = null
+  children: realChildren, childrenState, grades, attendance, schedule, scheduleStates, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, childRanks, openNotifications = false, initialStudentId, initialWorkflowView = null
 }: OrtuWorkspaceProps) {
   const { data: session } = useSession();
   const router = useRouter();
@@ -113,7 +116,9 @@ export default function OrtuWorkspace({
   }, []);
 
   // Child selector — use real data (P25) or empty. T1-02: activeChildIndex untuk multi-child.
-  const childList = realChildren?.length ? realChildren : [];
+  const childReadState = childrenState ?? (realChildren?.length ? 'ready' : 'empty');
+  const childrenReady = childReadState === 'ready';
+  const childList = childrenReady && realChildren?.length ? realChildren : [];
   const child = childList[activeChildIndex] ?? childList[0] ?? { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
   const activeStudentId = 'studentId' in child ? child.studentId : undefined;
   useEffect(() => {
@@ -123,12 +128,12 @@ export default function OrtuWorkspace({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [activeScreen, activeStudentId, initialWorkflow.parentFocus]);
-  const childGrades = filterByStudentId(grades, activeStudentId);
-  const childAttendance = filterByStudentId(attendance, activeStudentId);
-  const childSchedule = filterByStudentId(schedule, activeStudentId);
-  const childSpp = filterByStudentId(realSpp, activeStudentId);
-  const childBadges = filterByStudentId(realBadges, activeStudentId);
-  const childWaLog = filterByStudentId(realWaLog, activeStudentId);
+  const childGrades = activeStudentId ? filterByStudentId(grades, activeStudentId) : [];
+  const childAttendance = activeStudentId ? filterByStudentId(attendance, activeStudentId) : [];
+  const childSchedule = activeStudentId ? filterByStudentId(schedule, activeStudentId) : [];
+  const childSpp = activeStudentId ? filterByStudentId(realSpp, activeStudentId) : [];
+  const childBadges = activeStudentId ? filterByStudentId(realBadges, activeStudentId) : [];
+  const childWaLog = activeStudentId ? filterByStudentId(realWaLog, activeStudentId) : [];
   const activeChildRank = activeStudentId ? childRanks?.[activeStudentId] ?? null : null;
   const openOfficialReport = useCallback(() => {
     if (!activeStudentId) {
@@ -159,6 +164,7 @@ export default function OrtuWorkspace({
   ];
 
   const renderScreen = () => {
+    if (!childrenReady) return <ParentChildrenNotice state={childReadState} />;
     switch (activeScreen) {
       case 'beranda':
         return (
@@ -171,7 +177,7 @@ export default function OrtuWorkspace({
             children={childList}
             activeChildIndex={Math.min(activeChildIndex, Math.max(childList.length - 1, 0))}
             schedule={childSchedule}
-            scheduleState={activeStudentId ? scheduleStates?.[activeStudentId] ?? 'ready' : 'unassigned'}
+            scheduleState={activeStudentId ? scheduleStates?.[activeStudentId] ?? 'error' : 'error'}
             spp={childSpp ?? []}
             waLog={childWaLog ?? []}
             attendance={childAttendance ?? []}
@@ -237,7 +243,7 @@ export default function OrtuWorkspace({
               <button
                 onClick={() => childList.length > 0 && setChildSelectorOpen((o) => !o)}
                 className="flex min-h-11 max-w-[6.5rem] cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 transition-colors hover:border-[var(--pri)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
-                aria-label={`Pilih anak. Aktif: ${child.name}`}
+                aria-label={childrenReady && childList.length ? `Pilih anak. Aktif: ${child.name}` : 'Data anak belum tersedia'}
                 aria-expanded={childSelectorOpen}
                 disabled={childList.length === 0}
               >
@@ -384,7 +390,7 @@ export default function OrtuWorkspace({
       </nav>
 
       {/* Modals */}
-      {modal.type === 'grade' && (
+      {childrenReady && modal.type === 'grade' && (
         <GradeDetailModal
           nilai={(modal.data as { nilai: OrtuNilai }).nilai}
           onClose={() => setModal({ type: null })}
@@ -401,7 +407,7 @@ export default function OrtuWorkspace({
         />
       )}
 
-      {modal.type === 'day' && (
+      {childrenReady && modal.type === 'day' && (
         <DayDetailModal
           day={(modal.data as { day: number }).day}
           status={(modal.data as { status: AttendanceCellStatus }).status}
@@ -411,7 +417,7 @@ export default function OrtuWorkspace({
         />
       )}
 
-      {modal.type === 'pay' && (
+      {childrenReady && modal.type === 'pay' && (
         <PayDetailModal
           payment={(modal.data as { payment: Pembayaran }).payment}
           onClose={() => setModal({ type: null })}
