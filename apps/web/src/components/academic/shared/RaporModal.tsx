@@ -28,6 +28,8 @@ import { fetchOfficialReportSections } from '@/app/dashboard/akademik/actions';
 export interface RaporRow {
   subject: string;
   components: StudentGradeComponents;
+  /** Explicit null means authoritative threshold unavailable; omission preserves legacy callers. */
+  kktp?: number | null;
 }
 
 interface RaporModalProps {
@@ -61,11 +63,11 @@ export function RaporModal({
   academicYear,
   semester,
 }: RaporModalProps) {
-  const computed = rows.map((r) => ({ ...r, na: naOf(r.components) }));
+  const computed = rows.map(r => ({ ...r, na: naOf(r.components), threshold: r.kktp === undefined ? kktp : r.kktp }));
   const nas = computed.map((r) => r.na).filter((n): n is number => n !== null);
   const avg = nas.length ? round1(nas.reduce((a, b) => a + b, 0) / nas.length) : null;
-  const tuntas = computed.filter((r) => r.na !== null && r.na >= kktp).length;
-  const naik = rows.length > 0 && tuntas >= rows.length - 1;
+  const tuntas = computed.some(r => r.threshold === null || r.na === null) ? null : computed.filter(r => r.na! >= r.threshold!).length;
+  const naik = rows.length > 0 && tuntas === rows.length;
 
   // T2-01: Fetch sections B-G data
   const [sectionB, setSectionB] = useState<{ subjects: { name: string; na: number; kktp: number | null; kktpProvenance?: string | null; predikat: string }[] } | null>(null);
@@ -131,7 +133,7 @@ export function RaporModal({
 
         <div className="grid grid-cols-2 gap-3">
           <Stat label="Rata² NA" value={avg ?? '—'} tone="text-emerald-600" />
-          <Stat label="Tuntas" value={`${tuntas}/${rows.length}`} tone="text-emerald-600" />
+          <Stat label="Tuntas" value={tuntas === null ? 'Belum tersedia' : `${tuntas}/${rows.length}`} tone="text-emerald-600" />
         </div>
 
         <div className="overflow-x-auto">
@@ -156,7 +158,7 @@ export function RaporModal({
                 </tr>
               ) : (
                 computed.map((r) => {
-                  const tone = r.na != null ? STATUS_TEXT_CLASS[gradeStatus(r.na, kktp)] : 'text-slate-400';
+                  const tone = r.na != null && r.threshold != null ? STATUS_TEXT_CLASS[gradeStatus(r.na, r.threshold)] : 'text-slate-400';
                   return (
                     <tr key={r.subject} className="border-b border-slate-100">
                       <td className="py-2.5 pr-3 font-semibold text-slate-700">{r.subject}</td>
@@ -166,7 +168,7 @@ export function RaporModal({
                       <td className="px-2 text-center text-slate-600">{r.components.uas ?? '—'}</td>
                       <td className={cn('px-2 text-right font-extrabold tabular-nums', tone)}>{r.na ?? '—'}</td>
                       <td className={cn('pl-2 text-right font-extrabold', tone)}>
-                        {r.na != null ? predikat(r.na, kktp) : '—'}
+                        {r.na != null && r.threshold != null ? predikat(r.na, r.threshold) : '—'}
                       </td>
                     </tr>
                   );
@@ -180,7 +182,7 @@ export function RaporModal({
           NA = Nilai Akhir berbobot: UH 20% · Praktik 25% · Sikap 15% · UTS 20% · UAS 20%.
         </p>
 
-        {rows.length > 0 && (
+        {rows.length > 0 && tuntas !== null && (
           <div
             className={cn(
               'flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] font-semibold',
@@ -188,7 +190,7 @@ export function RaporModal({
             )}
           >
             {naik ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-            {naik ? 'Semua mapel tuntas — memenuhi syarat kenaikan.' : 'Ada mapel yang perlu remedial.'}
+            {naik ? 'Seluruh mapel pada pratinjau ini memenuhi KKTP; bukan keputusan kenaikan kelas.' : 'Ada mapel yang perlu remedial.'}
           </div>
         )}
 

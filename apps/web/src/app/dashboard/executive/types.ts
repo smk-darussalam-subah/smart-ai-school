@@ -89,7 +89,9 @@ export interface TeacherCompliance {
   totalTeachers: number;
   presentToday: number;
   gpsPct: number | null;
+  attendance?: { required: number; late: number; notRequired: number; notScheduled: number; notDue: number; review: number; unknown: number; inside: number; date: string; source: string };
   rpp: {
+    state?: 'ready' | 'denied';
     draft: number;
     submitted: number;
     approved: number;

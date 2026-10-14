@@ -368,12 +368,12 @@ export class StaffAttendanceService {
     return arrivals;
   }
 
-  async report(query: AttendanceQuery) {
+  async report(query: AttendanceQuery, teacherIds?: string[]) {
     const profile = await this.policy();
     // Bounded 91-day report; all aggregations are computed before pagination/filtering.
     const [employees, records, holidays] = await Promise.all([
       this.prisma.user.findMany({
-        where: EMPLOYEE_WHERE,
+        where: { ...EMPLOYEE_WHERE, ...(teacherIds ? { teacher: { is: { id: { in: teacherIds }, deletedAt: null } } } : {}) },
         select: {
           id: true,
           fullName: true,
@@ -499,6 +499,20 @@ export class StaffAttendanceService {
           b.date.localeCompare(a.date) || a.employee.fullName.localeCompare(b.employee.fullName),
       );
     return {
+      // Full-scope aggregates, computed before UI pagination. No coordinates or employee names.
+      teacherSummary: {
+        total: employees.filter(person => person.teacher).length,
+        present: rows.filter(row => row.employee.teacher && row.receipt).length,
+        inside: rows.filter(row => row.employee.teacher && row.receipt?.locationInStatus === 'INSIDE').length,
+        required: rows.filter(row => row.employee.teacher && row.arrival.dueAt).length,
+        late: rows.filter(row => row.employee.teacher && row.status === 'LATE').length,
+        absent: rows.filter(row => row.employee.teacher && row.status === 'ABSENT').length,
+        notRequired: rows.filter(row => row.employee.teacher && row.status === 'NOT_REQUIRED').length,
+        notScheduled: rows.filter(row => row.employee.teacher && row.status === 'NOT_SCHEDULED').length,
+        notDue: rows.filter(row => row.employee.teacher && row.status === 'NOT_DUE').length,
+        review: rows.filter(row => row.employee.teacher && row.review).length,
+        unknown: rows.filter(row => row.employee.teacher && row.status === 'UNKNOWN').length,
+      },
       summary,
       trend,
       attention: rows

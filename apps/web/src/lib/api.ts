@@ -26,6 +26,8 @@ export interface GradeItem {
   notes: string | null;
   student: StudentRef;
   assignment: {
+    id?: string;
+    teacherId?: string;
     subject: string;
     classId: string;
     academicYear: string;

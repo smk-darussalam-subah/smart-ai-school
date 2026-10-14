@@ -6,7 +6,7 @@
 // Semua keluaran AGREGAT tanpa PII.
 // =============================================================================
 
-import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
+import { BadRequestException, Controller, ForbiddenException, Get, Query } from '@nestjs/common';
 import { AuthUser } from '@smk/auth';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -15,6 +15,8 @@ import { AnalyticsService } from './analytics.service';
 import { StudentAnalyticsService } from './analytics.service';
 import { AnalyticsQuerySchema } from './dto/analytics-query.dto';
 import { StudentAnalyticsQuerySchema } from './dto/analytics-query.dto';
+import { PermissionsService } from '../permissions/permissions.service';
+import { isSiswaOnly, isOrangTuaOnly } from '../common/helpers/role-helpers';
 
 @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH')
 @Controller('analytics')
@@ -22,6 +24,7 @@ export class AnalyticsController {
   constructor(
     private readonly service: AnalyticsService,
     private readonly studentService: StudentAnalyticsService,
+    private readonly permissions: PermissionsService,
   ) {}
 
   private parse(rawQuery: unknown) {
@@ -34,6 +37,12 @@ export class AnalyticsController {
     const parsed = StudentAnalyticsQuerySchema.safeParse(rawQuery);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors);
     return parsed.data;
+  }
+
+  private async assertDomainReader(user: AuthUser, domain: 'grade' | 'attendance') {
+    const required = isSiswaOnly(user) ? `${domain}.own.read` : isOrangTuaOnly(user) ? `${domain}.child.read` : `academic.${domain}.read`;
+    const effective = await this.permissions.getEffectivePermissions(user.keycloakId, user.roles);
+    if (!effective.has('*') && !effective.has(required)) throw new ForbiddenException(`Permission '${required}' diperlukan untuk konteks ini`);
   }
 
   /** Distribusi nilai + ketuntasan KKM + korelasi kehadiran↔nilai. */
@@ -60,8 +69,10 @@ export class AnalyticsController {
   /** Kepatuhan guru: kehadiran GPS hari ini + RPP approval rate. */
   @RequirePermission('teacher.attendance.read')
   @Get('teacher-compliance')
-  teacherCompliance(@Query() rawQuery: unknown) {
-    return this.service.teacherCompliance(this.parse(rawQuery));
+  async teacherCompliance(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
+    const query = this.parse(rawQuery);
+    const effective = await this.permissions.getEffectivePermissions(user.keycloakId, user.roles);
+    return this.service.teacherCompliance(query, effective.has('*') || effective.has('rpp.read'), effective.has('*') || effective.has('academic.teaching.read'));
   }
 
   /** T3-02 B7: Rekap audit per guru×kelas×mapel untuk KS/Wakakur. */
@@ -71,11 +82,18 @@ export class AnalyticsController {
     return this.service.rekapAudit(this.parse(rawQuery));
   }
 
-  /** T3-02 B6: Monitoring KBM real-time untuk KS/Wakakur. */
+  /** Period-bound monitoring snapshot; not a live-session claim. */
   @RequirePermission('academic.grade.read')
   @Get('monitoring-kbm')
-  monitoringKbm(@Query() rawQuery: unknown) {
-    return this.service.monitoringKbm(this.parse(rawQuery));
+  async monitoringKbm(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
+    const query = this.parse(rawQuery);
+    const effective = await this.permissions.getEffectivePermissions(user.keycloakId, user.roles);
+    const can = (permission: string) => effective.has('*') || effective.has(permission);
+    return this.service.monitoringKbm(query, new Date(), {
+      assignments: can('academic.teaching.read'), attendance: can('academic.attendance.read'),
+      journal: can('activity.read'), schedules: can('academic.schedule.read'),
+      sessions: can('operational.monitoring.read'), lms: can('lms.read'),
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -88,7 +106,8 @@ export class AnalyticsController {
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
   @RequirePermission(['academic.attendance.read', 'attendance.own.read', 'attendance.child.read'])
   @Get('attendance/stats')
-  attendanceStats(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
+  async attendanceStats(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
+    await this.assertDomainReader(user, 'attendance');
     return this.studentService.attendanceStats(this.parseStudentQuery(rawQuery), user);
   }
 
@@ -96,7 +115,8 @@ export class AnalyticsController {
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA')
   @RequirePermission(['academic.grade.read', 'grade.own.read', 'grade.child.read'])
   @Get('grades/student')
-  studentGrades(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
+  async studentGrades(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
+    await this.assertDomainReader(user, 'grade');
     return this.studentService.studentGrades(this.parseStudentQuery(rawQuery), user);
   }
 
@@ -108,7 +128,8 @@ export class AnalyticsController {
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'GURU', 'SISWA')
   @RequirePermission(['academic.grade.read', 'grade.own.read'])
   @Get('cp-progress')
-  cpProgress(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
+  async cpProgress(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
+    await this.assertDomainReader(user, 'grade');
     return this.service.cpProgress(this.parse(rawQuery), user);
   }
 }

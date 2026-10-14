@@ -86,17 +86,18 @@ function Bar({ label, pct, value }: { label: string; pct: number | null; value: 
 
 export function TeacherComplianceCard({ teacher }: { teacher: TeacherCompliance | null }) {
   return (
-    <Card title="Kepatuhan Guru" subtitle="Kehadiran GPS · RPP" icon={ClipboardCheck} level="real" className="col-span-12 lg:col-span-5">
+    <Card title="Presensi & Modul Ajar Guru" subtitle="Presensi harian kanonik · kewajiban sesuai jadwal" icon={ClipboardCheck} level="real" className="col-span-12 lg:col-span-5">
       {!teacher ? (
         <EmptyState />
       ) : (
         <>
-          <Bar label="Kehadiran GPS" pct={teacher.gpsPct} value={teacher.gpsPct !== null ? `${teacher.gpsPct}%` : '—'} />
-          <Bar label="RPP disetujui" pct={teacher.rpp.approvalRate} value={teacher.rpp.approvalRate !== null ? `${teacher.rpp.approvalRate}%` : '—'} />
+          <Bar label="Lokasi di area / presensi tercatat" pct={teacher.gpsPct} value={teacher.gpsPct !== null ? `${teacher.gpsPct}%` : 'Belum ada presensi'} />
+          {teacher.rpp.state === 'denied' ? <p className="text-xs">Modul ajar: akses tidak tersedia.</p> : <Bar label="RPP disetujui / non-draft" pct={teacher.rpp.approvalRate} value={teacher.rpp.approvalRate !== null ? `${teacher.rpp.approvalRate}%` : '—'} />}
           <div className="mt-3 flex items-center gap-2 rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] font-semibold text-amber-700">
             <ClipboardCheck className="h-3.5 w-3.5" />
-            {teacher.presentToday}/{teacher.totalTeachers} guru hadir hari ini · {teacher.rpp.total} RPP semester ini
+            {teacher.presentToday} presensi guru tercatat · {teacher.totalTeachers} guru aktif
           </div>
+          {teacher.attendance && <p className="mt-2 text-xs text-[#355a4e]">Wajib: {teacher.attendance.required} · Terlambat: {teacher.attendance.late} · Belum jatuh tempo: {teacher.attendance.notDue} · Tidak diwajibkan: {teacher.attendance.notRequired} · Tidak terjadwal: {teacher.attendance.notScheduled} · Perlu review: {teacher.attendance.review} · Belum terverifikasi: {teacher.attendance.unknown}</p>}
         </>
       )}
     </Card>
