@@ -8,6 +8,7 @@ import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
 import { redirect } from 'next/navigation';
 import { apiFetch, apiFetchResult, GradeItem, AttendanceItem } from '@/lib/api';
 import { readParentChildren } from '@/lib/parent-children';
+import { fetchLearnerGrades } from '@/lib/learner-grades-server';
 import type {
   SiswaBadge,
   SiswaXP,
@@ -265,7 +266,7 @@ export default async function AkademikPage({
       cpRes,
       attStatsRes,
     ] = await Promise.all([
-      academicPages<GradeItem>(pp('/grades'), token),
+      fetchLearnerGrades(pp('/analytics/grades/student'), token),
       academicPages<AttendanceItem>(selectedPeriod && attendanceMonth.dateFrom <= selectedPeriod.endDate.slice(0,10) && attendanceMonth.dateTo >= selectedPeriod.startDate.slice(0,10) ?
         '/attendance?' + new URLSearchParams({ dateFrom: attendanceMonth.dateFrom > selectedPeriod.startDate.slice(0,10) ? attendanceMonth.dateFrom : selectedPeriod.startDate.slice(0,10), dateTo: attendanceMonth.dateTo < selectedPeriod.endDate.slice(0,10) ? attendanceMonth.dateTo : selectedPeriod.endDate.slice(0,10) }) : null,
         token,
@@ -447,7 +448,8 @@ export default async function AkademikPage({
     return (
       <SiswaRefreshWrapper>
         <SiswaWorkspace
-          grades={gradesRes?.data ?? []}
+          grades={gradesRes.data}
+          gradeState={gradesRes.state}
           attendance={attendanceRes?.data ?? []}
           schedule={ownedSchedule.data}
           scheduleState={ownedSchedule.state}
@@ -627,8 +629,7 @@ export default async function AkademikPage({
       children.map(async (child) => {
         const studentId = child.id;
         const schedulePath = childSchedulePath(child.class?.id);
-        const [gradesRes, attendanceRes, scheduleRes, badgesRes, waLogRes] = await Promise.all([
-          academicPages<GradeItem>(pp(`/grades?studentId=${studentId}`), token),
+        const [attendanceRes, scheduleRes, badgesRes, waLogRes] = await Promise.all([
           academicPages<AttendanceItem>(
             pp(`/attendance?studentId=${studentId}`, 'attendance'),
             token,
@@ -652,7 +653,6 @@ export default async function AkademikPage({
         return {
           studentId,
           scheduleState: schedulePath ? childSchedule.state : 'unassigned' as const,
-          grades: tagWithStudentId(gradesRes?.data.filter(item => item.studentId === studentId), studentId),
           attendance: tagWithStudentId(attendanceRes?.data.filter(item => item.studentId === studentId), studentId),
           schedule: tagWithStudentId(childSchedule.data, studentId),
           badges: tagWithStudentId(badgesRes ?? [], studentId),
@@ -661,7 +661,7 @@ export default async function AkademikPage({
       }),
     );
 
-    const [childData, sppRes, assignmentsDashboardRes, semRes, leaderboardRes] = await Promise.all([
+    const [childData, sppRes, assignmentsDashboardRes, semRes, leaderboardRes, learnerGrades] = await Promise.all([
       childDataPromise,
       childIds.length
         ? apiFetch<{ data: SppDashboardGroup[] }>('/student-dashboard/spp', token)
@@ -676,6 +676,8 @@ export default async function AkademikPage({
       childIds.length
         ? apiFetch<LeaderboardEntry[]>('/gamification/leaderboard-xp?limit=50', token)
         : Promise.resolve(null),
+      childIds.length ? fetchLearnerGrades(pp('/analytics/grades/student'), token)
+        : Promise.resolve({ state: 'unavailable' as const, data: [] }),
     ]);
 
     // R-16: Compute semester label for RaporModal
@@ -691,7 +693,7 @@ export default async function AkademikPage({
         leaderboardRes?.find((entry) => entry.studentId === studentId)?.rank ?? null,
       ]),
     );
-    const gradesDataOrtu = childData.flatMap((item) => item.grades);
+    const gradesDataOrtu = learnerGrades.data.filter(item => childIds.includes(item.studentId));
     const attendanceDataOrtu = childData.flatMap((item) => item.attendance);
     const scheduleDataOrtu = childData.flatMap((item) => item.schedule);
     const badgesDataOrtu = childData.flatMap((item) => item.badges);
@@ -717,6 +719,7 @@ export default async function AkademikPage({
           children={ortuChildren}
           childrenState={childRead.state}
           grades={gradesDataOrtu}
+          gradeState={learnerGrades.state}
           attendance={attendanceDataOrtu}
           schedule={scheduleDataOrtu}
           scheduleStates={Object.fromEntries(childData.map((item) => [item.studentId, item.scheduleState]))}

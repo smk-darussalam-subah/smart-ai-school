@@ -13,6 +13,8 @@ import LearnerScheduleNotice from '../LearnerScheduleNotice';
 import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import type { SiswaScreen, ModalState } from './SiswaWorkspace';
 import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaModul, SiswaQuest, SiswaXP, SiswaKehadiranStats } from './siswa-types';
+import { learnerGradeSummary, learnerGradeStatus, type LearnerGradeState } from '@/lib/learner-grades';
+import { LearnerGradeNotice } from '../LearnerGradeView';
 
 interface Props {
   showToast: (msg: string) => void;
@@ -21,6 +23,7 @@ interface Props {
   setBadgeCelebration: (data: { show: boolean; badgeName?: string }) => void;
   setActiveModulId: (id: number | null) => void;
   grades: SiswaNilai[];
+  gradeState?: LearnerGradeState;
   tasks: SiswaTugas[];
   badges: SiswaBadge[];
   modules: SiswaModul[];
@@ -34,20 +37,18 @@ interface Props {
   studentClassName?: string | null;
 }
 
-export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, recentlyCompletedModule, quest, xp, kehStats, schedule, scheduleState = 'ready', userName, studentClassName }: Props) {
+export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades: suppliedGrades, gradeState = 'ready', tasks, badges, modules, recentlyCompletedModule, quest, xp, kehStats, schedule, scheduleState = 'ready', userName, studentClassName }: Props) {
+  const grades = gradeState === 'ready' ? suppliedGrades : [];
   const now = wibNow();
   const dow = now.jsDay || 7;
   const bell = useBellPattern();
   const { JP_LABELS, JP_MAP } = studentDayPattern(bell.profile, dow);
 
   // Derived stats
-  const avgNilai = useMemo(() => {
-    if (grades.length === 0) return null;
-    return Math.round(grades.reduce((a: number, b) => a + b.rata, 0) / grades.length * 10) / 10;
-  }, [grades]);
+  const summary = learnerGradeSummary(grades);
+  const avgNilai = summary.average;
 
   const pendingTasks = useMemo(() => tasks.filter((t) => t.status === 'pending'), [tasks]);
-  const tuntasCount = useMemo(() => grades.filter((g) => g.rata >= g.kktp).length, [grades]);
   const earnedBadges = useMemo(() => badges.filter((b) => b.earned).length, [badges]);
   const activeModul = useMemo(() => modules.find((m) => m.status === 'Aktif'), [modules]);
   const hasAttendance = (kehStats?.total ?? 0) > 0;
@@ -156,8 +157,8 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
           </div>
           <div className="text-xl font-extrabold tracking-tight">{avgNilai !== null ? avgNilai : '—'}</div>
           <div className="mt-0.5 text-[10.5px] font-bold text-[var(--muted)]">Rata² Nilai</div>
-          <div className={`mt-0.5 text-[10px] font-extrabold ${avgNilai === null ? 'text-[var(--muted)]' : avgNilai >= 75 ? 'text-emerald-500' : 'text-rose-500'}`}>
-            {grades.length > 0 ? `${tuntasCount}/${grades.length} tuntas` : 'belum ada nilai'}
+          <div className="mt-0.5 text-[10px] font-extrabold text-[var(--muted)]">
+            {gradeState !== 'ready' ? 'Nilai belum tersedia' : summary.assessed ? `${summary.tuntas}/${summary.assessed} tuntas` : grades.length ? 'KKTP belum tersedia' : 'belum ada nilai'}
           </div>
         </button>
 
@@ -379,9 +380,10 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
             </button>
           </div>
           <div className="divide-y divide-[var(--border)]">
+            <LearnerGradeNotice state={gradeState} empty={grades.length === 0} />
             {recentGrades.map((n) => {
               const c = mpColor(n.mp);
-              const tuntas = n.rata >= n.kktp;
+              const tuntas = n.status === 'tuntas';
               return (
                 <button
                   key={n.mp}
@@ -394,20 +396,20 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold">{n.mp}</div>
                     <div className="mt-0.5 text-[11px] font-semibold text-[var(--muted)]">
-                      {tuntas ? 'Tuntas' : 'Remedial'} · KKTP {n.kktp}
+                      {learnerGradeStatus(n)} · KKTP {n.kktp ?? '—'}
                     </div>
                     <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--bar-bg)]">
                       <div
                         className="h-full rounded-full"
                         style={{
-                          width: `${n.rata}%`,
+                          width: `${n.na ?? 0}%`,
                           background: tuntas ? 'linear-gradient(90deg, #10b981, #059669)' : 'linear-gradient(90deg, #fbbf24, #d97706)',
                         }}
                       />
                     </div>
                   </div>
                   <div className={`text-lg font-extrabold tracking-tight ${tuntas ? 'text-emerald-400' : 'text-amber-500'}`}>
-                    {n.rata ?? 0}
+                    {n.na ?? '—'}
                   </div>
                 </button>
               );

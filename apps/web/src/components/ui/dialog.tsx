@@ -1,7 +1,9 @@
+'use client';
 import * as React from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AuthRecoverySurface, useAuthRecovery } from '@/components/auth/AuthRecoveryContext';
 
 const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
@@ -27,28 +29,46 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { closeDisabled?: boolean }
->(({ className, children, closeDisabled = false, ...props }, ref) => (
-  <DialogPortal>
-    <DialogOverlay />
-    <DialogPrimitive.Content
-      ref={ref}
-      className={cn(
-        'fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-slate-200 bg-white p-6 shadow-lg rounded-xl sm:rounded-xl',
-        className,
-      )}
-      {...props}
-    >
-      {children}
-      <DialogPrimitive.Close
-        disabled={closeDisabled}
-        className="absolute right-3 top-3 flex min-h-11 min-w-11 items-center justify-center rounded-lg opacity-70 ring-offset-white transition-opacity hover:bg-slate-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-30"
+>(({ className, children, closeDisabled = false, ...props }, ref) => {
+  const blocked = useAuthRecovery()?.blocked ?? false;
+  return (
+    <DialogPortal>
+      <DialogOverlay />
+      <DialogPrimitive.Content
+        ref={ref}
+        className={cn(
+          'fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-slate-200 bg-white p-6 shadow-lg rounded-xl sm:rounded-xl',
+          className,
+        )}
+        {...props}
+        {...(blocked
+          ? {
+              'aria-label': 'Pemulihan sesi',
+              'aria-labelledby': undefined,
+              'aria-describedby': undefined,
+            }
+          : {})}
+        onEscapeKeyDown={(event: Event) =>
+          blocked ? event.preventDefault() : props.onEscapeKeyDown?.(event)
+        }
+        onInteractOutside={(event: Event) =>
+          blocked ? event.preventDefault() : props.onInteractOutside?.(event)
+        }
       >
-        <X className="h-4 w-4" />
-        <span className="sr-only">Tutup</span>
-      </DialogPrimitive.Close>
-    </DialogPrimitive.Content>
-  </DialogPortal>
-));
+        <AuthRecoverySurface>
+          {children}
+          <DialogPrimitive.Close
+            disabled={closeDisabled}
+            className="absolute right-3 top-3 flex min-h-11 min-w-11 items-center justify-center rounded-lg opacity-70 ring-offset-white transition-opacity hover:bg-slate-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-30"
+          >
+            <X className="h-4 w-4" />
+            <span className="sr-only">Tutup</span>
+          </DialogPrimitive.Close>
+        </AuthRecoverySurface>
+      </DialogPrimitive.Content>
+    </DialogPortal>
+  );
+});
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

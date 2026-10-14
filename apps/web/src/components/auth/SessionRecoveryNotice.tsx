@@ -1,3 +1,6 @@
+'use client';
+import React, { useId } from 'react';
+
 /** Public, identity-free recovery surface. Plain anchors intentionally leave the
  * App Router before entering the writable authentication boundary. */
 export function SessionRecoveryNotice({
@@ -5,20 +8,33 @@ export function SessionRecoveryNotice({
   retryHref = '/api/auth/refresh?callbackUrl=%2Fdashboard',
   onRetry,
   busy = false,
+  embedded = false,
 }: {
   message: string;
   retryHref?: string;
   onRetry?: () => void;
   busy?: boolean;
+  embedded?: boolean;
 }) {
+  const titleId = useId();
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-slate-50 p-5 text-slate-900">
+    <div
+      className={
+        embedded
+          ? 'max-h-[75dvh] overflow-y-auto bg-white text-slate-900'
+          : 'flex min-h-dvh items-center justify-center bg-slate-50 p-5 text-slate-900'
+      }
+    >
       <section
-        className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
-        aria-labelledby="session-recovery-title"
+        className={
+          embedded
+            ? 'w-full p-1'
+            : 'w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6'
+        }
+        aria-labelledby={titleId}
       >
         <p className="text-sm font-semibold text-smk-emerald">DIIS</p>
-        <h1 id="session-recovery-title" className="mt-2 text-xl font-bold">
+        <h1 id={titleId} className="mt-2 text-xl font-bold">
           Sesi belum dapat digunakan
         </h1>
         <p role="status" className="mt-3 text-sm leading-6 text-slate-600">
@@ -52,6 +68,6 @@ export function SessionRecoveryNotice({
           dicabut.
         </p>
       </section>
-    </main>
+    </div>
   );
 }
