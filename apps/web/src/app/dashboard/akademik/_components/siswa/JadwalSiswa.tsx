@@ -5,6 +5,7 @@ import { CalendarClock, MapPin, Bell } from 'lucide-react';
 import { useBellPattern } from '@/components/providers/BellPatternProvider';
 import { wibNow } from '@/lib/bell-times';
 import { studentDayPattern, resolveSchedule, scheduledInstructionMinutes, studentLessonPhase } from './siswa-data';
+import ScheduleAlternatives from './ScheduleAlternatives';
 import LearnerScheduleNotice from '../LearnerScheduleNotice';
 import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import type { SiswaScreen, ModalState } from './SiswaWorkspace';
@@ -24,12 +25,13 @@ const HARI: [string, number][] = [['Senin', 1], ['Selasa', 2], ['Rabu', 3], ['Ka
 
 export default function JadwalSiswa({ schedule, scheduleState = 'ready', showToast: _showToast, go: _go, setModal, kalender, studentClassName }: Props) {
   const now = wibNow();
-  const todayDow = now.jsDay; // 0=Sunday → no schedule → shows "Libur"
+  const todayDow = now.jsDay || 7;
   const bell = useBellPattern();
 
   const [selectedDay, setSelectedDay] = useState(todayDow);
   const { JP_LABELS, JP_MAP } = studentDayPattern(bell.profile, selectedDay);
   const { schedule: schedData, isSim: isSimSchedule, timingAvailable } = resolveSchedule(schedule, bell.profile);
+  const displayedDays: [string,number][] = [...HARI, ...(schedData[7] && Object.keys(schedData[7]).length ? [['Minggu',7] as [string,number]] : [])];
   const daySched = schedData[selectedDay] || {};
   const hasSched = Object.keys(daySched).length > 0;
 
@@ -68,7 +70,7 @@ export default function JadwalSiswa({ schedule, scheduleState = 'ready', showToa
       {/* Day Selector */}
       <div className="sticky top-[57px] z-10 border-b border-[var(--border)] bg-[var(--surface)] px-5 py-3">
         <div className="flex gap-1.5 overflow-x-auto scrollbar-none">
-          {HARI.map(([label, dow]) => {
+          {displayedDays.map(([label, dow]) => {
             const isActive = dow === selectedDay;
             const isToday = dow === todayDow;
             const schedCount = Object.keys(schedData[dow] || {}).length;
@@ -136,7 +138,6 @@ export default function JadwalSiswa({ schedule, scheduleState = 'ready', showToa
                     ? 'border-emerald-500/30 bg-emerald-500/5'
                     : 'border-[var(--border)] bg-[var(--surface)]'
                 }`}
-                onClick={isNow ? () => setModal({ type: 'lesson', data: { subject: slot.mp, teacher: guruShort, room: slot.ruang, jpIndex: idx } }) : undefined}
               >
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0 text-right">
@@ -149,26 +150,28 @@ export default function JadwalSiswa({ schedule, scheduleState = 'ready', showToa
                     }`}
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="break-words text-sm font-bold [overflow-wrap:anywhere] sm:text-base">{slot.mp}</div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 break-words text-xs text-[var(--muted)]">
+                    <div className="break-words text-sm font-bold [overflow-wrap:anywhere] sm:text-base">{slot.sessions?.length ? `${slot.sessions.length} sesi terjadwal` : slot.mp}</div>
+                    <ScheduleAlternatives slot={slot} />
+                    {isNow && !slot.sessions?.length && <button type="button" onClick={() => setModal({ type: 'lesson', data: { subject: slot.mp, teacher: guruShort, room: slot.ruang, jpIndex: idx } })} className="mt-2 rounded-lg border px-3 py-2 text-xs">Lihat panduan mapel</button>}
+                    {!slot.sessions?.length && <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 break-words text-xs text-[var(--muted)]">
                       <span className="flex min-w-0 max-w-full items-center gap-1">
                         <MapPin className="h-3 w-3 shrink-0" />
                         <span className="min-w-0 [overflow-wrap:anywhere]">{slot.ruang}</span>
                       </span>
                       <span className="text-[11px] font-semibold text-[var(--muted)]">·</span>
                       <span className="min-w-0 max-w-full break-words text-xs font-semibold text-[var(--muted)] [overflow-wrap:anywhere]">{guruShort}</span>
-                    </div>
+                    </div>}
                     {isNow && (
                       <div className="mt-2">
                         <span className="rounded bg-amber-500/15 px-2 py-1 text-[10px] font-extrabold text-amber-500">
-                          ▶ Sedang berlangsung — klik untuk mulai sesi
+                          Rentang jadwal sekarang · bukan status sesi aktif
                         </span>
                       </div>
                     )}
                     {isDone && (
                       <div className="mt-2">
                         <span className="rounded bg-emerald-500/12 px-2 py-1 text-[10px] font-extrabold text-emerald-500">
-                          ✓ Selesai
+                          Waktu jadwal telah lewat
                         </span>
                       </div>
                     )}

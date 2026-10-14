@@ -11,16 +11,22 @@ import { CURRENT_CONSENT_VERSION } from '@/lib/constants';
 import { BellPatternProvider } from '@/components/providers/BellPatternProvider';
 import type { BellTimingCatalog } from '@/lib/bell-patterns';
 import { AttendanceEngine } from '@/components/attendance/AttendanceEngine';
+import { isTerminalSessionError } from '@/lib/auth-session-state';
+import { SessionRecoveryNotice } from '@/components/auth/SessionRecoveryNotice';
 
-export default async function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions);
 
   // Double-check auth (middleware already guards this, belt-and-suspenders)
   if (!session) redirect('/login');
+  if (isTerminalSessionError(session.error)) redirect('/login?reason=session');
+  if (!session.accessToken) {
+    if (session.error === 'RefreshAccessTokenTemporaryError')
+      return (
+        <SessionRecoveryNotice message="Layanan akun sekolah sementara belum tersedia. Tunggu sekitar 30 detik, lalu coba lagi." />
+      );
+    redirect('/login?reason=session');
+  }
 
   const viewAs = await getActiveViewAs(session);
   const roles = await getEffectiveRoles(session);
@@ -37,7 +43,10 @@ export default async function DashboardLayout({
   const token = session.accessToken ?? '';
   const [meData, posData, bellCatalog] = await Promise.all([
     apiFetch<{ permissions: string[] }>('/auth/me', token),
-    apiFetch<{ academicYear: unknown; positions: { status: 'ACTIVE'; position: { code: string; name: string } }[] }>('/positions/my-positions', token),
+    apiFetch<{
+      academicYear: unknown;
+      positions: { status: 'ACTIVE'; position: { code: string; name: string } }[];
+    }>('/positions/my-positions', token),
     apiFetch<BellTimingCatalog>('/bell-schedules/catalog', token),
   ]);
   // R-24: Sidebar gets position codes only from active effective appointments.
@@ -46,6 +55,13 @@ export default async function DashboardLayout({
   // Tanpa pembedaan ini, sidebar runtuh ke menu kosong (hanya Beranda) saat fetch gagal.
   // permError = true → Sidebar masuk mode terbatas (filter role saja) alih-alih menyembunyikan semua.
   const permError = meData === null;
+  if (permError)
+    return (
+      <SessionRecoveryNotice
+        message="Informasi akses sekolah belum dapat dimuat. Coba lagi; tidak ada perubahan izin yang disimpulkan dari kegagalan ini."
+        retryHref="/dashboard"
+      />
+    );
   const userPermissions: string[] = meData?.permissions ?? [];
 
   // ── PDP Consent check ─────────────────────────────────────────────────────
@@ -59,15 +75,33 @@ export default async function DashboardLayout({
 
   return (
     <DashboardProviders session={session}>
-      <BellPatternProvider profiles={(bellCatalog?.profiles ?? []).map((profile) => ({ ...profile, revokedAt: null, provenance: '' }))} periods={bellCatalog?.periods ?? []}>
-      <AttendanceEngine enabled={!viewAs && (userPermissions.includes('*') || userPermissions.includes('staff.attendance.checkin'))}>
-      <HeartbeatProvider>
-        <LoginEventRecorder />
-        <AppShell viewAs={viewAs} permissions={userPermissions} permError={permError} hideChrome={hideChrome} positionRoles={positionRoles}>
-          {children}
-        </AppShell>
-      </HeartbeatProvider>
-      </AttendanceEngine>
+      <BellPatternProvider
+        profiles={(bellCatalog?.profiles ?? []).map((profile) => ({
+          ...profile,
+          revokedAt: null,
+          provenance: '',
+        }))}
+        periods={bellCatalog?.periods ?? []}
+      >
+        <AttendanceEngine
+          enabled={
+            !viewAs &&
+            (userPermissions.includes('*') || userPermissions.includes('staff.attendance.checkin'))
+          }
+        >
+          <HeartbeatProvider>
+            <LoginEventRecorder />
+            <AppShell
+              viewAs={viewAs}
+              permissions={userPermissions}
+              permError={permError}
+              hideChrome={hideChrome}
+              positionRoles={positionRoles}
+            >
+              {children}
+            </AppShell>
+          </HeartbeatProvider>
+        </AttendanceEngine>
       </BellPatternProvider>
     </DashboardProviders>
   );

@@ -25,7 +25,14 @@ async function requestWithToken(
   const headers = new Headers(extraHeaders);
   headers.set('content-type', 'application/json');
   if (token) {
-    const encoded = await encode({ token, secret: syntheticSecret });
+    const encoded = await encode({
+      token: {
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+        refreshedAt: Math.floor(Date.now() / 1000),
+        ...token,
+      },
+      secret: syntheticSecret,
+    });
     headers.set('cookie', `__Secure-next-auth.session-token=${encoded}`);
   }
   if (authorization) headers.set('authorization', authorization);
@@ -103,17 +110,19 @@ describe('API backend proxy authorization', () => {
     expect(forwardedHeaders().has('cookie')).toBe(false);
   });
 
-  it('does not invent authorization when the cookie is missing or lacks an access token', async () => {
-    for (const request of [
-      await requestWithToken(),
-      await requestWithToken({ sub: 'synthetic-student', roles: ['SISWA'] }),
-    ]) {
-      (global.fetch as jest.MockedFunction<typeof fetch>).mockClear();
-      const response = await POST(request, proxyContext());
+  it('does not invent authorization when the cookie is missing', async () => {
+    const response = await POST(await requestWithToken(), proxyContext());
+    expect(response.status).toBe(200); // Public upstream is still allowed without a session.
+    expect(forwardedHeaders().has('authorization')).toBe(false);
+  });
 
-      expect(response.status).toBe(200);
-      expect(forwardedHeaders().has('authorization')).toBe(false);
-    }
+  it('rejects a recognized session that cannot provide any valid credential', async () => {
+    const response = await POST(
+      await requestWithToken({ sub: 'synthetic-student', roles: ['SISWA'] }),
+      proxyContext(),
+    );
+    expect(response.status).toBe(401);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('fails closed when the encrypted session cookie is malformed', async () => {

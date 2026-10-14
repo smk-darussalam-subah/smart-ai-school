@@ -98,6 +98,7 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
   const [mapelProg, setMapelProg] = useState<MapelProgressItem[]>([]);
   const [cpData, setCpData] = useState<CpBreakdownItem[]>([]);
   const [cpLoading, setCpLoading] = useState(false);
+  const [cpError, setCpError] = useState<string | null>(null);
   const [lmsEditing, setLmsEditing] = useState<LmsModuleItem | null>(null);
   const [monitorM, setMonitorM] = useState<LmsModuleItem | null>(null);
   const [previewM, setPreviewM] = useState<LmsModuleItem | null>(null);
@@ -106,15 +107,14 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
 
   // W2-B-3: Fetch real CP progress data
   useEffect(() => {
-    setCpLoading(true);
-    fetchCpProgress({ academicYear, semester })
-      .then((res) => {
-        if (res.success && res.data) {
-          setMapelProg(res.data.mapelProgress);
-          setCpData(res.data.cpBreakdown);
-        }
-      })
-      .finally(() => setCpLoading(false));
+    let active = true; setCpLoading(true); setCpError(null); setMapelProg([]); setCpData([]);
+    fetchCpProgress({ academicYear, semester }).then(res => {
+      if (!active) return;
+      if (res.success && res.data) { setMapelProg(res.data.mapelProgress); setCpData(res.data.cpBreakdown); }
+      else setCpError(res.error || "Hasil nilai belum tersedia. Coba muat ulang halaman.");
+    }).catch(() => { if (active) setCpError("Layanan hasil nilai belum tersedia."); })
+      .finally(() => { if (active) setCpLoading(false); });
+    return () => { active = false; };
   }, [academicYear, semester]);
 
   useEffect(() => {
@@ -439,20 +439,20 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
       {/* Progres Ketercapaian */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <h3 className="mb-1 flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
-          <TrendingUp className="h-[18px] w-[18px] text-emerald-600" />Progres Ketercapaian
+          <TrendingUp className="h-[18px] w-[18px] text-emerald-600" />Ketuntasan Nilai per Mapel
         </h3>
         <div className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10.5px] font-bold text-sky-700">
-          <Info className="h-3 w-3" /> Data progres CP tersedia saat nilai dan LMS aktif
+          <Info className="h-3 w-3" /> Kelulusan nilai berbobot bukan ketercapaian CP; progres LMS tetap dicatat terpisah.
         </div>
 
         {/* Per Mapel — REAL DATA from /analytics/cp-progress */}
-        {cpLoading ? (
+        {cpError ? <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{cpError}</p> : cpLoading ? (
           <div className="flex items-center gap-2 rounded-xl bg-[#f9fbfa] px-3 py-4 text-[11.5px] font-semibold text-[#6b8079]">
             <Loader2 className="h-4 w-4 animate-spin text-emerald-600" /> Memuat progres ketercapaian...
           </div>
         ) : mapelProg.length === 0 ? (
           <div className="grid h-16 place-items-center rounded-xl bg-[#f4f7f5] text-[12px] font-medium text-[#9bb0a8]">
-            Belum ada data progres. Tuntas rate muncul saat nilai dan LMS aktif.
+            Belum ada catatan nilai pada periode ini; tidak berarti 0% ketercapaian.
           </div>
         ) : (
           <div className="space-y-2.5">
@@ -460,10 +460,10 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
               <div key={m.mapel} className="flex items-center gap-3">
                 <span className="w-32 shrink-0 text-[12px] font-semibold text-[#0f2e25]">{m.mapel}</span>
                 <div className="h-3 flex-1 overflow-hidden rounded-full bg-[#f0f4f2]">
-                  <div className={`h-full rounded-full ${m.progres >= 60 ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${m.progres}%` }} />
+                  <div className={`h-full rounded-full ${(m.progres ?? -1) >= 60 ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${m.progres ?? 0}%` }} />
                 </div>
-                <span className="w-10 text-right text-[12px] font-extrabold text-[#0f2e25]">{m.progres}%</span>
-                <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${m.progres >= 60 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{m.tp}</span>
+                <span className="w-10 text-right text-[12px] font-extrabold text-[#0f2e25]">{m.progres === null ? "—" : `${m.progres}%`}</span>
+                <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${(m.progres ?? -1) >= 60 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{m.tp}</span>
               </div>
             ))}
           </div>
@@ -473,7 +473,7 @@ export default function PembelajaranGuru({ rpp, lmsModules, subjects, classes, a
         <div className="mb-2 mt-4 text-[12px] font-extrabold text-[#355a4e]">Ketercapaian per CP</div>
         {cpData.length === 0 ? (
           <div className="grid h-16 place-items-center rounded-xl bg-[#f4f7f5] text-[12px] font-medium text-[#9bb0a8]">
-            Data CP tersedia saat Modul Ajar berisi capaian pembelajaran (CP).
+            Bukti asesmen yang terhubung per CP belum tersedia. Nilai mapel tidak digunakan sebagai progres CP.
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

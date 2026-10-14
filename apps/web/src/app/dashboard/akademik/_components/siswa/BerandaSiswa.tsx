@@ -8,6 +8,7 @@ import {
 import { useBellPattern } from '@/components/providers/BellPatternProvider';
 import { wibNow } from '@/lib/bell-times';
 import { mpColor, mpIcon, studentDayPattern, resolveSchedule, studentLessonPhase } from './siswa-data';
+import ScheduleAlternatives from './ScheduleAlternatives';
 import LearnerScheduleNotice from '../LearnerScheduleNotice';
 import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import type { SiswaScreen, ModalState } from './SiswaWorkspace';
@@ -35,9 +36,9 @@ interface Props {
 
 export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, recentlyCompletedModule, quest, xp, kehStats, schedule, scheduleState = 'ready', userName, studentClassName }: Props) {
   const now = wibNow();
-  const dow = now.jsDay; // 0=Sunday → SCHED[0] undefined → shows "Libur"
+  const dow = now.jsDay || 7;
   const bell = useBellPattern();
-  const { JP_LABELS, JP_MAP } = studentDayPattern(bell.profile, now.jsDay);
+  const { JP_LABELS, JP_MAP } = studentDayPattern(bell.profile, dow);
 
   // Derived stats
   const avgNilai = useMemo(() => {
@@ -279,7 +280,6 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                   <div
                     key={idx}
                     className={`flex gap-3 ${isNow ? 'rounded-xl bg-amber-500/6 p-3 -mx-1 border border-amber-500/25 shadow-[0_0_24px_-8px_rgba(245,158,11,.25)] cursor-pointer' : 'py-2.5 border-b border-[var(--border)] last:border-b-0'}`}
-                    onClick={isNow ? () => setModal({ type: 'lesson', data: { subject: slot.mp, teacher: guruShort, room: slot.ruang, jpIndex: idx } }) : undefined}
                   >
                     <div className="w-12 flex-shrink-0 text-right">
                       <div className="text-[11px] font-extrabold">{t[0]}</div>
@@ -287,18 +287,20 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                     </div>
                     <div className={`mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full border-2 border-[var(--bg)] shadow-[0_0_0_2px_var(--em)] ${dotCls}`} />
                     <div className="flex-1 min-w-0">
-                      <div className={`break-words text-[13px] font-bold [overflow-wrap:anywhere] ${isNow ? 'sm:text-base' : ''}`}>{slot.mp}</div>
-                      <div className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 break-words text-xs font-semibold ${isNow ? 'text-amber-500' : 'text-[var(--muted)]'}`}>
+                      <div className={`break-words text-[13px] font-bold [overflow-wrap:anywhere] ${isNow ? 'sm:text-base' : ''}`}>{slot.sessions?.length ? `${slot.sessions.length} sesi terjadwal` : slot.mp}</div>
+                      <ScheduleAlternatives slot={slot} />
+                      {isNow && !slot.sessions?.length && <button type="button" onClick={() => setModal({ type: 'lesson', data: { subject: slot.mp, teacher: guruShort, room: slot.ruang, jpIndex: idx } })} className="mt-2 rounded-lg border px-3 py-2 text-xs">Lihat panduan mapel</button>}
+                      {!slot.sessions?.length && <div className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 break-words text-xs font-semibold ${isNow ? 'text-amber-500' : 'text-[var(--muted)]'}`}>
                         <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">{guruShort}</span>·<span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">{slot.ruang}</span>
-                      </div>
+                      </div>}
                       {isNow && (
                         <span className="mt-1 inline-block rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-extrabold text-amber-500">
-                          ▶ Sedang berlangsung — klik untuk mulai sesi
+                          Rentang jadwal sekarang · bukan status sesi aktif
                         </span>
                       )}
                       {isDone && (
                         <span className="mt-1 inline-block rounded bg-emerald-500/12 px-1.5 py-0.5 text-[9px] font-extrabold text-emerald-500">
-                          Selesai
+                          Waktu jadwal telah lewat
                         </span>
                       )}
                       {!isNow && !isDone && (

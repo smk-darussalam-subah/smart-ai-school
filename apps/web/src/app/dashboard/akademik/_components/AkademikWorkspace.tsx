@@ -47,6 +47,7 @@ import {
 } from '@/lib/academic-workflow-deep-link';
 
 type Assignment = AssessmentTeachingAssignment;
+import type { TeacherSummaryAvailability, TeacherThreshold } from '@/lib/teacher-summary';
 
 interface Props {
   grades: GradeItem[];
@@ -66,6 +67,10 @@ interface Props {
   semester: number;
   /** true bila sebagian data inti (nilai/kehadiran) gagal dimuat. */
   dataWarning?: boolean;
+  scheduleAvailable?: boolean;
+  summaryAvailability?: TeacherSummaryAvailability;
+  summaryThresholds?: TeacherThreshold[];
+  todayDate?: string;
   canManageReportCards: boolean;
   initialWorkflowView?: AcademicWorkflowView | null;
 }
@@ -86,9 +91,10 @@ const NAV_ALL: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = 
 
 export default function AkademikWorkspace({
   grades, attendances, assignments, schedules, activities, rpp, lmsModules, todayClasses, assessmentSessions,
-  assessmentSessionTotal, assessmentSessionPage, assessmentSessionLimit, academicYear, semester, dataWarning,
+  assessmentSessionTotal, assessmentSessionPage, assessmentSessionLimit, academicYear, semester, dataWarning, scheduleAvailable = true,
   canManageReportCards,
   initialWorkflowView = null,
+  summaryAvailability, summaryThresholds, todayDate,
 }: Props) {
   const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
   const approvedRpp = useMemo(() => rpp.filter((r) => r.status === 'approved'), [rpp]);
@@ -169,8 +175,9 @@ export default function AkademikWorkspace({
 
   const penilaianGrades = grades.filter((g) =>
     (subject === 'all' ? false : g.assignment.subject === subject) &&
-    (selClass === 'all' ? true : g.assignment.class.name === selClassName));
-  const inputAssignmentId = assignments.find((a) => a.subject === subject && a.class?.name === selClassName)?.id;
+    (selClass === 'all' ? true : (g.assignment.classId ?? g.assignment.class.id) === selClass));
+  const matchingInputAssignments = assignments.filter(a => a.subject === subject && a.class?.id === selClass);
+  const inputAssignmentId = matchingInputAssignments.length === 1 ? matchingInputAssignments[0]!.id : undefined;
   const savedAssessmentCards = useMemo<TodayClass[]>(() => buildAssessmentSessionCards({
     assessmentSessions: sessionRegistry,
     subject,
@@ -386,12 +393,13 @@ export default function AkademikWorkspace({
         {screen === 'ringkasan' && (
           <RingkasanGuru
             grades={grades} attendances={attendances} activities={activities} rpp={rpp} todayClasses={todayClasses}
+            availability={summaryAvailability} thresholds={summaryThresholds} todayDate={todayDate}
             onAbsen={(c) => setAbsen(c)} onJurnal={(c) => setJurnal(c)} onNavigate={(s) => setScreen(s as Screen)}
             onStartSession={(c) => setSessFlow(c)} onPenilaian={(c) => setPenilaian({ session: c, mode: 'preview', tab: 'diag' })}
           />
         )}
 
-        {screen === 'jadwal' && <JadwalTimetable schedules={schedules} />}
+        {screen === 'jadwal' && <JadwalTimetable schedules={schedules} academicYear={academicYear} semester={semester} available={scheduleAvailable} />}
 
         {screen === 'rekap' && (
           <RekapPembelajaran
@@ -421,7 +429,7 @@ export default function AkademikWorkspace({
               ))}
             </div>
             {penilaianPanel === 'nilai' && (
-              <GradebookPenilaian grades={penilaianGrades} className={selClassName || 'Semua Kelas'} subject={subject === 'all' ? '' : subject} onInputNilai={() => setInputNilai(true)} />
+              <GradebookPenilaian grades={penilaianGrades} sourceSnapshot={grades} className={selClassName || 'Semua Kelas'} subject={subject === 'all' ? '' : subject} academicYear={academicYear} semester={semester} dataState={summaryAvailability?.grades} thresholds={summaryThresholds} thresholdState={summaryAvailability?.kktp} onInputNilai={() => setInputNilai(true)} />
             )}
             {penilaianPanel === 'sesi' && (
               <div className="space-y-2" aria-busy={sessionLoading}>
@@ -469,7 +477,7 @@ export default function AkademikWorkspace({
                   <div className="space-y-2">
                     <div className="text-[11px] font-extrabold uppercase tracking-wide text-[#6b8079]">Jadwal hari ini</div>
                     {todaySessionCandidates.map((item) => (
-                      <article key={`${item.classId}-${item.subject}-${item.startLabel}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e6efea] px-3 py-2">
+                      <article key={item.scheduleId ?? `${item.classId}-${item.subject}-${item.startLabel}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e6efea] px-3 py-2">
                         <div>
                           <div className="text-[12.5px] font-bold text-[#0f2e25]">{item.subject} - {item.className}</div>
                           <div className="text-[11px] font-semibold text-[#6b8079]">{item.startLabel}</div>
@@ -483,10 +491,10 @@ export default function AkademikWorkspace({
                   <div className="space-y-2">
                     <div className="text-[11px] font-extrabold uppercase tracking-wide text-[#6b8079]">Penugasan mengajar</div>
                     {assignmentSessionCandidates.map((item) => (
-                      <article key={`${item.classId}-${item.subject}-assignment`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e6efea] px-3 py-2">
+                      <article key={`${item.assignmentId}-${item.moduleId}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e6efea] px-3 py-2">
                         <div>
                           <div className="text-[12.5px] font-bold text-[#0f2e25]">{item.subject} - {item.className}</div>
-                          <div className="text-[11px] font-semibold text-[#6b8079]">Siap membuat sesi, jadwal tidak wajib.</div>
+                          <div className="text-[11px] font-semibold text-[#6b8079]">Modul: {item.moduleTitle} · pilih modul ini secara eksplisit; jadwal tidak wajib.</div>
                         </div>
                         <button type="button" onClick={() => setPenilaian({ session: item, mode: 'preview', tab: 'diag' })} className="rounded-lg bg-emerald-600 px-3 py-2 text-[11.5px] font-bold text-white">Buka Studio</button>
                       </article>
@@ -557,7 +565,7 @@ export default function AkademikWorkspace({
         )}
 
         {screen === 'capaian' && (
-          <CapaianRapor grades={grades} className={selClassName} academicYear={academicYear} semester={semester} />
+          <CapaianRapor key={`${academicYear}|${semester}|${selClass}`} grades={grades} classId={selClass === 'all' ? undefined : selClass} className={selClassName} academicYear={academicYear} semester={semester} dataState={summaryAvailability?.grades} thresholds={summaryThresholds} thresholdState={summaryAvailability?.kktp} />
         )}
 
         {screen === 'rapor' && (
@@ -584,11 +592,13 @@ export default function AkademikWorkspace({
             // Buka popup Modul Ajar DI ATAS modal sesi (z-50 > z-40).
             // Cari RPP match subject (+classId sesi); bila tak ada → create dgn subject pre-select.
             // Modal sesi TETAP TERBUKA — flow tak terputus (pola sama dgn step 3).
-            const match =
-              rpp.find((r) => r.subject === session.subject && (r.classId ?? '') === session.classId) ??
-              rpp.find((r) => r.subject === session.subject) ??
-              null;
-            setModulFromSession({ rpp: match, subject: session.subject, classId: session.classId });
+            const matches = rpp.filter(r => r.subject === session.subject && r.classId === session.classId && r.academicYear === academicYear && r.semester === semester);
+            if (matches.length > 1) {
+              // The module list exposes explicit titled choices; never pick an arbitrary RPP.
+              setSessFlow(null); setSubject(session.subject); setScreen('pembelajaran');
+              return;
+            }
+            setModulFromSession({ rpp: matches[0] ?? null, subject: session.subject, classId: session.classId });
           }}
           onClose={() => setSessFlow(null)}
         />

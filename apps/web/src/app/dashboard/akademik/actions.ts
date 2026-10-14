@@ -1,6 +1,7 @@
 'use server';
 
 import type { AssessmentQuestion } from '@smk/types';
+import { z } from 'zod';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
@@ -31,7 +32,7 @@ async function apiCall(path: string, method: string, body?: unknown) {
         redirect('/login?reason=session');
       }
       const err = await res.json().catch(() => null);
-      return { success: false, error: apiErrorMessage(err), errorCode: apiErrorCode(err) };
+      return { success: false, error: apiErrorMessage(err), errorCode: apiErrorCode(err), httpStatus: res.status };
     }
     return { success: true, data: await res.json() };
   } catch (err) {
@@ -834,6 +835,8 @@ export async function fetchAssessmentSessions(params?: {
 
 export interface AssessmentSessionData {
   id: string;
+  academicYear?: string;
+  semester?: number;
   teacherId?: string;
   moduleId?: string | null;
   teachingAssignmentId?: string | null;
@@ -1117,14 +1120,16 @@ export async function fetchKktpConfigs(
     semester: number;
   }>;
   error?: string;
+  state?: 'ready' | 'denied' | 'unavailable';
 }> {
   const params = new URLSearchParams();
   if (academicYear) params.set('academicYear', academicYear);
   if (semester) params.set('semester', String(semester));
   const r = await apiCall(`/kktp-config${params.toString() ? '?' + params.toString() : ''}`, 'GET');
-  if (!r.success) return { success: false, error: r.error };
+  if (!r.success) return { success: false, error: r.error, state: r.httpStatus === 403 ? 'denied' : 'unavailable' };
   return {
     success: true,
+    state: 'ready',
     data: r.data as Array<{
       id: string;
       subject: string;
@@ -1288,8 +1293,12 @@ export async function fetchTeachers(): Promise<{
 export async function fetchMonitoringKbm(
   academicYear?: string,
   semester?: number,
+  filters: { teacherId?: string; subject?: string } = {},
 ): Promise<{ success: boolean; data?: unknown; error?: string }> {
   const params = new URLSearchParams();
+  if (!academicYear || !semester) return { success: false, error: 'Pilih periode terkonfigurasi.' };
+  if (filters.teacherId) params.set('teacherId', filters.teacherId);
+  if (filters.subject) params.set('subject', filters.subject);
   if (academicYear) params.set('academicYear', academicYear);
   if (semester) params.set('semester', String(semester));
   const r = await apiCall(
@@ -1557,11 +1566,13 @@ export async function fetchSubmissionDetails(sessionId: string): Promise<{
 /** W2-A-3: Fetch CP progress (mapel + CP breakdown). */
 export interface MapelProgressItem {
   mapel: string;
-  progres: number;
-  na: number;
-  tuntas: number;
+  progres: number | null;
+  na: number | null;
+  tuntas: number | null;
   total: number;
   tp: string;
+  kktp?: number | null;
+  kktpProvenance?: string;
 }
 export interface CpBreakdownItem {
   cp: string;
@@ -1613,33 +1624,33 @@ export async function fetchWaliClasses(): Promise<{
 // ── P1: Data-integrity endpoints (S-05 teacher attendance + S-09 profile CV) ─────
 
 /** P1 (S-05): Fetch today's teacher attendance summary for KS dashboard. */
-export async function fetchTeacherAttendanceToday(): Promise<{
+export async function fetchTeacherAttendanceToday(filters: { academicYear?: string; semester?: number; teacherId?: string; subject?: string } = {}): Promise<{
   success: boolean;
   data?: TeacherAttendanceSummary;
   error?: string;
 }> {
-  const r = await apiCall('/teacher-attendance/today-summary', 'GET');
+  const query = new URLSearchParams();
+  if (filters.academicYear) query.set('academicYear', filters.academicYear);
+  if (filters.semester) query.set('semester', String(filters.semester));
+  if (filters.teacherId) query.set('teacherId', filters.teacherId);
+  if (filters.subject) query.set('subject', filters.subject);
+  const r = await apiCall('/analytics/teacher-compliance?' + query.toString(), 'GET');
   if (!r.success) return { success: false, error: r.error };
-  return { success: true, data: r.data as TeacherAttendanceSummary };
+  const count = z.number().int().nonnegative();
+  const parsed = z.object({ attendance: z.object({
+    date: z.string(), source: z.literal('StaffAttendance'), total: count, present: count, inside: count,
+    required: count, late: count, absent: count, notRequired: count, notScheduled: count, notDue: count, review: count, unknown: count,
+  }) }).safeParse(r.data);
+  if (!parsed.success) return { success: false, error: 'Ringkasan presensi pegawai belum tersedia.' };
+  return { success: true, data: parsed.data.attendance };
 }
 
 export interface TeacherAttendanceSummary {
   date: string;
+  source: 'StaffAttendance';
   total: number;
-  hadir: number;
-  selesai: number;
-  belum: number;
-  outsideGeofence: number;
-  roster: Array<{
-    teacherId: string;
-    nama: string;
-    inisial: string;
-    mapel: string;
-    status: string;
-    checkInAt: string | null;
-    checkOutAt: string | null;
-    outsideGeofence: boolean;
-  }>;
+  present: number; inside: number; required: number; late: number; absent: number;
+  notRequired: number; notScheduled: number; notDue: number; review: number; unknown: number;
 }
 
 /** P1 (S-09): Fetch siswa profile CV aggregate (identity + academic stats). */

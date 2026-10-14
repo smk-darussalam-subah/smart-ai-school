@@ -60,13 +60,15 @@ export function gradeCls(v: number, kktp: number = KKTP_DEFAULT): 'ok' | 'warn' 
 }
 
 export const ATT_STATUS_LABELS: Record<string, string> = {
-  hadir: 'Hadir — semua sesi',
-  izin: 'Izin — keperluan keluarga',
-  sakit: 'Sakit — demam',
+  hadir: 'Hadir',
+  izin: 'Izin',
+  sakit: 'Sakit',
   alpha: 'Alpha — tanpa keterangan',
-  empty: 'Libur',
+  empty: 'Belum ada catatan',
   none: 'Belum ada catatan',
-  future: 'Tanggal future — belum ada data',
+  future: 'Tanggal mendatang — belum ada data',
+  holiday: 'Libur kalender sekolah',
+  outside: 'Di luar bulan pilihan',
 };
 
 export function currentMonthYear(): { month: string; year: number } {

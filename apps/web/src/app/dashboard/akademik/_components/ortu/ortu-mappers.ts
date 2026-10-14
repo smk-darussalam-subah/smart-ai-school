@@ -193,9 +193,9 @@ export interface OrtuScheduleSlotMapped {
  * dan petakan ke slot ringkas untuk ditampilkan di Beranda/Kehadiran.
  */
 export function mapTodaySchedule(items: ScheduleItem[], dayOfWeek: number, JP_SLOTS: JpSlot[] = []): OrtuScheduleSlotMapped[] {
-  if (dayOfWeek === 0) return [];
+  const normalizedDay = dayOfWeek || 7;
   return items
-    .filter((s) => s.dayOfWeek === dayOfWeek)
+    .filter((s) => s.dayOfWeek === normalizedDay)
     .map((s) => {
       // Estimasi rentang waktu dari JP via bell-times (sumber tunggal).
       // jpStart/jpEnd → label "07:30–08:10" bila tersedia di JP_SLOTS.

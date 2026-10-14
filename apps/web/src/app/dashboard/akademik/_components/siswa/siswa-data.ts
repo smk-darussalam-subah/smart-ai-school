@@ -52,6 +52,7 @@ export interface SimSchedSlot {
   mp: string;
   g: string;
   ruang: string;
+  sessions?: SimSchedSlot[];
 }
 export type SimSchedule = Record<number, Record<number, SimSchedSlot>>;
 
@@ -109,7 +110,7 @@ export function scheduleClassName(items: unknown[] = []): string | null {
 
 /** Other weekdays must not inherit today's live/finished highlight. */
 export function studentLessonPhase(now: { jsDay: number; minutes: number }, day: number, slot?: JpSlot): 'current' | 'finished' | 'upcoming' {
-  if (!slot || day !== now.jsDay || now.minutes < slot.startMin) return 'upcoming';
+  if (!slot || day !== (now.jsDay || 7) || now.minutes < slot.startMin) return 'upcoming';
   return now.minutes < slot.endMin ? 'current' : 'finished';
 }
 
@@ -120,11 +121,13 @@ export function transformApiSchedule(items: ApiScheduleItem[], profile: BellProf
     if (!result[item.dayOfWeek]) result[item.dayOfWeek] = {};
     for (const [jp, idx] of studentDayPattern(profile, item.dayOfWeek).JP_MAP) {
       if (jp >= item.jpStart && jp <= item.jpEnd) {
-        result[item.dayOfWeek]![idx] = {
+        const next: SimSchedSlot = {
           mp: item.teachingAssignment?.subject ?? '—',
           g: item.teachingAssignment?.teacher?.user?.fullName?.trim() || '—',
           ruang: item.room ?? '—',
         };
+        const prior = result[item.dayOfWeek]![idx];
+        result[item.dayOfWeek]![idx] = prior ? { ...prior, sessions: [...(prior.sessions ?? [prior]),next] } : next;
       }
     }
   }

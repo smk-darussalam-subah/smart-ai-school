@@ -2,17 +2,21 @@
 
 export interface ScheduleItem {
   id: string;
+  academicYear?: string;
+  semester?: number;
   classId: string;
   dayOfWeek: number; // 1=Senin … 6=Sabtu
   jpStart: number;
   jpEnd: number;
   room?: string | null;
+  concurrencyGroup?: { id:string; mode:string; expiresOn:string | null } | null;
   class: { id: string; name: string; grade: number; majorCode: string };
-  teachingAssignment: { subject: string; teacher?: { id?: string; user?: { fullName?: string } } };
+  teachingAssignment: { id?: string; subject: string; teacher?: { id?: string; user?: { fullName?: string } } };
 }
 
 export interface ActivityItem {
   id: string;
+  teacherId?: string;
   classId: string;
   date: string;
   title: string;
@@ -66,6 +70,7 @@ export interface ModulAjarBody {
 
 export interface RppItem {
   id: string;
+  teacherId?: string;
   subject: string;
   title: string;
   content: string | null;
@@ -102,6 +107,7 @@ export interface LmsProgressResponse {
 
 export interface LmsModuleItem {
   id: string;
+  teacherId?: string;
   rppId: string | null;
   classId: string | null;
   subject: string;
@@ -137,6 +143,7 @@ export interface AttendanceRow {
 
 /** Satu blok mengajar hari ini (gabungan JP berurutan satu kelas+mapel). */
 export interface TodayClass {
+  scheduleId?: string;
   classId: string;
   className: string;
   subject: string;
@@ -148,6 +155,10 @@ export interface TodayClass {
   moduleId?: string;
   /** U2 Wave 3: assessment session ID for analisis hasil (optional, populated when session exists). */
   assessmentSessionId?: string;
+  hasFeedback?: boolean;
+  moduleCandidates?: number;
+  moduleTitle?: string;
+  assignmentId?: string;
 }
 
 // Sumber tunggal KKTP ada di lib/academic (fondasi W0). Re-export agar konsumen

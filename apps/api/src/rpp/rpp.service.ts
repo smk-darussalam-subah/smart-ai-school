@@ -118,7 +118,7 @@ export class RppService {
     const [data, total] = await Promise.all([
       this.prisma.rpp.findMany({
         where,
-        orderBy: [{ status: 'asc' }, { submittedAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }],
+        orderBy: [{ status: 'asc' }, { submittedAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }, { id: 'asc' }],
         skip,
         take: query.limit,
         select: RPP_SELECT,
