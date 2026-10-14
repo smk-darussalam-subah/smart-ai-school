@@ -21,6 +21,7 @@ export interface PapanCell {
   subject: string;
   teacher: string;
   room: string | null;
+  sessions?: PapanCell[];
 }
 export interface PapanRow {
   classId: string;
@@ -28,22 +29,6 @@ export interface PapanRow {
   cells: (PapanCell | null)[]; // panjang = JP_COUNT, index 0 = JP1
 }
 
-// ── Mapel abbreviation (compact cell labels) ──────────────────────────────────
-const MAPEL_ABBREV: Record<string, string> = {
-  'Matematika': 'Mtk', 'B.Indonesia': 'BInd', 'Bahasa Indonesia': 'BInd',
-  'B.Inggris': 'BIng', 'Bahasa Inggris': 'BIng', 'Pendidikan Agama': 'PAg',
-  'PKN': 'PKn', 'PKn': 'PKn', 'Penjaskes': 'Penj', 'PJOK': 'Penj',
-  'Pemrograman Web': 'PemWeb', 'Pemrograman Dasar': 'PemDas', 'Pemrograman': 'Pem',
-  'Basis Data': 'BasDat', 'Jaringan Komputer': 'JarKom', 'Jaringan': 'Jar',
-  'Sistem Operasi': 'SysOp', 'Desain Grafis': 'DesGra',
-  'Akuntansi Dasar': 'AkdDas', 'Akuntansi': 'Akd', 'Akun': 'Akd',
-  'Perpajakan': 'Pjk', 'Perbankan': 'Pbk', 'Motor Bensin': 'MotBen',
-  'Kelistrikan Otomotif': 'KelOto', 'Chasis & Pemindah Daya': 'ChaPem',
-  'Teknik Sepeda Motor': 'TekSep', 'Seni': 'Seni', 'IPA': 'IPA',
-};
-function mpAbbrev(mp: string): string {
-  return MAPEL_ABBREV[mp] ?? (mp.length <= 6 ? mp : mp.slice(0, 6));
-}
 
 export default function PapanPembelajaran({ rows, dayLabel, onCellClick, absenPerJp, onAbsenClick }: { rows: PapanRow[]; dayLabel: string; onCellClick?: (row: PapanRow, jp: number, cell: PapanCell) => void; absenPerJp?: (number | null)[]; onAbsenClick?: (jp: number) => void }) {
   const JP_SLOTS = useBellPattern().slots;
@@ -126,7 +111,7 @@ export default function PapanPembelajaran({ rows, dayLabel, onCellClick, absenPe
                           )}
                         >
                           {cell && (
-                            <span className="text-[9px] font-medium leading-none truncate">{mpAbbrev(cell.subject)}</span>
+                            <span className="break-words text-[9px] font-medium leading-tight">{cell.sessions?.length ? `${cell.sessions.length} sesi` : cell.subject}</span>
                           )}
                         </div>
                         {/* HTML Tooltip */}
@@ -134,8 +119,7 @@ export default function PapanPembelajaran({ rows, dayLabel, onCellClick, absenPe
                           {cell ? (
                             <>
                               <div className="font-semibold">JP{jp} · {jpStartLabel(jp, JP_SLOTS)}</div>
-                              <div className="font-bold">{cell.subject}</div>
-                              <div className="text-slate-300">{cell.teacher}{cell.room ? ` · ${cell.room}` : ''}</div>
+                              {(cell.sessions ?? [cell]).map((item,index) => <div key={index}><div className="font-bold">{item.subject}</div><div className="text-slate-300">{item.teacher}{item.room ? ` · ${item.room}` : ''}</div></div>)}
                             </>
                           ) : (
                             <div>JP{jp} · Tidak ada jadwal</div>

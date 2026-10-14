@@ -214,7 +214,7 @@ export class ClassesService {
     const [rows, total] = await Promise.all([
       this.prisma.class.findMany({
         where,
-        orderBy: [{ grade: 'asc' }, { name: 'asc' }],
+        orderBy: [{ grade: 'asc' }, { name: 'asc' }, { id: 'asc' }],
         skip,
         take: limit,
         include: {

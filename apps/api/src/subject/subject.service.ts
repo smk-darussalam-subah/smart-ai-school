@@ -30,7 +30,7 @@ export class SubjectService {
     }
 
     const [data, total] = await Promise.all([
-      this.prisma.subject.findMany({ where, select: SELECT, orderBy: { name: 'asc' }, skip: query.offset, take: query.limit }),
+      this.prisma.subject.findMany({ where, select: SELECT, orderBy: [{ name: 'asc' }, { id: 'asc' }], skip: query.offset, take: query.limit }),
       this.prisma.subject.count({ where }),
     ]);
 

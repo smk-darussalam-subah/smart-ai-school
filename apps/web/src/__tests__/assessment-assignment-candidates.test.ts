@@ -52,6 +52,12 @@ function build(
 }
 
 describe('assignment-based assessment session candidates', () => {
+  it('exposes every matching module as an explicit choice rather than first-wins',()=>{
+    const candidates=build([assignment()],[module(),module({id:'module-2',title:'Pilihan kedua',status:'published'})]);
+    expect(candidates.map(c=>c.moduleId)).toEqual(['module-1','module-2']);
+    expect(candidates.map(c=>c.moduleCandidates)).toEqual([2,2]);
+    expect(candidates[1]?.moduleTitle).toBe('Pilihan kedua');
+  });
   it('exposes an active assignment with a matching LMS module without requiring a schedule', () => {
     expect(build([assignment()], [module()])).toEqual([
       expect.objectContaining({

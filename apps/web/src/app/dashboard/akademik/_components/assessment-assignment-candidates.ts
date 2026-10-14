@@ -33,7 +33,7 @@ export function buildAssignmentSessionCandidates({
   const scheduledContexts = new Set(
     todayClasses.map((item) => contextKey(item.classId, item.subject)),
   );
-  const moduleByContext = new Map<string, LmsModuleItem>();
+  const moduleByContext = new Map<string, LmsModuleItem[]>();
 
   for (const module of lmsModules) {
     if (
@@ -46,10 +46,9 @@ export function buildAssignmentSessionCandidates({
     }
 
     const key = contextKey(module.classId, module.subject);
-    const selected = moduleByContext.get(key);
-    if (!selected || (selected.status !== 'published' && module.status === 'published')) {
-      moduleByContext.set(key, module);
-    }
+    const candidates = moduleByContext.get(key) ?? [];
+    if (!candidates.some(candidate => candidate.id === module.id)) candidates.push(module);
+    moduleByContext.set(key, candidates);
   }
 
   return assignments.flatMap((assignment) => {
@@ -64,10 +63,10 @@ export function buildAssignmentSessionCandidates({
       return [];
     }
 
-    const module = moduleByContext.get(key);
-    if (!module) return [];
+    const modules = moduleByContext.get(key) ?? [];
 
-    return [{
+    return modules.map(module => ({
+      assignmentId: assignment.id,
       classId: assignmentClassId,
       className: assignment.class.name,
       subject: assignment.subject,
@@ -77,6 +76,8 @@ export function buildAssignmentSessionCandidates({
       startLabel: 'Dari penugasan mengajar',
       isNow: false,
       moduleId: module.id,
-    }];
+      moduleTitle: module.title,
+      moduleCandidates: modules.length,
+    }));
   });
 }

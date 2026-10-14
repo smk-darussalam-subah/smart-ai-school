@@ -19,7 +19,7 @@ describe('learner timetable request contract', () => {
   });
   it('real server page consumes both contracts and never sends unsupported studentId to schedules', () => {
     const page = fs.readFileSync(path.join(__dirname, '../app/dashboard/akademik/page.tsx'), 'utf8');
-    expect(page).toContain('>(OWN_STUDENT_SCHEDULE_PATH, token)');
+    expect(page).toContain('>(pp(OWN_STUDENT_SCHEDULE_PATH), token)');
     expect(page).toContain('const schedulePath = childSchedulePath(child.class?.id)');
     expect(page).not.toContain('/schedules?studentId=');
   });

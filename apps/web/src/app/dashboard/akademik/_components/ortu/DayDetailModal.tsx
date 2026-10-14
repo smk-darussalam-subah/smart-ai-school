@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { X } from 'lucide-react';
 import { useBellPattern } from '@/components/providers/BellPatternProvider';
 import { fmtMin } from '@/lib/bell-times';
@@ -28,7 +29,7 @@ function statusColor(status: AttendanceCellStatus): string {
 export default function DayDetailModal({ day, status, month, year, onClose }: DayDetailModalProps) {
   const monthIndex = ['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'agu', 'sep', 'okt', 'nov', 'des'].findIndex((prefix) => month.toLowerCase().startsWith(prefix));
   const date = year + '-' + String(monthIndex + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
-  const JP_SLOTS = useBellPattern(date, new Date(date + 'T00:00:00Z').getUTCDay()).slots;
+  const JP_SLOTS = useBellPattern(date, new Date(date + 'T00:00:00Z').getUTCDay() || 7).slots;
   const isEmpty = status === 'empty' || status === 'future';
   const color = statusColor(status);
   const label = ATT_STATUS_LABELS[status] ?? status;
@@ -47,7 +48,7 @@ export default function DayDetailModal({ day, status, month, year, onClose }: Da
           <b className="text-[15px] font-extrabold">{day} {month} {year}</b>
           <button
             onClick={onClose}
-            className="flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)]"
+            className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)]"
             aria-label="Tutup"
           >
             <X className="h-4 w-4" />
@@ -56,7 +57,7 @@ export default function DayDetailModal({ day, status, month, year, onClose }: Da
 
         {isEmpty ? (
           <div className="py-6 text-center text-[12px] font-semibold text-[var(--dim)]">
-            {status === 'future' ? 'Tanggal future — belum ada data' : 'Libur (Minggu)'}
+            {status === 'future' ? 'Tanggal mendatang — belum ada data' : 'Catatan kehadiran harian belum tersedia; tidak dapat menyimpulkan hari libur.'}
           </div>
         ) : (
           <>
@@ -65,10 +66,11 @@ export default function DayDetailModal({ day, status, month, year, onClose }: Da
               <b className="text-[13px]" style={{ color }}>{label}</b>
             </div>
 
-            {/* Per-session breakdown */}
+            {/* Bell timing is not per-session attendance evidence. */}
             <b className="mb-2 block text-[12px] font-bold uppercase tracking-wide text-[var(--muted)]">
-              Detail per Sesi
+              Pola Jam Pelajaran
             </b>
+            <p className="mb-3 text-xs text-[var(--muted)]">Presensi setiap JP belum tersedia. Jam di bawah mengikuti bel sekolah; status kehadiran tetap dihitung per hari.</p>
             {JP_SLOTS.map((slot) => (
               <div
                 key={slot.jp}
@@ -76,7 +78,7 @@ export default function DayDetailModal({ day, status, month, year, onClose }: Da
               >
                 <div
                   className="h-2 w-2 rounded-full"
-                  style={{ background: color }}
+                  style={{ background: 'var(--muted)' }}
                 />
                 <div className="flex-1">
                   <b className="text-[12px]">JP {slot.jp}</b>
@@ -86,9 +88,9 @@ export default function DayDetailModal({ day, status, month, year, onClose }: Da
                 </div>
                 <span
                   className="text-[10px] font-bold capitalize"
-                  style={{ color }}
+                  style={{ color: 'var(--muted)' }}
                 >
-                  {status}
+                  Pola bel
                 </span>
               </div>
             ))}

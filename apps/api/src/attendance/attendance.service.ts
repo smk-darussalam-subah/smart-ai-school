@@ -243,7 +243,7 @@ export class AttendanceService {
         skip,
         take:    query.limit,
         select:  ATTENDANCE_SELECT,
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }],
       }),
       this.prisma.attendance.count({ where }),
     ]);

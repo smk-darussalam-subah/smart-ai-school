@@ -19,6 +19,8 @@
 import { SessionProvider as NextAuthSessionProvider } from 'next-auth/react';
 import type { Session } from 'next-auth';
 import { Toaster } from 'sonner';
+import { SESSION_POLL_SECONDS } from '@/lib/auth-session-state';
+import { AuthSessionBoundary } from '@/components/auth/AuthSessionBoundary';
 
 export function DashboardProviders({
   children,
@@ -28,8 +30,8 @@ export function DashboardProviders({
   session: Session | null;
 }) {
   return (
-    <NextAuthSessionProvider session={session} refetchInterval={5 * 60}>
-      {children}
+    <NextAuthSessionProvider session={session} refetchInterval={SESSION_POLL_SECONDS}>
+      <AuthSessionBoundary>{children}</AuthSessionBoundary>
       <Toaster
         position="top-right"
         richColors
