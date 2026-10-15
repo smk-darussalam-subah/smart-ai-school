@@ -105,7 +105,11 @@ async function proxyRequest(
   { params }: { params: Promise<{ path: string[] }> },
 ): Promise<Response> {
   const { path } = await params;
-  const backendPath = path.join('/');
+  if (path.some(segment => segment === '.' || segment === '..'))
+    return Response.json({ message: 'Path tidak valid.' }, { status: 400 });
+  // App Router params are decoded. Preserve each segment (including a year
+  // such as 2026/2027) rather than turning encoded data into routing syntax.
+  const backendPath = path.map((segment) => encodeURIComponent(segment)).join('/');
   const backendUrl = `${API_BASE}/api/v1/${backendPath}${request.url.includes('?') ? `?${new URL(request.url).search.slice(1)}` : ''}`;
   let sessionCookies: string[] = [];
   try {

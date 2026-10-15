@@ -62,14 +62,7 @@ export interface SiswaTugas {
 
 // ── Nilai ──────────────────────────────────────────────────────────────────
 
-export interface SiswaNilai {
-  mp: string;
-  scores: [number, number, number, number, number]; // UH, Praktik, Sikap, UTS, UAS
-  rata: number;
-  kktp: number;
-  trend: 'up' | 'down' | 'stable';
-  cp: number;
-}
+export type SiswaNilai = import('@/lib/learner-grades').LearnerGrade;
 
 // ── CP (Capaian Pembelajaran) ─────────────────────────────────────────────
 

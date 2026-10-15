@@ -27,7 +27,7 @@ import { fetchMyNotifications, subscribePush, unsubscribePush } from '../../acti
 import { initials } from './ortu-data';
 import type { OrtuChild, OrtuNilai, OrtuPengumuman } from './ortu-types';
 import type { AttendanceCellStatus, Pembayaran } from '@/lib/academic';
-import type { GradeItem, AttendanceItem } from '@/lib/api';
+import type { AttendanceItem } from '@/lib/api';
 import type { ScheduleItem } from '../guru-types';
 import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import type { ParentChildrenState } from '@/lib/parent-children';
@@ -53,7 +53,8 @@ export interface ModalState {
 interface OrtuWorkspaceProps {
   children?: OrtuChild[];
   childrenState?: ParentChildrenState;
-  grades?: GradeItem[];
+  grades?: OrtuNilai[];
+  gradeState?: import('@/lib/learner-grades').LearnerGradeState;
   attendance?: AttendanceItem[];
   schedule?: Array<ScheduleItem & { studentId?: string }>;
   scheduleStates?: Record<string, LearnerScheduleState>;
@@ -73,7 +74,7 @@ interface OrtuWorkspaceProps {
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function OrtuWorkspace({
-  children: realChildren, childrenState, grades, attendance, schedule, scheduleStates, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, childRanks, openNotifications = false, initialStudentId, initialWorkflowView = null
+  children: realChildren, childrenState, grades, gradeState = 'ready', attendance, schedule, scheduleStates, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, childRanks, openNotifications = false, initialStudentId, initialWorkflowView = null
 }: OrtuWorkspaceProps) {
   const { data: session } = useSession();
   const router = useRouter();
@@ -128,7 +129,10 @@ export default function OrtuWorkspace({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [activeScreen, activeStudentId, initialWorkflow.parentFocus]);
-  const childGrades = activeStudentId ? filterByStudentId(grades, activeStudentId) : [];
+  const childGrades = gradeState === 'ready' && activeStudentId ? filterByStudentId(grades, activeStudentId) : [];
+  const modalGrade = modal.type === 'grade' ? modal.data?.nilai : null;
+  const currentModalGrade = modalGrade && typeof modalGrade === 'object' && 'mp' in modalGrade && 'studentId' in modalGrade
+    ? childGrades.find(grade => grade.mp === modalGrade.mp && grade.studentId === modalGrade.studentId) : undefined;
   const childAttendance = activeStudentId ? filterByStudentId(attendance, activeStudentId) : [];
   const childSchedule = activeStudentId ? filterByStudentId(schedule, activeStudentId) : [];
   const childSpp = activeStudentId ? filterByStudentId(realSpp, activeStudentId) : [];
@@ -147,6 +151,7 @@ export default function OrtuWorkspace({
     if (openNotifications) router.replace(learnerDashboardHref(activeStudentId), { scroll: false });
   }, [activeStudentId, openNotifications, router]);
   const selectChild = (i: number) => {
+    setModal({ type: null });
     setActiveChildIndex(i);
     setChildSelectorOpen(false);
     window.scrollTo(0, 0);
@@ -173,6 +178,7 @@ export default function OrtuWorkspace({
             go={go}
             setModal={setModal}
             grades={childGrades}
+            gradeState={gradeState}
             announcements={announcements}
             children={childList}
             activeChildIndex={Math.min(activeChildIndex, Math.max(childList.length - 1, 0))}
@@ -200,6 +206,7 @@ export default function OrtuWorkspace({
           <NilaiOrtu
             setModal={setModal}
             grades={childGrades}
+            gradeState={gradeState}
             onOpenOfficialReport={openOfficialReport}
           />
         );
@@ -390,9 +397,9 @@ export default function OrtuWorkspace({
       </nav>
 
       {/* Modals */}
-      {childrenReady && modal.type === 'grade' && (
+      {childrenReady && currentModalGrade && (
         <GradeDetailModal
-          nilai={(modal.data as { nilai: OrtuNilai }).nilai}
+          nilai={currentModalGrade}
           onClose={() => setModal({ type: null })}
         />
       )}

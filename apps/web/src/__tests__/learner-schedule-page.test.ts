@@ -21,7 +21,7 @@ jest.mock('@/app/dashboard/akademik/_components/ortu/OrtuRefreshWrapper', () => 
 import AcademicPage from '@/app/dashboard/akademik/page';
 import AcademicOperationsWorkspace from '@/app/dashboard/akademik/_components/AcademicOperationsWorkspace';
 
-type WorkspaceProps = { children?: unknown[]; childrenState?: string; grades?: unknown[]; attendance?: unknown[]; schedule?: unknown[]; scheduleState?: string; scheduleStates?: Record<string, string> };
+type WorkspaceProps = { children?: unknown[]; childrenState?: string; grades?: unknown[]; gradeState?: string; attendance?: unknown[]; schedule?: unknown[]; scheduleState?: string; scheduleStates?: Record<string, string> };
 async function workspaceProps(): Promise<WorkspaceProps> {
   const element = await AcademicPage({ searchParams: Promise.resolve({}) });
   const wrapper = element as React.ReactElement<{ children: React.ReactElement<WorkspaceProps> }>;
@@ -125,9 +125,18 @@ describe('real SSR page schedule-state wiring', () => {
     mockAuthority.mockResolvedValue({roles:['ORANG_TUA'],hasRole:()=>false,can:()=>false});
     mockApiFetchResult.mockImplementation(async(url:string) => url === '/students/my-children'
       ? {status:'success',httpStatus:200,data:{data:[{id:'child-a',class:null,user:{fullName:'A'}},{id:'child-b',class:null,user:{fullName:'B'}}]}}
+      : url.startsWith('/analytics/grades/student?')
+      ? {status:'success',httpStatus:200,data:{data:['child-a','child-b','not-owned'].map(studentId=>({studentId,subjects:[{subject:'Matematika',uh:95,praktik:null,sikap:null,uts:null,uas:null,na:95,kktp:80,kktpProvenance:'config',status:'tuntas'}]}))}}
       : {status:'success',httpStatus:200,data:{data:url.startsWith('/grades?')||url.startsWith('/attendance?') ? [{id:'record-a',studentId:'child-a'},{id:'record-b',studentId:'child-b'}] : [],total:url.startsWith('/grades?')||url.startsWith('/attendance?') ? 2:0,page:1,limit:100,offset:0}});
     const props = await workspaceProps();
-    expect(props.grades).toEqual([{id:'record-a',studentId:'child-a'},{id:'record-b',studentId:'child-b'}]);
-    expect(props.attendance).toEqual(props.grades);
+    expect(props.grades).toEqual(['child-a','child-b'].map(studentId=>({studentId,mp:'Matematika',na:95,kktp:80,kktpProvenance:'config',status:'tuntas',components:{uh:95,praktik:null,sikap:null,uts:null,uas:null}})));
+    expect(props.gradeState).toBe('ready');
+    expect(props.attendance).toEqual([{id:'record-a',studentId:'child-a'},{id:'record-b',studentId:'child-b'}]);
+    expect(mockApiFetchResult.mock.calls.filter(([url])=>String(url).startsWith('/analytics/grades/student?'))).toHaveLength(1);
+    expect(mockApiFetchResult.mock.calls.some(([url])=>String(url).startsWith('/grades?studentId='))).toBe(false);
+  });
+  it.each(['forbidden','unavailable','requestError'] as const)('learner grade %s read is not silently converted into empty success', async status => {
+    mockApiFetchResult.mockImplementation(async(url:string)=>url.startsWith('/analytics/grades/student?') ? {status,message:'Synthetic'} : {status:'success',httpStatus:200,data:{data:[],total:0,page:1,limit:100,offset:0}});
+    const props=await workspaceProps(); expect(props.gradeState).toBe(status==='forbidden'?'denied':'unavailable'); expect(props.grades).toEqual([]);
   });
 });

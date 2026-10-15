@@ -10,6 +10,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -28,10 +29,15 @@ import { GradeService } from './grade.service';
 import { CreateGradeSchema, CreateGradeDto } from './dto/create-grade.dto';
 import { UpdateGradeSchema, UpdateGradeDto } from './dto/update-grade.dto';
 import { ListGradesQuerySchema } from './dto/list-grades.dto';
+import { isOrangTuaOnly, isSiswaOnly } from '../common/helpers/role-helpers';
+import { PermissionsService } from '../permissions/permissions.service';
 
 @Controller('grades')
 export class GradeController {
-  constructor(private service: GradeService) {}
+  constructor(
+    private service: GradeService,
+    private readonly permissions: PermissionsService,
+  ) {}
 
   /**
    * POST /grades — Guru input nilai.
@@ -53,11 +59,17 @@ export class GradeController {
    * Ownership difilter di service (GURU=kelas sendiri, SISWA=diri, OT=anak).
    */
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'SISWA', 'ORANG_TUA', 'WAKA_KURIKULUM')
-  @RequirePermission('academic.grade.read')
+  @RequirePermission(['academic.grade.read', 'grade.own.read', 'grade.child.read'])
   @Get()
-  findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
+  async findAll(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     const parsed = ListGradesQuerySchema.safeParse(rawQuery);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    // Match GradeService's role/ownership precedence, not an OR across roles.
+    const required = isSiswaOnly(user) ? 'grade.own.read'
+      : isOrangTuaOnly(user) ? 'grade.child.read' : 'academic.grade.read';
+    if (!await this.permissions.hasPermission(user.keycloakId, user.roles, required)) {
+      throw new ForbiddenException(`Permission '${required}' diperlukan untuk konteks nilai ini`);
+    }
     return this.service.findAll(parsed.data, user);
   }
 
