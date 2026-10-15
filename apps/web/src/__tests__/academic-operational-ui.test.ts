@@ -237,7 +237,9 @@ describe('academic operational UI contracts', () => {
   it('uses native buttons for every editable schedule entry', () => {
     const scheduleMatrix = source('app/dashboard/jadwal/_components/JadwalMatrix.tsx');
 
-    expect(scheduleMatrix.match(/aria-label=\{`Edit jadwal/g)).toHaveLength(2);
+    // Both detail and compact cards retain explicit edit labels; overlap summaries open all details.
+    expect(scheduleMatrix.match(/`Edit jadwal/g)).toHaveLength(2);
+    expect(scheduleMatrix).toContain('Lihat seluruh ${group.length} slot bertumpuk');
     expect(scheduleMatrix).toContain('focus-visible:ring-2');
     expect(scheduleMatrix).not.toMatch(/<td[^>]*onClick=/);
     expect(scheduleMatrix).not.toMatch(/<div[^>]*onClick=/);
@@ -335,6 +337,7 @@ describe('academic operational UI contracts', () => {
     const ortuWorkspace = source('app/dashboard/akademik/_components/ortu/OrtuWorkspace.tsx');
     const nilaiOrtu = source('app/dashboard/akademik/_components/ortu/NilaiOrtu.tsx');
     const nilaiSiswa = source('app/dashboard/akademik/_components/siswa/NilaiSiswa.tsx');
+    const learnerGradeView = source('app/dashboard/akademik/_components/LearnerGradeView.tsx');
     const siswaWorkspace = source('app/dashboard/akademik/_components/siswa/SiswaWorkspace.tsx');
     const reportPage = source('app/dashboard/rapor/page.tsx');
     const reportHub = source('app/dashboard/rapor/_components/RaporHub.tsx');
@@ -368,9 +371,10 @@ describe('academic operational UI contracts', () => {
     );
     expect(reportHub).toContain('href={dashboardHref}');
     expect(siswaWorkspace).toContain('openNotifications');
-    expect(nilaiOrtu).toContain('Rapor resmi');
+    expect(nilaiOrtu).toContain('onReport={onOpenOfficialReport}');
+    expect(learnerGradeView).toContain('Rapor resmi');
     expect(nilaiSiswa).toContain("router.push('/dashboard/rapor')");
-    expect(nilaiSiswa).toContain('Rapor resmi');
+    expect(nilaiSiswa).toContain('<LearnerGradeView');
     expect(ortuWorkspace).not.toContain("import RaporModal from './RaporModal'");
     expect(ortuWorkspace).not.toContain("type: 'rapor'");
     expect(nilaiSiswa).not.toContain('Rapor akan tersedia');

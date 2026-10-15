@@ -101,7 +101,7 @@ export class LmsService {
       const [data, total] = await Promise.all([
         this.prisma.lmsModule.findMany({
           where,
-          orderBy: [{ subject: 'asc' }, { orderIndex: 'asc' }, { createdAt: 'asc' }],
+          orderBy: [{ subject: 'asc' }, { orderIndex: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
           skip,
           take: query.limit,
           select: {
@@ -130,7 +130,7 @@ export class LmsService {
     const [data, total] = await Promise.all([
       this.prisma.lmsModule.findMany({
         where,
-        orderBy: [{ subject: 'asc' }, { orderIndex: 'asc' }, { updatedAt: 'desc' }],
+        orderBy: [{ subject: 'asc' }, { orderIndex: 'asc' }, { updatedAt: 'desc' }, { id: 'asc' }],
         skip,
         take: query.limit,
         select: { ...LMS_SELECT, _count: { select: { progress: true } } },

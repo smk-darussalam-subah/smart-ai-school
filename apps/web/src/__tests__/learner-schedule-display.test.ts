@@ -133,7 +133,8 @@ describe('actual student metadata and timing', () => {
     for (const minutes of [575, 900]) expect(studentLessonPhase({ jsDay: 1, minutes }, 1, slotsForDay(profile, 1)[2])).toBe('finished');
     expect(studentLessonPhase({ jsDay: 1, minutes: 575 }, 1, slotsForDay(profile, 1)[3])).toBe('upcoming');
     jest.setSystemTime(new Date('2026-10-05T16:00:00+07:00'));
-    expect(render(React.createElement(JadwalSiswa, studentProps))).toContain('Selesai');
+    expect(render(React.createElement(JadwalSiswa, studentProps))).toContain('Waktu jadwal telah lewat');
+    expect(render(React.createElement(JadwalSiswa, studentProps))).not.toContain('>Selesai<');
     expect(render(React.createElement(JadwalSiswa, studentProps))).not.toContain('Sedang berlangsung');
   });
 });

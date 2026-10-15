@@ -135,7 +135,7 @@ export class GradeService {
         skip,
         take: query.limit,
         select: GRADE_SELECT,
-        orderBy: [{ academicYear: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ academicYear: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }],
       }),
       this.prisma.grade.count({ where }),
     ]);

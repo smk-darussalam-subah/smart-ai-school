@@ -8,23 +8,27 @@
 // Mockup ref: .tasks/akademik-mockup/akademik-ks.html (1,305 lines)
 // =============================================================================
 
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import ScheduleBoard, { ScheduleReadProvider, useScheduleRead } from './ks/ScheduleBoard';
+import SchedulingMonitoringPanel from './ks/SchedulingMonitoringPanel';
+import { MonitoringSchema, type SchedulingMonitoring } from '@/lib/scheduling-monitoring';
 import {
   LayoutDashboard, FileCheck2, ClipboardPenLine, Monitor, ClipboardCheck,
   Target, CalendarClock, Users, BadgeCheck, Presentation, FileClock,
   AlertTriangle, Activity, TrendingUp, ListChecks, ChevronRight, X,
-  Check, CheckCircle2, XCircle, Info, Save, Table2, LayoutGrid, SlidersHorizontal,
+  Check, CheckCircle2, Info, LayoutGrid, SlidersHorizontal,
   Route, Lightbulb, Paperclip, FileText,
   type LucideIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem, ActivityItem, RppItem, ClassRef, LmsModuleItem } from './guru-types';
 import { resolveProfileFramework } from './modul-ajar-profile';
-import { KKTP_DEFAULT } from '@/lib/academic';
-import { useBellPattern } from '@/components/providers/BellPatternProvider';
-import { fmtMin, scheduleDayOfWeek, wibTodayISO, wibDateLabel, currentJp, wibNow } from '@/lib/bell-times';
-import { fetchAttendanceHeatmap, fetchMonitoringKbm, fetchRekapAudit, fetchKktpConfigs, saveKktpConfig, fetchTeacherAttendanceToday } from '../actions';
+import KktpKs from './ks/KktpKs';
+import { scheduleDayOfWeek, wibTodayISO, wibDateLabel } from '@/lib/bell-times';
+import { fetchMonitoringKbm, fetchTeacherAttendanceToday } from '../actions';
 import type { AssessmentSessionData, TeacherAttendanceSummary } from '../actions';
 import RaporPipelineKs from './ks/RaporPipelineKs';
 import {
@@ -34,7 +38,7 @@ import {
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface Assignment { id: string; subject: string; class: { id: string; name: string } }
+interface Assignment { id: string; subject: string; teacherId?: string; teacher?: { id: string; user: { fullName: string } }; class: { id: string; name: string } }
 
 interface Props {
   grades: GradeItem[];
@@ -50,6 +54,9 @@ interface Props {
   academicYear: string;
   semester: number;
   dataWarning?: boolean;
+  rppAvailable?: boolean;
+  assessmentsAvailable?: boolean;
+  scheduleAvailable?: boolean;
   initialWorkflowView?: AcademicWorkflowView | null;
 }
 
@@ -92,7 +99,6 @@ function sumatifStatus(status: string): SumatifStatus {
 }
 
 // Scheduling structural config (NOT simulasi — these are real school parameters)
-const SCHED_CONFIG = { days: 6, maxJpGuru: 24 };
 
 // U6: SIM_HEALTH, SIM_TREN_*, SIM_RPP_SLOW removed — refactored to honest empty states
 // P0: SIM_SUMATIF fake array → type-only (SumatifItem). SIM_SCHED_CONFLICTS → empty.
@@ -102,8 +108,35 @@ const SCHED_CONFIG = { days: 6, maxJpGuru: 24 };
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function KsWorkspace({
-  grades, attendances, classes, assignments, rpp, schedules, activities, lmsModules: _lmsModules, realSumatif, subjects, academicYear, semester, dataWarning, initialWorkflowView = null,
+  grades: _sourceGrades, attendances: sourceAttendances, classes: sourceClasses, assignments: sourceAssignments, rpp: sourceRpp, schedules: sourceSchedules, activities: _sourceActivities, lmsModules: _lmsModules, realSumatif, subjects, academicYear, semester, dataWarning, scheduleAvailable = false, rppAvailable = false, assessmentsAvailable = false, initialWorkflowView = null,
 }: Props) {
+  const router = useRouter(), searchParams = useSearchParams();
+  const [filterGuru, setFilterGuru] = useState('');
+  const [filterMapel, setFilterMapel] = useState('');
+  const teacherOptions = [...new Map(sourceAssignments.flatMap(a => a.teacher ? [[a.teacher.id,a.teacher.user.fullName] as const] : [])).entries()].sort((a,b) => a[1].localeCompare(b[1]) || a[0].localeCompare(b[0]));
+  const filterMapelOpts = [...new Set(sourceAssignments.map(a => a.subject))].sort();
+  const assignments = sourceAssignments.filter(a => (!filterGuru || (a.teacherId ?? a.teacher?.id) === filterGuru) && (!filterMapel || a.subject === filterMapel));
+  const assignmentIds = new Set(assignments.map(a => a.id));
+  const classIds = new Set(assignments.map(a => a.class.id));
+  const filtered = !!filterGuru || !!filterMapel;
+  const schedules = sourceSchedules.filter(s => !filtered || !!s.teachingAssignment.id && assignmentIds.has(s.teachingAssignment.id));
+  const classes = sourceClasses.filter(c => !filtered || classIds.has(c.id));
+  const attendances = sourceAttendances.filter(a => !filtered || classIds.has(a.classId));
+  const rpp = sourceRpp.filter(row => (!filterMapel || row.subject === filterMapel) && (!filterGuru || row.teacherId === filterGuru));
+  const [loadedMonitoring, setMonitoring] = useState<SchedulingMonitoring | null>(null);
+  const monitoring = loadedMonitoring?.academicYear === academicYear && loadedMonitoring?.semester === semester && loadedMonitoring?.filters.teacherId === (filterGuru || null) && loadedMonitoring?.filters.subject === (filterMapel || null) ? loadedMonitoring : null;
+  const [monitorError, setMonitorError] = useState<string | null>(null), [monitorBusy, setMonitorBusy] = useState(false), [monitorRevision, setMonitorRevision] = useState(0);
+  useEffect(() => {
+    let active = true; setMonitoring(null); setMonitorError(null); setMonitorBusy(true);
+    fetchMonitoringKbm(academicYear,semester,{ teacherId: filterGuru || undefined, subject: filterMapel || undefined }).then(result => {
+      if (!active) return;
+      const parsed = result.success ? MonitoringSchema.safeParse(result.data) : null;
+      if (parsed?.success && parsed.data.state === 'ready' && parsed.data.academicYear === academicYear && parsed.data.semester === semester) setMonitoring(parsed.data);
+      else setMonitorError(result.error || (parsed?.success ? parsed.data.reason : null) || 'Sumber monitoring belum tersedia.');
+    }).catch(() => { if (active) setMonitorError('Sumber monitoring belum tersedia.'); }).finally(() => { if (active) setMonitorBusy(false); });
+    return () => { active = false; };
+  }, [academicYear,semester,filterGuru,filterMapel,monitorRevision]);
+  const monitoringRead = { data: monitoring, error: monitorError, loading: monitorBusy, retry: () => setMonitorRevision(value => value+1) };
   const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
   const [screen, setScreen] = useState<Screen>(initialWorkflow.leadershipScreen);
   // Opsi B (mobile nav): auto-center tab aktif saat ganti screen (anti hidden).
@@ -116,6 +149,7 @@ export default function KsWorkspace({
   }, [screen]);
   const [selRpp, setSelRpp] = useState<RppItem | null>(null);
   const sumatifData = useMemo<SumatifItem[]>(() => (realSumatif ?? [])
+    .filter(item => item.academicYear === academicYear && item.semester === semester && (!filterGuru || item.teacherId === filterGuru) && (!filterMapel || item.module?.subject === filterMapel || item.teachingAssignment?.subject === filterMapel))
     .filter((item) => item.type.toLowerCase() === 'sumatif')
     .map((item) => ({
       id: item.id,
@@ -128,7 +162,7 @@ export default function KsWorkspace({
       durationMinutes: item.durationMinutes,
       startedAt: item.startedAt,
       completedAt: item.completedAt,
-    })), [realSumatif]);
+    })), [realSumatif, academicYear, semester, filterGuru, filterMapel]);
   const [selSumatif, setSelSumatif] = useState<SumatifItem | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
@@ -151,34 +185,14 @@ export default function KsWorkspace({
   const todayAtt = attendances.filter((a) => a.date?.slice(0, 10) === todayISO);
   const hadirPct = attendances.length ? Math.round((attendances.filter((a) => a.status === 'hadir').length / attendances.length) * 100) : null;
 
-  // Grade aggregation per class×subject
-  const kelasMapel = useMemo(() => {
-    const m = new Map<string, { kelas: string; mapel: string; scores: number[] }>();
-    for (const g of grades) {
-      const key = `${g.assignment.class.name}|${g.assignment.subject}`;
-      let row = m.get(key);
-      if (!row) { row = { kelas: g.assignment.class.name, mapel: g.assignment.subject, scores: [] }; m.set(key, row); }
-      row.scores.push(Number(g.score));
-    }
-    return [...m.values()].map((r) => ({
-      kelas: r.kelas,
-      mapel: r.mapel,
-      count: r.scores.length,
-      avg: r.scores.length ? Math.round((r.scores.reduce((a, b) => a + b, 0) / r.scores.length) * 10) / 10 : null,
-      tuntasPct: r.scores.length ? Math.round((r.scores.filter((s) => s >= KKTP_DEFAULT).length / r.scores.length) * 100) : null,
-    })).sort((a, b) => a.kelas.localeCompare(b.kelas) || a.mapel.localeCompare(b.mapel));
-  }, [grades]);
-
-  const belowKktp = kelasMapel.filter((k) => k.tuntasPct !== null && k.tuntasPct < 75);
-
-  // Global filter state (frontend filtering — server sends full dataset)
-  const [filterSemester, setFilterSemester] = useState<'Semua' | 'Ganjil' | 'Genap'>(semester === 1 ? 'Ganjil' : semester === 2 ? 'Genap' : 'Semua');
-  const [filterGuru, setFilterGuru] = useState('Semua Guru');
-  const [filterMapel, setFilterMapel] = useState('Semua Mapel');
-  const filterMapelOpts = useMemo(() => [...new Set(kelasMapel.map((k) => k.mapel))].sort(), [kelasMapel]);
+  // Thresholds and counts are resolved by the authoritative API, never by a local fallback.
+  const kelasMapel = useMemo(() => (monitoring?.data ?? []).map(row => ({
+    kelas: row.kelas, mapel: row.mapel, count: row.gradeCount, avg: row.avg, tuntasPct: row.tuntasPct,
+  })), [monitoring]);
+  const belowKktp = kelasMapel.filter(k => k.tuntasPct !== null && k.tuntasPct < 75);
 
   return (
-    <div className="space-y-1">
+    <ScheduleReadProvider value={{ academicYear, semester, teacherId: filterGuru, subject: filterMapel, available: scheduleAvailable, subjects: subjects ?? [] }}><div className="space-y-1">
       <h1 className="text-2xl font-bold tracking-tight text-[#0f2e25]">Dashboard KS / Waka Kurikulum</h1>
       <p className="text-sm text-[#6b8079]">Pengawasan akademik · approval modul ajar · monitoring sumatif · monitoring KBM</p>
 
@@ -197,21 +211,24 @@ export default function KsWorkspace({
           <CalendarClock className="h-[15px] w-[15px] text-emerald-600" />TA {academicYear || '—'}
         </span>
         <div className="inline-flex rounded-xl bg-[#f4f7f5] p-1">
-          {(['Semua', 'Ganjil', 'Genap'] as const).map((s) => (
-            <button key={s} type="button" onClick={() => setFilterSemester(s)}
-              className={clsx('rounded-lg px-3 py-1.5 text-[12px] font-bold', filterSemester === s ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]')}>
-              {s === 'Semua' ? 'Semua Sem' : s}
+          {([1,2] as const).map((s) => (
+            <button key={s} type="button" onClick={() => {
+              const query = new URLSearchParams(searchParams.toString()); query.set('academicYear', academicYear); query.set('semester', String(s));
+              router.push('/dashboard/akademik?' + query.toString());
+            }}
+              className={clsx('rounded-lg px-3 py-1.5 text-[12px] font-bold', semester === s ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]')}>
+              {s === 1 ? 'Ganjil' : 'Genap'}
             </button>
           ))}
         </div>
         <select value={filterGuru} onChange={(e) => setFilterGuru(e.target.value)}
           className="rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] shadow-sm outline-none">
-          <option>Semua Guru</option>
-          {/* P0: guru filter populated from real data when available (P1 will wire teacher endpoint) */}
+          <option value="">Semua Guru</option>
+          {teacherOptions.map(([id,name]) => <option key={id} value={id}>{name}</option>)}
         </select>
         <select value={filterMapel} onChange={(e) => setFilterMapel(e.target.value)}
           className="rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] shadow-sm outline-none">
-          <option>Semua Mapel</option>
+          <option value="">Semua Mapel</option>
           {filterMapelOpts.map((m) => <option key={m}>{m}</option>)}
         </select>
         <span className="ml-auto hidden items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11.5px] font-bold text-blue-700 sm:inline-flex">
@@ -251,11 +268,11 @@ export default function KsWorkspace({
       </div>
 
       <div className="pt-4">
-        {screen === 'beranda' && <BerandaKs hadirPct={hadirPct} todayAtt={todayAtt} pendingRpp={pendingRpp.length} activeSumatif={activeSumatif.length} belowKktp={belowKktp} schedules={schedules} classes={classes} onNavigate={setScreen} />}
+        {screen === 'beranda' && <BerandaKs hadirPct={hadirPct} todayAtt={todayAtt} attendances={attendances} dataComplete={!dataWarning && !!monitoring} pendingRpp={rppAvailable ? pendingRpp.length : null} activeSumatif={assessmentsAvailable ? activeSumatif.length : null} belowKktp={belowKktp} schedules={schedules} classes={classes} onNavigate={setScreen} />}
         {screen === 'modul' && <ModulAjarKs rpp={rpp} onReview={setSelRpp} />}
         {screen === 'sumatif' && <AuditSumatifKs onOpenDetail={setSelSumatif} data={sumatifData} />}
-        {screen === 'monitor' && <MonitoringKbmKs kelasMapel={kelasMapel} attendances={attendances} schedules={schedules} classes={classes} />}
-        {screen === 'rekap' && <RekapAuditKs kelasMapel={kelasMapel} grades={grades} attendances={attendances} activities={activities} rpp={rpp} />}
+        {screen === 'monitor' && <SchedulingMonitoringPanel academicYear={academicYear} semester={semester} teacherId={filterGuru || undefined} subject={filterMapel || undefined} subjects={subjects} readResult={monitoringRead} />}
+        {screen === 'rekap' && <SchedulingMonitoringPanel academicYear={academicYear} semester={semester} teacherId={filterGuru || undefined} subject={filterMapel || undefined} subjects={subjects} readResult={monitoringRead} audit />}
         {screen === 'kktp' && <KktpKs kelasMapel={kelasMapel} subjects={subjects ?? []} showToast={showToast} academicYear={academicYear} semester={semester} />}
         {screen === 'jadwal' && <JadwalTugasKs schedules={schedules} classes={classes} pendingRpp={pendingRpp} activeSumatif={activeSumatif} />}
         {screen === 'rapor' && <RaporPipelineKs academicYear={academicYear} semester={semester} />}
@@ -273,66 +290,59 @@ export default function KsWorkspace({
           {toast}
         </div>
       )}
-    </div>
+    </div></ScheduleReadProvider>
   );
 }
 
 // ═══ SCREEN 1: BERANDA ════════════════════════════════════════════════════════
 
-function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, activeSumatif, belowKktp, schedules, classes, onNavigate }: {
-  hadirPct: number | null; todayAtt: AttendanceItem[]; pendingRpp: number; activeSumatif: number;
+function BerandaKs({ hadirPct: _hadirPct, todayAtt, attendances, dataComplete, pendingRpp, activeSumatif, belowKktp, schedules, classes, onNavigate }: {
+  hadirPct: number | null; todayAtt: AttendanceItem[]; attendances: AttendanceItem[]; dataComplete: boolean; pendingRpp: number | null; activeSumatif: number | null;
   belowKktp: { kelas: string; mapel: string; tuntasPct: number | null }[];
   schedules: ScheduleItem[]; classes: ClassRef[]; onNavigate: (s: Screen) => void;
 }) {
   const [trenPeriod, setTrenPeriod] = useState<'10H' | '1B' | '3B'>('10H');
   const [berandaModal, setBerandaModal] = useState<null | 'kehadiran' | 'guruHadir' | 'kelasBerjalan'>(null);
-  const [trenData, setTrenData] = useState<{ siswa: number[]; guru: number[] } | null>(null);
-  const [trenLoading, setTrenLoading] = useState(false);
   // P1 (S-05): Fetch real teacher attendance for KS dashboard
   const [teacherAtt, setTeacherAtt] = useState<TeacherAttendanceSummary | null>(null);
+  const read = useScheduleRead();
+  const trenData = useMemo(() => {
+    if (!read.period.period) return null;
+    const days = trenPeriod === '10H' ? 10 : trenPeriod === '1B' ? 30 : 90;
+    const end = Math.min(Date.parse(wibTodayISO()),Date.parse(read.period.period.endDate.slice(0,10)));
+    const start = Math.max(end-(days-1)*86400000,Date.parse(read.period.period.startDate.slice(0,10)));
+    const siswa: (number | null)[] = [];
+    for (let stamp = start; stamp <= end; stamp += 86400000) {
+      const date = new Date(stamp).toISOString().slice(0,10), recorded = attendances.filter(row => row.date.slice(0,10) === date);
+      siswa.push(recorded.length ? Math.round(recorded.filter(row => row.status === 'hadir').length/recorded.length*100) : null);
+    }
+    return siswa.some(value => value !== null) ? { siswa, guru: [] as (number | null)[] } : null;
+  }, [read.period.period,attendances,trenPeriod]);
   const dow = scheduleDayOfWeek();
   const todaySchedules = schedules.filter((s) => s.dayOfWeek === dow);
-  const activeClasses = new Set(todaySchedules.map((s) => s.class?.name)).size;
+  const activeClasses = new Set(todaySchedules.map((s) => s.classId)).size;
   const todayHadirPct = todayAtt.length ? Math.round((todayAtt.filter((a) => a.status === 'hadir').length / todayAtt.length) * 100) : null;
 
   // P1 (S-05): Fetch teacher attendance on mount
   useEffect(() => {
-    fetchTeacherAttendanceToday().then((res) => {
-      if (res.success && res.data) setTeacherAtt(res.data);
-    });
-  }, []);
+    let active = true; setTeacherAtt(null);
+    fetchTeacherAttendanceToday({ academicYear: read.academicYear, semester: read.semester, teacherId: read.teacherId || undefined, subject: read.subject || undefined }).then((res) => {
+      if (active && res.success && res.data) setTeacherAtt(res.data);
+    }).catch(() => { /* Retain unavailable state, never substitute zero. */ });
+    return () => { active = false; };
+  }, [read.academicYear,read.semester,read.teacherId,read.subject]);
 
-  // T2-02: Fetch heatmap data for trend chart
-  useEffect(() => {
-    const days = trenPeriod === '10H' ? 10 : trenPeriod === '1B' ? 30 : 90;
-    setTrenLoading(true);
-    fetchAttendanceHeatmap(days).then((res) => {
-      if (res.success && res.data) {
-        // Compute daily overall pct from heatmap
-        const pcts = res.data.dates.map((_, i) => {
-          let h = 0, t = 0;
-          for (const c of res.data!.classes) {
-            const cell = c.cells[i];
-            if (cell) { h += cell.hadir; t += cell.total; }
-          }
-          return t ? Math.round((h / t) * 1000) / 10 : 0;
-        });
-        // P0 (S-06): guru tren no longer approximated (p+2 removed).
-        // Siswa tren uses real heatmap data. Guru tren is null until P1 ships teacher-attendance.
-        setTrenData({ siswa: pcts, guru: [] });
-      }
-    }).finally(() => setTrenLoading(false));
-  }, [trenPeriod]);
 
   return (
     <div className="space-y-4">
       {/* KPI grid */}
+      {!dataComplete && <p role="status" className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">Sebagian sumber belum terverifikasi dalam cakupan ini. Tidak dapat menyimpulkan seluruh tugas selesai; gunakan muat ulang pada panel terkait.</p>}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Kpi icon={Users} label="Kehadiran Siswa" value={todayHadirPct !== null ? `${todayHadirPct}%` : '—'} sub={todayAtt.length ? `${todayAtt.length} catatan hari ini` : undefined} onClick={() => setBerandaModal('kehadiran')} />
-        <Kpi icon={BadgeCheck} label="Guru Hadir" value={teacherAtt ? `${teacherAtt.hadir}/${teacherAtt.total}` : '—'} sub={teacherAtt ? `${teacherAtt.belum} belum hadir` : 'Memuat...'} onClick={() => setBerandaModal('guruHadir')} />
-        <Kpi icon={Presentation} label="Kelas Berjalan" value={`${activeClasses}`} sub={`${todaySchedules.length} sesi hari ini`} onClick={() => setBerandaModal('kelasBerjalan')} />
-        <Kpi icon={FileClock} label="Modul Pending" value={`${pendingRpp}`} valueClass="text-amber-600" onClick={() => onNavigate('modul')} />
-        <Kpi icon={ClipboardPenLine} label="Sumatif Aktif" value={`${activeSumatif}`} valueClass="text-sky-600" onClick={() => onNavigate('sumatif')} />
+        <Kpi icon={BadgeCheck} label="Presensi Guru Tercatat" value={teacherAtt ? `${teacherAtt.present}/${teacherAtt.total}` : '—'} sub={teacherAtt ? `${teacherAtt.absent} wajib belum tercatat · ${teacherAtt.notRequired} bebas kewajiban` : 'Belum tersedia'} onClick={() => setBerandaModal('guruHadir')} />
+        <Kpi icon={Presentation} label="Kelas Terjadwal Hari Ini" value={read.available && read.todayInPeriod ? `${activeClasses}` : '—'} sub={read.available && read.todayInPeriod ? `${todaySchedules.length} blok terencana, bukan sesi aktif` : 'Jadwal tidak tersedia untuk hari ini'} onClick={() => setBerandaModal('kelasBerjalan')} />
+        <Kpi icon={FileClock} label="Modul Pending" value={pendingRpp === null ? '—' : String(pendingRpp)} valueClass="text-amber-600" onClick={() => onNavigate('modul')} />
+        <Kpi icon={ClipboardPenLine} label="Sumatif Aktif" value={activeSumatif === null ? '—' : String(activeSumatif)} valueClass="text-sky-600" onClick={() => onNavigate('sumatif')} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
@@ -363,7 +373,7 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, activeSumatif, b
         <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
           <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><ListChecks className="h-[18px] w-[18px] text-emerald-600" />Perlu Tindakan</h3>
           <div className="mt-3 space-y-2.5">
-            {pendingRpp > 0 && (
+            {pendingRpp !== null && pendingRpp > 0 && (
               <button type="button" onClick={() => onNavigate('modul')} className="flex w-full items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3 text-left transition hover:border-emerald-200 hover:shadow-sm">
                 <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-600"><FileClock className="h-[18px] w-[18px]" /></div>
                 <div className="min-w-0 flex-1"><b className="text-[12.5px] text-[#0f2e25]">{pendingRpp} Modul Ajar menunggu approval</b><div className="text-[11.5px] text-[#6b8079]">Klik untuk review</div></div>
@@ -373,11 +383,11 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, activeSumatif, b
             {belowKktp.length > 0 && (
               <button type="button" onClick={() => onNavigate('monitor')} className="flex w-full items-center gap-3 rounded-xl border border-[#e6efea] bg-white p-3 text-left transition hover:border-emerald-200 hover:shadow-sm">
                 <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-rose-50 text-rose-600"><AlertTriangle className="h-[18px] w-[18px]" /></div>
-                <div className="min-w-0 flex-1"><b className="text-[12.5px] text-[#0f2e25]">{belowKktp.length} kelas di bawah KKTP</b><div className="text-[11.5px] text-[#6b8079]">{belowKktp.slice(0, 2).map((k) => `${k.kelas} — ${k.mapel} ${k.tuntasPct}%`).join(' · ')}</div></div>
+                <div className="min-w-0 flex-1"><b className="text-[12.5px] text-[#0f2e25]">{belowKktp.length} penugasan dengan hasil perlu ditinjau</b><div className="text-[11.5px] text-[#6b8079]">Kurang dari 75% catatan nilai memenuhi KKTP mapel; bukan progres CP. {belowKktp.slice(0, 2).map((k) => `${k.kelas} — ${k.mapel} ${k.tuntasPct}%`).join(' · ')}</div></div>
                 <ChevronRight className="h-4 w-4 shrink-0 text-[#9bb0a8]" />
               </button>
             )}
-            {pendingRpp === 0 && belowKktp.length === 0 && (
+            {dataComplete && pendingRpp === 0 && belowKktp.length === 0 && (
               <div className="grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">Tidak ada tindakan tertunda.</div>
             )}
           </div>
@@ -393,15 +403,13 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, activeSumatif, b
               ))}
             </div>
           </div>
-          {trenLoading ? (
-            <div className="flex h-32 items-center justify-center text-[12px] font-medium text-[#9bb0a8]">Memuat data tren...</div>
-          ) : trenData ? (
+          {trenData ? (
             <TrenChart siswa={trenData.siswa} guru={trenData.guru} />
           ) : (
             /* U6: SIM_TREN fallback replaced with honest empty state */
             <div className="flex h-32 items-center justify-center text-[12px] font-medium text-[#9bb0a8]">Belum ada data tren kehadiran</div>
           )}
-          <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700"><TrendingUp className="h-3 w-3" /> {trenData ? 'Data kehadiran siswa real-time' : 'Menunggu data kehadiran'}</div>
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700"><TrendingUp className="h-3 w-3" /> {trenData ? 'Catatan harian periode dan kelas pilihan; celah = data belum ada' : 'Data harian belum tersedia pada cakupan pilihan'}</div>
         </div>
       </div>
 
@@ -416,74 +424,8 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, pendingRpp, activeSumatif, b
 // ═══ BERANDA: HEATMAP PAPAN ═══════════════════════════════════════════════════
 
 function PapanHeatmap({ schedules, classes }: { schedules: ScheduleItem[]; classes: ClassRef[] }) {
-  const dow = scheduleDayOfWeek();
-  const { minutes } = wibNow();
-  const JP_SLOTS = useBellPattern().slots;
-  const liveJp = currentJp(minutes, JP_SLOTS);
-  const todaySched = schedules.filter((s) => s.dayOfWeek === dow);
-
-  const grid = useMemo(() => {
-    const m = new Map<string, Map<number, ScheduleItem>>();
-    for (const s of todaySched) {
-      if (!m.has(s.classId)) m.set(s.classId, new Map());
-      for (let jp = s.jpStart; jp <= s.jpEnd; jp++) m.get(s.classId)!.set(jp, s);
-    }
-    return m;
-  }, [todaySched]);
-
-  if (todaySched.length === 0) {
-    return <div className="mt-3 grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">Tidak ada jadwal mengajar hari ini.</div>;
-  }
-
-  return (
-    <div className="mt-3 overflow-x-auto">
-      <div className="flex min-w-[520px] flex-col gap-1">
-        <div className="flex items-center gap-1">
-          <div className="w-20 shrink-0" />
-          {JP_SLOTS.map((slot) => (
-            <div key={slot.jp} className={clsx('flex-1 text-center', slot.jp === liveJp ? 'text-emerald-700' : 'text-[#9bb0a8]')}>
-              <div className="text-[10px] font-bold">JP{slot.jp}</div>
-              <div className="text-[9px]">{fmtMin(slot.startMin)}</div>
-            </div>
-          ))}
-        </div>
-        {classes.map((cls) => {
-          const row = grid.get(cls.id);
-          return (
-            <div key={cls.id} className="flex items-center gap-1">
-              <div className="w-20 shrink-0 truncate text-[11px] font-bold text-[#355a4e]">{cls.name}</div>
-              {JP_SLOTS.map((slot) => {
-                const sched = row?.get(slot.jp);
-                const isLive = slot.jp === liveJp;
-                if (sched) {
-                  const mp = sched.teachingAssignment?.subject ?? '—';
-                  const mpShort = mp.length > 8 ? mp.slice(0, 7) + '…' : mp;
-                  const guruName = sched.teachingAssignment?.teacher?.user?.fullName ?? '—';
-                  return (
-                    <div key={slot.jp} title={`JP${slot.jp} (${fmtMin(slot.startMin)}–${fmtMin(slot.endMin)}) · ${mp} · ${guruName} · ${sched.room ?? '—'}`}
-                      className={clsx('flex h-[34px] min-w-[48px] flex-1 cursor-pointer items-center justify-center rounded-md text-[9px] font-bold text-white transition hover:scale-105',
-                        isLive ? 'bg-emerald-500 ring-2 ring-emerald-700 ring-offset-1' : 'bg-emerald-500/85')}>
-                      {mpShort}
-                    </div>
-                  );
-                }
-                return <div key={slot.jp} className="flex h-[34px] min-w-[48px] flex-1 items-center justify-center rounded-md border border-dashed border-[#e6efea] bg-[#f4f7f5] text-[9px] text-[#9bb0a8]">—</div>;
-              })}
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-2.5 flex gap-3.5 text-[11px] font-semibold text-[#6b8079]">
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />Ada jadwal</span>
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-dashed border-[#e6efea] bg-[#f4f7f5]" />Kosong</span>
-        {liveJp > 0 && <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500 ring-2 ring-emerald-700 ring-offset-1" />Berlangsung</span>}
-        <span className="ml-auto text-[#9bb0a8]">Hover untuk info</span>
-      </div>
-    </div>
-  );
+  return <ScheduleBoard schedules={schedules} classes={classes} />;
 }
-
-// ═══ BERANDA: DRILL-DOWN MODALS ═══════════════════════════════════════════════
 
 function KehadiranDetailModal({ todayAtt, onClose }: { todayAtt: AttendanceItem[]; onClose: () => void }) {
   const byClass = useMemo(() => {
@@ -548,137 +490,27 @@ function KehadiranDetailModal({ todayAtt, onClose }: { todayAtt: AttendanceItem[
 }
 
 function GuruHadirModal({ data, onClose }: { data: TeacherAttendanceSummary | null; onClose: () => void }) {
-  // P1 (S-05): Real teacher attendance from GET /teacher-attendance/today-summary
-  const roster = data?.roster ?? [];
-  const hadir = data?.hadir ?? 0;
-  const belum = data?.belum ?? 0;
-  const total = data?.total ?? 0;
-  const outside = data?.outsideGeofence ?? 0;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <div className="sticky top-0 flex items-center justify-between border-b border-[#e6efea] bg-white px-5 py-4">
-          <div><h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><BadgeCheck className="h-5 w-5 text-emerald-600" />Guru Hadir — {hadir}/{total}</h3><p className="text-[11.5px] text-[#6b8079]">{hadir} hadir · {belum} belum · {wibDateLabel()}</p></div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-[#9bb0a8] hover:bg-[#f4f7f5]" aria-label="Tutup"><X className="h-5 w-5" /></button>
-        </div>
-        <div className="space-y-4 p-5">
-          {roster.length > 0 ? (<>
-            <div className="flex flex-wrap gap-2">
-              <StatPill n={`${hadir}`} l="Hadir" />
-              <StatPill n={`${belum}`} l="Belum" />
-              <StatPill n={`${outside}`} l="Luar Area" />
-              <StatPill n={`${total}`} l="Total Guru" />
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[12px]">
-                <thead><tr className="border-b border-[#e6efea] text-left text-[10.5px] uppercase tracking-wide text-[#6b8079]">
-                  <th className="py-2 pr-3">Guru</th><th className="py-2 pr-3">Mapel</th><th className="py-2 pr-3">Status</th><th className="py-2">Check-in</th>
-                </tr></thead>
-                <tbody>
-                  {roster.map((g) => (
-                    <tr key={g.teacherId} className="border-b border-[#f0f4f2]">
-                      <td className="py-2.5 pr-3"><span className="mr-1.5 inline-grid h-5 w-5 place-items-center rounded bg-emerald-100 text-[9px] font-bold text-emerald-700">{g.inisial}</span><b className="text-[#0f2e25]">{g.nama.split(',')[0]}</b></td>
-                      <td className="py-2.5 pr-3 text-[#355a4e]">{g.mapel}</td>
-                      <td className="py-2.5 pr-3"><span className={clsx('rounded-md px-2 py-0.5 text-[10.5px] font-bold', g.status === 'Hadir' || g.status === 'Selesai' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500')}>{g.status}</span>{g.outsideGeofence && <span className="ml-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">Luar Area</span>}</td>
-                      <td className="py-2.5 text-[11px] text-[#6b8079]">{g.checkInAt ? new Date(g.checkInAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>) : (
-            <div className="grid h-32 place-items-center rounded-xl border border-dashed border-[#e6efea] bg-[#f9fbfa] text-center">
-              <div>
-                <BadgeCheck className="mx-auto h-7 w-7 text-[#cbd5e1]" />
-                <p className="mt-2 text-[13px] font-bold text-[#0f2e25]">Belum ada presensi guru hari ini</p>
-                <p className="text-[11.5px] text-[#6b8079]">Data akan muncul saat guru melakukan check-in.</p>
-              </div>
-            </div>
-          )}
-        </div>
-        <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[#e6efea] bg-white px-5 py-3">
-          <button type="button" onClick={onClose} className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>
-        </div>
-      </div>
-    </div>
-  );
+  return <Dialog open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
+    <DialogContent className="max-h-[88vh] max-w-2xl overflow-y-auto">
+      <DialogHeader><DialogTitle>Presensi Guru Harian</DialogTitle><DialogDescription>Ringkasan StaffAttendance. Bebas kewajiban atau belum jatuh waktu tidak dihitung sebagai absen.</DialogDescription></DialogHeader>
+      {!data ? <p role="status">Ringkasan belum tersedia. Tutup dan muat ulang sumber; tidak dapat menyimpulkan nol kehadiran.</p> : <div className="space-y-4">
+        <p className="text-sm text-slate-600">{data.date} · {data.present}/{data.total} guru memiliki presensi tercatat.</p>
+        <div className="grid grid-cols-2 gap-3">{[['Kewajiban tersedia',data.required],['Wajib belum tercatat',data.absent],['Belum jatuh waktu',data.notDue],['Bebas kewajiban',data.notRequired],['Tidak dijadwalkan',data.notScheduled],['Status belum diketahui',data.unknown],['Terlambat',data.late],['Perlu review lokasi',data.review],['Lokasi masuk di area',data.inside]].map(([label,value]) => <StatPill key={label} n={String(value)} l={String(label)} />)}</div>
+        <p className="text-xs text-slate-500">Lokasi tidak menyatakan bukti mengajar. Status review tidak otomatis berarti di luar area.</p>
+        <a href="/dashboard/presensi-guru" className="inline-flex rounded-lg bg-emerald-700 px-4 py-2 text-sm text-white">Buka rekap presensi pegawai</a>
+      </div>}
+    </DialogContent>
+  </Dialog>;
 }
 
 function KelasBerjalanModal({ schedules, classes, onClose }: { schedules: ScheduleItem[]; classes: ClassRef[]; onClose: () => void }) {
-  const dow = scheduleDayOfWeek();
-  const { minutes } = wibNow();
-  const JP_SLOTS = useBellPattern().slots;
-  const liveJp = currentJp(minutes, JP_SLOTS);
-  const todaySched = schedules.filter((s) => s.dayOfWeek === dow);
-
-  const data = classes.map((cls) => {
-    const classSched = todaySched.filter((s) => s.classId === cls.id);
-    const live = classSched.find((s) => liveJp >= s.jpStart && liveJp <= s.jpEnd);
-    const next = classSched.find((s) => s.jpStart > liveJp);
-    const slot = live ?? next;
-    return {
-      rombel: cls.name,
-      jp: slot ? `JP${slot.jpStart}` : '—',
-      mapel: slot?.teachingAssignment?.subject ?? 'Libur',
-      guru: slot?.teachingAssignment?.teacher?.user?.fullName?.split(',')[0] ?? '—',
-      ruang: slot?.room ?? '—',
-      status: live ? 'Berlangsung' : slot ? 'Terjadwal' : 'Libur',
-    };
-  });
-
-  const liveCount = data.filter((d) => d.status === 'Berlangsung').length;
-  const scheduledCount = data.filter((d) => d.status === 'Terjadwal').length;
-  const idleCount = data.filter((d) => d.status === 'Libur').length;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <div className="sticky top-0 flex items-center justify-between border-b border-[#e6efea] bg-white px-5 py-4">
-          <div><h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><Presentation className="h-5 w-5 text-emerald-600" />Kelas Berjalan — {liveCount}/{classes.length}</h3><p className="text-[11.5px] text-[#6b8079]">{liveCount} berlangsung · {scheduledCount} terjadwal · {idleCount} libur · {wibDateLabel()}</p></div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-[#9bb0a8] hover:bg-[#f4f7f5]" aria-label="Tutup"><X className="h-5 w-5" /></button>
-        </div>
-        <div className="space-y-4 p-5">
-          <div className="flex flex-wrap gap-2">
-            <StatPill n={`${liveCount}`} l="Berlangsung" />
-            <StatPill n={`${scheduledCount}`} l="Terjadwal" />
-            <StatPill n={`${idleCount}`} l="Libur" />
-            <StatPill n={`${classes.length}`} l="Total Rombel" />
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12px]">
-              <thead><tr className="border-b border-[#e6efea] text-left text-[10.5px] uppercase tracking-wide text-[#6b8079]">
-                <th className="py-2 pr-3">Rombel</th><th className="py-2 pr-3">JP</th><th className="py-2 pr-3">Mapel</th><th className="py-2 pr-3">Guru</th><th className="py-2 pr-3">Ruang</th><th className="py-2">Status</th>
-              </tr></thead>
-              <tbody>
-                {data.map((d) => (
-                  <tr key={d.rombel} className="border-b border-[#f0f4f2]">
-                    <td className="py-2.5 pr-3 font-bold text-[#0f2e25]">{d.rombel}</td>
-                    <td className="py-2.5 pr-3 text-[#355a4e]">{d.jp}</td>
-                    <td className="py-2.5 pr-3 text-[#355a4e]">{d.mapel}</td>
-                    <td className="py-2.5 pr-3 text-[#355a4e]">{d.guru}</td>
-                    <td className="py-2.5 pr-3 text-[#355a4e]">{d.ruang}</td>
-                    <td className="py-2.5">
-                      <span className={clsx('inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10.5px] font-bold', d.status === 'Berlangsung' ? 'bg-emerald-50 text-emerald-700' : d.status === 'Terjadwal' ? 'bg-slate-100 text-slate-600' : 'bg-rose-50 text-rose-600')}>
-                        {d.status === 'Berlangsung' && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />}
-                        {d.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[#e6efea] bg-white px-5 py-3">
-          <button type="button" onClick={onClose} className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>
-        </div>
-      </div>
-    </div>
-  );
+  return <Dialog open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
+    <DialogContent className="max-h-[88vh] max-w-5xl overflow-y-auto">
+      <DialogHeader><DialogTitle>Jadwal Kelas Hari Ini</DialogTitle><DialogDescription>Semua blok terencana tetap terlihat. Rentang waktu jadwal bukan bukti sesi aktif atau kelas libur.</DialogDescription></DialogHeader>
+      <ScheduleBoard schedules={schedules} classes={classes} />
+    </DialogContent>
+  </Dialog>;
 }
-
-// ═══ SCREEN 2: MODUL AJAR (RPP Approval) ═══════════════════════════════════════
 
 function ModulAjarKs({ rpp, onReview }: { rpp: RppItem[]; onReview: (r: RppItem) => void }) {
   const [filter, setFilter] = useState<'Semua' | 'Menunggu' | 'Disetujui' | 'Ditolak'>('Semua');
@@ -774,432 +606,8 @@ function AuditSumatifKs({ onOpenDetail, data }: { onOpenDetail: (s: SumatifItem)
 
 // ═══ SCREEN 4: MONITORING KBM ═════════════════════════════════════════════════
 
-function MonitoringKbmKs({ kelasMapel, attendances: _attendances, schedules, classes }: {
-  kelasMapel: { kelas: string; mapel: string; avg: number | null; tuntasPct: number | null; count: number }[];
-  attendances: AttendanceItem[]; schedules: ScheduleItem[]; classes: ClassRef[];
-}) {
-  const onTrack = kelasMapel.filter((k) => k.tuntasPct !== null && k.tuntasPct >= 75).length;
-  const perhatian = kelasMapel.filter((k) => k.tuntasPct !== null && k.tuntasPct >= 60 && k.tuntasPct < 75).length;
-  const berisiko = kelasMapel.filter((k) => k.tuntasPct !== null && k.tuntasPct < 60).length;
 
-  const cellTone = (pct: number | null) => pct === null ? 'bg-[#f9fbfa] text-[#cbd5e1]' : pct >= 75 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : pct >= 60 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-600 border-rose-200';
 
-  // B6: Fetch real monitoring data from /analytics/monitoring-kbm
-  const [realMonData, setRealMonData] = useState<Array<{ guru: string; mapel: string; kelas: string; jp: number; avg: number | null; tuntasPct: number | null; hadirPct: number | null; jurnalCount: number; gradeCount: number; status: string }>>([]);
-  useEffect(() => {
-    fetchMonitoringKbm().then((res) => {
-      if (res.success && res.data) {
-        const data = res.data as { data: Array<{ guru: string; mapel: string; kelas: string; jp: number; avg: number | null; tuntasPct: number | null; hadirPct: number | null; jurnalCount: number; gradeCount: number; status: string }> };
-        setRealMonData(data.data ?? []);
-      }
-    });
-  }, []);
-
-  // P0 (S-15): SIM_MON_GURUS fallback removed — show real data or empty-state, never fake.
-  // Hooks must be called unconditionally — compute empty fallback inside useMemo, then select
-  const emptyMonData = useMemo(() => [] as { guru: string; mapel: string; kelas: string; cp: number; pert: number; rencana: number; jurnal: number; hadir: number; rata: number | null; status: 'on' | 'warn' | 'risk' }[], [kelasMapel]);
-  const monData = realMonData.length > 0 ? realMonData.map((m) => ({
-    guru: m.guru, mapel: m.mapel, kelas: m.kelas, cp: m.tuntasPct ?? 0,
-    pert: 0, rencana: 0, jurnal: m.jurnalCount, hadir: m.hadirPct ?? 0, rata: m.avg, status: m.status as 'on' | 'warn' | 'risk',
-  })) : emptyMonData;
-
-  // G8: Guru × Kelas matrix data
-  const guruList = useMemo(() => [...new Set(monData.map((m) => m.guru))], [monData]);
-  const kelasList = useMemo(() => [...new Set(monData.map((m) => m.kelas))], [monData]);
-  const monCellCls = (s: string) => s === 'on' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : s === 'warn' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-rose-50 border-rose-200 text-rose-600';
-  const monCellCol = (s: string) => s === 'on' ? 'text-emerald-700' : s === 'warn' ? 'text-amber-600' : 'text-rose-600';
-
-  // G10: Kehadiran per Sesi (JP) matrix
-  const dow = scheduleDayOfWeek();
-  const todaySched = schedules.filter((s) => s.dayOfWeek === dow);
-  const classJpSched = useMemo(() => {
-    const m = new Map<string, Map<number, ScheduleItem>>();
-    for (const s of todaySched) {
-      if (!m.has(s.classId)) m.set(s.classId, new Map());
-      for (let jp = s.jpStart; jp <= s.jpEnd; jp++) m.get(s.classId)!.set(jp, s);
-    }
-    return m;
-  }, [todaySched]);
-  const { minutes } = wibNow();
-  const JP_SLOTS = useBellPattern().slots;
-  const liveJp = currentJp(minutes, JP_SLOTS);
-
-  return (
-    <div className="space-y-4">
-      <h3 className="flex items-center gap-2 text-[17px] font-bold text-[#0f2e25]"><Monitor className="h-5 w-5 text-emerald-600" />Monitoring KBM</h3>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi icon={LayoutGrid} label="Total Kelas×Mapel" value={`${kelasMapel.length}`} />
-        <Kpi icon={CheckCircle2} label="On Track" value={`${onTrack}`} valueClass="text-emerald-700" />
-        <Kpi icon={AlertTriangle} label="Perhatian" value={`${perhatian}`} valueClass="text-amber-600" />
-        <Kpi icon={XCircle} label="Berisiko" value={`${berisiko}`} valueClass="text-rose-600" />
-      </div>
-
-      {/* G8: Matriks Progres CP — Guru × Kelas */}
-      <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><LayoutGrid className="h-4 w-4 text-emerald-600" />Matriks Progres CP — Guru × Kelas</h4>
-          {/* P0 (S-08): conditional badge — real data shows "Real-time", empty shows honest state */}
-          {realMonData.length > 0
-            ? <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Real-time</span>
-            : null
-          }
-        </div>
-        <p className="text-[11.5px] text-[#6b8079]">Persen ketercapaian CP/TP per guru × kelas</p>
-        {monData.length > 0 ? (
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-[11.5px] border-separate" style={{ borderSpacing: 4 }}>
-              <thead><tr className="text-[10px] font-extrabold uppercase text-[#6b8079]"><th className="px-2 py-2 text-left">Guru \ Kelas</th>{kelasList.map((k) => <th key={k} className="px-2 py-2 text-center">{k}</th>)}</tr></thead>
-              <tbody>
-                {guruList.map((g) => (
-                  <tr key={g}>
-                    <td className="px-2 py-2 text-left font-bold text-[#0f2e25] whitespace-nowrap">{g.split(',')[0]}</td>
-                    {kelasList.map((k) => {
-                      const r = monData.find((m) => m.guru === g && m.kelas === k);
-                      return r ? (
-                        <td key={k} className={clsx('rounded-md border px-2 py-2 text-center', monCellCls(r.status))}>
-                          <b>{r.cp}%</b>
-                          <div className="text-[9.5px] font-medium opacity-80">{r.mapel.length > 10 ? r.mapel.slice(0, 9) + '…' : r.mapel}</div>
-                          <div className="text-[9.5px] opacity-60">{r.pert}/{r.rencana} pert</div>
-                        </td>
-                      ) : <td key={k} className="px-2 py-2 text-center text-[#cbd5e1]">–</td>;
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : <div className="mt-3 grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] text-[#9bb0a8]">Belum ada data.</div>}
-      </div>
-
-      {/* G9: Rincian Progres per Guru */}
-      <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
-        <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><ListChecks className="h-4 w-4 text-emerald-600" />Rincian Progres per Guru</h4>
-        <div className="mt-3 space-y-1">
-          {monData.map((r, i) => (
-            <div key={i} className="grid grid-cols-[1fr_1fr_2fr_48px_56px] items-center gap-3 border-b border-[#f0f4f2] py-2 text-[12px] font-bold">
-              <span className="text-[#0f2e25]">{r.guru.split(',')[0]}</span>
-              <span className="text-[#6b8079]">{r.kelas}</span>
-              <div>
-                <div className="text-[11px] font-bold text-[#355a4e]">{r.mapel}</div>
-                <div className="mt-1 h-[9px] overflow-hidden rounded-md bg-[#eef3f0]"><span className="block h-full rounded-md" style={{ width: `${r.cp}%`, background: r.status === 'on' ? 'linear-gradient(90deg,#34d399,#059669)' : r.status === 'warn' ? 'linear-gradient(90deg,#fbbf24,#d97706)' : 'linear-gradient(90deg,#fb7185,#e11d48)' }} /></div>
-              </div>
-              <span className={clsx('text-right', monCellCol(r.status))}>{r.cp}%</span>
-              <span className="text-right text-[#6b8079]">{r.pert}/{r.rencana}</span>
-            </div>
-          ))}
-          {monData.length === 0 && <div className="grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] text-[#9bb0a8]">Belum ada data.</div>}
-        </div>
-      </div>
-
-      {/* G10: Kehadiran Siswa per Sesi (JP) */}
-      <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><Users className="h-4 w-4 text-emerald-600" />Kehadiran Siswa per Sesi (JP)</h4>
-          <span className="rounded-md bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">{wibDateLabel()}</span>
-        </div>
-        <p className="text-[11.5px] text-[#6b8079]">Persentase kehadiran siswa per rombel × sesi (JP) — hari ini</p>
-        {todaySched.length > 0 ? (
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-[11.5px] border-separate" style={{ borderSpacing: 4 }}>
-              <thead><tr className="text-[10px] font-extrabold uppercase text-[#6b8079]"><th className="px-2 py-2 text-left">Rombel \ JP</th>{JP_SLOTS.map((slot) => <th key={slot.jp} className={clsx('px-2 py-2 text-center', slot.jp === liveJp ? 'text-emerald-700' : '')}>JP{slot.jp}</th>)}</tr></thead>
-              <tbody>
-                {classes.map((cls, ci) => {
-                  const jpMap = classJpSched.get(cls.id);
-                  return (
-                    <tr key={cls.id}>
-                      <td className="px-2 py-2 text-left font-bold text-[#0f2e25] whitespace-nowrap">{cls.name}</td>
-                      {JP_SLOTS.map((slot) => {
-                        const sched = jpMap?.get(slot.jp);
-                        if (sched) {
-                          const hadir = 85 + ((ci * 3 + slot.jp * 2) % 13);
-                          const cls2 = hadir >= 90 ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : hadir >= 85 ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-rose-50 border-rose-200 text-rose-600';
-                          const mp = sched.teachingAssignment?.subject ?? '—';
-                          return <td key={slot.jp} className={clsx('rounded-md border px-2 py-1.5 text-center', cls2)}><b>{hadir}%</b><div className="text-[9.5px] opacity-70">{mp.length > 10 ? mp.slice(0, 9) + '…' : mp}</div></td>;
-                        }
-                        return <td key={slot.jp} className="rounded-md border border-dashed border-[#e6efea] bg-[#f4f7f5] px-2 py-1.5 text-center text-[#9bb0a8]">—</td>;
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : <div className="mt-3 grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">Tidak ada jadwal mengajar hari ini.</div>}
-      </div>
-
-      {/* Rincian per Kelas × Mapel (real data) */}
-      <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
-        <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><Table2 className="h-4 w-4 text-emerald-600" />Rincian per Kelas × Mapel</h4>
-        <p className="text-[11.5px] text-[#6b8079]">Rata² nilai & persentase ketuntasan KKTP dari data gradebook nyata</p>
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full text-[12px]">
-            <thead><tr className="border-b border-[#e6efea] text-left text-[10.5px] uppercase tracking-wide text-[#6b8079]">
-              <th className="py-2 pr-3">Kelas</th><th className="py-2 pr-3">Mapel</th><th className="py-2 pr-3 text-right">Rata²</th><th className="py-2 pr-3 text-right">Entri</th><th className="py-2 text-right">Tuntas</th>
-            </tr></thead>
-            <tbody>
-              {kelasMapel.map((k, i) => (
-                <tr key={i} className="border-b border-[#f0f4f2]">
-                  <td className="py-2.5 pr-3 font-bold text-[#0f2e25]">{k.kelas}</td>
-                  <td className="py-2.5 pr-3 text-[#355a4e]">{k.mapel}</td>
-                  <td className="py-2.5 pr-3 text-right font-bold text-[#0f2e25]">{k.avg ?? '—'}</td>
-                  <td className="py-2.5 pr-3 text-right text-[#355a4e]">{k.count}</td>
-                  <td className="py-2.5 text-right">
-                    {k.tuntasPct !== null ? <span className={clsx('rounded-md px-2 py-0.5 text-[10.5px] font-bold', cellTone(k.tuntasPct))}>{k.tuntasPct}%</span> : <span className="text-[#cbd5e1]">—</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ═══ SCREEN 5: REKAP AUDIT ═══════════════════════════════════════════════════
-
-function RekapAuditKs({ kelasMapel, grades, attendances, activities, rpp }: {
-  kelasMapel: { kelas: string; mapel: string; avg: number | null; tuntasPct: number | null; count: number }[];
-  grades: GradeItem[]; attendances: AttendanceItem[]; activities: ActivityItem[]; rpp: RppItem[];
-}) {
-  const scores = grades.map((g) => Number(g.score)).filter((n) => !Number.isNaN(n));
-  const rata = scores.length ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : null;
-  const tuntas = scores.filter((s) => s >= KKTP_DEFAULT).length;
-  const tuntasPct = scores.length ? Math.round((tuntas / scores.length) * 100) : null;
-  const approvedRpp = rpp.filter((r) => r.status === 'approved').length;
-  const hadirPct = attendances.length ? Math.round((attendances.filter((a) => a.status === 'hadir').length / attendances.length) * 100) : null;
-
-  const kelasList = [...new Set(kelasMapel.map((k) => k.kelas))].sort();
-  const mapelList = [...new Set(kelasMapel.map((k) => k.mapel))].sort();
-
-  // B7: Fetch real rekap audit data from /analytics/rekap-audit
-  const [realRekap, setRealRekap] = useState<Array<{ teacher: string; className: string; subject: string; count: number; average: number; tuntasCount: number; tuntasPct: number | null }>>([]);
-  useEffect(() => {
-    fetchRekapAudit().then((res) => {
-      if (res.success && res.data) {
-        const data = res.data as { data: Array<{ teacher: string; className: string; subject: string; count: number; average: number; tuntasCount: number; tuntasPct: number | null }> };
-        setRealRekap(data.data ?? []);
-      }
-    });
-  }, []);
-
-  // P0 (S-15): genSimMonitor fallback removed — real data or empty-state only.
-  // Hooks must be called unconditionally
-  const emptyRekapData = useMemo(() => [] as { guru: string; mapel: string; kelas: string; cp: number; pert: number; rencana: number; jurnal: number; hadir: number; rata: number | null; status: 'on' | 'warn' | 'risk' }[], [kelasMapel]);
-  const monData = realRekap.length > 0 ? realRekap.map((r) => ({
-    guru: r.teacher, mapel: r.subject, kelas: r.className,
-    cp: r.tuntasPct ?? 0, pert: 0, rencana: 0, jurnal: 0, hadir: 0,
-    rata: r.average, status: (r.tuntasPct ?? 0) >= 75 ? 'on' as const : (r.tuntasPct ?? 0) >= 60 ? 'warn' as const : 'risk' as const,
-  })) : emptyRekapData;
-  // G11: Sort by guru → kelas → mapel
-  const sortedMon = useMemo(() => [...monData].sort((a, b) =>
-    a.guru.localeCompare(b.guru) || a.kelas.localeCompare(b.kelas) || a.mapel.localeCompare(b.mapel)
-  ), [monData]);
-  // G12: Per-guru average CP
-  const guruAgg = useMemo(() => {
-    const m = new Map<string, { cp: number; count: number }>();
-    for (const r of monData) { const g = m.get(r.guru) ?? { cp: 0, count: 0 }; g.cp += r.cp; g.count++; m.set(r.guru, g); }
-    return [...m.entries()].map(([guru, v]) => ({ guru, avgCp: Math.round(v.cp / v.count) }));
-  }, [monData]);
-
-  const statusBadge = (s: string) => s === 'on' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : s === 'warn' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-600 border-rose-200';
-  const statusLabel = (s: string) => s === 'on' ? 'On Track' : s === 'warn' ? 'Perhatian' : 'Berisiko';
-  const cpBadge = (cp: number) => cp >= 75 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : cp >= 60 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-600 border-rose-200';
-
-  return (
-    <div className="space-y-4">
-      <h3 className="flex items-center gap-2 text-[17px] font-bold text-[#0f2e25]"><ClipboardCheck className="h-5 w-5 text-emerald-600" />Rekap Audit Per Guru</h3>
-      <div className="rounded-lg bg-violet-50 px-3 py-2 text-[11.5px] font-semibold text-violet-700"><Info className="mr-1 inline h-3 w-3" />Data otomatis ter-agregat dari input harian guru (absen, jurnal, nilai).</div>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Kpi icon={FileCheck2} label="Modul Disetujui" value={`${approvedRpp}`} />
-        <Kpi icon={Activity} label="Jurnal Tercatat" value={`${activities.length}`} />
-        <Kpi icon={Target} label="Tuntas KKTP" value={tuntasPct !== null ? `${tuntasPct}%` : '—'} />
-        <Kpi icon={TrendingUp} label="Rata² Nilai" value={rata !== null ? `${rata}` : '—'} />
-        <Kpi icon={Users} label="Kehadiran" value={hadirPct !== null ? `${hadirPct}%` : '—'} />
-      </div>
-
-      {/* G11: Rincian per Guru × Kelas × Mapel */}
-      <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><Table2 className="h-4 w-4 text-emerald-600" />Rincian per Guru × Kelas × Mapel</h4>
-          {/* P0 (S-07): conditional badge — real data shows "Real-time", empty shows honest state */}
-          {realRekap.length > 0
-            ? <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Real-time</span>
-            : null
-          }
-        </div>
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full text-[12px]">
-            <thead><tr className="border-b border-[#e6efea] text-left text-[10.5px] uppercase tracking-wide text-[#6b8079]">
-              <th className="py-2 pr-3">Guru</th><th className="py-2 pr-3">Mapel</th><th className="py-2 pr-3">Kelas</th>
-              <th className="py-2 pr-3 text-right">Rata²</th><th className="py-2 pr-3 text-right">CP</th><th className="py-2 pr-3 text-right">Hadir</th>
-              <th className="py-2 pr-3 text-right">Pertemuan</th><th className="py-2 pr-3 text-right">Jurnal</th><th className="py-2">Status</th>
-            </tr></thead>
-            <tbody>
-              {sortedMon.map((r, i) => (
-                <tr key={i} className="border-b border-[#f0f4f2]">
-                  <td className="py-2.5 pr-3 font-bold text-[#0f2e25]">{r.guru.split(',')[0]}</td>
-                  <td className="py-2.5 pr-3 text-[#355a4e]">{r.mapel}</td>
-                  <td className="py-2.5 pr-3 text-[#355a4e]">{r.kelas}</td>
-                  <td className="py-2.5 pr-3 text-right font-bold text-[#0f2e25]">{r.rata ?? '—'}</td>
-                  <td className="py-2.5 pr-3 text-right"><span className={clsx('rounded-md border px-2 py-0.5 text-[10.5px] font-bold', cpBadge(r.cp))}>{r.cp}%</span></td>
-                  <td className="py-2.5 pr-3 text-right text-[#355a4e]">{r.hadir}%</td>
-                  <td className="py-2.5 pr-3 text-right text-[#355a4e]">{r.pert}/{r.rencana}</td>
-                  <td className="py-2.5 pr-3 text-right text-[#355a4e]">{r.jurnal}</td>
-                  <td className="py-2.5"><span className={clsx('rounded-md border px-2 py-0.5 text-[10.5px] font-bold', statusBadge(r.status))}>{statusLabel(r.status)}</span></td>
-                </tr>
-              ))}
-              {sortedMon.length === 0 && (<tr><td colSpan={9} className="py-6 text-center text-[#9bb0a8]">Belum ada data.</td></tr>)}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Matrix + Per Guru (2-column grid, matching mockup layout) */}
-      <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-        {/* Matriks Ketuntasan */}
-        {kelasList.length > 0 && mapelList.length > 0 && (
-          <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
-            <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><LayoutGrid className="h-4 w-4 text-emerald-600" />Matriks Ketuntasan KKTP — Kelas × Mapel</h4>
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full text-[11.5px] border-separate" style={{ borderSpacing: 4 }}>
-                <thead><tr className="text-[10px] font-extrabold uppercase text-[#6b8079]">
-                  <th className="px-2 py-2 text-left">Kelas</th>
-                  {mapelList.map((m) => <th key={m} className="px-2 py-2 text-center">{m.length > 10 ? m.slice(0, 8) + '…' : m}</th>)}
-                </tr></thead>
-                <tbody>
-                  {kelasList.map((k) => (
-                    <tr key={k}>
-                      <td className="px-2 py-2 text-left font-bold text-[#0f2e25]">{k}</td>
-                      {mapelList.map((mp) => {
-                        const r = kelasMapel.find((x) => x.kelas === k && x.mapel === mp);
-                        return r?.tuntasPct != null ? (
-                          <td key={mp} className={clsx('rounded-md px-2 py-2 text-center font-bold border', r.tuntasPct >= 75 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : r.tuntasPct >= 60 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-600 border-rose-200')} style={{ borderRadius: 4 }}>{r.tuntasPct}%</td>
-                        ) : <td key={mp} className="px-2 py-2 text-center text-[#cbd5e1]">–</td>;
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* G12: Per Guru — Rata² Tuntas */}
-        <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><TrendingUp className="h-4 w-4 text-emerald-600" />Per Guru — Rata² Tuntas</h4>
-            {/* P0: conditional badge — real data shows "Real-time" */}
-            {realRekap.length > 0 && <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Real-time</span>}
-          </div>
-          <div className="mt-3 space-y-3">
-            {guruAgg.map((g) => (
-              <div key={g.guru} className="flex items-center gap-3">
-                <span className="w-24 shrink-0 text-[12px] font-bold text-[#0f2e25]">{g.guru.split(',')[0]}</span>
-                <div className="h-[10px] flex-1 overflow-hidden rounded-md bg-[#eef3f0]">
-                  <span className="block h-full rounded-md" style={{ width: `${g.avgCp}%`, background: g.avgCp >= 75 ? 'linear-gradient(90deg,#34d399,#059669)' : g.avgCp >= 60 ? 'linear-gradient(90deg,#fbbf24,#d97706)' : 'linear-gradient(90deg,#fb7185,#e11d48)' }} />
-                </div>
-                <span className={clsx('w-9 shrink-0 text-right text-[12px] font-bold', g.avgCp >= 75 ? 'text-emerald-700' : g.avgCp >= 60 ? 'text-amber-600' : 'text-rose-600')}>{g.avgCp}%</span>
-              </div>
-            ))}
-            {guruAgg.length === 0 && <div className="grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] text-[#9bb0a8]">Belum ada data.</div>}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ═══ SCREEN 6: KKTP ═══════════════════════════════════════════════════════════
-
-function KktpKs({ kelasMapel, subjects, showToast, academicYear, semester }: { kelasMapel: { mapel: string }[]; subjects: { id: string; code: string; name: string; isActive: boolean }[]; showToast: (msg: string) => void; academicYear: string; semester: number }) {
-  // BUG FIX: Use Subject catalog (active only) as the source of truth for mapel list.
-  // Previously derived from grade data — meaning new subjects wouldn't appear until graded.
-  const mapelList = useMemo(() => {
-    const activeSubjects = subjects.filter((s) => s.isActive).map((s) => s.name).sort();
-    // Merge any mapel from grade data that doesn't exist in catalog (legacy/orphan data)
-    const gradeMapels = [...new Set(kelasMapel.map((k) => k.mapel))].sort();
-    return [...new Set([...activeSubjects, ...gradeMapels])].sort();
-  }, [subjects, kelasMapel]);
-  const [kktpValues, setKktpValues] = useState<Record<string, number>>({});
-  const [kktpLoaded, setKktpLoaded] = useState(false);
-  const [saving, startSaveTransition] = useTransition();
-
-  // U3: Fetch existing KKTP configs from backend on mount
-  useEffect(() => {
-    fetchKktpConfigs(academicYear, semester).then((res) => {
-      if (res.success && res.data) {
-        const configMap: Record<string, number> = {};
-        for (const c of res.data) configMap[c.subject] = c.kktp;
-        setKktpValues((prev) => ({ ...configMap, ...prev }));
-      }
-      setKktpLoaded(true);
-    });
-  }, [academicYear, semester]);
-
-  const affectedCount = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const k of kelasMapel) counts[k.mapel] = (counts[k.mapel] ?? 0) + 1;
-    return counts;
-  }, [kelasMapel]);
-
-  // U3: Wire to real saveKktpConfig server action
-  const handleSave = () => {
-    startSaveTransition(async () => {
-      let saved = 0;
-      let failed = 0;
-      for (const [subject, kktp] of Object.entries(kktpValues)) {
-        const res = await saveKktpConfig({ subject, kktp, academicYear, semester });
-        if (res.success) saved++;
-        else failed++;
-      }
-      if (failed > 0) showToast(`${saved} mapel tersimpan, ${failed} gagal`);
-      else showToast(`${saved} konfigurasi KKTP tersimpan`);
-    });
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="flex items-center gap-2 text-[17px] font-bold text-[#0f2e25]"><Target className="h-5 w-5 text-emerald-600" />Manajemen KKTP</h3>
-          <p className="text-[12.5px] text-[#6b8079]">Threshold Kriteria Ketuntasan Tujuan Pembelajaran per mapel</p>
-        </div>
-        <button type="button" disabled={saving} onClick={handleSave} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-[12.5px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"><Save className="h-4 w-4" />{saving ? 'Menyimpan...' : 'Simpan Perubahan'}</button>
-      </div>
-      <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
-        <div className="mb-3 rounded-lg bg-sky-50 px-3 py-2 text-[11.5px] font-semibold text-sky-700"><Info className="mr-1 inline h-3 w-3" />KKTP default {KKTP_DEFAULT}. Naikkan untuk mapel unggulan, turunkan untuk mapel yang masih adaptasi.</div>
-        {!kktpLoaded && <div className="mb-3 text-[11px] font-medium text-[#9bb0a8]">Memuat konfigurasi KKTP...</div>}
-        <div className="mt-4 space-y-3">
-          {mapelList.map((mp) => {
-            // P0: SIM_KKTP_DATA removed — use KKTP_DEFAULT when no backend config
-            const val = kktpValues[mp] ?? KKTP_DEFAULT;
-            const affected = affectedCount[mp] ?? 0;
-            const badge = val === KKTP_DEFAULT
-              ? { text: 'Default', cls: 'bg-slate-100 text-slate-600' }
-              : val > KKTP_DEFAULT
-                ? { text: 'Ditingkatkan', cls: 'bg-emerald-50 text-emerald-700' }
-                : { text: 'Diturunkan', cls: 'bg-amber-50 text-amber-700' };
-            return (
-              <div key={mp} className="grid grid-cols-[1fr_60px] items-center gap-4 border-b border-[#e6efea] py-3 lg:grid-cols-[180px_1fr_60px_100px]">
-                <div>
-                  <span className="text-[12.5px] font-bold text-[#0f2e25]">{mp}</span>
-                  <div className="text-[11px] text-[#6b8079]">{affected} kelas terdampak · default {KKTP_DEFAULT}</div>
-                </div>
-                <div className="hidden lg:block"><input type="range" min={60} max={90} value={val} onChange={(e) => setKktpValues((p) => ({ ...p, [mp]: Number(e.target.value) }))} className="h-2 w-full appearance-none rounded-lg" style={{ background: 'linear-gradient(90deg,#e11d48 0%,#f59e0b 50%,#10b981 100%)' }} /></div>
-                <span className={clsx('text-right text-[18px] font-extrabold', val >= KKTP_DEFAULT ? 'text-emerald-700' : 'text-amber-600')}>{val}</span>
-                <span className={clsx('hidden lg:block rounded-md px-2 py-0.5 text-[10.5px] font-bold', badge.cls)}>{badge.text}</span>
-              </div>
-            );
-          })}
-          {mapelList.length === 0 && <div className="grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] text-[#9bb0a8]">Belum ada mapel. Data muncul saat guru menginput nilai.</div>}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ═══ SCREEN 7: JADWAL & TUGAS ═════════════════════════════════════════════════
 
@@ -1208,34 +616,28 @@ function JadwalTugasKs({ schedules, classes, pendingRpp, activeSumatif }: {
   pendingRpp: RppItem[]; activeSumatif: SumatifItem[];
 }) {
   const [selClass, setSelClass] = useState<string>('all');
-  const filtered = selClass === 'all' ? schedules : schedules.filter((s) => s.classId === selClass);
 
-  const bell = useBellPattern();
-  const JP_SLOTS = bell.weeklySlots;
-  const dailyCounts = [1,2,3,4,5,6].map((day) => bell.slotsForDay(day).length);
+  const read = useScheduleRead(), bell = read.period;
+  const dailyCounts = [1,2,3,4,5,6,7].map((day) => bell.slotsForDay(day).length);
   const jpRange = dailyCounts.length ? `${Math.min(...dailyCounts)}–${Math.max(...dailyCounts)}` : '—';
-  const matrixRows = JP_SLOTS.map((slot) => ({
-    slot,
-    cells: [1, 2, 3, 4, 5, 6].map((d) => filtered.find((s) => s.dayOfWeek === d && slot.jp >= s.jpStart && slot.jp <= s.jpEnd) ?? null),
-  }));
 
   const totalJP = schedules.reduce((sum, s) => sum + (s.jpEnd - s.jpStart + 1), 0);
 
   // Beban Mengajar per Guru
   const guruLoad = useMemo(() => {
-    const m = new Map<string, { name: string; jp: number }>();
+    const m = new Map<string, { id:string; name: string; jp: number }>();
     const physicalSlots = new Set<string>();
     for (const s of schedules) {
       const name = s.teachingAssignment.teacher?.user?.fullName ?? '—';
       const teacherKey = s.teachingAssignment.teacher?.id ?? `unknown:${s.id}`;
       for (let jp = s.jpStart; jp <= s.jpEnd; jp++) {
         const key = `${teacherKey}|${s.dayOfWeek}|${jp}`;
-        if (!physicalSlots.has(key)) { m.set(teacherKey, { name, jp: (m.get(teacherKey)?.jp ?? 0) + 1 }); physicalSlots.add(key); }
+        if (!physicalSlots.has(key)) { m.set(teacherKey, { id:teacherKey, name, jp: (m.get(teacherKey)?.jp ?? 0) + 1 }); physicalSlots.add(key); }
       }
     }
     return [...m.values()].sort((a, b) => b.jp - a.jp);
   }, [schedules]);
-  const over24 = guruLoad.filter((g) => g.jp > SCHED_CONFIG.maxJpGuru).length;
+  const maxObservedLoad = Math.max(1,...guruLoad.map(g => g.jp));
 
   // Antrian hanya memakai status server; tidak membuat deadline sintetis.
   const tugasMendatang = useMemo(() => [
@@ -1263,7 +665,7 @@ function JadwalTugasKs({ schedules, classes, pendingRpp, activeSumatif }: {
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><SlidersHorizontal className="h-4 w-4 text-emerald-600" />Struktur Jadwal</h4>
         <div className="mt-3 grid grid-cols-3 gap-3 lg:grid-cols-6">
-          {[['Hari Aktif', `${SCHED_CONFIG.days}`], ['JP/Hari', jpRange], ['Total JP/Minggu', `${dailyCounts.reduce((sum, count) => sum + count, 0)}`], ['Rombel', `${classes.length}`], ['Guru', `${guruLoad.length}`], ['Max JP/Guru', `${SCHED_CONFIG.maxJpGuru}`]].map(([label, val]) => (
+          {[['Hari dalam pola bel', `${dailyCounts.filter(count => count > 0).length}`], ['JP/Hari', jpRange], ['Kapasitas pola JP/Minggu', `${dailyCounts.reduce((sum, count) => sum + count, 0)}`], ['Rombel', `${classes.length}`], ['Guru', `${guruLoad.length}`], ['JP guru tertinggi (tersimpan)', `${guruLoad.length ? maxObservedLoad : '—'}`]].map(([label, val]) => (
             <div key={label} className="rounded-xl bg-[#f4f7f5] px-3 py-2.5 text-center"><div className="text-[20px] font-extrabold text-[#0f2e25]">{val}</div><div className="text-[10.5px] font-medium text-[#6b8079]">{label}</div></div>
           ))}
         </div>
@@ -1271,18 +673,10 @@ function JadwalTugasKs({ schedules, classes, pendingRpp, activeSumatif }: {
 
       {/* Kelengkapan penugasan; panel ini tidak menyatakan bebas overlap. */}
       {(() => {
-        // Detect real conflicts: classes with JP slots missing a teacher assignment
-        const conflictSlots: { day: number; jp: number; rombel: string }[] = [];
-        for (const cls of classes) {
-          for (let d = 1; d <= SCHED_CONFIG.days; d++) {
-            for (const slot of JP_SLOTS) {
-              const has = schedules.some((s) => s.classId === cls.id && s.dayOfWeek === d && slot.jp >= s.jpStart && slot.jp <= s.jpEnd);
-              if (!has) continue; // empty slot is not a conflict
-              const noTeacher = !schedules.some((s) => s.classId === cls.id && s.dayOfWeek === d && slot.jp >= s.jpStart && slot.jp <= s.jpEnd && s.teachingAssignment?.teacher);
-              if (noTeacher) conflictSlots.push({ day: d, jp: slot.jp, rombel: cls.name });
-            }
-          }
-        }
+        const conflictSlots = schedules.filter(row => !row.teachingAssignment.teacher?.id).flatMap(row =>
+          Array.from({ length:row.jpEnd-row.jpStart+1 },(_,index) => ({ day:row.dayOfWeek,jp:row.jpStart+index,rombel:row.class.name })));
+        if (!read.available) return <p role="status" className="rounded-lg bg-amber-50 p-3 text-xs">Kelengkapan penugasan belum dapat diperiksa.</p>;
+        if (!schedules.length) return <p className="p-3 text-xs">Belum ada slot tersimpan pada cakupan ini.</p>;
         return conflictSlots.length > 0 ? (
           <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-5 shadow-sm">
             <h4 className="flex items-center gap-2 text-[14px] font-bold text-rose-600"><AlertTriangle className="h-4 w-4" />{conflictSlots.length} Slot tanpa Guru</h4>
@@ -1307,44 +701,23 @@ function JadwalTugasKs({ schedules, classes, pendingRpp, activeSumatif }: {
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full text-[11.5px] border-separate" style={{ borderSpacing: 4 }}>
-            <thead><tr className="text-[10px] font-extrabold uppercase text-[#6b8079]">
-              <th className="px-2 py-2 text-left">JP</th>
-              {[1, 2, 3, 4, 5, 6].map((d) => <th key={d} className="px-2 py-2 text-center">{(DOW[d] ?? '').slice(0, 3)}</th>)}
-            </tr></thead>
-            <tbody>
-              {matrixRows.map(({ slot, cells }) => (
-                <tr key={slot.jp}>
-                  <td className="px-2 py-2 text-[10.5px] font-extrabold text-emerald-700">JP {slot.jp}</td>
-                  {cells.map((c, i) => c ? (
-                    <td key={i} className="rounded-md border border-emerald-200 bg-emerald-50/40 px-2 py-1.5 text-center">
-                      <b className="text-[10.5px] text-[#0f2e25]">{c.teachingAssignment?.subject?.slice(0, 8) ?? '—'}</b>
-                      <div className="text-[9.5px] text-[#6b8079]">{c.class?.name ?? '—'}</div>
-                    </td>
-                  ) : <td key={i} className="rounded-md border border-[#e6efea] bg-[#f9fbfa] text-center text-[#9bb0a8]">—</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <div className="mt-3"><ScheduleBoard schedules={schedules} classes={classes} weekly classId={selClass === 'all' ? undefined : selClass} /></div>
       </div>
 
       {/* Beban Mengajar per Guru */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><Users className="h-4 w-4 text-emerald-600" />Beban Mengajar per Guru</h4>
-          <span className="rounded-md bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">{over24} guru &gt;{SCHED_CONFIG.maxJpGuru} JP</span>
+          <span className="rounded-md bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">JP fisik unik per guru, bukan akumulasi kelas gabungan</span>
         </div>
         <div className="mt-3 max-h-[460px] space-y-2.5 overflow-auto">
           {guruLoad.map((g) => {
-            const over = g.jp > SCHED_CONFIG.maxJpGuru;
-            const pct = Math.min(100, (g.jp / SCHED_CONFIG.maxJpGuru) * 100);
+            const pct = g.jp / maxObservedLoad * 100;
             return (
-              <div key={g.name} className="flex items-center gap-3">
+              <div key={g.id} className="flex items-center gap-3">
                 <span className="w-28 shrink-0 truncate text-[12px] font-bold text-[#0f2e25]" title={g.name}>{g.name.split(',')[0]}</span>
-                <div className="h-[9px] flex-1 overflow-hidden rounded-md bg-[#eef3f0]"><span className="block h-full rounded-md" style={{ width: `${pct}%`, background: over ? 'linear-gradient(90deg,#fbbf24,#d97706)' : 'linear-gradient(90deg,#34d399,#059669)' }} /></div>
-                <span className={clsx('w-12 shrink-0 text-right text-[12px] font-bold', over ? 'text-amber-600' : 'text-[#355a4e]')}>{g.jp} JP</span>
+                <div className="h-[9px] flex-1 overflow-hidden rounded-md bg-[#eef3f0]"><span className="block h-full rounded-md" style={{ width: `${pct}%`, background: '#059669' }} /></div>
+                <span className={'w-12 shrink-0 text-right text-[12px] font-bold text-[#355a4e]'}>{g.jp} JP</span>
               </div>
             );
           })}
@@ -1518,20 +891,24 @@ function Kpi({ icon: Icon, label, value, sub, valueClass, onClick }: { icon: Luc
   );
 }
 
-function TrenChart({ siswa, guru }: { siswa: number[]; guru: number[] }) {
+function TrenChart({ siswa, guru }: { siswa: (number | null)[]; guru: (number | null)[] }) {
   const W = 620, H = 120;
-  const y = (v: number) => H - 10 - ((v - 80) / 20) * (H - 30);
-  const x = (i: number, len: number) => 10 + (i * (W - 20)) / Math.max(1, len - 1);
-  const polyS = siswa.map((v, i) => `${x(i, siswa.length)},${y(v)}`).join(' ');
-  // P0 (S-06): guru line only rendered when real data exists (non-empty array)
-  const polyG = guru.length > 0 ? guru.map((v, i) => `${x(i, guru.length)},${y(v)}`).join(' ') : null;
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 w-full">
-      {[90, 85, 80].map((g) => <line key={g} x1={0} y1={y(g)} x2={W} y2={y(g)} stroke="#e6efea" />)}
-      <polyline points={polyS} fill="none" stroke="#059669" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-      {polyG && <polyline points={polyG} fill="none" stroke="#0284c7" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />}
-    </svg>
-  );
+  const y = (value: number) => H - 10 - value / 100 * (H - 30);
+  const x = (index: number, length: number) => 10 + index * (W-20) / Math.max(1,length-1);
+  const segments = (values: (number | null)[]) => {
+    const parts: string[][] = [[]];
+    values.forEach((value,index) => {
+      if (value === null) parts.push([]);
+      else parts[parts.length-1]!.push(x(index,values.length)+','+y(value));
+    });
+    return parts.filter(part => part.length);
+  };
+  return <figure><svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Persentase hadir dari catatan harian, skala nol sampai seratus. Celah berarti data belum tersedia." className="mt-2 w-full">
+    {[0,25,50,75,100].map(value => <g key={value}><line x1={0} y1={y(value)} x2={W} y2={y(value)} stroke="#e6efea" /><text x={0} y={y(value)-2} fontSize={8} fill="#6b8079">{value}%</text></g>)}
+    {segments(siswa).map((points,index) => <polyline key={index} points={points.join(' ')} fill="none" stroke="#059669" strokeWidth={2.5} />)}
+    {siswa.map((value,index) => value === null ? null : <circle key={index} cx={x(index,siswa.length)} cy={y(value)} r={2} fill="#059669"><title>{value}% dari catatan harian</title></circle>)}
+    {segments(guru).map((points,index) => <polyline key={index} points={points.join(' ')} fill="none" stroke="#0284c7" strokeWidth={2} />)}
+  </svg><figcaption className="text-xs text-slate-500">Tidak ada garis penghubung pada tanggal tanpa catatan. Kehadiran guru tidak diperkirakan dari data siswa.</figcaption></figure>;
 }
 
 function StatPill({ n, l }: { n: string; l: string }) {

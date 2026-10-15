@@ -19,20 +19,7 @@ export interface OrtuChild {
 
 // ── Nilai (grade per mapel with raw components for detail modal) ────────────
 
-export interface OrtuNilaiRaw {
-  uh: number[];
-  praktik: number[];
-  sikap: number;
-  uts: number;
-  uas: number;
-}
-
-export interface OrtuNilai {
-  mp: string;
-  na: number;
-  raw: OrtuNilaiRaw;
-  trend: 'up' | 'down';
-}
+export type OrtuNilai = import('@/lib/learner-grades').LearnerGrade;
 
 // ── Schedule slot (today's schedule) ────────────────────────────────────────
 

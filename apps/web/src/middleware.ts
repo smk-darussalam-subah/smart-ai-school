@@ -1,6 +1,12 @@
 import { getToken } from 'next-auth/jwt';
 import { NextRequest, NextResponse } from 'next/server';
 import { isMobileOnlyDashboardRoleSet } from './lib/dashboard-routing';
+import {
+  hasUsableAccessToken,
+  isTerminalSessionError,
+  shouldRefreshSession,
+  sessionAppOrigin,
+} from './lib/auth-session-state';
 
 function generateNonce(): string {
   const bytes = new Uint8Array(16);
@@ -72,8 +78,12 @@ const PUBLIC_PREFIXES = [
 ] as const;
 
 export function isPublicPath(pathname: string): boolean {
-  if (['/local-preview/jp-presensi', '/local-preview/jp-presensi/period'].includes(pathname) &&
-    process.env.NODE_ENV === 'development' && process.env.DIIS_LOCAL_PREVIEW === 'true') return true;
+  if (
+    ['/local-preview/jp-presensi', '/local-preview/jp-presensi/period'].includes(pathname) &&
+    process.env.NODE_ENV === 'development' &&
+    process.env.DIIS_LOCAL_PREVIEW === 'true'
+  )
+    return true;
   if (PUBLIC_EXACT.includes(pathname)) return true;
   if (pathname.startsWith('/jurusan/')) return true;
   return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
@@ -110,8 +120,25 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   }).catch(() => null);
 
-  if ((pathname === '/login' || pathname === '/auth') && token) {
-    const res = NextResponse.redirect(new URL('/dashboard', request.url));
+  const isLogin = pathname === '/login' || pathname === '/auth';
+  const query = new URL(request.url).searchParams;
+  const recovering = query.get('reason') === 'session' || query.has('error');
+  const usable = hasUsableAccessToken(token);
+  if (isLogin && !recovering && usable && token && !shouldRefreshSession(token)) {
+    const res = NextResponse.redirect(new URL('/dashboard', sessionAppOrigin(request.url)));
+    res.headers.set('Content-Security-Policy', csp);
+    return res;
+  }
+
+  if (!isPublicPath(pathname) && token && (!usable || shouldRefreshSession(token))) {
+    const canRefresh = !isTerminalSessionError(token.error) && Boolean(token.refreshToken);
+    const target = new URL(
+      canRefresh ? '/api/auth/refresh' : '/login',
+      sessionAppOrigin(request.url),
+    );
+    if (!canRefresh) target.searchParams.set('reason', 'session');
+    target.searchParams.set('callbackUrl', pathname + new URL(request.url).search);
+    const res = NextResponse.redirect(target);
     res.headers.set('Content-Security-Policy', csp);
     return res;
   }
@@ -123,13 +150,15 @@ export async function middleware(request: NextRequest) {
     ? token.roles.filter((role): role is string => typeof role === 'string')
     : [];
   if (pathname === '/dashboard' && isMobileOnlyDashboardRoleSet(roles)) {
-    const res = NextResponse.redirect(new URL('/dashboard/akademik', request.url));
+    const res = NextResponse.redirect(
+      new URL('/dashboard/akademik', sessionAppOrigin(request.url)),
+    );
     res.headers.set('Content-Security-Policy', csp);
     return res;
   }
 
   if (!isPublicPath(pathname) && !token) {
-    const loginUrl = new URL('/login', request.url);
+    const loginUrl = new URL('/login', sessionAppOrigin(request.url));
     loginUrl.searchParams.set('callbackUrl', pathname);
     const res = NextResponse.redirect(loginUrl);
     res.headers.set('Content-Security-Policy', csp);

@@ -202,6 +202,7 @@ export class ScheduleService {
           { semester: 'asc' },
           { dayOfWeek: 'asc' },
           { jpStart: 'asc' },
+          { id: 'asc' },
         ],
       }),
       this.prisma.schedule.count({ where }),

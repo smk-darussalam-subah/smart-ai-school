@@ -166,7 +166,7 @@ export class ClassActivitiesService {
     const [data, total] = await Promise.all([
       this.prisma.classActivity.findMany({
         where,
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }],
         skip,
         take: query.limit,
         select: ACTIVITY_SELECT,

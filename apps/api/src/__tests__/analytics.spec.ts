@@ -22,6 +22,8 @@ import {
 import { AnalyticsController } from '../analytics/analytics.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { SchoolConfigService } from '../school-config/school-config.service';
+import { StaffAttendanceService } from '../staff-attendance/staff-attendance.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import {
   agingBucketIndex,
   kkmPassRate,
@@ -123,6 +125,7 @@ const schoolMock = {
     endDate: new Date('2026-06-30'),
   }),
 };
+const staffMock = { report: jest.fn() };
 
 describe('AnalyticsService', () => {
   let service: AnalyticsService;
@@ -135,6 +138,7 @@ describe('AnalyticsService', () => {
         AnalyticsService,
         { provide: PrismaService, useValue: prisma },
         { provide: SchoolConfigService, useValue: schoolMock },
+        { provide: StaffAttendanceService, useValue: staffMock },
       ],
     }).compile();
     service = module.get(AnalyticsService);
@@ -274,9 +278,11 @@ describe('AnalyticsService', () => {
         { status: 'revision', _count: { _all: 2 } },
       ]);
 
-      const res = await service.teacherCompliance({});
+      staffMock.report.mockResolvedValue({ teacherSummary: { total: 20, present: 19, inside: 19 } });
+      const res = await service.teacherCompliance({}, true);
 
-      expect(res.gpsPct).toBe(95); // 19/20
+      expect(res.gpsPct).toBe(100); // recorded arrivals, not all active employees
+      expect(prisma.teacherAttendance.count).not.toHaveBeenCalled();
       // approved 6 dari non-draft (2+6+2=10) = 60%
       expect(res.rpp.approvalRate).toBe(60);
       expect(res.rpp.total).toBe(14);
@@ -287,7 +293,8 @@ describe('AnalyticsService', () => {
       prisma.teacherAttendance.count.mockResolvedValue(0);
       prisma.rpp.groupBy.mockResolvedValue([{ status: 'draft', _count: { _all: 3 } }]);
 
-      const res = await service.teacherCompliance({});
+      staffMock.report.mockResolvedValue({ teacherSummary: { total: 0, present: 0, inside: 0 } });
+      const res = await service.teacherCompliance({}, true);
 
       expect(res.gpsPct).toBeNull();
       expect(res.rpp.approvalRate).toBeNull();
@@ -315,6 +322,7 @@ describe('AnalyticsController', () => {
       providers: [
         { provide: AnalyticsService, useValue: mockService },
         { provide: StudentAnalyticsService, useValue: mockStudentService },
+        { provide: PermissionsService, useValue: { getEffectivePermissions: jest.fn().mockResolvedValue(new Set(['*'])) } },
       ],
     }).compile();
     controller = module.get(AnalyticsController);
@@ -340,7 +348,7 @@ describe('AnalyticsController', () => {
 
   it('financeAging & teacherCompliance & atRisk delegasi', async () => {
     await controller.financeAging({});
-    await controller.teacherCompliance({});
+    await controller.teacherCompliance({}, { keycloakId: 'kc-sa', username: 'admin', roles: ['SUPER_ADMIN'] } as AuthUser);
     await controller.atRisk({});
     expect(mockService.financeAging).toHaveBeenCalled();
     expect(mockService.teacherCompliance).toHaveBeenCalled();

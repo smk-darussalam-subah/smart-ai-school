@@ -5,20 +5,26 @@
 // JUJUR: hanya mencakup mapel yang diampu guru ini; rapor lengkap lintas mapel
 // dikompilasi wali kelas / modul Rapor.
 
-import { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { GraduationCap, FileText, Info, Users, Award, GitBranch, ArrowRight, Download, TrendingUp, CheckCircle } from 'lucide-react';
 import clsx from 'clsx';
 import type { GradeItem } from '@/lib/api';
-import { naOf, predikat, gradeStatus, KKTP_DEFAULT, NA_WEIGHTS, type StudentGradeComponents } from '@/lib/academic';
+import { naOf, gradeStatus, NA_WEIGHTS } from '@/lib/academic';
+import { averageGradeComponents, subjectThreshold } from '@/lib/grade-consumers';
+import type { SummaryReadState, TeacherThreshold } from '@/lib/teacher-summary';
 import { RaporModal, type RaporRow } from '@/components/academic/shared';
 import { STATUS_TEXT_CLASS } from '@/components/academic/shared/grade-meta';
 import { fetchCpProgress, type CpBreakdownItem } from '../actions';
 
 interface Props {
   grades: GradeItem[];
+  classId?: string;
   className: string; // '' = belum pilih kelas
   academicYear: string;
   semester: number;
+  dataState?: SummaryReadState;
+  thresholds?: TeacherThreshold[];
+  thresholdState?: SummaryReadState;
 }
 
 interface StudentRapor {
@@ -27,7 +33,7 @@ interface StudentRapor {
   nis: string;
   rows: RaporRow[];
   avg: number | null;
-  tuntas: number;
+  tuntas: number | null;
   total: number;
 }
 
@@ -35,41 +41,52 @@ interface StudentRapor {
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
-export default function CapaianRapor({ grades, className, academicYear, semester }: Props) {
+export default function CapaianRapor(props: Props) {
+  return <PeriodCapaian key={`${props.academicYear}|${props.semester}|${props.classId ?? props.className}`} {...props} />;
+}
+function PeriodCapaian({ grades, className, classId, academicYear, semester, dataState = 'unavailable', thresholds = [], thresholdState = 'unavailable' }: Props) {
+  const scopeKey = `${academicYear}|${semester}|${classId ?? className}`;
   const students = useMemo<StudentRapor[]>(() => {
-    if (!className) return [];
-    const classGrades = grades.filter((g) => g.assignment.class.name === className);
-    const byStudent = new Map<string, { name: string; nis: string; subjects: Map<string, StudentGradeComponents> }>();
+    if (!className || dataState !== 'ready') return [];
+    const classGrades = grades.filter(g => g.academicYear === academicYear && g.assignment.academicYear === academicYear && g.semester === semester && (classId ? (g.assignment.classId ?? g.assignment.class.id) === classId : g.assignment.class.name === className));
+    const byStudent = new Map<string, { name: string; nis: string; subjects: Map<string, GradeItem[]> }>();
     for (const g of classGrades) {
       let st = byStudent.get(g.studentId);
       if (!st) {
         st = { name: g.student.user.fullName, nis: g.student.nis, subjects: new Map() };
         byStudent.set(g.studentId, st);
       }
-      const comp = st.subjects.get(g.assignment.subject) ?? {};
-      comp[g.type] = Number(g.score);
-      st.subjects.set(g.assignment.subject, comp);
+      const records = st.subjects.get(g.assignment.subject) ?? [];
+      records.push(g);
+      st.subjects.set(g.assignment.subject, records);
     }
     return [...byStudent.entries()]
       .map(([studentId, st]) => {
-        const rows: RaporRow[] = [...st.subjects.entries()].map(([subject, components]) => ({ subject, components }));
+        const rows: RaporRow[] = [...st.subjects.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([subject, records]) => ({ subject, components: averageGradeComponents(records), kktp: thresholdState === 'ready' ? subjectThreshold(thresholds, subject) : null }));
         const nas = rows.map((r) => naOf(r.components)).filter((n): n is number => n !== null);
         const avg = nas.length ? round1(nas.reduce((a, b) => a + b, 0) / nas.length) : null;
-        const tuntas = rows.filter((r) => { const na = naOf(r.components); return na !== null && na >= KKTP_DEFAULT; }).length;
+        const tuntas = rows.some(r => r.kktp == null || naOf(r.components) === null) ? null : rows.filter(r => naOf(r.components)! >= r.kktp!).length;
         return { studentId, name: st.name, nis: st.nis, rows, avg, tuntas, total: rows.length };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [grades, className]);
+  }, [grades, className, classId, thresholds, thresholdState, academicYear, semester, dataState]);
 
-  const [sel, setSel] = useState<StudentRapor | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const sel = students.find(student => student.studentId === selectedId) ?? null;
   const [tab, setTab] = useState<'ringkas' | 'rapor'>('ringkas');
   // W2-B-4: Real CP progress from /analytics/cp-progress
   const [cpRapor, setCpRapor] = useState<CpBreakdownItem[]>([]);
+  const [cpState, setCpState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   useEffect(() => {
-    fetchCpProgress({ classId: undefined, academicYear, semester }).then((res) => {
-      if (res.success && res.data) setCpRapor(res.data.cpBreakdown);
-    });
-  }, [academicYear, semester]);
+    let active = true; setCpRapor([]); setSelectedId(null); setCpState('loading');
+    fetchCpProgress({ classId, academicYear, semester }).then(res => {
+      if (!active) return;
+      // CP evidence does not replace the authoritative parent KKTP snapshot.
+      if (res.success && res.data && Array.isArray(res.data.cpBreakdown)) { setCpRapor(res.data.cpBreakdown); setCpState('ready'); }
+      else setCpState('unavailable');
+    }).catch(() => { if (active) { setCpRapor([]); setCpState('unavailable'); } });
+    return () => { active = false; };
+  }, [academicYear, semester, classId, scopeKey]);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2800); };
 
@@ -94,13 +111,11 @@ export default function CapaianRapor({ grades, className, academicYear, semester
   }
 
   // KPIs for Ringkasan Capaian
-  const tuntasCount = students.filter((s) => s.avg !== null && s.avg >= KKTP_DEFAULT).length;
+  const tuntasCount = students.filter(s => s.tuntas !== null && s.total > 0 && s.tuntas === s.total).length;
   const allNas = students.map((s) => s.avg).filter((x): x is number => x !== null);
   const rataNa = allNas.length ? Math.round((allNas.reduce((a, b) => a + b, 0) / allNas.length) * 10) / 10 : null;
-  const remedialCount = students.filter((s) => s.avg !== null && s.avg < KKTP_DEFAULT).length;
+  const remedialCount = students.filter(s => s.tuntas !== null && s.tuntas < s.total).length;
   // W2-B-4: CP Tercapai dari data NYATA
-  const cpTercapai = cpRapor.filter((c) => c.progres >= 75).length;
-  const cpTotal = cpRapor.length;
 
   return (
     <div className="space-y-4">
@@ -124,35 +139,35 @@ export default function CapaianRapor({ grades, className, academicYear, semester
           <Award className="h-[18px] w-[18px] text-emerald-600" />Capaian Pembelajaran — {className}
         </h3>
         <div className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10.5px] font-bold text-sky-700">
-          <Info className="h-3 w-3" /> CP Grid — data lengkap tersedia saat rapor diterbitkan
+          <Info className="h-3 w-3" /> Nilai akhir bukan bukti ketercapaian per CP
         </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <KpiSmall label="Tuntas" value={`${tuntasCount}/${students.length}`} valueClass="text-emerald-700" />
+          <KpiSmall label="Tuntas" value={dataState !== 'ready' || students.length === 0 || students.some(s => s.tuntas === null) ? "Belum tersedia" : `${tuntasCount}/${students.length}`} valueClass="text-emerald-700" />
           <KpiSmall label="Rata² NA" value={rataNa !== null ? `${rataNa}` : '—'} />
-          <KpiSmall label="Remedial" value={`${remedialCount}`} valueClass="text-rose-600" />
-          <KpiSmall label="CP Tercapai" value={`${cpTercapai}/${cpTotal}`} />
+          <KpiSmall label="Remedial" value={dataState !== 'ready' || students.length === 0 || students.some(s => s.tuntas === null) ? "Belum tersedia" : `${remedialCount}`} valueClass="text-rose-600" />
+          <KpiSmall label="CP Tercapai" value="Belum tersedia" />
         </div>
       </div>
 
       {/* Student list */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
             <GraduationCap className="h-[18px] w-[18px] text-emerald-600" />Pratinjau Rapor per Siswa
           </h3>
           <span className="inline-flex items-center gap-1.5 rounded-md bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">
-            <Users className="h-3.5 w-3.5" />{students.length} siswa
+            <Users className="h-3.5 w-3.5" />{dataState === 'ready' ? `${students.length} siswa` : 'Data siswa belum tersedia'}
           </span>
         </div>
 
-      <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-semibold text-amber-700">
-        <Info className="mt-px h-3.5 w-3.5 shrink-0" />
-        Pratinjau mencakup <b className="mx-1">mapel yang Anda ampu</b>. Rapor lengkap lintas mapel dikompilasi wali kelas / modul Rapor.
+      <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-semibold leading-relaxed text-amber-700">
+        <Info className="mr-1 inline h-3.5 w-3.5 align-text-bottom" aria-hidden="true" />
+        Pratinjau mencakup <b>mapel yang Anda ampu</b>. Rapor lengkap lintas mapel dikompilasi wali kelas / modul Rapor.
       </p>
 
       {students.length === 0 ? (
         <div className="mt-3 grid h-24 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">
-          Belum ada nilai untuk kelas ini.
+          {dataState === 'denied' ? 'Anda tidak memiliki izin melihat nilai.' : dataState !== 'ready' ? 'Nilai belum dapat dimuat. Coba muat ulang halaman.' : 'Belum ada nilai untuk kelas ini.'}
         </div>
       ) : (
         <div className="mt-3 overflow-x-auto">
@@ -161,14 +176,14 @@ export default function CapaianRapor({ grades, className, academicYear, semester
               <tr className="border-b border-[#e6efea] text-left text-[11px] uppercase tracking-wide text-[#6b8079]">
                 <th className="py-2 pr-3">Siswa</th>
                 <th className="py-2 pr-3 text-right">Rata² NA</th>
-                <th className="py-2 pr-3 text-center">Predikat</th>
+                <th className="py-2 pr-3 text-center">Ketuntasan</th>
                 <th className="py-2 pr-3 text-right">Tuntas</th>
                 <th className="py-2 text-right">Rapor</th>
               </tr>
             </thead>
             <tbody>
               {students.map((s) => {
-                const tone = s.avg != null ? STATUS_TEXT_CLASS[gradeStatus(s.avg)] : 'text-[#9bb0a8]';
+                const tone = s.tuntas === null ? 'text-[#9bb0a8]' : s.tuntas === s.total ? 'text-emerald-700' : 'text-amber-700';
                 return (
                   <tr key={s.studentId} className="border-b border-[#f0f4f2]">
                     <td className="py-2.5 pr-3">
@@ -177,13 +192,13 @@ export default function CapaianRapor({ grades, className, academicYear, semester
                     </td>
                     <td className={`py-2.5 pr-3 text-right font-extrabold tabular-nums ${tone}`}>{s.avg ?? '—'}</td>
                     <td className={`py-2.5 pr-3 text-center font-extrabold ${tone}`}>
-                      {s.avg != null ? predikat(s.avg) : '—'}
+                      {s.tuntas === null ? 'Belum tersedia' : `${s.tuntas}/${s.total} mapel`}
                     </td>
-                    <td className="py-2.5 pr-3 text-right text-[#355a4e]">{s.tuntas}/{s.total}</td>
+                    <td className="py-2.5 pr-3 text-right text-[#355a4e]">{s.tuntas === null ? 'Belum tersedia' : `${s.tuntas}/${s.total}`}</td>
                     <td className="py-2.5 text-right">
                       <button
                         type="button"
-                        onClick={() => setSel(s)}
+                        onClick={() => setSelectedId(s.studentId)}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-[#e6efea] bg-white px-2.5 py-1.5 text-[12px] font-bold text-[#355a4e] transition hover:bg-[#f4f7f5]"
                       >
                         <FileText className="h-3.5 w-3.5 text-emerald-600" />Lihat
@@ -209,11 +224,11 @@ export default function CapaianRapor({ grades, className, academicYear, semester
           <b>Komposisi Nilai Akhir (NA):</b> UH×{Math.round(NA_WEIGHTS.uh * 100)}% + Praktik×{Math.round(NA_WEIGHTS.praktik * 100)}% + Sikap×{Math.round(NA_WEIGHTS.sikap * 100)}% + UTS×{Math.round(NA_WEIGHTS.uts * 100)}% + UAS×{Math.round(NA_WEIGHTS.uas * 100)}%. UH = rata² formatif harian TP. Praktik = tugas/proyek/observasi. Sikap = observasi langsung.
         </div>
         <div className="flex flex-col items-start gap-2 text-[12px] font-semibold text-[#355a4e]">
-          <div className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5 text-emerald-600" /> <b>Formatif harian (TP)</b> → rata² → UH di Gradebook</div>
-          <div className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5 text-emerald-600" /> <b>Sumatif per CP</b> → ukur ketercapaian CP</div>
-          <div className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5 text-emerald-600" /> <b>UTS</b> = sumatif beberapa CP tahap 1 · <b>UAS</b> = sumatif semua CP tahap 1+2</div>
-          <div className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5 text-emerald-600" /> <b>NA ≥ KKTP</b> → CP terkait bertambah progres → Rapor</div>
-          <div className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5 text-emerald-600" /> <b>Semua agregasi</b> → Rekap Audit KS/Wakakur</div>
+          <p><ArrowRight className="mr-1 inline h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> <b>Formatif harian (TP)</b> → rata-rata → UH di Rekap Nilai</p>
+          <p><ArrowRight className="mr-1 inline h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> <b>Sumatif per CP</b> → ukur ketercapaian CP</p>
+          <p><ArrowRight className="mr-1 inline h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> <b>UTS</b> = sumatif beberapa CP tahap 1 · <b>UAS</b> = sumatif semua CP tahap 1+2</p>
+          <p><ArrowRight className="mr-1 inline h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> <b>NA ≥ KKTP</b> → ketuntasan hasil nilai → Rapor; tidak otomatis menjadi progres CP</p>
+          <p><ArrowRight className="mr-1 inline h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> <b>Ringkasan nilai</b> → Rekap Audit KS/Wakakur</p>
         </div>
       </div>
       </>
@@ -223,7 +238,7 @@ export default function CapaianRapor({ grades, className, academicYear, semester
       <>
       {/* Rapor Preview Matrix */}
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
             <FileText className="h-[18px] w-[18px] text-emerald-600" />Pratinjau Rapor — {className}
           </h3>
@@ -232,13 +247,13 @@ export default function CapaianRapor({ grades, className, academicYear, semester
             <Download className="h-3.5 w-3.5" />Ekspor PDF
           </button>
         </div>
-        <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-semibold text-amber-700">
-          <Info className="mt-px h-3.5 w-3.5 shrink-0" />
-          Pratinjau mencakup <b className="mx-1">mapel yang Anda ampu</b>. Rapor lengkap (muatan lokal, Ekskul, ketidakhadiran, catatan guru, pengesahan) dikompilasi wali kelas / modul Rapor.
+        <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-semibold leading-relaxed text-amber-700">
+          <Info className="mr-1 inline h-3.5 w-3.5 align-text-bottom" aria-hidden="true" />
+          Pratinjau mencakup <b>mapel yang Anda ampu</b>. Rapor lengkap (muatan lokal, Ekskul, ketidakhadiran, catatan guru, pengesahan) dikompilasi wali kelas / modul Rapor.
         </p>
         {students.length === 0 ? (
           <div className="mt-3 grid h-24 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">
-            Belum ada nilai untuk kelas ini.
+            {dataState === 'denied' ? 'Anda tidak memiliki izin melihat nilai.' : dataState !== 'ready' ? 'Nilai belum dapat dimuat. Coba muat ulang halaman.' : 'Belum ada nilai untuk kelas ini.'}
           </div>
         ) : (
           <div className="mt-3 overflow-x-auto">
@@ -250,13 +265,13 @@ export default function CapaianRapor({ grades, className, academicYear, semester
                     <th key={sub} className="py-2 px-2 text-center">{sub}</th>
                   ))}
                   <th className="py-2 pl-3 text-right">Rata² NA</th>
-                  <th className="py-2 pl-3 text-center">Predikat</th>
+                  <th className="py-2 pl-3 text-center">Ketuntasan</th>
                   <th className="py-2 pl-3 text-center">Rapor</th>
                 </tr>
               </thead>
               <tbody>
                 {students.map((s) => {
-                  const tone = s.avg != null ? STATUS_TEXT_CLASS[gradeStatus(s.avg)] : 'text-[#9bb0a8]';
+                  const tone = s.tuntas === null ? 'text-[#9bb0a8]' : s.tuntas === s.total ? 'text-emerald-700' : 'text-amber-700';
                   return (
                     <tr key={s.studentId} className="border-b border-[#f0f4f2]">
                       <td className="py-2 pr-3">
@@ -267,17 +282,17 @@ export default function CapaianRapor({ grades, className, academicYear, semester
                         const row = s.rows.find((r) => r.subject === sub);
                         const na = row ? naOf(row.components) : null;
                         return (
-                          <td key={sub} className={`py-2 px-2 text-center font-bold tabular-nums ${na != null ? STATUS_TEXT_CLASS[gradeStatus(na)] : 'text-[#9bb0a8]'}`}>
+                          <td key={sub} className={`py-2 px-2 text-center font-bold tabular-nums ${na != null && row?.kktp != null ? STATUS_TEXT_CLASS[gradeStatus(na, row.kktp)] : 'text-[#9bb0a8]'}`}>
                             {na ?? '—'}
                           </td>
                         );
                       })}
                       <td className={`py-2 pl-3 text-right font-extrabold tabular-nums ${tone}`}>{s.avg ?? '—'}</td>
                       <td className={`py-2 pl-3 text-center font-extrabold ${tone}`}>
-                        {s.avg != null ? predikat(s.avg) : '—'}
+                        {s.tuntas === null ? 'Belum tersedia' : `${s.tuntas}/${s.total} mapel`}
                       </td>
                       <td className="py-2 pl-3 text-center">
-                        <button type="button" onClick={() => setSel(s)}
+                        <button type="button" onClick={() => setSelectedId(s.studentId)}
                           className="inline-flex items-center gap-1 rounded-lg border border-[#e6efea] bg-white px-2 py-1 text-[11px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">
                           <FileText className="h-3 w-3 text-emerald-600" />Lihat
                         </button>
@@ -297,11 +312,11 @@ export default function CapaianRapor({ grades, className, academicYear, semester
           <TrendingUp className="h-[18px] w-[18px] text-emerald-600" />Progres Ketercapaian CP
         </h3>
         <div className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10.5px] font-bold text-sky-700">
-          <Info className="h-3 w-3" /> Data progres CP tersedia saat rapor diterbitkan
+          <Info className="h-3 w-3" /> Nilai akhir bukan bukti ketercapaian per CP
         </div>
         {cpRapor.length === 0 ? (
           <div className="grid h-16 place-items-center rounded-xl bg-[#f4f7f5] text-[12px] font-medium text-[#9bb0a8]">
-            Data progres CP tersedia saat Modul Ajar berisi capaian pembelajaran (CP) dan nilai aktif.
+            {cpState === 'loading' ? 'Memuat bukti asesmen per CP...' : cpState === 'unavailable' ? 'Bukti asesmen per CP belum dapat dimuat. Coba muat ulang halaman.' : 'Bukti asesmen yang terhubung per CP belum tersedia. Nilai mapel tidak digunakan sebagai progres CP.'}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -327,11 +342,11 @@ export default function CapaianRapor({ grades, className, academicYear, semester
           <GitBranch className="h-[18px] w-[18px] text-emerald-600" />Alur Capaian → Rapor
         </h3>
         <div className="flex flex-col items-start gap-2 text-[12px] font-semibold text-[#355a4e]">
-          <div className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5 text-emerald-600" /> <b>Formatif harian (TP)</b> → rata² → UH di Gradebook</div>
-          <div className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5 text-emerald-600" /> <b>Sumatif per CP</b> → ukur ketercapaian CP</div>
-          <div className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5 text-emerald-600" /> <b>NA ≥ KKTP</b> → CP terkait bertambah progres → Rapor</div>
-          <div className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5 text-emerald-600" /> <b>Deskripsi capaian per TP</b> → diperiksa Kepala Sekolah → terbit ke orang tua</div>
-          <div className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5 text-emerald-600" /> <b>Rapor lengkap</b> (muatan lokal, Ekskul, ketidakhadiran, catatan guru) → modul Rapor / Wali Kelas</div>
+          <p><ArrowRight className="mr-1 inline h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> <b>Formatif harian (TP)</b> → rata-rata → UH di Rekap Nilai</p>
+          <p><ArrowRight className="mr-1 inline h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> <b>Sumatif per CP</b> → ukur ketercapaian CP</p>
+          <p><ArrowRight className="mr-1 inline h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> <b>NA ≥ KKTP</b> → ketuntasan hasil nilai → Rapor; tidak otomatis menjadi progres CP</p>
+          <p><ArrowRight className="mr-1 inline h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> <b>Deskripsi capaian per TP</b> → diperiksa Kepala Sekolah → terbit ke orang tua</p>
+          <p><ArrowRight className="mr-1 inline h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> <b>Rapor lengkap</b> (muatan lokal, Ekskul, ketidakhadiran, catatan guru) → modul Rapor / Wali Kelas</p>
         </div>
       </div>
       </>
@@ -346,7 +361,7 @@ export default function CapaianRapor({ grades, className, academicYear, semester
     {sel && (
       <RaporModal
         open={!!sel}
-        onOpenChange={(o) => !o && setSel(null)}
+        onOpenChange={(o) => !o && setSelectedId(null)}
         studentName={sel.name}
         subtitle={`${className} · Semester ${semester} · ${academicYear || '—'}`}
         rows={sel.rows}

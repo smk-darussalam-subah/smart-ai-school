@@ -12,6 +12,8 @@ export const AnalyticsQuerySchema = z.object({
   semester: z.coerce.number().int().min(1).max(2).optional(),
   majorCode: z.string().max(10).optional(),
   classId: z.string().uuid().optional(),
+  teacherId: z.string().uuid().optional(),
+  subject: z.string().trim().min(1).max(120).optional(),
 });
 
 export type AnalyticsQuery = z.infer<typeof AnalyticsQuerySchema>;

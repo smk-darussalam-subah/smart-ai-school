@@ -114,7 +114,7 @@ export class ClassSessionService {
       this.prisma.classSession.findMany({
         where,
         select: SESSION_SELECT,
-        orderBy: [{ serviceDate: 'desc' }, { scheduledStartAt: 'asc' }],
+        orderBy: [{ serviceDate: 'desc' }, { scheduledStartAt: 'asc' }, { id: 'asc' }],
         skip,
         take: query.limit,
       }),

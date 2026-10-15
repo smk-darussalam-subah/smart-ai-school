@@ -957,7 +957,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     const [data, total] = await Promise.all([
       this.prisma.assessmentSession.findMany({
         where,
-        orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+        orderBy: [{ status: 'asc' }, { createdAt: 'desc' }, { id: 'asc' }],
         skip,
         take: query.limit,
         select: SESSION_SELECT,

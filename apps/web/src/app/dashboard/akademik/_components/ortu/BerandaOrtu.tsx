@@ -6,9 +6,11 @@ import LearnerScheduleNotice from '../LearnerScheduleNotice';
 import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import {
   CalendarCheck, CalendarClock, Wallet, TrendingUp, Megaphone,
-  MessageCircle, ChevronRight, TrendingDown, UserCircle, Phone, Mail,
+  MessageCircle, ChevronRight, UserCircle, Phone, Mail,
 } from 'lucide-react';
-import { KKTP_DEFAULT, fmtRupiahExact, daysUntil, fmtDateShort } from '@/lib/academic';
+import { fmtRupiahExact, daysUntil, fmtDateShort } from '@/lib/academic';
+import { learnerGradeStatus, type LearnerGradeState } from '@/lib/learner-grades';
+import { LearnerGradeNotice } from '../LearnerGradeView';
 import { scheduleDayOfWeek, wibNow } from '@/lib/bell-times';
 import type { AttendanceItem } from '@/lib/api';
 import type { OrtuScreen, ModalState } from './OrtuWorkspace';
@@ -28,7 +30,8 @@ interface BerandaOrtuProps {
   showToast: (msg: string) => void;
   go: (screen: OrtuScreen) => void;
   setModal: (modal: ModalState) => void;
-  grades?: unknown[];
+  grades?: OrtuNilai[];
+  gradeState?: LearnerGradeState;
   announcements?: { id: string; title: string; createdAt: string }[];
   // T1-02 (audit v2): data real menggantikan SIM_*
   children: OrtuChild[];
@@ -58,7 +61,7 @@ const RING_CIRC = 2 * Math.PI * RING_R;
 
 const EMPTY_CHILD: OrtuChild = { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
 
-export default function BerandaOrtu({ showToast: _showToast, go, setModal, grades, announcements, children, activeChildIndex, schedule, scheduleState = 'ready', spp, waLog, attendance, rank, activeStudentId }: BerandaOrtuProps) {
+export default function BerandaOrtu({ showToast: _showToast, go, setModal, grades, gradeState = 'ready', announcements, children, activeChildIndex, schedule, scheduleState = 'ready', spp, waLog, attendance, rank, activeStudentId }: BerandaOrtuProps) {
   // U4: Fetch wali kelas / teachers for contact info
   const [waliKelas, setWaliKelas] = useState<{ name: string; subject: string; phone: string | null; email: string | null } | null>(null);
   useEffect(() => {
@@ -75,7 +78,7 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
 
   // T1-02: sumber data 100% real. Tidak ada lagi fallback ke SIM_*.
   const child = children[activeChildIndex] ?? EMPTY_CHILD;
-  const nilai: OrtuNilai[] = grades?.length ? (grades as OrtuNilai[]) : [];
+  const nilai = gradeState === 'ready' ? grades ?? [] : [];
   const avg = avgNa(nilai);
   const stats = computeAttStats(attendance);           // ganti SIM_KEH_STATS
   const bell = useBellPattern();
@@ -128,7 +131,7 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
         </div>
         <div className="relative z-10 mt-3.5 flex gap-3">
           <div className="flex-1 text-center">
-            <div className="text-[18px] font-extrabold">{avg || '—'}</div>
+            <div className="text-[18px] font-extrabold">{avg ?? '—'}</div>
             <div className="text-[9px] font-semibold uppercase tracking-wide opacity-75">Rata²</div>
           </div>
           <div className="flex-1 text-center">
@@ -299,7 +302,7 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
           <div className="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
             <TrendingUp className="h-[15px] w-[15px] text-[var(--pri)]" />
             Nilai Terbaru
-            {nilai.length === 0 && <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[9px] text-sky-500">Belum ada data</span>}
+            {nilai.length === 0 && gradeState === 'ready' && <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[9px] text-sky-500">Belum ada data</span>}
           </div>
           <button
             onClick={() => go('nilai')}
@@ -309,13 +312,11 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
           </button>
         </div>
         {nilai.length === 0 ? (
-          <div className="py-5 text-center text-[12px] font-semibold text-[var(--dim)]">
-            Belum ada nilai yang diinput guru
-          </div>
+          <LearnerGradeNotice state={gradeState} empty />
         ) : (
           nilai.slice(0, 3).map((n) => {
           const c = mpColor(n.mp);
-          const cls = gradeCls(n.na);
+          const cls = gradeCls(n.na, n.kktp);
           return (
             <div
               key={n.mp}
@@ -329,19 +330,14 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
               <div className="min-w-0 flex-1">
                 <b className="block text-[13px]">{n.mp}</b>
                 <small className="text-[10px] font-semibold text-[var(--muted)]">
-                  {n.na >= KKTP_DEFAULT ? 'Tuntas' : 'Remedial'} · KKTP {KKTP_DEFAULT}
+                  {learnerGradeStatus(n)} · KKTP {n.kktp ?? '—'}
                 </small>
               </div>
               <div
                 className="shrink-0 text-[18px] font-extrabold"
-                style={{ color: cls === 'ok' ? 'var(--em)' : cls === 'warn' ? 'var(--amber)' : 'var(--rose)' }}
+                style={{ color: cls === 'unknown' ? 'var(--muted)' : cls === 'ok' ? 'var(--em)' : cls === 'warn' ? 'var(--amber)' : 'var(--rose)' }}
               >
-                {n.na}
-              </div>
-              <div className="shrink-0" style={{ color: n.trend === 'up' ? 'var(--em)' : 'var(--rose)' }}>
-                {n.trend === 'up'
-                  ? <TrendingUp className="h-[14px] w-[14px]" />
-                  : <TrendingDown className="h-[14px] w-[14px]" />}
+                {n.na ?? '—'}
               </div>
             </div>
           );

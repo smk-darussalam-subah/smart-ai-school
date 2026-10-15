@@ -14,8 +14,9 @@
 // proxy dari caller tidak pernah melewati boundary Next.js -> NestJS.
 // =============================================================================
 
-import { getToken } from 'next-auth/jwt';
 import { NextRequest } from 'next/server';
+import { resolveRequestSession, persistSessionCookies } from '@/lib/request-session';
+import { isTerminalSessionError } from '@/lib/auth-session-state';
 
 const API_BASE = process.env.API_URL ?? 'http://localhost:3001';
 
@@ -24,6 +25,7 @@ const REQUEST_HEADER_ALLOWLIST = new Set([
   'accept-language',
   'authorization',
   'content-type',
+  'idempotency-key',
   'if-match',
   'if-modified-since',
   'if-none-match',
@@ -33,6 +35,10 @@ const REQUEST_HEADER_ALLOWLIST = new Set([
 
 // Response headers yang tidak boleh diteruskan ke browser.
 const RESPONSE_STRIP_HEADERS = new Set([
+  // fetch decodes upstream compression; these describe the old encoded bytes.
+  // Forwarding them makes browsers decompress JSON twice or truncate the body.
+  'content-encoding',
+  'content-length',
   'host',
   'connection',
   'keep-alive',
@@ -63,17 +69,35 @@ function copyResponseHeaders(responseHeaders: Headers): Record<string, string> {
   return out;
 }
 
-async function buildBackendRequestHeaders(request: NextRequest): Promise<Record<string, string>> {
+async function buildBackendRequestHeaders(request: NextRequest): Promise<{
+  headers: Record<string, string>;
+  cookies: string[];
+  failure?: Response;
+}> {
   const out = copyAllowedRequestHeaders(request.headers);
   const hasAuthorization = Object.keys(out).some((key) => key.toLowerCase() === 'authorization');
-  if (!hasAuthorization) {
-    const token = await getToken({
-      req: request,
-      secret: process.env.NEXTAUTH_SECRET,
-    }).catch(() => null);
-    if (token?.accessToken) out.Authorization = `Bearer ${token.accessToken}`;
-  }
-  return out;
+  if (hasAuthorization) return { headers: out, cookies: [] };
+  const { session, cookies } = await resolveRequestSession(request);
+  if (isTerminalSessionError(session?.error))
+    return {
+      headers: out,
+      cookies,
+      failure: Response.json(
+        { message: 'Sesi Anda telah berakhir. Silakan masuk kembali.' },
+        { status: 401 },
+      ),
+    };
+  if (session?.error === 'RefreshAccessTokenTemporaryError' && !session.accessToken)
+    return {
+      headers: out,
+      cookies,
+      failure: Response.json(
+        { message: 'Layanan sesi sementara belum tersedia. Coba lagi.' },
+        { status: 503, headers: { 'retry-after': '30' } },
+      ),
+    };
+  if (session?.accessToken) out.Authorization = `Bearer ${session.accessToken}`;
+  return { headers: out, cookies };
 }
 
 async function proxyRequest(
@@ -81,13 +105,20 @@ async function proxyRequest(
   { params }: { params: Promise<{ path: string[] }> },
 ): Promise<Response> {
   const { path } = await params;
-  const backendPath = path.join('/');
+  if (path.some(segment => segment === '.' || segment === '..'))
+    return Response.json({ message: 'Path tidak valid.' }, { status: 400 });
+  // App Router params are decoded. Preserve each segment (including a year
+  // such as 2026/2027) rather than turning encoded data into routing syntax.
+  const backendPath = path.map((segment) => encodeURIComponent(segment)).join('/');
   const backendUrl = `${API_BASE}/api/v1/${backendPath}${request.url.includes('?') ? `?${new URL(request.url).search.slice(1)}` : ''}`;
-
+  let sessionCookies: string[] = [];
   try {
+    const auth = await buildBackendRequestHeaders(request);
+    sessionCookies = auth.cookies;
+    if (auth.failure) return persistSessionCookies(auth.failure, auth.cookies);
     const backendRes = await fetch(backendUrl, {
       method: request.method,
-      headers: await buildBackendRequestHeaders(request),
+      headers: auth.headers,
       body:
         request.method !== 'GET' && request.method !== 'HEAD'
           ? await request.arrayBuffer()
@@ -97,20 +128,26 @@ async function proxyRequest(
     // Forward response headers (strip hop-by-hop)
     const responseHeaders = copyResponseHeaders(backendRes.headers);
 
-    return new Response(backendRes.body, {
-      status: backendRes.status,
-      statusText: backendRes.statusText,
-      headers: responseHeaders,
-    });
+    return persistSessionCookies(
+      new Response(backendRes.body, {
+        status: backendRes.status,
+        statusText: backendRes.statusText,
+        headers: responseHeaders,
+      }),
+      auth.cookies,
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console
     console.error(
       `[api-backend-proxy] ${request.method} /${backendPath} → ${backendUrl} FAILED: ${message}`,
     );
-    return Response.json(
-      { statusCode: 502, message: `Backend unreachable: ${message}` },
-      { status: 502 },
+    return persistSessionCookies(
+      Response.json(
+        { statusCode: 502, message: `Backend unreachable: ${message}` },
+        { status: 502 },
+      ),
+      sessionCookies,
     );
   }
 }

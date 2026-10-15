@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { authOptions } from '@/lib/auth';
 import { apiFetch, apiFetchResult, type ApiFetchResult } from '@/lib/api';
+import { academicPagesResult } from '@/lib/academic-pages-server';
+import { periodPath, selectAcademicPeriod, type AcademicPeriod } from '@/lib/academic-scheduling';
 import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
 import { getEffectiveRoles } from '@/lib/view-as';
 import { isMobileOnlyDashboardRoleSet } from '@/lib/dashboard-routing';
@@ -16,12 +18,13 @@ interface ActiveAcademicYear {
   name?: string;
   code?: string;
 }
-interface ActiveSemester {
+interface ActiveSemester extends AcademicPeriod {
   id: string;
   name?: string;
   semester?: number;
 }
 interface ScheduleApi {
+  id: string;
   classId: string;
   jpStart: number;
   jpEnd: number;
@@ -89,12 +92,14 @@ function buildPapanRows(list: ScheduleApi[]): PapanRow[] {
     }
     for (let jp = schedule.jpStart; jp <= schedule.jpEnd; jp += 1) {
       const index = jp - 1;
-      if (index >= 0 && entry.cells[index] === null) {
-        entry.cells[index] = {
+      if (index >= 0) {
+        const next: PapanCell = {
           subject: schedule.teachingAssignment.subject,
           teacher: schedule.teachingAssignment.teacher.user.fullName,
           room: schedule.room,
         };
+        const prior = entry.cells[index];
+        entry.cells[index] = prior ? { ...prior, sessions: [...(prior.sessions ?? [prior]),next] } : next;
       }
     }
   }
@@ -143,8 +148,9 @@ export default async function DashboardPage() {
     apiFetch<ActiveAcademicYear>('/school/academic-years/active', token),
     apiFetch<ActiveSemester>('/school/semesters/active', token),
   ]);
-  const periodLabel = academicYear
-    ? `${academicYear.name ?? academicYear.code ?? 'Tahun ajaran aktif'}${semester ? ` · Semester ${semester.semester ?? semester.name ?? 'aktif'}` : ''}`
+  const activePeriod = selectAcademicPeriod(semester,[],{});
+  const periodLabel = activePeriod && academicYear
+    ? `${activePeriod.academicYear.code} · Semester ${activePeriod.number}`
     : null;
 
   const canReadStudents = authority.can('student.read');
@@ -181,13 +187,13 @@ export default async function DashboardPage() {
       ? apiFetch<{ total: number }>('/rpp?status=submitted&limit=1', token)
       : Promise.resolve(null),
     canReadSchedule && dayOfWeek > 0
-      ? apiFetchResult<{ data: ScheduleApi[] }>(`/schedules?dayOfWeek=${dayOfWeek}&limit=500`, token)
+      ? academicPagesResult<ScheduleApi>(periodPath(`/schedules?dayOfWeek=${dayOfWeek}`, activePeriod), token)
       : Promise.resolve(successfulEmpty({ data: [] as ScheduleApi[] })),
     academicYear
       ? apiFetchResult<CalendarApi[]>('/school/calendar', token, { academicYearId: academicYear.id })
       : Promise.resolve({ status: 'unavailable', message: 'Periode aktif belum tersedia.' } as ApiFetchResult<CalendarApi[]>),
     canReadSchedule
-      ? apiFetchResult<{ data: ClassSessionApi[] }>(`/class-sessions?date=${wibToday()}`, token)
+      ? academicPagesResult<ClassSessionApi>(`/class-sessions?date=${wibToday()}`, token)
       : Promise.resolve(successfulEmpty({ data: [] as ClassSessionApi[] })),
     canReadMonitoring
       ? apiFetch<MonitoringApi>('/operational-monitoring/snapshot', token)

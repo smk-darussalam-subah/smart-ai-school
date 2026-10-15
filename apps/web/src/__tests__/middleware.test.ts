@@ -53,6 +53,15 @@ function makeRequest(pathname: string) {
   } as unknown as import('next/server').NextRequest;
 }
 
+function validToken(roles: string[]) {
+  return {
+    roles,
+    accessToken: 'synthetic-access',
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    refreshedAt: Math.floor(Date.now() / 1000),
+  };
+}
+
 // ── N21: CSP ada di requestHeaders untuk route dinamis ────────────────────────
 // Gunakan /api/auth/callback — public path, dynamic CSP (nonce + strict-dynamic),
 // tidak masuk STATIC_INTERACTIVE, token=null → NextResponse.next().
@@ -198,7 +207,7 @@ describe('middleware - learner OAuth landing (React #310 regression)', () => {
   it.each(['SISWA', 'ORANG_TUA'])(
     'redirects a %s account before the App Router mounts',
     async (role) => {
-      mockedGetToken.mockResolvedValue({ roles: [role] } as Awaited<ReturnType<typeof getToken>>);
+      mockedGetToken.mockResolvedValue(validToken([role]));
 
       await middleware(makeRequest('/dashboard'));
 
@@ -210,9 +219,7 @@ describe('middleware - learner OAuth landing (React #310 regression)', () => {
   it.each(['GURU', 'KEPALA_SEKOLAH', 'SUPER_ADMIN', 'TATA_USAHA'])(
     'keeps a mixed SISWA + %s account on the standard dashboard',
     async (role) => {
-      mockedGetToken.mockResolvedValue({ roles: ['SISWA', role] } as Awaited<
-        ReturnType<typeof getToken>
-      >);
+      mockedGetToken.mockResolvedValue(validToken(['SISWA', role]));
 
       await middleware(makeRequest('/dashboard'));
 
@@ -224,9 +231,7 @@ describe('middleware - learner OAuth landing (React #310 regression)', () => {
   it.each(['SISWA', 'ORANG_TUA'])(
     'keeps a %s + INDUSTRI account on the standard dashboard',
     async (role) => {
-      mockedGetToken.mockResolvedValue({ roles: [role, 'INDUSTRI'] } as Awaited<
-        ReturnType<typeof getToken>
-      >);
+      mockedGetToken.mockResolvedValue(validToken([role, 'INDUSTRI']));
 
       await middleware(makeRequest('/dashboard'));
 
@@ -236,9 +241,7 @@ describe('middleware - learner OAuth landing (React #310 regression)', () => {
   );
 
   it('does not redirect an INDUSTRI-only account to the akademik workspace', async () => {
-    mockedGetToken.mockResolvedValue({ roles: ['INDUSTRI'] } as Awaited<
-      ReturnType<typeof getToken>
-    >);
+    mockedGetToken.mockResolvedValue(validToken(['INDUSTRI']));
 
     await middleware(makeRequest('/dashboard'));
 
@@ -247,7 +250,7 @@ describe('middleware - learner OAuth landing (React #310 regression)', () => {
   });
 
   it('does not redirect a learner already on the akademik workspace', async () => {
-    mockedGetToken.mockResolvedValue({ roles: ['SISWA'] } as Awaited<ReturnType<typeof getToken>>);
+    mockedGetToken.mockResolvedValue(validToken(['SISWA']));
 
     await middleware(makeRequest('/dashboard/akademik'));
 

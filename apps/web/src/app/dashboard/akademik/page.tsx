@@ -1,10 +1,14 @@
 import React from 'react';
+import { academicPages, academicPagesResult, academicCatalog } from '@/lib/academic-pages-server';
+import { periodPath, selectAcademicPeriod, lessonLinks, type AcademicPeriod } from '@/lib/academic-scheduling';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getActiveViewAs } from '@/lib/view-as';
 import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
 import { redirect } from 'next/navigation';
-import { apiFetch, apiFetchResult, PaginatedResponse, GradeItem, AttendanceItem } from '@/lib/api';
+import { apiFetch, apiFetchResult, GradeItem, AttendanceItem } from '@/lib/api';
+import { readParentChildren } from '@/lib/parent-children';
+import { fetchLearnerGrades } from '@/lib/learner-grades-server';
 import type {
   SiswaBadge,
   SiswaXP,
@@ -43,6 +47,10 @@ import {
 } from './_components/ortu/ortu-mappers';
 import { resolveAcademicWorkflowView } from '@/lib/academic-workflow-deep-link';
 import { childSchedulePath, OWN_STUDENT_SCHEDULE_PATH, readLearnerSchedule } from '@/lib/learner-schedule';
+import { readTeacherThresholds, mergeTeacherThresholds, teacherTodayState, type SummaryReadState } from '@/lib/teacher-summary';
+import type { ApiFetchResult } from '@/lib/api';
+
+const summaryState = (result: ApiFetchResult<unknown>): SummaryReadState => result.status === 'success' ? 'ready' : result.status === 'forbidden' ? 'denied' : 'unavailable';
 
 type Assignment = TeachingAssignmentItem;
 interface ClassItem {
@@ -56,10 +64,7 @@ export interface SubjectItem {
   isActive: boolean;
 }
 
-interface ActiveSemester {
-  number: number;
-  academicYear: { code: string };
-}
+type ActiveSemester = AcademicPeriod;
 interface StudentDashboardAssignment {
   id: string;
   type: 'lms' | 'assessment';
@@ -128,27 +133,27 @@ function studentTaskStatus(item: StudentDashboardAssignment): 'pending' | 'submi
   return 'pending';
 }
 
-async function fetchInitialAssessmentSessions(token: string): Promise<{
+async function fetchInitialAssessmentSessions(token: string, period: AcademicPeriod | null): Promise<{
   data: AssessmentSessionData[];
+  all: AssessmentSessionData[];
   total: number;
   page: number;
   limit: number;
   failed: boolean;
+  state: SummaryReadState;
 }> {
-  const first = await apiFetch<{
-    data: AssessmentSessionData[];
-    total: number;
-    page: number;
-    limit: number;
-  }>(`/assessment/sessions?page=1&limit=${ASSESSMENT_SESSION_PAGE_SIZE}&purpose=regular`, token);
-  if (!first)
-    return { data: [], total: 0, page: 1, limit: ASSESSMENT_SESSION_PAGE_SIZE, failed: true };
+  const read = await academicPagesResult<AssessmentSessionData>(periodPath('/assessment/sessions?purpose=regular', period), token);
+  if (read.status !== 'success')
+    return { data: [], all: [], total: 0, page: 1, limit: ASSESSMENT_SESSION_PAGE_SIZE, failed: true, state: summaryState(read) };
+  const first = read.data;
   return {
-    data: first.data,
+    data: first.data.slice(0,ASSESSMENT_SESSION_PAGE_SIZE),
+    all: first.data,
     total: first.total ?? first.data.length,
     page: first.page ?? 1,
-    limit: first.limit ?? ASSESSMENT_SESSION_PAGE_SIZE,
+    limit: ASSESSMENT_SESSION_PAGE_SIZE,
     failed: false,
+    state: 'ready',
   };
 }
 
@@ -163,14 +168,27 @@ export default async function AkademikPage({
   const openNotifications = oneSearchParam(requestedParams.panel) === 'notifications';
   const initialStudentId = oneSearchParam(requestedParams.studentId).trim();
   const token = session?.accessToken ?? '';
-  const bellProfile = await apiFetch<BellProfile>('/bell-schedules/resolve?scope=SCHOOL&date=' + wibTodayISO(), token);
+  const [activePeriod, configuredPeriods] = await Promise.all([
+    apiFetch<ActiveSemester>('/school/semesters/active', token),
+    apiFetch<ActiveSemester[]>('/school/semesters', token),
+  ]);
+  const selectedPeriod = selectAcademicPeriod(activePeriod, configuredPeriods ?? [], {
+    academicYear: oneSearchParam(requestedParams.academicYear),
+    semester: oneSearchParam(requestedParams.semester),
+  });
+  const pp = (path: string, mode?: 'semester' | 'year' | 'attendance' | 'journal') => periodPath(path, selectedPeriod, mode);
+  const academicYear = selectedPeriod?.academicYear.code ?? '';
+  const semester = selectedPeriod?.number ?? 0;
+  const inSelectedPeriod = !!selectedPeriod && wibTodayISO() >= selectedPeriod.startDate.slice(0,10) && wibTodayISO() <= selectedPeriod.endDate.slice(0,10);
+  const bellProfile = inSelectedPeriod ? await apiFetch<BellProfile>(
+    '/bell-schedules/resolve?' + new URLSearchParams({ scope: 'SCHOOL', date: wibTodayISO() }), token) : null;
   const dailySlots = slotsForDay(bellProfile, scheduleDayOfWeek());
   const authority = await resolveDashboardAuthority(session);
   const roles = authority.roles;
   const viewAs = await getActiveViewAs(session);
 
   if (roles.includes('INDUSTRI')) redirect('/dashboard');
-  const isGuru = roles.includes('GURU') && !authority.hasRole('KEPALA_SEKOLAH', 'WAKA_KURIKULUM');
+  const isGuru = roles.includes('GURU') && !authority.hasRole('KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPROG');
   const isDualRoleWaka =
     (session.roles ?? []).includes('GURU') &&
     authority.hasRole('WAKA_KURIKULUM') &&
@@ -194,30 +212,34 @@ export default async function AkademikPage({
     authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_KURIKULUM', 'KAPROG') &&
     authority.can('academic.teaching.read');
   const [
-    gradesData,
-    attendanceData,
+    gradesRead,
+    attendanceRead,
     classesRes,
     assignmentsRes,
     subjectsRes,
     assignmentOptionsRes,
   ] = await Promise.all([
-    apiFetch<PaginatedResponse<GradeItem>>('/grades?limit=200', token),
-    apiFetch<PaginatedResponse<AttendanceItem>>('/attendance?limit=200', token),
+    academicPagesResult<GradeItem>(pp('/grades'), token),
+    academicPagesResult<AttendanceItem>(pp('/attendance', 'attendance'), token),
     canReadAllClasses
-      ? apiFetch<{ data: ClassItem[] }>('/classes?limit=100', token)
+      ? academicPages<ClassItem>(pp('/classes', 'year'), token)
       : Promise.resolve({ data: [] as ClassItem[] }),
-    apiFetch<{ data: Assignment[]; total: number }>('/teaching-assignments?page=1&limit=20', token),
-    apiFetch<{ data: SubjectItem[] }>('/subjects?limit=200', token),
+    academicPages<Assignment>(pp('/teaching-assignments', 'year'), token),
+    academicCatalog<SubjectItem>('/subjects', token),
     canReadAssignmentOptions
       ? apiFetch<TeachingAssignmentOptions>('/teaching-assignments/options/active', token)
       : Promise.resolve(null),
   ]);
+  const gradesData = gradesRead.status === 'success' ? gradesRead.data : null;
+  const attendanceData = attendanceRead.status === 'success' ? attendanceRead.data : null;
+  const todayDate = wibTodayISO();
+  const todayPeriodState = teacherTodayState(activePeriod, selectedPeriod, todayDate);
 
   // JANGAN blokir dashboard. apiFetch null = gagal-muat (bukan kosong). Bila ada
   // sumber inti yang gagal → tampilkan peringatan NON-BLOK di workspace; guru tetap
   // bisa memakai tab lain. (Hindari menutup seluruh halaman seperti regresi LoadError.)
   const dataWarning =
-    gradesData === null ||
+    selectedPeriod === null || gradesData === null ||
     attendanceData === null ||
     (canReadAllClasses && classesRes === null) ||
     assignmentsRes === null ||
@@ -244,12 +266,12 @@ export default async function AkademikPage({
       cpRes,
       attStatsRes,
     ] = await Promise.all([
-      apiFetch<PaginatedResponse<GradeItem>>(`/grades?studentId=${studentId}&limit=100`, token),
-      apiFetch<PaginatedResponse<AttendanceItem>>(
-        `/attendance?dateFrom=${attendanceMonth.dateFrom}&dateTo=${attendanceMonth.dateTo}&limit=200`,
+      fetchLearnerGrades(pp('/analytics/grades/student'), token),
+      academicPages<AttendanceItem>(selectedPeriod && attendanceMonth.dateFrom <= selectedPeriod.endDate.slice(0,10) && attendanceMonth.dateTo >= selectedPeriod.startDate.slice(0,10) ?
+        '/attendance?' + new URLSearchParams({ dateFrom: attendanceMonth.dateFrom > selectedPeriod.startDate.slice(0,10) ? attendanceMonth.dateFrom : selectedPeriod.startDate.slice(0,10), dateTo: attendanceMonth.dateTo < selectedPeriod.endDate.slice(0,10) ? attendanceMonth.dateTo : selectedPeriod.endDate.slice(0,10) }) : null,
         token,
       ),
-      apiFetchResult<{ data: ScheduleItem[] }>(OWN_STUDENT_SCHEDULE_PATH, token),
+      academicPagesResult<ScheduleItem>(pp(OWN_STUDENT_SCHEDULE_PATH), token),
       apiFetch<{ data: { id: string; title: string; createdAt: string }[] }>(
         '/announcements?limit=5',
         token,
@@ -426,7 +448,8 @@ export default async function AkademikPage({
     return (
       <SiswaRefreshWrapper>
         <SiswaWorkspace
-          grades={gradesRes?.data ?? []}
+          grades={gradesRes.data}
+          gradeState={gradesRes.state}
           attendance={attendanceRes?.data ?? []}
           schedule={ownedSchedule.data}
           scheduleState={ownedSchedule.state}
@@ -449,57 +472,31 @@ export default async function AkademikPage({
   // ── Dashboard Guru (IA baru). Role lain → tampilan lama (fallback). ─────────
   if (isGuru) {
     const initialWorkflowView = resolveAcademicWorkflowView(requestedParams.view, 'teacher');
-    const [schedulesRes, activitiesRes, rppRes, lmsRes, semRes, assessmentRes] = await Promise.all([
-      apiFetch<{ data: ScheduleItem[] }>('/schedules?limit=500', token),
-      apiFetch<{ data: ActivityItem[] }>('/class-activities?limit=200', token),
-      apiFetch<{ data: RppItem[] }>('/rpp?limit=100', token),
-      apiFetch<{ data: LmsModuleItem[] }>('/lms/modules?limit=200', token),
-      apiFetch<ActiveSemester>('/school/semesters/active', token),
-      fetchInitialAssessmentSessions(token),
+    const [schedulesRead, activitiesRead, rppRead, lmsRes, assessmentRes, thresholdRead] = await Promise.all([
+      academicPagesResult<ScheduleItem>(pp('/schedules'), token),
+      academicPagesResult<ActivityItem>(pp('/class-activities', 'journal'), token),
+      academicPagesResult<RppItem>(pp('/rpp'), token),
+      academicPages<LmsModuleItem>(pp('/lms/modules'), token),
+      fetchInitialAssessmentSessions(token, selectedPeriod),
+      selectedPeriod ? apiFetchResult<unknown>(periodPath('/analytics/cp-progress', selectedPeriod)!, token) : Promise.resolve({ status: 'unavailable' as const, message: 'Periode belum tersedia.' }),
     ]);
+    const schedulesRes = schedulesRead.status === 'success' ? schedulesRead.data : null;
+    const activitiesRes = activitiesRead.status === 'success' ? activitiesRead.data : null;
+    const rppRes = rppRead.status === 'success' ? rppRead.data : null;
+    const thresholds = thresholdRead.status === 'success' ? readTeacherThresholds(thresholdRead.data) : null;
 
     const schedules = schedulesRes?.data ?? [];
     const { minutes } = wibNow();
     const dow = scheduleDayOfWeek();
     const nowJp = currentJp(minutes, dailySlots);
 
-    // R-13: Build a map of classId → latest assessment session for penilaian/feedback status.
-    // A session with status 'active' or 'completed' and responses > 0 means penilaian is available.
-    const assessmentSessions = assessmentRes.data;
-    const sessionByClassSubject = new Map<
-      string,
-      { id: string; status: string; hasResponses: boolean }
-    >();
-    for (const s of assessmentSessions) {
-      if (s.classId) {
-        const key = `${s.classId}|${s.module?.subject ?? ''}`;
-        const existing = sessionByClassSubject.get(key);
-        // Prefer completed sessions with responses, then active, then draft
-        if (
-          !existing ||
-          s.status === 'completed' ||
-          (s.status === 'active' && existing.status === 'draft')
-        ) {
-          sessionByClassSubject.set(key, {
-            id: s.id,
-            status: s.status,
-            hasResponses: (s._count?.responses ?? 0) > 0,
-          });
-        }
-      }
-    }
-    const moduleByClassSubject = new Map<string, string>();
-    for (const module of lmsRes?.data ?? []) {
-      if (!module.classId || module.status === 'archived') continue;
-      const key = `${module.classId}|${module.subject}`;
-      const existing = moduleByClassSubject.get(key);
-      if (!existing || module.status === 'published') moduleByClassSubject.set(key, module.id);
-    }
+    const assessmentSessions = assessmentRes.all.filter(s => s.academicYear === academicYear && s.semester === semester);
 
     const todayClasses: TodayClass[] = schedules
-      .filter((s) => s.dayOfWeek === dow)
+      .filter((s) => todayPeriodState === 'ready' && s.dayOfWeek === dow)
       .sort((a, b) => a.jpStart - b.jpStart)
       .map((s) => ({
+        scheduleId: s.id,
         classId: s.classId,
         className: s.class?.name ?? '—',
         subject: s.teachingAssignment?.subject ?? '—',
@@ -508,15 +505,9 @@ export default async function AkademikPage({
         jpEnd: s.jpEnd,
         startLabel: jpStartLabel(s.jpStart, dailySlots),
         isNow: nowJp >= s.jpStart && nowJp <= s.jpEnd,
-        moduleId: moduleByClassSubject.get(`${s.classId}|${s.teachingAssignment?.subject ?? ''}`),
-        // R-13: Link assessment session if exists for this class+subject
-        assessmentSessionId: sessionByClassSubject.get(
-          `${s.classId}|${s.teachingAssignment?.subject ?? ''}`,
-        )?.id,
+        ...lessonLinks(s, { academicYear, semester }, lmsRes?.data ?? [], assessmentSessions),
       }));
 
-    const academicYear = semRes?.academicYear?.code ?? '';
-    const semester = semRes?.number ?? 1;
 
     return (
       <AkademikWorkspace
@@ -525,17 +516,21 @@ export default async function AkademikPage({
         classes={classesRes?.data ?? []}
         assignments={assignmentsRes?.data ?? []}
         schedules={schedules}
+        scheduleAvailable={!!schedulesRes}
+        summaryAvailability={{ grades: summaryState(gradesRead), attendance: summaryState(attendanceRead), journal: summaryState(activitiesRead), rpp: summaryState(rppRead), assessments: assessmentRes.state === 'ready' && !lmsRes ? 'unavailable' : assessmentRes.state, kktp: thresholds ? 'ready' : thresholdRead.status === 'success' ? 'unavailable' : summaryState(thresholdRead), today: todayPeriodState === 'ready' ? summaryState(schedulesRead) : todayPeriodState }}
+        summaryThresholds={thresholds ?? []}
+        todayDate={todayDate}
         activities={activitiesRes?.data ?? []}
         rpp={rppRes?.data ?? []}
         lmsModules={lmsRes?.data ?? []}
         todayClasses={todayClasses}
-        assessmentSessions={assessmentSessions}
+        assessmentSessions={assessmentRes.data}
         assessmentSessionTotal={assessmentRes.total}
         assessmentSessionPage={assessmentRes.page}
         assessmentSessionLimit={assessmentRes.limit}
         academicYear={academicYear}
         semester={semester}
-        dataWarning={dataWarning || assessmentRes.failed}
+        dataWarning={dataWarning || assessmentRes.failed || !schedulesRes || !activitiesRes || !rppRes || !lmsRes}
         canManageReportCards={!authority.hasRole('SUPER_ADMIN')}
         initialWorkflowView={initialWorkflowView}
       />
@@ -545,17 +540,14 @@ export default async function AkademikPage({
   // ── Dashboard KS / Waka Kurikulum (F4 — desktop-first, 7-screen workspace). ─
   if (isKs) {
     const initialWorkflowView = resolveAcademicWorkflowView(requestedParams.view, 'principal');
-    const [schedulesRes, activitiesRes, rppRes, lmsRes, semRes, assessmentRes] = await Promise.all([
-      apiFetch<{ data: ScheduleItem[] }>('/schedules?limit=500', token),
-      apiFetch<{ data: ActivityItem[] }>('/class-activities?limit=200', token),
-      apiFetch<{ data: RppItem[] }>('/rpp?limit=100', token),
-      apiFetch<{ data: LmsModuleItem[] }>('/lms/modules?limit=200', token),
-      apiFetch<ActiveSemester>('/school/semesters/active', token),
-      fetchInitialAssessmentSessions(token),
+    const [schedulesRes, activitiesRes, rppRes, lmsRes, assessmentRes] = await Promise.all([
+      academicPages<ScheduleItem>(pp('/schedules'), token),
+      academicPages<ActivityItem>(pp('/class-activities', 'journal'), token),
+      academicPages<RppItem>(pp('/rpp'), token),
+      academicPages<LmsModuleItem>(pp('/lms/modules'), token),
+      fetchInitialAssessmentSessions(token, selectedPeriod),
     ]);
 
-    const academicYear = semRes?.academicYear?.code ?? '';
-    const semester = semRes?.number ?? 1;
 
     return (
       <KsWorkspace
@@ -567,11 +559,14 @@ export default async function AkademikPage({
         schedules={schedulesRes?.data ?? []}
         activities={activitiesRes?.data ?? []}
         lmsModules={lmsRes?.data ?? []}
-        realSumatif={assessmentRes.data}
+        realSumatif={assessmentRes.all}
         subjects={subjectsRes?.data ?? []}
         academicYear={academicYear}
         semester={semester}
-        dataWarning={dataWarning || assessmentRes.failed}
+        dataWarning={dataWarning || assessmentRes.failed || !schedulesRes || !activitiesRes || !rppRes || !lmsRes}
+        scheduleAvailable={!!schedulesRes}
+        rppAvailable={!!rppRes}
+        assessmentsAvailable={!assessmentRes.failed}
         initialWorkflowView={initialWorkflowView}
       />
     );
@@ -586,7 +581,7 @@ export default async function AkademikPage({
         '/announcements?limit=5',
         token,
       ),
-      apiFetch<{
+      apiFetchResult<{
         data: Array<{
           id: string;
           nis: string;
@@ -597,7 +592,8 @@ export default async function AkademikPage({
       }>('/students/my-children', token),
     ]);
 
-    const children = childrenRes?.data ?? [];
+    const childRead = readParentChildren(childrenRes);
+    const children = childRead.data;
     const childIds = children.map((child) => child.id);
     type OrtuBadgeApiItem = {
       id: string;
@@ -633,14 +629,13 @@ export default async function AkademikPage({
       children.map(async (child) => {
         const studentId = child.id;
         const schedulePath = childSchedulePath(child.class?.id);
-        const [gradesRes, attendanceRes, scheduleRes, badgesRes, waLogRes] = await Promise.all([
-          apiFetch<PaginatedResponse<GradeItem>>(`/grades?studentId=${studentId}&limit=100`, token),
-          apiFetch<PaginatedResponse<AttendanceItem>>(
-            `/attendance?studentId=${studentId}&limit=200`,
+        const [attendanceRes, scheduleRes, badgesRes, waLogRes] = await Promise.all([
+          academicPages<AttendanceItem>(
+            pp(`/attendance?studentId=${studentId}`, 'attendance'),
             token,
           ),
           schedulePath
-            ? apiFetchResult<{ data: ScheduleItem[] }>(schedulePath, token)
+            ? academicPagesResult<ScheduleItem>(pp(schedulePath), token)
             : Promise.resolve({ status: 'success' as const, httpStatus: 200, data: { data: [] as ScheduleItem[] } }),
           apiFetch<OrtuBadgeApiItem[]>(`/badges/student/${studentId}`, token),
           apiFetch<{
@@ -658,8 +653,7 @@ export default async function AkademikPage({
         return {
           studentId,
           scheduleState: schedulePath ? childSchedule.state : 'unassigned' as const,
-          grades: tagWithStudentId(gradesRes?.data, studentId),
-          attendance: tagWithStudentId(attendanceRes?.data, studentId),
+          attendance: tagWithStudentId(attendanceRes?.data.filter(item => item.studentId === studentId), studentId),
           schedule: tagWithStudentId(childSchedule.data, studentId),
           badges: tagWithStudentId(badgesRes ?? [], studentId),
           waLog: tagWithStudentId(waLogRes?.data, studentId),
@@ -667,7 +661,7 @@ export default async function AkademikPage({
       }),
     );
 
-    const [childData, sppRes, assignmentsDashboardRes, semRes, leaderboardRes] = await Promise.all([
+    const [childData, sppRes, assignmentsDashboardRes, semRes, leaderboardRes, learnerGrades] = await Promise.all([
       childDataPromise,
       childIds.length
         ? apiFetch<{ data: SppDashboardGroup[] }>('/student-dashboard/spp', token)
@@ -678,15 +672,17 @@ export default async function AkademikPage({
             token,
           )
         : Promise.resolve(null),
-      apiFetch<ActiveSemester>('/school/semesters/active', token),
+      Promise.resolve(selectedPeriod),
       childIds.length
         ? apiFetch<LeaderboardEntry[]>('/gamification/leaderboard-xp?limit=50', token)
         : Promise.resolve(null),
+      childIds.length ? fetchLearnerGrades(pp('/analytics/grades/student'), token)
+        : Promise.resolve({ state: 'unavailable' as const, data: [] }),
     ]);
 
     // R-16: Compute semester label for RaporModal
     const academicYearOrtu = semRes?.academicYear?.code ?? '';
-    const semesterOrtu = semRes?.number ?? 1;
+    const semesterOrtu = semRes?.number ?? 0;
     const semesterLabel = semRes
       ? `Rapor Semester ${semesterOrtu === 1 ? 'Ganjil' : 'Genap'} ${academicYearOrtu}`
       : '';
@@ -697,7 +693,7 @@ export default async function AkademikPage({
         leaderboardRes?.find((entry) => entry.studentId === studentId)?.rank ?? null,
       ]),
     );
-    const gradesDataOrtu = childData.flatMap((item) => item.grades);
+    const gradesDataOrtu = learnerGrades.data.filter(item => childIds.includes(item.studentId));
     const attendanceDataOrtu = childData.flatMap((item) => item.attendance);
     const scheduleDataOrtu = childData.flatMap((item) => item.schedule);
     const badgesDataOrtu = childData.flatMap((item) => item.badges);
@@ -721,7 +717,9 @@ export default async function AkademikPage({
       <OrtuRefreshWrapper>
         <OrtuWorkspace
           children={ortuChildren}
+          childrenState={childRead.state}
           grades={gradesDataOrtu}
+          gradeState={learnerGrades.state}
           attendance={attendanceDataOrtu}
           schedule={scheduleDataOrtu}
           scheduleStates={Object.fromEntries(childData.map((item) => [item.studentId, item.scheduleState]))}
@@ -801,16 +799,16 @@ export default async function AkademikPage({
     );
   }
 
-  const ownAssignmentsRes = await apiFetch<{ data: Assignment[]; total: number }>(
-    `/teaching-assignments?teacherId=${encodeURIComponent(ownTeacherId)}&page=1&limit=100`,
+  const ownAssignmentsRes = await academicPages<Assignment>(
+    pp(`/teaching-assignments?teacherId=${encodeURIComponent(ownTeacherId)}`, 'year'),
     token,
   );
   const ownAssignments = ownAssignmentsRes?.data ?? [];
   const ownClassIds = [...new Set(ownAssignments.map((assignment) => assignment.classId))];
 
   const [
-    ownSchedulesRes,
-    ownRppRes,
+    ownSchedulesRead,
+    ownRppRead,
     ownAssessmentRes,
     semesterRes,
     gradeResponses,
@@ -818,36 +816,36 @@ export default async function AkademikPage({
     activityResponses,
     lmsResponses,
   ] = await Promise.all([
-    apiFetch<{ data: ScheduleItem[]; total: number }>(
-      `/schedules?teacherId=${encodeURIComponent(ownTeacherId)}&page=1&limit=500`,
+    academicPagesResult<ScheduleItem>(
+      pp(`/schedules?teacherId=${encodeURIComponent(ownTeacherId)}`),
       token,
     ),
-    apiFetch<{ data: RppItem[]; total: number }>(
-      `/rpp?teacherId=${encodeURIComponent(ownTeacherId)}&page=1&limit=100`,
+    academicPagesResult<RppItem>(
+      pp(`/rpp?teacherId=${encodeURIComponent(ownTeacherId)}`),
       token,
     ),
-    fetchInitialAssessmentSessions(token),
-    apiFetch<ActiveSemester>('/school/semesters/active', token),
+    fetchInitialAssessmentSessions(token, selectedPeriod),
+    Promise.resolve(selectedPeriod),
     Promise.all(
       ownAssignments.map((assignment) =>
-        apiFetch<PaginatedResponse<GradeItem>>(
-          `/grades?assignmentId=${assignment.id}&limit=200`,
+        academicPagesResult<GradeItem>(
+          pp(`/grades?assignmentId=${assignment.id}`),
           token,
         ),
       ),
     ),
     Promise.all(
       ownClassIds.map((classId) =>
-        apiFetch<PaginatedResponse<AttendanceItem>>(
-          `/attendance?classId=${classId}&limit=200`,
+        academicPagesResult<AttendanceItem>(
+          pp(`/attendance?classId=${classId}`, 'attendance'),
           token,
         ),
       ),
     ),
     Promise.all(
       ownClassIds.map((classId) =>
-        apiFetch<{ data: Array<ActivityItem & { teacher?: { id: string } }> }>(
-          `/class-activities?classId=${classId}&limit=200`,
+        academicPagesResult<ActivityItem & { teacher?: { id: string } }>(
+          pp(`/class-activities?classId=${classId}`, 'journal'),
           token,
         ),
       ),
@@ -861,19 +859,21 @@ export default async function AkademikPage({
           page: '1',
           limit: '200',
         });
-        return apiFetch<{ data: Array<LmsModuleItem & { teacherId?: string }> }>(
-          `/lms/modules?${query.toString()}`,
+        return academicPages<LmsModuleItem>(
+          pp(`/lms/modules?${query.toString()}`),
           token,
         );
       }),
     ),
   ]);
 
+  const ownSchedulesRes = ownSchedulesRead.status === 'success' ? ownSchedulesRead.data : null;
+  const ownRppRes = ownRppRead.status === 'success' ? ownRppRead.data : null;
   const ownSchedules = ownSchedulesRes?.data ?? [];
-  const ownGrades = gradeResponses.flatMap((response) => response?.data ?? []);
-  const ownAttendances = attendanceResponses.flatMap((response) => response?.data ?? []);
+  const ownGrades = gradeResponses.flatMap((response) => response.status === 'success' ? response.data.data : []);
+  const ownAttendances = attendanceResponses.flatMap((response) => response.status === 'success' ? response.data.data : []);
   const ownActivities = activityResponses
-    .flatMap((response) => response?.data ?? [])
+    .flatMap((response) => response.status === 'success' ? response.data.data : [])
     .filter((activity) => activity.teacher?.id === ownTeacherId);
   const ownLmsModules = [
     ...new Map(
@@ -884,34 +884,20 @@ export default async function AkademikPage({
     ).values(),
   ];
   const ownRpp = ownRppRes?.data ?? [];
-  const ownAssessmentSessions = ownAssessmentRes.data.filter(
-    (assessment) => !assessment.teacherId || assessment.teacherId === ownTeacherId,
+  const ownAssessmentSessions = ownAssessmentRes.all.filter(
+    (assessment) => assessment.teacherId === ownTeacherId && assessment.academicYear === academicYear && assessment.semester === semester,
   );
   const ownClasses = ownAssignments
     .map((assignment) => assignment.class)
     .filter((kelas, index, all) => all.findIndex((item) => item.id === kelas.id) === index);
-  const moduleByClassSubject = new Map<string, string>();
-  for (const module of ownLmsModules) {
-    if (!module.classId || module.status === 'archived') continue;
-    const key = `${module.classId}|${module.subject}`;
-    const existing = moduleByClassSubject.get(key);
-    if (!existing || module.status === 'published') moduleByClassSubject.set(key, module.id);
-  }
-  const sessionByClassSubject = new Map<string, string>();
-  for (const assessment of ownAssessmentSessions) {
-    if (!assessment.classId) continue;
-    sessionByClassSubject.set(
-      `${assessment.classId}|${assessment.module?.subject ?? ''}`,
-      assessment.id,
-    );
-  }
   const { minutes } = wibNow();
   const today = scheduleDayOfWeek();
   const nowJp = currentJp(minutes, dailySlots);
   const ownTodayClasses: TodayClass[] = ownSchedules
-    .filter((schedule) => schedule.dayOfWeek === today)
+    .filter((schedule) => todayPeriodState === 'ready' && schedule.dayOfWeek === today)
     .sort((left, right) => left.jpStart - right.jpStart)
     .map((schedule) => ({
+      scheduleId: schedule.id,
       classId: schedule.classId,
       className: schedule.class?.name ?? '—',
       subject: schedule.teachingAssignment?.subject ?? '—',
@@ -920,12 +906,7 @@ export default async function AkademikPage({
       jpEnd: schedule.jpEnd,
       startLabel: jpStartLabel(schedule.jpStart, dailySlots),
       isNow: nowJp >= schedule.jpStart && nowJp <= schedule.jpEnd,
-      moduleId: moduleByClassSubject.get(
-        `${schedule.classId}|${schedule.teachingAssignment?.subject ?? ''}`,
-      ),
-      assessmentSessionId: sessionByClassSubject.get(
-        `${schedule.classId}|${schedule.teachingAssignment?.subject ?? ''}`,
-      ),
+      ...lessonLinks(schedule, { academicYear, semester }, ownLmsModules, ownAssessmentSessions),
     }));
   const ownDataWarning =
     ownAssignmentsRes === null ||
@@ -933,13 +914,16 @@ export default async function AkademikPage({
     ownRppRes === null ||
     semesterRes === null ||
     ownAssessmentRes.failed ||
-    gradeResponses.some((response) => response === null) ||
-    attendanceResponses.some((response) => response === null) ||
-    activityResponses.some((response) => response === null) ||
+    gradeResponses.some((response) => response.status !== 'success') ||
+    attendanceResponses.some((response) => response.status !== 'success') ||
+    activityResponses.some((response) => response.status !== 'success') ||
     lmsResponses.some((response) => response === null) ||
-    (ownSchedulesRes?.total ?? 0) > 500 ||
-    (ownRppRes?.total ?? 0) > 100 ||
-    (ownAssignmentsRes?.total ?? 0) > 100;
+    selectedPeriod === null;
+
+  const ownThresholdResponses = await Promise.all(ownClassIds.map(classId => selectedPeriod ? apiFetchResult<unknown>(periodPath(`/analytics/cp-progress?classId=${encodeURIComponent(classId)}`, selectedPeriod)!, token) : Promise.resolve({ status: 'unavailable' as const, message: 'Periode belum tersedia.' })));
+  const ownThresholdRows = ownThresholdResponses.map(response => response.status === 'success' ? readTeacherThresholds(response.data) : null);
+  const ownThresholds = ownThresholdRows.some(rows => rows === null) ? null : mergeTeacherThresholds(ownThresholdRows.filter(rows => rows !== null));
+  const ownReadState = (responses: ApiFetchResult<unknown>[]): SummaryReadState => !ownAssignmentsRes || !selectedPeriod ? 'unavailable' : responses.some(response => response.status === 'forbidden') ? 'denied' : responses.some(response => response.status !== 'success') ? 'unavailable' : 'ready';
 
   const teachingWorkspace = (
     <AkademikWorkspace
@@ -948,16 +932,20 @@ export default async function AkademikPage({
       classes={ownClasses}
       assignments={ownAssignments}
       schedules={ownSchedules}
+      scheduleAvailable={!!ownSchedulesRes}
+      summaryAvailability={{ grades: ownReadState(gradeResponses), attendance: ownReadState(attendanceResponses), journal: ownReadState(activityResponses), rpp: summaryState(ownRppRead), assessments: ownAssessmentRes.state === 'ready' && (!ownAssignmentsRes || lmsResponses.some(response => response === null)) ? 'unavailable' : ownAssessmentRes.state, kktp: ownReadState(ownThresholdResponses) !== 'ready' ? ownReadState(ownThresholdResponses) : ownThresholds ? 'ready' : 'unavailable', today: todayPeriodState === 'ready' ? summaryState(ownSchedulesRead) : todayPeriodState }}
+      summaryThresholds={ownThresholds ?? []}
+      todayDate={todayDate}
       activities={ownActivities}
       rpp={ownRpp}
       lmsModules={ownLmsModules}
       todayClasses={ownTodayClasses}
-      assessmentSessions={ownAssessmentSessions}
+      assessmentSessions={ownAssessmentSessions.slice(0, ASSESSMENT_SESSION_PAGE_SIZE)}
       assessmentSessionTotal={ownAssessmentSessions.length}
       assessmentSessionPage={ownAssessmentRes.page}
       assessmentSessionLimit={ownAssessmentRes.limit}
       academicYear={semesterRes?.academicYear?.code ?? ''}
-      semester={semesterRes?.number ?? 1}
+      semester={semesterRes?.number ?? 0}
       dataWarning={ownDataWarning}
       canManageReportCards={!authority.hasRole('SUPER_ADMIN')}
       initialWorkflowView={resolveAcademicWorkflowView(requestedParams.view, 'teacher')}

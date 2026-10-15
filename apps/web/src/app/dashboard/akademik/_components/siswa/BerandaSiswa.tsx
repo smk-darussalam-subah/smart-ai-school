@@ -8,10 +8,13 @@ import {
 import { useBellPattern } from '@/components/providers/BellPatternProvider';
 import { wibNow } from '@/lib/bell-times';
 import { mpColor, mpIcon, studentDayPattern, resolveSchedule, studentLessonPhase } from './siswa-data';
+import ScheduleAlternatives from './ScheduleAlternatives';
 import LearnerScheduleNotice from '../LearnerScheduleNotice';
 import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import type { SiswaScreen, ModalState } from './SiswaWorkspace';
 import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaModul, SiswaQuest, SiswaXP, SiswaKehadiranStats } from './siswa-types';
+import { learnerGradeSummary, learnerGradeStatus, type LearnerGradeState } from '@/lib/learner-grades';
+import { LearnerGradeNotice } from '../LearnerGradeView';
 
 interface Props {
   showToast: (msg: string) => void;
@@ -20,6 +23,7 @@ interface Props {
   setBadgeCelebration: (data: { show: boolean; badgeName?: string }) => void;
   setActiveModulId: (id: number | null) => void;
   grades: SiswaNilai[];
+  gradeState?: LearnerGradeState;
   tasks: SiswaTugas[];
   badges: SiswaBadge[];
   modules: SiswaModul[];
@@ -33,20 +37,18 @@ interface Props {
   studentClassName?: string | null;
 }
 
-export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades, tasks, badges, modules, recentlyCompletedModule, quest, xp, kehStats, schedule, scheduleState = 'ready', userName, studentClassName }: Props) {
+export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades: suppliedGrades, gradeState = 'ready', tasks, badges, modules, recentlyCompletedModule, quest, xp, kehStats, schedule, scheduleState = 'ready', userName, studentClassName }: Props) {
+  const grades = gradeState === 'ready' ? suppliedGrades : [];
   const now = wibNow();
-  const dow = now.jsDay; // 0=Sunday → SCHED[0] undefined → shows "Libur"
+  const dow = now.jsDay || 7;
   const bell = useBellPattern();
-  const { JP_LABELS, JP_MAP } = studentDayPattern(bell.profile, now.jsDay);
+  const { JP_LABELS, JP_MAP } = studentDayPattern(bell.profile, dow);
 
   // Derived stats
-  const avgNilai = useMemo(() => {
-    if (grades.length === 0) return null;
-    return Math.round(grades.reduce((a: number, b) => a + b.rata, 0) / grades.length * 10) / 10;
-  }, [grades]);
+  const summary = learnerGradeSummary(grades);
+  const avgNilai = summary.average;
 
   const pendingTasks = useMemo(() => tasks.filter((t) => t.status === 'pending'), [tasks]);
-  const tuntasCount = useMemo(() => grades.filter((g) => g.rata >= g.kktp).length, [grades]);
   const earnedBadges = useMemo(() => badges.filter((b) => b.earned).length, [badges]);
   const activeModul = useMemo(() => modules.find((m) => m.status === 'Aktif'), [modules]);
   const hasAttendance = (kehStats?.total ?? 0) > 0;
@@ -155,8 +157,8 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
           </div>
           <div className="text-xl font-extrabold tracking-tight">{avgNilai !== null ? avgNilai : '—'}</div>
           <div className="mt-0.5 text-[10.5px] font-bold text-[var(--muted)]">Rata² Nilai</div>
-          <div className={`mt-0.5 text-[10px] font-extrabold ${avgNilai === null ? 'text-[var(--muted)]' : avgNilai >= 75 ? 'text-emerald-500' : 'text-rose-500'}`}>
-            {grades.length > 0 ? `${tuntasCount}/${grades.length} tuntas` : 'belum ada nilai'}
+          <div className="mt-0.5 text-[10px] font-extrabold text-[var(--muted)]">
+            {gradeState !== 'ready' ? 'Nilai belum tersedia' : summary.assessed ? `${summary.tuntas}/${summary.assessed} tuntas` : grades.length ? 'KKTP belum tersedia' : 'belum ada nilai'}
           </div>
         </button>
 
@@ -279,7 +281,6 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                   <div
                     key={idx}
                     className={`flex gap-3 ${isNow ? 'rounded-xl bg-amber-500/6 p-3 -mx-1 border border-amber-500/25 shadow-[0_0_24px_-8px_rgba(245,158,11,.25)] cursor-pointer' : 'py-2.5 border-b border-[var(--border)] last:border-b-0'}`}
-                    onClick={isNow ? () => setModal({ type: 'lesson', data: { subject: slot.mp, teacher: guruShort, room: slot.ruang, jpIndex: idx } }) : undefined}
                   >
                     <div className="w-12 flex-shrink-0 text-right">
                       <div className="text-[11px] font-extrabold">{t[0]}</div>
@@ -287,18 +288,20 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                     </div>
                     <div className={`mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full border-2 border-[var(--bg)] shadow-[0_0_0_2px_var(--em)] ${dotCls}`} />
                     <div className="flex-1 min-w-0">
-                      <div className={`break-words text-[13px] font-bold [overflow-wrap:anywhere] ${isNow ? 'sm:text-base' : ''}`}>{slot.mp}</div>
-                      <div className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 break-words text-xs font-semibold ${isNow ? 'text-amber-500' : 'text-[var(--muted)]'}`}>
+                      <div className={`break-words text-[13px] font-bold [overflow-wrap:anywhere] ${isNow ? 'sm:text-base' : ''}`}>{slot.sessions?.length ? `${slot.sessions.length} sesi terjadwal` : slot.mp}</div>
+                      <ScheduleAlternatives slot={slot} />
+                      {isNow && !slot.sessions?.length && <button type="button" onClick={() => setModal({ type: 'lesson', data: { subject: slot.mp, teacher: guruShort, room: slot.ruang, jpIndex: idx } })} className="mt-2 rounded-lg border px-3 py-2 text-xs">Lihat panduan mapel</button>}
+                      {!slot.sessions?.length && <div className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 break-words text-xs font-semibold ${isNow ? 'text-amber-500' : 'text-[var(--muted)]'}`}>
                         <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">{guruShort}</span>·<span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">{slot.ruang}</span>
-                      </div>
+                      </div>}
                       {isNow && (
                         <span className="mt-1 inline-block rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-extrabold text-amber-500">
-                          ▶ Sedang berlangsung — klik untuk mulai sesi
+                          Rentang jadwal sekarang · bukan status sesi aktif
                         </span>
                       )}
                       {isDone && (
                         <span className="mt-1 inline-block rounded bg-emerald-500/12 px-1.5 py-0.5 text-[9px] font-extrabold text-emerald-500">
-                          Selesai
+                          Waktu jadwal telah lewat
                         </span>
                       )}
                       {!isNow && !isDone && (
@@ -377,9 +380,10 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
             </button>
           </div>
           <div className="divide-y divide-[var(--border)]">
+            <LearnerGradeNotice state={gradeState} empty={grades.length === 0} />
             {recentGrades.map((n) => {
               const c = mpColor(n.mp);
-              const tuntas = n.rata >= n.kktp;
+              const tuntas = n.status === 'tuntas';
               return (
                 <button
                   key={n.mp}
@@ -392,20 +396,20 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold">{n.mp}</div>
                     <div className="mt-0.5 text-[11px] font-semibold text-[var(--muted)]">
-                      {tuntas ? 'Tuntas' : 'Remedial'} · KKTP {n.kktp}
+                      {learnerGradeStatus(n)} · KKTP {n.kktp ?? '—'}
                     </div>
                     <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--bar-bg)]">
                       <div
                         className="h-full rounded-full"
                         style={{
-                          width: `${n.rata}%`,
+                          width: `${n.na ?? 0}%`,
                           background: tuntas ? 'linear-gradient(90deg, #10b981, #059669)' : 'linear-gradient(90deg, #fbbf24, #d97706)',
                         }}
                       />
                     </div>
                   </div>
                   <div className={`text-lg font-extrabold tracking-tight ${tuntas ? 'text-emerald-400' : 'text-amber-500'}`}>
-                    {n.rata ?? 0}
+                    {n.na ?? '—'}
                   </div>
                 </button>
               );

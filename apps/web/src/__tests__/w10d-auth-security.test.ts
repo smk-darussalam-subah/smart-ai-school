@@ -62,7 +62,13 @@ describe('W10-D real NextAuth security boundary', () => {
     'preserves valid encrypted %s session and existing landing',
     async (role) => {
       const encoded = await encode({
-        token: { sub: 'synthetic-subject', roles: [role] },
+        token: {
+          sub: 'synthetic-subject',
+          roles: [role],
+          accessToken: 'synthetic-access',
+          expiresAt: Math.floor(Date.now() / 1000) + 3600,
+          refreshedAt: Math.floor(Date.now() / 1000),
+        },
         secret: syntheticSecret,
       });
       const req = request('/dashboard', 'Bearer %', `next-auth.session-token=${encoded}`);
@@ -90,7 +96,15 @@ describe('W10-D real NextAuth security boundary', () => {
   it('retains Keycloak-only, JWT session strategy and login redirect', async () => {
     expect(authOptions.providers.map((provider) => provider.id)).toEqual(['keycloak']);
     expect(authOptions.session).toEqual({ strategy: 'jwt', maxAge: 8 * 60 * 60 });
-    const encoded = await encode({ token: { roles: ['GURU'] }, secret: syntheticSecret });
+    const encoded = await encode({
+      token: {
+        roles: ['GURU'],
+        accessToken: 'synthetic-access',
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+        refreshedAt: Math.floor(Date.now() / 1000),
+      },
+      secret: syntheticSecret,
+    });
     const result = await middleware(
       request('/login', undefined, `next-auth.session-token=${encoded}`),
     );

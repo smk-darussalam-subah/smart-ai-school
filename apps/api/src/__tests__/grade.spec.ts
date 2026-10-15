@@ -45,6 +45,7 @@ import { GradeModule } from '../grade/grade.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { AuthUser } from '@smk/auth';
+import { PermissionsService } from '../permissions/permissions.service';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -520,6 +521,7 @@ describe('GradeController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [GradeController],
       providers: [
+        { provide: PermissionsService, useValue: { hasPermission: jest.fn().mockResolvedValue(true) } },
         {
           provide: GradeService,
           useValue: {
@@ -577,6 +579,8 @@ describe('GradeModule', () => {
       imports: [GradeModule],
     })
       .overrideProvider(GradeService)
+      .useValue({})
+      .overrideProvider(PermissionsService)
       .useValue({})
       .compile();
 

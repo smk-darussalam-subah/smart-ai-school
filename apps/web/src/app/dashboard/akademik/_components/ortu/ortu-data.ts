@@ -1,7 +1,7 @@
 // Utility functions for Dashboard Orang Tua.
 // P6: All SIMULASI constants purged — data comes from real API endpoints.
 
-import { KKTP_DEFAULT } from '@/lib/academic';
+import { learnerGradeSummary } from '@/lib/learner-grades';
 import { type JpSlot, fmtMin } from '@/lib/bell-times';
 import type { OrtuNilai, OrtuLeaderboardEntry } from './ortu-types';
 
@@ -40,33 +40,35 @@ export function jpTimeRange(jp: number, JP_SLOTS: JpSlot[] = []): string {
 
 // ── Derived helpers ─────────────────────────────────────────────────────────
 
-export function avgNa(nilai: OrtuNilai[]): number {
-  if (nilai.length === 0) return 0;
-  return Math.round((nilai.reduce((s, n) => s + n.na, 0) / nilai.length) * 10) / 10;
+export function avgNa(nilai: OrtuNilai[]): number | null {
+  return learnerGradeSummary(nilai).average;
 }
 
 export function childRank(leaderboard: OrtuLeaderboardEntry[]): number {
   return leaderboard.findIndex((s) => s.me) + 1;
 }
 
-export function tuntasCount(nilai: OrtuNilai[], kktp: number = KKTP_DEFAULT): number {
-  return nilai.filter((n) => n.na >= kktp).length;
+export function tuntasCount(nilai: OrtuNilai[]): number {
+  return learnerGradeSummary(nilai).tuntas;
 }
 
-export function gradeCls(v: number, kktp: number = KKTP_DEFAULT): 'ok' | 'warn' | 'bad' {
+export function gradeCls(v: number | null, kktp: number | null): 'ok' | 'warn' | 'bad' | 'unknown' {
+  if (v === null || kktp === null) return 'unknown';
   if (v >= kktp) return 'ok';
   if (v >= 60) return 'warn';
   return 'bad';
 }
 
 export const ATT_STATUS_LABELS: Record<string, string> = {
-  hadir: 'Hadir — semua sesi',
-  izin: 'Izin — keperluan keluarga',
-  sakit: 'Sakit — demam',
+  hadir: 'Hadir',
+  izin: 'Izin',
+  sakit: 'Sakit',
   alpha: 'Alpha — tanpa keterangan',
-  empty: 'Libur',
+  empty: 'Belum ada catatan',
   none: 'Belum ada catatan',
-  future: 'Tanggal future — belum ada data',
+  future: 'Tanggal mendatang — belum ada data',
+  holiday: 'Libur kalender sekolah',
+  outside: 'Di luar bulan pilihan',
 };
 
 export function currentMonthYear(): { month: string; year: number } {
