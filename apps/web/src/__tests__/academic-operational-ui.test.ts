@@ -337,6 +337,7 @@ describe('academic operational UI contracts', () => {
     const ortuWorkspace = source('app/dashboard/akademik/_components/ortu/OrtuWorkspace.tsx');
     const nilaiOrtu = source('app/dashboard/akademik/_components/ortu/NilaiOrtu.tsx');
     const nilaiSiswa = source('app/dashboard/akademik/_components/siswa/NilaiSiswa.tsx');
+    const learnerGradeView = source('app/dashboard/akademik/_components/LearnerGradeView.tsx');
     const siswaWorkspace = source('app/dashboard/akademik/_components/siswa/SiswaWorkspace.tsx');
     const reportPage = source('app/dashboard/rapor/page.tsx');
     const reportHub = source('app/dashboard/rapor/_components/RaporHub.tsx');
@@ -370,9 +371,10 @@ describe('academic operational UI contracts', () => {
     );
     expect(reportHub).toContain('href={dashboardHref}');
     expect(siswaWorkspace).toContain('openNotifications');
-    expect(nilaiOrtu).toContain('Rapor resmi');
+    expect(nilaiOrtu).toContain('onReport={onOpenOfficialReport}');
+    expect(learnerGradeView).toContain('Rapor resmi');
     expect(nilaiSiswa).toContain("router.push('/dashboard/rapor')");
-    expect(nilaiSiswa).toContain('Rapor resmi');
+    expect(nilaiSiswa).toContain('<LearnerGradeView');
     expect(ortuWorkspace).not.toContain("import RaporModal from './RaporModal'");
     expect(ortuWorkspace).not.toContain("type: 'rapor'");
     expect(nilaiSiswa).not.toContain('Rapor akan tersedia');

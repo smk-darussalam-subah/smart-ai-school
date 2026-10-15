@@ -73,7 +73,8 @@ export type ModalState =
   | { type: null };
 
 interface SiswaWorkspaceProps {
-  grades?: unknown[];
+  grades?: SiswaNilai[];
+  gradeState?: import('@/lib/learner-grades').LearnerGradeState;
   attendance?: unknown[];
   schedule?: unknown[];
   scheduleState?: LearnerScheduleState;
@@ -148,7 +149,7 @@ function toSiswaKalenderEvent(event: SchoolCalendarEvent): SiswaKalenderEvent {
   };
 }
 
-export default function SiswaWorkspace({ grades, attendance, schedule, scheduleState = 'ready', announcements, realBadges, realXp, realLeaderboard, realAssignments, realModules, realCp, realAttStats, viewAs, openNotifications = false, initialWorkflowView = null }: SiswaWorkspaceProps) {
+export default function SiswaWorkspace({ grades, gradeState = 'ready', attendance, schedule, scheduleState = 'ready', announcements, realBadges, realXp, realLeaderboard, realAssignments, realModules, realCp, realAttStats, viewAs, openNotifications = false, initialWorkflowView = null }: SiswaWorkspaceProps) {
   const { data: session } = useSession();
   const router = useRouter();
   const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
@@ -306,7 +307,8 @@ export default function SiswaWorkspace({ grades, attendance, schedule, scheduleS
         return (
           <BerandaSiswa
             {...commonProps}
-            grades={(grades ?? []) as SiswaNilai[]}
+            grades={gradeState === 'ready' ? grades ?? [] : []}
+            gradeState={gradeState}
             tasks={(realAssignments ?? []) as unknown as SiswaTugas[]}
             badges={realBadges ?? []}
             modules={displayedModules}
@@ -347,7 +349,8 @@ export default function SiswaWorkspace({ grades, attendance, schedule, scheduleS
         return (
           <NilaiSiswa
             {...commonProps}
-            grades={(grades ?? []) as SiswaNilai[]}
+            grades={gradeState === 'ready' ? grades ?? [] : []}
+            gradeState={gradeState}
             initialFilter={initialWorkflow.studentGradeFilter}
           />
         );
