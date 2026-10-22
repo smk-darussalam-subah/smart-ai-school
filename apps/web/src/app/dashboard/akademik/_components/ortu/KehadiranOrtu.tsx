@@ -1,22 +1,31 @@
 'use client';
+import React from 'react';
 
 import { Calendar, BarChart3, MessageCircle } from 'lucide-react';
 import type { OrtuScreen, ModalState } from './OrtuWorkspace';
 import type { AttendanceCellStatus } from '@/lib/academic';
 import type { AttendanceItem } from '@/lib/api';
 import {
-  currentMonthYear, ATT_STATUS_LABELS,
-} from './ortu-data';
-import {
-  mapWaLog, computeAttStats, attCalendarFromApi,
-  type WaLogApiItem,
-} from './ortu-mappers';
+  attendanceMonth,
+  attendanceStats,
+  jakartaToday,
+  type LearnerAttendanceState,
+} from '@/lib/learner-attendance';
+import LearnerAttendanceNotice from '../LearnerAttendanceNotice';
+import LearnerSessionAttendance from '../LearnerSessionAttendance';
+import DailyAttendanceCalculation from '../DailyAttendanceCalculation';
+import { currentMonthYear, ATT_STATUS_LABELS } from './ortu-data';
+import { mapWaLog, attCalendarFromApi, type WaLogApiItem } from './ortu-mappers';
 
 interface KehadiranOrtuProps {
+  period?: import('@/lib/learner-attendance').AttendancePeriod;
+  initialDate?: string;
+  activeStudentId?: string;
   go?: (screen: OrtuScreen) => void;
   setModal: (modal: ModalState) => void;
   /** T1-03b: data attendance real dari /attendance?studentId= */
   attendance: AttendanceItem[];
+  attendanceState?: LearnerAttendanceState;
   /** T1-03b: data WA log real dari /wa-log/student/:id */
   waLog: WaLogApiItem[];
 }
@@ -28,24 +37,38 @@ const RING_CIRC = 2 * Math.PI * RING_R;
 /** Status → CSS color variable for calendar cells. */
 function statusBg(status: AttendanceCellStatus): string {
   switch (status) {
-    case 'hadir': return 'rgba(16,185,129,.25)';
-    case 'izin': return 'rgba(14,165,233,.2)';
-    case 'sakit': return 'rgba(245,158,11,.2)';
-    case 'alpha': return 'rgba(239,68,68,.2)';
-    case 'holiday': return 'rgba(239,68,68,.1)';
-    case 'outside': return 'rgba(148,163,184,.06)';
-    default: return 'var(--empty-cell)';
+    case 'hadir':
+      return 'rgba(16,185,129,.25)';
+    case 'izin':
+      return 'rgba(14,165,233,.2)';
+    case 'sakit':
+      return 'rgba(245,158,11,.2)';
+    case 'alpha':
+      return 'rgba(239,68,68,.2)';
+    case 'holiday':
+      return 'rgba(239,68,68,.1)';
+    case 'outside':
+      return 'rgba(148,163,184,.06)';
+    default:
+      return 'var(--empty-cell)';
   }
 }
 function statusText(status: AttendanceCellStatus): string {
   switch (status) {
-    case 'hadir': return 'var(--em)';
-    case 'izin': return 'var(--sky)';
-    case 'sakit': return 'var(--amber)';
-    case 'alpha': return 'var(--rose)';
-    case 'holiday': return 'var(--rose)';
-    case 'outside': return 'var(--dim)';
-    default: return 'var(--dim)';
+    case 'hadir':
+      return 'var(--em)';
+    case 'izin':
+      return 'var(--sky)';
+    case 'sakit':
+      return 'var(--amber)';
+    case 'alpha':
+      return 'var(--rose)';
+    case 'holiday':
+      return 'var(--rose)';
+    case 'outside':
+      return 'var(--dim)';
+    default:
+      return 'var(--dim)';
   }
 }
 
@@ -66,13 +89,37 @@ function waBg(status: string): string {
   return 'rgba(239,68,68,.15)';
 }
 
-export default function KehadiranOrtu({ setModal, attendance, waLog }: KehadiranOrtuProps) {
-  const today = new Date().getDate();
+export function DailyKehadiranOrtu({
+  activeStudentId,
+  setModal,
+  attendance,
+  attendanceState = 'unavailable',
+  waLog,
+}: KehadiranOrtuProps) {
+  const todayIso = jakartaToday();
+  const today = Number(todayIso.slice(8, 10));
   const { month, year } = currentMonthYear();
   // T1-03b: kalender & stats dari data real (bukan simAttCalendar/SIM_KEH_STATS).
-  const calCells = attCalendarFromApi(attendance, today);
-  const stats = computeAttStats(attendance);
+  const rows = attendanceState === 'ready' ? attendanceMonth(attendance) : [];
+  const calCells = attCalendarFromApi(rows, today);
+  const stats = attendanceStats(rows);
   const waHistory = mapWaLog(waLog);
+  const openDay = (day: number, status: AttendanceCellStatus) => {
+    const date = `${todayIso.slice(0, 7)}-${String(day).padStart(2, '0')}`;
+    const record = rows.find((row) => row.date.slice(0, 10) === date);
+    setModal({
+      type: 'day',
+      data: {
+        day,
+        status,
+        month,
+        year,
+        date,
+        studentId: activeStudentId ?? record?.studentId,
+        notes: record?.notes ?? null,
+      },
+    });
+  };
 
   const statBoxes = [
     { label: 'Hadir', value: stats.hadir, color: 'var(--em)' },
@@ -85,37 +132,62 @@ export default function KehadiranOrtu({ setModal, attendance, waLog }: Kehadiran
     <div className="px-4 pb-4">
       <div className="mb-3.5">
         <h1 className="text-xl font-extrabold">Kehadiran</h1>
-        <p className="mt-0.5 text-[12px] font-medium text-[var(--muted)]">Rekap {month} {year}</p>
-        {stats.total === 0 && (
-          <div className="mt-2 flex items-center gap-2 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] font-bold text-sky-500">
-            <span>ℹ️</span> Belum ada data kehadiran dari sekolah
-          </div>
-        )}
+        <p className="mt-0.5 text-[12px] font-medium text-[var(--muted)]">
+          Rekap {month} {year}
+        </p>
+        <LearnerAttendanceNotice state={attendanceState} empty={stats.total === 0} />
+        <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+          Absensi harian kelas pada periode pilihan, bukan absensi per JP. Tanggal yang belum
+          dicatat tidak dianggap alpha.
+        </p>
       </div>
 
       {/* 1. Summary ring + 4 stat boxes */}
       <div className="mb-3.5 rounded-[var(--r)] border border-[var(--border)] bg-[var(--surface)] p-3.5">
         <div className="flex items-center gap-4">
           {/* Ring chart (larger) */}
-          <div className="relative inline-block">
-            <svg width="90" height="90">
-              <circle cx="45" cy="45" r={RING_R} strokeWidth="7" fill="none" stroke="var(--ring-bg)" />
-              <circle
-                cx="45" cy="45" r={RING_R} strokeWidth="7" fill="none"
-                stroke="var(--pril)" strokeLinecap="round"
-                strokeDasharray={RING_CIRC}
-                strokeDashoffset={RING_CIRC - (RING_CIRC * (stats.total > 0 ? stats.pct : 0) / 100)}
-                transform="rotate(-90 45 45)"
-                style={{ transition: 'stroke-dashoffset 0.5s ease' }}
-              />
-            </svg>
-            <div className="absolute inset-0 grid place-items-center text-center">
-              <div>
-                <div className="text-[20px] font-extrabold">{stats.total > 0 ? `${stats.pct}%` : '—'}</div>
-                <div className="text-[8px] font-bold uppercase tracking-wide text-[var(--muted)]">Hadir</div>
+          <DailyAttendanceCalculation
+            shell="ortu"
+            stats={stats}
+            available={attendanceState === 'ready'}
+            label={`${month} ${year}`}
+          >
+            <div className="relative inline-block">
+              <svg width="90" height="90">
+                <circle
+                  cx="45"
+                  cy="45"
+                  r={RING_R}
+                  strokeWidth="7"
+                  fill="none"
+                  stroke="var(--ring-bg)"
+                />
+                <circle
+                  cx="45"
+                  cy="45"
+                  r={RING_R}
+                  strokeWidth="7"
+                  fill="none"
+                  stroke={stats.pct === null ? 'transparent' : 'var(--pril)'}
+                  strokeLinecap="round"
+                  strokeDasharray={RING_CIRC}
+                  strokeDashoffset={RING_CIRC - RING_CIRC * ((stats.pct ?? 0) / 100)}
+                  transform="rotate(-90 45 45)"
+                  style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+                />
+              </svg>
+              <div className="absolute inset-0 grid place-items-center text-center">
+                <div>
+                  <div className="text-[20px] font-extrabold">
+                    {stats.total > 0 ? `${stats.pct}%` : '—'}
+                  </div>
+                  <div className="text-[8px] font-bold uppercase tracking-wide text-[var(--muted)]">
+                    Hadir
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          </DailyAttendanceCalculation>
           {/* 4 stat boxes */}
           <div className="grid flex-1 grid-cols-2 gap-1.5">
             {statBoxes.map((s) => (
@@ -123,8 +195,12 @@ export default function KehadiranOrtu({ setModal, attendance, waLog }: Kehadiran
                 key={s.label}
                 className="rounded-lg border border-[var(--border)] p-2 text-center"
               >
-                <div className="text-[16px] font-extrabold" style={{ color: s.color }}>{s.value}</div>
-                <div className="text-[9px] font-bold uppercase tracking-wide text-[var(--muted)]">{s.label}</div>
+                <div className="text-[16px] font-extrabold" style={{ color: s.color }}>
+                  {attendanceState === 'ready' ? s.value : '—'}
+                </div>
+                <div className="text-[9px] font-bold uppercase tracking-wide text-[var(--muted)]">
+                  {s.label}
+                </div>
               </div>
             ))}
           </div>
@@ -139,18 +215,28 @@ export default function KehadiranOrtu({ setModal, attendance, waLog }: Kehadiran
             Kalender Kehadiran
           </div>
           <span className="text-[10px] font-semibold text-[var(--muted)]">
-            {stats.total} hari recorded
+            {attendanceState === 'ready' ? `${stats.total} hari tercatat` : 'Data belum tersedia'}
           </span>
         </div>
         <div className="mb-2 flex items-center justify-between">
-          <b className="text-[13px]">{month} {year}</b>
+          <b className="text-[13px]">
+            {month} {year}
+          </b>
         </div>
         {/* Calendar grid — Sunday-first, minmax(0,1fr) (§6.5) */}
         <div className="cal-wrap overflow-hidden pb-1">
-          <div className="grid w-full gap-[3px]" style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}>
+          <div
+            className="grid w-full gap-[3px]"
+            style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}
+          >
             {/* Headers */}
             {['M', 'S', 'S', 'R', 'K', 'J', 'S'].map((d, i) => (
-              <div key={i} className={`py-0.5 text-center text-[10px] font-extrabold ${i === 0 ? 'text-[var(--rose)]' : 'text-[var(--dim)]'}`}>{d}</div>
+              <div
+                key={i}
+                className={`py-0.5 text-center text-[10px] font-extrabold ${i === 0 ? 'text-[var(--rose)]' : 'text-[var(--dim)]'}`}
+              >
+                {d}
+              </div>
             ))}
             {/* Cells */}
             {calCells.map((cell, i) => {
@@ -166,7 +252,12 @@ export default function KehadiranOrtu({ setModal, attendance, waLog }: Kehadiran
                 );
               }
               if (cell.status === 'empty') {
-                return <div key={i} className="aspect-square rounded-[5px] border border-[var(--border)] bg-[var(--empty-cell)]" />;
+                return (
+                  <div
+                    key={i}
+                    className="aspect-square rounded-[5px] border border-[var(--border)] bg-[var(--empty-cell)]"
+                  />
+                );
               }
               if (cell.status === 'future') {
                 return (
@@ -196,9 +287,10 @@ export default function KehadiranOrtu({ setModal, attendance, waLog }: Kehadiran
               const bg = statusBg(cell.status);
               const txt = statusText(cell.status);
               return (
-                <div
+                <button
+                  type="button"
                   key={i}
-                  onClick={() => setModal({ type: 'day', data: { day: cell.day, status: cell.status, month, year } })}
+                  onClick={() => openDay(cell.day, cell.status)}
                   className="aspect-square grid cursor-pointer place-items-center rounded-[5px] text-[11px] font-extrabold transition-transform hover:scale-110"
                   style={{
                     background: bg,
@@ -207,13 +299,10 @@ export default function KehadiranOrtu({ setModal, attendance, waLog }: Kehadiran
                     outline: isToday ? '2px solid var(--pri)' : undefined,
                     outlineOffset: isToday ? '-3px' : undefined,
                   }}
-                  role="button"
-                  tabIndex={0}
                   aria-label={`${cell.day} ${month} — ${ATT_STATUS_LABELS[cell.status] ?? cell.status}`}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setModal({ type: 'day', data: { day: cell.day, status: cell.status, month, year } }); } }}
                 >
                   {cell.day}
-                </div>
+                </button>
               );
             })}
           </div>
@@ -225,7 +314,10 @@ export default function KehadiranOrtu({ setModal, attendance, waLog }: Kehadiran
               { label: 'Sakit', bg: 'rgba(245,158,11,.2)' },
               { label: 'Alpha', bg: 'rgba(239,68,68,.2)' },
             ].map((l) => (
-              <span key={l.label} className="flex items-center gap-1 text-[9px] font-semibold text-[var(--muted)]">
+              <span
+                key={l.label}
+                className="flex items-center gap-1 text-[9px] font-semibold text-[var(--muted)]"
+              >
                 <i className="inline-block h-2.5 w-2.5 rounded" style={{ background: l.bg }} />
                 {l.label}
               </span>
@@ -239,7 +331,9 @@ export default function KehadiranOrtu({ setModal, attendance, waLog }: Kehadiran
           Tren bulanan memerlukan endpoint agregasi terpisah — belum di-wire. */}
       <div className="mb-3.5 rounded-[var(--r)] border border-dashed border-[var(--border)] bg-[var(--surface)] p-3.5 text-center">
         <BarChart3 className="mx-auto h-5 w-5 text-[var(--dim)]" />
-        <p className="mt-1.5 text-[11.5px] font-bold text-[var(--muted)]">Tren bulanan akan tersedia menyusul</p>
+        <p className="mt-1.5 text-[11.5px] font-bold text-[var(--muted)]">
+          Tren bulanan akan tersedia menyusul
+        </p>
         <p className="text-[10px] text-[var(--dim)]">Agregasi bulanan belum dihubungkan</p>
       </div>
 
@@ -259,7 +353,10 @@ export default function KehadiranOrtu({ setModal, attendance, waLog }: Kehadiran
             const icC = waColor(w.status);
             const bgC = waBg(w.status);
             return (
-              <div key={i} className="mb-1.5 flex items-center gap-2.5 rounded-[var(--r-sm)] border border-[var(--border)] p-2.5 last:mb-0">
+              <div
+                key={i}
+                className="mb-1.5 flex items-center gap-2.5 rounded-[var(--r-sm)] border border-[var(--border)] p-2.5 last:mb-0"
+              >
                 <div
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
                   style={{ background: bgC }}
@@ -269,7 +366,9 @@ export default function KehadiranOrtu({ setModal, attendance, waLog }: Kehadiran
                   {ic === 'alert-triangle' && <span style={{ color: icC }}>⚠</span>}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <b className="block text-[12px]">{w.date} · {w.session}</b>
+                  <b className="block text-[12px]">
+                    {w.date} · {w.session}
+                  </b>
                   <small className="text-[9.5px] font-semibold text-[var(--muted)]">
                     Dikirim {w.time} ke {w.sentTo} — {w.note}
                   </small>
@@ -285,6 +384,20 @@ export default function KehadiranOrtu({ setModal, attendance, waLog }: Kehadiran
           })
         )}
       </div>
+    </div>
+  );
+}
+
+export default function KehadiranOrtu(props: KehadiranOrtuProps) {
+  return (
+    <div className="p-4">
+      <LearnerSessionAttendance
+        key={props.activeStudentId}
+        shell="ortu"
+        studentId={props.activeStudentId}
+        period={props.period}
+        initialDate={props.initialDate}
+      />
     </div>
   );
 }

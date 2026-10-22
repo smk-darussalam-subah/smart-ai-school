@@ -441,12 +441,11 @@ export class StudentDashboardService {
   // ── T3-02 B4: Teacher-by-student (guru mapel + kontak untuk ortu) ───────────
 
   /** B4: List guru mapel for student's class, with contact info for parents. */
-  async getTeachers(user: AuthUser) {
+  async getTeachers(user: AuthUser, studentId?: string) {
     const students = await this.resolveStudents(user);
     if (students.length === 0) return { data: [] };
-
-    // All students share the same class typically; use first student's classId
-    const classId = students[0]!.classId;
+    const student = this.selectedStudent(students, studentId);
+    const classId = student.classId;
     if (!classId) return { data: [] };
 
     const assignments = await this.prisma.teachingAssignment.findMany({
@@ -479,10 +478,10 @@ export class StudentDashboardService {
   // ── T3-02 B3: Learning timeline for parents/siswa ──────────────────────
 
   /** B3: Build learning timeline from grades + attendance + LMS progress events. */
-  async getTimeline(user: AuthUser) {
+  async getTimeline(user: AuthUser, studentId?: string) {
     const students = await this.resolveStudents(user);
     if (students.length === 0) return { data: [] };
-    const s = students[0]!;
+    const s = this.selectedStudent(students, studentId);
 
     // Fetch recent grades, attendance anomalies, and LMS completions
     const [grades, attendance, lmsProgress] = await Promise.all([
@@ -567,6 +566,17 @@ export class StudentDashboardService {
     events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return { data: events.slice(0, 30) };
+  }
+
+  /** Never infer the first child when a parent owns multiple student profiles. */
+  private selectedStudent(students: StudentBrief[], studentId?: string): StudentBrief {
+    const student = studentId
+      ? students.find((item) => item.id === studentId)
+      : students.length === 1
+        ? students[0]
+        : undefined;
+    if (!student) throw new NotFoundException('Pilih siswa yang berada dalam kewenangan Anda.');
+    return student;
   }
 }
 

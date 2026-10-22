@@ -3,6 +3,7 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { apiErrorMessage } from '@/lib/api';
+import { rateLimitMessage } from '@/lib/rate-limit';
 
 const API_BASE = process.env.API_URL || 'http://api:3001';
 
@@ -26,7 +27,7 @@ export async function apiAction<T = unknown>(
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
       return {
-        error: apiErrorMessage(err, `HTTP ${res.status}`),
+        error: res.status === 429 ? rateLimitMessage(res.headers) : apiErrorMessage(err, `HTTP ${res.status}`),
         status: res.status,
       };
     }

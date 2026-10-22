@@ -143,6 +143,8 @@ export interface AttendanceRow {
 
 /** Satu blok mengajar hari ini (gabungan JP berurutan satu kelas+mapel). */
 export interface TodayClass {
+  classSessionId?: string;
+  serviceDate?: string;
   scheduleId?: string;
   classId: string;
   className: string;

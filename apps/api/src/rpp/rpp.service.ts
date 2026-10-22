@@ -15,6 +15,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveOwnTeachingRead } from '../common/helpers/own-teaching-read';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { EVENTS, RppReviewedPayload } from '../events/events.types';
@@ -24,12 +25,7 @@ import {
   kaprogClassWhere,
   resolveActiveKaprogMajorScope,
 } from '../common/helpers/appointment-scope.helper';
-import {
-  CreateRppDto,
-  ListRppQueryDto,
-  ReviewRppDto,
-  UpdateRppDto,
-} from './dto/rpp.dto';
+import { CreateRppDto, ListRppQueryDto, ReviewRppDto, UpdateRppDto } from './dto/rpp.dto';
 
 // W3-4: One-step consistent policy dengan role-aware audit trail.
 // - WAKA_KURIKULUM: dapat melakukan Review (catatan + minta revisi) dan Approval
@@ -40,16 +36,37 @@ const REVIEWER_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPR
 const EDITABLE_STATUSES = ['draft', 'revision'] as const;
 
 const RPP_SELECT = {
-  id: true, teacherId: true, classId: true, subject: true, title: true,
-  content: true, body: true, fileUrl: true, status: true,
-  reviewerId: true, reviewerName: true, reviewNote: true,
-  curriculumReviewerId: true, curriculumReviewerName: true,
-  curriculumReviewNote: true, curriculumReviewedAt: true,
-  finalReviewerId: true, finalReviewerName: true,
-  finalReviewNote: true, finalApprovedAt: true,
-  submittedAt: true, reviewedAt: true, archivedAt: true, archivedBy: true,
-  academicYear: true, semester: true, createdAt: true, updatedAt: true,
-  teacher: { select: { id: true, user: { select: { fullName: true, staff: { select: { niy: true } } } } } },
+  id: true,
+  teacherId: true,
+  classId: true,
+  subject: true,
+  title: true,
+  content: true,
+  body: true,
+  fileUrl: true,
+  status: true,
+  reviewerId: true,
+  reviewerName: true,
+  reviewNote: true,
+  curriculumReviewerId: true,
+  curriculumReviewerName: true,
+  curriculumReviewNote: true,
+  curriculumReviewedAt: true,
+  finalReviewerId: true,
+  finalReviewerName: true,
+  finalReviewNote: true,
+  finalApprovedAt: true,
+  submittedAt: true,
+  reviewedAt: true,
+  archivedAt: true,
+  archivedBy: true,
+  academicYear: true,
+  semester: true,
+  createdAt: true,
+  updatedAt: true,
+  teacher: {
+    select: { id: true, user: { select: { fullName: true, staff: { select: { niy: true } } } } },
+  },
   class: { select: { id: true, name: true } },
 } as const;
 
@@ -75,7 +92,9 @@ export class RppService {
     return teacher.id;
   }
 
-  private async writeTransaction<T>(callback: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+  private async writeTransaction<T>(
+    callback: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
     const prismaWithTransaction = this.prisma as PrismaService & {
       $transaction?: (fn: (tx: Prisma.TransactionClient) => Promise<T>) => Promise<T>;
     };
@@ -92,16 +111,26 @@ export class RppService {
       ...(query.academicYear ? { academicYear: query.academicYear } : {}),
       ...(query.semester ? { semester: query.semester } : {}),
       ...(query.classId ? { classId: query.classId } : {}),
-      ...(query.search ? {
-        OR: [
-          { title: { contains: query.search, mode: 'insensitive' } },
-          { subject: { contains: query.search, mode: 'insensitive' } },
-          { teacher: { user: { fullName: { contains: query.search, mode: 'insensitive' } } } },
-        ],
-      } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: 'insensitive' } },
+              { subject: { contains: query.search, mode: 'insensitive' } },
+              { teacher: { user: { fullName: { contains: query.search, mode: 'insensitive' } } } },
+            ],
+          }
+        : {}),
     };
 
-    if (this.isReviewer(user)) {
+    const ownTeacherId = await resolveOwnTeachingRead(
+      this.prisma,
+      user,
+      query.scope,
+      query.teacherId,
+    );
+    if (ownTeacherId) {
+      where.teacherId = ownTeacherId;
+    } else if (this.isReviewer(user)) {
       if (query.teacherId) where.teacherId = query.teacherId;
       if (isKaprogScopedReader(user)) {
         const scope = await resolveActiveKaprogMajorScope(this.prisma, user);
@@ -118,7 +147,12 @@ export class RppService {
     const [data, total] = await Promise.all([
       this.prisma.rpp.findMany({
         where,
-        orderBy: [{ status: 'asc' }, { submittedAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }, { id: 'asc' }],
+        orderBy: [
+          { status: 'asc' },
+          { submittedAt: { sort: 'desc', nulls: 'last' } },
+          { updatedAt: 'desc' },
+          { id: 'asc' },
+        ],
         skip,
         take: query.limit,
         select: RPP_SELECT,
@@ -130,6 +164,14 @@ export class RppService {
 
   async findOne(id: string, user: AuthUser) {
     const where: Prisma.RppWhereInput = { id, archivedAt: null };
+    if (isKaprogScopedReader(user) && user.roles.includes('GURU')) {
+      const teacherId = await resolveOwnTeachingRead(this.prisma, user, 'own');
+      const own = await this.prisma.rpp.findFirst({
+        where: { ...where, teacherId: teacherId! },
+        select: RPP_SELECT,
+      });
+      if (own) return own;
+    }
     if (isKaprogScopedReader(user)) {
       where.class = kaprogClassWhere(await resolveActiveKaprogMajorScope(this.prisma, user));
     }
@@ -145,7 +187,9 @@ export class RppService {
   async create(dto: CreateRppDto, user: AuthUser) {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
     if (!dto.content && !dto.fileUrl && !dto.body) {
-      throw new BadRequestException('Isi Modul Ajar (struktur/teks) atau lampiran wajib salah satu');
+      throw new BadRequestException(
+        'Isi Modul Ajar (struktur/teks) atau lampiran wajib salah satu',
+      );
     }
     // W3-6: GURU harus memiliki TeachingAssignment yang cocok dengan
     // classId + subject + academicYear. Mencegah guru membuat Modul Ajar
@@ -180,7 +224,14 @@ export class RppService {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
     const existing = await this.prisma.rpp.findFirst({
       where: { id, teacherId },
-      select: { id: true, status: true, classId: true, subject: true, academicYear: true, semester: true },
+      select: {
+        id: true,
+        status: true,
+        classId: true,
+        subject: true,
+        academicYear: true,
+        semester: true,
+      },
     });
     if (!existing) throw new NotFoundException('RPP tidak ditemukan');
     if (!(EDITABLE_STATUSES as readonly string[]).includes(existing.status)) {
@@ -198,7 +249,10 @@ export class RppService {
       });
       const nextSemester = dto.semester ?? existing.semester;
       if (newYear !== existing.academicYear || nextSemester !== existing.semester) {
-        await this.academicPeriod.assertWritablePeriod(tx, { academicYear: newYear, semester: nextSemester });
+        await this.academicPeriod.assertWritablePeriod(tx, {
+          academicYear: newYear,
+          semester: nextSemester,
+        });
       }
       return tx.rpp.updateMany({
         where: { id, teacherId, status: existing.status, archivedAt: null },
@@ -206,7 +260,9 @@ export class RppService {
           ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
           ...(dto.title !== undefined ? { title: dto.title } : {}),
           ...(dto.content !== undefined ? { content: dto.content } : {}),
-          ...(dto.body !== undefined ? { body: dto.body ? (dto.body as Prisma.InputJsonValue) : Prisma.DbNull } : {}),
+          ...(dto.body !== undefined
+            ? { body: dto.body ? (dto.body as Prisma.InputJsonValue) : Prisma.DbNull }
+            : {}),
           ...(dto.fileUrl !== undefined ? { fileUrl: dto.fileUrl } : {}),
           ...(dto.classId !== undefined ? { classId: dto.classId } : {}),
           ...(dto.academicYear !== undefined ? { academicYear: dto.academicYear } : {}),
@@ -227,7 +283,15 @@ export class RppService {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
     const existing = await this.prisma.rpp.findFirst({
       where: { id, teacherId },
-      select: { id: true, status: true, content: true, body: true, fileUrl: true, academicYear: true, semester: true },
+      select: {
+        id: true,
+        status: true,
+        content: true,
+        body: true,
+        fileUrl: true,
+        academicYear: true,
+        semester: true,
+      },
     });
     if (!existing) throw new NotFoundException('RPP tidak ditemukan');
     if (!(EDITABLE_STATUSES as readonly string[]).includes(existing.status)) {
@@ -280,16 +344,20 @@ export class RppService {
       },
     });
     if (!existing) throw new NotFoundException('RPP tidak ditemukan');
-    if (existing.archivedAt) throw new ConflictException('Modul Ajar yang diarsipkan tidak dapat direview');
+    if (existing.archivedAt)
+      throw new ConflictException('Modul Ajar yang diarsipkan tidak dapat direview');
 
     const isFinalReviewer = user.roles.includes('KEPALA_SEKOLAH');
-    const isCurriculumReviewer = user.roles.includes('WAKA_KURIKULUM') || user.roles.includes('KAPROG');
+    const isCurriculumReviewer =
+      user.roles.includes('WAKA_KURIKULUM') || user.roles.includes('KAPROG');
     if (!isFinalReviewer && !isCurriculumReviewer) {
       throw new ForbiddenException('Akses review ditolak');
     }
     if (isKaprogScopedReader(user)) {
       if (!existing.classId) {
-        throw new ForbiddenException('Kaprog hanya dapat mereview Modul Ajar dalam lingkup jurusannya');
+        throw new ForbiddenException(
+          'Kaprog hanya dapat mereview Modul Ajar dalam lingkup jurusannya',
+        );
       }
       await assertClassInKaprogScope(
         this.prisma,
@@ -304,34 +372,42 @@ export class RppService {
         `Modul Ajar tidak berada pada antrean review (status '${existing.status}')`,
       );
     }
-    const requiredPermission = isCurriculumStage
-      ? 'rpp.curriculum.review'
-      : 'rpp.final.approve';
-    if (!await this.permissions.hasPermission(user.keycloakId, user.roles, requiredPermission)) {
-      throw new ForbiddenException(`Permission '${requiredPermission}' diperlukan untuk tahap review ini`);
+    const requiredPermission = isCurriculumStage ? 'rpp.curriculum.review' : 'rpp.final.approve';
+    if (!(await this.permissions.hasPermission(user.keycloakId, user.roles, requiredPermission))) {
+      throw new ForbiddenException(
+        `Permission '${requiredPermission}' diperlukan untuk tahap review ini`,
+      );
     }
     if (isCurriculumStage) {
       if (!isCurriculumReviewer) {
         throw new ForbiddenException('Review kurikulum hanya untuk Waka Kurikulum atau Kaprog');
       }
       if (!['recommended', 'revision'].includes(dto.decision)) {
-        throw new ForbiddenException('Waka Kurikulum/Kaprog hanya dapat merekomendasikan atau meminta revisi');
+        throw new ForbiddenException(
+          'Waka Kurikulum/Kaprog hanya dapat merekomendasikan atau meminta revisi',
+        );
       }
     } else {
       if (!isFinalReviewer) {
         throw new ForbiddenException('Persetujuan final hanya untuk Kepala Sekolah');
       }
       if (existing.curriculumReviewerId === user.keycloakId) {
-        throw new ForbiddenException('Persetujuan final harus dilakukan oleh aktor yang berbeda dari reviewer kurikulum');
+        throw new ForbiddenException(
+          'Persetujuan final harus dilakukan oleh aktor yang berbeda dari reviewer kurikulum',
+        );
       }
       if (!['approved', 'revision'].includes(dto.decision)) {
-        throw new ForbiddenException('Kepala Sekolah hanya dapat menyetujui final atau meminta revisi');
+        throw new ForbiddenException(
+          'Kepala Sekolah hanya dapat menyetujui final atau meminta revisi',
+        );
       }
     }
     // W3-4 P2: Audit trail dengan role tag — reviewerName disimpan sebagai
     // `username [ROLE]` agar jelas dalam kapasitas apa keputusan diambil.
     const reviewerRole = isCurriculumStage
-      ? (user.roles.includes('WAKA_KURIKULUM') ? 'WAKA_KURIKULUM' : 'KAPROG')
+      ? user.roles.includes('WAKA_KURIKULUM')
+        ? 'WAKA_KURIKULUM'
+        : 'KAPROG'
       : 'KEPALA_SEKOLAH';
     const formattedReviewerName = reviewerRole
       ? `${user.username} [${reviewerRole}]`
@@ -345,21 +421,23 @@ export class RppService {
       reviewerId: user.keycloakId,
       reviewerName: formattedReviewerName,
       reviewedAt: now,
-      ...(isCurriculumStage ? {
-        curriculumReviewerId: user.keycloakId,
-        curriculumReviewerName: formattedReviewerName,
-        curriculumReviewNote: dto.note ?? null,
-        curriculumReviewedAt: now,
-        finalReviewerId: null,
-        finalReviewerName: null,
-        finalReviewNote: null,
-        finalApprovedAt: null,
-      } : {
-        finalReviewerId: user.keycloakId,
-        finalReviewerName: formattedReviewerName,
-        finalReviewNote: dto.note ?? null,
-        finalApprovedAt: dto.decision === 'approved' ? now : null,
-      }),
+      ...(isCurriculumStage
+        ? {
+            curriculumReviewerId: user.keycloakId,
+            curriculumReviewerName: formattedReviewerName,
+            curriculumReviewNote: dto.note ?? null,
+            curriculumReviewedAt: now,
+            finalReviewerId: null,
+            finalReviewerName: null,
+            finalReviewNote: null,
+            finalApprovedAt: null,
+          }
+        : {
+            finalReviewerId: user.keycloakId,
+            finalReviewerName: formattedReviewerName,
+            finalReviewNote: dto.note ?? null,
+            finalApprovedAt: dto.decision === 'approved' ? now : null,
+          }),
     };
     const changed = await this.writeTransaction(async (tx) => {
       await this.academicPeriod.assertWritablePeriodWithCutoverLock(tx, {
@@ -372,7 +450,9 @@ export class RppService {
       });
     });
     if (changed.count !== 1) {
-      throw new ConflictException('Status Modul Ajar berubah. Muat ulang antrean sebelum mengambil keputusan.');
+      throw new ConflictException(
+        'Status Modul Ajar berubah. Muat ulang antrean sebelum mengambil keputusan.',
+      );
     }
     const reviewed = await this.prisma.rpp.findUnique({
       where: { id },

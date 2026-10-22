@@ -80,7 +80,7 @@ interface KpiItem {
 export function KpiStrip({ kpi }: { kpi: Kpi }) {
   const items: KpiItem[] = [
     { label: 'Kehadiran Siswa', icon: Users, value: kpi.studentPct !== null ? `${kpi.studentPct}%` : '—', delta: kpi.studentDelta, spark: kpi.studentSpark },
-    { label: 'Kehadiran Guru', icon: ClipboardCheck, value: kpi.teacherPct !== null ? `${kpi.teacherPct}%` : '—' },
+    { label: 'Presensi wajib guru', icon: ClipboardCheck, value: kpi.teacherPct !== null ? `${kpi.teacherPct}%` : '—' },
     { label: 'Rata² Nilai', icon: GraduationCap, value: kpi.avgGrade !== null ? `${kpi.avgGrade}` : '—' },
     { label: 'Kolektibilitas SPP', icon: Wallet, value: kpi.sppCollectedPct !== null ? `${kpi.sppCollectedPct}%` : '—' },
     { label: 'Konversi PPDB', icon: BarChart3, value: kpi.ppdbConversion !== null ? `${kpi.ppdbConversion}%` : '—' },

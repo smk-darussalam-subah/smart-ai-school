@@ -33,6 +33,8 @@ export interface TodayClassSession {
   scheduledStartAt: string;
   scheduledEndAt: string;
   status: string;
+  canOperate?: boolean;
+  operationBlockedReason?: string | null;
 }
 
 export interface SessionTeacherOption {
@@ -53,11 +55,13 @@ export default function TodayClassSessions({
   loadError,
   canManage = false,
   teachers = [],
+  canOperateSessions = false,
 }: {
   sessions: TodayClassSession[];
   loadError: string | null;
   canManage?: boolean;
   teachers?: SessionTeacherOption[];
+  canOperateSessions?: boolean;
 }) {
   const inFlight = useRef(new Set<string>());
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
@@ -141,6 +145,7 @@ export default function TodayClassSessions({
 
   return (
     <section
+      id="today-class-sessions"
       aria-labelledby="today-session-heading"
       className="rounded-lg border border-slate-200 bg-white"
     >
@@ -150,7 +155,7 @@ export default function TodayClassSessions({
             Sesi hari ini
           </h2>
           <p className="mt-1 text-xs text-slate-500">
-            Status server berdasarkan jadwal, periode aktif, dan Bell Schedule.
+            Status mengikuti jadwal, semester aktif, dan jam pelajaran sekolah.
           </p>
         </div>
         <Clock3 className="h-5 w-5 text-emerald-800" aria-hidden="true" />
@@ -186,7 +191,10 @@ export default function TodayClassSessions({
       ) : (
         <div className="divide-y divide-slate-100">
           {sessions.map((session) => {
-            const action = classSessionAction(session.status);
+            const action =
+              canOperateSessions && session.canOperate === true
+                ? classSessionAction(session.status)
+                : null;
             const statusMeta = classSessionStatusMeta(session.status);
             const busy = action ? busyIds.has(`${session.id}:${action}`) : false;
             return (
@@ -202,9 +210,14 @@ export default function TodayClassSessions({
                     {timeLabel(session.scheduledStartAt)}–{timeLabel(session.scheduledEndAt)} ·{' '}
                     {session.roomSnapshot || 'Ruang belum ditetapkan'}
                   </p>
+                  {session.operationBlockedReason && (
+                    <p className="mt-1 text-xs text-amber-800">{session.operationBlockedReason}</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`rounded-md px-2 py-1 text-xs font-semibold ${statusMeta.className}`}>
+                  <span
+                    className={`rounded-md px-2 py-1 text-xs font-semibold ${statusMeta.className}`}
+                  >
                     {statusMeta.label}
                   </span>
                   {action && (

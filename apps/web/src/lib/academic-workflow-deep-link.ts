@@ -7,6 +7,7 @@ export const ACADEMIC_WORKFLOW_VIEWS = [
   'remedial',
   'remedial-status',
   'assessment-overview',
+  'learning-recap',
 ] as const;
 
 export type AcademicWorkflowView = (typeof ACADEMIC_WORKFLOW_VIEWS)[number];
@@ -14,16 +15,16 @@ export type AcademicWorkflowPersona = 'teacher' | 'principal' | 'student' | 'par
 
 const VIEW_SET = new Set<string>(ACADEMIC_WORKFLOW_VIEWS);
 const PERSONA_VIEWS: Record<AcademicWorkflowPersona, ReadonlySet<AcademicWorkflowView>> = {
-  teacher: new Set(['overview', 'teaching', 'module-authoring', 'question-bank', 'remedial']),
-  principal: new Set(['overview', 'module-authoring', 'assessment-overview']),
+  teacher: new Set(['overview', 'teaching', 'module-authoring', 'question-bank', 'remedial', 'learning-recap']),
+  principal: new Set(['overview', 'module-authoring', 'assessment-overview', 'learning-recap']),
   student: new Set(['overview', 'assessment', 'remedial-status']),
   parent: new Set(['overview', 'remedial-status']),
 };
 
 export interface AcademicWorkflowPresentation {
-  teacherScreen: 'ringkasan' | 'pembelajaran' | 'penilaian';
+  teacherScreen: 'ringkasan' | 'pembelajaran' | 'penilaian' | 'sesi';
   teacherAssessmentPanel: 'nilai' | 'bank' | 'remedial';
-  leadershipScreen: 'beranda' | 'modul' | 'sumatif';
+  leadershipScreen: 'beranda' | 'modul' | 'sumatif' | 'sesi';
   studentScreen: 'beranda' | 'tugas' | 'nilai';
   studentTaskFilter: 'all' | 'assessment' | 'remedial';
   studentGradeFilter: 'all' | 'remedial';
@@ -62,6 +63,7 @@ export function academicWorkflowPresentation(
   view: AcademicWorkflowView | null,
 ): AcademicWorkflowPresentation {
   if (!view || view === 'overview' || view === 'teaching') return DEFAULT_PRESENTATION;
+  if (view === 'learning-recap') return { ...DEFAULT_PRESENTATION, teacherScreen: 'sesi', leadershipScreen: 'sesi' };
   if (view === 'module-authoring') {
     return {
       ...DEFAULT_PRESENTATION,

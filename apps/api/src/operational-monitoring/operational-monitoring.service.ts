@@ -8,6 +8,11 @@ import {
 } from '../display-devices/display-device.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DisplayPlaybackLeaseService } from './display-playback-lease.service';
+import {
+  lockSessionActivation,
+  lockSessionInputs,
+  sessionAlertSuppression,
+} from '../common/helpers/class-session-activation';
 
 const STREAM_INTERVAL_MS = 5_000;
 const STALE_AFTER_SECONDS = 75;
@@ -118,8 +123,11 @@ export class OperationalMonitoringService {
         where: { session: where, status: { in: ['PENDING', 'CLAIMED', 'DISPATCHED'] } },
       }),
     ]);
+    const schoolDay = await this.readCurrentSegment(date, now);
     return {
       date,
+      schoolDay,
+      currentSegment: schoolDay.label,
       generatedAt: new Date().toISOString(),
       counters: Object.fromEntries(statusGroups.map((group) => [group.status, group._count._all])),
       activeAlerts,
@@ -137,6 +145,43 @@ export class OperationalMonitoringService {
                 : 'ONLINE',
       })),
     };
+  }
+
+  private async readCurrentSegment(date: string, now: Date) {
+    if (date !== this.jakartaDate(now))
+      return { state: 'NOT_TODAY', label: 'Tanggal pilihan, bukan hari ini' };
+    try {
+      const serviceDate = this.asDate(date);
+      const holiday = await this.prisma.academicCalendar.findFirst({
+        where: {
+          type: { in: ['holiday', 'break'] },
+          startDate: { lte: serviceDate },
+          endDate: { gte: serviceDate },
+          academicYear: { startDate: { lte: serviceDate }, endDate: { gte: serviceDate } },
+        },
+        select: { id: true },
+      });
+      if (holiday || serviceDate.getUTCDay() === 0)
+        return { state: 'HOLIDAY', label: 'Hari libur' };
+      const bell = await this.bells.resolveForDate(serviceDate, 'SCHOOL');
+      if (!bell.segments.length)
+        return { state: 'OUTSIDE', label: 'Tidak ada jam pelajaran hari ini' };
+      const wib = new Date(now.getTime() + 7 * 60 * 60_000);
+      const minute = wib.getUTCHours() * 60 + wib.getUTCMinutes();
+      const segment = bell.segments.find(
+        (item) => minute >= item.startMinute && minute < item.endMinute,
+      );
+      if (!segment) return { state: 'OUTSIDE', label: 'Di luar jam pelajaran' };
+      return {
+        state: segment.type === 'INSTRUCTION' ? 'INSTRUCTION' : 'BREAK',
+        label:
+          segment.type === 'INSTRUCTION'
+            ? `JP ${segment.jpNumber} · ${segment.label}`
+            : segment.label,
+      };
+    } catch {
+      return { state: 'UNAVAILABLE', label: null };
+    }
   }
 
   async deviceSnapshot(credential: string | undefined) {
@@ -176,18 +221,19 @@ export class OperationalMonitoringService {
 
   async markDelivered(credential: string | undefined, deliveryId: string, now = new Date()) {
     const device = await this.devices.authenticateCredential(credential);
-    const delivery = await this.findOwnedDelivery(device.id, deliveryId);
-    if (['DELIVERED', 'PLAYED', 'ACKNOWLEDGED'].includes(delivery.status)) {
-      return { status: delivery.status, transitioned: false };
-    }
-    if (delivery.status !== 'PENDING')
-      throw new ConflictException('Delivery tidak dapat ditandai terkirim');
-    const changed = await this.prisma.classSessionAlertDelivery.updateMany({
-      where: { id: deliveryId, deviceId: device.id, status: 'PENDING' },
-      data: { status: 'DELIVERED', deliveredAt: now },
+    return this.withOwnedDelivery(device.id, deliveryId, async (tx, delivery) => {
+      if (['DELIVERED', 'PLAYED', 'ACKNOWLEDGED'].includes(delivery.status)) {
+        return { status: delivery.status, transitioned: false };
+      }
+      if (delivery.status !== 'PENDING')
+        throw new ConflictException('Delivery tidak dapat ditandai terkirim');
+      const changed = await tx.classSessionAlertDelivery.updateMany({
+        where: { id: deliveryId, deviceId: device.id, status: 'PENDING' },
+        data: { status: 'DELIVERED', deliveredAt: now },
+      });
+      if (changed.count !== 1) throw new ConflictException('Delivery telah berubah');
+      return { status: 'DELIVERED', transitioned: true };
     });
-    if (changed.count !== 1) throw new ConflictException('Delivery telah berubah');
-    return { status: 'DELIVERED', transitioned: true };
   }
 
   async claimPlayback(credential: string | undefined, deliveryId: string) {
@@ -201,6 +247,12 @@ export class OperationalMonitoringService {
       throw new ConflictException('Delivery tidak dapat diputar');
     const claim = await this.playbackLeases.claim(device.profile, deliveryId);
     if (!claim) throw new ConflictException('Audio sedang diproses oleh perangkat lain');
+    try {
+      await this.findOwnedDelivery(device.id, deliveryId);
+    } catch (error) {
+      await this.playbackLeases.release(device.profile, deliveryId, claim.token);
+      throw error;
+    }
     return {
       status: delivery.status,
       claimed: true,
@@ -216,26 +268,26 @@ export class OperationalMonitoringService {
     now = new Date(),
   ) {
     const device = await this.devices.authenticateCredential(credential);
-    const delivery = await this.findOwnedDelivery(device.id, deliveryId);
-    this.assertAudibleDelivery(device, delivery.audible);
-    if (['PLAYED', 'ACKNOWLEDGED'].includes(delivery.status)) {
-      return { status: delivery.status, transitioned: false };
-    }
-    if (!['PENDING', 'DELIVERED'].includes(delivery.status))
-      throw new ConflictException('Delivery tidak dapat diputar');
-    if (!(await this.playbackLeases.assertAndExtend(device.profile, deliveryId, claimToken))) {
-      throw new ConflictException('Klaim audio tidak berlaku atau sudah kedaluwarsa');
-    }
-    const changed = await this.prisma.classSessionAlertDelivery.updateMany({
-      where: { id: deliveryId, deviceId: device.id, status: { in: ['PENDING', 'DELIVERED'] } },
-      data: {
-        status: 'PLAYED',
-        deliveredAt: delivery.deliveredAt ?? now,
-        playedAt: now,
-      },
+    return this.withOwnedDelivery(device.id, deliveryId, async (tx, delivery) => {
+      this.assertAudibleDelivery(device, delivery.audible);
+      if (['PLAYED', 'ACKNOWLEDGED'].includes(delivery.status))
+        return { status: delivery.status, transitioned: false };
+      if (!['PENDING', 'DELIVERED'].includes(delivery.status))
+        throw new ConflictException('Delivery tidak dapat diputar');
+      if (!(await this.playbackLeases.assertAndExtend(device.profile, deliveryId, claimToken))) {
+        throw new ConflictException('Klaim audio tidak berlaku atau sudah kedaluwarsa');
+      }
+      const changed = await tx.classSessionAlertDelivery.updateMany({
+        where: { id: deliveryId, deviceId: device.id, status: { in: ['PENDING', 'DELIVERED'] } },
+        data: {
+          status: 'PLAYED',
+          deliveredAt: delivery.deliveredAt ?? now,
+          playedAt: now,
+        },
+      });
+      if (changed.count !== 1) throw new ConflictException('Delivery telah berubah');
+      return { status: 'PLAYED', transitioned: true };
     });
-    if (changed.count !== 1) throw new ConflictException('Delivery telah berubah');
-    return { status: 'PLAYED', transitioned: true };
   }
 
   async releasePlaybackClaim(
@@ -259,6 +311,16 @@ export class OperationalMonitoringService {
   ) {
     const device = await this.devices.authenticateCredential(credential);
     return this.prisma.$transaction(async (tx) => {
+      await lockSessionInputs(tx);
+      const target = await tx.classSessionAlertDelivery.findFirst({
+        where: { id: deliveryId, deviceId: device.id },
+        select: { alert: { select: { sessionId: true } } },
+      });
+      if (!target) throw new NotFoundException('Delivery tidak ditemukan');
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM academic.class_sessions WHERE id=${target.alert.sessionId}::uuid FOR UPDATE`,
+      );
+      await lockSessionActivation(tx);
       await tx.$queryRaw(Prisma.sql`
         SELECT id FROM academic.class_session_alert_deliveries
         WHERE id = ${deliveryId}::uuid AND device_id = ${device.id}::uuid FOR UPDATE
@@ -268,7 +330,13 @@ export class OperationalMonitoringService {
         include: { alert: { select: { sessionId: true } } },
       });
       if (!delivery) throw new NotFoundException('Delivery tidak ditemukan');
+      if (delivery.status === 'ACKNOWLEDGED') return { status: 'ACKNOWLEDGED' };
       if (delivery.status === 'CANCELLED') throw new ConflictException('Delivery sudah dibatalkan');
+      const session = await tx.classSession.findUniqueOrThrow({
+        where: { id: delivery.alert.sessionId },
+      });
+      if (await sessionAlertSuppression(tx, this.bells, session, now))
+        throw new ConflictException('Pengingat sudah tidak aktif. Muat ulang tampilan.');
       await tx.classSessionAlertAcknowledgement.createMany({
         data: [{ deliveryId, actorDeviceId: device.id, reason, acknowledgedAt: now }],
         skipDuplicates: true,
@@ -348,21 +416,13 @@ export class OperationalMonitoringService {
             select: {
               stage: true,
               dueAt: true,
-              session: {
-                select: {
-                  classNameSnapshot: true,
-                  subjectSnapshot: true,
-                  assignedTeacherName: true,
-                  roomSnapshot: true,
-                  scheduledStartAt: true,
-                  scheduledEndAt: true,
-                  status: true,
-                },
-              },
+              sessionId: true,
+              session: true,
             },
           },
         },
         orderBy: { createdAt: 'asc' },
+        take: 100,
       }),
       this.displayOperationalProjection(device.profile, now, serviceDate),
     ]);
@@ -377,7 +437,27 @@ export class OperationalMonitoringService {
       status: session.status,
       lateByMinutes: session.lateByMinutes,
     }));
-    const deliveryAllowlist = deliveries.map((delivery) => ({
+    const allowedSessions = deliveries.length
+      ? await this.prisma.$transaction(async (tx) => {
+          await lockSessionInputs(tx);
+          const ids = [...new Set(deliveries.map((delivery) => delivery.alert.sessionId))].sort();
+          await tx.$queryRaw(
+            Prisma.sql`SELECT id FROM academic.class_sessions WHERE id IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))}) ORDER BY id FOR UPDATE`,
+          );
+          await lockSessionActivation(tx);
+          const fresh = await tx.classSession.findMany({ where: { id: { in: ids } } });
+          const allowed = new Set<string>();
+          const checkedAt = new Date();
+          for (const session of fresh)
+            if (!(await sessionAlertSuppression(tx, this.bells, session, checkedAt)))
+              allowed.add(session.id);
+          return allowed;
+        })
+      : new Set<string>();
+    const activeDeliveries = deliveries.filter((delivery) =>
+      allowedSessions.has(delivery.alert.sessionId),
+    );
+    const deliveryAllowlist = activeDeliveries.map((delivery) => ({
       deliveryId: delivery.id,
       stage: delivery.alert.stage,
       dueAt: delivery.alert.dueAt,
@@ -637,12 +717,47 @@ export class OperationalMonitoringService {
   }
 
   private async findOwnedDelivery(deviceId: string, deliveryId: string) {
-    const delivery = await this.prisma.classSessionAlertDelivery.findFirst({
-      where: { id: deliveryId, deviceId },
-      select: { id: true, status: true, audible: true, deliveredAt: true },
+    return this.withOwnedDelivery(deviceId, deliveryId, async (_tx, delivery) => delivery);
+  }
+
+  private async withOwnedDelivery<T>(
+    deviceId: string,
+    deliveryId: string,
+    run: (
+      tx: Prisma.TransactionClient,
+      delivery: { id: string; status: string; audible: boolean; deliveredAt: Date | null },
+    ) => Promise<T>,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await lockSessionInputs(tx);
+      const target = await tx.classSessionAlertDelivery.findFirst({
+        where: { id: deliveryId, deviceId },
+        select: { alert: { select: { sessionId: true } } },
+      });
+      if (!target) throw new NotFoundException('Delivery tidak ditemukan');
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM academic.class_sessions WHERE id=${target.alert.sessionId}::uuid FOR UPDATE`,
+      );
+      await lockSessionActivation(tx);
+      const delivery = await tx.classSessionAlertDelivery.findFirst({
+        where: { id: deliveryId, deviceId },
+        select: {
+          id: true,
+          status: true,
+          audible: true,
+          deliveredAt: true,
+          alert: { select: { status: true, session: true } },
+        },
+      });
+      if (!delivery) throw new NotFoundException('Delivery tidak ditemukan');
+      if (
+        !['ACKNOWLEDGED', 'PLAYED'].includes(delivery.status) &&
+        (delivery.alert.status !== 'DISPATCHED' ||
+          (await sessionAlertSuppression(tx, this.bells, delivery.alert.session, new Date())))
+      )
+        throw new ConflictException('Pengingat sudah tidak aktif. Muat ulang tampilan.');
+      return run(tx, delivery);
     });
-    if (!delivery) throw new NotFoundException('Delivery tidak ditemukan');
-    return delivery;
   }
 
   private assertAudibleDelivery(device: AuthenticatedDisplayDevice, audible: boolean): void {

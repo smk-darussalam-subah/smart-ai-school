@@ -5,6 +5,7 @@ import { z } from 'zod';
  * Diagregasi dari AssessmentSession (type formatif) + AssessmentResponse.
  */
 export const ListSubmissionsQuerySchema = z.object({
+  scope: z.literal('own').optional(),
   classId: z.string().uuid().optional(),
   subject: z.string().max(100).optional(),
   status: z.enum(['aktif', 'selesai', 'all']).default('all'),

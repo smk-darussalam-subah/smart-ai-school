@@ -5,9 +5,21 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  Home, CalendarClock, BookOpen, TrendingUp, ClipboardList,
-  UserCheck, Award, Sun, Moon, Bell, ChevronLeft,
-  LogOut, X, User as UserIcon, CircleHelp,
+  Home,
+  CalendarClock,
+  BookOpen,
+  TrendingUp,
+  ClipboardList,
+  UserCheck,
+  Award,
+  Sun,
+  Moon,
+  Bell,
+  ChevronLeft,
+  LogOut,
+  X,
+  User as UserIcon,
+  CircleHelp,
 } from 'lucide-react';
 import clsx from 'clsx';
 import ViewAsBanner from '@/components/layout/ViewAsBanner';
@@ -29,21 +41,44 @@ import DayDetailModal from './DayDetailModal';
 import BadgeDetailModal from './BadgeDetailModal';
 import PushNotificationToggle from '@/components/shared/PushNotificationToggle';
 import LogoutButton from '@/components/shared/LogoutButton';
-import { fetchMyNotifications, subscribePush, unsubscribePush, fetchDailyQuests, fetchPersonalCalendar } from '../../actions';
 import {
-  normalizeAnnouncements,
-  scheduleClassName,
-} from './siswa-data';
+  fetchMyNotifications,
+  subscribePush,
+  unsubscribePush,
+  fetchDailyQuests,
+  fetchPersonalCalendar,
+} from '../../actions';
+import { normalizeAnnouncements, scheduleClassName } from './siswa-data';
 import type { LearnerScheduleState } from '@/lib/learner-schedule';
+import type { LearnerAttendanceState, AttendancePeriod } from '@/lib/learner-attendance';
 import { withCompletedModuleProgress } from './siswa-modul-progress';
-import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaXP, SiswaLeaderboardEntry, SiswaModul, SiswaCP, SiswaKehadiranStats, SiswaQuest, SiswaKalenderEvent, BadgeCelebrationData } from './siswa-types';
+import type {
+  SiswaNilai,
+  SiswaTugas,
+  SiswaBadge,
+  SiswaXP,
+  SiswaLeaderboardEntry,
+  SiswaModul,
+  SiswaCP,
+  SiswaKehadiranStats,
+  SiswaQuest,
+  SiswaKalenderEvent,
+  BadgeCelebrationData,
+} from './siswa-types';
 import type { AttendanceEntry } from './KehadiranSiswa';
 import {
   academicWorkflowPresentation,
   type AcademicWorkflowView,
 } from '@/lib/academic-workflow-deep-link';
 
-export type SiswaScreen = 'beranda' | 'jadwal' | 'modul' | 'nilai' | 'tugas' | 'kehadiran' | 'capaian';
+export type SiswaScreen =
+  | 'beranda'
+  | 'jadwal'
+  | 'modul'
+  | 'nilai'
+  | 'tugas'
+  | 'kehadiran'
+  | 'capaian';
 
 // ── Modal data types (discriminated union) ─────────────────────────────────
 export interface LessonModalData {
@@ -58,6 +93,8 @@ export interface TaskModalData {
 export interface DayModalData {
   day: number;
   status: string;
+  date?: string;
+  notes?: string | null;
 }
 export interface BadgeModalData {
   badge: SiswaBadge;
@@ -76,6 +113,9 @@ interface SiswaWorkspaceProps {
   grades?: SiswaNilai[];
   gradeState?: import('@/lib/learner-grades').LearnerGradeState;
   attendance?: unknown[];
+  attendanceState?: LearnerAttendanceState;
+  attendancePeriod?: AttendancePeriod;
+  initialAttendanceDate?: string;
   schedule?: unknown[];
   scheduleState?: LearnerScheduleState;
   announcements?: unknown[];
@@ -85,7 +125,7 @@ interface SiswaWorkspaceProps {
   realAssignments?: unknown[] | null;
   realModules?: unknown[] | null;
   realCp?: unknown[] | null;
-  realAttStats?: { hadir: number; izin: number; sakit: number; alpha: number; total: number; pct: number } | null;
+  realAttStats?: SiswaKehadiranStats | null;
   viewAs?: string | null;
   openNotifications?: boolean;
   initialWorkflowView?: AcademicWorkflowView | null;
@@ -93,10 +133,28 @@ interface SiswaWorkspaceProps {
 
 function initials(name?: string | null): string {
   if (!name) return 'U';
-  return name.split(' ').map((w) => w.charAt(0)).slice(0, 2).join('').toUpperCase();
+  return name
+    .split(' ')
+    .map((w) => w.charAt(0))
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
 }
 
-const MONTH_SHORT_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const MONTH_SHORT_ID = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'Mei',
+  'Jun',
+  'Jul',
+  'Agu',
+  'Sep',
+  'Okt',
+  'Nov',
+  'Des',
+];
 const ATTENDANCE_STATUS_VALUES = new Set(['hadir', 'izin', 'sakit', 'alpha']);
 const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -112,7 +170,8 @@ function toAttendanceEntry(value: unknown): AttendanceEntry | null {
   if (!isRecord(value)) return null;
   const date = readString(value.date)?.slice(0, 10);
   const status = readString(value.status);
-  if (!date || !DATE_KEY_RE.test(date) || !status || !ATTENDANCE_STATUS_VALUES.has(status)) return null;
+  if (!date || !DATE_KEY_RE.test(date) || !status || !ATTENDANCE_STATUS_VALUES.has(status))
+    return null;
   return { date, status: status as AttendanceEntry['status'] };
 }
 
@@ -142,22 +201,44 @@ function toSiswaKalenderEvent(event: SchoolCalendarEvent): SiswaKalenderEvent {
   const end = event.end && event.end !== event.start ? ` - ${event.end}` : '';
   return {
     d: validDate ? date.getDate() : 0,
-    m: validDate ? MONTH_SHORT_ID[date.getMonth()] ?? '-' : '-',
+    m: validDate ? (MONTH_SHORT_ID[date.getMonth()] ?? '-') : '-',
     title: event.name ?? 'Agenda sekolah',
     desc: event.description ?? `${start}${end}`,
     color: eventColor(event.type),
   };
 }
 
-export default function SiswaWorkspace({ grades, gradeState = 'ready', attendance, schedule, scheduleState = 'ready', announcements, realBadges, realXp, realLeaderboard, realAssignments, realModules, realCp, realAttStats, viewAs, openNotifications = false, initialWorkflowView = null }: SiswaWorkspaceProps) {
+export default function SiswaWorkspace({
+  grades,
+  gradeState = 'ready',
+  attendance,
+  attendanceState = 'unavailable',
+  attendancePeriod,
+  initialAttendanceDate,
+  schedule,
+  scheduleState = 'ready',
+  announcements,
+  realBadges,
+  realXp,
+  realLeaderboard,
+  realAssignments,
+  realModules,
+  realCp,
+  realAttStats,
+  viewAs,
+  openNotifications = false,
+  initialWorkflowView = null,
+}: SiswaWorkspaceProps) {
   const { data: session } = useSession();
   const router = useRouter();
   const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
-  const [activeScreen, setActiveScreen] = useState<SiswaScreen>(initialWorkflow.studentScreen);
+  const [activeScreen, setActiveScreen] = useState<SiswaScreen>(initialAttendanceDate ? 'kehadiran' : initialWorkflow.studentScreen);
   const [activeModulId, setActiveModulId] = useState<number | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [modal, setModal] = useState<ModalState>(openNotifications ? { type: 'pengumuman' } : { type: null });
+  const [modal, setModal] = useState<ModalState>(
+    openNotifications ? { type: 'pengumuman' } : { type: null },
+  );
   const notificationTriggerRef = useRef<HTMLButtonElement>(null);
   const [badgeCelebration, setBadgeCelebration] = useState<BadgeCelebrationData>({ show: false });
   const [toast, setToast] = useState<string | null>(null);
@@ -185,7 +266,9 @@ export default function SiswaWorkspace({ grades, gradeState = 'ready', attendanc
       if (res.success && res.data) {
         const data = res.data as { schedule: unknown[]; events: unknown[] };
         const events = Array.isArray(data.events)
-          ? data.events.map(toSchoolCalendarEvent).filter((event): event is SchoolCalendarEvent => event !== null)
+          ? data.events
+              .map(toSchoolCalendarEvent)
+              .filter((event): event is SchoolCalendarEvent => event !== null)
           : [];
         setSchoolCalendarEvents(events);
         setRealCalendar(events.length > 0 ? events.map(toSiswaKalenderEvent) : null);
@@ -215,7 +298,11 @@ export default function SiswaWorkspace({ grades, gradeState = 'ready', attendanc
   }, []);
 
   const displayedModules = useMemo(
-    () => withCompletedModuleProgress((realModules ?? []) as unknown as SiswaModul[], completedModuleUuids),
+    () =>
+      withCompletedModuleProgress(
+        (realModules ?? []) as unknown as SiswaModul[],
+        completedModuleUuids,
+      ),
     [realModules, completedModuleUuids],
   );
 
@@ -224,7 +311,7 @@ export default function SiswaWorkspace({ grades, gradeState = 'ready', attendanc
     const latestModuleUuid = completed[completed.length - 1];
 
     return latestModuleUuid
-      ? displayedModules.find((module) => module.uuid === latestModuleUuid) ?? null
+      ? (displayedModules.find((module) => module.uuid === latestModuleUuid) ?? null)
       : null;
   }, [completedModuleUuids, displayedModules]);
 
@@ -285,12 +372,13 @@ export default function SiswaWorkspace({ grades, gradeState = 'ready', attendanc
 
   // Own schedule supplies class even when the student has no leaderboard entry.
   const userName = session?.user?.name ?? null;
-  const studentClassName = scheduleClassName(schedule) ?? realLeaderboard?.find((e) => e.me)?.kelas ?? null;
+  const studentClassName =
+    scheduleClassName(schedule) ?? realLeaderboard?.find((e) => e.me)?.kelas ?? null;
   const attendanceEntries = (attendance ?? [])
     .map(toAttendanceEntry)
     .filter((entry): entry is AttendanceEntry => entry !== null);
   const activeModule = activeModulId
-    ? displayedModules.find((module) => module.id === activeModulId) ?? null
+    ? (displayedModules.find((module) => module.id === activeModulId) ?? null)
     : null;
 
   const renderScreen = () => {
@@ -306,8 +394,9 @@ export default function SiswaWorkspace({ grades, gradeState = 'ready', attendanc
       case 'beranda':
         return (
           <BerandaSiswa
+            attendancePeriod={attendancePeriod}
             {...commonProps}
-            grades={gradeState === 'ready' ? grades ?? [] : []}
+            grades={gradeState === 'ready' ? (grades ?? []) : []}
             gradeState={gradeState}
             tasks={(realAssignments ?? []) as unknown as SiswaTugas[]}
             badges={realBadges ?? []}
@@ -316,6 +405,7 @@ export default function SiswaWorkspace({ grades, gradeState = 'ready', attendanc
             quest={realQuests ?? { title: 'Daily Quest', tasks: [] }}
             xp={realXp ?? { level: 1, current: 0, next: 500 }}
             kehStats={realAttStats ?? { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, pct: 0 }}
+            attendanceState={attendanceState}
             schedule={schedule || []}
             scheduleState={scheduleState}
             userName={userName}
@@ -349,7 +439,7 @@ export default function SiswaWorkspace({ grades, gradeState = 'ready', attendanc
         return (
           <NilaiSiswa
             {...commonProps}
-            grades={gradeState === 'ready' ? grades ?? [] : []}
+            grades={gradeState === 'ready' ? (grades ?? []) : []}
             gradeState={gradeState}
             initialFilter={initialWorkflow.studentGradeFilter}
           />
@@ -366,8 +456,19 @@ export default function SiswaWorkspace({ grades, gradeState = 'ready', attendanc
         return (
           <KehadiranSiswa
             {...commonProps}
-            stats={(realAttStats ?? { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, pct: 0 }) as SiswaKehadiranStats}
+            stats={
+              (realAttStats ?? {
+                hadir: 0,
+                izin: 0,
+                sakit: 0,
+                alpha: 0,
+                total: 0,
+                pct: 0,
+              }) as SiswaKehadiranStats
+            }
             attendance={attendanceEntries}
+            period={attendancePeriod}
+            initialDate={initialAttendanceDate}
             calendarEvents={schoolCalendarEvents}
           />
         );
@@ -460,12 +561,17 @@ export default function SiswaWorkspace({ grades, gradeState = 'ready', attendanc
                 onClick={() => go(key)}
                 className={clsx(
                   'flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--em)]',
-                  isActive ? 'text-emerald-500' : 'text-[var(--dim)]'
+                  isActive ? 'text-emerald-500' : 'text-[var(--dim)]',
                 )}
                 aria-label={label}
                 aria-current={isActive ? 'page' : undefined}
               >
-                <Icon className={clsx('h-5 w-5', isActive && 'drop-shadow-[0_0_6px_rgba(16,185,129,.4)]')} />
+                <Icon
+                  className={clsx(
+                    'h-5 w-5',
+                    isActive && 'drop-shadow-[0_0_6px_rgba(16,185,129,.4)]',
+                  )}
+                />
                 <span className="text-[10px] font-bold">{label}</span>
               </button>
             );
@@ -489,9 +595,13 @@ export default function SiswaWorkspace({ grades, gradeState = 'ready', attendanc
       {/* Modals & Overlays */}
       {modal.type === 'pengumuman' && (
         <PengumumanModal
-          announcements={announcements?.length
-            ? normalizeAnnouncements(announcements as { id: string; title: string; createdAt: string }[])
-            : []}
+          announcements={
+            announcements?.length
+              ? normalizeAnnouncements(
+                  announcements as { id: string; title: string; createdAt: string }[],
+                )
+              : []
+          }
           onFetchNotifications={fetchMyNotifications}
           returnFocusRef={notificationTriggerRef}
           onClose={closeNotificationCenter}
@@ -536,15 +646,14 @@ export default function SiswaWorkspace({ grades, gradeState = 'ready', attendanc
         <DayDetailModal
           day={modal.data.day}
           status={modal.data.status}
+          date={modal.data.date}
+          notes={modal.data.notes}
           onClose={() => setModal({ type: null })}
         />
       )}
 
       {modal.type === 'badge' && (
-        <BadgeDetailModal
-          badge={modal.data.badge}
-          onClose={() => setModal({ type: null })}
-        />
+        <BadgeDetailModal badge={modal.data.badge} onClose={() => setModal({ type: null })} />
       )}
 
       {badgeCelebration.show && (
@@ -592,7 +701,9 @@ export default function SiswaWorkspace({ grades, gradeState = 'ready', attendanc
                 {initials(session?.user?.name)}
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-[var(--text)]">{session?.user?.name ?? 'Pengguna'}</p>
+                <p className="truncate text-sm font-bold text-[var(--text)]">
+                  {session?.user?.name ?? 'Pengguna'}
+                </p>
                 <p className="truncate text-xs text-[var(--muted)]">{session?.user?.email ?? ''}</p>
               </div>
             </div>
@@ -619,12 +730,14 @@ export default function SiswaWorkspace({ grades, gradeState = 'ready', attendanc
             </Link>
 
             {/* T3-03: Push notification toggle */}
-            <PushNotificationToggle onSubscribe={subscribePush} onUnsubscribe={unsubscribePush} onFetchNotifications={fetchMyNotifications} />
+            <PushNotificationToggle
+              onSubscribe={subscribePush}
+              onUnsubscribe={unsubscribePush}
+              onFetchNotifications={fetchMyNotifications}
+            />
 
             {/* Logout */}
-            <LogoutButton
-              className="flex w-full items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-500 transition-colors hover:bg-red-500/20"
-            >
+            <LogoutButton className="flex w-full items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-500 transition-colors hover:bg-red-500/20">
               <LogOut className="h-4 w-4" aria-hidden="true" />
               Keluar
             </LogoutButton>
@@ -634,7 +747,11 @@ export default function SiswaWorkspace({ grades, gradeState = 'ready', attendanc
 
       {/* Toast */}
       {toast && (
-        <div role="status" aria-live="polite" className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 animate-[fadeIn_.3s_ease] rounded-xl border border-emerald-500 bg-[var(--bg2)] px-5 py-3 text-[12.5px] font-bold text-[var(--text)] shadow-[0_8px_40px_-12px_rgba(0,0,0,.6)] motion-reduce:animate-none">
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 animate-[fadeIn_.3s_ease] rounded-xl border border-emerald-500 bg-[var(--bg2)] px-5 py-3 text-[12.5px] font-bold text-[var(--text)] shadow-[0_8px_40px_-12px_rgba(0,0,0,.6)] motion-reduce:animate-none"
+        >
           {toast}
         </div>
       )}

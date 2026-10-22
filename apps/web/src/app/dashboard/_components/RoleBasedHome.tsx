@@ -308,7 +308,8 @@ export default function RoleBasedHome({
               </div>
             ) : scheduleRows.length > 0 ? (
               <div className="p-5 text-sm text-slate-600">
-                Jadwal tersedia. Sesi harian sedang disiapkan dari jadwal dan Bell Schedule aktif.
+                Jadwal tersedia, tetapi sesi harian belum dibentuk.
+                <a href="/dashboard/jadwal#session-preparation" className="ml-1 inline-flex min-h-11 items-center font-semibold text-emerald-800 underline">Buka jadwal dan sesi</a>
               </div>
             ) : (
               <div className="p-5 text-sm text-slate-600">

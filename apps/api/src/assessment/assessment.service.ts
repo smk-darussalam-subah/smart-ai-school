@@ -22,6 +22,7 @@ import { logger } from '@smk/logger';
 import { Observable } from 'rxjs';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveOwnTeachingRead } from '../common/helpers/own-teaching-read';
 import {
   AutosaveResponseDto,
   AssessmentRuntimeSignalDto,
@@ -884,6 +885,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
   }
 
   async findAll(query: ListAssessmentSessionDto, user: AuthUser) {
+    const ownTeacherId = await resolveOwnTeachingRead(this.prisma, user, query.scope);
     const filters: Prisma.AssessmentSessionWhereInput = {
       ...(query.moduleId ? { moduleId: query.moduleId } : {}),
       ...(query.status ? { status: query.status } : {}),
@@ -904,6 +906,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
 
     const skip = (query.page - 1) * query.limit;
 
+    if (ownTeacherId) return this.page({ ...filters, teacherId: ownTeacherId }, skip, query);
     if (this.isReviewer(user)) {
       return this.page(filters, skip, query);
     }
@@ -2967,6 +2970,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
    * RBAC: GURU (own), SUPER_ADMIN, KEPALA_SEKOLAH.
    */
   async listRemedials(query: ListAssessmentSessionDto, user: AuthUser) {
+    const ownTeacherId = await resolveOwnTeachingRead(this.prisma, user, query.scope);
     const filters: Prisma.AssessmentSessionWhereInput = {
       purpose: 'remedial',
       ...(query.status ? { status: query.status } : {}),
@@ -2977,6 +2981,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     };
     const skip = (query.page - 1) * query.limit;
 
+    if (ownTeacherId)
+      return this.pageRemedials({ ...filters, teacherId: ownTeacherId }, skip, query);
     if (this.isRemedialReviewer(user)) return this.pageRemedials(filters, skip, query);
 
     if (user.roles.includes('GURU')) {
@@ -3813,9 +3819,12 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
 
   async listSubmissions(query: ListSubmissionsQuery, user: AuthUser) {
     const where: Prisma.AssessmentSessionWhereInput = {};
+    const ownTeacherId = await resolveOwnTeachingRead(this.prisma, user, query.scope);
 
     // Ownership: GURU hanya sesi sendiri; reviewer semua.
-    if (!this.isReviewer(user)) {
+    if (ownTeacherId) {
+      where.teacherId = ownTeacherId;
+    } else if (!this.isReviewer(user)) {
       const teacherId = await this.resolveTeacherId(user.keycloakId);
       where.teacherId = teacherId;
     }

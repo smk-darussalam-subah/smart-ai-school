@@ -11,10 +11,21 @@ import type { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { BellScheduleService } from '../bell-schedule/bell-schedule.service';
 import { evaluateLocation, schoolDate, schoolMinute } from './attendance-rules';
-import { teacherArrival, workdayArrival, isAttendanceWorkingDay, UNKNOWN_ARRIVAL, EXEMPT_ARRIVAL, type ArrivalExpectation } from './arrival-rules';
+import {
+  teacherArrival,
+  workdayArrival,
+  isAttendanceWorkingDay,
+  UNKNOWN_ARRIVAL,
+  EXEMPT_ARRIVAL,
+  type ArrivalExpectation,
+} from './arrival-rules';
 import { PermissionsService } from '../permissions/permissions.service';
-import { acquireIdentityMutationLock, assertFreshMutationAuthority } from '../common/helpers/identity-mutation-lock';
+import {
+  acquireIdentityMutationLock,
+  assertFreshMutationAuthority,
+} from '../common/helpers/identity-mutation-lock';
 import { isScheduleOperational } from '../schedule/schedule-validity';
+import { isOperationalTeacher } from '../common/helpers/operational-teacher';
 import {
   AttendanceCorrectionSchema,
   AttendancePolicySchema,
@@ -123,17 +134,36 @@ export class StaffAttendanceService {
     ]);
     let scheduleError: string | null = null;
     let schedules: Awaited<ReturnType<StaffAttendanceService['todaySchedules']>> = [];
-    const workingDay = isAttendanceWorkingDay(date, profile.attendanceWorkingDays, holiday ? [holiday] : []);
+    const workingDay = isAttendanceWorkingDay(
+      date,
+      profile.attendanceWorkingDays,
+      holiday ? [holiday] : [],
+    );
     if (identity.teacher && workingDay) {
       try {
         schedules = await this.todaySchedules(identity.teacher.id, date, day, now);
       } catch (error) {
-        scheduleError = error instanceof ServiceUnavailableException ? error.message : 'Jadwal hari ini belum dapat dimuat. Presensi tetap dapat dilakukan.';
+        scheduleError =
+          error instanceof ServiceUnavailableException
+            ? error.message
+            : 'Jadwal hari ini belum dapat dimuat. Presensi tetap dapat dilakukan.';
       }
     }
-    const arrival = identity.isPrincipal ? EXEMPT_ARRIVAL : !workingDay ? teacherArrival(null, 0, 0) : identity.role === 'TATA_USAHA' ? workdayArrival(date, 420) : identity.teacher
-      ? scheduleError ? UNKNOWN_ARRIVAL : teacherArrival(schedules[0]?.startAt ?? null, profile.attendanceTeacherLeadMin, profile.attendanceTeacherLeadTarget)
-      : workdayArrival(date, profile.attendanceStartMinute);
+    const arrival = identity.isPrincipal
+      ? EXEMPT_ARRIVAL
+      : !workingDay
+        ? teacherArrival(null, 0, 0)
+        : identity.role === 'TATA_USAHA'
+          ? workdayArrival(date, 420)
+          : identity.teacher
+            ? scheduleError
+              ? UNKNOWN_ARRIVAL
+              : teacherArrival(
+                  schedules[0]?.startAt ?? null,
+                  profile.attendanceTeacherLeadMin,
+                  profile.attendanceTeacherLeadTarget,
+                )
+            : workdayArrival(date, profile.attendanceStartMinute);
     return {
       employee: identity,
       serverNow: now.toISOString(),
@@ -149,12 +179,22 @@ export class StaffAttendanceService {
         !receipt &&
         !holiday &&
         profile.attendanceWorkingDays.includes(day) &&
-        (identity.isPrincipal || arrival.recommendedAt != null && now >= new Date(arrival.recommendedAt) &&
-        (identity.teacher && identity.role !== 'TATA_USAHA' ? schedules.some((slot) => now < new Date(slot.endAt)) : schoolMinute(now) < profile.attendanceEndMinute)),
+        (identity.isPrincipal ||
+          (arrival.recommendedAt != null &&
+            now >= new Date(arrival.recommendedAt) &&
+            (identity.teacher && identity.role !== 'TATA_USAHA'
+              ? schedules.some((slot) => now < new Date(slot.endAt))
+              : schoolMinute(now) < profile.attendanceEndMinute))),
     };
   }
 
-  private async todaySchedules(teacherId: string, date: string, day: number, now: Date, db: Prisma.TransactionClient = this.prisma) {
+  private async todaySchedules(
+    teacherId: string,
+    date: string,
+    day: number,
+    now: Date,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
     const periods = await db.semester.findMany({
       where: {
         academicYear: { isActive: true },
@@ -202,15 +242,19 @@ export class StaffAttendanceService {
     >();
     for (const slot of slots) {
       if (!isScheduleOperational(slot.concurrencyGroup, date)) {
-        throw new ServiceUnavailableException('Persetujuan jadwal bersamaan kedaluwarsa; admin perlu memverifikasi jadwal sebelum dipakai untuk kegiatan dan batas kehadiran.');
+        throw new ServiceUnavailableException(
+          'Persetujuan jadwal bersamaan kedaluwarsa; admin perlu memverifikasi jadwal sebelum dipakai untuk kegiatan dan batas kehadiran.',
+        );
       }
       const window = this.bell.resolveInstructionWindow(date, profile, slot.jpStart, slot.jpEnd);
       const key = slot.concurrencyGroupId ?? slot.id;
       const existing = groups.get(key);
       if (existing) {
         existing.classes.push(slot.class.name);
-        if (!existing.subject.split(' • ').includes(slot.teachingAssignment.subject)) existing.subject += ' • ' + slot.teachingAssignment.subject;
-        if (slot.room && !existing.room?.split(' / ').includes(slot.room)) existing.room = [existing.room, slot.room].filter(Boolean).join(' / ');
+        if (!existing.subject.split(' • ').includes(slot.teachingAssignment.subject))
+          existing.subject += ' • ' + slot.teachingAssignment.subject;
+        if (slot.room && !existing.room?.split(' / ').includes(slot.room))
+          existing.room = [existing.room, slot.room].filter(Boolean).join(' / ');
         continue;
       }
       groups.set(key, {
@@ -233,16 +277,29 @@ export class StaffAttendanceService {
     return [...groups.values()];
   }
 
-  async record(dto: AttendanceLocation, user: AuthUser, checkout = false, legacyNotes?: string | null) {
+  async record(
+    dto: AttendanceLocation,
+    user: AuthUser,
+    checkout = false,
+    legacyNotes?: string | null,
+  ) {
     const identity = await this.identity(user); // ID only; authority is re-read after waiting.
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw(
         Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${'attendance:' + identity.id}))`,
       );
-      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('academic:schedule:mutation:v1'))`);
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('academic:schedule:mutation:v1'))`,
+      );
       await acquireIdentityMutationLock(tx);
       const employee = await this.identity(user, tx);
-      if (!await this.permissions.hasFreshPermission(user.keycloakId, 'staff.attendance.checkin', tx))
+      if (
+        !(await this.permissions.hasFreshPermission(
+          user.keycloakId,
+          'staff.attendance.checkin',
+          tx,
+        ))
+      )
         throw new ForbiddenException('Hak presensi pegawai tidak lagi aktif');
       const now = new Date(); // after lock: one authoritative timestamp, including midnight races
       const date = new Date(schoolDate(now));
@@ -257,20 +314,53 @@ export class StaffAttendanceService {
       const profile = await tx.schoolProfile.findFirst();
       if (!profile) throw new ServiceUnavailableException('Kebijakan sekolah belum tersedia');
       const location = evaluateLocation(dto, profile, now);
-      const isPrincipal = (await this.permissions.getActivePositionCodes(user.keycloakId, date, tx)).has('KEPALA_SEKOLAH');
-      let arrival: ArrivalExpectation = isPrincipal ? EXEMPT_ARRIVAL : workdayArrival(schoolDate(now), employee.role === 'TATA_USAHA' ? 420 : profile.attendanceStartMinute);
+      const isPrincipal = (
+        await this.permissions.getActivePositionCodes(user.keycloakId, date, tx)
+      ).has('KEPALA_SEKOLAH');
+      let arrival: ArrivalExpectation = isPrincipal
+        ? EXEMPT_ARRIVAL
+        : workdayArrival(
+            schoolDate(now),
+            employee.role === 'TATA_USAHA' ? 420 : profile.attendanceStartMinute,
+          );
       const holidays = await tx.academicCalendar.findMany({
-        where: { type: { in: ['holiday', 'break'] }, startDate: { lte: date }, endDate: { gte: date },
-          academicYear: { startDate: { lte: date }, endDate: { gte: date } } },
+        where: {
+          type: { in: ['holiday', 'break'] },
+          startDate: { lte: date },
+          endDate: { gte: date },
+          academicYear: { startDate: { lte: date }, endDate: { gte: date } },
+        },
         select: { startDate: true, endDate: true },
       });
-      const workingDay = isAttendanceWorkingDay(schoolDate(now), profile.attendanceWorkingDays, holidays);
+      const workingDay = isAttendanceWorkingDay(
+        schoolDate(now),
+        profile.attendanceWorkingDays,
+        holidays,
+      );
       if (!workingDay && !isPrincipal) arrival = teacherArrival(null, 0, 0);
-      if (workingDay && employee.teacher && !isPrincipal && employee.role !== 'TATA_USAHA' && !checkout) {
+      if (
+        workingDay &&
+        employee.teacher &&
+        !isPrincipal &&
+        employee.role !== 'TATA_USAHA' &&
+        !checkout
+      ) {
         try {
-          const schedules = await this.todaySchedules(employee.teacher.id, schoolDate(now), new Date(schoolDate(now)).getUTCDay() || 7, now, tx);
-          arrival = teacherArrival(schedules[0]?.startAt ?? null, profile.attendanceTeacherLeadMin, profile.attendanceTeacherLeadTarget);
-        } catch { arrival = UNKNOWN_ARRIVAL; }
+          const schedules = await this.todaySchedules(
+            employee.teacher.id,
+            schoolDate(now),
+            new Date(schoolDate(now)).getUTCDay() || 7,
+            now,
+            tx,
+          );
+          arrival = teacherArrival(
+            schedules[0]?.startAt ?? null,
+            profile.attendanceTeacherLeadMin,
+            profile.attendanceTeacherLeadTarget,
+          );
+        } catch {
+          arrival = UNKNOWN_ARRIVAL;
+        }
       }
       if (profile.attendanceMode === 'STRICT' && location.status !== 'INSIDE') {
         throw new BadRequestException(
@@ -334,37 +424,74 @@ export class StaffAttendanceService {
   }
 
   /** Batched by date, never one query per teacher. Unknown schedules cannot produce lateness. */
-  private async arrivalsForDate(date: string, teacherIds: string[], profile: Awaited<ReturnType<StaffAttendanceService['policy']>>) {
+  private async arrivalsForDate(
+    date: string,
+    teacherIds: string[],
+    profile: Awaited<ReturnType<StaffAttendanceService['policy']>>,
+  ) {
     const arrivals = new Map<string, ArrivalExpectation>();
     if (!teacherIds.length) return arrivals;
     try {
       const periods = await this.prisma.semester.findMany({
         where: { startDate: { lte: new Date(date) }, endDate: { gte: new Date(date) } },
-        include: { academicYear: true }, take: 2,
+        include: { academicYear: true },
+        take: 2,
       });
       if (periods.length !== 1) throw new ServiceUnavailableException('Semester tidak tunggal');
       const period = periods[0]!;
       const [bell, slots] = await Promise.all([
         this.bell.resolveForDate(date),
         this.prisma.schedule.findMany({
-          where: { dayOfWeek: new Date(date).getUTCDay() || 7, academicYear: period.academicYear.code,
-            semester: period.number, teachingAssignment: { teacherId: { in: teacherIds } } },
-          select: { jpStart: true, jpEnd: true, concurrencyGroup: { select: { mode: true, expiresOn: true } }, teachingAssignment: { select: { teacherId: true } } },
+          where: {
+            dayOfWeek: new Date(date).getUTCDay() || 7,
+            academicYear: period.academicYear.code,
+            semester: period.number,
+            teachingAssignment: { teacherId: { in: teacherIds } },
+          },
+          select: {
+            jpStart: true,
+            jpEnd: true,
+            concurrencyGroup: { select: { mode: true, expiresOn: true } },
+            teachingAssignment: { select: { teacherId: true } },
+          },
           orderBy: { jpStart: 'asc' },
         }),
       ]);
-      for (const id of teacherIds) arrivals.set(id, teacherArrival(null, profile.attendanceTeacherLeadMin, profile.attendanceTeacherLeadTarget));
+      for (const id of teacherIds)
+        arrivals.set(
+          id,
+          teacherArrival(
+            null,
+            profile.attendanceTeacherLeadMin,
+            profile.attendanceTeacherLeadTarget,
+          ),
+        );
       for (const slot of slots) {
         const id = slot.teachingAssignment.teacherId;
         try {
-          if (!isScheduleOperational(slot.concurrencyGroup, date)) throw new Error('Expired schedule authority');
+          if (!isScheduleOperational(slot.concurrencyGroup, date))
+            throw new Error('Expired schedule authority');
           const window = this.bell.resolveInstructionWindow(date, bell, slot.jpStart, slot.jpEnd);
           const previous = arrivals.get(id);
-          if (previous?.basis !== 'UNAVAILABLE' && (!previous?.firstTeachingAt || window.startAt < new Date(previous.firstTeachingAt)))
-            arrivals.set(id, teacherArrival(window.startAt.toISOString(), profile.attendanceTeacherLeadMin, profile.attendanceTeacherLeadTarget));
-        } catch { arrivals.set(id, UNKNOWN_ARRIVAL); }
+          if (
+            previous?.basis !== 'UNAVAILABLE' &&
+            (!previous?.firstTeachingAt || window.startAt < new Date(previous.firstTeachingAt))
+          )
+            arrivals.set(
+              id,
+              teacherArrival(
+                window.startAt.toISOString(),
+                profile.attendanceTeacherLeadMin,
+                profile.attendanceTeacherLeadTarget,
+              ),
+            );
+        } catch {
+          arrivals.set(id, UNKNOWN_ARRIVAL);
+        }
       }
-    } catch { for (const id of teacherIds) arrivals.set(id, UNKNOWN_ARRIVAL); }
+    } catch {
+      for (const id of teacherIds) arrivals.set(id, UNKNOWN_ARRIVAL);
+    }
     return arrivals;
   }
 
@@ -373,14 +500,19 @@ export class StaffAttendanceService {
     // Bounded 91-day report; all aggregations are computed before pagination/filtering.
     const [employees, records, holidays] = await Promise.all([
       this.prisma.user.findMany({
-        where: { ...EMPLOYEE_WHERE, ...(teacherIds ? { teacher: { is: { id: { in: teacherIds }, deletedAt: null } } } : {}) },
+        where: {
+          ...EMPLOYEE_WHERE,
+          ...(teacherIds ? { teacher: { is: { id: { in: teacherIds }, deletedAt: null } } } : {}),
+        },
         select: {
           id: true,
           fullName: true,
           createdAt: true,
           role: true,
-          staff: { select: { niy: true, employmentStatus: true } },
-          teacher: { select: { id: true } },
+          isActive: true,
+          deletedAt: true,
+          staff: { select: { niy: true, employmentStatus: true, deletedAt: true } },
+          teacher: { select: { id: true, deletedAt: true } },
         },
         orderBy: { fullName: 'asc' },
       }),
@@ -397,6 +529,13 @@ export class StaffAttendanceService {
         select: { startDate: true, endDate: true },
       }),
     ]);
+    const operationalTeacherUserIds = new Set(
+      employees
+        .filter((person) =>
+          isOperationalTeacher(person.teacher ? { ...person.teacher, user: person } : null),
+        )
+        .map((person) => person.id),
+    );
     const employeeIds = new Set(employees.map((employee) => employee.id));
     const lookup = new Map(
       records
@@ -412,7 +551,8 @@ export class StaffAttendanceService {
       arrival: ArrivalExpectation;
     }> = [];
     const trend: Array<{ date: string; present: number; late: number; absent: number }> = [];
-    const today = schoolDate(new Date());
+    const reportNow = new Date();
+    const today = schoolDate(reportNow);
     for (
       let stamp = new Date(query.from).getTime();
       stamp <= new Date(query.to).getTime();
@@ -424,42 +564,85 @@ export class StaffAttendanceService {
       const workday = isAttendanceWorkingDay(ymd, profile.attendanceWorkingDays, holidays);
       const point = { date: ymd, present: 0, late: 0, absent: 0 };
       const arrivals = workday
-        ? await this.arrivalsForDate(ymd, employees.flatMap((person) => person.teacher ? [person.teacher.id] : []), profile)
+        ? await this.arrivalsForDate(
+            ymd,
+            employees.flatMap((person) =>
+              operationalTeacherUserIds.has(person.id) && person.teacher ? [person.teacher.id] : [],
+            ),
+            profile,
+          )
         : new Map<string, ArrivalExpectation>();
-      const principalIds = new Set((await this.prisma.appointment.findMany({
-        where: { status: 'ACTIVE', position: { code: 'KEPALA_SEKOLAH', isActive: true, scopeType: 'NONE' }, majorId: null,
-          academicYear: { startDate: { lte: date }, endDate: { gte: date } },
-          effectiveFrom: { lte: date }, OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: date } }],
-          staff: { deletedAt: null, user: EMPLOYEE_WHERE } },
-        select: { staff: { select: { userId: true } } },
-      })).map((appointment) => appointment.staff.userId));
+      const principalIds = new Set(
+        (
+          await this.prisma.appointment.findMany({
+            where: {
+              status: 'ACTIVE',
+              position: { code: 'KEPALA_SEKOLAH', isActive: true, scopeType: 'NONE' },
+              majorId: null,
+              academicYear: { startDate: { lte: date }, endDate: { gte: date } },
+              effectiveFrom: { lte: date },
+              OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: date } }],
+              staff: { deletedAt: null, user: EMPLOYEE_WHERE },
+            },
+            select: { staff: { select: { userId: true } } },
+          })
+        ).map((appointment) => appointment.staff.userId),
+      );
       for (const employee of employees) {
         const receipt = lookup.get(employee.id + '|' + ymd) ?? null;
         if (!receipt && schoolDate(employee.createdAt) > ymd) continue;
         if (!workday && !receipt) continue;
-        const currentArrival = principalIds.has(employee.id) ? EXEMPT_ARRIVAL : !workday ? teacherArrival(null, 0, 0) : employee.role === 'TATA_USAHA' ? workdayArrival(ymd, 420) : employee.teacher
-          ? arrivals.get(employee.teacher.id) ?? teacherArrival(null, profile.attendanceTeacherLeadMin, profile.attendanceTeacherLeadTarget)
-          : workdayArrival(ymd, profile.attendanceStartMinute);
-        const arrival: ArrivalExpectation = receipt && workday
-          ? { basis: (receipt.arrivalBasis as ArrivalExpectation['basis'] | null) ?? 'UNAVAILABLE',
-              dueAt: receipt.expectedArrivalAt?.toISOString() ?? null,
-              recommendedAt: receipt.recommendedArrivalAt?.toISOString() ?? null,
-              firstTeachingAt: receipt.firstTeachingAt?.toISOString() ?? null }
-          : currentArrival;
-        const late = Boolean(receipt && arrival.dueAt && receipt.checkInAt > new Date(arrival.dueAt));
-        const status = arrival.basis === 'UNAVAILABLE' ? 'UNKNOWN'
-          : receipt ? late ? 'LATE' : 'PRESENT'
-          : arrival.basis === 'EXEMPT' ? 'NOT_REQUIRED'
-          : arrival.basis === 'NONE' ? 'NOT_SCHEDULED'
-          : arrival.dueAt && new Date() <= new Date(arrival.dueAt) ? 'NOT_DUE' : 'ABSENT';
+        const currentArrival = principalIds.has(employee.id)
+          ? EXEMPT_ARRIVAL
+          : !workday
+            ? teacherArrival(null, 0, 0)
+            : employee.role === 'TATA_USAHA'
+              ? workdayArrival(ymd, 420)
+              : operationalTeacherUserIds.has(employee.id) && employee.teacher
+                ? (arrivals.get(employee.teacher.id) ??
+                  teacherArrival(
+                    null,
+                    profile.attendanceTeacherLeadMin,
+                    profile.attendanceTeacherLeadTarget,
+                  ))
+                : workdayArrival(ymd, profile.attendanceStartMinute);
+        const arrival: ArrivalExpectation =
+          receipt && workday
+            ? {
+                basis:
+                  (receipt.arrivalBasis as ArrivalExpectation['basis'] | null) ?? 'UNAVAILABLE',
+                dueAt: receipt.expectedArrivalAt?.toISOString() ?? null,
+                recommendedAt: receipt.recommendedArrivalAt?.toISOString() ?? null,
+                firstTeachingAt: receipt.firstTeachingAt?.toISOString() ?? null,
+              }
+            : currentArrival;
+        const late = Boolean(
+          receipt && arrival.dueAt && receipt.checkInAt > new Date(arrival.dueAt),
+        );
+        const status =
+          arrival.basis === 'UNAVAILABLE'
+            ? 'UNKNOWN'
+            : receipt
+              ? late
+                ? 'LATE'
+                : 'PRESENT'
+              : arrival.basis === 'EXEMPT'
+                ? 'NOT_REQUIRED'
+                : arrival.basis === 'NONE'
+                  ? 'NOT_SCHEDULED'
+                  : arrival.dueAt && reportNow <= new Date(arrival.dueAt)
+                    ? 'NOT_DUE'
+                    : 'ABSENT';
         const review = Boolean(
           arrival.basis === 'UNAVAILABLE' ||
-          receipt &&
-          ([receipt.locationInStatus, receipt.locationOutStatus].some(
-            (state) => state === 'UNVERIFIED' || state === 'OUTSIDE',
-          ) ||
-            (!receipt.checkOutAt &&
-              (ymd < today || arrival.basis !== 'EXEMPT' && schoolMinute(new Date()) >= profile.attendanceEndMinute))),
+          (receipt &&
+            ([receipt.locationInStatus, receipt.locationOutStatus].some(
+              (state) => state === 'UNVERIFIED' || state === 'OUTSIDE',
+            ) ||
+              (!receipt.checkOutAt &&
+                (ymd < today ||
+                  (arrival.basis !== 'EXEMPT' &&
+                    schoolMinute(reportNow) >= profile.attendanceEndMinute))))),
         );
         rows.push({ employee, date: ymd, receipt, status, review, arrival });
         if (status === 'ABSENT') point.absent++;
@@ -485,7 +668,8 @@ export class StaffAttendanceService {
           row.employee.fullName
             .toLocaleLowerCase('id')
             .includes(query.search.toLocaleLowerCase('id')) &&
-          (query.unit === 'ALL' || Boolean(row.employee.teacher) === (query.unit === 'TEACHER')) &&
+          (query.unit === 'ALL' ||
+            operationalTeacherUserIds.has(row.employee.id) === (query.unit === 'TEACHER')) &&
           (query.status === 'ALL' ||
             (query.status === 'REVIEW'
               ? row.review
@@ -501,17 +685,51 @@ export class StaffAttendanceService {
     return {
       // Full-scope aggregates, computed before UI pagination. No coordinates or employee names.
       teacherSummary: {
-        total: employees.filter(person => person.teacher).length,
-        present: rows.filter(row => row.employee.teacher && row.receipt).length,
-        inside: rows.filter(row => row.employee.teacher && row.receipt?.locationInStatus === 'INSIDE').length,
-        required: rows.filter(row => row.employee.teacher && row.arrival.dueAt).length,
-        late: rows.filter(row => row.employee.teacher && row.status === 'LATE').length,
-        absent: rows.filter(row => row.employee.teacher && row.status === 'ABSENT').length,
-        notRequired: rows.filter(row => row.employee.teacher && row.status === 'NOT_REQUIRED').length,
-        notScheduled: rows.filter(row => row.employee.teacher && row.status === 'NOT_SCHEDULED').length,
-        notDue: rows.filter(row => row.employee.teacher && row.status === 'NOT_DUE').length,
-        review: rows.filter(row => row.employee.teacher && row.review).length,
-        unknown: rows.filter(row => row.employee.teacher && row.status === 'UNKNOWN').length,
+        total: operationalTeacherUserIds.size,
+        present: rows.filter((row) => operationalTeacherUserIds.has(row.employee.id) && row.receipt)
+          .length,
+        inside: rows.filter(
+          (row) =>
+            operationalTeacherUserIds.has(row.employee.id) &&
+            row.receipt?.locationInStatus === 'INSIDE',
+        ).length,
+        required: rows.filter(
+          (row) => operationalTeacherUserIds.has(row.employee.id) && row.arrival.dueAt,
+        ).length,
+        dueRequired: rows.filter(
+          (row) =>
+            operationalTeacherUserIds.has(row.employee.id) &&
+            row.arrival.basis !== 'UNAVAILABLE' &&
+            row.arrival.dueAt &&
+            (row.receipt || new Date(row.arrival.dueAt) < reportNow),
+        ).length,
+        presentRequired: rows.filter(
+          (row) =>
+            operationalTeacherUserIds.has(row.employee.id) &&
+            row.arrival.basis !== 'UNAVAILABLE' &&
+            row.arrival.dueAt &&
+            row.receipt,
+        ).length,
+        late: rows.filter(
+          (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'LATE',
+        ).length,
+        absent: rows.filter(
+          (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'ABSENT',
+        ).length,
+        notRequired: rows.filter(
+          (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'NOT_REQUIRED',
+        ).length,
+        notScheduled: rows.filter(
+          (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'NOT_SCHEDULED',
+        ).length,
+        notDue: rows.filter(
+          (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'NOT_DUE',
+        ).length,
+        review: rows.filter((row) => operationalTeacherUserIds.has(row.employee.id) && row.review)
+          .length,
+        unknown: rows.filter(
+          (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'UNKNOWN',
+        ).length,
       },
       summary,
       trend,
@@ -561,8 +779,13 @@ export class StaffAttendanceService {
       await tx.$executeRaw(
         Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${'attendance:' + target.userId}))`,
       );
-      await assertFreshMutationAuthority(tx, this.permissions, user.keycloakId,
-        'staff.attendance.manage', ['SUPER_ADMIN']);
+      await assertFreshMutationAuthority(
+        tx,
+        this.permissions,
+        user.keycloakId,
+        'staff.attendance.manage',
+        ['SUPER_ADMIN'],
+      );
       const before = await tx.staffAttendance.findUniqueOrThrow({
         where: { id },
         select: RECEIPT_SELECT,
@@ -575,7 +798,8 @@ export class StaffAttendanceService {
             ? new Date(dto.checkOutAt)
             : null;
       if (
-        checkInAt > new Date() || (checkOutAt && checkOutAt > new Date()) ||
+        checkInAt > new Date() ||
+        (checkOutAt && checkOutAt > new Date()) ||
         schoolDate(checkInAt) !== before.date.toISOString().slice(0, 10) ||
         (checkOutAt && (checkOutAt < checkInAt || schoolDate(checkOutAt) !== schoolDate(checkInAt)))
       ) {
@@ -604,11 +828,21 @@ export class StaffAttendanceService {
 
   async note(id: string, reason: string, user: AuthUser) {
     return this.prisma.$transaction(async (tx) => {
-      const target = await tx.staffAttendance.findUnique({ where: { id }, select: { userId: true } });
+      const target = await tx.staffAttendance.findUnique({
+        where: { id },
+        select: { userId: true },
+      });
       if (!target) throw new NotFoundException('Presensi tidak ditemukan');
-      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${'attendance:' + target.userId}))`);
-      await assertFreshMutationAuthority(tx, this.permissions, user.keycloakId,
-        'staff.attendance.manage', ['SUPER_ADMIN']);
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${'attendance:' + target.userId}))`,
+      );
+      await assertFreshMutationAuthority(
+        tx,
+        this.permissions,
+        user.keycloakId,
+        'staff.attendance.manage',
+        ['SUPER_ADMIN'],
+      );
       return tx.staffAttendanceEvent.create({
         data: { attendanceId: id, actorId: user.keycloakId, kind: 'NOTE', reason },
         select: { id: true, kind: true, reason: true, createdAt: true },
@@ -618,15 +852,28 @@ export class StaffAttendanceService {
 
   async updatePolicy(dto: z.infer<typeof AttendancePolicySchema>, user: AuthUser) {
     return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('operational:attendance-policy:mutation:v1'))`);
-      await assertFreshMutationAuthority(tx, this.permissions, user.keycloakId,
-        'staff.attendance.manage', ['SUPER_ADMIN']);
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('operational:attendance-policy:mutation:v1'))`,
+      );
+      await assertFreshMutationAuthority(
+        tx,
+        this.permissions,
+        user.keycloakId,
+        'staff.attendance.manage',
+        ['SUPER_ADMIN'],
+      );
       const profile = await tx.schoolProfile.findFirst();
-      if (!profile) throw new ServiceUnavailableException('Profil dan kebijakan sekolah belum dikonfigurasi');
-      if (dto.attendanceMode === 'STRICT' && (profile.latitude == null || profile.longitude == null)) {
+      if (!profile)
+        throw new ServiceUnavailableException('Profil dan kebijakan sekolah belum dikonfigurasi');
+      if (
+        dto.attendanceMode === 'STRICT' &&
+        (profile.latitude == null || profile.longitude == null)
+      ) {
         throw new BadRequestException('Atur koordinat sekolah sebelum mengaktifkan lokasi wajib');
       }
-      return this.policyPayload(await tx.schoolProfile.update({ where: { id: profile.id }, data: dto }));
+      return this.policyPayload(
+        await tx.schoolProfile.update({ where: { id: profile.id }, data: dto }),
+      );
     });
   }
 }

@@ -13,6 +13,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveOwnTeachingRead } from '../common/helpers/own-teaching-read';
 import {
   isElevated,
   isGuruOnly,
@@ -40,8 +41,14 @@ import {
 } from '../common/helpers/appointment-scope.helper';
 
 const ACTIVITY_SELECT = {
-  id: true, classId: true, date: true, title: true, description: true,
-  category: true, photoUrl: true, createdAt: true,
+  id: true,
+  classId: true,
+  date: true,
+  title: true,
+  description: true,
+  category: true,
+  photoUrl: true,
+  createdAt: true,
   class: { select: { id: true, name: true } },
   teacher: { select: { id: true, user: { select: { fullName: true } } } },
 } as const;
@@ -90,7 +97,7 @@ export class ClassActivitiesService {
         select: { classId: true },
         distinct: ['classId'],
       });
-      return [...new Set(children.flatMap((child) => child.classId ? [child.classId] : []))];
+      return [...new Set(children.flatMap((child) => (child.classId ? [child.classId] : [])))];
     }
     return [];
   }
@@ -98,7 +105,9 @@ export class ClassActivitiesService {
   private async assertCanReadClass(classId: string, user: AuthUser): Promise<void> {
     const readableClassIds = await this.resolveReadableClassIds(user);
     if (readableClassIds !== null && !readableClassIds.includes(classId)) {
-      throw new ForbiddenException('Pengguna hanya bisa melihat media kegiatan dalam scope kelasnya');
+      throw new ForbiddenException(
+        'Pengguna hanya bisa melihat media kegiatan dalam scope kelasnya',
+      );
     }
   }
 
@@ -132,26 +141,34 @@ export class ClassActivitiesService {
     ]);
     if (!kelas) throw new NotFoundException('Kelas tidak ditemukan');
     if (!activeYear || !kelas.isActive || kelas.academicYear !== activeYear.code) {
-      throw new ForbiddenException('Kegiatan hanya dapat dicatat untuk kelas pada tahun ajaran aktif');
+      throw new ForbiddenException(
+        'Kegiatan hanya dapat dicatat untuk kelas pada tahun ajaran aktif',
+      );
     }
   }
 
   async findAll(query: ListActivitiesQueryDto, user: AuthUser) {
-    const readableClassIds = await this.resolveReadableClassIds(user);
+    const ownTeacherId = await resolveOwnTeachingRead(this.prisma, user, query.scope);
+    const readableClassIds = ownTeacherId ? null : await this.resolveReadableClassIds(user);
     const where: Prisma.ClassActivityWhereInput = {
+      ...(ownTeacherId ? { teacherId: ownTeacherId } : {}),
       ...(query.classId ? { classId: query.classId } : {}),
       ...(query.category ? { category: query.category } : {}),
-      ...(query.search ? {
-        OR: [
-          { title: { contains: query.search, mode: 'insensitive' } },
-          { description: { contains: query.search, mode: 'insensitive' } },
-          { teacher: { user: { fullName: { contains: query.search, mode: 'insensitive' } } } },
-        ],
-      } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: 'insensitive' } },
+              { description: { contains: query.search, mode: 'insensitive' } },
+              { teacher: { user: { fullName: { contains: query.search, mode: 'insensitive' } } } },
+            ],
+          }
+        : {}),
     };
     if (readableClassIds !== null) {
       if (query.classId && !readableClassIds.includes(query.classId)) {
-        throw new ForbiddenException('Pengguna hanya bisa melihat kegiatan kelas dalam scope yang diizinkan');
+        throw new ForbiddenException(
+          'Pengguna hanya bisa melihat kegiatan kelas dalam scope yang diizinkan',
+        );
       }
       where.classId = query.classId ?? { in: readableClassIds };
     }
@@ -174,9 +191,8 @@ export class ClassActivitiesService {
       this.prisma.classActivity.count({ where }),
     ]);
     const canManageAll = user.roles.includes('SUPER_ADMIN') || this.isKesiswaanOperator(user);
-    const teacherId = !canManageAll && isGuruOnly(user)
-      ? await this.resolveTeacherId(user.keycloakId)
-      : null;
+    const teacherId =
+      !canManageAll && isGuruOnly(user) ? await this.resolveTeacherId(user.keycloakId) : null;
     return {
       data: data.map((activity) => ({
         ...this.presentActivity(activity),
@@ -194,9 +210,10 @@ export class ClassActivitiesService {
       select: { code: true },
     });
     if (!activeYear) return [];
-    const classIds = user.roles.includes('SUPER_ADMIN') || this.isKesiswaanOperator(user)
-      ? null
-      : await resolveGuruClassIds(this.prisma, user.keycloakId);
+    const classIds =
+      user.roles.includes('SUPER_ADMIN') || this.isKesiswaanOperator(user)
+        ? null
+        : await resolveGuruClassIds(this.prisma, user.keycloakId);
     return this.prisma.class.findMany({
       where: {
         isActive: true,
@@ -282,12 +299,7 @@ export class ClassActivitiesService {
     return this.presentActivity(activity);
   }
 
-  async uploadMedia(
-    id: string,
-    body: unknown,
-    contentType: string | undefined,
-    user: AuthUser,
-  ) {
+  async uploadMedia(id: string, body: unknown, contentType: string | undefined, user: AuthUser) {
     const activity = await this.assertOwnership(id, user);
     const previousKey = parseClassActivityMediaKey(activity.photoUrl);
     const media = validateClassActivityMedia(body, contentType);
@@ -338,7 +350,8 @@ export class ClassActivitiesService {
       where: { id, photoUrl: activity.photoUrl },
       data: { photoUrl: null },
     });
-    if (changed.count !== 1) throw new ConflictException('Data kegiatan berubah; muat ulang sebelum menghapus media');
+    if (changed.count !== 1)
+      throw new ConflictException('Data kegiatan berubah; muat ulang sebelum menghapus media');
     if (key) await this.storage.deleteObject(key).catch(() => undefined);
     return { deleted: true, id };
   }

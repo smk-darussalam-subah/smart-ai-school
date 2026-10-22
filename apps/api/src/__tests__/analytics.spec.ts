@@ -89,7 +89,7 @@ describe('analytics.math', () => {
   it('naOf: semua komponen', () => {
     // uh:0.20*80 + praktik:0.25*90 + sikap:0.15*88 + uts:0.20*82 + uas:0.20*84
     // = 16 + 22.5 + 13.2 + 16.4 + 16.8 = 84.9 → round = 85
-    expect(naOf({ uh: 80, praktik: 90, sikap: 88, uts: 82, uas: 84 })).toBe(85);
+    expect(naOf({ uh: 80, praktik: 90, sikap: 88, uts: 82, uas: 84 })).toBe(84.9);
   });
 
   it('naOf: komponen parsial (renormalisasi bobot)', () => {
@@ -278,10 +278,20 @@ describe('AnalyticsService', () => {
         { status: 'revision', _count: { _all: 2 } },
       ]);
 
-      staffMock.report.mockResolvedValue({ teacherSummary: { total: 20, present: 19, inside: 19 } });
+      staffMock.report.mockResolvedValue({
+        teacherSummary: {
+          total: 20,
+          present: 1,
+          inside: 1,
+          unknown: 0,
+          dueRequired: 20,
+          presentRequired: 1,
+        },
+      });
       const res = await service.teacherCompliance({}, true);
 
       expect(res.gpsPct).toBe(100); // recorded arrivals, not all active employees
+      expect(res.attendancePct).toBe(5);
       expect(prisma.teacherAttendance.count).not.toHaveBeenCalled();
       // approved 6 dari non-draft (2+6+2=10) = 60%
       expect(res.rpp.approvalRate).toBe(60);
@@ -297,8 +307,31 @@ describe('AnalyticsService', () => {
       const res = await service.teacherCompliance({}, true);
 
       expect(res.gpsPct).toBeNull();
+      expect(res.attendancePct).toBeNull();
       expect(res.rpp.approvalRate).toBeNull();
     });
+    it.each([
+      [0, 0, 0, null],
+      [1, 20, 1, null],
+      [0, 20, 0, 0],
+      [0, 3, 2, 66.7],
+    ])(
+      'uses unknown=%s due=%s recorded=%s as attendance=%s',
+      async (unknown, dueRequired, presentRequired, expected) => {
+        prisma.rpp.groupBy.mockResolvedValue([]);
+        staffMock.report.mockResolvedValue({
+          teacherSummary: {
+            total: 23,
+            present: 1,
+            inside: 1,
+            unknown,
+            dueRequired,
+            presentRequired,
+          },
+        });
+        expect((await service.teacherCompliance({}, true)).attendancePct).toBe(expected);
+      },
+    );
   });
 });
 
@@ -322,7 +355,10 @@ describe('AnalyticsController', () => {
       providers: [
         { provide: AnalyticsService, useValue: mockService },
         { provide: StudentAnalyticsService, useValue: mockStudentService },
-        { provide: PermissionsService, useValue: { getEffectivePermissions: jest.fn().mockResolvedValue(new Set(['*'])) } },
+        {
+          provide: PermissionsService,
+          useValue: { getEffectivePermissions: jest.fn().mockResolvedValue(new Set(['*'])) },
+        },
       ],
     }).compile();
     controller = module.get(AnalyticsController);
@@ -348,7 +384,11 @@ describe('AnalyticsController', () => {
 
   it('financeAging & teacherCompliance & atRisk delegasi', async () => {
     await controller.financeAging({});
-    await controller.teacherCompliance({}, { keycloakId: 'kc-sa', username: 'admin', roles: ['SUPER_ADMIN'] } as AuthUser);
+    await controller.teacherCompliance({}, {
+      keycloakId: 'kc-sa',
+      username: 'admin',
+      roles: ['SUPER_ADMIN'],
+    } as AuthUser);
     await controller.atRisk({});
     expect(mockService.financeAging).toHaveBeenCalled();
     expect(mockService.teacherCompliance).toHaveBeenCalled();
@@ -482,8 +522,8 @@ describe('StudentAnalyticsService', () => {
     expect(res.data).toHaveLength(1);
     const subj = res.data[0]!.subjects[0]!;
     expect(subj.subject).toBe('Matematika');
-    expect(subj.uh).toBe(83);
-    expect(subj.na).toBe(86);
+    expect(subj.uh).toBe(82.5);
+    expect(subj.na).toBe(85.4);
     expect(subj.status).toBe('tuntas');
     expect(subj.kktp).toBe(75);
     expect(subj.kktpProvenance).toBe('system_default');
@@ -521,7 +561,7 @@ describe('StudentAnalyticsService', () => {
     ]);
 
     const res = await service.studentGrades({}, SISWA_USER);
-    expect(res.data[0]!.subjects[0]!.na).toBe(63);
+    expect(res.data[0]!.subjects[0]!.na).toBe(62.5);
     expect(res.data[0]!.subjects[0]!.status).toBe('remedial');
   });
 });

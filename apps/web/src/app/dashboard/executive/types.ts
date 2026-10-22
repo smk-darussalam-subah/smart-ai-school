@@ -86,10 +86,11 @@ export interface Aging {
 
 // ── /analytics/teacher-compliance ────────────────────────────────────────────
 export interface TeacherCompliance {
+  attendancePct?: number | null;
   totalTeachers: number;
   presentToday: number;
   gpsPct: number | null;
-  attendance?: { required: number; late: number; notRequired: number; notScheduled: number; notDue: number; review: number; unknown: number; inside: number; date: string; source: string };
+  attendance?: { required: number; dueRequired?: number; presentRequired?: number; late: number; notRequired: number; notScheduled: number; notDue: number; review: number; unknown: number; inside: number; date: string; source: string };
   rpp: {
     state?: 'ready' | 'denied';
     draft: number;
