@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   PlayCircle, X, ChevronLeft, ChevronRight, Flag, CalendarCheck, Search,
   BookOpen, ClipboardCheck, ClipboardPenLine, MessageCircle, PenLine,
@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 
 interface Props {
   session: TodayClass | null;
-  onAbsen: (c: { classId: string; className: string }) => void;
+  onAbsen: (c: TodayClass) => void;
   onJurnal: (c: { classId: string; className: string; subject: string; startLabel: string; jpStart: number }) => void;
   onOpenPenilaian: (session: TodayClass, mode: 'preview' | 'monitor' | 'analysis', tab: 'diag' | 'form' | 'fb') => void;
   /** Step 4 "Buka Modul Ajar": buka popup Modul Ajar DI ATAS modal sesi (z-50 > z-40),
@@ -34,6 +34,7 @@ const SESSION_STEPS = [
 
 export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPenilaian, onOpenModule, onClose }: Props) {
   const [step, setStep] = useState(1);
+  const titleRef = useRef<HTMLHeadingElement>(null);
 
   if (!session) return null;
 
@@ -44,7 +45,7 @@ export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPen
 
   const handleAction = () => {
     switch (step) {
-      case 2: onAbsen({ classId: session.classId, className: session.className }); break;
+      case 2: onAbsen(session); break;
       case 3: onOpenPenilaian(session, 'preview', 'diag'); break;
       // Step 4: buka popup Modul Ajar DI ATAS modal sesi (modal sesi tetap terbuka,
       // flow tak terputus — sama seperti step 3). Sebelumnya: close+navigate = salah
@@ -80,12 +81,12 @@ export default function SessionFlowModal({ session, onAbsen, onJurnal, onOpenPen
     <Dialog open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
       <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto p-5" onOpenAutoFocus={(event: Event) => {
         event.preventDefault();
-        document.getElementById('session-flow-title')?.focus();
+        titleRef.current?.focus();
       }}>
         {/* Header */}
         <div className="pr-10">
           <div>
-            <DialogTitle id="session-flow-title" tabIndex={-1} className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25] outline-none"><PlayCircle className="h-[18px] w-[18px] text-emerald-600" />Sesi Mengajar — {session.subject} · {session.className}</DialogTitle>
+            <DialogTitle ref={titleRef} tabIndex={-1} className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25] outline-none"><PlayCircle className="h-[18px] w-[18px] text-emerald-600" />Panduan Mengajar — {session.subject} · {session.className}</DialogTitle>
             <DialogDescription className="text-[11px] text-[#526b62]">{session.startLabel} · JP {session.jpStart}–{session.jpEnd}{session.room ? ` · ${session.room}` : ''}</DialogDescription>
           </div>
         </div>

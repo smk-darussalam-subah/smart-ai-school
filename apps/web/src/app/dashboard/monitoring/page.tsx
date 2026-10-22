@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth';
 import { apiFetchResult } from '@/lib/api';
 import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
 import MonitoringClient from './MonitoringClient';
+import SessionPreparationPanel from '../jadwal/_components/SessionPreparationPanel';
+import { wibTodayISO } from '@/lib/bell-times';
 import {
   hasMonitoringReaderRole,
   normalizeMonitoringDevices,
@@ -40,6 +42,8 @@ export default async function MonitoringPage() {
   const deviceWarning = deviceResult.status === 'success' ? null : deviceResult.message;
 
   return (
+    <div className="space-y-4">
+    {authority.can('academic.schedule.manage') && authority.hasRole('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM') && <SessionPreparationPanel today={wibTodayISO()} />}
     <MonitoringClient
       initialSnapshot={snapshot}
       initialDevices={devices}
@@ -47,5 +51,6 @@ export default async function MonitoringPage() {
       deviceWarning={deviceWarning}
       canManageDevices={canManageDevices}
     />
+    </div>
   );
 }

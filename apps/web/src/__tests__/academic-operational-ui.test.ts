@@ -128,6 +128,12 @@ function loadServiceWorkerHarness() {
         data: {
           json: () => ({
             ...(payload && typeof payload === 'object' ? payload : {}),
+            delivery: {
+              version: 2,
+              messageId: '12000000-0000-4000-8000-000000000004',
+              refType: null,
+              refId: null,
+            },
             deliveryProof: 'a'.repeat(64),
           }),
         },
@@ -253,7 +259,9 @@ describe('academic operational UI contracts', () => {
     expect(modeSwitcher).toContain('Operasional Kurikulum');
     expect(modeSwitcher).toContain('role="tablist"');
     expect(modeSwitcher).toContain('role="tabpanel"');
-    expect(academicPage).toContain('isDualRoleWaka');
+    expect(academicPage).toContain('isDualRoleTeacher');
+    expect(academicPage).toContain("'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPROG'");
+    expect(academicPage).toContain('/teaching-assignments?scope=own&teacherId=');
     expect(academicPage).toContain('teacherId=${encodeURIComponent(ownTeacherId)}');
   });
 
@@ -500,7 +508,10 @@ describe('academic operational UI contracts', () => {
 
     expect(academicPage).toContain("canManageReportCards={!authority.hasRole('SUPER_ADMIN')}");
     expect(workspace).toContain("NAV_ALL.filter((n) => n.key !== 'rapor')");
-    expect(workspace).toContain('if (!canManageReportCards)');
+    expect(workspace).toContain('useWaliClasses(canManageReportCards,');
+    expect(workspace).toContain(
+      "canManageReportCards && (waliStatus !== 'ready' || waliClasses.length > 0)",
+    );
     expect(hub).toContain('report.updatedAt), onClose');
     expect(hubActions).toContain('{ notes, expectedUpdatedAt }');
     expect(academicActions).toContain('{ notes, expectedUpdatedAt }');

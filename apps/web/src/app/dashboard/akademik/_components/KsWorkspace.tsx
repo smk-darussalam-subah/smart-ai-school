@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ScheduleBoard, { ScheduleReadProvider, useScheduleRead } from './ks/ScheduleBoard';
 import SchedulingMonitoringPanel from './ks/SchedulingMonitoringPanel';
+import LearningRecap from './LearningRecap';
 import { MonitoringSchema, type SchedulingMonitoring } from '@/lib/scheduling-monitoring';
 import {
   LayoutDashboard, FileCheck2, ClipboardPenLine, Monitor, ClipboardCheck,
@@ -58,12 +59,14 @@ interface Props {
   assessmentsAvailable?: boolean;
   scheduleAvailable?: boolean;
   initialWorkflowView?: AcademicWorkflowView | null;
+  canReadClassSessions?: boolean;
 }
 
-type Screen = 'beranda' | 'modul' | 'sumatif' | 'monitor' | 'rekap' | 'kktp' | 'jadwal' | 'rapor';
+type Screen = 'beranda' | 'modul' | 'sumatif' | 'monitor' | 'rekap' | 'kktp' | 'jadwal' | 'rapor' | 'sesi';
 
 const NAV: { key: Screen; label: string; icon: LucideIcon; badge?: number }[] = [
   { key: 'beranda', label: 'Beranda', icon: LayoutDashboard },
+  { key: 'sesi', label: 'Rekap Pembelajaran', icon: CalendarClock },
   { key: 'modul', label: 'Modul Ajar', icon: FileCheck2 },
   { key: 'sumatif', label: 'Sumatif', icon: ClipboardPenLine },
   { key: 'monitor', label: 'Monitoring KBM', icon: Monitor },
@@ -108,7 +111,7 @@ function sumatifStatus(status: string): SumatifStatus {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function KsWorkspace({
-  grades: _sourceGrades, attendances: sourceAttendances, classes: sourceClasses, assignments: sourceAssignments, rpp: sourceRpp, schedules: sourceSchedules, activities: _sourceActivities, lmsModules: _lmsModules, realSumatif, subjects, academicYear, semester, dataWarning, scheduleAvailable = false, rppAvailable = false, assessmentsAvailable = false, initialWorkflowView = null,
+  grades: _sourceGrades, attendances: sourceAttendances, classes: sourceClasses, assignments: sourceAssignments, rpp: sourceRpp, schedules: sourceSchedules, activities: _sourceActivities, lmsModules: _lmsModules, realSumatif, subjects, academicYear, semester, dataWarning, scheduleAvailable = false, rppAvailable = false, assessmentsAvailable = false, initialWorkflowView = null, canReadClassSessions = false,
 }: Props) {
   const router = useRouter(), searchParams = useSearchParams();
   const [filterGuru, setFilterGuru] = useState('');
@@ -196,7 +199,7 @@ export default function KsWorkspace({
       <h1 className="text-2xl font-bold tracking-tight text-[#0f2e25]">Dashboard KS / Waka Kurikulum</h1>
       <p className="text-sm text-[#6b8079]">Pengawasan akademik · approval modul ajar · monitoring sumatif · monitoring KBM</p>
 
-      {dataWarning && (
+      {dataWarning && screen !== 'sesi' && (
         <div className="mt-2 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[12.5px] font-semibold text-amber-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />Sebagian data gagal dimuat dari server. Muat ulang halaman jika berlanjut.
         </div>
@@ -205,7 +208,7 @@ export default function KsWorkspace({
       {/* Global Filter Bar */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-[#9bb0a8]">
-          <SlidersHorizontal className="h-3.5 w-3.5" />Filter
+          <SlidersHorizontal className="h-3.5 w-3.5" />{screen === 'sesi' ? 'Periode' : 'Filter'}
         </span>
         <span className="inline-flex items-center gap-2 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] shadow-sm">
           <CalendarClock className="h-[15px] w-[15px] text-emerald-600" />TA {academicYear || '—'}
@@ -214,6 +217,7 @@ export default function KsWorkspace({
           {([1,2] as const).map((s) => (
             <button key={s} type="button" onClick={() => {
               const query = new URLSearchParams(searchParams.toString()); query.set('academicYear', academicYear); query.set('semester', String(s));
+              if (screen === 'sesi') query.set('view', 'learning-recap');
               router.push('/dashboard/akademik?' + query.toString());
             }}
               className={clsx('rounded-lg px-3 py-1.5 text-[12px] font-bold', semester === s ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]')}>
@@ -221,23 +225,23 @@ export default function KsWorkspace({
             </button>
           ))}
         </div>
-        <select value={filterGuru} onChange={(e) => setFilterGuru(e.target.value)}
+        <select hidden={screen === 'sesi'} value={filterGuru} onChange={(e) => setFilterGuru(e.target.value)}
           className="rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] shadow-sm outline-none">
           <option value="">Semua Guru</option>
           {teacherOptions.map(([id,name]) => <option key={id} value={id}>{name}</option>)}
         </select>
-        <select value={filterMapel} onChange={(e) => setFilterMapel(e.target.value)}
+        <select hidden={screen === 'sesi'} value={filterMapel} onChange={(e) => setFilterMapel(e.target.value)}
           className="rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] shadow-sm outline-none">
           <option value="">Semua Mapel</option>
           {filterMapelOpts.map((m) => <option key={m}>{m}</option>)}
         </select>
-        <span className="ml-auto hidden items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11.5px] font-bold text-blue-700 sm:inline-flex">
+        {screen !== 'sesi' && <><span className="ml-auto hidden items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11.5px] font-bold text-blue-700 sm:inline-flex">
           <Users className="h-3.5 w-3.5" />{classes.length} rombel · {assignments.length} penugasan
         </span>
         <span className="hidden items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11.5px] font-bold text-emerald-700 sm:inline-flex">
           <BadgeCheck className="h-3.5 w-3.5" />Kepala Sekolah
         </span>
-        <span className="hidden items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700 sm:inline-flex"><Check className="h-3 w-3" /> Filter Aktif</span>
+        <span className="hidden items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700 sm:inline-flex"><Check className="h-3 w-3" /> Filter Aktif</span></>}
       </div>
 
       {/* Sub-nav — Opsi B: horizontal scroll + fade affordance + auto-center active (mobile), wrap (desktop) */}
@@ -268,6 +272,7 @@ export default function KsWorkspace({
       </div>
 
       <div className="pt-4">
+        {screen === 'sesi' && <LearningRecap key={`${academicYear}|${semester}`} academicYear={academicYear} semester={semester} scope="operations" canRead={canReadClassSessions} />}
         {screen === 'beranda' && <BerandaKs hadirPct={hadirPct} todayAtt={todayAtt} attendances={attendances} dataComplete={!dataWarning && !!monitoring} pendingRpp={rppAvailable ? pendingRpp.length : null} activeSumatif={assessmentsAvailable ? activeSumatif.length : null} belowKktp={belowKktp} schedules={schedules} classes={classes} onNavigate={setScreen} />}
         {screen === 'modul' && <ModulAjarKs rpp={rpp} onReview={setSelRpp} />}
         {screen === 'sumatif' && <AuditSumatifKs onOpenDetail={setSelSumatif} data={sumatifData} />}

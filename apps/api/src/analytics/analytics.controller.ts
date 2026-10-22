@@ -13,7 +13,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { AnalyticsService } from './analytics.service';
 import { StudentAnalyticsService } from './analytics.service';
-import { AnalyticsQuerySchema } from './dto/analytics-query.dto';
+import { AnalyticsQuerySchema, CpProgressQuerySchema } from './dto/analytics-query.dto';
 import { StudentAnalyticsQuerySchema } from './dto/analytics-query.dto';
 import { PermissionsService } from '../permissions/permissions.service';
 import { isSiswaOnly, isOrangTuaOnly } from '../common/helpers/role-helpers';
@@ -40,9 +40,14 @@ export class AnalyticsController {
   }
 
   private async assertDomainReader(user: AuthUser, domain: 'grade' | 'attendance') {
-    const required = isSiswaOnly(user) ? `${domain}.own.read` : isOrangTuaOnly(user) ? `${domain}.child.read` : `academic.${domain}.read`;
+    const required = isSiswaOnly(user)
+      ? `${domain}.own.read`
+      : isOrangTuaOnly(user)
+        ? `${domain}.child.read`
+        : `academic.${domain}.read`;
     const effective = await this.permissions.getEffectivePermissions(user.keycloakId, user.roles);
-    if (!effective.has('*') && !effective.has(required)) throw new ForbiddenException(`Permission '${required}' diperlukan untuk konteks ini`);
+    if (!effective.has('*') && !effective.has(required))
+      throw new ForbiddenException(`Permission '${required}' diperlukan untuk konteks ini`);
   }
 
   /** Distribusi nilai + ketuntasan KKM + korelasi kehadiran↔nilai. */
@@ -72,7 +77,11 @@ export class AnalyticsController {
   async teacherCompliance(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     const query = this.parse(rawQuery);
     const effective = await this.permissions.getEffectivePermissions(user.keycloakId, user.roles);
-    return this.service.teacherCompliance(query, effective.has('*') || effective.has('rpp.read'), effective.has('*') || effective.has('academic.teaching.read'));
+    return this.service.teacherCompliance(
+      query,
+      effective.has('*') || effective.has('rpp.read'),
+      effective.has('*') || effective.has('academic.teaching.read'),
+    );
   }
 
   /** T3-02 B7: Rekap audit per guru×kelas×mapel untuk KS/Wakakur. */
@@ -90,9 +99,12 @@ export class AnalyticsController {
     const effective = await this.permissions.getEffectivePermissions(user.keycloakId, user.roles);
     const can = (permission: string) => effective.has('*') || effective.has(permission);
     return this.service.monitoringKbm(query, new Date(), {
-      assignments: can('academic.teaching.read'), attendance: can('academic.attendance.read'),
-      journal: can('activity.read'), schedules: can('academic.schedule.read'),
-      sessions: can('operational.monitoring.read'), lms: can('lms.read'),
+      assignments: can('academic.teaching.read'),
+      attendance: can('academic.attendance.read'),
+      journal: can('activity.read'),
+      schedules: can('academic.schedule.read'),
+      sessions: can('operational.monitoring.read'),
+      lms: can('lms.read'),
     });
   }
 
@@ -130,6 +142,8 @@ export class AnalyticsController {
   @Get('cp-progress')
   async cpProgress(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
     await this.assertDomainReader(user, 'grade');
-    return this.service.cpProgress(this.parse(rawQuery), user);
+    const parsed = CpProgressQuerySchema.safeParse(rawQuery);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.service.cpProgress(parsed.data, user);
   }
 }

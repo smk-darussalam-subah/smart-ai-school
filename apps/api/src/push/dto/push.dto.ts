@@ -49,8 +49,9 @@ function isPrivateOrLocalIp(hostname: string): boolean {
 
 function isAllowedPushHost(hostname: string): boolean {
   const normalized = normalizeHostname(hostname);
-  return PUSH_ENDPOINT_HOST_ALLOWLIST.some((allowed) =>
-    normalized === allowed || normalized.endsWith(`.${allowed}`));
+  return PUSH_ENDPOINT_HOST_ALLOWLIST.some(
+    (allowed) => normalized === allowed || normalized.endsWith(`.${allowed}`),
+  );
 }
 
 export function isAllowedPushEndpoint(endpoint: string): boolean {
@@ -69,29 +70,56 @@ export function isAllowedPushEndpoint(endpoint: string): boolean {
   }
 }
 
-export const PushEndpointSchema = z.string()
+export const PushEndpointSchema = z
+  .string()
   .trim()
   .min(1)
   .max(PUSH_ENDPOINT_MAX_LENGTH)
   .url()
-  .refine(isAllowedPushEndpoint, 'Endpoint push harus HTTPS dan berasal dari provider Web Push tepercaya');
+  .refine(
+    isAllowedPushEndpoint,
+    'Endpoint push harus HTTPS dan berasal dari provider Web Push tepercaya',
+  );
 
-export const SubscribeSchema = z.object({
-  endpoint: PushEndpointSchema,
-  keys: z.object({
-    p256dh: z.string().trim().min(1).max(1024),
-    auth: z.string().trim().min(1).max(1024),
-  }).strict(),
-}).strict();
+export const SubscribeSchema = z
+  .object({
+    endpoint: PushEndpointSchema,
+    keys: z
+      .object({
+        p256dh: z.string().trim().min(1).max(1024),
+        auth: z.string().trim().min(1).max(1024),
+      })
+      .strict(),
+  })
+  .strict();
 export type SubscribeDto = z.infer<typeof SubscribeSchema>;
 
-export const UnsubscribeSchema = z.object({
-  endpoint: PushEndpointSchema,
-}).strict();
+export const UnsubscribeSchema = z
+  .object({
+    endpoint: PushEndpointSchema,
+  })
+  .strict();
 export type UnsubscribeDto = z.infer<typeof UnsubscribeSchema>;
 
-export const VerifyPushDeliverySchema = z.object({
-  endpoint: PushEndpointSchema,
-  proof: z.string().regex(/^[a-f0-9]{64}$/),
-}).strict();
+export const PushDeliveryMessageSchema = z
+  .object({
+    version: z.literal(2),
+    messageId: z.string().uuid(),
+    refType: z.string().max(100).nullable(),
+    refId: z.string().max(512).nullable(),
+    title: z.string().max(500),
+    body: z.string().max(8192),
+    url: z.string().max(2048),
+    tag: z.string().max(64),
+  })
+  .strict();
+export type PushDeliveryMessage = z.infer<typeof PushDeliveryMessageSchema>;
+
+export const VerifyPushDeliverySchema = z
+  .object({
+    endpoint: PushEndpointSchema,
+    proof: z.string().regex(/^[a-f0-9]{64}$/),
+    message: PushDeliveryMessageSchema,
+  })
+  .strict();
 export type VerifyPushDeliveryDto = z.infer<typeof VerifyPushDeliverySchema>;

@@ -4,15 +4,18 @@
 // =============================================================================
 
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { logger } from '@smk/logger';
 import * as webpush from 'web-push';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveUserId } from '../common/helpers/role-helpers';
+import { studentAttendanceNoticeTarget } from '../common/helpers/student-session-notification';
 import {
   PushEndpointSchema,
+  PushDeliveryMessage,
+  PushDeliveryMessageSchema,
   SubscribeDto,
   SubscribeSchema,
   UnsubscribeDto,
@@ -26,6 +29,8 @@ interface PushLogInput {
   userId: string;
   title: string;
   body: string;
+  beforeSend?: () => Promise<boolean>;
+  kind?: 'student-attendance';
 }
 
 interface StoredPushKeys {
@@ -64,8 +69,44 @@ function readVapidConfig(): { subject: string; publicKey: string; privateKey: st
   return { subject, publicKey: publicKey.trim(), privateKey: privateKey.trim() };
 }
 
-function deliveryProof(privateKey: string, userId: string, endpoint: string): Buffer {
-  return createHmac('sha256', privateKey).update(userId).update('\0').update(endpoint).digest();
+function deliveryProof(
+  privateKey: string,
+  userId: string,
+  endpoint: string,
+  message: PushDeliveryMessage,
+): Buffer {
+  // Fixed tuple order binds the exact raw payload, not its display-normalized form.
+  // No legacy endpoint-only fallback: old provider messages cannot prove intent ownership.
+  return createHmac('sha256', privateKey)
+    .update(
+      JSON.stringify([
+        'diis-push-delivery-v2',
+        userId,
+        endpoint,
+        message.messageId,
+        message.refType,
+        message.refId,
+        message.title,
+        message.body,
+        message.url,
+        message.tag,
+      ]),
+    )
+    .digest();
+}
+
+const deliveryLogSelect = { subject: true, body: true, refType: true, refId: true } as const;
+type DeliveryLog = {
+  subject: string | null;
+  body: string;
+  refType: string | null;
+  refId: string | null;
+};
+
+function notificationTag(logId: string, refType: string | null): string {
+  if (refType === 'student_session_attendance')
+    return 'att-' + createHash('sha256').update(logId).digest('hex').slice(0, 24);
+  return refType === 'class_session_alert' ? 'class-session' : 'report-card';
 }
 
 function staleSubscriptionStatus(error: unknown): number | null {
@@ -100,6 +141,7 @@ function reportHref(studentId: string): string {
 }
 
 function defaultTargetHref(refType: string | null | undefined): string {
+  if (refType === 'class_session_alert') return '/dashboard/jadwal#today-class-sessions';
   return refType === 'report-card' ? '/dashboard/rapor' : '/dashboard/akademik';
 }
 
@@ -168,32 +210,76 @@ export class PushService {
       select: { id: true },
     });
     if (!owner) return { deliver: false };
-    const expected = deliveryProof(vapid.privateKey, userId, input.data.endpoint);
-    return { deliver: timingSafeEqual(expected, Buffer.from(input.data.proof, 'hex')) };
+    const { message, endpoint, proof } = input.data;
+    const expected = deliveryProof(vapid.privateKey, userId, endpoint, message);
+    if (!timingSafeEqual(expected, Buffer.from(proof, 'hex'))) return { deliver: false };
+    const log = await this.prisma.notificationLog.findFirst({
+      where: {
+        id: message.messageId,
+        recipient: userId,
+        channel: 'push',
+        status: { in: ['pending', 'sent'] },
+      },
+      select: deliveryLogSelect,
+    });
+    if (
+      !log ||
+      message.refType !== log.refType ||
+      message.refId !== log.refId ||
+      message.title !== (log.subject ?? 'Notifikasi DIIS') ||
+      message.body !== log.body ||
+      message.tag !== notificationTag(message.messageId, log.refType)
+    )
+      return { deliver: false };
+    // Read-only: a provider-accepted intent is normally already sent, not pending.
+    const target = await this.resolveNotificationTargetHref(log, userId);
+    return { deliver: target !== null && message.url === target };
   }
 
-  async dispatchNotificationLog(input: PushLogInput): Promise<{ attempted: number; staleRemoved: number }> {
+  async dispatchNotificationLog(
+    input: PushLogInput,
+  ): Promise<{ attempted: number; staleRemoved: number }> {
     const subscriptions = await this.prisma.pushSubscription.findMany({
       where: { userId: input.userId },
       select: { id: true, endpoint: true, keys: true },
       take: 20,
     });
     if (subscriptions.length === 0) {
-      logger.info('[PushService] No push subscriptions for notification log', { logId: input.logId });
+      logger.info('[PushService] No push subscriptions for notification log', {
+        logId: input.logId,
+      });
       return { attempted: 0, staleRemoved: 0 };
     }
     const vapid = readVapidConfig();
     if (!vapid) {
       throw new Error('VAPID configuration is not available');
     }
+    const log = await this.prisma.notificationLog.findFirst({
+      where: { id: input.logId, recipient: input.userId, channel: 'push', status: 'pending' },
+      select: deliveryLogSelect,
+    });
+    if (!log) return { attempted: 0, staleRemoved: 0 };
+    const targetHref = await this.resolveNotificationTargetHref(log, input.userId);
+    if (!targetHref) return { attempted: 0, staleRemoved: 0 };
     webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey);
-    const targetHref = await this.resolveNotificationTargetHrefByLog(input.logId, input.userId);
+    // Sensitivity comes from the stored intent, never optional caller flags.
+    const attendanceTopic =
+      log.refType === 'student_session_attendance'
+        ? notificationTag(input.logId, log.refType)
+        : null;
     const payload = {
-      title: input.title,
-      body: input.body,
+      title: log.subject ?? 'Notifikasi DIIS',
+      body: log.body,
       url: targetHref,
-      tag: 'report-card',
+      tag: notificationTag(input.logId, log.refType),
     };
+    const delivery = {
+      version: 2 as const,
+      messageId: input.logId,
+      refType: log.refType,
+      refId: log.refId,
+    };
+    const message = PushDeliveryMessageSchema.parse({ ...delivery, ...payload });
     let attempted = 0;
     let staleRemoved = 0;
     for (const subscription of subscriptions) {
@@ -204,16 +290,23 @@ export class PushService {
         staleRemoved++;
         continue;
       }
-      attempted++;
       try {
-        const proof = deliveryProof(vapid.privateKey, input.userId, endpoint).toString('hex');
-        await webpush.sendNotification({
-          endpoint,
-          keys,
-        }, JSON.stringify({ ...payload, deliveryProof: proof }), {
-          TTL: 60 * 60 * 24,
-          topic: 'report-card',
-        });
+        if (input.beforeSend && !(await input.beforeSend())) break;
+        attempted++;
+        const proof = deliveryProof(vapid.privateKey, input.userId, endpoint, message).toString(
+          'hex',
+        );
+        await webpush.sendNotification(
+          {
+            endpoint,
+            keys,
+          },
+          JSON.stringify({ ...payload, delivery, deliveryProof: proof }),
+          {
+            TTL: attendanceTopic ? 60 * 60 * 24 : input.beforeSend ? 60 : 60 * 60 * 24,
+            topic: attendanceTopic ?? (input.beforeSend ? 'class-session' : 'report-card'),
+          },
+        );
       } catch (error) {
         const status = staleSubscriptionStatus(error);
         if (status === 404 || status === 410) {
@@ -230,28 +323,48 @@ export class PushService {
   /** Get push notification logs for the current user. */
   async findMyNotifications(user: AuthUser) {
     const userId = await resolveUserId(this.prisma, user.keycloakId);
-    const logs: PushNotificationLogRow[] = await this.prisma.notificationLog.findMany({
+    const fetched: PushNotificationLogRow[] = await this.prisma.notificationLog.findMany({
       where: { recipient: userId, channel: 'push' },
       orderBy: { createdAt: 'desc' },
       take: 50,
       select: {
-        id: true, channel: true, subject: true,
-        body: true, status: true, sentAt: true, refType: true, refId: true, createdAt: true,
+        id: true,
+        channel: true,
+        subject: true,
+        body: true,
+        status: true,
+        sentAt: true,
+        refType: true,
+        refId: true,
+        createdAt: true,
       },
     });
+    const targets = await Promise.all(
+      fetched.map(async (log) =>
+        log.refType === 'student_session_attendance'
+          ? studentAttendanceNoticeTarget(this.prisma, { ...log, recipient: userId })
+          : null,
+      ),
+    );
+    const logs = fetched.filter(
+      (log, index) => log.refType !== 'student_session_attendance' || targets[index],
+    );
     const targetHrefs = await this.resolveNotificationTargetHrefs(userId, user, logs);
+    fetched.forEach((log, index) => {
+      if (targets[index]) targetHrefs.set(log.id, targets[index]!);
+    });
     return logs.map(({ refId: _refId, ...log }) => ({
       ...log,
       targetHref: targetHrefs.get(log.id) ?? defaultTargetHref(log.refType),
     }));
   }
 
-  private async resolveNotificationTargetHrefByLog(logId: string, userId: string): Promise<string> {
-    const log = await this.prisma.notificationLog.findFirst({
-      where: { id: logId, recipient: userId, channel: 'push' },
-      select: { refType: true, refId: true },
-    });
-    if (!log) return '/dashboard/rapor';
+  private async resolveNotificationTargetHref(
+    log: DeliveryLog,
+    userId: string,
+  ): Promise<string | null> {
+    if (log.refType === 'student_session_attendance')
+      return studentAttendanceNoticeTarget(this.prisma, { ...log, recipient: userId });
     if (log.refType !== 'report-card' || !isUuid(log.refId)) return defaultTargetHref(log.refType);
     const report = await this.prisma.reportCard.findFirst({
       where: {
@@ -272,9 +385,13 @@ export class PushService {
     user: AuthUser,
     logs: PushNotificationLogRow[],
   ): Promise<Map<string, string>> {
-    const reportIds = [...new Set(logs.flatMap((log) => (
-      log.refType === 'report-card' && isUuid(log.refId) ? [log.refId] : []
-    )))];
+    const reportIds = [
+      ...new Set(
+        logs.flatMap((log) =>
+          log.refType === 'report-card' && isUuid(log.refId) ? [log.refId] : [],
+        ),
+      ),
+    ];
     if (reportIds.length === 0) return new Map();
 
     const ownership: Prisma.StudentWhereInput[] = [];
@@ -293,7 +410,9 @@ export class PushService {
       },
       select: { id: true, studentId: true },
     });
-    const reportTargets = new Map(reports.map((report) => [report.id, reportHref(report.studentId)]));
+    const reportTargets = new Map(
+      reports.map((report) => [report.id, reportHref(report.studentId)]),
+    );
     const logTargets = new Map<string, string>();
     for (const log of logs) {
       if (log.refType !== 'report-card' || !log.refId) continue;

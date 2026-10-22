@@ -8,6 +8,7 @@ import AcademicDataNotice from '../_components/AcademicDataNotice';
 import TodayClassSessions, { type TodayClassSession } from './_components/TodayClassSessions';
 import BellScheduleManager from './_components/BellPatternEditor';
 import type { BellProfile as BellScheduleProfile } from '@/lib/bell-patterns';
+import SessionPreparationPanel from './_components/SessionActivationPanel';
 
 interface ListResponse {
   data: ScheduleItem[];
@@ -50,7 +51,11 @@ function wibToday() {
   }).format(new Date());
 }
 
-export default async function JadwalPage() {
+export default async function JadwalPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
   const authority = await resolveDashboardAuthority(session);
@@ -124,9 +129,19 @@ export default async function JadwalPage() {
       : null;
   const options = canReadOptions && optionsRes?.status === 'success' ? optionsRes.data : null;
   const canReadSessions = authority.can('academic.class-session.read');
+  const requested = await searchParams;
+  const canReadOwn = authority.hasRole('GURU');
+  const canReadOperations = authority.hasRole(
+    'SUPER_ADMIN',
+    'KEPALA_SEKOLAH',
+    'TATA_USAHA',
+    'WAKA_KURIKULUM',
+    'KAPROG',
+  );
+  const ownSessions = canReadOwn && (requested?.sessions !== 'operations' || !canReadOperations);
   const sessionsRes = canReadSessions
     ? await apiFetchResult<{ data: TodayClassSession[] }>(
-        `/class-sessions?date=${wibToday()}&limit=100`,
+        `/class-sessions?date=${wibToday()}&limit=100${ownSessions ? '&scope=own' : ''}`,
         token,
       )
     : null;
@@ -148,6 +163,7 @@ export default async function JadwalPage() {
 
   return (
     <div className="space-y-4">
+      {canManage && <SessionPreparationPanel today={wibToday()} />}
       {optionWarning && <AcademicDataNotice href="/dashboard/jadwal" message={optionWarning} />}
       <JadwalMatrix
         schoolName={schoolProfileRes.status === 'success' ? schoolProfileRes.data.name : undefined}
@@ -179,12 +195,35 @@ export default async function JadwalPage() {
         }
         todaySessions={
           canReadSessions ? (
-            <TodayClassSessions
-              sessions={sessions}
-              loadError={sessionLoadError}
-              canManage={canManage}
-              teachers={teacherOptions}
-            />
+            <div className="space-y-3">
+              {canReadOwn && canReadOperations && (
+                <nav aria-label="Lingkup sesi pembelajaran" className="flex flex-wrap gap-2">
+                  <a
+                    href="/dashboard/jadwal?sessions=own#today-class-sessions"
+                    aria-current={ownSessions ? 'page' : undefined}
+                    className="inline-flex min-h-11 items-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900 focus-visible:ring-2 focus-visible:ring-emerald-700"
+                  >
+                    Sesi Saya
+                  </a>
+                  <a
+                    href="/dashboard/jadwal?sessions=operations#today-class-sessions"
+                    aria-current={!ownSessions ? 'page' : undefined}
+                    className="inline-flex min-h-11 items-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900 focus-visible:ring-2 focus-visible:ring-emerald-700"
+                  >
+                    Sesi dalam Kewenangan Jabatan
+                  </a>
+                </nav>
+              )}
+              <TodayClassSessions
+                sessions={sessions}
+                loadError={sessionLoadError}
+                canManage={canManage && !ownSessions}
+                canOperateSessions={
+                  authority.hasRole('GURU') && authority.can('academic.class-session.manage')
+                }
+                teachers={teacherOptions}
+              />
+            </div>
           ) : undefined
         }
       />

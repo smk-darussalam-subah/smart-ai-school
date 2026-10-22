@@ -106,7 +106,7 @@ function deriveHealth(
 ): KioskHealth {
   const pilars = [
     { label: 'Kehadiran Siswa', pct: studentPct },
-    { label: 'Kehadiran Guru', pct: teacher?.gpsPct ?? null },
+    { label: 'Presensi wajib guru', pct: teacher?.attendancePct ?? null },
     { label: 'Ketuntasan KKTP', pct: grades?.overall.kkmPassRate ?? null },
     { label: 'Kepatuhan RPP', pct: teacher?.rpp.approvalRate ?? null },
   ];
@@ -151,7 +151,7 @@ async function loadExecutiveBundle(token: string, filters: ExecFilters): Promise
     studentPct,
     studentDelta,
     studentSpark,
-    teacherPct: teacher?.gpsPct ?? null,
+    teacherPct: teacher?.attendancePct ?? null,
     avgGrade: grades?.overall.mean ?? null,
     sppCollectedPct: collectedPct,
     ppdbConversion: ppdb?.conversionRate ?? null,

@@ -22,44 +22,76 @@ function shortDate(iso: string): string {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  hadir: 'Hadir', izin: 'Izin', sakit: 'Sakit', alpha: 'Alpha',
+  hadir: 'Hadir',
+  izin: 'Izin',
+  sakit: 'Sakit',
+  alpha: 'Alpha',
 };
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
 function DetailPanel({
-  classId, date, className, onClose,
+  classId,
+  date,
+  className,
+  onClose,
 }: {
-  classId: string; date: string; className: string; onClose: () => void;
+  classId: string;
+  date: string;
+  className: string;
+  onClose: () => void;
 }) {
   const [detail, setDetail] = useState<AttendanceDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
   const panelRef = useRef<HTMLDivElement>(null);
+  const returnFocus = useRef(
+    typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  );
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
-    fetchAttendanceDetailAction(classId, date).then((d) => {
-      setDetail(d);
-      setLoading(false);
-    });
-  }, [classId, date]);
+    setFailed(false);
+    setDetail(null);
+    fetchAttendanceDetailAction(classId, date)
+      .then((d) => {
+        if (active) {
+          setDetail(d);
+          setFailed(d === null);
+        }
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [classId, date, retry]);
 
   // Focus trap — simple: focus panel on mount, close on Escape
   useEffect(() => {
     panelRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      if (returnFocus.current?.isConnected) returnFocus.current.focus();
+    };
   }, [onClose]);
 
   return (
     <>
       {/* Overlay backdrop */}
-      <div
-        className="fixed inset-0 z-40 bg-black/20"
-        onClick={onClose}
-        aria-hidden="true"
-      />
+      <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} aria-hidden="true" />
       {/* Panel */}
       <div
         ref={panelRef}
@@ -88,6 +120,17 @@ function DetailPanel({
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {loading ? (
             <p className="text-sm text-gray-400">Memuat data...</p>
+          ) : failed ? (
+            <div role="status" className="text-sm text-amber-900">
+              <p>Kehadiran belum dapat dimuat. Tidak dapat menyimpulkan tidak ada catatan.</p>
+              <button
+                type="button"
+                onClick={() => setRetry((value) => value + 1)}
+                className="mt-2 min-h-11 rounded-lg border px-3 font-semibold"
+              >
+                Coba lagi
+              </button>
+            </div>
           ) : !detail || detail.total === 0 ? (
             <p className="text-sm text-gray-400">Tidak ada data kehadiran untuk hari ini.</p>
           ) : (
@@ -106,21 +149,29 @@ function DetailPanel({
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-gray-400 text-right">Total tercatat: {detail.total} siswa</p>
+              <p className="text-xs text-gray-400 text-right">
+                Total tercatat: {detail.total} siswa
+              </p>
 
               {/* Absen list */}
               {detail.absen.length > 0 && (
                 <div>
-                  <p className="text-sm font-medium text-gray-700 mb-2">Tidak hadir ({detail.absen.length}):</p>
+                  <p className="text-sm font-medium text-gray-700 mb-2">
+                    Tidak hadir ({detail.absen.length}):
+                  </p>
                   <ul className="space-y-1">
                     {detail.absen.map((a, i) => (
                       <li key={i} className="flex items-center justify-between text-sm">
                         <span className="text-gray-800">{a.name}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          a.status === 'izin' ? 'bg-blue-100 text-blue-700' :
-                          a.status === 'sakit' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-red-100 text-red-700'
-                        }`}>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            a.status === 'izin'
+                              ? 'bg-blue-100 text-blue-700'
+                              : a.status === 'sakit'
+                                ? 'bg-yellow-100 text-yellow-700'
+                                : 'bg-red-100 text-red-700'
+                          }`}
+                        >
                           {STATUS_LABELS[a.status] ?? a.status}
                         </span>
                       </li>
@@ -190,7 +241,9 @@ export default function HeatmapInteractive({ data }: { data: HeatmapData }) {
           <tbody>
             {data.classes.map((row) => (
               <tr key={row.classId}>
-                <td className="pr-2 font-medium text-gray-600 whitespace-nowrap">{row.className}</td>
+                <td className="pr-2 font-medium text-gray-600 whitespace-nowrap">
+                  {row.className}
+                </td>
                 {row.cells.map((cell) => (
                   <td
                     key={cell.date}
@@ -199,10 +252,20 @@ export default function HeatmapInteractive({ data }: { data: HeatmapData }) {
                         ? `${row.className} · ${shortDate(cell.date)}: tidak ada data`
                         : `${row.className} · ${shortDate(cell.date)}: ${cell.hadir}/${cell.total} hadir (${cell.pct}%) — klik untuk detail`
                     }
-                    onClick={() => handleCellClick(row, cell)}
                     className={`rounded text-center align-middle px-1.5 py-1 min-w-[2.5rem] ${cellColor(cell.pct)} ${cell.pct !== null ? 'cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-smk-blue transition-all' : 'cursor-default'}`}
                   >
-                    {cell.pct === null ? '·' : `${Math.round(cell.pct)}%`}
+                    {cell.pct === null ? (
+                      '·'
+                    ) : (
+                      <button
+                        type="button"
+                        aria-label={`Detail kehadiran ${row.className} ${shortDate(cell.date)}`}
+                        onClick={() => handleCellClick(row, cell)}
+                        className="min-h-11 min-w-11 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                      >
+                        {Math.round(cell.pct)}%
+                      </button>
+                    )}
                   </td>
                 ))}
               </tr>
@@ -210,12 +273,24 @@ export default function HeatmapInteractive({ data }: { data: HeatmapData }) {
           </tbody>
         </table>
         <div className="flex flex-wrap items-center gap-3 mt-3 text-[11px] text-gray-500">
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-200 inline-block" /> &lt;75%</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-200 inline-block" /> 75–79%</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-200 inline-block" /> 80–89%</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-lime-200 inline-block" /> 90–94%</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-300 inline-block" /> ≥95%</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100 inline-block" /> tanpa data</span>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded bg-red-200 inline-block" /> &lt;75%
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded bg-orange-200 inline-block" /> 75–79%
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded bg-yellow-200 inline-block" /> 80–89%
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded bg-lime-200 inline-block" /> 90–94%
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded bg-green-300 inline-block" /> ≥95%
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded bg-gray-100 inline-block" /> tanpa data
+          </span>
         </div>
       </Card>
 

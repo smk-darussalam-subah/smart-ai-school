@@ -51,4 +51,14 @@ describe('executive Server Action authority', () => {
     expect(mockRequireAccess).toHaveBeenCalledTimes(1);
     expect(mockApiFetch).toHaveBeenCalled();
   });
+
+  it.each([5, null])('uses required attendance %s, never GPS100, in both KPI and health', async attendancePct => {
+    mockRequireAccess.mockResolvedValue({ accessToken: 'synthetic-token' });
+    mockApiFetch.mockImplementation(async (path: string) => path === '/analytics/teacher-compliance'
+      ? { gpsPct: 100, attendancePct, rpp: { approvalRate: null } } : null);
+    const bundle = await fetchExecutiveBundle({});
+    expect(bundle.kpi.teacherPct).toBe(attendancePct);
+    expect(bundle.health.score).toBe(attendancePct);
+    expect(bundle.health.pilars.find(p => p.label === 'Presensi wajib guru')?.pct).toBe(attendancePct);
+  });
 });

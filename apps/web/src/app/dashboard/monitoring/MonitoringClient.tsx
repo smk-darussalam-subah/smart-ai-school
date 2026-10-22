@@ -88,7 +88,7 @@ function SummaryRail({ snapshot }: { snapshot: MonitoringSnapshot }) {
         <div className="px-4 py-3">
           <p className="text-xs font-semibold uppercase text-slate-500">Segmen aktif</p>
           <p className="mt-1 font-semibold text-slate-900">
-            {snapshot.currentSegment ?? 'Di luar jam pelajaran'}
+            {snapshot.currentSegment ?? 'Segmen belum dapat diverifikasi'}
           </p>
         </div>
         {values.map(([label, value, tone]) => (

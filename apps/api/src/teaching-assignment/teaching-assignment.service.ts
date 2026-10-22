@@ -29,6 +29,7 @@ import {
 import { CreateAssignmentDto } from './dto/create-assignment.dto';
 import { UpdateAssignmentDto } from './dto/update-assignment.dto';
 import { ListAssignmentsQuery } from './dto/list-assignments.dto';
+import { resolveOwnTeachingRead } from '../common/helpers/own-teaching-read';
 
 // ── Select shape ─────────────────────────────────────────────────────────────
 
@@ -55,12 +56,7 @@ type AssignmentDb = PrismaService | Prisma.TransactionClient;
 
 // ── Ownership helper ──────────────────────────────────────────────────────────
 
-const ELEVATED_ROLES = [
-  'SUPER_ADMIN',
-  'KEPALA_SEKOLAH',
-  'TATA_USAHA',
-  'WAKA_KURIKULUM',
-] as const;
+const ELEVATED_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_KURIKULUM'] as const;
 
 function isGuruOnly(user: AuthUser): boolean {
   return (
@@ -108,7 +104,12 @@ export class TeachingAssignmentService {
         where: {
           id: teacherId,
           deletedAt: null,
-          user: { isActive: true, deletedAt: null, role: 'GURU', staff: { is: { deletedAt: null } } },
+          user: {
+            isActive: true,
+            deletedAt: null,
+            role: 'GURU',
+            staff: { is: { deletedAt: null } },
+          },
         },
         select: { id: true },
       }),
@@ -125,7 +126,8 @@ export class TeachingAssignmentService {
         select: { code: true },
       }),
     ]);
-    if (!teacher) throw new BadRequestException('Guru tidak aktif atau profil guru tidak ditemukan');
+    if (!teacher)
+      throw new BadRequestException('Guru tidak aktif atau profil guru tidak ditemukan');
     if (!kelas) throw new BadRequestException('Kelas tidak aktif atau tidak ditemukan');
     if (kelas.academicYear !== academicYear) {
       throw new BadRequestException('Tahun ajaran penugasan harus sama dengan tahun ajaran kelas');
@@ -141,15 +143,24 @@ export class TeachingAssignmentService {
       const assignments = await this.prisma.teachingAssignment.findMany({
         where: { class: kaprogClassWhere(scope), academicYear: scope.academicYearCode },
         select: {
-          teacher: { select: { id: true, user: { select: { fullName: true, staff: { select: { niy: true } } } } } },
-          class: { select: { id: true, name: true, grade: true, majorCode: true, academicYear: true } },
+          teacher: {
+            select: {
+              id: true,
+              user: { select: { fullName: true, staff: { select: { niy: true } } } },
+            },
+          },
+          class: {
+            select: { id: true, name: true, grade: true, majorCode: true, academicYear: true },
+          },
           subject: true,
         },
       });
-      const teachers = [...new Map(assignments.map((item) => [item.teacher.id, item.teacher])).values()]
-        .sort((a, b) => a.user.fullName.localeCompare(b.user.fullName));
-      const classes = [...new Map(assignments.map((item) => [item.class.id, item.class])).values()]
-        .sort((a, b) => a.name.localeCompare(b.name));
+      const teachers = [
+        ...new Map(assignments.map((item) => [item.teacher.id, item.teacher])).values(),
+      ].sort((a, b) => a.user.fullName.localeCompare(b.user.fullName));
+      const classes = [
+        ...new Map(assignments.map((item) => [item.class.id, item.class])).values(),
+      ].sort((a, b) => a.name.localeCompare(b.name));
       const subjects = [...new Set(assignments.map((item) => item.subject))]
         .sort((a, b) => a.localeCompare(b))
         .map((name) => ({ id: name, code: name, name }));
@@ -165,7 +176,12 @@ export class TeachingAssignmentService {
       this.prisma.teacher.findMany({
         where: {
           deletedAt: null,
-          user: { isActive: true, deletedAt: null, role: 'GURU', staff: { is: { deletedAt: null } } },
+          user: {
+            isActive: true,
+            deletedAt: null,
+            role: 'GURU',
+            staff: { is: { deletedAt: null } },
+          },
         },
         select: {
           id: true,
@@ -188,7 +204,13 @@ export class TeachingAssignmentService {
         orderBy: { startDate: 'desc' },
       }),
     ]);
-    return { teachers, classes, subjects, academicYears, scope: { type: 'global' as const, labels: [] } };
+    return {
+      teachers,
+      classes,
+      subjects,
+      academicYears,
+      scope: { type: 'global' as const, labels: [] },
+    };
   }
 
   async findMyTeacherContext(user: AuthUser) {
@@ -218,7 +240,15 @@ export class TeachingAssignmentService {
     let teacherIdFilter = query.teacherId;
     let kaprogClassFilter: Prisma.ClassWhereInput | undefined;
     let academicYearFilter = query.academicYear;
-    if (isKaprogScopedReader(user)) {
+    const ownTeacherId = await resolveOwnTeachingRead(
+      this.prisma,
+      user,
+      query.scope,
+      query.teacherId,
+    );
+    if (ownTeacherId) {
+      teacherIdFilter = ownTeacherId;
+    } else if (isKaprogScopedReader(user)) {
       const scope = await resolveActiveKaprogMajorScope(this.prisma, user);
       if (query.classId) {
         await assertClassInKaprogScope(this.prisma, query.classId, scope);
@@ -301,19 +331,19 @@ export class TeachingAssignmentService {
         Prisma.sql`SELECT id FROM academic.teaching_assignments WHERE id = ${id}::uuid FOR UPDATE`,
       );
       const existing = await tx.teachingAssignment.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        teacherId: true,
-        classId: true,
-        subject: true,
-        academicYear: true,
-        schedules: { select: { semester: true, jpStart: true, jpEnd: true } },
-      },
+        where: { id },
+        select: {
+          id: true,
+          teacherId: true,
+          classId: true,
+          subject: true,
+          academicYear: true,
+          schedules: { select: { semester: true, jpStart: true, jpEnd: true } },
+        },
       });
       if (!existing) throw new NotFoundException('TeachingAssignment tidak ditemukan');
 
-    // P2002 (duplikat unique constraint) → ditangani PrismaExceptionFilter global → 409
+      // P2002 (duplikat unique constraint) → ditangani PrismaExceptionFilter global → 409
       const canonicalSubject = await this.validateAssignmentContext(
         existing.teacherId,
         existing.classId,
@@ -333,9 +363,14 @@ export class TeachingAssignmentService {
         const scheduledBySemester = new Map<number, number>();
         for (const slot of existing.schedules) {
           const hours = slot.jpEnd - slot.jpStart + 1;
-          scheduledBySemester.set(slot.semester, (scheduledBySemester.get(slot.semester) ?? 0) + hours);
+          scheduledBySemester.set(
+            slot.semester,
+            (scheduledBySemester.get(slot.semester) ?? 0) + hours,
+          );
         }
-        const overLimit = [...scheduledBySemester.entries()].find(([, hours]) => hours > dto.hoursPerWeek!);
+        const overLimit = [...scheduledBySemester.entries()].find(
+          ([, hours]) => hours > dto.hoursPerWeek!,
+        );
         if (overLimit) {
           throw new ConflictException(
             `JP per minggu tidak boleh kurang dari ${overLimit[1]} JP yang sudah dijadwalkan pada semester ${overLimit[0]}`,
@@ -384,7 +419,9 @@ export class TeachingAssignmentService {
       academicYear: assignment.academicYear,
     };
     const [schedules, grades, rpp, lms, sessions] = await Promise.all([
-      assignmentId ? db.schedule.count({ where: { teachingAssignmentId: assignmentId } }) : Promise.resolve(0),
+      assignmentId
+        ? db.schedule.count({ where: { teachingAssignmentId: assignmentId } })
+        : Promise.resolve(0),
       assignmentId ? db.grade.count({ where: { assignmentId } }) : Promise.resolve(0),
       db.rpp.count({ where: context }),
       db.lmsModule.count({ where: context }),

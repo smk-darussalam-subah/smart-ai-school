@@ -298,7 +298,7 @@ export default function TeachingAssignmentManager({
               <TableHead>Kelas</TableHead>
               <TableHead>Tahun Ajaran</TableHead>
               <TableHead className="text-center">JP/Minggu</TableHead>
-              <TableHead>Kesiapan Jadwal</TableHead>
+              <TableHead>Keterisian Jadwal</TableHead>
               <TableHead className="w-24 text-right">Aksi</TableHead>
             </TableRow>
           </TableHeader>

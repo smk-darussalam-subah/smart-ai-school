@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { redirect } from 'next/navigation';
+import { rateLimitMessage } from './rate-limit';
 
 const API_BASE = process.env.API_URL ?? 'http://localhost:3001';
 
@@ -170,6 +171,7 @@ export async function apiFetchResult<T>(
       const message = apiErrorMessage(body, res.status >= 500
         ? 'Server belum dapat memuat data. Coba lagi.'
         : 'Permintaan tidak dapat diproses.');
+      if (res.status === 429) return { status: 'unavailable', httpStatus: 429, message: rateLimitMessage(res.headers) };
       if (res.status === 403) return { status: 'forbidden', httpStatus: res.status, message };
       if (res.status === 404) return { status: 'notFound', httpStatus: res.status, message };
       if (res.status >= 500) return { status: 'unavailable', httpStatus: res.status, message };

@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth';
 import { apiFetch, apiMutate, PaginatedResponse, AttendanceItem } from '@/lib/api';
 import { apiAction } from '@/lib/server-actions';
 import { wibTodayISO } from '@/lib/bell-times';
+import { academicPagesResult } from '@/lib/academic-pages-server';
 
 // R3 — Link publik Ruang Guru (token, SA/KS).
 export async function fetchKioskLink() {
@@ -42,7 +43,10 @@ export async function fetchTodayStudentAttendance(): Promise<TodayStudentAttenda
   if (!data) return null;
 
   const records = data.data ?? [];
-  let hadir = 0, izin = 0, sakit = 0, alpha = 0;
+  let hadir = 0,
+    izin = 0,
+    sakit = 0,
+    alpha = 0;
   const absent: TodayStudentAttendance['absent'] = [];
   for (const r of records) {
     if (r.status === 'hadir') hadir++;
@@ -50,7 +54,12 @@ export async function fetchTodayStudentAttendance(): Promise<TodayStudentAttenda
     else if (r.status === 'sakit') sakit++;
     else if (r.status === 'alpha') alpha++;
     if (r.status !== 'hadir') {
-      absent.push({ name: r.student.user.fullName, className: r.class.name, status: r.status, notes: r.notes });
+      absent.push({
+        name: r.student.user.fullName,
+        className: r.class.name,
+        status: r.status,
+        notes: r.notes,
+      });
     }
   }
   return { date, hadir, izin, sakit, alpha, total: records.length, absent };
@@ -107,18 +116,19 @@ export async function fetchAttendanceDetailAction(
   const session = await getServerSession(authOptions);
   if (!session?.accessToken) return null;
 
-  const data = await apiFetch<PaginatedResponse<AttendanceItem>>(
-    `/attendance`,
+  const query = new URLSearchParams({ classId, dateFrom: date, dateTo: date });
+  const result = await academicPagesResult<AttendanceItem>(
+    `/attendance?${query}`,
     session.accessToken,
-    { classId, dateFrom: date, dateTo: date, limit: '200' },
   );
-
-  if (!data) return null;
-
-  const records = data.data ?? [];
+  if (result.status !== 'success') return null;
+  const records = result.data.data;
   const className = records[0]?.class?.name ?? '';
 
-  let hadir = 0, izin = 0, sakit = 0, alpha = 0;
+  let hadir = 0,
+    izin = 0,
+    sakit = 0,
+    alpha = 0;
   const absen: { name: string; status: string }[] = [];
 
   for (const r of records) {
@@ -149,38 +159,65 @@ export async function fetchAttendanceDetailAction(
 // R2 — Rekap kehadiran by tanggal/rentang (DATA NYATA) untuk date-picker Beranda.
 // Pakai endpoint yang ada; hari tanpa record (mis. libur) otomatis tak terhitung.
 // =============================================================================
-export interface StudentRecap { activeDays: number; total: number; hadir: number; izin: number; sakit: number; alpha: number; hadirPct: number | null }
+export interface StudentRecap {
+  activeDays: number;
+  total: number;
+  hadir: number;
+  izin: number;
+  sakit: number;
+  alpha: number;
+  hadirPct: number | null;
+}
 
 export async function fetchStudentRecap(dates: string[]): Promise<StudentRecap | null> {
   const session = await getServerSession(authOptions);
   if (!session?.accessToken || dates.length === 0) return null;
   const sorted = [...dates].sort();
   const data = await apiFetch<PaginatedResponse<AttendanceItem>>(
-    '/attendance', session.accessToken,
+    '/attendance',
+    session.accessToken,
     { dateFrom: sorted[0]!, dateTo: sorted[sorted.length - 1]!, limit: '5000' },
   );
   if (!data) return null;
   const set = new Set(dates);
   const activeSet = new Set<string>();
-  let hadir = 0, izin = 0, sakit = 0, alpha = 0;
+  let hadir = 0,
+    izin = 0,
+    sakit = 0,
+    alpha = 0;
   for (const r of data.data ?? []) {
     const d = String((r as { date?: string }).date ?? '').slice(0, 10);
     if (!set.has(d)) continue;
     activeSet.add(d);
-    if (r.status === 'hadir') hadir++; else if (r.status === 'izin') izin++; else if (r.status === 'sakit') sakit++; else if (r.status === 'alpha') alpha++;
+    if (r.status === 'hadir') hadir++;
+    else if (r.status === 'izin') izin++;
+    else if (r.status === 'sakit') sakit++;
+    else if (r.status === 'alpha') alpha++;
   }
   const total = hadir + izin + sakit + alpha;
-  return { activeDays: activeSet.size, total, hadir, izin, sakit, alpha, hadirPct: total ? Math.round((hadir / total) * 1000) / 10 : null };
+  return {
+    activeDays: activeSet.size,
+    total,
+    hadir,
+    izin,
+    sakit,
+    alpha,
+    hadirPct: total ? Math.round((hadir / total) * 1000) / 10 : null,
+  };
 }
 
-export interface TeacherRecap { activeDays: number; checkins: number }
+export interface TeacherRecap {
+  activeDays: number;
+  checkins: number;
+}
 
 export async function fetchTeacherRecap(dates: string[]): Promise<TeacherRecap | null> {
   const session = await getServerSession(authOptions);
   if (!session?.accessToken || dates.length === 0) return null;
   const sorted = [...dates].sort();
   const data = await apiFetch<PaginatedResponse<{ date?: string }>>(
-    '/teacher-attendance', session.accessToken,
+    '/teacher-attendance',
+    session.accessToken,
     { from: sorted[0]!, to: sorted[sorted.length - 1]!, limit: '3000' },
   );
   if (!data) return null;
@@ -197,24 +234,40 @@ export async function fetchTeacherRecap(dates: string[]): Promise<TeacherRecap |
 }
 
 // Tren kehadiran OVERALL (data nyata) untuk rentang panjang — granularitas auto.
-interface HeatmapResp { dates: string[]; classes: { cells: { hadir: number; total: number }[] }[] }
-export interface TrenSeries { labels: string[]; pcts: number[] }
+interface HeatmapResp {
+  dates: string[];
+  classes: { cells: { hadir: number; total: number }[] }[];
+}
+export interface TrenSeries {
+  labels: string[];
+  pcts: number[];
+}
 
 export async function fetchTrenOverall(days: number): Promise<TrenSeries | null> {
   const session = await getServerSession(authOptions);
   if (!session?.accessToken) return null;
-  const data = await apiFetch<HeatmapResp>('/attendance/heatmap', session.accessToken, { days: String(days) });
+  const data = await apiFetch<HeatmapResp>('/attendance/heatmap', session.accessToken, {
+    days: String(days),
+  });
   if (!data || !data.dates?.length) return null;
   const n = data.dates.length;
   const daily: (number | null)[] = [];
   for (let i = 0; i < n; i++) {
-    let h = 0, t = 0;
-    for (const c of data.classes) { const cell = c.cells[i]; if (cell) { h += cell.hadir; t += cell.total; } }
+    let h = 0,
+      t = 0;
+    for (const c of data.classes) {
+      const cell = c.cells[i];
+      if (cell) {
+        h += cell.hadir;
+        t += cell.total;
+      }
+    }
     daily.push(t ? (h / t) * 100 : null);
   }
   const bucket = days <= 14 ? 1 : days <= 90 ? 7 : 30;
   if (bucket === 1) return { labels: data.dates, pcts: daily.map((p) => p ?? 0) };
-  const labels: string[] = []; const pcts: number[] = [];
+  const labels: string[] = [];
+  const pcts: number[] = [];
   for (let i = 0; i < n; i += bucket) {
     const slice = daily.slice(i, i + bucket).filter((x): x is number => x !== null);
     if (!slice.length) continue;

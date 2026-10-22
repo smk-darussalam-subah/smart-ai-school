@@ -104,6 +104,7 @@ describe('student LMS progress freshness', () => {
         quest: { title: 'Quest', tasks: [] },
         xp: { level: 1, current: 0, next: 100 },
         kehStats: { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, pct: 0 },
+        attendanceState: 'ready',
       }),
     );
 

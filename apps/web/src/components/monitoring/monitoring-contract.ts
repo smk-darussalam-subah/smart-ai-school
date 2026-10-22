@@ -88,7 +88,7 @@ export function normalizeMonitoringSnapshot(input: unknown): MonitoringSnapshot 
     generatedAt,
     staleAfterSeconds: Math.min(300, Math.max(30, count(payload.staleAfterSeconds) || 75)),
     currentSegment:
-      text(payload.currentSegment) || text(record(payload.schoolDay).currentSegment) || null,
+      text(payload.currentSegment) || text(record(payload.schoolDay).label) || text(record(payload.schoolDay).currentSegment) || null,
     sessions,
     alerts,
     summary: {

@@ -2,6 +2,7 @@
 // P6: All SIMULASI constants purged — data comes from real API endpoints.
 
 import { learnerGradeSummary } from '@/lib/learner-grades';
+import { jakartaToday } from '@/lib/learner-attendance';
 import { type JpSlot, fmtMin } from '@/lib/bell-times';
 import type { OrtuNilai, OrtuLeaderboardEntry } from './ortu-types';
 
@@ -10,12 +11,12 @@ import type { OrtuNilai, OrtuLeaderboardEntry } from './ortu-types';
 export const MAPEL_COLORS: Record<string, string> = {
   'Pemrograman Web': '#10b981',
   'Basis Data': '#0ea5e9',
-  'Matematika': '#a78bfa',
+  Matematika: '#a78bfa',
   'B.Inggris': '#f59e0b',
   'B.Indonesia': '#ec4899',
-  'Fisika': '#ef4444',
-  'PJOK': '#14b8a6',
-  'PKn': '#8b5cf6',
+  Fisika: '#ef4444',
+  PJOK: '#14b8a6',
+  PKn: '#8b5cf6',
 };
 
 export function mpColor(mp: string): string {
@@ -72,7 +73,20 @@ export const ATT_STATUS_LABELS: Record<string, string> = {
 };
 
 export function currentMonthYear(): { month: string; year: number } {
-  const now = new Date();
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+  const now = new Date(`${jakartaToday()}T12:00:00`);
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'Mei',
+    'Jun',
+    'Jul',
+    'Ags',
+    'Sep',
+    'Okt',
+    'Nov',
+    'Des',
+  ];
   return { month: months[now.getMonth()]!, year: now.getFullYear() };
 }

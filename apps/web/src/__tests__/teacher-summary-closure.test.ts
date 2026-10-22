@@ -262,7 +262,7 @@ interface SummaryWorkspaceProps {
   todayDate: string;
 }
 async function teacherPage(
-  role: 'GURU' | 'WAKA_KURIKULUM',
+  role: string,
   selected = active,
   failedDomain = '',
   denied = false,
@@ -336,13 +336,72 @@ async function teacherPage(
     }),
   });
   return (
-    role === 'GURU'
-      ? result
-      : (result as React.ReactElement<{ teachingWorkspace: React.ReactElement }>).props
+    ['WAKA_KURIKULUM', 'KEPALA_SEKOLAH', 'KAPROG'].includes(role)
+      ? (result as React.ReactElement<{ teachingWorkspace: React.ReactElement }>).props
           .teachingWorkspace
+      : result
   ).props as SummaryWorkspaceProps;
 }
 describe('P2-CD-R03 and actual SSR availability wiring, both teacher contexts', () => {
+  it.each([
+    'GURU',
+    'WAKA_KESISWAAN',
+    'WAKA_HUMAS',
+    'WAKA_SARPRAS',
+    'KEPALA_TU',
+    'KOOR_BKK',
+    'KOOR_HUBIN',
+    'WAKIL_KOOR_BKK',
+    'WAKIL_KOOR_HUBIN',
+    'GURU_BK',
+    'BENDAHARA',
+    'STAF_KEPEGAWAIAN',
+    'OPERATOR_DAPODIK',
+  ])('%s personal workspace never falls back to appointment-wide teaching lists', async (role) => {
+    await teacherPage(role);
+    for (const endpoint of [
+      '/teaching-assignments?',
+      '/schedules?',
+      '/rpp?',
+      '/class-activities?',
+      '/lms/modules?',
+      '/assessment/sessions?',
+      '/analytics/cp-progress?',
+    ]) {
+      const calls = mockApiFetchResult.mock.calls.filter(([url]) =>
+        String(url).startsWith(endpoint),
+      );
+      expect(calls.length).toBeGreaterThan(0);
+      expect(
+        calls.every(
+          ([url]) => new URL(String(url), 'http://localhost').searchParams.get('scope') === 'own',
+        ),
+      ).toBe(true);
+    }
+  });
+  it.each(['KEPALA_SEKOLAH', 'KAPROG'] as const)(
+    '%s receives a separate personal workspace with explicit own scope',
+    async (role) => {
+      const props = await teacherPage(role);
+      expect(props.todayDate).toBeDefined();
+      for (const endpoint of [
+        '/teaching-assignments?',
+        '/schedules?',
+        '/rpp?',
+        '/class-activities?',
+        '/lms/modules?',
+        '/assessment/sessions?',
+      ]) {
+        expect(
+          mockApiFetchResult.mock.calls.some(
+            ([url]) =>
+              String(url).startsWith(endpoint) &&
+              new URL(String(url), 'http://localhost').searchParams.get('scope') === 'own',
+          ),
+        ).toBe(true);
+      }
+    },
+  );
   it.each(['GURU', 'WAKA_KURIKULUM'] as const)(
     '%s does not claim missing assessment when module matching failed',
     async (role) => {

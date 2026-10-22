@@ -23,7 +23,11 @@ jest.mock('@/app/dashboard/akademik/_components/ortu/NilaiOrtu', () => ({ __esMo
 jest.mock('@/app/dashboard/akademik/_components/ortu/PembayaranOrtu', () => ({ __esModule: true, default: () => null }));
 jest.mock('@/app/dashboard/akademik/_components/ortu/CapaianOrtu', () => ({ __esModule: true, default: () => null }));
 jest.mock('@/app/dashboard/akademik/_components/ortu/GradeDetailModal', () => ({ __esModule: true, default: () => null }));
-jest.mock('@/app/dashboard/akademik/_components/ortu/DayDetailModal', () => ({ __esModule: true, default: () => null }));
+jest.mock('@/app/dashboard/akademik/_components/ortu/DayDetailModal', () => ({
+  __esModule: true,
+  default: ({ date, notes, status }: { date?: string; notes?: string | null; status: string }) =>
+    React.createElement('output', { 'data-day-popup': date }, `${status}: ${notes ?? ''}`),
+}));
 jest.mock('@/app/dashboard/akademik/_components/ortu/PayDetailModal', () => ({ __esModule: true, default: () => null }));
 jest.mock('@/app/dashboard/akademik/_components/ortu/PengumumanModal', () => ({ __esModule: true, default: () => null }));
 
@@ -91,5 +95,87 @@ describe('parent identity read outcomes', () => {
       expect(html).toContain('role="status"');
       expect(html).not.toContain('Muat ulang data anak');
     }
+  });
+});
+
+describe('parent attendance modal uses the current child and current record', () => {
+  const modal = {
+    type: 'day',
+    data: {
+      studentId: 'synthetic-child',
+      date: '2026-10-02',
+      day: 2,
+      month: 'Okt',
+      year: 2026,
+      status: 'alpha',
+      notes: 'STALE-SNAPSHOT',
+    },
+  };
+  const record = {
+    id: 'attendance-1',
+    studentId: 'synthetic-child',
+    classId: 'class-1',
+    date: '2026-10-02',
+    status: 'izin' as const,
+    notes: 'LATEST-SCHOOL-NOTE',
+    student: { id: 'synthetic-child', nis: 'SYN', user: { fullName: 'Sintetis' } },
+    class: { id: 'class-1', name: 'X AKL', majorCode: 'AKL' },
+  };
+  function opened(
+    options: {
+      state?: 'ready' | 'unavailable' | 'denied';
+      modalStudent?: string;
+      records?: (typeof record)[];
+    } = {},
+  ) {
+    const originalUseState = React.useState;
+    const useState = ((initial: unknown) => {
+      if (initial && typeof initial === 'object' && 'type' in initial && initial.type === null) {
+        return [
+          {
+            ...modal,
+            data: { ...modal.data, studentId: options.modalStudent ?? 'synthetic-child' },
+          },
+          jest.fn(),
+        ];
+      }
+      return originalUseState(initial);
+    }) as typeof React.useState;
+    const spy = jest.spyOn(React, 'useState').mockImplementation(useState);
+    try {
+      return renderToStaticMarkup(
+        React.createElement(OrtuWorkspace, {
+          children,
+          childrenState: 'ready',
+          attendance: options.records ?? [record],
+          attendanceStates: { 'synthetic-child': options.state ?? 'ready' },
+        }),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  }
+  it('resolves status and notes from the latest record instead of the modal snapshot', () => {
+    const html = opened();
+    expect(html).toContain('data-day-popup="2026-10-02"');
+    expect(html).toContain('izin: LATEST-SCHOOL-NOTE');
+    expect(html).not.toContain('STALE-SNAPSHOT');
+  });
+  it('cannot keep a popup for a different child', () => {
+    expect(opened({ modalStudent: 'other-child' })).not.toContain('data-day-popup');
+  });
+  it.each(['unavailable', 'denied'] as const)(
+    'hides previous popup data when attendance becomes %s',
+    (state) => {
+      const html = opened({ state });
+      expect(html).not.toContain('data-day-popup');
+      expect(html).not.toContain('LATEST-SCHOOL-NOTE');
+    },
+  );
+  it('does not retain stale notes if the selected record disappears', () => {
+    const html = opened({ records: [] });
+    expect(html).toContain('none: ');
+    expect(html).not.toContain('STALE-SNAPSHOT');
+    expect(html).not.toContain('LATEST-SCHOOL-NOTE');
   });
 });

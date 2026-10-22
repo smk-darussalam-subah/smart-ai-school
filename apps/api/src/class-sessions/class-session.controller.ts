@@ -21,6 +21,8 @@ import {
   ClassSessionTransitionSchema,
   ListClassSessionQuerySchema,
   MaterializeClassSessionsSchema,
+  PrepareClassSessionsQuerySchema,
+  DisableSessionActivationSchema,
   ReassignClassSessionDto,
   ReassignClassSessionSchema,
   RecoverClassSessionDto,
@@ -36,6 +38,55 @@ export class ClassSessionController {
     private readonly due: ClassSessionDueService,
   ) {}
 
+  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
+  @RequirePermission('academic.schedule.manage')
+  @Get('activation')
+  activation() {
+    return this.service.activationStatus();
+  }
+
+  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
+  @RequirePermission('academic.schedule.manage')
+  @Get('activation/preparation')
+  activationPreparation(@Query() raw: unknown) {
+    const parsed = PrepareClassSessionsQuerySchema.safeParse(raw);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.service.materialize(parsed.data.date, 'system', { preview: true, activate: true });
+  }
+
+  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
+  @RequirePermission('academic.schedule.manage')
+  @Audit({
+    action: 'classSession.activation.enable',
+    resourceType: 'class_session_activation',
+    captureBody: false,
+  })
+  @Post('activation/enable')
+  enableActivation(
+    @Body(ZodPipe(MaterializeClassSessionsSchema)) dto: { date: string; planHash: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.materialize(dto.date, user.keycloakId, {
+      expectedPlanHash: dto.planHash,
+      activate: true,
+    });
+  }
+
+  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
+  @RequirePermission('academic.schedule.manage')
+  @Audit({
+    action: 'classSession.activation.disable',
+    resourceType: 'class_session_activation',
+    captureBody: false,
+  })
+  @Post('activation/disable')
+  disableActivation(
+    @Body(ZodPipe(DisableSessionActivationSchema)) dto: { semesterId: string; revision: number },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.disableActivation(dto.semesterId, dto.revision, user);
+  }
+
   @Roles('SUPER_ADMIN', 'TATA_USAHA', 'GURU', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPROG')
   @RequirePermission('academic.class-session.read')
   @Get()
@@ -47,13 +98,22 @@ export class ClassSessionController {
 
   @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
   @RequirePermission('academic.schedule.manage')
+  @Get('preparation')
+  preparation(@Query() rawQuery: unknown) {
+    const parsed = PrepareClassSessionsQuerySchema.safeParse(rawQuery);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.service.materialize(parsed.data.date, 'system', { preview: true });
+  }
+
+  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM')
+  @RequirePermission('academic.schedule.manage')
   @Audit({ action: 'classSession.materialize', resourceType: 'class_session', captureBody: false })
   @Post('materialize')
   materialize(
-    @Body(ZodPipe(MaterializeClassSessionsSchema)) dto: { date: string },
+    @Body(ZodPipe(MaterializeClassSessionsSchema)) dto: { date: string; planHash: string },
     @CurrentUser() user: AuthUser,
   ) {
-    return this.service.materialize(dto.date, user.keycloakId);
+    return this.service.materialize(dto.date, user.keycloakId, { expectedPlanHash: dto.planHash });
   }
 
   @Roles('SUPER_ADMIN')

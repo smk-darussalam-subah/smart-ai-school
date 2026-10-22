@@ -1,6 +1,6 @@
 // =============================================================================
 // AuthController — /auth/me, /auth/consent, /auth/heartbeat, /auth/login-events
-// Rate limit ketat: 15 req/menit (override global 100) — auth endpoints sensitif
+// Mutasi profil tetap 15/menit; pembacaan sesi dan heartbeat punya budget per user.
 // =============================================================================
 
 import { Controller, Get, Patch, Post, Body } from '@nestjs/common';
@@ -28,6 +28,7 @@ export class AuthController {
    * Data dari DB (bukan JWT) agar role selalu sinkron.
    */
   @Get('me')
+  @Throttle({ default: { ttl: 60_000, limit: 240 } })
   getMe(@CurrentUser() user: AuthUser) {
     return this.authService.getMe(user.keycloakId, user.roles);
   }
@@ -56,6 +57,7 @@ export class AuthController {
    * snapshot of the user's identity at creation time.
    */
   @Post('sse-token')
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
   createSseToken(@CurrentUser() user: AuthUser) {
     return this.sseTokenService.createToken(user);
   }
@@ -78,10 +80,10 @@ export class AuthController {
 
   /**
    * POST /auth/heartbeat — update lastSeenAt for the authenticated user.
-   * Throttled to 2 req/min — called every 60s from the dashboard.
+   * Throttled per user, allowing several dashboard tabs without sharing a proxy quota.
    */
   @Post('heartbeat')
-  @Throttle({ default: { ttl: 60_000, limit: 2 } })
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   heartbeat(@CurrentUser() user: AuthUser) {
     return this.authService.heartbeat(user.keycloakId);
   }

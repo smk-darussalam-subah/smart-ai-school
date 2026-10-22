@@ -36,6 +36,7 @@ interface Props {
   editing: RppItem | null;
   /** Pre-select mapel saat create baru (dipakai session flow step "Buka Modul Ajar"). */
   defaultSubject?: string;
+  defaultClassId?: string;
   onDraftCreated?: (draft: RppItem) => void;
 }
 
@@ -60,10 +61,10 @@ const makeSteps = (profileLabel: string) => [
 
 const num = (s: string): number | null => (s.trim() === '' ? null : Number(s));
 
-export default function ModulAjarForm({ open, onClose, subjects, classes, academicYear, semester, editing, defaultSubject, onDraftCreated }: Props) {
+export default function ModulAjarForm({ open, onClose, subjects, classes, academicYear, semester, editing, defaultSubject, defaultClassId, onDraftCreated }: Props) {
   const [currentRppId, setCurrentRppId] = useState<string | null>(editing?.id ?? null);
   const [subject, setSubject] = useState(editing?.subject ?? defaultSubject ?? '');
-  const [classId, setClassId] = useState(editing?.classId ?? '');
+  const [classId, setClassId] = useState(editing?.classId ?? defaultClassId ?? '');
   const [title, setTitle] = useState(editing?.title ?? '');
   const [body, setBody] = useState<ModulAjarBody>(editing?.body ?? {});
   const [err, setErr] = useState<string | null>(null);

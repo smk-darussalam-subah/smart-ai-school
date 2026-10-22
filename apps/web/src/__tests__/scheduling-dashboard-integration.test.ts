@@ -33,6 +33,17 @@ import {
 } from '@/lib/monitoring-presentation';
 import { transformApiSchedule } from '@/app/dashboard/akademik/_components/siswa/siswa-data';
 jest.mock('@/app/dashboard/akademik/actions', () => ({ fetchMonitoringKbm: jest.fn() }));
+// SSR contract only: real portal/focus interactions are verified in the browser recipe.
+jest.mock('@/components/ui/dialog', () => ({
+  Dialog: ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
+  DialogContent: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('section', null, children),
+  DialogTitle: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('h2', null, children),
+  DialogDescription: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('p', null, children),
+}));
 jest.mock('@/app/dashboard/_components/MonthCalendar', () => ({
   __esModule: true,
   default: () => null,
@@ -412,7 +423,7 @@ describe('real component SSR and document safety', () => {
       }),
     );
     expect(html).toContain('Pola Jam Pelajaran');
-    expect(html).toContain('Presensi setiap JP belum tersedia');
+    expect(html).toContain('bukan bukti kehadiran siswa per JP');
     expect(html).not.toContain('Detail per Sesi');
     expect(html).not.toContain('>hadir<');
     expect(html).not.toContain('semua sesi');
