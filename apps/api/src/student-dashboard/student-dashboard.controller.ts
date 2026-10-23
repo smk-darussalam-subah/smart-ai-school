@@ -4,7 +4,8 @@
 // Endpoints: SPP, assignments, CP progress, leaderboard.
 // =============================================================================
 
-import { Controller, Get } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
+import { z } from 'zod';
 import { AuthUser } from '@smk/auth';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -51,15 +52,24 @@ export class StudentDashboardController {
   @Roles('SISWA', 'ORANG_TUA')
   @RequirePermission(['student.own.read', 'student.child.read'])
   @Get('teachers')
-  getTeachers(@CurrentUser() user: AuthUser) {
-    return this.service.getTeachers(user);
+  getTeachers(@CurrentUser() user: AuthUser, @Query() rawQuery: unknown) {
+    return this.service.getTeachers(user, this.studentQuery(rawQuery));
   }
 
   /** T3-02 B3: Timeline pembelajaran untuk SISWA atau ORANG_TUA. */
   @Roles('SISWA', 'ORANG_TUA')
   @RequirePermission(['grade.own.read', 'grade.child.read'])
   @Get('timeline')
-  getTimeline(@CurrentUser() user: AuthUser) {
-    return this.service.getTimeline(user);
+  getTimeline(@CurrentUser() user: AuthUser, @Query() rawQuery: unknown) {
+    return this.service.getTimeline(user, this.studentQuery(rawQuery));
+  }
+
+  private studentQuery(raw: unknown): string | undefined {
+    const parsed = z
+      .object({ studentId: z.string().uuid().optional() })
+      .strict()
+      .safeParse(raw ?? {});
+    if (!parsed.success) throw new BadRequestException('Pilihan siswa tidak valid.');
+    return parsed.data.studentId;
   }
 }

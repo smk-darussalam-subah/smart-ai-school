@@ -176,7 +176,7 @@ export interface SiswaKehadiranStats {
   sakit: number;
   alpha: number;
   total: number;
-  pct: number;
+  pct: number | null;
 }
 
 // ── XP / Level ─────────────────────────────────────────────────────────────

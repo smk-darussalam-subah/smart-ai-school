@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from '../push/push.service';
 import { logger } from '@smk/logger';
 import { NotifJob, NOTIFICATION_QUEUE, resolveNotificationQueuePrefix } from './queue.config';
+import { resolveNotificationIntent } from '../common/helpers/class-session-notification';
 
 const CONCURRENCY = parseInt(process.env.NOTIF_QUEUE_CONCURRENCY || '1', 10);
 
@@ -50,33 +51,48 @@ export function createNotificationWorker(
             userId: to,
             title: subject ?? 'Notifikasi DIIS',
             body,
+            ...(pending.refType==='student_session_attendance'?{kind:'student-attendance' as const}:{}),
+            ...(['class_session_alert', 'student_session_attendance'].includes(pending.refType ?? '')
+              ? {
+                  beforeSend: async () =>
+                    Boolean(await resolvePendingNotificationIntent(prisma, logId)),
+                }
+              : {}),
           });
         } else {
           await adapter.send(channel, to, body, subject);
         }
 
-        await prisma.notificationLog.update({
-          where: { id: logId },
+        const marked = await prisma.notificationLog.updateMany({
+          where: { id: logId, status: 'pending' },
           data: { status: 'sent', sentAt: new Date() },
         });
 
-        logger.info('[NotifWorker] Sent', { logId, channel });
+        logger.info(
+          marked.count ? '[NotifWorker] Sent' : '[NotifWorker] Intent stopped during dispatch',
+          { logId, channel },
+        );
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         const willRetry = job.attemptsMade + 1 < (job.opts.attempts || 5);
 
         logger.warn('[NotifWorker] Failed', {
-          logId, channel, attempt: job.attemptsMade + 1,
-          willRetry, error: message,
+          logId,
+          channel,
+          attempt: job.attemptsMade + 1,
+          willRetry,
+          error: message,
         });
 
         if (!willRetry) {
-          await prisma.notificationLog.update({
-            where: { id: logId },
-            data: { status: 'failed', error: message },
-          }).catch((updateErr: unknown) => {
-            logger.error('[NotifWorker] Gagal update status failed', { logId, updateErr });
-          });
+          await prisma.notificationLog
+            .updateMany({
+              where: { id: logId, status: 'pending' },
+              data: { status: 'failed', error: message },
+            })
+            .catch((updateErr: unknown) => {
+              logger.error('[NotifWorker] Gagal update status failed', { logId, updateErr });
+            });
         }
 
         throw err; // Re-throw agar BullMQ retry
@@ -92,8 +108,10 @@ export function createNotificationWorker(
   worker.on('failed', (job, err) => {
     if (job) {
       logger.error('[NotifWorker] Final failure', {
-        jobId: job.id, logId: job.data.logId,
-        attempts: job.attemptsMade, error: err.message,
+        jobId: job.id,
+        logId: job.data.logId,
+        attempts: job.attemptsMade,
+        error: err.message,
       });
     }
   });
@@ -103,9 +121,5 @@ export function createNotificationWorker(
 }
 
 export async function resolvePendingNotificationIntent(prisma: PrismaService, logId: string) {
-  const log = await prisma.notificationLog.findUnique({
-    where: { id: logId },
-    select: { status: true, channel: true, recipient: true, body: true, subject: true },
-  });
-  return log?.status === 'pending' ? log : null;
+  return resolveNotificationIntent(prisma, logId);
 }

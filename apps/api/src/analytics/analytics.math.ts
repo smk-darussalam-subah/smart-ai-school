@@ -7,7 +7,7 @@
 export const KKM_DEFAULT = 75;
 
 /** Bobot Nilai Akhir (NA) — konsisten dengan lib/academic.ts (frontend). */
-export const NA_WEIGHTS = { uh: 0.20, praktik: 0.25, sikap: 0.15, uts: 0.20, uas: 0.20 } as const;
+export const NA_WEIGHTS = { uh: 0.2, praktik: 0.25, sikap: 0.15, uts: 0.2, uas: 0.2 } as const;
 
 export interface NaComponents {
   uh?: number;
@@ -25,11 +25,17 @@ export interface NaComponents {
  */
 export function naOf(components: NaComponents): number | null {
   const keys = Object.keys(NA_WEIGHTS) as (keyof typeof NA_WEIGHTS)[];
-  const defined = keys.filter((k) => components[k] !== undefined);
+  const defined = keys.filter(
+    (k) =>
+      typeof components[k] === 'number' &&
+      Number.isFinite(components[k]) &&
+      components[k]! >= 0 &&
+      components[k]! <= 100,
+  );
   if (defined.length === 0) return null;
   const totalWeight = defined.reduce((sum, k) => sum + NA_WEIGHTS[k], 0);
   const weightedSum = defined.reduce((sum, k) => sum + (components[k] ?? 0) * NA_WEIGHTS[k], 0);
-  return Math.round(weightedSum / totalWeight);
+  return round1(weightedSum / totalWeight);
 }
 
 /** Bucket umur tunggakan SPP (hari). */

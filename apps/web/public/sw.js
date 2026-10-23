@@ -271,8 +271,9 @@ async function forcePushDeliveryState(state) {
   return { status: 'applied', ...record };
 }
 
-async function verifyPushDelivery(proof) {
+async function verifyPushDelivery(proof, rawPayload) {
   if (typeof proof !== 'string' || !/^[a-f0-9]{64}$/.test(proof)) return false;
+  if (!rawPayload || !rawPayload.delivery || rawPayload.delivery.version !== 2) return false;
   try {
     const subscription = await self.registration.pushManager.getSubscription();
     if (!subscription) return false;
@@ -282,7 +283,17 @@ async function verifyPushDelivery(proof) {
       cache: 'no-store',
       redirect: 'error',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint: subscription.endpoint, proof }),
+      body: JSON.stringify({
+        endpoint: subscription.endpoint,
+        proof,
+        message: {
+          ...rawPayload.delivery,
+          title: rawPayload.title,
+          body: rawPayload.body,
+          url: rawPayload.url,
+          tag: rawPayload.tag,
+        },
+      }),
     });
     if (!response.ok) return false;
     const result = await response.json();
@@ -401,7 +412,7 @@ self.addEventListener('push', (event) => {
   const payload = normalizePushPayload(rawPayload);
   event.waitUntil(enqueuePushStateOperation(async () => {
     if (await readPushDeliveryState() !== 'signed-in') return;
-    if (!await verifyPushDelivery(rawPayload.deliveryProof)) return;
+    if (!await verifyPushDelivery(rawPayload.deliveryProof, rawPayload)) return;
     await self.registration.showNotification(payload.title, {
       body: payload.body,
       tag: payload.tag,

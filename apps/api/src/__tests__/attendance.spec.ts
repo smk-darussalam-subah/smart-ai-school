@@ -501,9 +501,14 @@ describe('AttendanceModule', () => {
     })
       .overrideProvider(AttendanceService)
       .useValue({})
+      .overrideProvider('NOTIFICATION_QUEUE')
+      .useValue({ close: jest.fn() })
+      .overrideProvider('NOTIFICATION_WORKER')
+      .useValue({ close: jest.fn() })
       .compile();
 
     expect(module).toBeDefined();
     expect(module.get(AttendanceController)).toBeDefined();
+    await module.close();
   });
 });

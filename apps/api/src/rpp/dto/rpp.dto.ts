@@ -14,11 +14,11 @@ const AtpItem = z.object({
 });
 const KegiatanItem = z.object({
   pertemuan: z.string().max(120).optional(),
-  deskripsi: z.string().max(20_000).optional(),          // legacy: deskripsi bebas
-  pendahuluan: z.string().max(10_000).optional(),        // kegiatan pendahuluan
-  inti: z.string().max(20_000).optional(),               // kegiatan inti
-  penutup: z.string().max(10_000).optional(),            // kegiatan penutup
-  diferensiasi: z.string().max(10_000).optional(),       // strategi diferensiasi
+  deskripsi: z.string().max(20_000).optional(), // legacy: deskripsi bebas
+  pendahuluan: z.string().max(10_000).optional(), // kegiatan pendahuluan
+  inti: z.string().max(20_000).optional(), // kegiatan inti
+  penutup: z.string().max(10_000).optional(), // kegiatan penutup
+  diferensiasi: z.string().max(10_000).optional(), // strategi diferensiasi
 });
 export const ModulAjarBodySchema = z.object({
   fase: z.string().max(20).optional(),
@@ -36,17 +36,17 @@ export const ModulAjarBodySchema = z.object({
   target: z.string().max(2_000).optional(),
   model: z.string().max(200).optional(),
   kegiatan: z.array(KegiatanItem).max(40).optional(),
-  asesmen: z.string().max(20_000).optional(),            // legacy: rencana asesmen bebas
-  asesmenDiagnostik: z.string().max(10_000).optional(),  // jenis + deskripsi diagnostik
-  asesmenFormatif: z.string().max(10_000).optional(),    // jenis + deskripsi formatif
-  asesmenSumatif: z.string().max(10_000).optional(),     // jenis + deskripsi sumatif
+  asesmen: z.string().max(20_000).optional(), // legacy: rencana asesmen bebas
+  asesmenDiagnostik: z.string().max(10_000).optional(), // jenis + deskripsi diagnostik
+  asesmenFormatif: z.string().max(10_000).optional(), // jenis + deskripsi formatif
+  asesmenSumatif: z.string().max(10_000).optional(), // jenis + deskripsi sumatif
   pengayaan: z.string().max(10_000).optional(),
   remedial: z.string().max(10_000).optional(),
-  refleksi: z.string().max(10_000).optional(),           // legacy: refleksi gabungan
-  refleksiGuru: z.string().max(10_000).optional(),       // pertanyaan refleksi guru
-  refleksiSiswa: z.string().max(10_000).optional(),      // pertanyaan refleksi siswa
-  lampiran: z.string().max(20_000).optional(),           // catatan lampiran (teks)
-  lampiranUrl: z.string().max(2000).optional(),          // URL eksternal (video/drive)
+  refleksi: z.string().max(10_000).optional(), // legacy: refleksi gabungan
+  refleksiGuru: z.string().max(10_000).optional(), // pertanyaan refleksi guru
+  refleksiSiswa: z.string().max(10_000).optional(), // pertanyaan refleksi siswa
+  lampiran: z.string().max(20_000).optional(), // catatan lampiran (teks)
+  lampiranUrl: z.string().max(2000).optional(), // URL eksternal (video/drive)
   durasiMenit: z.coerce.number().int().min(1).max(600).nullish(), // durasi per JP (menit)
 });
 export type ModulAjarBody = z.infer<typeof ModulAjarBodySchema>;
@@ -67,21 +67,27 @@ export type CreateRppDto = z.infer<typeof CreateRppSchema>;
 export const UpdateRppSchema = CreateRppSchema.omit({ submit: true }).partial();
 export type UpdateRppDto = z.infer<typeof UpdateRppSchema>;
 
-export const ReviewRppSchema = z.object({
-  decision: z.enum(['recommended', 'approved', 'revision']),
-  note: z.string().trim().max(5000).nullish(),
-}).refine((d) => d.decision !== 'revision' || (d.note && d.note.length >= 3), {
-  message: 'Keputusan revisi wajib disertai catatan untuk guru',
-  path: ['note'],
-});
+export const ReviewRppSchema = z
+  .object({
+    decision: z.enum(['recommended', 'approved', 'revision']),
+    note: z.string().trim().max(5000).nullish(),
+  })
+  .refine((d) => d.decision !== 'revision' || (d.note && d.note.length >= 3), {
+    message: 'Keputusan revisi wajib disertai catatan untuk guru',
+    path: ['note'],
+  });
 export type ReviewRppDto = z.infer<typeof ReviewRppSchema>;
 
 export const ListRppQuerySchema = z.object({
+  scope: z.literal('own').optional(),
   status: z.enum(['draft', 'submitted', 'curriculum_reviewed', 'approved', 'revision']).optional(),
   teacherId: z.string().uuid().optional(),
   classId: z.string().uuid().optional(),
   search: z.string().trim().max(100).optional(),
-  academicYear: z.string().regex(/^\d{4}\/\d{4}$/).optional(),
+  academicYear: z
+    .string()
+    .regex(/^\d{4}\/\d{4}$/)
+    .optional(),
   semester: z.coerce.number().int().min(1).max(2).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),

@@ -36,13 +36,15 @@ function Cell({
 }) {
   if (!items.length) return <span className="text-slate-400">—</span>;
   return (
-    <details className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 text-left">
-      <summary className="flex min-h-11 cursor-pointer items-center break-words font-semibold text-emerald-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-600">
+    <details className="min-w-0 max-w-full rounded-lg border border-emerald-200 bg-emerald-50/50 p-1.5 text-left">
+      <summary className="flex min-h-11 min-w-0 max-w-full cursor-pointer items-center text-[11px] font-bold text-emerald-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-600">
+        <span className="min-w-0 max-w-full [overflow-wrap:anywhere]">
         {items.length > 1
           ? `${items.length} sesi terjadwal`
           : officialSubjectLabel(items[0]!.teachingAssignment.subject, subjects)}
+        </span>
       </summary>
-      <ul className="mt-2 space-y-2">
+      <ul className="mt-2 min-w-0 space-y-2 [overflow-wrap:anywhere]">
         {items.map((item) => (
           <li key={item.id} className="border-t border-emerald-200 pt-2">
             <p className="font-semibold">{item.teachingAssignment.subject}</p>

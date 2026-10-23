@@ -7,7 +7,13 @@ import { authOptions } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { apiErrorMessage } from '@/lib/api';
+import { academicPagesResult } from '@/lib/academic-pages-server';
 import type { FamilyRemedialListResponse } from './_components/ortu/ortu-remedial-ui';
+import {
+  readLearnerAttendance,
+  type AttendancePeriod,
+  type LearnerAttendanceState,
+} from '@/lib/learner-attendance';
 
 const API_BASE = process.env.API_URL ?? 'http://localhost:3001';
 
@@ -32,7 +38,12 @@ async function apiCall(path: string, method: string, body?: unknown) {
         redirect('/login?reason=session');
       }
       const err = await res.json().catch(() => null);
-      return { success: false, error: apiErrorMessage(err), errorCode: apiErrorCode(err), httpStatus: res.status };
+      return {
+        success: false,
+        error: apiErrorMessage(err),
+        errorCode: apiErrorCode(err),
+        httpStatus: res.status,
+      };
     }
     return { success: true, data: await res.json() };
   } catch (err) {
@@ -136,31 +147,37 @@ export interface RosterStudent {
 }
 
 /** Roster siswa aktif satu kelas (untuk modal Absen). */
-export async function fetchClassRoster(classId: string): Promise<RosterStudent[]> {
+export async function fetchClassRoster(
+  classId: string,
+): Promise<{ success: true; data: RosterStudent[] } | { success: false; error: string }> {
   const session = await getServerSession(authOptions);
   if (!session?.accessToken) {
     redirect('/login?reason=session');
   }
-  try {
-    const res = await fetch(
-      `${API_BASE}/api/v1/students?classId=${classId}&status=active&limit=100`,
-      {
-        headers: { Authorization: `Bearer ${session!.accessToken}` },
-        cache: 'no-store',
-      },
-    );
-    if (!res.ok) {
-      if (res.status === 401) redirect('/login?reason=session');
-      return [];
-    }
-    const json = (await res.json()) as {
-      data?: { id: string; nis: string; user?: { fullName?: string } }[];
+  if (!z.string().uuid().safeParse(classId).success)
+    return { success: false, error: 'Kelas tidak valid. Buka kembali dari daftar kelas.' };
+  const result = await academicPagesResult<{ id: string; nis: string; user: { fullName: string } }>(
+    `/students?classId=${encodeURIComponent(classId)}&status=active&limit=100`,
+    session.accessToken,
+  );
+  if (result.status !== 'success')
+    return {
+      success: false,
+      error: result.message || 'Daftar siswa belum dapat dimuat. Coba lagi.',
     };
-    return (json.data ?? []).map((s) => ({ id: s.id, nis: s.nis, name: s.user?.fullName ?? '—' }));
-  } catch (err) {
-    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err;
-    return [];
-  }
+  const rows = z
+    .array(z.object({ id: z.string(), nis: z.string(), user: z.object({ fullName: z.string() }) }))
+    .safeParse(result.data.data);
+  if (!rows.success)
+    return { success: false, error: 'Daftar siswa belum dapat diverifikasi. Coba muat ulang.' };
+  return {
+    success: true,
+    data: rows.data.map((student) => ({
+      id: student.id,
+      nis: student.nis,
+      name: student.user.fullName,
+    })),
+  };
 }
 
 /** Simpan Jurnal Mengajar (disimpan sebagai ClassActivity / Kegiatan Kelas). */
@@ -801,6 +818,7 @@ export async function fetchAssessmentSession(
 }
 
 export async function fetchAssessmentSessions(params?: {
+  scope?: 'own';
   page?: number;
   limit?: number;
   status?: 'draft' | 'active' | 'completed' | 'cancelled';
@@ -818,6 +836,7 @@ export async function fetchAssessmentSessions(params?: {
   const searchParams = new URLSearchParams();
   searchParams.set('page', String(params?.page ?? 1));
   searchParams.set('limit', String(params?.limit ?? 100));
+  if (params?.scope) searchParams.set('scope', params.scope);
   if (params?.status) searchParams.set('status', params.status);
   if (params?.purpose) searchParams.set('purpose', params.purpose);
   if (params?.type) searchParams.set('type', params.type);
@@ -919,6 +938,7 @@ export async function fetchRemedialCandidates(params: {
 }
 
 export async function fetchRemedialSessions(params: {
+  scope?: 'own';
   page?: number;
   limit?: number;
   status?: 'draft' | 'active' | 'completed' | 'cancelled';
@@ -939,6 +959,7 @@ export async function fetchRemedialSessions(params: {
   if (params.classId) searchParams.set('classId', params.classId);
   if (params.academicYear) searchParams.set('academicYear', params.academicYear);
   if (params.semester) searchParams.set('semester', String(params.semester));
+  if (params.scope) searchParams.set('scope', params.scope);
   const r = await apiCall(`/assessment/remedials?${searchParams.toString()}`, 'GET');
   if (!r.success) return { success: false, error: r.error };
   return {
@@ -1126,7 +1147,12 @@ export async function fetchKktpConfigs(
   if (academicYear) params.set('academicYear', academicYear);
   if (semester) params.set('semester', String(semester));
   const r = await apiCall(`/kktp-config${params.toString() ? '?' + params.toString() : ''}`, 'GET');
-  if (!r.success) return { success: false, error: r.error, state: r.httpStatus === 403 ? 'denied' : 'unavailable' };
+  if (!r.success)
+    return {
+      success: false,
+      error: r.error,
+      state: r.httpStatus === 403 ? 'denied' : 'unavailable',
+    };
   return {
     success: true,
     state: 'ready',
@@ -1217,7 +1243,13 @@ type StudentAttendanceMonthItem = {
 export async function fetchStudentAttendanceMonth(
   year: number,
   monthIndex0: number,
-): Promise<{ success: boolean; data?: StudentAttendanceMonthItem[]; error?: string }> {
+  period?: AttendancePeriod,
+): Promise<{
+  success: boolean;
+  data?: StudentAttendanceMonthItem[];
+  state?: LearnerAttendanceState;
+  error?: string;
+}> {
   if (
     !Number.isInteger(year) ||
     !Number.isInteger(monthIndex0) ||
@@ -1229,16 +1261,43 @@ export async function fetchStudentAttendanceMonth(
 
   const month = String(monthIndex0 + 1).padStart(2, '0');
   const lastDay = new Date(year, monthIndex0 + 1, 0).getDate();
-  const dateFrom = `${year}-${month}-01`;
-  const dateTo = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
-  const r = await apiCall(`/attendance?dateFrom=${dateFrom}&dateTo=${dateTo}&limit=200`, 'GET');
-  if (!r.success) return { success: false, error: r.error };
-  const body = r.data as { data?: StudentAttendanceMonthItem[] };
-  return { success: true, data: body.data ?? [] };
+  if (
+    !period ||
+    !z.object({ dateFrom: z.string().date(), dateTo: z.string().date() }).safeParse(period)
+      .success ||
+    period.dateFrom > period.dateTo
+  ) {
+    return {
+      success: false,
+      state: 'period-unavailable',
+      error: 'Pilih periode sekolah untuk melihat kehadiran.',
+    };
+  }
+  const dateFrom = [period.dateFrom, `${year}-${month}-01`].sort().at(-1)!;
+  const dateTo = [period.dateTo, `${year}-${month}-${String(lastDay).padStart(2, '0')}`].sort()[0]!;
+  if (dateFrom > dateTo) return { success: true, state: 'ready', data: [] };
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) redirect('/login?reason=session');
+  const result = await academicPagesResult<StudentAttendanceMonthItem>(
+    `/attendance?dateFrom=${dateFrom}&dateTo=${dateTo}`,
+    session.accessToken,
+  );
+  const read = readLearnerAttendance(result);
+  return read.state === 'ready'
+    ? {
+        success: true,
+        state: 'ready',
+        data: read.data.map((row) => ({ ...row, notes: row.notes ?? null })),
+      }
+    : {
+        success: false,
+        state: read.state,
+        error: 'Kehadiran belum dapat dimuat. Coba muat ulang.',
+      };
 }
 
 /** B3: Fetch learning timeline for siswa/ortu. */
-export async function fetchTimeline(): Promise<{
+export async function fetchTimeline(studentId?: string): Promise<{
   success: boolean;
   data?: Array<{
     date: string;
@@ -1249,22 +1308,33 @@ export async function fetchTimeline(): Promise<{
   }>;
   error?: string;
 }> {
-  const r = await apiCall('/student-dashboard/timeline', 'GET');
+  const r = await apiCall(
+    `/student-dashboard/timeline${studentId ? `?studentId=${encodeURIComponent(studentId)}` : ''}`,
+    'GET',
+  );
   if (!r.success) return { success: false, error: r.error };
+  const parsed = z
+    .object({
+      data: z.array(
+        z.object({
+          date: z.string(),
+          type: z.string(),
+          title: z.string(),
+          description: z.string(),
+          subject: z.string().optional(),
+        }),
+      ),
+    })
+    .safeParse(r.data);
+  if (!parsed.success) return { success: false, error: 'Riwayat belum dapat dimuat.' };
   return {
     success: true,
-    data: r.data as Array<{
-      date: string;
-      type: string;
-      title: string;
-      description: string;
-      subject?: string;
-    }>,
+    data: parsed.data.data,
   };
 }
 
 /** B4: Fetch teachers for siswa/ortu. */
-export async function fetchTeachers(): Promise<{
+export async function fetchTeachers(studentId?: string): Promise<{
   success: boolean;
   data?: Array<{
     subject: string;
@@ -1275,17 +1345,28 @@ export async function fetchTeachers(): Promise<{
   }>;
   error?: string;
 }> {
-  const r = await apiCall('/student-dashboard/teachers', 'GET');
+  const r = await apiCall(
+    `/student-dashboard/teachers${studentId ? `?studentId=${encodeURIComponent(studentId)}` : ''}`,
+    'GET',
+  );
   if (!r.success) return { success: false, error: r.error };
+  const parsed = z
+    .object({
+      data: z.array(
+        z.object({
+          subject: z.string(),
+          teacherName: z.string(),
+          phone: z.string().nullable(),
+          email: z.string().nullable(),
+          hoursPerWeek: z.number(),
+        }),
+      ),
+    })
+    .safeParse(r.data);
+  if (!parsed.success) return { success: false, error: 'Kontak guru belum dapat dimuat.' };
   return {
     success: true,
-    data: r.data as Array<{
-      subject: string;
-      teacherName: string;
-      phone: string | null;
-      email: string | null;
-      hoursPerWeek: number;
-    }>,
+    data: parsed.data.data,
   };
 }
 
@@ -1519,6 +1600,7 @@ export interface SubmissionDetailStudent {
   score: number | null;
 }
 export async function fetchSubmissions(params?: {
+  scope?: 'own';
   classId?: string;
   subject?: string;
   status?: string;
@@ -1532,7 +1614,10 @@ export async function fetchSubmissions(params?: {
   if (params?.subject) searchParams.set('subject', params.subject);
   if (params?.status) searchParams.set('status', params.status);
   const qs = searchParams.toString();
-  const r = await apiCall(`/submissions${qs ? '?' + qs : ''}`, 'GET');
+  const r = await apiCall(
+    `/submissions${qs ? '?' + qs : ''}${params?.scope ? `${qs ? '&' : '?'}scope=own` : ''}`,
+    'GET',
+  );
   if (!r.success) return { success: false, error: r.error };
   return { success: true, data: r.data as { data: SubmissionItem[]; total: number } };
 }
@@ -1582,6 +1667,7 @@ export interface CpBreakdownItem {
   total: number;
 }
 export async function fetchCpProgress(params?: {
+  scope?: 'own';
   classId?: string;
   academicYear?: string;
   semester?: number;
@@ -1595,7 +1681,10 @@ export async function fetchCpProgress(params?: {
   if (params?.academicYear) searchParams.set('academicYear', params.academicYear);
   if (params?.semester) searchParams.set('semester', String(params.semester));
   const qs = searchParams.toString();
-  const r = await apiCall(`/analytics/cp-progress${qs ? '?' + qs : ''}`, 'GET');
+  const r = await apiCall(
+    `/analytics/cp-progress${qs ? '?' + qs : ''}${params?.scope ? `${qs ? '&' : '?'}scope=own` : ''}`,
+    'GET',
+  );
   if (!r.success) return { success: false, error: r.error };
   return {
     success: true,
@@ -1618,13 +1707,31 @@ export async function fetchWaliClasses(): Promise<{
 }> {
   const r = await apiCall('/teachers/me/wali-classes', 'GET');
   if (!r.success) return { success: false, error: r.error };
-  return { success: true, data: r.data as { classes: WaliClassItem[]; isWaliKelas: boolean } };
+  const parsed = z
+    .object({
+      classes: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          majorCode: z.string(),
+          grade: z.number(),
+          academicYear: z.string(),
+        }),
+      ),
+      isWaliKelas: z.boolean(),
+    })
+    .safeParse(r.data);
+  if (!parsed.success)
+    return { success: false, error: 'Informasi wali kelas belum dapat diverifikasi. Coba lagi.' };
+  return { success: true, data: parsed.data };
 }
 
 // ── P1: Data-integrity endpoints (S-05 teacher attendance + S-09 profile CV) ─────
 
 /** P1 (S-05): Fetch today's teacher attendance summary for KS dashboard. */
-export async function fetchTeacherAttendanceToday(filters: { academicYear?: string; semester?: number; teacherId?: string; subject?: string } = {}): Promise<{
+export async function fetchTeacherAttendanceToday(
+  filters: { academicYear?: string; semester?: number; teacherId?: string; subject?: string } = {},
+): Promise<{
   success: boolean;
   data?: TeacherAttendanceSummary;
   error?: string;
@@ -1637,11 +1744,27 @@ export async function fetchTeacherAttendanceToday(filters: { academicYear?: stri
   const r = await apiCall('/analytics/teacher-compliance?' + query.toString(), 'GET');
   if (!r.success) return { success: false, error: r.error };
   const count = z.number().int().nonnegative();
-  const parsed = z.object({ attendance: z.object({
-    date: z.string(), source: z.literal('StaffAttendance'), total: count, present: count, inside: count,
-    required: count, late: count, absent: count, notRequired: count, notScheduled: count, notDue: count, review: count, unknown: count,
-  }) }).safeParse(r.data);
-  if (!parsed.success) return { success: false, error: 'Ringkasan presensi pegawai belum tersedia.' };
+  const parsed = z
+    .object({
+      attendance: z.object({
+        date: z.string(),
+        source: z.literal('StaffAttendance'),
+        total: count,
+        present: count,
+        inside: count,
+        required: count,
+        late: count,
+        absent: count,
+        notRequired: count,
+        notScheduled: count,
+        notDue: count,
+        review: count,
+        unknown: count,
+      }),
+    })
+    .safeParse(r.data);
+  if (!parsed.success)
+    return { success: false, error: 'Ringkasan presensi pegawai belum tersedia.' };
   return { success: true, data: parsed.data.attendance };
 }
 
@@ -1649,8 +1772,16 @@ export interface TeacherAttendanceSummary {
   date: string;
   source: 'StaffAttendance';
   total: number;
-  present: number; inside: number; required: number; late: number; absent: number;
-  notRequired: number; notScheduled: number; notDue: number; review: number; unknown: number;
+  present: number;
+  inside: number;
+  required: number;
+  late: number;
+  absent: number;
+  notRequired: number;
+  notScheduled: number;
+  notDue: number;
+  review: number;
+  unknown: number;
 }
 
 /** P1 (S-09): Fetch siswa profile CV aggregate (identity + academic stats). */

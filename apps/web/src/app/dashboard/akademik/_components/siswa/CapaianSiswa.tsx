@@ -2,8 +2,21 @@
 
 import { useState } from 'react';
 import {
-  Award, Trophy, Target, Zap, CheckCircle, Loader, Circle,
-  Code2, Palette, Flame, Layout, CheckSquare, Calculator, Languages, Dumbbell,
+  Award,
+  Trophy,
+  Target,
+  Zap,
+  CheckCircle,
+  Loader,
+  Circle,
+  Code2,
+  Palette,
+  Flame,
+  Layout,
+  CheckSquare,
+  Calculator,
+  Languages,
+  Dumbbell,
 } from 'lucide-react';
 import type { SiswaScreen, ModalState } from './SiswaWorkspace';
 import type { SiswaXP, SiswaLeaderboardEntry, SiswaCP, SiswaCPTP, SiswaBadge } from './siswa-types';
@@ -22,14 +35,14 @@ interface Props {
 // Map mockup icon names to lucide-react components
 const ICON_MAP: Record<string, typeof Code2> = {
   'code-2': Code2,
-  'palette': Palette,
-  'flame': Flame,
-  'zap': Zap,
-  'layout': Layout,
+  palette: Palette,
+  flame: Flame,
+  zap: Zap,
+  layout: Layout,
   'check-square': CheckSquare,
-  'calculator': Calculator,
-  'languages': Languages,
-  'dumbbell': Dumbbell,
+  calculator: Calculator,
+  languages: Languages,
+  dumbbell: Dumbbell,
 };
 
 function getIcon(name: string) {
@@ -37,10 +50,24 @@ function getIcon(name: string) {
 }
 
 function initials(name: string) {
-  return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+  return name
+    .split(' ')
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
 }
 
-export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderboard, cpData, badges, userName }: Props) {
+export default function CapaianSiswa({
+  showToast,
+  go: _go,
+  setModal,
+  xp,
+  leaderboard,
+  cpData,
+  badges,
+  userName,
+}: Props) {
   const [filter, setFilter] = useState<'all' | 'earned' | 'progress'>('all');
 
   // T1-04 (audit v2): gunakan props langsung. SiswaWorkspace menjamin default
@@ -71,7 +98,9 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xl font-extrabold">Level {displayXP.level}</div>
-                <div className="mt-0.5 text-[11px] font-semibold opacity-80">{userName || 'Siswa'}</div>
+                <div className="mt-0.5 text-[11px] font-semibold opacity-80">
+                  {userName || 'Siswa'}
+                </div>
               </div>
               <Zap className="h-7 w-7 opacity-80" />
             </div>
@@ -83,7 +112,9 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
             </div>
             <div className="mt-1.5 flex justify-between text-[10px] font-semibold opacity-85">
               <span>{displayXP.current.toLocaleString()} XP</span>
-              <span>{displayXP.next.toLocaleString()} XP → Level {displayXP.level + 1}</span>
+              <span>
+                {displayXP.next.toLocaleString()} XP → Level {displayXP.level + 1}
+              </span>
             </div>
           </div>
         </div>
@@ -94,10 +125,13 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted)]">
-              <Trophy className="h-3.5 w-3.5 text-amber-500" />Leaderboard TJKT
+              <Trophy className="h-3.5 w-3.5 text-amber-500" />
+              Leaderboard XP
             </div>
             <button
-              onClick={() => showToast('Periode: Semester Genap 2025/2026')}
+              onClick={() =>
+                showToast('Peringkat berdasarkan total XP, bukan peringkat nilai rapor.')
+              }
               className="text-[11px] font-bold text-emerald-400"
             >
               Info
@@ -107,10 +141,14 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
             {displayLeaderboard.map((entry: SiswaLeaderboardEntry, idx: number) => {
               const rankColors = ['#10b981', '#0ea5e9', '#a78bfa', '#ec4899', '#f59e0b', '#14b8a6'];
               const avColor = rankColors[idx % rankColors.length];
-              const rankCls = idx === 0 ? 'bg-amber-500/15 text-amber-500' :
-                idx === 1 ? 'bg-gray-400/15 text-gray-400' :
-                idx === 2 ? 'bg-orange-500/15 text-orange-500' :
-                'bg-[var(--surface2)] text-[var(--muted)]';
+              const rankCls =
+                idx === 0
+                  ? 'bg-amber-500/15 text-amber-500'
+                  : idx === 1
+                    ? 'bg-gray-400/15 text-gray-400'
+                    : idx === 2
+                      ? 'bg-orange-500/15 text-orange-500'
+                      : 'bg-[var(--surface2)] text-[var(--muted)]';
 
               return (
                 <div
@@ -119,7 +157,9 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
                     entry.me ? 'border border-emerald-500/20 bg-emerald-500/8' : ''
                   }`}
                 >
-                  <div className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-[11px] font-extrabold ${rankCls}`}>
+                  <div
+                    className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-[11px] font-extrabold ${rankCls}`}
+                  >
                     {idx + 1}
                   </div>
                   <div
@@ -130,7 +170,8 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-bold">
-                      {entry.name}{entry.me ? ' (You)' : ''}
+                      {entry.name}
+                      {entry.me ? ' (You)' : ''}
                     </div>
                     <div className="text-[10px] font-semibold text-[var(--muted)]">
                       {entry.kelas} · {entry.badges} badge · {entry.avg} avg
@@ -150,9 +191,16 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
       <div className="px-5 pb-3">
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <div className="mb-3 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted)]">
-            <Target className="h-3.5 w-3.5 text-emerald-500" />Progress CP per Mapel
+            <Target className="h-3.5 w-3.5 text-emerald-500" />
+            Progress CP per Mapel
           </div>
           <div className="space-y-2.5">
+            {displayCP.length === 0 && (
+              <p role="status" className="text-xs leading-5 text-[var(--muted)]">
+                Progres CP/TP belum tersedia. Nilai akhir dan ketuntasan mapel dapat dilihat di menu
+                Nilai; keduanya bukan bukti penyelesaian CP.
+              </p>
+            )}
             {displayCP.map((cp: SiswaCP) => {
               const ok = cp.progres >= 75;
               const StatusIcon = cp.progres >= 100 ? CheckCircle : cp.progres > 0 ? Loader : Circle;
@@ -175,7 +223,9 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
                           style={{ color: ok ? 'var(--em)' : 'var(--amber)' }}
                         />
                       </div>
-                      <div className="text-[13px] font-bold">{cp.cp}: {cp.desc}</div>
+                      <div className="text-[13px] font-bold">
+                        {cp.cp}: {cp.desc}
+                      </div>
                     </div>
                     <span
                       className="text-xs font-extrabold"
@@ -214,7 +264,9 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
                           >
                             {tp.done && <CheckSquare className="h-3 w-3 text-white" />}
                           </div>
-                          <span className="flex-1">{tp.tp}: {tp.desc}</span>
+                          <span className="flex-1">
+                            {tp.tp}: {tp.desc}
+                          </span>
                           {tp.badge && <Award className="h-4 w-4 flex-shrink-0 text-amber-500" />}
                         </div>
                       ))}
@@ -232,11 +284,15 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-center">
             <div className="text-2xl font-extrabold text-emerald-500">{earnedCount}</div>
-            <div className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Earned</div>
+            <div className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">
+              Earned
+            </div>
           </div>
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-center">
             <div className="text-2xl font-extrabold text-amber-500">{progressCount}</div>
-            <div className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">In Progress</div>
+            <div className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">
+              In Progress
+            </div>
           </div>
         </div>
       </div>
@@ -244,11 +300,13 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
       {/* Badge Filters */}
       <div className="sticky top-[57px] z-10 border-b border-[var(--border)] bg-[var(--surface)] px-5 py-3">
         <div className="flex gap-1.5">
-          {([
-            ['all', 'Semua'],
-            ['earned', 'Earned'],
-            ['progress', 'Progress'],
-          ] as const).map(([key, label]) => (
+          {(
+            [
+              ['all', 'Semua'],
+              ['earned', 'Earned'],
+              ['progress', 'Progress'],
+            ] as const
+          ).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setFilter(key)}
@@ -284,15 +342,23 @@ export default function CapaianSiswa({ showToast, go: _go, setModal, xp, leaderb
                   <Icon className="h-6 w-6" style={{ color: badge.color }} />
                 </div>
                 <div className="text-[10px] font-bold">{badge.name}</div>
-                <div className="mt-0.5 text-[8.5px] font-semibold uppercase tracking-wide text-[var(--dim)]">{badge.cat}</div>
+                <div className="mt-0.5 text-[8.5px] font-semibold uppercase tracking-wide text-[var(--dim)]">
+                  {badge.cat}
+                </div>
                 {badge.earned ? (
                   badge.score ? (
-                    <div className="mt-0.5 text-[9px] font-extrabold text-emerald-500">★ {badge.score}</div>
+                    <div className="mt-0.5 text-[9px] font-extrabold text-emerald-500">
+                      ★ {badge.score}
+                    </div>
                   ) : (
-                    <div className="mt-0.5 text-[9px] font-extrabold text-emerald-500">✓ Earned</div>
+                    <div className="mt-0.5 text-[9px] font-extrabold text-emerald-500">
+                      ✓ Earned
+                    </div>
                   )
                 ) : (
-                  <div className="mt-0.5 text-[9px] font-semibold text-[var(--muted)]">{badge.prog || 0}%</div>
+                  <div className="mt-0.5 text-[9px] font-semibold text-[var(--muted)]">
+                    {badge.prog || 0}%
+                  </div>
                 )}
               </button>
             );

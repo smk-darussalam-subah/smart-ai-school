@@ -3,9 +3,16 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { logger } from '@smk/logger';
 import { BellScheduleService } from '../bell-schedule/bell-schedule.service';
-import { isScheduleOperational } from '../schedule/schedule-validity';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ClassSessionService } from './class-session.service';
+import {
+  lockSessionActivation,
+  lockSessionInputs,
+  sessionAlertSuppression,
+  sessionSchoolDate,
+} from '../common/helpers/class-session-activation';
+import { OPERATIONAL_TEACHER_SELECT } from '../common/helpers/operational-teacher';
 
 const SCAN_INTERVAL_MS = 60_000;
 const CLAIM_LIMIT = 100;
@@ -29,10 +36,24 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly bells: BellScheduleService,
     private readonly notifications: NotificationService,
+    private readonly sessions: ClassSessionService,
   ) {}
 
   onModuleInit() {
-    this.timer = setInterval(() => void this.runDueScan(), SCAN_INTERVAL_MS);
+    void this.runDueScan().catch((error) => {
+      logger.warn('[ClassSessionDue] Startup scan failed closed', {
+        errorType: error instanceof Error ? error.name : 'unknown',
+      });
+    });
+    this.timer = setInterval(
+      () =>
+        void this.runDueScan().catch((error) => {
+          logger.warn('[ClassSessionDue] Scan failed closed', {
+            errorType: error instanceof Error ? error.name : 'unknown',
+          });
+        }),
+      SCAN_INTERVAL_MS,
+    );
     this.timer.unref?.();
   }
 
@@ -41,10 +62,14 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
     this.timer = null;
   }
 
-  async runDueScan(now = new Date()) {
+  async runDueScan(at?: Date) {
     if (this.running) return { skipped: true, reason: 'OVERLAP_GUARD' };
     this.running = true;
     try {
+      const prepared = await this.sessions.prepareToday(at);
+      if (['ACTIVATION_DISABLED', 'SUNDAY', 'HOLIDAY'].includes(prepared.suppressed ?? ''))
+        return { skipped: true, reason: prepared.suppressed };
+      const now = at ?? new Date();
       const missedCount = await this.markMissed(now);
       const claims = await this.claimDueAlerts(now);
       let dispatchedCount = 0;
@@ -52,7 +77,7 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
       let pendingRecoveryCount = 0;
       for (const claim of claims) {
         try {
-          const result = await this.dispatchClaim(claim, now);
+          const result = await this.dispatchClaim(claim, at);
           if (result.suppressed) suppressedCount += 1;
           else dispatchedCount += 1;
           pendingRecoveryCount += result.pendingRecovery ? 1 : 0;
@@ -64,7 +89,14 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
           });
         }
       }
-      return { skipped: false, missedCount, claimedCount: claims.length, dispatchedCount, suppressedCount, pendingRecoveryCount };
+      return {
+        skipped: false,
+        missedCount,
+        claimedCount: claims.length,
+        dispatchedCount,
+        suppressedCount,
+        pendingRecoveryCount,
+      };
     } finally {
       this.running = false;
     }
@@ -72,16 +104,18 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
 
   private async markMissed(now: Date) {
     const missed = await this.prisma.$transaction(async (tx) => {
+      await lockSessionInputs(tx);
       const rows = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
-        UPDATE academic.class_sessions
-        SET status = 'MISSED'::academic."ClassSessionStatus",
-            missed_at = ${now},
-            version = version + 1,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id IN (
           SELECT cs.id FROM academic.class_sessions cs
           WHERE cs.status IN ('SCHEDULED'::academic."ClassSessionStatus", 'REASSIGNED'::academic."ClassSessionStatus")
             AND cs.scheduled_end_at <= ${now}
+            AND cs.service_date = ${new Date(now.getTime() + 7 * 3600_000).toISOString().slice(0, 10)}::date
+            AND EXISTS (SELECT 1 FROM academic.class_session_activations a
+              JOIN school.semesters sem ON sem.id=a.semester_id
+              JOIN school.academic_years ay ON ay.id=sem.academic_year_id
+              WHERE a.semester_id=cs.semester_id AND a.enabled AND sem.is_active AND ay.is_active
+                AND EXISTS (SELECT 1 FROM academic.class_session_events e WHERE e.session_id=cs.id
+                  AND e.event_key='class-session:activation:' || cs.id::text || ':' || a.revision::text))
             AND NOT EXISTS (
               SELECT 1 FROM academic.schedules s
               JOIN academic.schedule_concurrency_groups g ON g.id = s.concurrency_group_id
@@ -91,12 +125,25 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
           ORDER BY cs.scheduled_end_at
           FOR UPDATE OF cs SKIP LOCKED
           LIMIT ${CLAIM_LIMIT}
-        )
-        RETURNING id
       `);
-      if (rows.length > 0) {
+      await lockSessionActivation(tx);
+      const eligible: { id: string }[] = [];
+      for (const row of rows) {
+        const session = await tx.classSession.findUniqueOrThrow({ where: { id: row.id } });
+        if (!(await sessionAlertSuppression(tx, this.bells, session, now, 'missed')))
+          eligible.push(row);
+      }
+      if (eligible.length)
+        await tx.classSession.updateMany({
+          where: {
+            id: { in: eligible.map((row) => row.id) },
+            status: { in: ['SCHEDULED', 'REASSIGNED'] },
+          },
+          data: { status: 'MISSED', missedAt: now, version: { increment: 1 } },
+        });
+      if (eligible.length > 0) {
         await tx.classSessionEvent.createMany({
-          data: rows.map((row) => ({
+          data: eligible.map((row) => ({
             sessionId: row.id,
             eventType: 'MISSED',
             eventKey: `class-session:missed:${row.id}`,
@@ -107,14 +154,21 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
           skipDuplicates: true,
         });
         await tx.classSessionAlert.updateMany({
-          where: { sessionId: { in: rows.map((row) => row.id) }, status: { in: ['PENDING', 'CLAIMED'] } },
+          where: {
+            sessionId: { in: eligible.map((row) => row.id) },
+            status: { in: ['PENDING', 'CLAIMED'] },
+          },
           data: {
-            status: 'CANCELLED', cancelledAt: now, cancellationReason: 'SESSION_MISSED',
-            claimToken: null, claimedAt: null, leaseUntil: null,
+            status: 'CANCELLED',
+            cancelledAt: now,
+            cancellationReason: 'SESSION_MISSED',
+            claimToken: null,
+            claimedAt: null,
+            leaseUntil: null,
           },
         });
       }
-      return rows;
+      return eligible;
     });
     return missed.length;
   }
@@ -147,8 +201,9 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
     `);
   }
 
-  private async dispatchClaim(claim: ClaimedAlert, now: Date) {
+  private async dispatchClaim(claim: ClaimedAlert, at?: Date) {
     const outcome = await this.prisma.$transaction(async (tx) => {
+      await lockSessionInputs(tx);
       const alert = await tx.classSessionAlert.findFirst({
         where: { id: claim.id, claimToken: claim.claimToken, status: 'CLAIMED' },
         include: {
@@ -161,28 +216,38 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
         },
       });
       if (!alert) return { suppressed: true, notificationLogIds: [] as string[] };
-      await tx.$queryRaw(Prisma.sql`SELECT id FROM academic.class_sessions WHERE id = ${alert.sessionId}::uuid FOR UPDATE`);
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM academic.class_sessions WHERE id = ${alert.sessionId}::uuid FOR UPDATE`,
+      );
+      await lockSessionActivation(tx);
+      const now = at ?? new Date();
       const session = await tx.classSession.findUniqueOrThrow({
         where: { id: alert.sessionId },
-        include: { assignedTeacher: { select: { user: { select: { keycloakId: true } } } } },
+        include: { assignedTeacher: { select: OPERATIONAL_TEACHER_SELECT } },
       });
       const suppression = await this.findSuppressionReason(tx, session, now);
       if (suppression) {
         await tx.classSessionAlert.update({
           where: { id: alert.id },
           data: {
-            status: 'CANCELLED', cancelledAt: now, cancellationReason: suppression,
-            claimToken: null, claimedAt: null, leaseUntil: null,
+            status: 'CANCELLED',
+            cancelledAt: now,
+            cancellationReason: suppression,
+            claimToken: null,
+            claimedAt: null,
+            leaseUntil: null,
           },
         });
         await tx.classSessionEvent.createMany({
-          data: [{
-            sessionId: session.id,
-            eventType: 'ALERT_CANCELLED',
-            eventKey: `class-session:alert-cancelled:${alert.id}`,
-            actorType: 'SYSTEM',
-            reason: suppression,
-          }],
+          data: [
+            {
+              sessionId: session.id,
+              eventType: 'ALERT_CANCELLED',
+              eventKey: `class-session:alert-cancelled:${alert.id}`,
+              actorType: 'SYSTEM',
+              reason: suppression,
+            },
+          ],
           skipDuplicates: true,
         });
         return { suppressed: true, notificationLogIds: [] as string[] };
@@ -192,7 +257,8 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
       if (alert.stage === 'ROOM_T10') {
         const devices = await tx.displayDevice.findMany({
           where: {
-            status: 'ACTIVE', revokedAt: null,
+            status: 'ACTIVE',
+            revokedAt: null,
             OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
             profile: { in: ['RUANG_GURU', 'RUANG_TU'] },
           },
@@ -202,24 +268,30 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
           data: devices.map((device) => ({
             alertId: alert.id,
             deviceId: device.id,
-            audible: device.profile === 'RUANG_GURU' && device.audioEnabled && device.isAudibleLeader,
+            audible:
+              device.profile === 'RUANG_GURU' && device.audioEnabled && device.isAudibleLeader,
           })),
           skipDuplicates: true,
         });
       } else {
-        const recipients = alert.stage === 'PRIVATE_T5'
-          ? [session.assignedTeacher.user.keycloakId]
-          : await this.resolveEscalationRecipients(tx, session.academicYearId, now);
+        const recipients =
+          alert.stage === 'PRIVATE_T5'
+            ? [session.assignedTeacher.user.id]
+            : await this.resolveEscalationRecipients(tx, session.academicYearId, now);
         const uniqueRecipients = [...new Set(recipients)].filter(Boolean);
         if (uniqueRecipients.length > 0) {
           await tx.notificationLog.createMany({
             data: uniqueRecipients.map((recipient) => ({
               recipient,
               channel: 'push' as const,
-              subject: alert.stage === 'PRIVATE_T5' ? 'Konfirmasi sesi pembelajaran' : 'Eskalasi sesi pembelajaran',
-              body: alert.stage === 'PRIVATE_T5'
-                ? `Konfirmasi kehadiran mengajar untuk ${session.classNameSnapshot} - ${session.subjectSnapshot}.`
-                : `Sesi ${session.classNameSnapshot} - ${session.subjectSnapshot} belum dikonfirmasi.`,
+              subject:
+                alert.stage === 'PRIVATE_T5'
+                  ? 'Konfirmasi sesi pembelajaran'
+                  : 'Eskalasi sesi pembelajaran',
+              body:
+                alert.stage === 'PRIVATE_T5'
+                  ? `Konfirmasi kehadiran mengajar untuk ${session.classNameSnapshot} - ${session.subjectSnapshot}.`
+                  : `Sesi ${session.classNameSnapshot} - ${session.subjectSnapshot} belum dikonfirmasi.`,
               status: 'pending' as const,
               refType: 'class_session_alert',
               refId: alert.id,
@@ -228,8 +300,11 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
           });
           const logs = await tx.notificationLog.findMany({
             where: {
-              refType: 'class_session_alert', refId: alert.id,
-              recipient: { in: uniqueRecipients }, status: 'pending', channel: 'push',
+              refType: 'class_session_alert',
+              refId: alert.id,
+              recipient: { in: uniqueRecipients },
+              status: 'pending',
+              channel: 'push',
             },
             select: { id: true },
           });
@@ -240,18 +315,23 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
       await tx.classSessionAlert.update({
         where: { id: alert.id },
         data: {
-          status: 'DISPATCHED', dispatchedAt: now,
-          claimToken: null, claimedAt: null, leaseUntil: null,
+          status: 'DISPATCHED',
+          dispatchedAt: now,
+          claimToken: null,
+          claimedAt: null,
+          leaseUntil: null,
         },
       });
       await tx.classSessionEvent.createMany({
-        data: [{
-          sessionId: session.id,
-          eventType: 'ALERT_CREATED',
-          eventKey: `class-session:alert-dispatched:${alert.id}`,
-          actorType: 'SYSTEM',
-          metadata: { stage: alert.stage },
-        }],
+        data: [
+          {
+            sessionId: session.id,
+            eventType: 'ALERT_CREATED',
+            eventKey: `class-session:alert-dispatched:${alert.id}`,
+            actorType: 'SYSTEM',
+            metadata: { stage: alert.stage },
+          },
+        ],
         skipDuplicates: true,
       });
       return { suppressed: false, notificationLogIds };
@@ -285,70 +365,44 @@ export class ClassSessionDueService implements OnModuleInit, OnModuleDestroy {
       scheduleId: string;
       classId: string;
       teachingAssignmentId: string;
+      assignedTeacherId: string;
+      scheduledStartAt: Date;
+      scheduledEndAt: Date;
     },
     now: Date,
   ): Promise<string | null> {
-    if (!['SCHEDULED', 'REASSIGNED'].includes(session.status)) return `SESSION_${session.status}`;
-    const [years, semesters] = await Promise.all([
-      tx.academicYear.findMany({ where: { isActive: true }, take: 2, select: { id: true } }),
-      tx.semester.findMany({ where: { isActive: true }, take: 2, select: { id: true, academicYearId: true } }),
-    ]);
-    if (
-      years.length !== 1 || semesters.length !== 1
-      || years[0]!.id !== session.academicYearId
-      || semesters[0]!.id !== session.semesterId
-      || semesters[0]!.academicYearId !== years[0]!.id
-    ) return 'STALE_OR_AMBIGUOUS_PERIOD';
-    const holiday = await tx.academicCalendar.findFirst({
-      where: {
-        academicYearId: session.academicYearId, type: 'holiday',
-        startDate: { lte: session.serviceDate }, endDate: { gte: session.serviceDate },
-      },
-      select: { id: true },
-    });
-    if (holiday) return 'HOLIDAY';
-    const schedule = await tx.schedule.findUnique({
-      where: { id: session.scheduleId },
-      select: { classId: true, teachingAssignmentId: true, concurrencyGroup: { select: { mode: true, expiresOn: true } } },
-    });
-    if (!schedule || schedule.classId !== session.classId || schedule.teachingAssignmentId !== session.teachingAssignmentId) {
-      return 'STALE_SCHEDULE_SOURCE';
-    }
-    if (!isScheduleOperational(schedule.concurrencyGroup, session.serviceDate.toISOString().slice(0, 10))) return 'EXPIRED_CONCURRENCY';
-    try {
-      const bell = await this.bells.resolveForDate(session.serviceDate, 'SCHOOL', tx);
-      if (bell.id !== session.bellScheduleProfileId) return 'STALE_BELL_PROFILE';
-    } catch {
-      return 'INVALID_BELL_PROFILE';
-    }
-    const acknowledged = await tx.classSessionAlertAcknowledgement.findFirst({
-      where: { delivery: { alert: { sessionId: session.id } } },
-      select: { id: true },
-    });
-    if (acknowledged) return 'DISPLAY_ACKNOWLEDGED';
-    if (session.serviceDate > now) return 'FUTURE_SESSION_DATE';
-    return null;
+    return sessionAlertSuppression(tx, this.bells, session, now);
   }
 
-  private async resolveEscalationRecipients(tx: Prisma.TransactionClient, academicYearId: string, now: Date) {
+  private async resolveEscalationRecipients(
+    tx: Prisma.TransactionClient,
+    academicYearId: string,
+    now: Date,
+  ) {
+    const schoolDate = new Date(sessionSchoolDate(now));
     const appointments = await tx.appointment.findMany({
       where: {
         academicYearId,
         status: 'ACTIVE',
-        effectiveFrom: { lte: now },
-        OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: now } }],
-        position: { code: { in: ['WAKA_KURIKULUM', 'KEPALA_SEKOLAH'] }, isActive: true },
+        effectiveFrom: { lte: schoolDate },
+        OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: schoolDate } }],
+        majorId: null,
+        position: {
+          code: { in: ['WAKA_KURIKULUM', 'KEPALA_SEKOLAH'] },
+          scopeType: 'NONE',
+          isActive: true,
+        },
         staff: { deletedAt: null, user: { isActive: true, deletedAt: null } },
       },
-      select: { staff: { select: { user: { select: { keycloakId: true } } } } },
+      select: { staff: { select: { user: { select: { id: true } } } } },
     });
     const tataUsaha = await tx.user.findMany({
       where: { role: 'TATA_USAHA', isActive: true, deletedAt: null },
-      select: { keycloakId: true },
+      select: { id: true },
     });
     return [
-      ...appointments.map((appointment) => appointment.staff.user.keycloakId),
-      ...tataUsaha.map((user) => user.keycloakId),
+      ...appointments.map((appointment) => appointment.staff.user.id),
+      ...tataUsaha.map((user) => user.id),
     ];
   }
 

@@ -15,8 +15,10 @@ describe('canonical staff presence aggregation', () => {
       fullName: `Guru ${String(i + 1).padStart(3, '0')}`,
       createdAt: new Date('2026-01-01'),
       role: 'GURU',
-      teacher: { id: `t${i + 1}` },
-      staff: null,
+      isActive: true,
+      deletedAt: null,
+      teacher: { id: `t${i + 1}`, deletedAt: null as Date | null },
+      staff: { deletedAt: null as Date | null },
     }));
     const db = {
       schoolProfile: {
@@ -76,7 +78,7 @@ describe('canonical staff presence aggregation', () => {
       bell as unknown as BellScheduleService,
       {} as PermissionsService,
     );
-    return { db, bell, service };
+    return { db, bell, service, employees };
   }
   beforeEach(() => {
     jest.useFakeTimers();
@@ -134,6 +136,44 @@ describe('canonical staff presence aggregation', () => {
       }),
     );
   });
+  it.each(['TATA_USAHA', 'SUPER_ADMIN', 'archivedTeacher', 'archivedStaff'])(
+    'excludes retained profiles (%s) from every teacher KPI and teacher unit',
+    async (state) => {
+      const { service, employees } = fixture();
+      // Teacher 2 has the sole attendance receipt; keep their historical row.
+      const retained = employees[1]!;
+      if (state === 'archivedTeacher') retained.teacher.deletedAt = new Date(date);
+      else if (state === 'archivedStaff') retained.staff.deletedAt = new Date(date);
+      else retained.role = state;
+      const query = AttendanceQuerySchema.parse({
+        from: date,
+        to: date,
+        unit: 'TEACHER',
+        limit: 100,
+      });
+      const report = await service.report(query);
+      expect(report.teacherSummary).toMatchObject({
+        total: 100,
+        present: 0,
+        inside: 0,
+        late: 0,
+        required: 98,
+        dueRequired: 98,
+        presentRequired: 0,
+        absent: 98,
+        notRequired: 1,
+        notScheduled: 1,
+        notDue: 0,
+        review: 0,
+        unknown: 0,
+      });
+      expect(report.data.some((row) => row.employee.id === retained.id)).toBe(false);
+      const staff = await service.report({ ...query, unit: 'STAFF' });
+      expect(staff.data.map((row) => row.employee.id)).toEqual([retained.id]);
+      expect(staff.data[0]!.employee.teacher).toBeTruthy();
+      expect(report.summary.totalEmployees).toBe(101);
+    },
+  );
 });
 describe('legacy grade-summary consumer cannot manufacture CP attainment', () => {
   function fixture() {

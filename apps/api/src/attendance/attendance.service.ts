@@ -25,7 +25,15 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AttendanceStatus, Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
-import { isGuruOnly, isSiswaOnly, isOrangTuaOnly, resolveUserId, resolveTeacherId, resolveGuruClassIds, resolveSiswaId } from '../common/helpers/role-helpers';
+import {
+  isGuruOnly,
+  isSiswaOnly,
+  isOrangTuaOnly,
+  resolveUserId,
+  resolveTeacherId,
+  resolveGuruClassIds,
+  resolveSiswaId,
+} from '../common/helpers/role-helpers';
 import { CreateAttendanceDto } from './dto/create-attendance.dto';
 import { ListAttendanceQuery } from './dto/list-attendance.dto';
 import { AttendanceSessionsQuery } from './dto/attendance-sessions.dto';
@@ -46,17 +54,17 @@ function parseDateStr(s: string): Date {
 // ── Select shape ─────────────────────────────────────────────────────────────
 
 const ATTENDANCE_SELECT = {
-  id:         true,
-  studentId:  true,
-  classId:    true,
-  date:       true,
-  status:     true,
-  notes:      true,
+  id: true,
+  studentId: true,
+  classId: true,
+  date: true,
+  status: true,
+  notes: true,
   recordedBy: true,
-  createdAt:  true,
+  createdAt: true,
   student: {
     select: {
-      id:  true,
+      id: true,
       nis: true,
       user: { select: { fullName: true } },
     },
@@ -108,14 +116,20 @@ export class AttendanceService {
         });
     if (!activePeriod && !fallbackYear) throw new ConflictException('Tidak ada tahun ajaran aktif');
     const activeYear = activePeriod
-      ? { code: activePeriod.academicYear, startDate: activePeriod.startDate, endDate: activePeriod.endDate }
+      ? {
+          code: activePeriod.academicYear,
+          startDate: activePeriod.startDate,
+          endDate: activePeriod.endDate,
+        }
       : {
           code: fallbackYear!.code,
           startDate: fallbackYear!.startDate ?? date,
           endDate: fallbackYear!.endDate ?? date,
         };
     if (!kelas.isActive || kelas.academicYear !== activeYear.code) {
-      throw new BadRequestException('Absensi hanya dapat dicatat untuk kelas pada tahun ajaran aktif');
+      throw new BadRequestException(
+        'Absensi hanya dapat dicatat untuk kelas pada tahun ajaran aktif',
+      );
     }
 
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
@@ -148,19 +162,20 @@ export class AttendanceService {
     // 5. Bulk insert atomik via $transaction
     // Jika ada P2002 (unique [studentId,classId,date]) → seluruh transaksi di-rollback
     // → error propagate ke PrismaExceptionFilter global → 409
-    const buildCreateOps = (db: PrismaService | Prisma.TransactionClient) => (
-      dto.records.map((r) => db.attendance.create({
-        data: {
-          studentId:  r.studentId,
-          classId:    dto.classId,
-          date,
-          status:     r.status as AttendanceStatus,
-          notes:      r.notes,
-          recordedBy: userId,
-        },
-        select: ATTENDANCE_SELECT,
-      }))
-    );
+    const buildCreateOps = (db: PrismaService | Prisma.TransactionClient) =>
+      dto.records.map((r) =>
+        db.attendance.create({
+          data: {
+            studentId: r.studentId,
+            classId: dto.classId,
+            date,
+            status: r.status as AttendanceStatus,
+            notes: r.notes,
+            recordedBy: userId,
+          },
+          select: ATTENDANCE_SELECT,
+        }),
+      );
     const insertRecords = async (db: PrismaService | Prisma.TransactionClient) => {
       const created = [];
       for (const op of buildCreateOps(db)) {
@@ -178,20 +193,20 @@ export class AttendanceService {
       if (record.status === 'alpha' || record.status === 'sakit') {
         const absPayload: AttendanceRecordedPayload = {
           attendanceId: record.id,
-          studentId:    record.studentId,
-          classId:      record.classId,
-          date:         dto.date,
-          status:       record.status as 'alpha' | 'sakit',
+          studentId: record.studentId,
+          classId: record.classId,
+          date: dto.date,
+          status: record.status as 'alpha' | 'sakit',
         };
         this.eventEmitter.emit(EVENTS.ATTENDANCE_RECORDED, absPayload);
       }
     }
 
     return {
-      count:   results.length,
-      date:    dto.date,
+      count: results.length,
+      date: dto.date,
       classId: dto.classId,
-      data:    results,
+      data: results,
     };
   }
 
@@ -204,7 +219,7 @@ export class AttendanceService {
     if (query.dateFrom || query.dateTo) {
       const dateFilter: Prisma.DateTimeFilter = {};
       if (query.dateFrom) dateFilter.gte = parseDateStr(query.dateFrom);
-      if (query.dateTo)   dateFilter.lte = parseDateStr(query.dateTo);
+      if (query.dateTo) dateFilter.lte = parseDateStr(query.dateTo);
       where.date = dateFilter;
     }
 
@@ -232,7 +247,7 @@ export class AttendanceService {
       if (query.classId) where.classId = query.classId;
     } else {
       // ELEVATED (SA/KS/TU): filter opsional
-      if (query.classId)   where.classId   = query.classId;
+      if (query.classId) where.classId = query.classId;
       if (query.studentId) where.studentId = query.studentId;
     }
 
@@ -241,8 +256,8 @@ export class AttendanceService {
       this.prisma.attendance.findMany({
         where,
         skip,
-        take:    query.limit,
-        select:  ATTENDANCE_SELECT,
+        take: query.limit,
+        select: ATTENDANCE_SELECT,
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }],
       }),
       this.prisma.attendance.count({ where }),
@@ -351,6 +366,10 @@ export class AttendanceService {
   // ═══════════════════════════════════════════════════════════════════════════
 
   async sessions(query: AttendanceSessionsQuery, user: AuthUser) {
+    if (query.subject)
+      throw new BadRequestException(
+        'Absensi harian kelas tidak memiliki relasi mapel per sesi. Gunakan filter kelas dan tanggal.',
+      );
     // Ownership filter: GURU hanya kelas yang diampu; ELEVATED semua.
     const dateWhere: Prisma.AttendanceWhereInput['date'] = {};
     if (query.from) dateWhere.gte = parseDateStr(query.from);
@@ -369,7 +388,11 @@ export class AttendanceService {
 
     const where: Prisma.AttendanceWhereInput = {
       ...(Object.keys(dateWhere).length ? { date: dateWhere } : {}),
-      ...(query.classId ? { classId: query.classId } : scopeClassIds ? { classId: { in: scopeClassIds } } : {}),
+      ...(query.classId
+        ? { classId: query.classId }
+        : scopeClassIds
+          ? { classId: { in: scopeClassIds } }
+          : {}),
     };
 
     // Ambil record + class + recordedBy (trace ke subject via teacher assignment)
@@ -389,38 +412,35 @@ export class AttendanceService {
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     });
 
-    // Resolve subject per (classId, recordedBy) via teacher → teaching-assignment.
-    // recordedBy = auth.users.id; teacher.userId = auth.users.id.
-    const teacherUserIds = [...new Set(records.map((r) => r.recordedBy))];
-    const classIdsInData = [...new Set(records.map((r) => r.classId))];
-    const subjectMap = new Map<string, string>(); // key: `${userId}|${classId}` → subject
-    if (teacherUserIds.length > 0 && classIdsInData.length > 0) {
-      const teachers = await this.prisma.teacher.findMany({
-        where: { userId: { in: teacherUserIds } },
-        select: { id: true, userId: true, assignments: { select: { classId: true, subject: true } } },
-      });
-      for (const t of teachers) {
-        for (const a of t.assignments) {
-          subjectMap.set(`${t.userId}|${a.classId}`, a.subject);
-        }
-      }
-    }
-
-    // ── Aggregate sessions: group by date + classId + recordedBy(subject) ──
+    // Legacy route name retained; these are daily class records, not session evidence.
     interface SessionAgg {
-      date: Date; className: string; subject: string;
-      hadir: number; izin: number; sakit: number; alpha: number; total: number;
+      date: Date;
+      className: string;
+      subject: string;
+      hadir: number;
+      izin: number;
+      sakit: number;
+      alpha: number;
+      total: number;
       notesSet: Set<string>;
     }
     const sessionMap = new Map<string, SessionAgg>();
     for (const r of records) {
-      const subject = subjectMap.get(`${r.recordedBy}|${r.classId}`) ?? '—';
-      // Bila filter subject diberikan, skip record yang tak cocok
-      if (query.subject && subject !== query.subject) continue;
-      const key = `${r.date.toISOString()}|${r.classId}|${subject}`;
+      const subject = 'Harian kelas';
+      const key = `${r.date.toISOString()}|${r.classId}`;
       let agg = sessionMap.get(key);
       if (!agg) {
-        agg = { date: r.date, className: r.class.name, subject, hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0, notesSet: new Set() };
+        agg = {
+          date: r.date,
+          className: r.class.name,
+          subject,
+          hadir: 0,
+          izin: 0,
+          sakit: 0,
+          alpha: 0,
+          total: 0,
+          notesSet: new Set(),
+        };
         sessionMap.set(key, agg);
       }
       agg.total++;
@@ -447,15 +467,33 @@ export class AttendanceService {
       }));
 
     // ── Attention list: siswa dengan alpha berulang (≥2) dalam window ──
-    const alphaByStudent = new Map<string, { studentId: string; name: string; className: string; subject: string; alphaCount: number; sakitCount: number; izinCount: number }>();
+    const alphaByStudent = new Map<
+      string,
+      {
+        studentId: string;
+        name: string;
+        className: string;
+        subject: string;
+        alphaCount: number;
+        sakitCount: number;
+        izinCount: number;
+      }
+    >();
     for (const r of records) {
       if (r.status !== 'alpha' && r.status !== 'sakit' && r.status !== 'izin') continue;
-      const subject = subjectMap.get(`${r.recordedBy}|${r.classId}`) ?? '—';
-      if (query.subject && subject !== query.subject) continue;
+      const subject = 'Harian kelas';
       const key = r.studentId;
       let entry = alphaByStudent.get(key);
       if (!entry) {
-        entry = { studentId: r.studentId, name: r.student.user.fullName, className: r.class.name, subject, alphaCount: 0, sakitCount: 0, izinCount: 0 };
+        entry = {
+          studentId: r.studentId,
+          name: r.student.user.fullName,
+          className: r.class.name,
+          subject,
+          alphaCount: 0,
+          sakitCount: 0,
+          izinCount: 0,
+        };
         alphaByStudent.set(key, entry);
       }
       if (r.status === 'alpha') entry.alphaCount++;
@@ -463,39 +501,57 @@ export class AttendanceService {
       if (r.status === 'izin') entry.izinCount++;
     }
     const attention = [...alphaByStudent.values()]
-      .filter((a) => a.alphaCount >= 1 || (a.alphaCount + a.sakitCount + a.izinCount) >= 2)
-      .sort((a, b) => b.alphaCount - a.alphaCount || (b.alphaCount + b.sakitCount + b.izinCount) - (a.alphaCount + a.sakitCount + a.izinCount))
+      .filter((a) => a.alphaCount >= 1 || a.alphaCount + a.sakitCount + a.izinCount >= 2)
+      .sort(
+        (a, b) =>
+          b.alphaCount - a.alphaCount ||
+          b.alphaCount + b.sakitCount + b.izinCount - (a.alphaCount + a.sakitCount + a.izinCount),
+      )
       .slice(0, 12)
       .map((a) => ({
         studentName: a.name,
         className: a.className,
         subject: a.subject,
         alphaCount: a.alphaCount,
-        reason: [
-          a.alphaCount > 0 ? `${a.alphaCount} alpha` : null,
-          a.sakitCount > 0 ? `${a.sakitCount} sakit` : null,
-          a.izinCount > 0 ? `${a.izinCount} izin` : null,
-        ].filter(Boolean).join(' · ') || 'Kehadiran rendah',
+        reason:
+          [
+            a.alphaCount > 0 ? `${a.alphaCount} alpha` : null,
+            a.sakitCount > 0 ? `${a.sakitCount} sakit` : null,
+            a.izinCount > 0 ? `${a.izinCount} izin` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ') || 'Kehadiran rendah',
       }));
 
     // ── Trend: pct kehadiran harian N hari terakhir ──
     const trendDays = query.trendDays;
     const nowTrend = new Date();
-    const todayTrend = new Date(Date.UTC(nowTrend.getUTCFullYear(), nowTrend.getUTCMonth(), nowTrend.getUTCDate()));
+    const todayKey = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(nowTrend);
+    const todayTrend = parseDateStr(query.to && query.to < todayKey ? query.to : todayKey);
     const trendFrom = new Date(todayTrend);
     trendFrom.setUTCDate(trendFrom.getUTCDate() - (trendDays - 1));
+    if (query.from && parseDateStr(query.from) > trendFrom)
+      trendFrom.setTime(parseDateStr(query.from).getTime());
 
     const trendDates: string[] = [];
     for (let i = 0; i < trendDays; i++) {
       const d = new Date(trendFrom);
       d.setUTCDate(d.getUTCDate() + i);
-      trendDates.push(d.toISOString().slice(0, 10));
+      if (d <= todayTrend) trendDates.push(d.toISOString().slice(0, 10));
     }
 
     const trendWhere: Prisma.AttendanceWhereInput = {
       date: { gte: trendFrom, lte: todayTrend },
-      ...(query.classId ? { classId: query.classId } : scopeClassIds ? { classId: { in: scopeClassIds } } : {}),
-      ...(query.subject ? {} : {}),
+      ...(query.classId
+        ? { classId: query.classId }
+        : scopeClassIds
+          ? { classId: { in: scopeClassIds } }
+          : {}),
     };
     const trendRecords = await this.prisma.attendance.groupBy({
       by: ['date', 'status'],
@@ -512,10 +568,12 @@ export class AttendanceService {
     }
     const trend = trendDates.map((date) => {
       const cell = trendCellMap.get(date);
-      return { date, pct: cell && cell.total > 0 ? Math.round((cell.hadir / cell.total) * 100) : null };
+      return {
+        date,
+        pct: cell && cell.total > 0 ? Math.round((cell.hadir / cell.total) * 100) : null,
+      };
     });
 
     return { sessions, attention, trend };
   }
-
 }

@@ -22,18 +22,24 @@ export const UpdateLmsModuleSchema = CreateLmsModuleSchema.omit({ publish: true 
 export type UpdateLmsModuleDto = z.infer<typeof UpdateLmsModuleSchema>;
 
 export const ListLmsModuleQuerySchema = z.object({
+  scope: z.literal('own').optional(),
   subject: z.string().trim().max(100).optional(),
   classId: z.string().uuid().optional(),
   status: z.enum(['draft', 'published', 'archived']).optional(),
-  academicYear: z.string().regex(/^\d{4}\/\d{4}$/).optional(),
+  academicYear: z
+    .string()
+    .regex(/^\d{4}\/\d{4}$/)
+    .optional(),
   semester: z.coerce.number().int().min(1).max(2).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 export type ListLmsModuleQueryDto = z.infer<typeof ListLmsModuleQuerySchema>;
 
-export const UpdateProgressSchema = z.object({
-  progress: z.coerce.number().int().min(0).max(100),
-  status: z.enum(['active', 'completed']).optional(),
-}).strict();
+export const UpdateProgressSchema = z
+  .object({
+    progress: z.coerce.number().int().min(0).max(100),
+    status: z.enum(['active', 'completed']).optional(),
+  })
+  .strict();
 export type UpdateProgressDto = z.infer<typeof UpdateProgressSchema>;

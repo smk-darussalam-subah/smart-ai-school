@@ -22,7 +22,7 @@ export function getScheduleReadiness(item: ScheduleReadinessInput): ScheduleRead
   if (values.some((hours) => hours > item.hoursPerWeek)) {
     return { label: 'Perlu koreksi', detail, tone: 'text-rose-700' };
   }
-  if (values.some((hours) => hours < item.hoursPerWeek) || bySemester.size < 2) {
+  if (values.some((hours) => hours < item.hoursPerWeek)) {
     return { label: 'Parsial', detail, tone: 'text-amber-700' };
   }
   return { label: 'Siap', detail, tone: 'text-emerald-700' };

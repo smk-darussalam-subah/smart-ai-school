@@ -91,7 +91,9 @@ export function TeacherComplianceCard({ teacher }: { teacher: TeacherCompliance 
         <EmptyState />
       ) : (
         <>
-          <Bar label="Lokasi di area / presensi tercatat" pct={teacher.gpsPct} value={teacher.gpsPct !== null ? `${teacher.gpsPct}%` : 'Belum ada presensi'} />
+          <Bar label="Presensi wajib guru" pct={teacher.attendancePct ?? null} value={teacher.attendancePct != null ? `${teacher.attendancePct}%` : '—'} />
+          <Bar label="Lokasi di area / presensi tercatat" pct={teacher.gpsPct} value={teacher.gpsPct !== null ? `${teacher.gpsPct}%` : '—'} />
+          {teacher.attendance?.dueRequired != null && <p className="mb-2 text-xs text-[#355a4e]">{teacher.attendance.presentRequired ?? 0} dari {teacher.attendance.dueRequired} kewajiban hadir sudah tercatat. Kewajiban yang belum jatuh tempo dan belum tercatat tidak dihitung.</p>}
           {teacher.rpp.state === 'denied' ? <p className="text-xs">Modul ajar: akses tidak tersedia.</p> : <Bar label="RPP disetujui / non-draft" pct={teacher.rpp.approvalRate} value={teacher.rpp.approvalRate !== null ? `${teacher.rpp.approvalRate}%` : '—'} />}
           <div className="mt-3 flex items-center gap-2 rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] font-semibold text-amber-700">
             <ClipboardCheck className="h-3.5 w-3.5" />

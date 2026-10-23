@@ -17,6 +17,10 @@ export const AnalyticsQuerySchema = z.object({
 });
 
 export type AnalyticsQuery = z.infer<typeof AnalyticsQuerySchema>;
+export const CpProgressQuerySchema = AnalyticsQuerySchema.extend({
+  scope: z.literal('own').optional(),
+});
+export type CpProgressQuery = z.infer<typeof CpProgressQuerySchema>;
 
 // ── Student-level analytics (W1-3 + W1-4) ──────────────────────────────────
 // Extends executive query dengan studentId + date range untuk attendance.

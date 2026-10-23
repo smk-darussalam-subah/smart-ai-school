@@ -197,7 +197,7 @@ export function LearnerGradeDetail({
       }}
     >
       <DialogContent
-        className={`${shell}-app max-h-[85dvh] w-[calc(100%-2rem)] overflow-y-auto border-[var(--border)] bg-[var(--surface)] text-[var(--text)]`}
+        className={`${shell}-app max-h-[85dvh] w-[calc(100%-2rem)] overflow-y-auto border-slate-200 bg-white text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100`}
       >
         <DialogTitle className="pr-12 break-words text-base">{grade.mp}</DialogTitle>
         <DialogDescription className="text-xs text-[var(--muted)]">
