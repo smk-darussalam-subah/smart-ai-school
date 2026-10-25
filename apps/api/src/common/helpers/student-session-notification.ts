@@ -27,7 +27,7 @@ export async function studentAttendanceNoticeTarget(
     !student?.parent ||
     !(await new PermissionsService(prisma).hasFreshPermission(
       student.parent.keycloakId,
-      'academic.attendance.read',
+      'attendance.child.read',
       prisma,
     ))
   )

@@ -945,6 +945,9 @@ export default function PenilaianSesiModal({
         <QuestionBankEditor
           subject={session.subject}
           moduleId={session.moduleId}
+          classId={session.classId}
+          academicYear={academicYear}
+          semester={semester}
           selectable
           selectedPoints={selectedPoints}
           onSelectedPointsChange={setSelectedPoints}

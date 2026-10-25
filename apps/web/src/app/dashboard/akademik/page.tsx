@@ -14,13 +14,13 @@ import { redirect } from 'next/navigation';
 import { apiFetch, apiFetchResult, GradeItem, AttendanceItem } from '@/lib/api';
 import { readParentChildren } from '@/lib/parent-children';
 import { fetchLearnerGrades } from '@/lib/learner-grades-server';
+import { fetchStudentTasks, fetchParentSpp } from '@/lib/learner-dashboard-server';
 import { attendanceStats, readLearnerAttendance } from '@/lib/learner-attendance';
 import type {
   SiswaBadge,
   SiswaXP,
   SiswaLeaderboardEntry,
   SiswaModul,
-  SiswaTugas,
 } from './_components/siswa/siswa-types';
 import { slotsForDay, type BellProfile } from '@/lib/bell-patterns';
 import { wibTodayISO, scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-times';
@@ -48,8 +48,6 @@ import type {
 import type { AssessmentSessionData } from './actions';
 import {
   normalizeAssignmentGroups,
-  normalizeSppGroups,
-  type SppDashboardGroup,
   type StudentDashboardAssignmentGroup as OrtuStudentDashboardAssignmentGroup,
 } from './_components/ortu/ortu-mappers';
 import { resolveAcademicWorkflowView } from '@/lib/academic-workflow-deep-link';
@@ -82,64 +80,10 @@ export interface SubjectItem {
 }
 
 type ActiveSemester = AcademicPeriod;
-interface StudentDashboardAssignment {
-  id: string;
-  type: 'lms' | 'assessment';
-  title: string;
-  subject: string;
-  guru: string | null;
-  status: 'pending' | 'submitted' | 'graded';
-  lateSubmissionStatus?: 'pending' | 'accepted' | 'rejected' | null;
-  progress?: number;
-  kktp?: number;
-  purpose?: 'regular' | 'remedial';
-  sessionStatus?: string;
-  dueAt?: string | null;
-  instructions?: string | null;
-  remedialParticipant?: {
-    status: 'assigned' | 'in_progress' | 'submitted' | 'passed' | 'needs_retry';
-    assignedAt: string;
-    startedAt: string | null;
-    submittedAt: string | null;
-    finalizedAt: string | null;
-  } | null;
-}
-interface SiswaDashboardAssignmentGroup {
-  assignments: StudentDashboardAssignment[];
-}
-
 const ASSESSMENT_SESSION_PAGE_SIZE = 100;
 type AcademicSearchParams = Promise<Record<string, string | string[] | undefined>>;
 const oneSearchParam = (value: string | string[] | undefined): string =>
   Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
-
-function assignmentDeadline(
-  dueAt: string | null | undefined,
-  now: Date,
-): {
-  label: string;
-  days: number;
-} {
-  if (!dueAt) return { label: 'Tanpa tenggat', days: Number.POSITIVE_INFINITY };
-  const date = new Date(dueAt);
-  if (Number.isNaN(date.getTime()))
-    return { label: 'Tenggat tidak valid', days: Number.POSITIVE_INFINITY };
-  return {
-    label: new Intl.DateTimeFormat('id-ID', {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-      timeZone: 'Asia/Jakarta',
-    }).format(date),
-    days: Math.ceil((date.getTime() - now.getTime()) / 86_400_000),
-  };
-}
-
-function studentTaskStatus(item: StudentDashboardAssignment): 'pending' | 'submitted' | 'graded' {
-  if (item.purpose !== 'remedial' || !item.remedialParticipant) return item.status;
-  if (item.remedialParticipant.status === 'submitted') return 'submitted';
-  if (item.remedialParticipant.status === 'passed') return 'graded';
-  return 'pending';
-}
 
 async function fetchInitialAssessmentSessions(
   token: string,
@@ -191,7 +135,9 @@ export default async function AkademikPage({
   const openNotifications = oneSearchParam(requestedParams.panel) === 'notifications';
   const initialStudentId = oneSearchParam(requestedParams.studentId).trim();
   const requestedAttendanceDate = oneSearchParam(requestedParams.attendanceDate).trim();
-  const initialAttendanceDate = validSessionDate(requestedAttendanceDate) ? requestedAttendanceDate : undefined;
+  const initialAttendanceDate = validSessionDate(requestedAttendanceDate)
+    ? requestedAttendanceDate
+    : undefined;
   const token = session?.accessToken ?? '';
   const [activePeriod, configuredPeriods] = await Promise.all([
     apiFetch<ActiveSemester>('/school/semesters/active', token),
@@ -303,7 +249,6 @@ export default async function AkademikPage({
     // Fetch siswa-specific data
     // Note: studentId lookup from keycloakId — backend should resolve this
     const studentId = session.keycloakId ?? '';
-    const now = new Date();
     const [
       gradesRes,
       attendanceRes,
@@ -362,10 +307,7 @@ export default async function AkademikPage({
         }>
       >('/gamification/leaderboard-xp?limit=10', token),
       // P26: Wire pure SIM data sources to real APIs
-      apiFetch<{ data: SiswaDashboardAssignmentGroup[] }>(
-        '/student-dashboard/assignments?limit=20',
-        token,
-      ),
+      fetchStudentTasks(token),
       apiFetch<{ data: LmsModuleItem[] }>('/lms/modules/my-learning?limit=50', token),
       // Grade aggregates are not evidence of CP/TP attainment.
       Promise.resolve(null),
@@ -434,6 +376,7 @@ export default async function AkademikPage({
             uuid: m.id, // T3-06: preserve real UUID for progress endpoint
             tp: m.tp ?? '—',
             judul: m.title,
+            content: m.content,
             alokasi: `${m.jpAllocation ?? 0} JP`,
             kktp: m.kktp,
             status,
@@ -443,45 +386,6 @@ export default async function AkademikPage({
             mapel: m.subject,
           };
         })
-      : null;
-    const realAssignments: SiswaTugas[] | null = assignmentsRes
-      ? assignmentsRes.data
-          .flatMap((group) => group.assignments)
-          .map((item, index) => {
-            const deadline = assignmentDeadline(item.dueAt, now);
-            return {
-              id: index + 1,
-              uuid: item.id,
-              assessmentSessionId: item.type === 'assessment' ? item.id : undefined,
-              purpose: item.purpose,
-              sessionStatus: item.sessionStatus,
-              dueAt: item.dueAt ?? null,
-              remedialParticipant: item.remedialParticipant ?? null,
-              mp: item.subject,
-              title: item.title,
-              type:
-                item.purpose === 'remedial'
-                  ? 'Remedial'
-                  : item.type === 'assessment'
-                    ? 'Asesmen'
-                    : 'Modul LMS',
-              deadline: deadline.label,
-              dlDays: deadline.days,
-              status: studentTaskStatus(item),
-              lateSubmissionStatus: item.lateSubmissionStatus ?? null,
-              guru: item.guru ?? 'Guru mapel',
-              desc:
-                item.instructions?.trim() ||
-                (item.purpose === 'remedial'
-                  ? 'Kerjakan remedial sesuai tenggat dan pantau status finalisasi dari guru.'
-                  : item.type === 'assessment'
-                    ? 'Kerjakan asesmen sesuai waktu dan kirim jawaban dari sistem.'
-                    : 'Lanjutkan pembelajaran modul sampai selesai.'),
-              score: item.status === 'graded' ? (item.progress ?? 0) : undefined,
-              feedback: null,
-              submittedFiles: 0,
-            };
-          })
       : null;
 
     const ownedSchedule = readLearnerSchedule(scheduleRes);
@@ -498,6 +402,8 @@ export default async function AkademikPage({
               ? {
                   dateFrom: selectedPeriod.startDate.slice(0, 10),
                   dateTo: selectedPeriod.endDate.slice(0, 10),
+                  academicYear,
+                  semester,
                 }
               : undefined
           }
@@ -507,7 +413,7 @@ export default async function AkademikPage({
           realBadges={realBadges}
           realXp={realXp}
           realLeaderboard={realLeaderboard}
-          realAssignments={realAssignments}
+          taskRead={assignmentsRes}
           realModules={realModules}
           realCp={cpRes}
           realAttStats={realAttStats}
@@ -764,8 +670,8 @@ export default async function AkademikPage({
       await Promise.all([
         childDataPromise,
         childIds.length
-          ? apiFetch<{ data: SppDashboardGroup[] }>('/student-dashboard/spp', token)
-          : Promise.resolve(null),
+          ? fetchParentSpp(token, childIds)
+          : Promise.resolve({ state: 'denied' as const }),
         childIds.length
           ? apiFetch<{ data: OrtuStudentDashboardAssignmentGroup[] }>(
               '/student-dashboard/assignments',
@@ -799,7 +705,6 @@ export default async function AkademikPage({
     const scheduleDataOrtu = childData.flatMap((item) => item.schedule);
     const badgesDataOrtu = childData.flatMap((item) => item.badges);
     const waLogDataOrtu = childData.flatMap((item) => item.waLog);
-    const sppDataOrtu = normalizeSppGroups(sppRes?.data ?? []);
     const assignmentsDataOrtu = normalizeAssignmentGroups(assignmentsDashboardRes?.data ?? []);
 
     // Transform children for OrtuWorkspace
@@ -818,7 +723,16 @@ export default async function AkademikPage({
       <OrtuRefreshWrapper>
         <OrtuWorkspace
           initialAttendanceDate={initialAttendanceDate}
-          attendancePeriod={selectedPeriod ? {dateFrom:selectedPeriod.startDate.slice(0,10),dateTo:selectedPeriod.endDate.slice(0,10)} : undefined}
+          attendancePeriod={
+            selectedPeriod
+              ? {
+                  dateFrom: selectedPeriod.startDate.slice(0, 10),
+                  dateTo: selectedPeriod.endDate.slice(0, 10),
+                  academicYear,
+                  semester,
+                }
+              : undefined
+          }
           children={ortuChildren}
           childrenState={childRead.state}
           grades={gradesDataOrtu}
@@ -832,7 +746,7 @@ export default async function AkademikPage({
             childData.map((item) => [item.studentId, item.scheduleState]),
           )}
           announcements={announcementsRes?.data ?? []}
-          spp={sppDataOrtu}
+          sppRead={sppRes}
           assignments={assignmentsDataOrtu}
           badges={badgesDataOrtu}
           waLog={waLogDataOrtu}

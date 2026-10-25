@@ -8,6 +8,7 @@ export interface SiswaModul {
   uuid?: string; // T3-06: real module UUID for PATCH /lms/modules/:id/progress
   tp: string;
   judul: string;
+  content?: string | null;
   alokasi: string;
   kktp: number;
   status: 'Selesai' | 'Aktif' | 'Terkunci';

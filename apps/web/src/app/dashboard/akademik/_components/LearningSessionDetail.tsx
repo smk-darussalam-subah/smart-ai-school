@@ -2,6 +2,7 @@
 import React, { useId } from 'react';
 import { BookOpen, FileText, Users } from 'lucide-react';
 import { wibTodayISO } from '@/lib/bell-times';
+import SessionAttendanceRecap, { attendanceRecapSummary } from './SessionAttendanceRecap';
 import {
   learningRecordStatus,
   learningDate,
@@ -53,7 +54,7 @@ export default function LearningDetail({
     today &&
     context.capabilities.attendance &&
     props.onAttendance &&
-    ['STARTED','COMPLETED'].includes(row.status);
+    ['STARTED', 'COMPLETED'].includes(row.status);
   const parts = [
     {
       key: 'modules',
@@ -78,12 +79,12 @@ export default function LearningDetail({
     },
     {
       key: 'attendance',
-      title: 'Absensi harian kelas',
+      title: 'Absensi sesi',
       icon: Users,
       read: context.attendance,
       action: attendanceAction ? () => props.onAttendance?.(guide) : undefined,
       actionLabel: 'Isi / koreksi absensi sesi-JP',
-      note: 'Data kehadiran harian kelas pada tanggal ini, bukan absensi terpisah untuk setiap sesi / JP.',
+      note: 'Kehadiran siswa pada setiap JP sesi ini.',
     },
     {
       key: 'assessments',
@@ -159,9 +160,11 @@ export default function LearningDetail({
                   <div className="mt-3">
                     {part.read.state === 'ready' ? (
                       <p className="font-semibold">
-                        {part.read.data.length
-                          ? `${part.read.data.length} ${part.key === 'attendance' ? 'catatan siswa' : 'catatan tersedia'}`
-                          : 'Belum ada catatan'}
+                        {part.key === 'attendance' && context.attendance.state === 'ready'
+                          ? attendanceRecapSummary(context.attendance.data)
+                          : part.read.data.length
+                            ? `${part.read.data.length} catatan tersedia`
+                            : 'Belum ada catatan'}
                       </p>
                     ) : (
                       <p className="text-sm text-amber-800 dark:text-amber-200">
@@ -281,51 +284,7 @@ function DetailRecords({
   if (section === 'attendance') {
     const read = context.attendance;
     if (read.state !== 'ready') return <ReadProblem read={read} onRetry={onRetry} />;
-    if (!read.data.length) return <p>Absensi harian kelas belum tercatat pada tanggal ini.</p>;
-    return (
-      <>
-        <div className="mb-4 flex flex-wrap gap-2">
-          {['hadir', 'izin', 'sakit', 'alpha'].map((status) => (
-            <span
-              key={status}
-              className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-800 dark:bg-slate-800 dark:text-slate-100"
-            >
-              {status === 'alpha' ? 'Tanpa keterangan' : status}:{' '}
-              <b>{read.data.filter((x) => x.status === status).length}</b>
-            </span>
-          ))}
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <caption className="sr-only">Absensi harian kelas</caption>
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-700">
-                <th scope="col" className="p-2">
-                  Nama siswa
-                </th>
-                <th scope="col" className="p-2">
-                  Status
-                </th>
-                <th scope="col" className="p-2">
-                  Keterangan
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {read.data.map((x) => (
-                <tr key={x.id} className="border-b border-slate-100 dark:border-slate-800">
-                  <th scope="row" className="p-2 font-medium">
-                    {x.student.user.fullName}
-                  </th>
-                  <td className="p-2">{x.status === 'alpha' ? 'Tanpa keterangan' : x.status}</td>
-                  <td className="p-2">{x.notes || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </>
-    );
+    return <SessionAttendanceRecap rows={read.data} />;
   }
   const read =
     section === 'modules'

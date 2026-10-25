@@ -1,11 +1,11 @@
 import { ForbiddenException } from '@nestjs/common';
 import type { AuthUser } from '@smk/auth';
-import type { PrismaService } from '../../prisma/prisma.service';
+import type { Prisma } from '@prisma/client';
 import { OPERATIONAL_TEACHER_WHERE } from './operational-teacher';
 
 /** Explicit personal read scope. Never replaces appointment scope on default reads or mutations. */
 export async function resolveOwnTeachingRead(
-  prisma: PrismaService,
+  prisma: Prisma.TransactionClient,
   user: AuthUser,
   scope?: 'own',
   requestedTeacherId?: string,

@@ -118,10 +118,14 @@ export const SupportingJournalSchema = z.object({
   description: z.string().nullable(),
 });
 export const SupportingAttendanceSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().min(1),
+  sessionId: z.string().uuid(),
   classId: z.string().uuid(),
   date: timestamp,
-  status: z.enum(['hadir', 'izin', 'sakit', 'alpha']),
+  jp: z.number().int().positive(),
+  startAt: timestamp,
+  endAt: timestamp,
+  status: z.enum(['hadir', 'izin', 'sakit', 'alpha']).nullable(),
   notes: z.string().nullable(),
   student: z.object({ id: z.string().uuid(), user: z.object({ fullName: z.string() }) }),
 });

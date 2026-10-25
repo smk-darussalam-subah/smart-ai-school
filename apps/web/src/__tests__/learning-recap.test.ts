@@ -144,6 +144,7 @@ describe('learning recap contract', () => {
     expect(mockPages.mock.calls[0][0]).toContain(`id=${id(1)}&scope=own`);
   });
   it('keeps errors distinct from empty supporting records', async () => {
+    mockApi.mockResolvedValue({ status: 'forbidden', message: 'denied' });
     mockPages.mockImplementation((path: string) =>
       Promise.resolve(
         path.startsWith('/class-sessions')
@@ -200,7 +201,8 @@ describe('learning recap contract', () => {
     expect(html).toContain('Guru &lt;uji&gt;');
     expect(html).not.toContain('Guru <uji>');
     expect(html).toContain('2026/2027');
-    expect(html).toContain('absensi harian kelas');
+    expect(html).toContain('Absensi siswa per JP');
+    expect(html).not.toContain('Absensi siswa disimpan sebagai absensi harian kelas');
     expect(learningDocumentRows(input)[0]).toHaveLength(10);
     expect(learningDocumentHtml(input, true)).toContain('background:#ddd');
   });
