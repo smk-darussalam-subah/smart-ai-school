@@ -52,7 +52,7 @@ function notes(input: LearningDocumentInput) {
     `Tahun ajaran ${input.academicYear} · Semester ${input.semester} (${input.semester === 1 ? 'Ganjil' : 'Genap'})`,
     `Periode ${learningDate(input.from)} – ${learningDate(input.until)} · ${input.scopeLabel} · ${input.rows.length} sesi`,
     `Dibuat ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`,
-    'Status sesi berasal dari catatan pelaksanaan. Selesai tidak otomatis menandakan jurnal, absensi dan asesmen lengkap. Absensi siswa disimpan sebagai absensi harian kelas.',
+    'Status selesai tidak otomatis menandakan jurnal, absensi dan asesmen lengkap. Absensi siswa per JP dapat dilihat pada rincian sesi; catatan kehadiran harian kelas terpisah.',
   ];
 }
 export function learningDocumentHtml(input: LearningDocumentInput, monochrome = false) {

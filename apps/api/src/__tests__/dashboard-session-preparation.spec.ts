@@ -44,6 +44,7 @@ function setup() {
     },
   }));
   const tx = {
+    user: { findFirst: jest.fn().mockResolvedValue({ role: 'GURU' }) },
     $queryRaw: jest
       .fn()
       .mockImplementation(async (query: { strings: string[] }) =>
@@ -100,6 +101,7 @@ function setup() {
     })),
   };
   const permissions = {
+    getActivePositionCodes: jest.fn().mockResolvedValue(new Set(['KEPALA_SEKOLAH'])),
     getAuthoritativePrimaryRole: jest.fn().mockResolvedValue('SUPER_ADMIN'),
     hasFreshPermission: jest.fn().mockResolvedValue(true),
   };
@@ -219,7 +221,7 @@ describe('manual session preparation', () => {
     expect(tx.classSession.createMany).not.toHaveBeenCalled();
   });
   it('exposes ownership capability without leaking the joined identity', async () => {
-    const { service, tx } = setup();
+    const { service, tx, permissions } = setup();
     tx.classSession.findMany.mockResolvedValue([
       ...['mine', 'other'].map((keycloakId, index) => ({
         id: index ? 'foreign' : 'owned',
@@ -255,6 +257,8 @@ describe('manual session preparation', () => {
         operationBlockedReason: null,
       },
     ]);
+    tx.user.findFirst.mockResolvedValue({ role: 'SUPER_ADMIN' });
+    permissions.getActivePositionCodes.mockResolvedValue(new Set());
     expect(
       (await service.list(query, { ...user, roles: ['SUPER_ADMIN'] })).data.every(
         (item) => !item.canOperate,

@@ -1,5 +1,9 @@
 import { z } from 'zod';
 const date = z.string().date();
+export const SessionAttendanceReadSchema = z
+  .object({ scope: z.literal('own').optional() })
+  .strict();
+export type SessionAttendanceReadQuery = z.infer<typeof SessionAttendanceReadSchema>;
 export const SessionAttendanceRosterSchema = z
   .object({
     sessionId: z.string().uuid().optional(),
@@ -39,8 +43,21 @@ export const SessionAttendanceSaveSchema = z
     }
   });
 export const LearnerSessionAttendanceSchema = z
-  .object({ studentId: z.string().uuid().optional(), from: date, to: date })
+  .object({
+    studentId: z.string().uuid().optional(),
+    from: date,
+    to: date,
+    academicYear: z
+      .string()
+      .regex(/^\d{4}\/\d{4}$/)
+      .optional(),
+    semester: z.coerce.number().int().min(1).max(2).optional(),
+  })
   .strict()
+  .refine(
+    (x) => Boolean(x.academicYear) === Boolean(x.semester),
+    'Pilih tahun ajaran dan semester bersama.',
+  )
   .refine(
     (x) => x.to >= x.from && (Date.parse(x.to) - Date.parse(x.from)) / 86400000 <= 61,
     'Rentang maksimal 62 hari.',

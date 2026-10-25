@@ -1,6 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useDashboardRead } from '@/hooks/use-dashboard-read';
+import type { DashboardRead } from '@/lib/learner-dashboard-read';
+import { refreshParentSpp } from '../../learner-dashboard-actions';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -47,7 +50,12 @@ import type { ScheduleItem } from '../guru-types';
 import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import type { ParentChildrenState } from '@/lib/parent-children';
 import ParentChildrenNotice from './ParentChildrenNotice';
-import { filterByStudentId, type OrtuAssignmentItem, type SppApiItem } from './ortu-mappers';
+import {
+  filterByStudentId,
+  mapSppToPembayaran,
+  type OrtuAssignmentItem,
+  type SppApiItem,
+} from './ortu-mappers';
 import { initialChildIndex, learnerDashboardHref, learnerReportHref } from '../learner-navigation';
 import {
   academicWorkflowPresentation,
@@ -78,6 +86,7 @@ interface OrtuWorkspaceProps {
   scheduleStates?: Record<string, LearnerScheduleState>;
   announcements?: { id: string; title: string; createdAt: string }[];
   spp?: SppApiItem[];
+  sppRead?: DashboardRead<SppApiItem>;
   assignments?: OrtuAssignmentItem[];
   badges?: Array<{
     id: string;
@@ -121,6 +130,7 @@ export default function OrtuWorkspace({
   scheduleStates,
   announcements,
   spp: realSpp,
+  sppRead,
   badges: realBadges,
   waLog: realWaLog,
   viewAs,
@@ -134,7 +144,9 @@ export default function OrtuWorkspace({
   const { data: session } = useSession();
   const router = useRouter();
   const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
-  const [activeScreen, setActiveScreen] = useState<OrtuScreen>(initialAttendanceDate ? 'kehadiran' : initialWorkflow.parentScreen);
+  const [activeScreen, setActiveScreen] = useState<OrtuScreen>(
+    initialAttendanceDate ? 'kehadiran' : initialWorkflow.parentScreen,
+  );
   const [modal, setModal] = useState<ModalState>(
     openNotifications ? { type: 'pengumuman' } : { type: null },
   );
@@ -217,7 +229,27 @@ export default function OrtuWorkspace({
     ? childAttendance.find((row) => row.date.slice(0, 10) === dayDate)
     : undefined;
   const childSchedule = activeStudentId ? filterByStudentId(schedule, activeStudentId) : [];
-  const childSpp = activeStudentId ? filterByStudentId(realSpp, activeStudentId) : [];
+  const initialSpp = useMemo<DashboardRead<SppApiItem>>(() => {
+    if (!childrenReady || !activeStudentId) return { state: 'denied' };
+    const source =
+      sppRead ??
+      (realSpp ? { state: 'ready' as const, data: realSpp } : { state: 'unavailable' as const });
+    return source.state === 'ready'
+      ? { state: 'ready', data: filterByStudentId(source.data, activeStudentId) }
+      : source;
+  }, [childrenReady, activeStudentId, sppRead, realSpp]);
+  const loadSpp = useCallback(() => refreshParentSpp(activeStudentId ?? ''), [activeStudentId]);
+  const { read: childSppRead, retry: retrySpp } = useDashboardRead(
+    `${session?.keycloakId ?? ''}:${viewAs ?? ''}:${activeStudentId ?? ''}`,
+    initialSpp,
+    loadSpp,
+  );
+  const childSpp = childSppRead.state === 'ready' ? childSppRead.data : [];
+  const selectedPayment =
+    modal.type === 'pay' ? (modal.data?.payment as Pembayaran | undefined) : undefined;
+  const currentPayment = selectedPayment
+    ? mapSppToPembayaran(childSpp).find((payment) => payment.id === selectedPayment.id)
+    : undefined;
   const childBadges = activeStudentId ? filterByStudentId(realBadges, activeStudentId) : [];
   const childWaLog = activeStudentId ? filterByStudentId(realWaLog, activeStudentId) : [];
   const activeChildRank = activeStudentId ? (childRanks?.[activeStudentId] ?? null) : null;
@@ -270,6 +302,8 @@ export default function OrtuWorkspace({
               activeStudentId ? (scheduleStates?.[activeStudentId] ?? 'error') : 'error'
             }
             spp={childSpp ?? []}
+            sppState={childSppRead.state}
+            onRetrySpp={retrySpp}
             waLog={childWaLog ?? []}
             attendance={childAttendance ?? []}
             attendanceState={childAttendanceState}
@@ -302,7 +336,14 @@ export default function OrtuWorkspace({
           />
         );
       case 'pembayaran':
-        return <PembayaranOrtu setModal={setModal} spp={childSpp} />;
+        return (
+          <PembayaranOrtu
+            setModal={setModal}
+            spp={childSpp}
+            sppState={childSppRead.state}
+            onRetrySpp={retrySpp}
+          />
+        );
       case 'capaian':
         return (
           <CapaianOrtu
@@ -538,9 +579,9 @@ export default function OrtuWorkspace({
           />
         )}
 
-      {childrenReady && modal.type === 'pay' && (
+      {childrenReady && modal.type === 'pay' && currentPayment && (
         <PayDetailModal
-          payment={(modal.data as { payment: Pembayaran }).payment}
+          payment={currentPayment}
           onClose={() => setModal({ type: null })}
           showToast={showToast}
         />

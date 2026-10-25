@@ -26,6 +26,7 @@ function fixture() {
     count: jest.fn().mockResolvedValue(0),
   });
   const prisma = {
+    user: { findFirst: jest.fn().mockResolvedValue({ role: 'GURU' }) },
     teacher: { findFirst: jest.fn().mockResolvedValue({ id: 'own-teacher' }) },
     teachingAssignment: table(),
     schedule: table(),
@@ -34,7 +35,9 @@ function fixture() {
     lmsModule: table(),
     classActivity: table(),
     assessmentSession: table(),
+    $transaction: jest.fn(),
   };
+  prisma.$transaction.mockImplementation((run: (tx: typeof prisma) => unknown) => run(prisma));
   return { prisma, db: prisma as unknown as PrismaService };
 }
 describe('explicit own-teaching scope', () => {
@@ -165,13 +168,21 @@ describe('explicit own-teaching scope', () => {
           );
           break;
         case 'sessions':
-          await new ClassSessionService(db, bells).list(
+          await new ClassSessionService(db, bells, {
+            hasFreshPermission: async () => true,
+            getActivePositionCodes: async () => new Set(),
+          } as unknown as PermissionsService).list(
             ListClassSessionQuerySchema.parse({ scope: 'own' }),
             user,
           );
           expect(prisma.classSession.findMany).toHaveBeenCalledWith(
             expect.objectContaining({
-              where: expect.objectContaining({ assignedTeacherId: 'own-teacher' }),
+              where: {
+                AND: [
+                  expect.anything(),
+                  expect.objectContaining({ assignedTeacherId: 'own-teacher' }),
+                ],
+              },
             }),
           );
           break;

@@ -54,6 +54,8 @@ function sample() {
     from: query.from,
     to: query.to,
     unit: 'student_session_jp',
+    academicYear: '2026/2027',
+    semester: 1,
     scope: 'Synthetic',
     totals,
     days: [{ date: '2026-10-22', ...totals }],

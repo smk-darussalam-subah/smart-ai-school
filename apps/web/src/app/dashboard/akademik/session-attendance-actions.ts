@@ -22,13 +22,21 @@ export async function fetchLearnerSessionAttendance(input: {
   from: string;
   to: string;
   studentId?: string;
+  academicYear?: string;
+  semester?: number;
 }): Promise<JpRead<LearnerJp>> {
   const parsed = z
     .object({
       from: z.string().date(),
       to: z.string().date(),
       studentId: z.string().uuid().optional(),
+      academicYear: z
+        .string()
+        .regex(/^\d{4}\/\d{4}$/)
+        .optional(),
+      semester: z.number().int().min(1).max(2).optional(),
     })
+    .refine((value) => Boolean(value.academicYear) === Boolean(value.semester))
     .safeParse(input);
   if (
     !parsed.success ||
@@ -37,7 +45,8 @@ export async function fetchLearnerSessionAttendance(input: {
   )
     return { state: 'error', message: 'Pilih rentang tanggal yang valid.' };
   const result = await apiFetchResult<unknown>(
-    '/attendance/student-sessions/summary?' + new URLSearchParams(parsed.data),
+    '/attendance/student-sessions/summary?' +
+      new URLSearchParams(Object.entries(parsed.data).map(([key, value]) => [key, String(value)])),
     await token(),
   );
   if (result.status !== 'success')
@@ -53,6 +62,8 @@ export async function fetchLearnerSessionAttendance(input: {
     !data.success ||
     data.data.from !== input.from ||
     data.data.to !== input.to ||
+    (input.academicYear && data.data.academicYear !== input.academicYear) ||
+    (input.semester && data.data.semester !== input.semester) ||
     (input.studentId && data.data.studentId !== input.studentId)
   )
     return { state: 'error', message: 'Rincian kehadiran belum dapat diverifikasi. Muat ulang.' };

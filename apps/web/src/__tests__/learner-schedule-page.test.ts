@@ -58,6 +58,8 @@ type WorkspaceProps = {
   schedule?: unknown[];
   scheduleState?: string;
   scheduleStates?: Record<string, string>;
+  taskRead?: import('@/lib/learner-dashboard-read').DashboardRead<unknown>;
+  sppRead?: import('@/lib/learner-dashboard-read').DashboardRead<unknown>;
 };
 async function workspaceProps(): Promise<WorkspaceProps> {
   const element = await AcademicPage({ searchParams: Promise.resolve({}) });
@@ -89,6 +91,73 @@ beforeEach(() => {
 });
 
 describe('real SSR page schedule-state wiring', () => {
+  it.each([403, 429, 503, 200])(
+    'preserves student task HTTP%s availability through SSR',
+    async (status) => {
+      const base = {
+        status: 'success',
+        httpStatus: 200,
+        data: { data: [], total: 0, page: 1, limit: 100 },
+      };
+      mockApiFetchResult.mockImplementation(async (url: string) =>
+        url === '/student-dashboard/assignments'
+          ? status === 200
+            ? { ...base, data: { data: [{ studentId: 'own', assignments: [] }] } }
+            : { status: status === 403 ? 'forbidden' : 'unavailable', httpStatus: status }
+          : base,
+      );
+      const props = await workspaceProps();
+      expect(props.taskRead).toEqual(
+        status === 200
+          ? { state: 'ready', data: [] }
+          : { state: status === 403 ? 'denied' : 'unavailable' },
+      );
+      expect(mockApiFetchResult).toHaveBeenCalledWith(
+        '/student-dashboard/assignments',
+        'synthetic',
+      );
+      expect(props.scheduleState).toBe('ready');
+    },
+  );
+  it.each([403, 429, 503, 200])(
+    'preserves parent payment HTTP%s availability through SSR without breaking child identity',
+    async (status) => {
+      mockSession.mockResolvedValue({ accessToken: 'synthetic', roles: ['ORANG_TUA'] });
+      mockAuthority.mockResolvedValue({
+        roles: ['ORANG_TUA'],
+        hasRole: () => false,
+        can: () => false,
+      });
+      mockApiFetchResult.mockImplementation(async (url: string) =>
+        url === '/students/my-children'
+          ? {
+              status: 'success',
+              httpStatus: 200,
+              data: { data: [{ id: 'child-a', user: { fullName: 'QA' }, class: null }] },
+            }
+          : url === '/student-dashboard/spp'
+            ? status === 200
+              ? {
+                  status: 'success',
+                  httpStatus: 200,
+                  data: { data: [{ studentId: 'child-a', studentName: 'QA', payments: [] }] },
+                }
+              : { status: status === 403 ? 'forbidden' : 'unavailable', httpStatus: status }
+            : {
+                status: 'success',
+                httpStatus: 200,
+                data: { data: [], total: 0, page: 1, limit: 100 },
+              },
+      );
+      const props = await workspaceProps();
+      expect(props.childrenState).toBe('ready');
+      expect(props.sppRead).toEqual(
+        status === 200
+          ? { state: 'ready', data: [] }
+          : { state: status === 403 ? 'denied' : 'unavailable' },
+      );
+    },
+  );
   it.each([
     ['SUPER_ADMIN', ['SUPER_ADMIN']],
     ['TATA_USAHA', ['TATA_USAHA']],

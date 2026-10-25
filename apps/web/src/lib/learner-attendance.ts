@@ -5,6 +5,8 @@ export type LearnerAttendanceState = 'ready' | 'denied' | 'unavailable' | 'perio
 export interface AttendancePeriod {
   dateFrom: string;
   dateTo: string;
+  academicYear?: string;
+  semester?: number;
 }
 const dateKey = z.string().date();
 const rowSchema = z.object({

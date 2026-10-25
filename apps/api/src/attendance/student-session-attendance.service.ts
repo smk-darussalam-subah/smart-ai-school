@@ -52,12 +52,22 @@ export class StudentSessionAttendanceService {
     private readonly notifications: NotificationService,
   ) {}
 
-  private async actor(tx: Prisma.TransactionClient, user: AuthUser, permission: string) {
+  private async actor(
+    tx: Prisma.TransactionClient,
+    user: AuthUser,
+    permission: string | ((role: string) => string | null),
+  ) {
     const actor = await tx.user.findFirst({
       where: { keycloakId: user.keycloakId, isActive: true, deletedAt: null },
       select: { id: true, role: true },
     });
-    if (!actor || !(await this.permissions.hasFreshPermission(user.keycloakId, permission, tx)))
+    const required =
+      actor && (typeof permission === 'string' ? permission : permission(actor.role));
+    if (
+      !actor ||
+      !required ||
+      !(await this.permissions.hasFreshPermission(user.keycloakId, required, tx))
+    )
       throw new ForbiddenException('Akses kehadiran tidak diizinkan');
     return actor;
   }
@@ -316,7 +326,13 @@ export class StudentSessionAttendanceService {
   async learner(query: LearnerSessionAttendanceQuery, user: AuthUser) {
     return this.prisma.$transaction(
       async (tx) => {
-        const actor = await this.actor(tx, user, 'academic.attendance.read');
+        const actor = await this.actor(tx, user, (role) =>
+          role === 'SISWA'
+            ? 'attendance.own.read'
+            : role === 'ORANG_TUA'
+              ? 'attendance.child.read'
+              : null,
+        );
         if (!['SISWA', 'ORANG_TUA'].includes(actor.role))
           throw new ForbiddenException('Gunakan tampilan pemantauan sesuai kewenangan');
         const student = await tx.student.findFirst({
@@ -331,17 +347,19 @@ export class StudentSessionAttendanceService {
           throw new ForbiddenException('Pilih siswa yang terhubung dengan akun ini');
         const from = new Date(query.from),
           to = new Date(query.to);
-        const semesters = await tx.semester.findMany({
-          where: { startDate: { lte: from }, endDate: { gte: to } },
-          select: { id: true },
-        });
-        if (semesters.length !== 1)
+        // Dates alone are ambiguous when old semester configurations overlap.
+        // The UI's selected period is authoritative; older callers use the one active period.
+        const period =
+          query.academicYear && query.semester
+            ? await this.period.findPeriodByCodeAndSemester(query.academicYear, query.semester, tx)
+            : await this.period.getActivePeriod(tx);
+        if (from < period.startDate || to > period.endDate)
           throw new BadRequestException(
             'Rentang harus berada dalam satu periode sekolah yang dikonfigurasi',
           );
         const sessions = await tx.classSession.findMany({
           where: {
-            semesterId: semesters[0]!.id,
+            semesterId: period.semesterId,
             serviceDate: { gte: from, lte: to },
             status: { in: ['SCHEDULED', 'REASSIGNED', 'STARTED', 'COMPLETED'] },
             supersededAt: null,
@@ -413,6 +431,8 @@ export class StudentSessionAttendanceService {
         }));
         return {
           studentId: student.id,
+          academicYear: period.academicYear,
+          semester: period.semester,
           from: query.from,
           to: query.to,
           unit: 'student_session_jp' as const,

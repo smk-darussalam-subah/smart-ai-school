@@ -4,6 +4,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import type { VerifyPushDeliveryDto } from '../push/dto/push.dto';
 import type { AuthUser } from '@smk/auth';
 import { StudentSessionAttendanceService } from '../attendance/student-session-attendance.service';
+import { StudentSessionAttendanceReadService } from '../attendance/student-session-attendance-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
@@ -17,7 +18,9 @@ import { resolvePendingNotificationIntent } from '../notification/notification-w
 const url = process.env.STUDENT_JP_DATABASE_URL;
 if (
   url &&
-  !/^postgresql:\/\/diis_local:diis_local@127\.0\.0\.1:55441\/diis_student_session_jp$/.test(url)
+  !/^postgresql:\/\/diis_local:diis_local@127\.0\.0\.1:(55441\/diis_student_session_jp|55445\/diis_learning_ai_remediation)$/.test(
+    url,
+  )
 )
   throw Error('Disposable local database only');
 const proof = url ? describe : describe.skip;
@@ -31,6 +34,7 @@ proof('student/session/JP production service on PostgreSQL', () => {
   const service = new StudentSessionAttendanceService(db, permissions, period, {
     enqueueCommittedPendingLogs: enqueue,
   } as unknown as NotificationService);
+  const audit = new StudentSessionAttendanceReadService(db, permissions);
   let teacher: AuthUser, learner: AuthUser, parent: AuthUser, foreign: AuthUser;
   let teacherUserId: string,
     teacherId: string,
@@ -199,9 +203,12 @@ proof('student/session/JP production service on PostgreSQL', () => {
       else secondId = session.id;
     }
     for (const [role, codes] of [
-      ['GURU', ['academic.attendance.create', 'academic.attendance.read']],
-      ['SISWA', ['academic.attendance.read']],
-      ['ORANG_TUA', ['academic.attendance.read']],
+      [
+        'GURU',
+        ['academic.attendance.create', 'academic.attendance.read', 'academic.class-session.read'],
+      ],
+      ['SISWA', ['attendance.own.read']],
+      ['ORANG_TUA', ['attendance.child.read']],
     ] as const)
       for (const code of codes) {
         const permission = await prisma.permission.upsert({
@@ -278,6 +285,60 @@ proof('student/session/JP production service on PostgreSQL', () => {
     };
   }
   const read = () => service.learner({ from: '2026-10-01', to: '2026-10-22' }, learner);
+  it('audit reads real JP records rather than the independent daily attendance', async () => {
+    const bodyValue = await body(sessionId, 'izin');
+    await service.save(sessionId, bodyValue, teacher);
+    const result = await audit.read(sessionId, { scope: 'own' }, teacher);
+    expect(result.students).toHaveLength(2);
+    expect(result.slots.map((slot) => slot.jp)).toEqual([1, 2]);
+    expect(result.records).toHaveLength(4);
+    expect(result.records.every((record) => record.status === 'izin')).toBe(true);
+    expect((await prisma.attendance.findFirstOrThrow()).status).toBe('hadir');
+  });
+  it('audit rejects a different teacher and a freshly revoked read permission', async () => {
+    const u = await person('GURU');
+    await prisma.teacher.create({ data: { userId: u.id } });
+    await expect(
+      audit.read(sessionId, { scope: 'own' }, auth(u.keycloakId, 'GURU')),
+    ).rejects.toThrow();
+    const permission = await prisma.permission.findUniqueOrThrow({
+      where: { code: 'academic.class-session.read' },
+    });
+    const override = await prisma.userPermissionOverride.create({
+      data: { userId: teacherUserId, permissionId: permission.id, grant: false },
+    });
+    try {
+      await expect(audit.read(sessionId, {}, teacher)).rejects.toThrow();
+    } finally {
+      await prisma.userPermissionOverride.delete({ where: { id: override.id } });
+    }
+  });
+  it('learner explicitly selects the official semester despite overlapping historical date ranges', async () => {
+    const historical = await prisma.semester.create({
+      data: {
+        academicYearId: yearId,
+        number: 2,
+        startDate: new Date('2026-07-01'),
+        endDate: new Date('2026-12-31'),
+        isActive: false,
+      },
+    });
+    try {
+      const result = await service.learner(
+        { from: '2026-10-01', to: '2026-10-22', academicYear: '2026/2027', semester: 1 },
+        learner,
+      );
+      expect(result.semester).toBe(1);
+      expect(result.sessions.map((row) => row.id)).toContain(sessionId);
+      const other = await service.learner(
+        { from: '2026-10-01', to: '2026-10-22', academicYear: '2026/2027', semester: 2 },
+        learner,
+      );
+      expect(other.sessions).toEqual([]);
+    } finally {
+      await prisma.semester.delete({ where: { id: historical.id } });
+    }
+  });
   it('returns roster from the actual session timing, not the changed Schedule', async () => {
     const s = await prisma.classSession.findUniqueOrThrow({ where: { id: sessionId } });
     await prisma.schedule.update({ where: { id: s.scheduleId }, data: { jpStart: 9, jpEnd: 10 } });
@@ -470,7 +531,7 @@ proof('student/session/JP production service on PostgreSQL', () => {
     expect(await studentAttendanceNoticeTarget(db, log)).toBeNull();
     await prisma.user.update({ where: { id: parentId }, data: { isActive: true } });
     const permission = await prisma.permission.findUniqueOrThrow({
-      where: { code: 'academic.attendance.read' },
+      where: { code: 'attendance.child.read' },
     });
     await prisma.userPermissionOverride.create({
       data: { userId: parentId, permissionId: permission.id, grant: false },
@@ -691,7 +752,7 @@ proof('student/session/JP production service on PostgreSQL', () => {
       process.env.VAPID_PRIVATE_KEY = 'synthetic-private';
       const endpoint = 'https://fcm.googleapis.com/fcm/send/synthetic-postgres-delivery';
       const grant = await prisma.rolePermission.findFirstOrThrow({
-        where: { role: 'ORANG_TUA', permission: { code: 'academic.attendance.read' } },
+        where: { role: 'ORANG_TUA', permission: { code: 'attendance.child.read' } },
       });
       try {
         await service.save(sessionId, await body(sessionId, 'alpha'), teacher);

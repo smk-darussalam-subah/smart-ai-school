@@ -8,6 +8,9 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { apiErrorMessage } from '@/lib/api';
 import { academicPagesResult } from '@/lib/academic-pages-server';
+import { buildQuestionSourceOptions } from './_components/assessment-workspace-mappers';
+import type { QuestionSourceOption } from './_components/question-bank-ai-request';
+import type { LmsModuleItem, RppItem } from './_components/guru-types';
 import type { FamilyRemedialListResponse } from './_components/ortu/ortu-remedial-ui';
 import {
   readLearnerAttendance,
@@ -629,6 +632,49 @@ export interface AiQuestionDraftItem {
   cognitiveLevel: CognitiveLevel;
   rationale: string;
   warnings: string[];
+}
+
+/** Reuse existing owner-scoped source reads; do not invent TP 1 when a saved source has no TP. */
+export async function fetchQuestionSources(input: {
+  subject: string;
+  classId?: string;
+  academicYear?: string;
+  semester?: number;
+}): Promise<{ success: boolean; data?: QuestionSourceOption[]; error?: string }> {
+  const parsed = z
+    .object({
+      subject: z.string().trim().min(1).max(100),
+      classId: z.string().uuid().optional(),
+      academicYear: z
+        .string()
+        .regex(/^\d{4}\/\d{4}$/)
+        .optional(),
+      semester: z.number().int().min(1).max(2).optional(),
+    })
+    .refine((value) => Boolean(value.academicYear) === Boolean(value.semester))
+    .safeParse(input);
+  if (!parsed.success) return { success: false, error: 'Pilih mapel dan periode yang valid.' };
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) return { success: false, error: 'Silakan masuk kembali.' };
+  const query = new URLSearchParams({ scope: 'own' });
+  if (parsed.data.classId) query.set('classId', parsed.data.classId);
+  if (parsed.data.academicYear) query.set('academicYear', parsed.data.academicYear);
+  if (parsed.data.semester) query.set('semester', String(parsed.data.semester));
+  const [modules, rpp] = await Promise.all([
+    academicPagesResult<LmsModuleItem>(`/lms/modules?${query}`, session.accessToken),
+    academicPagesResult<RppItem>(`/rpp?${query}`, session.accessToken),
+  ]);
+  if (modules.status !== 'success' && rpp.status !== 'success')
+    return { success: false, error: 'Sumber soal belum dapat dimuat. Coba lagi.' };
+  return {
+    success: true,
+    data: buildQuestionSourceOptions({
+      subject: parsed.data.subject,
+      classId: parsed.data.classId ?? 'all',
+      lmsModules: modules.status === 'success' ? modules.data.data : [],
+      rpp: rpp.status === 'success' ? rpp.data.data : [],
+    }),
+  };
 }
 
 export async function generateQuestionDrafts(data: AiQuestionDraftRequest): Promise<{

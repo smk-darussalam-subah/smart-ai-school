@@ -93,7 +93,15 @@ type QuestionDraftLease = {
 type QuestionDraftClaim =
   | { kind: 'claimed'; id: string; lease: QuestionDraftLease }
   | { kind: 'wait' }
-  | { kind: 'ready'; response: { generationId: string; model: string; source: ReturnType<AiGenerateService['contextSnapshot']>; items: QuestionDraftItem[] } };
+  | {
+      kind: 'ready';
+      response: {
+        generationId: string;
+        model: string;
+        source: ReturnType<AiGenerateService['contextSnapshot']>;
+        items: QuestionDraftItem[];
+      };
+    };
 
 const QUESTION_DRAFT_LEASE_MS = 120_000;
 
@@ -169,63 +177,90 @@ const NEAR_DUPLICATE_THRESHOLD = 0.82;
 
 const TextField = z.string().trim().min(3).max(3000);
 const ShortTextField = z.string().trim().min(1).max(160);
-const TpRefField = z.string().trim().regex(/^TP\s+\d+$/i);
-const QuestionDraftItemSchema = z.object({
-  itemKey: z.string().trim().min(3).max(80),
-  question: QuestionPayloadSchema,
-  tpRefs: z.array(z.string().trim().min(1).max(120)).min(1).max(20),
-  cognitiveLevel: z.enum(['C1', 'C2', 'C3', 'C4', 'C5', 'C6']),
-  rationale: z.string().trim().min(3).max(1000),
-  warnings: z.array(z.string().trim().min(1).max(300)).max(10).default([]),
-}).strict();
-const QuestionDraftOutputSchema = z.object({
-  items: z.array(QuestionDraftItemSchema).min(1).max(20),
-}).strict();
+const TpRefField = z
+  .string()
+  .trim()
+  .regex(/^TP\s+\d+$/i);
+const QuestionDraftItemSchema = z
+  .object({
+    itemKey: z.string().trim().min(3).max(80),
+    question: QuestionPayloadSchema,
+    tpRefs: z.array(z.string().trim().min(1).max(120)).min(1).max(20),
+    cognitiveLevel: z.enum(['C1', 'C2', 'C3', 'C4', 'C5', 'C6']),
+    rationale: z.string().trim().min(3).max(1000),
+    warnings: z.array(z.string().trim().min(1).max(300)).max(10).default([]),
+  })
+  .strict();
+const QuestionDraftOutputSchema = z
+  .object({
+    items: z.array(QuestionDraftItemSchema).min(1).max(20),
+  })
+  .strict();
 type QuestionDraftItem = z.infer<typeof QuestionDraftItemSchema>;
 
-const AtpItemSchema = z.object({
-  tpRef: TpRefField,
-  indikator: TextField,
-}).strict();
+const AtpItemSchema = z
+  .object({
+    tpRef: TpRefField,
+    indikator: TextField,
+  })
+  .strict();
 
-const KegiatanItemSchema = z.object({
-  pertemuan: ShortTextField,
-  pendahuluan: TextField,
-  inti: TextField,
-  penutup: TextField,
-  diferensiasi: TextField,
-}).strict();
+const KegiatanItemSchema = z
+  .object({
+    pertemuan: ShortTextField,
+    pendahuluan: TextField,
+    inti: TextField,
+    penutup: TextField,
+    diferensiasi: TextField,
+  })
+  .strict();
 
 const PatchSchemas = {
-  cp_tp: z.object({
-    tp: z.array(TextField).min(1).max(12),
-  }).strict(),
-  atp: z.object({
-    atp: z.array(AtpItemSchema).min(1).max(24),
-  }).strict(),
-  sarana: z.object({
-    sarana: TextField,
-    target: TextField,
-  }).strict(),
-  kegiatan: z.object({
-    kegiatan: z.array(KegiatanItemSchema).min(1).max(12),
-  }).strict(),
-  asesmen: z.object({
-    asesmenDiagnostik: TextField,
-    asesmenFormatif: TextField,
-    asesmenSumatif: TextField,
-  }).strict(),
-  remedial: z.object({
-    pengayaan: TextField,
-    remedial: TextField,
-  }).strict(),
-  refleksi: z.object({
-    refleksiGuru: TextField,
-    refleksiSiswa: TextField,
-  }).strict(),
-  lampiran: z.object({
-    lampiran: TextField,
-  }).strict(),
+  cp_tp: z
+    .object({
+      tp: z.array(TextField).min(1).max(12),
+    })
+    .strict(),
+  atp: z
+    .object({
+      atp: z.array(AtpItemSchema).min(1).max(24),
+    })
+    .strict(),
+  sarana: z
+    .object({
+      sarana: TextField,
+      target: TextField,
+    })
+    .strict(),
+  kegiatan: z
+    .object({
+      kegiatan: z.array(KegiatanItemSchema).min(1).max(12),
+    })
+    .strict(),
+  asesmen: z
+    .object({
+      asesmenDiagnostik: TextField,
+      asesmenFormatif: TextField,
+      asesmenSumatif: TextField,
+    })
+    .strict(),
+  remedial: z
+    .object({
+      pengayaan: TextField,
+      remedial: TextField,
+    })
+    .strict(),
+  refleksi: z
+    .object({
+      refleksiGuru: TextField,
+      refleksiSiswa: TextField,
+    })
+    .strict(),
+  lampiran: z
+    .object({
+      lampiran: TextField,
+    })
+    .strict(),
 } as const;
 
 @Injectable()
@@ -252,7 +287,13 @@ export class AiGenerateService {
     this.assertSectionFoundation(dto.section, resolved.body);
 
     const prompt = this.buildRppSectionPrompt(dto.section, resolved.rpp, resolved.body);
-    const ai = await this.callAi(prompt, dto.section, resolved.rpp.academicYear, resolved.rpp, resolved.body);
+    const ai = await this.callAi(
+      prompt,
+      dto.section,
+      resolved.rpp.academicYear,
+      resolved.rpp,
+      resolved.body,
+    );
     const output = this.normalizeSectionOutput(dto.section, ai.output, resolved.rpp, resolved.body);
 
     await this.auditGeneration({
@@ -275,48 +316,81 @@ export class AiGenerateService {
     }
     this.assertProductiveContextConfigured(dto, context);
 
-    return this.withInProcessLock(`ai-question-generate:${context.teacherId}:${dto.idempotencyKey}`, async () => {
-      const requestSpec = this.generationRequestSpec(dto);
-      const claim = await this.claimQuestionDraftGeneration(context, dto, requestSpec);
-      if (claim.kind === 'ready') return claim.response;
-      if (claim.kind === 'wait') return this.waitForQuestionDraftGeneration(context, dto, requestSpec);
-
-      const prompt = this.buildQuestionDraftPrompt(dto, context);
-      try {
-        const { ai, parsed } = await this.callQuestionDraftAiWithBoundedRepair(prompt, dto, context);
-        await this.assertNoQuestionDraftDuplicates(parsed.items, context.teacherId, context.subject);
-        const output = JSON.stringify({ items: parsed.items });
-        const stored = await this.finalizeQuestionDraftGeneration(claim.id, claim.lease, ai.promptForAudit, output, ai.model);
-
-        return {
-          generationId: stored.id,
-          model: stored.model,
-          source: this.contextSnapshot(context),
-          items: parsed.items,
-        };
-      } catch (error) {
-        await this.markQuestionDraftGenerationFailed(claim.id, claim.lease, prompt, error);
-        if (error instanceof HttpException) throw error;
-        throw this.mapProviderError(error, hasPii(prompt));
-      }
-    });
-  }
-
-  async acceptQuestionDrafts(generationId: string, dto: AcceptQuestionDraftDto, user: AuthUser) {
     return this.withInProcessLock(
-      `ai-question-lifecycle:${generationId}`,
-      () => this.acceptQuestionDraftsLocked(generationId, dto, user),
+      `ai-question-generate:${context.teacherId}:${dto.idempotencyKey}`,
+      async () => {
+        const requestSpec = this.generationRequestSpec(dto);
+        const claim = await this.claimQuestionDraftGeneration(context, dto, requestSpec);
+        if (claim.kind === 'ready') return claim.response;
+        if (claim.kind === 'wait')
+          return this.waitForQuestionDraftGeneration(context, dto, requestSpec);
+
+        const prompt = this.buildQuestionDraftPrompt(dto, context);
+        try {
+          const { ai, parsed } = await this.callQuestionDraftAiWithBoundedRepair(
+            prompt,
+            dto,
+            context,
+          );
+          await this.assertNoQuestionDraftDuplicates(
+            parsed.items,
+            context.teacherId,
+            context.subject,
+          );
+          const output = JSON.stringify({ items: parsed.items });
+          const stored = await this.finalizeQuestionDraftGeneration(
+            claim.id,
+            claim.lease,
+            ai.promptForAudit,
+            output,
+            ai.model,
+          );
+
+          return {
+            generationId: stored.id,
+            model: stored.model,
+            source: this.contextSnapshot(context),
+            items: parsed.items,
+          };
+        } catch (error) {
+          await this.markQuestionDraftGenerationFailed(claim.id, claim.lease, prompt, error);
+          if (error instanceof HttpException) throw error;
+          throw this.mapProviderError(error, hasPii(prompt));
+        }
+      },
     );
   }
 
-  private async acceptQuestionDraftsLocked(generationId: string, dto: AcceptQuestionDraftDto, user: AuthUser) {
+  async acceptQuestionDrafts(generationId: string, dto: AcceptQuestionDraftDto, user: AuthUser) {
+    return this.withInProcessLock(`ai-question-lifecycle:${generationId}`, () =>
+      this.acceptQuestionDraftsLocked(generationId, dto, user),
+    );
+  }
+
+  private async acceptQuestionDraftsLocked(
+    generationId: string,
+    dto: AcceptQuestionDraftDto,
+    user: AuthUser,
+  ) {
+    if (new Set(dto.items.map((item) => item.itemKey)).size !== dto.items.length) {
+      throw new BadRequestException('Pilih soal yang berbeda untuk disimpan.');
+    }
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
     const generation = await this.prisma.aiGeneration.findFirst({
       where: { id: generationId, teacherId, type: 'question-drafts' },
-      select: { id: true, teacherId: true, output: true, sourceType: true, sourceId: true, contextSnapshot: true, status: true },
+      select: {
+        id: true,
+        teacherId: true,
+        output: true,
+        sourceType: true,
+        sourceId: true,
+        contextSnapshot: true,
+        status: true,
+      },
     });
     if (!generation) throw new ForbiddenException('Draft AI Bank Soal tidak ditemukan');
-    if (generation.status === 'rejected') throw new ConflictException('Draft AI Bank Soal sudah ditolak');
+    if (generation.status === 'rejected')
+      throw new ConflictException('Draft AI Bank Soal sudah ditolak');
 
     const original = QuestionDraftOutputSchema.parse(JSON.parse(generation.output));
     const originalKeys = new Set(original.items.map((item) => item.itemKey));
@@ -331,6 +405,11 @@ export class AiGenerateService {
     }
 
     const accepted = await this.prisma.$transaction(async (tx) => {
+      // Serialize acceptance at the persistent generation boundary, not just one Node process.
+      // No pool/root query may be issued while this transaction holds its connection.
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM ai_knowledge.ai_generations WHERE id = ${generation.id}::uuid FOR UPDATE`,
+      );
       const acceptance = await tx.aiDraftAcceptance.upsert({
         where: {
           aiGenerationId_idempotencyKey: {
@@ -356,17 +435,55 @@ export class AiGenerateService {
         select: { id: true, status: true },
       });
       if (!locked) throw new ForbiddenException('Draft AI Bank Soal tidak ditemukan');
-      if (locked.status === 'rejected') throw new ConflictException('Draft AI Bank Soal sudah ditolak');
+      if (locked.status === 'rejected')
+        throw new ConflictException('Draft AI Bank Soal sudah ditolak');
 
-      const result: Array<{ id: string; subject: string; type: string; body: string; difficulty: string; aiItemKey: string | null }> = [];
+      const result: Array<{
+        id: string;
+        subject: string;
+        type: string;
+        body: string;
+        difficulty: string;
+        aiItemKey: string | null;
+      }> = [];
       const existingForGeneration = await tx.question.findMany({
         where: { aiGenerationId: generation.id },
         select: {
-          id: true, subject: true, type: true, body: true, options: true, answer: true,
-          difficulty: true, tags: true, rubric: true, aiItemKey: true, tpRefs: true, cognitiveLevel: true,
+          id: true,
+          subject: true,
+          type: true,
+          body: true,
+          options: true,
+          answer: true,
+          difficulty: true,
+          tags: true,
+          rubric: true,
+          aiItemKey: true,
+          tpRefs: true,
+          cognitiveLevel: true,
         },
       });
-      const acceptedKeys = new Set(existingForGeneration.map((item) => item.aiItemKey).filter((item): item is string => Boolean(item)));
+      // Committed receipts outlive hard deletion of a bank question. Their item keys
+      // remain tombstones; a new operation key must not bypass an old acceptance.
+      const receipts = await tx.aiDraftAcceptance.findMany({
+        where: { aiGenerationId: generation.id, status: 'accepted' },
+        select: { itemKeys: true },
+      });
+      const previouslyAccepted = new Set(receipts.flatMap((receipt) => receipt.itemKeys));
+      if (locked.status === 'accepted') for (const key of originalKeys) previouslyAccepted.add(key);
+      const existingByKey = new Map(existingForGeneration.map((item) => [item.aiItemKey, item]));
+      const acceptedKeys = new Set([
+        ...previouslyAccepted,
+        ...existingForGeneration
+          .map((item) => item.aiItemKey)
+          .filter((item): item is string => Boolean(item)),
+      ]);
+      const changedAcceptedItem = () =>
+        new ConflictException({
+          error: 'AI_ACCEPTED_ITEM_CHANGED',
+          message:
+            'Soal yang pernah disimpan telah diubah atau dihapus. Buka Bank Soal untuk melihat kondisi terbaru.',
+        });
       for (const item of dto.items) {
         const data = {
           subject: item.question.subject,
@@ -376,24 +493,43 @@ export class AiGenerateService {
           tags: item.question.tags,
           ...questionPayloadToData(item.question),
         };
-        const question = await tx.question.upsert({
-          where: { aiGenerationId_aiItemKey: { aiGenerationId: generation.id, aiItemKey: item.itemKey } },
-          create: {
-            teacherId,
-            ...data,
-            source: 'AI_ASSISTED',
-            aiGenerationId: generation.id,
-            aiItemKey: item.itemKey,
-            tpRefs: item.tpRefs,
-            cognitiveLevel: item.cognitiveLevel,
-          },
-          update: {},
-          select: {
-            id: true, subject: true, type: true, body: true, options: true, answer: true,
-            difficulty: true, tags: true, rubric: true, aiItemKey: true, tpRefs: true, cognitiveLevel: true,
-          },
-        });
-        const expected = { ...data, aiItemKey: item.itemKey, tpRefs: item.tpRefs, cognitiveLevel: item.cognitiveLevel };
+        const existing = existingByKey.get(item.itemKey);
+        if (!existing && previouslyAccepted.has(item.itemKey)) throw changedAcceptedItem();
+        // A replay only reads the existing question. It never executes an upsert
+        // that could recreate the row if another tab deleted it after our read.
+        const question =
+          existing ??
+          (await tx.question.create({
+            data: {
+              teacherId,
+              ...data,
+              source: 'AI_ASSISTED',
+              aiGenerationId: generation.id,
+              aiItemKey: item.itemKey,
+              tpRefs: item.tpRefs,
+              cognitiveLevel: item.cognitiveLevel,
+            },
+            select: {
+              id: true,
+              subject: true,
+              type: true,
+              body: true,
+              options: true,
+              answer: true,
+              difficulty: true,
+              tags: true,
+              rubric: true,
+              aiItemKey: true,
+              tpRefs: true,
+              cognitiveLevel: true,
+            },
+          }));
+        const expected = {
+          ...data,
+          aiItemKey: item.itemKey,
+          tpRefs: item.tpRefs,
+          cognitiveLevel: item.cognitiveLevel,
+        };
         const current = {
           subject: question.subject,
           type: question.type,
@@ -407,8 +543,10 @@ export class AiGenerateService {
           tpRefs: question.tpRefs,
           cognitiveLevel: question.cognitiveLevel,
         };
-        if (this.persistedQuestionFingerprint(current) !== this.persistedQuestionFingerprint(expected)) {
-          throw new ConflictException('Item draft sudah diterima dengan payload berbeda');
+        if (
+          this.persistedQuestionFingerprint(current) !== this.persistedQuestionFingerprint(expected)
+        ) {
+          throw changedAcceptedItem();
         }
         acceptedKeys.add(item.itemKey);
         result.push({
@@ -423,7 +561,11 @@ export class AiGenerateService {
 
       await tx.aiGeneration.update({
         where: { id: generation.id },
-        data: { status: original.items.every((item) => acceptedKeys.has(item.itemKey)) ? 'accepted' : 'partially_accepted' },
+        data: {
+          status: original.items.every((item) => acceptedKeys.has(item.itemKey))
+            ? 'accepted'
+            : 'partially_accepted',
+        },
       });
       await tx.aiDraftAcceptance.update({
         where: {
@@ -446,9 +588,8 @@ export class AiGenerateService {
     dto: RegenerateQuestionDraftItemDto,
     user: AuthUser,
   ) {
-    return this.withInProcessLock(
-      `ai-question-lifecycle:${generationId}`,
-      () => this.regenerateQuestionDraftItemLocked(generationId, itemKey, dto, user),
+    return this.withInProcessLock(`ai-question-lifecycle:${generationId}`, () =>
+      this.regenerateQuestionDraftItemLocked(generationId, itemKey, dto, user),
     );
   }
 
@@ -487,12 +628,19 @@ export class AiGenerateService {
       where: { aiGenerationId_aiItemKey: { aiGenerationId: generation.id, aiItemKey: itemKey } },
       select: { id: true },
     });
-    if (acceptedItem) throw new ConflictException('Item draft sudah diterima dan tidak dapat diregenerasi');
+    const acceptedReceipt = await this.prisma.aiDraftAcceptance.findFirst({
+      where: { aiGenerationId: generation.id, status: 'accepted', itemKeys: { has: itemKey } },
+      select: { id: true },
+    });
+    if (acceptedItem || acceptedReceipt)
+      throw new ConflictException('Item draft sudah diterima dan tidak dapat diregenerasi');
 
     const context = await this.reloadQuestionGenerationContext(generation, user);
     const requestSpec = this.questionDraftSpecFromGeneration(generation.requestSpec, context);
     const regenerateDto: GenerateQuestionDraftDto = {
-      ...(context.sourceType === 'module' ? { moduleId: context.sourceId } : { rppId: context.sourceId }),
+      ...(context.sourceType === 'module'
+        ? { moduleId: context.sourceId }
+        : { rppId: context.sourceId }),
       purpose: requestSpec.purpose,
       questionCount: 1,
       typeDistribution: {
@@ -525,45 +673,142 @@ export class AiGenerateService {
       this.buildQuestionDraftPrompt(regenerateDto, context),
       `Regenerate tepat satu item pengganti untuk itemKey ${itemKey}. Jangan mengubah tipe, kesulitan, level kognitif, atau TP.`,
     ].join('\n');
-    const { parsed } = await this.callQuestionDraftAiWithBoundedRepair(prompt, regenerateDto, context);
+    const { parsed } = await this.callQuestionDraftAiWithBoundedRepair(
+      prompt,
+      regenerateDto,
+      context,
+    );
     const replacement: QuestionDraftItem = { ...parsed.items[0]!, itemKey: target.itemKey };
-    const next = { items: original.items.map((item) => item.itemKey === itemKey ? replacement : item) };
-    await this.assertNoQuestionDraftDuplicates(next.items, teacherId, context.subject);
-
-    await this.prisma.aiGeneration.update({
-      where: { id: generation.id },
-      data: { output: JSON.stringify(next), status: 'drafted' },
+    const next = {
+      items: original.items.map((item) => (item.itemKey === itemKey ? replacement : item)),
+    };
+    // Provider latency must not hold a pool connection or a lifecycle row lock.
+    // Revalidate the exact prompt/output basis only after the provider returns.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM ai_knowledge.ai_generations WHERE id = ${generation.id}::uuid FOR UPDATE`,
+      );
+      const locked = await tx.aiGeneration.findFirst({
+        where: { id: generation.id, teacherId, type: 'question-drafts' },
+        select: {
+          status: true,
+          output: true,
+          sourceType: true,
+          sourceId: true,
+          requestSpec: true,
+          contextSnapshot: true,
+        },
+      });
+      if (!locked) throw new ForbiddenException('Draft AI Bank Soal tidak ditemukan');
+      if (locked.status !== 'drafted' && locked.status !== 'partially_accepted') {
+        throw new ConflictException(
+          'Draft AI Bank Soal sudah selesai atau berubah. Muat ulang sebelum mencoba lagi.',
+        );
+      }
+      if (
+        locked.output !== generation.output ||
+        locked.sourceType !== generation.sourceType ||
+        locked.sourceId !== generation.sourceId ||
+        this.stableJson(locked.requestSpec) !== this.stableJson(generation.requestSpec) ||
+        this.stableJson(locked.contextSnapshot) !== this.stableJson(generation.contextSnapshot)
+      ) {
+        throw new ConflictException('Draft telah berubah. Muat ulang sebelum membuat ulang soal.');
+      }
+      const [currentItem, committedItem] = await Promise.all([
+        tx.question.findUnique({
+          where: {
+            aiGenerationId_aiItemKey: { aiGenerationId: generation.id, aiItemKey: itemKey },
+          },
+          select: { id: true },
+        }),
+        tx.aiDraftAcceptance.findFirst({
+          where: { aiGenerationId: generation.id, status: 'accepted', itemKeys: { has: itemKey } },
+          select: { id: true },
+        }),
+      ]);
+      if (currentItem || committedItem)
+        throw new ConflictException('Item draft sudah diterima dan tidak dapat diregenerasi');
+      // Check the entire resulting draft for internal duplicates, but only the
+      // new replacement against the bank. Unchanged accepted siblings are not
+      // new candidates; edited siblings and manual questions still participate.
+      await this.assertNoQuestionDraftDuplicates(next.items, teacherId, context.subject, tx, [
+        replacement,
+      ]);
+      const changed = await tx.aiGeneration.updateMany({
+        where: {
+          id: generation.id,
+          teacherId,
+          type: 'question-drafts',
+          status: locked.status,
+          output: generation.output,
+        },
+        data: { output: JSON.stringify(next) },
+      });
+      if (changed.count !== 1)
+        throw new ConflictException('Draft telah berubah. Muat ulang sebelum membuat ulang soal.');
     });
 
     return { generationId: generation.id, item: replacement };
   }
 
   async rejectQuestionDrafts(generationId: string, dto: RejectQuestionDraftDto, user: AuthUser) {
-    return this.withInProcessLock(
-      `ai-question-lifecycle:${generationId}`,
-      () => this.rejectQuestionDraftsLocked(generationId, dto, user),
+    return this.withInProcessLock(`ai-question-lifecycle:${generationId}`, () =>
+      this.rejectQuestionDraftsLocked(generationId, dto, user),
     );
   }
 
-  private async rejectQuestionDraftsLocked(generationId: string, dto: RejectQuestionDraftDto, user: AuthUser) {
+  private async rejectQuestionDraftsLocked(
+    generationId: string,
+    dto: RejectQuestionDraftDto,
+    user: AuthUser,
+  ) {
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
     const generation = await this.prisma.aiGeneration.findFirst({
       where: { id: generationId, teacherId, type: 'question-drafts' },
       select: { id: true, status: true, sourceType: true, sourceId: true, contextSnapshot: true },
     });
     if (!generation) throw new ForbiddenException('Draft AI Bank Soal tidak ditemukan');
-    if (generation.status === 'accepted') throw new ConflictException('Draft AI Bank Soal sudah diterima');
     await this.reloadQuestionGenerationContext(generation, user);
 
-    const acceptedCount = await this.prisma.question.count({
-      where: { aiGenerationId: generation.id },
+    const fingerprint = this.questionFingerprint({
+      generationId,
+      action: 'reject',
+      idempotencyKey: dto.idempotencyKey,
     });
-    if (acceptedCount > 0) {
-      throw new ConflictException('Sebagian item sudah diterima; draft tidak dapat ditolak seluruhnya');
-    }
-
-    const fingerprint = this.questionFingerprint({ generationId, action: 'reject', idempotencyKey: dto.idempotencyKey });
     await this.prisma.$transaction(async (tx) => {
+      // Same persistent serialization point and lock order as accept. All state
+      // checks below use this client, after the lock, never a second pool checkout.
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM ai_knowledge.ai_generations WHERE id = ${generation.id}::uuid FOR UPDATE`,
+      );
+      const locked = await tx.aiGeneration.findFirst({
+        where: { id: generation.id, teacherId, type: 'question-drafts' },
+        select: { id: true, status: true },
+      });
+      if (!locked) throw new ForbiddenException('Draft AI Bank Soal tidak ditemukan');
+      if (locked.status === 'accepted' || locked.status === 'partially_accepted') {
+        throw new ConflictException(
+          'Sebagian item sudah diterima; draft tidak dapat ditolak seluruhnya',
+        );
+      }
+      const [acceptedCount, acceptedReceipt] = await Promise.all([
+        tx.question.count({ where: { aiGenerationId: generation.id } }),
+        tx.aiDraftAcceptance.findFirst({
+          // Empty item keys identify a reject operation, not an accepted question.
+          // Nonempty committed receipts remain authoritative after hard deletion.
+          where: {
+            aiGenerationId: generation.id,
+            status: 'accepted',
+            itemKeys: { isEmpty: false },
+          },
+          select: { id: true },
+        }),
+      ]);
+      if (acceptedCount > 0 || acceptedReceipt) {
+        throw new ConflictException(
+          'Sebagian item sudah diterima; draft tidak dapat ditolak seluruhnya',
+        );
+      }
       const acceptance = await tx.aiDraftAcceptance.upsert({
         where: {
           aiGenerationId_idempotencyKey: {
@@ -576,18 +821,37 @@ export class AiGenerateService {
           idempotencyKey: dto.idempotencyKey,
           payloadFingerprint: fingerprint,
           itemKeys: [],
-          status: 'accepted',
+          status: 'pending',
         },
         update: {},
-        select: { payloadFingerprint: true },
+        select: { payloadFingerprint: true, itemKeys: true, status: true },
       });
-      if (acceptance.payloadFingerprint !== fingerprint) {
+      if (acceptance.payloadFingerprint !== fingerprint || acceptance.itemKeys.length !== 0) {
         throw new ConflictException('Idempotency key reject sudah dipakai untuk payload berbeda');
       }
-      await tx.aiGeneration.updateMany({
-        where: { id: generation.id, status: { not: 'accepted' } },
-        data: { status: 'rejected' },
-      });
+      if (acceptance.status === 'accepted' && locked.status !== 'rejected') {
+        throw new ConflictException('Status penolakan draft belum dapat dikonfirmasi');
+      }
+      if (locked.status !== 'rejected') {
+        const changed = await tx.aiGeneration.updateMany({
+          where: { id: generation.id, teacherId, type: 'question-drafts', status: locked.status },
+          data: { status: 'rejected' },
+        });
+        if (changed.count !== 1)
+          throw new ConflictException('Status draft berubah. Muat ulang sebelum mencoba lagi.');
+      }
+      // A committed same-key replay is read-only: do not alter its timestamps.
+      if (acceptance.status !== 'accepted') {
+        await tx.aiDraftAcceptance.update({
+          where: {
+            aiGenerationId_idempotencyKey: {
+              aiGenerationId: generation.id,
+              idempotencyKey: dto.idempotencyKey,
+            },
+          },
+          data: { status: 'accepted' },
+        });
+      }
     });
 
     return { generationId: generation.id, rejected: true };
@@ -599,7 +863,11 @@ export class AiGenerateService {
     requestSpec: Record<string, unknown>,
   ): Promise<QuestionDraftClaim> {
     const existing = await this.prisma.aiGeneration.findFirst({
-      where: { teacherId: context.teacherId, type: 'question-drafts', idempotencyKey: dto.idempotencyKey },
+      where: {
+        teacherId: context.teacherId,
+        type: 'question-drafts',
+        idempotencyKey: dto.idempotencyKey,
+      },
       select: { id: true, requestSpec: true, output: true, model: true, status: true },
     });
     if (existing) {
@@ -608,11 +876,20 @@ export class AiGenerateService {
         const existingLease = this.questionDraftLease(existing.requestSpec);
         if (!this.isQuestionDraftLeaseExpired(existingLease)) return { kind: 'wait' };
         const nextLease = this.newQuestionDraftLease((existingLease?.leaseSequence ?? 0) + 1);
-        const reclaimed = await this.reclaimQuestionDraftGeneration(existing.id, existingLease, requestSpec, nextLease);
-        return reclaimed ? { kind: 'claimed', id: existing.id, lease: nextLease } : { kind: 'wait' };
+        const reclaimed = await this.reclaimQuestionDraftGeneration(
+          existing.id,
+          existingLease,
+          requestSpec,
+          nextLease,
+        );
+        return reclaimed
+          ? { kind: 'claimed', id: existing.id, lease: nextLease }
+          : { kind: 'wait' };
       }
       if (existing.status === 'failed') {
-        const nextLease = this.newQuestionDraftLease((this.questionDraftLease(existing.requestSpec)?.leaseSequence ?? 0) + 1);
+        const nextLease = this.newQuestionDraftLease(
+          (this.questionDraftLease(existing.requestSpec)?.leaseSequence ?? 0) + 1,
+        );
         const claimed = await this.prisma.aiGeneration.updateMany({
           where: { id: existing.id, status: 'failed' },
           data: {
@@ -620,12 +897,20 @@ export class AiGenerateService {
             prompt: '',
             output: '',
             model: 'pending',
-            requestSpec: this.storedQuestionDraftRequestSpec(requestSpec, nextLease) as Prisma.InputJsonValue,
+            requestSpec: this.storedQuestionDraftRequestSpec(
+              requestSpec,
+              nextLease,
+            ) as Prisma.InputJsonValue,
           },
         });
-        return claimed.count === 1 ? { kind: 'claimed', id: existing.id, lease: nextLease } : { kind: 'wait' };
+        return claimed.count === 1
+          ? { kind: 'claimed', id: existing.id, lease: nextLease }
+          : { kind: 'wait' };
       }
-      return { kind: 'ready', response: this.questionDraftResponse(existing, context, requestSpec) };
+      return {
+        kind: 'ready',
+        response: this.questionDraftResponse(existing, context, requestSpec),
+      };
     }
 
     try {
@@ -640,7 +925,10 @@ export class AiGenerateService {
           sourceType: context.sourceType,
           sourceId: context.sourceId,
           status: 'generating',
-          requestSpec: this.storedQuestionDraftRequestSpec(requestSpec, lease) as Prisma.InputJsonValue,
+          requestSpec: this.storedQuestionDraftRequestSpec(
+            requestSpec,
+            lease,
+          ) as Prisma.InputJsonValue,
           contextSnapshot: this.contextSnapshot(context) as Prisma.InputJsonValue,
           idempotencyKey: dto.idempotencyKey,
         },
@@ -648,10 +936,7 @@ export class AiGenerateService {
       });
       return { kind: 'claimed', id: generation.id, lease };
     } catch (error) {
-      if (
-        !(error instanceof Prisma.PrismaClientKnownRequestError)
-        || error.code !== 'P2002'
-      ) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
         throw error;
       }
       return { kind: 'wait' };
@@ -662,19 +947,30 @@ export class AiGenerateService {
     context: ResolvedQuestionSourceContext,
     dto: GenerateQuestionDraftDto,
     requestSpec: Record<string, unknown>,
-  ): Promise<{ generationId: string; model: string; source: ReturnType<AiGenerateService['contextSnapshot']>; items: QuestionDraftItem[] }> {
+  ): Promise<{
+    generationId: string;
+    model: string;
+    source: ReturnType<AiGenerateService['contextSnapshot']>;
+    items: QuestionDraftItem[];
+  }> {
     const deadline = Date.now() + 60_000;
     while (Date.now() < deadline) {
       await this.delay(250);
       const existing = await this.prisma.aiGeneration.findFirst({
-        where: { teacherId: context.teacherId, type: 'question-drafts', idempotencyKey: dto.idempotencyKey },
+        where: {
+          teacherId: context.teacherId,
+          type: 'question-drafts',
+          idempotencyKey: dto.idempotencyKey,
+        },
         select: { id: true, requestSpec: true, output: true, model: true, status: true },
       });
       if (!existing) continue;
       this.assertQuestionDraftRequestMatches(existing.requestSpec, requestSpec);
       if (existing.status === 'generating') continue;
       if (existing.status === 'failed') {
-        throw new ConflictException('Generate draft AI sebelumnya gagal. Gunakan idempotency key baru untuk mencoba ulang.');
+        throw new ConflictException(
+          'Generate draft AI sebelumnya gagal. Gunakan idempotency key baru untuk mencoba ulang.',
+        );
       }
       return this.questionDraftResponse(existing, context, requestSpec);
     }
@@ -685,7 +981,12 @@ export class AiGenerateService {
     generation: { id: string; requestSpec: unknown; output: string; model: string },
     context: ResolvedQuestionSourceContext,
     requestSpec: Record<string, unknown>,
-  ): { generationId: string; model: string; source: ReturnType<AiGenerateService['contextSnapshot']>; items: QuestionDraftItem[] } {
+  ): {
+    generationId: string;
+    model: string;
+    source: ReturnType<AiGenerateService['contextSnapshot']>;
+    items: QuestionDraftItem[];
+  } {
     this.assertQuestionDraftRequestMatches(generation.requestSpec, requestSpec);
     if (!generation.output.trim()) {
       throw new ConflictException('Draft AI belum memiliki output valid');
@@ -698,18 +999,28 @@ export class AiGenerateService {
     };
   }
 
-  private assertQuestionDraftRequestMatches(existingSpec: unknown, requestSpec: Record<string, unknown>): void {
-    if (this.stableJson(this.questionDraftOriginalRequestSpec(existingSpec)) !== this.stableJson(requestSpec)) {
+  private assertQuestionDraftRequestMatches(
+    existingSpec: unknown,
+    requestSpec: Record<string, unknown>,
+  ): void {
+    if (
+      this.stableJson(this.questionDraftOriginalRequestSpec(existingSpec)) !==
+      this.stableJson(requestSpec)
+    ) {
       throw new ConflictException('Idempotency key sudah dipakai untuk request berbeda');
     }
   }
 
-  private storedQuestionDraftRequestSpec(requestSpec: Record<string, unknown>, lease: QuestionDraftLease): Record<string, unknown> {
+  private storedQuestionDraftRequestSpec(
+    requestSpec: Record<string, unknown>,
+    lease: QuestionDraftLease,
+  ): Record<string, unknown> {
     return { request: requestSpec, lease };
   }
 
   private questionDraftOriginalRequestSpec(storedSpec: unknown): unknown {
-    if (!storedSpec || typeof storedSpec !== 'object' || Array.isArray(storedSpec)) return storedSpec;
+    if (!storedSpec || typeof storedSpec !== 'object' || Array.isArray(storedSpec))
+      return storedSpec;
     const maybeRequest = (storedSpec as { request?: unknown }).request;
     return maybeRequest && typeof maybeRequest === 'object' && !Array.isArray(maybeRequest)
       ? maybeRequest
@@ -722,9 +1033,9 @@ export class AiGenerateService {
     if (!lease || typeof lease !== 'object' || Array.isArray(lease)) return null;
     const candidate = lease as Partial<QuestionDraftLease>;
     if (
-      typeof candidate.leaseId !== 'string'
-      || typeof candidate.leaseExpiresAt !== 'string'
-      || typeof candidate.leaseSequence !== 'number'
+      typeof candidate.leaseId !== 'string' ||
+      typeof candidate.leaseExpiresAt !== 'string' ||
+      typeof candidate.leaseSequence !== 'number'
     ) {
       return null;
     }
@@ -802,7 +1113,9 @@ export class AiGenerateService {
     `);
     const stored = rows[0];
     if (!stored) {
-      throw new ConflictException('Lease generate draft AI sudah kedaluwarsa atau diambil proses lain. Muat ulang hasil terbaru.');
+      throw new ConflictException(
+        'Lease generate draft AI sudah kedaluwarsa atau diambil proses lain. Muat ulang hasil terbaru.',
+      );
     }
     return stored;
   }
@@ -813,7 +1126,9 @@ export class AiGenerateService {
     prompt: string,
     error: unknown,
   ): Promise<void> {
-    await this.prisma.$executeRaw(Prisma.sql`
+    await this.prisma
+      .$executeRaw(
+        Prisma.sql`
       UPDATE ai_knowledge.ai_generations
       SET prompt = ${prompt},
           output = ${this.errorMessage(error).slice(0, 2000)},
@@ -822,12 +1137,14 @@ export class AiGenerateService {
       WHERE id = ${generationId}::uuid
         AND status = 'generating'
         AND request_spec #>> '{lease,leaseId}' = ${lease.leaseId}
-    `).catch((updateError: unknown) => {
-      logger.warn('[AiGenerateService] failed to mark question draft generation failed', {
-        generationId,
-        error: this.errorMessage(updateError),
+    `,
+      )
+      .catch((updateError: unknown) => {
+        logger.warn('[AiGenerateService] failed to mark question draft generation failed', {
+          generationId,
+          error: this.errorMessage(updateError),
+        });
       });
-    });
   }
 
   private async callQuestionDraftAiWithBoundedRepair(
@@ -837,12 +1154,13 @@ export class AiGenerateService {
   ): Promise<{ ai: AiCallResult; parsed: { items: QuestionDraftItem[] } }> {
     let lastError: unknown = null;
     for (let attempt = 0; attempt < 2; attempt++) {
-      const promptForAttempt = attempt === 0
-        ? prompt
-        : [
-          prompt,
-          'Output sebelumnya ditolak validator DIIS. Kembalikan ulang JSON object saja, tanpa markdown, field ekstra, KI/KD, PII, atau bentuk soal di luar schema.',
-        ].join('\n');
+      const promptForAttempt =
+        attempt === 0
+          ? prompt
+          : [
+              prompt,
+              'Output sebelumnya ditolak validator DIIS. Kembalikan ulang JSON object saja, tanpa markdown, field ekstra, KI/KD, PII, atau bentuk soal di luar schema.',
+            ].join('\n');
       const ai = await this.callQuestionDraftAi(promptForAttempt, context.academicYear, dto);
       try {
         return { ai, parsed: this.normalizeQuestionDraftOutput(ai.output, dto, context) };
@@ -861,9 +1179,12 @@ export class AiGenerateService {
     if (generation.sourceType !== 'rpp' && generation.sourceType !== 'module') {
       throw new ConflictException('Source context AI generation tidak valid');
     }
-    if (!generation.sourceId) throw new ConflictException('Source context AI generation tidak lengkap');
+    if (!generation.sourceId)
+      throw new ConflictException('Source context AI generation tidak lengkap');
     return this.loadQuestionSourceContext(
-      generation.sourceType === 'rpp' ? { rppId: generation.sourceId } : { moduleId: generation.sourceId },
+      generation.sourceType === 'rpp'
+        ? { rppId: generation.sourceId }
+        : { moduleId: generation.sourceId },
       user,
     );
   }
@@ -871,38 +1192,65 @@ export class AiGenerateService {
   private questionDraftSpecFromGeneration(
     requestSpec: Prisma.JsonValue | null,
     context: ResolvedQuestionSourceContext,
-  ): Pick<GenerateQuestionDraftDto, 'purpose' | 'contextMode' | 'character' | 'teacherInstruction'> {
+  ): Pick<
+    GenerateQuestionDraftDto,
+    'purpose' | 'contextMode' | 'character' | 'teacherInstruction'
+  > {
     const originalSpec = this.questionDraftOriginalRequestSpec(requestSpec);
-    const spec = originalSpec && typeof originalSpec === 'object' && !Array.isArray(originalSpec)
-      ? originalSpec as Record<string, unknown>
-      : {};
+    const spec =
+      originalSpec && typeof originalSpec === 'object' && !Array.isArray(originalSpec)
+        ? (originalSpec as Record<string, unknown>)
+        : {};
     const purpose = spec['purpose'];
     const contextMode = spec['contextMode'];
     const character = spec['character'];
     const teacherInstruction = spec['teacherInstruction'];
-    if (purpose !== 'diagnostik' && purpose !== 'formatif' && purpose !== 'sumatif-uts' && purpose !== 'sumatif-uas') {
+    if (
+      purpose !== 'diagnostik' &&
+      purpose !== 'formatif' &&
+      purpose !== 'sumatif-uts' &&
+      purpose !== 'sumatif-uas'
+    ) {
       throw new ConflictException('Request spec draft AI tidak valid');
     }
     return {
       purpose,
-      contextMode: contextMode === 'umum' || contextMode === 'auto_vokasi' || contextMode === 'produktif'
-        ? contextMode
-        : context.majorName ? 'auto_vokasi' : 'umum',
-      character: character === 'konseptual' || character === 'studi_kasus' || character === 'praktik' || character === 'literasi' || character === 'numerasi'
-        ? character
-        : 'konseptual',
-      teacherInstruction: typeof teacherInstruction === 'string' && teacherInstruction.trim() ? teacherInstruction : undefined,
+      contextMode:
+        contextMode === 'umum' || contextMode === 'auto_vokasi' || contextMode === 'produktif'
+          ? contextMode
+          : context.majorName
+            ? 'auto_vokasi'
+            : 'umum',
+      character:
+        character === 'konseptual' ||
+        character === 'studi_kasus' ||
+        character === 'praktik' ||
+        character === 'literasi' ||
+        character === 'numerasi'
+          ? character
+          : 'konseptual',
+      teacherInstruction:
+        typeof teacherInstruction === 'string' && teacherInstruction.trim()
+          ? teacherInstruction
+          : undefined,
     };
   }
 
-  private async loadQuestionSourceContext(dto: { rppId?: string; moduleId?: string }, user: AuthUser): Promise<ResolvedQuestionSourceContext> {
+  private async loadQuestionSourceContext(
+    dto: { rppId?: string; moduleId?: string },
+    user: AuthUser,
+  ): Promise<ResolvedQuestionSourceContext> {
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
     if (dto.rppId) {
       const resolved = await this.loadOwnedRppContext(dto.rppId, user);
       const tp = this.asStringArray(resolved.body['tp']);
-      if (tp.length === 0) throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
+      if (tp.length === 0)
+        throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
       const major = resolved.rpp.class?.majorCode
-        ? await this.prisma.major.findUnique({ where: { code: resolved.rpp.class.majorCode }, select: { name: true, description: true } })
+        ? await this.prisma.major.findUnique({
+            where: { code: resolved.rpp.class.majorCode },
+            select: { name: true, description: true },
+          })
         : null;
       return {
         teacherId,
@@ -923,27 +1271,47 @@ export class AiGenerateService {
           this.asText(resolved.body['materi']),
           this.asText(resolved.body['kegiatan']),
           this.asText(resolved.body['asesmen']),
-        ].filter(Boolean).join('\n').slice(0, 6000),
+        ]
+          .filter(Boolean)
+          .join('\n')
+          .slice(0, 6000),
       };
     }
 
     const module = await this.prisma.lmsModule.findFirst({
       where: { id: dto.moduleId, teacherId },
       select: {
-        id: true, teacherId: true, classId: true, subject: true, title: true, tp: true,
-        content: true, academicYear: true, semester: true,
+        id: true,
+        teacherId: true,
+        classId: true,
+        subject: true,
+        title: true,
+        tp: true,
+        content: true,
+        academicYear: true,
+        semester: true,
         class: { select: { id: true, name: true, grade: true, majorCode: true } },
       },
     });
     if (!module) throw new ForbiddenException('Modul LMS tidak ditemukan atau bukan milik guru');
-    if (!module.classId || !module.class) throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
+    if (!module.classId || !module.class)
+      throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
     if (!module.tp) throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
     const assignment = await this.prisma.teachingAssignment.findFirst({
-      where: { teacherId, classId: module.classId, subject: module.subject, academicYear: module.academicYear },
+      where: {
+        teacherId,
+        classId: module.classId,
+        subject: module.subject,
+        academicYear: module.academicYear,
+      },
       select: { id: true },
     });
-    if (!assignment) throw new ForbiddenException('Assignment mengajar untuk Modul LMS ini tidak aktif');
-    const major = await this.prisma.major.findUnique({ where: { code: module.class.majorCode }, select: { name: true, description: true } });
+    if (!assignment)
+      throw new ForbiddenException('Assignment mengajar untuk Modul LMS ini tidak aktif');
+    const major = await this.prisma.major.findUnique({
+      where: { code: module.class.majorCode },
+      select: { name: true, description: true },
+    });
     return {
       teacherId,
       sourceType: 'module',
@@ -1002,7 +1370,10 @@ export class AiGenerateService {
     };
   }
 
-  private buildQuestionDraftPrompt(dto: GenerateQuestionDraftDto, context: ResolvedQuestionSourceContext): string {
+  private buildQuestionDraftPrompt(
+    dto: GenerateQuestionDraftDto,
+    context: ResolvedQuestionSourceContext,
+  ): string {
     this.assertProductiveContextConfigured(dto, context);
     return [
       'Anda membuat draft soal untuk Bank Soal DIIS. Kembalikan JSON object valid saja.',
@@ -1011,12 +1382,15 @@ export class AiGenerateService {
       `Mapel: ${context.subject}.`,
       `Judul sumber: ${context.title}.`,
       `Kelas: ${context.className}. Tahun ajaran: ${context.academicYear}. Semester: ${context.semester}.`,
-      `Jurusan: ${dto.contextMode === 'umum' ? 'jangan pakai konteks vokasi' : context.majorName ?? 'umum'}.`,
+      `Jurusan: ${dto.contextMode === 'umum' ? 'jangan pakai konteks vokasi' : (context.majorName ?? 'umum')}.`,
       this.schoolCurriculumContextLine(dto, context),
       `Tujuan asesmen: ${dto.purpose}. Karakter soal: ${dto.character}.`,
       `Jumlah soal: ${dto.questionCount}. Distribusi tipe: ${JSON.stringify(dto.typeDistribution)}.`,
       `Distribusi kesulitan: ${JSON.stringify(dto.difficultyDistribution)}. Distribusi kognitif: ${JSON.stringify(dto.cognitiveDistribution)}.`,
-      `TP dipilih: ${context.tpOptions.filter((tp) => dto.tpRefs.includes(tp.ref)).map((tp) => `${tp.ref}: ${tp.text}`).join(' | ')}.`,
+      `TP dipilih: ${context.tpOptions
+        .filter((tp) => dto.tpRefs.includes(tp.ref))
+        .map((tp) => `${tp.ref}: ${tp.text}`)
+        .join(' | ')}.`,
       dto.teacherInstruction ? `Catatan guru: ${dto.teacherInstruction}.` : '',
       context.contentSummary ? `Ringkasan materi authoritative: ${context.contentSummary}` : '',
       'Setiap item wajib punya itemKey stabil, question, tpRefs, cognitiveLevel, rationale, warnings.',
@@ -1024,10 +1398,15 @@ export class AiGenerateService {
       'Untuk matching, question.pairs[].id adalah kode internal; question.pairs[].prompt adalah sisi kiri; question.pairs[].match adalah teks jawaban sisi kanan yang lengkap, bukan kode seperti M1/M2 atau pengulangan id.',
       'Untuk matching, question.answer wajib array {promptId, matchId}; promptId dan matchId sama-sama wajib berisi id dari question.pairs[].id. Jangan pakai object dengan key dinamis.',
       'Rubrik esai total weight tepat 100. Matching harus bijective. PG harus punya distraktor unik.',
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
-  private schoolCurriculumContextLine(dto: GenerateQuestionDraftDto, context: ResolvedQuestionSourceContext): string {
+  private schoolCurriculumContextLine(
+    dto: GenerateQuestionDraftDto,
+    context: ResolvedQuestionSourceContext,
+  ): string {
     if (dto.contextMode === 'umum') {
       return 'Katalog konteks sekolah: gunakan konteks umum lintas jurusan; jangan memaksakan skenario vokasi.';
     }
@@ -1050,7 +1429,10 @@ export class AiGenerateService {
       .slice(0, 4);
   }
 
-  private assertProductiveContextConfigured(dto: GenerateQuestionDraftDto, context: ResolvedQuestionSourceContext): void {
+  private assertProductiveContextConfigured(
+    dto: GenerateQuestionDraftDto,
+    context: ResolvedQuestionSourceContext,
+  ): void {
     if (dto.contextMode === 'umum') return;
     if (this.productiveContextHints(context.majorDescription).length > 0) return;
     const majorLabel = context.majorName ? ` untuk jurusan ${context.majorName}` : '';
@@ -1066,14 +1448,30 @@ export class AiGenerateService {
       .slice(0, MAJOR_PRODUCTIVE_CONTEXT_MAX_CHARS);
   }
 
-  private async callQuestionDraftAi(prompt: string, academicYear: string, dto: GenerateQuestionDraftDto): Promise<AiCallResult> {
+  private async callQuestionDraftAi(
+    prompt: string,
+    academicYear: string,
+    dto: GenerateQuestionDraftDto,
+  ): Promise<AiCallResult> {
     const piiDetected = hasPii(prompt);
     if (piiDetected) {
-      return this.callQuestionDraftProvider(this.gateway, stripPiiForLlm(prompt), 'ollama', academicYear, dto);
+      return this.callQuestionDraftProvider(
+        this.gateway,
+        stripPiiForLlm(prompt),
+        'ollama',
+        academicYear,
+        dto,
+      );
     }
-    if (this.openaiGateway && await this.providerStatus.shouldAttemptOpenAiProbe()) {
+    if (this.openaiGateway && (await this.providerStatus.shouldAttemptOpenAiProbe())) {
       try {
-        const result = await this.callQuestionDraftProvider(this.openaiGateway, stripPiiForLlm(prompt), 'gpt-4.1-mini', academicYear, dto);
+        const result = await this.callQuestionDraftProvider(
+          this.openaiGateway,
+          stripPiiForLlm(prompt),
+          'gpt-4.1-mini',
+          academicYear,
+          dto,
+        );
         await this.providerStatus.markOpenAiRecovered();
         return result;
       } catch (err) {
@@ -1082,12 +1480,24 @@ export class AiGenerateService {
           const detailCode = err instanceof OpenAiProviderError ? err.code : null;
           await this.providerStatus.markOpenAiQuotaExhausted(detailCode);
           this.scheduleAdminOpenAiQuotaNotice();
-          return this.callQuestionDraftProvider(this.gateway, stripPiiForLlm(prompt), 'ollama', academicYear, dto);
+          return this.callQuestionDraftProvider(
+            this.gateway,
+            stripPiiForLlm(prompt),
+            'ollama',
+            academicYear,
+            dto,
+          );
         }
         throw this.mapProviderError(err, false);
       }
     }
-    return this.callQuestionDraftProvider(this.gateway, stripPiiForLlm(prompt), 'ollama', academicYear, dto);
+    return this.callQuestionDraftProvider(
+      this.gateway,
+      stripPiiForLlm(prompt),
+      'ollama',
+      academicYear,
+      dto,
+    );
   }
 
   private async callQuestionDraftProvider(
@@ -1106,7 +1516,8 @@ export class AiGenerateService {
       },
     };
     const output = await gateway.chat(promptForProvider, undefined, responseFormat);
-    if (!output || output.trim().length === 0) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    if (!output || output.trim().length === 0)
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     return { output, model, promptForAudit: promptForProvider };
   }
 
@@ -1127,7 +1538,8 @@ export class AiGenerateService {
     parsed = this.normalizeQuestionDraftProviderOutput(parsed);
     const result = QuestionDraftOutputSchema.safeParse(parsed);
     if (!result.success) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
-    if (result.data.items.length !== dto.questionCount) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+    if (result.data.items.length !== dto.questionCount)
+      throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     const items = this.normalizeQuestionDraftMetadata(result.data.items, dto, context);
     this.assertDraftDistribution(items, dto);
     for (const item of items) {
@@ -1141,8 +1553,14 @@ export class AiGenerateService {
     dto: GenerateQuestionDraftDto,
     context: ResolvedQuestionSourceContext,
   ): QuestionDraftItem[] {
-    const difficultySlots = this.distributionSlots(['easy', 'medium', 'hard'] as const, dto.difficultyDistribution);
-    const cognitiveSlots = this.distributionSlots(['C1', 'C2', 'C3', 'C4', 'C5', 'C6'] as const, dto.cognitiveDistribution);
+    const difficultySlots = this.distributionSlots(
+      ['easy', 'medium', 'hard'] as const,
+      dto.difficultyDistribution,
+    );
+    const cognitiveSlots = this.distributionSlots(
+      ['C1', 'C2', 'C3', 'C4', 'C5', 'C6'] as const,
+      dto.cognitiveDistribution,
+    );
 
     return items.map((item, index) => ({
       ...item,
@@ -1156,27 +1574,32 @@ export class AiGenerateService {
     }));
   }
 
-  private distributionSlots<const T extends string>(order: readonly T[], distribution: Record<T, number>): T[] {
+  private distributionSlots<const T extends string>(
+    order: readonly T[],
+    distribution: Record<T, number>,
+  ): T[] {
     return order.flatMap((key) => Array.from({ length: distribution[key] ?? 0 }, () => key));
   }
 
   private normalizeQuestionDraftProviderOutput(value: unknown): unknown {
-    if (!value || typeof value !== 'object' || !Array.isArray((value as { items?: unknown }).items)) return value;
+    if (!value || typeof value !== 'object' || !Array.isArray((value as { items?: unknown }).items))
+      return value;
     return {
       ...(value as Record<string, unknown>),
-      items: ((value as { items: unknown[] }).items).map((item) => {
+      items: (value as { items: unknown[] }).items.map((item) => {
         if (!item || typeof item !== 'object') return item;
         const question = (item as { question?: unknown }).question;
         if (!question || typeof question !== 'object') return item;
         const typedQuestion = question as { type?: unknown; answer?: unknown };
         if (typedQuestion.type !== 'matching' || !Array.isArray(typedQuestion.answer)) return item;
         const matchingPairs = Array.isArray((typedQuestion as { pairs?: unknown }).pairs)
-          ? (typedQuestion as { pairs: unknown[] }).pairs
-            .filter((pair): pair is { id: string; match: string } =>
-              Boolean(pair)
-              && typeof pair === 'object'
-              && typeof (pair as { id?: unknown }).id === 'string'
-              && typeof (pair as { match?: unknown }).match === 'string')
+          ? (typedQuestion as { pairs: unknown[] }).pairs.filter(
+              (pair): pair is { id: string; match: string } =>
+                Boolean(pair) &&
+                typeof pair === 'object' &&
+                typeof (pair as { id?: unknown }).id === 'string' &&
+                typeof (pair as { match?: unknown }).match === 'string',
+            )
           : [];
         const matchTextToId = new Map<string, string>();
         for (const pair of matchingPairs) {
@@ -1187,11 +1610,13 @@ export class AiGenerateService {
         }
         const answer = Object.fromEntries(
           typedQuestion.answer
-            .filter((pair): pair is { promptId: string; matchId: string } =>
-              Boolean(pair)
-              && typeof pair === 'object'
-              && typeof (pair as { promptId?: unknown }).promptId === 'string'
-              && typeof (pair as { matchId?: unknown }).matchId === 'string')
+            .filter(
+              (pair): pair is { promptId: string; matchId: string } =>
+                Boolean(pair) &&
+                typeof pair === 'object' &&
+                typeof (pair as { promptId?: unknown }).promptId === 'string' &&
+                typeof (pair as { matchId?: unknown }).matchId === 'string',
+            )
             .map((pair) => {
               const normalizedMatchId = this.normalizedQuestionText(pair.matchId);
               return [pair.promptId, matchTextToId.get(normalizedMatchId) ?? pair.matchId];
@@ -1208,7 +1633,13 @@ export class AiGenerateService {
     };
   }
 
-  private async assertNoQuestionDraftDuplicates(items: QuestionDraftItem[], teacherId: string, subject: string): Promise<void> {
+  private async assertNoQuestionDraftDuplicates(
+    items: QuestionDraftItem[],
+    teacherId: string,
+    subject: string,
+    db: Prisma.TransactionClient = this.prisma,
+    bankCandidates: QuestionDraftItem[] = items,
+  ): Promise<void> {
     const bodies = items.map((item) => this.normalizedQuestionText(item.question.body));
     if (new Set(bodies).size !== bodies.length) {
       throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
@@ -1220,8 +1651,8 @@ export class AiGenerateService {
         }
       }
     }
-    const existing = await this.prisma.question.findMany({
-      where: { teacherId, subject, body: { in: items.map((item) => item.question.body) } },
+    const existing = await db.question.findMany({
+      where: { teacherId, subject, body: { in: bankCandidates.map((item) => item.question.body) } },
       select: { id: true },
       take: 1,
     });
@@ -1231,49 +1662,74 @@ export class AiGenerateService {
   }
 
   private assertDraftDistribution(items: QuestionDraftItem[], dto: GenerateQuestionDraftDto): void {
-    const countBy = <T extends string>(values: T[]) => values.reduce<Record<T, number>>((acc, value) => {
-      acc[value] = (acc[value] ?? 0) + 1;
-      return acc;
-    }, {} as Record<T, number>);
+    const countBy = <T extends string>(values: T[]) =>
+      values.reduce<Record<T, number>>(
+        (acc, value) => {
+          acc[value] = (acc[value] ?? 0) + 1;
+          return acc;
+        },
+        {} as Record<T, number>,
+      );
     const typeCounts = countBy(items.map((item) => item.question.type));
     const difficultyCounts = countBy(items.map((item) => item.question.difficulty));
     const cognitiveCounts = countBy(items.map((item) => item.cognitiveLevel));
     for (const [type, count] of Object.entries(dto.typeDistribution)) {
-      if ((typeCounts[type as keyof typeof typeCounts] ?? 0) !== count) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+      if ((typeCounts[type as keyof typeof typeCounts] ?? 0) !== count)
+        throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
     for (const [difficulty, count] of Object.entries(dto.difficultyDistribution)) {
-      if ((difficultyCounts[difficulty as keyof typeof difficultyCounts] ?? 0) !== count) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+      if ((difficultyCounts[difficulty as keyof typeof difficultyCounts] ?? 0) !== count)
+        throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
     for (const [level, count] of Object.entries(dto.cognitiveDistribution)) {
-      if ((cognitiveCounts[level as keyof typeof cognitiveCounts] ?? 0) !== count) throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
+      if ((cognitiveCounts[level as keyof typeof cognitiveCounts] ?? 0) !== count)
+        throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
   }
 
-  private assertQuestionDraftItem(item: QuestionDraftItem, context: ResolvedQuestionSourceContext): void {
+  private assertQuestionDraftItem(
+    item: QuestionDraftItem,
+    context: ResolvedQuestionSourceContext,
+  ): void {
     QuestionPayloadSchema.parse(item.question);
     this.assertRequestedTpRefs(item.tpRefs, context);
     if (item.question.subject !== context.subject) {
       throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
     const serialized = JSON.stringify(item);
-    if (FORBIDDEN_OUTPUT_PATTERNS.some((pattern) => pattern.test(serialized)) || hasPii(serialized)) {
+    if (
+      FORBIDDEN_OUTPUT_PATTERNS.some((pattern) => pattern.test(serialized)) ||
+      hasPii(serialized)
+    ) {
       throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
     const question = item.question;
     if (question.type === 'multiple_choice') {
-      const optionTexts = question.options.map((option) => this.normalizedQuestionText(option.text));
+      const optionTexts = question.options.map((option) =>
+        this.normalizedQuestionText(option.text),
+      );
       if (new Set(optionTexts).size !== optionTexts.length) {
         throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
       }
-      if (question.options.some((option) => AMBIGUOUS_OPTION_PATTERNS.some((pattern) => pattern.test(option.text)))) {
+      if (
+        question.options.some((option) =>
+          AMBIGUOUS_OPTION_PATTERNS.some((pattern) => pattern.test(option.text)),
+        )
+      ) {
         throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
       }
-      const answerText = question.options.find((option) => option.id === question.answer)?.text.toLocaleLowerCase('id-ID') ?? '';
+      const answerText =
+        question.options
+          .find((option) => option.id === question.answer)
+          ?.text.toLocaleLowerCase('id-ID') ?? '';
       if (answerText && question.body.toLocaleLowerCase('id-ID').includes(answerText)) {
         throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
       }
     }
-    if (question.type === 'true_false' && /\btidak\b.+\bbukan\b|\bbukan\b.+\btidak\b/i.test(question.body)) {
+    if (
+      question.type === 'true_false' &&
+      /\btidak\b.+\bbukan\b|\bbukan\b.+\btidak\b/i.test(question.body)
+    ) {
       throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
     if (question.type === 'matching') {
@@ -1282,18 +1738,27 @@ export class AiGenerateService {
     this.assertQuestionReadableForGrade(question.body, question.type, context.grade);
   }
 
-  private assertMatchingQuestionQuality(pairs: Array<{ id: string; prompt: string; match: string }>): void {
+  private assertMatchingQuestionQuality(
+    pairs: Array<{ id: string; prompt: string; match: string }>,
+  ): void {
     const promptTexts = pairs.map((pair) => this.normalizedQuestionText(pair.prompt));
     const matchTexts = pairs.map((pair) => this.normalizedQuestionText(pair.match));
-    if (new Set(promptTexts).size !== promptTexts.length || new Set(matchTexts).size !== matchTexts.length) {
+    if (
+      new Set(promptTexts).size !== promptTexts.length ||
+      new Set(matchTexts).size !== matchTexts.length
+    ) {
       throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
-    if (pairs.some((pair) => {
-      const match = pair.match.trim();
-      return match.length < 4
-        || match.toLocaleLowerCase('id-ID') === pair.id.trim().toLocaleLowerCase('id-ID')
-        || /^[A-Za-z]?\d{1,3}$/i.test(match);
-    })) {
+    if (
+      pairs.some((pair) => {
+        const match = pair.match.trim();
+        return (
+          match.length < 4 ||
+          match.toLocaleLowerCase('id-ID') === pair.id.trim().toLocaleLowerCase('id-ID') ||
+          /^[A-Za-z]?\d{1,3}$/i.test(match)
+        );
+      })
+    ) {
       throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
   }
@@ -1342,7 +1807,9 @@ export class AiGenerateService {
   }
 
   private persistedQuestionFingerprint(value: unknown): string {
-    return createHash('sha256').update(this.stableJson(this.normalizePersistedQuestionValue(value))).digest('hex');
+    return createHash('sha256')
+      .update(this.stableJson(this.normalizePersistedQuestionValue(value)))
+      .digest('hex');
   }
 
   private normalizePersistedQuestionValue(value: unknown): unknown {
@@ -1354,11 +1821,14 @@ export class AiGenerateService {
     ) {
       return null;
     }
-    if (Array.isArray(value)) return value.map((item) => this.normalizePersistedQuestionValue(item));
+    if (Array.isArray(value))
+      return value.map((item) => this.normalizePersistedQuestionValue(item));
     if (value && typeof value === 'object') {
       return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>)
-          .map(([key, nested]) => [key, this.normalizePersistedQuestionValue(nested)]),
+        Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
+          key,
+          this.normalizePersistedQuestionValue(nested),
+        ]),
       );
     }
     return value;
@@ -1410,10 +1880,10 @@ export class AiGenerateService {
     if (!(error instanceof HttpException)) return false;
     const response = error.getResponse();
     return Boolean(
-      response
-      && typeof response === 'object'
-      && 'error' in response
-      && (response as { error?: unknown }).error === 'AI_OUTPUT_INVALID',
+      response &&
+      typeof response === 'object' &&
+      'error' in response &&
+      (response as { error?: unknown }).error === 'AI_OUTPUT_INVALID',
     );
   }
 
@@ -1450,9 +1920,20 @@ export class AiGenerateService {
       additionalProperties: false,
       required: ['id', 'prompt', 'match'],
       properties: {
-        id: { type: 'string', description: 'Kode internal pasangan, misalnya p1, p2. Dipakai ulang oleh answer.promptId dan answer.matchId.' },
-        prompt: { type: 'string', description: 'Teks sisi kiri yang dilihat siswa, misalnya Router.' },
-        match: { type: 'string', description: 'Teks jawaban sisi kanan yang lengkap, misalnya Menghubungkan dua jaringan. Jangan isi dengan M1, M2, atau id.' },
+        id: {
+          type: 'string',
+          description:
+            'Kode internal pasangan, misalnya p1, p2. Dipakai ulang oleh answer.promptId dan answer.matchId.',
+        },
+        prompt: {
+          type: 'string',
+          description: 'Teks sisi kiri yang dilihat siswa, misalnya Router.',
+        },
+        match: {
+          type: 'string',
+          description:
+            'Teks jawaban sisi kanan yang lengkap, misalnya Menghubungkan dua jaringan. Jangan isi dengan M1, M2, atau id.',
+        },
       },
     };
     const questionShapes = [
@@ -1502,8 +1983,15 @@ export class AiGenerateService {
                 additionalProperties: false,
                 required: ['promptId', 'matchId'],
                 properties: {
-                  promptId: { type: 'string', description: 'Harus sama dengan salah satu question.pairs[].id.' },
-                  matchId: { type: 'string', description: 'Harus sama dengan salah satu question.pairs[].id yang menjadi pasangan benar, bukan teks match dan bukan M1/M2.' },
+                  promptId: {
+                    type: 'string',
+                    description: 'Harus sama dengan salah satu question.pairs[].id.',
+                  },
+                  matchId: {
+                    type: 'string',
+                    description:
+                      'Harus sama dengan salah satu question.pairs[].id yang menjadi pasangan benar, bukan teks match dan bukan M1/M2.',
+                  },
                 },
               },
             },
@@ -1526,12 +2014,19 @@ export class AiGenerateService {
       },
     ];
     const requestedTypes = dto
-      ? new Set(Object.entries(dto.typeDistribution).filter(([, count]) => count > 0).map(([type]) => type))
+      ? new Set(
+          Object.entries(dto.typeDistribution)
+            .filter(([, count]) => count > 0)
+            .map(([type]) => type),
+        )
       : null;
     const requestedShapes = requestedTypes
-      ? questionShapes.filter((shape) => requestedTypes.has(shape.questionType)).map((shape) => shape.schema)
+      ? questionShapes
+          .filter((shape) => requestedTypes.has(shape.questionType))
+          .map((shape) => shape.schema)
       : questionShapes.map((shape) => shape.schema);
-    const questionShape = requestedShapes.length === 1 ? requestedShapes[0] : { anyOf: requestedShapes };
+    const questionShape =
+      requestedShapes.length === 1 ? requestedShapes[0] : { anyOf: requestedShapes };
     return {
       type: 'object',
       additionalProperties: false,
@@ -1605,7 +2100,10 @@ export class AiGenerateService {
     if (section === 'cp_tp' && !cp) {
       throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
     }
-    if ((section === 'atp' || section === 'kegiatan' || section === 'asesmen') && (!cp || tp.length === 0)) {
+    if (
+      (section === 'atp' || section === 'kegiatan' || section === 'asesmen') &&
+      (!cp || tp.length === 0)
+    ) {
       throw this.aiException('AI_FOUNDATION_INCOMPLETE', HttpStatus.BAD_REQUEST);
     }
   }
@@ -1619,11 +2117,21 @@ export class AiGenerateService {
   ): Promise<AiCallResult> {
     const piiDetected = hasPii(prompt);
     const promptForProvider = stripPiiForLlm(prompt);
-    const ollamaPromptForProvider = stripPiiForLlm(this.buildOllamaFallbackPrompt(section, rpp, body));
+    const ollamaPromptForProvider = stripPiiForLlm(
+      this.buildOllamaFallbackPrompt(section, rpp, body),
+    );
 
-    if (!piiDetected && this.openaiGateway && await this.providerStatus.shouldAttemptOpenAiProbe()) {
+    if (
+      !piiDetected &&
+      this.openaiGateway &&
+      (await this.providerStatus.shouldAttemptOpenAiProbe())
+    ) {
       try {
-        const result = await this.callOpenAiWithRateLimitRetry(promptForProvider, section, academicYear);
+        const result = await this.callOpenAiWithRateLimitRetry(
+          promptForProvider,
+          section,
+          academicYear,
+        );
         await this.providerStatus.markOpenAiRecovered();
         return result;
       } catch (err) {
@@ -1640,7 +2148,13 @@ export class AiGenerateService {
     }
 
     try {
-      return await this.callProvider(this.gateway, ollamaPromptForProvider, 'ollama', section, academicYear);
+      return await this.callProvider(
+        this.gateway,
+        ollamaPromptForProvider,
+        'ollama',
+        section,
+        academicYear,
+      );
     } catch (err) {
       if (err instanceof HttpException) throw err;
       throw this.mapProviderError(err, piiDetected);
@@ -1655,7 +2169,13 @@ export class AiGenerateService {
     let lastErr: unknown;
     for (let attempt = 1; attempt <= OPENAI_RATE_LIMIT_MAX_ATTEMPTS; attempt++) {
       try {
-        return await this.callProvider(this.openaiGateway as AIGateway, promptForProvider, 'gpt-4.1-mini', section, academicYear);
+        return await this.callProvider(
+          this.openaiGateway as AIGateway,
+          promptForProvider,
+          'gpt-4.1-mini',
+          section,
+          academicYear,
+        );
       } catch (err) {
         lastErr = err;
         if (
@@ -1680,7 +2200,13 @@ export class AiGenerateService {
     academicYear: string,
   ): Promise<AiCallResult> {
     try {
-      return await this.callProvider(this.gateway, promptForProvider, 'ollama', section, academicYear);
+      return await this.callProvider(
+        this.gateway,
+        promptForProvider,
+        'ollama',
+        section,
+        academicYear,
+      );
     } catch (fallbackErr) {
       if (fallbackErr instanceof HttpException) throw fallbackErr;
       throw this.mapProviderError(fallbackErr, false);
@@ -1694,14 +2220,22 @@ export class AiGenerateService {
     section: AiRppSection,
     academicYear: string,
   ): Promise<AiCallResult> {
-    const output = await gateway.chat(promptForProvider, undefined, this.responseFormatFor(section, academicYear, model));
+    const output = await gateway.chat(
+      promptForProvider,
+      undefined,
+      this.responseFormatFor(section, academicYear, model),
+    );
     if (!output || output.trim().length === 0) {
       throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
     return { output, model, promptForAudit: promptForProvider };
   }
 
-  private responseFormatFor(section: AiRppSection, academicYear: string, model: AiCallResult['model']): AiChatOptions {
+  private responseFormatFor(
+    section: AiRppSection,
+    academicYear: string,
+    model: AiCallResult['model'],
+  ): AiChatOptions {
     if (model === 'ollama') {
       return { responseFormat: 'json_object' };
     }
@@ -1801,13 +2335,15 @@ export class AiGenerateService {
   private isOpenAiTemporaryRateLimit(err: OpenAiProviderError): boolean {
     if (err.status !== 429) return false;
     if (err.code && OPENAI_QUOTA_ERROR_CODES.has(err.code)) return false;
-    return !err.code || OPENAI_RATE_LIMIT_ERROR_CODES.has(err.code) || err.type === 'rate_limit_exceeded';
+    return (
+      !err.code || OPENAI_RATE_LIMIT_ERROR_CODES.has(err.code) || err.type === 'rate_limit_exceeded'
+    );
   }
 
   private openAiRetryDelayMs(err: OpenAiProviderError, attempt: number): number | null {
     const retryAfterMs = err.retryAfterSeconds !== null ? err.retryAfterSeconds * 1000 : null;
     if (retryAfterMs !== null && retryAfterMs > OPENAI_RATE_LIMIT_MAX_DELAY_MS) return null;
-    const fallbackMs = 250 * (2 ** (attempt - 1));
+    const fallbackMs = 250 * 2 ** (attempt - 1);
     return retryAfterMs ?? Math.min(fallbackMs, OPENAI_RATE_LIMIT_MAX_DELAY_MS);
   }
 
@@ -1822,7 +2358,9 @@ export class AiGenerateService {
 
   private async notifyAdminsOpenAiQuotaFallback(): Promise<void> {
     if (!this.notificationService) {
-      logger.warn('[AiGenerateService] OpenAI quota notice skipped: NotificationService unavailable');
+      logger.warn(
+        '[AiGenerateService] OpenAI quota notice skipped: NotificationService unavailable',
+      );
       return;
     }
 
@@ -1947,23 +2485,33 @@ export class AiGenerateService {
   private patchSchemaFor(section: AiRppSection, academicYear: string): z.ZodType<unknown> {
     if (section === 'profil') {
       const dimensions = this.profileDimensionsFor(academicYear);
-      return z.object({
-        profilDimensi: z.array(z.enum(dimensions)).min(1).max(dimensions.length),
-        profilUraian: TextField,
-      }).strict();
+      return z
+        .object({
+          profilDimensi: z.array(z.enum(dimensions)).min(1).max(dimensions.length),
+          profilUraian: TextField,
+        })
+        .strict();
     }
     return PatchSchemas[section];
   }
 
-  private assertAtpRefsMatchSavedTp(patch: Record<string, unknown>, body: Record<string, unknown>): void {
+  private assertAtpRefsMatchSavedTp(
+    patch: Record<string, unknown>,
+    body: Record<string, unknown>,
+  ): void {
     const tpCount = this.asStringArray(body['tp']).length;
     const allowed = new Set(Array.from({ length: tpCount }, (_, index) => `TP ${index + 1}`));
     const rows = patch['atp'];
-    if (!Array.isArray(rows) || rows.some((row) => {
-      if (!row || typeof row !== 'object' || Array.isArray(row)) return true;
-      const tpRef = String((row as Record<string, unknown>)['tpRef'] ?? '').trim().toUpperCase();
-      return !allowed.has(tpRef.replace(/\s+/, ' '));
-    })) {
+    if (
+      !Array.isArray(rows) ||
+      rows.some((row) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return true;
+        const tpRef = String((row as Record<string, unknown>)['tpRef'] ?? '')
+          .trim()
+          .toUpperCase();
+        return !allowed.has(tpRef.replace(/\s+/, ' '));
+      })
+    ) {
       throw this.aiException('AI_OUTPUT_INVALID', HttpStatus.BAD_GATEWAY);
     }
   }
@@ -2028,19 +2576,29 @@ export class AiGenerateService {
       `Judul: ${rpp.title}.`,
       `Tahun ajaran: ${rpp.academicYear}.`,
       `Semester: ${rpp.semester}.`,
-      rpp.class ? `Kelas: ${rpp.class.name} (kelas ${rpp.class.grade}, jurusan ${rpp.class.majorCode}).` : '',
+      rpp.class
+        ? `Kelas: ${rpp.class.name} (kelas ${rpp.class.grade}, jurusan ${rpp.class.majorCode}).`
+        : '',
       this.asText(body['fase']) ? `Fase: ${this.asText(body['fase'])}.` : '',
       this.asText(body['model']) ? `Model pembelajaran: ${this.asText(body['model'])}.` : '',
-      this.asNumberText(body['jpAllocation']) ? `Alokasi JP: ${this.asNumberText(body['jpAllocation'])}.` : '',
-      this.asNumberText(body['durasiMenit']) ? `Durasi per JP: ${this.asNumberText(body['durasiMenit'])} menit.` : '',
+      this.asNumberText(body['jpAllocation'])
+        ? `Alokasi JP: ${this.asNumberText(body['jpAllocation'])}.`
+        : '',
+      this.asNumberText(body['durasiMenit'])
+        ? `Durasi per JP: ${this.asNumberText(body['durasiMenit'])} menit.`
+        : '',
     ].filter(Boolean);
 
     const foundation = [
       this.asText(body['cp']) ? `CP tersimpan:\n${this.asText(body['cp'])}` : '',
       this.asStringArray(body['tp']).length
-        ? `TP tersimpan:\n${this.asStringArray(body['tp']).map((tp, index) => `${index + 1}. ${tp}`).join('\n')}`
+        ? `TP tersimpan:\n${this.asStringArray(body['tp'])
+            .map((tp, index) => `${index + 1}. ${tp}`)
+            .join('\n')}`
         : '',
-      this.asText(body['kompetensiAwal']) ? `Kompetensi awal:\n${this.asText(body['kompetensiAwal'])}` : '',
+      this.asText(body['kompetensiAwal'])
+        ? `Kompetensi awal:\n${this.asText(body['kompetensiAwal'])}`
+        : '',
     ].filter(Boolean);
 
     const sectionContext = this.sectionSpecificContext(section, body, rpp.academicYear);
@@ -2054,16 +2612,27 @@ export class AiGenerateService {
       'Dilarang memakai istilah Kompetensi Dasar, KI/KD, atau format Kurikulum 2013. Gunakan CP, TP, ATP, langkah pembelajaran, dan asesmen.',
       'Jangan membuat identitas personal, tautan palsu, nomor telepon, atau surel.',
       outputRule,
-    ].filter(Boolean).join('\n\n').slice(0, 10000);
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+      .slice(0, 10000);
   }
 
-  private sectionSpecificContext(section: AiRppSection, body: Record<string, unknown>, academicYear: string): string {
+  private sectionSpecificContext(
+    section: AiRppSection,
+    body: Record<string, unknown>,
+    academicYear: string,
+  ): string {
     switch (section) {
       case 'cp_tp':
         return [
-          this.asText(body['kompetensiAwal']) ? `Kompetensi awal: ${this.asText(body['kompetensiAwal'])}` : '',
+          this.asText(body['kompetensiAwal'])
+            ? `Kompetensi awal: ${this.asText(body['kompetensiAwal'])}`
+            : '',
           'CP tersimpan adalah otoritatif. Usulkan TP terukur dari CP tersebut. Jangan mengubah atau menulis ulang CP. Jangan membuat ATP di bagian ini.',
-        ].filter(Boolean).join('\n');
+        ]
+          .filter(Boolean)
+          .join('\n');
       case 'atp':
         return 'Susun urutan alur dari TP tersimpan. Jangan membuat TP baru.';
       case 'profil':
@@ -2072,25 +2641,37 @@ export class AiGenerateService {
           this.asStringArray(body['profilDimensi']).length
             ? `Dimensi terpilih: ${this.asStringArray(body['profilDimensi']).join(', ')}.`
             : 'Dimensi belum dipilih; usulkan dimensi yang paling relevan dari daftar resmi di atas.',
-          this.asText(body['profilUraian']) ? `Uraian saat ini:\n${this.asText(body['profilUraian'])}` : '',
-        ].filter(Boolean).join('\n\n');
+          this.asText(body['profilUraian'])
+            ? `Uraian saat ini:\n${this.asText(body['profilUraian'])}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n');
       case 'sarana':
         return [
           this.asText(body['sarana']) ? `Sarana saat ini:\n${this.asText(body['sarana'])}` : '',
-          this.asText(body['target']) ? `Target peserta didik saat ini:\n${this.asText(body['target'])}` : '',
-        ].filter(Boolean).join('\n\n');
+          this.asText(body['target'])
+            ? `Target peserta didik saat ini:\n${this.asText(body['target'])}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n');
       case 'kegiatan':
         return [
           'Buat kegiatan pendahuluan, inti, dan penutup untuk pertemuan pertama.',
           this.asText(body['model']) ? `Model pembelajaran: ${this.asText(body['model'])}` : '',
-        ].filter(Boolean).join('\n');
+        ]
+          .filter(Boolean)
+          .join('\n');
       case 'asesmen':
         return 'Buat asesmen diagnostik, formatif, dan sumatif yang selaras dengan TP tersimpan.';
       case 'remedial':
         return [
           this.asText(body['kktp']) ? `KKTP: ${this.asText(body['kktp'])}.` : '',
           'Buat pengayaan untuk siswa tuntas dan remedial untuk siswa belum tuntas.',
-        ].filter(Boolean).join('\n');
+        ]
+          .filter(Boolean)
+          .join('\n');
       case 'refleksi':
         return 'Buat pertanyaan refleksi untuk guru dan peserta didik.';
       case 'lampiran':
@@ -2121,7 +2702,11 @@ export class AiGenerateService {
     }
   }
 
-  private buildOllamaFallbackPrompt(section: AiRppSection, rpp: RppForAi, body: Record<string, unknown>): string {
+  private buildOllamaFallbackPrompt(
+    section: AiRppSection,
+    rpp: RppForAi,
+    body: Record<string, unknown>,
+  ): string {
     const patch = this.buildDeterministicFallbackPatch(section, rpp, body);
     return [
       'Kembalikan hanya JSON object berikut tanpa perubahan.',
@@ -2158,8 +2743,10 @@ export class AiGenerateService {
         };
       case 'profil': {
         const dimensions = this.profileDimensionsFor(rpp.academicYear);
-        const selected = this.asStringArray(body['profilDimensi'])
-          .filter((item): item is typeof dimensions[number] => (dimensions as readonly string[]).includes(item));
+        const selected = this.asStringArray(body['profilDimensi']).filter(
+          (item): item is (typeof dimensions)[number] =>
+            (dimensions as readonly string[]).includes(item),
+        );
         return {
           profilDimensi: selected.length ? selected.slice(0, 2) : [dimensions[0]],
           profilUraian: `Peserta didik menguatkan karakter melalui aktivitas ${title} yang selaras dengan pembelajaran ${subject}.`,
@@ -2167,18 +2754,25 @@ export class AiGenerateService {
       }
       case 'sarana':
         return {
-          sarana: this.asText(body['sarana']) || `Perangkat belajar, bahan ajar, dan lembar kerja untuk ${title}.`,
-          target: this.asText(body['target']) || `Peserta didik yang mempelajari ${subject} pada topik ${title}.`,
+          sarana:
+            this.asText(body['sarana']) ||
+            `Perangkat belajar, bahan ajar, dan lembar kerja untuk ${title}.`,
+          target:
+            this.asText(body['target']) ||
+            `Peserta didik yang mempelajari ${subject} pada topik ${title}.`,
         };
       case 'kegiatan':
         return {
-          kegiatan: [{
-            pertemuan: 'Pertemuan 1',
-            pendahuluan: `Guru membuka pembelajaran ${title}, menyampaikan tujuan, dan mengaitkan materi dengan pengalaman peserta didik.`,
-            inti: `Peserta didik mengikuti aktivitas ${model} untuk memahami ${firstTp.toLowerCase()}`,
-            penutup: `Guru dan peserta didik menyimpulkan pembelajaran ${title} serta mencatat tindak lanjut.`,
-            diferensiasi: 'Guru memberi dukungan bertahap, pilihan sumber belajar, dan tantangan lanjutan sesuai kesiapan peserta didik.',
-          }],
+          kegiatan: [
+            {
+              pertemuan: 'Pertemuan 1',
+              pendahuluan: `Guru membuka pembelajaran ${title}, menyampaikan tujuan, dan mengaitkan materi dengan pengalaman peserta didik.`,
+              inti: `Peserta didik mengikuti aktivitas ${model} untuk memahami ${firstTp.toLowerCase()}`,
+              penutup: `Guru dan peserta didik menyimpulkan pembelajaran ${title} serta mencatat tindak lanjut.`,
+              diferensiasi:
+                'Guru memberi dukungan bertahap, pilihan sumber belajar, dan tantangan lanjutan sesuai kesiapan peserta didik.',
+            },
+          ],
         };
       case 'asesmen':
         return {
@@ -2203,7 +2797,9 @@ export class AiGenerateService {
     }
   }
 
-  private profileDimensionsFor(academicYear: string): typeof GRADUATE_PROFILE_DIMENSIONS | typeof LEGACY_PANCASILA_DIMENSIONS {
+  private profileDimensionsFor(
+    academicYear: string,
+  ): typeof GRADUATE_PROFILE_DIMENSIONS | typeof LEGACY_PANCASILA_DIMENSIONS {
     const startYear = Number(academicYear.match(/^(\d{4})\/\d{4}$/)?.[1] ?? 0);
     return startYear >= 2025 ? GRADUATE_PROFILE_DIMENSIONS : LEGACY_PANCASILA_DIMENSIONS;
   }

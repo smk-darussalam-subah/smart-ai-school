@@ -24,6 +24,9 @@ import {
 import clsx from 'clsx';
 import ViewAsBanner from '@/components/layout/ViewAsBanner';
 import BerandaSiswa from './BerandaSiswa';
+import { useDashboardRead } from '@/hooks/use-dashboard-read';
+import type { DashboardRead } from '@/lib/learner-dashboard-read';
+import { refreshStudentTasks } from '../../learner-dashboard-actions';
 import JadwalSiswa from './JadwalSiswa';
 import ModulSiswa from './ModulSiswa';
 import ModulDetailSiswa from './ModulDetailSiswa';
@@ -122,7 +125,8 @@ interface SiswaWorkspaceProps {
   realBadges?: SiswaBadge[] | null;
   realXp?: SiswaXP | null;
   realLeaderboard?: SiswaLeaderboardEntry[] | null;
-  realAssignments?: unknown[] | null;
+  realAssignments?: SiswaTugas[] | null;
+  taskRead?: DashboardRead<SiswaTugas>;
   realModules?: unknown[] | null;
   realCp?: unknown[] | null;
   realAttStats?: SiswaKehadiranStats | null;
@@ -222,6 +226,7 @@ export default function SiswaWorkspace({
   realXp,
   realLeaderboard,
   realAssignments,
+  taskRead,
   realModules,
   realCp,
   realAttStats,
@@ -231,14 +236,34 @@ export default function SiswaWorkspace({
 }: SiswaWorkspaceProps) {
   const { data: session } = useSession();
   const router = useRouter();
+  const initialTasks = useMemo<DashboardRead<SiswaTugas>>(
+    () =>
+      taskRead ??
+      (realAssignments ? { state: 'ready', data: realAssignments } : { state: 'unavailable' }),
+    [taskRead, realAssignments],
+  );
+  const { read: tasksRead, retry: retryTasks } = useDashboardRead(
+    `${session?.keycloakId ?? ''}:${viewAs ?? ''}`,
+    initialTasks,
+    refreshStudentTasks,
+  );
+  const currentTasks = tasksRead.state === 'ready' ? tasksRead.data : [];
   const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
-  const [activeScreen, setActiveScreen] = useState<SiswaScreen>(initialAttendanceDate ? 'kehadiran' : initialWorkflow.studentScreen);
+  const [activeScreen, setActiveScreen] = useState<SiswaScreen>(
+    initialAttendanceDate ? 'kehadiran' : initialWorkflow.studentScreen,
+  );
   const [activeModulId, setActiveModulId] = useState<number | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [modal, setModal] = useState<ModalState>(
     openNotifications ? { type: 'pengumuman' } : { type: null },
   );
+  const currentTask =
+    modal.type === 'task'
+      ? currentTasks.find((task) =>
+          task.uuid ? task.uuid === modal.data.task.uuid : task.id === modal.data.task.id,
+        )
+      : undefined;
   const notificationTriggerRef = useRef<HTMLButtonElement>(null);
   const [badgeCelebration, setBadgeCelebration] = useState<BadgeCelebrationData>({ show: false });
   const [toast, setToast] = useState<string | null>(null);
@@ -325,7 +350,7 @@ export default function SiswaWorkspace({
   // Navigation
   const go = useCallback((screen: SiswaScreen) => {
     setActiveScreen(screen);
-    setActiveModulId(null);
+    if (screen !== 'modul') setActiveModulId(null);
     window.scrollTo(0, 0);
   }, []);
 
@@ -398,7 +423,9 @@ export default function SiswaWorkspace({
             {...commonProps}
             grades={gradeState === 'ready' ? (grades ?? []) : []}
             gradeState={gradeState}
-            tasks={(realAssignments ?? []) as unknown as SiswaTugas[]}
+            tasks={currentTasks}
+            taskState={tasksRead.state}
+            onRetryTasks={retryTasks}
             badges={realBadges ?? []}
             modules={displayedModules}
             recentlyCompletedModule={recentlyCompletedModule}
@@ -448,7 +475,9 @@ export default function SiswaWorkspace({
         return (
           <TugasSiswa
             {...commonProps}
-            tasks={(realAssignments ?? []) as unknown as SiswaTugas[]}
+            tasks={currentTasks}
+            taskState={tasksRead.state}
+            onRetryTasks={retryTasks}
             initialSourceFilter={initialWorkflow.studentTaskFilter}
           />
         );
@@ -634,9 +663,9 @@ export default function SiswaWorkspace({
         />
       )}
 
-      {modal.type === 'task' && (
+      {modal.type === 'task' && currentTask && (
         <TaskDetailModal
-          task={modal.data.task}
+          task={currentTask}
           onClose={() => setModal({ type: null })}
           showToast={showToast}
         />

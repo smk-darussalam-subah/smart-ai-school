@@ -48,7 +48,7 @@ export default function LearnerSessionAttendance({
     last = new Date(Date.UTC(year, m, 0)).getUTCDate();
   const from = [month + '-01', period?.dateFrom ?? month + '-01'].sort().at(-1)!;
   const to = [month + '-' + last, period?.dateTo ?? month + '-' + last, jakartaToday()].sort()[0]!;
-  const key = `${studentId ?? 'own'}|${from}|${to}|${retry}`;
+  const key = `${studentId ?? 'own'}|${period?.academicYear ?? ''}|${period?.semester ?? ''}|${from}|${to}|${retry}`;
   const read = loaded?.key === key ? loaded.read : null;
   useEffect(() => {
     let active = true;
@@ -66,7 +66,14 @@ export default function LearnerSessionAttendance({
         active = false;
       };
     }
-    fetchLearnerSessionAttendance({ from, to, ...(studentId ? { studentId } : {}) })
+    fetchLearnerSessionAttendance({
+      from,
+      to,
+      ...(studentId ? { studentId } : {}),
+      ...(period.academicYear && period.semester
+        ? { academicYear: period.academicYear, semester: period.semester }
+        : {}),
+    })
       .then((result) => {
         if (active) setLoaded({ key, read: result });
       })
