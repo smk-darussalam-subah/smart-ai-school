@@ -1,4 +1,5 @@
 'use client';
+import React from 'react';
 
 import { X, Info, CreditCard, Upload } from 'lucide-react';
 import { fmtRupiahExact, daysUntil, fmtDateShort } from '@/lib/academic';
@@ -11,14 +12,17 @@ interface PayDetailModalProps {
 }
 
 export default function PayDetailModal({ payment: p, onClose, showToast }: PayDetailModalProps) {
-  const dd = daysUntil(p.due);
-  const isOverdue = p.status === 'unpaid' && dd < 0;
+  const hasDueDate = Number.isFinite(Date.parse(p.due));
+  const dd = hasDueDate ? daysUntil(p.due) : null;
+  const isOverdue = p.status === 'unpaid' && dd !== null && dd < 0;
   const isPaid = p.status === 'paid';
 
   return (
     <div
       className="ortu-app fixed inset-0 z-50 flex items-end justify-center bg-[var(--ovl-bg)] backdrop-blur-sm"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       role="dialog"
       aria-modal="true"
       aria-label={`Detail pembayaran ${p.jenis}`}
@@ -65,7 +69,9 @@ export default function PayDetailModal({ payment: p, onClose, showToast }: PayDe
           </div>
           <div className="flex justify-between border-b border-[var(--border)] py-2">
             <span className="text-[12px] text-[var(--muted)]">Jatuh Tempo</span>
-            <span className="text-[12px] font-bold">{fmtDateShort(p.due)}</span>
+            <span className="text-[12px] font-bold">
+              {hasDueDate ? fmtDateShort(p.due) : 'Belum tersedia'}
+            </span>
           </div>
           {isPaid ? (
             <div className="flex justify-between py-2">
@@ -75,8 +81,11 @@ export default function PayDetailModal({ payment: p, onClose, showToast }: PayDe
           ) : (
             <div className="flex justify-between py-2">
               <span className="text-[12px] text-[var(--muted)]">Status</span>
-              <span className="text-[12px] font-bold" style={{ color: isOverdue ? 'var(--rose)' : 'var(--amber)' }}>
-                {isOverdue ? `Terlewat ${Math.abs(dd)} hari` : 'Belum dibayar'}
+              <span
+                className="text-[12px] font-bold"
+                style={{ color: isOverdue ? 'var(--rose)' : 'var(--amber)' }}
+              >
+                {isOverdue && dd !== null ? `Terlewat ${Math.abs(dd)} hari` : 'Belum dibayar'}
               </span>
             </div>
           )}

@@ -43,6 +43,8 @@ import {
 import { LearnerGradeNotice } from '../LearnerGradeView';
 import LearnerSessionAttendance from '../LearnerSessionAttendance';
 import type { LearnerAttendanceState } from '@/lib/learner-attendance';
+import DashboardReadNotice from '../DashboardReadNotice';
+import type { DashboardReadState } from '@/lib/learner-dashboard-read';
 
 interface Props {
   attendancePeriod?: import('@/lib/learner-attendance').AttendancePeriod;
@@ -54,6 +56,8 @@ interface Props {
   grades: SiswaNilai[];
   gradeState?: LearnerGradeState;
   tasks: SiswaTugas[];
+  taskState?: DashboardReadState;
+  onRetryTasks?: () => void;
   badges: SiswaBadge[];
   modules: SiswaModul[];
   recentlyCompletedModule?: SiswaModul | null;
@@ -74,7 +78,9 @@ export default function BerandaSiswa({
   setActiveModulId,
   grades: suppliedGrades,
   gradeState = 'ready',
-  tasks,
+  tasks: suppliedTasks,
+  taskState = 'ready',
+  onRetryTasks,
   badges,
   modules,
   recentlyCompletedModule,
@@ -96,7 +102,10 @@ export default function BerandaSiswa({
   const summary = learnerGradeSummary(grades);
   const avgNilai = summary.average;
 
-  const pendingTasks = useMemo(() => tasks.filter((t) => t.status === 'pending'), [tasks]);
+  const pendingTasks = useMemo(
+    () => (taskState === 'ready' ? suppliedTasks.filter((t) => t.status === 'pending') : []),
+    [suppliedTasks, taskState],
+  );
   const earnedBadges = useMemo(() => badges.filter((b) => b.earned).length, [badges]);
   const activeModul = useMemo(() => modules.find((m) => m.status === 'Aktif'), [modules]);
 
@@ -235,12 +244,22 @@ export default function BerandaSiswa({
           <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/12 text-amber-500">
             <ClipboardList className="h-4 w-4" />
           </div>
-          <div className="text-xl font-extrabold tracking-tight">{pendingTasks.length}</div>
+          <div className="text-xl font-extrabold tracking-tight">
+            {taskState === 'ready' ? pendingTasks.length : '—'}
+          </div>
           <div className="mt-0.5 text-[10.5px] font-bold text-[var(--muted)]">Tugas Pending</div>
           <div
-            className={`mt-0.5 text-[10px] font-extrabold ${pendingTasks.length > 0 ? 'text-rose-500' : 'text-emerald-500'}`}
+            className={`mt-0.5 text-[10px] font-extrabold ${taskState !== 'ready' ? 'text-[var(--muted)]' : pendingTasks.length > 0 ? 'text-rose-500' : 'text-emerald-500'}`}
           >
-            {pendingTasks.length > 0 ? 'perlu dikerjakan' : 'tidak ada tugas'}
+            {taskState === 'ready'
+              ? pendingTasks.length > 0
+                ? 'perlu dikerjakan'
+                : 'tidak ada tugas'
+              : taskState === 'loading'
+                ? 'Memuat…'
+                : taskState === 'denied'
+                  ? 'Akses terbatas'
+                  : 'Belum dapat dimuat'}
           </div>
         </button>
 
@@ -473,7 +492,9 @@ export default function BerandaSiswa({
             </button>
           </div>
           <div className="space-y-2">
-            {urgentTasks.length > 0 ? (
+            {taskState !== 'ready' ? (
+              <DashboardReadNotice state={taskState} domain="Tugas" onRetry={onRetryTasks} />
+            ) : urgentTasks.length > 0 ? (
               urgentTasks.map((t) => {
                 const c = mpColor(t.mp);
                 const urgent = t.dlDays <= 1;

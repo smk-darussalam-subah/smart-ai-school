@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { authOptions } from '@/lib/auth';
 import { academicPagesResult } from '@/lib/academic-pages-server';
 import { apiFetchResult } from '@/lib/api';
+import { SessionRosterSchema } from '@/lib/session-attendance';
 import {
   LearningSessionSchema,
   RecapQuerySchema,
@@ -108,11 +109,7 @@ export async function fetchLearningContext(
       token,
       SupportingJournalSchema,
     ),
-    readRows(
-      `/attendance?classId=${row.classId}&dateFrom=${date}&dateTo=${date}`,
-      token,
-      SupportingAttendanceSchema,
-    ),
+    readSessionAttendance(row, scope, token),
     readRows(
       `/assessment/sessions?${period}&subject=${encodeURIComponent(row.subjectSnapshot)}${own}`,
       token,
@@ -149,10 +146,7 @@ export async function fetchLearningContext(
             x.classId === row.classId &&
             x.date.slice(0, 10) === date,
         ),
-        attendance: filter(
-          attendance,
-          (x) => x.classId === row.classId && x.date.slice(0, 10) === date,
-        ),
+        attendance,
         assessments: filter(
           assessments,
           (x) =>
@@ -172,4 +166,56 @@ export async function fetchLearningContext(
       (authority.data.permissions.includes('*') || authority.data.permissions.includes(code))
     );
   }
+}
+
+async function readSessionAttendance(
+  session: LearningSession,
+  scope: LearningScope,
+  token: string,
+): Promise<LearningRead<z.infer<typeof SupportingAttendanceSchema>[]>> {
+  const result = await apiFetchResult<unknown>(
+    `/attendance/student-sessions/sessions/${session.id}${scope === 'own' ? '?scope=own' : ''}`,
+    token,
+  );
+  if (result.status !== 'success')
+    return {
+      state: result.status === 'forbidden' ? 'denied' : 'error',
+      message:
+        result.status === 'forbidden'
+          ? 'Anda tidak memiliki akses ke absensi sesi ini.'
+          : 'Absensi sesi belum dapat dimuat. Coba lagi.',
+    };
+  const parsed = SessionRosterSchema.safeParse(result.data);
+  if (
+    !parsed.success ||
+    parsed.data.sessionId !== session.id ||
+    parsed.data.classId !== session.classId ||
+    parsed.data.date !== session.serviceDate.slice(0, 10) ||
+    parsed.data.subject !== session.subjectSnapshot
+  )
+    return { state: 'error', message: 'Rincian absensi tidak sesuai sesi. Muat ulang.' };
+  const roster = parsed.data;
+  const records = new Map(
+    roster.records.map((record) => [`${record.studentId}:${record.jp}`, record]),
+  );
+  return {
+    state: 'ready',
+    data: roster.students.flatMap((student) =>
+      roster.slots.map((slot) => {
+        const record = records.get(`${student.id}:${slot.jp}`);
+        return {
+          id: `${session.id}:${student.id}:${slot.jp}`,
+          sessionId: session.id,
+          classId: session.classId,
+          date: session.serviceDate,
+          jp: slot.jp,
+          startAt: slot.startAt,
+          endAt: slot.endAt,
+          status: record?.status ?? null,
+          notes: record?.notes ?? null,
+          student: { id: student.id, user: { fullName: student.name } },
+        };
+      }),
+    ),
+  };
 }

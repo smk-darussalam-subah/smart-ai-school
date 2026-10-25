@@ -12,14 +12,8 @@ import { Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
 import { BellScheduleService } from '../bell-schedule/bell-schedule.service';
 import { isScheduleOperational } from '../schedule/schedule-validity';
-import { isGuruOnly, resolveTeacherId } from '../common/helpers/role-helpers';
-import {
-  isKaprogScopedReader,
-  kaprogClassWhere,
-  resolveActiveKaprogMajorScope,
-} from '../common/helpers/appointment-scope.helper';
+import { resolveClassSessionReadScope } from './class-session-read-scope';
 import { PrismaService } from '../prisma/prisma.service';
-import { resolveOwnTeachingRead } from '../common/helpers/own-teaching-read';
 import { PermissionsService } from '../permissions/permissions.service';
 import {
   acquireIdentityMutationLock,
@@ -119,49 +113,27 @@ export class ClassSessionService {
     }
     if (query.status) where.status = query.status;
 
-    const ownTeacherId = await resolveOwnTeachingRead(
-      this.prisma,
-      user,
-      query.scope,
-      query.teacherId,
-    );
-    if (ownTeacherId) {
-      where.assignedTeacherId = ownTeacherId;
-      if (query.classId) where.classId = query.classId;
-    } else if (isKaprogScopedReader(user)) {
-      const scope = await resolveActiveKaprogMajorScope(this.prisma, user);
-      where.academicYearId = scope.academicYearId;
-      where.class = kaprogClassWhere(scope);
-      if (query.classId) {
-        const allowed = await this.prisma.class.count({
-          where: { id: query.classId, ...kaprogClassWhere(scope) },
-        });
-        if (!allowed) return { data: [], total: 0, page: query.page, limit: query.limit };
-        where.classId = query.classId;
-      }
-    } else if (isGuruOnly(user)) {
-      const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
-      where.assignedTeacherId = teacherId;
-      if (query.teacherId && query.teacherId !== teacherId) {
-        return { data: [], total: 0, page: query.page, limit: query.limit };
-      }
-      if (query.classId) where.classId = query.classId;
-    } else {
-      if (query.classId) where.classId = query.classId;
-      if (query.teacherId) where.assignedTeacherId = query.teacherId;
-    }
-
+    if (!this.permissions)
+      throw new ServiceUnavailableException('Kewenangan pembacaan sesi belum tersedia');
     const skip = (query.page - 1) * query.limit;
-    const [data, total] = await Promise.all([
-      this.prisma.classSession.findMany({
-        where,
-        select: { ...SESSION_SELECT, assignedTeacher: { select: OPERATIONAL_TEACHER_SELECT } },
-        orderBy: [{ serviceDate: 'desc' }, { scheduledStartAt: 'asc' }, { id: 'asc' }],
-        skip,
-        take: query.limit,
-      }),
-      this.prisma.classSession.count({ where }),
-    ]);
+    const { data, total, currentUser } = await this.prisma.$transaction(
+      async (tx) => {
+        const access = await resolveClassSessionReadScope(tx, this.permissions!, user, query);
+        const filtered: Prisma.ClassSessionWhereInput = { AND: [where, access.where] };
+        const [data, total] = await Promise.all([
+          tx.classSession.findMany({
+            where: filtered,
+            select: { ...SESSION_SELECT, assignedTeacher: { select: OPERATIONAL_TEACHER_SELECT } },
+            orderBy: [{ serviceDate: 'desc' }, { scheduledStartAt: 'asc' }, { id: 'asc' }],
+            skip,
+            take: query.limit,
+          }),
+          tx.classSession.count({ where: filtered }),
+        ]);
+        return { data, total, currentUser: access.user };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
     const configurations = new Map(
       await Promise.all(
         [...new Set(data.map((session) => session.semesterId))].map(
@@ -215,9 +187,9 @@ export class ClassSessionService {
               : null,
           canOperate:
             ready &&
-            user.roles.includes('GURU') &&
+            currentUser.roles.includes('GURU') &&
             isOperationalTeacher(assignedTeacher) &&
-            assignedTeacher.user.keycloakId === user.keycloakId,
+            assignedTeacher.user.keycloakId === currentUser.keycloakId,
         };
       }),
       total,

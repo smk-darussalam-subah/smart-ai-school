@@ -6,10 +6,14 @@
 // Parent me-remount via key={editing?.id ?? 'new'}.
 
 import { useState, useTransition, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import {
-  Loader2, Save, Send, AlertTriangle, BookOpen, ClipboardList, Award,
-} from 'lucide-react';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { Loader2, Save, Send, AlertTriangle, BookOpen, ClipboardList, Award } from 'lucide-react';
 import clsx from 'clsx';
 import type { LmsModuleItem } from './guru-types';
 import { createLmsModule, updateLmsModule, fetchBadgeCatalog } from '../actions';
@@ -27,7 +31,8 @@ interface Props {
 
 type TabName = 'materi' | 'asesmen' | 'badge';
 
-const FIELD = 'w-full rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[13px] text-[#0f2e25] outline-none focus:border-emerald-400';
+const FIELD =
+  'w-full rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[13px] text-[#0f2e25] outline-none focus:border-emerald-400';
 
 const TABS: { key: TabName; label: string; icon: typeof BookOpen }[] = [
   { key: 'materi', label: 'Materi', icon: BookOpen },
@@ -37,11 +42,23 @@ const TABS: { key: TabName; label: string; icon: typeof BookOpen }[] = [
 
 // Badge catalog shape (T2-03: fetched from /badges API)
 type BadgeCatalogItem = {
-  id: string; code: string; name: string; description: string | null;
-  icon: string; tier: string;
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  icon: string;
+  tier: string;
 };
 
-export default function ModulLmsForm({ open, onClose, subjects, classes, academicYear, semester, editing }: Props) {
+export default function ModulLmsForm({
+  open,
+  onClose,
+  subjects,
+  classes,
+  academicYear,
+  semester,
+  editing,
+}: Props) {
   const [activeTab, setActiveTab] = useState<TabName>('materi');
   const [subject, setSubject] = useState(editing?.subject ?? '');
   const [classId, setClassId] = useState(editing?.classId ?? '');
@@ -67,13 +84,15 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
     if (activeTab === 'badge' && badgeCatalog.length === 0 && !badgeLoading) {
       setBadgeLoading(true);
       setBadgeError(null);
-      fetchBadgeCatalog().then((res) => {
-        if (res.success && res.data) {
-          setBadgeCatalog(res.data);
-        } else {
-          setBadgeError(res.error ?? 'Gagal memuat katalog badge');
-        }
-      }).finally(() => setBadgeLoading(false));
+      fetchBadgeCatalog()
+        .then((res) => {
+          if (res.success && res.data) {
+            setBadgeCatalog(res.data);
+          } else {
+            setBadgeError(res.error ?? 'Gagal memuat katalog badge');
+          }
+        })
+        .finally(() => setBadgeLoading(false));
     }
   }, [activeTab, badgeCatalog.length, badgeLoading]);
 
@@ -86,13 +105,19 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
 
     const jpNum = jp.trim() ? Number(jp) : null;
     const kktpNum = kktp.trim() ? Number(kktp) : 75;
-    if (jpNum != null && (Number.isNaN(jpNum) || jpNum < 1 || jpNum > 40)) return setErr('Alokasi JP harus 1-40.');
+    if (jpNum != null && (Number.isNaN(jpNum) || jpNum < 1 || jpNum > 40))
+      return setErr('Alokasi JP harus 1-40.');
     if (Number.isNaN(kktpNum) || kktpNum < 0 || kktpNum > 100) return setErr('KKTP harus 0-100.');
 
     startTransition(async () => {
       const payload = {
-        subject, title, tp: tp.trim() || null, jpAllocation: jpNum, kktp: kktpNum,
-        content, classId: classId || null,
+        subject,
+        title,
+        tp: tp.trim() || null,
+        jpAllocation: jpNum,
+        kktp: kktpNum,
+        content,
+        classId: classId || null,
       };
       const res = editing
         ? await updateLmsModule(editing.id, payload)
@@ -109,17 +134,27 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
           <DialogTitle className="flex items-center gap-2">
             {editing ? 'Edit Modul LMS' : 'Buat Modul LMS'}
             {editing && (
-              <span className={clsx('rounded-md px-2 py-0.5 text-[11px] font-bold',
-                editing.status === 'published' ? 'bg-emerald-50 text-emerald-700'
-                  : editing.status === 'archived' ? 'bg-zinc-100 text-zinc-500'
-                  : 'bg-slate-100 text-slate-600'
-              )}>
-                {editing.status === 'published' ? 'Terbit' : editing.status === 'archived' ? 'Arsip' : 'Draft'}
+              <span
+                className={clsx(
+                  'rounded-md px-2 py-0.5 text-[11px] font-bold',
+                  editing.status === 'published'
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : editing.status === 'archived'
+                      ? 'bg-zinc-100 text-zinc-500'
+                      : 'bg-slate-100 text-slate-600',
+                )}
+              >
+                {editing.status === 'published'
+                  ? 'Terbit'
+                  : editing.status === 'archived'
+                    ? 'Arsip'
+                    : 'Draft'}
               </span>
             )}
           </DialogTitle>
           <DialogDescription>
-            TA {academicYear || '-'} · Semester {semester}. Materi yang dipublikasikan akan terlihat siswa kelas terkait.
+            TA {academicYear || '-'} · Semester {semester}. Materi yang dipublikasikan akan terlihat
+            siswa kelas terkait.
           </DialogDescription>
         </DialogHeader>
 
@@ -136,7 +171,7 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
                   'flex items-center gap-1.5 border-b-2 px-4 py-2 text-[12.5px] font-bold transition-colors',
                   activeTab === tab.key
                     ? 'border-emerald-500 text-emerald-700'
-                    : 'border-transparent text-[#9bb0a8] hover:text-[#355a4e]'
+                    : 'border-transparent text-[#9bb0a8] hover:text-[#355a4e]',
                 )}
               >
                 <Icon className="h-4 w-4" />
@@ -153,52 +188,109 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
             <>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
-                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">Mapel</span>
-                  <select value={subject} onChange={(e) => setSubject(e.target.value)} className={FIELD}>
+                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">
+                    Mapel
+                  </span>
+                  <select
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    className={FIELD}
+                  >
                     <option value="">- pilih -</option>
-                    {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {subjects.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">Kelas (opsional)</span>
-                  <select value={classId} onChange={(e) => setClassId(e.target.value)} className={FIELD}>
+                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">
+                    Kelas (opsional)
+                  </span>
+                  <select
+                    value={classId}
+                    onChange={(e) => setClassId(e.target.value)}
+                    className={FIELD}
+                  >
                     <option value="">- umum -</option>
-                    {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {classes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
                   </select>
                 </label>
               </div>
 
               <label className="block">
-                <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">Judul Modul</span>
-                <input value={title} onChange={(e) => setTitle(e.target.value)} className={FIELD}
-                  placeholder="mis. Flexbox & Layout Responsif" />
+                <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">
+                  Judul Modul
+                </span>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className={FIELD}
+                  placeholder="mis. Flexbox & Layout Responsif"
+                />
               </label>
 
               <div className="grid grid-cols-3 gap-3">
                 <label className="block">
-                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">TP (opsional)</span>
-                  <input value={tp} onChange={(e) => setTp(e.target.value)} className={FIELD} placeholder="TP 2.1" />
+                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">
+                    TP (opsional)
+                  </span>
+                  <input
+                    value={tp}
+                    onChange={(e) => setTp(e.target.value)}
+                    className={FIELD}
+                    placeholder="TP 2.1"
+                  />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">Alokasi JP</span>
-                  <input value={jp} onChange={(e) => setJp(e.target.value)} className={FIELD} inputMode="numeric" placeholder="4" />
+                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">
+                    Alokasi JP
+                  </span>
+                  <input
+                    value={jp}
+                    onChange={(e) => setJp(e.target.value)}
+                    className={FIELD}
+                    inputMode="numeric"
+                    placeholder="4"
+                  />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">KKTP</span>
-                  <input value={kktp} onChange={(e) => setKktp(e.target.value)} className={FIELD} inputMode="numeric" placeholder="75" />
+                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">
+                    KKTP
+                  </span>
+                  <input
+                    value={kktp}
+                    onChange={(e) => setKktp(e.target.value)}
+                    className={FIELD}
+                    inputMode="numeric"
+                    placeholder="75"
+                  />
                 </label>
               </div>
 
               <div className="rounded-lg bg-emerald-50 px-3 py-2 text-[11px] font-medium text-emerald-700">
-                Konten di bawah tersinkron dari Modul Ajar yang disetujui. Edit materi akan langsung tampil di LMS siswa.
+                Konten di bawah tersinkron dari Modul Ajar yang disetujui. Edit materi akan langsung
+                tampil di LMS siswa.
               </div>
 
               <label className="block">
                 <div className="mb-1 flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">Isi Materi</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">
+                    Isi Materi
+                  </span>
                 </div>
-                <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={7}
-                  className={`${FIELD} resize-y`} placeholder="Materi pembelajaran (teks/markdown)..." />
+                <textarea
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  rows={7}
+                  className={`${FIELD} resize-y`}
+                  placeholder="Materi pembelajaran (teks/markdown)..."
+                />
               </label>
             </>
           )}
@@ -207,11 +299,14 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
           {activeTab === 'asesmen' && (
             <>
               <div className="rounded-lg bg-amber-50 px-3 py-2 inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-700">
-                <AlertTriangle className="h-3 w-3" /> Konfigurasi asesmen tersimpan saat Simpan Draft/Publikasikan
+                <AlertTriangle className="h-3 w-3" /> Konfigurasi asesmen tersimpan saat Simpan
+                Draft/Publikasikan
               </div>
 
               <div>
-                <span className="mb-2 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">Tipe Asesmen</span>
+                <span className="mb-2 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">
+                  Tipe Asesmen
+                </span>
                 <div className="flex gap-2">
                   {(['formative', 'summative'] as const).map((t) => (
                     <button
@@ -222,7 +317,7 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
                         'rounded-xl border px-4 py-2 text-[12.5px] font-bold transition-colors',
                         assessmentType === t
                           ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                          : 'border-[#e6efea] bg-white text-[#6b8079] hover:bg-[#f4f7f5]'
+                          : 'border-[#e6efea] bg-white text-[#6b8079] hover:bg-[#f4f7f5]',
                       )}
                     >
                       {t === 'formative' ? 'Formatif (Auto-grade PG)' : 'Sumatif (Essay + Rubrik)'}
@@ -256,7 +351,9 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
           {activeTab === 'badge' && (
             <>
               <div>
-                <span className="mb-2 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">Pilih Badge untuk Modul Ini</span>
+                <span className="mb-2 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">
+                  Pilih Badge untuk Modul Ini
+                </span>
 
                 {badgeLoading && (
                   <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-4 text-[12px] font-medium text-slate-500">
@@ -282,34 +379,52 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
                       <button
                         key={badge.id}
                         type="button"
-                        onClick={() => setSelectedBadge(selectedBadge === badge.code ? null : badge.code)}
+                        onClick={() =>
+                          setSelectedBadge(selectedBadge === badge.code ? null : badge.code)
+                        }
                         className={clsx(
                           'flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors',
                           selectedBadge === badge.code
                             ? 'border-emerald-300 bg-emerald-50'
-                            : 'border-[#e6efea] bg-white hover:bg-[#f4f7f5]'
+                            : 'border-[#e6efea] bg-white hover:bg-[#f4f7f5]',
                         )}
                       >
-                        <div className={clsx(
-                          'flex h-10 w-10 items-center justify-center rounded-full text-lg',
-                          badge.tier === 'gold' ? 'bg-yellow-100' :
-                          badge.tier === 'silver' ? 'bg-gray-100' :
-                          badge.tier === 'platinum' ? 'bg-blue-100' : 'bg-orange-100'
-                        )}>
+                        <div
+                          className={clsx(
+                            'flex h-10 w-10 items-center justify-center rounded-full text-lg',
+                            badge.tier === 'gold'
+                              ? 'bg-yellow-100'
+                              : badge.tier === 'silver'
+                                ? 'bg-gray-100'
+                                : badge.tier === 'platinum'
+                                  ? 'bg-blue-100'
+                                  : 'bg-orange-100',
+                          )}
+                        >
                           {badge.icon || (
-                            <Award className={clsx(
-                              'h-5 w-5',
-                              badge.tier === 'gold' ? 'text-yellow-600' :
-                              badge.tier === 'silver' ? 'text-gray-500' :
-                              badge.tier === 'platinum' ? 'text-blue-600' : 'text-orange-600'
-                            )} />
+                            <Award
+                              className={clsx(
+                                'h-5 w-5',
+                                badge.tier === 'gold'
+                                  ? 'text-yellow-600'
+                                  : badge.tier === 'silver'
+                                    ? 'text-gray-500'
+                                    : badge.tier === 'platinum'
+                                      ? 'text-blue-600'
+                                      : 'text-orange-600',
+                              )}
+                            />
                           )}
                         </div>
                         <div className="flex-1">
                           <div className="text-[13px] font-bold text-[#0f2e25]">{badge.name}</div>
-                          <div className="text-[11px] text-[#6b8079]">{badge.description || 'Tidak ada deskripsi'}</div>
+                          <div className="text-[11px] text-[#6b8079]">
+                            {badge.description || 'Tidak ada deskripsi'}
+                          </div>
                         </div>
-                        <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 uppercase">{badge.tier}</span>
+                        <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 uppercase">
+                          {badge.tier}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -318,7 +433,9 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
 
               {selectedBadge && (
                 <label className="block">
-                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">Threshold Nilai untuk Badge</span>
+                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#6b8079]">
+                    Threshold Nilai untuk Badge
+                  </span>
                   <input
                     value={badgeThreshold}
                     onChange={(e) => setBadgeThreshold(e.target.value)}
@@ -326,7 +443,10 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
                     inputMode="numeric"
                     placeholder="75"
                   />
-                  <p className="mt-1 text-[10.5px] text-[#9bb0a8]">Siswa yang menyelesaikan modul dengan nilai di atas threshold akan mendapat badge.</p>
+                  <p className="mt-1 text-[10.5px] text-[#9bb0a8]">
+                    Siswa yang menyelesaikan modul dengan nilai di atas threshold akan mendapat
+                    badge.
+                  </p>
                 </label>
               )}
             </>
@@ -335,25 +455,44 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
           {/* Error display (shared) */}
           {err && (
             <div className="flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-600">
-              <AlertTriangle className="h-4 w-4 shrink-0" />{err}
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              {err}
             </div>
           )}
         </div>
 
         {/* Save buttons (shared across tabs) */}
         <div className="flex items-center justify-end gap-2">
-          <button type="button" onClick={onClose} disabled={pending}
-            className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[13px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] disabled:opacity-50">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={pending}
+            className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[13px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] disabled:opacity-50"
+          >
             Batal
           </button>
-          <button type="button" onClick={() => save(false)} disabled={pending}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-[13px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
-            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Simpan Draft
+          <button
+            type="button"
+            onClick={() => save(false)}
+            disabled={pending}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-[13px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+          >
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Simpan Draft
           </button>
           {!editing && (
-            <button type="button" onClick={() => save(true)} disabled={pending}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-[13px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
-              {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Simpan &amp; Publikasikan
+            <button
+              type="button"
+              onClick={() => save(true)}
+              disabled={pending}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-[13px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {pending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              Simpan &amp; Publikasikan
             </button>
           )}
         </div>
@@ -361,7 +500,14 @@ export default function ModulLmsForm({ open, onClose, subjects, classes, academi
 
       {/* Question Bank Editor overlay (opened from Asesmen tab) */}
       {qbOpen && (
-        <QuestionBankEditor subject={subject} moduleId={editing?.id} onClose={() => setQbOpen(false)} />
+        <QuestionBankEditor
+          subject={subject}
+          moduleId={editing?.id}
+          classId={editing?.classId ?? (classId || undefined)}
+          academicYear={academicYear}
+          semester={semester}
+          onClose={() => setQbOpen(false)}
+        />
       )}
     </Dialog>
   );

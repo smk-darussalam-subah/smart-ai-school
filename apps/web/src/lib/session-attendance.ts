@@ -39,6 +39,8 @@ function verifyTotals(t: z.infer<typeof TotalsObject>, ctx: z.RefinementCtx) {
 export const JpTotalsSchema = TotalsObject.superRefine(verifyTotals);
 const LearnerJpObject = z.object({
   studentId: z.string().uuid(),
+  academicYear: z.string().regex(/^\d{4}\/\d{4}$/),
+  semester: z.number().int().min(1).max(2),
   from: z.string().date(),
   to: z.string().date(),
   unit: z.literal('student_session_jp'),

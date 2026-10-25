@@ -8,7 +8,7 @@ jest.mock('@smk/logger', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AuthUser } from '@smk/auth';
 import { LmsController } from '../lms/lms.controller';
 import { LmsService } from '../lms/lms.service';
@@ -16,7 +16,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
 
 const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
-const SISWA: AuthUser = { keycloakId: 'kc-siswa', username: 'siswa1', roles: ['SISWA'] } as AuthUser;
+const SISWA: AuthUser = {
+  keycloakId: 'kc-siswa',
+  username: 'siswa1',
+  roles: ['SISWA'],
+} as AuthUser;
 const WAKA: AuthUser = {
   keycloakId: 'kc-waka',
   username: 'waka',
@@ -24,8 +28,13 @@ const WAKA: AuthUser = {
 } as AuthUser;
 
 const baseCreate = {
-  subject: 'Pemrograman Web', title: 'Struktur HTML', kktp: 75, orderIndex: 0,
-  classId: 'class-1', academicYear: '2025/2026', semester: 1,
+  subject: 'Pemrograman Web',
+  title: 'Struktur HTML',
+  kktp: 75,
+  orderIndex: 0,
+  classId: 'class-1',
+  academicYear: '2025/2026',
+  semester: 1,
 };
 
 describe('LmsService', () => {
@@ -39,6 +48,8 @@ describe('LmsService', () => {
   const count = jest.fn();
   const create = jest.fn();
   const update = jest.fn();
+  const updateMany = jest.fn();
+  const deleteMany = jest.fn();
   const del = jest.fn();
   const progressUpsert = jest.fn();
   const progressFindMany = jest.fn();
@@ -47,15 +58,47 @@ describe('LmsService', () => {
   const rppFindUnique = jest.fn();
 
   beforeEach(async () => {
-    [teacherFindFirst, teachingAssignmentFindFirst, studentFindFirst, findFirst, findUnique, findMany, count, create, update, del, progressUpsert, progressFindMany, progressFindUnique, studentCount, rppFindUnique]
-      .forEach((m) => m.mockReset());
+    [
+      teacherFindFirst,
+      teachingAssignmentFindFirst,
+      studentFindFirst,
+      findFirst,
+      findUnique,
+      findMany,
+      count,
+      create,
+      update,
+      updateMany,
+      deleteMany,
+      del,
+      progressUpsert,
+      progressFindMany,
+      progressFindUnique,
+      studentCount,
+      rppFindUnique,
+    ].forEach((m) => m.mockReset());
     teacherFindFirst.mockResolvedValue({ id: 'teacher-1' });
     // W3-6: default — GURU has matching assignment for any create call in legacy tests.
     teachingAssignmentFindFirst.mockResolvedValue({ id: 'ta-1' });
     studentFindFirst.mockResolvedValue({ id: 'student-1', classId: 'class-1' });
-    create.mockImplementation((a: { data: Record<string, unknown> }) => Promise.resolve({ id: 'lms-1', ...a.data }));
-    update.mockImplementation((a: { data: Record<string, unknown> }) => Promise.resolve({ id: 'lms-1', ...a.data }));
-    progressUpsert.mockImplementation((a: { create: Record<string, unknown> }) => Promise.resolve({ id: 'prog-1', ...a.create }));
+    findUnique.mockResolvedValue({
+      ...baseCreate,
+      id: 'lms-1',
+      teacherId: 'teacher-1',
+      rppId: null,
+      status: 'draft',
+    });
+    updateMany.mockResolvedValue({ count: 1 });
+    deleteMany.mockResolvedValue({ count: 1 });
+    create.mockImplementation((a: { data: Record<string, unknown> }) =>
+      Promise.resolve({ id: 'lms-1', ...a.data }),
+    );
+    update.mockImplementation((a: { data: Record<string, unknown> }) =>
+      Promise.resolve({ id: 'lms-1', ...a.data }),
+    );
+    progressUpsert.mockImplementation((a: { create: Record<string, unknown> }) =>
+      Promise.resolve({ id: 'prog-1', ...a.create }),
+    );
     count.mockResolvedValue(0);
     findMany.mockResolvedValue([]);
     progressFindMany.mockResolvedValue([]);
@@ -63,20 +106,41 @@ describe('LmsService', () => {
     studentCount.mockResolvedValue(0);
 
     const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
       teacher: { findFirst: teacherFindFirst },
       teachingAssignment: { findFirst: teachingAssignmentFindFirst },
       student: { findFirst: studentFindFirst, count: studentCount },
       rpp: { findUnique: rppFindUnique },
-      lmsModule: { findFirst, findUnique, findMany, count, create, update, delete: del },
-      lmsModuleProgress: { upsert: progressUpsert, findMany: progressFindMany, findUnique: progressFindUnique },
+      lmsModule: {
+        findFirst,
+        findUnique,
+        findUniqueOrThrow: findUnique,
+        findMany,
+        count,
+        create,
+        update,
+        updateMany,
+        deleteMany,
+        delete: del,
+      },
+      lmsModuleProgress: {
+        upsert: progressUpsert,
+        findMany: progressFindMany,
+        findUnique: progressFindUnique,
+      },
+    };
+    const database = {
+      ...prisma,
+      $transaction: (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma),
     };
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
         LmsService,
-        { provide: PrismaService, useValue: prisma },
+        { provide: PrismaService, useValue: database },
         {
           provide: AcademicPeriodService,
           useValue: {
+            acquireCutoverLock: jest.fn().mockResolvedValue(undefined),
             assertWritablePeriodWithCutoverLock: jest.fn().mockResolvedValue(undefined),
             assertWritablePeriod: jest.fn().mockResolvedValue(undefined),
           },
@@ -109,7 +173,11 @@ describe('LmsService', () => {
 
   it('findAll SISWA → hanya published + visibilitas kelas, ratakan myProgress', async () => {
     findMany.mockResolvedValueOnce([
-      { id: 'lms-1', subject: 'X', progress: [{ progress: 50, status: 'active', startedAt: null, completedAt: null }] },
+      {
+        id: 'lms-1',
+        subject: 'X',
+        progress: [{ progress: 50, status: 'active', startedAt: null, completedAt: null }],
+      },
     ]);
     const res = await service.findAll({ page: 1, limit: 50 } as never, SISWA);
     const where = findMany.mock.calls[0][0].where;
@@ -120,7 +188,9 @@ describe('LmsService', () => {
 
   it('updateProgress modul belum published → Forbidden', async () => {
     findUnique.mockResolvedValue({ id: 'lms-1', status: 'draft', classId: 'class-1' });
-    await expect(service.updateProgress('lms-1', { progress: 30 }, SISWA)).rejects.toThrow(ForbiddenException);
+    await expect(service.updateProgress('lms-1', { progress: 30 }, SISWA)).rejects.toThrow(
+      ForbiddenException,
+    );
   });
 
   it('updateProgress progress=100 → status completed + completedAt', async () => {
@@ -133,34 +203,64 @@ describe('LmsService', () => {
   });
 
   it('update modul bukan milik sendiri → NotFound', async () => {
-    findFirst.mockResolvedValue(null); // ensureOwned gagal
-    await expect(service.update('lms-x', { title: 'baru' }, GURU)).rejects.toThrow(NotFoundException);
+    findUnique.mockResolvedValue(null);
+    await expect(service.update('lms-x', { title: 'baru' }, GURU)).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   it('setStatus publish modul milik sendiri', async () => {
-    findFirst.mockResolvedValue({ id: 'lms-1' });
     await service.setStatus('lms-1', 'published', GURU);
-    expect(update.mock.calls[0][0].data.status).toBe('published');
+    expect(updateMany.mock.calls[0][0].data.status).toBe('published');
   });
 
   it('getProgress milik sendiri → progres siswa + classStudentCount', async () => {
-    findUnique.mockResolvedValue({ id: 'lms-1', title: 'M', subject: 'X', classId: 'class-1', teacherId: 'teacher-1' });
+    findUnique.mockResolvedValue({
+      id: 'lms-1',
+      title: 'M',
+      subject: 'X',
+      classId: 'class-1',
+      teacherId: 'teacher-1',
+    });
     progressFindMany.mockResolvedValue([
-      { progress: 100, status: 'completed', startedAt: new Date(), completedAt: new Date(), student: { nis: '101', user: { fullName: 'Ani' } } },
+      {
+        progress: 100,
+        status: 'completed',
+        startedAt: new Date(),
+        completedAt: new Date(),
+        student: { nis: '101', user: { fullName: 'Ani' } },
+      },
     ]);
     studentCount.mockResolvedValue(30);
     const res = await service.getProgress('lms-1', GURU);
-    expect(res.progress[0]).toMatchObject({ name: 'Ani', nis: '101', progress: 100, status: 'completed' });
+    expect(res.progress[0]).toMatchObject({
+      name: 'Ani',
+      nis: '101',
+      progress: 100,
+      status: 'completed',
+    });
     expect(res.classStudentCount).toBe(30);
   });
 
   it('getProgress modul bukan milik sendiri → Forbidden', async () => {
-    findUnique.mockResolvedValue({ id: 'lms-1', title: 'M', subject: 'X', classId: null, teacherId: 'teacher-LAIN' });
+    findUnique.mockResolvedValue({
+      id: 'lms-1',
+      title: 'M',
+      subject: 'X',
+      classId: null,
+      teacherId: 'teacher-LAIN',
+    });
     await expect(service.getProgress('lms-1', GURU)).rejects.toThrow(ForbiddenException);
   });
 
   it('getProgress WAKA_KURIKULUM hasil active appointment → boleh monitor modul guru lain', async () => {
-    findUnique.mockResolvedValue({ id: 'lms-1', title: 'M', subject: 'X', classId: 'class-1', teacherId: 'teacher-LAIN' });
+    findUnique.mockResolvedValue({
+      id: 'lms-1',
+      title: 'M',
+      subject: 'X',
+      classId: 'class-1',
+      teacherId: 'teacher-LAIN',
+    });
     progressFindMany.mockResolvedValue([]);
     studentCount.mockResolvedValue(31);
     const res = await service.getProgress('lms-1', WAKA);
@@ -172,15 +272,33 @@ describe('LmsService', () => {
 
   it('findMyLearning SISWA → modul published + myProgress + stats', async () => {
     findMany.mockResolvedValueOnce([
-      { id: 'lms-1', subject: 'X', status: 'published', classId: 'class-1', progress: [{ progress: 100, status: 'completed', startedAt: null, completedAt: null }] },
-      { id: 'lms-2', subject: 'Y', status: 'published', classId: 'class-1', progress: [{ progress: 50, status: 'active', startedAt: null, completedAt: null }] },
+      {
+        id: 'lms-1',
+        subject: 'X',
+        status: 'published',
+        classId: 'class-1',
+        progress: [{ progress: 100, status: 'completed', startedAt: null, completedAt: null }],
+      },
+      {
+        id: 'lms-2',
+        subject: 'Y',
+        status: 'published',
+        classId: 'class-1',
+        progress: [{ progress: 50, status: 'active', startedAt: null, completedAt: null }],
+      },
       { id: 'lms-3', subject: 'Z', status: 'published', classId: 'class-1', progress: [] },
     ]);
     const res = await service.findMyLearning(SISWA);
     expect(res.data).toHaveLength(3);
     expect((res.data[0] as { myProgress: { progress: number } }).myProgress.progress).toBe(100);
     expect((res.data[2] as { myProgress: unknown }).myProgress).toBeNull();
-    expect(res.stats).toEqual({ total: 3, completed: 1, inProgress: 1, notStarted: 1, avgProgress: 50 });
+    expect(res.stats).toEqual({
+      total: 3,
+      completed: 1,
+      inProgress: 1,
+      notStarted: 1,
+      avgProgress: 50,
+    });
   });
 
   it('findMyLearning SISWA → visibilitas published + kelas sendiri', async () => {
@@ -194,38 +312,77 @@ describe('LmsService', () => {
   // ── findOne SISWA myProgress (W1-2) ────────────────────────────────────────
 
   it('findOne SISWA published → sertakan myProgress', async () => {
-    findUnique.mockResolvedValue({ id: 'lms-1', status: 'published', classId: 'class-1', class: { id: 'class-1', name: 'X' }, teacherId: 't-1' });
-    progressFindUnique.mockResolvedValue({ id: 'prog-1', progress: 75, status: 'active', startedAt: new Date(), completedAt: null });
-    const res = await service.findOne('lms-1', SISWA) as { myProgress: { progress: number } };
+    findUnique.mockResolvedValue({
+      id: 'lms-1',
+      status: 'published',
+      classId: 'class-1',
+      class: { id: 'class-1', name: 'X' },
+      teacherId: 't-1',
+    });
+    progressFindUnique.mockResolvedValue({
+      id: 'prog-1',
+      progress: 75,
+      status: 'active',
+      startedAt: new Date(),
+      completedAt: null,
+    });
+    const res = (await service.findOne('lms-1', SISWA)) as { myProgress: { progress: number } };
     expect(res.myProgress.progress).toBe(75);
     expect(progressFindUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { moduleId_studentId: { moduleId: 'lms-1', studentId: 'student-1' } } }),
+      expect.objectContaining({
+        where: { moduleId_studentId: { moduleId: 'lms-1', studentId: 'student-1' } },
+      }),
     );
   });
 
   it('findOne SISWA draft → Forbidden (belum published)', async () => {
-    findUnique.mockResolvedValue({ id: 'lms-1', status: 'draft', classId: 'class-1', class: { id: 'class-1', name: 'X' }, teacherId: 't-1' });
+    findUnique.mockResolvedValue({
+      id: 'lms-1',
+      status: 'draft',
+      classId: 'class-1',
+      class: { id: 'class-1', name: 'X' },
+      teacherId: 't-1',
+    });
     await expect(service.findOne('lms-1', SISWA)).rejects.toThrow(ForbiddenException);
   });
 
   // ── W3-6: RPP/LMS ownership validation ─────────────────────────────────
   it('W3-6: GURU create tanpa rppId + classId di luar assignment → Forbidden', async () => {
     teachingAssignmentFindFirst.mockResolvedValue(null);
-    await expect(service.create({
-      ...baseCreate, classId: 'class-lain', publish: false,
-    }, GURU)).rejects.toThrow(ForbiddenException);
+    await expect(
+      service.create(
+        {
+          ...baseCreate,
+          classId: 'class-lain',
+          publish: false,
+        },
+        GURU,
+      ),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it('W3-6: GURU create tanpa rppId & tanpa classId → Forbidden (class wajib)', async () => {
-    await expect(service.create({
-      ...baseCreate, classId: undefined, publish: false,
-    }, GURU)).rejects.toThrow(ForbiddenException);
+    await expect(
+      service.create(
+        {
+          ...baseCreate,
+          classId: undefined,
+          publish: false,
+        },
+        GURU,
+      ),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it('W3-6: GURU create dengan rppId milik sendiri → sukses, derive dari RPP', async () => {
     rppFindUnique.mockResolvedValue({
-      id: 'rpp-1', teacherId: 'teacher-1', classId: 'class-from-rpp',
-      subject: 'Subjek From RPP', academicYear: '2026/2027', status: 'approved',
+      id: 'rpp-1',
+      teacherId: 'teacher-1',
+      classId: 'class-from-rpp',
+      subject: 'Subjek From RPP',
+      academicYear: '2026/2027',
+      status: 'approved',
+      semester: 1,
     });
     await service.create({ ...baseCreate, rppId: 'rpp-1', publish: false }, GURU);
     const data = create.mock.calls[0][0].data;
@@ -237,28 +394,140 @@ describe('LmsService', () => {
 
   it('W3-6: GURU create dengan rppId milik guru lain → Forbidden', async () => {
     rppFindUnique.mockResolvedValue({
-      id: 'rpp-1', teacherId: 'teacher-LAIN', classId: 'class-x',
-      subject: 'X', academicYear: '2026/2027', status: 'approved',
+      id: 'rpp-1',
+      teacherId: 'teacher-LAIN',
+      classId: 'class-x',
+      subject: 'X',
+      academicYear: '2026/2027',
+      status: 'approved',
     });
-    await expect(service.create({ ...baseCreate, rppId: 'rpp-1', publish: false }, GURU))
-      .rejects.toThrow(ForbiddenException);
+    await expect(
+      service.create({ ...baseCreate, rppId: 'rpp-1', publish: false }, GURU),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it('W3-6: GURU create dengan rppId yang tidak ada → NotFound', async () => {
     rppFindUnique.mockResolvedValue(null);
-    await expect(service.create({ ...baseCreate, rppId: 'rpp-fiktif', publish: false }, GURU))
-      .rejects.toThrow(NotFoundException);
+    await expect(
+      service.create({ ...baseCreate, rppId: 'rpp-fiktif', publish: false }, GURU),
+    ).rejects.toThrow(NotFoundException);
   });
+
+  it.each(['draft', 'published'])(
+    'R01 rejects class→null for %s, not just published',
+    async (status) => {
+      findUnique.mockResolvedValue({
+        ...baseCreate,
+        id: 'lms-1',
+        teacherId: 'teacher-1',
+        rppId: null,
+        status,
+      });
+      await expect(service.update('lms-1', { classId: null }, GURU)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(updateMany).not.toHaveBeenCalled();
+    },
+  );
+  it('R01 rejects foreign RPP on owned module, including reviewer teacher', async () => {
+    rppFindUnique.mockResolvedValue({ teacherId: 'teacher-other' });
+    await expect(service.update('lms-1', { rppId: 'rpp-foreign' }, WAKA)).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+  it('R01 validates effective assignment for title-only edit', async () => {
+    teachingAssignmentFindFirst.mockResolvedValue(null);
+    await expect(service.update('lms-1', { title: 'New content' }, GURU)).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+  it('R01 preserves content edits of existing general module without new audience', async () => {
+    findUnique.mockResolvedValue({
+      ...baseCreate,
+      id: 'lms-1',
+      teacherId: 'teacher-1',
+      rppId: null,
+      classId: null,
+      status: 'published',
+    });
+    await service.update('lms-1', { title: 'General content', classId: null }, GURU);
+    expect(updateMany).toHaveBeenCalled();
+    expect(teachingAssignmentFindFirst).not.toHaveBeenCalled();
+    await expect(
+      service.update('lms-1', { subject: 'Different public context' }, GURU),
+    ).rejects.toThrow(ForbiddenException);
+  });
+  it('R01 permits explicit RPP detach but rejects mismatched linked period', async () => {
+    const current = {
+      ...baseCreate,
+      id: 'lms-1',
+      teacherId: 'teacher-1',
+      rppId: 'rpp-own',
+      status: 'published',
+    };
+    findUnique.mockResolvedValue(current);
+    rppFindUnique.mockResolvedValue({ ...current, id: 'rpp-own', semester: 2 });
+    await expect(service.update('lms-1', { title: 'Updated title' }, GURU)).rejects.toThrow(
+      ForbiddenException,
+    );
+    await service.update('lms-1', { rppId: null, title: 'Detached source' }, GURU);
+    expect(updateMany.mock.calls[0][0].data.rppId).toBeNull();
+  });
+  it('R02 completed timestamp and max progress survive sequential stale value', async () => {
+    findUnique.mockResolvedValue({
+      ...baseCreate,
+      id: 'lms-1',
+      teacherId: 'teacher-1',
+      status: 'published',
+    });
+    const completedAt = new Date('2026-10-24T01:00:00Z');
+    progressFindUnique.mockResolvedValue({ progress: 100, status: 'completed', completedAt });
+    await service.updateProgress('lms-1', { progress: 20, status: 'active' }, SISWA);
+    expect(progressUpsert.mock.calls[0][0].update).toEqual({
+      progress: 100,
+      status: 'completed',
+      completedAt,
+    });
+  });
+  it.each<AuthUser>([GURU, { ...GURU, roles: ['SUPER_ADMIN'] }])(
+    'R03 archived delete conflicts for $roles',
+    async (actor) => {
+      findUnique.mockResolvedValue({
+        ...baseCreate,
+        id: 'lms-1',
+        teacherId: 'teacher-1',
+        status: 'archived',
+      });
+      await expect(service.remove('lms-1', actor)).rejects.toThrow(ConflictException);
+      expect(deleteMany).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('LmsController appointment-aware reviewer metadata', () => {
   it('GET reviewer paths request WAKA_KURIKULUM so RolesGuard can enrich from active Appointment', () => {
-    expect(Reflect.getMetadata('roles', LmsController.prototype.findAll))
-      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU', 'SISWA']);
-    expect(Reflect.getMetadata('roles', LmsController.prototype.findOne))
-      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU', 'SISWA']);
-    expect(Reflect.getMetadata('roles', LmsController.prototype.getProgress))
-      .toEqual(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU']);
+    expect(Reflect.getMetadata('roles', LmsController.prototype.findAll)).toEqual([
+      'SUPER_ADMIN',
+      'KEPALA_SEKOLAH',
+      'WAKA_KURIKULUM',
+      'GURU',
+      'SISWA',
+    ]);
+    expect(Reflect.getMetadata('roles', LmsController.prototype.findOne)).toEqual([
+      'SUPER_ADMIN',
+      'KEPALA_SEKOLAH',
+      'WAKA_KURIKULUM',
+      'GURU',
+      'SISWA',
+    ]);
+    expect(Reflect.getMetadata('roles', LmsController.prototype.getProgress)).toEqual([
+      'SUPER_ADMIN',
+      'KEPALA_SEKOLAH',
+      'WAKA_KURIKULUM',
+      'GURU',
+    ]);
   });
 
   it('write paths stay GURU-owned and do not grant WAKA broad LMS mutation', () => {

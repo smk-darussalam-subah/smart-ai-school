@@ -35,6 +35,8 @@ import { fetchTeachers } from '../../actions';
 import RemedialOrtu from './RemedialOrtu';
 import type { LearnerAttendanceState } from '@/lib/learner-attendance';
 import LearnerSessionAttendance from '../LearnerSessionAttendance';
+import DashboardReadNotice from '../DashboardReadNotice';
+import type { DashboardReadState } from '@/lib/learner-dashboard-read';
 
 interface BerandaOrtuProps {
   attendancePeriod?: import('@/lib/learner-attendance').AttendancePeriod;
@@ -50,6 +52,8 @@ interface BerandaOrtuProps {
   schedule: ScheduleItem[];
   scheduleState?: LearnerScheduleState;
   spp: SppApiItem[];
+  sppState?: DashboardReadState;
+  onRetrySpp?: () => void;
   waLog: WaLogApiItem[];
   attendance: AttendanceItem[];
   attendanceState?: LearnerAttendanceState;
@@ -89,6 +93,8 @@ export default function BerandaOrtu({
   schedule,
   scheduleState = 'ready',
   spp,
+  sppState = 'ready',
+  onRetrySpp,
   waLog,
   rank,
   activeStudentId,
@@ -140,14 +146,16 @@ export default function BerandaOrtu({
   const hasTodaySchedule = dow !== 0 && todaySched.length > 0;
 
   // Pembayaran real
-  const pembayaran = mapSppToPembayaran(spp);
+  const pembayaran = mapSppToPembayaran(sppState === 'ready' ? spp : []);
   const unpaidItems = pembayaran.filter((p) => p.status === 'unpaid');
   const totalUnpaid = unpaidItems.reduce((s, p) => s + p.amount, 0);
   const nextDue =
     unpaidItems.length > 0
-      ? [...unpaidItems].sort((a, b) => new Date(a.due).getTime() - new Date(b.due).getTime())[0]
+      ? [...unpaidItems].sort(
+          (a, b) => (Date.parse(a.due) || Infinity) - (Date.parse(b.due) || Infinity),
+        )[0]
       : null;
-  const dd = nextDue ? daysUntil(nextDue.due) : 0;
+  const dd = nextDue && Number.isFinite(Date.parse(nextDue.due)) ? daysUntil(nextDue.due) : null;
 
   // WA notifikasi real
   const recentWa = mapWaLog(waLog)[0] ?? null;
@@ -283,6 +291,11 @@ export default function BerandaOrtu({
       </div>
 
       {/* 6. Payment summary */}
+      {sppState !== 'ready' && (
+        <section className="mb-3.5" aria-label="Ringkasan pembayaran">
+          <DashboardReadNotice state={sppState} domain="Pembayaran" onRetry={onRetrySpp} />
+        </section>
+      )}
       {unpaidItems.length > 0 && nextDue && (
         <div
           className="mb-3.5 rounded-[var(--r)] border p-3.5"
@@ -313,9 +326,13 @@ export default function BerandaOrtu({
               <div className="text-[12px] font-bold text-[var(--text)]">{nextDue.jenis}</div>
               <small
                 className="text-[10px] font-bold"
-                style={{ color: dd < 0 ? 'var(--rose)' : 'var(--amber)' }}
+                style={{ color: dd !== null && dd < 0 ? 'var(--rose)' : 'var(--amber)' }}
               >
-                {dd < 0 ? `Terlewat ${Math.abs(dd)} hari` : `Jatuh tempo ${dd} hari`}
+                {dd === null
+                  ? 'Jatuh tempo belum tersedia'
+                  : dd < 0
+                    ? `Terlewat ${Math.abs(dd)} hari`
+                    : `Jatuh tempo ${dd} hari`}
               </small>
             </div>
           </div>

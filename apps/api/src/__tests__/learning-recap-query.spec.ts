@@ -10,15 +10,21 @@ describe('learning recap session read', () => {
   );
   it('combines exact ID and academic period with own identity scope', async () => {
     const prisma = {
+      user: { findFirst: jest.fn().mockResolvedValue({ role: 'GURU' }) },
       teacher: { findFirst: jest.fn().mockResolvedValue({ id: 'own-teacher' }) },
       classSession: {
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
       },
+      $transaction: jest.fn(async (run: (tx: unknown) => unknown): Promise<unknown> => run(prisma)),
     };
     const service = new ClassSessionService(
       prisma as unknown as PrismaService,
       {} as ConstructorParameters<typeof ClassSessionService>[1],
+      {
+        hasFreshPermission: jest.fn().mockResolvedValue(true),
+        getActivePositionCodes: jest.fn().mockResolvedValue(new Set()),
+      } as unknown as ConstructorParameters<typeof ClassSessionService>[2],
     );
     await service.list(
       ListClassSessionQuerySchema.parse({
@@ -31,16 +37,20 @@ describe('learning recap session read', () => {
     );
     expect(prisma.classSession.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({
-          id,
-          academicYear: { code: '2026/2027' },
-          semester: { number: 1 },
-          assignedTeacherId: 'own-teacher',
-        }),
+        where: {
+          AND: [
+            {
+              id,
+              academicYear: { code: '2026/2027' },
+              semester: { number: 1 },
+            },
+            { assignedTeacherId: 'own-teacher' },
+          ],
+        },
       }),
     );
     expect(prisma.classSession.count).toHaveBeenCalledWith({
-      where: expect.objectContaining({ id, assignedTeacherId: 'own-teacher' }),
+      where: { AND: [expect.objectContaining({ id }), { assignedTeacherId: 'own-teacher' }] },
     });
   });
 });

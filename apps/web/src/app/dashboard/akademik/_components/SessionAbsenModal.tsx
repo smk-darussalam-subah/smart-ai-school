@@ -288,7 +288,6 @@ export default function SessionAbsenModal({
               </div>
               <p className="text-sm text-slate-600 dark:text-slate-300">
                 Setelah disimpan, ketidakhadiran dikirim ke pesan masuk orang tua sesuai status.
-                Catatan harian lama tidak ditimpa.
               </p>
             </>
           )

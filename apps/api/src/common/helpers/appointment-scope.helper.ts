@@ -19,12 +19,14 @@ const GLOBAL_ACADEMIC_READ_ROLES = new Set([
 ]);
 
 export function isKaprogScopedReader(user: AuthUser): boolean {
-  return user.roles.includes('KAPROG') &&
-    !user.roles.some((role) => GLOBAL_ACADEMIC_READ_ROLES.has(role));
+  return (
+    user.roles.includes('KAPROG') &&
+    !user.roles.some((role) => GLOBAL_ACADEMIC_READ_ROLES.has(role))
+  );
 }
 
 export async function resolveActiveKaprogMajorScope(
-  prisma: PrismaService,
+  prisma: Prisma.TransactionClient,
   user: AuthUser,
   schoolDate: Date = getSchoolDate(),
 ): Promise<ActiveKaprogMajorScope> {
@@ -56,10 +58,7 @@ export async function resolveActiveKaprogMajorScope(
       majorId: { not: null },
       major: { isActive: true },
       effectiveFrom: { lte: schoolDate },
-      OR: [
-        { effectiveUntil: null },
-        { effectiveUntil: { gte: schoolDate } },
-      ],
+      OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: schoolDate } }],
     },
     select: {
       majorId: true,
@@ -74,7 +73,9 @@ export async function resolveActiveKaprogMajorScope(
     }
   }
   if (majorScopes.size === 0) {
-    throw new ForbiddenException('Appointment KAPROG aktif tidak memiliki scope jurusan yang valid');
+    throw new ForbiddenException(
+      'Appointment KAPROG aktif tidak memiliki scope jurusan yang valid',
+    );
   }
 
   return {

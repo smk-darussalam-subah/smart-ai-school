@@ -190,7 +190,13 @@ export default function AkademikWorkspace({
   );
   const [subject, setSubject] = useState<string>('all');
   const [selClass, setSelClass] = useState<string>('all');
-  const [absen, setAbsen] = useState<{ classId: string; className: string;classSessionId?:string;scheduleId?:string;serviceDate?:string } | null>(null);
+  const [absen, setAbsen] = useState<{
+    classId: string;
+    className: string;
+    classSessionId?: string;
+    scheduleId?: string;
+    serviceDate?: string;
+  } | null>(null);
   const [jurnal, setJurnal] = useState<{
     classId: string;
     className: string;
@@ -1135,6 +1141,9 @@ export default function AkademikWorkspace({
         <QuestionBankEditor
           subject={subject}
           sourceOptions={bankSourceOptions}
+          classId={selClass === 'all' ? undefined : selClass}
+          academicYear={academicYear}
+          semester={semester}
           onClose={() => setPenilaianBankOpen(false)}
         />
       )}

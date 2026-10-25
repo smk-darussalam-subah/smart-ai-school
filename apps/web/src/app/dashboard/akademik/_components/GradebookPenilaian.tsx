@@ -550,7 +550,14 @@ function PeriodGradebook({
       </div>
 
       {/* Bank Soal — real CRUD via /questions API (P20) */}
-      {pgBankOpen && <QuestionBankEditor subject={subject} onClose={() => setPgBankOpen(false)} />}
+      {pgBankOpen && (
+        <QuestionBankEditor
+          subject={subject}
+          academicYear={academicYear}
+          semester={semester}
+          onClose={() => setPgBankOpen(false)}
+        />
+      )}
     </div>
   );
 }

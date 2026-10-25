@@ -35,8 +35,13 @@ export default function ModulDetailSiswa({
   if (!module) {
     return (
       <div className="px-5 py-4">
-        <button type="button" onClick={back} className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-emerald-500">
-          <ArrowLeft className="h-4 w-4" />Kembali
+        <button
+          type="button"
+          onClick={back}
+          className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-emerald-500"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Kembali
         </button>
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 text-sm font-semibold text-[var(--muted)]">
           Modul tidak ditemukan atau belum tersedia untuk akun ini.
@@ -50,13 +55,20 @@ export default function ModulDetailSiswa({
 
   return (
     <div className="px-5 py-4">
-      <button type="button" onClick={back} className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-emerald-500">
-        <ArrowLeft className="h-4 w-4" />Kembali ke Modul
+      <button
+        type="button"
+        onClick={back}
+        className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-emerald-500"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Kembali ke Modul
       </button>
 
       <article className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
         <div className="bg-gradient-to-br from-emerald-500 to-emerald-800 p-5 text-white">
-          <div className="text-[11px] font-extrabold uppercase tracking-wider opacity-85">{module.mapel} - {module.alokasi}</div>
+          <div className="text-[11px] font-extrabold uppercase tracking-wider opacity-85">
+            {module.mapel} - {module.alokasi}
+          </div>
           <h1 className="mt-2 text-xl font-extrabold leading-tight">{module.judul}</h1>
           <p className="mt-2 text-sm font-semibold opacity-90">{module.tp}</p>
         </div>
@@ -68,22 +80,39 @@ export default function ModulDetailSiswa({
               <span>{completed ? 100 : module.prog}%</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-[var(--bar-bg)]">
-              <div className="h-full rounded-full bg-emerald-500" style={{ width: `${completed ? 100 : module.prog}%` }} />
+              <div
+                className="h-full rounded-full bg-emerald-500"
+                style={{ width: `${completed ? 100 : module.prog}%` }}
+              />
             </div>
           </div>
 
           <div className="grid gap-2 sm:grid-cols-2">
-            <InfoCard icon={BookOpen} label="Status LMS" value={completed ? 'Selesai' : locked ? 'Terkunci' : 'Aktif'} />
+            <InfoCard
+              icon={BookOpen}
+              label="Status LMS"
+              value={completed ? 'Selesai' : locked ? 'Terkunci' : 'Aktif'}
+            />
             <InfoCard icon={Target} label="KKTP" value={String(module.kktp)} />
           </div>
 
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-4">
-            <div className="text-sm font-bold text-[var(--text)]">Ringkasan kegiatan</div>
-            <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">
-              Pelajari materi pada modul ini, lanjutkan latihan atau asesmen yang tersedia di tab Tugas,
-              lalu tandai selesai setelah aktivitas belajar benar-benar tuntas.
-            </p>
-          </div>
+          <section
+            aria-label="Materi pembelajaran"
+            className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-4 sm:p-5"
+          >
+            <h2 className="text-base font-bold text-[var(--text)]">Materi pembelajaran</h2>
+            {locked ? (
+              <p className="mt-3 text-sm text-[var(--muted)]">Materi belum dibuka oleh guru.</p>
+            ) : module.content?.trim() ? (
+              <div className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-[var(--text)]">
+                {module.content}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-[var(--muted)]">
+                Materi belum tersedia. Silakan tanyakan kepada guru.
+              </p>
+            )}
+          </section>
 
           {!locked && module.uuid && !completed && (
             <button
@@ -102,14 +131,19 @@ export default function ModulDetailSiswa({
               }}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-60"
             >
-              {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+              {pending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle className="h-4 w-4" />
+              )}
               Tandai Modul Selesai
             </button>
           )}
 
           {completed && (
             <div className="flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-sm font-bold text-emerald-500">
-              <CheckCircle className="h-4 w-4" />Selesai - 100%
+              <CheckCircle className="h-4 w-4" />
+              Selesai - 100%
             </div>
           )}
         </div>
@@ -118,11 +152,21 @@ export default function ModulDetailSiswa({
   );
 }
 
-function InfoCard({ icon: Icon, label, value }: { icon: typeof BookOpen; label: string; value: string }) {
+function InfoCard({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof BookOpen;
+  label: string;
+  value: string;
+}) {
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3">
       <Icon className="h-4 w-4 text-emerald-500" />
-      <div className="mt-2 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">{label}</div>
+      <div className="mt-2 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">
+        {label}
+      </div>
       <div className="mt-0.5 text-sm font-extrabold text-[var(--text)]">{value}</div>
     </div>
   );
