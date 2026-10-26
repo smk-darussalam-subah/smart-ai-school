@@ -1,4 +1,5 @@
 'use client';
+import QuestionContent from '@/components/learning/QuestionContent';
 
 // SessionAnalysisPanel — U2 Wave 3: Analisis Hasil.
 // Displays score distribution, ketuntasan gauge, and per-question item analysis
@@ -215,7 +216,7 @@ export default function SessionAnalysisPanel({ sessionId }: Props) {
                   <tr key={item.questionId} className="border-b border-[#f0f4f2]">
                     <td className="px-2.5 py-2 font-bold text-[#9bb0a8]">{item.questionIndex + 1}</td>
                     <td className="px-2.5 py-2 text-[#0f2e25]">
-                      {item.body.length > 80 ? `${item.body.slice(0, 80)}...` : item.body || '(kosong)'}
+                      <QuestionContent body={item.body} />
                     </td>
                     <td className="px-2.5 py-2 text-center">
                       <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">

@@ -1,4 +1,5 @@
 import React from 'react';
+import QuestionContent from '@/components/learning/QuestionContent';
 import { Check, Loader2, Pencil, RefreshCw } from 'lucide-react';
 import type { AiQuestionDraftItem } from '../actions';
 import {
@@ -77,9 +78,7 @@ export default function QuestionBankAiReview({
               </button>
             </div>
           </div>
-          <p className="mt-3 whitespace-pre-wrap break-words text-sm font-semibold leading-7">
-            {item.question.body}
-          </p>
+          <div className="mt-3"><QuestionContent body={item.question.body} /></div>
           <details open={index === 0} className="mt-3">
             <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-[var(--qb-muted)] focus-visible:outline-2 focus-visible:outline-emerald-500">
               Pilihan dan kunci jawaban

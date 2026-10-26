@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query, ParseUUIDPipe } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import type { AuthUser } from '@smk/auth';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -8,11 +17,8 @@ import {
   LearnerSessionAttendanceSchema,
   SessionAttendanceRosterSchema,
   SessionAttendanceSaveSchema,
-  type LearnerSessionAttendanceQuery,
-  type SessionAttendanceRosterQuery,
   type SessionAttendanceSave,
   SessionAttendanceReadSchema,
-  type SessionAttendanceReadQuery,
 } from './student-session-attendance.dto';
 import { StudentSessionAttendanceService } from './student-session-attendance.service';
 import { StudentSessionAttendanceReadService } from './student-session-attendance-read.service';
@@ -28,28 +34,30 @@ export class StudentSessionAttendanceController {
   @RequirePermission('academic.class-session.read')
   read(
     @Param('id', ParseUUIDPipe) id: string,
-    @Query(ZodPipe(SessionAttendanceReadSchema)) query: SessionAttendanceReadQuery,
+    @Query() rawQuery: unknown,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.auditRead.read(id, query, user);
+    const parsed = SessionAttendanceReadSchema.safeParse(rawQuery);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.auditRead.read(id, parsed.data, user);
   }
   @Get('summary')
   @Roles('SISWA', 'ORANG_TUA')
   @RequirePermission(['attendance.own.read', 'attendance.child.read'])
-  learner(
-    @Query(ZodPipe(LearnerSessionAttendanceSchema)) query: LearnerSessionAttendanceQuery,
-    @CurrentUser() user: AuthUser,
-  ) {
-    return this.service.learner(query, user);
+  learner(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
+    // The shared ZodPipe deliberately validates bodies only. HTTP query values
+    // must be parsed here so semester reaches the period lookup as a number.
+    const parsed = LearnerSessionAttendanceSchema.safeParse(rawQuery);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.service.learner(parsed.data, user);
   }
   @Get('roster')
   @Roles('GURU')
   @RequirePermission('academic.attendance.create')
-  roster(
-    @Query(ZodPipe(SessionAttendanceRosterSchema)) query: SessionAttendanceRosterQuery,
-    @CurrentUser() user: AuthUser,
-  ) {
-    return this.service.roster(query, user);
+  roster(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
+    const parsed = SessionAttendanceRosterSchema.safeParse(rawQuery);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.service.roster(parsed.data, user);
   }
   @Post(':id')
   @Roles('GURU')

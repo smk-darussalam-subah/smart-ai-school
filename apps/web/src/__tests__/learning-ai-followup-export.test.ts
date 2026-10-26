@@ -23,7 +23,8 @@ const input: LearningDocumentInput = {
 describe('R05 shared recap export narrative', () => {
   it.each([false, true])('print/PDF notes are accurate and escaped (monochrome=%s)', (mono) => {
     const html = learningDocumentHtml(input, mono);
-    expect(html).toContain('Absensi siswa per JP dapat dilihat pada rincian sesi');
+    expect(html).toContain('Rincian absensi per JP tersedia pada sesi yang dipilih');
+    expect(html).not.toContain('harian');
     expect(html).not.toContain('Absensi siswa disimpan sebagai absensi harian kelas');
     expect(html).toContain('Guru &lt;QA&gt;');
     expect(html).not.toContain('Guru <QA>');
@@ -36,9 +37,10 @@ describe('R05 shared recap export narrative', () => {
       row.flatMap((cell) => (cell?.value === undefined ? [] : [String(cell.value)])),
     );
     expect(values).toContain(
-      'Status selesai tidak otomatis menandakan jurnal, absensi dan asesmen lengkap. Absensi siswa per JP dapat dilihat pada rincian sesi; catatan kehadiran harian kelas terpisah.',
+      'Status selesai tidak otomatis menandakan seluruh catatan pembelajaran lengkap. Rincian absensi per JP tersedia pada sesi yang dipilih.',
     );
     expect(values.join('\n')).not.toContain('Absensi siswa disimpan sebagai absensi harian kelas');
+    expect(values.join('\n')).not.toContain('harian');
     expect(mockToFile).toHaveBeenCalledWith('rekap-pembelajaran-2026-10-19-2026-10-21.xlsx');
   });
 });

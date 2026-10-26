@@ -67,6 +67,10 @@ import {
   type TypeDistribution,
 } from './question-bank-ai-request';
 import { buildQuestionImportIdentity } from './question-bank-import-identity';
+import MaterialEditor from '@/components/learning/MaterialEditor';
+import QuestionContent from '@/components/learning/QuestionContent';
+import { sanitizeMaterialHtml } from '@/lib/material-content';
+import { QUESTION_HTML_PREFIX, questionBodyForEditor } from '@/lib/question-content';
 
 export type { QuestionSourceOption } from './question-bank-ai-request';
 
@@ -383,6 +387,9 @@ function QuestionBankWorkspace({
   const [csvLoading, startCsv] = useTransition();
   const loadRequestRef = useRef(0);
   const [showForm, setShowForm] = useState(false);
+  const manualSave = useRef<{ requestId: string; data: QuestionData } | null>(null);
+  const [manualSaveUncertain, setManualSaveUncertain] = useState(false);
+  const [manualSaveConflict, setManualSaveConflict] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [csvPreview, setCsvPreview] = useState<CsvPreview | null>(null);
@@ -430,6 +437,23 @@ function QuestionBankWorkspace({
 
   const [fType, setFType] = useState<QuestionType>('multiple_choice');
   const [fBody, setFBody] = useState('');
+  const formWasOpen = useRef(false);
+  useEffect(() => {
+    if (showForm) {
+      if (!formWasOpen.current) document.getElementById(`${workspaceId}-form-title`)?.focus();
+      formWasOpen.current = true;
+    } else if (formWasOpen.current && !saving && !csvLoading && aiAction === null) {
+      const target =
+        document.getElementById(`${workspaceId}-add-question`) ??
+        document.getElementById(`${workspaceId}-panel`);
+      target?.focus();
+      formWasOpen.current = false;
+    }
+  }, [showForm, saving, csvLoading, aiAction, workspaceId]);
+  const formErrorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (formError) formErrorRef.current?.focus();
+  }, [formError]);
   const [fDifficulty, setFDifficulty] = useState<QuestionDifficulty>('medium');
   const [fTags, setFTags] = useState('');
   const [fOptions, setFOptions] = useState<QuestionOption[]>(defaultOptions);
@@ -607,6 +631,9 @@ function QuestionBankWorkspace({
   }, [selectedAiSource]);
 
   const resetForm = () => {
+    manualSave.current = null;
+    setManualSaveUncertain(false);
+    setManualSaveConflict(false);
     setFormError(null);
     setMode(editingDraftKey ? 'ai' : 'bank');
     setEditingId(null);
@@ -629,7 +656,7 @@ function QuestionBankWorkspace({
     setMode('manual');
     setEditingId(question.id);
     setFType(question.type);
-    setFBody(question.body);
+    setFBody(questionBodyForEditor(question.body));
     setFDifficulty(question.difficulty);
     setFTags((question.tags ?? []).join(', '));
     setFOptions(normalizeOptions(question.options));
@@ -655,7 +682,7 @@ function QuestionBankWorkspace({
     setEditingId(null);
     setEditingDraftKey(item.itemKey);
     setFType(item.question.type);
-    setFBody(item.question.body);
+    setFBody(questionBodyForEditor(item.question.body));
     setFDifficulty(item.question.difficulty);
     setFTags((item.question.tags ?? []).join(', '));
     setFOptions(normalizeOptions('options' in item.question ? item.question.options : undefined));
@@ -686,9 +713,17 @@ function QuestionBankWorkspace({
       .split(',')
       .map((tag) => tag.trim())
       .filter(Boolean);
-    const base = { subject, body: fBody.trim(), difficulty: fDifficulty, tags };
-    if (base.body.length < 3) {
+    const body = sanitizeMaterialHtml(fBody).trim();
+    const plain = new DOMParser().parseFromString(body, 'text/html').body.textContent?.trim() ?? '';
+    const base = { subject, body: QUESTION_HTML_PREFIX + body, difficulty: fDifficulty, tags };
+    if (plain.length < 3) {
       setFormError('Isi soal minimal 3 karakter.');
+      return null;
+    }
+    if (base.body.length > 5000) {
+      setFormError(
+        'Isi soal terlalu panjang. Maksimal 5.000 karakter termasuk format. Isian Anda tetap tersimpan di editor.',
+      );
       return null;
     }
     if (fType === 'multiple_choice') {
@@ -765,7 +800,7 @@ function QuestionBankWorkspace({
 
   const handleSave = () => {
     setFormError(null);
-    const data = payload();
+    const data = manualSave.current?.data ?? payload();
     if (!data) return;
     if (editingDraftKey) {
       setAiDrafts((prev) =>
@@ -778,15 +813,30 @@ function QuestionBankWorkspace({
     }
     startSave(async () => {
       try {
-        const res = editingId ? await updateQuestion(editingId, data) : await createQuestion(data);
+        if (!editingId && !manualSave.current)
+          manualSave.current = { requestId: crypto.randomUUID(), data };
+        const res = editingId
+          ? await updateQuestion(editingId, data)
+          : await createQuestion(data, manualSave.current!.requestId);
         if (!res.success) {
-          setFormError('Soal belum tersimpan. Periksa isian atau coba lagi.');
+          const uncertain = !res.httpStatus || res.httpStatus >= 500 || res.httpStatus === 409;
+          setManualSaveUncertain(uncertain);
+          setManualSaveConflict(res.httpStatus === 409);
+          if (!uncertain) manualSave.current = null;
+          setFormError(
+            res.httpStatus === 409
+              ? (res.error ?? 'Permintaan simpan tidak dapat diulang. Periksa Bank Soal.')
+              : uncertain
+                ? 'Hasil simpan belum terkonfirmasi. Isian dikunci agar percobaan ulang tidak membuat soal ganda.'
+                : 'Soal belum tersimpan. Periksa isian atau coba lagi.',
+          );
           return;
         }
         toast.success(editingId ? 'Soal diperbarui.' : 'Soal ditambahkan.');
         resetForm();
         load();
       } catch {
+        setManualSaveUncertain(true);
         if (mounted.current)
           setFormError('Koneksi terputus. Isian tetap tersedia; coba simpan lagi.');
       }
@@ -1349,12 +1399,26 @@ function QuestionBankWorkspace({
           <div
             id={`${workspaceId}-panel`}
             role="tabpanel"
+            tabIndex={-1}
             aria-labelledby={`${workspaceId}-${mode}`}
             aria-busy={busy}
             className="qb-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-6"
           >
             {mode === 'bank' && (
               <section className="min-h-[280px] space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="font-semibold">Soal tersimpan</h3>
+                  <button
+                    id={`${workspaceId}-add-question`}
+                    type="button"
+                    className={`${BTN} ${QB_PRIMARY}`}
+                    disabled={busy || saveUncertain}
+                    onClick={() => activateMode('manual')}
+                  >
+                    <Plus aria-hidden="true" className="h-4 w-4" />
+                    Tambah Soal
+                  </button>
+                </div>
                 <div className="grid gap-2 rounded-lg bg-[var(--qb-soft)] p-3 sm:grid-cols-[minmax(0,1fr)_180px_150px]">
                   <input
                     value={questionSearch}
@@ -1440,9 +1504,9 @@ function QuestionBankWorkspace({
                               </span>
                               <span className="text-[var(--qb-muted)]">#{index + 1}</span>
                             </div>
-                            <p className="mt-1.5 whitespace-pre-wrap break-words text-sm font-semibold leading-relaxed">
-                              {question.body}
-                            </p>
+                            <div className="mt-3">
+                              <QuestionContent body={question.body} />
+                            </div>
                             {Array.isArray(question.tags) && question.tags.length > 0 && (
                               <p className="mt-1 text-xs text-[var(--qb-muted)]">
                                 {question.tags.join(', ')}
@@ -1531,7 +1595,11 @@ function QuestionBankWorkspace({
 
             <div className={mode === 'bank' ? 'mt-5' : ''}>
               {showForm && (
-                <h3 className="mb-4 text-base font-bold">
+                <h3
+                  id={`${workspaceId}-form-title`}
+                  tabIndex={-1}
+                  className="mb-4 text-base font-bold"
+                >
                   {editingDraftKey ? 'Ubah draft soal' : editingId ? 'Ubah soal' : 'Tulis soal'}
                 </h3>
               )}
@@ -1932,7 +2000,8 @@ function QuestionBankWorkspace({
                       <ol className="divide-y divide-[var(--qb-line)]">
                         {aiSaved.map((question, index) => (
                           <li key={question.id} className="py-3 text-sm leading-relaxed">
-                            {index + 1}. {question.body}
+                            <span className="font-semibold">Soal {index + 1}</span>
+                            <QuestionContent body={question.body} />
                           </li>
                         ))}
                       </ol>
@@ -1940,7 +2009,7 @@ function QuestionBankWorkspace({
                   )}
                 </div>
               ) : (
-                <fieldset disabled={busy} className="space-y-4">
+                <fieldset disabled={busy || manualSaveUncertain} className="space-y-4">
                   <div className="grid grid-cols-2 gap-2">
                     <select
                       aria-label="Bentuk soal manual"
@@ -1965,18 +2034,22 @@ function QuestionBankWorkspace({
                       <option value="hard">Sulit</option>
                     </select>
                   </div>
-                  <label className="block text-sm font-semibold">
-                    Pertanyaan
-                    <textarea
-                      maxLength={5000}
-                      aria-label="Pertanyaan"
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold">Pertanyaan</p>
+                    <MaterialEditor
+                      key={editingId ?? editingDraftKey ?? 'new'}
                       value={fBody}
-                      onChange={(event) => setFBody(event.target.value)}
-                      className={FIELD}
-                      rows={4}
-                      placeholder="Tulis pertanyaan..."
+                      onChange={setFBody}
+                      disabled={busy || manualSaveUncertain}
+                      ariaLabel="Pertanyaan"
+                      compact
+                      invalid={!!formError}
+                      describedBy={`${workspaceId}-body-help`}
                     />
-                  </label>
+                    <p id={`${workspaceId}-body-help`} className="text-xs text-[var(--qb-muted)]">
+                      Format teks, daftar, atau tabel. Maksimal 5.000 karakter termasuk format.
+                    </p>
+                  </div>
                   <label className="block text-sm font-semibold">
                     Tag (opsional)
                     <input
@@ -2234,6 +2307,8 @@ function QuestionBankWorkspace({
           <footer className="shrink-0 border-t border-[var(--qb-line)] bg-[var(--qb-bg)] px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
             {showForm && formError && (
               <p
+                ref={formErrorRef}
+                tabIndex={-1}
                 role="alert"
                 className="mb-3 rounded-lg bg-[var(--qb-error-bg)] p-3 text-sm text-[var(--qb-error-ink)]"
               >
@@ -2280,7 +2355,10 @@ function QuestionBankWorkspace({
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={resetForm}
+                      onClick={() => {
+                        if (manualSaveUncertain) setExitConfirm(true);
+                        else resetForm();
+                      }}
                       className={`${BTN} ${QB_OUTLINE}`}
                     >
                       Batal edit
@@ -2288,11 +2366,22 @@ function QuestionBankWorkspace({
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={handleSave}
+                      onClick={() => {
+                        if (manualSaveConflict) {
+                          resetForm();
+                          load();
+                        } else handleSave();
+                      }}
                       className={`${BTN} ${QB_PRIMARY}`}
                     >
                       {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                      {editingDraftKey ? 'Perbarui draft' : 'Simpan soal'}
+                      {manualSaveConflict
+                        ? 'Periksa Bank Soal'
+                        : manualSaveUncertain
+                          ? 'Coba simpan lagi'
+                          : editingDraftKey
+                            ? 'Perbarui draft'
+                            : 'Simpan soal'}
                     </button>
                   </>
                 ) : mode === 'ai' && aiStep === 'setup' ? (
@@ -2388,11 +2477,13 @@ function QuestionBankWorkspace({
         onOpenChange={setExitConfirm}
         title="Tutup Bank Soal?"
         description={
-          saveUncertain
+          saveUncertain || manualSaveUncertain
             ? 'Hasil simpan belum pasti. Sebaiknya coba simpan lagi sebelum menutup. Soal yang sudah tersimpan tetap ada di Bank Soal.'
             : 'Isian yang belum disimpan di jendela ini tidak dapat dilanjutkan setelah ditutup. Soal yang sudah tersimpan tetap aman.'
         }
-        confirmLabel="Keluar tanpa menyimpan"
+        confirmLabel={
+          saveUncertain || manualSaveUncertain ? 'Tutup Bank Soal' : 'Keluar tanpa menyimpan'
+        }
         cancelLabel="Lanjut mengedit"
         onConfirm={onClose}
       />

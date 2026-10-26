@@ -7,6 +7,7 @@
 import { ArrowLeft, BookOpen, Smartphone, Users, Award } from 'lucide-react';
 import clsx from 'clsx';
 import type { LmsModuleItem } from './guru-types';
+import MaterialContent from '@/components/learning/MaterialContent';
 
 interface Props {
   module: LmsModuleItem;
@@ -100,9 +101,7 @@ export default function LmsPreviewScreen({ module, onClose }: Props) {
                 <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-emerald-600">{module.subject}</div>
                 <h4 className="mb-2 text-[14px] font-bold text-gray-800">{module.title}</h4>
                 {module.tp && <p className="mb-2 text-[10px] text-gray-500">{module.tp}</p>}
-                <div className="whitespace-pre-wrap text-[11.5px] leading-relaxed text-gray-700">
-                  {module.content?.trim() || 'Modul ini belum memiliki konten materi.'}
-                </div>
+                {module.content?.trim() ? <MaterialContent content={module.content} /> : <p className="text-sm text-gray-700">Modul ini belum memiliki konten materi.</p>}
               </div>
             </div>
           </div>
