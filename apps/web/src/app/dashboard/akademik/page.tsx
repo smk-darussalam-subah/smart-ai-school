@@ -475,6 +475,9 @@ export default async function AkademikPage({
 
     return (
       <AkademikWorkspace
+        allowGeneralLmsClass={roles.some((role) =>
+          ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'].includes(role),
+        )}
         canReadClassSessions={authority.can('academic.class-session.read')}
         canOperateClassSessions={authority.can('academic.class-session.manage')}
         grades={gradesData?.data ?? []}
@@ -981,6 +984,9 @@ export default async function AkademikPage({
 
     const teachingWorkspace = (
       <AkademikWorkspace
+        allowGeneralLmsClass={roles.some((role) =>
+          ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'].includes(role),
+        )}
         canReadClassSessions={authority.can('academic.class-session.read')}
         canOperateClassSessions={authority.can('academic.class-session.manage')}
         grades={ownGrades}

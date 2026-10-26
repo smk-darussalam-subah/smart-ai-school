@@ -201,7 +201,7 @@ describe('learning recap contract', () => {
     expect(html).toContain('Guru &lt;uji&gt;');
     expect(html).not.toContain('Guru <uji>');
     expect(html).toContain('2026/2027');
-    expect(html).toContain('Absensi siswa per JP');
+    expect(html).toContain('Rincian absensi per JP tersedia pada sesi yang dipilih.');
     expect(html).not.toContain('Absensi siswa disimpan sebagai absensi harian kelas');
     expect(learningDocumentRows(input)[0]).toHaveLength(10);
     expect(learningDocumentHtml(input, true)).toContain('background:#ddd');

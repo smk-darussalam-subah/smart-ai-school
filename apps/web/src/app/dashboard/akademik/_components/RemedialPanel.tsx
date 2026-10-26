@@ -1,4 +1,5 @@
 'use client';
+import QuestionContent from '@/components/learning/QuestionContent';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { AlertTriangle, CheckCircle2, RotateCcw, Search, XCircle } from 'lucide-react';
@@ -53,10 +54,6 @@ const PARTICIPANT_LABEL: Record<string, string> = {
 function toWibIso(localValue: string): string | undefined {
   if (!localValue) return undefined;
   return new Date(`${localValue}:00+07:00`).toISOString();
-}
-
-function shortText(value: string, max = 110): string {
-  return value.length <= max ? value : `${value.slice(0, max - 1)}...`;
 }
 
 export default function RemedialPanel({
@@ -322,7 +319,7 @@ export default function RemedialPanel({
                       <span className="font-bold text-[#0f2e25]">
                         {question.type} | {question.difficulty}
                       </span>
-                      <span className="block text-[#6b8079]">{shortText(question.body)}</span>
+                      <div className="mt-2 text-[#6b8079]"><QuestionContent body={question.body} /></div>
                     </span>
                   </label>
                 ))

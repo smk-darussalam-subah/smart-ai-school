@@ -1,4 +1,5 @@
 'use client';
+import QuestionContent from '@/components/learning/QuestionContent';
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import {
@@ -62,13 +63,15 @@ interface LiveMonitorData {
   selesai: number;
   sedang: number;
   belum: number;
-  rata: number;
+  rata: number | null;
+  finalCount: number;
+  pendingManualCount: number;
   pendingLateReview: number;
   roster: Array<{
     responseId: string;
     name: string;
     status: string;
-    nilai: number;
+    nilai: number | null;
     waktu: string;
     revision: number;
     lastSavedAt: string | null;
@@ -405,7 +408,7 @@ export default function PenilaianSesiModal({
   const selesai = liveData?.selesai ?? 0;
   const sedang = liveData?.sedang ?? 0;
   const belum = liveData?.belum ?? 0;
-  const rata = liveData?.rata ?? 0;
+  const rata = liveData?.rata ?? null;
   const total = liveData?.classStudentCount ?? 0;
   const progressPct = total > 0 ? Math.round((selesai / total) * 100) : 0;
   const incidentTotal = (liveData?.roster ?? []).reduce((sum, row) => sum + row.incidentCount, 0);
@@ -445,15 +448,17 @@ export default function PenilaianSesiModal({
         </div>
 
         <div className="mt-3 flex gap-1 rounded-lg bg-[#f4f7f5] p-1">
-          {[
-            ['preview', ClipboardCheck, 'Sesi'],
-            ['monitor', Activity, 'Monitor'],
-            ['analysis', BarChart3, 'Analisis'],
-          ].map(([key, Icon, label]) => (
+          {(
+            [
+              ['preview', ClipboardCheck, 'Sesi'],
+              ['monitor', Activity, 'Monitor'],
+              ['analysis', BarChart3, 'Analisis'],
+            ] as const
+          ).map(([key, Icon, label]) => (
             <button
               key={String(key)}
               type="button"
-              onClick={() => setMode(key as 'preview' | 'monitor' | 'analysis')}
+              onClick={() => setMode(key)}
               className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[12px] font-bold ${mode === key ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]'}`}
             >
               <Icon className="h-4 w-4" />
@@ -698,9 +703,7 @@ export default function PenilaianSesiModal({
                             <div className="text-[11px] font-bold text-emerald-700">
                               #{index + 1} - {record.type} - {record.points ?? 0} poin
                             </div>
-                            <p className="mt-1 text-[13px] font-semibold text-[#0f2e25]">
-                              {record.body}
-                            </p>
+                            <div className="mt-2"><QuestionContent body={record.body ?? ''} /></div>
                           </article>
                         );
                       })}
@@ -770,7 +773,7 @@ export default function PenilaianSesiModal({
                     value={String(liveData?.pendingLateReview ?? 0)}
                     tone="amber"
                   />
-                  <Metric icon={CheckCircle} label="Rata-rata" value={String(rata)} tone="slate" />
+                  <Metric icon={CheckCircle} label="Rata-rata nilai final" value={rata === null ? '—' : String(rata)} tone="slate" />
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-[#e6efea]">
                   <div
@@ -785,18 +788,19 @@ export default function PenilaianSesiModal({
                     sebagai bahan pemeriksaan, bukan keputusan otomatis tentang kecurangan.
                   </div>
                 )}
-                {pendingEssayCorrections.length > 0 && (
+                {(liveData?.pendingManualCount ?? pendingEssayCorrections.length) > 0 && (
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                     <div className="text-[12px] font-bold text-amber-800">
-                      {pendingEssayCorrections.length} jawaban esai menunggu koreksi guru.
+                      {liveData?.pendingManualCount ?? pendingEssayCorrections.length} jawaban menunggu koreksi guru.
                     </div>
                     <button
                       type="button"
-                      onClick={() => setEssayGradingOpen(true)}
+                      onClick={() => pendingEssayCorrections.length ? setEssayGradingOpen(true) : loadResults()}
+                      disabled={loading}
                       className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-600"
                     >
                       <ClipboardPenLine className="h-3.5 w-3.5" />
-                      Nilai Esai Pending
+                      {pendingEssayCorrections.length ? 'Koreksi esai' : 'Muat jawaban'}
                     </button>
                   </div>
                 )}
@@ -850,7 +854,7 @@ export default function PenilaianSesiModal({
                               </div>
                             )}
                           </td>
-                          <td className="px-3 py-2 font-bold">{row.nilai || '-'}</td>
+                          <td className="px-3 py-2 font-bold">{row.nilai ?? '—'}</td>
                           <td className="px-3 py-2 text-[#6b8079]">{row.waktu}</td>
                           <td className="px-3 py-2">
                             {row.lateSubmissionStatus === 'pending' ? (

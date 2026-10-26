@@ -72,6 +72,7 @@ interface Props {
   /** Subject pre-select dari session flow (step "Buka Modul Ajar"). Filter rpp ke mapel ini. */
   activeSubject?: string;
   onClearSubject?: () => void;
+  allowGeneralLmsClass?: boolean;
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -112,6 +113,7 @@ export default function PembelajaranGuru({
   semester,
   activeSubject,
   onClearSubject,
+  allowGeneralLmsClass = false,
 }: Props) {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<RppItem | null>(null);
@@ -761,6 +763,7 @@ export default function PembelajaranGuru({
           academicYear={academicYear}
           semester={semester}
           editing={lmsEditing}
+          allowGeneralClass={allowGeneralLmsClass}
         />
       )}
       {monitorM && <LmsMonitorModal module={monitorM} onClose={() => setMonitorM(null)} />}

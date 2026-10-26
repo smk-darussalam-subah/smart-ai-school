@@ -27,10 +27,11 @@ const task = z.object({
   title: text,
   subject: text,
   guru: z.string().nullable(),
-  status: z.enum(['pending', 'submitted', 'graded']),
+  status: z.enum(['pending', 'submitted', 'graded', 'closed']),
   progress: z.number().finite().min(0).max(100).optional(),
   purpose: z.enum(['regular', 'remedial']).optional(),
   sessionStatus: z.string().optional(),
+  attemptStarted: z.boolean().optional(),
   dueAt: date.nullable().optional(),
   instructions: z.string().nullable().optional(),
   lateSubmissionStatus: z.enum(['pending', 'accepted', 'rejected']).nullable().optional(),
@@ -98,6 +99,9 @@ export function readStudentTasks(
         id: index + 1,
         uuid: item.id,
         assessmentSessionId: item.type === 'assessment' ? item.id : undefined,
+        sourceKind: item.type,
+        progress: item.type === 'lms' ? item.progress : undefined,
+        attemptStarted: item.attemptStarted,
         purpose: item.purpose,
         sessionStatus: item.sessionStatus,
         dueAt: item.dueAt ?? null,
@@ -120,7 +124,14 @@ export function readStudentTasks(
         dlDays: due
           ? Math.ceil((due.getTime() - now.getTime()) / 86_400_000)
           : Number.POSITIVE_INFINITY,
-        status,
+        status:
+          item.type === 'assessment' &&
+          item.purpose !== 'remedial' &&
+          item.sessionStatus === 'completed' &&
+          item.attemptStarted === false &&
+          status === 'pending'
+            ? 'closed'
+            : status,
         lateSubmissionStatus: item.lateSubmissionStatus ?? null,
         guru: item.guru ?? 'Guru mapel',
         desc:
@@ -130,7 +141,13 @@ export function readStudentTasks(
             : item.type === 'assessment'
               ? 'Kerjakan asesmen sesuai waktu dan kirim jawaban dari sistem.'
               : 'Lanjutkan pembelajaran modul sampai selesai.'),
-        score: item.status === 'graded' ? (item.progress ?? 0) : undefined,
+        score:
+          item.type === 'assessment' &&
+          item.status === 'graded' &&
+          item.lateSubmissionStatus !== 'pending' &&
+          item.lateSubmissionStatus !== 'rejected'
+            ? item.progress
+            : undefined,
         feedback: null,
         submittedFiles: 0,
       };

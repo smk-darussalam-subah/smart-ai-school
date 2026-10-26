@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import {
   AssessmentAnswerMap,
@@ -20,7 +21,7 @@ type QuestionRecord = {
   rubric: Prisma.JsonValue | null;
 };
 
-function matchingChoiceId(questionId: string, pairId: string): string {
+function legacyMatchingChoiceId(questionId: string, pairId: string): string {
   let hash = 0;
   const input = `${questionId}:${pairId}`;
   for (let i = 0; i < input.length; i++) {
@@ -29,9 +30,37 @@ function matchingChoiceId(questionId: string, pairId: string): string {
   return `choice-${hash.toString(36)}`;
 }
 
+function matchingChoiceId(
+  question: Extract<StoredQuestionSnapshot, { type: 'matching' }>,
+  pairId: string,
+): string {
+  // Legacy IDs are retained exclusively for historical teacher scoring, not learner mutations.
+  return question.choiceIds?.[pairId] ?? legacyMatchingChoiceId(question.id, pairId);
+}
+
+/** Persist at snapshot creation (or draft upgrade), never on parse/read/resume. */
+export function secureMatchingSnapshot(question: StoredQuestionSnapshot): StoredQuestionSnapshot {
+  if (question.type !== 'matching' || question.choiceIds) return question;
+  return {
+    ...question,
+    choiceIds: Object.fromEntries(question.pairs.map((pair) => [pair.id, randomUUID()])),
+  };
+}
+
+export function hasLegacyMatching(questions: StoredQuestionSnapshot[]): boolean {
+  return questions.some((question) => question.type === 'matching' && !question.choiceIds);
+}
+
+export function assertSecureStudentQuestions(questions: StoredQuestionSnapshot[]): void {
+  if (hasLegacyMatching(questions))
+    throw new ConflictException(
+      'Sesi menjodohkan lama perlu diganti oleh guru. Jawaban dan histori yang tersimpan tetap dipertahankan.',
+    );
+}
+
 function matchingChoices(question: Extract<StoredQuestionSnapshot, { type: 'matching' }>) {
   return question.pairs
-    .map((pair) => ({ id: matchingChoiceId(question.id, pair.id), text: pair.match }))
+    .map((pair) => ({ id: matchingChoiceId(question, pair.id), text: pair.match }))
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
@@ -95,12 +124,12 @@ export function dbQuestionToSnapshot(question: QuestionRecord, points: number): 
     } catch {
       throw new ConflictException('Kunci menjodohkan tidak valid');
     }
-    return {
+    return secureMatchingSnapshot({
       ...base,
       type: 'matching',
       pairs: question.options as Array<{ id: string; prompt: string; match: string }>,
       answer,
-    };
+    });
   }
 
   if (question.type === 'essay') {
@@ -134,6 +163,7 @@ export function sanitizeQuestionForStudent(question: StoredQuestionSnapshot) {
     case 'true_false':
       return base;
     case 'matching':
+      assertSecureStudentQuestions([question]);
       return {
         ...base,
         prompts: question.pairs.map((pair) => ({ id: pair.id, prompt: pair.prompt })),
@@ -180,7 +210,9 @@ export function shuffleQuestionIds(questions: StoredQuestionSnapshot[]): string[
 export function validateAnswersForSnapshot(
   answers: AssessmentAnswerMap,
   questions: StoredQuestionSnapshot[],
+  historicalTeacherReview = false,
 ): void {
+  if (!historicalTeacherReview) assertSecureStudentQuestions(questions);
   const questionMap = new Map(questions.map((question) => [question.id, question]));
   for (const [questionId, answer] of Object.entries(answers)) {
     const question = questionMap.get(questionId);
@@ -195,7 +227,7 @@ export function validateAnswersForSnapshot(
 
     if (question.type === 'matching' && answer.type === 'matching') {
       const validPromptIds = new Set(question.pairs.map((pair) => pair.id));
-      const validChoiceIds = new Set(question.pairs.map((pair) => matchingChoiceId(question.id, pair.id)));
+      const validChoiceIds = new Set(question.pairs.map((pair) => matchingChoiceId(question, pair.id)));
       for (const [left, right] of Object.entries(answer.pairs)) {
         if (!validPromptIds.has(left) || !validChoiceIds.has(right)) {
           throw new BadRequestException(`Pasangan jawaban tidak valid untuk soal ${questionId}`);
@@ -251,7 +283,7 @@ export function scoreAnswers(
       const totalPairs = question.pairs.length;
       const correctPairs = question.pairs.filter((pair) => {
         const correctPairId = question.answer[pair.id];
-        return correctPairId ? answer.pairs[pair.id] === matchingChoiceId(question.id, correctPairId) : false;
+        return correctPairId ? answer.pairs[pair.id] === matchingChoiceId(question, correctPairId) : false;
       }).length;
       itemEarned = totalPairs > 0 ? Math.round((correctPairs / totalPairs) * question.points * 100) / 100 : 0;
     }

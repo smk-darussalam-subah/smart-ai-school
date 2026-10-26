@@ -201,7 +201,7 @@ export class StudentDashboardService {
             },
             responses: {
               where: { studentId: s.id },
-              select: { score: true, submittedAt: true, lateSubmissionStatus: true },
+              select: { score: true, startedAt: true, submittedAt: true, lateSubmissionStatus: true },
             },
           },
         });
@@ -209,7 +209,10 @@ export class StudentDashboardService {
           sessions.map(async (sess) => {
             const resp = sess.responses[0];
             const status =
-              !resp || !resp.submittedAt ? 'pending' : resp.score !== null ? 'graded' : 'submitted';
+              !resp || !resp.submittedAt
+                ? sess.purpose !== 'remedial' && sess.status === 'completed' && !resp?.startedAt ? 'closed' : 'pending'
+                : resp.lateSubmissionStatus === 'pending' || resp.lateSubmissionStatus === 'rejected' ? 'submitted'
+                : resp.score !== null ? 'graded' : 'submitted';
             const subject = sess.module?.subject ?? sess.teachingAssignment?.subject ?? null;
             const participant = sess.remedialParticipants[0];
             const exposeOwnRemedialLifecycle =
@@ -238,6 +241,8 @@ export class StudentDashboardService {
               subject: subject ?? '-',
               guru: null,
               status,
+              sessionStatus: sess.status,
+              attemptStarted: Boolean(resp?.startedAt),
               lateSubmissionStatus: resp?.lateSubmissionStatus ?? null,
               ...(exposeOwnRemedialLifecycle
                 ? {

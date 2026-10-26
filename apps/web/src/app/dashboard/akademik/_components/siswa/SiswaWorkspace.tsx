@@ -563,7 +563,9 @@ export default function SiswaWorkspace({
       {viewAs && <ViewAsBanner viewAs={viewAs} />}
 
       {/* Screen content */}
-      <main className="mx-auto max-w-[560px] pb-24">
+      <main
+        className={`mx-auto pb-24 ${activeScreen === 'modul' && activeModulId ? 'max-w-3xl' : 'max-w-[560px]'}`}
+      >
         {activeScreen === 'modul' && activeModulId ? (
           <ModulDetailSiswa
             module={activeModule}
@@ -668,6 +670,13 @@ export default function SiswaWorkspace({
           task={currentTask}
           onClose={() => setModal({ type: null })}
           showToast={showToast}
+          onOpenModule={(uuid) => {
+            const target = displayedModules.find((module) => module.uuid === uuid);
+            if (!target) { showToast('Materi belum tersedia untuk akun ini. Muat ulang daftar modul.'); return; }
+            setModal({ type: null });
+            go('modul');
+            setActiveModulId(target.id);
+          }}
         />
       )}
 

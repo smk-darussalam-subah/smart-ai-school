@@ -1,7 +1,23 @@
 import { z } from 'zod';
 
 const idSchema = z.string().trim().min(1).max(80);
-const bodySchema = z.string().trim().min(3).max(5000);
+const bodySchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(5000)
+  .refine((value) => {
+    if (!value.startsWith('<!--diis-question-html:v1-->')) return true;
+    // Content validation only, not an HTML sanitizer. Rendering uses the shared allowlist.
+    const visible = value
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/<(script|style|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&(?:nbsp|#160|#xA0);/gi, ' ')
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .trim();
+    return visible.length >= 3;
+  }, 'Isi soal minimal 3 karakter yang dapat dibaca');
 const tagSchema = z.string().trim().min(1).max(50);
 
 export const AssessmentOptionSchema = z.object({
@@ -123,12 +139,43 @@ export const QuestionPayloadSchema = z.union([
 ]);
 
 export const StoredQuestionSnapshotSchema = z.union([
-  MultipleChoiceQuestionRawSchema.extend({ id: idSchema, points: z.number().finite().positive().max(100) }).strict()
+  MultipleChoiceQuestionRawSchema.extend({
+    id: idSchema,
+    points: z.number().finite().positive().max(100),
+  })
+    .strict()
     .superRefine(refineMultipleChoice),
-  TrueFalseQuestionSchema.extend({ id: idSchema, points: z.number().finite().positive().max(100) }).strict(),
-  MatchingQuestionRawSchema.extend({ id: idSchema, points: z.number().finite().positive().max(100) }).strict()
-    .superRefine(refineMatching),
-  EssayQuestionRawSchema.extend({ id: idSchema, points: z.number().finite().positive().max(100) }).strict()
+  TrueFalseQuestionSchema.extend({
+    id: idSchema,
+    points: z.number().finite().positive().max(100),
+  }).strict(),
+  MatchingQuestionRawSchema.extend({
+    id: idSchema,
+    points: z.number().finite().positive().max(100),
+    // Internal snapshot only. Authoring payloads cannot provide or choose these tokens.
+    choiceIds: z.record(idSchema, z.string().uuid()).optional(),
+  })
+    .strict()
+    .superRefine((value, ctx) => {
+      refineMatching(value, ctx);
+      if (value.choiceIds) {
+        const keys = Object.keys(value.choiceIds);
+        const values = Object.values(value.choiceIds);
+        if (
+          keys.length !== value.pairs.length ||
+          !value.pairs.every((pair) => keys.includes(pair.id)) ||
+          !hasUniqueValues(values)
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['choiceIds'],
+            message: 'Mapping pilihan snapshot harus lengkap dan unik',
+          });
+        }
+      }
+    }),
+  EssayQuestionRawSchema.extend({ id: idSchema, points: z.number().finite().positive().max(100) })
+    .strict()
     .superRefine(refineEssay),
 ]);
 
