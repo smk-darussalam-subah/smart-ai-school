@@ -239,7 +239,7 @@ describe('real production tabs distinguish empty / unavailable / denied / loadin
     },
   );
   it('still presents true empty success', () => {
-    expect(renderTasks('ready')).toContain('Tidak ada tugas pending');
+    expect(renderTasks('ready')).toContain('Tidak ada tugas yang perlu dikerjakan');
     expect(renderPayments('ready')).toContain('Tidak ada data pembayaran');
     expect(renderTasks('ready')).not.toBe(renderTasks('unavailable'));
     expect(renderPayments('ready')).not.toBe(renderPayments('unavailable'));

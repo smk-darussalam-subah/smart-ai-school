@@ -548,8 +548,8 @@ export async function fetchQuestions(
 }
 
 /** Create a new question in the bank. */
-export async function createQuestion(data: QuestionData) {
-  const r = await apiCall('/questions', 'POST', data);
+export async function createQuestion(data: QuestionData, requestId?: string) {
+  const r = await apiCall('/questions', 'POST', { ...data, ...(requestId ? { requestId } : {}) });
   revalidatePath('/dashboard/akademik');
   return r;
 }

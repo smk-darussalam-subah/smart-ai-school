@@ -1,5 +1,12 @@
 jest.mock('web-push', () => ({ setVapidDetails: jest.fn(), sendNotification: jest.fn() }));
 import * as webpush from 'web-push';
+import { Test } from '@nestjs/testing';
+import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { PermissionGuard } from '../permissions/permissions.guard';
+import { StudentSessionAttendanceController } from '../attendance/student-session-attendance.controller';
 import { PrismaClient, Prisma } from '@prisma/client';
 import type { VerifyPushDeliveryDto } from '../push/dto/push.dto';
 import type { AuthUser } from '@smk/auth';
@@ -285,6 +292,72 @@ proof('student/session/JP production service on PostgreSQL', () => {
     };
   }
   const read = () => service.learner({ from: '2026-10-01', to: '2026-10-22' }, learner);
+  it('real HTTP query conversion reaches PostgreSQL and preserves family/student ownership', async () => {
+    const module = await Test.createTestingModule({
+      controllers: [StudentSessionAttendanceController],
+      providers: [
+        { provide: StudentSessionAttendanceService, useValue: service },
+        { provide: StudentSessionAttendanceReadService, useValue: audit },
+      ],
+    }).compile();
+    const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
+      logger: false,
+    });
+    const actors: Record<string, AuthUser> = { learner, parent, foreign };
+    const reflector = new Reflector();
+    app.setGlobalPrefix('api/v1');
+    // Test identity injection only; production role/permission guards and DB-backed ownership stay real.
+    app.useGlobalGuards(
+      {
+        canActivate(context: ExecutionContext) {
+          const request = context
+            .switchToHttp()
+            .getRequest<{ user?: AuthUser; headers: Record<string, string> }>();
+          request.user = actors[request.headers['x-qa-actor'] ?? ''];
+          return true;
+        },
+      },
+      new RolesGuard(reflector, permissions),
+      new PermissionGuard(reflector, permissions),
+    );
+    try {
+      await app.init();
+      await app.getHttpAdapter().getInstance().ready();
+      const get = (actor: string, id: string, semester = '1') =>
+        app.inject({
+          method: 'GET',
+          url:
+            '/api/v1/attendance/student-sessions/summary?' +
+            new URLSearchParams({
+              from: '2026-10-01',
+              to: '2026-10-22',
+              academicYear: '2026/2027',
+              semester,
+              studentId: id,
+            }),
+          headers: { 'x-qa-actor': actor },
+        });
+      for (const [actor, id] of [
+        ['learner', studentId],
+        ['parent', studentId],
+        ['parent', otherId],
+      ]) {
+        const response = await get(actor!, id!);
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({
+          studentId: id,
+          academicYear: '2026/2027',
+          semester: 1,
+        });
+      }
+      expect((await get('learner', otherId)).statusCode).toBe(403);
+      expect((await get('foreign', studentId)).statusCode).toBe(403);
+      for (const invalid of ['abc', '0', '3', '1.5'])
+        expect((await get('learner', studentId, invalid)).statusCode).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
   it('audit reads real JP records rather than the independent daily attendance', async () => {
     const bodyValue = await body(sessionId, 'izin');
     await service.save(sessionId, bodyValue, teacher);

@@ -71,6 +71,7 @@ type Assignment = AssessmentTeachingAssignment;
 import type { TeacherSummaryAvailability, TeacherThreshold } from '@/lib/teacher-summary';
 
 interface Props {
+  allowGeneralLmsClass?: boolean;
   grades: GradeItem[];
   attendances: AttendanceItem[];
   classes: ClassRef[];
@@ -124,6 +125,7 @@ const NAV_ALL: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = 
 ];
 
 export default function AkademikWorkspace({
+  allowGeneralLmsClass = false,
   grades,
   attendances,
   assignments,
@@ -677,6 +679,7 @@ export default function AkademikWorkspace({
 
         {screen === 'pembelajaran' && (
           <PembelajaranGuru
+            allowGeneralLmsClass={allowGeneralLmsClass}
             rpp={rpp}
             lmsModules={lmsModules}
             subjects={subjects}

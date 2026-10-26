@@ -21,6 +21,7 @@ import {
   SubmitResponseSchema,
 } from '../assessment/dto/assessment.dto';
 import { QuestionPayloadSchema } from '../assessment/assessment-contract';
+import { secureMatchingSnapshot } from '../assessment/assessment-runtime';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
@@ -619,6 +620,9 @@ describe('AssessmentService remedial runtime contract', () => {
     );
     const rawPrisma = prisma as unknown as { $executeRaw: jest.Mock };
     expect((rawPrisma.$executeRaw.mock.calls[0][0] as Prisma.Sql).values.join(' ')).toContain(
+      'assessment-session:',
+    );
+    expect((rawPrisma.$executeRaw.mock.calls[1][0] as Prisma.Sql).values.join(' ')).toContain(
       'appointment_due_activation',
     );
   });
@@ -817,6 +821,7 @@ describe('AssessmentService remedial runtime contract', () => {
           status: 'draft',
           purpose: 'remedial',
           teachingAssignment: assignment,
+          questions: [mcQuestion],
           _count: { remedialParticipants: 1 },
         }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -943,6 +948,7 @@ describe('AssessmentService remedial runtime contract', () => {
           status: 'draft',
           purpose: 'remedial',
           teachingAssignment: assignment,
+          questions: [mcQuestion],
           _count: { remedialParticipants: 1 },
         }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -1832,7 +1838,7 @@ describe('AssessmentService runtime attempt contract', () => {
             id: 'session-1',
             status: 'active',
             classId: 'class-1',
-            questions: [matchingQuestion],
+            questions: [secureMatchingSnapshot(matchingQuestion)],
             durationMinutes: null,
             randomizeOrder: false,
           }),

@@ -1,13 +1,14 @@
 'use client';
 
 // LmsPreviewModal — pratinjau Modul LMS seperti tampilan siswa (read-only). Konten
-// dirender sbg teks pre-wrap (AMAN — tanpa dangerouslySetInnerHTML/XSS). `content`
+// dibersihkan dengan kebijakan HTML yang sama dengan siswa. `content`
 // sudah ada di item modul, jadi tak perlu fetch tambahan.
 // P8 (F3): Enhanced with metadata cards, student-view simulation banner, and structured layout.
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { BookOpen, FileText, Clock, Target, Users, Eye, Info } from 'lucide-react';
 import type { LmsModuleItem } from './guru-types';
+import MaterialContent from '@/components/learning/MaterialContent';
 
 export default function LmsPreviewModal({ module, onClose }: { module: LmsModuleItem; onClose: () => void }) {
   const meta = [
@@ -51,7 +52,7 @@ export default function LmsPreviewModal({ module, onClose }: { module: LmsModule
         {/* Content preview */}
         <div className="max-h-[50vh] overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-4">
           {module.content?.trim() ? (
-            <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-slate-700">{module.content}</div>
+            <MaterialContent content={module.content} />
           ) : (
             <div className="grid h-24 place-items-center text-[12.5px] font-medium text-slate-400">Modul ini belum memiliki konten materi.</div>
           )}

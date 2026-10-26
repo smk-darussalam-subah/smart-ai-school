@@ -7,6 +7,7 @@ export const QB_OUTLINE =
 export const QB_PRIMARY = 'bg-emerald-700 text-white hover:bg-emerald-800';
 // Scoped tokens: both the DIIS theme switch and OS dark preference work, without changing global Tailwind behavior.
 export const QUESTION_BANK_STYLE = `
+.diis-question-bank{--material-bg:var(--qb-bg);--material-line:var(--qb-line);--material-ink:var(--qb-ink);--material-link:var(--qb-ok-ink);--material-code:var(--qb-soft)}
 .diis-question-bank{--qb-bg:#fff;--qb-soft:#f4f7f5;--qb-ink:#0f2e25;--qb-muted:#526b62;--qb-line:#dfe9e4;--qb-ok-bg:#ecfdf5;--qb-ok-ink:#065f46;--qb-warn-bg:#fffbeb;--qb-warn-ink:#92400e;--qb-error-bg:#fff1f2;--qb-error-ink:#9f1239;--qb-ai-bg:#f5f3ff;--qb-ai-ink:#6d28d9;color:var(--qb-ink);background:var(--qb-bg)}
 :root[data-theme="dark"] .diis-question-bank,:root.dark .diis-question-bank{--qb-bg:#0f172a;--qb-soft:#172335;--qb-ink:#f1f5f9;--qb-muted:#bdcbd5;--qb-line:#3e5063;--qb-ok-bg:#052e24;--qb-ok-ink:#a7f3d0;--qb-warn-bg:#452a08;--qb-warn-ink:#fde68a;--qb-error-bg:#4c1026;--qb-error-ink:#fecdd3;--qb-ai-bg:#2e1065;--qb-ai-ink:#ddd6fe}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .diis-question-bank{--qb-bg:#0f172a;--qb-soft:#172335;--qb-ink:#f1f5f9;--qb-muted:#bdcbd5;--qb-line:#3e5063;--qb-ok-bg:#052e24;--qb-ok-ink:#a7f3d0;--qb-warn-bg:#452a08;--qb-warn-ink:#fde68a;--qb-error-bg:#4c1026;--qb-error-ink:#fecdd3;--qb-ai-bg:#2e1065;--qb-ai-ink:#ddd6fe}}
