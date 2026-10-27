@@ -105,7 +105,7 @@ async function proxyRequest(
   { params }: { params: Promise<{ path: string[] }> },
 ): Promise<Response> {
   const { path } = await params;
-  if (path.some(segment => segment === '.' || segment === '..'))
+  if (path.some((segment) => segment === '.' || segment === '..'))
     return Response.json({ message: 'Path tidak valid.' }, { status: 400 });
   // App Router params are decoded. Preserve each segment (including a year
   // such as 2026/2027) rather than turning encoded data into routing syntax.
@@ -119,6 +119,8 @@ async function proxyRequest(
     const backendRes = await fetch(backendUrl, {
       method: request.method,
       headers: auth.headers,
+      cache: 'no-store',
+      signal: request.signal,
       body:
         request.method !== 'GET' && request.method !== 'HEAD'
           ? await request.arrayBuffer()
@@ -127,6 +129,10 @@ async function proxyRequest(
 
     // Forward response headers (strip hop-by-hop)
     const responseHeaders = copyResponseHeaders(backendRes.headers);
+    if (backendRes.headers.get('content-type')?.includes('text/event-stream')) {
+      responseHeaders['cache-control'] = 'no-store';
+      responseHeaders['x-accel-buffering'] = 'no';
+    }
 
     return persistSessionCookies(
       new Response(backendRes.body, {
@@ -136,15 +142,14 @@ async function proxyRequest(
       }),
       auth.cookies,
     );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+  } catch {
+    if (request.signal.aborted)
+      return persistSessionCookies(new Response(null, { status: 499 }), sessionCookies);
     // eslint-disable-next-line no-console
-    console.error(
-      `[api-backend-proxy] ${request.method} /${backendPath} → ${backendUrl} FAILED: ${message}`,
-    );
+    console.error(`[api-backend-proxy] ${request.method} /${backendPath} failed`);
     return persistSessionCookies(
       Response.json(
-        { statusCode: 502, message: `Backend unreachable: ${message}` },
+        { statusCode: 502, message: 'Layanan backend belum tersedia. Coba lagi.' },
         { status: 502 },
       ),
       sessionCookies,
