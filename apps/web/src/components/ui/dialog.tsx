@@ -48,10 +48,10 @@ const DialogContent = React.forwardRef<
               'aria-describedby': undefined,
             }
           : {})}
-        onEscapeKeyDown={(event: Event) =>
+        onEscapeKeyDown={(event) =>
           blocked ? event.preventDefault() : props.onEscapeKeyDown?.(event)
         }
-        onInteractOutside={(event: Event) =>
+        onInteractOutside={(event) =>
           blocked ? event.preventDefault() : props.onInteractOutside?.(event)
         }
       >

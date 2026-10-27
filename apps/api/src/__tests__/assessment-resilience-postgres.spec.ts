@@ -5,6 +5,14 @@ import { AcademicPeriodService } from '../academic-period/academic-period.servic
 import { AssessmentService } from '../assessment/assessment.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { QuestionBankService } from '../question-bank/question-bank.service';
+import { QuestionPayloadSchema, AssessmentAnswerMap } from '../assessment/assessment-contract';
+import { CreateAssessmentSessionSchema } from '../assessment/dto/assessment.dto';
+import { parseSnapshotQuestions } from '../assessment/assessment-runtime';
+import { LmsService } from '../lms/lms.service';
+import { CreateQuestionSchema } from '../question-bank/dto/question.dto';
+import { firstValueFrom } from 'rxjs';
+import { randomUUID } from 'crypto';
 
 const databaseUrl = process.env.ASSESSMENT_RESILIENCE_DATABASE_URL;
 const describePostgres = databaseUrl ? describe : describe.skip;
@@ -422,11 +430,556 @@ describePostgres('Assessment resilience PostgreSQL service integration proof', (
     await prisma.teachingAssignment.deleteMany({ where: { id: assignmentId } });
     await prisma.student.deleteMany({ where: { id: studentId } });
     await prisma.class.deleteMany({ where: { id: classId } });
+    await prisma.question.deleteMany({ where: { teacherId } });
     await prisma.teacher.deleteMany({ where: { id: teacherId } });
     await prisma.user.deleteMany({ where: { id: { in: [teacherUserId, studentUserId] } } });
     await prisma.semester.deleteMany({ where: { id: semesterId } });
     await prisma.$disconnect();
   });
+
+  it('binds remedial monitor, results and analysis to eligible participants, preserving cancelled response history', async () => {
+    const extras: Array<{ userId: string; studentId: string }> = [];
+    let proofResponseId: string | undefined;
+    try {
+      for (let i = 0; i < 2; i++) {
+        const user = await prisma.user.create({
+          data: {
+            keycloakId: randomUUID(),
+            fullName: `Local remedial outsider ${i}`,
+            email: `${randomUUID()}@example.invalid`,
+            role: 'SISWA',
+          },
+        });
+        const student = await prisma.student.create({
+          data: { userId: user.id, classId, nis: randomUUID().slice(0, 16), joinedAt: new Date() },
+        });
+        extras.push({ userId: user.id, studentId: student.id });
+      }
+      const response = await prisma.assessmentResponse.create({
+        data: {
+          sessionId: remedialSessionId,
+          studentId,
+          startedAt: new Date(),
+          submittedAt: new Date(),
+          score: 100,
+          answers: correctAnswers,
+          itemScores: [],
+        },
+      });
+      proofResponseId = response.id;
+      const service = buildActualService();
+      const frame = await firstValueFrom(service.streamResults(remedialSessionId, GURU));
+      expect(frame.data).toMatchObject({ classStudentCount: 1, selesai: 1, belum: 0 });
+      expect((await service.getResults(remedialSessionId, GURU)).classStudentCount).toBe(1);
+      await prisma.remedialParticipant.update({
+        where: { id: remedialParticipantId },
+        data: { status: 'cancelled' },
+      });
+      const cancelled = await firstValueFrom(service.streamResults(remedialSessionId, GURU));
+      expect(cancelled.data).toMatchObject({
+        classStudentCount: 0,
+        selesai: 0,
+        belum: 0,
+        roster: [],
+      });
+      expect((await service.getResults(remedialSessionId, GURU)).responses).toEqual([]);
+      expect((await service.getSessionAnalysis(remedialSessionId, GURU)).summary.totalStudents).toBe(0);
+      expect(await prisma.assessmentResponse.count({ where: { id: response.id } })).toBe(1);
+    } finally {
+      if (proofResponseId)
+        await prisma.assessmentResponse.deleteMany({ where: { id: proofResponseId } });
+      await prisma.remedialParticipant.update({
+        where: { id: remedialParticipantId },
+        data: { status: 'assigned' },
+      });
+      await prisma.student.deleteMany({
+        where: { id: { in: extras.map((row) => row.studentId) } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: extras.map((row) => row.userId) } } });
+    }
+  });
+
+  it.each(['uts', 'uas'] as const)(
+    'returns a business conflict and rolls back duplicate %s sync without altering the first Grade',
+    async (target) => {
+      const ids: string[] = [];
+      try {
+        for (let i = 0; i < 2; i++) {
+          const session = await prisma.assessmentSession.create({
+            data: {
+              teacherId,
+              moduleId,
+              teachingAssignmentId: assignmentId,
+              classId,
+              title: `Local duplicate ${target} ${i}`,
+              type: 'sumatif',
+              gradeTarget: target,
+              status: 'active',
+              purpose: 'regular',
+              questions,
+              academicYear,
+              semester: 1,
+            },
+          });
+          ids.push(session.id);
+          await prisma.assessmentResponse.create({
+            data: {
+              sessionId: session.id,
+              studentId,
+              startedAt: new Date(),
+              submittedAt: new Date(),
+              score: i === 0 ? 100 : 0,
+              answers: correctAnswers,
+              itemScores: [],
+            },
+          });
+        }
+        const service = buildActualService();
+        await service.completeSession(ids[0]!, GURU);
+        await expect(service.completeSession(ids[1]!, GURU)).rejects.toMatchObject({ status: 409 });
+        const rows = await prisma.grade.findMany({
+          where: { sourceAssessmentSessionId: { in: ids } },
+        });
+        expect(rows).toHaveLength(1);
+        expect(Number(rows[0]!.score)).toBe(100);
+        expect(rows[0]!.sourceAssessmentSessionId).toBe(ids[0]);
+        expect(
+          (await prisma.assessmentSession.findUniqueOrThrow({ where: { id: ids[1]! } })).status,
+        ).toBe('active');
+        expect(
+          await prisma.assessmentEventOutbox.count({
+            where: { dedupeKey: `assessment.completed:${ids[1]}` },
+          }),
+        ).toBe(0);
+      } finally {
+        const rows = await prisma.grade.findMany({
+          where: { sourceAssessmentSessionId: { in: ids } },
+          select: { id: true },
+        });
+        await prisma.assessmentEventOutbox.deleteMany({
+          where: {
+            dedupeKey: {
+              in: [
+                ...ids.map((id) => `assessment.completed:${id}`),
+                ...rows.map((row) => `grade.submitted:${row.id}`),
+              ],
+            },
+          },
+        });
+        await prisma.grade.deleteMany({ where: { sourceAssessmentSessionId: { in: ids } } });
+        await prisma.assessmentSession.deleteMany({ where: { id: { in: ids } } });
+      }
+    },
+  );
+
+  it('runs manual rich questions through canonical storage, snapshot, start, autosave, resume and final submit', async () => {
+    const bank = new QuestionBankService(prisma as unknown as PrismaService);
+    const service = buildActualService();
+    const createdQuestions: string[] = [];
+    let createdSession: string | undefined;
+    try {
+      const common = {
+        subject: 'Pemrograman Web',
+        body: '<!--diis-question-html:v1--><p>Amati <strong>data</strong> berikut.</p>',
+        difficulty: 'medium',
+        tags: [],
+      };
+      const payloads = [
+        {
+          ...common,
+          type: 'multiple_choice',
+          options: [
+            { id: 'a', text: 'A' },
+            { id: 'b', text: 'B' },
+          ],
+          answer: 'a',
+        },
+        { ...common, type: 'true_false', answer: true },
+        {
+          ...common,
+          type: 'matching',
+          pairs: [
+            { id: 'p1', prompt: 'Dua', match: '2' },
+            { id: 'p2', prompt: 'Tiga', match: '3' },
+          ],
+          answer: { p1: 'p2', p2: 'p1' },
+        },
+        {
+          ...common,
+          type: 'essay',
+          guideAnswer: 'Alasan yang tepat.',
+          rubric: [{ id: 'r1', name: 'Alasan', weight: 100, maxScore: 10 }],
+        },
+      ];
+      for (const payload of payloads) {
+        const question = await bank.create(QuestionPayloadSchema.parse(payload), GURU);
+        createdQuestions.push(question.id);
+        await bank.update(
+          question.id,
+          QuestionPayloadSchema.parse({
+            ...payload,
+            body: common.body + '<p>Data diperbarui.</p>',
+          }),
+          GURU,
+        );
+        expect((await bank.findOne(question.id, GURU)).body).toContain('<strong>data</strong>');
+      }
+      const created = await service.create(
+        CreateAssessmentSessionSchema.parse({
+          moduleId,
+          title: 'Manual four-type QA',
+          type: 'formatif',
+          classId,
+          academicYear,
+          semester: 1,
+          questionSelections: createdQuestions.map((questionId, order) => ({
+            questionId,
+            order,
+            points: 25,
+          })),
+        }),
+        GURU,
+      );
+      createdSession = created.id;
+      await service.startSession(created.id, GURU);
+      const attempt = await service.startResponse(created.id, SISWA);
+      const session = await prisma.assessmentSession.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+      const snapshots = parseSnapshotQuestions(session.questions);
+      const answers: AssessmentAnswerMap = {};
+      for (const question of snapshots) {
+        if (question.type === 'multiple_choice')
+          answers[question.id] = { type: question.type, optionId: question.answer };
+        if (question.type === 'true_false')
+          answers[question.id] = { type: question.type, value: question.answer };
+        if (question.type === 'matching')
+          answers[question.id] = {
+            type: question.type,
+            pairs: Object.fromEntries(
+              question.pairs.map((pair) => [
+                pair.id,
+                question.choiceIds![question.answer[pair.id]!]!,
+              ]),
+            ),
+          };
+        if (question.type === 'essay')
+          answers[question.id] = { type: question.type, text: 'Alasan siswa sintetis.' };
+      }
+      const mutationId = 'd0000000-0000-4000-8000-000000000001';
+      await service.autosaveResponse(created.id, { answers, revision: 1, mutationId }, SISWA);
+      const resumed = await service.startResponse(created.id, SISWA);
+      expect(resumed.responseId).toBe(attempt.responseId);
+      expect(resumed.questions).toEqual(attempt.questions);
+      expect(resumed.answers).toEqual(answers);
+      await service.submitResponse(created.id, { answers, revision: 1, mutationId }, SISWA);
+      const results = await service.getResults(created.id, GURU);
+      expect(results).toMatchObject({
+        submitted: 1,
+        finalCount: 0,
+        pendingManualCount: 1,
+        avgScore: null,
+      });
+      expect(results.responses[0]?.score).toBeNull();
+      expect(await prisma.grade.count({ where: { sourceAssessmentSessionId: created.id } })).toBe(
+        0,
+      );
+    } finally {
+      if (createdSession) {
+        await prisma.assessmentEventOutbox.deleteMany({
+          where: { payload: { path: ['sessionId'], equals: createdSession } },
+        });
+        await prisma.grade.deleteMany({ where: { sourceAssessmentSessionId: createdSession } });
+        await prisma.assessmentResponse.deleteMany({ where: { sessionId: createdSession } });
+        await prisma.assessmentSession.deleteMany({ where: { id: createdSession } });
+      }
+      await prisma.question.deleteMany({ where: { id: { in: createdQuestions } } });
+    }
+  });
+
+  it('records module opening separately from completion without regressing completed progress', async () => {
+    const period = new AcademicPeriodService(
+      prisma as unknown as PrismaService,
+      {} as PermissionsService,
+    );
+    const lms = new LmsService(prisma as unknown as PrismaService, period);
+    try {
+      expect(await lms.updateProgress(moduleId, { progress: 0 }, SISWA)).toMatchObject({
+        progress: 0,
+        status: 'active',
+        completedAt: null,
+      });
+      const completed = await lms.updateProgress(moduleId, { progress: 100 }, SISWA);
+      const replay = await lms.updateProgress(moduleId, { progress: 0 }, SISWA);
+      expect(replay).toMatchObject({
+        progress: 100,
+        status: 'completed',
+        completedAt: completed.completedAt,
+      });
+    } finally {
+      await prisma.lmsModuleProgress.deleteMany({ where: { moduleId, studentId } });
+    }
+  });
+
+  it('makes manual-create retries durable, preserves later edits and never resurrects a deleted question', async () => {
+    const bank = new QuestionBankService(prisma as unknown as PrismaService);
+    const requestId = 'e0000000-0000-4000-8000-000000000001';
+    const payload = {
+      requestId,
+      subject: 'Pemrograman Web',
+      type: 'true_false',
+      body: 'Retry manual tidak membuat soal ganda.',
+      answer: true,
+      difficulty: 'medium',
+      tags: [],
+    };
+    let savedId: string | undefined;
+    try {
+      const responses = await Promise.all(
+        Array.from({ length: 4 }, () => bank.create(CreateQuestionSchema.parse(payload), GURU)),
+      );
+      savedId = responses[0]!.id;
+      expect(new Set(responses.map((row) => row.id)).size).toBe(1);
+      expect(await prisma.question.count({ where: { teacherId, body: payload.body } })).toBe(1);
+      await expect(
+        bank.create(
+          CreateQuestionSchema.parse({ ...payload, body: 'Isi berbeda dengan key yang sama.' }),
+          GURU,
+        ),
+      ).rejects.toThrow('isi soal berbeda');
+      const { requestId: _requestId, ...authoringPayload } = payload;
+      const edited = QuestionPayloadSchema.parse(authoringPayload);
+      await bank.update(
+        savedId,
+        { ...edited, body: 'Edit yang lebih baru tetap dipertahankan.' },
+        GURU,
+      );
+      expect((await bank.create(CreateQuestionSchema.parse(payload), GURU)).body).toBe(
+        'Edit yang lebih baru tetap dipertahankan.',
+      );
+      await bank.remove(savedId, GURU);
+      await expect(bank.create(CreateQuestionSchema.parse(payload), GURU)).rejects.toThrow(
+        'sudah dihapus',
+      );
+      expect(await prisma.question.count({ where: { id: savedId } })).toBe(0);
+    } finally {
+      if (savedId) await prisma.question.deleteMany({ where: { id: savedId } });
+      await prisma.questionImportRow.deleteMany({
+        where: { teacherId, batchKey: `manual:${requestId}` },
+      });
+    }
+  });
+
+  it('does not resurrect a deleted CSV question on replay of its completed import receipt', async () => {
+    const bank = new QuestionBankService(prisma as unknown as PrismaService);
+    const batchKey = 'csv-tombstone-qa-20261026';
+    const question = QuestionPayloadSchema.parse({
+      subject: 'Pemrograman Web',
+      type: 'true_false',
+      body: 'CSV tombstone sintetis.',
+      answer: true,
+      difficulty: 'easy',
+      tags: [],
+    });
+    const dto = { subject: question.subject, batchKey, rows: [{ rowKey: 'row-1', question }] };
+    try {
+      expect(await bank.importQuestionsCsv(dto, GURU)).toEqual({ imported: 1, errors: [] });
+      const receipt = await prisma.questionImportRow.findUniqueOrThrow({
+        where: { teacherId_batchKey_rowKey: { teacherId, batchKey, rowKey: 'row-1' } },
+      });
+      await bank.remove(receipt.questionId!, GURU);
+      const replay = await bank.importQuestionsCsv(dto, GURU);
+      expect(replay.imported).toBe(0);
+      expect(replay.errors[0]?.message).toContain('sudah dihapus');
+      expect(await prisma.question.count({ where: { teacherId, body: question.body } })).toBe(0);
+    } finally {
+      await prisma.questionImportRow.deleteMany({ where: { teacherId, batchKey } });
+    }
+  });
+
+  it.each([true, false])(
+    'serializes regular draft edit and activation without overwriting acknowledged edits (edit first=%s)',
+    async (editFirst) => {
+      const service = buildActualService();
+      const replacement = await prisma.question.create({
+        data: {
+          teacherId,
+          subject: 'Pemrograman Web',
+          type: 'true_false',
+          body: 'Snapshot terbaru harus dipertahankan.',
+          answer: 'true',
+          difficulty: 'easy',
+          tags: [],
+        },
+      });
+      try {
+        await prisma.assessmentSession.update({
+          where: { id: sessionId },
+          data: { status: 'draft', questions },
+        });
+        const gate = pauseFirstSessionLock(service);
+        const edit = () =>
+          service.update(
+            sessionId,
+            { questionSelections: [{ questionId: replacement.id, points: 100, order: 0 }] },
+            GURU,
+          );
+        const activate = () => service.startSession(sessionId, GURU);
+        const first = editFirst ? edit() : activate();
+        await gate.firstLocked;
+        const second = editFirst ? activate() : edit();
+        await gate.secondAttempted;
+        gate.release();
+        const outcomes = await Promise.allSettled([first, second]);
+        expect(outcomes[0]?.status).toBe('fulfilled');
+        const current = await prisma.assessmentSession.findUniqueOrThrow({
+          where: { id: sessionId },
+        });
+        expect(current.status).toBe('active');
+        if (editFirst) {
+          expect(outcomes[1]?.status).toBe('fulfilled');
+          expect(parseSnapshotQuestions(current.questions)[0]?.id).toBe(replacement.id);
+        } else {
+          expect(outcomes[1]?.status).toBe('rejected');
+          expect((outcomes[1] as PromiseRejectedResult).reason.constructor.name).toBe(
+            'ConflictException',
+          );
+          expect(parseSnapshotQuestions(current.questions)[0]?.id).toBe(questionId);
+        }
+      } finally {
+        await prisma.assessmentSession.update({
+          where: { id: sessionId },
+          data: { status: 'active', questions },
+        });
+        await prisma.question.delete({ where: { id: replacement.id } });
+      }
+    },
+  );
+
+  it.each(['draft', 'active'] as const)(
+    'persists secure legacy-draft upgrade or contains already-active legacy matching (%s)',
+    async (status) => {
+      const legacy = {
+        id: questionId,
+        type: 'matching',
+        subject: 'Pemrograman Web',
+        body: 'Pasangkan dua pernyataan.',
+        difficulty: 'medium',
+        tags: [],
+        points: 100,
+        pairs: [
+          { id: 'p1', prompt: 'Dua', match: '2' },
+          { id: 'p2', prompt: 'Tiga', match: '3' },
+        ],
+        answer: { p1: 'p1', p2: 'p2' },
+      };
+      const created = await prisma.assessmentSession.create({
+        data: {
+          teacherId,
+          classId,
+          moduleId,
+          teachingAssignmentId: assignmentId,
+          title: 'Legacy fixture QA',
+          type: 'formatif',
+          status,
+          academicYear,
+          semester: 1,
+          questions: [legacy],
+        },
+      });
+      const service = buildActualService();
+      try {
+        if (status === 'draft') {
+          await service.startSession(created.id, GURU);
+          const stored = await prisma.assessmentSession.findUniqueOrThrow({
+            where: { id: created.id },
+          });
+          const parsed = parseSnapshotQuestions(stored.questions)[0]!;
+          expect(parsed).toHaveProperty('choiceIds');
+          const first = await service.startResponse(created.id, SISWA);
+          const resumed = await service.startResponse(created.id, SISWA);
+          expect(resumed.questions).toEqual(first.questions);
+        } else {
+          const response = await prisma.assessmentResponse.create({
+            data: {
+              sessionId: created.id,
+              studentId,
+              startedAt: new Date(),
+              submittedAt: null,
+              answers: {},
+              questionOrder: [questionId],
+            },
+          });
+          const before = await prisma.assessmentResponse.findUniqueOrThrow({
+            where: { id: response.id },
+          });
+          await expect(service.startResponse(created.id, SISWA)).rejects.toThrow(
+            'Sesi menjodohkan lama',
+          );
+          await expect(
+            service.autosaveResponse(
+              created.id,
+              { answers: {}, revision: 1, mutationId: submitMutationId },
+              SISWA,
+            ),
+          ).rejects.toThrow('Sesi menjodohkan lama');
+          await expect(
+            service.submitResponse(
+              created.id,
+              { answers: {}, revision: 1, mutationId: submitMutationId },
+              SISWA,
+            ),
+          ).rejects.toThrow('Sesi menjodohkan lama');
+          expect(
+            await prisma.assessmentResponse.findUniqueOrThrow({ where: { id: response.id } }),
+          ).toEqual(before);
+          const visible = await service.findOne(created.id, SISWA);
+          expect(visible).toMatchObject({
+            questions: [],
+            questionCount: 1,
+            attemptBlockedReason: expect.any(String),
+          });
+        }
+      } finally {
+        await prisma.assessmentResponse.deleteMany({ where: { sessionId: created.id } });
+        await prisma.assessmentSession.delete({ where: { id: created.id } });
+      }
+    },
+  );
+
+  it.each([true, false])(
+    'uses consistent session-before-cutover locks for remedial activation/cancellation (activation first=%s)',
+    async (activationFirst) => {
+      await resetForRemedialStart();
+      await prisma.assessmentSession.update({
+        where: { id: remedialSessionId },
+        data: { status: 'draft' },
+      });
+      const service = buildActualService();
+      const gate = pauseFirstSessionLock(service);
+      const activate = () => service.activateRemedialSession(remedialSessionId, GURU);
+      const cancel = () =>
+        service.cancelRemedialSession(
+          remedialSessionId,
+          { reason: 'Pengujian konkurensi sintetis' },
+          GURU,
+        );
+      const first = activationFirst ? activate() : cancel();
+      await gate.firstLocked;
+      const second = activationFirst ? cancel() : activate();
+      await gate.secondAttempted;
+      gate.release();
+      const outcomes = await Promise.allSettled([first, second]);
+      expect(outcomes[0]?.status).toBe('fulfilled');
+      for (const outcome of outcomes)
+        if (outcome.status === 'rejected')
+          expect(outcome.reason.constructor.name).toBe('ConflictException');
+      expect(
+        (await prisma.assessmentSession.findUniqueOrThrow({ where: { id: remedialSessionId } }))
+          .status,
+      ).toBe('cancelled');
+    },
+  );
 
   it('allows exactly one concurrent pending-to-final decision', async () => {
     await resetForLateReview();

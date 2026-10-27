@@ -1,16 +1,28 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ClipboardList, Calendar, AlertCircle, CheckCircle, RotateCcw } from 'lucide-react';
-import { mpColor, mpIcon } from './siswa-data';
+import {
+  BookOpen,
+  ClipboardList,
+  Calendar,
+  AlertCircle,
+  CheckCircle,
+  RotateCcw,
+} from 'lucide-react';
+import { mpColor } from './siswa-data';
 import type { SiswaScreen, ModalState } from './SiswaWorkspace';
 import type { SiswaTugas } from './siswa-types';
 import { filterStudentTasksForWorkflow } from '@/lib/academic-workflow-deep-link';
+import DashboardReadNotice from '../DashboardReadNotice';
+import type { DashboardReadState } from '@/lib/learner-dashboard-read';
 
 type TaskSourceFilter = 'all' | 'assessment' | 'remedial' | 'module';
-type TaskStatusFilter = 'all' | 'pending' | 'submitted' | 'graded';
+type TaskStatusFilter = 'all' | 'pending' | 'submitted' | 'graded' | 'closed';
 
-const REMEDIAL_STATUS_LABEL: Record<NonNullable<SiswaTugas['remedialParticipant']>['status'], string> = {
+const REMEDIAL_STATUS_LABEL: Record<
+  NonNullable<SiswaTugas['remedialParticipant']>['status'],
+  string
+> = {
   assigned: 'Ditugaskan',
   in_progress: 'Sedang dikerjakan',
   submitted: 'Menunggu finalisasi guru',
@@ -18,7 +30,10 @@ const REMEDIAL_STATUS_LABEL: Record<NonNullable<SiswaTugas['remedialParticipant'
   needs_retry: 'Perlu percobaan berikutnya',
 };
 
-const REMEDIAL_BADGE_LABEL: Record<NonNullable<SiswaTugas['remedialParticipant']>['status'], string> = {
+const REMEDIAL_BADGE_LABEL: Record<
+  NonNullable<SiswaTugas['remedialParticipant']>['status'],
+  string
+> = {
   assigned: 'DITUGASKAN',
   in_progress: 'DIKERJAKAN',
   submitted: 'DIKIRIM',
@@ -28,7 +43,12 @@ const REMEDIAL_BADGE_LABEL: Record<NonNullable<SiswaTugas['remedialParticipant']
 
 function taskActionPriority(task: SiswaTugas): number {
   const remedialStatus = task.remedialParticipant?.status;
-  if (remedialStatus === 'assigned' || remedialStatus === 'in_progress' || remedialStatus === 'needs_retry') return 0;
+  if (
+    remedialStatus === 'assigned' ||
+    remedialStatus === 'in_progress' ||
+    remedialStatus === 'needs_retry'
+  )
+    return 0;
   if (remedialStatus === 'submitted') return 1;
   if (remedialStatus === 'passed') return 3;
 
@@ -39,21 +59,43 @@ function taskActionPriority(task: SiswaTugas): number {
 
 interface Props {
   tasks: SiswaTugas[];
+  taskState?: DashboardReadState;
+  onRetryTasks?: () => void;
   showToast: (msg: string) => void;
   go: (screen: SiswaScreen) => void;
   setModal: (modal: ModalState) => void;
   initialSourceFilter?: 'all' | 'assessment' | 'remedial';
 }
 
-export default function TugasSiswa({ tasks, showToast: _showToast, go: _go, setModal, initialSourceFilter = 'all' }: Props) {
-  const [filter, setFilter] = useState<TaskStatusFilter>(initialSourceFilter === 'remedial' ? 'all' : 'pending');
+export default function TugasSiswa({
+  tasks: suppliedTasks,
+  taskState = 'ready',
+  onRetryTasks,
+  showToast: _showToast,
+  go: _go,
+  setModal,
+  initialSourceFilter = 'all',
+}: Props) {
+  const [filter, setFilter] = useState<TaskStatusFilter>(
+    initialSourceFilter === 'remedial' ? 'all' : 'pending',
+  );
   const [sourceFilter, setSourceFilter] = useState<TaskSourceFilter>(initialSourceFilter);
+  const tasks = taskState === 'ready' ? suppliedTasks : [];
+  if (taskState !== 'ready')
+    return (
+      <div className="space-y-4 px-5 py-4">
+        <h1 className="text-2xl font-extrabold tracking-tight">Tugas</h1>
+        <DashboardReadNotice state={taskState} domain="Tugas" onRetry={onRetryTasks} />
+      </div>
+    );
 
   // T1-04 (audit v2): langsung dari props. Empty → empty state, BUKAN SIM_TUGAS.
-  const displayTasks = sourceFilter === 'module'
-    ? tasks.filter((task) => !task.assessmentSessionId)
-    : filterStudentTasksForWorkflow(tasks, sourceFilter);
-  const filtered = filter === 'all' ? displayTasks : displayTasks.filter((t) => t.status === filter);
+  const displayTasks =
+    sourceFilter === 'module'
+      ? tasks.filter((task) => !task.assessmentSessionId)
+      : filterStudentTasksForWorkflow(tasks, sourceFilter);
+  const filtered =
+    filter === 'all' ? displayTasks : displayTasks.filter((t) => t.status === filter);
 
   const stats = {
     pending: displayTasks.filter((t) => t.status === 'pending').length,
@@ -68,19 +110,24 @@ export default function TugasSiswa({ tasks, showToast: _showToast, go: _go, setM
         <h1 className="text-2xl font-extrabold tracking-tight">Tugas</h1>
         <div className="mt-2 flex items-center gap-2 text-sm text-[var(--muted)]">
           <ClipboardList className="h-4 w-4" />
-          <span>{stats.pending} pending · {stats.submitted} submitted · {stats.graded} graded</span>
+          <span>
+            {stats.pending} perlu dikerjakan · {stats.submitted} dalam proses · {stats.graded}{' '}
+            selesai
+          </span>
         </div>
       </div>
 
       {/* Filters */}
       <div className="sticky top-[57px] z-10 border-b border-[var(--border)] bg-[var(--surface)] px-5 py-3">
         <div className="mb-2 flex gap-1.5" role="group" aria-label="Sumber tugas">
-          {([
-            ['all', 'Semua'],
-            ['assessment', 'Asesmen'],
-            ['remedial', 'Remedial'],
-            ['module', 'Modul'],
-          ] as const).map(([key, label]) => (
+          {(
+            [
+              ['all', 'Semua'],
+              ['assessment', 'Asesmen'],
+              ['remedial', 'Remedial'],
+              ['module', 'Modul'],
+            ] as const
+          ).map(([key, label]) => (
             <button
               key={key}
               type="button"
@@ -96,21 +143,25 @@ export default function TugasSiswa({ tasks, showToast: _showToast, go: _go, setM
             </button>
           ))}
         </div>
-        <div className="flex gap-1.5" role="group" aria-label="Status tugas">
-          {([
-            ['all', 'Semua', 'bg-sky-600'],
-            ['pending', 'Pending', 'bg-rose-500'],
-            ['submitted', 'Submitted', 'bg-amber-500'],
-            ['graded', 'Graded', 'bg-emerald-500'],
-          ] as const).map(([key, label, color]) => (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Status tugas">
+          {(
+            [
+              ['all', 'Semua'],
+              ['pending', 'Perlu dikerjakan'],
+              ['submitted', 'Dalam proses'],
+              ['graded', 'Selesai'],
+              ['closed', 'Ditutup'],
+            ] as const
+          ).map(([key, label]) => (
             <button
               key={key}
               type="button"
               onClick={() => setFilter(key)}
-              className={`min-h-11 rounded-lg px-3 text-[11px] font-bold uppercase tracking-wider transition-all ${
+              aria-pressed={filter === key}
+              className={`min-h-11 rounded-lg border px-3 text-[11px] font-bold uppercase tracking-wider transition-colors ${
                 filter === key
-                  ? `${color} text-white`
-                  : 'border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--border2)]'
+                  ? 'border-emerald-700 bg-emerald-700 text-white'
+                  : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--border2)]'
               }`}
             >
               {label}
@@ -138,9 +189,24 @@ export default function TugasSiswa({ tasks, showToast: _showToast, go: _go, setM
               const overdue = hasDeadline && t.dlDays < 0 && t.status === 'pending';
               const remedialStatus = t.remedialParticipant?.status ?? null;
               const isRemedial = t.purpose === 'remedial' && remedialStatus !== null;
+              const isModule = !t.assessmentSessionId;
               const badgeLabel = isRemedial
                 ? REMEDIAL_BADGE_LABEL[remedialStatus]
-                : overdue ? 'TERLAMBAT' : t.status === 'pending' ? 'PENDING' : t.status === 'submitted' ? 'DIKIRIM' : 'DINILAI';
+                : t.status === 'closed'
+                  ? 'DITUTUP'
+                  : isModule
+                    ? t.status === 'graded'
+                      ? 'SELESAI'
+                      : t.status === 'submitted'
+                        ? 'DIBACA'
+                        : 'BELUM DIBACA'
+                    : overdue
+                      ? 'TERLAMBAT'
+                      : t.status === 'pending'
+                        ? 'PENDING'
+                        : t.status === 'submitted'
+                          ? 'DIKIRIM'
+                          : 'DINILAI';
               const badgeClass = isRemedial
                 ? remedialStatus === 'passed'
                   ? 'bg-emerald-500/15 text-emerald-500'
@@ -167,7 +233,11 @@ export default function TugasSiswa({ tasks, showToast: _showToast, go: _go, setM
                         className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
                         style={{ background: `${c}20`, color: c }}
                       >
-                        <span className="text-lg font-extrabold">{(mpIcon(t.mp) || 'book').charAt(0).toUpperCase()}</span>
+                        {isModule ? (
+                          <BookOpen aria-hidden="true" className="h-5 w-5" />
+                        ) : (
+                          <ClipboardList aria-hidden="true" className="h-5 w-5" />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-base font-bold">{t.title}</div>
@@ -184,34 +254,62 @@ export default function TugasSiswa({ tasks, showToast: _showToast, go: _go, setM
 
                         {/* Deadline */}
                         {hasDeadline && (
-                          <div className={`mt-2 flex items-center gap-1.5 text-[11px] font-bold ${
-                            overdue ? 'text-rose-500' : urgent ? 'text-amber-500' : 'text-[var(--muted)]'
-                          }`}>
+                          <div
+                            className={`mt-2 flex items-center gap-1.5 text-[11px] font-bold ${
+                              overdue
+                                ? 'text-rose-500'
+                                : urgent
+                                  ? 'text-amber-500'
+                                  : 'text-[var(--muted)]'
+                            }`}
+                          >
                             <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
                             Tenggat {t.deadline}
                             {t.status === 'pending' && (
-                              <span>{overdue ? '· Terlewat' : t.dlDays === 0 ? '· Hari ini' : `· ${t.dlDays} hari lagi`}</span>
+                              <span>
+                                {overdue
+                                  ? '· Terlewat'
+                                  : t.dlDays === 0
+                                    ? '· Hari ini'
+                                    : `· ${t.dlDays} hari lagi`}
+                              </span>
                             )}
                           </div>
                         )}
 
                         {/* Submitted status */}
-                        {!isRemedial && t.status === 'submitted' && (
+                        {!isRemedial && !isModule && t.status === 'submitted' && (
                           <div className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-amber-500">
                             <CheckCircle className="h-3.5 w-3.5" />
-                            Submitted · Menunggu penilaian
+                            {t.lateSubmissionStatus === 'pending'
+                              ? 'Menunggu keputusan guru'
+                              : t.lateSubmissionStatus === 'rejected'
+                                ? 'Jawaban terlambat ditolak'
+                                : 'Menunggu penilaian'}
                           </div>
                         )}
 
                         {/* Graded status */}
-                        {!isRemedial && t.status === 'graded' && t.score !== null && (
-                          <div className="mt-2 flex items-center gap-2">
-                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-500">
-                              <CheckCircle className="h-3.5 w-3.5" />
-                              Dinilai
+                        {!isRemedial &&
+                          !isModule &&
+                          t.status === 'graded' &&
+                          typeof t.score === 'number' && (
+                            <div className="mt-2 flex items-center gap-2">
+                              <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-500">
+                                <CheckCircle className="h-3.5 w-3.5" />
+                                Dinilai
+                              </div>
+                              <div className="text-lg font-extrabold text-emerald-500">
+                                {t.score}
+                              </div>
                             </div>
-                            <div className="text-lg font-extrabold text-emerald-500">{t.score}</div>
-                          </div>
+                          )}
+                        {isModule && (
+                          <p className="mt-2 text-sm font-semibold text-[var(--muted)]">
+                            {t.status === 'graded'
+                              ? 'Bacaan ditandai selesai'
+                              : `Progres membaca ${t.progress ?? 0}%`}
+                          </p>
                         )}
                       </div>
 
@@ -234,7 +332,7 @@ export default function TugasSiswa({ tasks, showToast: _showToast, go: _go, setM
             <div className="text-lg">
               {filter === 'all'
                 ? 'Belum ada tugas pada kategori ini'
-                : `Tidak ada tugas ${filter === 'pending' ? 'pending' : filter === 'submitted' ? 'submitted' : 'graded'}`}
+                : `Tidak ada tugas ${filter === 'pending' ? 'yang perlu dikerjakan' : filter === 'submitted' ? 'dalam proses' : filter === 'closed' ? 'yang ditutup' : 'yang selesai'}`}
             </div>
           </div>
         )}
@@ -247,7 +345,10 @@ export default function TugasSiswa({ tasks, showToast: _showToast, go: _go, setM
             <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-amber-500" />
             <div>
               <div className="font-bold text-amber-500">Tugas Mendesak</div>
-              <div className="mt-1">Kerjakan tugas dengan deadline terdekat terlebih dahulu. Klik tugas untuk melihat detail dan submit.</div>
+              <div className="mt-1">
+                Kerjakan tugas dengan deadline terdekat terlebih dahulu. Klik tugas untuk melihat
+                detail dan submit.
+              </div>
             </div>
           </div>
         </div>

@@ -88,6 +88,49 @@ export class QuestionBankService {
   async create(dto: CreateQuestionDto, user: AuthUser) {
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
     await this.assertTeacherSubject(teacherId, dto.subject);
+    if (dto.requestId) {
+      const data = this.questionData(dto);
+      const batchKey = `manual:${dto.requestId}`;
+      const rowKey = 'question';
+      const fingerprint = this.questionIdentityFingerprint(data);
+      return this.prisma.$transaction(async (tx) => {
+        await this.lockQuestionImportRow(tx, teacherId, batchKey, rowKey);
+        const ledger = await tx.questionImportRow.upsert({
+          where: { teacherId_batchKey_rowKey: { teacherId, batchKey, rowKey } },
+          create: { teacherId, batchKey, rowKey, payloadFingerprint: fingerprint },
+          update: {},
+          select: { payloadFingerprint: true, questionId: true, status: true },
+        });
+        if (ledger.payloadFingerprint !== fingerprint)
+          throw new ConflictException(
+            'Permintaan simpan ini sudah dipakai untuk isi soal berbeda.',
+          );
+        if (ledger.status === 'imported' && !ledger.questionId)
+          throw new ConflictException(
+            'Soal dari permintaan ini sudah dihapus. Muat ulang Bank Soal.',
+          );
+        if (ledger.questionId) {
+          const saved = await tx.question.findFirst({
+            where: { id: ledger.questionId, teacherId },
+            select: QUESTION_SELECT,
+          });
+          if (!saved)
+            throw new ConflictException(
+              'Soal dari permintaan ini sudah dihapus. Muat ulang Bank Soal.',
+            );
+          return saved;
+        }
+        const saved = await tx.question.create({
+          data: { teacherId, ...data },
+          select: QUESTION_SELECT,
+        });
+        await tx.questionImportRow.update({
+          where: { teacherId_batchKey_rowKey: { teacherId, batchKey, rowKey } },
+          data: { questionId: saved.id, status: 'imported', errorMessage: null },
+        });
+        return saved;
+      });
+    }
     return this.prisma.question.create({
       data: {
         teacherId,
@@ -102,7 +145,16 @@ export class QuestionBankService {
       ...(query.subject ? { subject: query.subject } : {}),
       ...(query.type ? { type: query.type } : {}),
       ...(query.difficulty ? { difficulty: query.difficulty } : {}),
-      ...(query.tags ? { tags: { hasSome: query.tags.split(',').map((tag) => tag.trim()).filter(Boolean) } } : {}),
+      ...(query.tags
+        ? {
+            tags: {
+              hasSome: query.tags
+                .split(',')
+                .map((tag) => tag.trim())
+                .filter(Boolean),
+            },
+          }
+        : {}),
       ...(query.search
         ? {
             OR: [
@@ -258,24 +310,30 @@ export class QuestionBankService {
   }
 
   async exportQuestionsCsv(subject: string | undefined, user: AuthUser) {
-    const first = await this.findAll({ page: 1, limit: 100, ...(subject ? { subject } : {}) }, user);
+    const first = await this.findAll(
+      { page: 1, limit: 100, ...(subject ? { subject } : {}) },
+      user,
+    );
     const pages = Math.ceil(first.total / first.limit);
     const pageResults = await Promise.all(
       Array.from({ length: Math.max(0, pages - 1) }, (_, index) =>
-        this.findAll({ page: index + 2, limit: 100, ...(subject ? { subject } : {}) }, user)),
+        this.findAll({ page: index + 2, limit: 100, ...(subject ? { subject } : {}) }, user),
+      ),
     );
     const questions = [first, ...pageResults].flatMap((page) => page.data);
     const header = 'type,subject,body,options,answer,difficulty,tags,rubric';
-    const rows = questions.map((question) => [
-      sanitizeCsvCell(question.type),
-      sanitizeCsvCell(question.subject),
-      sanitizeCsvCell(question.body),
-      sanitizeCsvCell(question.options),
-      sanitizeCsvCell(question.answer ?? ''),
-      sanitizeCsvCell(question.difficulty),
-      sanitizeCsvCell(question.tags),
-      sanitizeCsvCell(question.rubric),
-    ].join(','));
+    const rows = questions.map((question) =>
+      [
+        sanitizeCsvCell(question.type),
+        sanitizeCsvCell(question.subject),
+        sanitizeCsvCell(question.body),
+        sanitizeCsvCell(question.options),
+        sanitizeCsvCell(question.answer ?? ''),
+        sanitizeCsvCell(question.difficulty),
+        sanitizeCsvCell(question.tags),
+        sanitizeCsvCell(question.rubric),
+      ].join(','),
+    );
 
     return { csv: [header, ...rows].join('\n'), count: questions.length };
   }
@@ -311,21 +369,27 @@ export class QuestionBankService {
               payloadFingerprint: fingerprint,
             },
             update: {},
-            select: { payloadFingerprint: true, questionId: true },
+            select: { payloadFingerprint: true, questionId: true, status: true },
           });
           if (ledger.payloadFingerprint !== fingerprint) {
             throw new ConflictException('Row import sudah dipakai untuk payload berbeda');
           }
+          if (ledger.status === 'imported' && !ledger.questionId)
+            throw new ConflictException(
+              'Soal dari baris impor ini sudah dihapus. Gunakan batch baru bila ingin menambahkan soal baru.',
+            );
           if (ledger.questionId) return;
 
           const existing = await this.findQuestionByFullFingerprint(tx, teacherId, data);
-          const question = existing ?? await tx.question.create({
-            data: {
-              teacherId,
-              ...data,
-            },
-            select: { id: true },
-          });
+          const question =
+            existing ??
+            (await tx.question.create({
+              data: {
+                teacherId,
+                ...data,
+              },
+              select: { id: true },
+            }));
           await tx.questionImportRow.update({
             where: {
               teacherId_batchKey_rowKey: {
@@ -342,9 +406,12 @@ export class QuestionBankService {
         errors.push({
           row: i + 1,
           column: row.rowKey,
-          message: error instanceof BadRequestException || error instanceof ConflictException || error instanceof ForbiddenException
-            ? error.message
-            : 'Baris tidak dapat diimpor. Periksa format dan duplikasi data.',
+          message:
+            error instanceof BadRequestException ||
+            error instanceof ConflictException ||
+            error instanceof ForbiddenException
+              ? error.message
+              : 'Baris tidak dapat diimpor. Periksa format dan duplikasi data.',
         });
       }
     }
@@ -360,7 +427,9 @@ export class QuestionBankService {
   ): Promise<void> {
     const rawTx = tx as unknown as { $executeRaw?: (query: unknown) => Promise<unknown> };
     if (typeof rawTx.$executeRaw !== 'function') return;
-    const [left, right] = this.advisoryLockPair(`question-import:${teacherId}:${batchKey}:${rowKey}`);
+    const [left, right] = this.advisoryLockPair(
+      `question-import:${teacherId}:${batchKey}:${rowKey}`,
+    );
     await rawTx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(${left}::int, ${right}::int)`);
   }
 
@@ -402,7 +471,10 @@ export class QuestionBankService {
       },
     });
     const expected = this.questionIdentityFingerprint(data);
-    return candidates.find((candidate) => this.questionIdentityFingerprint(candidate) === expected) ?? null;
+    return (
+      candidates.find((candidate) => this.questionIdentityFingerprint(candidate) === expected) ??
+      null
+    );
   }
 
   private questionIdentityFingerprint(value: {

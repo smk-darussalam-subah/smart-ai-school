@@ -8,6 +8,7 @@ export interface SiswaModul {
   uuid?: string; // T3-06: real module UUID for PATCH /lms/modules/:id/progress
   tp: string;
   judul: string;
+  content?: string | null;
   alokasi: string;
   kktp: number;
   status: 'Selesai' | 'Aktif' | 'Terkunci';
@@ -36,6 +37,9 @@ export interface SiswaTugas {
   id: number;
   uuid?: string;
   assessmentSessionId?: string;
+  sourceKind?: 'lms' | 'assessment';
+  progress?: number;
+  attemptStarted?: boolean;
   purpose?: 'regular' | 'remedial';
   sessionStatus?: string;
   dueAt?: string | null;
@@ -51,7 +55,7 @@ export interface SiswaTugas {
   type: string;
   deadline: string;
   dlDays: number;
-  status: 'pending' | 'submitted' | 'graded';
+  status: 'pending' | 'submitted' | 'graded' | 'closed';
   lateSubmissionStatus?: 'pending' | 'accepted' | 'rejected' | null;
   guru: string;
   desc: string;
@@ -176,7 +180,7 @@ export interface SiswaKehadiranStats {
   sakit: number;
   alpha: number;
   total: number;
-  pct: number;
+  pct: number | null;
 }
 
 // ── XP / Level ─────────────────────────────────────────────────────────────

@@ -54,6 +54,7 @@ export type UpdateAssessmentSessionDto = z.infer<typeof UpdateAssessmentSessionS
 
 export const ListAssessmentSessionSchema = z
   .object({
+    scope: z.literal('own').optional(),
     moduleId: z.string().uuid().optional(),
     status: z.enum(['draft', 'active', 'completed', 'cancelled']).optional(),
     purpose: z.enum(['regular', 'remedial']).optional(),

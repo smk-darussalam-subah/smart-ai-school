@@ -1,4 +1,5 @@
 'use client';
+import QuestionContent from '@/components/learning/QuestionContent';
 
 // EssayGradingModal — U2 Wave 2: Manual essay grading with rubrik.
 // GURU views essay responses for a completed session, enters per-criteria
@@ -55,7 +56,7 @@ export default function EssayGradingModal({ sessionId, questions, responses, onC
   if (responses.length === 0) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-        <div className="max-w-md rounded-2xl bg-white p-6 text-center shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div role="dialog" aria-modal="true" aria-label="Koreksi esai" className="max-w-md rounded-2xl bg-white p-6 text-center shadow-xl" onClick={(e) => e.stopPropagation()}>
           <GraduationCap className="mx-auto h-8 w-8 text-[#9bb0a8]" />
           <p className="mt-2 text-[13px] font-medium text-[#6b8079]">Tidak ada respons essay yang perlu dinilai.</p>
           <button type="button" onClick={onClose} className="mt-4 rounded-lg border border-[#e6efea] bg-white px-4 py-2 text-[12px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>
@@ -151,7 +152,7 @@ export default function EssayGradingModal({ sessionId, questions, responses, onC
                   <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">Essay #{qi + 1}</span>
                   {isSaved && <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600"><Check className="h-3 w-3" />Tersimpan</span>}
                 </div>
-                <p className="mt-2 text-[12.5px] text-[#0f2e25]">{q.body}</p>
+                <div className="mt-2 text-[#0f2e25]"><QuestionContent body={q.body} /></div>
                 <div className="mt-2 rounded-lg border border-dashed border-[#e6efea] bg-[#f9fbfa] px-3 py-2 text-[11.5px] text-[#355a4e]">
                   <span className="font-bold text-[#6b8079]">Jawaban siswa: </span>{answerText}
                 </div>

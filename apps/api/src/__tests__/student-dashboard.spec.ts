@@ -15,7 +15,12 @@ const ORTU: AuthUser = {
 } as AuthUser;
 
 describe('StudentDashboardService remedial visibility', () => {
-  it('projects a started but unsubmitted assessment as pending after reload', async () => {
+  it.each([
+    ['active', false, 'pending'],
+    ['active', true, 'pending'],
+    ['completed', false, 'closed'],
+    ['completed', true, 'pending'],
+  ])('projects regular %s started=%s as %s', async (sessionStatus, started, expected) => {
     const prisma = {
       user: { findUnique: jest.fn().mockResolvedValue({ id: 'user-siswa' }) },
       student: {
@@ -35,7 +40,7 @@ describe('StudentDashboardService remedial visibility', () => {
             id: 'session-1',
             title: 'Formatif HTML',
             type: 'formatif',
-            status: 'active',
+            status: sessionStatus,
             purpose: 'regular',
             academicYear: '2026/2027',
             semester: 1,
@@ -44,7 +49,7 @@ describe('StudentDashboardService remedial visibility', () => {
             module: { subject: 'Pemrograman Web', kktp: 75 },
             teachingAssignment: null,
             remedialParticipants: [],
-            responses: [{ score: null, submittedAt: null, lateSubmissionStatus: null }],
+            responses: started ? [{ score: null, startedAt: new Date(), submittedAt: null, lateSubmissionStatus: null }] : [],
           },
         ]),
       },
@@ -58,7 +63,9 @@ describe('StudentDashboardService remedial visibility', () => {
 
     expect(result.data[0]?.assignments[0]).toMatchObject({
       id: 'session-1',
-      status: 'pending',
+      status: expected,
+      sessionStatus,
+      attemptStarted: started,
     });
   });
 

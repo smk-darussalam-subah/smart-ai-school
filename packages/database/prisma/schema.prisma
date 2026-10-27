@@ -52,6 +52,7 @@ model User {
   leads       PpdbLead[] @relation("AssignedLeads")
   semesterClosures SemesterClosure[]
   staffAttendances StaffAttendance[]
+  recordedSessionAttendance StudentSessionAttendance[]
 
   @@index([role])
   @@index([isActive])
@@ -245,6 +246,7 @@ model Student {
   parent      User?        @relation("ParentStudent", fields: [parentId], references: [id])
   grades      Grade[]
   attendance  Attendance[]
+  sessionAttendance StudentSessionAttendance[]
   reportCards ReportCard[]
   sppPayments SppPayment[]
   lmsProgress LmsModuleProgress[]
@@ -467,6 +469,29 @@ model Attendance {
   @@unique([studentId, classId, date])
   @@index([classId, date])
   @@map("attendance")
+  @@schema("academic")
+}
+
+// One recorded decision per student/session/JP. Legacy daily Attendance is untouched.
+model StudentSessionAttendance {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId String @map("student_id") @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+  jp Int
+  status AttendanceStatus
+  notes String? @db.VarChar(1000)
+  recordedBy String @map("recorded_by") @db.Uuid
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  session ClassSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  recorder User @relation(fields: [recordedBy], references: [id], onDelete: Restrict)
+
+  @@unique([studentId, sessionId, jp])
+  @@index([sessionId])
+  @@map("student_session_attendance")
   @@schema("academic")
 }
 
@@ -797,6 +822,23 @@ enum OperationalActorType {
   @@schema("academic")
 }
 
+// Explicit opt-in per semester. Missing configuration is disabled.
+model ClassSessionActivation {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  semesterId  String    @unique @map("semester_id") @db.Uuid
+  enabled     Boolean   @default(false)
+  revision    Int       @default(1)
+  activatedAt DateTime? @map("activated_at") @db.Timestamptz(3)
+  changedBy   String    @map("changed_by") @db.VarChar(255)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  semester Semester @relation(fields: [semesterId], references: [id], onDelete: Restrict)
+
+  @@map("class_session_activations")
+  @@schema("academic")
+}
+
 model ClassSession {
   id                    String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   scheduleId            String             @map("schedule_id") @db.Uuid
@@ -844,6 +886,7 @@ model ClassSession {
   scheduledTeacher    Teacher             @relation("ClassSessionScheduledTeacher", fields: [scheduledTeacherId], references: [id], onDelete: Restrict)
   assignedTeacher     Teacher             @relation("ClassSessionAssignedTeacher", fields: [assignedTeacherId], references: [id], onDelete: Restrict)
   events              ClassSessionEvent[]
+  studentAttendance   StudentSessionAttendance[]
   alerts              ClassSessionAlert[]
 
   @@unique([scheduleId, serviceDate])
@@ -1766,6 +1809,7 @@ model Semester {
   nextClosure    SemesterClosure? @relation("SemesterClosureNext")
   classSessions ClassSession[]
   schedulingVersions SchedulingVersion[]
+  classSessionActivation ClassSessionActivation?
 
   @@unique([academicYearId, number])
   @@map("semesters")

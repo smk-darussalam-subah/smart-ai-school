@@ -17,14 +17,15 @@ interface Props {
   availability?: TeacherSummaryAvailability;
   thresholds?: TeacherThreshold[];
   todayDate?: string;
-  onAbsen: (c: { classId: string; className: string }) => void;
+  onAbsen: (c: TodayClass) => void;
   onJurnal: (c: { classId: string; className: string; subject: string; startLabel: string; jpStart: number }) => void;
   onNavigate?: (screen: string) => void;
   onStartSession?: (c: TodayClass) => void;
+  canReadClassSessions?: boolean;
   onPenilaian?: (c: TodayClass) => void;
 }
 
-export default function RingkasanGuru({ grades, attendances, activities, rpp, todayClasses: suppliedTodayClasses, availability, thresholds = [], todayDate, onAbsen, onJurnal, onNavigate, onStartSession, onPenilaian }: Props) {
+export default function RingkasanGuru({ grades, attendances, activities, rpp, todayClasses: suppliedTodayClasses, availability, thresholds = [], todayDate, onAbsen, onJurnal, onNavigate, onStartSession, onPenilaian, canReadClassSessions = false }: Props) {
   // Missing read metadata must not certify a successful empty dataset.
   const reads = availability ?? { grades: 'unavailable', attendance: 'unavailable', journal: 'unavailable', rpp: 'unavailable', assessments: 'unavailable', kktp: 'unavailable', today: 'unavailable' };
   const todayState = reads.today === 'ready' && todayDate !== wibTodayISO() ? 'unavailable' : reads.today;
@@ -58,6 +59,7 @@ export default function RingkasanGuru({ grades, attendances, activities, rpp, to
 
   return (
     <div className="space-y-4">
+      {canReadClassSessions && <a href="/dashboard/jadwal#today-class-sessions" className="inline-flex min-h-11 items-center gap-2 font-bold text-emerald-800 underline"><PlayCircle className="h-4 w-4" aria-hidden="true" />Sesi pembelajaran</a>}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi icon={Target} label="Nilai mencapai KKTP" value={tuntas !== null ? `${tuntas}%` : '—'} sub={reads.grades !== 'ready' ? summaryReadMessage(reads.grades, 'Nilai') : reads.kktp !== 'ready' ? summaryReadMessage(reads.kktp, 'KKTP resmi') : gradeSummary.unknown ? `KKTP untuk ${gradeSummary.unknown} record belum tersedia.` : tuntas !== null ? `${gradeSummary.passed} dari ${gradeSummary.records} record nilai` : 'Belum ada record nilai.'} tooltip="Persentase record nilai yang mencapai KKTP resmi mapelnya. Satu siswa dapat memiliki beberapa record; ini bukan jumlah siswa atau nilai akhir rapor." />
         <Kpi icon={GraduationCap} label="Rata-rata record nilai" value={rata !== null ? `${rata}` : '—'} sub={reads.grades !== 'ready' ? summaryReadMessage(reads.grades, 'Nilai') : gradeSummary.records ? `dari ${gradeSummary.records} record nilai` : 'Belum ada record nilai.'} tooltip="Rata-rata nilai yang tercatat, bukan NA berbobot per siswa dan mapel." />
@@ -91,8 +93,8 @@ export default function RingkasanGuru({ grades, attendances, activities, rpp, to
                     {c.isNow && <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-extrabold text-emerald-700">Rentang jadwal</span>}
                   </div>
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    {onStartSession && <button type="button" onClick={() => canActToday() && onStartSession(c)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-[12.5px] font-bold text-white hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"><PlayCircle className="h-4 w-4" />Mulai Sesi</button>}
-                    <button type="button" onClick={() => canActToday() && onAbsen({ classId: c.classId, className: c.className })} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[#d5e2dc] bg-white px-3 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"><CalendarCheck className="h-4 w-4 text-emerald-700" />Absen</button>
+                    {onStartSession && <button type="button" onClick={() => canActToday() && onStartSession(c)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-[12.5px] font-bold text-white hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"><PlayCircle className="h-4 w-4" />Panduan mengajar</button>}
+                    <button type="button" onClick={() => canActToday() && onAbsen(c)} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[#d5e2dc] bg-white px-3 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"><CalendarCheck className="h-4 w-4 text-emerald-700" />Absen sesi</button>
                     <button type="button" onClick={() => canActToday() && onJurnal({ classId: c.classId, className: c.className, subject: c.subject, startLabel: c.startLabel, jpStart: c.jpStart })} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[#d5e2dc] bg-white px-3 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"><PenLine className="h-4 w-4 text-emerald-700" />Jurnal</button>
                     {onPenilaian && <button type="button" onClick={() => canActToday() && onPenilaian(c)} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[#d5e2dc] bg-white px-3 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"><ClipboardPenLine className="h-4 w-4 text-emerald-700" />Nilai</button>}
                   </div>

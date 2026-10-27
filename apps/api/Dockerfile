@@ -19,9 +19,11 @@ COPY packages/ ./packages/
 
 # Copy API app
 COPY apps/api/ ./apps/api/
+COPY scripts/verify-dependency-graph.cjs ./scripts/verify-dependency-graph.cjs
 
 # Install semua workspace dependencies dari root
 RUN npm ci
+RUN node scripts/verify-dependency-graph.cjs
 
 # ─── Step 1: Build workspace packages dalam urutan dependency ─────────────────
 # Packages memiliki "main": "./dist/index.js" — harus dikompilasi dulu

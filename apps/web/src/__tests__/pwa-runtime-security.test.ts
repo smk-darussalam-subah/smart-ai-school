@@ -35,6 +35,12 @@ import {
 
 const loadCommonJsModule = createRequire(__filename);
 const DELIVERY_PROOF = 'a'.repeat(64);
+const DELIVERY_CONTEXT = {
+  version: 2,
+  messageId: '12000000-0000-4000-8000-000000000004',
+  refType: null,
+  refId: null,
+};
 
 function source(relativePath: string): string {
   return readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
@@ -726,6 +732,7 @@ describe('DIIS service-worker behavior', () => {
           json: () => ({
             title: 'Pembaruan',
             body: 'Ada pembaruan.',
+            delivery: DELIVERY_CONTEXT,
             deliveryProof: DELIVERY_PROOF,
           }),
         },
@@ -762,7 +769,13 @@ describe('DIIS service-worker behavior', () => {
     await worker.put(DIIS_PUSH_STATE_URL, new Response('signed-in'));
     await expect(worker.api.readPushDeliveryState()).resolves.toBe('signed-out');
     await worker.waitEvent('push', {
-      data: { json: () => ({ title: 'Legacy owner update', deliveryProof: DELIVERY_PROOF }) },
+      data: {
+        json: () => ({
+          title: 'Legacy owner update',
+          delivery: DELIVERY_CONTEXT,
+          deliveryProof: DELIVERY_PROOF,
+        }),
+      },
     });
     expect(worker.showNotification).not.toHaveBeenCalled();
   });
@@ -781,6 +794,7 @@ describe('DIIS service-worker behavior', () => {
           json: () => ({
             title: 'Private update',
             body: 'Old owner payload',
+            delivery: DELIVERY_CONTEXT,
             deliveryProof: DELIVERY_PROOF,
           }),
         },
@@ -845,7 +859,13 @@ describe('DIIS service-worker behavior', () => {
       }),
     );
     await worker.waitEvent('push', {
-      data: { json: () => ({ title: 'Private A', deliveryProof: DELIVERY_PROOF }) },
+      data: {
+        json: () => ({
+          title: 'Private A',
+          delivery: DELIVERY_CONTEXT,
+          deliveryProof: DELIVERY_PROOF,
+        }),
+      },
     });
     expect(worker.showNotification).not.toHaveBeenCalled();
     expect(worker.fetchMock).toHaveBeenCalledWith(
@@ -855,7 +875,11 @@ describe('DIIS service-worker behavior', () => {
         credentials: 'same-origin',
         cache: 'no-store',
         redirect: 'error',
-        body: JSON.stringify({ endpoint: subscription.endpoint, proof: DELIVERY_PROOF }),
+        body: JSON.stringify({
+          endpoint: subscription.endpoint,
+          proof: DELIVERY_PROOF,
+          message: { ...DELIVERY_CONTEXT, title: 'Private A' },
+        }),
       }),
     );
     expect(subscription.unsubscribe).not.toHaveBeenCalled();
@@ -869,7 +893,13 @@ describe('DIIS service-worker behavior', () => {
     await worker.waitEvent('push', { data: { json: () => ({ title: 'No proof' }) } });
     worker.fetchMock.mockRejectedValueOnce(new Error('offline'));
     await worker.waitEvent('push', {
-      data: { json: () => ({ title: 'Network failed', deliveryProof: DELIVERY_PROOF }) },
+      data: {
+        json: () => ({
+          title: 'Network failed',
+          delivery: DELIVERY_CONTEXT,
+          deliveryProof: DELIVERY_PROOF,
+        }),
+      },
     });
     worker.fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ deliver: false }), {
@@ -878,7 +908,13 @@ describe('DIIS service-worker behavior', () => {
       }),
     );
     await worker.waitEvent('push', {
-      data: { json: () => ({ title: 'Session denied', deliveryProof: DELIVERY_PROOF }) },
+      data: {
+        json: () => ({
+          title: 'Session denied',
+          delivery: DELIVERY_CONTEXT,
+          deliveryProof: DELIVERY_PROOF,
+        }),
+      },
     });
     expect(worker.showNotification).not.toHaveBeenCalled();
     expect(worker.fetchMock).toHaveBeenCalledTimes(2);
@@ -939,6 +975,7 @@ describe('DIIS service-worker behavior', () => {
         json: () => ({
           title: 'Old owner update',
           body: 'Private payload',
+          delivery: DELIVERY_CONTEXT,
           deliveryProof: DELIVERY_PROOF,
         }),
       },
@@ -1083,7 +1120,13 @@ describe('DIIS service-worker behavior', () => {
     });
     expect(unsubscribe).not.toHaveBeenCalled();
     await worker.waitEvent('push', {
-      data: { json: () => ({ title: 'New owner update', deliveryProof: DELIVERY_PROOF }) },
+      data: {
+        json: () => ({
+          title: 'New owner update',
+          delivery: DELIVERY_CONTEXT,
+          deliveryProof: DELIVERY_PROOF,
+        }),
+      },
     });
     expect(worker.showNotification).toHaveBeenCalledTimes(1);
   });
@@ -1138,7 +1181,13 @@ describe('DIIS service-worker behavior', () => {
     });
     expect(unsubscribe).not.toHaveBeenCalled();
     await worker.waitEvent('push', {
-      data: { json: () => ({ title: 'New owner update', deliveryProof: DELIVERY_PROOF }) },
+      data: {
+        json: () => ({
+          title: 'New owner update',
+          delivery: DELIVERY_CONTEXT,
+          deliveryProof: DELIVERY_PROOF,
+        }),
+      },
     });
     expect(worker.showNotification).toHaveBeenCalledTimes(1);
   });
@@ -1184,7 +1233,13 @@ describe('DIIS service-worker behavior', () => {
       await expect(worker.api.readPushDeliveryState()).resolves.toBe('signed-out');
       expect(unsubscribe).not.toHaveBeenCalled();
       await worker.waitEvent('push', {
-        data: { json: () => ({ title: 'Private update', deliveryProof: DELIVERY_PROOF }) },
+        data: {
+          json: () => ({
+            title: 'Private update',
+            delivery: DELIVERY_CONTEXT,
+            deliveryProof: DELIVERY_PROOF,
+          }),
+        },
       });
       expect(worker.showNotification).not.toHaveBeenCalled();
     }

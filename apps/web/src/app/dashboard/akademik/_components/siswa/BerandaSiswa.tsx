@@ -2,21 +2,52 @@
 
 import React, { useMemo } from 'react';
 import {
-  Flame, UserCheck, TrendingUp, ClipboardList, Award, CalendarClock,
-  PlayCircle, ChevronRight, Target, CheckCircle,
+  Flame,
+  UserCheck,
+  TrendingUp,
+  ClipboardList,
+  Award,
+  CalendarClock,
+  PlayCircle,
+  ChevronRight,
+  Target,
+  CheckCircle,
 } from 'lucide-react';
 import { useBellPattern } from '@/components/providers/BellPatternProvider';
 import { wibNow } from '@/lib/bell-times';
-import { mpColor, mpIcon, studentDayPattern, resolveSchedule, studentLessonPhase } from './siswa-data';
+import {
+  mpColor,
+  mpIcon,
+  studentDayPattern,
+  resolveSchedule,
+  studentLessonPhase,
+} from './siswa-data';
 import ScheduleAlternatives from './ScheduleAlternatives';
 import LearnerScheduleNotice from '../LearnerScheduleNotice';
 import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import type { SiswaScreen, ModalState } from './SiswaWorkspace';
-import type { SiswaNilai, SiswaTugas, SiswaBadge, SiswaModul, SiswaQuest, SiswaXP, SiswaKehadiranStats } from './siswa-types';
-import { learnerGradeSummary, learnerGradeStatus, type LearnerGradeState } from '@/lib/learner-grades';
+import type {
+  SiswaNilai,
+  SiswaTugas,
+  SiswaBadge,
+  SiswaModul,
+  SiswaQuest,
+  SiswaXP,
+  SiswaKehadiranStats,
+} from './siswa-types';
+import {
+  learnerGradeSummary,
+  learnerGradeStatus,
+  type LearnerGradeState,
+} from '@/lib/learner-grades';
 import { LearnerGradeNotice } from '../LearnerGradeView';
+import LearnerSessionAttendance from '../LearnerSessionAttendance';
+import type { LearnerAttendanceState } from '@/lib/learner-attendance';
+import DashboardReadNotice from '../DashboardReadNotice';
+import type { DashboardReadState } from '@/lib/learner-dashboard-read';
 
 interface Props {
+  attendancePeriod?: import('@/lib/learner-attendance').AttendancePeriod;
   showToast: (msg: string) => void;
   go: (screen: SiswaScreen) => void;
   setModal: (modal: ModalState) => void;
@@ -25,19 +56,42 @@ interface Props {
   grades: SiswaNilai[];
   gradeState?: LearnerGradeState;
   tasks: SiswaTugas[];
+  taskState?: DashboardReadState;
+  onRetryTasks?: () => void;
   badges: SiswaBadge[];
   modules: SiswaModul[];
   recentlyCompletedModule?: SiswaModul | null;
   quest: SiswaQuest;
   xp: SiswaXP;
   kehStats: SiswaKehadiranStats;
+  attendanceState?: LearnerAttendanceState;
   schedule?: unknown[];
   scheduleState?: LearnerScheduleState;
   userName?: string | null;
   studentClassName?: string | null;
 }
 
-export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId, grades: suppliedGrades, gradeState = 'ready', tasks, badges, modules, recentlyCompletedModule, quest, xp, kehStats, schedule, scheduleState = 'ready', userName, studentClassName }: Props) {
+export default function BerandaSiswa({
+  showToast,
+  go,
+  setModal,
+  setActiveModulId,
+  grades: suppliedGrades,
+  gradeState = 'ready',
+  tasks: suppliedTasks,
+  taskState = 'ready',
+  onRetryTasks,
+  badges,
+  modules,
+  recentlyCompletedModule,
+  quest,
+  xp,
+  attendancePeriod,
+  schedule,
+  scheduleState = 'ready',
+  userName,
+  studentClassName,
+}: Props) {
   const grades = gradeState === 'ready' ? suppliedGrades : [];
   const now = wibNow();
   const dow = now.jsDay || 7;
@@ -48,10 +102,12 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
   const summary = learnerGradeSummary(grades);
   const avgNilai = summary.average;
 
-  const pendingTasks = useMemo(() => tasks.filter((t) => t.status === 'pending'), [tasks]);
+  const pendingTasks = useMemo(
+    () => (taskState === 'ready' ? suppliedTasks.filter((t) => t.status === 'pending') : []),
+    [suppliedTasks, taskState],
+  );
   const earnedBadges = useMemo(() => badges.filter((b) => b.earned).length, [badges]);
   const activeModul = useMemo(() => modules.find((m) => m.status === 'Aktif'), [modules]);
-  const hasAttendance = (kehStats?.total ?? 0) > 0;
 
   // Daily quest progress
   const qDone = quest.tasks.filter((t) => t.done).length;
@@ -60,14 +116,16 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
   const qCirc = 2 * Math.PI * 22;
 
   // Today's schedule uses owned API data, never a simulated fallback.
-  const { schedule: schedData, isSim: isSimSchedule, timingAvailable } = resolveSchedule(schedule, bell.profile);
+  const {
+    schedule: schedData,
+    isSim: isSimSchedule,
+    timingAvailable,
+  } = resolveSchedule(schedule, bell.profile);
   const daySched = schedData[dow] || {};
   const hasSched = Object.keys(daySched).length > 0;
 
   // Urgent tasks (top 3)
-  const urgentTasks = pendingTasks
-    .sort((a, b) => a.dlDays - b.dlDays)
-    .slice(0, 3);
+  const urgentTasks = pendingTasks.sort((a, b) => a.dlDays - b.dlDays).slice(0, 3);
 
   // Recent grades (top 4)
   const recentGrades = grades.slice(0, 4);
@@ -83,23 +141,40 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
         <div className="relative z-10 flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <h1 className="text-2xl font-extrabold tracking-tight">
-              Halo, {userName || 'Siswa'}! <span className="inline-block animate-[wave_1.5s_ease_infinite]">👋</span>
+              Halo, {userName || 'Siswa'}!{' '}
+              <span className="inline-block animate-[wave_1.5s_ease_infinite]">👋</span>
             </h1>
-            <p className="mt-1 text-sm font-semibold text-[var(--muted)]">{studentClassName || '—'} · SMK Darussalam Subah</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--muted)]">
+              {studentClassName || '—'} · SMK Darussalam Subah
+            </p>
             {xp.streakDays != null && xp.streakDays > 0 && (
               <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-amber-500/25 bg-amber-500/12 px-3 py-1 text-[11px] font-extrabold text-amber-500">
-                <Flame className="h-3.5 w-3.5" />{xp.streakDays} hari streak kehadiran!
+                <Flame className="h-3.5 w-3.5" />
+                {xp.streakDays} hari streak kehadiran!
               </span>
             )}
           </div>
           <button
-            onClick={() => showToast(qTotal > 0 ? 'Daily Quest: Selesaikan quest hari ini!' : 'Daily Quest belum tersedia hari ini.')}
+            onClick={() =>
+              showToast(
+                qTotal > 0
+                  ? 'Daily Quest: Selesaikan quest hari ini!'
+                  : 'Daily Quest belum tersedia hari ini.',
+              )
+            }
             className="relative z-10 flex-shrink-0 text-center"
             aria-label="Daily Quest"
           >
             <div className="relative mx-auto h-14 w-14">
               <svg className="-rotate-90" width="56" height="56">
-                <circle cx="28" cy="28" r="22" stroke="var(--ring-bg)" strokeWidth="5" fill="none" />
+                <circle
+                  cx="28"
+                  cy="28"
+                  r="22"
+                  stroke="var(--ring-bg)"
+                  strokeWidth="5"
+                  fill="none"
+                />
                 <circle
                   cx="28"
                   cy="28"
@@ -125,6 +200,9 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
       </div>
 
       {/* Stat Cards Grid */}
+      <div className="px-5 pb-4">
+        <LearnerSessionAttendance shell="siswa" period={attendancePeriod} compact />
+      </div>
       <div className="grid grid-cols-2 gap-2.5 px-5 pb-4">
         <button
           onClick={() => go('kehadiran')}
@@ -133,19 +211,8 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
           <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-500">
             <UserCheck className="h-4 w-4" />
           </div>
-          <div className="text-xl font-extrabold tracking-tight">
-            {hasAttendance ? (
-              <>
-                {kehStats.pct}<small className="text-sm font-bold text-[var(--muted)]">%</small>
-              </>
-            ) : '—'}
-          </div>
-          <div className="mt-0.5 text-[10.5px] font-bold text-[var(--muted)]">Kehadiran</div>
-          <div className={`mt-0.5 text-[10px] font-extrabold ${hasAttendance ? 'text-emerald-500' : 'text-[var(--muted)]'}`}>
-            {hasAttendance
-              ? xp.streakDays != null && xp.streakDays > 0 ? `+ ${xp.streakDays} hari streak` : 'tercatat'
-              : 'belum ada presensi'}
-          </div>
+          <div className="text-base font-bold">Kalender kehadiran</div>
+          <div className="mt-1 text-[11px] text-[var(--muted)]">Lihat rincian sesi per tanggal</div>
         </button>
 
         <button
@@ -155,10 +222,18 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
           <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/12 text-violet-500">
             <TrendingUp className="h-4 w-4" />
           </div>
-          <div className="text-xl font-extrabold tracking-tight">{avgNilai !== null ? avgNilai : '—'}</div>
+          <div className="text-xl font-extrabold tracking-tight">
+            {avgNilai !== null ? avgNilai : '—'}
+          </div>
           <div className="mt-0.5 text-[10.5px] font-bold text-[var(--muted)]">Rata² Nilai</div>
           <div className="mt-0.5 text-[10px] font-extrabold text-[var(--muted)]">
-            {gradeState !== 'ready' ? 'Nilai belum tersedia' : summary.assessed ? `${summary.tuntas}/${summary.assessed} tuntas` : grades.length ? 'KKTP belum tersedia' : 'belum ada nilai'}
+            {gradeState !== 'ready'
+              ? 'Nilai belum tersedia'
+              : summary.assessed
+                ? `${summary.tuntas}/${summary.assessed} tuntas`
+                : grades.length
+                  ? 'KKTP belum tersedia'
+                  : 'belum ada nilai'}
           </div>
         </button>
 
@@ -169,10 +244,22 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
           <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/12 text-amber-500">
             <ClipboardList className="h-4 w-4" />
           </div>
-          <div className="text-xl font-extrabold tracking-tight">{pendingTasks.length}</div>
+          <div className="text-xl font-extrabold tracking-tight">
+            {taskState === 'ready' ? pendingTasks.length : '—'}
+          </div>
           <div className="mt-0.5 text-[10.5px] font-bold text-[var(--muted)]">Tugas Pending</div>
-          <div className={`mt-0.5 text-[10px] font-extrabold ${pendingTasks.length > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-            {pendingTasks.length > 0 ? 'perlu dikerjakan' : 'tidak ada tugas'}
+          <div
+            className={`mt-0.5 text-[10px] font-extrabold ${taskState !== 'ready' ? 'text-[var(--muted)]' : pendingTasks.length > 0 ? 'text-rose-500' : 'text-emerald-500'}`}
+          >
+            {taskState === 'ready'
+              ? pendingTasks.length > 0
+                ? 'perlu dikerjakan'
+                : 'tidak ada tugas'
+              : taskState === 'loading'
+                ? 'Memuat…'
+                : taskState === 'denied'
+                  ? 'Akses terbatas'
+                  : 'Belum dapat dimuat'}
           </div>
         </button>
 
@@ -192,12 +279,17 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
       {/* Content Area */}
       <div className="px-5 pt-0 space-y-3">
         {recentlyCompletedModule && (
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2.5" role="status">
+          <div
+            className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2.5"
+            role="status"
+          >
             <div className="flex min-w-0 items-center gap-2">
               <CheckCircle className="h-4 w-4 flex-shrink-0 text-emerald-500" aria-hidden="true" />
               <div className="min-w-0">
                 <div className="text-[11px] font-extrabold text-emerald-500">Selesai</div>
-                <div className="truncate text-[11px] font-semibold text-[var(--muted)]">{recentlyCompletedModule.judul}</div>
+                <div className="truncate text-[11px] font-semibold text-[var(--muted)]">
+                  {recentlyCompletedModule.judul}
+                </div>
               </div>
             </div>
             <span className="flex-shrink-0 text-[11px] font-extrabold text-emerald-500">100%</span>
@@ -209,7 +301,8 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
           <div className="rounded-2xl border border-emerald-500/20 bg-[var(--surface)] p-4 shadow-[0_0_0_1px_rgba(16,185,129,.1),0_4px_24px_-8px_rgba(16,185,129,.15)]">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted)]">
-                <PlayCircle className="h-3.5 w-3.5 text-emerald-500" />Lanjutkan Belajar
+                <PlayCircle className="h-3.5 w-3.5 text-emerald-500" />
+                Lanjutkan Belajar
               </div>
               <button
                 onClick={() => go('modul')}
@@ -224,13 +317,17 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
             >
               <div
                 className="relative flex h-12 items-center px-4"
-                style={{ background: `linear-gradient(135deg, ${mpColor(activeModul.mapel)}, ${mpColor(activeModul.mapel)}80)` }}
+                style={{
+                  background: `linear-gradient(135deg, ${mpColor(activeModul.mapel)}, ${mpColor(activeModul.mapel)}80)`,
+                }}
               >
                 <div className="absolute left-2.5 top-1.5 rounded bg-white/20 px-1.5 py-0.5 text-[9px] font-extrabold text-white backdrop-blur">
                   {activeModul.tp}
                 </div>
                 <div className="ml-auto grid h-7 w-7 place-items-center rounded-lg bg-white/20 backdrop-blur">
-                  <span className="text-sm font-extrabold text-white">{(mpIcon(activeModul.mapel) ?? 'book').charAt(0).toUpperCase()}</span>
+                  <span className="text-sm font-extrabold text-white">
+                    {(mpIcon(activeModul.mapel) ?? 'book').charAt(0).toUpperCase()}
+                  </span>
                 </div>
               </div>
               <div className="p-3">
@@ -245,7 +342,9 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                       style={{ width: `${activeModul.prog}%` }}
                     />
                   </div>
-                  <span className="text-[11px] font-extrabold text-emerald-500">{activeModul.prog ?? 0}%</span>
+                  <span className="text-[11px] font-extrabold text-emerald-500">
+                    {activeModul.prog ?? 0}%
+                  </span>
                 </div>
               </div>
             </button>
@@ -256,24 +355,44 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
         <div className="rounded-2xl border border-emerald-500/20 bg-[var(--surface)] p-4 shadow-[0_0_0_1px_rgba(16,185,129,.1),0_4px_24px_-8px_rgba(16,185,129,.15)]">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted)]">
-              <CalendarClock className="h-3.5 w-3.5 text-emerald-500" />Jadwal Hari Ini
-              {isSimSchedule && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] text-amber-500">Simulasi</span>}
+              <CalendarClock className="h-3.5 w-3.5 text-emerald-500" />
+              Jadwal Hari Ini
+              {isSimSchedule && (
+                <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] text-amber-500">
+                  Simulasi
+                </span>
+              )}
             </div>
-            <button onClick={() => go('jadwal')} className="flex items-center gap-0.5 text-[11px] font-bold text-emerald-400">
+            <button
+              onClick={() => go('jadwal')}
+              className="flex items-center gap-0.5 text-[11px] font-bold text-emerald-400"
+            >
               Lihat semua <ChevronRight className="h-3 w-3" />
             </button>
           </div>
           <div className="space-y-2">
-            {scheduleState !== 'ready' ? <LearnerScheduleNotice state={scheduleState} /> : !timingAvailable ? (
-              <p role="status" className="p-3 text-sm text-[var(--muted)]">Waktu JP belum dapat dimuat. Coba muat ulang atau hubungi admin sekolah.</p>
+            {scheduleState !== 'ready' ? (
+              <LearnerScheduleNotice state={scheduleState} />
+            ) : !timingAvailable ? (
+              <p role="status" className="p-3 text-sm text-[var(--muted)]">
+                Waktu JP belum dapat dimuat. Coba muat ulang atau hubungi admin sekolah.
+              </p>
             ) : hasSched ? (
               JP_MAP.map(([jp, idx]) => {
                 const slot = daySched[idx];
                 if (!slot) return null;
-                const phase = studentLessonPhase(now, dow, bell.slots.find((slot) => slot.jp === jp));
+                const phase = studentLessonPhase(
+                  now,
+                  dow,
+                  bell.slots.find((slot) => slot.jp === jp),
+                );
                 const isDone = phase === 'finished';
                 const isNow = phase === 'current';
-                const dotCls = isDone ? 'bg-emerald-500' : isNow ? 'bg-amber-500 animate-pulse' : 'bg-transparent border-2 border-[var(--dim)]';
+                const dotCls = isDone
+                  ? 'bg-emerald-500'
+                  : isNow
+                    ? 'bg-amber-500 animate-pulse'
+                    : 'bg-transparent border-2 border-[var(--dim)]';
                 const t = JP_LABELS[idx]![1].split('–');
                 const guruShort = slot.g.split(',')[0] ?? slot.g;
 
@@ -284,16 +403,52 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                   >
                     <div className="w-12 flex-shrink-0 text-right">
                       <div className="text-[11px] font-extrabold">{t[0]}</div>
-                      <div className="text-[9px] font-semibold text-[var(--muted)]">{JP_LABELS[idx]![0]}</div>
+                      <div className="text-[9px] font-semibold text-[var(--muted)]">
+                        {JP_LABELS[idx]![0]}
+                      </div>
                     </div>
-                    <div className={`mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full border-2 border-[var(--bg)] shadow-[0_0_0_2px_var(--em)] ${dotCls}`} />
+                    <div
+                      className={`mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full border-2 border-[var(--bg)] shadow-[0_0_0_2px_var(--em)] ${dotCls}`}
+                    />
                     <div className="flex-1 min-w-0">
-                      <div className={`break-words text-[13px] font-bold [overflow-wrap:anywhere] ${isNow ? 'sm:text-base' : ''}`}>{slot.sessions?.length ? `${slot.sessions.length} sesi terjadwal` : slot.mp}</div>
+                      <div
+                        className={`break-words text-[13px] font-bold [overflow-wrap:anywhere] ${isNow ? 'sm:text-base' : ''}`}
+                      >
+                        {slot.sessions?.length ? `${slot.sessions.length} sesi terjadwal` : slot.mp}
+                      </div>
                       <ScheduleAlternatives slot={slot} />
-                      {isNow && !slot.sessions?.length && <button type="button" onClick={() => setModal({ type: 'lesson', data: { subject: slot.mp, teacher: guruShort, room: slot.ruang, jpIndex: idx } })} className="mt-2 rounded-lg border px-3 py-2 text-xs">Lihat panduan mapel</button>}
-                      {!slot.sessions?.length && <div className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 break-words text-xs font-semibold ${isNow ? 'text-amber-500' : 'text-[var(--muted)]'}`}>
-                        <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">{guruShort}</span>·<span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">{slot.ruang}</span>
-                      </div>}
+                      {isNow && !slot.sessions?.length && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setModal({
+                              type: 'lesson',
+                              data: {
+                                subject: slot.mp,
+                                teacher: guruShort,
+                                room: slot.ruang,
+                                jpIndex: idx,
+                              },
+                            })
+                          }
+                          className="mt-2 rounded-lg border px-3 py-2 text-xs"
+                        >
+                          Lihat panduan mapel
+                        </button>
+                      )}
+                      {!slot.sessions?.length && (
+                        <div
+                          className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 break-words text-xs font-semibold ${isNow ? 'text-amber-500' : 'text-[var(--muted)]'}`}
+                        >
+                          <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">
+                            {guruShort}
+                          </span>
+                          ·
+                          <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">
+                            {slot.ruang}
+                          </span>
+                        </div>
+                      )}
                       {isNow && (
                         <span className="mt-1 inline-block rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-extrabold text-amber-500">
                           Rentang jadwal sekarang · bukan status sesi aktif
@@ -326,14 +481,20 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted)]">
-              <ClipboardList className="h-3.5 w-3.5 text-emerald-500" />Tugas Mendesak
+              <ClipboardList className="h-3.5 w-3.5 text-emerald-500" />
+              Tugas Mendesak
             </div>
-            <button onClick={() => go('tugas')} className="flex items-center gap-0.5 text-[11px] font-bold text-emerald-400">
+            <button
+              onClick={() => go('tugas')}
+              className="flex items-center gap-0.5 text-[11px] font-bold text-emerald-400"
+            >
               Semua <ChevronRight className="h-3 w-3" />
             </button>
           </div>
           <div className="space-y-2">
-            {urgentTasks.length > 0 ? (
+            {taskState !== 'ready' ? (
+              <DashboardReadNotice state={taskState} domain="Tugas" onRetry={onRetryTasks} />
+            ) : urgentTasks.length > 0 ? (
               urgentTasks.map((t) => {
                 const c = mpColor(t.mp);
                 const urgent = t.dlDays <= 1;
@@ -343,13 +504,19 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                     onClick={() => setModal({ type: 'task', data: { task: t } })}
                     className="flex w-full items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-left transition-all hover:border-[var(--border2)] hover:bg-[var(--surface2)]"
                   >
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl" style={{ background: `${c}20`, color: c }}>
-                      <span className="text-lg">{(mpIcon(t.mp) || 'book').charAt(0).toUpperCase()}</span>
+                    <div
+                      className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
+                      style={{ background: `${c}20`, color: c }}
+                    >
+                      <span className="text-lg">
+                        {(mpIcon(t.mp) || 'book').charAt(0).toUpperCase()}
+                      </span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="truncate text-sm font-bold">{t.title}</div>
                       <div className="mt-0.5 text-[11px] font-semibold text-[var(--muted)]">
-                        {t.mp} · {t.dlDays === 0 ? '⚠ Deadline hari ini!' : `${t.dlDays ?? 1} hari lagi`}
+                        {t.mp} ·{' '}
+                        {t.dlDays === 0 ? '⚠ Deadline hari ini!' : `${t.dlDays ?? 1} hari lagi`}
                       </div>
                     </div>
                     <span
@@ -373,9 +540,13 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted)]">
-              <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />Nilai Terbaru
+              <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+              Nilai Terbaru
             </div>
-            <button onClick={() => go('nilai')} className="flex items-center gap-0.5 text-[11px] font-bold text-emerald-400">
+            <button
+              onClick={() => go('nilai')}
+              className="flex items-center gap-0.5 text-[11px] font-bold text-emerald-400"
+            >
               Detail <ChevronRight className="h-3 w-3" />
             </button>
           </div>
@@ -390,8 +561,13 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                   onClick={() => go('nilai')}
                   className="flex w-full items-center gap-3 py-3 text-left first:pt-0 last:pb-0"
                 >
-                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl" style={{ background: `${c}20`, color: c }}>
-                    <span className="text-sm font-extrabold">{(mpIcon(n.mp) || 'book').charAt(0).toUpperCase()}</span>
+                  <div
+                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl"
+                    style={{ background: `${c}20`, color: c }}
+                  >
+                    <span className="text-sm font-extrabold">
+                      {(mpIcon(n.mp) || 'book').charAt(0).toUpperCase()}
+                    </span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold">{n.mp}</div>
@@ -403,12 +579,16 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                         className="h-full rounded-full"
                         style={{
                           width: `${n.na ?? 0}%`,
-                          background: tuntas ? 'linear-gradient(90deg, #10b981, #059669)' : 'linear-gradient(90deg, #fbbf24, #d97706)',
+                          background: tuntas
+                            ? 'linear-gradient(90deg, #10b981, #059669)'
+                            : 'linear-gradient(90deg, #fbbf24, #d97706)',
                         }}
                       />
                     </div>
                   </div>
-                  <div className={`text-lg font-extrabold tracking-tight ${tuntas ? 'text-emerald-400' : 'text-amber-500'}`}>
+                  <div
+                    className={`text-lg font-extrabold tracking-tight ${tuntas ? 'text-emerald-400' : 'text-amber-500'}`}
+                  >
                     {n.na ?? '—'}
                   </div>
                 </button>
@@ -421,9 +601,13 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted)]">
-              <Award className="h-3.5 w-3.5 text-emerald-500" />Progress Capaian
+              <Award className="h-3.5 w-3.5 text-emerald-500" />
+              Progress Capaian
             </div>
-            <button onClick={() => go('capaian')} className="flex items-center gap-0.5 text-[11px] font-bold text-emerald-400">
+            <button
+              onClick={() => go('capaian')}
+              className="flex items-center gap-0.5 text-[11px] font-bold text-emerald-400"
+            >
               Badge <ChevronRight className="h-3 w-3" />
             </button>
           </div>
@@ -438,10 +622,16 @@ export default function BerandaSiswa({ showToast, go, setModal, setActiveModulId
                   className="mx-auto mb-1.5 flex h-14 w-14 items-center justify-center rounded-full"
                   style={{ background: `${b.color}20`, border: `2px solid ${b.color}40` }}
                 >
-                  <span className="text-2xl" style={{ color: b.color }}>🏅</span>
+                  <span className="text-2xl" style={{ color: b.color }}>
+                    🏅
+                  </span>
                 </div>
                 <div className="text-[10px] font-bold">{b.name}</div>
-                {!b.earned && <div className="mt-0.5 text-[9px] font-semibold text-[var(--muted)]">{b.prog ?? 0}%</div>}
+                {!b.earned && (
+                  <div className="mt-0.5 text-[9px] font-semibold text-[var(--muted)]">
+                    {b.prog ?? 0}%
+                  </div>
+                )}
               </button>
             ))}
           </div>

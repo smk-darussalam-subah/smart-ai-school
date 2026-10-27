@@ -1,4 +1,5 @@
 'use client';
+import QuestionContent from '@/components/learning/QuestionContent';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import {
@@ -39,6 +40,7 @@ interface Props {
   task: SiswaTugas;
   onClose: () => void;
   showToast: (msg: string) => void;
+  onOpenModule?: (moduleUuid: string) => void;
 }
 
 type StudentQuestion =
@@ -232,7 +234,7 @@ function answerProgress(question: StudentQuestion, answers: Record<string, Answe
   return false;
 }
 
-export default function TaskDetailModal({ task, onClose, showToast }: Props) {
+export default function TaskDetailModal({ task, onClose, showToast, onOpenModule }: Props) {
   const [attempt, setAttempt] = useState<AttemptState | null>(null);
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [revision, setRevision] = useState(0);
@@ -827,6 +829,7 @@ export default function TaskDetailModal({ task, onClose, showToast }: Props) {
                 <p className="mt-1 text-sm text-[var(--muted)]">
                   {task.desc || 'Tugas ini belum berupa asesmen interaktif.'}
                 </p>
+                {task.uuid && onOpenModule && <button type="button" className="mt-4 min-h-11 rounded-lg bg-emerald-700 px-4 font-bold text-white" onClick={() => onOpenModule(task.uuid!)}>Buka materi</button>}
               </div>
             </div>
           </div>
@@ -900,11 +903,14 @@ export default function TaskDetailModal({ task, onClose, showToast }: Props) {
               </div>
             </div>
           </div>
+        ) : !attempt && task.sessionStatus === 'completed' && task.attemptStarted === false ? (
+          <div role="status" className="mt-5 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--muted)]">
+            Asesmen sudah ditutup. Anda belum memulai asesmen ini. Hubungi guru bila memerlukan tindak lanjut.
+          </div>
         ) : !attempt ? (
           <div className="mt-5 space-y-4">
             <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--muted)]">
-              Mulai asesmen dari tombol ini. Timer, urutan soal, dan resume jawaban mengikuti data
-              server.
+              Baca petunjuk sebelum mulai. Waktu pengerjaan mengikuti ketentuan guru.
             </div>
             <button
               type="button"
@@ -913,7 +919,7 @@ export default function TaskDetailModal({ task, onClose, showToast }: Props) {
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-60"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock className="h-4 w-4" />}
-              Mulai / lanjutkan asesmen
+              {task.attemptStarted ? 'Lanjutkan asesmen' : task.attemptStarted === false ? 'Mulai asesmen' : 'Buka asesmen'}
             </button>
           </div>
         ) : (
@@ -997,9 +1003,7 @@ export default function TaskDetailModal({ task, onClose, showToast }: Props) {
                 <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-emerald-500">
                   Soal {currentIndex + 1} dari {totalQuestions} - {currentQuestion.points} poin
                 </div>
-                <p className="text-sm font-bold leading-relaxed text-[var(--text)]">
-                  {currentQuestion.body}
-                </p>
+                <QuestionContent body={currentQuestion.body} />
                 <QuestionAnswerInput
                   question={currentQuestion}
                   answers={answers}

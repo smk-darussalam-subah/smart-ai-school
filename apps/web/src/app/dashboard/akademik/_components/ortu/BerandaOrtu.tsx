@@ -5,8 +5,15 @@ import React, { useEffect, useState } from 'react';
 import LearnerScheduleNotice from '../LearnerScheduleNotice';
 import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import {
-  CalendarCheck, CalendarClock, Wallet, TrendingUp, Megaphone,
-  MessageCircle, ChevronRight, UserCircle, Phone, Mail,
+  CalendarClock,
+  Wallet,
+  TrendingUp,
+  Megaphone,
+  MessageCircle,
+  ChevronRight,
+  UserCircle,
+  Phone,
+  Mail,
 } from 'lucide-react';
 import { fmtRupiahExact, daysUntil, fmtDateShort } from '@/lib/academic';
 import { learnerGradeStatus, type LearnerGradeState } from '@/lib/learner-grades';
@@ -16,17 +23,23 @@ import type { AttendanceItem } from '@/lib/api';
 import type { OrtuScreen, ModalState } from './OrtuWorkspace';
 import type { OrtuChild, OrtuNilai } from './ortu-types';
 import type { ScheduleItem } from '../guru-types';
+import { mpColor, gradeCls, avgNa, initials } from './ortu-data';
 import {
-  mpColor, gradeCls, avgNa, initials,
-} from './ortu-data';
-import {
-  mapSppToPembayaran, mapWaLog, mapTodaySchedule, computeAttStats,
-  type SppApiItem, type WaLogApiItem,
+  mapSppToPembayaran,
+  mapWaLog,
+  mapTodaySchedule,
+  type SppApiItem,
+  type WaLogApiItem,
 } from './ortu-mappers';
 import { fetchTeachers } from '../../actions';
 import RemedialOrtu from './RemedialOrtu';
+import type { LearnerAttendanceState } from '@/lib/learner-attendance';
+import LearnerSessionAttendance from '../LearnerSessionAttendance';
+import DashboardReadNotice from '../DashboardReadNotice';
+import type { DashboardReadState } from '@/lib/learner-dashboard-read';
 
 interface BerandaOrtuProps {
+  attendancePeriod?: import('@/lib/learner-attendance').AttendancePeriod;
   showToast: (msg: string) => void;
   go: (screen: OrtuScreen) => void;
   setModal: (modal: ModalState) => void;
@@ -39,8 +52,11 @@ interface BerandaOrtuProps {
   schedule: ScheduleItem[];
   scheduleState?: LearnerScheduleState;
   spp: SppApiItem[];
+  sppState?: DashboardReadState;
+  onRetrySpp?: () => void;
   waLog: WaLogApiItem[];
   attendance: AttendanceItem[];
+  attendanceState?: LearnerAttendanceState;
   rank?: number | null;
   activeStudentId?: string;
 }
@@ -55,52 +71,100 @@ function greetPrefix(): string {
   return 'Selamat malam';
 }
 
-/** Ring chart circumference constant (r=28 → 2πr ≈ 175.93). */
-const RING_R = 28;
-const RING_CIRC = 2 * Math.PI * RING_R;
+const EMPTY_CHILD: OrtuChild = {
+  id: 0,
+  name: 'Anak',
+  kelas: '—',
+  active: false,
+  avg: 0,
+  att: 0,
+  wali: '—',
+};
 
-const EMPTY_CHILD: OrtuChild = { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
-
-export default function BerandaOrtu({ showToast: _showToast, go, setModal, grades, gradeState = 'ready', announcements, children, activeChildIndex, schedule, scheduleState = 'ready', spp, waLog, attendance, rank, activeStudentId }: BerandaOrtuProps) {
+export default function BerandaOrtu({
+  showToast: _showToast,
+  go,
+  setModal,
+  grades,
+  gradeState = 'ready',
+  announcements,
+  children,
+  activeChildIndex,
+  schedule,
+  scheduleState = 'ready',
+  spp,
+  sppState = 'ready',
+  onRetrySpp,
+  waLog,
+  rank,
+  activeStudentId,
+  attendancePeriod,
+}: BerandaOrtuProps) {
   // U4: Fetch wali kelas / teachers for contact info
-  const [waliKelas, setWaliKelas] = useState<{ name: string; subject: string; phone: string | null; email: string | null } | null>(null);
+  const [teachers, setTeachers] = useState<
+    Array<{ name: string; subject: string; phone: string | null; email: string | null }>
+  >([]);
+  const [teachersState, setTeachersState] = useState('loading');
   useEffect(() => {
-    fetchTeachers().then((res) => {
-      if (res.success && res.data && res.data.length > 0) {
-        // U4 simplified: show first teacher (wali kelas is typically first in list)
-        const t = res.data[0];
-        if (t) {
-          setWaliKelas({ name: t.teacherName, subject: t.subject, phone: t.phone, email: t.email });
-        }
-      }
-    });
-  }, []);
+    let active = true;
+    setTeachers([]);
+    setTeachersState('loading');
+    if (!activeStudentId) {
+      setTeachersState('unavailable');
+      return;
+    }
+    fetchTeachers(activeStudentId)
+      .then((res) => {
+        if (!active) return;
+        setTeachers(
+          res.success
+            ? (res.data ?? []).map((t) => ({
+                name: t.teacherName,
+                subject: t.subject,
+                phone: t.phone,
+                email: t.email,
+              }))
+            : [],
+        );
+        setTeachersState(res.success ? 'ready' : 'unavailable');
+      })
+      .catch(() => {
+        if (active) setTeachersState('unavailable');
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeStudentId]);
 
   // T1-02: sumber data 100% real. Tidak ada lagi fallback ke SIM_*.
   const child = children[activeChildIndex] ?? EMPTY_CHILD;
-  const nilai = gradeState === 'ready' ? grades ?? [] : [];
+  const nilai = gradeState === 'ready' ? (grades ?? []) : [];
   const avg = avgNa(nilai);
-  const stats = computeAttStats(attendance);           // ganti SIM_KEH_STATS
   const bell = useBellPattern();
   const dow = scheduleDayOfWeek();
-  const todaySched = mapTodaySchedule(schedule, dow, bell.slots);   // ganti SIM_SCHEDULE
+  const todaySched = mapTodaySchedule(schedule, dow, bell.slots); // ganti SIM_SCHEDULE
   const hasTodaySchedule = dow !== 0 && todaySched.length > 0;
 
   // Pembayaran real
-  const pembayaran = mapSppToPembayaran(spp);
+  const pembayaran = mapSppToPembayaran(sppState === 'ready' ? spp : []);
   const unpaidItems = pembayaran.filter((p) => p.status === 'unpaid');
   const totalUnpaid = unpaidItems.reduce((s, p) => s + p.amount, 0);
-  const nextDue = unpaidItems.length > 0
-    ? [...unpaidItems].sort((a, b) => new Date(a.due).getTime() - new Date(b.due).getTime())[0]
-    : null;
-  const dd = nextDue ? daysUntil(nextDue.due) : 0;
+  const nextDue =
+    unpaidItems.length > 0
+      ? [...unpaidItems].sort(
+          (a, b) => (Date.parse(a.due) || Infinity) - (Date.parse(b.due) || Infinity),
+        )[0]
+      : null;
+  const dd = nextDue && Number.isFinite(Date.parse(nextDue.due)) ? daysUntil(nextDue.due) : null;
 
   // WA notifikasi real
   const recentWa = mapWaLog(waLog)[0] ?? null;
 
   // Pengumuman real (API {id,title,createdAt} → display {id,title,tag,date})
   const pengumuman = (announcements ?? []).map((a) => ({
-    id: a.id, title: a.title, tag: 'Info',
+    id: a.id,
+    title: a.title,
+    tag: 'Info',
     date: a.createdAt ? fmtDateShort(a.createdAt) : '—',
   }));
 
@@ -112,7 +176,9 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
       {/* 1. Greeting */}
       <div className="mb-3.5">
         <h1 className="text-xl font-extrabold">{greetPrefix()}, Ayah!</h1>
-        <p className="mt-0.5 text-[12px] font-medium text-[var(--muted)]">Pantau perkembangan putra Anda</p>
+        <p className="mt-0.5 text-[12px] font-medium text-[var(--muted)]">
+          Pantau perkembangan putra Anda
+        </p>
       </div>
 
       {/* 2. Student card */}
@@ -126,7 +192,9 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
           </div>
           <div>
             <b className="block text-[17px]">{child.name}</b>
-            <small className="text-[12px] font-medium opacity-85">{child.kelas} · SMK Darussalam Subah</small>
+            <small className="text-[12px] font-medium opacity-85">
+              {child.kelas} · SMK Darussalam Subah
+            </small>
           </div>
         </div>
         <div className="relative z-10 mt-3.5 flex gap-3">
@@ -135,63 +203,26 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
             <div className="text-[9px] font-semibold uppercase tracking-wide opacity-75">Rata²</div>
           </div>
           <div className="flex-1 text-center">
-            <div className="text-[18px] font-extrabold">{stats.total > 0 ? `${stats.pct}%` : '—'}</div>
-            <div className="text-[9px] font-semibold uppercase tracking-wide opacity-75">Hadir</div>
-          </div>
-          <div className="flex-1 text-center">
-            <div className="text-[18px] font-extrabold">{rankDisplay != null ? `#${rankDisplay}` : '—'}</div>
-            <div className="text-[9px] font-semibold uppercase tracking-wide opacity-75">Ranking</div>
+            <div className="text-[18px] font-extrabold">
+              {rankDisplay != null ? `#${rankDisplay}` : '—'}
+            </div>
+            <div className="text-[9px] font-semibold uppercase tracking-wide opacity-75">
+              Peringkat XP
+            </div>
           </div>
         </div>
       </div>
 
       {/* 3. Monthly attendance availability is independent of schedule fetch/empty state. */}
-      <div className="mb-3.5 rounded-[var(--r)] border border-[var(--border)] bg-[var(--surface)] p-3.5">
-        <div className="mb-2.5 flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
-            <CalendarCheck className="h-[15px] w-[15px] text-[var(--pri)]" />
-            Kehadiran
-            {stats.total === 0 && <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[9px] text-sky-500">Belum ada data</span>}
-          </div>
-          <button
-            onClick={() => go('kehadiran')}
-            className="flex cursor-pointer items-center gap-0.5 text-[11px] font-bold text-[var(--pril)]"
-          >
-            Detail <ChevronRight className="h-[13px] w-[13px]" />
-          </button>
-        </div>
-        <div className="flex items-center gap-3.5">
-          {/* Ring chart */}
-          <div className="relative inline-block">
-            <svg width="70" height="70">
-              <circle cx="35" cy="35" r={RING_R} strokeWidth="6" fill="none" stroke="var(--ring-bg)" />
-              <circle
-                cx="35" cy="35" r={RING_R} strokeWidth="6" fill="none"
-                stroke="var(--pril)" strokeLinecap="round"
-                strokeDasharray={RING_CIRC}
-                strokeDashoffset={RING_CIRC - (RING_CIRC * (stats.total > 0 ? stats.pct : 0) / 100)}
-                transform="rotate(-90 35 35)"
-                style={{ transition: 'stroke-dashoffset 0.5s ease' }}
-              />
-            </svg>
-            <div className="absolute inset-0 grid place-items-center text-center">
-              <div className="text-[14px] font-extrabold">{stats.total > 0 ? `${stats.pct}%` : '—'}</div>
-            </div>
-          </div>
-          <div className="flex-1">
-            <b
-              className="text-[13px]"
-              style={{ color: stats.total > 0 ? 'var(--em)' : 'var(--muted)' }}
-            >
-              {stats.total > 0 ? 'Tercatat' : 'Belum ada data'}
-            </b>
-            <p className="mt-0.5 text-[10.5px] text-[var(--muted)]">
-              Bulan ini: {stats.hadir} hadir · {stats.izin} izin · {stats.sakit} sakit · {stats.alpha} alpha
-            </p>
-          </div>
-        </div>
+      <div className="mb-4">
+        <LearnerSessionAttendance
+          key={activeStudentId}
+          studentId={activeStudentId}
+          period={attendancePeriod}
+          shell="ortu"
+          compact
+        />
       </div>
-
       {/* 4. WA notification (latest absence) */}
       {recentWa && (
         <div
@@ -211,9 +242,7 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
                 {recentWa.date} · {recentWa.session} — {recentWa.status.toUpperCase()}
               </small>
             </div>
-            <span
-              className="rounded-md bg-[rgba(245,158,11,.15)] px-2 py-1 text-[9px] font-extrabold text-[var(--amber)]"
-            >
+            <span className="rounded-md bg-[rgba(245,158,11,.15)] px-2 py-1 text-[9px] font-extrabold text-[var(--amber)]">
               {recentWa.status}
             </span>
           </div>
@@ -231,7 +260,9 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
             {['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'][dow]}
           </span>
         </div>
-        {scheduleState !== 'ready' ? <LearnerScheduleNotice state={scheduleState} /> : !hasTodaySchedule ? (
+        {scheduleState !== 'ready' ? (
+          <LearnerScheduleNotice state={scheduleState} />
+        ) : !hasTodaySchedule ? (
           <div className="py-6 text-center text-[12px] font-semibold text-[var(--dim)]">
             Belum ada jadwal untuk hari ini
           </div>
@@ -239,7 +270,10 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
           todaySched.map((slot, i) => {
             const c = mpColor(slot.mapel);
             return (
-              <div key={i} className="flex gap-2.5 border-b border-[var(--border)] py-2 last:border-0">
+              <div
+                key={i}
+                className="flex gap-2.5 border-b border-[var(--border)] py-2 last:border-0"
+              >
                 <div className="w-24 shrink-0 pt-0.5 text-right text-xs font-bold tabular-nums text-[var(--muted)]">
                   {slot.timeRange || 'Waktu JP belum tersedia'}
                 </div>
@@ -257,6 +291,11 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
       </div>
 
       {/* 6. Payment summary */}
+      {sppState !== 'ready' && (
+        <section className="mb-3.5" aria-label="Ringkasan pembayaran">
+          <DashboardReadNotice state={sppState} domain="Pembayaran" onRetry={onRetrySpp} />
+        </section>
+      )}
       {unpaidItems.length > 0 && nextDue && (
         <div
           className="mb-3.5 rounded-[var(--r)] border p-3.5"
@@ -287,9 +326,13 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
               <div className="text-[12px] font-bold text-[var(--text)]">{nextDue.jenis}</div>
               <small
                 className="text-[10px] font-bold"
-                style={{ color: dd < 0 ? 'var(--rose)' : 'var(--amber)' }}
+                style={{ color: dd !== null && dd < 0 ? 'var(--rose)' : 'var(--amber)' }}
               >
-                {dd < 0 ? `Terlewat ${Math.abs(dd)} hari` : `Jatuh tempo ${dd} hari`}
+                {dd === null
+                  ? 'Jatuh tempo belum tersedia'
+                  : dd < 0
+                    ? `Terlewat ${Math.abs(dd)} hari`
+                    : `Jatuh tempo ${dd} hari`}
               </small>
             </div>
           </div>
@@ -302,7 +345,11 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
           <div className="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
             <TrendingUp className="h-[15px] w-[15px] text-[var(--pri)]" />
             Nilai Terbaru
-            {nilai.length === 0 && gradeState === 'ready' && <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[9px] text-sky-500">Belum ada data</span>}
+            {nilai.length === 0 && gradeState === 'ready' && (
+              <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[9px] text-sky-500">
+                Belum ada data
+              </span>
+            )}
           </div>
           <button
             onClick={() => go('nilai')}
@@ -315,33 +362,47 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
           <LearnerGradeNotice state={gradeState} empty />
         ) : (
           nilai.slice(0, 3).map((n) => {
-          const c = mpColor(n.mp);
-          const cls = gradeCls(n.na, n.kktp);
-          return (
-            <div
-              key={n.mp}
-              onClick={() => setModal({ type: 'grade', data: { nilai: n } })}
-              className="mb-2 flex cursor-pointer items-center gap-2.5 rounded-[var(--r-sm)] border border-[var(--border)] p-2.5 transition-colors hover:border-[var(--border2)] hover:bg-[var(--surface2)] last:mb-0"
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setModal({ type: 'grade', data: { nilai: n } }); } }}
-            >
-              <div className="h-10 w-1 shrink-0 rounded" style={{ background: c }} />
-              <div className="min-w-0 flex-1">
-                <b className="block text-[13px]">{n.mp}</b>
-                <small className="text-[10px] font-semibold text-[var(--muted)]">
-                  {learnerGradeStatus(n)} · KKTP {n.kktp ?? '—'}
-                </small>
-              </div>
+            const c = mpColor(n.mp);
+            const cls = gradeCls(n.na, n.kktp);
+            return (
               <div
-                className="shrink-0 text-[18px] font-extrabold"
-                style={{ color: cls === 'unknown' ? 'var(--muted)' : cls === 'ok' ? 'var(--em)' : cls === 'warn' ? 'var(--amber)' : 'var(--rose)' }}
+                key={n.mp}
+                onClick={() => setModal({ type: 'grade', data: { nilai: n } })}
+                className="mb-2 flex cursor-pointer items-center gap-2.5 rounded-[var(--r-sm)] border border-[var(--border)] p-2.5 transition-colors hover:border-[var(--border2)] hover:bg-[var(--surface2)] last:mb-0"
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setModal({ type: 'grade', data: { nilai: n } });
+                  }
+                }}
               >
-                {n.na ?? '—'}
+                <div className="h-10 w-1 shrink-0 rounded" style={{ background: c }} />
+                <div className="min-w-0 flex-1">
+                  <b className="block text-[13px]">{n.mp}</b>
+                  <small className="text-[10px] font-semibold text-[var(--muted)]">
+                    {learnerGradeStatus(n)} · KKTP {n.kktp ?? '—'}
+                  </small>
+                </div>
+                <div
+                  className="shrink-0 text-[18px] font-extrabold"
+                  style={{
+                    color:
+                      cls === 'unknown'
+                        ? 'var(--muted)'
+                        : cls === 'ok'
+                          ? 'var(--em)'
+                          : cls === 'warn'
+                            ? 'var(--amber)'
+                            : 'var(--rose)',
+                  }}
+                >
+                  {n.na ?? '—'}
+                </div>
               </div>
-            </div>
-          );
-        })
+            );
+          })
         )}
       </div>
 
@@ -384,31 +445,48 @@ export default function BerandaOrtu({ showToast: _showToast, go, setModal, grade
       <div className="mb-3.5 rounded-[var(--r)] border border-[var(--border)] bg-[var(--surface)] p-3.5">
         <div className="mb-2.5 flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
           <UserCircle className="h-[15px] w-[15px] text-[var(--pri)]" />
-          Wali Kelas
+          Guru mapel kelas anak
         </div>
-        {waliKelas ? (
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--pri)] text-[14px] font-extrabold text-white">
-              {waliKelas.name.charAt(0)}
+        {teachers.length ? (
+          teachers.map((teacher, index) => (
+            <div
+              key={`${teacher.name}-${teacher.subject}-${index}`}
+              className="flex items-center gap-3 py-2"
+            >
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--pri)] text-[14px] font-extrabold text-white">
+                {teacher.name.charAt(0)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <b className="block break-words text-[13px]">{teacher.name}</b>
+                <small className="text-[10px] font-semibold text-[var(--muted)]">
+                  {teacher.subject}
+                </small>
+                {teacher.phone && (
+                  <a
+                    href={`tel:${teacher.phone}`}
+                    className="mt-1 flex min-h-11 items-center gap-1 text-xs font-bold text-[var(--pril)]"
+                  >
+                    <Phone className="h-[14px] w-[14px]" /> {teacher.phone}
+                  </a>
+                )}
+                {teacher.email && (
+                  <a
+                    href={`mailto:${teacher.email}`}
+                    className="flex min-h-11 items-center gap-1 break-all text-xs font-bold text-[var(--pril)]"
+                  >
+                    <Mail className="h-[14px] w-[14px] shrink-0" /> {teacher.email}
+                  </a>
+                )}
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <b className="block text-[13px]">{waliKelas.name}</b>
-              <small className="text-[10px] font-semibold text-[var(--muted)]">{waliKelas.subject}</small>
-              {waliKelas.phone && (
-                <a href={`tel:${waliKelas.phone}`} className="mt-1 flex items-center gap-1 text-[10px] font-bold text-[var(--pril)]">
-                  <Phone className="h-[10px] w-[10px]" /> {waliKelas.phone}
-                </a>
-              )}
-              {waliKelas.email && (
-                <a href={`mailto:${waliKelas.email}`} className="flex items-center gap-1 text-[10px] font-bold text-[var(--pril)]">
-                  <Mail className="h-[10px] w-[10px]" /> {waliKelas.email}
-                </a>
-              )}
-            </div>
-          </div>
+          ))
         ) : (
           <div className="py-3 text-center text-[11px] font-semibold text-[var(--dim)]">
-            Wali kelas akan tersedia menyusul
+            {teachersState === 'loading'
+              ? 'Memuat kontak guru...'
+              : teachersState === 'unavailable'
+                ? 'Kontak guru belum dapat dimuat. Coba muat ulang halaman.'
+                : 'Belum ada kontak guru mapel untuk kelas anak.'}
           </div>
         )}
       </div>

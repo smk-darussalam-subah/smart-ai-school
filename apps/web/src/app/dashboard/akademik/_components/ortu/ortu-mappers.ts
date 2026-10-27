@@ -11,6 +11,7 @@ import type { CalendarCell } from '@/lib/academic';
 import { type JpSlot, fmtMin } from '@/lib/bell-times';
 import type { ScheduleItem } from '../guru-types';
 import type { OrtuWAHistory, OrtuKehadiranStats } from './ortu-types';
+import { jakartaToday } from '@/lib/learner-attendance';
 
 // ── Tipe API (shape dari akademik/page.tsx ortu branch) ──────────────────────
 
@@ -87,7 +88,9 @@ export function normalizeSppGroups(groups: SppDashboardGroup[]): SppApiItem[] {
   );
 }
 
-export function normalizeAssignmentGroups(groups: StudentDashboardAssignmentGroup[]): OrtuAssignmentItem[] {
+export function normalizeAssignmentGroups(
+  groups: StudentDashboardAssignmentGroup[],
+): OrtuAssignmentItem[] {
   return groups.flatMap((group) =>
     group.assignments.map((assignment) => ({
       ...assignment,
@@ -120,7 +123,7 @@ export function mapSppToPembayaran(items: SppApiItem[]): Pembayaran[] {
       amount: s.amount,
       due: s.dueDate ?? '',
       status: paid ? 'paid' : 'unpaid',
-      paidDate: paid ? s.paidAt ?? s.month : undefined,
+      paidDate: paid ? (s.paidAt ?? s.month) : undefined,
       desc: s.month ? `SPP bulan ${s.month}` : undefined,
     };
   });
@@ -165,7 +168,10 @@ export function mapWaLog(items: WaLogApiItem[]): OrtuWAHistory[] {
  * Mengembalikan 0 untuk semua field bila array kosong (bukan SIM).
  */
 export function computeAttStats(items: AttendanceItem[]): OrtuKehadiranStats {
-  let hadir = 0, izin = 0, sakit = 0, alpha = 0;
+  let hadir = 0,
+    izin = 0,
+    sakit = 0,
+    alpha = 0;
   for (const a of items) {
     if (a.status === 'hadir') hadir++;
     else if (a.status === 'izin') izin++;
@@ -192,7 +198,11 @@ export interface OrtuScheduleSlotMapped {
  * Filter ScheduleItem API untuk hari (dayOfWeek 1=Senin..6=Sabtu, 0=Minggu=libur)
  * dan petakan ke slot ringkas untuk ditampilkan di Beranda/Kehadiran.
  */
-export function mapTodaySchedule(items: ScheduleItem[], dayOfWeek: number, JP_SLOTS: JpSlot[] = []): OrtuScheduleSlotMapped[] {
+export function mapTodaySchedule(
+  items: ScheduleItem[],
+  dayOfWeek: number,
+  JP_SLOTS: JpSlot[] = [],
+): OrtuScheduleSlotMapped[] {
   const normalizedDay = dayOfWeek || 7;
   return items
     .filter((s) => s.dayOfWeek === normalizedDay)
@@ -201,9 +211,8 @@ export function mapTodaySchedule(items: ScheduleItem[], dayOfWeek: number, JP_SL
       // jpStart/jpEnd → label "07:30–08:10" bila tersedia di JP_SLOTS.
       const startMin = jpStartMin(s.jpStart, JP_SLOTS);
       const endMin = jpEndMin(s.jpEnd, JP_SLOTS);
-      const timeRange = startMin != null && endMin != null
-        ? `${fmtMin(startMin)}\u2013${fmtMin(endMin)}`
-        : '';
+      const timeRange =
+        startMin != null && endMin != null ? `${fmtMin(startMin)}\u2013${fmtMin(endMin)}` : '';
       return {
         jp: s.jpStart,
         jpEnd: s.jpEnd,
@@ -232,7 +241,7 @@ function jpEndMin(jp: number, JP_SLOTS: JpSlot[]): number | null {
  * Menggunakan generateCalendar() dari lib/academic.ts (sumber tunggal struktur kalender).
  */
 export function attCalendarFromApi(attendance: AttendanceItem[], todayDay: number): CalendarCell[] {
-  const now = new Date();
+  const now = new Date(`${jakartaToday()}T12:00:00`);
   const year = now.getFullYear();
   const monthIndex0 = now.getMonth();
 

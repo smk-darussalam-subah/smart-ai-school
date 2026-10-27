@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
+import DashboardReadNotice from '../DashboardReadNotice';
+import type { DashboardReadState } from '@/lib/learner-dashboard-read';
 import { CheckCircle, Clock } from 'lucide-react';
 import { fmtRupiahExact, daysUntil, fmtDateShort } from '@/lib/academic';
 import type { Pembayaran } from '@/lib/academic';
@@ -11,12 +13,26 @@ interface PembayaranOrtuProps {
   setModal: (modal: ModalState) => void;
   /** Data SPP real dari /student-dashboard/spp. Kosong = tampilkan empty state. */
   spp?: SppApiItem[];
+  sppState?: DashboardReadState;
+  onRetrySpp?: () => void;
 }
 
 type PayTab = 'all' | 'unpaid' | 'paid';
 
-export default function PembayaranOrtu({ setModal, spp }: PembayaranOrtuProps) {
+export default function PembayaranOrtu({
+  setModal,
+  spp,
+  sppState = spp ? 'ready' : 'unavailable',
+  onRetrySpp,
+}: PembayaranOrtuProps) {
   const [payTab, setPayTab] = useState<PayTab>('all');
+  if (sppState !== 'ready')
+    return (
+      <div className="space-y-4 px-4 pb-4">
+        <h1 className="text-xl font-extrabold">Pembayaran</h1>
+        <DashboardReadNotice state={sppState} domain="Pembayaran" onRetry={onRetrySpp} />
+      </div>
+    );
 
   // T1-01 (audit v2): sumber data real (dipetakan ke view-model). JANGAN fallback ke SIM.
   const payments: Pembayaran[] = mapSppToPembayaran(spp ?? []);
@@ -37,7 +53,9 @@ export default function PembayaranOrtu({ setModal, spp }: PembayaranOrtuProps) {
     <div className="px-4 pb-4">
       <div className="mb-3.5">
         <h1 className="text-xl font-extrabold">Pembayaran</h1>
-        <p className="mt-0.5 text-[12px] font-medium text-[var(--muted)]">Status SPP & biaya pendidikan</p>
+        <p className="mt-0.5 text-[12px] font-medium text-[var(--muted)]">
+          Status SPP & biaya pendidikan
+        </p>
       </div>
 
       {/* Segmented tabs */}
@@ -75,12 +93,23 @@ export default function PembayaranOrtu({ setModal, spp }: PembayaranOrtuProps) {
         </div>
       ) : (
         filtered.map((p) => {
-          const dd = daysUntil(p.due);
-          const isOverdue = p.status === 'unpaid' && dd < 0;
+          const hasDueDate = Number.isFinite(Date.parse(p.due));
+          const dd = hasDueDate ? daysUntil(p.due) : null;
+          const isOverdue = p.status === 'unpaid' && dd !== null && dd < 0;
           const isPaid = p.status === 'paid';
-          const bBg = isPaid ? 'rgba(16,185,129,.15)' : isOverdue ? 'rgba(239,68,68,.15)' : 'rgba(245,158,11,.15)';
+          const bBg = isPaid
+            ? 'rgba(16,185,129,.15)'
+            : isOverdue
+              ? 'rgba(239,68,68,.15)'
+              : 'rgba(245,158,11,.15)';
           const bTx = isPaid ? 'var(--em)' : isOverdue ? 'var(--rose)' : 'var(--amber)';
-          const bText = isPaid ? 'Lunas' : isOverdue ? 'Terlewat' : `${dd} hari`;
+          const bText = isPaid
+            ? 'Lunas'
+            : isOverdue
+              ? 'Terlewat'
+              : dd === null
+                ? 'Belum dibayar'
+                : `${dd} hari`;
 
           return (
             <div
@@ -89,22 +118,33 @@ export default function PembayaranOrtu({ setModal, spp }: PembayaranOrtuProps) {
               className="mb-2 flex cursor-pointer items-center gap-2.5 rounded-[var(--r-sm)] border border-[var(--border)] p-2.5 transition-colors hover:border-[var(--border2)] hover:bg-[var(--surface2)] last:mb-0"
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setModal({ type: 'pay', data: { payment: p } }); } }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setModal({ type: 'pay', data: { payment: p } });
+                }
+              }}
             >
               {/* Icon */}
               <div
                 className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px]"
                 style={{ background: isPaid ? 'rgba(16,185,129,.15)' : 'rgba(245,158,11,.15)' }}
               >
-                {isPaid
-                  ? <CheckCircle className="h-[18px] w-[18px] text-[var(--em)]" />
-                  : <Clock className="h-[18px] w-[18px] text-[var(--amber)]" />}
+                {isPaid ? (
+                  <CheckCircle className="h-[18px] w-[18px] text-[var(--em)]" />
+                ) : (
+                  <Clock className="h-[18px] w-[18px] text-[var(--amber)]" />
+                )}
               </div>
               {/* Body */}
               <div className="min-w-0 flex-1">
                 <b className="block text-[12.5px]">{p.jenis}</b>
                 <small className="text-[10px] font-semibold text-[var(--muted)]">
-                  {isPaid ? `Dibayar ${p.paidDate}` : `Jatuh tempo ${fmtDateShort(p.due)}`}
+                  {isPaid
+                    ? `Dibayar ${p.paidDate}`
+                    : hasDueDate
+                      ? `Jatuh tempo ${fmtDateShort(p.due)}`
+                      : 'Jatuh tempo belum tersedia'}
                 </small>
               </div>
               {/* Amount + badge */}

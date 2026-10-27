@@ -1,17 +1,35 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useDashboardRead } from '@/hooks/use-dashboard-read';
+import type { DashboardRead } from '@/lib/learner-dashboard-read';
+import { refreshParentSpp } from '../../learner-dashboard-actions';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  Home, CalendarCheck, TrendingUp, Wallet, Award,
-  Sun, Moon, Bell, ChevronDown,
-  LogOut, User as UserIcon, CircleHelp,
+  Home,
+  CalendarCheck,
+  TrendingUp,
+  Wallet,
+  Award,
+  Sun,
+  Moon,
+  Bell,
+  ChevronDown,
+  LogOut,
+  User as UserIcon,
+  CircleHelp,
 } from 'lucide-react';
 import clsx from 'clsx';
 import ViewAsBanner from '@/components/layout/ViewAsBanner';
-import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import BerandaOrtu from './BerandaOrtu';
 import KehadiranOrtu from './KehadiranOrtu';
 import NilaiOrtu from './NilaiOrtu';
@@ -26,13 +44,18 @@ import LogoutButton from '@/components/shared/LogoutButton';
 import { fetchMyNotifications, subscribePush, unsubscribePush } from '../../actions';
 import { initials } from './ortu-data';
 import type { OrtuChild, OrtuNilai, OrtuPengumuman } from './ortu-types';
-import type { AttendanceCellStatus, Pembayaran } from '@/lib/academic';
+import type { Pembayaran } from '@/lib/academic';
 import type { AttendanceItem } from '@/lib/api';
 import type { ScheduleItem } from '../guru-types';
 import type { LearnerScheduleState } from '@/lib/learner-schedule';
 import type { ParentChildrenState } from '@/lib/parent-children';
 import ParentChildrenNotice from './ParentChildrenNotice';
-import { filterByStudentId, type OrtuAssignmentItem, type SppApiItem } from './ortu-mappers';
+import {
+  filterByStudentId,
+  mapSppToPembayaran,
+  type OrtuAssignmentItem,
+  type SppApiItem,
+} from './ortu-mappers';
 import { initialChildIndex, learnerDashboardHref, learnerReportHref } from '../learner-navigation';
 import {
   academicWorkflowPresentation,
@@ -51,18 +74,41 @@ export interface ModalState {
 // ── Props ───────────────────────────────────────────────────────────────────
 
 interface OrtuWorkspaceProps {
+  attendancePeriod?: import('@/lib/learner-attendance').AttendancePeriod;
+  initialAttendanceDate?: string;
   children?: OrtuChild[];
   childrenState?: ParentChildrenState;
   grades?: OrtuNilai[];
   gradeState?: import('@/lib/learner-grades').LearnerGradeState;
   attendance?: AttendanceItem[];
+  attendanceStates?: Record<string, import('@/lib/learner-attendance').LearnerAttendanceState>;
   schedule?: Array<ScheduleItem & { studentId?: string }>;
   scheduleStates?: Record<string, LearnerScheduleState>;
   announcements?: { id: string; title: string; createdAt: string }[];
   spp?: SppApiItem[];
+  sppRead?: DashboardRead<SppApiItem>;
   assignments?: OrtuAssignmentItem[];
-  badges?: Array<{ id: string; studentId?: string; awardedAt: string; badge: { id: string; code: string; name: string; description: string; icon: string; tier: string } }>;
-  waLog?: Array<{ id: string; studentId: string; recipient: string; message: string; eventType: string; createdAt: string }>;
+  badges?: Array<{
+    id: string;
+    studentId?: string;
+    awardedAt: string;
+    badge: {
+      id: string;
+      code: string;
+      name: string;
+      description: string;
+      icon: string;
+      tier: string;
+    };
+  }>;
+  waLog?: Array<{
+    id: string;
+    studentId: string;
+    recipient: string;
+    message: string;
+    eventType: string;
+    createdAt: string;
+  }>;
   viewAs?: string | null;
   semesterLabel?: string;
   childRanks?: Record<string, number | null>;
@@ -74,19 +120,44 @@ interface OrtuWorkspaceProps {
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function OrtuWorkspace({
-  children: realChildren, childrenState, grades, gradeState = 'ready', attendance, schedule, scheduleStates, announcements, spp: realSpp, badges: realBadges, waLog: realWaLog, viewAs, childRanks, openNotifications = false, initialStudentId, initialWorkflowView = null
+  children: realChildren,
+  childrenState,
+  grades,
+  gradeState = 'ready',
+  attendance,
+  attendanceStates,
+  schedule,
+  scheduleStates,
+  announcements,
+  spp: realSpp,
+  sppRead,
+  badges: realBadges,
+  waLog: realWaLog,
+  viewAs,
+  childRanks,
+  openNotifications = false,
+  initialStudentId,
+  initialWorkflowView = null,
+  attendancePeriod,
+  initialAttendanceDate,
 }: OrtuWorkspaceProps) {
   const { data: session } = useSession();
   const router = useRouter();
   const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
-  const [activeScreen, setActiveScreen] = useState<OrtuScreen>(initialWorkflow.parentScreen);
-  const [modal, setModal] = useState<ModalState>(openNotifications ? { type: 'pengumuman' } : { type: null });
+  const [activeScreen, setActiveScreen] = useState<OrtuScreen>(
+    initialAttendanceDate ? 'kehadiran' : initialWorkflow.parentScreen,
+  );
+  const [modal, setModal] = useState<ModalState>(
+    openNotifications ? { type: 'pengumuman' } : { type: null },
+  );
   const notificationTriggerRef = useRef<HTMLButtonElement>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [accountOpen, setAccountOpen] = useState(false);
   // T1-02 (audit v2): active child state untuk multi-child selector (C1 fix).
-  const [activeChildIndex, setActiveChildIndex] = useState(() => initialChildIndex(realChildren ?? [], initialStudentId));
+  const [selectedStudentId, setSelectedStudentId] = useState(
+    () => realChildren?.[initialChildIndex(realChildren ?? [], initialStudentId)]?.studentId,
+  );
   const [childSelectorOpen, setChildSelectorOpen] = useState(false);
 
   // Theme management — scoped to .ortu-app CSS variables (§6.4)
@@ -120,25 +191,68 @@ export default function OrtuWorkspace({
   const childReadState = childrenState ?? (realChildren?.length ? 'ready' : 'empty');
   const childrenReady = childReadState === 'ready';
   const childList = childrenReady && realChildren?.length ? realChildren : [];
-  const child = childList[activeChildIndex] ?? childList[0] ?? { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
+  const activeChildIndex = Math.max(
+    0,
+    childList.findIndex((item) => item.studentId === selectedStudentId),
+  );
+  const child = childList[activeChildIndex] ??
+    childList[0] ?? { id: 0, name: 'Anak', kelas: '—', active: false, avg: 0, att: 0, wali: '—' };
   const activeStudentId = 'studentId' in child ? child.studentId : undefined;
   useEffect(() => {
-    if (initialWorkflow.parentFocus !== 'remedial' || activeScreen !== 'beranda' || !activeStudentId) return;
+    if (
+      initialWorkflow.parentFocus !== 'remedial' ||
+      activeScreen !== 'beranda' ||
+      !activeStudentId
+    )
+      return;
     const frame = window.requestAnimationFrame(() => {
       document.getElementById('ortu-remedial')?.scrollIntoView({ block: 'start' });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [activeScreen, activeStudentId, initialWorkflow.parentFocus]);
-  const childGrades = gradeState === 'ready' && activeStudentId ? filterByStudentId(grades, activeStudentId) : [];
+  const childGrades =
+    gradeState === 'ready' && activeStudentId ? filterByStudentId(grades, activeStudentId) : [];
   const modalGrade = modal.type === 'grade' ? modal.data?.nilai : null;
-  const currentModalGrade = modalGrade && typeof modalGrade === 'object' && 'mp' in modalGrade && 'studentId' in modalGrade
-    ? childGrades.find(grade => grade.mp === modalGrade.mp && grade.studentId === modalGrade.studentId) : undefined;
+  const currentModalGrade =
+    modalGrade && typeof modalGrade === 'object' && 'mp' in modalGrade && 'studentId' in modalGrade
+      ? childGrades.find(
+          (grade) => grade.mp === modalGrade.mp && grade.studentId === modalGrade.studentId,
+        )
+      : undefined;
   const childAttendance = activeStudentId ? filterByStudentId(attendance, activeStudentId) : [];
+  const childAttendanceState = activeStudentId
+    ? (attendanceStates?.[activeStudentId] ?? 'unavailable')
+    : 'unavailable';
+  const dayDate =
+    modal.type === 'day' && typeof modal.data?.date === 'string' ? modal.data.date : null;
+  const currentDayAttendance = dayDate
+    ? childAttendance.find((row) => row.date.slice(0, 10) === dayDate)
+    : undefined;
   const childSchedule = activeStudentId ? filterByStudentId(schedule, activeStudentId) : [];
-  const childSpp = activeStudentId ? filterByStudentId(realSpp, activeStudentId) : [];
+  const initialSpp = useMemo<DashboardRead<SppApiItem>>(() => {
+    if (!childrenReady || !activeStudentId) return { state: 'denied' };
+    const source =
+      sppRead ??
+      (realSpp ? { state: 'ready' as const, data: realSpp } : { state: 'unavailable' as const });
+    return source.state === 'ready'
+      ? { state: 'ready', data: filterByStudentId(source.data, activeStudentId) }
+      : source;
+  }, [childrenReady, activeStudentId, sppRead, realSpp]);
+  const loadSpp = useCallback(() => refreshParentSpp(activeStudentId ?? ''), [activeStudentId]);
+  const { read: childSppRead, retry: retrySpp } = useDashboardRead(
+    `${session?.keycloakId ?? ''}:${viewAs ?? ''}:${activeStudentId ?? ''}`,
+    initialSpp,
+    loadSpp,
+  );
+  const childSpp = childSppRead.state === 'ready' ? childSppRead.data : [];
+  const selectedPayment =
+    modal.type === 'pay' ? (modal.data?.payment as Pembayaran | undefined) : undefined;
+  const currentPayment = selectedPayment
+    ? mapSppToPembayaran(childSpp).find((payment) => payment.id === selectedPayment.id)
+    : undefined;
   const childBadges = activeStudentId ? filterByStudentId(realBadges, activeStudentId) : [];
   const childWaLog = activeStudentId ? filterByStudentId(realWaLog, activeStudentId) : [];
-  const activeChildRank = activeStudentId ? childRanks?.[activeStudentId] ?? null : null;
+  const activeChildRank = activeStudentId ? (childRanks?.[activeStudentId] ?? null) : null;
   const openOfficialReport = useCallback(() => {
     if (!activeStudentId) {
       showToast('Pilih anak terlebih dahulu.');
@@ -152,7 +266,7 @@ export default function OrtuWorkspace({
   }, [activeStudentId, openNotifications, router]);
   const selectChild = (i: number) => {
     setModal({ type: null });
-    setActiveChildIndex(i);
+    setSelectedStudentId(childList[i]?.studentId);
     setChildSelectorOpen(false);
     window.scrollTo(0, 0);
   };
@@ -174,6 +288,7 @@ export default function OrtuWorkspace({
       case 'beranda':
         return (
           <BerandaOrtu
+            key={activeStudentId}
             showToast={showToast}
             go={go}
             setModal={setModal}
@@ -183,21 +298,31 @@ export default function OrtuWorkspace({
             children={childList}
             activeChildIndex={Math.min(activeChildIndex, Math.max(childList.length - 1, 0))}
             schedule={childSchedule}
-            scheduleState={activeStudentId ? scheduleStates?.[activeStudentId] ?? 'error' : 'error'}
+            scheduleState={
+              activeStudentId ? (scheduleStates?.[activeStudentId] ?? 'error') : 'error'
+            }
             spp={childSpp ?? []}
+            sppState={childSppRead.state}
+            onRetrySpp={retrySpp}
             waLog={childWaLog ?? []}
             attendance={childAttendance ?? []}
+            attendanceState={childAttendanceState}
             rank={activeChildRank}
             activeStudentId={activeStudentId}
+            attendancePeriod={attendancePeriod}
           />
         );
       // Following screens implemented in subsequent batches
       case 'kehadiran':
         return (
           <KehadiranOrtu
+            period={attendancePeriod}
+            initialDate={initialAttendanceDate}
+            activeStudentId={activeStudentId}
             go={go}
             setModal={setModal}
             attendance={childAttendance ?? []}
+            attendanceState={childAttendanceState}
             waLog={childWaLog ?? []}
           />
         );
@@ -215,14 +340,18 @@ export default function OrtuWorkspace({
           <PembayaranOrtu
             setModal={setModal}
             spp={childSpp}
+            sppState={childSppRead.state}
+            onRetrySpp={retrySpp}
           />
         );
       case 'capaian':
         return (
           <CapaianOrtu
+            key={activeStudentId}
             setModal={setModal}
             showToast={showToast}
             badges={childBadges}
+            activeStudentId={activeStudentId}
           />
         );
       default:
@@ -240,7 +369,9 @@ export default function OrtuWorkspace({
             <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-[var(--grad)] text-[12px] font-extrabold text-white">
               DIIS
             </div>
-            <span className="max-w-[3.625rem] truncate text-[14px] font-extrabold max-[374px]:sr-only">Orang Tua</span>
+            <span className="max-w-[3.625rem] truncate text-[14px] font-extrabold max-[374px]:sr-only">
+              Orang Tua
+            </span>
           </div>
 
           {/* Right buttons */}
@@ -250,14 +381,20 @@ export default function OrtuWorkspace({
               <button
                 onClick={() => childList.length > 0 && setChildSelectorOpen((o) => !o)}
                 className="flex min-h-11 max-w-[6.5rem] cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 transition-colors hover:border-[var(--pri)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
-                aria-label={childrenReady && childList.length ? `Pilih anak. Aktif: ${child.name}` : 'Data anak belum tersedia'}
+                aria-label={
+                  childrenReady && childList.length
+                    ? `Pilih anak. Aktif: ${child.name}`
+                    : 'Data anak belum tersedia'
+                }
                 aria-expanded={childSelectorOpen}
                 disabled={childList.length === 0}
               >
                 <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--grad)] text-[10px] font-extrabold text-white">
                   {initials(child.name)}
                 </div>
-                <span className="min-w-0 flex-1 truncate text-[12px] font-bold">{child.name.split(' ')[0]}</span>
+                <span className="min-w-0 flex-1 truncate text-[12px] font-bold">
+                  {child.name.split(' ')[0]}
+                </span>
                 <ChevronDown className="h-[14px] w-[14px] shrink-0 text-[var(--muted)]" />
               </button>
               {childSelectorOpen && childList.length > 0 && (
@@ -273,7 +410,9 @@ export default function OrtuWorkspace({
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="truncate">{c.name}</div>
-                        <div className="text-[9px] font-semibold text-[var(--muted)]">{c.kelas}</div>
+                        <div className="text-[9px] font-semibold text-[var(--muted)]">
+                          {c.kelas}
+                        </div>
                       </div>
                     </button>
                   ))}
@@ -293,7 +432,11 @@ export default function OrtuWorkspace({
             </button>
 
             <Link
-              href={activeStudentId ? `/dashboard/panduan?from=/dashboard/akademik&studentId=${encodeURIComponent(activeStudentId)}` : '/dashboard/panduan?from=/dashboard/akademik'}
+              href={
+                activeStudentId
+                  ? `/dashboard/panduan?from=/dashboard/akademik&studentId=${encodeURIComponent(activeStudentId)}`
+                  : '/dashboard/panduan?from=/dashboard/akademik'
+              }
               className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] transition-colors hover:bg-[var(--surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pri)]"
               aria-label="Panduan orang tua"
             >
@@ -324,8 +467,12 @@ export default function OrtuWorkspace({
                     {initials(session?.user?.name ?? 'U')}
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-[var(--text)]">{session?.user?.name ?? 'Pengguna'}</p>
-                    <p className="truncate text-xs text-[var(--muted)]">{session?.user?.email ?? ''}</p>
+                    <p className="truncate text-sm font-bold text-[var(--text)]">
+                      {session?.user?.name ?? 'Pengguna'}
+                    </p>
+                    <p className="truncate text-xs text-[var(--muted)]">
+                      {session?.user?.email ?? ''}
+                    </p>
                   </div>
                 </div>
 
@@ -340,11 +487,13 @@ export default function OrtuWorkspace({
                   <span className="text-xs text-[var(--muted)]">Ketuk untuk ganti</span>
                 </button>
 
-                <PushNotificationToggle onSubscribe={subscribePush} onUnsubscribe={unsubscribePush} onFetchNotifications={fetchMyNotifications} />
+                <PushNotificationToggle
+                  onSubscribe={subscribePush}
+                  onUnsubscribe={unsubscribePush}
+                  onFetchNotifications={fetchMyNotifications}
+                />
 
-                <LogoutButton
-                  className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-500 transition-colors hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-                >
+                <LogoutButton className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-500 transition-colors hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
                   <LogOut className="h-4 w-4" aria-hidden="true" />
                   Keluar
                 </LogoutButton>
@@ -358,9 +507,7 @@ export default function OrtuWorkspace({
       {viewAs && <ViewAsBanner viewAs={viewAs} />}
 
       {/* Screen content */}
-      <main className="mx-auto max-w-[560px] pb-24">
-        {renderScreen()}
-      </main>
+      <main className="mx-auto max-w-[560px] pb-24">{renderScreen()}</main>
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-1/2 z-30 w-full max-w-[560px] -translate-x-1/2 border-t border-[var(--border)] bg-[var(--nav-bg)] backdrop-blur-2xl">
@@ -378,7 +525,12 @@ export default function OrtuWorkspace({
                 aria-label={label}
                 aria-current={isActive ? 'page' : undefined}
               >
-                <Icon className={clsx('h-5 w-5', isActive && 'drop-shadow-[0_0_6px_rgba(59,130,246,.4)]')} />
+                <Icon
+                  className={clsx(
+                    'h-5 w-5',
+                    isActive && 'drop-shadow-[0_0_6px_rgba(59,130,246,.4)]',
+                  )}
+                />
                 <span className="text-[10px] font-bold">{label}</span>
                 {/* Payment badge — dynamic unpaid count */}
                 {key === 'pembayaran' && unpaidCount > 0 && (
@@ -398,10 +550,7 @@ export default function OrtuWorkspace({
 
       {/* Modals */}
       {childrenReady && currentModalGrade && (
-        <GradeDetailModal
-          nilai={currentModalGrade}
-          onClose={() => setModal({ type: null })}
-        />
+        <GradeDetailModal nilai={currentModalGrade} onClose={() => setModal({ type: null })} />
       )}
 
       {modal.type === 'pengumuman' && (
@@ -414,19 +563,25 @@ export default function OrtuWorkspace({
         />
       )}
 
-      {childrenReady && modal.type === 'day' && (
-        <DayDetailModal
-          day={(modal.data as { day: number }).day}
-          status={(modal.data as { status: AttendanceCellStatus }).status}
-          month={(modal.data as { month: string }).month}
-          year={(modal.data as { year: number }).year}
-          onClose={() => setModal({ type: null })}
-        />
-      )}
+      {childrenReady &&
+        childAttendanceState === 'ready' &&
+        modal.type === 'day' &&
+        dayDate &&
+        modal.data?.studentId === activeStudentId && (
+          <DayDetailModal
+            day={(modal.data as { day: number }).day}
+            status={currentDayAttendance?.status ?? 'none'}
+            month={(modal.data as { month: string }).month}
+            year={(modal.data as { year: number }).year}
+            date={dayDate}
+            notes={currentDayAttendance?.notes ?? null}
+            onClose={() => setModal({ type: null })}
+          />
+        )}
 
-      {childrenReady && modal.type === 'pay' && (
+      {childrenReady && modal.type === 'pay' && currentPayment && (
         <PayDetailModal
-          payment={(modal.data as { payment: Pembayaran }).payment}
+          payment={currentPayment}
           onClose={() => setModal({ type: null })}
           showToast={showToast}
         />
@@ -434,7 +589,11 @@ export default function OrtuWorkspace({
 
       {/* Toast */}
       {toast && (
-        <div role="status" aria-live="polite" className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 animate-[fadeIn_.3s_ease] rounded-[10px] border border-[var(--border2)] bg-[var(--bg2)] px-4 py-2.5 text-[12px] font-semibold text-[var(--text)] shadow-[var(--shlift)] motion-reduce:animate-none">
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 animate-[fadeIn_.3s_ease] rounded-[10px] border border-[var(--border2)] bg-[var(--bg2)] px-4 py-2.5 text-[12px] font-semibold text-[var(--text)] shadow-[var(--shlift)] motion-reduce:animate-none"
+        >
           {toast}
         </div>
       )}

@@ -1,0 +1,22 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const repo = path.resolve(__dirname, '..');
+const audits = path.resolve(repo, '../docs/audits');
+const out = path.join(audits, 'evidence/learning-recap-ui-20261021');
+fs.mkdirSync(out, { recursive: true });
+if (fs.existsSync(path.join(out, 'baseline.json'))) throw Error('Baseline already exists');
+const manifest = JSON.parse(fs.readFileSync(path.join(audits, 'DIIS-TEACHER-WORKFLOW-GAP-2026-10-21-SOURCE-MANIFEST.json'), 'utf8'));
+const rows = Array.isArray(manifest) ? manifest : manifest.files;
+if (!Array.isArray(rows)) throw Error('Unknown predecessor manifest');
+const baseline = rows.map(row => {
+  const name = row.path;
+  const bytes = fs.readFileSync(path.join(repo, name));
+  const hash = crypto.createHash('sha256').update(bytes).digest('hex');
+  const target = path.join(out, 'baseline', name);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, bytes, { flag: 'wx' });
+  return { path: name, sha256: hash };
+});
+fs.writeFileSync(path.join(out, 'baseline.json'), JSON.stringify({ repo, files: baseline }, null, 2), { flag: 'wx' });
+process.stdout.write(JSON.stringify({ baseline: baseline.length, out }));

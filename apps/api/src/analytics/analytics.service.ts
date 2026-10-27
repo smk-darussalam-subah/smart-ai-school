@@ -12,6 +12,7 @@ import { AttendanceQuerySchema } from '../staff-attendance/staff-attendance.dto'
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveOwnTeachingRead } from '../common/helpers/own-teaching-read';
 import { SchoolConfigService } from '../school-config/school-config.service';
 import {
   isGuruOnly,
@@ -22,7 +23,7 @@ import {
   resolveGuruClassIds,
   resolveUserId,
 } from '../common/helpers/role-helpers';
-import { AnalyticsQuery, StudentAnalyticsQuery } from './dto/analytics-query.dto';
+import { AnalyticsQuery, CpProgressQuery, StudentAnalyticsQuery } from './dto/analytics-query.dto';
 import {
   AGING_BUCKETS,
   AT_RISK_ALPHA_MIN,
@@ -399,33 +400,58 @@ export class AnalyticsService {
 
   // ── 4. Kepatuhan guru: kehadiran GPS hari ini + RPP approval rate ─────────
   async teacherCompliance(query: AnalyticsQuery, canReadRpp = false, canReadAssignments = false) {
-    if ((query.classId || query.majorCode || query.teacherId || query.subject) && !canReadAssignments)
+    if (
+      (query.classId || query.majorCode || query.teacherId || query.subject) &&
+      !canReadAssignments
+    )
       throw new ForbiddenException('Izin membaca cakupan penugasan tidak tersedia');
-    const active = query.academicYear && query.semester ? null : await this.school.getActiveSemester();
-    const period = { academicYear: query.academicYear ?? active!.academicYear.code, semester: query.semester ?? active!.number };
+    const active =
+      query.academicYear && query.semester ? null : await this.school.getActiveSemester();
+    const period = {
+      academicYear: query.academicYear ?? active!.academicYear.code,
+      semester: query.semester ?? active!.number,
+    };
     const wib = new Date(Date.now() + 7 * 60 * 60 * 1000);
     const today = new Date(Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate()));
 
-    const teacherIds = query.classId || query.majorCode || query.teacherId || query.subject
-      ? (await this.prisma.teachingAssignment.findMany({ where: {
-          academicYear: period.academicYear,
-          ...(query.classId ? { classId: query.classId } : {}),
-          ...(query.majorCode ? { class: { majorCode: query.majorCode } } : {}),
-          ...(query.teacherId ? { teacherId: query.teacherId } : {}),
-          ...(query.subject ? { subject: query.subject } : {}),
-        }, select: { teacherId: true }, distinct: ['teacherId'] })).map(row => row.teacherId)
-      : undefined;
+    const teacherIds =
+      query.classId || query.majorCode || query.teacherId || query.subject
+        ? (
+            await this.prisma.teachingAssignment.findMany({
+              where: {
+                academicYear: period.academicYear,
+                ...(query.classId ? { classId: query.classId } : {}),
+                ...(query.majorCode ? { class: { majorCode: query.majorCode } } : {}),
+                ...(query.teacherId ? { teacherId: query.teacherId } : {}),
+                ...(query.subject ? { subject: query.subject } : {}),
+              },
+              select: { teacherId: true },
+              distinct: ['teacherId'],
+            })
+          ).map((row) => row.teacherId)
+        : undefined;
     const [report, rppGroups] = await Promise.all([
-      this.staff.report(AttendanceQuerySchema.parse({ from: today.toISOString().slice(0,10), to: today.toISOString().slice(0,10), unit: 'TEACHER' }), teacherIds),
-      canReadRpp ? this.prisma.rpp.groupBy({
-        by: ['status'],
-        where: { academicYear: period.academicYear, semester: period.semester,
-          ...(teacherIds ? { teacherId: { in: teacherIds } } : {}),
-          ...(query.classId ? { classId: query.classId } : {}),
-          ...(query.subject ? { subject: query.subject } : {}),
-        },
-        _count: { _all: true },
-      }) : Promise.resolve([]),
+      this.staff.report(
+        AttendanceQuerySchema.parse({
+          from: today.toISOString().slice(0, 10),
+          to: today.toISOString().slice(0, 10),
+          unit: 'TEACHER',
+        }),
+        teacherIds,
+      ),
+      canReadRpp
+        ? this.prisma.rpp.groupBy({
+            by: ['status'],
+            where: {
+              academicYear: period.academicYear,
+              semester: period.semester,
+              ...(teacherIds ? { teacherId: { in: teacherIds } } : {}),
+              ...(query.classId ? { classId: query.classId } : {}),
+              ...(query.subject ? { subject: query.subject } : {}),
+            },
+            _count: { _all: true },
+          })
+        : Promise.resolve([]),
     ]);
 
     const rpp = { draft: 0, submitted: 0, approved: 0, revision: 0, curriculum_reviewed: 0 };
@@ -436,16 +462,32 @@ export class AnalyticsService {
     const approvalRate = rppActive > 0 ? round1((rpp.approved / rppActive) * 100) : null;
 
     const canonical = report.teacherSummary;
-    const totalTeachers = canonical.total, presentToday = canonical.present;
+    const totalTeachers = canonical.total,
+      presentToday = canonical.present;
     // GPS verifies location of a recorded arrival, not the obligation/absence of every teacher.
-    const gpsPct = presentToday > 0 ? round1(canonical.inside / presentToday * 100) : null;
+    const gpsPct = presentToday > 0 ? round1((canonical.inside / presentToday) * 100) : null;
+    const attendancePct =
+      canonical.unknown === 0 && canonical.dueRequired > 0
+        ? round1((canonical.presentRequired / canonical.dueRequired) * 100)
+        : null;
 
     return {
       totalTeachers,
       presentToday,
       gpsPct,
-      attendance: { ...canonical, date: today.toISOString().slice(0,10), source: 'StaffAttendance', unit: 'teacher_daily_arrivals' },
-      rpp: { ...rpp, total: rpp.draft + rppActive, approvalRate, state: canReadRpp ? 'ready' : 'denied' },
+      attendancePct,
+      attendance: {
+        ...canonical,
+        date: today.toISOString().slice(0, 10),
+        source: 'StaffAttendance',
+        unit: 'teacher_daily_arrivals',
+      },
+      rpp: {
+        ...rpp,
+        total: rpp.draft + rppActive,
+        approvalRate,
+        state: canReadRpp ? 'ready' : 'denied',
+      },
       // Sub-metrik ketepatan input nilai/absen = Fase 2 (butuh modul KBM 2M).
     };
   }
@@ -488,17 +530,26 @@ export class AnalyticsService {
     });
 
     // Names are labels only; homonyms and competency-specific assignments remain distinct.
-    const key = (g: (typeof grades)[0]) =>
-      g.assignment.id;
+    const key = (g: (typeof grades)[0]) => g.assignment.id;
 
     const grouped = new Map<
       string,
-      { assignmentId:string; teacherId:string; classId:string; scores: number[]; teacher: string; className: string; subject: string }
+      {
+        assignmentId: string;
+        teacherId: string;
+        classId: string;
+        scores: number[];
+        teacher: string;
+        className: string;
+        subject: string;
+      }
     >();
     for (const g of grades) {
       const k = key(g);
       const entry = grouped.get(k) ?? {
-        assignmentId:g.assignment.id, teacherId:g.assignment.teacherId, classId:g.assignment.classId,
+        assignmentId: g.assignment.id,
+        teacherId: g.assignment.teacherId,
+        classId: g.assignment.classId,
         scores: [] as number[],
         teacher: g.assignment.teacher?.user?.fullName ?? '-',
         className: g.assignment.class?.name ?? '-',
@@ -521,7 +572,9 @@ export class AnalyticsService {
         const kktp = this.kktpValue(kktpCatalog, e.subject);
         const tuntas = kktp === null ? 0 : e.scores.filter((s) => s >= kktp).length;
         return {
-          assignmentId:e.assignmentId, teacherId:e.teacherId, classId:e.classId,
+          assignmentId: e.assignmentId,
+          teacherId: e.teacherId,
+          classId: e.classId,
           teacher: e.teacher,
           className: e.className,
           subject: e.subject,
@@ -545,10 +598,23 @@ export class AnalyticsService {
 
   /** Domain-gated monitoring with stable IDs and explicit availability. */
   async monitoringKbm(query: AnalyticsQuery, now = new Date(), caps?: MonitoringCapabilities) {
-    const period = query.academicYear && query.semester
-      ? { academicYear: query.academicYear, semester: query.semester }
-      : await this.school.getActiveSemester().then(semester => ({ academicYear: semester.academicYear.code, semester: semester.number }));
-    return readSchedulingMonitoring(this.prisma, { ...query, academicYear: query.academicYear ?? period.academicYear, semester: query.semester ?? period.semester }, caps, now);
+    const period =
+      query.academicYear && query.semester
+        ? { academicYear: query.academicYear, semester: query.semester }
+        : await this.school.getActiveSemester().then((semester) => ({
+            academicYear: semester.academicYear.code,
+            semester: semester.number,
+          }));
+    return readSchedulingMonitoring(
+      this.prisma,
+      {
+        ...query,
+        academicYear: query.academicYear ?? period.academicYear,
+        semester: query.semester ?? period.semester,
+      },
+      caps,
+      now,
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -557,18 +623,38 @@ export class AnalyticsService {
   // Dipakai PembelajaranGuru + CapaianRapor untuk menggantikan MAPEL_PROG/CP_DATA/CP_RAPOR.
   // ═══════════════════════════════════════════════════════════════════════════
 
-  async cpProgress(query: AnalyticsQuery, user: AuthUser) {
-    const active = query.academicYear && query.semester ? null : await this.school.getActiveSemester();
-    const period = { academicYear: query.academicYear ?? active!.academicYear.code, semester: query.semester ?? active!.number };
-    const configured = await this.prisma.semester.findFirst({ where: { number: period.semester, academicYear: { code: period.academicYear } }, select: { id: true } });
+  async cpProgress(query: CpProgressQuery, user: AuthUser) {
+    const ownTeacherId = await resolveOwnTeachingRead(
+      this.prisma,
+      user,
+      query.scope,
+      query.teacherId,
+    );
+    const active =
+      query.academicYear && query.semester ? null : await this.school.getActiveSemester();
+    const period = {
+      academicYear: query.academicYear ?? active!.academicYear.code,
+      semester: query.semester ?? active!.number,
+    };
+    const configured = await this.prisma.semester.findFirst({
+      where: { number: period.semester, academicYear: { code: period.academicYear } },
+      select: { id: true },
+    });
     if (!configured) throw new ForbiddenException('Periode nilai belum dikonfigurasi.');
 
     const gradeWhere: Prisma.GradeWhereInput = {
-      academicYear: period.academicYear, semester: period.semester,
-      ...(isSiswaOnly(user) ? { studentId: await resolveSiswaId(this.prisma, user.keycloakId) } : {}),
+      academicYear: period.academicYear,
+      semester: period.semester,
+      ...(isSiswaOnly(user)
+        ? { studentId: await resolveSiswaId(this.prisma, user.keycloakId) }
+        : {}),
       assignment: {
         ...(query.classId ? { classId: query.classId } : {}),
-        ...(isGuruOnly(user) ? { teacherId: await resolveTeacherId(this.prisma, user.keycloakId) } : {}),
+        ...(ownTeacherId
+          ? { teacherId: ownTeacherId }
+          : isGuruOnly(user)
+            ? { teacherId: await resolveTeacherId(this.prisma, user.keycloakId) }
+            : {}),
       },
     };
 
@@ -671,7 +757,12 @@ export class AnalyticsService {
       .sort((a, b) => (b.progres ?? -1) - (a.progres ?? -1));
 
     // Grade records do not prove individual CP/TP attainment. No RPP query under a grade-only grant.
-    return { mapelProgress, cpBreakdown: [], cpState: "unavailable", cpReason: "Relasi bukti asesmen per CP belum tersedia; ketuntasan nilai bukan progres CP." };
+    return {
+      mapelProgress,
+      cpBreakdown: [],
+      cpState: 'unavailable',
+      cpReason: 'Relasi bukti asesmen per CP belum tersedia; ketuntasan nilai bukan progres CP.',
+    };
   }
 }
 
@@ -891,8 +982,13 @@ export class StudentAnalyticsService {
     const data = students.map((s) => {
       const subjectMap = map.get(s.id) ?? new Map<string, CompArrays>();
       const subjects = [...subjectMap.entries()].map(([subject, comp]) => {
-        const avg = (arr: number[]): number | undefined =>
-          arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : undefined;
+        // Do not round components before the official one-decimal weighted NA.
+        const avg = (arr: number[]): number | undefined => {
+          const valid = arr
+            .filter((n) => Number.isFinite(n) && n >= 0 && n <= 100)
+            .sort((a, b) => a - b);
+          return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : undefined;
+        };
         const naComponents: NaComponents = {
           uh: avg(comp.uh),
           praktik: avg(comp.praktik),

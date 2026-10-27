@@ -27,9 +27,11 @@ export function isAiDistributionValid(input: {
   difficultyDistribution: DifficultyDistribution;
   cognitiveDistribution: CognitiveDistribution;
 }): boolean {
-  return sumValues(input.typeDistribution) === input.questionCount
-    && sumValues(input.difficultyDistribution) === input.questionCount
-    && sumValues(input.cognitiveDistribution) === input.questionCount;
+  return (
+    sumValues(input.typeDistribution) === input.questionCount &&
+    sumValues(input.difficultyDistribution) === input.questionCount &&
+    sumValues(input.cognitiveDistribution) === input.questionCount
+  );
 }
 
 export function buildAiQuestionDraftRequest(input: {
@@ -43,7 +45,7 @@ export function buildAiQuestionDraftRequest(input: {
   contextMode: AiContextMode;
   character: AiCharacter;
   teacherInstruction?: string;
-  idempotencyKey: string;
+  idempotencyKey?: string;
 }) {
   const allowedRefs = new Set(normalizeSourceTpOptions(input.source).map((tp) => tp.ref));
   const requestedRefs = input.tpRefs.map((ref) => ref.trim()).filter(Boolean);
@@ -51,7 +53,9 @@ export function buildAiQuestionDraftRequest(input: {
     throw new Error('TP harus dipilih dari sumber authoritative.');
   }
   return {
-    ...(input.source.sourceType === 'module' ? { moduleId: input.source.id } : { rppId: input.source.id }),
+    ...(input.source.sourceType === 'module'
+      ? { moduleId: input.source.id }
+      : { rppId: input.source.id }),
     purpose: input.purpose,
     questionCount: input.questionCount,
     typeDistribution: input.typeDistribution,
@@ -60,12 +64,16 @@ export function buildAiQuestionDraftRequest(input: {
     tpRefs: requestedRefs,
     contextMode: input.contextMode,
     character: input.character,
-    ...(input.teacherInstruction?.trim() ? { teacherInstruction: input.teacherInstruction.trim() } : {}),
-    idempotencyKey: input.idempotencyKey,
+    ...(input.teacherInstruction?.trim()
+      ? { teacherInstruction: input.teacherInstruction.trim() }
+      : {}),
+    ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
   };
 }
 
-export function normalizeSourceTpOptions(source: QuestionSourceOption): Array<{ ref: string; text: string }> {
+export function normalizeSourceTpOptions(
+  source: QuestionSourceOption,
+): Array<{ ref: string; text: string }> {
   if (source.tpOptions && source.tpOptions.length > 0) return source.tpOptions;
   return source.tpRefs.map((ref) => ({ ref, text: ref }));
 }

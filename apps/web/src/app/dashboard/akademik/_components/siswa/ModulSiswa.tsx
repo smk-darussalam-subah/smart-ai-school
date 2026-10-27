@@ -50,13 +50,19 @@ export function ModuleCard({ module, isPending, onOpen, onComplete }: ModuleCard
       >
         <div
           className="relative flex h-10 items-center px-4"
-          style={{ background: isLocked ? 'var(--bar-bg)' : `linear-gradient(135deg, ${color}, ${color}80)` }}
+          style={{
+            background: isLocked
+              ? 'var(--bar-bg)'
+              : `linear-gradient(135deg, ${color}, ${color}80)`,
+          }}
         >
           <div className="absolute left-2.5 top-1.5 rounded bg-white/20 px-1.5 py-0.5 text-[9px] font-extrabold text-white backdrop-blur">
             {module.tp}
           </div>
           <div className="ml-auto grid h-6 w-6 place-items-center rounded-lg bg-white/20 backdrop-blur">
-            <span className="text-white text-xs font-bold">{(mpIcon(module.mapel) || 'book').charAt(0).toUpperCase()}</span>
+            <span className="text-white text-xs font-bold">
+              {(mpIcon(module.mapel) || 'book').charAt(0).toUpperCase()}
+            </span>
           </div>
         </div>
         <div className="p-3">
@@ -67,8 +73,12 @@ export function ModuleCard({ module, isPending, onOpen, onComplete }: ModuleCard
                 {module.mapel} · {module.alokasi}
               </div>
             </div>
-            {isCompleted && <CheckCircle className="h-5 w-5 flex-shrink-0 text-emerald-500" aria-hidden="true" />}
-            {isLocked && <Lock className="h-5 w-5 flex-shrink-0 text-[var(--muted)]" aria-hidden="true" />}
+            {isCompleted && (
+              <CheckCircle className="h-5 w-5 flex-shrink-0 text-emerald-500" aria-hidden="true" />
+            )}
+            {isLocked && (
+              <Lock className="h-5 w-5 flex-shrink-0 text-[var(--muted)]" aria-hidden="true" />
+            )}
           </div>
 
           {!isLocked && (
@@ -84,7 +94,10 @@ export function ModuleCard({ module, isPending, onOpen, onComplete }: ModuleCard
           )}
 
           {isCompleted && (
-            <div className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-500" role="status">
+            <div
+              className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-500"
+              role="status"
+            >
               <CheckCircle className="h-3.5 w-3.5" aria-hidden="true" />
               Selesai
             </div>
@@ -94,13 +107,6 @@ export function ModuleCard({ module, isPending, onOpen, onComplete }: ModuleCard
             <div className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-amber-500">
               <Award className="h-3.5 w-3.5" />
               {module.badge}
-            </div>
-          )}
-
-          {isCompleted && module.lms && (
-            <div className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-500">
-              <CheckCircle className="h-3.5 w-3.5" />
-              LMS · Nilai tercatat
             </div>
           )}
         </div>
@@ -114,7 +120,11 @@ export function ModuleCard({ module, isPending, onOpen, onComplete }: ModuleCard
             disabled={isPending}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold text-emerald-600 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
           >
-            {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+            {isPending ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <CheckCircle className="h-3 w-3" />
+            )}
             Tandai Selesai
           </button>
         </div>
@@ -123,7 +133,16 @@ export function ModuleCard({ module, isPending, onOpen, onComplete }: ModuleCard
   );
 }
 
-export default function ModulSiswa({ modules, badges: _badges, showToast, go, setModal: _setModal, setBadgeCelebration: _setBadgeCelebration, setActiveModulId, onModuleCompleted }: Props) {
+export default function ModulSiswa({
+  modules,
+  badges: _badges,
+  showToast,
+  go,
+  setModal: _setModal,
+  setBadgeCelebration: _setBadgeCelebration,
+  setActiveModulId,
+  onModuleCompleted,
+}: Props) {
   const [filter, setFilter] = useState<'all' | 'aktif' | 'selesai' | 'terkunci'>('all');
   const [pendingModuleUuid, startTransition] = useTransition();
 
@@ -145,7 +164,9 @@ export default function ModulSiswa({ modules, badges: _badges, showToast, go, se
         <h1 className="text-2xl font-extrabold tracking-tight">Modul Ajar</h1>
         <div className="mt-2 flex items-center gap-2 text-sm text-[var(--muted)]">
           <BookOpen className="h-4 w-4" />
-          <span>{stats.selesai} selesai · {stats.aktif} aktif · {stats.terkunci} terkunci</span>
+          <span>
+            {stats.selesai} selesai · {stats.aktif} aktif · {stats.terkunci} terkunci
+          </span>
         </div>
       </div>
 

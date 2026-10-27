@@ -11,12 +11,22 @@ import { fetchTimeline } from '../../actions';
 export interface BadgeApiItem {
   id: string;
   awardedAt: string;
-  badge: { id: string; code: string; name: string; description: string; icon: string; tier: string };
+  badge: {
+    id: string;
+    code: string;
+    name: string;
+    description: string;
+    icon: string;
+    tier: string;
+  };
 }
 
 /** Emoji tier fallback bila badge.icon kosong/tidak valid. */
 const TIER_EMOJI: Record<string, string> = {
-  BRONZE: '\u{1F948}', SILVER: '\u{1F948}', GOLD: '\u{1F3C6}', PLATINUM: '\u{1F48E}',
+  BRONZE: '\u{1F948}',
+  SILVER: '\u{1F948}',
+  GOLD: '\u{1F3C6}',
+  PLATINUM: '\u{1F48E}',
 };
 
 /** Mapping badge API → OrtuBadge view-model. Semua badge ter-award dianggap earned=true. */
@@ -34,22 +44,42 @@ interface CapaianOrtuProps {
   showToast: (msg: string) => void;
   /** T1-03a: badge real dari /badges/student/:id. */
   badges?: BadgeApiItem[];
+  activeStudentId?: string;
 }
 
 /** Avatar colors for leaderboard (cycling). */
 
-export default function CapaianOrtu({ showToast, badges }: CapaianOrtuProps) {
+export default function CapaianOrtu({ showToast, badges, activeStudentId }: CapaianOrtuProps) {
   // T1-03a: badges dari data real. XP/CP/leaderboard belum di-fetch untuk ortu
   // (lihat page.tsx ortu branch) → tampilkan honest empty state, BUKAN SIM.
   const earnedBadges = mapBadges(badges ?? []);
 
   // B3: Fetch real timeline from /student-dashboard/timeline
-  const [realTimeline, setRealTimeline] = useState<Array<{ date: string; type: string; title: string; description: string; subject?: string }>>([]);
+  const [realTimeline, setRealTimeline] = useState<
+    Array<{ date: string; type: string; title: string; description: string; subject?: string }>
+  >([]);
+  const [timelineState, setTimelineState] = useState('loading');
   useEffect(() => {
-    fetchTimeline().then((res) => {
-      if (res.success && res.data) setRealTimeline(res.data);
-    });
-  }, []);
+    let active = true;
+    setRealTimeline([]);
+    setTimelineState('loading');
+    if (!activeStudentId) {
+      setTimelineState('unavailable');
+      return;
+    }
+    fetchTimeline(activeStudentId)
+      .then((res) => {
+        if (!active) return;
+        setRealTimeline(res.success ? (res.data ?? []) : []);
+        setTimelineState(res.success ? 'ready' : 'unavailable');
+      })
+      .catch(() => {
+        if (active) setTimelineState('unavailable');
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeStudentId]);
 
   return (
     <div className="px-4 pb-4">
@@ -59,20 +89,25 @@ export default function CapaianOrtu({ showToast, badges }: CapaianOrtuProps) {
       </div>
 
       {/* 1. XP card — T1-03a: ortu XP endpoint belum di-wire; honest empty state */}
-      <div
-        className="mb-3.5 rounded-[var(--r)] border border-dashed border-[var(--border)] bg-[var(--surface)] p-3.5 text-center"
-      >
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl text-[18px] font-extrabold text-white" style={{ background: 'var(--grad)' }}>
+      <div className="mb-3.5 rounded-[var(--r)] border border-dashed border-[var(--border)] bg-[var(--surface)] p-3.5 text-center">
+        <div
+          className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl text-[18px] font-extrabold text-white"
+          style={{ background: 'var(--grad)' }}
+        >
           ?
         </div>
         <p className="mt-2 text-[12.5px] font-bold text-[var(--text)]">XP & Level</p>
-        <p className="text-[10.5px] text-[var(--muted)]">Data gamifikasi anak akan tersedia menyusul</p>
+        <p className="text-[10.5px] text-[var(--muted)]">
+          Data gamifikasi anak akan tersedia menyusul
+        </p>
       </div>
 
       {/* 2. Ranking — belum di-fetch untuk ortu; honest empty state */}
       <div className="mb-3.5 rounded-[var(--r)] border border-dashed border-[var(--border)] bg-[var(--surface)] p-3.5 text-center">
         <Trophy className="mx-auto h-5 w-5 text-[var(--dim)]" />
-        <p className="mt-1.5 text-[12px] font-bold text-[var(--muted)]">Ranking kelas belum tersedia</p>
+        <p className="mt-1.5 text-[12px] font-bold text-[var(--muted)]">
+          Ranking kelas belum tersedia
+        </p>
       </div>
 
       {/* 3. Badges grid — T1-03a: dari /badges/student/:id (real) */}
@@ -99,7 +134,12 @@ export default function CapaianOrtu({ showToast, badges }: CapaianOrtuProps) {
                 className="cursor-pointer rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--surface)] p-2.5 text-center transition-transform hover:-translate-y-0.5"
                 role="button"
                 tabIndex={0}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showToast(`${b.name}: ${b.desc}`); } }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    showToast(`${b.name}: ${b.desc}`);
+                  }
+                }}
               >
                 <div className="mb-1 text-[22px] leading-none">{b.emoji}</div>
                 <div className="text-[9px] font-bold leading-tight">{b.name}</div>
@@ -113,7 +153,9 @@ export default function CapaianOrtu({ showToast, badges }: CapaianOrtuProps) {
           namun belum di-wire ke komponen ortu di page.tsx; honest empty state */}
       <div className="mb-3.5 rounded-[var(--r)] border border-dashed border-[var(--border)] bg-[var(--surface)] p-3.5 text-center">
         <Target className="mx-auto h-5 w-5 text-[var(--dim)]" />
-        <p className="mt-1.5 text-[12px] font-bold text-[var(--muted)]">Progress kompetensi akan tersedia menyusul</p>
+        <p className="mt-1.5 text-[12px] font-bold text-[var(--muted)]">
+          Progress kompetensi akan tersedia menyusul
+        </p>
       </div>
 
       {/* 5. Learning timeline — B3: wired to /student-dashboard/timeline */}
@@ -121,7 +163,7 @@ export default function CapaianOrtu({ showToast, badges }: CapaianOrtuProps) {
         <div className="mb-2.5 flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--muted)]">
             <History className="h-[15px] w-[15px] text-[var(--pri)]" />
-            Timeline Pembelajaran
+            Riwayat terbaru anak
           </div>
         </div>
         {/* U6: SIM_TIMELINE replaced with honest empty state */}
@@ -141,13 +183,19 @@ export default function CapaianOrtu({ showToast, badges }: CapaianOrtuProps) {
                 />
                 <b className="block text-[12px]">{t.title}</b>
                 <small className="text-[10px] font-semibold text-[var(--muted)]">{t.date}</small>
-                <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--muted)]">{t.description}</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--muted)]">
+                  {t.description}
+                </p>
               </div>
             ))}
           </div>
         ) : (
           <div className="py-5 text-center text-[12px] font-semibold text-[var(--dim)]">
-            Timeline pembelajaran akan tersedia menyusul
+            {timelineState === 'loading'
+              ? 'Memuat riwayat anak...'
+              : timelineState === 'unavailable'
+                ? 'Riwayat belum dapat dimuat. Coba muat ulang halaman.'
+                : 'Belum ada riwayat pembelajaran anak.'}
           </div>
         )}
       </div>

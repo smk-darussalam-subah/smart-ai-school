@@ -8,15 +8,16 @@
 // Mockup ref: .tasks/akademik-mockup/akademik-ks.html (1,305 lines)
 // =============================================================================
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ScheduleBoard, { ScheduleReadProvider, useScheduleRead } from './ks/ScheduleBoard';
 import SchedulingMonitoringPanel from './ks/SchedulingMonitoringPanel';
+import LearningRecap from './LearningRecap';
 import { MonitoringSchema, type SchedulingMonitoring } from '@/lib/scheduling-monitoring';
 import {
   LayoutDashboard, FileCheck2, ClipboardPenLine, Monitor, ClipboardCheck,
   Target, CalendarClock, Users, BadgeCheck, Presentation, FileClock,
-  AlertTriangle, Activity, TrendingUp, ListChecks, ChevronRight, X,
+  AlertTriangle, Activity, TrendingUp, ListChecks, ChevronRight,
   Check, CheckCircle2, Info, LayoutGrid, SlidersHorizontal,
   Route, Lightbulb, Paperclip, FileText,
   type LucideIcon,
@@ -58,12 +59,14 @@ interface Props {
   assessmentsAvailable?: boolean;
   scheduleAvailable?: boolean;
   initialWorkflowView?: AcademicWorkflowView | null;
+  canReadClassSessions?: boolean;
 }
 
-type Screen = 'beranda' | 'modul' | 'sumatif' | 'monitor' | 'rekap' | 'kktp' | 'jadwal' | 'rapor';
+type Screen = 'beranda' | 'modul' | 'sumatif' | 'monitor' | 'rekap' | 'kktp' | 'jadwal' | 'rapor' | 'sesi';
 
 const NAV: { key: Screen; label: string; icon: LucideIcon; badge?: number }[] = [
   { key: 'beranda', label: 'Beranda', icon: LayoutDashboard },
+  { key: 'sesi', label: 'Rekap Pembelajaran', icon: CalendarClock },
   { key: 'modul', label: 'Modul Ajar', icon: FileCheck2 },
   { key: 'sumatif', label: 'Sumatif', icon: ClipboardPenLine },
   { key: 'monitor', label: 'Monitoring KBM', icon: Monitor },
@@ -108,7 +111,7 @@ function sumatifStatus(status: string): SumatifStatus {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function KsWorkspace({
-  grades: _sourceGrades, attendances: sourceAttendances, classes: sourceClasses, assignments: sourceAssignments, rpp: sourceRpp, schedules: sourceSchedules, activities: _sourceActivities, lmsModules: _lmsModules, realSumatif, subjects, academicYear, semester, dataWarning, scheduleAvailable = false, rppAvailable = false, assessmentsAvailable = false, initialWorkflowView = null,
+  grades: _sourceGrades, attendances: sourceAttendances, classes: sourceClasses, assignments: sourceAssignments, rpp: sourceRpp, schedules: sourceSchedules, activities: _sourceActivities, lmsModules: _lmsModules, realSumatif, subjects, academicYear, semester, dataWarning, scheduleAvailable = false, rppAvailable = false, assessmentsAvailable = false, initialWorkflowView = null, canReadClassSessions = false,
 }: Props) {
   const router = useRouter(), searchParams = useSearchParams();
   const [filterGuru, setFilterGuru] = useState('');
@@ -196,7 +199,7 @@ export default function KsWorkspace({
       <h1 className="text-2xl font-bold tracking-tight text-[#0f2e25]">Dashboard KS / Waka Kurikulum</h1>
       <p className="text-sm text-[#6b8079]">Pengawasan akademik · approval modul ajar · monitoring sumatif · monitoring KBM</p>
 
-      {dataWarning && (
+      {dataWarning && screen !== 'sesi' && (
         <div className="mt-2 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[12.5px] font-semibold text-amber-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />Sebagian data gagal dimuat dari server. Muat ulang halaman jika berlanjut.
         </div>
@@ -205,7 +208,7 @@ export default function KsWorkspace({
       {/* Global Filter Bar */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-[#9bb0a8]">
-          <SlidersHorizontal className="h-3.5 w-3.5" />Filter
+          <SlidersHorizontal className="h-3.5 w-3.5" />{screen === 'sesi' ? 'Periode' : 'Filter'}
         </span>
         <span className="inline-flex items-center gap-2 rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] shadow-sm">
           <CalendarClock className="h-[15px] w-[15px] text-emerald-600" />TA {academicYear || '—'}
@@ -214,6 +217,7 @@ export default function KsWorkspace({
           {([1,2] as const).map((s) => (
             <button key={s} type="button" onClick={() => {
               const query = new URLSearchParams(searchParams.toString()); query.set('academicYear', academicYear); query.set('semester', String(s));
+              if (screen === 'sesi') query.set('view', 'learning-recap');
               router.push('/dashboard/akademik?' + query.toString());
             }}
               className={clsx('rounded-lg px-3 py-1.5 text-[12px] font-bold', semester === s ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]')}>
@@ -221,23 +225,23 @@ export default function KsWorkspace({
             </button>
           ))}
         </div>
-        <select value={filterGuru} onChange={(e) => setFilterGuru(e.target.value)}
-          className="rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] shadow-sm outline-none">
+        <select hidden={screen === 'sesi'} aria-label="Filter guru" value={filterGuru} onChange={(e) => setFilterGuru(e.target.value)}
+          className="rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">
           <option value="">Semua Guru</option>
           {teacherOptions.map(([id,name]) => <option key={id} value={id}>{name}</option>)}
         </select>
-        <select value={filterMapel} onChange={(e) => setFilterMapel(e.target.value)}
-          className="rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] shadow-sm outline-none">
+        <select hidden={screen === 'sesi'} aria-label="Filter mata pelajaran" value={filterMapel} onChange={(e) => setFilterMapel(e.target.value)}
+          className="rounded-xl border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-bold text-[#355a4e] shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">
           <option value="">Semua Mapel</option>
           {filterMapelOpts.map((m) => <option key={m}>{m}</option>)}
         </select>
-        <span className="ml-auto hidden items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11.5px] font-bold text-blue-700 sm:inline-flex">
+        {screen !== 'sesi' && <><span className="ml-auto hidden items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11.5px] font-bold text-blue-700 sm:inline-flex">
           <Users className="h-3.5 w-3.5" />{classes.length} rombel · {assignments.length} penugasan
         </span>
         <span className="hidden items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11.5px] font-bold text-emerald-700 sm:inline-flex">
           <BadgeCheck className="h-3.5 w-3.5" />Kepala Sekolah
         </span>
-        <span className="hidden items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700 sm:inline-flex"><Check className="h-3 w-3" /> Filter Aktif</span>
+        <span className="hidden items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700 sm:inline-flex"><Check className="h-3 w-3" /> Filter Aktif</span></>}
       </div>
 
       {/* Sub-nav — Opsi B: horizontal scroll + fade affordance + auto-center active (mobile), wrap (desktop) */}
@@ -268,6 +272,7 @@ export default function KsWorkspace({
       </div>
 
       <div className="pt-4">
+        {screen === 'sesi' && <LearningRecap key={`${academicYear}|${semester}`} academicYear={academicYear} semester={semester} scope="operations" canRead={canReadClassSessions} />}
         {screen === 'beranda' && <BerandaKs hadirPct={hadirPct} todayAtt={todayAtt} attendances={attendances} dataComplete={!dataWarning && !!monitoring} pendingRpp={rppAvailable ? pendingRpp.length : null} activeSumatif={assessmentsAvailable ? activeSumatif.length : null} belowKktp={belowKktp} schedules={schedules} classes={classes} onNavigate={setScreen} />}
         {screen === 'modul' && <ModulAjarKs rpp={rpp} onReview={setSelRpp} />}
         {screen === 'sumatif' && <AuditSumatifKs onOpenDetail={setSelSumatif} data={sumatifData} />}
@@ -447,11 +452,9 @@ function KehadiranDetailModal({ todayAtt, onClose }: { todayAtt: AttendanceItem[
   const totalPct = todayAtt.length ? Math.round((totalHadir / todayAtt.length) * 100) : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <div className="sticky top-0 flex items-center justify-between border-b border-[#e6efea] bg-white px-5 py-4">
+    <KsDetailDialog title="Kehadiran Siswa — Rincian" onClose={onClose}>
+        <div className="sticky top-0 flex items-center justify-between border-b border-[#e6efea] bg-white py-4 pl-5 pr-16">
           <div><h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><Users className="h-5 w-5 text-emerald-600" />Kehadiran Siswa — Rincian</h3><p className="text-[11.5px] text-[#6b8079]">Per kelas · {wibDateLabel()}</p></div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-[#9bb0a8] hover:bg-[#f4f7f5]" aria-label="Tutup"><X className="h-5 w-5" /></button>
         </div>
         <div className="space-y-4 p-5">
           <div className="flex flex-wrap gap-2">
@@ -484,14 +487,14 @@ function KehadiranDetailModal({ todayAtt, onClose }: { todayAtt: AttendanceItem[
         <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[#e6efea] bg-white px-5 py-3">
           <button type="button" onClick={onClose} className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>
         </div>
-      </div>
-    </div>
+    </KsDetailDialog>
   );
 }
 
 function GuruHadirModal({ data, onClose }: { data: TeacherAttendanceSummary | null; onClose: () => void }) {
+  const focus = useKsDialogFocus();
   return <Dialog open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
-    <DialogContent className="max-h-[88vh] max-w-2xl overflow-y-auto">
+    <DialogContent {...focus} className="max-h-[88vh] w-[calc(100%-2rem)] max-w-2xl overflow-y-auto">
       <DialogHeader><DialogTitle>Presensi Guru Harian</DialogTitle><DialogDescription>Ringkasan StaffAttendance. Bebas kewajiban atau belum jatuh waktu tidak dihitung sebagai absen.</DialogDescription></DialogHeader>
       {!data ? <p role="status">Ringkasan belum tersedia. Tutup dan muat ulang sumber; tidak dapat menyimpulkan nol kehadiran.</p> : <div className="space-y-4">
         <p className="text-sm text-slate-600">{data.date} · {data.present}/{data.total} guru memiliki presensi tercatat.</p>
@@ -504,8 +507,9 @@ function GuruHadirModal({ data, onClose }: { data: TeacherAttendanceSummary | nu
 }
 
 function KelasBerjalanModal({ schedules, classes, onClose }: { schedules: ScheduleItem[]; classes: ClassRef[]; onClose: () => void }) {
+  const focus = useKsDialogFocus();
   return <Dialog open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
-    <DialogContent className="max-h-[88vh] max-w-5xl overflow-y-auto">
+    <DialogContent {...focus} className="max-h-[88vh] w-[calc(100%-2rem)] max-w-5xl overflow-y-auto">
       <DialogHeader><DialogTitle>Jadwal Kelas Hari Ini</DialogTitle><DialogDescription>Semua blok terencana tetap terlihat. Rentang waktu jadwal bukan bukti sesi aktif atau kelas libur.</DialogDescription></DialogHeader>
       <ScheduleBoard schedules={schedules} classes={classes} />
     </DialogContent>
@@ -696,7 +700,7 @@ function JadwalTugasKs({ schedules, classes, pendingRpp, activeSumatif }: {
       <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h4 className="flex items-center gap-2 text-[14px] font-bold text-[#0f2e25]"><LayoutGrid className="h-4 w-4 text-emerald-600" />Matriks Jadwal Mingguan</h4>
-          <select value={selClass} onChange={(e) => setSelClass(e.target.value)} className="rounded-lg border border-[#e6efea] bg-white px-3 py-1.5 text-[12px] font-bold text-[#355a4e]">
+          <select aria-label="Filter kelas jadwal" value={selClass} onChange={(e) => setSelClass(e.target.value)} className="rounded-lg border border-[#e6efea] bg-white px-3 py-1.5 text-[12px] font-bold text-[#355a4e]">
             <option value="all">Semua Kelas</option>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
@@ -747,17 +751,42 @@ function JadwalTugasKs({ schedules, classes, pendingRpp, activeSumatif }: {
 
 // ═══ MODALS ═══════════════════════════════════════════════════════════════════
 
+function useKsDialogFocus() {
+  const trigger = useRef<HTMLElement | null>(null);
+  return {
+    onOpenAutoFocus: () => { trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; },
+    onCloseAutoFocus: (event: Event) => {
+      event.preventDefault();
+      if (trigger.current?.isConnected) trigger.current.focus();
+    },
+  };
+}
+
+function KsDetailDialog({ title, onClose, children, compact = false }: {
+  title: string; onClose: () => void; children: React.ReactNode; compact?: boolean;
+}) {
+  const focus = useKsDialogFocus();
+  return <Dialog open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
+    <DialogContent
+      {...focus}
+      className={clsx('block max-h-[88dvh] w-[calc(100%-2rem)] gap-0 overflow-y-auto rounded-2xl border-[#e6efea] bg-white p-0 text-[#0f2e25] shadow-xl', compact ? 'max-w-xl' : 'max-w-2xl')}
+      aria-describedby={undefined}
+    >
+      <DialogTitle className="sr-only">{title}</DialogTitle>
+      {children}
+    </DialogContent>
+  </Dialog>;
+}
+
 function RppDetailModal({ rpp, onClose }: { rpp: RppItem; onClose: () => void }) {
   const body = rpp.body;
   const fase = body?.fase ?? '—';
   const profileFramework = resolveProfileFramework(rpp.academicYear);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <div className="sticky top-0 flex items-center justify-between border-b border-[#e6efea] bg-white px-5 py-4">
+    <KsDetailDialog title={`Rincian Modul Ajar: ${rpp.title}`} onClose={onClose}>
+        <div className="sticky top-0 flex items-center justify-between border-b border-[#e6efea] bg-white py-4 pl-5 pr-16">
           <div><h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><FileCheck2 className="h-5 w-5 text-emerald-600" />{rpp.title}</h3><p className="text-[11.5px] text-[#6b8079]">{rpp.subject} · {rpp.class?.name ?? '—'} · {rpp.status}</p></div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-[#9bb0a8] hover:bg-[#f4f7f5]" aria-label="Tutup"><X className="h-5 w-5" /></button>
         </div>
         <div className="space-y-4 p-5">
           {/* Stats */}
@@ -844,18 +873,15 @@ function RppDetailModal({ rpp, onClose }: { rpp: RppItem; onClose: () => void })
           <button type="button" onClick={onClose} className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>
           <a href="/dashboard/rpp" className="inline-flex items-center rounded-xl bg-emerald-600 px-4 py-2 text-[12.5px] font-bold text-white hover:bg-emerald-700">Buka antrean review</a>
         </div>
-      </div>
-    </div>
+    </KsDetailDialog>
   );
 }
 
 function SumatifDetailModal({ item, onClose }: { item: SumatifItem; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <div className="sticky top-0 flex items-center justify-between border-b border-[#e6efea] bg-white px-5 py-4">
+    <KsDetailDialog title={`Rincian Sumatif: ${item.title}`} onClose={onClose} compact>
+        <div className="sticky top-0 flex items-center justify-between border-b border-[#e6efea] bg-white py-4 pl-5 pr-16">
           <div><h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><ClipboardPenLine className="h-5 w-5 text-emerald-600" />{item.title}</h3><p className="text-[11.5px] text-[#6b8079]">{item.subject} · {item.className}</p></div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-[#9bb0a8] hover:bg-[#f4f7f5]" aria-label="Tutup"><X className="h-5 w-5" /></button>
         </div>
         <div className="space-y-4 p-5">
           <div className="flex flex-wrap gap-2">
@@ -874,21 +900,22 @@ function SumatifDetailModal({ item, onClose }: { item: SumatifItem; onClose: () 
         <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[#e6efea] bg-white px-5 py-3">
           <button type="button" onClick={onClose} className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>
         </div>
-      </div>
-    </div>
+    </KsDetailDialog>
   );
 }
 
 // ═══ SHARED COMPONENTS ═════════════════════════════════════════════════════════
 
 function Kpi({ icon: Icon, label, value, sub, valueClass, onClick }: { icon: LucideIcon; label: string; value: string; sub?: string; valueClass?: string; onClick?: () => void }) {
-  return (
-    <div className={clsx('rounded-2xl border border-[#e6efea] bg-white p-4 shadow-sm', onClick && 'cursor-pointer transition hover:border-emerald-200 hover:shadow-md')} onClick={onClick}>
-      <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-[#6b8079]"><Icon className="h-3.5 w-3.5 text-emerald-600" />{label}</div>
-      <div className={clsx('mt-1.5 text-[24px] font-extrabold tracking-tight text-[#0f2e25]', valueClass)}>{value}</div>
-      {sub && <div className="mt-0.5 text-[10.5px] font-medium text-[#9bb0a8]">{sub}</div>}
-    </div>
-  );
+  const className = 'rounded-2xl border border-[#e6efea] bg-white p-4 text-left shadow-sm';
+  const content = <>
+    <span className="flex items-center gap-1.5 text-[11.5px] font-semibold text-[#6b8079]"><Icon aria-hidden="true" className="h-3.5 w-3.5 text-emerald-600" />{label}</span>
+    <span className={clsx('mt-1.5 block text-[24px] font-extrabold tracking-tight text-[#0f2e25]', valueClass)}>{value}</span>
+    {sub && <span className="mt-0.5 block text-[10.5px] font-medium text-[#9bb0a8]">{sub}</span>}
+  </>;
+  return onClick
+    ? <button type="button" onClick={onClick} className={clsx(className, 'w-full transition hover:border-emerald-200 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600')}>{content}</button>
+    : <div className={className}>{content}</div>;
 }
 
 function TrenChart({ siswa, guru }: { siswa: (number | null)[]; guru: (number | null)[] }) {

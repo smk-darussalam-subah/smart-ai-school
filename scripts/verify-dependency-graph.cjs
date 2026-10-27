@@ -9,6 +9,26 @@ const { dirname, relative, resolve } = require('node:path');
 const root = resolve(__dirname, '..');
 const lock = JSON.parse(readFileSync(resolve(root, 'package-lock.json'), 'utf8'));
 const packages = lock.packages;
+// Nest's async-controller normalization uses Observable constructor identity.
+// Equal semver declarations alone do not prove a shared physical module.
+const { createRequire } = require('node:module');
+const appRequire = createRequire(resolve(root, 'apps/api/package.json'));
+const coreRequire = createRequire(appRequire.resolve('@nestjs/core/package.json'));
+const appRx = appRequire('rxjs');
+const coreRx = coreRequire('rxjs');
+assert.equal(
+  appRx.Observable,
+  coreRx.Observable,
+  'API and Nest must share one Observable constructor',
+);
+assert.equal(packages['node_modules/rxjs']?.version, '7.8.2');
+assert.deepEqual(
+  Object.keys(packages).filter(
+    (p) => p.endsWith('/node_modules/rxjs') || p === 'node_modules/rxjs',
+  ),
+  ['node_modules/rxjs'],
+  'nested RxJS copy must not be locked',
+);
 const thread = packages['node_modules/thread-stream'];
 
 assert.equal(thread?.version, '3.2.0', 'unexpected thread-stream version');
@@ -31,7 +51,8 @@ const resolvedPackage = require.resolve('real-require/package.json', {
 const actual = JSON.parse(readFileSync(resolvedPackage, 'utf8'));
 // Compare against the canonical installed root, including supported worktree junctions.
 const installedRoot = realpathSync(resolve(root, 'node_modules'));
-const relativePackage = 'node_modules/' + relative(installedRoot, realpathSync(resolvedPackage)).replaceAll('\\', '/');
+const relativePackage =
+  'node_modules/' + relative(installedRoot, realpathSync(resolvedPackage)).replaceAll('\\', '/');
 
 assert.equal(actual.version, '0.2.0', 'worker resolves an incompatible real-require version');
 assert.equal(
@@ -43,6 +64,8 @@ assert.equal(
 process.stdout.write(
   `${JSON.stringify({
     status: 'DEPENDENCY_GRAPH_VALID',
+    rxjs: appRequire('rxjs/package.json').version,
+    sharedObservableConstructor: appRx.Observable === coreRx.Observable,
     threadStream: thread.version,
     declaredRealRequire: thread.dependencies['real-require'],
     resolvedRealRequire: actual.version,

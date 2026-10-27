@@ -17,6 +17,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { serializeDisplayEvent } from '../operational-monitoring/operational-monitoring.controller';
 import { DisplayPlaybackLeaseService } from '../operational-monitoring/display-playback-lease.service';
 import { OperationalMonitoringService } from '../operational-monitoring/operational-monitoring.service';
+import { sessionActivationFixture } from './fixtures/session-activation.fixture';
 
 const playbackLeases = {
   claim: jest.fn(),
@@ -361,6 +362,8 @@ describe('Wave 8.5 legacy kiosk cutover', () => {
 });
 
 describe('Wave 8.5 durable display playback', () => {
+  beforeEach(() => jest.useFakeTimers().setSystemTime(new Date('2026-10-20T06:00:00Z')));
+  afterEach(() => jest.useRealTimers());
   const device = {
     id: '40000000-0000-4000-8000-000000000001',
     profile: 'RUANG_GURU' as const,
@@ -371,18 +374,50 @@ describe('Wave 8.5 durable display playback', () => {
   };
 
   function buildService(status: 'PENDING' | 'PLAYED', changed = 1) {
+    const session = {
+      id: 'session',
+      assignedTeacherId: 'teacher',
+      serviceDate: new Date('2026-10-20'),
+      academicYearId: 'year',
+      semesterId: 'semester',
+      bellScheduleProfileId: 'bell',
+      classId: 'class',
+      teachingAssignmentId: 'assignment',
+      status: 'SCHEDULED',
+      scheduledStartAt: new Date('2026-10-20T05:59:00Z'),
+      scheduledEndAt: new Date('2026-10-20T06:30:00Z'),
+    };
+    const activation = sessionActivationFixture(session);
+    const bells = {
+      resolveForDate: jest.fn().mockResolvedValue({
+        id: 'bell',
+        segments: [
+          { dayOfWeek: 0, type: 'INSTRUCTION', jpNumber: 1, startMinute: 779, endMinute: 810 },
+        ],
+      }),
+      resolveInstructionWindow: jest
+        .fn()
+        .mockReturnValue({ startAt: session.scheduledStartAt, endAt: session.scheduledEndAt }),
+    };
     const updateMany = jest.fn().mockResolvedValue({ count: changed });
-    const prisma = {
+    const tx = {
+      ...activation.domain,
+      $executeRaw: jest.fn(),
+      $queryRaw: jest.fn().mockImplementation(activation.queryRaw),
+      classSessionEvent: { findUnique: jest.fn().mockImplementation(activation.binding) },
+      classSessionAlertAcknowledgement: { findFirst: jest.fn().mockResolvedValue(null) },
       classSessionAlertDelivery: {
         findFirst: jest.fn().mockResolvedValue({
           id: '50000000-0000-4000-8000-000000000001',
           status,
           audible: true,
           deliveredAt: status === 'PLAYED' ? new Date() : null,
+          alert: { sessionId: session.id, status: 'DISPATCHED', session },
         }),
         updateMany,
       },
     };
+    const prisma = { ...tx, $transaction: (run: (client: typeof tx) => unknown) => run(tx) };
     const devices = { authenticateCredential: jest.fn().mockResolvedValue(device) };
     const leases = {
       claim: jest.fn().mockResolvedValue({
@@ -396,7 +431,7 @@ describe('Wave 8.5 durable display playback', () => {
       service: new OperationalMonitoringService(
         prisma as unknown as PrismaService,
         devices as unknown as DisplayDeviceService,
-        {} as BellScheduleService,
+        bells as unknown as BellScheduleService,
         leases as unknown as DisplayPlaybackLeaseService,
       ),
       updateMany,

@@ -1,10 +1,11 @@
 // =============================================================================
 // app.module.ts — Root Module
-// Guard urutan: ThrottlerGuard → KeycloakGuard → PermissionGuard → RolesGuard
+// Guard urutan: IP ceiling -> Keycloak -> user quotas -> permissions -> roles.
 // =============================================================================
 
 import { Module } from '@nestjs/common';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { AuthenticatedThrottlerGuard, PreAuthThrottlerGuard, skipAiThrottle } from './common/guards/api-throttler.guard';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { HealthModule } from './health/health.module';
@@ -64,8 +65,8 @@ import { OperationalMonitoringModule } from './operational-monitoring/operationa
 @Module({
   imports: [
     ThrottlerModule.forRoot([
-      { ttl: 60_000, limit: 100 },
-      { name: 'aichat', ttl: 60_000, limit: 20 },
+      { ttl: 60_000, limit: 240 },
+      { name: 'aichat', ttl: 60_000, limit: 20, skipIf: skipAiThrottle },
     ]),
     EventEmitterModule.forRoot({ ignoreErrors: true }),
     PrismaModule,
@@ -119,8 +120,9 @@ import { OperationalMonitoringModule } from './operational-monitoring/operationa
   ],
   providers: [
     UserStatusService,
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: PreAuthThrottlerGuard },
     { provide: APP_GUARD, useClass: KeycloakGuard },
+    { provide: APP_GUARD, useClass: AuthenticatedThrottlerGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },

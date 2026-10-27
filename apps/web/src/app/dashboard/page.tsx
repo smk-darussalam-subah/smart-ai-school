@@ -39,6 +39,7 @@ interface CalendarApi {
   endDate: string;
 }
 interface ClassSessionApi {
+  canOperate?: boolean;
   id: string;
   status: string;
   scheduledStartAt: string;
@@ -157,6 +158,7 @@ export default async function DashboardPage() {
   const canReadClasses = authority.can('class.read') || authority.can('academic.class.read');
   const canReadPpdb = authority.can('ppdb.read');
   const canReadSchedule = authority.can('academic.schedule.read');
+  const canReadSessions = authority.can('academic.class-session.read');
   const canReadMonitoring = authority.can('operational.monitoring.read');
   const [
     students,
@@ -192,7 +194,7 @@ export default async function DashboardPage() {
     academicYear
       ? apiFetchResult<CalendarApi[]>('/school/calendar', token, { academicYearId: academicYear.id })
       : Promise.resolve({ status: 'unavailable', message: 'Periode aktif belum tersedia.' } as ApiFetchResult<CalendarApi[]>),
-    canReadSchedule
+    canReadSessions
       ? academicPagesResult<ClassSessionApi>(`/class-sessions?date=${wibToday()}`, token)
       : Promise.resolve(successfulEmpty({ data: [] as ClassSessionApi[] })),
     canReadMonitoring
@@ -240,8 +242,8 @@ export default async function DashboardPage() {
           scheduledStartAt: item.scheduledStartAt,
           scheduledEndAt: item.scheduledEndAt,
           status: item.status,
-          canStart: ['SCHEDULED', 'REASSIGNED'].includes(item.status),
-          canComplete: item.status === 'STARTED',
+          canStart: item.canOperate === true && authority.can('academic.class-session.manage') && ['SCHEDULED', 'REASSIGNED'].includes(item.status),
+          canComplete: item.canOperate === true && authority.can('academic.class-session.manage') && item.status === 'STARTED',
         }))}
         monitoringSummary={
           monitoring

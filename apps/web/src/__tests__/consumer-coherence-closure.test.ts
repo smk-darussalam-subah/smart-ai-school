@@ -253,14 +253,20 @@ describe('CM KKTP scoped read and draft validation', () => {
     expect(gradeCsvCell(0)).toBe('"0"');
     expect(gradeCsvCell(null)).toBe('""');
   });
-  it('production Workspace forwards official read states and period to both consumers', () => {
+  it('production Workspace forwards official read states and period to every grade consumer', () => {
     const source = readFileSync(
       path.join(__dirname, '../app/dashboard/akademik/_components/AkademikWorkspace.tsx'),
       'utf8',
     );
-    expect(source).toContain('thresholds={summaryThresholds}');
-    expect(source).toContain('thresholdState={summaryAvailability?.kktp}');
-    expect(source.match(/dataState=\{summaryAvailability\?\.grades\}/g)).toHaveLength(2);
+    for (const name of ['GradebookPenilaian', 'CapaianRapor', 'RekapPembelajaran']) {
+      const consumer = source.match(new RegExp(`<${name}\\b[\\s\\S]*?/>`))?.[0];
+      expect(consumer).toBeDefined();
+      expect(consumer).toContain('thresholds={summaryThresholds}');
+      expect(consumer).toContain('thresholdState={summaryAvailability?.kktp}');
+      expect(consumer).toContain('dataState={summaryAvailability?.grades}');
+      expect(consumer).toContain('academicYear={academicYear}');
+      expect(consumer).toContain('semester={semester}');
+    }
   });
   it('rapor prose is ordinary inline flow, not flex fragments', () => {
     const source = readFileSync(

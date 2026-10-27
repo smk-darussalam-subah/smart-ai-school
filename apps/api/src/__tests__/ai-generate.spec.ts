@@ -17,13 +17,15 @@ import { AiProviderStatusService } from '../ai/ai-provider-status.service';
 const RPP_ID = '11111111-1111-4111-8111-111111111111';
 const GURU: AuthUser = { keycloakId: 'kc-guru', username: 'guru1', roles: ['GURU'] } as AuthUser;
 const KEGIATAN_PATCH = JSON.stringify({
-  kegiatan: [{
-    pertemuan: 'Pertemuan 1',
-    pendahuluan: 'Menyampaikan tujuan pembelajaran.',
-    inti: 'Menganalisis grafik fungsi linear.',
-    penutup: 'Refleksi dan umpan balik.',
-    diferensiasi: 'Menyiapkan dukungan bertahap dan tantangan lanjutan sesuai kesiapan siswa.',
-  }],
+  kegiatan: [
+    {
+      pertemuan: 'Pertemuan 1',
+      pendahuluan: 'Menyampaikan tujuan pembelajaran.',
+      inti: 'Menganalisis grafik fungsi linear.',
+      penutup: 'Refleksi dan umpan balik.',
+      diferensiasi: 'Menyiapkan dukungan bertahap dan tantangan lanjutan sesuai kesiapan siswa.',
+    },
+  ],
 });
 const ATP_PATCH = JSON.stringify({
   atp: [{ tpRef: 'TP 1', indikator: 'Menjelaskan grafik fungsi linear dengan benar.' }],
@@ -87,23 +89,28 @@ const ownedModule = {
   semester: 1,
   class: { id: 'class-1', name: 'X TKJ 1', grade: 10, majorCode: 'TKJ' },
 };
-const p2002 = () => new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
-  code: 'P2002',
-  clientVersion: 'test',
-  meta: { target: ['teacher_id', 'type', 'idempotency_key'] },
-});
-const kegiatanPatchWithInti = (inti: string) => JSON.stringify({
-  kegiatan: [{
-    pertemuan: 'Pertemuan 1',
-    pendahuluan: 'Apersepsi pembelajaran.',
-    inti,
-    penutup: 'Refleksi pembelajaran.',
-    diferensiasi: 'Pendampingan kelompok kecil dan pilihan produk belajar.',
-  }],
-});
+const p2002 = () =>
+  new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+    code: 'P2002',
+    clientVersion: 'test',
+    meta: { target: ['teacher_id', 'type', 'idempotency_key'] },
+  });
+const kegiatanPatchWithInti = (inti: string) =>
+  JSON.stringify({
+    kegiatan: [
+      {
+        pertemuan: 'Pertemuan 1',
+        pendahuluan: 'Apersepsi pembelajaran.',
+        inti,
+        penutup: 'Refleksi pembelajaran.',
+        diferensiasi: 'Pendampingan kelompok kecil dan pilihan produk belajar.',
+      },
+    ],
+  });
 const flushPromises = () => new Promise<void>((resolve) => setImmediate(resolve));
 const asRecord = (value: unknown): Record<string, unknown> => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected object');
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Expected object');
   return value as Record<string, unknown>;
 };
 const asArray = (value: unknown): unknown[] => {
@@ -123,7 +130,6 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   const questionFindMany = jest.fn();
   const questionCreate = jest.fn();
   const questionFindUnique = jest.fn();
-  const questionUpsert = jest.fn();
   const questionCount = jest.fn();
   const aiGenerationFindFirst = jest.fn();
   const aiGenerationCreate = jest.fn();
@@ -131,6 +137,8 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   const aiGenerationUpdateMany = jest.fn();
   const aiDraftAcceptanceUpsert = jest.fn();
   const aiDraftAcceptanceUpdate = jest.fn();
+  const aiDraftAcceptanceFindMany = jest.fn();
+  const aiDraftAcceptanceFindFirst = jest.fn();
   const transaction = jest.fn();
   const executeRaw = jest.fn();
   const queryRaw = jest.fn();
@@ -162,22 +170,47 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
 
   beforeEach(async () => {
     [
-      userFindUnique, userFindMany, teacherFindUnique, rppFindFirst, lmsModuleFindFirst,
-      majorFindUnique, teachingAssignmentFindFirst, questionFindMany, questionCreate, questionFindUnique,
-      questionUpsert, questionCount, aiGenerationFindFirst, aiGenerationCreate, aiGenerationUpdate, aiGenerationUpdateMany,
-      aiDraftAcceptanceUpsert, aiDraftAcceptanceUpdate, transaction, executeRaw, queryRaw, localChat, cloudChat,
-      notificationNotify, shouldAttemptOpenAiProbe, markOpenAiQuotaExhausted, markOpenAiRecovered,
-      claimOpenAiQuotaNoticeIncident, releaseOpenAiQuotaNoticeIncident,
-    ]
-      .forEach((mock) => mock.mockReset());
+      userFindUnique,
+      userFindMany,
+      teacherFindUnique,
+      rppFindFirst,
+      lmsModuleFindFirst,
+      majorFindUnique,
+      teachingAssignmentFindFirst,
+      questionFindMany,
+      questionCreate,
+      questionFindUnique,
+      questionCount,
+      aiGenerationFindFirst,
+      aiGenerationCreate,
+      aiGenerationUpdate,
+      aiGenerationUpdateMany,
+      aiDraftAcceptanceUpsert,
+      aiDraftAcceptanceUpdate,
+      aiDraftAcceptanceFindMany,
+      aiDraftAcceptanceFindFirst,
+      transaction,
+      executeRaw,
+      queryRaw,
+      localChat,
+      cloudChat,
+      notificationNotify,
+      shouldAttemptOpenAiProbe,
+      markOpenAiQuotaExhausted,
+      markOpenAiRecovered,
+      claimOpenAiQuotaNoticeIncident,
+      releaseOpenAiQuotaNoticeIncident,
+    ].forEach((mock) => mock.mockReset());
 
     userFindUnique.mockResolvedValue({ id: 'user-1' });
-    userFindMany.mockResolvedValue([{
-      id: 'admin-1',
-      fullName: 'Super Admin',
-      email: 'admin@example.sch.id',
-      phone: null,
-    }]);
+    userFindMany.mockResolvedValue([
+      {
+        id: 'admin-1',
+        fullName: 'Super Admin',
+        email: 'admin@example.sch.id',
+        phone: null,
+      },
+    ]);
     teacherFindUnique.mockResolvedValue({ id: 'teacher-1' });
     rppFindFirst.mockResolvedValue(baseRpp);
     lmsModuleFindFirst.mockResolvedValue(null);
@@ -187,45 +220,47 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     });
     teachingAssignmentFindFirst.mockResolvedValue({ id: 'ta-1' });
     questionFindMany.mockResolvedValue([]);
-    questionCreate.mockImplementation((args: { data: Record<string, unknown> }) => Promise.resolve({
-      id: 'q-ai-1',
-      subject: args.data.subject,
-      type: args.data.type,
-      body: args.data.body,
-      difficulty: args.data.difficulty,
-      aiItemKey: args.data.aiItemKey ?? null,
-    }));
+    questionCreate.mockImplementation((args: { data: Record<string, unknown> }) =>
+      Promise.resolve({
+        id: 'q-ai-1',
+        ...args.data,
+        options: args.data.options ?? null,
+        answer: args.data.answer ?? null,
+        rubric: args.data.rubric ?? null,
+        aiItemKey: args.data.aiItemKey ?? null,
+        tpRefs: args.data.tpRefs ?? [],
+        cognitiveLevel: args.data.cognitiveLevel ?? null,
+      }),
+    );
     questionFindUnique.mockResolvedValue(null);
-    questionUpsert.mockImplementation((args: { create: Record<string, unknown> }) => Promise.resolve({
-      id: 'q-ai-1',
-      subject: args.create.subject,
-      type: args.create.type,
-      body: args.create.body,
-      options: args.create.options ?? null,
-      answer: args.create.answer ?? null,
-      difficulty: args.create.difficulty,
-      tags: args.create.tags,
-      rubric: args.create.rubric ?? null,
-      aiItemKey: args.create.aiItemKey ?? null,
-      tpRefs: args.create.tpRefs ?? [],
-      cognitiveLevel: args.create.cognitiveLevel ?? null,
-    }));
     questionCount.mockResolvedValue(0);
     aiGenerationFindFirst.mockResolvedValue(null);
-    aiGenerationCreate.mockImplementation((args: { data: Record<string, unknown> }) => Promise.resolve({
-      id: 'gen-1',
-      model: args.data.model ?? 'gpt-4.1-mini',
-    }));
-    aiGenerationUpdate.mockImplementation((args: { data: Record<string, unknown> }) => Promise.resolve({
-      id: 'gen-1',
-      model: args.data.model ?? 'gpt-4.1-mini',
-    }));
+    aiGenerationCreate.mockImplementation((args: { data: Record<string, unknown> }) =>
+      Promise.resolve({
+        id: 'gen-1',
+        model: args.data.model ?? 'gpt-4.1-mini',
+      }),
+    );
+    aiGenerationUpdate.mockImplementation((args: { data: Record<string, unknown> }) =>
+      Promise.resolve({
+        id: 'gen-1',
+        model: args.data.model ?? 'gpt-4.1-mini',
+      }),
+    );
     aiGenerationUpdateMany.mockResolvedValue({ count: 1 });
     executeRaw.mockResolvedValue(1);
     queryRaw.mockResolvedValue([{ id: 'gen-1', model: 'gpt-4.1-mini' }]);
-    aiDraftAcceptanceUpsert.mockImplementation((args: { create: { payloadFingerprint: string } }) =>
-      Promise.resolve({ payloadFingerprint: args.create.payloadFingerprint }));
+    aiDraftAcceptanceUpsert.mockImplementation(
+      (args: { create: { payloadFingerprint: string; status?: string; itemKeys?: string[] } }) =>
+        Promise.resolve({
+          payloadFingerprint: args.create.payloadFingerprint,
+          status: args.create.status ?? 'pending',
+          itemKeys: args.create.itemKeys ?? [],
+        }),
+    );
     aiDraftAcceptanceUpdate.mockResolvedValue({ id: 'accept-1' });
+    aiDraftAcceptanceFindMany.mockResolvedValue([]);
+    aiDraftAcceptanceFindFirst.mockResolvedValue(null);
     const prisma = {
       user: { findUnique: userFindUnique, findMany: userFindMany },
       teacher: { findUnique: teacherFindUnique },
@@ -237,7 +272,6 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
         findMany: questionFindMany,
         create: questionCreate,
         findUnique: questionFindUnique,
-        upsert: questionUpsert,
         count: questionCount,
       },
       aiGeneration: {
@@ -246,7 +280,12 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
         update: aiGenerationUpdate,
         updateMany: aiGenerationUpdateMany,
       },
-      aiDraftAcceptance: { upsert: aiDraftAcceptanceUpsert, update: aiDraftAcceptanceUpdate },
+      aiDraftAcceptance: {
+        upsert: aiDraftAcceptanceUpsert,
+        update: aiDraftAcceptanceUpdate,
+        findMany: aiDraftAcceptanceFindMany,
+        findFirst: aiDraftAcceptanceFindFirst,
+      },
       $executeRaw: executeRaw,
       $queryRaw: queryRaw,
       $transaction: transaction,
@@ -267,13 +306,16 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: 'AI_GATEWAY', useValue: { chat: localChat } },
         { provide: 'OPENAI_GATEWAY', useValue: { chat: cloudChat } },
-        { provide: AiProviderStatusService, useValue: {
-          shouldAttemptOpenAiProbe,
-          markOpenAiQuotaExhausted,
-          markOpenAiRecovered,
-          claimOpenAiQuotaNoticeIncident,
-          releaseOpenAiQuotaNoticeIncident,
-        } },
+        {
+          provide: AiProviderStatusService,
+          useValue: {
+            shouldAttemptOpenAiProbe,
+            markOpenAiQuotaExhausted,
+            markOpenAiRecovered,
+            claimOpenAiQuotaNoticeIncident,
+            releaseOpenAiQuotaNoticeIncident,
+          },
+        },
         { provide: NotificationService, useValue: { notify: notificationNotify } },
       ],
     }).compile();
@@ -283,17 +325,21 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   it('loads saved RPP and derives prompt from server-side ownership context', async () => {
     await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
 
-    expect(rppFindFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: RPP_ID, teacherId: 'teacher-1' },
-    }));
-    expect(teachingAssignmentFindFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: {
-        teacherId: 'teacher-1',
-        classId: 'class-1',
-        subject: 'Matematika',
-        academicYear: '2026/2027',
-      },
-    }));
+    expect(rppFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: RPP_ID, teacherId: 'teacher-1' },
+      }),
+    );
+    expect(teachingAssignmentFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          teacherId: 'teacher-1',
+          classId: 'class-1',
+          subject: 'Matematika',
+          academicYear: '2026/2027',
+        },
+      }),
+    );
     const prompt = cloudChat.mock.calls[0][0] as string;
     expect(prompt).toContain('Mapel: Matematika.');
     expect(prompt).toContain('Judul: Fungsi Linear.');
@@ -312,12 +358,14 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
 
     expect(parsed.success).toBe(false);
     if (!parsed.success) {
-      expect(parsed.error.issues).toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          code: 'unrecognized_keys',
-          keys: expect.arrayContaining(['context', 'rppBody', 'subject']),
-        }),
-      ]));
+      expect(parsed.error.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'unrecognized_keys',
+            keys: expect.arrayContaining(['context', 'rppBody', 'subject']),
+          }),
+        ]),
+      );
     }
   });
 
@@ -331,8 +379,9 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   it('rejects non-owner before provider call and audit write', async () => {
     rppFindFirst.mockResolvedValue(null);
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
-      .rejects.toThrow('Akses Modul Ajar ditolak');
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU),
+    ).rejects.toThrow('Akses Modul Ajar ditolak');
 
     expect(localChat).not.toHaveBeenCalled();
     expect(cloudChat).not.toHaveBeenCalled();
@@ -342,8 +391,9 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   it('rejects owned RPP without active TeachingAssignment before provider call', async () => {
     teachingAssignmentFindFirst.mockResolvedValue(null);
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
-      .rejects.toThrow('Assignment mengajar untuk Modul Ajar ini tidak aktif');
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU),
+    ).rejects.toThrow('Assignment mengajar untuk Modul Ajar ini tidak aktif');
 
     expect(localChat).not.toHaveBeenCalled();
     expect(cloudChat).not.toHaveBeenCalled();
@@ -358,22 +408,26 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
 
     expect(result.items).toHaveLength(1);
     expect(questionCreate).not.toHaveBeenCalled();
-    expect(aiGenerationCreate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        type: 'question-drafts',
-        sourceType: 'module',
-        sourceId: MODULE_ID,
-        status: 'generating',
-        idempotencyKey: 'draft-key-123456',
+    expect(aiGenerationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: 'question-drafts',
+          sourceType: 'module',
+          sourceId: MODULE_ID,
+          status: 'generating',
+          idempotencyKey: 'draft-key-123456',
+        }),
       }),
-    }));
+    );
     const createdSpec = asRecord(aiGenerationCreate.mock.calls[0][0].data.requestSpec);
     expect(asRecord(createdSpec.request)).toEqual(questionDraftRequestSpec);
-    expect(asRecord(createdSpec.lease)).toEqual(expect.objectContaining({
-      leaseId: expect.any(String),
-      leaseExpiresAt: expect.any(String),
-      leaseSequence: 1,
-    }));
+    expect(asRecord(createdSpec.lease)).toEqual(
+      expect.objectContaining({
+        leaseId: expect.any(String),
+        leaseExpiresAt: expect.any(String),
+        leaseSequence: 1,
+      }),
+    );
     expect(queryRaw).toHaveBeenCalledTimes(1);
     const prompt = cloudChat.mock.calls[0][0] as string;
     expect(prompt).toContain('Katalog konteks umum-produktif sekolah');
@@ -383,7 +437,14 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(responseFormat.strict).toBe(true);
     const schema = asRecord(responseFormat.schema);
     const itemSchema = asRecord(asRecord(asRecord(schema.properties).items).items);
-    expect(itemSchema.required).toEqual(['itemKey', 'question', 'tpRefs', 'cognitiveLevel', 'rationale', 'warnings']);
+    expect(itemSchema.required).toEqual([
+      'itemKey',
+      'question',
+      'tpRefs',
+      'cognitiveLevel',
+      'rationale',
+      'warnings',
+    ]);
     const questionSchema = asRecord(asRecord(itemSchema.properties).question);
     const shapes = asArray(questionSchema.anyOf).map(asRecord);
     for (const shape of shapes) {
@@ -391,14 +452,19 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       expect([...asArray(shape.required)].sort()).toEqual(Object.keys(properties).sort());
     }
     const matchingShape = shapes.find((shape) =>
-      asArray(asRecord(asRecord(shape.properties).type).enum).includes('matching'));
+      asArray(asRecord(asRecord(shape.properties).type).enum).includes('matching'),
+    );
     expect(matchingShape).toBeDefined();
     const matchingPair = asRecord(asRecord(asRecord(matchingShape?.properties).pairs).items);
-    expect(asRecord(asRecord(matchingPair.properties).match).description).toContain('Jangan isi dengan M1');
+    expect(asRecord(asRecord(matchingPair.properties).match).description).toContain(
+      'Jangan isi dengan M1',
+    );
     const matchingAnswer = asRecord(asRecord(asRecord(matchingShape?.properties).answer).items);
     expect(asArray(matchingAnswer.required).sort()).toEqual(['matchId', 'promptId']);
     expect(matchingAnswer.additionalProperties).toBe(false);
-    expect(asRecord(asRecord(matchingAnswer.properties).matchId).description).toContain('question.pairs[].id');
+    expect(asRecord(asRecord(matchingAnswer.properties).matchId).description).toContain(
+      'question.pairs[].id',
+    );
   });
 
   it('uses the strict question draft schema when Redis circuit routes generation to Ollama', async () => {
@@ -407,10 +473,13 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     localChat.mockResolvedValue(AI_QUESTION_OUTPUT);
     queryRaw.mockResolvedValueOnce([{ id: 'gen-1', model: 'ollama' }]);
 
-    const result = await service.generateQuestionDrafts({
-      ...questionDraftDto,
-      idempotencyKey: 'draft-key-ollama-schema',
-    }, GURU);
+    const result = await service.generateQuestionDrafts(
+      {
+        ...questionDraftDto,
+        idempotencyKey: 'draft-key-ollama-schema',
+      },
+      GURU,
+    );
 
     expect(result.model).toBe('ollama');
     expect(result.items).toHaveLength(1);
@@ -424,29 +493,49 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     const schema = asRecord(responseFormat.schema);
     expect(asArray(schema.required)).toEqual(['items']);
     const itemSchema = asRecord(asRecord(asRecord(schema.properties).items).items);
-    expect(itemSchema.required).toEqual(['itemKey', 'question', 'tpRefs', 'cognitiveLevel', 'rationale', 'warnings']);
+    expect(itemSchema.required).toEqual([
+      'itemKey',
+      'question',
+      'tpRefs',
+      'cognitiveLevel',
+      'rationale',
+      'warnings',
+    ]);
     const questionSchema = asRecord(asRecord(itemSchema.properties).question);
     expect(questionSchema.anyOf).toBeUndefined();
-    expect(asArray(asRecord(asRecord(questionSchema.properties).type).enum)).toEqual(['multiple_choice']);
+    expect(asArray(asRecord(asRecord(questionSchema.properties).type).enum)).toEqual([
+      'multiple_choice',
+    ]);
   });
 
   it('normalizes AI draft metadata and subject back to authoritative teacher context', async () => {
     shouldAttemptOpenAiProbe.mockResolvedValue(false);
     lmsModuleFindFirst.mockResolvedValue(ownedModule);
     queryRaw.mockResolvedValueOnce([{ id: 'gen-1', model: 'ollama' }]);
-    localChat.mockResolvedValue(JSON.stringify({
-      items: [{
-        ...AI_QUESTION_ITEM,
-        question: { ...AI_QUESTION_ITEM.question, subject: 'Judul modul buatan provider', difficulty: 'hard' },
-        tpRefs: ['Judul modul buatan provider'],
-        cognitiveLevel: 'C6',
-      }],
-    }));
+    localChat.mockResolvedValue(
+      JSON.stringify({
+        items: [
+          {
+            ...AI_QUESTION_ITEM,
+            question: {
+              ...AI_QUESTION_ITEM.question,
+              subject: 'Judul modul buatan provider',
+              difficulty: 'hard',
+            },
+            tpRefs: ['Judul modul buatan provider'],
+            cognitiveLevel: 'C6',
+          },
+        ],
+      }),
+    );
 
-    const result = await service.generateQuestionDrafts({
-      ...questionDraftDto,
-      idempotencyKey: 'draft-key-normalized-metadata',
-    }, GURU);
+    const result = await service.generateQuestionDrafts(
+      {
+        ...questionDraftDto,
+        idempotencyKey: 'draft-key-normalized-metadata',
+      },
+      GURU,
+    );
 
     expect(result.items[0]?.question.subject).toBe('Pemrograman Web');
     expect(result.items[0]?.question.difficulty).toBe('easy');
@@ -455,12 +544,18 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   });
 
   it('rejects productive question draft when the managed major description is empty', async () => {
-    lmsModuleFindFirst.mockResolvedValue({ ...ownedModule, class: { ...ownedModule.class, majorCode: 'DKV' } });
+    lmsModuleFindFirst.mockResolvedValue({
+      ...ownedModule,
+      class: { ...ownedModule.class, majorCode: 'DKV' },
+    });
     majorFindUnique.mockResolvedValue({ name: 'Desain Komunikasi Visual', description: null });
     cloudChat.mockResolvedValue(AI_QUESTION_OUTPUT);
 
-    await expect(service.generateQuestionDrafts({ ...questionDraftDto, contextMode: 'produktif' }, GURU))
-      .rejects.toThrow('Konteks produktif untuk jurusan Desain Komunikasi Visual belum dikonfigurasi');
+    await expect(
+      service.generateQuestionDrafts({ ...questionDraftDto, contextMode: 'produktif' }, GURU),
+    ).rejects.toThrow(
+      'Konteks produktif untuk jurusan Desain Komunikasi Visual belum dikonfigurasi',
+    );
 
     expect(cloudChat).not.toHaveBeenCalled();
     expect(localChat).not.toHaveBeenCalled();
@@ -476,7 +571,10 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     });
     cloudChat.mockResolvedValue(AI_QUESTION_OUTPUT);
 
-    await service.generateQuestionDrafts({ ...questionDraftDto, idempotencyKey: 'draft-key-bounded-context' }, GURU);
+    await service.generateQuestionDrafts(
+      { ...questionDraftDto, idempotencyKey: 'draft-key-bounded-context' },
+      GURU,
+    );
 
     const prompt = cloudChat.mock.calls[0][0] as string;
     expect(prompt).toContain('A'.repeat(180));
@@ -500,14 +598,19 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     });
     cloudChat.mockResolvedValue(nearDuplicateOutput);
 
-    await expect(service.generateQuestionDrafts({
-      ...questionDraftDto,
-      idempotencyKey: 'draft-key-near-duplicate',
-      questionCount: 2,
-      typeDistribution: { multiple_choice: 2, true_false: 0, matching: 0, essay: 0 },
-      difficultyDistribution: { easy: 2, medium: 0, hard: 0 },
-      cognitiveDistribution: { C1: 0, C2: 2, C3: 0, C4: 0, C5: 0, C6: 0 },
-    }, GURU)).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+    await expect(
+      service.generateQuestionDrafts(
+        {
+          ...questionDraftDto,
+          idempotencyKey: 'draft-key-near-duplicate',
+          questionCount: 2,
+          typeDistribution: { multiple_choice: 2, true_false: 0, matching: 0, essay: 0 },
+          difficultyDistribution: { easy: 2, medium: 0, hard: 0 },
+          cognitiveDistribution: { C1: 0, C2: 2, C3: 0, C4: 0, C5: 0, C6: 0 },
+        },
+        GURU,
+      ),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
 
     expect(queryRaw).not.toHaveBeenCalled();
   });
@@ -515,25 +618,32 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   it('rejects ambiguous multiple-choice options before finalizing generation', async () => {
     lmsModuleFindFirst.mockResolvedValue(ownedModule);
     const ambiguousOutput = JSON.stringify({
-      items: [{
-        ...AI_QUESTION_ITEM,
-        question: {
-          ...AI_QUESTION_ITEM.question,
-          options: [
-            { id: 'a', text: '<a>' },
-            { id: 'b', text: '<img>' },
-            { id: 'c', text: '<table>' },
-            { id: 'd', text: 'Semua jawaban benar' },
-          ],
+      items: [
+        {
+          ...AI_QUESTION_ITEM,
+          question: {
+            ...AI_QUESTION_ITEM.question,
+            options: [
+              { id: 'a', text: '<a>' },
+              { id: 'b', text: '<img>' },
+              { id: 'c', text: '<table>' },
+              { id: 'd', text: 'Semua jawaban benar' },
+            ],
+          },
         },
-      }],
+      ],
     });
     cloudChat.mockResolvedValue(ambiguousOutput);
 
-    await expect(service.generateQuestionDrafts({
-      ...questionDraftDto,
-      idempotencyKey: 'draft-key-ambiguous-option',
-    }, GURU)).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+    await expect(
+      service.generateQuestionDrafts(
+        {
+          ...questionDraftDto,
+          idempotencyKey: 'draft-key-ambiguous-option',
+        },
+        GURU,
+      ),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
 
     expect(queryRaw).not.toHaveBeenCalled();
   });
@@ -541,14 +651,12 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   it('recovers a concurrent generate race by returning the existing idempotent draft', async () => {
     lmsModuleFindFirst.mockResolvedValue(ownedModule);
     cloudChat.mockResolvedValue(AI_QUESTION_OUTPUT);
-    aiGenerationFindFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
-        id: 'gen-existing',
-        requestSpec: questionDraftRequestSpec,
-        output: AI_QUESTION_OUTPUT,
-        model: 'gpt-4.1-mini',
-      });
+    aiGenerationFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: 'gen-existing',
+      requestSpec: questionDraftRequestSpec,
+      output: AI_QUESTION_OUTPUT,
+      model: 'gpt-4.1-mini',
+    });
     aiGenerationCreate.mockRejectedValueOnce(p2002());
 
     const result = await service.generateQuestionDrafts(questionDraftDto, GURU);
@@ -561,7 +669,13 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   it('serializes concurrent generate requests so the provider is called once per idempotency key', async () => {
     lmsModuleFindFirst.mockResolvedValue(ownedModule);
     cloudChat.mockResolvedValue(AI_QUESTION_OUTPUT);
-    let storedDraft: { id: string; requestSpec: Record<string, unknown>; output: string; model: string; status: string } | null = null;
+    let storedDraft: {
+      id: string;
+      requestSpec: Record<string, unknown>;
+      output: string;
+      model: string;
+      status: string;
+    } | null = null;
     aiGenerationFindFirst.mockImplementation(() => Promise.resolve(storedDraft));
     aiGenerationCreate.mockImplementation(async (args: { data: Record<string, unknown> }) => {
       await new Promise<void>((resolve) => setTimeout(resolve, 10));
@@ -629,8 +743,9 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     cloudChat.mockResolvedValue(AI_QUESTION_OUTPUT);
     queryRaw.mockResolvedValueOnce([]);
 
-    await expect(service.generateQuestionDrafts(questionDraftDto, GURU))
-      .rejects.toThrow('Lease generate draft AI');
+    await expect(service.generateQuestionDrafts(questionDraftDto, GURU)).rejects.toThrow(
+      'Lease generate draft AI',
+    );
 
     expect(cloudChat).toHaveBeenCalledTimes(1);
     expect(queryRaw).toHaveBeenCalledTimes(1);
@@ -638,84 +753,104 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
 
   it('normalizes matching provider answer arrays before validating canonical output', async () => {
     lmsModuleFindFirst.mockResolvedValue(ownedModule);
-    cloudChat.mockResolvedValue(JSON.stringify({
-      items: [{
-        itemKey: 'match-1',
-        question: {
-          subject: 'Pemrograman Web',
-          type: 'matching',
-          body: 'Pasangkan tag HTML dengan fungsinya.',
-          pairs: [
-            { id: 'p1', prompt: '<a>', match: 'Membuat tautan halaman' },
-            { id: 'p2', prompt: '<img>', match: 'Menampilkan gambar pada halaman' },
-          ],
-          answer: [
-            { promptId: 'p1', matchId: 'Membuat tautan halaman' },
-            { promptId: 'p2', matchId: 'Menampilkan gambar pada halaman' },
-          ],
-          difficulty: 'medium',
-          tags: ['html'],
-        },
-        tpRefs: ['TP 1'],
-        cognitiveLevel: 'C2',
-        rationale: 'Mengukur pemahaman pasangan tag dan fungsi.',
-        warnings: [],
-      }],
-    }));
+    cloudChat.mockResolvedValue(
+      JSON.stringify({
+        items: [
+          {
+            itemKey: 'match-1',
+            question: {
+              subject: 'Pemrograman Web',
+              type: 'matching',
+              body: 'Pasangkan tag HTML dengan fungsinya.',
+              pairs: [
+                { id: 'p1', prompt: '<a>', match: 'Membuat tautan halaman' },
+                { id: 'p2', prompt: '<img>', match: 'Menampilkan gambar pada halaman' },
+              ],
+              answer: [
+                { promptId: 'p1', matchId: 'Membuat tautan halaman' },
+                { promptId: 'p2', matchId: 'Menampilkan gambar pada halaman' },
+              ],
+              difficulty: 'medium',
+              tags: ['html'],
+            },
+            tpRefs: ['TP 1'],
+            cognitiveLevel: 'C2',
+            rationale: 'Mengukur pemahaman pasangan tag dan fungsi.',
+            warnings: [],
+          },
+        ],
+      }),
+    );
 
-    const result = await service.generateQuestionDrafts({
-      ...questionDraftDto,
-      idempotencyKey: 'draft-key-matching',
-      typeDistribution: { multiple_choice: 0, true_false: 0, matching: 1, essay: 0 },
-      difficultyDistribution: { easy: 0, medium: 1, hard: 0 },
-    }, GURU);
+    const result = await service.generateQuestionDrafts(
+      {
+        ...questionDraftDto,
+        idempotencyKey: 'draft-key-matching',
+        typeDistribution: { multiple_choice: 0, true_false: 0, matching: 1, essay: 0 },
+        difficultyDistribution: { easy: 0, medium: 1, hard: 0 },
+      },
+      GURU,
+    );
 
-    expect(result.items[0]?.question).toEqual(expect.objectContaining({
-      type: 'matching',
-      answer: { p1: 'p1', p2: 'p2' },
-    }));
+    expect(result.items[0]?.question).toEqual(
+      expect.objectContaining({
+        type: 'matching',
+        answer: { p1: 'p1', p2: 'p2' },
+      }),
+    );
     expect(queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it('rejects matching draft items whose match text is only an internal code', async () => {
     lmsModuleFindFirst.mockResolvedValue(ownedModule);
-    cloudChat.mockResolvedValue(JSON.stringify({
-      items: [{
-        itemKey: 'match-code-1',
-        question: {
-          subject: 'Pemrograman Web',
-          type: 'matching',
-          body: 'Pasangkan perangkat jaringan dengan fungsinya.',
-          pairs: [
-            { id: 'p1', prompt: 'Router', match: 'M1' },
-            { id: 'p2', prompt: 'Switch', match: 'M2' },
-          ],
-          answer: [
-            { promptId: 'p1', matchId: 'M1' },
-            { promptId: 'p2', matchId: 'M2' },
-          ],
-          difficulty: 'medium',
-          tags: ['jaringan'],
-        },
-        tpRefs: ['TP 1'],
-        cognitiveLevel: 'C2',
-        rationale: 'Mengukur pemahaman perangkat jaringan.',
-        warnings: [],
-      }],
-    }));
+    cloudChat.mockResolvedValue(
+      JSON.stringify({
+        items: [
+          {
+            itemKey: 'match-code-1',
+            question: {
+              subject: 'Pemrograman Web',
+              type: 'matching',
+              body: 'Pasangkan perangkat jaringan dengan fungsinya.',
+              pairs: [
+                { id: 'p1', prompt: 'Router', match: 'M1' },
+                { id: 'p2', prompt: 'Switch', match: 'M2' },
+              ],
+              answer: [
+                { promptId: 'p1', matchId: 'M1' },
+                { promptId: 'p2', matchId: 'M2' },
+              ],
+              difficulty: 'medium',
+              tags: ['jaringan'],
+            },
+            tpRefs: ['TP 1'],
+            cognitiveLevel: 'C2',
+            rationale: 'Mengukur pemahaman perangkat jaringan.',
+            warnings: [],
+          },
+        ],
+      }),
+    );
 
-    await expect(service.generateQuestionDrafts({
-      ...questionDraftDto,
-      idempotencyKey: 'draft-key-match-code',
-      typeDistribution: { multiple_choice: 0, true_false: 0, matching: 1, essay: 0 },
-      difficultyDistribution: { easy: 0, medium: 1, hard: 0 },
-    }, GURU)).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+    await expect(
+      service.generateQuestionDrafts(
+        {
+          ...questionDraftDto,
+          idempotencyKey: 'draft-key-match-code',
+          typeDistribution: { multiple_choice: 0, true_false: 0, matching: 1, essay: 0 },
+          difficultyDistribution: { easy: 0, medium: 1, hard: 0 },
+        },
+        GURU,
+      ),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
   });
 
   it('uses one bounded repair attempt when provider returns invalid question JSON', async () => {
     lmsModuleFindFirst.mockResolvedValue(ownedModule);
     cloudChat
-      .mockResolvedValueOnce(JSON.stringify({ items: [{ itemKey: 'bad', question: { type: 'essay' } }] }))
+      .mockResolvedValueOnce(
+        JSON.stringify({ items: [{ itemKey: 'bad', question: { type: 'essay' } }] }),
+      )
       .mockResolvedValueOnce(AI_QUESTION_OUTPUT);
 
     const result = await service.generateQuestionDrafts(questionDraftDto, GURU);
@@ -723,6 +858,28 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(result.items).toEqual([AI_QUESTION_ITEM]);
     expect(cloudChat).toHaveBeenCalledTimes(2);
     expect(aiGenerationCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects duplicate draft item keys before any write or provider call', async () => {
+    const item = {
+      itemKey: AI_QUESTION_ITEM.itemKey,
+      question: AI_QUESTION_ITEM.question,
+      tpRefs: ['TP 1'],
+      cognitiveLevel: 'C2' as const,
+    };
+    await expect(
+      service.acceptQuestionDrafts(
+        '33333333-3333-4333-8333-333333333333',
+        {
+          idempotencyKey: 'accept-duplicate-item',
+          items: [item, item],
+        },
+        GURU,
+      ),
+    ).rejects.toThrow('Pilih soal yang berbeda untuk disimpan.');
+    expect(questionCreate).not.toHaveBeenCalled();
+    expect(aiDraftAcceptanceUpsert).not.toHaveBeenCalled();
+    expect(cloudChat).not.toHaveBeenCalled();
   });
 
   it('accepts selected AI draft items into canonical questions with provenance', async () => {
@@ -756,32 +913,42 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     });
     lmsModuleFindFirst.mockResolvedValue(ownedModule);
 
-    const result = await service.acceptQuestionDrafts(generationId, {
-      idempotencyKey: 'accept-key-123456',
-      items: [{
-        itemKey: AI_QUESTION_ITEM.itemKey,
-        question: AI_QUESTION_ITEM.question,
-        tpRefs: ['TP 1'],
-        cognitiveLevel: 'C2',
-      }],
-    }, GURU);
+    const result = await service.acceptQuestionDrafts(
+      generationId,
+      {
+        idempotencyKey: 'accept-key-123456',
+        items: [
+          {
+            itemKey: AI_QUESTION_ITEM.itemKey,
+            question: AI_QUESTION_ITEM.question,
+            tpRefs: ['TP 1'],
+            cognitiveLevel: 'C2',
+          },
+        ],
+      },
+      GURU,
+    );
 
     expect(result.acceptedCount).toBe(1);
-    expect(questionUpsert).toHaveBeenCalledWith(expect.objectContaining({
-      create: expect.objectContaining({
-        teacherId: 'teacher-1',
-        subject: 'Pemrograman Web',
-        source: 'AI_ASSISTED',
-        aiGenerationId: generationId,
-        aiItemKey: 'item-1',
-        tpRefs: ['TP 1'],
-        cognitiveLevel: 'C2',
+    expect(questionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          teacherId: 'teacher-1',
+          subject: 'Pemrograman Web',
+          source: 'AI_ASSISTED',
+          aiGenerationId: generationId,
+          aiItemKey: 'item-1',
+          tpRefs: ['TP 1'],
+          cognitiveLevel: 'C2',
+        }),
       }),
-    }));
-    expect(aiGenerationUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: generationId },
-      data: { status: 'accepted' },
-    }));
+    );
+    expect(aiGenerationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: generationId },
+        data: { status: 'accepted' },
+      }),
+    );
   });
 
   it('accepts newly created drafts when JSON nulls round-trip from the database as null', async () => {
@@ -825,7 +992,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       sourceId: MODULE_ID,
     });
     lmsModuleFindFirst.mockResolvedValue(ownedModule);
-    questionUpsert.mockResolvedValueOnce({
+    questionCreate.mockResolvedValueOnce({
       id: 'q-ai-1',
       subject: trueFalseItem.question.subject,
       type: trueFalseItem.question.type,
@@ -840,21 +1007,29 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       cognitiveLevel: 'C2',
     });
 
-    const result = await service.acceptQuestionDrafts(generationId, {
-      idempotencyKey: 'accept-key-json-null',
-      items: [{
-        itemKey: trueFalseItem.itemKey,
-        question: trueFalseItem.question,
-        tpRefs: ['TP 1'],
-        cognitiveLevel: 'C2',
-      }],
-    }, GURU);
+    const result = await service.acceptQuestionDrafts(
+      generationId,
+      {
+        idempotencyKey: 'accept-key-json-null',
+        items: [
+          {
+            itemKey: trueFalseItem.itemKey,
+            question: trueFalseItem.question,
+            tpRefs: ['TP 1'],
+            cognitiveLevel: 'C2',
+          },
+        ],
+      },
+      GURU,
+    );
 
     expect(result.acceptedCount).toBe(1);
-    expect(aiGenerationUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: generationId },
-      data: { status: 'accepted' },
-    }));
+    expect(aiGenerationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: generationId },
+        data: { status: 'accepted' },
+      }),
+    );
   });
 
   it('rejects accept retry when the same idempotency key has a different payload', async () => {
@@ -871,17 +1046,25 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     lmsModuleFindFirst.mockResolvedValue(ownedModule);
     aiDraftAcceptanceUpsert.mockResolvedValueOnce({ payloadFingerprint: 'different-payload' });
 
-    await expect(service.acceptQuestionDrafts(generationId, {
-      idempotencyKey: 'accept-key-123456',
-      items: [{
-        itemKey: AI_QUESTION_ITEM.itemKey,
-        question: AI_QUESTION_ITEM.question,
-        tpRefs: ['TP 1'],
-        cognitiveLevel: 'C2',
-      }],
-    }, GURU)).rejects.toThrow('Idempotency key accept sudah dipakai untuk payload berbeda');
+    await expect(
+      service.acceptQuestionDrafts(
+        generationId,
+        {
+          idempotencyKey: 'accept-key-123456',
+          items: [
+            {
+              itemKey: AI_QUESTION_ITEM.itemKey,
+              question: AI_QUESTION_ITEM.question,
+              tpRefs: ['TP 1'],
+              cognitiveLevel: 'C2',
+            },
+          ],
+        },
+        GURU,
+      ),
+    ).rejects.toThrow('Idempotency key accept sudah dipakai untuk payload berbeda');
 
-    expect(questionUpsert).not.toHaveBeenCalled();
+    expect(questionCreate).not.toHaveBeenCalled();
   });
 
   it('regenerates one AI draft item in the same generation', async () => {
@@ -934,13 +1117,89 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
 
     expect(result.item.itemKey).toBe('item-1');
     expect(result.item.question.body).toContain('tautan');
-    expect(aiGenerationUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: generationId },
-      data: expect.objectContaining({
-        status: 'drafted',
-        output: expect.stringContaining('"itemKey":"item-1"'),
+    expect(aiGenerationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: generationId,
+          teacherId: 'teacher-1',
+          type: 'question-drafts',
+          status: 'drafted',
+          output: AI_QUESTION_OUTPUT,
+        },
+        data: expect.objectContaining({
+          output: expect.stringContaining('"itemKey":"item-1"'),
+        }),
       }),
-    }));
+    );
+  });
+
+  function prepareRegenerateCommit() {
+    const generation = {
+      id: '33333333-3333-4333-8333-333333333333',
+      output: AI_QUESTION_OUTPUT,
+      status: 'drafted',
+      requestSpec: questionDraftRequestSpec,
+      contextSnapshot: {},
+      sourceType: 'module',
+      sourceId: MODULE_ID,
+    };
+    const replacement = {
+      ...AI_QUESTION_ITEM,
+      question: {
+        ...AI_QUESTION_ITEM.question,
+        body: 'Tag HTML manakah yang membuat tautan ke halaman lain?',
+      },
+    };
+    aiGenerationFindFirst.mockResolvedValue(generation);
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    cloudChat.mockResolvedValue(JSON.stringify({ items: [replacement] }));
+    return { generation, replacement };
+  }
+
+  it.each(['rejected', 'accepted'])(
+    'a late regenerate cannot reopen a %s generation',
+    async (status) => {
+      const { generation, replacement } = prepareRegenerateCommit();
+      cloudChat.mockImplementationOnce(async () => {
+        aiGenerationFindFirst.mockResolvedValue({ ...generation, status });
+        return JSON.stringify({ items: [replacement] });
+      });
+      await expect(
+        service.regenerateQuestionDraftItem(generation.id, 'item-1', {}, GURU),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(aiGenerationUpdateMany).not.toHaveBeenCalled();
+      expect(aiGenerationUpdate).not.toHaveBeenCalled();
+      expect(questionCreate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('regenerate refuses a changed output snapshot after its provider returns', async () => {
+    const { generation, replacement } = prepareRegenerateCommit();
+    cloudChat.mockImplementationOnce(async () => {
+      aiGenerationFindFirst.mockResolvedValue({
+        ...generation,
+        output: JSON.stringify({ items: [replacement] }),
+      });
+      return JSON.stringify({ items: [replacement] });
+    });
+    await expect(
+      service.regenerateQuestionDraftItem(generation.id, 'item-1', {}, GURU),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(aiGenerationUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('regenerate checks affected rows instead of reporting success for a zero-row write', async () => {
+    const { generation } = prepareRegenerateCommit();
+    aiGenerationUpdateMany.mockResolvedValue({ count: 0 });
+    await expect(
+      service.regenerateQuestionDraftItem(generation.id, 'item-1', {}, GURU),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(aiGenerationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ output: generation.output, status: 'drafted' }),
+      }),
+    );
+    expect(aiGenerationUpdate).not.toHaveBeenCalled();
   });
 
   it('does not regenerate an accepted draft item', async () => {
@@ -956,8 +1215,9 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     });
     questionFindUnique.mockResolvedValue({ id: 'q-ai-1' });
 
-    await expect(service.regenerateQuestionDraftItem(generationId, 'item-1', {}, GURU))
-      .rejects.toThrow('Item draft sudah diterima dan tidak dapat diregenerasi');
+    await expect(
+      service.regenerateQuestionDraftItem(generationId, 'item-1', {}, GURU),
+    ).rejects.toThrow('Item draft sudah diterima dan tidak dapat diregenerasi');
 
     expect(cloudChat).not.toHaveBeenCalled();
     expect(localChat).not.toHaveBeenCalled();
@@ -974,12 +1234,138 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     });
     lmsModuleFindFirst.mockResolvedValue(ownedModule);
 
-    const result = await service.rejectQuestionDrafts(generationId, { idempotencyKey: 'reject-key-123456' }, GURU);
+    const result = await service.rejectQuestionDrafts(
+      generationId,
+      { idempotencyKey: 'reject-key-123456' },
+      GURU,
+    );
 
     expect(result).toEqual({ generationId, rejected: true });
-    expect(aiGenerationUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
-      data: { status: 'rejected' },
-    }));
+    expect(aiGenerationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: 'rejected' },
+      }),
+    );
+  });
+
+  it('reject performs its state checks after the shared generation lock', async () => {
+    const generationId = '33333333-3333-4333-8333-333333333333';
+    aiGenerationFindFirst
+      .mockResolvedValueOnce({
+        id: generationId,
+        status: 'drafted',
+        sourceType: 'module',
+        sourceId: MODULE_ID,
+        contextSnapshot: {},
+      })
+      .mockResolvedValueOnce({ id: generationId, status: 'accepted' });
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    await expect(
+      service.rejectQuestionDrafts(generationId, { idempotencyKey: 'reject-fresh-locked' }, GURU),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(queryRaw).toHaveBeenCalled();
+    expect(queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      aiGenerationFindFirst.mock.invocationCallOrder[1]!,
+    );
+    expect(aiDraftAcceptanceUpsert).not.toHaveBeenCalled();
+    expect(aiGenerationUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('reject checks nonempty committed item receipts, not empty reject receipts', async () => {
+    const generationId = '33333333-3333-4333-8333-333333333333';
+    aiGenerationFindFirst.mockResolvedValue({
+      id: generationId,
+      status: 'drafted',
+      sourceType: 'module',
+      sourceId: MODULE_ID,
+      contextSnapshot: {},
+    });
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    aiDraftAcceptanceFindFirst.mockResolvedValue({ id: 'accepted-item-receipt' });
+    await expect(
+      service.rejectQuestionDrafts(generationId, { idempotencyKey: 'reject-after-delete' }, GURU),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(aiDraftAcceptanceFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'accepted', itemKeys: { isEmpty: false } }),
+      }),
+    );
+    expect(aiDraftAcceptanceUpsert).not.toHaveBeenCalled();
+  });
+
+  it('same-key committed reject replay does not rewrite generation or receipt', async () => {
+    const generationId = '33333333-3333-4333-8333-333333333333';
+    aiGenerationFindFirst.mockResolvedValue({
+      id: generationId,
+      status: 'rejected',
+      sourceType: 'module',
+      sourceId: MODULE_ID,
+      contextSnapshot: {},
+    });
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    aiDraftAcceptanceUpsert.mockImplementation((args: { create: { payloadFingerprint: string } }) =>
+      Promise.resolve({
+        payloadFingerprint: args.create.payloadFingerprint,
+        itemKeys: [],
+        status: 'accepted',
+      }),
+    );
+    await expect(
+      service.rejectQuestionDrafts(
+        generationId,
+        { idempotencyKey: 'reject-replay-committed' },
+        GURU,
+      ),
+    ).resolves.toEqual({ generationId, rejected: true });
+    expect(aiGenerationUpdateMany).not.toHaveBeenCalled();
+    expect(aiDraftAcceptanceUpdate).not.toHaveBeenCalled();
+    expect(questionCreate).not.toHaveBeenCalled();
+    expect(cloudChat).not.toHaveBeenCalled();
+  });
+
+  it('does not confirm a zero-row conditional reject transition', async () => {
+    const generationId = '33333333-3333-4333-8333-333333333333';
+    aiGenerationFindFirst.mockResolvedValue({
+      id: generationId,
+      status: 'drafted',
+      sourceType: 'module',
+      sourceId: MODULE_ID,
+      contextSnapshot: {},
+    });
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    aiGenerationUpdateMany.mockResolvedValue({ count: 0 });
+    await expect(
+      service.rejectQuestionDrafts(generationId, { idempotencyKey: 'reject-zero-row-count' }, GURU),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(aiDraftAcceptanceUpdate).not.toHaveBeenCalled();
+  });
+
+  it('a committed reject receipt cannot falsely confirm a drafted generation', async () => {
+    const generationId = '33333333-3333-4333-8333-333333333333';
+    aiGenerationFindFirst.mockResolvedValue({
+      id: generationId,
+      status: 'drafted',
+      sourceType: 'module',
+      sourceId: MODULE_ID,
+      contextSnapshot: {},
+    });
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    aiDraftAcceptanceUpsert.mockImplementation((args: { create: { payloadFingerprint: string } }) =>
+      Promise.resolve({
+        payloadFingerprint: args.create.payloadFingerprint,
+        itemKeys: [],
+        status: 'accepted',
+      }),
+    );
+    await expect(
+      service.rejectQuestionDrafts(
+        generationId,
+        { idempotencyKey: 'reject-receipt-state-conflict' },
+        GURU,
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(aiGenerationUpdateMany).not.toHaveBeenCalled();
+    expect(aiDraftAcceptanceUpdate).not.toHaveBeenCalled();
   });
 
   it('does not reject all after any draft item has been accepted', async () => {
@@ -994,12 +1380,15 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     lmsModuleFindFirst.mockResolvedValue(ownedModule);
     questionCount.mockResolvedValue(1);
 
-    await expect(service.rejectQuestionDrafts(generationId, { idempotencyKey: 'reject-key-123456' }, GURU))
-      .rejects.toThrow('Sebagian item sudah diterima');
+    await expect(
+      service.rejectQuestionDrafts(generationId, { idempotencyKey: 'reject-key-123456' }, GURU),
+    ).rejects.toThrow('Sebagian item sudah diterima');
 
-    expect(aiGenerationUpdateMany).not.toHaveBeenCalledWith(expect.objectContaining({
-      data: { status: 'rejected' },
-    }));
+    expect(aiGenerationUpdateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: 'rejected' },
+      }),
+    );
   });
 
   it('routes PII context to local gateway and never calls cloud', async () => {
@@ -1031,8 +1420,11 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     });
     localChat.mockRejectedValue(new Error('local unavailable'));
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
-      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_CONTEXT_PII_BLOCKED' }) });
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'AI_CONTEXT_PII_BLOCKED' }),
+    });
 
     expect(cloudChat).not.toHaveBeenCalled();
     expect(aiGenerationCreate).not.toHaveBeenCalled();
@@ -1041,8 +1433,11 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   it('stops ATP generation with missing TP before provider call', async () => {
     rppFindFirst.mockResolvedValue({ ...baseRpp, body: { cp: 'CP tersimpan' } });
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'atp' }, GURU))
-      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_FOUNDATION_INCOMPLETE' }) });
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'atp' }, GURU),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'AI_FOUNDATION_INCOMPLETE' }),
+    });
 
     expect(localChat).not.toHaveBeenCalled();
     expect(cloudChat).not.toHaveBeenCalled();
@@ -1051,10 +1446,16 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   it('stops kegiatan and asesmen generation with missing TP before save/provider/audit', async () => {
     rppFindFirst.mockResolvedValue({ ...baseRpp, body: { cp: 'CP tersimpan', tp: [] } });
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
-      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_FOUNDATION_INCOMPLETE' }) });
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'asesmen' }, GURU))
-      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_FOUNDATION_INCOMPLETE' }) });
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'AI_FOUNDATION_INCOMPLETE' }),
+    });
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'asesmen' }, GURU),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'AI_FOUNDATION_INCOMPLETE' }),
+    });
 
     expect(localChat).not.toHaveBeenCalled();
     expect(cloudChat).not.toHaveBeenCalled();
@@ -1064,8 +1465,11 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   it('stops CP/TP generation with missing CP before provider call', async () => {
     rppFindFirst.mockResolvedValue({ ...baseRpp, body: { tp: ['TP browser'] } });
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'cp_tp' }, GURU))
-      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_FOUNDATION_INCOMPLETE' }) });
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'cp_tp' }, GURU),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'AI_FOUNDATION_INCOMPLETE' }),
+    });
 
     expect(localChat).not.toHaveBeenCalled();
     expect(cloudChat).not.toHaveBeenCalled();
@@ -1074,8 +1478,9 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   it('rejects invalid ATP output before audit success', async () => {
     cloudChat.mockResolvedValue('ini bukan JSON');
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'atp' }, GURU))
-      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'atp' }, GURU),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
 
     expect(aiGenerationCreate).not.toHaveBeenCalled();
   });
@@ -1083,8 +1488,9 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   it('rejects markdown/code-fence and legacy KI/KD output before audit success', async () => {
     cloudChat.mockResolvedValue('```json\n{"kegiatan":[{"inti":"Kompetensi Dasar lama"}]}\n```');
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
-      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
 
     expect(aiGenerationCreate).not.toHaveBeenCalled();
   });
@@ -1092,28 +1498,35 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   it('rejects an outer code fence around otherwise valid JSON before audit success', async () => {
     cloudChat.mockResolvedValue(`\`\`\`json\n${KEGIATAN_PATCH}\n\`\`\``);
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
-      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
 
     expect(aiGenerationCreate).not.toHaveBeenCalled();
   });
 
   it('rejects a nested code fence inside otherwise valid JSON before audit success', async () => {
-    cloudChat.mockResolvedValue(kegiatanPatchWithInti('Siswa membandingkan contoh ```teks``` dan menjelaskan hasilnya.'));
+    cloudChat.mockResolvedValue(
+      kegiatanPatchWithInti('Siswa membandingkan contoh ```teks``` dan menjelaskan hasilnya.'),
+    );
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
-      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
 
     expect(aiGenerationCreate).not.toHaveBeenCalled();
   });
 
   it('rejects incomplete kegiatan patches before audit success', async () => {
-    cloudChat.mockResolvedValue(JSON.stringify({
-      kegiatan: [{ pertemuan: 'Pertemuan 1', inti: 'Hanya kegiatan inti.' }],
-    }));
+    cloudChat.mockResolvedValue(
+      JSON.stringify({
+        kegiatan: [{ pertemuan: 'Pertemuan 1', inti: 'Hanya kegiatan inti.' }],
+      }),
+    );
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
-      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
 
     expect(aiGenerationCreate).not.toHaveBeenCalled();
   });
@@ -1126,23 +1539,32 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     ['KI-KD', 'Mengacu pada KI-KD kelas X.'],
     ['KI dan KD', 'Mengacu pada KI dan KD kelas X.'],
     ['heading markdown generik', '# Tujuan Pembelajaran\nSiswa memahami grafik.'],
-  ])('rejects legacy curriculum or markdown heading output without code fence: %s', async (_case, badText) => {
-    cloudChat.mockResolvedValue(kegiatanPatchWithInti(badText));
+  ])(
+    'rejects legacy curriculum or markdown heading output without code fence: %s',
+    async (_case, badText) => {
+      cloudChat.mockResolvedValue(kegiatanPatchWithInti(badText));
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
-      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+      await expect(
+        service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }),
+      });
 
-    expect(aiGenerationCreate).not.toHaveBeenCalled();
-  });
+      expect(aiGenerationCreate).not.toHaveBeenCalled();
+    },
+  );
 
   it('rejects extra fields and CP overwrite in CP/TP patch', async () => {
-    cloudChat.mockResolvedValue(JSON.stringify({
-      cp: 'CP buatan AI',
-      tp: ['Menjelaskan grafik fungsi linear.'],
-    }));
+    cloudChat.mockResolvedValue(
+      JSON.stringify({
+        cp: 'CP buatan AI',
+        tp: ['Menjelaskan grafik fungsi linear.'],
+      }),
+    );
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'cp_tp' }, GURU))
-      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'cp_tp' }, GURU),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
 
     expect(aiGenerationCreate).not.toHaveBeenCalled();
   });
@@ -1154,17 +1576,22 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
 
     expect(res).toEqual({
       type: 'atp',
-      output: { atp: [{ tpRef: 'TP 1', indikator: 'Menjelaskan grafik fungsi linear dengan benar.' }] },
+      output: {
+        atp: [{ tpRef: 'TP 1', indikator: 'Menjelaskan grafik fungsi linear dengan benar.' }],
+      },
     });
   });
 
   it('rejects ATP refs that invent unsaved TP', async () => {
-    cloudChat.mockResolvedValue(JSON.stringify({
-      atp: [{ tpRef: 'TP 2', indikator: 'Indikator palsu.' }],
-    }));
+    cloudChat.mockResolvedValue(
+      JSON.stringify({
+        atp: [{ tpRef: 'TP 2', indikator: 'Indikator palsu.' }],
+      }),
+    );
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'atp' }, GURU))
-      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'atp' }, GURU),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_OUTPUT_INVALID' }) });
   });
 
   it('uses a single configured provider attempt for non-PII prompts', async () => {
@@ -1173,29 +1600,32 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(res).toEqual({
       type: 'kegiatan',
       output: {
-        kegiatan: [{
-          pertemuan: 'Pertemuan 1',
-          pendahuluan: 'Menyampaikan tujuan pembelajaran.',
-          inti: 'Menganalisis grafik fungsi linear.',
-          penutup: 'Refleksi dan umpan balik.',
-          diferensiasi: 'Menyiapkan dukungan bertahap dan tantangan lanjutan sesuai kesiapan siswa.',
-        }],
+        kegiatan: [
+          {
+            pertemuan: 'Pertemuan 1',
+            pendahuluan: 'Menyampaikan tujuan pembelajaran.',
+            inti: 'Menganalisis grafik fungsi linear.',
+            penutup: 'Refleksi dan umpan balik.',
+            diferensiasi:
+              'Menyiapkan dukungan bertahap dan tantangan lanjutan sesuai kesiapan siswa.',
+          },
+        ],
       },
     });
     expect(cloudChat).toHaveBeenCalledTimes(1);
-    expect(cloudChat).toHaveBeenCalledWith(
-      expect.stringContaining('Schema JSON'),
-      undefined,
-      { responseFormat: expect.objectContaining({
+    expect(cloudChat).toHaveBeenCalledWith(expect.stringContaining('Schema JSON'), undefined, {
+      responseFormat: expect.objectContaining({
         type: 'json_schema',
         name: 'rpp_kegiatan_patch',
         schema: expect.objectContaining({
           additionalProperties: false,
           required: ['kegiatan'],
         }),
-      }) },
-    );
-    const options = cloudChat.mock.calls[0][2] as { responseFormat: { schema: Record<string, unknown> } };
+      }),
+    });
+    const options = cloudChat.mock.calls[0][2] as {
+      responseFormat: { schema: Record<string, unknown> };
+    };
     const schemaText = JSON.stringify(options.responseFormat.schema);
     expect(schemaText).not.toMatch(/minLength|maxLength|minItems|maxItems|pattern/);
     expect(schemaText).toContain('diferensiasi');
@@ -1204,26 +1634,31 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
 
   it('opens circuit, falls back to Ollama, and notifies admin when OpenAI quota is exhausted', async () => {
     localChat.mockResolvedValue(KEGIATAN_PATCH);
-    cloudChat.mockRejectedValue(new OpenAiProviderError(
-      'You exceeded your current quota',
-      429,
-      'organization_spend_limit_exceeded',
-      'insufficient_quota',
-      null,
-    ));
+    cloudChat.mockRejectedValue(
+      new OpenAiProviderError(
+        'You exceeded your current quota',
+        429,
+        'organization_spend_limit_exceeded',
+        'insufficient_quota',
+        null,
+      ),
+    );
 
     const res = await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
     await flushPromises();
     await flushPromises();
 
     expect(res.output).toEqual({
-      kegiatan: [{
-        pertemuan: 'Pertemuan 1',
-        pendahuluan: 'Menyampaikan tujuan pembelajaran.',
-        inti: 'Menganalisis grafik fungsi linear.',
-        penutup: 'Refleksi dan umpan balik.',
-        diferensiasi: 'Menyiapkan dukungan bertahap dan tantangan lanjutan sesuai kesiapan siswa.',
-      }],
+      kegiatan: [
+        {
+          pertemuan: 'Pertemuan 1',
+          pendahuluan: 'Menyampaikan tujuan pembelajaran.',
+          inti: 'Menganalisis grafik fungsi linear.',
+          penutup: 'Refleksi dan umpan balik.',
+          diferensiasi:
+            'Menyiapkan dukungan bertahap dan tantangan lanjutan sesuai kesiapan siswa.',
+        },
+      ],
     });
     expect(cloudChat).toHaveBeenCalledTimes(1);
     expect(localChat).toHaveBeenCalledWith(
@@ -1232,56 +1667,68 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       { responseFormat: 'json_object' },
     );
     expect(markOpenAiQuotaExhausted).toHaveBeenCalledWith('organization_spend_limit_exceeded');
-    expect(notificationNotify).toHaveBeenCalledWith(expect.objectContaining({
-      channel: 'email',
-      to: 'admin@example.sch.id',
-      subject: 'OpenAI fallback aktif',
-      refType: 'ai_openai_quota',
-      refId: 'incident-1',
-    }));
-    expect((notificationNotify.mock.calls[0][0] as { body: string }).body).toContain('Ollama lokal');
-    expect((notificationNotify.mock.calls[0][0] as { body: string }).body).toContain('billing/usage OpenAI');
-    expect(aiGenerationCreate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ model: 'ollama' }),
-    }));
+    expect(notificationNotify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: 'email',
+        to: 'admin@example.sch.id',
+        subject: 'OpenAI fallback aktif',
+        refType: 'ai_openai_quota',
+        refId: 'incident-1',
+      }),
+    );
+    expect((notificationNotify.mock.calls[0][0] as { body: string }).body).toContain(
+      'Ollama lokal',
+    );
+    expect((notificationNotify.mock.calls[0][0] as { body: string }).body).toContain(
+      'billing/usage OpenAI',
+    );
+    expect(aiGenerationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ model: 'ollama' }),
+      }),
+    );
   });
 
-  it.each([
-    'credit_balance_exhausted',
-    'organization_usage_limit_exceeded',
-  ])('opens circuit and falls back for official OpenAI quota code %s', async (code) => {
-    cloudChat.mockRejectedValue(new OpenAiProviderError(
-      'OpenAI usage is not available',
-      429,
-      code,
-      'insufficient_quota',
-      null,
-    ));
-    localChat.mockResolvedValue(KEGIATAN_PATCH);
+  it.each(['credit_balance_exhausted', 'organization_usage_limit_exceeded'])(
+    'opens circuit and falls back for official OpenAI quota code %s',
+    async (code) => {
+      cloudChat.mockRejectedValue(
+        new OpenAiProviderError(
+          'OpenAI usage is not available',
+          429,
+          code,
+          'insufficient_quota',
+          null,
+        ),
+      );
+      localChat.mockResolvedValue(KEGIATAN_PATCH);
 
-    await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
-    await flushPromises();
-    await flushPromises();
+      await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
+      await flushPromises();
+      await flushPromises();
 
-    expect(cloudChat).toHaveBeenCalledTimes(1);
-    expect(localChat).toHaveBeenCalledTimes(1);
-    expect(markOpenAiQuotaExhausted).toHaveBeenCalledWith(code);
-    expect(aiGenerationCreate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ model: 'ollama' }),
-    }));
-  });
+      expect(cloudChat).toHaveBeenCalledTimes(1);
+      expect(localChat).toHaveBeenCalledTimes(1);
+      expect(markOpenAiQuotaExhausted).toHaveBeenCalledWith(code);
+      expect(aiGenerationCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ model: 'ollama' }),
+        }),
+      );
+    },
+  );
 
   it('throttles repeated OpenAI quota admin notifications while continuing fallback', async () => {
-    claimOpenAiQuotaNoticeIncident
-      .mockResolvedValueOnce('incident-1')
-      .mockResolvedValueOnce(null);
-    cloudChat.mockRejectedValue(new OpenAiProviderError(
-      'You exceeded your current quota',
-      429,
-      'insufficient_quota',
-      'insufficient_quota',
-      null,
-    ));
+    claimOpenAiQuotaNoticeIncident.mockResolvedValueOnce('incident-1').mockResolvedValueOnce(null);
+    cloudChat.mockRejectedValue(
+      new OpenAiProviderError(
+        'You exceeded your current quota',
+        429,
+        'insufficient_quota',
+        'insufficient_quota',
+        null,
+      ),
+    );
     localChat.mockResolvedValue(KEGIATAN_PATCH);
 
     await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
@@ -1309,20 +1756,24 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       { responseFormat: 'json_object' },
     );
     expect(notificationNotify).not.toHaveBeenCalled();
-    expect(aiGenerationCreate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ model: 'ollama' }),
-    }));
+    expect(aiGenerationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ model: 'ollama' }),
+      }),
+    );
   });
 
   it('retries temporary OpenAI rate limit once without opening circuit or falling back', async () => {
     cloudChat
-      .mockRejectedValueOnce(new OpenAiProviderError(
-        'Rate limit reached',
-        429,
-        'rate_limit_exceeded',
-        'rate_limit_exceeded',
-        0,
-      ))
+      .mockRejectedValueOnce(
+        new OpenAiProviderError(
+          'Rate limit reached',
+          429,
+          'rate_limit_exceeded',
+          'rate_limit_exceeded',
+          0,
+        ),
+      )
       .mockResolvedValueOnce(KEGIATAN_PATCH);
 
     await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
@@ -1331,22 +1782,29 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     expect(localChat).not.toHaveBeenCalled();
     expect(markOpenAiQuotaExhausted).not.toHaveBeenCalled();
     expect(notificationNotify).not.toHaveBeenCalled();
-    expect(aiGenerationCreate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ model: 'gpt-4.1-mini' }),
-    }));
+    expect(aiGenerationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ model: 'gpt-4.1-mini' }),
+      }),
+    );
   });
 
   it('does not retry before a long Retry-After budget and returns rate-limited response', async () => {
-    cloudChat.mockRejectedValue(new OpenAiProviderError(
-      'Rate limit reached',
-      429,
-      'rate_limit_exceeded',
-      'rate_limit_exceeded',
-      5,
-    ));
+    cloudChat.mockRejectedValue(
+      new OpenAiProviderError(
+        'Rate limit reached',
+        429,
+        'rate_limit_exceeded',
+        'rate_limit_exceeded',
+        5,
+      ),
+    );
 
-    await expect(service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU))
-      .rejects.toMatchObject({ response: expect.objectContaining({ error: 'AI_PROVIDER_RATE_LIMITED' }) });
+    await expect(
+      service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'AI_PROVIDER_RATE_LIMITED' }),
+    });
 
     expect(cloudChat).toHaveBeenCalledTimes(1);
     expect(localChat).not.toHaveBeenCalled();
@@ -1355,24 +1813,29 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   });
 
   it('uses one incident refId for all admin recipients in the same quota notice', async () => {
-    userFindMany.mockResolvedValue([{
-      id: 'admin-1',
-      fullName: 'Super Admin 1',
-      email: 'admin1@example.sch.id',
-      phone: null,
-    }, {
-      id: 'admin-2',
-      fullName: 'Super Admin 2',
-      email: null,
-      phone: '628100000001',
-    }]);
-    cloudChat.mockRejectedValue(new OpenAiProviderError(
-      'Project spend limit exceeded',
-      429,
-      'project_spend_limit_exceeded',
-      'insufficient_quota',
-      null,
-    ));
+    userFindMany.mockResolvedValue([
+      {
+        id: 'admin-1',
+        fullName: 'Super Admin 1',
+        email: 'admin1@example.sch.id',
+        phone: null,
+      },
+      {
+        id: 'admin-2',
+        fullName: 'Super Admin 2',
+        email: null,
+        phone: '628100000001',
+      },
+    ]);
+    cloudChat.mockRejectedValue(
+      new OpenAiProviderError(
+        'Project spend limit exceeded',
+        429,
+        'project_spend_limit_exceeded',
+        'insufficient_quota',
+        null,
+      ),
+    );
     localChat.mockResolvedValue(KEGIATAN_PATCH);
 
     await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
@@ -1381,33 +1844,42 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
 
     expect(notificationNotify).toHaveBeenCalledTimes(2);
     expect(notificationNotify.mock.calls.map((call) => call[0])).toEqual([
-      expect.objectContaining({ channel: 'email', to: 'admin1@example.sch.id', refId: 'incident-1' }),
+      expect.objectContaining({
+        channel: 'email',
+        to: 'admin1@example.sch.id',
+        refId: 'incident-1',
+      }),
       expect.objectContaining({ channel: 'whatsapp', to: '628100000001', refId: 'incident-1' }),
     ]);
   });
 
   it('keeps quota notice throttle when at least one admin recipient succeeds', async () => {
-    userFindMany.mockResolvedValue([{
-      id: 'admin-1',
-      fullName: 'Super Admin 1',
-      email: 'admin1@example.sch.id',
-      phone: null,
-    }, {
-      id: 'admin-2',
-      fullName: 'Super Admin 2',
-      email: 'admin2@example.sch.id',
-      phone: null,
-    }]);
+    userFindMany.mockResolvedValue([
+      {
+        id: 'admin-1',
+        fullName: 'Super Admin 1',
+        email: 'admin1@example.sch.id',
+        phone: null,
+      },
+      {
+        id: 'admin-2',
+        fullName: 'Super Admin 2',
+        email: 'admin2@example.sch.id',
+        phone: null,
+      },
+    ]);
     notificationNotify
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error('email unavailable'));
-    cloudChat.mockRejectedValue(new OpenAiProviderError(
-      'Project spend limit exceeded',
-      429,
-      'project_spend_limit_exceeded',
-      'insufficient_quota',
-      null,
-    ));
+    cloudChat.mockRejectedValue(
+      new OpenAiProviderError(
+        'Project spend limit exceeded',
+        429,
+        'project_spend_limit_exceeded',
+        'insufficient_quota',
+        null,
+      ),
+    );
     localChat.mockResolvedValue(KEGIATAN_PATCH);
 
     await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
@@ -1419,20 +1891,24 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
   });
 
   it('releases quota notice throttle when every recipient delivery fails', async () => {
-    userFindMany.mockResolvedValue([{
-      id: 'admin-1',
-      fullName: 'Super Admin 1',
-      email: 'admin1@example.sch.id',
-      phone: null,
-    }]);
+    userFindMany.mockResolvedValue([
+      {
+        id: 'admin-1',
+        fullName: 'Super Admin 1',
+        email: 'admin1@example.sch.id',
+        phone: null,
+      },
+    ]);
     notificationNotify.mockRejectedValue(new Error('email unavailable'));
-    cloudChat.mockRejectedValue(new OpenAiProviderError(
-      'Project spend limit exceeded',
-      429,
-      'project_spend_limit_exceeded',
-      'insufficient_quota',
-      null,
-    ));
+    cloudChat.mockRejectedValue(
+      new OpenAiProviderError(
+        'Project spend limit exceeded',
+        429,
+        'project_spend_limit_exceeded',
+        'insufficient_quota',
+        null,
+      ),
+    );
     localChat.mockResolvedValue(KEGIATAN_PATCH);
 
     await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
@@ -1447,13 +1923,15 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
     claimOpenAiQuotaNoticeIncident
       .mockResolvedValueOnce('incident-1')
       .mockResolvedValueOnce('incident-2');
-    cloudChat.mockRejectedValue(new OpenAiProviderError(
-      'Project spend limit exceeded',
-      429,
-      'project_spend_limit_exceeded',
-      'insufficient_quota',
-      null,
-    ));
+    cloudChat.mockRejectedValue(
+      new OpenAiProviderError(
+        'Project spend limit exceeded',
+        429,
+        'project_spend_limit_exceeded',
+        'insufficient_quota',
+        null,
+      ),
+    );
     localChat.mockResolvedValue(KEGIATAN_PATCH);
 
     await service.generateRppStep({ rppId: RPP_ID, section: 'kegiatan' }, GURU);
@@ -1475,9 +1953,11 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       service.rejectLegacyGeneration();
     } catch (err) {
       expect((err as HttpException).getStatus()).toBe(410);
-      expect((err as HttpException).getResponse()).toEqual(expect.objectContaining({
-        error: 'AI_ENDPOINT_DISABLED',
-      }));
+      expect((err as HttpException).getResponse()).toEqual(
+        expect.objectContaining({
+          error: 'AI_ENDPOINT_DISABLED',
+        }),
+      );
     }
   });
 });

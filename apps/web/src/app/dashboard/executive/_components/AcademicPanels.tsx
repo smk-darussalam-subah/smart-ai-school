@@ -177,8 +177,8 @@ export function KkmHeatmap({ grades }: { grades: GradeAnalytics | null }) {
     matrix?.cells.find((c) => c.majorCode === major && c.subject === subject)?.passRate ?? null;
   return (
     <Card
-      title="Ketuntasan KKTP"
-      subtitle="Ambang per mapel · jurusan × mapel"
+      title="Entri nilai mencapai KKTP"
+      subtitle="Jurusan × mapel · persentase entri, bukan siswa tuntas"
       icon={ClipboardList}
       level="real"
       className="col-span-12 lg:col-span-3"
@@ -209,7 +209,7 @@ export function KkmHeatmap({ grades }: { grades: GradeAnalytics | null }) {
                         key={s}
                         className="rounded-md px-1 py-2 text-center text-[10.5px] font-bold text-white"
                         style={{ background: passColor(p) }}
-                        aria-label={`${m} ${s}: ${p === null ? 'KKTP belum tersedia atau tidak ada data' : `${Math.round(p)}% tuntas`}`}
+                        aria-label={`${m} ${s}: ${p === null ? 'KKTP belum tersedia atau tidak ada data' : `${Math.round(p)}% entri mencapai KKTP`}`}
                       >
                         {p === null ? '–' : Math.round(p)}
                       </td>
