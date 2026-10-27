@@ -785,7 +785,7 @@ export async function gradeEssayResponse(
     'PATCH',
     data,
   );
-  revalidatePath('/dashboard/akademik');
+  if (r.success) revalidatePath('/dashboard/akademik');
   return r;
 }
 
@@ -799,7 +799,7 @@ export async function reviewLateAssessmentSubmission(
     'PATCH',
     data,
   );
-  revalidatePath('/dashboard/akademik');
+  if (r.success) revalidatePath('/dashboard/akademik');
   return r;
 }
 
@@ -912,6 +912,12 @@ export interface AssessmentSessionData {
   purpose?: 'regular' | 'remedial';
   questions: AssessmentQuestion[];
   gradeTarget?: string | null;
+  gradingSummary?: {
+    gradedCount: number;
+    pendingManualCount: number;
+    skippedCount: number;
+    gradeTarget: string | null;
+  };
   dueAt?: string | null;
   instructions?: string | null;
   remedialParticipants?: RemedialParticipantData[];
@@ -1096,6 +1102,8 @@ export async function completeAssessmentSession(
 ): Promise<{ success: boolean; data?: AssessmentSessionData; error?: string }> {
   const r = await apiCall(`/assessment/sessions/${sessionId}/complete`, 'PATCH');
   if (!r.success) return { success: false, error: r.error };
+  // Merge fresh authoritative grades into the current workspace without a browser reload.
+  revalidatePath('/dashboard/akademik');
   return { success: true, data: r.data as AssessmentSessionData };
 }
 

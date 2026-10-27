@@ -1522,26 +1522,41 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         where: uniqueWhere,
         select: { id: true },
       });
-      const grade = await db.grade.upsert({
-        where: uniqueWhere,
-        create: {
-          studentId: response.studentId,
-          assignmentId: assignment.id,
-          semester: session.semester,
-          academicYear: assignment.academicYear,
-          score: response.score,
-          type: session.gradeTarget,
-          notes: `Sinkron otomatis dari asesmen: ${session.title}`,
-          submittedBy,
-          sourceAssessmentSessionId: session.id,
-        },
-        update: {
-          score: response.score,
-          notes: `Sinkron otomatis dari asesmen: ${session.title}`,
-          submittedBy,
-        },
-        select: { id: true, studentId: true, type: true },
-      });
+      const grade = await db.grade
+        .upsert({
+          where: uniqueWhere,
+          create: {
+            studentId: response.studentId,
+            assignmentId: assignment.id,
+            semester: session.semester,
+            academicYear: assignment.academicYear,
+            score: response.score,
+            type: session.gradeTarget,
+            notes: `Sinkron otomatis dari asesmen: ${session.title}`,
+            submittedBy,
+            sourceAssessmentSessionId: session.id,
+          },
+          update: {
+            score: response.score,
+            notes: `Sinkron otomatis dari asesmen: ${session.title}`,
+            submittedBy,
+          },
+          select: { id: true, studentId: true, type: true },
+        })
+        .catch((error: unknown) => {
+          // The database remains the final arbiter, including concurrent UTS/UAS writes.
+          // Throw out of the transaction: never leave a partial sync or overwrite another exam.
+          if (
+            (session.gradeTarget === 'uts' || session.gradeTarget === 'uas') &&
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === 'P2002'
+          ) {
+            throw new ConflictException(
+              `Nilai ${session.gradeTarget.toUpperCase()} sudah ada untuk peserta pada semester ini. Periksa Gradebook sebelum menyelesaikan sesi.`,
+            );
+          }
+          throw error;
+        });
       const created = !previousGrade;
       if (created) {
         gradeEvents.push({
@@ -2333,6 +2348,38 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     return result.response;
   }
 
+  /** Keep remedial results, analysis and monitor bound to the same eligible participants. */
+  private responseScope(session: {
+    id: string;
+    purpose?: string;
+  }): Prisma.AssessmentResponseWhereInput {
+    return {
+      sessionId: session.id,
+      ...(session.purpose === 'remedial'
+        ? {
+            student: {
+              remedialParticipants: {
+                some: { sessionId: session.id, status: { not: 'cancelled' } },
+              },
+            },
+          }
+        : {}),
+    };
+  }
+
+  private countParticipants(session: { id: string; purpose?: string; classId: string | null }) {
+    if (session.purpose === 'remedial') {
+      return this.prisma.remedialParticipant.count({
+        where: { sessionId: session.id, status: { not: 'cancelled' } },
+      });
+    }
+    return session.classId
+      ? this.prisma.student.count({
+          where: { classId: session.classId, deletedAt: null, status: 'active' },
+        })
+      : Promise.resolve(null);
+  }
+
   /** GURU pemilik / KS / SA: lihat semua respons untuk sesi (realtime monitor). */
   async getResults(sessionId: string, user: AuthUser) {
     const session = await this.prisma.assessmentSession.findUnique({
@@ -2357,7 +2404,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
 
     const [responses, classStudentCount] = await Promise.all([
       this.prisma.assessmentResponse.findMany({
-        where: { sessionId },
+        where: this.responseScope(session),
         orderBy: [{ submittedAt: 'desc' }],
         select: {
           id: true,
@@ -2374,15 +2421,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           student: { select: { nis: true, user: { select: { fullName: true } } } },
         },
       }),
-      session.purpose === 'remedial'
-        ? this.prisma.remedialParticipant.count({
-            where: { sessionId, status: { not: 'cancelled' } },
-          })
-        : session.classId
-          ? this.prisma.student.count({
-              where: { classId: session.classId, deletedAt: null, status: 'active' },
-            })
-          : Promise.resolve(null),
+      this.countParticipants(session),
     ]);
 
     const questions = parseSnapshotQuestions(session.questions);
@@ -2651,7 +2690,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
 
     // Fetch all submitted responses
     const responses = await this.prisma.assessmentResponse.findMany({
-      where: { sessionId, submittedAt: { not: null } },
+      where: { ...this.responseScope(session), submittedAt: { not: null } },
       select: {
         id: true,
         score: true,
@@ -2858,13 +2897,13 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
 
         const session = await this.prisma.assessmentSession.findUnique({
           where: { id: sessionId },
-          select: { id: true, classId: true, title: true, type: true, status: true },
+          select: { id: true, classId: true, purpose: true, title: true, type: true, status: true },
         });
         if (!session) return;
 
-        const [responses, classStudentCount] = await Promise.all([
+        const [responses, participantCount] = await Promise.all([
           this.prisma.assessmentResponse.findMany({
-            where: { sessionId },
+            where: this.responseScope(session),
             orderBy: [{ submittedAt: 'desc' }],
             select: {
               id: true,
@@ -2894,12 +2933,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
               student: { select: { nis: true, user: { select: { fullName: true } } } },
             },
           }),
-          session.classId
-            ? this.prisma.student.count({
-                where: { classId: session.classId, deletedAt: null, status: 'active' },
-              })
-            : Promise.resolve(0),
+          this.countParticipants(session),
         ]);
+        const classStudentCount = participantCount ?? 0;
 
         const submitted = responses.filter(
           (r) =>

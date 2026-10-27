@@ -1,7 +1,8 @@
 'use client';
 import QuestionContent from '@/components/learning/QuestionContent';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -25,19 +26,27 @@ import EssayGradingModal from './EssayGradingModal';
 import QuestionBankEditor from './QuestionBankEditor';
 import SessionAnalysisPanel from './SessionAnalysisPanel';
 import {
+  assessmentCompletionLabel,
+  assessmentCompletionMessage,
+} from './assessment-completion-feedback';
+import {
   completeAssessmentSession,
   createAssessmentSession,
   fetchAssessmentResults,
   fetchAssessmentSession,
   fetchQuestions,
-  getSseToken,
   reviewLateAssessmentSubmission,
   startAssessmentSession,
   type AssessmentResultsData,
   type AssessmentSessionData,
 } from '../actions';
 
-const SSE_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+import {
+  connectAssessmentMonitor,
+  requestAssessmentMonitorToken,
+  type LiveMonitorData,
+  type LiveMonitorState,
+} from './assessment-live-monitor';
 
 interface Props {
   session: TodayClass | null;
@@ -55,34 +64,6 @@ interface QuestionRecord {
   type: string;
   body: string;
   difficulty: string;
-}
-
-interface LiveMonitorData {
-  sessionStatus: string;
-  classStudentCount: number;
-  selesai: number;
-  sedang: number;
-  belum: number;
-  rata: number | null;
-  finalCount: number;
-  pendingManualCount: number;
-  pendingLateReview: number;
-  roster: Array<{
-    responseId: string;
-    name: string;
-    status: string;
-    nilai: number | null;
-    waktu: string;
-    revision: number;
-    lastSavedAt: string | null;
-    connectionStatus: 'connecting' | 'online' | 'stale' | 'offline' | 'completed';
-    incidentCount: number;
-    lastIncidentType: string | null;
-    lastIncidentAt: string | null;
-    lastIncidentDelayed: boolean;
-    lateSubmissionStatus: 'pending' | 'accepted' | 'rejected' | null;
-    lateSubmittedAt: string | null;
-  }>;
 }
 
 const INCIDENT_LABELS: Record<string, string> = {
@@ -150,9 +131,21 @@ export default function PenilaianSesiModal({
   const [loading, startLoad] = useTransition();
   const [saving, startSave] = useTransition();
   const [liveData, setLiveData] = useState<LiveMonitorData | null>(null);
-  const [liveState, setLiveState] = useState<
-    'idle' | 'connecting' | 'live' | 'reconnecting' | 'closed'
-  >('idle');
+  const [liveState, setLiveState] = useState<LiveMonitorState>('idle');
+  const [liveRetry, setLiveRetry] = useState(0);
+  const [analysisVersion, setAnalysisVersion] = useState(0);
+  const reviewTrigger = useRef<HTMLButtonElement | null>(null);
+  const monitorTab = useRef<HTMLButtonElement | null>(null);
+  const analysisTab = useRef<HTMLButtonElement | null>(null);
+
+  const closeLateReview = (saved = false) => {
+    setLateReviewTarget(null);
+    setLateReviewNote('');
+    requestAnimationFrame(() => {
+      const target = saved ? monitorTab.current : reviewTrigger.current;
+      (target?.isConnected ? target : monitorTab.current)?.focus();
+    });
+  };
 
   const submitLateReview = () => {
     if (!workingSessionId || !lateReviewTarget || lateReviewNote.trim().length < 3) return;
@@ -171,8 +164,9 @@ export default function PenilaianSesiModal({
           ? 'Jawaban terlambat diterima untuk dinilai.'
           : 'Jawaban terlambat ditolak.',
       );
-      setLateReviewTarget(null);
-      setLateReviewNote('');
+      closeLateReview(true);
+      loadResults();
+      setAnalysisVersion((version) => version + 1);
     });
   };
 
@@ -284,60 +278,16 @@ export default function PenilaianSesiModal({
   useEffect(() => {
     if (mode !== 'monitor' || !workingSessionId) {
       setLiveState('idle');
+      setLiveData(null);
       return;
     }
-    let es: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let cancelled = false;
-    let attempt = 0;
-    const connect = () => {
-      if (cancelled) return;
-      setLiveState(attempt === 0 ? 'connecting' : 'reconnecting');
-      getSseToken().then((tokenRes) => {
-        if (cancelled) return;
-        if (!tokenRes.success || !tokenRes.token) {
-          attempt++;
-          const delay = Math.min(8000, 1000 * 2 ** Math.min(attempt, 3));
-          reconnectTimer = setTimeout(connect, delay);
-          return;
-        }
-        es?.close();
-        es = new EventSource(
-          `${SSE_BASE}/api/v1/assessment/sessions/${workingSessionId}/stream?token=${encodeURIComponent(tokenRes.token)}`,
-        );
-        es.onopen = () => {
-          attempt = 0;
-          setLiveState('live');
-        };
-        es.onmessage = (event) => {
-          try {
-            setLiveData(JSON.parse(event.data) as LiveMonitorData);
-            setLiveState('live');
-          } catch {
-            setLiveState('reconnecting');
-          }
-        };
-        es.onerror = () => {
-          es?.close();
-          if (cancelled) return;
-          attempt++;
-          if (attempt > 5) {
-            setLiveState('closed');
-            return;
-          }
-          setLiveState('reconnecting');
-          const delay = Math.min(8000, 1000 * 2 ** Math.min(attempt, 3));
-          reconnectTimer = setTimeout(connect, delay);
-        };
-      });
-    };
-    connect();
-    return () => {
-      cancelled = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      es?.close();
-    };
-  }, [mode, workingSessionId]);
+    return connectAssessmentMonitor({
+      sessionId: workingSessionId,
+      getToken: requestAssessmentMonitorToken,
+      onData: setLiveData,
+      onState: setLiveState,
+    });
+  }, [mode, workingSessionId, liveRetry]);
 
   if (!session) return null;
 
@@ -400,7 +350,8 @@ export default function PenilaianSesiModal({
         setSessionData(res.data ?? null);
         setMode('analysis');
         loadResults();
-        toast.success('Sesi selesai dan nilai disinkronkan.');
+        setAnalysisVersion((version) => version + 1);
+        toast.success(assessmentCompletionMessage(res.data));
       }
     });
   };
@@ -416,13 +367,16 @@ export default function PenilaianSesiModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3"
-      onClick={onClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
     >
       <div
         className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
-        aria-modal="true"
+        aria-modal={!lateReviewTarget && !essayGradingOpen && !bankOpen}
+        inert={lateReviewTarget || essayGradingOpen || bankOpen ? true : undefined}
         aria-label="Penilaian sesi"
       >
         <div className="flex items-start justify-between gap-3">
@@ -457,6 +411,7 @@ export default function PenilaianSesiModal({
           ).map(([key, Icon, label]) => (
             <button
               key={String(key)}
+              ref={key === 'monitor' ? monitorTab : key === 'analysis' ? analysisTab : undefined}
               type="button"
               onClick={() => setMode(key)}
               className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[12px] font-bold ${mode === key ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]'}`}
@@ -703,28 +658,31 @@ export default function PenilaianSesiModal({
                             <div className="text-[11px] font-bold text-emerald-700">
                               #{index + 1} - {record.type} - {record.points ?? 0} poin
                             </div>
-                            <div className="mt-2"><QuestionContent body={record.body ?? ''} /></div>
+                            <div className="mt-2">
+                              <QuestionContent body={record.body ?? ''} />
+                            </div>
                           </article>
                         );
                       })}
                     </div>
-                    {sessionData?.status !== 'completed' && (
-                      <button
-                        type="button"
-                        onClick={activateOrComplete}
-                        disabled={saving}
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-[13px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
-                      >
-                        {saving ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Play className="h-4 w-4" />
-                        )}
-                        {sessionData?.status === 'draft'
-                          ? 'Aktifkan untuk siswa'
-                          : 'Selesaikan dan sinkron Gradebook'}
-                      </button>
-                    )}
+                    {sessionData &&
+                      (sessionData.status === 'draft' || sessionData.status === 'active') && (
+                        <button
+                          type="button"
+                          onClick={activateOrComplete}
+                          disabled={saving}
+                          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-[13px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {saving ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Play className="h-4 w-4" />
+                          )}
+                          {sessionData?.status === 'draft'
+                            ? 'Aktifkan untuk siswa'
+                            : assessmentCompletionLabel(sessionData)}
+                        </button>
+                      )}
                   </>
                 )}
               </div>
@@ -738,25 +696,33 @@ export default function PenilaianSesiModal({
               <div className="rounded-lg border border-[#dfe9e4] p-6 text-center text-[12px] font-semibold text-[#6b8079]">
                 Buat atau pilih sesi terlebih dahulu.
               </div>
-            ) : liveState === 'closed' ? (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-[12px] font-bold text-amber-700">
-                Koneksi realtime terputus setelah beberapa percobaan. Tutup dan buka kembali
-                monitor.
+            ) : liveState !== 'live' || !liveData ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"
+              >
+                <p>
+                  {liveState === 'closed'
+                    ? 'Monitor belum dapat dimuat. Coba sambungkan kembali atau buka Analisis untuk memeriksa hasil tersimpan.'
+                    : liveState === 'reconnecting'
+                      ? 'Koneksi terputus. Sedang menyambungkan kembali…'
+                      : 'Memuat data monitor…'}
+                </p>
+                {liveState === 'closed' && (
+                  <button
+                    type="button"
+                    onClick={() => setLiveRetry((value) => value + 1)}
+                    className="min-h-11 rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+                  >
+                    Sambungkan kembali
+                  </button>
+                )}
               </div>
             ) : (
               <>
-                <div
-                  className={`rounded-lg border px-3 py-2 text-[12px] font-bold ${
-                    liveState === 'live'
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : 'border-sky-200 bg-sky-50 text-sky-700'
-                  }`}
-                >
-                  {liveState === 'live'
-                    ? 'Live'
-                    : liveState === 'reconnecting'
-                      ? 'Menyambungkan kembali...'
-                      : 'Menghubungkan monitor...'}
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-bold text-emerald-700">
+                  Live
                 </div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                   <Metric
@@ -773,7 +739,12 @@ export default function PenilaianSesiModal({
                     value={String(liveData?.pendingLateReview ?? 0)}
                     tone="amber"
                   />
-                  <Metric icon={CheckCircle} label="Rata-rata nilai final" value={rata === null ? '—' : String(rata)} tone="slate" />
+                  <Metric
+                    icon={CheckCircle}
+                    label="Rata-rata nilai final"
+                    value={rata === null ? '—' : String(rata)}
+                    tone="slate"
+                  />
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-[#e6efea]">
                   <div
@@ -791,11 +762,14 @@ export default function PenilaianSesiModal({
                 {(liveData?.pendingManualCount ?? pendingEssayCorrections.length) > 0 && (
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                     <div className="text-[12px] font-bold text-amber-800">
-                      {liveData?.pendingManualCount ?? pendingEssayCorrections.length} jawaban menunggu koreksi guru.
+                      {liveData?.pendingManualCount ?? pendingEssayCorrections.length} jawaban
+                      menunggu koreksi guru.
                     </div>
                     <button
                       type="button"
-                      onClick={() => pendingEssayCorrections.length ? setEssayGradingOpen(true) : loadResults()}
+                      onClick={() =>
+                        pendingEssayCorrections.length ? setEssayGradingOpen(true) : loadResults()
+                      }
                       disabled={loading}
                       className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-600"
                     >
@@ -861,7 +835,8 @@ export default function PenilaianSesiModal({
                               <div className="flex min-w-[138px] gap-1.5">
                                 <button
                                   type="button"
-                                  onClick={() => {
+                                  onClick={(event) => {
+                                    reviewTrigger.current = event.currentTarget;
                                     setLateReviewTarget({
                                       responseId: row.responseId,
                                       studentName: row.name,
@@ -875,7 +850,8 @@ export default function PenilaianSesiModal({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => {
+                                  onClick={(event) => {
+                                    reviewTrigger.current = event.currentTarget;
                                     setLateReviewTarget({
                                       responseId: row.responseId,
                                       studentName: row.name,
@@ -909,7 +885,7 @@ export default function PenilaianSesiModal({
                     ) : (
                       <RefreshCw className="h-4 w-4" />
                     )}
-                    Selesaikan dan sinkron Gradebook
+                    {assessmentCompletionLabel(sessionData)}
                   </button>
                 )}
               </>
@@ -935,7 +911,7 @@ export default function PenilaianSesiModal({
               </div>
             )}
             {workingSessionId ? (
-              <SessionAnalysisPanel sessionId={workingSessionId} />
+              <SessionAnalysisPanel sessionId={workingSessionId} refreshVersion={analysisVersion} />
             ) : (
               <div className="rounded-lg border border-[#dfe9e4] p-6 text-center text-[12px] font-semibold text-[#6b8079]">
                 Analisis tersedia setelah ada sesi.
@@ -966,25 +942,39 @@ export default function PenilaianSesiModal({
           sessionId={workingSessionId}
           questions={essayQuestions}
           responses={essayResponses}
-          onClose={() => setEssayGradingOpen(false)}
-          onSaved={loadResults}
+          onClose={() => {
+            setEssayGradingOpen(false);
+            requestAnimationFrame(() => analysisTab.current?.focus());
+          }}
+          onSaved={() => {
+            loadResults();
+            setAnalysisVersion((version) => version + 1);
+          }}
         />
       )}
       {lateReviewTarget && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="late-review-title"
-            className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl"
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !saving) closeLateReview();
+          }}
+        >
+          <DialogContent
+            className="z-[80] w-[calc(100%-2rem)] max-w-md p-5"
+            closeDisabled={saving}
+            onCloseAutoFocus={(event) => event.preventDefault()}
+            onEscapeKeyDown={(event) => {
+              if (saving) event.preventDefault();
+            }}
+            onInteractOutside={(event) => event.preventDefault()}
           >
-            <h3 id="late-review-title" className="text-base font-extrabold text-[#0f2e25]">
+            <DialogTitle className="text-base font-extrabold text-[#0f2e25]">
               {lateReviewTarget.decision === 'accept' ? 'Terima' : 'Tolak'} jawaban terlambat
-            </h3>
-            <p className="mt-1 text-[12px] text-[#5f746d]">
+            </DialogTitle>
+            <DialogDescription className="text-sm text-[#5f746d]">
               {lateReviewTarget.studentName}. Konfirmasikan secara lisan, lalu catat alasan
               keputusan untuk jejak audit.
-            </p>
+            </DialogDescription>
             <label
               className="mt-4 block text-[11px] font-bold text-[#294c41]"
               htmlFor="late-review-note"
@@ -998,17 +988,16 @@ export default function PenilaianSesiModal({
               maxLength={500}
               rows={4}
               autoFocus
-              className="mt-1 w-full resize-none rounded-lg border border-[#cbdad4] px-3 py-2 text-[13px] outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+              disabled={saving}
+              className="mt-1 w-full resize-none rounded-lg border border-[#cbdad4] px-3 py-2 text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
               placeholder="Contoh: koneksi siswa terputus selama ujian dan telah dikonfirmasi setelah sesi."
             />
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setLateReviewTarget(null);
-                  setLateReviewNote('');
-                }}
-                className="rounded-lg border border-[#cbdad4] px-3 py-2 text-[12px] font-bold text-[#294c41]"
+                onClick={() => closeLateReview()}
+                disabled={saving}
+                className="min-h-11 rounded-lg border border-[#cbdad4] px-3 py-2 text-sm font-bold text-[#294c41] focus-visible:ring-2 focus-visible:ring-emerald-600"
               >
                 Batal
               </button>
@@ -1016,7 +1005,7 @@ export default function PenilaianSesiModal({
                 type="button"
                 onClick={submitLateReview}
                 disabled={saving || lateReviewNote.trim().length < 3}
-                className={`rounded-lg px-3 py-2 text-[12px] font-bold text-white disabled:opacity-50 ${
+                className={`min-h-11 rounded-lg px-3 py-2 text-sm font-bold text-white focus-visible:ring-2 focus-visible:ring-emerald-600 disabled:opacity-50 ${
                   lateReviewTarget.decision === 'accept'
                     ? 'bg-emerald-600 hover:bg-emerald-700'
                     : 'bg-rose-600 hover:bg-rose-700'
@@ -1025,8 +1014,8 @@ export default function PenilaianSesiModal({
                 {saving ? 'Menyimpan...' : 'Simpan keputusan'}
               </button>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

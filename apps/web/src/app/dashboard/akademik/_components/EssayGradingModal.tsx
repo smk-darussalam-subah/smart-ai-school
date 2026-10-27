@@ -56,7 +56,7 @@ export default function EssayGradingModal({ sessionId, questions, responses, onC
   if (responses.length === 0) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-        <div className="max-w-md rounded-2xl bg-white p-6 text-center shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div role="dialog" aria-modal="true" aria-label="Koreksi esai" className="max-w-md rounded-2xl bg-white p-6 text-center shadow-xl" onClick={(e) => e.stopPropagation()}>
           <GraduationCap className="mx-auto h-8 w-8 text-[#9bb0a8]" />
           <p className="mt-2 text-[13px] font-medium text-[#6b8079]">Tidak ada respons essay yang perlu dinilai.</p>
           <button type="button" onClick={onClose} className="mt-4 rounded-lg border border-[#e6efea] bg-white px-4 py-2 text-[12px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>

@@ -11,6 +11,8 @@ import { CreateAssessmentSessionSchema } from '../assessment/dto/assessment.dto'
 import { parseSnapshotQuestions } from '../assessment/assessment-runtime';
 import { LmsService } from '../lms/lms.service';
 import { CreateQuestionSchema } from '../question-bank/dto/question.dto';
+import { firstValueFrom } from 'rxjs';
+import { randomUUID } from 'crypto';
 
 const databaseUrl = process.env.ASSESSMENT_RESILIENCE_DATABASE_URL;
 const describePostgres = databaseUrl ? describe : describe.skip;
@@ -434,6 +436,141 @@ describePostgres('Assessment resilience PostgreSQL service integration proof', (
     await prisma.semester.deleteMany({ where: { id: semesterId } });
     await prisma.$disconnect();
   });
+
+  it('binds remedial monitor, results and analysis to eligible participants, preserving cancelled response history', async () => {
+    const extras: Array<{ userId: string; studentId: string }> = [];
+    let proofResponseId: string | undefined;
+    try {
+      for (let i = 0; i < 2; i++) {
+        const user = await prisma.user.create({
+          data: {
+            keycloakId: randomUUID(),
+            fullName: `Local remedial outsider ${i}`,
+            email: `${randomUUID()}@example.invalid`,
+            role: 'SISWA',
+          },
+        });
+        const student = await prisma.student.create({
+          data: { userId: user.id, classId, nis: randomUUID().slice(0, 16), joinedAt: new Date() },
+        });
+        extras.push({ userId: user.id, studentId: student.id });
+      }
+      const response = await prisma.assessmentResponse.create({
+        data: {
+          sessionId: remedialSessionId,
+          studentId,
+          startedAt: new Date(),
+          submittedAt: new Date(),
+          score: 100,
+          answers: correctAnswers,
+          itemScores: [],
+        },
+      });
+      proofResponseId = response.id;
+      const service = buildActualService();
+      const frame = await firstValueFrom(service.streamResults(remedialSessionId, GURU));
+      expect(frame.data).toMatchObject({ classStudentCount: 1, selesai: 1, belum: 0 });
+      expect((await service.getResults(remedialSessionId, GURU)).classStudentCount).toBe(1);
+      await prisma.remedialParticipant.update({
+        where: { id: remedialParticipantId },
+        data: { status: 'cancelled' },
+      });
+      const cancelled = await firstValueFrom(service.streamResults(remedialSessionId, GURU));
+      expect(cancelled.data).toMatchObject({
+        classStudentCount: 0,
+        selesai: 0,
+        belum: 0,
+        roster: [],
+      });
+      expect((await service.getResults(remedialSessionId, GURU)).responses).toEqual([]);
+      expect((await service.getSessionAnalysis(remedialSessionId, GURU)).summary.totalStudents).toBe(0);
+      expect(await prisma.assessmentResponse.count({ where: { id: response.id } })).toBe(1);
+    } finally {
+      if (proofResponseId)
+        await prisma.assessmentResponse.deleteMany({ where: { id: proofResponseId } });
+      await prisma.remedialParticipant.update({
+        where: { id: remedialParticipantId },
+        data: { status: 'assigned' },
+      });
+      await prisma.student.deleteMany({
+        where: { id: { in: extras.map((row) => row.studentId) } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: extras.map((row) => row.userId) } } });
+    }
+  });
+
+  it.each(['uts', 'uas'] as const)(
+    'returns a business conflict and rolls back duplicate %s sync without altering the first Grade',
+    async (target) => {
+      const ids: string[] = [];
+      try {
+        for (let i = 0; i < 2; i++) {
+          const session = await prisma.assessmentSession.create({
+            data: {
+              teacherId,
+              moduleId,
+              teachingAssignmentId: assignmentId,
+              classId,
+              title: `Local duplicate ${target} ${i}`,
+              type: 'sumatif',
+              gradeTarget: target,
+              status: 'active',
+              purpose: 'regular',
+              questions,
+              academicYear,
+              semester: 1,
+            },
+          });
+          ids.push(session.id);
+          await prisma.assessmentResponse.create({
+            data: {
+              sessionId: session.id,
+              studentId,
+              startedAt: new Date(),
+              submittedAt: new Date(),
+              score: i === 0 ? 100 : 0,
+              answers: correctAnswers,
+              itemScores: [],
+            },
+          });
+        }
+        const service = buildActualService();
+        await service.completeSession(ids[0]!, GURU);
+        await expect(service.completeSession(ids[1]!, GURU)).rejects.toMatchObject({ status: 409 });
+        const rows = await prisma.grade.findMany({
+          where: { sourceAssessmentSessionId: { in: ids } },
+        });
+        expect(rows).toHaveLength(1);
+        expect(Number(rows[0]!.score)).toBe(100);
+        expect(rows[0]!.sourceAssessmentSessionId).toBe(ids[0]);
+        expect(
+          (await prisma.assessmentSession.findUniqueOrThrow({ where: { id: ids[1]! } })).status,
+        ).toBe('active');
+        expect(
+          await prisma.assessmentEventOutbox.count({
+            where: { dedupeKey: `assessment.completed:${ids[1]}` },
+          }),
+        ).toBe(0);
+      } finally {
+        const rows = await prisma.grade.findMany({
+          where: { sourceAssessmentSessionId: { in: ids } },
+          select: { id: true },
+        });
+        await prisma.assessmentEventOutbox.deleteMany({
+          where: {
+            dedupeKey: {
+              in: [
+                ...ids.map((id) => `assessment.completed:${id}`),
+                ...rows.map((row) => `grade.submitted:${row.id}`),
+              ],
+            },
+          },
+        });
+        await prisma.grade.deleteMany({ where: { sourceAssessmentSessionId: { in: ids } } });
+        await prisma.assessmentSession.deleteMany({ where: { id: { in: ids } } });
+      }
+    },
+  );
 
   it('runs manual rich questions through canonical storage, snapshot, start, autosave, resume and final submit', async () => {
     const bank = new QuestionBankService(prisma as unknown as PrismaService);
