@@ -16,6 +16,7 @@ import { formatAnalysisQuestionType } from './session-analysis-labels';
 
 interface Props {
   sessionId: string;
+  refreshVersion?: number;
 }
 
 interface AnalysisData {
@@ -44,21 +45,28 @@ interface AnalysisData {
   }>;
 }
 
-export default function SessionAnalysisPanel({ sessionId }: Props) {
+export default function SessionAnalysisPanel({ sessionId, refreshVersion = 0 }: Props) {
   const [data, setData] = useState<AnalysisData | null>(null);
   const [loading, startLoad] = useTransition();
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
+    let current = true;
+    setErr(null);
+    setData(null);
     startLoad(async () => {
       const res = await fetchSessionAnalysis(sessionId);
+      if (!current) return;
       if (res.success && res.data) {
         setData(res.data as AnalysisData);
       } else {
         setErr(res.error ?? 'Gagal memuat analisis.');
       }
     });
-  }, [sessionId]);
+    return () => {
+      current = false;
+    };
+  }, [sessionId, refreshVersion]);
 
   const maxBucketCount = useMemo(
     () => data ? Math.max(...data.scoreDistribution.map((b) => b.count), 1) : 1,
@@ -84,7 +92,7 @@ export default function SessionAnalysisPanel({ sessionId }: Props) {
   if (!data || data.summary.totalStudents === 0) {
     return (
       <div className="grid h-32 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] font-medium text-[#9bb0a8]">
-        Belum ada respons yang dikumpulkan untuk analisis.
+        Belum ada nilai final untuk dianalisis.
       </div>
     );
   }

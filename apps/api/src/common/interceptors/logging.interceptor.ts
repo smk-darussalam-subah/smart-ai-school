@@ -20,7 +20,9 @@ export class LoggingInterceptor implements NestInterceptor {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
-    const { method, url } = request;
+    const { method } = request;
+    // SSE uses a short-lived query credential. Query values never belong in request logs.
+    const url = request.url.split('?')[0];
     const startTime = Date.now();
 
     return next.handle().pipe(
