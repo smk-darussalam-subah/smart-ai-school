@@ -1,3 +1,8 @@
+// Business-contract tests already stub the auth boundary; writable-cookie
+// behavior is exercised separately in action-session tests and real Next HTTP.
+jest.mock('@/lib/action-session', () => ({
+  getActionSession: (...args: unknown[]) => jest.requireMock('next-auth').getServerSession(...args),
+}));
 import React from 'react';
 const mockSession = jest.fn();
 const mockApiFetch = jest.fn();
@@ -60,6 +65,7 @@ type WorkspaceProps = {
   scheduleStates?: Record<string, string>;
   taskRead?: import('@/lib/learner-dashboard-read').DashboardRead<unknown>;
   sppRead?: import('@/lib/learner-dashboard-read').DashboardRead<unknown>;
+  waLog?: unknown[];
 };
 async function workspaceProps(): Promise<WorkspaceProps> {
   const element = await AcademicPage({ searchParams: Promise.resolve({}) });
@@ -91,6 +97,20 @@ beforeEach(() => {
 });
 
 describe('real SSR page schedule-state wiring', () => {
+  it('passes the real child WA-log array to the parent workspace with child identity', async () => {
+    mockSession.mockResolvedValue({ accessToken: 'synthetic', roles: ['ORANG_TUA'] });
+    mockAuthority.mockResolvedValue({ roles: ['ORANG_TUA'], hasRole: () => false, can: () => false });
+    const baseFetch = mockApiFetch.getMockImplementation()!;
+    mockApiFetch.mockImplementation(async (url: string) => url.startsWith('/wa-log/student/child-a')
+      ? [{ id: 'message-a', message: 'Pesan sintetis', createdAt: '2026-10-29' }]
+      : baseFetch(url));
+    mockApiFetchResult.mockImplementation(async (url: string) => ({ status: 'success', httpStatus: 200,
+      data: { data: url === '/students/my-children'
+        ? [{ id: 'child-a', class: null, user: { fullName: 'Anak QA' } }] : [], total: 1, page: 1, limit: 100 } }));
+    const props = await workspaceProps();
+    expect(props.waLog).toEqual([{ id: 'message-a', message: 'Pesan sintetis', createdAt: '2026-10-29', studentId: 'child-a' }]);
+    expect(mockApiFetch).toHaveBeenCalledWith('/wa-log/student/child-a?limit=20', 'synthetic');
+  });
   it.each([403, 429, 503, 200])(
     'preserves student task HTTP%s availability through SSR',
     async (status) => {
@@ -357,9 +377,11 @@ describe('real SSR page schedule-state wiring', () => {
       ).toBe(false);
       expect(
         mockApiFetch.mock.calls.some(([url]) =>
+          String(url) !== '/student-dashboard/parent-changes' &&
           /studentId=|my-children|leaderboard|student-dashboard/.test(String(url)),
         ),
       ).toBe(false);
+      expect(mockApiFetch).toHaveBeenCalledWith('/student-dashboard/parent-changes', 'synthetic');
     },
   );
   it('keeps a successful empty child list honest', async () => {

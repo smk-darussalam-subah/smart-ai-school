@@ -164,6 +164,7 @@ async function buildService(
         provide: AcademicPeriodService,
         useValue: {
           assertWritablePeriodWithCutoverLock: jest.fn().mockResolvedValue(undefined),
+          assertWritablePeriodWithSharedCutoverLock: jest.fn().mockResolvedValue(undefined),
         },
       },
       ...(notificationService

@@ -8,7 +8,7 @@ import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { authOptions } from '@/lib/auth';
 import { getLoaClauses } from './loa-content';
-import { recordConsentAction } from './actions';
+import { ConsentSubmit } from './consent-submit';
 import { CURRENT_CONSENT_VERSION } from '@/lib/constants';
 import { Shield } from 'lucide-react';
 
@@ -38,8 +38,8 @@ export default async function ConsentPage() {
         {/* Scrollable LoA Content */}
         <div className="max-h-[50vh] overflow-y-auto px-6 py-5 space-y-4 text-sm leading-relaxed">
           <p className="text-muted-foreground">
-            Sebelum menggunakan sistem DIIS, mohon baca dan setujui ketentuan berikut
-            terkait pengolahan data pribadi Anda:
+            Sebelum menggunakan sistem DIIS, mohon baca dan setujui ketentuan berikut terkait
+            pengolahan data pribadi Anda:
           </p>
 
           {clauses.map((clause, idx) => (
@@ -51,26 +51,18 @@ export default async function ConsentPage() {
 
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4">
             <p className="text-amber-800 text-xs">
-              <strong>Perhatian:</strong> Anda harus menyetujui ketentuan ini untuk
-              dapat mengakses sistem DIIS. Jika tidak menyetujui, silakan hubungi
-              administrator sekolah.
+              <strong>Perhatian:</strong> Anda harus menyetujui ketentuan ini untuk dapat mengakses
+              sistem DIIS. Jika tidak menyetujui, silakan hubungi administrator sekolah.
             </p>
           </div>
         </div>
 
         {/* Action */}
         <div className="border-t px-6 py-4 bg-slate-50">
-          <form action={recordConsentAction}>
-            <button
-              type="submit"
-              className="w-full bg-primary text-primary-foreground font-semibold py-3 px-4 rounded-lg hover:bg-primary/90 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-            >
-              Saya Menyetujui Pengolahan Data Pribadi
-            </button>
-          </form>
+          <ConsentSubmit />
           <p className="text-xs text-center text-muted-foreground mt-2">
-            Dengan menekan tombol di atas, Anda menyatakan setuju dengan seluruh
-            ketentuan pengolahan data pribadi yang tercantum.
+            Dengan menekan tombol di atas, Anda menyatakan setuju dengan seluruh ketentuan
+            pengolahan data pribadi yang tercantum.
           </p>
         </div>
       </div>

@@ -1,5 +1,7 @@
 'use client';
 import QuestionContent from '@/components/learning/QuestionContent';
+import { useLearningRefreshPause } from '@/lib/learning-refresh';
+import { AssessmentAutosaveWindow } from '@/lib/assessment-autosave-window';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import {
@@ -154,7 +156,12 @@ async function postAssessmentRequest(
           ? data.message
           : 'Permintaan ke server gagal.';
       const code = isRecord(data) && typeof data.code === 'string' ? data.code : undefined;
-      return { success: false, error: message, retryable: response.status >= 500, code };
+      return {
+        success: false,
+        error: message,
+        retryable: response.status === 429 || response.status >= 500,
+        code,
+      };
     }
     return { success: true, data: isRecord(data) ? data : {} };
   } catch {
@@ -235,6 +242,17 @@ function answerProgress(question: StudentQuestion, answers: Record<string, Answe
 }
 
 export default function TaskDetailModal({ task, onClose, showToast, onOpenModule }: Props) {
+  const pauseRefresh = useLearningRefreshPause();
+  const mountedRef = useRef(true);
+  // Keep the current form/draft in place; polling resumes when this dialog exits.
+  useEffect(() => {
+    mountedRef.current = true;
+    pauseRefresh?.(true);
+    return () => {
+      mountedRef.current = false;
+      pauseRefresh?.(false);
+    };
+  }, [pauseRefresh]);
   const [attempt, setAttempt] = useState<AttemptState | null>(null);
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [revision, setRevision] = useState(0);
@@ -254,6 +272,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     task.lateSubmissionStatus === 'pending',
   );
   const [submitRetryAttempt, setSubmitRetryAttempt] = useState(0);
+  const [autosaveRetryAttempt, setAutosaveRetryAttempt] = useState(0);
   const [confirmUnanswered, setConfirmUnanswered] = useState(false);
   const [busy, startTransition] = useTransition();
   const attemptRef = useRef<AttemptState | null>(null);
@@ -261,10 +280,12 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
   const revisionRef = useRef(0);
   const mutationIdRef = useRef<string | null>(null);
   const pendingSubmitRef = useRef(false);
+  const finishedRef = useRef(false);
   const submitRequestedAtRef = useRef<string | null>(null);
-  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autosaveWindow = useMemo(() => new AssessmentAutosaveWindow(), []);
   const lastSignalAtRef = useRef<Record<string, number>>({});
   const submitFlightRef = useRef<Promise<boolean> | null>(null);
+  const autosaveFlightRef = useRef<Promise<boolean> | null>(null);
   const retryableSubmitRef = useRef(false);
 
   const answeredCount = useMemo(
@@ -310,43 +331,68 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     [task.assessmentSessionId],
   );
 
-  const syncDraftToServer = useCallback(async (): Promise<boolean> => {
-    const currentAttempt = attemptRef.current;
-    if (
-      !currentAttempt ||
-      !task.assessmentSessionId ||
-      pendingSubmitRef.current ||
-      !navigator.onLine
-    )
-      return false;
-    setSaveState('saving');
-    const result = await postAssessmentRequest(task.assessmentSessionId, 'autosave', {
-      answers: answersRef.current,
-      revision: revisionRef.current,
-      mutationId: mutationIdRef.current ?? createAssessmentClientId(),
-    });
-    if (!result.success) {
-      setSaveState(result.retryable ? 'queued' : 'failed');
-      return false;
+  const syncDraftToServer: () => Promise<boolean> = useCallback(async (): Promise<boolean> => {
+    if (autosaveFlightRef.current) return autosaveFlightRef.current;
+    const flight = (async (): Promise<boolean> => {
+      const currentAttempt = attemptRef.current;
+      if (
+        !currentAttempt ||
+        !task.assessmentSessionId ||
+        pendingSubmitRef.current ||
+        finishedRef.current ||
+        !mountedRef.current ||
+        !navigator.onLine
+      )
+        return false;
+      setSaveState('saving');
+      const sentRevision = revisionRef.current;
+      autosaveWindow.markStarted();
+      const result = await postAssessmentRequest(task.assessmentSessionId, 'autosave', {
+        answers: answersRef.current,
+        revision: sentRevision,
+        mutationId: mutationIdRef.current ?? createAssessmentClientId(),
+      });
+      // A final submit can overtake this older revision. Backend CAS protects
+      // persistence; do not let the older response undo the final UI state.
+      if (pendingSubmitRef.current || finishedRef.current || !mountedRef.current)
+        return result.success;
+      if (!result.success) {
+        setSaveState(result.retryable ? 'queued' : 'failed');
+        if (result.retryable) setAutosaveRetryAttempt((value) => value + 1);
+        return false;
+      }
+      if (result.data?.superseded === true) {
+        setSaveState('failed');
+        setRevisionConflict(true);
+        setIntegrityWarning(
+          'Jawaban dari tab ini lebih lama daripada versi server. Tutup tab lain dan minta bantuan guru sebelum melanjutkan.',
+        );
+        return false;
+      }
+      const latestSaved = revisionRef.current === sentRevision;
+      setSaveState(latestSaved ? 'server' : 'device');
+      // A newer edit after a successful save is not a failed transport. Keep it
+      // in the next send window instead of growing exponential failure backoff.
+      setAutosaveRetryAttempt(0);
+      if (!latestSaved)
+        autosaveWindow.retry(() => {
+          void syncDraftToServer();
+        }, 0);
+      return latestSaved;
+    })();
+    autosaveFlightRef.current = flight;
+    try {
+      return await flight;
+    } finally {
+      if (autosaveFlightRef.current === flight) autosaveFlightRef.current = null;
     }
-    if (result.data?.superseded === true) {
-      setSaveState('failed');
-      setRevisionConflict(true);
-      setIntegrityWarning(
-        'Jawaban dari tab ini lebih lama daripada versi server. Tutup tab lain dan minta bantuan guru sebelum melanjutkan.',
-      );
-      return false;
-    }
-    setSaveState('server');
-    return true;
-  }, [task.assessmentSessionId]);
+  }, [autosaveWindow, task.assessmentSessionId]);
 
   const scheduleAutosave = useCallback(() => {
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    autosaveTimerRef.current = setTimeout(() => {
+    autosaveWindow.schedule(() => {
       void syncDraftToServer();
-    }, 1_000);
-  }, [syncDraftToServer]);
+    });
+  }, [autosaveWindow, syncDraftToServer]);
 
   const setAnswer = (questionId: string, answer: AnswerValue) => {
     if (pendingSubmitRef.current || revisionConflict || submitted) return;
@@ -430,6 +476,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     const submission = (async (): Promise<boolean> => {
       const currentAttempt = attemptRef.current;
       if (!currentAttempt || !task.assessmentSessionId || submitted) return false;
+      autosaveWindow.cancel();
       pendingSubmitRef.current = true;
       setPendingSubmit(true);
       const submitRequestedAt = submitRequestedAtRef.current ?? new Date().toISOString();
@@ -541,6 +588,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       setIntegrityWarning(null);
       const score = typeof result.data?.score === 'number' ? result.data.score : null;
       const pendingTeacherReview = result.data?.lateSubmissionStatus === 'pending';
+      finishedRef.current = true;
       setSubmitted(true);
       setLateReviewRequired(pendingTeacherReview);
       setPendingSubmit(false);
@@ -565,7 +613,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     } finally {
       if (submitFlightRef.current === submission) submitFlightRef.current = null;
     }
-  }, [persistDraft, showToast, submitted, task.assessmentSessionId]);
+  }, [autosaveWindow, persistDraft, showToast, submitted, task.assessmentSessionId]);
 
   const startAttempt = () => {
     if (!task.assessmentSessionId) return;
@@ -573,7 +621,19 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       void document.documentElement.requestFullscreen().catch(() => undefined);
     }
     startTransition(async () => {
-      const res = await startAssessmentResponse(task.assessmentSessionId!);
+      let res = await startAssessmentResponse(task.assessmentSessionId!);
+      // Only explicit admission rejection proves that this request did not
+      // execute. Do not blindly replay network/unknown mutation failures.
+      for (
+        let retry = 0;
+        retry < 2 && !res.success && res.errorCode === 'ASSESSMENT_WRITE_BUSY';
+        retry++
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 2000 + Math.random() * 3000));
+        if (!mountedRef.current) return;
+        res = await startAssessmentResponse(task.assessmentSessionId!);
+      }
+      if (!mountedRef.current) return;
       if (!res.success) {
         showToast(res.error ?? 'Gagal membuka asesmen.');
         return;
@@ -605,6 +665,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       setPendingSubmit(selected.pendingSubmit);
       setRevisionConflict(false);
       setLateReviewRequired(false);
+      finishedRef.current = false;
       setSubmitted(false);
       showToast(
         selected.source === 'device'
@@ -619,6 +680,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
 
   const saveDraft = () => {
     if (!task.assessmentSessionId || !attempt || submitted) return;
+    autosaveWindow.cancel();
     startTransition(async () => {
       const locallySaved =
         (await persistDraft(answersRef.current, revisionRef.current, false)) === 'saved';
@@ -698,7 +760,11 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       void flushSignals().then(async () => {
         if (pendingSubmitRef.current && retryableSubmitRef.current) {
           await submitCurrentAnswers();
-        } else await syncDraftToServer();
+        } else {
+          autosaveWindow.retry(() => {
+            void syncDraftToServer();
+          }, 0);
+        }
       });
     };
     const onOffline = () => {
@@ -748,6 +814,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     };
   }, [
     attempt,
+    autosaveWindow,
     flushSignals,
     sendRuntimeSignal,
     submitted,
@@ -783,10 +850,37 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
 
   useEffect(
     () => () => {
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      autosaveWindow.cancel();
     },
-    [],
+    [autosaveWindow],
   );
+
+  useEffect(() => {
+    if (
+      !attempt ||
+      submitted ||
+      revisionConflict ||
+      pendingSubmit ||
+      !online ||
+      autosaveRetryAttempt < 1
+    )
+      return;
+    const delay =
+      Math.min(30_000, 1000 * 2 ** Math.min(autosaveRetryAttempt - 1, 4)) +
+      Math.floor(Math.random() * 1000);
+    return autosaveWindow.retry(() => {
+      void syncDraftToServer();
+    }, delay);
+  }, [
+    attempt,
+    autosaveWindow,
+    submitted,
+    revisionConflict,
+    pendingSubmit,
+    online,
+    autosaveRetryAttempt,
+    syncDraftToServer,
+  ]);
 
   return (
     <div
@@ -829,7 +923,15 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
                 <p className="mt-1 text-sm text-[var(--muted)]">
                   {task.desc || 'Tugas ini belum berupa asesmen interaktif.'}
                 </p>
-                {task.uuid && onOpenModule && <button type="button" className="mt-4 min-h-11 rounded-lg bg-emerald-700 px-4 font-bold text-white" onClick={() => onOpenModule(task.uuid!)}>Buka materi</button>}
+                {task.uuid && onOpenModule && (
+                  <button
+                    type="button"
+                    className="mt-4 min-h-11 rounded-lg bg-emerald-700 px-4 font-bold text-white"
+                    onClick={() => onOpenModule(task.uuid!)}
+                  >
+                    Buka materi
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -904,8 +1006,12 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
             </div>
           </div>
         ) : !attempt && task.sessionStatus === 'completed' && task.attemptStarted === false ? (
-          <div role="status" className="mt-5 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--muted)]">
-            Asesmen sudah ditutup. Anda belum memulai asesmen ini. Hubungi guru bila memerlukan tindak lanjut.
+          <div
+            role="status"
+            className="mt-5 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--muted)]"
+          >
+            Asesmen sudah ditutup. Anda belum memulai asesmen ini. Hubungi guru bila memerlukan
+            tindak lanjut.
           </div>
         ) : !attempt ? (
           <div className="mt-5 space-y-4">
@@ -919,7 +1025,11 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-60"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock className="h-4 w-4" />}
-              {task.attemptStarted ? 'Lanjutkan asesmen' : task.attemptStarted === false ? 'Mulai asesmen' : 'Buka asesmen'}
+              {task.attemptStarted
+                ? 'Lanjutkan asesmen'
+                : task.attemptStarted === false
+                  ? 'Mulai asesmen'
+                  : 'Buka asesmen'}
             </button>
           </div>
         ) : (

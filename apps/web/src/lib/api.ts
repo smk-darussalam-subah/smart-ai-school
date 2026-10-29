@@ -6,6 +6,7 @@
 
 import { redirect } from 'next/navigation';
 import { rateLimitMessage } from './rate-limit';
+import { isPublicAcademicCatalog, publicAcademicCatalog, invalidatePublicAcademicCatalog } from './public-academic-catalog';
 
 const API_BASE = process.env.API_URL ?? 'http://localhost:3001';
 
@@ -107,6 +108,14 @@ export async function apiFetch<T>(
   }
 
   try {
+    if (isPublicAcademicCatalog(url)) {
+      return await publicAcademicCatalog.read(url, async (signal) => {
+        // These exact endpoints are @Public; omit account-specific credentials
+        // rather than accidentally sharing an authenticated response.
+        const response = await fetch(url.toString(), { cache: 'no-store', signal });
+        return response.ok ? response.json() as Promise<unknown> : null;
+      }) as T | null;
+    }
     const res = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store', // data absensi/nilai harus selalu fresh
@@ -223,6 +232,7 @@ export async function apiMutate<T>(
       return null;
     }
 
+    invalidatePublicAcademicCatalog(path, options.method);
     // 204 No Content or empty body
     const text = await res.text();
     if (!text) return null;

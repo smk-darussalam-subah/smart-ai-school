@@ -213,22 +213,28 @@ export default async function AkademikPage({
     subjectsRes,
     assignmentOptionsRes,
   ] = await Promise.all([
-    academicPagesResult<GradeItem>(pp('/grades'), token),
-    academicPagesResult<AttendanceItem>(pp('/attendance', 'attendance'), token),
+    !isSiswa && !isOrtu
+      ? academicPagesResult<GradeItem>(pp('/grades'), token)
+      : Promise.resolve(null),
+    !isSiswa && !isOrtu
+      ? academicPagesResult<AttendanceItem>(pp('/attendance', 'attendance'), token)
+      : Promise.resolve(null),
     canReadAllClasses
       ? academicPages<ClassItem>(pp('/classes', 'year'), token)
       : Promise.resolve({ data: [] as ClassItem[] }),
-    academicPages<Assignment>(
-      pp(isGuru ? '/teaching-assignments?scope=own' : '/teaching-assignments', 'year'),
-      token,
-    ),
-    academicCatalog<SubjectItem>('/subjects', token),
+    !isSiswa && !isOrtu
+      ? academicPages<Assignment>(
+          pp(isGuru ? '/teaching-assignments?scope=own' : '/teaching-assignments', 'year'),
+          token,
+        )
+      : Promise.resolve(null),
+    !isSiswa && !isOrtu ? academicCatalog<SubjectItem>('/subjects', token) : Promise.resolve(null),
     canReadAssignmentOptions
       ? apiFetch<TeachingAssignmentOptions>('/teaching-assignments/options/active', token)
       : Promise.resolve(null),
   ]);
-  const gradesData = gradesRead.status === 'success' ? gradesRead.data : null;
-  const attendanceData = attendanceRead.status === 'success' ? attendanceRead.data : null;
+  const gradesData = gradesRead?.status === 'success' ? gradesRead.data : null;
+  const attendanceData = attendanceRead?.status === 'success' ? attendanceRead.data : null;
   const todayDate = wibTodayISO();
   const todayPeriodState = teacherTodayState(activePeriod, selectedPeriod, todayDate);
 
@@ -246,6 +252,12 @@ export default async function AkademikPage({
   // ── Dashboard Siswa (W2 — mobile-first, 7 bottom-nav tabs). ──────────────
   if (isSiswa) {
     const initialWorkflowView = resolveAcademicWorkflowView(requestedParams.view, 'student');
+    // Snapshot before page reads: an update during rendering is detected by
+    // the first poll rather than accepted as a new, already-rendered baseline.
+    const initialChanges = await apiFetch<{ revision: string }>(
+      '/student-dashboard/changes',
+      token,
+    );
     // Fetch siswa-specific data
     // Note: studentId lookup from keycloakId — backend should resolve this
     const studentId = session.keycloakId ?? '';
@@ -390,7 +402,7 @@ export default async function AkademikPage({
 
     const ownedSchedule = readLearnerSchedule(scheduleRes);
     return (
-      <SiswaRefreshWrapper>
+      <SiswaRefreshWrapper key={studentId} initialRevision={initialChanges?.revision ?? null}>
         <SiswaWorkspace
           initialAttendanceDate={initialAttendanceDate}
           grades={gradesRes.data}
@@ -487,8 +499,8 @@ export default async function AkademikPage({
         schedules={schedules}
         scheduleAvailable={!!schedulesRes}
         summaryAvailability={{
-          grades: summaryState(gradesRead),
-          attendance: summaryState(attendanceRead),
+          grades: gradesRead ? summaryState(gradesRead) : 'unavailable',
+          attendance: attendanceRead ? summaryState(attendanceRead) : 'unavailable',
           journal: summaryState(activitiesRead),
           rpp: summaryState(rppRead),
           assessments:
@@ -571,6 +583,10 @@ export default async function AkademikPage({
   // ── Dashboard Orang Tua (P25 — wired to real APIs, mobile-first, 5 tabs). ────
   if (isOrtu) {
     const initialWorkflowView = resolveAcademicWorkflowView(requestedParams.view, 'parent');
+    // Snapshot before parent/child reads, so an update during render is retried.
+    const initialParentChanges = await apiFetch<{ revision: string; scopeRevision: string }>(
+      '/student-dashboard/parent-changes', token,
+    );
     // Round 1: fetch announcements + children list
     const [announcementsRes, childrenRes] = await Promise.all([
       apiFetch<{ data: { id: string; title: string; createdAt: string }[] }>(
@@ -638,16 +654,16 @@ export default async function AkademikPage({
                 data: { data: [] as ScheduleItem[] },
               }),
           apiFetch<OrtuBadgeApiItem[]>(`/badges/student/${studentId}`, token),
-          apiFetch<{
-            data: Array<{
+          apiFetch<
+            Array<{
               id: string;
               studentId: string;
               recipient: string;
               message: string;
               eventType: string;
               createdAt: string;
-            }>;
-          }>(`/wa-log/student/${studentId}?limit=20`, token),
+            }>
+          >(`/wa-log/student/${studentId}?limit=20`, token),
         ]);
         const childSchedule = readLearnerSchedule(scheduleRes);
         const childAttendance = readLearnerAttendance(
@@ -664,7 +680,7 @@ export default async function AkademikPage({
               : [],
           schedule: tagWithStudentId(childSchedule.data, studentId),
           badges: tagWithStudentId(badgesRes ?? [], studentId),
-          waLog: tagWithStudentId(waLogRes?.data, studentId),
+          waLog: tagWithStudentId(waLogRes ?? [], studentId),
         };
       }),
     );
@@ -723,7 +739,9 @@ export default async function AkademikPage({
     }));
 
     return (
-      <OrtuRefreshWrapper>
+      <OrtuRefreshWrapper key={session.keycloakId ?? ''}
+        initialRevision={initialParentChanges?.revision ?? null}
+        initialScopeRevision={initialParentChanges?.scopeRevision ?? null}>
         <OrtuWorkspace
           initialAttendanceDate={initialAttendanceDate}
           attendancePeriod={
