@@ -25,6 +25,7 @@ import {
   UpdateBellProfileSchema,
 } from './bell-schedule.dto';
 import { BellScheduleService } from './bell-schedule.service';
+import { SharedReadBudget } from '../common/guards/api-throttler.guard';
 
 @Controller('bell-schedules')
 export class BellScheduleController {
@@ -33,6 +34,7 @@ export class BellScheduleController {
   @Roles('SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU', 'SISWA', 'ORANG_TUA')
   @RequirePermission(['academic.schedule.read', 'student.own.read', 'student.child.read'])
   @Get('catalog')
+  @SharedReadBudget()
   catalog() {
     return this.service.timingCatalog();
   }
@@ -49,6 +51,7 @@ export class BellScheduleController {
   @Roles('SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU')
   @RequirePermission('academic.schedule.read')
   @Get('resolve')
+  @SharedReadBudget()
   resolve(@Query() rawQuery: unknown) {
     const parsed = ResolveBellProfileQuerySchema.safeParse(rawQuery);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors);

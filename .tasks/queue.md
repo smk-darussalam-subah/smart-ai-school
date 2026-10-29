@@ -1,5 +1,11 @@
 # TASK QUEUE — DIIS Tahap 0 → Sprint-0 Tahap 1
 
+> **2026-10-27 — Metabase retired by Director.** Dedicated runtime/image/volume and
+> identified mock application objects removed; native DIIS analytics retained.
+> Local Compose/ingress/CSP/shortcut cleanup verified, not committed or released.
+> See `.tasks/done/METABASE-REMOVAL-20261027-DONE.md`. Older Metabase entries below
+> describe historical implementations, not the current analytics dependency.
+
 > ⭐ **FILE INI = SATU-SATUNYA SUMBER KEBENARAN STATUS (canonical ledger).**
 > Dokumen lain (`current.md`, `CLAUDE.md` §7, gate docs) hanya MENAUTKAN ke sini,
 > tidak menduplikasi status. Jika ada konflik, file INI yang menang.
@@ -573,3 +579,8 @@ tsc 0 · eslint 0 · 361/361 tests hijau · coverage 83.81%.
 *Cowork AI akan update file ini setiap task selesai.*
 *Claude Code: jika sebuah task sudah selesai, beri tahu Cowork via laporan akhir di current.md*
 *Aturan baru: JANGAN centang ✅ tanpa bukti runtime. Lihat CLAUDE.md Section 9.*
+
+
+## Local concurrency350 remediation — 2026-10-28
+
+Local implementation and focused verification recorded in `.tasks/done/CONCURRENT350-REMEDIATION-20261028-DONE.md`. Git and runtime HOLD. Autosave cadence and deadline-queue policy await user decisions; no production350 capacity acceptance. Preserve the separate Metabase removal package.

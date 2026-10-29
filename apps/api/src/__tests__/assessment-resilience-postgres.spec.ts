@@ -86,11 +86,12 @@ describePostgres('Assessment resilience PostgreSQL service integration proof', (
   } as AuthUser;
   let prisma: PrismaClient;
 
-  function buildActualService(): AssessmentService {
-    const academicPeriodService = new AcademicPeriodService(
+  function buildActualService(
+    academicPeriodService = new AcademicPeriodService(
       prisma as unknown as PrismaService,
       {} as PermissionsService,
-    );
+    ),
+  ): AssessmentService {
     const service = new AssessmentService(
       prisma as unknown as PrismaService,
       { emitAsync: jest.fn().mockResolvedValue([]) } as unknown as EventEmitter2,
@@ -417,6 +418,7 @@ describePostgres('Assessment resilience PostgreSQL service integration proof', (
 
   afterAll(async () => {
     if (!prisma) return;
+    await prisma.semesterClosure.deleteMany({ where: { semesterId } });
     await prisma.assessmentIntegrityEvent.deleteMany({ where: { responseId } });
     await prisma.assessmentEventOutbox.deleteMany();
     await prisma.grade.deleteMany({ where: { sourceAssessmentSessionId: sessionId } });
@@ -1166,5 +1168,229 @@ describePostgres('Assessment resilience PostgreSQL service integration proof', (
         select: { status: true },
       }),
     ).resolves.toEqual({ status: 'cancelled' });
+  });
+
+  async function expectLockBarrierReached(promise: Promise<void>): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        promise,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error('Expected lock barrier was not reached')), 3000);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  async function expectAdvisoryWait(pid: number): Promise<void> {
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      const [row] = await prisma.$queryRaw<Array<{ waiting: boolean }>>(
+        Prisma.sql`SELECT EXISTS (
+          SELECT 1 FROM pg_locks
+          WHERE pid = ${pid} AND locktype = 'advisory' AND NOT granted
+        ) AS waiting`,
+      );
+      if (row?.waiting) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error('Expected PostgreSQL advisory lock waiter was not observed');
+  }
+
+  async function createClosureInTransaction(tx: Prisma.TransactionClient) {
+    const semester = await tx.semester.findUniqueOrThrow({ where: { id: semesterId } });
+    return tx.semesterClosure.create({
+      data: {
+        academicYearId: semester.academicYearId,
+        semesterId,
+        closedByUserId: teacherUserId,
+        readinessVersion: 'local-lock-proof',
+        readinessHash: 'local-synthetic-readiness',
+        idempotencyKey: `local-shared-cutover-${randomUUID()}`,
+        snapshot: {},
+      },
+    });
+  }
+
+  async function prepareForSharedAutosave(): Promise<void> {
+    // Earlier lifecycle controls deliberately replace the original attempt ID.
+    // Recreate the canonical response instead of depending on test order.
+    await resetForNewStart();
+    await prisma.assessmentResponse.create({
+      data: { id: responseId, sessionId, studentId, startedAt: new Date(), answers: {} },
+    });
+  }
+
+  it('lets actual autosaves for different pupils hold the same shared period barrier concurrently', async () => {
+    await prepareForSharedAutosave();
+    const extraUserId = randomUUID();
+    const extraStudentId = randomUUID();
+    const extraKeycloakId = randomUUID();
+    const period = new AcademicPeriodService(prisma as unknown as PrismaService, {} as PermissionsService);
+    const service = buildActualService(period);
+    const firstLocked = deferred();
+    const secondLocked = deferred();
+    const release = deferred();
+    const original = period.assertWritablePeriodWithSharedCutoverLock.bind(period);
+    let invocation = 0;
+    jest.spyOn(period, 'assertWritablePeriodWithSharedCutoverLock').mockImplementation(async (tx, input) => {
+      const current = ++invocation;
+      const result = await original(tx, input);
+      if (current === 1) {
+        firstLocked.resolve();
+        await release.promise;
+      } else secondLocked.resolve();
+      return result;
+    });
+    const saves: Array<Promise<unknown>> = [];
+    try {
+      await prisma.user.create({ data: { id: extraUserId, keycloakId: extraKeycloakId, email: `${extraUserId}@example.invalid`, fullName: 'Local concurrent pupil', role: 'SISWA' } });
+      await prisma.student.create({ data: { id: extraStudentId, userId: extraUserId, nis: extraStudentId.slice(0, 20), classId, joinedAt: new Date() } });
+      await prisma.assessmentResponse.create({ data: { sessionId, studentId: extraStudentId, startedAt: new Date() } });
+      saves.push(service.autosaveResponse(sessionId, { answers: correctAnswers, revision: 1, mutationId: randomUUID() }, SISWA));
+      await expectLockBarrierReached(firstLocked.promise);
+      const other = service.autosaveResponse(sessionId, { answers: correctAnswers, revision: 1, mutationId: randomUUID() }, { ...SISWA, keycloakId: extraKeycloakId });
+      saves.push(other);
+      await expectLockBarrierReached(secondLocked.promise);
+      await expect(other).resolves.toMatchObject({ saved: true, revision: 1 });
+      release.resolve();
+      await Promise.all(saves);
+      expect(await prisma.assessmentResponse.count({ where: { sessionId, clientRevision: 1 } })).toBe(2);
+    } finally {
+      release.resolve();
+      await Promise.allSettled(saves);
+      await prisma.assessmentResponse.deleteMany({ where: { studentId: extraStudentId } });
+      await prisma.student.deleteMany({ where: { id: extraStudentId } });
+      await prisma.user.deleteMany({ where: { id: extraUserId } });
+    }
+  });
+
+  it('makes an exclusive period closure wait for an earlier actual autosave and observe its committed revision', async () => {
+    await prepareForSharedAutosave();
+    const period = new AcademicPeriodService(prisma as unknown as PrismaService, {} as PermissionsService);
+    const service = buildActualService(period);
+    const locked = deferred();
+    const release = deferred();
+    const closeAttempted = deferred();
+    const original = period.assertWritablePeriodWithSharedCutoverLock.bind(period);
+    jest.spyOn(period, 'assertWritablePeriodWithSharedCutoverLock').mockImplementation(async (tx, input) => {
+      const result = await original(tx, input);
+      locked.resolve();
+      await release.promise;
+      return result;
+    });
+    let closePid = 0;
+    const pending: Array<Promise<unknown>> = [];
+    try {
+      const saving = service.autosaveResponse(sessionId, { answers: correctAnswers, revision: 1, mutationId: randomUUID() }, SISWA);
+      pending.push(saving);
+      await expectLockBarrierReached(locked.promise);
+      const closing = prisma.$transaction(async (tx) => {
+        const [backend] = await tx.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`;
+        closePid = backend!.pid;
+        closeAttempted.resolve();
+        await period.acquireCutoverLock(tx);
+        const saved = await tx.assessmentResponse.findUniqueOrThrow({ where: { id: responseId } });
+        expect(saved.clientRevision).toBe(1);
+        return createClosureInTransaction(tx);
+      }, { timeout: 10000 });
+      pending.push(closing);
+      await expectLockBarrierReached(closeAttempted.promise);
+      await expectAdvisoryWait(closePid);
+      release.resolve();
+      await Promise.all(pending);
+      expect(await prisma.semesterClosure.count({ where: { semesterId } })).toBe(1);
+    } finally {
+      release.resolve();
+      await Promise.allSettled(pending);
+      await prisma.semesterClosure.deleteMany({ where: { semesterId } });
+    }
+  });
+
+  it.each([true, false])(
+    'rechecks the period after waiting for an exclusive closure transaction (committed=%s)',
+    async (commit) => {
+      await prepareForSharedAutosave();
+      const before = await prisma.assessmentResponse.findUniqueOrThrow({ where: { id: responseId } });
+      const period = new AcademicPeriodService(prisma as unknown as PrismaService, {} as PermissionsService);
+      const service = buildActualService(period);
+      const closureReady = deferred();
+      const releaseClosure = deferred();
+      const saveAttempted = deferred();
+      const original = period.assertWritablePeriodWithSharedCutoverLock.bind(period);
+      let savePid = 0;
+      jest.spyOn(period, 'assertWritablePeriodWithSharedCutoverLock').mockImplementation(async (tx, input) => {
+        const [backend] = await tx.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`;
+        savePid = backend!.pid;
+        saveAttempted.resolve();
+        return original(tx, input);
+      });
+      const pending: Array<Promise<unknown>> = [];
+      try {
+        const closing = prisma.$transaction(async (tx) => {
+          await period.acquireCutoverLock(tx);
+          await createClosureInTransaction(tx);
+          closureReady.resolve();
+          await releaseClosure.promise;
+          if (!commit) throw new Error('Synthetic closure rollback');
+        }, { timeout: 10000 });
+        const closeOutcome = closing.then(() => 'committed', (error: Error) => error.message);
+        pending.push(closeOutcome);
+        await expectLockBarrierReached(closureReady.promise);
+        const saving = service.autosaveResponse(sessionId, { answers: correctAnswers, revision: 1, mutationId: randomUUID() }, SISWA);
+        const saveOutcome = saving.then((value) => ({ value }), (error: Error) => ({ error }));
+        pending.push(saveOutcome);
+        await expectLockBarrierReached(saveAttempted.promise);
+        await expectAdvisoryWait(savePid);
+        releaseClosure.resolve();
+        const outcome = await saveOutcome;
+        if (commit) {
+          expect(outcome).toHaveProperty('error');
+          if ('error' in outcome) expect(outcome.error.message).toContain('Periode semester sudah ditutup');
+          expect(await prisma.assessmentResponse.findUniqueOrThrow({ where: { id: responseId } })).toEqual(before);
+          expect(await closeOutcome).toBe('committed');
+        } else {
+          expect(outcome).toMatchObject({ value: { saved: true, revision: 1 } });
+          expect(await closeOutcome).toBe('Synthetic closure rollback');
+          expect(await prisma.semesterClosure.count({ where: { semesterId } })).toBe(0);
+        }
+      } finally {
+        releaseClosure.resolve();
+        await Promise.allSettled(pending);
+        await prisma.semesterClosure.deleteMany({ where: { semesterId } });
+      }
+    },
+  );
+
+  it('preserves monotonic revision CAS for two actual autosaves sharing a period lock', async () => {
+    await prepareForSharedAutosave();
+    const period = new AcademicPeriodService(prisma as unknown as PrismaService, {} as PermissionsService);
+    const service = buildActualService(period);
+    const bothLocked = deferred();
+    const release = deferred();
+    const original = period.assertWritablePeriodWithSharedCutoverLock.bind(period);
+    let locked = 0;
+    jest.spyOn(period, 'assertWritablePeriodWithSharedCutoverLock').mockImplementation(async (tx, input) => {
+      const result = await original(tx, input);
+      if (++locked === 2) bothLocked.resolve();
+      await release.promise;
+      return result;
+    });
+    const newestMutationId = randomUUID();
+    const pending = [
+      service.autosaveResponse(sessionId, { answers: { [questionId]: { type: 'multiple_choice', optionId: 'b' } }, revision: 1, mutationId: randomUUID() }, SISWA),
+      service.autosaveResponse(sessionId, { answers: correctAnswers, revision: 2, mutationId: newestMutationId }, SISWA),
+    ];
+    try {
+      await expectLockBarrierReached(bothLocked.promise);
+      release.resolve();
+      await Promise.all(pending);
+      expect(await prisma.assessmentResponse.findUniqueOrThrow({ where: { id: responseId } })).toMatchObject({ clientRevision: 2, lastMutationId: newestMutationId, answers: correctAnswers, submittedAt: null });
+    } finally {
+      release.resolve();
+      await Promise.allSettled(pending);
+    }
   });
 });

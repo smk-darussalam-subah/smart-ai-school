@@ -139,6 +139,22 @@ export class AcademicPeriodService {
     return this.assertWritablePeriod(db, input);
   }
 
+  /**
+   * Independent answer saves may share the period fence. Semester cutover and
+   * appointment changes still take the exclusive lock on this exact key, so a
+   * save checks the period after any preceding cutover has committed. Callers
+   * must not upgrade this shared lock or mutate period/appointment state.
+   */
+  async assertWritablePeriodWithSharedCutoverLock(
+    db: Prisma.TransactionClient,
+    input: { academicYear: string; semester: number },
+  ): Promise<AcademicPeriodIdentity> {
+    await db.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock_shared(hashtext(${APPOINTMENT_ACTIVATION_LOCK_KEY}))`,
+    );
+    return this.assertWritablePeriod(db, input);
+  }
+
   async assertWritableDate(db: PeriodDb, date: Date): Promise<AcademicPeriodIdentity> {
     const period = await this.findPeriodForDate(date, db);
     await this.assertWritableSemesterId(db, period.semesterId);

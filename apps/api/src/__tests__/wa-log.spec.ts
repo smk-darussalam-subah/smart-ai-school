@@ -74,6 +74,23 @@ describe('WaLogService', () => {
     studentFindFirst.mockResolvedValue({ id: 'student-1' });
     await service.findStudentLogs('student-1', ORTU);
     expect(studentFindFirst.mock.calls[0][0].where.parentId).toBe('user-1');
+    expect(waLogFindMany.mock.calls[0][0]).toMatchObject({
+      take: 20, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+  });
+
+  it('bounds the child message query while preserving its raw-array contract', async () => {
+    studentFindFirst.mockResolvedValue({ id: 'student-1' });
+    waLogFindMany.mockResolvedValue([{ id: 'latest-message' }]);
+    await expect(service.findStudentLogs('student-1', ORTU, 100)).resolves.toEqual([
+      { id: 'latest-message' },
+    ]);
+    expect(waLogFindMany.mock.calls[0][0].take).toBe(100);
+  });
+
+  it.each([0, -1, 101, 1.5, Number.NaN])('rejects invalid child-message limit %s before a query', async (limit) => {
+    await expect(service.findStudentLogs('student-1', ORTU, limit)).rejects.toMatchObject({ status: 400 });
+    expect(waLogFindMany).not.toHaveBeenCalled();
   });
 
   it('findStudentLogs ORTU not child → Forbidden', async () => {

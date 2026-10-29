@@ -1,6 +1,6 @@
 'use server';
 
-import { getServerSession } from 'next-auth';
+import { getActionSession as getServerSession } from '@/lib/action-session';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { authOptions } from '@/lib/auth';
