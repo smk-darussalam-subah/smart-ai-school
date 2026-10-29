@@ -1,6 +1,6 @@
 'use server';
 
-import { getServerSession } from 'next-auth';
+import { getActionSession as getServerSession } from '@/lib/action-session';
 import { z } from 'zod';
 import { authOptions } from '@/lib/auth';
 import { academicPagesResult } from '@/lib/academic-pages-server';

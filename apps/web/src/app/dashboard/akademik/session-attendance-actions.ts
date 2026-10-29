@@ -1,5 +1,5 @@
 'use server';
-import { getServerSession } from 'next-auth';
+import { getActionSession as getServerSession } from '@/lib/action-session';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';

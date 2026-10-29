@@ -2,7 +2,7 @@
 
 import type { AssessmentQuestion } from '@smk/types';
 import { z } from 'zod';
-import { getServerSession } from 'next-auth';
+import { getActionSession as getServerSession } from '@/lib/action-session';
 import { authOptions } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -57,6 +57,8 @@ async function apiCall(path: string, method: string, body?: unknown) {
 }
 
 function apiErrorCode(body: unknown): string | undefined {
+  if (body && typeof body === 'object' && 'code' in body && body.code === 'ASSESSMENT_WRITE_BUSY')
+    return 'ASSESSMENT_WRITE_BUSY';
   if (!body || typeof body !== 'object' || !('error' in body)) return undefined;
   const value = (body as { error?: unknown }).error;
   return typeof value === 'string' && value.startsWith('AI_') ? value : undefined;

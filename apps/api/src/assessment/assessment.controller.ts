@@ -29,6 +29,7 @@ import { SseTokenService } from '../auth/sse-token.service';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { AssessmentService } from './assessment.service';
+import { SharedAssessmentBudget } from '../common/guards/api-throttler.guard';
 import {
   AssessmentRuntimeSignalSchema,
   AutosaveResponseSchema,
@@ -194,6 +195,7 @@ export class AssessmentController {
   @Roles('SISWA')
   @RequirePermission('lms.progress.manage')
   @Post(':id/autosave')
+  @SharedAssessmentBudget()
   @HttpCode(HttpStatus.OK)
   autosaveResponse(
     @Param('id', ParseUUIDPipe) id: string,
@@ -210,6 +212,7 @@ export class AssessmentController {
   @Roles('SISWA')
   @RequirePermission('lms.progress.manage')
   @Post(':id/runtime-signal')
+  @SharedAssessmentBudget()
   @HttpCode(HttpStatus.OK)
   recordRuntimeSignal(
     @Param('id', ParseUUIDPipe) id: string,

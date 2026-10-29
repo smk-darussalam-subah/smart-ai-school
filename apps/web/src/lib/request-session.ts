@@ -1,4 +1,4 @@
-import { getServerSession, type Session } from 'next-auth';
+import { getServerSession, type NextAuthOptions, type Session } from 'next-auth';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import type { NextRequest } from 'next/server';
 import { authOptions } from './auth';
@@ -10,16 +10,22 @@ import { authOptions } from './auth';
 export async function resolveRequestSession(
   request: NextRequest,
 ): Promise<{ session: Session | null; cookies: string[] }> {
+  return resolveSessionHeaders(request.headers, request.cookies.getAll(), authOptions);
+}
+
+export async function resolveSessionHeaders(
+  requestHeaders: Headers,
+  requestCookies: ReadonlyArray<{ name: string; value: string }>,
+  options: NextAuthOptions,
+): Promise<{ session: Session | null; cookies: string[] }> {
   let cookies: string[] = [];
   const headers: Record<string, string> = {};
-  request.headers.forEach((value, name) => {
+  requestHeaders.forEach((value, name) => {
     headers[name] = value;
   });
   const req = {
     headers,
-    cookies: Object.fromEntries(
-      request.cookies.getAll().map((cookie) => [cookie.name, cookie.value]),
-    ),
+    cookies: Object.fromEntries(requestCookies.map((cookie) => [cookie.name, cookie.value])),
   };
   const res = {
     getHeader(name: string) {
@@ -33,7 +39,7 @@ export async function resolveRequestSession(
   const session = await getServerSession(
     req as NextApiRequest,
     res as unknown as NextApiResponse,
-    authOptions,
+    options,
   );
   return { session, cookies };
 }

@@ -3,13 +3,7 @@
 // Memastikan tidak ada stack trace yang bocor ke client di production
 // =============================================================================
 
-import {
-  ExceptionFilter,
-  Catch,
-  ArgumentsHost,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
+import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { captureException } from '@sentry/nestjs';
 import { logError } from '@smk/logger';
@@ -21,6 +15,7 @@ interface ErrorResponse {
   timestamp: string;
   path: string;
   requestId?: string;
+  code?: 'ASSESSMENT_WRITE_BUSY';
 }
 
 @Catch()
@@ -33,6 +28,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: string | string[] = 'Terjadi kesalahan pada server';
     let errorType = 'Internal Server Error';
+    let safeCode: 'ASSESSMENT_WRITE_BUSY' | undefined;
 
     if (exception instanceof HttpException) {
       statusCode = exception.getStatus();
@@ -44,10 +40,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
         const resp = exceptionResponse as Record<string, unknown>;
         message = (resp.message as string | string[]) || message;
         errorType = (resp.error as string) || exception.name;
+        if (statusCode === 503 && resp.code === 'ASSESSMENT_WRITE_BUSY') {
+          safeCode = 'ASSESSMENT_WRITE_BUSY';
+          reply.header('Retry-After', '2');
+        }
       }
 
       // Kirim ke Sentry hanya untuk 5xx — 4xx (400/401/403/404/409/422) adalah noise
-      if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR && !safeCode) {
         captureException(exception);
       }
     } else if (exception instanceof Error) {
@@ -71,6 +71,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       error: errorType,
       timestamp: new Date().toISOString(),
       path: request.url,
+      ...(safeCode ? { code: safeCode } : {}),
     };
 
     reply.status(statusCode).send(response);

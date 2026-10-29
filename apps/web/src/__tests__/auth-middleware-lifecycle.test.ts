@@ -33,6 +33,21 @@ async function request(path: string, token: JWT) {
   });
 }
 describe('middleware lifecycle with actual encrypted cookies', () => {
+  it.each(['POST', 'PATCH', 'PUT', 'DELETE'])(
+    'keeps %s at its writable boundary instead of307 ->405',
+    async (method) => {
+      const token = valid({ expiresAt: 0 });
+      const response = await middleware(
+        new NextRequest('http://localhost:3000/dashboard/akademik', {
+          method,
+          headers: { cookie: `next-auth.session-token=${await encode({ secret, token })}` },
+        }),
+      );
+      expect(response.headers.get('location')).toBeNull();
+      expect(response.headers.get('x-middleware-next')).toBe('1');
+      expect(response.headers.get('content-security-policy')).toContain("default-src 'self'");
+    },
+  );
   it.each([{}, true, 7, false])(
     'fails closed for an unexpected non-string error marker %j',
     (error) => {

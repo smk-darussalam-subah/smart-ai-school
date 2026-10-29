@@ -73,6 +73,7 @@ const PERMISSIONS: PermissionDef[] = [
   { code: 'rpp.curriculum.review', description: 'Review kurikulum dan rekomendasi Modul Ajar', module: 'academic' },
   { code: 'rpp.final.approve', description: 'Persetujuan final Modul Ajar', module: 'academic' },
   { code: 'lms.read', description: 'Melihat modul LMS', module: 'academic' },
+  { code: 'academic.grade.manage', description: 'Mengelola konfigurasi KKTP (KS/SA)', module: 'academic' },
   { code: 'lms.own.manage', description: 'Mengelola/publish modul LMS sendiri (GURU)', module: 'academic' },
   { code: 'lms.progress.manage', description: 'Melapor progres modul LMS sendiri (SISWA)', module: 'academic' },
   { code: 'teacher.attendance.checkin', description: 'Check-in/out presensi guru (GURU)', module: 'teacher' },
@@ -125,6 +126,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'report.read', 'activity.read',
   ],
   ORANG_TUA: [
+    'lms.read',
     'student.child.read', 'grade.child.read', 'attendance.child.read',
     'finance.child.read',
     'announcement.read',

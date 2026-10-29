@@ -13,6 +13,7 @@ import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { UpdateMeSchema, UpdateMeDto } from './dto/update-me.dto';
 import { ConsentSchema, ConsentDto } from './dto/consent.dto';
 import { RecordLoginEventSchema, RecordLoginEventDto } from './dto/login-event.dto';
+import { SharedReadBudget } from '../common/guards/api-throttler.guard';
 
 @Throttle({ default: { ttl: 60_000, limit: 15 } })
 @Controller('auth')
@@ -28,6 +29,7 @@ export class AuthController {
    * Data dari DB (bukan JWT) agar role selalu sinkron.
    */
   @Get('me')
+  @SharedReadBudget()
   @Throttle({ default: { ttl: 60_000, limit: 240 } })
   getMe(@CurrentUser() user: AuthUser) {
     return this.authService.getMe(user.keycloakId, user.roles);

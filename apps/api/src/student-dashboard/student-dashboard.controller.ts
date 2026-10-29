@@ -4,21 +4,47 @@
 // Endpoints: SPP, assignments, CP progress, leaderboard.
 // =============================================================================
 
-import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Header, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { AuthUser } from '@smk/auth';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { StudentDashboardService } from './student-dashboard.service';
+import { SharedReadBudget } from '../common/guards/api-throttler.guard';
 
 @Controller('student-dashboard')
 export class StudentDashboardController {
   constructor(private readonly service: StudentDashboardService) {}
 
+  @Roles('ORANG_TUA')
+  @RequirePermission('student.child.read')
+  @SharedReadBudget()
+  @Header('Cache-Control', 'private, no-store')
+  @Get('parent-changes')
+  getParentChanges(@CurrentUser() user: AuthUser, @Query() rawQuery: unknown) {
+    if (
+      !z
+        .object({})
+        .strict()
+        .safeParse(rawQuery ?? {}).success
+    )
+      throw new BadRequestException('Parameter pembaruan tidak valid.');
+    return this.service.getParentChanges(user);
+  }
+
+  @Roles('SISWA')
+  @RequirePermission('student.own.read')
+  @SharedReadBudget()
+  @Get('changes')
+  getChanges(@CurrentUser() user: AuthUser) {
+    return this.service.getChanges(user);
+  }
+
   /** W2-5: SPP payments for SISWA (own) or ORANG_TUA (children). */
   @Roles('SISWA', 'ORANG_TUA')
   @RequirePermission(['finance.own.read', 'finance.child.read'])
+  @SharedReadBudget()
   @Get('spp')
   getSpp(@CurrentUser() user: AuthUser) {
     return this.service.getSpp(user);
@@ -27,6 +53,7 @@ export class StudentDashboardController {
   /** W2-6: Assignments (LMS modules + assessment sessions) for SISWA or ORANG_TUA. */
   @Roles('SISWA', 'ORANG_TUA')
   @RequirePermission('lms.read')
+  @SharedReadBudget()
   @Get('assignments')
   getAssignments(@CurrentUser() user: AuthUser) {
     return this.service.getAssignments(user);
@@ -35,6 +62,7 @@ export class StudentDashboardController {
   /** W2-7: CP progress (NA per subject) for SISWA or ORANG_TUA. */
   @Roles('SISWA', 'ORANG_TUA')
   @RequirePermission(['grade.own.read', 'grade.child.read'])
+  @SharedReadBudget()
   @Get('cp')
   getCpProgress(@CurrentUser() user: AuthUser) {
     return this.service.getCpProgress(user);
@@ -43,6 +71,7 @@ export class StudentDashboardController {
   /** W2-8: Leaderboard (class ranking by average NA) for SISWA or ORANG_TUA. */
   @Roles('SISWA', 'ORANG_TUA')
   @RequirePermission(['grade.own.read', 'grade.child.read'])
+  @SharedReadBudget()
   @Get('leaderboard')
   getLeaderboard(@CurrentUser() user: AuthUser) {
     return this.service.getLeaderboard(user);
