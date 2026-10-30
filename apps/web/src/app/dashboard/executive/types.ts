@@ -2,6 +2,7 @@
 // Tipe bersama Dasbor Eksekutif — cermin keluaran endpoint /analytics + reuse.
 // =============================================================================
 
+import type { JpOverview } from '@/lib/session-attendance';
 export interface ExecFilters {
   academicYear?: string;
   semester?: number;
@@ -66,7 +67,8 @@ export interface GradeAnalytics {
   }[];
   kkmMatrix: KkmMatrix;
   kktpCatalog: { subject: string; value: number | null; provenance: string }[];
-  correlation: { r: number; n: number; points: { x: number; y: number }[] };
+  correlation: { r: number; n: number; points: { x: number; y: number }[];
+    basis?: { unit: 'student_daily'; from: string; to: string | null } };
 }
 
 // ── /analytics/at-risk ───────────────────────────────────────────────────────
@@ -79,6 +81,7 @@ export interface AtRisk {
 
 // ── /analytics/finance/aging ─────────────────────────────────────────────────
 export interface Aging {
+  scope?: { period: 'all_years'; majorCode: string | null; classId: string | null };
   buckets: { key: string; label: string; amount: number; students: number }[];
   totalAmount: number;
   totalStudents: number;
@@ -86,6 +89,8 @@ export interface Aging {
 
 // ── /analytics/teacher-compliance ────────────────────────────────────────────
 export interface TeacherCompliance {
+  studentsActive?: number | null;
+  scope?: { academicYear: string; semester: number; majorCode: string | null; classId: string | null };
   attendancePct?: number | null;
   totalTeachers: number;
   presentToday: number;
@@ -123,7 +128,7 @@ export interface KioskHealth {
 export interface Kpi {
   studentPct: number | null;
   studentDelta: number | null;
-  studentSpark: number[];
+  studentSpark: (number | null)[];
   teacherPct: number | null;
   avgGrade: number | null;
   sppCollectedPct: number | null;
@@ -131,7 +136,7 @@ export interface Kpi {
 }
 export interface TrenSeries {
   labels: string[];
-  pcts: number[];
+  pcts: (number | null)[];
 }
 export interface SppMonth {
   month: number;
@@ -146,6 +151,7 @@ export interface SystemStatus {
 }
 
 export interface ExecutiveData {
+  attendance?: JpOverview | null;
   filters: ExecFilters & { academicYear: string; semester: number };
   majors: MajorRef[];
   studentsActive: number | null;
@@ -158,5 +164,6 @@ export interface ExecutiveData {
   teacher: TeacherCompliance | null;
   ppdb: PpdbStats | null;
   spp: SppMonth[];
+  sppState?: 'ready' | 'denied' | 'unavailable';
   system: SystemStatus;
 }

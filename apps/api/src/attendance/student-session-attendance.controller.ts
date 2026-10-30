@@ -19,6 +19,7 @@ import {
   SessionAttendanceSaveSchema,
   type SessionAttendanceSave,
   SessionAttendanceReadSchema,
+  SessionAttendanceOverviewSchema,
 } from './student-session-attendance.dto';
 import { StudentSessionAttendanceService } from './student-session-attendance.service';
 import { StudentSessionAttendanceReadService } from './student-session-attendance-read.service';
@@ -29,6 +30,14 @@ export class StudentSessionAttendanceController {
     private readonly service: StudentSessionAttendanceService,
     private readonly auditRead: StudentSessionAttendanceReadService,
   ) {}
+  @Get('overview')
+  @Roles('SUPER_ADMIN', 'TATA_USAHA', 'GURU', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPROG')
+  @RequirePermission('academic.attendance.read')
+  overview(@Query() rawQuery: unknown, @CurrentUser() user: AuthUser) {
+    const parsed = SessionAttendanceOverviewSchema.safeParse(rawQuery);
+    if (!parsed.success) throw new BadRequestException(parsed.error.errors);
+    return this.auditRead.overview(parsed.data, user);
+  }
   @Get('sessions/:id')
   @Roles('SUPER_ADMIN', 'TATA_USAHA', 'GURU', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPROG')
   @RequirePermission('academic.class-session.read')

@@ -90,6 +90,7 @@ describe('ReportCardsService', () => {
     studentFindUnique.mockResolvedValue({ userId: 'user-s1', parentId: 'parent-s1', parent: { phone: '08123456789' } });
     enqueueCommittedPendingLogs.mockResolvedValue({ queuedCount: 3 });
     serviceHasPermission.mockResolvedValue(true);
+    queryRaw.mockResolvedValue([{ acquired: true }]);
     serviceGetActivePositionCodes.mockResolvedValue(new Set(['WAKA_KURIKULUM']));
 
     const prisma = {
@@ -100,6 +101,13 @@ describe('ReportCardsService', () => {
       class: { findUnique: classFindUnique, findMany: classFindMany, findFirst: classFindFirst },
       grade: { findMany: gradeFindMany, findFirst: gradeFindFirst },
       attendance: { groupBy: attGroupBy },
+      classSession: { findMany: jest.fn().mockResolvedValue([]) },
+      academicCalendar: { findMany: jest.fn().mockResolvedValue([]) },
+      semester: { findMany: jest.fn().mockResolvedValue([{
+        id: 'semester-active', number: 1,
+        startDate: new Date('2026-07-13'), endDate: new Date('2026-12-19'),
+        academicYear: { id: 'ay-active', code: '2026/2027' },
+      }]) },
       teacher: { findFirst: teacherFindFirst, findUnique: teacherFindUnique },
       teachingAssignment: { findMany: teachingAssignmentFindMany },
       student: { findFirst: studentFindFirst, findUnique: studentFindUnique },
@@ -161,13 +169,14 @@ describe('ReportCardsService', () => {
     const res = await service.generate({ classId: 'c1', academicYear: '2026/2027', semester: 1 });
 
     expect(res).toEqual({ generated: 1, refreshed: 0, skipped: 1, totalStudents: 2 });
+    expect(service['prisma'].semester.findMany).toHaveBeenCalledTimes(1);
     const data = rcCreate.mock.calls[0][0].data;
     const mtk = (data.grades as { subject: string; average: number; byType: Record<string, number> }[])
       .find((g) => g.subject === 'Matematika')!;
     expect(mtk.average).toBe(85);
     expect(mtk.byType).toEqual({ uh: 80, uts: 90 });
     expect(mtk).toEqual(expect.objectContaining({ kktp: 75, kktpProvenance: 'system_default' }));
-    expect(data.attendance).toEqual({ hadir: 90, izin: 0, sakit: 2, alpha: 0 });
+    expect(data.attendance).toMatchObject({ hadir: 90, izin: 0, sakit: 2, alpha: 0, jp: { version: 1, totals: { expected: 0, pct: null } } });
     expect(data).toEqual(expect.objectContaining({
       studentNameSnapshot: 'Siswa Satu',
       studentNisSnapshot: '1001',
@@ -259,7 +268,7 @@ describe('ReportCardsService', () => {
       id: 'c1', name: 'XI TKJ 1', academicYear: '2026/2027', isActive: true, teacher: null,
       students: [{ id: 's1', nis: '1001', user: { fullName: 'Siswa Satu' } }],
     });
-    rcFindMany.mockResolvedValue([{ id: 'rc-1', studentId: 's1', status: 'draft' }]);
+    rcFindMany.mockResolvedValue([{ id: 'rc-1', studentId: 's1', status: 'draft', updatedAt: new Date('2026-10-01') }]);
     gradeFindMany.mockResolvedValue([]);
     attGroupBy.mockResolvedValue([]);
 

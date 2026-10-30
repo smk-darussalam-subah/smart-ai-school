@@ -327,7 +327,8 @@ export async function fetchBadgeCatalog(): Promise<{
 export interface OfficialReportSections {
   reportCardId: string;
   snapshotStatus: string;
-  identity: { studentName: string; nis: string };
+  snapshotUpdatedAt?: string;
+  identity: { studentName: string; nis: string; classId?: string };
   muatanLokal: {
     subjects: {
       name: string;
@@ -337,7 +338,7 @@ export interface OfficialReportSections {
       predikat: string;
     }[];
   };
-  attendance: { hadir: number; izin: number; sakit: number; alpha: number; total: number };
+  attendance: { hadir: number; izin: number; sakit: number; alpha: number; total: number; jp?: unknown };
   development: { description: string; spiritual: string; social: string; academic: string };
   approval: {
     homeroomTeacher: string;

@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UserRole, isPrimaryRole } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { getSchoolDate } from '../common/helpers/school-date.helper';
+import { acquirePermissionMutationLock, touchPermissionAnchors } from './permission-mutation-coordination';
 
 interface CacheEntry {
   permissions: Set<string>;
@@ -150,7 +151,10 @@ export class PermissionsService {
   }
 
   async deletePermission(id: string) {
-    const result = await this.prisma.permission.delete({ where: { id } });
+    const result = await this.prisma.$transaction(async tx => {
+      await acquirePermissionMutationLock(tx);
+      return tx.permission.delete({ where: { id } });
+    }, { timeout: 30000 });
     this.invalidateAll();
     return result;
   }
@@ -165,15 +169,18 @@ export class PermissionsService {
   }
 
   async setRolePermissions(role: UserRole, permissionIds: string[]) {
-    await this.prisma.$transaction([
-      this.prisma.rolePermission.deleteMany({ where: { role } }),
-      this.prisma.rolePermission.createMany({
+    await this.prisma.$transaction(async tx => {
+      await acquirePermissionMutationLock(tx);
+      const existing = await tx.rolePermission.findMany({ where: { role }, select: { permissionId: true } });
+      await touchPermissionAnchors(tx, [...existing.map(row => row.permissionId), ...permissionIds]);
+      await tx.rolePermission.deleteMany({ where: { role } });
+      await tx.rolePermission.createMany({
         data: permissionIds.map((permId) => ({
           role,
           permissionId: permId,
         })),
-      }),
-    ]);
+      });
+    }, { timeout: 30000 });
 
     this.invalidateAll();
     logger.info(`Permissions updated for role ${role}`, { permissionIds });
@@ -305,51 +312,36 @@ export class PermissionsService {
       reason: grant ? 'Manual global grant via Users UI' : 'Manual global revoke via Users UI',
     };
 
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.userPermissionOverride.findFirst({
-          where: {
-            userId,
-            permissionId,
-            academicYearId: null,
-            status: PermissionOverrideStatus.ACTIVE,
-          },
-          select: { id: true },
-        });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          await acquirePermissionMutationLock(tx);
+          await touchPermissionAnchors(tx, [permissionId]);
+          const existing = await tx.userPermissionOverride.findFirst({
+            where: {
+              userId,
+              permissionId,
+              academicYearId: null,
+              status: PermissionOverrideStatus.ACTIVE,
+            },
+            select: { id: true },
+          });
 
-        return existing
-          ? tx.userPermissionOverride.update({
-              where: { id: existing.id },
-              data,
-            })
-          : tx.userPermissionOverride.create({
-              data: { userId, permissionId, ...data },
-            });
-      });
-    } catch (err) {
-      if (!this.isUniqueConflict(err)) {
-        throw err;
+          return existing
+            ? tx.userPermissionOverride.update({
+                where: { id: existing.id },
+                data,
+              })
+            : tx.userPermissionOverride.create({
+                data: { userId, permissionId, ...data },
+              });
+        }, { timeout: 30000 });
+      } catch (err) {
+        // Retry the entire protocol, never a fallback write outside its anchor.
+        if (!this.isUniqueConflict(err) || attempt === 1) throw err;
       }
-
-      const existing = await this.prisma.userPermissionOverride.findFirst({
-        where: {
-          userId,
-          permissionId,
-          academicYearId: null,
-          status: PermissionOverrideStatus.ACTIVE,
-        },
-        select: { id: true },
-      });
-
-      if (!existing) {
-        throw err;
-      }
-
-      return this.prisma.userPermissionOverride.update({
-        where: { id: existing.id },
-        data,
-      });
     }
+    throw new Error('Permission mutation did not complete');
   }
 
   private isUniqueConflict(err: unknown): err is Prisma.PrismaClientKnownRequestError {

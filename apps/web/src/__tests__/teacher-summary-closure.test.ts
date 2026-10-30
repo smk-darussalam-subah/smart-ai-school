@@ -23,7 +23,10 @@ jest.mock('next-auth', () => ({ getServerSession: mockSession }));
 jest.mock('@/lib/auth', () => ({ authOptions: {} }));
 jest.mock('@/lib/view-as', () => ({ getActiveViewAs: async () => null }));
 jest.mock('@/lib/dashboard-authority', () => ({ resolveDashboardAuthority: mockAuthority }));
-jest.mock('@/lib/api', () => ({ apiFetch: mockApiFetch, apiFetchResult: mockApiFetchResult }));
+jest.mock('@/lib/api', () => ({
+  apiFetch: (...args: unknown[]) => mockApiFetch(...args),
+  apiFetchResult: (...args: unknown[]) => mockApiFetchResult(...args),
+}));
 jest.mock('@/app/dashboard/akademik/_components/AcademicOperationsWorkspace', () => ({
   __esModule: true,
   default: () => null,

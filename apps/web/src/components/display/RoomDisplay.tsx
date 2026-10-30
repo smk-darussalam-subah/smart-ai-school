@@ -783,17 +783,16 @@ export default function RoomDisplay() {
                         {snapshot.attendance.students.present}/{snapshot.attendance.students.total}
                       </p>
                       <p className="text-sm text-slate-400">
-                        Hadir · {snapshot.attendance.students.recorded}/
+                        Harian siswa · {snapshot.attendance.students.recorded}/
                         {snapshot.attendance.students.total} tercatat
                       </p>
                     </div>
                     <div>
                       <p className="text-2xl font-bold text-blue-300">
-                        {snapshot.attendance.teachers.present}/{snapshot.attendance.teachers.total}
+                        {snapshot.attendance.teachers.unknown ? '—' : `${snapshot.attendance.teachers.present}/${snapshot.attendance.teachers.total}`}
                       </p>
                       <p className="text-sm text-slate-400">
-                        Hadir · {snapshot.attendance.teachers.recorded}/
-                        {snapshot.attendance.teachers.total} tercatat
+                        Presensi wajib guru · {snapshot.attendance.teachers.unknown ? `${snapshot.attendance.teachers.unknown} belum terverifikasi` : `${snapshot.attendance.teachers.recorded}/${snapshot.attendance.teachers.total} tercatat`}
                       </p>
                     </div>
                   </div>
@@ -808,7 +807,7 @@ export default function RoomDisplay() {
                             point.students.present,
                             point.students.total,
                           );
-                          const teacherPct = attendancePercent(
+                          const teacherPct = point.teachers.unknown ? null : attendancePercent(
                             point.teachers.present,
                             point.teachers.total,
                           );

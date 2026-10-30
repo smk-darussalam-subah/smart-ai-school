@@ -107,6 +107,7 @@ function buildPrisma() {
   return {
     grade: { findMany: jest.fn(), groupBy: jest.fn() },
     attendance: { groupBy: jest.fn() },
+    semester: { findMany: jest.fn().mockResolvedValue([{ id: 'sem', number: 1, startDate: new Date('2025-07-13'), endDate: new Date('2025-12-19'), academicYear: { id: 'year', code: '2025/2026' } }]) },
     student: { findMany: jest.fn() },
     sppPayment: { findMany: jest.fn() },
     teacher: { count: jest.fn() },
