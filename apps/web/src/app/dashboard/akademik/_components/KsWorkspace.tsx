@@ -13,6 +13,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import ScheduleBoard, { ScheduleReadProvider, useScheduleRead } from './ks/ScheduleBoard';
 import SchedulingMonitoringPanel from './ks/SchedulingMonitoringPanel';
 import LearningRecap from './LearningRecap';
+import AttendanceJpSummary from './AttendanceJpSummary';
 import { MonitoringSchema, type SchedulingMonitoring } from '@/lib/scheduling-monitoring';
 import {
   LayoutDashboard, FileCheck2, ClipboardPenLine, Monitor, ClipboardCheck,
@@ -341,6 +342,7 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, attendances, dataComplete, p
   return (
     <div className="space-y-4">
       {/* KPI grid */}
+      <AttendanceJpSummary query={{ academicYear: read.academicYear, semester: read.semester, teacherId: read.teacherId || undefined, subject: read.subject || undefined }} />
       {!dataComplete && <p role="status" className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">Sebagian sumber belum terverifikasi dalam cakupan ini. Tidak dapat menyimpulkan seluruh tugas selesai; gunakan muat ulang pada panel terkait.</p>}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Kpi icon={Users} label="Kehadiran Siswa" value={todayHadirPct !== null ? `${todayHadirPct}%` : '—'} sub={todayAtt.length ? `${todayAtt.length} catatan hari ini` : undefined} onClick={() => setBerandaModal('kehadiran')} />

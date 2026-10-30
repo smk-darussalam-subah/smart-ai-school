@@ -25,6 +25,7 @@ import type {
 import { slotsForDay, type BellProfile } from '@/lib/bell-patterns';
 import { wibTodayISO, scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-times';
 import AcademicOperationsWorkspace from './_components/AcademicOperationsWorkspace';
+import AttendanceJpSummary from './_components/AttendanceJpSummary';
 import AcademicRoleModeSwitcher from './_components/AcademicRoleModeSwitcher';
 import AcademicDataNotice from '../_components/AcademicDataNotice';
 import type {
@@ -792,6 +793,10 @@ export default async function AkademikPage({
   }
 
   const operationsWorkspace = (
+    <div className="space-y-4">
+      {authority.can('academic.attendance.read') && authority.can('academic.class-session.read') && (
+        <AttendanceJpSummary query={{ academicYear, semester }} refreshToken={Date.now()} />
+      )}
     <AcademicOperationsWorkspace
       assignments={assignmentsRes.data}
       assignmentTotal={assignmentsRes.total}
@@ -818,6 +823,7 @@ export default async function AkademikPage({
           (authority.hasRole('SUPER_ADMIN') && authority.can('rpp.read')),
       }}
     />
+    </div>
   );
 
   return withOwnTeaching(operationsWorkspace);

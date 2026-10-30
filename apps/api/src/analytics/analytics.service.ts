@@ -14,6 +14,7 @@ import { AuthUser } from '@smk/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveOwnTeachingRead } from '../common/helpers/own-teaching-read';
 import { SchoolConfigService } from '../school-config/school-config.service';
+import { readAttendancePeriod } from '../attendance/attendance-period';
 import {
   isGuruOnly,
   isSiswaOnly,
@@ -99,8 +100,10 @@ export class AnalyticsService {
     return {
       academicYear: period.academicYear,
       semester: period.semester,
-      ...(query.classId ? { assignment: { classId: query.classId } } : {}),
-      ...(query.majorCode ? { assignment: { class: { majorCode: query.majorCode } } } : {}),
+      ...(query.classId || query.majorCode ? { assignment: {
+        ...(query.classId ? { classId: query.classId } : {}),
+        ...(query.majorCode ? { class: { majorCode: query.majorCode } } : {}),
+      } } : {}),
     };
   }
 
@@ -250,21 +253,21 @@ export class AnalyticsService {
     query: AnalyticsQuery,
     gradeWhere: Prisma.GradeWhereInput,
   ) {
-    // Jendela kehadiran = rentang tahun ajaran aktif (s.d. hari ini).
-    let from: Date;
-    let to: Date = new Date();
-    try {
-      const ay = await this.school.getActiveAcademicYear();
-      from = ay.startDate;
-      if (ay.endDate < to) to = ay.endDate;
-    } catch {
-      from = new Date(to.getTime() - 180 * 86_400_000); // fallback 6 bulan
-    }
+    const official = await readAttendancePeriod(this.prisma, period);
+    const from = official.startDate;
+    const today = new Date(`${jakartaDateKey(new Date())}T00:00:00.000Z`);
+    const to = official.endDate < today ? official.endDate : today;
+    const basis = { unit: 'student_daily' as const, from: from.toISOString().slice(0, 10),
+      to: from <= to ? to.toISOString().slice(0, 10) : null };
+    if (from > to) return { r: 0, n: 0, points: [], basis };
 
     const [attGroups, gradeGroups] = await Promise.all([
       this.prisma.attendance.groupBy({
         by: ['studentId', 'status'],
-        where: { date: { gte: from, lte: to } },
+        where: { date: { gte: from, lte: to },
+          ...(query.classId ? { classId: query.classId } : {}),
+          class: { academicYear: period.academicYear, ...(query.majorCode ? { majorCode: query.majorCode } : {}) },
+        },
         _count: { _all: true },
       }),
       this.prisma.grade.groupBy({
@@ -298,7 +301,7 @@ export class AnalyticsService {
     const points: { x: number; y: number }[] = [];
     for (let i = 0; i < n; i += stride) points.push({ x: xs[i]!, y: ys[i]! });
 
-    return { r, n, points };
+    return { r, n, points, basis };
   }
 
   // ── 2. Siswa berisiko (alpha kronis) — agregat tanpa PII ──────────────────
@@ -358,8 +361,10 @@ export class AnalyticsService {
     const rows = await this.prisma.sppPayment.findMany({
       where: {
         status: { in: ['unpaid', 'late'] },
-        ...(query.classId ? { student: { classId: query.classId } } : {}),
-        ...(query.majorCode ? { student: { class: { majorCode: query.majorCode } } } : {}),
+        ...(query.classId || query.majorCode ? { student: {
+          ...(query.classId ? { classId: query.classId } : {}),
+          ...(query.majorCode ? { class: { majorCode: query.majorCode } } : {}),
+        } } : {}),
       },
       select: { amount: true, month: true, year: true, studentId: true },
     });
@@ -395,11 +400,12 @@ export class AnalyticsService {
       })),
       totalAmount: Math.round(totalAmount),
       totalStudents: allStudents.size,
+      scope: { period: 'all_years' as const, majorCode: query.majorCode || null, classId: query.classId || null },
     };
   }
 
   // ── 4. Kepatuhan guru: kehadiran GPS hari ini + RPP approval rate ─────────
-  async teacherCompliance(query: AnalyticsQuery, canReadRpp = false, canReadAssignments = false) {
+  async teacherCompliance(query: AnalyticsQuery, canReadRpp = false, canReadAssignments = false, canReadStudents = false) {
     if (
       (query.classId || query.majorCode || query.teacherId || query.subject) &&
       !canReadAssignments
@@ -430,7 +436,7 @@ export class AnalyticsService {
             })
           ).map((row) => row.teacherId)
         : undefined;
-    const [report, rppGroups] = await Promise.all([
+    const [report, rppGroups, studentsActive] = await Promise.all([
       this.staff.report(
         AttendanceQuerySchema.parse({
           from: today.toISOString().slice(0, 10),
@@ -452,6 +458,14 @@ export class AnalyticsService {
             _count: { _all: true },
           })
         : Promise.resolve([]),
+      canReadStudents ? this.prisma.student.count({ where: {
+        status: 'active', deletedAt: null,
+        user: { isActive: true, deletedAt: null },
+        class: { isActive: true, academicYear: period.academicYear,
+          ...(query.majorCode ? { majorCode: query.majorCode } : {}),
+          ...(query.classId ? { id: query.classId } : {}),
+        },
+      } }) : Promise.resolve(null),
     ]);
 
     const rpp = { draft: 0, submitted: 0, approved: 0, revision: 0, curriculum_reviewed: 0 };
@@ -473,6 +487,8 @@ export class AnalyticsService {
 
     return {
       totalTeachers,
+      studentsActive,
+      scope: { academicYear: period.academicYear, semester: period.semester, majorCode: query.majorCode ?? null, classId: query.classId ?? null },
       presentToday,
       gpsPct,
       attendancePct,

@@ -6,8 +6,10 @@
 // (muat awal) DAN client (saat filter berubah). Graceful null per-sumber.
 // =============================================================================
 
-import { apiFetch } from '@/lib/api';
+import { apiFetch, apiFetchResult } from '@/lib/api';
+import { z } from 'zod';
 import { requireExecutiveDashboardAccess } from './executive-authority.server';
+import { readJpOverview, type JpOverviewQuery } from '@/lib/session-attendance';
 import type {
   Aging,
   ExecFilters,
@@ -23,11 +25,6 @@ import type {
   TrenSeries,
 } from './types';
 
-interface HeatmapResp {
-  dates: string[];
-  classes: { cells: { date: string; total: number; hadir: number; pct: number | null }[] }[];
-  overall?: { today?: { pct: number | null } };
-}
 interface SppSummaryRow {
   year: number;
   month: number;
@@ -35,12 +32,15 @@ interface SppSummaryRow {
   totalAmount: string;
   count: number;
 }
+const SppSummarySchema = z.array(z.object({
+  year: z.number().int(), month: z.number().int().min(1).max(12),
+  status: z.enum(['paid', 'unpaid', 'late', 'waived']), count: z.number().int().nonnegative(),
+  totalAmount: z.string().regex(/^\d+(\.\d+)?$/).refine(value => Number.isFinite(Number(value))),
+}));
 interface AcademicYearRow {
   code: string;
   isActive: boolean;
 }
-
-const TREND_DAYS = 12;
 
 function toParams(filters: ExecFilters): Record<string, string> {
   const p: Record<string, string> = {};
@@ -48,26 +48,6 @@ function toParams(filters: ExecFilters): Record<string, string> {
   if (filters.semester) p.semester = String(filters.semester);
   if (filters.majorCode) p.majorCode = filters.majorCode;
   return p;
-}
-
-/** Rata-rata kehadiran harian keseluruhan dari grid heatmap. */
-function dailyOverall(heat: HeatmapResp | null): TrenSeries {
-  if (!heat || !heat.dates?.length) return { labels: [], pcts: [] };
-  const n = heat.dates.length;
-  const pcts: number[] = [];
-  for (let i = 0; i < n; i++) {
-    let h = 0;
-    let t = 0;
-    for (const c of heat.classes) {
-      const cell = c.cells[i];
-      if (cell) {
-        h += cell.hadir;
-        t += cell.total;
-      }
-    }
-    pcts.push(t ? Math.round((h / t) * 1000) / 10 : 0);
-  }
-  return { labels: heat.dates.map((d) => d.slice(5)), pcts };
 }
 
 function deriveSpp(rows: SppSummaryRow[] | null): {
@@ -105,10 +85,10 @@ function deriveHealth(
   grades: GradeAnalytics | null,
 ): KioskHealth {
   const pilars = [
-    { label: 'Kehadiran Siswa', pct: studentPct },
+    { label: 'Kehadiran siswa per JP', pct: studentPct },
     { label: 'Presensi wajib guru', pct: teacher?.attendancePct ?? null },
     { label: 'Ketuntasan KKTP', pct: grades?.overall.kkmPassRate ?? null },
-    { label: 'Kepatuhan RPP', pct: teacher?.rpp.approvalRate ?? null },
+    { label: 'Kepatuhan RPP', pct: teacher?.rpp?.approvalRate ?? null },
   ];
   const avail = pilars.filter((p) => p.pct !== null).map((p) => p.pct as number);
   const score = avail.length ? Math.round(avail.reduce((a, b) => a + b, 0) / avail.length) : null;
@@ -116,35 +96,59 @@ function deriveHealth(
 }
 
 async function loadExecutiveBundle(token: string, filters: ExecFilters): Promise<ExecutiveData> {
-  const qp = toParams(filters);
+  const active =
+    !filters.academicYear || !filters.semester
+      ? await apiFetch<{ number: number; academicYear: { code: string } }>(
+          '/school/semesters/active',
+          token,
+        )
+      : null;
+  const selected = {
+    ...filters,
+    academicYear: filters.academicYear ?? active?.academicYear.code,
+    semester: filters.semester ?? active?.number,
+  };
+  const qp = toParams(selected);
+  const overviewQuery: JpOverviewQuery = {
+    academicYear: selected.academicYear,
+    semester: selected.semester,
+    majorCode: filters.majorCode,
+  };
 
-  const [heat, grades, atRisk, aging, teacher, ppdb, sppRows, students, majors, years] =
+  const [overview, grades, atRisk, aging, teacher, ppdb, sppResult, majors, years] =
     await Promise.all([
-      apiFetch<HeatmapResp>('/attendance/heatmap', token, { days: String(TREND_DAYS) }),
+      selected.academicYear && selected.semester
+        ? apiFetch<unknown>('/attendance/student-sessions/overview', token, qp)
+        : Promise.resolve(null),
       apiFetch<GradeAnalytics>('/analytics/grades', token, qp),
       apiFetch<ExecutiveData['atRisk']>('/analytics/at-risk', token, qp),
       apiFetch<Aging>('/analytics/finance/aging', token, qp),
       apiFetch<TeacherCompliance>('/analytics/teacher-compliance', token, qp),
       apiFetch<PpdbStats>('/ppdb/stats', token),
-      apiFetch<SppSummaryRow[]>('/finance/spp/summary', token),
-      apiFetch<{ total: number }>('/students', token, { status: 'active', limit: '1' }),
+      apiFetchResult<SppSummaryRow[]>('/finance/spp/summary', token),
       apiFetch<MajorRef[]>('/school/majors', token, { activeOnly: 'true' }),
       apiFetch<AcademicYearRow[]>('/school/academic-years', token),
     ]);
 
-  const tren = dailyOverall(heat);
+  const attendance = readJpOverview(overview, overviewQuery);
+  const days = attendance?.days ?? [];
+  const tren: TrenSeries = {
+    labels: days.map((d) => d.date.slice(5)),
+    pcts: days.map((d) => d.pct),
+  };
   const studentSpark = tren.pcts.slice(-10);
-  const studentPct =
-    heat?.overall?.today?.pct ??
-    (studentSpark.length ? studentSpark[studentSpark.length - 1]! : null);
+  const studentPct = attendance?.totals.pct ?? null;
+  const latest = studentSpark.at(-1),
+    previous = studentSpark.at(-2);
   const studentDelta =
-    studentSpark.length >= 2
-      ? Math.round(
-          (studentSpark[studentSpark.length - 1]! - studentSpark[studentSpark.length - 2]!) * 10,
-        ) / 10
+    typeof latest === 'number' && typeof previous === 'number'
+      ? Math.round((latest - previous) * 10) / 10
       : null;
 
-  const { months: spp, collectedPct } = deriveSpp(sppRows);
+  const sppPayload = sppResult?.status === 'success' ? SppSummarySchema.safeParse(sppResult.data) : null;
+  const sppState = sppPayload?.success
+    ? 'ready' : sppResult?.status === 'forbidden' ? 'denied' : 'unavailable';
+  const { months: spp, collectedPct } = deriveSpp(sppPayload?.success ? sppPayload.data : null);
   const health = deriveHealth(studentPct, studentDelta, teacher, grades);
 
   const kpi: Kpi = {
@@ -152,13 +156,13 @@ async function loadExecutiveBundle(token: string, filters: ExecFilters): Promise
     studentDelta,
     studentSpark,
     teacherPct: teacher?.attendancePct ?? null,
-    avgGrade: grades?.overall.mean ?? null,
+    avgGrade: grades && grades.overall.count > 0 ? grades.overall.mean : null,
     sppCollectedPct: collectedPct,
     ppdbConversion: ppdb?.conversionRate ?? null,
   };
 
   // Status sistem = keterjangkauan live (badge "Nyata"): API balas → DB hidup.
-  const apiOk = grades !== null || atRisk !== null || ppdb !== null || students !== null;
+  const apiOk = grades !== null || atRisk !== null || ppdb !== null || teacher !== null;
   const system: SystemStatus = {
     overall: apiOk ? 'ok' : 'error',
     services: [
@@ -179,14 +183,23 @@ async function loadExecutiveBundle(token: string, filters: ExecFilters): Promise
 
   return {
     filters: {
-      academicYear: filters.academicYear ?? grades?.filters.academicYear ?? activeYear,
-      semester: filters.semester ?? grades?.filters.semester ?? 1,
+      academicYear:
+        selected.academicYear ??
+        attendance?.academicYear ??
+        grades?.filters.academicYear ??
+        activeYear,
+      semester: selected.semester ?? attendance?.semester ?? grades?.filters.semester ?? 1,
       majorCode: filters.majorCode,
     },
     majors: majors ?? [],
-    studentsActive: students?.total ?? null,
+    studentsActive: teacher?.scope?.academicYear === selected.academicYear &&
+      teacher?.scope?.semester === selected.semester &&
+      teacher?.scope?.classId === null &&
+      teacher?.scope?.majorCode === (filters.majorCode ?? null)
+      ? teacher.studentsActive ?? null : null,
     health,
     kpi,
+    attendance,
     tren,
     grades,
     atRisk,
@@ -194,6 +207,7 @@ async function loadExecutiveBundle(token: string, filters: ExecFilters): Promise
     teacher,
     ppdb,
     spp,
+    sppState,
     system,
   };
 }

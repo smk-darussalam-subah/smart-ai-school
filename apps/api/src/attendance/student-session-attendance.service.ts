@@ -20,9 +20,9 @@ import {
 import { lockOperationalTeachers } from '../common/helpers/operational-teacher';
 import { lockSessionInputs } from '../common/helpers/class-session-activation';
 import {
-  jpAttendanceTotals,
   sessionJpSlots,
-  physicalJpStatuses,
+  physicalJpAttendance,
+  jpDailyTotals,
   attendanceNoticeBody,
 } from './student-session-attendance.math';
 import type {
@@ -425,10 +425,7 @@ export class StudentSessionAttendanceService {
               }),
             };
           });
-        const days = [...new Set(rows.map((s) => s.date))].map((date) => ({
-          date,
-          ...jpAttendanceTotals(physicalJpStatuses(rows.filter((s) => s.date === date))),
-        }));
+        const daily = jpDailyTotals(physicalJpAttendance(rows));
         return {
           studentId: student.id,
           academicYear: period.academicYear,
@@ -439,8 +436,7 @@ export class StudentSessionAttendanceService {
           scope:
             'Sesi yang disiapkan untuk kelas saat ini dan catatan sesi tersimpan. Data kelas historis tidak direka. JP beririsan dihitung sekali; status yang berbeda/belum lengkap memerlukan pemeriksaan.',
           sessions: rows,
-          days,
-          totals: jpAttendanceTotals(physicalJpStatuses(rows)),
+          ...daily,
         };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
