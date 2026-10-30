@@ -42,6 +42,7 @@ import {
 
 const ACTIVITY_SELECT = {
   id: true,
+  teacherId: true,
   classId: true,
   date: true,
   title: true,

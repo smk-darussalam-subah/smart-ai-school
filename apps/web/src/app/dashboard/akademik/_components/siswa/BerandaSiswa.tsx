@@ -516,7 +516,11 @@ export default function BerandaSiswa({
                       <div className="truncate text-sm font-bold">{t.title}</div>
                       <div className="mt-0.5 text-[11px] font-semibold text-[var(--muted)]">
                         {t.mp} ·{' '}
-                        {t.dlDays === 0 ? '⚠ Deadline hari ini!' : `${t.dlDays ?? 1} hari lagi`}
+                        {!Number.isFinite(t.dlDays)
+                          ? 'Tanpa tenggat'
+                          : t.dlDays === 0
+                            ? '⚠ Deadline hari ini!'
+                            : `${t.dlDays} hari lagi`}
                       </div>
                     </div>
                     <span

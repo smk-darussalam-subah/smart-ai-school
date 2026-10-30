@@ -29,6 +29,7 @@ import type {
   LmsModuleItem,
 } from './guru-types';
 import RingkasanGuru from './RingkasanGuru';
+import AttendanceJpSummary from './AttendanceJpSummary';
 import JadwalTimetable from './JadwalTimetable';
 import RekapPembelajaran from './RekapPembelajaran';
 import LearningRecap from './LearningRecap';
@@ -617,6 +618,18 @@ export default function AkademikWorkspace({
       </div>
 
       <div className="pt-4">
+        {(screen === 'rekap' || screen === 'kehadiran') && canReadClassSessions && (
+          <AttendanceJpSummary
+            query={{
+              academicYear,
+              semester,
+              scope: 'own',
+              classId: selClass === 'all' ? undefined : selClass,
+              subject: subject === 'all' ? undefined : subject,
+            }}
+            refreshToken={recapRefresh}
+          />
+        )}
         {screen === 'sesi' && (
           <LearningRecap
             key={`${academicYear}|${semester}`}
@@ -635,6 +648,14 @@ export default function AkademikWorkspace({
         )}
         {screen === 'ringkasan' && (
           <RingkasanGuru
+            jpQuery={{
+              academicYear,
+              semester,
+              scope: 'own',
+              classId: selClass === 'all' ? undefined : selClass,
+              subject: subject === 'all' ? undefined : subject,
+            }}
+            refreshToken={recapRefresh}
             canReadClassSessions={canReadClassSessions}
             grades={grades}
             attendances={attendances}

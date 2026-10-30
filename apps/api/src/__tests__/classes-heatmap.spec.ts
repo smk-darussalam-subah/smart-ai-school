@@ -269,6 +269,7 @@ describe('AttendanceService.heatmap', () => {
   const mockGroupBy = jest.fn();
 
   beforeEach(async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-29T05:00:00Z'));
     mockClassFindMany.mockReset();
     mockGroupBy.mockReset();
     const prisma = {
@@ -293,6 +294,7 @@ describe('AttendanceService.heatmap', () => {
     }).compile();
     service = module.get(AttendanceService);
   });
+  afterEach(() => jest.useRealTimers());
 
   function utcDate(offsetDays: number): Date {
     const now = new Date();

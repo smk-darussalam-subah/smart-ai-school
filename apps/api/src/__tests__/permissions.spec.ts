@@ -103,6 +103,8 @@ describe('PermissionsService', () => {
       user: { findUnique: mockUserFindUnique, findFirst: mockUserFindFirst },
       academicYear: { findMany: mockAyFindMany },
       appointment: { findMany: mockAppointmentFindMany },
+      $executeRaw: jest.fn().mockResolvedValue(1),
+      $queryRaw: jest.fn().mockResolvedValue([]),
       $transaction: mockTransaction,
     };
     mockTransaction.mockImplementation(async (input: unknown) => {
@@ -631,6 +633,13 @@ describe('PermissionsService', () => {
       await service.setRolePermissions('GURU', ['p1', 'p2']);
       expect(mockTransaction).toHaveBeenCalledTimes(1);
     });
+    it('role replacement reads the previous grant IDs inside the same writer transaction', async () => {
+      mockRpFindMany.mockResolvedValue([{ permissionId: 'p-old' }]);
+      await service.setRolePermissions('GURU', ['p1', 'p2']);
+      expect(mockRpFindMany).toHaveBeenCalledWith({ where: { role: 'GURU' }, select: { permissionId: true } });
+      expect(typeof mockTransaction.mock.calls[0]?.[0]).toBe('function');
+      expect(mockTransaction.mock.calls[0]?.[1]).toEqual({ timeout: 30000 });
+    });
   });
 
   describe('User overrides', () => {
@@ -707,6 +716,8 @@ describe('PermissionsService', () => {
       const result = await service.grantUserPermission('auth-1', 'p1');
 
       expect(result).toEqual({ id: 'o-existing', grant: true });
+      expect(mockTransaction).toHaveBeenCalledTimes(2);
+      expect(mockTransaction.mock.calls.every(([callback]) => typeof callback === 'function')).toBe(true);
       expect(mockUpoUpdate).toHaveBeenCalledWith({
         where: { id: 'o-existing' },
         data: expect.objectContaining({

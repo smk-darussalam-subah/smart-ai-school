@@ -6,6 +6,7 @@ import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
 import MonitoringClient from './MonitoringClient';
 import SessionPreparationPanel from '../jadwal/_components/SessionPreparationPanel';
 import { wibTodayISO } from '@/lib/bell-times';
+import AttendanceJpSummary from '../akademik/_components/AttendanceJpSummary';
 import {
   hasMonitoringReaderRole,
   normalizeMonitoringDevices,
@@ -43,6 +44,7 @@ export default async function MonitoringPage() {
 
   return (
     <div className="space-y-4">
+    {authority.can('academic.attendance.read') && authority.can('academic.class-session.read') && <AttendanceJpSummary query={{ from: wibTodayISO(), to: wibTodayISO() }} refreshToken={Date.now()} />}
     {authority.can('academic.schedule.manage') && authority.hasRole('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM') && <SessionPreparationPanel today={wibTodayISO()} />}
     <MonitoringClient
       initialSnapshot={snapshot}

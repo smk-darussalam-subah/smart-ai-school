@@ -292,6 +292,75 @@ proof('student/session/JP production service on PostgreSQL', () => {
     };
   }
   const read = () => service.learner({ from: '2026-10-01', to: '2026-10-22' }, learner);
+  it('overview reads the same PostgreSQL JP decisions and leaves legacy daily records intact', async () => {
+    const legacyBefore = await prisma.attendance.findMany({ orderBy: { id: 'asc' } });
+    const input = {
+      academicYear: '2026/2027',
+      semester: 1,
+      from: '2026-10-22',
+      to: '2026-10-22',
+      scope: 'own' as const,
+    };
+    expect((await audit.overview(input, teacher)).totals).toMatchObject({
+      expected: 16,
+      recorded: 0,
+      unknown: 16,
+      pct: null,
+    });
+    await service.save(sessionId, await body(), teacher);
+    const summary = await audit.overview(input, teacher);
+    expect(summary.totals).toMatchObject({
+      expected: 16,
+      recorded: 4,
+      hadir: 4,
+      unknown: 12,
+      alpha: 0,
+      pct: null,
+    });
+    const child = await read();
+    expect(child.totals.hadir).toBe(2);
+    expect(summary.totals.hadir).toBe(child.totals.hadir * 2);
+    expect(await prisma.attendance.findMany({ orderBy: { id: 'asc' } })).toEqual(legacyBefore);
+  });
+  it('overview applies actual SQL class, major and subject filters to the teacher scope', async () => {
+    const input = {
+      academicYear: '2026/2027',
+      semester: 1,
+      from: '2026-10-22',
+      to: '2026-10-22',
+      scope: 'own' as const,
+    };
+    expect((await audit.overview({ ...input, majorCode: 'SYN' }, teacher)).totals.expected).toBe(
+      16,
+    );
+    expect(
+      (await audit.overview({ ...input, majorCode: 'FOREIGN' }, teacher)).totals.expected,
+    ).toBe(0);
+    expect(
+      (await audit.overview({ ...input, subject: 'Foreign subject' }, teacher)).totals.expected,
+    ).toBe(0);
+    expect(
+      (await audit.overview({ ...input, classId: '10000000-0000-4000-8000-000000000999' }, teacher))
+        .totals.expected,
+    ).toBe(0);
+  });
+  it('overview rejects a fresh PostgreSQL permission denial before exposing the aggregate', async () => {
+    const denied = await prisma.permission.findUniqueOrThrow({
+      where: { code: 'academic.attendance.read' },
+    });
+    await prisma.userPermissionOverride.create({
+      data: { userId: teacherUserId, permissionId: denied.id, grant: false },
+    });
+    try {
+      await expect(
+        audit.overview({ from: '2026-10-22', to: '2026-10-22' }, teacher),
+      ).rejects.toMatchObject({ status: 403 });
+    } finally {
+      await prisma.userPermissionOverride.deleteMany({
+        where: { userId: teacherUserId, permissionId: denied.id },
+      });
+    }
+  });
   it('real HTTP query conversion reaches PostgreSQL and preserves family/student ownership', async () => {
     const module = await Test.createTestingModule({
       controllers: [StudentSessionAttendanceController],
@@ -303,7 +372,7 @@ proof('student/session/JP production service on PostgreSQL', () => {
     const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
       logger: false,
     });
-    const actors: Record<string, AuthUser> = { learner, parent, foreign };
+    const actors: Record<string, AuthUser> = { learner, parent, foreign, teacher };
     const reflector = new Reflector();
     app.setGlobalPrefix('api/v1');
     // Test identity injection only; production role/permission guards and DB-backed ownership stay real.
@@ -354,6 +423,37 @@ proof('student/session/JP production service on PostgreSQL', () => {
       expect((await get('foreign', studentId)).statusCode).toBe(403);
       for (const invalid of ['abc', '0', '3', '1.5'])
         expect((await get('learner', studentId, invalid)).statusCode).toBe(400);
+      const saved = await app.inject({
+        method: 'POST',
+        url: `/api/v1/attendance/student-sessions/${sessionId}`,
+        headers: { 'x-qa-actor': 'teacher' },
+        payload: await body(),
+      });
+      expect(saved.statusCode).toBe(201);
+      const overviewPath =
+        '/api/v1/attendance/student-sessions/overview?academicYear=2026%2F2027&semester=1&from=2026-10-22&to=2026-10-22&scope=own';
+      const overviewResponse = await app.inject({
+        method: 'GET',
+        url: overviewPath,
+        headers: { 'x-qa-actor': 'teacher' },
+      });
+      expect(overviewResponse.statusCode).toBe(200);
+      expect(overviewResponse.json().totals).toMatchObject({
+        expected: 16,
+        recorded: 4,
+        hadir: 4,
+        unknown: 12,
+        pct: null,
+      });
+      expect(
+        (
+          await app.inject({
+            method: 'GET',
+            url: overviewPath,
+            headers: { 'x-qa-actor': 'learner' },
+          })
+        ).statusCode,
+      ).toBe(403);
     } finally {
       await app.close();
     }

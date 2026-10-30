@@ -682,55 +682,59 @@ export class StaffAttendanceService {
         (a, b) =>
           b.date.localeCompare(a.date) || a.employee.fullName.localeCompare(b.employee.fullName),
       );
+    const teacherSummaryFor = (items: typeof rows) => ({
+      total: operationalTeacherUserIds.size,
+      present: items.filter((row) => operationalTeacherUserIds.has(row.employee.id) && row.receipt)
+        .length,
+      inside: items.filter(
+        (row) =>
+          operationalTeacherUserIds.has(row.employee.id) &&
+          row.receipt?.locationInStatus === 'INSIDE',
+      ).length,
+      required: items.filter(
+        (row) => operationalTeacherUserIds.has(row.employee.id) && row.arrival.dueAt,
+      ).length,
+      dueRequired: items.filter(
+        (row) =>
+          operationalTeacherUserIds.has(row.employee.id) &&
+          row.arrival.basis !== 'UNAVAILABLE' &&
+          row.arrival.dueAt &&
+          (row.receipt || new Date(row.arrival.dueAt) < reportNow),
+      ).length,
+      presentRequired: items.filter(
+        (row) =>
+          operationalTeacherUserIds.has(row.employee.id) &&
+          row.arrival.basis !== 'UNAVAILABLE' &&
+          row.arrival.dueAt &&
+          row.receipt,
+      ).length,
+      late: items.filter(
+        (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'LATE',
+      ).length,
+      absent: items.filter(
+        (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'ABSENT',
+      ).length,
+      notRequired: items.filter(
+        (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'NOT_REQUIRED',
+      ).length,
+      notScheduled: items.filter(
+        (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'NOT_SCHEDULED',
+      ).length,
+      notDue: items.filter(
+        (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'NOT_DUE',
+      ).length,
+      review: items.filter((row) => operationalTeacherUserIds.has(row.employee.id) && row.review)
+        .length,
+      unknown: items.filter(
+        (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'UNKNOWN',
+      ).length,
+    });
     return {
       // Full-scope aggregates, computed before UI pagination. No coordinates or employee names.
-      teacherSummary: {
-        total: operationalTeacherUserIds.size,
-        present: rows.filter((row) => operationalTeacherUserIds.has(row.employee.id) && row.receipt)
-          .length,
-        inside: rows.filter(
-          (row) =>
-            operationalTeacherUserIds.has(row.employee.id) &&
-            row.receipt?.locationInStatus === 'INSIDE',
-        ).length,
-        required: rows.filter(
-          (row) => operationalTeacherUserIds.has(row.employee.id) && row.arrival.dueAt,
-        ).length,
-        dueRequired: rows.filter(
-          (row) =>
-            operationalTeacherUserIds.has(row.employee.id) &&
-            row.arrival.basis !== 'UNAVAILABLE' &&
-            row.arrival.dueAt &&
-            (row.receipt || new Date(row.arrival.dueAt) < reportNow),
-        ).length,
-        presentRequired: rows.filter(
-          (row) =>
-            operationalTeacherUserIds.has(row.employee.id) &&
-            row.arrival.basis !== 'UNAVAILABLE' &&
-            row.arrival.dueAt &&
-            row.receipt,
-        ).length,
-        late: rows.filter(
-          (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'LATE',
-        ).length,
-        absent: rows.filter(
-          (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'ABSENT',
-        ).length,
-        notRequired: rows.filter(
-          (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'NOT_REQUIRED',
-        ).length,
-        notScheduled: rows.filter(
-          (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'NOT_SCHEDULED',
-        ).length,
-        notDue: rows.filter(
-          (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'NOT_DUE',
-        ).length,
-        review: rows.filter((row) => operationalTeacherUserIds.has(row.employee.id) && row.review)
-          .length,
-        unknown: rows.filter(
-          (row) => operationalTeacherUserIds.has(row.employee.id) && row.status === 'UNKNOWN',
-        ).length,
-      },
+      teacherSummary: teacherSummaryFor(rows),
+      teacherDays: [...new Set(rows.map((row) => row.date))]
+        .sort()
+        .map((date) => ({ date, ...teacherSummaryFor(rows.filter((row) => row.date === date)) })),
       summary,
       trend,
       attention: rows

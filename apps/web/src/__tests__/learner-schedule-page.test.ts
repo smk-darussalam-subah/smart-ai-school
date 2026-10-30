@@ -240,7 +240,10 @@ describe('real SSR page schedule-state wiring', () => {
           operationsWorkspace: React.ReactElement;
           initialMode: string;
         }>;
-        expect(mode.props.operationsWorkspace.type).toBe(AcademicOperationsWorkspace);
+        const operationChildren = React.Children.toArray(
+          (mode.props.operationsWorkspace.props as { children: React.ReactNode }).children,
+        );
+        expect(operationChildren.some(child => React.isValidElement(child) && child.type === AcademicOperationsWorkspace)).toBe(true);
         expect(mode.props.initialMode).toBe('operations');
         expect(
           calls
