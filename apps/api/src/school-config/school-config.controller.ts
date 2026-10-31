@@ -18,9 +18,10 @@ import { Public } from '../auth/decorators/public.decorator';
 import { SchoolConfigService } from './school-config.service';
 import { UpdateProfileSchema } from './dto/update-profile.dto';
 import { CreateAcademicYearSchema, UpdateAcademicYearSchema } from './dto/academic-year.dto';
-import { CreateSemesterSchema, UpdateSemesterSchema } from './dto/semester.dto';
+import { CreateSemesterSchema, ListSemesterQuerySchema, UpdateSemesterSchema } from './dto/semester.dto';
 import { CreateCalendarEventSchema, ListCalendarEventsQuerySchema, UpdateCalendarEventSchema } from './dto/calendar-event.dto';
 import { CreateMajorSchema, UpdateMajorSchema } from './dto/major.dto';
+import { SharedReadBudget } from '../common/guards/api-throttler.guard';
 
 @Controller('school')
 export class SchoolConfigController {
@@ -102,8 +103,11 @@ export class SchoolConfigController {
   // ═══ Semesters ═════════════════════════════════════════════════════════════
 
   @Get('semesters')
-  getSemesters(@Query('academicYearId') academicYearId?: string) {
-    return this.service.getSemesters(academicYearId);
+  @SharedReadBudget()
+  getSemesters(@Query() query: unknown) {
+    const parsed = ListSemesterQuerySchema.safeParse(query ?? {});
+    if (!parsed.success) throw new BadRequestException('Pilihan tahun ajaran tidak valid.');
+    return this.service.getSemesters(parsed.data.academicYearId);
   }
 
   @Public()

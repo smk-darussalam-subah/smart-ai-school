@@ -43,15 +43,46 @@ export function jpAttendanceTotals(statuses: readonly (string | null)[]) {
 export function physicalJpStatuses(
   sessions: readonly { date: string; slots: readonly { jp: number; status: string | null }[] }[],
 ) {
+  return physicalJpAttendance(sessions).map((cell) => cell.status);
+}
+
+/** Keep the school date on deduplicated JP so all daily consumers share one basis. */
+export function physicalJpAttendance(
+  sessions: readonly { date: string; slots: readonly { jp: number; status: string | null }[] }[],
+) {
   const map = new Map<string, (string | null)[]>();
   for (const session of sessions)
     for (const slot of session.slots) {
       const key = session.date + ':' + slot.jp;
       map.set(key, [...(map.get(key) ?? []), slot.status]);
     }
-  return [...map.values()].map((values) =>
-    values.every((x) => x !== null && x === values[0]) ? values[0]! : null,
-  );
+  return [...map].map(([key, values]) => ({
+    date: key.slice(0, 10),
+    status: consistentJpStatus(values),
+  }));
+}
+
+/** One pass over physical JP, without collapsing mixed statuses into a daily label. */
+export function jpDailyTotals(cells: readonly { date: string; status: string | null }[]) {
+  const days = new Map<string, (string | null)[]>();
+  for (const cell of cells) {
+    const day = days.get(cell.date) ?? [];
+    day.push(cell.status);
+    days.set(cell.date, day);
+  }
+  return {
+    totals: jpAttendanceTotals(cells.map((cell) => cell.status)),
+    days: [...days]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, values]) => ({
+        date,
+        ...jpAttendanceTotals(values),
+      })),
+  };
+}
+
+export function consistentJpStatus(values: readonly (string | null)[]): string | null {
+  return values.length && values.every((x) => x !== null && x === values[0]) ? values[0]! : null;
 }
 
 /** Resolve immutable session timing against its retained bell profile, not Schedule edits. */

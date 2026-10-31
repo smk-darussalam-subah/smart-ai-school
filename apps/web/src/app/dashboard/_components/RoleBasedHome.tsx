@@ -449,10 +449,10 @@ export default function RoleBasedHome({
         </div>
         <div className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 md:grid-cols-4">
           {[
-            ['Siswa aktif', stats?.totalSiswa],
-            ['Rombel aktif', stats?.totalKelas],
+            ['Siswa terdaftar aktif', stats?.totalSiswa],
+            ['Rombel tahun aktif', stats?.totalKelas],
             [
-              'Kehadiran hari ini',
+              'Kehadiran harian hari ini',
               stats?.kehadiranHariIni == null ? null : `${stats.kehadiranHariIni}%`,
             ],
             ['Pipeline PPDB', stats?.ppdbLeads],

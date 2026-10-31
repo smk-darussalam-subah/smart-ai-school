@@ -1,9 +1,10 @@
 'use server';
 
-import { getServerSession } from 'next-auth';
+import { getActionSession as getServerSession } from '@/lib/action-session';
 import { authOptions } from '@/lib/auth';
 import { apiErrorMessage } from '@/lib/api';
 import { rateLimitMessage } from '@/lib/rate-limit';
+import { invalidatePublicAcademicCatalog } from '@/lib/public-academic-catalog';
 
 const API_BASE = process.env.API_URL || 'http://api:3001';
 
@@ -32,6 +33,7 @@ export async function apiAction<T = unknown>(
       };
     }
 
+    invalidatePublicAcademicCatalog(path, method);
     const text = await res.text();
     const data = text ? JSON.parse(text) as T : undefined;
     return { data, status: res.status };

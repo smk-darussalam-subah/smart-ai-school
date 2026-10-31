@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+/** Bound the authenticated bootstrap filter before it reaches PostgreSQL. */
+export const ListSemesterQuerySchema = z.object({
+  academicYearId: z.string().uuid().optional(),
+}).strict();
+
 // H2: Backend date validation — endDate must be after startDate.
 const BaseSemesterSchema = z.object({
   academicYearId: z.string().uuid(),

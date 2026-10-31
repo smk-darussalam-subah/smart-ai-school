@@ -53,6 +53,8 @@ export interface DisplayAttendanceMetric {
   present: number;
   recorded: number;
   total: number;
+  unknown?: number;
+  notRequired?: number;
 }
 
 export interface DisplayAttendancePoint {
@@ -239,7 +241,13 @@ function attendanceMetric(value: unknown): DisplayAttendanceMetric {
   const source = record(value);
   const total = integer(source.total);
   const recorded = Math.min(integer(source.recorded, total), total);
-  return { present: Math.min(integer(source.present), recorded), recorded, total };
+  return {
+    present: Math.min(integer(source.present), recorded),
+    recorded,
+    total,
+    ...(typeof source.unknown === 'number' ? { unknown: integer(source.unknown) } : {}),
+    ...(typeof source.notRequired === 'number' ? { notRequired: integer(source.notRequired) } : {}),
+  };
 }
 
 function normalizeAttendancePoint(value: unknown): DisplayAttendancePoint | null {
@@ -257,6 +265,7 @@ function normalizeAttendancePoint(value: unknown): DisplayAttendancePoint | null
       present: source.teacherPresent,
       recorded: source.teacherRecorded,
       total: source.teacherTotal,
+      unknown: source.teacherUnknown,
     }),
   };
 }

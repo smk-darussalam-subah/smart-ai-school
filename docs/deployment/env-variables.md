@@ -35,7 +35,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ## 2. PostgreSQL Database
 
-Digunakan oleh: `postgres` container, `api` service, `keycloak`, `n8n`, `metabase`
+Digunakan oleh: `postgres` container, `api` service, `keycloak`, `n8n`
 
 | Variable | Required | Default | Deskripsi | Contoh |
 |----------|----------|---------|-----------|--------|

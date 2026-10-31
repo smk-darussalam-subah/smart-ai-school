@@ -1,9 +1,10 @@
 'use server';
 
-import { getServerSession } from 'next-auth';
+import { getActionSession as getServerSession } from '@/lib/action-session';
 import { authOptions } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
 import { apiErrorMessage } from '@/lib/api';
+import { invalidatePublicAcademicCatalog } from '@/lib/public-academic-catalog';
 
 const API_BASE = process.env.API_URL ?? 'http://localhost:3001';
 
@@ -21,6 +22,7 @@ async function apiCall(path: string, method: string, body?: unknown) {
       const err = await res.json().catch(() => null);
       return { success: false, error: apiErrorMessage(err) };
     }
+    invalidatePublicAcademicCatalog(path, method);
     revalidatePath('/dashboard/tahun-ajaran');
     return { success: true, data: await res.json() };
   } catch {

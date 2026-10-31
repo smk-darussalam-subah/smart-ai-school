@@ -1,10 +1,11 @@
 const mockRequireAccess = jest.fn();
 const mockApiFetch = jest.fn();
+const mockApiFetchResult = jest.fn();
 
 jest.mock('@/app/dashboard/executive/executive-authority.server', () => ({
   requireExecutiveDashboardAccess: mockRequireAccess,
 }));
-jest.mock('@/lib/api', () => ({ apiFetch: mockApiFetch }));
+jest.mock('@/lib/api', () => ({ apiFetch: mockApiFetch, apiFetchResult: mockApiFetchResult }));
 
 import {
   fetchAcademicYears,
@@ -15,6 +16,7 @@ import {
 describe('executive Server Action authority', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockApiFetchResult.mockResolvedValue({ status: 'unavailable', message: 'Synthetic outage' });
   });
 
   it.each([

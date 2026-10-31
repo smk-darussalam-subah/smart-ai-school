@@ -39,7 +39,7 @@ function buildCsp(nonce: string, isPublicStatic: boolean): string {
     `connect-src ${connectSrc}`,
     "media-src 'none'",
     "object-src 'none'",
-    `frame-src https://www.youtube-nocookie.com${process.env.METABASE_SITE_URL ? ` ${process.env.METABASE_SITE_URL}` : ''}`,
+    'frame-src https://www.youtube-nocookie.com',
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
@@ -119,6 +119,16 @@ export async function middleware(request: NextRequest) {
     req: request,
     secret: process.env.NEXTAUTH_SECRET,
   }).catch(() => null);
+
+  // Mutations refresh at their writable HTTP/Server Action boundary. A307 to
+  // the GET-only refresh route preserves POST and causes405 (and a full-page
+  // recovery can discard drafts). Backend handlers/Server Actions still verify
+  // their own session and authorization; no mutation is executed by middleware.
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    const res = NextResponse.next({ request: { headers: requestHeaders } });
+    res.headers.set('Content-Security-Policy', csp);
+    return res;
+  }
 
   const isLogin = pathname === '/login' || pathname === '/auth';
   const query = new URL(request.url).searchParams;

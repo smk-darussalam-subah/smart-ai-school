@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import React from 'react';
 import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { authOptions } from '@/lib/auth';
@@ -10,6 +11,7 @@ import { getEffectiveRoles } from '@/lib/view-as';
 import { isMobileOnlyDashboardRoleSet } from '@/lib/dashboard-routing';
 import RoleBasedHome from './_components/RoleBasedHome';
 import type { PapanCell, PapanRow } from './_components/PapanPembelajaran';
+import AttendanceJpSummary from './akademik/_components/AttendanceJpSummary';
 
 export const metadata: Metadata = { title: 'Beranda' };
 
@@ -155,7 +157,10 @@ export default async function DashboardPage() {
     : null;
 
   const canReadStudents = authority.can('student.read');
-  const canReadClasses = authority.can('class.read') || authority.can('academic.class.read');
+  // /classes is a role-gated read; there is no class.read permission in the catalog.
+  const canReadClasses = authority.permissionCheckAvailable && authority.hasRole(
+    'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'WAKA_KESISWAAN',
+  );
   const canReadPpdb = authority.can('ppdb.read');
   const canReadSchedule = authority.can('academic.schedule.read');
   const canReadSessions = authority.can('academic.class-session.read');
@@ -173,10 +178,12 @@ export default async function DashboardPage() {
     aiStatus,
   ] = await Promise.all([
     canReadStudents
-      ? apiFetch<{ total: number }>('/students?limit=1', token)
+      ? apiFetch<{ total: number }>('/students?status=active&limit=1', token)
       : Promise.resolve(null),
-    canReadClasses ? apiFetch<{ total: number }>('/classes?limit=1', token) : Promise.resolve(null),
-    authority.can('attendance.read')
+    canReadClasses && activePeriod
+      ? apiFetch<{ total: number }>('/classes', token, { academicYear: activePeriod.academicYear.code, limit: '1' })
+      : Promise.resolve(null),
+    authority.can('academic.attendance.read') && authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_KESISWAAN')
       ? apiFetch<{ overall?: { today?: { pct?: number | null } } }>(
           '/attendance/heatmap?days=2',
           token,
@@ -215,6 +222,7 @@ export default async function DashboardPage() {
   return (
     <>
       <AiProviderBanner status={aiStatus} />
+      {authority.can('academic.attendance.read') && authority.can('academic.class-session.read') && <AttendanceJpSummary query={{ from: wibToday(), to: wibToday() }} refreshToken={Date.now()} />}
       <RoleBasedHome
         firstName={firstName}
         roles={authority.roles}

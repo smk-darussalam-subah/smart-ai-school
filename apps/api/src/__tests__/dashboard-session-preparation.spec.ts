@@ -8,6 +8,7 @@ import {
 import { BellScheduleService } from '../bell-schedule/bell-schedule.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { OperationalMonitoringService } from '../operational-monitoring/operational-monitoring.service';
+import type { StaffAttendanceService } from '../staff-attendance/staff-attendance.service';
 import { DisplayDeviceService } from '../display-devices/display-device.service';
 import { DisplayPlaybackLeaseService } from '../operational-monitoring/display-playback-lease.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -372,6 +373,7 @@ describe('monitoring segment without materialized sessions', () => {
         {} as DisplayDeviceService,
         bells as unknown as BellScheduleService,
         {} as DisplayPlaybackLeaseService,
+        {} as StaffAttendanceService,
       ),
     };
   }

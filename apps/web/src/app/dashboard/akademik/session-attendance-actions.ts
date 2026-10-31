@@ -1,5 +1,5 @@
 'use server';
-import { getServerSession } from 'next-auth';
+import { getActionSession as getServerSession } from '@/lib/action-session';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -11,7 +11,40 @@ import {
   type LearnerJp,
   type SessionRoster,
   type JpRead,
+  JpOverviewQuerySchema,
+  readJpOverview,
+  type JpOverviewQuery,
+  type JpOverview,
 } from '@/lib/session-attendance';
+
+export async function fetchSessionAttendanceOverview(
+  input: JpOverviewQuery,
+): Promise<JpRead<JpOverview>> {
+  const parsed = JpOverviewQuerySchema.safeParse(input);
+  if (!parsed.success)
+    return { state: 'error', message: 'Pilih periode dan rentang kehadiran yang valid.' };
+  const query = new URLSearchParams(
+    Object.entries(parsed.data)
+      .filter((entry): entry is [string, string | number] => entry[1] !== undefined)
+      .map(([k, v]) => [k, String(v)]),
+  );
+  const result = await apiFetchResult<unknown>(
+    '/attendance/student-sessions/overview?' + query,
+    await token(),
+  );
+  if (result.status !== 'success')
+    return {
+      state: result.status === 'forbidden' ? 'denied' : 'error',
+      message:
+        result.status === 'forbidden'
+          ? 'Anda tidak memiliki akses ke ringkasan JP ini.'
+          : 'Ringkasan JP belum dapat dimuat. Coba lagi.',
+    };
+  const data = readJpOverview(result.data, parsed.data);
+  return data
+    ? { state: 'ready', data }
+    : { state: 'error', message: 'Ringkasan JP belum dapat diverifikasi.' };
+}
 
 async function token() {
   const session = await getServerSession(authOptions);
