@@ -1,5 +1,24 @@
 # TASK QUEUE — DIIS Tahap 0 → Sprint-0 Tahap 1
 
+> **2026-11-01 — React #310: local built-browser reproduction and regression.**
+> Guru denial still protects Executive data and returns an interactive Beranda,
+> but emits #310 with the attendance provider enabled. Regression is deliberately
+> red on the unchanged application. P3 remains OPEN; no application fix, Git or
+> remote runtime action is included. See
+> `.tasks/done/REACT310-BUILT-BROWSER-2026-11-01-DONE.md`.
+
+> **2026-11-01 — React #310 passed independent local re-review.**
+> Background heartbeat/login now use an authenticated same-origin JSON boundary,
+> retaining renewed cookies without dispatching an RSC navigation. Final local
+> image: five browser journeys and nine HTTP controls PASS; attendance/guards
+> remain enabled. The standard build was canceled after about 15 minutes:
+> npm ci had completed (868.6s), and the last recorded stage was Next build.
+> The cause of the delay and full build outcome remain undetermined;
+> clean-install CI is PENDING. The verified local image reuses byte-bound
+> dependencies. P3-E01 is corrected in the REV1 evidence handoff; raw logs remain.
+> Git/staging/production HOLD. See
+> `.tasks/done/REACT310-REMEDIATION-2026-11-01-DONE.md`.
+
 > **2026-10-27 — Metabase retired by Director.** Dedicated runtime/image/volume and
 > identified mock application objects removed; native DIIS analytics retained.
 > Local Compose/ingress/CSP/shortcut cleanup verified, not committed or released.
