@@ -8,16 +8,18 @@
 //
 // Semantik fail-closed untuk seluruh route aplikasi terlindungi:
 //   • Row ada + aktif + tidak diarsipkan → IZINKAN.
-//   • Row hilang, nonaktif, diarsipkan, atau lookup DB gagal → TOLAK.
+//   • Row hilang, nonaktif atau diarsipkan → TOLAK sebagai sesi tidak berlaku.
+//   • Lookup DB gagal → TOLAK sementara (503), tanpa menyimpulkan sesi berakhir.
 // Route bootstrap/provisioning publik tetap dipisahkan melalui @Public() dan
 // tidak melewati service ini.
 // Cache TTL 5 menit (pola PermissionsService); updateActive() meng-invalidasi.
 // =============================================================================
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { UserRole, isPrimaryRole } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { PrismaService } from '../prisma/prisma.service';
+import { logoutAuditId } from './session-binding';
 
 interface CacheEntry {
   blocked: boolean;
@@ -47,7 +49,23 @@ export class UserStatusService {
    * Status akun dan primary role dibaca sebagai satu snapshot. Token Keycloak
    * boleh tertinggal saat sinkronisasi gagal, tetapi authority request tidak.
    */
-  async getAuthorizationState(keycloakId: string): Promise<UserAuthorizationState> {
+  async getAuthorizationState(
+    keycloakId: string,
+    sessionBinding?: string,
+  ): Promise<UserAuthorizationState> {
+    // Revocation is durable and deliberately not cached. A late response may
+    // restore a browser cookie, but can never restore its server authority.
+    if (sessionBinding) {
+      try {
+        const revoked = await this.prisma.auditLog.findUnique({
+          where: { id: logoutAuditId(sessionBinding) },
+          select: { id: true },
+        });
+        if (revoked) return { blocked: true, primaryRole: null };
+      } catch (error) {
+        throw this.authorityUnavailable(error);
+      }
+    }
     const cached = this.cache.get(keycloakId);
     if (cached && Date.now() < cached.expiresAt) {
       return { blocked: cached.blocked, primaryRole: cached.primaryRole };
@@ -71,11 +89,18 @@ export class UserStatusService {
       });
       return { blocked, primaryRole: blocked ? null : primaryRole };
     } catch (err) {
-      logger.error('[UserStatus] lookup gagal — akses ditolak fail-closed', {
-        errorType: err instanceof Error ? err.name : 'unknown',
-      });
-      return { blocked: true, primaryRole: null };
+      throw this.authorityUnavailable(err);
     }
+  }
+
+  private authorityUnavailable(error: unknown): ServiceUnavailableException {
+    logger.error('[UserStatus] authority unavailable — request denied temporarily', {
+      errorType: error instanceof Error ? error.name : 'unknown',
+    });
+    return new ServiceUnavailableException({
+      message: 'Layanan akun sementara tidak tersedia. Coba lagi sebentar.',
+      code: 'AUTHORITY_UNAVAILABLE',
+    });
   }
 
   /** Panggil saat updateActive/updateRole agar efek instan (tanpa tunggu TTL). */

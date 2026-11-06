@@ -149,6 +149,8 @@ describe('mixed roles through actual bootstrap controllers and global guards', (
     getAuthoritativePrimaryRole: async (id: string) => users.get(id) ?? null,
     getActivePositionCodes: async () => new Set<UserRole>(),
     hasPermission: async (id: string) => users.has(id) && id !== 'denied',
+    getEffectivePermissions: async (id: string) =>
+      new Set(users.has(id) && id !== 'denied' ? ['*'] : []),
   };
   const status = {
     getAuthorizationState: async (id: string) => ({

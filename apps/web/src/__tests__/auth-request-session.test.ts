@@ -1,3 +1,7 @@
+// Session-status HTTP is exercised separately; these tests retain their cookie/proxy boundary.
+jest.mock('../lib/server-session-status', () => ({
+  checkServerSession: jest.fn(async () => 'active'),
+}));
 import { NextRequest } from 'next/server';
 import { encode, getToken, type JWT } from 'next-auth/jwt';
 import { resolveRequestSession, persistSessionCookies } from '../lib/request-session';
@@ -138,14 +142,14 @@ describe('installed NextAuth writable request-session boundary', () => {
     expect(first.session?.accessToken).toBe(second.session?.accessToken);
     expect(second.cookies.length).toBeGreaterThan(0);
   });
-  it('uses the library chunk serializer and reconstructs a large encrypted session', async () => {
+  it('compacts legacy ID-token padding and removes obsolete cookie chunks', async () => {
     global.fetch = jest.fn().mockImplementation(async () => success());
     const { cookies } = await resolveRequestSession(
       await request('/api/auth/refresh', { idToken: 'synthetic-padding-'.repeat(600) }),
     );
     expect(
       cookies.filter((value) => /^__Secure-next-auth.session-token\.\d+=/.test(value)).length,
-    ).toBeGreaterThan(1);
+    ).toBe(0);
     const response = persistSessionCookies(new Response('{}'), cookies);
     const outputCookies = (
       response.headers as Headers & { getSetCookie(): string[] }
@@ -156,7 +160,7 @@ describe('installed NextAuth writable request-session boundary', () => {
     });
     const decoded = await getToken({ req: next, secret });
     expect(decoded?.accessToken).toBe('synthetic-refreshed-access');
-    expect(decoded?.idToken).toHaveLength('synthetic-padding-'.repeat(600).length);
+    expect(decoded?.idToken).toBeUndefined();
   });
   it.each([
     'https://outside.invalid/',

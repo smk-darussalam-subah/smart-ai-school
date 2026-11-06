@@ -223,27 +223,37 @@ export default function BerandaOrtu({
           compact
         />
       </div>
-      {/* 4. WA notification (latest absence) */}
+      {/* 4. Latest WA notification */}
       {recentWa && (
         <div
           className="mb-3.5 rounded-[var(--r)] border p-3.5"
-          style={{ borderColor: 'rgba(245,158,11,.2)', background: 'rgba(245,158,11,.04)' }}
+          style={{
+            borderColor: recentWa.status === 'info' ? 'var(--border)' : 'rgba(245,158,11,.2)',
+            background: recentWa.status === 'info' ? 'var(--bg2)' : 'rgba(245,158,11,.04)',
+          }}
         >
           <div className="flex items-center gap-2.5">
             <div
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-              style={{ background: 'rgba(245,158,11,.15)' }}
+              style={{
+                background: recentWa.status === 'info' ? 'var(--surface)' : 'rgba(245,158,11,.15)',
+              }}
             >
-              <MessageCircle className="h-[18px] w-[18px] text-[var(--amber)]" />
+              <MessageCircle
+                className={`h-[18px] w-[18px] ${recentWa.status === 'info' ? 'text-[var(--muted)]' : 'text-[var(--amber)]'}`}
+              />
             </div>
             <div className="min-w-0 flex-1">
               <b className="text-[12px]">Notifikasi WA Terakhir</b>
               <small className="block text-[10px] text-[var(--muted)]">
-                {recentWa.date} · {recentWa.session} — {recentWa.status.toUpperCase()}
+                {recentWa.date} · {recentWa.session} —{' '}
+                {recentWa.status === 'info' ? 'Informasi' : recentWa.status.toUpperCase()}
               </small>
             </div>
-            <span className="rounded-md bg-[rgba(245,158,11,.15)] px-2 py-1 text-[9px] font-extrabold text-[var(--amber)]">
-              {recentWa.status}
+            <span
+              className={`rounded-md px-2 py-1 text-[9px] font-extrabold ${recentWa.status === 'info' ? 'bg-[var(--surface)] text-[var(--muted)]' : 'bg-[rgba(245,158,11,.15)] text-[var(--amber)]'}`}
+            >
+              {recentWa.status === 'info' ? 'Informasi' : recentWa.status}
             </span>
           </div>
         </div>

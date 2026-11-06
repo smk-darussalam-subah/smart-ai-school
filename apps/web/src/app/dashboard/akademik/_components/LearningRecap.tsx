@@ -62,7 +62,7 @@ export default function LearningRecap(props: Props) {
     key: string;
     read: LearningRead<LearningSession[]>;
   } | null>(null);
-  const [selected, setSelected] = useState<string | null>(null),
+  const [selected, setSelected] = useState<string | null>(props.initialSessionId ?? null),
     [expanded, setExpanded] = useState<Set<string>>(new Set()),
     [detailTab, setDetailTab] = useState('summary');
   const supportingFocus = useRef<{
@@ -103,6 +103,10 @@ export default function LearningRecap(props: Props) {
   const read = snapshot?.key === key ? snapshot.read : null;
   const currentDetail = detail?.key === detailKey ? detail.read : null;
   useEffect(() => {
+    setSelected(props.initialSessionId ?? null);
+    setDetailTab('summary');
+  }, [props.initialSessionId]);
+  useEffect(() => {
     let active = true;
     if (!canRead) return;
     fetchLearningRecap({ academicYear, semester, scope, from, until })
@@ -138,7 +142,20 @@ export default function LearningRecap(props: Props) {
     if (!selected || !canRead) return;
     fetchLearningContext(selected, scope)
       .then((value) => {
-        if (active) setDetail({ key: detailKey, read: value });
+        if (active)
+          setDetail({
+            key: detailKey,
+            read:
+              value.state === 'ready' &&
+              (value.data.session.academicYear.code !== academicYear ||
+                value.data.session.semester.number !== semester)
+                ? {
+                    state: 'error',
+                    message:
+                      'Sesi tidak sesuai periode pilihan. Buka kembali dari jadwal atau pilih periode yang sesuai.',
+                  }
+                : value,
+          });
       })
       .catch(() => {
         if (active)
@@ -150,7 +167,7 @@ export default function LearningRecap(props: Props) {
     return () => {
       active = false;
     };
-  }, [selected, scope, detailKey, canRead]);
+  }, [selected, scope, detailKey, canRead, academicYear, semester]);
   useEffect(() => {
     if (selected) detailHeading.current?.focus();
   }, [selected]);

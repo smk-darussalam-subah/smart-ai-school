@@ -8,6 +8,7 @@ export const ACADEMIC_WORKFLOW_VIEWS = [
   'remedial-status',
   'assessment-overview',
   'learning-recap',
+  'attendance-recap',
 ] as const;
 
 export type AcademicWorkflowView = (typeof ACADEMIC_WORKFLOW_VIEWS)[number];
@@ -15,16 +16,31 @@ export type AcademicWorkflowPersona = 'teacher' | 'principal' | 'student' | 'par
 
 const VIEW_SET = new Set<string>(ACADEMIC_WORKFLOW_VIEWS);
 const PERSONA_VIEWS: Record<AcademicWorkflowPersona, ReadonlySet<AcademicWorkflowView>> = {
-  teacher: new Set(['overview', 'teaching', 'module-authoring', 'question-bank', 'remedial', 'learning-recap']),
-  principal: new Set(['overview', 'module-authoring', 'assessment-overview', 'learning-recap']),
+  teacher: new Set([
+    'overview',
+    'teaching',
+    'module-authoring',
+    'question-bank',
+    'assessment',
+    'remedial',
+    'learning-recap',
+    'attendance-recap',
+  ]),
+  principal: new Set([
+    'overview',
+    'module-authoring',
+    'assessment-overview',
+    'learning-recap',
+    'attendance-recap',
+  ]),
   student: new Set(['overview', 'assessment', 'remedial-status']),
   parent: new Set(['overview', 'remedial-status']),
 };
 
 export interface AcademicWorkflowPresentation {
-  teacherScreen: 'ringkasan' | 'pembelajaran' | 'penilaian' | 'sesi';
-  teacherAssessmentPanel: 'nilai' | 'bank' | 'remedial';
-  leadershipScreen: 'beranda' | 'modul' | 'sumatif' | 'sesi';
+  teacherScreen: 'ringkasan' | 'pembelajaran' | 'penilaian' | 'sesi' | 'kehadiran';
+  teacherAssessmentPanel: 'nilai' | 'bank' | 'remedial' | 'sesi';
+  leadershipScreen: 'beranda' | 'modul' | 'sumatif' | 'sesi' | 'kehadiran';
   studentScreen: 'beranda' | 'tugas' | 'nilai';
   studentTaskFilter: 'all' | 'assessment' | 'remedial';
   studentGradeFilter: 'all' | 'remedial';
@@ -59,11 +75,25 @@ export function academicWorkflowHref(view: AcademicWorkflowView): string {
   return `/dashboard/akademik?view=${encodeURIComponent(view)}`;
 }
 
+/** A new official period must not inherit an old date range or selected session. */
+export function academicPeriodQuery(search: string, academicYear: string, semester: number) {
+  const query = new URLSearchParams(search);
+  for (const key of [...query.keys()]) {
+    if (key.startsWith('attendance') || key === 'sessionId') query.delete(key);
+  }
+  query.set('academicYear', academicYear);
+  query.set('semester', String(semester));
+  return query;
+}
+
 export function academicWorkflowPresentation(
   view: AcademicWorkflowView | null,
 ): AcademicWorkflowPresentation {
   if (!view || view === 'overview' || view === 'teaching') return DEFAULT_PRESENTATION;
-  if (view === 'learning-recap') return { ...DEFAULT_PRESENTATION, teacherScreen: 'sesi', leadershipScreen: 'sesi' };
+  if (view === 'learning-recap')
+    return { ...DEFAULT_PRESENTATION, teacherScreen: 'sesi', leadershipScreen: 'sesi' };
+  if (view === 'attendance-recap')
+    return { ...DEFAULT_PRESENTATION, teacherScreen: 'kehadiran', leadershipScreen: 'kehadiran' };
   if (view === 'module-authoring') {
     return {
       ...DEFAULT_PRESENTATION,
@@ -81,6 +111,8 @@ export function academicWorkflowPresentation(
   if (view === 'assessment') {
     return {
       ...DEFAULT_PRESENTATION,
+      teacherScreen: 'penilaian',
+      teacherAssessmentPanel: 'sesi',
       studentScreen: 'tugas',
       studentTaskFilter: 'assessment',
     };
@@ -103,13 +135,12 @@ export function academicWorkflowPresentation(
   return { ...DEFAULT_PRESENTATION, leadershipScreen: 'sumatif' };
 }
 
-export function filterStudentTasksForWorkflow<T extends {
-  assessmentSessionId?: string | null;
-  purpose?: 'regular' | 'remedial';
-}>(
-  tasks: readonly T[],
-  filter: AcademicWorkflowPresentation['studentTaskFilter'],
-): T[] {
+export function filterStudentTasksForWorkflow<
+  T extends {
+    assessmentSessionId?: string | null;
+    purpose?: 'regular' | 'remedial';
+  },
+>(tasks: readonly T[], filter: AcademicWorkflowPresentation['studentTaskFilter']): T[] {
   if (filter === 'all') return [...tasks];
   if (filter === 'remedial') return tasks.filter((task) => task.purpose === 'remedial');
   return tasks.filter((task) => Boolean(task.assessmentSessionId) && task.purpose !== 'remedial');

@@ -77,12 +77,12 @@ export interface OrtuPengumuman {
   body: string;
 }
 
-// ── WA History (absence notifications — alpha/izin/sakit only) ─────────────
+// ── WA History (absence decisions and general notifications) ─────────────
 
 export interface OrtuWAHistory {
   date: string;
   session: string;
-  status: 'izin' | 'sakit' | 'alpha';
+  status: 'izin' | 'sakit' | 'alpha' | 'info';
   sentTo: string;
   time: string;
   note: string;

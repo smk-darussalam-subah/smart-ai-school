@@ -7,7 +7,10 @@ import { NextAuthOptions, Session } from 'next-auth';
 import { JWT } from 'next-auth/jwt';
 import KeycloakProvider from 'next-auth/providers/keycloak';
 import { PRIMARY_ROLES } from '@smk/auth';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { encodeBoundedSession } from './session-safety';
+import { decode } from 'next-auth/jwt';
+import { checkServerSession } from './server-session-status';
 import { z } from 'zod';
 import {
   hasUsableAccessToken,
@@ -33,7 +36,7 @@ declare module 'next-auth/jwt' {
   interface JWT {
     accessToken?: string;
     refreshToken?: string;
-    idToken?: string; // untuk federated logout (id_token_hint ke Keycloak end-session)
+    idToken?: string; // Legacy decode only; new cookies omit this duplicate token.
     expiresAt?: number;
     roles?: string[];
     keycloakId?: string;
@@ -41,6 +44,7 @@ declare module 'next-auth/jwt' {
     error?: string;
     refreshedAt?: number;
     refreshRetryAt?: number;
+    browserSessionId?: string;
   }
 }
 
@@ -179,6 +183,20 @@ export const authOptions: NextAuthOptions = {
   },
 
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      try {
+        const destination = new URL(url, baseUrl);
+        if (
+          url.length <= 1024 &&
+          encodeURIComponent(destination.href).length <= 1024 &&
+          destination.origin === new URL(baseUrl).origin
+        )
+          return destination.href;
+      } catch {
+        /* Return to the trusted application origin. */
+      }
+      return new URL('/dashboard', baseUrl).href;
+    },
     // ------------------------------------------------------------------
     // jwt: called on every token creation/refresh
     // ------------------------------------------------------------------
@@ -225,7 +243,7 @@ export const authOptions: NextAuthOptions = {
           ...token,
           accessToken: account.access_token,
           refreshToken: account.refresh_token,
-          idToken: account.id_token,
+          browserSessionId: randomUUID(),
           expiresAt: account.expires_at,
           roles: extractKeycloakRoles(p),
           keycloakId: profile.sub,
@@ -244,17 +262,29 @@ export const authOptions: NextAuthOptions = {
     // session: what the client receives via useSession()
     // ------------------------------------------------------------------
     async session({ session, token }): Promise<Session> {
+      const usable = hasUsableAccessToken(token);
+      const status = usable ? await checkServerSession(token.accessToken!) : null;
+      const error =
+        status === 'revoked'
+          ? 'SessionRevoked'
+          : status === 'unsupported'
+            ? 'SessionBindingUnavailable'
+            : status === 'unavailable'
+              ? 'RefreshAccessTokenTemporaryError'
+              : token.error;
       return {
         ...session,
-        accessToken: hasUsableAccessToken(token) ? token.accessToken : undefined,
+        accessToken: usable && status === 'active' ? token.accessToken : undefined,
         accessTokenExpiresAt: token.expiresAt,
         roles: token.roles,
         keycloakId: token.keycloakId,
         consentVersion: token.consentVersion,
-        error: token.error,
+        error,
       };
     },
   },
+
+  jwt: { encode: encodeBoundedSession, decode },
 
   pages: {
     signIn: '/login',

@@ -508,7 +508,7 @@ describe('academic operational UI contracts', () => {
 
     expect(academicPage).toContain("canManageReportCards={!authority.hasRole('SUPER_ADMIN')}");
     expect(workspace).toContain("NAV_ALL.filter((n) => n.key !== 'rapor')");
-    expect(workspace).toContain('useWaliClasses(canManageReportCards,');
+    expect(workspace).toContain('useWaliClasses(canManageReportCards || canReadClassSessions,');
     expect(workspace).toContain(
       "canManageReportCards && (waliStatus !== 'ready' || waliClasses.length > 0)",
     );

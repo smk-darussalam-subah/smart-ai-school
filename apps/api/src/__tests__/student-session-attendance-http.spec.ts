@@ -30,7 +30,19 @@ describe('student JP HTTP period parsing and ownership', () => {
   let permitted = true;
   const permission = {
     hasPermission: jest.fn(async () => permitted),
+    getEffectivePermissions: jest.fn(async () => new Set<string>(permitted ? ['*'] : [])),
     hasFreshPermission: jest.fn(async () => permitted),
+    findFreshActorWithPermission: jest.fn(
+      async (
+        key: ActorKey,
+        required: string | ((role: string) => string | null),
+        db: { user: typeof tx.user },
+      ) => {
+        const actor = await db.user.findFirst({ where: { keycloakId: key } });
+        const code = actor && (typeof required === 'string' ? required : required(actor.role));
+        return permitted && code ? actor : null;
+      },
+    ),
     getAuthoritativePrimaryRole: async (key: ActorKey) => actors[key]?.role ?? null,
     getActivePositionCodes: async () => new Set<string>(),
   };

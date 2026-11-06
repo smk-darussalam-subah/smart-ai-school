@@ -19,14 +19,14 @@ import { z } from 'zod';
 // period-bound position code and must not be assigned as a Keycloak realm role.
 export const PRIMARY_ROLES = [
   'SUPER_ADMIN',
-  'TATA_USAHA',       // Staf administrasi: keuangan, PPDB admin, data siswa
+  'TATA_USAHA', // Staf administrasi: keuangan, PPDB admin, data siswa
   'GURU',
   'SISWA',
   'ORANG_TUA',
-  'INDUSTRI',         // Mitra industri: PKL/Prakerin, BKK, rekrutmen
+  'INDUSTRI', // Mitra industri: PKL/Prakerin, BKK, rekrutmen
 ] as const;
 
-export type PrimaryRole = typeof PRIMARY_ROLES[number];
+export type PrimaryRole = (typeof PRIMARY_ROLES)[number];
 export const PrimaryRoleSchema = z.enum(PRIMARY_ROLES);
 
 /** Position codes from Struktur Organisasi. They are not Keycloak realm roles. */
@@ -49,7 +49,7 @@ export const POSITION_CODES = [
   'OPERATOR_DAPODIK',
 ] as const;
 
-export type PositionCode = typeof POSITION_CODES[number];
+export type PositionCode = (typeof POSITION_CODES)[number];
 
 // 21 unique values: 6 identity roles + 15 position-only codes.
 export const UserRole = z.enum([
@@ -92,22 +92,30 @@ export function isPrimaryRole(role: string): role is PrimaryRole {
 // ── JWT Payload dari Keycloak ─────────────────────────────────────────────────
 
 export const KeycloakTokenPayloadSchema = z.object({
-  sub: z.string(),                          // Keycloak user ID (UUID)
+  sub: z.string(), // Keycloak user ID (UUID)
   email: z.string().email().optional(),
   email_verified: z.boolean().optional(),
   preferred_username: z.string().optional(),
   given_name: z.string().optional(),
   family_name: z.string().optional(),
-  realm_access: z.object({
-    roles: z.array(z.string()),
-  }).optional(),
-  resource_access: z.record(z.object({
-    roles: z.array(z.string()),
-  })).optional(),
+  realm_access: z
+    .object({
+      roles: z.array(z.string()),
+    })
+    .optional(),
+  resource_access: z
+    .record(
+      z.object({
+        roles: z.array(z.string()),
+      }),
+    )
+    .optional(),
   iat: z.number(),
   exp: z.number(),
   iss: z.string(),
   aud: z.union([z.string(), z.array(z.string())]).optional(),
+  sid: z.string().min(1).max(255).optional(),
+  session_state: z.string().min(1).max(255).optional(),
 });
 
 export type KeycloakTokenPayload = z.infer<typeof KeycloakTokenPayloadSchema>;
@@ -122,6 +130,9 @@ export interface AuthUser {
   fullName: string;
   /** Verified JWT iat, used only for monotonic security bindings. */
   tokenIssuedAt?: number;
+  /** Opaque, server-derived revocation binding. Never supplied by a client DTO. */
+  sessionBinding?: string;
+  sessionBindingKind?: 'oidc' | 'token';
 }
 
 // ── JWKS Client untuk verifikasi token ──────────────────────────────────────
@@ -150,6 +161,18 @@ function getJwksClient(): jwksClient.JwksClient {
  * @throws Error jika token invalid atau expired
  */
 export async function verifyKeycloakToken(token: string): Promise<KeycloakTokenPayload> {
+  return verifyKeycloakSignature(token, false);
+}
+
+/** Signature-verified revocation proof only, never normal authorization. */
+export async function verifyKeycloakLogoutProof(token: string): Promise<KeycloakTokenPayload> {
+  return verifyKeycloakSignature(token, true);
+}
+
+async function verifyKeycloakSignature(
+  token: string,
+  ignoreExpiration: boolean,
+): Promise<KeycloakTokenPayload> {
   const client = getJwksClient();
 
   const decoded = jwt.decode(token, { complete: true });
@@ -167,6 +190,7 @@ export async function verifyKeycloakToken(token: string): Promise<KeycloakTokenP
   const verified = jwt.verify(token, publicKey, {
     issuer,
     algorithms: ['RS256'],
+    ignoreExpiration,
   });
 
   return KeycloakTokenPayloadSchema.parse(verified);
@@ -177,16 +201,17 @@ export async function verifyKeycloakToken(token: string): Promise<KeycloakTokenP
  */
 export function extractAuthUser(payload: KeycloakTokenPayload): AuthUser {
   const realmRoles = payload.realm_access?.roles || [];
-  const validRoles = realmRoles.filter((r): r is UserRole =>
-    isPrimaryRole(r)
-  );
+  const validRoles = realmRoles.filter((r): r is UserRole => isPrimaryRole(r));
 
   return {
     keycloakId: payload.sub,
     email: payload.email || '',
     username: payload.preferred_username || payload.sub,
     roles: validRoles,
-    fullName: [payload.given_name, payload.family_name].filter(Boolean).join(' ') || payload.preferred_username || '',
+    fullName:
+      [payload.given_name, payload.family_name].filter(Boolean).join(' ') ||
+      payload.preferred_username ||
+      '',
     tokenIssuedAt: payload.iat,
   };
 }

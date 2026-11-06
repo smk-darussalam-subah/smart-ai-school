@@ -1,0 +1,9 @@
+# Pemeriksaan akhir Guru/JP — 3 November 2026
+
+Mandat penyelesaian hingga P3 ditindaklanjuti lokal. Baseline102 path cocok102/102; tidak ada drift awal/index. Tiga kelompok P3 dibuktikan dan diperbaiki: narasi analisis KKTP memakai75 tetap; panel jabatan tidak selaras URL/Kembali/Maju; fokus/Escape dialog asesmen dan koreksi esai, termasuk kondisi kosong sesudah simpan. Status teknis pada dialog diganti padanan Indonesia yang sudah ada. Tidak ada kalkulasi nilai/JP, izin backend, dependency, schema atau runtime live diubah.
+
+Bukti failed-before: ANALYSIS-BEFORE-VALID (13 assertion); history-before; dialog-before. Bukti final: Web122suite/1555tes, API59 recap (22unit+37PG/HTTP) dan57 assessment; built browser terikat image accepted. Rincian kontrol unik dan screenshot pada output/teacher-jp-final-closure-20261103. Dialog menggunakan primitive DIIS, fokus kembali, nested layer di depan, Escape tidak menutup saat simpan. Metadata kosong tidak dianggap gagal/tuntas; angka resmi tetap dari server.
+
+TARGET NOL RESIDUAL BELUM TERCAPAI. #418 historis tidak terulang pada36 perjalanan image asal serta perjalanan final; ini bukti tidak tereproduksi, bukan root-cause closure. Tidak menambah suppressHydrationWarning, mematikan SSR/presensi/guard, atau menghapus receipt gagal. Keterbatasan histori, kebutuhan koreksi yang ditunda, advisory, perangkat/SSO/ingress/capacity dan acceptance staging/production tetap dibedakan dari defect lokal.
+
+Semua hasil ini verifikasi Executor, bukan PASS independen. Manifest final/preservasi, output test, batas adapter dan cleanup ada di handoff wrapper. Git/index/staging/production/commissioning tetap HOLD. Berikutnya reviewer independen GPT-6.1 Sol / high pada delta terikat dan investigasi #418 berbasis observasi baru; actual model/effort tidak terverifikasi.

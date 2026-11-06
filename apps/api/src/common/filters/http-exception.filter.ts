@@ -15,7 +15,7 @@ interface ErrorResponse {
   timestamp: string;
   path: string;
   requestId?: string;
-  code?: 'ASSESSMENT_WRITE_BUSY';
+  code?: 'ASSESSMENT_WRITE_BUSY' | 'JP_READ_BUSY' | 'AUTHORITY_UNAVAILABLE';
 }
 
 @Catch()
@@ -28,7 +28,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: string | string[] = 'Terjadi kesalahan pada server';
     let errorType = 'Internal Server Error';
-    let safeCode: 'ASSESSMENT_WRITE_BUSY' | undefined;
+    let safeCode: ErrorResponse['code'];
 
     if (exception instanceof HttpException) {
       statusCode = exception.getStatus();
@@ -40,8 +40,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
         const resp = exceptionResponse as Record<string, unknown>;
         message = (resp.message as string | string[]) || message;
         errorType = (resp.error as string) || exception.name;
-        if (statusCode === 503 && resp.code === 'ASSESSMENT_WRITE_BUSY') {
-          safeCode = 'ASSESSMENT_WRITE_BUSY';
+        if (
+          statusCode === 503 &&
+          (resp.code === 'ASSESSMENT_WRITE_BUSY' ||
+            resp.code === 'JP_READ_BUSY' ||
+            resp.code === 'AUTHORITY_UNAVAILABLE')
+        ) {
+          safeCode = resp.code;
           reply.header('Retry-After', '2');
         }
       }

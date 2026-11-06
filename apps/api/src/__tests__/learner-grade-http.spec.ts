@@ -29,6 +29,7 @@ describe('R08 grade HTTP permission is bound to authoritative persona', () => {
     update: jest.fn(),
   };
   const permissions = {
+    getEffectivePermissions: jest.fn(async () => grants),
     getAuthoritativePrimaryRole: jest.fn(async () => primary),
     getActivePositionCodes: jest.fn(async () => positions),
     hasPermission: jest.fn(

@@ -41,6 +41,7 @@ export function LearningStatusBadge({ status }: { status: LearningStatus }) {
 }
 
 export interface LearningRecapProps {
+  initialSessionId?: string;
   academicYear: string;
   semester: number;
   scope: LearningScope;
@@ -56,7 +57,7 @@ export interface LearningRecapProps {
 export function toTeachingGuide(row: LearningSession): TodayClass {
   return {
     classSessionId: row.id,
-    serviceDate: row.serviceDate.slice(0,10),
+    serviceDate: row.serviceDate.slice(0, 10),
     scheduleId: row.scheduleId,
     assignmentId: row.teachingAssignmentId,
     classId: row.classId,

@@ -11,7 +11,8 @@ import { getEffectiveRoles } from '@/lib/view-as';
 import { isMobileOnlyDashboardRoleSet } from '@/lib/dashboard-routing';
 import RoleBasedHome from './_components/RoleBasedHome';
 import type { PapanCell, PapanRow } from './_components/PapanPembelajaran';
-import AttendanceJpSummary from './akademik/_components/AttendanceJpSummary';
+import TeacherHome from './_components/TeacherHome';
+import { loadTeacherHome } from '@/lib/teacher-home-server';
 
 export const metadata: Metadata = { title: 'Beranda' };
 
@@ -39,6 +40,8 @@ interface CalendarApi {
   name: string;
   startDate: string;
   endDate: string;
+  startAt?: string | null;
+  location?: string | null;
 }
 interface ClassSessionApi {
   canOperate?: boolean;
@@ -102,7 +105,9 @@ function buildPapanRows(list: ScheduleApi[]): PapanRow[] {
           room: schedule.room,
         };
         const prior = entry.cells[index];
-        entry.cells[index] = prior ? { ...prior, sessions: [...(prior.sessions ?? [prior]),next] } : next;
+        entry.cells[index] = prior
+          ? { ...prior, sessions: [...(prior.sessions ?? [prior]), next] }
+          : next;
       }
     }
   }
@@ -151,16 +156,82 @@ export default async function DashboardPage() {
     apiFetch<ActiveAcademicYear>('/school/academic-years/active', token),
     apiFetch<ActiveSemester>('/school/semesters/active', token),
   ]);
-  const activePeriod = selectAcademicPeriod(semester,[],{});
-  const periodLabel = activePeriod && academicYear
-    ? `${activePeriod.academicYear.code} · Semester ${activePeriod.number}`
-    : null;
+  const activePeriod = selectAcademicPeriod(semester, [], {});
+  const periodLabel =
+    activePeriod && academicYear
+      ? `${activePeriod.academicYear.code} · Semester ${activePeriod.number}`
+      : null;
+
+  if (identityRoles.includes('GURU')) {
+    const today = wibToday();
+    const [home, agenda] = await Promise.all([
+      loadTeacherHome(
+        token,
+        today,
+        activePeriod
+          ? { academicYear: activePeriod.academicYear.code, semester: activePeriod.number }
+          : null,
+        (permission) => authority.can(permission),
+      ),
+      academicYear
+        ? apiFetchResult<CalendarApi[]>('/school/calendar', token, {
+            academicYearId: academicYear.id,
+          })
+        : null,
+    ]);
+    return (
+      <TeacherHome
+        firstName={firstName}
+        periodLabel={periodLabel}
+        date={today}
+        generatedAt={new Date().toISOString()}
+        data={home}
+        attendancePeriod={
+          activePeriod &&
+          authority.can('academic.attendance.read') &&
+          authority.can('academic.class-session.read')
+            ? { academicYear: activePeriod.academicYear.code, semester: activePeriod.number }
+            : undefined
+        }
+        canOperate={authority.can('academic.class-session.manage')}
+        canCheckin={authority.can('staff.attendance.checkin')}
+        leadership={authority.hasRole('KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'KAPROG')}
+        canManageCalendar={authority.can('school.calendar.manage')}
+        agenda={
+          agenda?.status === 'success'
+            ? agenda.data
+                .filter((a) => a.endDate.slice(0, 10) >= today)
+                .map((a) => ({
+                  id: a.id,
+                  name: a.name,
+                  date: a.startDate.slice(0, 10),
+                  time: a.startAt
+                    ? new Intl.DateTimeFormat('id-ID', {
+                        timeZone: 'Asia/Jakarta',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      }).format(new Date(a.startAt))
+                    : null,
+                  location: a.location ?? null,
+                }))
+            : []
+        }
+      />
+    );
+  }
 
   const canReadStudents = authority.can('student.read');
   // /classes is a role-gated read; there is no class.read permission in the catalog.
-  const canReadClasses = authority.permissionCheckAvailable && authority.hasRole(
-    'SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'GURU', 'WAKA_KURIKULUM', 'WAKA_KESISWAAN',
-  );
+  const canReadClasses =
+    authority.permissionCheckAvailable &&
+    authority.hasRole(
+      'SUPER_ADMIN',
+      'KEPALA_SEKOLAH',
+      'TATA_USAHA',
+      'GURU',
+      'WAKA_KURIKULUM',
+      'WAKA_KESISWAAN',
+    );
   const canReadPpdb = authority.can('ppdb.read');
   const canReadSchedule = authority.can('academic.schedule.read');
   const canReadSessions = authority.can('academic.class-session.read');
@@ -181,9 +252,13 @@ export default async function DashboardPage() {
       ? apiFetch<{ total: number }>('/students?status=active&limit=1', token)
       : Promise.resolve(null),
     canReadClasses && activePeriod
-      ? apiFetch<{ total: number }>('/classes', token, { academicYear: activePeriod.academicYear.code, limit: '1' })
+      ? apiFetch<{ total: number }>('/classes', token, {
+          academicYear: activePeriod.academicYear.code,
+          limit: '1',
+        })
       : Promise.resolve(null),
-    authority.can('academic.attendance.read') && authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_KESISWAAN')
+    authority.can('academic.attendance.read') &&
+    authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_KESISWAAN')
       ? apiFetch<{ overall?: { today?: { pct?: number | null } } }>(
           '/attendance/heatmap?days=2',
           token,
@@ -196,11 +271,19 @@ export default async function DashboardPage() {
       ? apiFetch<{ total: number }>('/rpp?status=submitted&limit=1', token)
       : Promise.resolve(null),
     canReadSchedule && dayOfWeek > 0
-      ? academicPagesResult<ScheduleApi>(periodPath(`/schedules?dayOfWeek=${dayOfWeek}`, activePeriod), token)
+      ? academicPagesResult<ScheduleApi>(
+          periodPath(`/schedules?dayOfWeek=${dayOfWeek}`, activePeriod),
+          token,
+        )
       : Promise.resolve(successfulEmpty({ data: [] as ScheduleApi[] })),
     academicYear
-      ? apiFetchResult<CalendarApi[]>('/school/calendar', token, { academicYearId: academicYear.id })
-      : Promise.resolve({ status: 'unavailable', message: 'Periode aktif belum tersedia.' } as ApiFetchResult<CalendarApi[]>),
+      ? apiFetchResult<CalendarApi[]>('/school/calendar', token, {
+          academicYearId: academicYear.id,
+        })
+      : Promise.resolve({
+          status: 'unavailable',
+          message: 'Periode aktif belum tersedia.',
+        } as ApiFetchResult<CalendarApi[]>),
     canReadSessions
       ? academicPagesResult<ClassSessionApi>(`/class-sessions?date=${wibToday()}`, token)
       : Promise.resolve(successfulEmpty({ data: [] as ClassSessionApi[] })),
@@ -222,12 +305,18 @@ export default async function DashboardPage() {
   return (
     <>
       <AiProviderBanner status={aiStatus} />
-      {authority.can('academic.attendance.read') && authority.can('academic.class-session.read') && <AttendanceJpSummary query={{ from: wibToday(), to: wibToday() }} refreshToken={Date.now()} />}
       <RoleBasedHome
         firstName={firstName}
         roles={authority.roles}
         permissions={authority.permissions}
         periodLabel={periodLabel}
+        attendancePeriod={
+          activePeriod &&
+          authority.can('academic.attendance.read') &&
+          authority.can('academic.class-session.read')
+            ? { academicYear: activePeriod.academicYear.code, semester: activePeriod.number }
+            : undefined
+        }
         stats={{
           totalSiswa: students?.total ?? null,
           totalKelas: classes?.total ?? null,
@@ -241,6 +330,14 @@ export default async function DashboardPage() {
           name: item.name,
           date: item.startDate.slice(0, 10),
           endDate: item.endDate.slice(0, 10),
+          time: item.startAt
+            ? new Intl.DateTimeFormat('id-ID', {
+                timeZone: 'Asia/Jakarta',
+                hour: '2-digit',
+                minute: '2-digit',
+              }).format(new Date(item.startAt))
+            : null,
+          location: item.location ?? null,
         }))}
         sessions={(sessions.status === 'success' ? sessions.data.data : []).map((item) => ({
           id: item.id,
@@ -250,8 +347,14 @@ export default async function DashboardPage() {
           scheduledStartAt: item.scheduledStartAt,
           scheduledEndAt: item.scheduledEndAt,
           status: item.status,
-          canStart: item.canOperate === true && authority.can('academic.class-session.manage') && ['SCHEDULED', 'REASSIGNED'].includes(item.status),
-          canComplete: item.canOperate === true && authority.can('academic.class-session.manage') && item.status === 'STARTED',
+          canStart:
+            item.canOperate === true &&
+            authority.can('academic.class-session.manage') &&
+            ['SCHEDULED', 'REASSIGNED'].includes(item.status),
+          canComplete:
+            item.canOperate === true &&
+            authority.can('academic.class-session.manage') &&
+            item.status === 'STARTED',
         }))}
         monitoringSummary={
           monitoring

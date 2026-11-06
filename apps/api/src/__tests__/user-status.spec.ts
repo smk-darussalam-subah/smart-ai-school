@@ -29,7 +29,13 @@ function buildService(): Promise<UserStatusService> {
   return Test.createTestingModule({
     providers: [
       UserStatusService,
-      { provide: PrismaService, useValue: { user: { findUnique: mockFindUnique } } },
+      {
+        provide: PrismaService,
+        useValue: {
+          auditLog: { findUnique: jest.fn(async () => null) },
+          user: { findUnique: mockFindUnique },
+        },
+      },
     ],
   })
     .compile()
@@ -75,7 +81,10 @@ describe('UserStatusService (2J-0 A4b)', () => {
   it('error DB → ditolak fail-closed dan pulih segera setelah DB kembali', async () => {
     const svc = await buildService();
     mockFindUnique.mockRejectedValue(new Error('db down'));
-    expect(await svc.isBlocked('kc-x')).toBe(true);
+    await expect(svc.isBlocked('kc-x')).rejects.toMatchObject({
+      status: 503,
+      response: { code: 'AUTHORITY_UNAVAILABLE' },
+    });
     mockFindUnique.mockResolvedValue({ isActive: true, deletedAt: null, role: 'GURU' });
     expect(await svc.isBlocked('kc-x')).toBe(false);
   });
@@ -119,7 +128,13 @@ describe('KeycloakGuard + UserStatus (integrasi)', () => {
         KeycloakGuard,
         Reflector,
         UserStatusService,
-        { provide: PrismaService, useValue: { user: { findUnique: mockFindUnique } } },
+        {
+          provide: PrismaService,
+          useValue: {
+            auditLog: { findUnique: jest.fn(async () => null) },
+            user: { findUnique: mockFindUnique },
+          },
+        },
       ],
     }).compile();
     const guard = module.get(KeycloakGuard);
@@ -127,7 +142,7 @@ describe('KeycloakGuard + UserStatus (integrasi)', () => {
     mockFindUnique.mockReset();
     mockFindUnique.mockResolvedValue({ isActive: false, deletedAt: null, role: 'GURU' });
     await expect(guard.canActivate(ctx())).rejects.toThrow(UnauthorizedException);
-    await expect(guard.canActivate(ctx())).rejects.toThrow('Akun dinonaktifkan');
+    await expect(guard.canActivate(ctx())).rejects.toThrow('Sesi tidak lagi berlaku');
   });
 
   it('user aktif → lolos, request.user terisi', async () => {
@@ -136,7 +151,13 @@ describe('KeycloakGuard + UserStatus (integrasi)', () => {
         KeycloakGuard,
         Reflector,
         UserStatusService,
-        { provide: PrismaService, useValue: { user: { findUnique: mockFindUnique } } },
+        {
+          provide: PrismaService,
+          useValue: {
+            auditLog: { findUnique: jest.fn(async () => null) },
+            user: { findUnique: mockFindUnique },
+          },
+        },
       ],
     }).compile();
     const guard = module.get(KeycloakGuard);
@@ -152,7 +173,13 @@ describe('KeycloakGuard + UserStatus (integrasi)', () => {
         KeycloakGuard,
         Reflector,
         UserStatusService,
-        { provide: PrismaService, useValue: { user: { findUnique: mockFindUnique } } },
+        {
+          provide: PrismaService,
+          useValue: {
+            auditLog: { findUnique: jest.fn(async () => null) },
+            user: { findUnique: mockFindUnique },
+          },
+        },
       ],
     }).compile();
     mockFindUnique.mockReset();

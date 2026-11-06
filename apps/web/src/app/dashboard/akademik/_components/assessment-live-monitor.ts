@@ -59,7 +59,7 @@ export async function requestAssessmentMonitorToken(
   });
   if (!response.ok) return { success: false };
   const parsed = z
-    .object({ token: z.string().regex(/^[a-f0-9]{64}$/) })
+    .object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}\.[a-f0-9]{64}$/) })
     .safeParse(await response.json());
   return parsed.success ? { success: true, token: parsed.data.token } : { success: false };
 }

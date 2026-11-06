@@ -212,6 +212,10 @@ describe('RolesGuard', () => {
     });
 
     await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
-    expect(mockGetAuthoritativePrimaryRole).toHaveBeenCalledWith('kc-user');
+    expect(mockGetAuthoritativePrimaryRole).toHaveBeenCalledWith(
+      'kc-user',
+      undefined,
+      expect.objectContaining({ user: expect.objectContaining({ keycloakId: 'kc-user' }) }),
+    );
   });
 });

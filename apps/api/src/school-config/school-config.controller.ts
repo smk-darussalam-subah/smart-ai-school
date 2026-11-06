@@ -18,10 +18,21 @@ import { Public } from '../auth/decorators/public.decorator';
 import { SchoolConfigService } from './school-config.service';
 import { UpdateProfileSchema } from './dto/update-profile.dto';
 import { CreateAcademicYearSchema, UpdateAcademicYearSchema } from './dto/academic-year.dto';
-import { CreateSemesterSchema, ListSemesterQuerySchema, UpdateSemesterSchema } from './dto/semester.dto';
-import { CreateCalendarEventSchema, ListCalendarEventsQuerySchema, UpdateCalendarEventSchema } from './dto/calendar-event.dto';
+import {
+  CreateSemesterSchema,
+  ListSemesterQuerySchema,
+  UpdateSemesterSchema,
+} from './dto/semester.dto';
+import {
+  CreateCalendarEventSchema,
+  ListCalendarEventsQuerySchema,
+  UpdateCalendarEventSchema,
+} from './dto/calendar-event.dto';
 import { CreateMajorSchema, UpdateMajorSchema } from './dto/major.dto';
 import { SharedReadBudget } from '../common/guards/api-throttler.guard';
+import type { AuthUser } from '@smk/auth';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import type { CreateCalendarEventDto, UpdateCalendarEventDto } from './dto/calendar-event.dto';
 
 @Controller('school')
 export class SchoolConfigController {
@@ -64,12 +75,17 @@ export class SchoolConfigController {
   @Roles('SUPER_ADMIN')
   @Post('majors')
   createMajor(@Body(ZodPipe(CreateMajorSchema)) dto: Record<string, unknown>) {
-    return this.service.createMajor(dto as { code: string; name: string; description?: string | null; isActive?: boolean });
+    return this.service.createMajor(
+      dto as { code: string; name: string; description?: string | null; isActive?: boolean },
+    );
   }
 
   @Roles('SUPER_ADMIN')
   @Patch('majors/:id')
-  updateMajor(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(UpdateMajorSchema)) dto: Record<string, unknown>) {
+  updateMajor(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(UpdateMajorSchema)) dto: Record<string, unknown>,
+  ) {
     return this.service.updateMajor(id, dto);
   }
 
@@ -90,13 +106,18 @@ export class SchoolConfigController {
   @RequirePermission('academic.period.manage')
   @Post('academic-years')
   createAcademicYear(@Body(ZodPipe(CreateAcademicYearSchema)) dto: Record<string, unknown>) {
-    return this.service.createAcademicYear(dto as { code: string; startDate: Date; endDate: Date; isActive?: boolean });
+    return this.service.createAcademicYear(
+      dto as { code: string; startDate: Date; endDate: Date; isActive?: boolean },
+    );
   }
 
   @Roles('SUPER_ADMIN')
   @RequirePermission('academic.period.manage')
   @Patch('academic-years/:id')
-  updateAcademicYear(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(UpdateAcademicYearSchema)) dto: Record<string, unknown>) {
+  updateAcademicYear(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(UpdateAcademicYearSchema)) dto: Record<string, unknown>,
+  ) {
     return this.service.updateAcademicYear(id, dto);
   }
 
@@ -120,15 +141,24 @@ export class SchoolConfigController {
   @RequirePermission('academic.period.manage')
   @Post('semesters')
   createSemester(@Body(ZodPipe(CreateSemesterSchema)) dto: Record<string, unknown>) {
-    return this.service.createSemester(dto as {
-      academicYearId: string; number: number; startDate: Date; endDate: Date; isActive?: boolean;
-    });
+    return this.service.createSemester(
+      dto as {
+        academicYearId: string;
+        number: number;
+        startDate: Date;
+        endDate: Date;
+        isActive?: boolean;
+      },
+    );
   }
 
   @Roles('SUPER_ADMIN')
   @RequirePermission('academic.period.manage')
   @Patch('semesters/:id')
-  updateSemester(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(UpdateSemesterSchema)) dto: Record<string, unknown>) {
+  updateSemester(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(UpdateSemesterSchema)) dto: Record<string, unknown>,
+  ) {
     return this.service.updateSemester(id, dto);
   }
 
@@ -141,24 +171,31 @@ export class SchoolConfigController {
     return this.service.getCalendarEvents(parsed.data.academicYearId, parsed.data.type);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_HUMAS')
+  @RequirePermission('school.calendar.manage')
   @Post('calendar')
-  createCalendarEvent(@Body(ZodPipe(CreateCalendarEventSchema)) dto: Record<string, unknown>) {
-    return this.service.createCalendarEvent(dto as {
-      academicYearId: string; name: string; startDate: Date; endDate: Date;
-      type: 'holiday' | 'exam' | 'event' | 'break'; description?: string | null;
-    });
+  createCalendarEvent(
+    @Body(ZodPipe(CreateCalendarEventSchema)) dto: CreateCalendarEventDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.createCalendarEvent(dto, user);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_HUMAS')
+  @RequirePermission('school.calendar.manage')
   @Patch('calendar/:id')
-  updateCalendarEvent(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(UpdateCalendarEventSchema)) dto: Record<string, unknown>) {
-    return this.service.updateCalendarEvent(id, dto);
+  updateCalendarEvent(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(UpdateCalendarEventSchema)) dto: UpdateCalendarEventDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.updateCalendarEvent(id, dto, user);
   }
 
-  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_HUMAS')
+  @RequirePermission('school.calendar.manage')
   @Delete('calendar/:id')
-  deleteCalendarEvent(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.deleteCalendarEvent(id);
+  deleteCalendarEvent(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.service.deleteCalendarEvent(id, user);
   }
 }

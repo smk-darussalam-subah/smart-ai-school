@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { BookOpenCheck, Settings2 } from 'lucide-react';
 
 interface Props {
@@ -33,7 +34,27 @@ export default function AcademicRoleModeSwitcher({
   operationsLabel = 'Operasional Kurikulum',
   initialMode = 'teaching',
 }: Props) {
+  const searchParams = useSearchParams();
+  const requestedMode = searchParams.get('workspace');
   const [mode, setMode] = useState<Mode>(initialMode);
+  // Start only the visible workspace. Keep visited workspaces mounted so draft
+  // fields and local filters survive switching back, without a second startup.
+  const [visited, setVisited] = useState<Set<Mode>>(() => new Set([initialMode]));
+  useEffect(() => {
+    const next = requestedMode === 'teaching' || requestedMode === 'operations'
+      ? requestedMode : initialMode;
+    setVisited((current) => current.has(next) ? current : new Set([...current, next]));
+    setMode(next);
+  }, [requestedMode, initialMode]);
+  const selectMode = (next: Mode) => {
+    setVisited((current) => (current.has(next) ? current : new Set([...current, next])));
+    setMode(next);
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('workspace') !== next) {
+      url.searchParams.set('workspace', next);
+      window.history.pushState(null, '', url.pathname + url.search + url.hash);
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -55,7 +76,7 @@ export default function AcademicRoleModeSwitcher({
                 aria-selected={active}
                 aria-controls={`academic-panel-${key}`}
                 tabIndex={active ? 0 : -1}
-                onClick={() => setMode(key)}
+                onClick={() => selectMode(key)}
                 onKeyDown={(event) => {
                   if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
                   event.preventDefault();
@@ -67,7 +88,7 @@ export default function AcademicRoleModeSwitcher({
                         : key === 'teaching'
                           ? 'operations'
                           : 'teaching';
-                  setMode(next);
+                  selectMode(next);
                   document.getElementById(`academic-mode-${next}`)?.focus();
                 }}
                 className={`min-h-20 border px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 ${
@@ -97,7 +118,7 @@ export default function AcademicRoleModeSwitcher({
         aria-labelledby="academic-mode-teaching"
         hidden={mode !== 'teaching'}
       >
-        {teachingWorkspace}
+        {visited.has('teaching') ? teachingWorkspace : null}
       </div>
       <div
         id="academic-panel-operations"
@@ -105,7 +126,7 @@ export default function AcademicRoleModeSwitcher({
         aria-labelledby="academic-mode-operations"
         hidden={mode !== 'operations'}
       >
-        {operationsWorkspace}
+        {visited.has('operations') ? operationsWorkspace : null}
       </div>
     </div>
   );

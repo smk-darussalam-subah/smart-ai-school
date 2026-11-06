@@ -7,14 +7,21 @@ import { NotificationModule } from '../notification/notification.module';
 import { StudentSessionAttendanceService } from './student-session-attendance.service';
 import { StudentSessionAttendanceController } from './student-session-attendance.controller';
 import { StudentSessionAttendanceReadService } from './student-session-attendance-read.service';
+import { AttendanceRecapController } from './attendance-recap.controller';
+import { AttendanceRecapService } from './attendance-recap.service';
 
 @Module({
   imports: [AcademicPeriodModule, PermissionModule, NotificationModule],
-  controllers: [AttendanceController, StudentSessionAttendanceController],
+  controllers: [
+    AttendanceController,
+    StudentSessionAttendanceController,
+    AttendanceRecapController,
+  ],
   providers: [
     AttendanceService,
     StudentSessionAttendanceService,
     StudentSessionAttendanceReadService,
+    AttendanceRecapService,
   ],
   exports: [AttendanceService],
 })
