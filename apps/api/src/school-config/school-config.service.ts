@@ -1,4 +1,18 @@
-import { BadRequestException, ConflictException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  GoneException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import type { AuthUser } from '@smk/auth';
+import type { CreateCalendarEventDto, UpdateCalendarEventDto } from './dto/calendar-event.dto';
+import {
+  acquireIdentityMutationLock,
+  assertFreshMutationAuthority,
+} from '../common/helpers/identity-mutation-lock';
+import { acquirePermissionMutationLock } from '../permissions/permission-mutation-coordination';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AppointmentsService } from '../appointments/appointments.service';
@@ -35,11 +49,15 @@ export class SchoolConfigService {
 
   // ═══ Kiosk link (token publik Ruang Guru) ══════════════════════════════════
   async getKioskToken() {
-    throw new GoneException('Manajemen link kiosk lama telah dinonaktifkan. Gunakan pairing Display Sekolah.');
+    throw new GoneException(
+      'Manajemen link kiosk lama telah dinonaktifkan. Gunakan pairing Display Sekolah.',
+    );
   }
 
   async regenerateKioskToken() {
-    throw new GoneException('Regenerasi link kiosk lama telah dinonaktifkan. Gunakan pairing Display Sekolah.');
+    throw new GoneException(
+      'Regenerasi link kiosk lama telah dinonaktifkan. Gunakan pairing Display Sekolah.',
+    );
   }
 
   async validateKioskToken(token: string): Promise<boolean> {
@@ -70,7 +88,12 @@ export class SchoolConfigService {
     });
   }
 
-  async createMajor(data: { code: string; name: string; description?: string | null; isActive?: boolean }) {
+  async createMajor(data: {
+    code: string;
+    name: string;
+    description?: string | null;
+    isActive?: boolean;
+  }) {
     const code = data.code.trim().toUpperCase();
     const exists = await this.prisma.major.findFirst({
       where: { code: { equals: code, mode: 'insensitive' } },
@@ -140,9 +163,17 @@ export class SchoolConfigService {
     return year;
   }
 
-  async createAcademicYear(data: { code: string; startDate: Date; endDate: Date; isActive?: boolean }) {
+  async createAcademicYear(data: {
+    code: string;
+    startDate: Date;
+    endDate: Date;
+    isActive?: boolean;
+  }) {
     // Cek duplikat SEBELUM menonaktifkan yang lain (hindari efek samping bila gagal).
-    const exists = await this.prisma.academicYear.findUnique({ where: { code: data.code }, select: { id: true } });
+    const exists = await this.prisma.academicYear.findUnique({
+      where: { code: data.code },
+      select: { id: true },
+    });
     if (exists) throw new ConflictException(`Tahun ajaran ${data.code} sudah terdaftar.`);
     // C1: Transactional — deactivate-all + create must be atomic.
     // BUG FIX: Activating a new TA must also deactivate ALL semesters from the old TA.
@@ -159,11 +190,14 @@ export class SchoolConfigService {
           take: 2,
         });
         if (Array.isArray(oldActiveYears) && oldActiveYears.length > 1) {
-          throw new ConflictException('Tahun ajaran aktif harus tepat satu sebelum aktivasi baru diproses.');
+          throw new ConflictException(
+            'Tahun ajaran aktif harus tepat satu sebelum aktivasi baru diproses.',
+          );
         }
         oldActiveYearId = Array.isArray(oldActiveYears)
-          ? oldActiveYears[0]?.id ?? null
-          : (await tx.academicYear.findFirst({ where: { isActive: true }, select: { id: true } }))?.id ?? null;
+          ? (oldActiveYears[0]?.id ?? null)
+          : ((await tx.academicYear.findFirst({ where: { isActive: true }, select: { id: true } }))
+              ?.id ?? null);
         await this.academicPeriod.assertAcademicYearActivationAllowed(tx, oldActiveYearId);
         await tx.academicYear.updateMany({ data: { isActive: false } });
         await tx.semester.updateMany({ data: { isActive: false } });
@@ -179,13 +213,16 @@ export class SchoolConfigService {
           now: activationNow,
         });
         affectedAppointmentUsers = summary.affectedKeycloakIds;
-        logger.info('[SchoolConfig] appointment cutover applied in academic-year create transaction', {
-          yearId: created.id,
-          oldYearId: oldActiveYearId,
-          endedAppointments: summary.endedCount,
-          cancelledAppointments: summary.cancelledCount,
-          activatedAppointments: summary.activatedCount,
-        });
+        logger.info(
+          '[SchoolConfig] appointment cutover applied in academic-year create transaction',
+          {
+            yearId: created.id,
+            oldYearId: oldActiveYearId,
+            endedAppointments: summary.endedCount,
+            cancelledAppointments: summary.cancelledCount,
+            activatedAppointments: summary.activatedCount,
+          },
+        );
       }
       return created;
     });
@@ -225,11 +262,15 @@ export class SchoolConfigService {
             take: 2,
           });
           if (Array.isArray(oldActiveYears) && oldActiveYears.length > 1) {
-            throw new ConflictException('Tahun ajaran aktif harus tepat satu sebelum aktivasi baru diproses.');
+            throw new ConflictException(
+              'Tahun ajaran aktif harus tepat satu sebelum aktivasi baru diproses.',
+            );
           }
           oldActiveYearId = Array.isArray(oldActiveYears)
-            ? oldActiveYears[0]?.id ?? null
-            : (await tx.academicYear.findFirst({ where: { isActive: true }, select: { id: true } }))?.id ?? null;
+            ? (oldActiveYears[0]?.id ?? null)
+            : ((
+                await tx.academicYear.findFirst({ where: { isActive: true }, select: { id: true } })
+              )?.id ?? null);
           if (oldActiveYearId !== id) {
             await this.academicPeriod.assertAcademicYearActivationAllowed(tx, oldActiveYearId);
           }
@@ -247,13 +288,16 @@ export class SchoolConfigService {
             now: activationNow,
           });
           affectedAppointmentUsers = summary.affectedKeycloakIds;
-          logger.info('[SchoolConfig] appointment cutover applied in academic-year update transaction', {
-            yearId: id,
-            oldYearId: oldActiveYearId,
-            endedAppointments: summary.endedCount,
-            cancelledAppointments: summary.cancelledCount,
-            activatedAppointments: summary.activatedCount,
-          });
+          logger.info(
+            '[SchoolConfig] appointment cutover applied in academic-year update transaction',
+            {
+              yearId: id,
+              oldYearId: oldActiveYearId,
+              endedAppointments: summary.endedCount,
+              cancelledAppointments: summary.cancelledCount,
+              activatedAppointments: summary.activatedCount,
+            },
+          );
         }
         return updated;
       });
@@ -319,7 +363,8 @@ export class SchoolConfigService {
     if (data.isActive !== true) return;
     await this.academicPeriod.assertInitialSemesterActivationAllowed(tx, {
       semesterId: existing.id,
-      academicYearId: typeof data.academicYearId === 'string' ? data.academicYearId : existing.academicYearId,
+      academicYearId:
+        typeof data.academicYearId === 'string' ? data.academicYearId : existing.academicYearId,
       number: typeof data.number === 'number' ? data.number : existing.number,
     });
   }
@@ -391,12 +436,21 @@ export class SchoolConfigService {
     return semester;
   }
 
-  async createSemester(data: { academicYearId: string; number: number; startDate: Date; endDate: Date; isActive?: boolean }) {
+  async createSemester(data: {
+    academicYearId: string;
+    number: number;
+    startDate: Date;
+    endDate: Date;
+    isActive?: boolean;
+  }) {
     const exists = await this.prisma.semester.findUnique({
-      where: { academicYearId_number: { academicYearId: data.academicYearId, number: data.number } },
+      where: {
+        academicYearId_number: { academicYearId: data.academicYearId, number: data.number },
+      },
       select: { id: true },
     });
-    if (exists) throw new ConflictException(`Semester ${data.number} sudah ada untuk tahun ajaran ini.`);
+    if (exists)
+      throw new ConflictException(`Semester ${data.number} sudah ada untuk tahun ajaran ini.`);
     // C1: Transactional — deactivate-all + create must be atomic.
     return this.prisma.$transaction(async (tx) => {
       if (data.isActive) {
@@ -452,47 +506,117 @@ export class SchoolConfigService {
     });
   }
 
-  async createCalendarEvent(data: {
-    academicYearId: string; name: string; startDate: Date; endDate: Date;
-    type: CalendarType; description?: string | null;
-  }) {
-    const year = await this.assertAcademicYearExists(data.academicYearId);
-    this.assertCalendarRange(data.startDate, data.endDate, year);
-    return this.prisma.academicCalendar.create({ data });
-  }
-
-  async updateCalendarEvent(id: string, data: Record<string, unknown>) {
-    const existing = await this.prisma.academicCalendar.findUnique({
-      where: { id },
-      include: { academicYear: true },
+  async createCalendarEvent(data: CreateCalendarEventDto, user?: AuthUser) {
+    return this.calendarMutation(user, async (tx) => {
+      const year = await tx.academicYear.findUnique({ where: { id: data.academicYearId } });
+      if (!year) throw new NotFoundException('Tahun ajaran tidak ditemukan.');
+      this.assertCalendarRange(data.startDate, data.endDate, year);
+      this.assertCalendarTimes(data);
+      return tx.academicCalendar.create({ data });
     });
-    if (!existing) throw new NotFoundException('Agenda kalender tidak ditemukan.');
-    const academicYearId = typeof data.academicYearId === 'string' ? data.academicYearId : existing.academicYearId;
-    const year = academicYearId === existing.academicYearId
-      ? existing.academicYear
-      : await this.assertAcademicYearExists(academicYearId);
-    const startDate = data.startDate instanceof Date ? data.startDate : existing.startDate;
-    const endDate = data.endDate instanceof Date ? data.endDate : existing.endDate;
-    this.assertCalendarRange(startDate, endDate, year);
-    try {
-      return await this.prisma.academicCalendar.update({ where: { id }, data });
-    } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
-        throw new NotFoundException('Agenda kalender tidak ditemukan.');
-      }
-      throw e;
-    }
   }
 
-  async deleteCalendarEvent(id: string) {
-    try {
-      return await this.prisma.academicCalendar.delete({ where: { id } });
-    } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
-        throw new NotFoundException('Agenda kalender tidak ditemukan.');
+  async updateCalendarEvent(id: string, data: UpdateCalendarEventDto, user?: AuthUser) {
+    return this.calendarMutation(user, async (tx) => {
+      const existing = await tx.academicCalendar.findUnique({
+        where: { id },
+        include: { academicYear: true },
+      });
+      if (!existing) throw new NotFoundException('Agenda kalender tidak ditemukan.');
+      const academicYearId =
+        typeof data.academicYearId === 'string' ? data.academicYearId : existing.academicYearId;
+      const year =
+        academicYearId === existing.academicYearId
+          ? existing.academicYear
+          : await tx.academicYear.findUnique({ where: { id: academicYearId } });
+      if (!year) throw new NotFoundException('Tahun ajaran tidak ditemukan.');
+      const startDate = data.startDate instanceof Date ? data.startDate : existing.startDate;
+      const endDate = data.endDate instanceof Date ? data.endDate : existing.endDate;
+      this.assertCalendarRange(startDate, endDate, year);
+      this.assertCalendarTimes({ ...existing, ...data, startDate, endDate });
+      try {
+        return await tx.academicCalendar.update({ where: { id }, data });
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+          throw new NotFoundException('Agenda kalender tidak ditemukan.');
+        }
+        throw e;
       }
-      throw e;
-    }
+    });
+  }
+
+  async deleteCalendarEvent(id: string, user?: AuthUser) {
+    return this.calendarMutation(user, async (tx) => {
+      try {
+        return await tx.academicCalendar.delete({ where: { id } });
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+          throw new NotFoundException('Agenda kalender tidak ditemukan.');
+        }
+        throw e;
+      }
+    });
+  }
+
+  private async calendarMutation<T>(
+    user: AuthUser | undefined,
+    write: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    if (!user) throw new ForbiddenException('Sesi pengguna diperlukan.');
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('school:calendar:mutation'))`;
+        await this.appointmentsService.acquireActivationLock(tx);
+        await acquirePermissionMutationLock(tx);
+        await acquireIdentityMutationLock(tx);
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM auth.users WHERE keycloak_id = ${user.keycloakId}::uuid FOR SHARE`,
+        );
+        // ReadCommitted resolves a fresh authority after waiting; hold the same
+        // appointment/permission/lifecycle locks through the write and commit.
+        await assertFreshMutationAuthority(
+          tx,
+          this.permissionsService,
+          user.keycloakId,
+          'school.calendar.manage',
+          ['SUPER_ADMIN', 'TATA_USAHA', 'KEPALA_SEKOLAH'],
+          ['KEPALA_SEKOLAH', 'WAKA_HUMAS'],
+        );
+        return write(tx);
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 15000 },
+    );
+  }
+
+  private assertCalendarTimes(data: {
+    type?: string;
+    startDate: Date;
+    endDate: Date;
+    startAt?: Date | null;
+    endAt?: Date | null;
+  }) {
+    if (!data.startAt && !data.endAt) return;
+    if (data.type === 'holiday' || data.type === 'break')
+      throw new BadRequestException(
+        'Hari libur dan jeda berlaku sepanjang hari. Gunakan acara untuk kegiatan dengan jam tertentu.',
+      );
+    const date = (value: Date) =>
+      new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Jakarta',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(value);
+    if (
+      !data.startAt ||
+      !data.endAt ||
+      data.endAt <= data.startAt ||
+      date(data.startAt) !== data.startDate.toISOString().slice(0, 10) ||
+      date(data.endAt) !== data.endDate.toISOString().slice(0, 10)
+    )
+      throw new BadRequestException(
+        'Periksa jam dan tanggal agenda (WIB). Jam selesai harus setelah jam mulai.',
+      );
   }
 
   private async assertAcademicYearExists(id: string) {

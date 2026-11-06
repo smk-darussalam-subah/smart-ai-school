@@ -8,13 +8,19 @@ const originalFetch = global.fetch;
 const originalSecret = process.env.NEXTAUTH_SECRET;
 const originalUrl = process.env.NEXTAUTH_URL;
 let sequence = 0;
+let mockActivityFetch: jest.Mock;
 
 beforeAll(() => {
   process.env.NEXTAUTH_SECRET = secret;
   process.env.NEXTAUTH_URL = origin;
 });
 beforeEach(() => {
-  global.fetch = jest.fn().mockImplementation(async () => new Response('{}', { status: 200 }));
+  mockActivityFetch = jest.fn().mockImplementation(async () => new Response('{}', { status: 200 }));
+  global.fetch = jest.fn().mockImplementation(async (url, init) => {
+    if (String(url).endsWith('/auth/session-status'))
+      return Response.json({ active: true, binding: 'oidc' });
+    return mockActivityFetch(url, init);
+  });
 });
 afterEach(() => {
   jest.restoreAllMocks();
@@ -66,7 +72,9 @@ async function request(
   });
 }
 function fetchCalls() {
-  return (global.fetch as jest.MockedFunction<typeof fetch>).mock.calls;
+  return (global.fetch as jest.MockedFunction<typeof fetch>).mock.calls.filter(
+    ([url]) => !String(url).endsWith('/auth/session-status'),
+  );
 }
 
 describe('background session activity — real NextAuth writable HTTP boundary', () => {
@@ -84,7 +92,7 @@ describe('background session activity — real NextAuth writable HTTP boundary',
     );
     expect(init?.body).toBeUndefined();
     expect(new Headers(init?.headers).has('cookie')).toBe(false);
-    expect(response.headers.has('set-cookie')).toBe(true);
+    expect(response.headers.has('set-cookie')).toBe(false);
   });
   it('records login metadata from request headers, never caller-provided identity', async () => {
     const response = await POST(
@@ -173,7 +181,7 @@ describe('background session activity — real NextAuth writable HTTP boundary',
   it.each([401, 403, 503])(
     'fails closed for upstream status %s without relaying its body or redirect',
     async (status) => {
-      global.fetch = jest.fn().mockResolvedValue(
+      mockActivityFetch = jest.fn().mockResolvedValue(
         new Response('private upstream body', {
           status,
           headers: { Location: 'https://untrusted.invalid', 'Set-Cookie': 'upstream=forged' },
@@ -183,19 +191,19 @@ describe('background session activity — real NextAuth writable HTTP boundary',
       expect(response.status).toBe(status);
       expect(await response.text()).not.toContain('private upstream body');
       expect(response.headers.has('location')).toBe(false);
-      expect(response.headers.get('set-cookie')).not.toContain('upstream=forged');
+      expect(response.headers.get('set-cookie') ?? '').not.toContain('upstream=forged');
       expect(fetchCalls()).toHaveLength(1);
     },
   );
-  it('does not replay when upstream fails and still persists renewed web cookies', async () => {
-    global.fetch = jest.fn().mockRejectedValue(new Error('Synthetic offline'));
+  it('does not replay when upstream fails and does not renew an unchanged web cookie', async () => {
+    mockActivityFetch = jest.fn().mockRejectedValue(new Error('Synthetic offline'));
     const response = await POST(await request());
     expect(response.status).toBe(503);
-    expect(response.headers.has('set-cookie')).toBe(true);
+    expect(response.headers.has('set-cookie')).toBe(false);
     expect(fetchCalls()).toHaveLength(1);
   });
   it('rotates expired credentials before exactly one activity request and persists the result', async () => {
-    global.fetch = jest
+    mockActivityFetch = jest
       .fn()
       .mockResolvedValueOnce(
         new Response(
@@ -231,4 +239,11 @@ describe('background session activity — real NextAuth writable HTTP boundary',
     expect(decoded?.refreshToken).toBe('synthetic-rotated-refresh');
     expect(response.headers.has('x-action-redirect')).toBe(false);
   });
+});
+
+it('checks server-bound revocation before writing background activity', async () => {
+  global.fetch = jest.fn().mockResolvedValue(new Response('{}', { status: 401 }));
+  const response = await POST(await request());
+  expect(response.status).toBe(401);
+  expect(fetchCalls()).toHaveLength(0);
 });

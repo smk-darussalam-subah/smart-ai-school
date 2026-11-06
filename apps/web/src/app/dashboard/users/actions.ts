@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { apiAction } from '@/lib/server-actions';
+import { LearnerCredentialResultSchema } from '@/lib/learner-credential-contract';
 
 // TF2-P1-2: accessCheckAction sudah ada di struktur-organisasi/actions.ts.
 // Re-export type AccessCheckResult untuk dipakai component UsersClient.
@@ -52,6 +53,9 @@ export async function restoreUserAction(userId: string, reason: string, expected
 }
 
 export interface PasswordResetResult {
+  userId?: string;
+  role?: string;
+  fullName?: string;
   username: string;
   temporaryPassword: string;
   requiresPasswordChange: true;
@@ -59,6 +63,22 @@ export interface PasswordResetResult {
 
 export async function resetUserPasswordAction(userId: string) {
   return apiAction<PasswordResetResult>(`/users/${userId}/password-reset`, 'PATCH');
+}
+export async function reissueLearnerPasswordAction(userId: string) {
+  const result = await apiAction<unknown>(
+    `/users/${userId}/learner-credential`,
+    'PATCH',
+    undefined,
+    120000,
+  );
+  if (result.error && result.status !== undefined)
+    return { error: result.error, status: result.status };
+  const parsed = LearnerCredentialResultSchema.safeParse(result.data);
+  if (!parsed.success || parsed.data.userId !== userId)
+    return {
+      error: 'Hasil penerbitan belum terkonfirmasi. Periksa akun sebelum menerbitkan ulang.',
+    };
+  return { data: parsed.data, status: result.status };
 }
 
 export async function grantUserPermission(userId: string, permissionId: string, grant: boolean) {

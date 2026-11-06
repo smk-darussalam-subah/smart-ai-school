@@ -6,7 +6,7 @@
 
 import type { Pembayaran } from '@/lib/academic';
 import type { AttendanceItem } from '@/lib/api';
-import { generateCalendar, fmtDateShort } from '@/lib/academic';
+import { generateCalendar } from '@/lib/academic';
 import type { CalendarCell } from '@/lib/academic';
 import { type JpSlot, fmtMin } from '@/lib/bell-times';
 import type { ScheduleItem } from '../guru-types';
@@ -69,7 +69,7 @@ export interface WaLogApiItem {
   studentId: string;
   recipient: string;
   message: string;
-  eventType: string;
+  eventType: string | null;
   createdAt: string;
 }
 
@@ -131,19 +131,38 @@ export function mapSppToPembayaran(items: SppApiItem[]): Pembayaran[] {
 
 // ── WA Log → OrtuWAHistory ─────────────────────────────────────────────────────
 
-/** Normalkan eventType API ke status hadir/izin/sakit/alpha yang dikenali UI. */
-function normalizeWaStatus(eventType: string): 'izin' | 'sakit' | 'alpha' {
-  const e = eventType.toLowerCase();
+/** Unknown notification types do not establish an absence decision. */
+function normalizeWaStatus(eventType: string | null): OrtuWAHistory['status'] {
+  const e = eventType?.trim().toLowerCase() ?? '';
   if (e.includes('izin') || e.includes('leave')) return 'izin';
   if (e.includes('sakit') || e.includes('sick')) return 'sakit';
-  return 'alpha';
+  if (/(^|[._:\s-])(alpha|alpa)(?=$|[._:\s-])/.test(e)) return 'alpha';
+  return 'info';
 }
 
-/** "2026-06-15T07:35:00Z" → "07:35" (WIB display). */
-function timeOfDay(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+const waTimestampFormatter = new Intl.DateTimeFormat('id-ID', {
+  timeZone: 'Asia/Jakarta',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+/** Keep notification date and time in WIB on both server and browser. */
+function waTimestamp(iso: string): { date: string; time: string } {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(iso))
+    return { date: '—', time: '—' };
+  const value = new Date(iso);
+  if (Number.isNaN(value.getTime())) return { date: '—', time: '—' };
+  const parts = waTimestampFormatter.formatToParts(value);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? '';
+  return {
+    date: `${part('day')} ${part('month')} ${part('year')}`,
+    time: `${part('hour')}:${part('minute')}`,
+  };
 }
 
 /**
@@ -151,14 +170,17 @@ function timeOfDay(iso: string): string {
  * (hanya eventType+message), jadi dibiarkan '—'. `note` ← message.
  */
 export function mapWaLog(items: WaLogApiItem[]): OrtuWAHistory[] {
-  return items.map((w) => ({
-    date: w.createdAt ? fmtDateShort(w.createdAt) : '—',
-    session: '—',
-    status: normalizeWaStatus(w.eventType),
-    sentTo: w.recipient || '—',
-    time: w.createdAt ? timeOfDay(w.createdAt) : '—',
-    note: w.message || '',
-  }));
+  return items.map((w) => {
+    const timestamp = waTimestamp(w.createdAt);
+    return {
+      date: timestamp.date,
+      session: '—',
+      status: normalizeWaStatus(w.eventType),
+      sentTo: w.recipient || '—',
+      time: timestamp.time,
+      note: w.message || '',
+    };
+  });
 }
 
 // ── Attendance → stats agregat ─────────────────────────────────────────────────

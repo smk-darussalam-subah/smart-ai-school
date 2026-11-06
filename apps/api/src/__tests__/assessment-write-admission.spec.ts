@@ -1,3 +1,5 @@
+jest.mock('node:os', () => ({ availableParallelism: jest.fn(() => 4) }));
+import { availableParallelism } from 'node:os';
 import { AssessmentWriteAdmission } from '../assessment/assessment-write-admission';
 
 function deferred() {
@@ -9,6 +11,33 @@ function deferred() {
 }
 
 describe('assessment database admission', () => {
+  it.each([
+    [1, 1],
+    [2, 2],
+    [4, 4],
+    [12, 4],
+  ])(
+    'uses %i available CPU(s) with at most %i active writes and no lost work',
+    async (cpus, expected) => {
+      jest.mocked(availableParallelism).mockReturnValueOnce(cpus);
+      const gate = new AssessmentWriteAdmission();
+      let active = 0,
+        peak = 0;
+      const values = await Promise.all(
+        Array.from({ length: 350 }, (_, index) =>
+          gate.run('synthetic-' + index, async () => {
+            active++;
+            peak = Math.max(peak, active);
+            await Promise.resolve();
+            active--;
+            return index;
+          }),
+        ),
+      );
+      expect(peak).toBe(expected);
+      expect(new Set(values).size).toBe(350);
+    },
+  );
   it('bounds simultaneous work and serves FIFO before new arrivals', async () => {
     const gate = new AssessmentWriteAdmission(1, 3, 1000);
     const hold = deferred();

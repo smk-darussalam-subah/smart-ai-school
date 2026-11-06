@@ -15,6 +15,7 @@ import { logger } from '@smk/logger';
 import { Prisma } from '@prisma/client';
 import { generateTemporaryPassword } from '../common/helpers/temp-password';
 import { acquireIdentityMutationLock } from '../common/helpers/identity-mutation-lock';
+import { acquirePermissionMutationLock } from '../permissions/permission-mutation-coordination';
 import {
   acquireUserMutationLocks,
   createKeycloakMutationTransactionOptions,
@@ -170,9 +171,10 @@ export class UsersService {
     return actor;
   }
 
-  async resetPassword(id: string, actorKeycloakId: string) {
+  async resetPassword(id: string, actorKeycloakId: string, learnerOnly = false) {
     const result = await this.prisma.$transaction(
       async (tx) => {
+        await acquirePermissionMutationLock(tx);
         const actorIdentity = await tx.user.findFirst({
           where: { keycloakId: actorKeycloakId },
           select: { id: true },
@@ -189,6 +191,10 @@ export class UsersService {
         if (!actor || !['SUPER_ADMIN', 'TATA_USAHA'].includes(actor.role)) {
           throw new ForbiddenException('Permintaan reset tidak dapat diproses');
         }
+        if (
+          !(await this.permissions.hasFreshPermission(actorKeycloakId, 'user.password.reset', tx))
+        )
+          throw new ForbiddenException('Izin penerbitan password tidak lagi tersedia.');
 
         const target = await tx.user.findUnique({
           where: { id },
@@ -197,6 +203,7 @@ export class UsersService {
             keycloakId: true,
             email: true,
             role: true,
+            fullName: true,
             isActive: true,
             deletedAt: true,
           },
@@ -207,6 +214,10 @@ export class UsersService {
         if (target.role === 'SUPER_ADMIN') {
           throw new ForbiddenException('Permintaan reset tidak dapat diproses');
         }
+        if (learnerOnly && !['SISWA', 'ORANG_TUA'].includes(target.role))
+          throw new ForbiddenException(
+            'Penerbitan terpilih hanya untuk akun siswa atau orang tua.',
+          );
         const tataUsahaTargets = ['GURU', 'SISWA', 'ORANG_TUA', 'INDUSTRI'];
         if (actor.role === 'TATA_USAHA' && !tataUsahaTargets.includes(target.role)) {
           throw new ForbiddenException('Permintaan reset tidak dapat diproses');
@@ -231,6 +242,9 @@ export class UsersService {
         }
         return {
           targetKeycloakId: target.keycloakId,
+          userId: target.id,
+          role: target.role,
+          fullName: target.fullName,
           username: keycloakUser.username,
           temporaryPassword,
           requiresPasswordChange: true as const,
@@ -244,6 +258,9 @@ export class UsersService {
     this.userStatus.invalidate(result.targetKeycloakId);
     this.permissions.invalidateUser(result.targetKeycloakId);
     return {
+      userId: result.userId,
+      role: result.role,
+      fullName: result.fullName,
       username: result.username,
       temporaryPassword: result.temporaryPassword,
       requiresPasswordChange: result.requiresPasswordChange,

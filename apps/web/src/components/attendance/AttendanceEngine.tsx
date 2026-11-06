@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   CalendarDays,
   Check,
@@ -78,7 +78,7 @@ export function AttendanceEngine({
   const input = useRef<LocationInput>({});
   const inFlight = useRef(false);
   const checking = useRef(false);
-  const dismissed = useRef(false);
+  const [dismissed, setDismissed] = useState(false);
   const audio = useRef<AudioContext | null>(null);
   const refresh = useCallback(async () => {
     if (!enabled) return;
@@ -116,7 +116,9 @@ export function AttendanceEngine({
     ? 'diis-attendance-prompt:' + context.employee.id + ':' + context.date
     : '';
   function snooze() {
-    dismissed.current = true;
+    // Also repaint when the reminder is already IDLE and error is empty.
+    // A ref/storage write alone leaves the dismissed banner on screen.
+    setDismissed(true);
     try {
       sessionStorage.setItem(cooldownKey, String(Date.now()));
     } catch {
@@ -132,7 +134,7 @@ export function AttendanceEngine({
         (context?.policy.attendancePromptCooldown ?? 30) * 60000
       );
     } catch {
-      return dismissed.current;
+      return dismissed;
     }
   }
   const openPrompt = async (isCheckout = false) => {

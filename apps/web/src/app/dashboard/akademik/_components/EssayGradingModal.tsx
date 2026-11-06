@@ -1,12 +1,14 @@
 'use client';
 import QuestionContent from '@/components/learning/QuestionContent';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { useDialogReturnFocus } from '@/lib/use-dialog-return-focus';
 
 // EssayGradingModal — U2 Wave 2: Manual essay grading with rubrik.
 // GURU views essay responses for a completed session, enters per-criteria
 // scores, sees real-time weighted total, saves via gradeEssayResponse().
 
 import { useState, useTransition, useEffect } from 'react';
-import { ClipboardPenLine, X, Loader2, Check, AlertTriangle, GraduationCap } from 'lucide-react';
+import { ClipboardPenLine, Loader2, Check, AlertTriangle, GraduationCap } from 'lucide-react';
 import clsx from 'clsx';
 import { gradeEssayResponse, type EssayRubricCriteria } from '../actions';
 
@@ -32,6 +34,7 @@ interface Props {
 }
 
 export default function EssayGradingModal({ sessionId, questions, responses, onClose, onSaved }: Props) {
+  const returnFocus = useDialogReturnFocus();
   const [currentIdx, setCurrentIdx] = useState(0);
   const [scores, setScores] = useState<Record<string, Record<string, number>>>({});
   const [saving, startSave] = useTransition();
@@ -55,13 +58,19 @@ export default function EssayGradingModal({ sessionId, questions, responses, onC
 
   if (responses.length === 0) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-        <div role="dialog" aria-modal="true" aria-label="Koreksi esai" className="max-w-md rounded-2xl bg-white p-6 text-center shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
+        <DialogContent
+          {...returnFocus}
+          className="z-[70] w-[calc(100%-2rem)] max-w-md rounded-2xl bg-white p-6 text-center shadow-xl"
+          closeDisabled={saving}
+          onEscapeKeyDown={(event) => { if (saving) event.preventDefault(); }}
+          onInteractOutside={(event) => { if (saving) event.preventDefault(); }}
+        >
           <GraduationCap className="mx-auto h-8 w-8 text-[#9bb0a8]" />
-          <p className="mt-2 text-[13px] font-medium text-[#6b8079]">Tidak ada respons essay yang perlu dinilai.</p>
-          <button type="button" onClick={onClose} className="mt-4 rounded-lg border border-[#e6efea] bg-white px-4 py-2 text-[12px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>
-        </div>
-      </div>
+          <DialogTitle>Koreksi esai</DialogTitle>
+          <DialogDescription>Tidak ada jawaban esai yang perlu dinilai.</DialogDescription>
+        </DialogContent>
+      </Dialog>
     );
   }
 
@@ -105,22 +114,27 @@ export default function EssayGradingModal({ sessionId, questions, responses, onC
   const FIELD = 'w-20 rounded-lg border border-[#e6efea] px-2 py-1.5 text-[12px] text-[#0f2e25] outline-none focus:border-emerald-300';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+    <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
+      <DialogContent
+        {...returnFocus}
+        className="z-[70] block max-h-[85dvh] w-[calc(100%-2rem)] max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
+        closeDisabled={saving}
+        onEscapeKeyDown={(event) => { if (saving) event.preventDefault(); }}
+        onInteractOutside={(event) => { if (saving) event.preventDefault(); }}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
+        <div className="flex items-center justify-between pr-10">
+          <DialogTitle className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
             <ClipboardPenLine className="h-[18px] w-[18px] text-emerald-600" />
-            Penilaian Essay — Siswa {currentIdx + 1}/{responses.length}
-          </h3>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-[#9bb0a8] hover:bg-[#f4f7f5]" aria-label="Tutup">
-            <X className="h-4 w-4" />
-          </button>
+            Penilaian Esai — Siswa {currentIdx + 1}/{responses.length}
+          </DialogTitle>
         </div>
+        <DialogDescription className="sr-only">Periksa jawaban dan isi nilai sesuai rubrik.</DialogDescription>
 
         {/* Student selector */}
         <div className="mt-3 flex items-center gap-2">
           <select
+            aria-label="Siswa yang dinilai"
             value={currentIdx}
             onChange={(e) => setCurrentIdx(Number(e.target.value))}
             className="flex-1 rounded-lg border border-[#e6efea] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#0f2e25] outline-none focus:border-emerald-300"
@@ -175,6 +189,7 @@ export default function EssayGradingModal({ sessionId, questions, responses, onC
                           <div className="text-[10px] text-[#6b8079]">Bobot: {c.weight.toFixed(0)}% · Maks: {c.maxScore}</div>
                         </div>
                         <input
+                          aria-label={`Nilai ${c.name}`}
                           type="number"
                           min={0}
                           max={c.maxScore}
@@ -226,7 +241,7 @@ export default function EssayGradingModal({ sessionId, questions, responses, onC
             Berikutnya →
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

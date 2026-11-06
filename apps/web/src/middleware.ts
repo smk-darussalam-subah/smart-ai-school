@@ -1,4 +1,5 @@
 import { getToken } from 'next-auth/jwt';
+import { matchesSignedOutSession, signedOutCookieName } from './lib/session-cookie-state';
 import { NextRequest, NextResponse } from 'next/server';
 import { isMobileOnlyDashboardRoleSet } from './lib/dashboard-routing';
 import {
@@ -115,7 +116,7 @@ export async function middleware(request: NextRequest) {
   requestHeaders.set('x-nonce', nonce);
   requestHeaders.set('Content-Security-Policy', csp);
 
-  const token = await getToken({
+  let token = await getToken({
     req: request,
     secret: process.env.NEXTAUTH_SECRET,
   }).catch(() => null);
@@ -130,9 +131,18 @@ export async function middleware(request: NextRequest) {
     return res;
   }
 
+  if (
+    matchesSignedOutSession(
+      token,
+      request.cookies.get(signedOutCookieName(sessionAppOrigin(request.url).startsWith('https:')))
+        ?.value,
+    )
+  )
+    token = null;
   const isLogin = pathname === '/login' || pathname === '/auth';
   const query = new URL(request.url).searchParams;
-  const recovering = query.get('reason') === 'session' || query.has('error');
+  const recovering =
+    ['session', 'logout'].includes(query.get('reason') ?? '') || query.has('error');
   const usable = hasUsableAccessToken(token);
   if (isLogin && !recovering && usable && token && !shouldRefreshSession(token)) {
     const res = NextResponse.redirect(new URL('/dashboard', sessionAppOrigin(request.url)));

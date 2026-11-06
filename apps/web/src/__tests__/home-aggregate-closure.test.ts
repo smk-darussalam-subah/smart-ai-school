@@ -35,6 +35,11 @@ jest.mock('@/app/dashboard/akademik/_components/AttendanceJpSummary', () => ({
 }));
 import DashboardPage from '@/app/dashboard/page';
 import RoleBasedHome from '@/app/dashboard/_components/RoleBasedHome';
+import TeacherHome from '@/app/dashboard/_components/TeacherHome';
+jest.mock('@/app/dashboard/_components/TeacherHome', () => ({
+  __esModule: true,
+  default: () => null,
+}));
 function setup(role: string, permissions: string[] | null = []) {
   mockRoles.mockResolvedValue([role]);
   mockRead.mockImplementation(
@@ -66,28 +71,24 @@ function stats(tree: React.ReactElement) {
 }
 describe('Home class capability and selected-year count', () => {
   beforeEach(() => jest.resetAllMocks());
-  it.each([
-    'SUPER_ADMIN',
-    'KEPALA_SEKOLAH',
-    'TATA_USAHA',
-    'GURU',
-    'WAKA_KURIKULUM',
-    'WAKA_KESISWAAN',
-  ])('role %s can read class totals without imaginary permission aliases', async (role) => {
-    setup(role);
-    expect(stats(await DashboardPage()).totalKelas).toBe(11);
-    expect(mockRead.mock.calls.find(([p]) => p === '/classes')?.[2]).toEqual({
-      academicYear: '2026/2027',
-      limit: '1',
-    });
-  });
+  it.each(['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_KURIKULUM', 'WAKA_KESISWAAN'])(
+    'role %s can read class totals without imaginary permission aliases',
+    async (role) => {
+      setup(role);
+      expect(stats(await DashboardPage()).totalKelas).toBe(11);
+      expect(mockRead.mock.calls.find(([p]) => p === '/classes')?.[2]).toEqual({
+        academicYear: '2026/2027',
+        limit: '1',
+      });
+    },
+  );
   it.each(['KAPROG', 'INDUSTRI'])('does not expand the class read contract to %s', async (role) => {
     setup(role);
     expect(stats(await DashboardPage()).totalKelas).toBeNull();
     expect(mockRead.mock.calls.some(([p]) => p.startsWith('/classes'))).toBe(false);
   });
   it('fails closed if current authority cannot be loaded', async () => {
-    setup('GURU', null);
+    setup('TATA_USAHA', null);
     expect(stats(await DashboardPage()).totalKelas).toBeNull();
   });
   it('reads active enrollment with a distinct label, not account eligibility', async () => {
@@ -95,4 +96,12 @@ describe('Home class capability and selected-year count', () => {
     expect(stats(await DashboardPage()).totalSiswa).toBe(41);
     expect(mockRead.mock.calls.some(([p]) => p === '/students?status=active&limit=1')).toBe(true);
   });
+});
+
+it('Guru opens the approved daily action home without fetching school-wide class totals', async () => {
+  mockRead.mockClear();
+  setup('GURU');
+  const tree = await DashboardPage();
+  expect(tree.type).toBe(TeacherHome);
+  expect(mockRead.mock.calls.some(([p]) => p.startsWith('/classes'))).toBe(false);
 });

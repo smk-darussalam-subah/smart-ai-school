@@ -35,12 +35,13 @@ jest.mock('@smk/logger', () => ({
   },
 }));
 
-// Mock PermissionsService.hasPermission — bypass semua permission check di E2E
-// (CI tidak punya data permission ter-seed di DB smk_test)
+// Fixture permission-granted untuk jalur HTTP/domain, bukan E2E RBAC database.
+// Guard produksi tetap berjalan; kontrak Set harus konsisten dengan hasPermission.
+// CI tidak memiliki data permission ter-seed di DB smk_test.
 jest.mock('../src/permissions/permissions.service', () => ({
   PermissionsService: jest.fn().mockImplementation(() => ({
     hasPermission: jest.fn().mockResolvedValue(true),
-    getEffectivePermissions: jest.fn().mockResolvedValue(new Set()),
+    getEffectivePermissions: jest.fn().mockResolvedValue(new Set(['*'])),
     getAuthoritativePrimaryRole: jest.fn().mockImplementation((keycloakId: string) => {
       const rolesByKeycloakId: Record<string, string> = {
         'e2e00000-0000-4000-c000-000000000001': 'SUPER_ADMIN',
@@ -86,6 +87,7 @@ import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter
 import { PrismaExceptionFilter } from '../src/common/filters/prisma-exception.filter';
 import { LoggingInterceptor } from '../src/common/interceptors/logging.interceptor';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { PermissionsService } from '../src/permissions/permissions.service';
 
 // ── Test IDs — deterministik agar mudah cleanup ──────────────────────────────
 // Semua UUID valid format (36 char) — diperlukan oleh @db.Uuid constraint
@@ -322,6 +324,20 @@ describe('Auth mock contract', () => {
     expect(PrimaryRoleSchema.safeParse('GURU').success).toBe(true);
     expect(PrimaryRoleSchema.safeParse('KEPALA_SEKOLAH').success).toBe(false);
     expect(isPrimaryRole('KEPALA_SEKOLAH')).toBe(false);
+  });
+
+  it('enforces an explicit empty permission Set and recovers for the same identity', async () => {
+    const effectivePermissions = jest.mocked(app.get(PermissionsService).getEffectivePermissions);
+    effectivePermissions.mockResolvedValueOnce(new Set());
+
+    await req()
+      .get(`/api/v1/students/${IDS.student}`)
+      .set(auth('e2e-token-sa'))
+      .expect(403);
+    await req()
+      .get(`/api/v1/students/${IDS.student}`)
+      .set(auth('e2e-token-sa'))
+      .expect(200);
   });
 });
 

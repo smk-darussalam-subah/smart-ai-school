@@ -1,12 +1,26 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { provisionStudentAction } from '../actions';
+import TemporaryCredentialExports from '@/components/TemporaryCredentialExports';
+import { credentialRoleLabel, type TemporaryCredential } from '@/lib/temporary-credentials';
 import {
   getRecommendedClassId,
   isRecommendedClassForLead,
@@ -15,12 +29,14 @@ import {
   toWizardInitialValues,
 } from './ppdb-enrollment-handoff';
 
-interface ClassItem { id: string; name: string; grade?: number; majorCode?: string | null; }
-
-interface TempCredential {
-  username: string;
-  tempPassword: string;
+interface ClassItem {
+  id: string;
+  name: string;
+  grade?: number;
+  majorCode?: string | null;
 }
+
+type TempCredential = TemporaryCredential;
 
 interface Props {
   open: boolean;
@@ -95,11 +111,16 @@ export default function SiswaWizard({ open, onOpenChange, classes, initialLead }
 
   const canNext = (): boolean => {
     switch (step) {
-      case 1: return nis.trim().length >= 1 && siswaName.trim().length >= 1 && classId.trim().length >= 1;
-      case 2: return ortuName.trim().length >= 1 && ortuPhone.trim().length >= 1;
-      case 3: return consent === true;
-      case 4: return true;
-      default: return false;
+      case 1:
+        return nis.trim().length >= 1 && siswaName.trim().length >= 1 && classId.trim().length >= 1;
+      case 2:
+        return ortuName.trim().length >= 1 && ortuPhone.trim().length >= 1;
+      case 3:
+        return consent === true;
+      case 4:
+        return true;
+      default:
+        return false;
     }
   };
 
@@ -149,7 +170,8 @@ export default function SiswaWizard({ open, onOpenChange, classes, initialLead }
 
   const selectedClass = classes.find((item) => item.id === classId);
   const selectedClassName = selectedClass?.name;
-  const hasClassRecommendation = !!selectedClass && isRecommendedClassForLead(initialLead, selectedClass);
+  const hasClassRecommendation =
+    !!selectedClass && isRecommendedClassForLead(initialLead, selectedClass);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -167,7 +189,9 @@ export default function SiswaWizard({ open, onOpenChange, classes, initialLead }
         <div className="min-h-0 overflow-y-auto px-6 py-5">
           {initialLead && (
             <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-              Enrollment PPDB untuk {initialLead.fullName}. Nama, kontak wali, email wali, dan gender diprefill dari lead bila tersedia; NIS, kelas, dan consent tetap diverifikasi operator.
+              Enrollment PPDB untuk {initialLead.fullName}. Nama, kontak wali, email wali, dan
+              gender diprefill dari lead bila tersedia; NIS, kelas, dan consent tetap diverifikasi
+              operator.
             </div>
           )}
 
@@ -185,38 +209,77 @@ export default function SiswaWizard({ open, onOpenChange, classes, initialLead }
           {step === 1 && (
             <div className="space-y-4">
               <div>
-                <Label htmlFor="wizard-nis">NIS <span className="text-red-500">*</span></Label>
-                <Input id="wizard-nis" value={nis} onChange={(e) => setNis(e.target.value)} required minLength={1} maxLength={20} placeholder="Nomor Induk Siswa" />
+                <Label htmlFor="wizard-nis">
+                  NIS <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="wizard-nis"
+                  value={nis}
+                  onChange={(e) => setNis(e.target.value)}
+                  required
+                  minLength={1}
+                  maxLength={20}
+                  placeholder="Nomor Induk Siswa"
+                />
               </div>
               <div>
-                <Label htmlFor="wizard-siswa-name">Nama Lengkap <span className="text-red-500">*</span></Label>
-                <Input id="wizard-siswa-name" value={siswaName} onChange={(e) => setSiswaName(e.target.value)} required placeholder="Nama lengkap siswa" />
+                <Label htmlFor="wizard-siswa-name">
+                  Nama Lengkap <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="wizard-siswa-name"
+                  value={siswaName}
+                  onChange={(e) => setSiswaName(e.target.value)}
+                  required
+                  placeholder="Nama lengkap siswa"
+                />
               </div>
               {siswaGender && (
                 <div className="rounded-lg border bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                  Jenis kelamin dari lead PPDB: <span className="font-medium">{siswaGender === 'L' ? 'Laki-laki' : 'Perempuan'}</span>
+                  Jenis kelamin dari lead PPDB:{' '}
+                  <span className="font-medium">
+                    {siswaGender === 'L' ? 'Laki-laki' : 'Perempuan'}
+                  </span>
                 </div>
               )}
               <div>
-                <Label>Kelas <span className="text-red-500">*</span></Label>
-                <Select value={classId || 'none'} onValueChange={(v: string) => setClassId(v === 'none' ? '' : v)}>
-                  <SelectTrigger><SelectValue placeholder="Pilih kelas" /></SelectTrigger>
+                <Label>
+                  Kelas <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={classId || 'none'}
+                  onValueChange={(v: string) => setClassId(v === 'none' ? '' : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih kelas" />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none" disabled>-- Pilih Kelas --</SelectItem>
+                    <SelectItem value="none" disabled>
+                      -- Pilih Kelas --
+                    </SelectItem>
                     {classOptions.map((item) => (
                       <SelectItem key={item.id} value={item.id}>
-                        {item.name}{isRecommendedClassForLead(initialLead, item) ? ' - sesuai jurusan PPDB' : ''}
+                        {item.name}
+                        {isRecommendedClassForLead(initialLead, item)
+                          ? ' - sesuai jurusan PPDB'
+                          : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 {initialLead?.interestMajor && (
                   <p className="mt-1 text-xs text-gray-500">
-                    Jurusan minat PPDB: {initialLead.interestMajor}. {hasClassRecommendation ? 'Kelas direkomendasikan sudah dipilih otomatis.' : 'Pilih kelas akhir sesuai keputusan panitia.'}
+                    Jurusan minat PPDB: {initialLead.interestMajor}.{' '}
+                    {hasClassRecommendation
+                      ? 'Kelas direkomendasikan sudah dipilih otomatis.'
+                      : 'Pilih kelas akhir sesuai keputusan panitia.'}
                   </p>
                 )}
                 {!classId && (
-                  <p className="mt-1 text-xs text-red-600">Kelas wajib dipilih agar jadwal, aktivitas kelas, dan kalender siswa langsung aktif.</p>
+                  <p className="mt-1 text-xs text-red-600">
+                    Kelas wajib dipilih agar jadwal, aktivitas kelas, dan kalender siswa langsung
+                    aktif.
+                  </p>
                 )}
               </div>
             </div>
@@ -225,17 +288,39 @@ export default function SiswaWizard({ open, onOpenChange, classes, initialLead }
           {step === 2 && (
             <div className="space-y-4">
               <div>
-                <Label htmlFor="wizard-ortu-name">Nama Orang Tua <span className="text-red-500">*</span></Label>
-                <Input id="wizard-ortu-name" value={ortuName} onChange={(e) => setOrtuName(e.target.value)} required placeholder="Nama lengkap orang tua/wali" />
+                <Label htmlFor="wizard-ortu-name">
+                  Nama Orang Tua <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="wizard-ortu-name"
+                  value={ortuName}
+                  onChange={(e) => setOrtuName(e.target.value)}
+                  required
+                  placeholder="Nama lengkap orang tua/wali"
+                />
               </div>
               <div>
-                <Label htmlFor="wizard-ortu-phone">Nomor Telepon <span className="text-red-500">*</span></Label>
-                <Input id="wizard-ortu-phone" value={ortuPhone} onChange={(e) => setOrtuPhone(e.target.value)} required placeholder="+6281234567890" />
+                <Label htmlFor="wizard-ortu-phone">
+                  Nomor Telepon <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="wizard-ortu-phone"
+                  value={ortuPhone}
+                  onChange={(e) => setOrtuPhone(e.target.value)}
+                  required
+                  placeholder="+6281234567890"
+                />
                 <p className="mt-1 text-xs text-gray-400">Format E.164 (diawali kode negara)</p>
               </div>
               <div>
                 <Label htmlFor="wizard-ortu-email">Surel (opsional)</Label>
-                <Input id="wizard-ortu-email" type="email" value={ortuEmail} onChange={(e) => setOrtuEmail(e.target.value)} placeholder="ortu@contoh.com" />
+                <Input
+                  id="wizard-ortu-email"
+                  type="email"
+                  value={ortuEmail}
+                  onChange={(e) => setOrtuEmail(e.target.value)}
+                  placeholder="ortu@contoh.com"
+                />
               </div>
               <div className="flex items-center gap-2">
                 <input
@@ -257,9 +342,9 @@ export default function SiswaWizard({ open, onOpenChange, classes, initialLead }
               <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
                 <h4 className="mb-2 font-medium text-yellow-800">Konfirmasi Persetujuan Data</h4>
                 <p className="text-sm text-yellow-700">
-                  Dengan melanjutkan, Anda menyatakan bahwa persetujuan dari siswa dan orang tua/wali
-                  untuk memproses data pribadi telah diperoleh sesuai kebijakan privasi sekolah.
-                  Akun akan dibuat di sistem Keycloak dan database sekolah.
+                  Dengan melanjutkan, Anda menyatakan bahwa persetujuan dari siswa dan orang
+                  tua/wali untuk memproses data pribadi telah diperoleh sesuai kebijakan privasi
+                  sekolah. Akun akan dibuat di sistem Keycloak dan database sekolah.
                 </p>
               </div>
               <div className="flex items-start gap-2">
@@ -271,20 +356,43 @@ export default function SiswaWizard({ open, onOpenChange, classes, initialLead }
                   className="mt-1 rounded border-gray-300"
                 />
                 <Label htmlFor="wizard-consent" className="text-sm font-normal">
-                  Saya menyatakan bahwa persetujuan data telah diperoleh dari siswa dan/atau orang tua/wali
+                  Saya menyatakan bahwa persetujuan data telah diperoleh dari siswa dan/atau orang
+                  tua/wali
                 </Label>
               </div>
 
               <div className="space-y-1 rounded-lg border bg-gray-50 p-4 text-sm">
                 <h4 className="mb-2 font-medium">Ringkasan Data</h4>
-                <p><span className="text-gray-500">NIS:</span> {nis}</p>
-                <p><span className="text-gray-500">Nama Siswa:</span> {siswaName}</p>
-                {siswaGender && <p><span className="text-gray-500">Jenis Kelamin:</span> {siswaGender === 'L' ? 'Laki-laki' : 'Perempuan'}</p>}
-                <p><span className="text-gray-500">Kelas:</span> {selectedClassName ?? 'Wajib dipilih'}</p>
-                <p><span className="text-gray-500">Nama Orang Tua:</span> {ortuName}</p>
-                <p><span className="text-gray-500">Telepon Orang Tua:</span> {ortuPhone}</p>
-                {ortuEmail && <p><span className="text-gray-500">Surel Orang Tua:</span> {ortuEmail}</p>}
-                {reuseParent && <p className="text-blue-600">Akun orang tua yang sudah ada akan digunakan</p>}
+                <p>
+                  <span className="text-gray-500">NIS:</span> {nis}
+                </p>
+                <p>
+                  <span className="text-gray-500">Nama Siswa:</span> {siswaName}
+                </p>
+                {siswaGender && (
+                  <p>
+                    <span className="text-gray-500">Jenis Kelamin:</span>{' '}
+                    {siswaGender === 'L' ? 'Laki-laki' : 'Perempuan'}
+                  </p>
+                )}
+                <p>
+                  <span className="text-gray-500">Kelas:</span>{' '}
+                  {selectedClassName ?? 'Wajib dipilih'}
+                </p>
+                <p>
+                  <span className="text-gray-500">Nama Orang Tua:</span> {ortuName}
+                </p>
+                <p>
+                  <span className="text-gray-500">Telepon Orang Tua:</span> {ortuPhone}
+                </p>
+                {ortuEmail && (
+                  <p>
+                    <span className="text-gray-500">Surel Orang Tua:</span> {ortuEmail}
+                  </p>
+                )}
+                {reuseParent && (
+                  <p className="text-blue-600">Akun orang tua yang sudah ada akan digunakan</p>
+                )}
               </div>
             </div>
           )}
@@ -294,14 +402,15 @@ export default function SiswaWizard({ open, onOpenChange, classes, initialLead }
               <div className="rounded-lg border border-green-200 bg-green-50 p-4">
                 <h4 className="mb-2 font-medium text-green-800">Akun Berhasil Dibuat</h4>
                 <p className="text-sm text-green-700">
-                  Akun siswa dan orang tua/wali telah berhasil dibuat di sistem.
-                  Berikut kredensial sementara yang harus disampaikan kepada pengguna:
+                  Akun siswa dan orang tua/wali telah berhasil dibuat di sistem. Berikut kredensial
+                  sementara yang harus disampaikan kepada pengguna:
                 </p>
               </div>
 
+              <TemporaryCredentialExports credentials={credentials} />
               {credentials.map((cred, idx) => (
                 <div key={idx} className="space-y-2 rounded-lg border bg-gray-50 p-4">
-                  <h5 className="text-sm font-medium">{idx === 0 && credentials.length > 1 ? 'Orang Tua/Wali' : 'Siswa'}</h5>
+                  <h5 className="text-sm font-medium">{credentialRoleLabel(cred.role)}</h5>
                   <div className="grid gap-3 text-sm sm:grid-cols-2">
                     <div>
                       <span className="text-gray-500">Nama Pengguna:</span>
@@ -316,7 +425,8 @@ export default function SiswaWizard({ open, onOpenChange, classes, initialLead }
               ))}
 
               <p className="text-xs text-gray-500">
-                Harap sampaikan kredensial ini secara aman kepada pengguna. Mereka akan diminta mengubah kata sandi saat masuk pertama kali.
+                Harap sampaikan kredensial ini secara aman kepada pengguna. Mereka akan diminta
+                mengubah kata sandi saat masuk pertama kali.
               </p>
             </div>
           )}
@@ -354,7 +464,11 @@ export default function SiswaWizard({ open, onOpenChange, classes, initialLead }
               </Button>
             )}
             {step === 4 && (
-              <Button type="button" onClick={handleClose} className="bg-smk-blue hover:bg-primary-700">
+              <Button
+                type="button"
+                onClick={handleClose}
+                className="bg-smk-blue hover:bg-primary-700"
+              >
                 Selesai
               </Button>
             )}

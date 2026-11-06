@@ -1,5 +1,6 @@
 'use client';
 
+import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutDashboard,
@@ -29,7 +30,7 @@ import type {
   LmsModuleItem,
 } from './guru-types';
 import RingkasanGuru from './RingkasanGuru';
-import AttendanceJpSummary from './AttendanceJpSummary';
+import AttendanceRecap from './AttendanceRecap';
 import JadwalTimetable from './JadwalTimetable';
 import RekapPembelajaran from './RekapPembelajaran';
 import LearningRecap from './LearningRecap';
@@ -44,7 +45,6 @@ import PenilaianSesiModal from './PenilaianSesiModal';
 import SessionFlowModal from './SessionFlowModal';
 import ModulAjarForm from './ModulAjarForm';
 import RemedialPanel from './RemedialPanel';
-import KehadiranGuru from './KehadiranGuru';
 import PenugasanGuru from './PenugasanGuru';
 import RaporWaliKelas from './guru/RaporWaliKelas';
 import { fetchAssessmentSessions, type AssessmentSessionData } from '../actions';
@@ -65,6 +65,7 @@ import {
 } from './assessment-assignment-candidates';
 import {
   academicWorkflowPresentation,
+  resolveAcademicWorkflowView,
   type AcademicWorkflowView,
 } from '@/lib/academic-workflow-deep-link';
 
@@ -72,6 +73,7 @@ type Assignment = AssessmentTeachingAssignment;
 import type { TeacherSummaryAvailability, TeacherThreshold } from '@/lib/teacher-summary';
 
 interface Props {
+  initialSessionId?: string;
   allowGeneralLmsClass?: boolean;
   grades: GradeItem[];
   attendances: AttendanceItem[];
@@ -126,6 +128,7 @@ const NAV_ALL: { key: Screen; label: string; icon: typeof LayoutDashboard }[] = 
 ];
 
 export default function AkademikWorkspace({
+  initialSessionId,
   allowGeneralLmsClass = false,
   grades,
   attendances,
@@ -152,6 +155,11 @@ export default function AkademikWorkspace({
   todayDate,
 }: Props) {
   const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
+  const routeParams = useSearchParams();
+  const routeWorkflow = resolveAcademicWorkflowView(
+    routeParams.get('view') ?? undefined,
+    'teacher',
+  );
   const approvedRpp = useMemo(() => rpp.filter((r) => r.status === 'approved'), [rpp]);
   const subjects = useMemo(() => {
     const set = new Set<string>();
@@ -176,13 +184,24 @@ export default function AkademikWorkspace({
   }, [assignments, schedules]);
 
   const [screen, setScreen] = useState<Screen>(initialWorkflow.teacherScreen);
+  useEffect(() => {
+    if (routeWorkflow) setScreen(academicWorkflowPresentation(routeWorkflow).teacherScreen);
+    else if (!initialWorkflowView) setScreen('ringkasan');
+  }, [initialWorkflowView, routeWorkflow]);
+  const navigate = (next: Screen) => {
+    setScreen(next);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('view');
+    url.searchParams.delete('sessionId');
+    window.history.replaceState(null, '', url.toString());
+  };
   // W2-B-5: Wali kelas detection — fetch real wali classes from /teachers/me/wali-classes
   const {
     classes: waliClasses,
     status: waliStatus,
     error: waliError,
     retry: retryWali,
-  } = useWaliClasses(canManageReportCards, `${academicYear}|${semester}`);
+  } = useWaliClasses(canManageReportCards || canReadClassSessions, `${academicYear}|${semester}`);
   // W2-13: 'Rapor Kelas' tab only visible when guru is actually a wali kelas
   const NAV = useMemo(
     () =>
@@ -216,6 +235,10 @@ export default function AkademikWorkspace({
   const [penilaianPanel, setPenilaianPanel] = useState<
     'nilai' | 'sesi' | 'bank' | 'koreksi' | 'remedial'
   >(initialWorkflow.teacherAssessmentPanel);
+  useEffect(() => {
+    if (routeWorkflow)
+      setPenilaianPanel(academicWorkflowPresentation(routeWorkflow).teacherAssessmentPanel);
+  }, [routeWorkflow]);
   const [penilaianBankOpen, setPenilaianBankOpen] = useState(false);
   const [sessFlow, setSessFlow] = useState<TodayClass | null>(null);
   const [recapRefresh, setRecapRefresh] = useState(0);
@@ -599,7 +622,7 @@ export default function AkademikWorkspace({
                 key={n.key}
                 type="button"
                 data-active={on || undefined}
-                onClick={() => setScreen(n.key)}
+                onClick={() => navigate(n.key)}
                 className={clsx(
                   'inline-flex shrink-0 items-center gap-2 rounded-xl border px-3.5 py-2 text-[13px] font-bold',
                   on
@@ -618,16 +641,14 @@ export default function AkademikWorkspace({
       </div>
 
       <div className="pt-4">
-        {(screen === 'rekap' || screen === 'kehadiran') && canReadClassSessions && (
-          <AttendanceJpSummary
-            query={{
-              academicYear,
-              semester,
-              scope: 'own',
-              classId: selClass === 'all' ? undefined : selClass,
-              subject: subject === 'all' ? undefined : subject,
-            }}
-            refreshToken={recapRefresh}
+        {screen === 'rekap' && canReadClassSessions && (
+          <AttendanceRecap
+            key={`${academicYear}|${semester}|${selClass}|${subject}|${recapRefresh}`}
+            academicYear={academicYear}
+            semester={semester}
+            classId={selClass === 'all' ? undefined : selClass}
+            subject={subject === 'all' ? undefined : subject}
+            compact
           />
         )}
         {screen === 'sesi' && (
@@ -637,6 +658,7 @@ export default function AkademikWorkspace({
             academicYear={academicYear}
             semester={semester}
             scope="own"
+            initialSessionId={initialSessionId}
             canRead={canReadClassSessions}
             canOperate={canOperateClassSessions}
             onGuide={setSessFlow}
@@ -667,7 +689,7 @@ export default function AkademikWorkspace({
             todayDate={todayDate}
             onAbsen={(c) => setAbsen(c)}
             onJurnal={(c) => setJurnal(c)}
-            onNavigate={(s) => setScreen(s as Screen)}
+            onNavigate={(s) => navigate(s as Screen)}
             onStartSession={(c) => setSessFlow(c)}
             onPenilaian={(c) => setPenilaian({ session: c, mode: 'preview', tab: 'diag' })}
           />
@@ -1026,14 +1048,13 @@ export default function AkademikWorkspace({
         )}
 
         {screen === 'kehadiran' && (
-          <KehadiranGuru
-            key={`${academicYear}|${semester}|${selClass}`}
-            attendances={attendances}
-            className={selClassName}
-            classId={selClass === 'all' ? undefined : selClass}
+          <AttendanceRecap
+            key={`${academicYear}|${semester}|${selClass}|${subject}`}
             academicYear={academicYear}
             semester={semester}
-            dataState={summaryAvailability?.attendance ?? 'unavailable'}
+            classId={selClass === 'all' ? undefined : selClass}
+            subject={subject === 'all' ? undefined : subject}
+            allowHomeroom={waliStatus === 'ready' && waliClasses.length > 0}
           />
         )}
 

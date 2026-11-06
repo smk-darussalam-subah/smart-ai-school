@@ -38,7 +38,11 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Akses ditolak: user tidak terautentikasi');
     }
 
-    const primaryRole = await this.permissions.getAuthoritativePrimaryRole(user.keycloakId);
+    const primaryRole = await this.permissions.getAuthoritativePrimaryRole(
+      user.keycloakId,
+      undefined,
+      request,
+    );
     if (!primaryRole) {
       throw new ForbiddenException('Akses ditolak: role aplikasi tidak tersedia');
     }

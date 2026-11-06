@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -148,11 +149,24 @@ export class UsersController {
   }
 
   @Patch(':id/password-reset')
+  @Header('Cache-Control', 'private, no-store')
   @RequirePermission('user.password.reset')
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @Audit({ action: 'user.password.reset', resourceType: 'user' })
   async resetPassword(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthUser) {
     return this.usersService.resetPassword(id, actor.keycloakId);
+  }
+
+  @Patch(':id/learner-credential')
+  @Header('Cache-Control', 'private, no-store')
+  @RequirePermission('user.password.reset')
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @Audit({ action: 'user.password.reset', resourceType: 'user' })
+  async reissueLearnerCredential(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.usersService.resetPassword(id, actor.keycloakId, true);
   }
 
   @Post(':id/archive')

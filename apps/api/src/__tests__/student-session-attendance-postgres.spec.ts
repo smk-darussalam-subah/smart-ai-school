@@ -22,6 +22,8 @@ import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PushService } from '../push/push.service';
 import { resolvePendingNotificationIntent } from '../notification/notification-worker';
+import { withJpRead } from '../attendance/jp-read-admission';
+import { logoutAuditId } from '../auth/session-binding';
 const url = process.env.STUDENT_JP_DATABASE_URL;
 if (
   url &&
@@ -38,6 +40,17 @@ proof('student/session/JP production service on PostgreSQL', () => {
     permissions = new PermissionsService(db),
     period = new AcademicPeriodService(db, permissions),
     enqueue = jest.fn(async (_ids: string[]) => ({ queuedCount: 0 }));
+  let identityReads: string[] | null = null;
+  prisma.$use(async (params, next) => {
+    if (
+      identityReads &&
+      params.model === 'User' &&
+      ['findFirst', 'findUnique'].includes(params.action) &&
+      params.args?.where?.keycloakId
+    )
+      identityReads.push(params.action);
+    return next(params);
+  });
   const service = new StudentSessionAttendanceService(db, permissions, period, {
     enqueueCommittedPendingLogs: enqueue,
   } as unknown as NotificationService);
@@ -292,6 +305,103 @@ proof('student/session/JP production service on PostgreSQL', () => {
     };
   }
   const read = () => service.learner({ from: '2026-10-01', to: '2026-10-22' }, learner);
+  it.each(['student', 'parent'] as const)(
+    'reads %s identity once inside each fresh learner transaction',
+    async (kind) => {
+      identityReads = [];
+      try {
+        const result = await service.learner(
+          { from: '2026-10-01', to: '2026-10-22', studentId },
+          kind === 'student' ? learner : parent,
+        );
+        expect(result.studentId).toBe(studentId);
+        expect(identityReads).toEqual(['findFirst']);
+      } finally {
+        identityReads = null;
+      }
+    },
+  );
+  it('does not reuse a fresh actor after a mutation in the same transaction', async () => {
+    const permission = 'attendance.child.read';
+    await expect(
+      prisma.$transaction(async (tx) => {
+        expect(
+          await permissions.findFreshActorWithPermission(parent.keycloakId, permission, tx),
+        ).toMatchObject({ id: parentId, role: 'ORANG_TUA' });
+        await tx.user.update({ where: { id: parentId }, data: { isActive: false } });
+        expect(
+          await permissions.findFreshActorWithPermission(parent.keycloakId, permission, tx),
+        ).toBeNull();
+        throw new Error('synthetic-rollback-fresh-actor');
+      }),
+    ).rejects.toThrow('synthetic-rollback-fresh-actor');
+    expect(await prisma.user.findUnique({ where: { id: parentId } })).toMatchObject({
+      isActive: true,
+      role: 'ORANG_TUA',
+    });
+  });
+  it.each(['relationship', 'permission', 'disabled', 'role', 'logout'] as const)(
+    'a read waiting for admission rechecks fresh PostgreSQL %s before exposing JP',
+    async (change) => {
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const a = withJpRead(prisma, 'synthetic-reserve-a', () => held);
+      const b = withJpRead(prisma, 'synthetic-reserve-b', () => held);
+      const sessionBinding = 'synthetic-admission-revocation';
+      const pending = service.learner(
+        { from: '2026-10-01', to: '2026-10-22', studentId },
+        { ...parent, sessionBinding },
+      );
+      const denied = expect(pending).rejects.toMatchObject({
+        status: change === 'logout' ? 401 : 403,
+      });
+      const permission = await prisma.permission.findUniqueOrThrow({
+        where: { code: 'attendance.child.read' },
+      });
+      try {
+        if (change === 'relationship')
+          await prisma.student.update({ where: { id: studentId }, data: { parentId: null } });
+        if (change === 'permission')
+          await prisma.userPermissionOverride.create({
+            data: { userId: parentId, permissionId: permission.id, grant: false },
+          });
+        if (change === 'disabled')
+          await prisma.user.update({ where: { id: parentId }, data: { isActive: false } });
+        if (change === 'role')
+          await prisma.user.update({ where: { id: parentId }, data: { role: 'TATA_USAHA' } });
+        if (change === 'logout')
+          await prisma.auditLog.create({
+            data: {
+              id: logoutAuditId(sessionBinding),
+              actorId: parent.keycloakId,
+              actorRoles: ['ORANG_TUA'],
+              action: 'auth.logout',
+              method: 'POST',
+              path: '/synthetic/logout',
+              statusCode: 200,
+              outcome: 'success',
+            },
+          });
+        release();
+        await Promise.all([a, b]);
+        await denied;
+      } finally {
+        release();
+        await Promise.allSettled([a, b, pending]);
+        await prisma.student.update({ where: { id: studentId }, data: { parentId } });
+        await prisma.user.update({
+          where: { id: parentId },
+          data: { isActive: true, role: 'ORANG_TUA' },
+        });
+        await prisma.auditLog.deleteMany({ where: { id: logoutAuditId(sessionBinding) } });
+        await prisma.userPermissionOverride.deleteMany({
+          where: { userId: parentId, permissionId: permission.id },
+        });
+      }
+    },
+  );
   it('overview reads the same PostgreSQL JP decisions and leaves legacy daily records intact', async () => {
     const legacyBefore = await prisma.attendance.findMany({ orderBy: { id: 'asc' } });
     const input = {

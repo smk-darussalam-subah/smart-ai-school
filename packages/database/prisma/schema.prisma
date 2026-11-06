@@ -1849,6 +1849,9 @@ model AcademicCalendar {
   endDate        DateTime     @map("end_date") @db.Date
   type           CalendarType                          // holiday, exam, event, break
   description    String?      @db.Text
+  startAt        DateTime?    @map("start_at") @db.Timestamptz(3)
+  endAt          DateTime?    @map("end_at") @db.Timestamptz(3)
+  location       String?      @db.VarChar(255)
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 

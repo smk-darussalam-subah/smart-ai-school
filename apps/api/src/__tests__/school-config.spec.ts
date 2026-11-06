@@ -14,10 +14,50 @@ import { AppointmentsService } from '../appointments/appointments.service';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { Prisma } from '@prisma/client';
 
-const PROFILE = { id: 'p1', name: 'SMK Darussalam Subah', npsn: '20324567', address: 'Jl. Raya', phone: null, email: null, website: null, headmasterName: null, headmasterNip: null, logoUrl: null, accreditation: 'A', createdAt: new Date(), updatedAt: new Date() };
-const MAJOR_TKRO = { id: 'm1', code: 'TKRO', name: 'Teknik Kendaraan Ringan Otomotif', description: null, isActive: true, createdAt: new Date(), updatedAt: new Date() };
-const AY = { id: 'ay1', code: '2026/2027', startDate: new Date('2026-07-13'), endDate: new Date('2027-06-26'), isActive: true, createdAt: new Date(), updatedAt: new Date() };
-const SEM = { id: 's1', academicYearId: 'ay1', number: 1, startDate: new Date('2026-07-13'), endDate: new Date('2026-12-19'), isActive: true, createdAt: new Date(), updatedAt: new Date(), academicYear: { code: '2026/2027' } };
+const PROFILE = {
+  id: 'p1',
+  name: 'SMK Darussalam Subah',
+  npsn: '20324567',
+  address: 'Jl. Raya',
+  phone: null,
+  email: null,
+  website: null,
+  headmasterName: null,
+  headmasterNip: null,
+  logoUrl: null,
+  accreditation: 'A',
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+const MAJOR_TKRO = {
+  id: 'm1',
+  code: 'TKRO',
+  name: 'Teknik Kendaraan Ringan Otomotif',
+  description: null,
+  isActive: true,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+const AY = {
+  id: 'ay1',
+  code: '2026/2027',
+  startDate: new Date('2026-07-13'),
+  endDate: new Date('2027-06-26'),
+  isActive: true,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+const SEM = {
+  id: 's1',
+  academicYearId: 'ay1',
+  number: 1,
+  startDate: new Date('2026-07-13'),
+  endDate: new Date('2026-12-19'),
+  isActive: true,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  academicYear: { code: '2026/2027' },
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // SchoolConfigService
@@ -26,14 +66,47 @@ const SEM = { id: 's1', academicYearId: 'ay1', number: 1, startDate: new Date('2
 describe('SchoolConfigService', () => {
   let service: SchoolConfigService;
   const mockProfile = { findFirst: jest.fn(), update: jest.fn() };
-  const mockMajor = { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() };
-  const mockAY = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() };
-  const mockSem = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() };
-  const mockCal = { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() };
+  const mockMajor = {
+    findMany: jest.fn(),
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  };
+  const mockAY = {
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+    findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+    count: jest.fn(),
+  };
+  const mockSem = {
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+    findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+    count: jest.fn(),
+  };
+  const mockCal = {
+    findMany: jest.fn(),
+    findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+  };
   const mockStaffPosition = { updateMany: jest.fn() };
   const mockUserPermissionOverride = { deleteMany: jest.fn() };
   const mock$transaction = jest.fn();
-  const mockPermissions = { invalidateAll: jest.fn(), invalidateUser: jest.fn() };
+  const mockPermissions = {
+    getAuthoritativePrimaryRole: jest.fn().mockResolvedValue('SUPER_ADMIN'),
+    hasFreshPermission: jest.fn().mockResolvedValue(true),
+    invalidateAll: jest.fn(),
+    invalidateUser: jest.fn(),
+  };
   const mockAppointments = {
     acquireActivationLock: jest.fn(),
     applyAcademicYearActivation: jest.fn(),
@@ -53,19 +126,49 @@ describe('SchoolConfigService', () => {
     staffPosition: mockStaffPosition,
     userPermissionOverride: mockUserPermissionOverride,
     $transaction: mock$transaction,
+    $executeRaw: jest.fn().mockResolvedValue(1),
+    $queryRaw: jest.fn().mockResolvedValue([]),
   };
 
   beforeEach(async () => {
-    [mockProfile.findFirst, mockProfile.update, mockMajor.findMany, mockMajor.findUnique, mockMajor.findFirst, mockMajor.create, mockMajor.update,
-      mockAY.findMany, mockAY.findFirst, mockAY.findUnique, mockAY.create, mockAY.update, mockAY.updateMany, mockAY.count,
-      mockSem.findMany, mockSem.findFirst, mockSem.findUnique, mockSem.create, mockSem.update, mockSem.updateMany, mockSem.count,
-      mockCal.findMany, mockCal.findUnique, mockCal.create, mockCal.update, mockCal.delete,
-      mockStaffPosition.updateMany, mockUserPermissionOverride.deleteMany,
-      mock$transaction, mockPermissions.invalidateAll, mockPermissions.invalidateUser,
-      mockAppointments.acquireActivationLock, mockAppointments.applyAcademicYearActivation,
+    [
+      mockProfile.findFirst,
+      mockProfile.update,
+      mockMajor.findMany,
+      mockMajor.findUnique,
+      mockMajor.findFirst,
+      mockMajor.create,
+      mockMajor.update,
+      mockAY.findMany,
+      mockAY.findFirst,
+      mockAY.findUnique,
+      mockAY.create,
+      mockAY.update,
+      mockAY.updateMany,
+      mockAY.count,
+      mockSem.findMany,
+      mockSem.findFirst,
+      mockSem.findUnique,
+      mockSem.create,
+      mockSem.update,
+      mockSem.updateMany,
+      mockSem.count,
+      mockCal.findMany,
+      mockCal.findUnique,
+      mockCal.create,
+      mockCal.update,
+      mockCal.delete,
+      mockStaffPosition.updateMany,
+      mockUserPermissionOverride.deleteMany,
+      mock$transaction,
+      mockPermissions.invalidateAll,
+      mockPermissions.invalidateUser,
+      mockAppointments.acquireActivationLock,
+      mockAppointments.applyAcademicYearActivation,
       mockAcademicPeriod.assertAcademicYearActivationAllowed,
       mockAcademicPeriod.assertInitialSemesterActivationAllowed,
-      mockAcademicPeriod.assertWritableSemesterId].forEach(m => m.mockReset());
+      mockAcademicPeriod.assertWritableSemesterId,
+    ].forEach((m) => m.mockReset());
     mockAppointments.acquireActivationLock.mockResolvedValue(undefined);
     mockAppointments.applyAcademicYearActivation.mockResolvedValue({
       endedCount: 0,
@@ -137,32 +240,38 @@ describe('SchoolConfigService', () => {
       description: '   ',
     });
     expect(whitespaceDescription.success).toBe(true);
-    expect(whitespaceDescription.success ? whitespaceDescription.data.description : 'failed').toBeNull();
-    expect(CreateMajorSchema.safeParse({
-      code: 'DKV',
-      name: 'Desain Komunikasi Visual',
-      description: 'x'.repeat(801),
-    }).success).toBe(false);
+    expect(
+      whitespaceDescription.success ? whitespaceDescription.data.description : 'failed',
+    ).toBeNull();
+    expect(
+      CreateMajorSchema.safeParse({
+        code: 'DKV',
+        name: 'Desain Komunikasi Visual',
+        description: 'x'.repeat(801),
+      }).success,
+    ).toBe(false);
   });
 
   it('createMajor duplikat → Conflict', async () => {
     mockMajor.findFirst.mockResolvedValue({ id: 'm1' });
-    await expect(
-      service.createMajor({ code: 'TKRO', name: 'TKRO' }),
-    ).rejects.toThrow(ConflictException);
+    await expect(service.createMajor({ code: 'TKRO', name: 'TKRO' })).rejects.toThrow(
+      ConflictException,
+    );
     expect(mockMajor.create).not.toHaveBeenCalled();
   });
 
   it('createMajor race P2002 → Conflict tanpa 500', async () => {
     mockMajor.findFirst.mockResolvedValue(null);
-    mockMajor.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('duplicate', {
-      code: 'P2002',
-      clientVersion: '5.0.0',
-    }));
+    mockMajor.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('duplicate', {
+        code: 'P2002',
+        clientVersion: '5.0.0',
+      }),
+    );
 
-    await expect(
-      service.createMajor({ code: 'TKRO', name: 'TKRO' }),
-    ).rejects.toThrow(ConflictException);
+    await expect(service.createMajor({ code: 'TKRO', name: 'TKRO' })).rejects.toThrow(
+      ConflictException,
+    );
   });
 
   it('updateMajor → success', async () => {
@@ -177,18 +286,27 @@ describe('SchoolConfigService', () => {
 
     await service.updateMajor('m1', { isActive: false });
 
-    expect(mockMajor.update).toHaveBeenCalledWith({ where: { id: 'm1' }, data: { isActive: false } });
+    expect(mockMajor.update).toHaveBeenCalledWith({
+      where: { id: 'm1' },
+      data: { isActive: false },
+    });
     expect(mockPermissions.invalidateAll).toHaveBeenCalledTimes(1);
   });
 
   it('updateMajor → not found → NotFoundException', async () => {
-    mockMajor.update.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('test', { code: 'P2025', clientVersion: '5.0.0' }));
-    await expect(service.updateMajor('not-exist', { name: 'X' })).rejects.toThrow(NotFoundException);
+    mockMajor.update.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('test', { code: 'P2025', clientVersion: '5.0.0' }),
+    );
+    await expect(service.updateMajor('not-exist', { name: 'X' })).rejects.toThrow(
+      NotFoundException,
+    );
     expect(mockPermissions.invalidateAll).not.toHaveBeenCalled();
   });
 
   it('updateMajor → duplicate code → ConflictException', async () => {
-    mockMajor.update.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('test', { code: 'P2002', clientVersion: '5.0.0' }));
+    mockMajor.update.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('test', { code: 'P2002', clientVersion: '5.0.0' }),
+    );
     await expect(service.updateMajor('m1', { code: 'DUP' })).rejects.toThrow(ConflictException);
   });
 
@@ -206,10 +324,17 @@ describe('SchoolConfigService', () => {
   it('createAcademicYear with isActive → deactivate others in transaction', async () => {
     mockAY.findUnique.mockResolvedValue(null); // tak duplikat
     // Simulate $transaction: execute the callback immediately with the mock prisma
-    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) =>
+      cb(prisma),
+    );
     mockAY.updateMany.mockResolvedValue({ count: 1 });
     mockAY.create.mockResolvedValue(AY);
-    await service.createAcademicYear({ code: '2026/2027', startDate: new Date('2026-07-13'), endDate: new Date('2027-06-26'), isActive: true });
+    await service.createAcademicYear({
+      code: '2026/2027',
+      startDate: new Date('2026-07-13'),
+      endDate: new Date('2027-06-26'),
+      isActive: true,
+    });
     void prisma;
     expect(mock$transaction).toHaveBeenCalledTimes(1);
     expect(mockAY.updateMany).toHaveBeenCalledWith({ data: { isActive: false } });
@@ -218,7 +343,9 @@ describe('SchoolConfigService', () => {
   it('createAcademicYear active baru -> cleanup posisi dan override tahun lama', async () => {
     mockAY.findUnique.mockResolvedValue(null);
     mockAY.findFirst.mockResolvedValue({ id: 'ay-old' });
-    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) =>
+      cb(prisma),
+    );
     mockAY.updateMany.mockResolvedValue({ count: 1 });
     mockSem.updateMany.mockResolvedValue({ count: 2 });
     mockAY.create.mockResolvedValue({ ...AY, id: 'ay-new' });
@@ -239,13 +366,18 @@ describe('SchoolConfigService', () => {
     expect(mockUserPermissionOverride.deleteMany).toHaveBeenCalledWith({
       where: { academicYearId: 'ay-old', source: 'POSITION_ASSIGNMENT' },
     });
-    expect(mockAppointments.applyAcademicYearActivation).toHaveBeenCalledWith(
-      prisma,
-      { yearId: 'ay-new', oldYearId: 'ay-old', now: expect.any(Date) },
-    );
+    expect(mockAppointments.applyAcademicYearActivation).toHaveBeenCalledWith(prisma, {
+      yearId: 'ay-new',
+      oldYearId: 'ay-old',
+      now: expect.any(Date),
+    });
     expect(mockAppointments.acquireActivationLock).toHaveBeenCalledWith(prisma);
-    expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.findFirst.mock.invocationCallOrder[0]!);
-    expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.updateMany.mock.invocationCallOrder[0]!);
+    expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(
+      mockAY.findFirst.mock.invocationCallOrder[0]!,
+    );
+    expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(
+      mockAY.updateMany.mock.invocationCallOrder[0]!,
+    );
     expect(mockPermissions.invalidateAll).toHaveBeenCalled();
   });
 
@@ -255,9 +387,14 @@ describe('SchoolConfigService', () => {
     mockAY.findUnique.mockResolvedValue(null);
     mockAY.findMany.mockResolvedValue([]);
     mockAY.create.mockResolvedValue({ ...AY, id: 'ay-new' });
-    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) =>
+      cb(prisma),
+    );
     mockAppointments.acquireActivationLock.mockImplementationOnce(
-      () => new Promise<void>((resolve) => { releaseLock = resolve; }),
+      () =>
+        new Promise<void>((resolve) => {
+          releaseLock = resolve;
+        }),
     );
 
     try {
@@ -287,17 +424,21 @@ describe('SchoolConfigService', () => {
   it('cleanup gagal tetap invalidate cache agar resolver membaca active year baru', async () => {
     mockAY.findUnique.mockResolvedValue(null);
     mockAY.findFirst.mockResolvedValue({ id: 'ay-old' });
-    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) =>
+      cb(prisma),
+    );
     mockAY.updateMany.mockResolvedValue({ count: 1 });
     mockAY.create.mockResolvedValue({ ...AY, id: 'ay-new' });
     mockStaffPosition.updateMany.mockRejectedValue(new Error('cleanup failed'));
 
-    await expect(service.createAcademicYear({
-      code: '2027/2028',
-      startDate: new Date('2027-07-12'),
-      endDate: new Date('2028-06-24'),
-      isActive: true,
-    })).resolves.toBeDefined();
+    await expect(
+      service.createAcademicYear({
+        code: '2027/2028',
+        startDate: new Date('2027-07-12'),
+        endDate: new Date('2028-06-24'),
+        isActive: true,
+      }),
+    ).resolves.toBeDefined();
 
     expect(mockPermissions.invalidateAll).toHaveBeenCalled();
   });
@@ -305,7 +446,12 @@ describe('SchoolConfigService', () => {
   it('createAcademicYear duplikat → Conflict (tanpa menonaktifkan yg lain)', async () => {
     mockAY.findUnique.mockResolvedValue({ id: 'ay1' }); // sudah ada
     await expect(
-      service.createAcademicYear({ code: '2026/2027', startDate: new Date('2026-07-13'), endDate: new Date('2027-06-26'), isActive: true }),
+      service.createAcademicYear({
+        code: '2026/2027',
+        startDate: new Date('2026-07-13'),
+        endDate: new Date('2027-06-26'),
+        isActive: true,
+      }),
     ).rejects.toThrow(ConflictException);
     expect(mock$transaction).not.toHaveBeenCalled();
     expect(mockAY.create).not.toHaveBeenCalled();
@@ -323,21 +469,30 @@ describe('SchoolConfigService', () => {
     const result = await service.updateAcademicYear('ay1', { isActive: true });
     expect(mock$transaction).toHaveBeenCalledTimes(1);
     expect(result).toBeDefined();
-    expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.findMany.mock.invocationCallOrder[0]!);
-    expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(mockAY.updateMany.mock.invocationCallOrder[0]!);
+    expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(
+      mockAY.findMany.mock.invocationCallOrder[0]!,
+    );
+    expect(mockAppointments.acquireActivationLock.mock.invocationCallOrder[0]!).toBeLessThan(
+      mockAY.updateMany.mock.invocationCallOrder[0]!,
+    );
   });
 
   it('updateAcademicYear captures cutover time after a deferred lock crosses Jakarta midnight', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-30T16:59:59.999Z'));
     let releaseLock: (() => void) | undefined;
-    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+    mock$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) =>
+      cb(prisma),
+    );
     mockAY.findUnique.mockResolvedValue({ id: 'ay1', isActive: false });
     mockAY.count.mockResolvedValue(0);
     mockSem.count.mockResolvedValue(0);
     mockAY.findMany.mockResolvedValue([]);
     mockAY.update.mockResolvedValue({ ...AY, isActive: true });
     mockAppointments.acquireActivationLock.mockImplementationOnce(
-      () => new Promise<void>((resolve) => { releaseLock = resolve; }),
+      () =>
+        new Promise<void>((resolve) => {
+          releaseLock = resolve;
+        }),
     );
 
     try {
@@ -362,14 +517,24 @@ describe('SchoolConfigService', () => {
   });
 
   it('updateAcademicYear → not found → NotFoundException', async () => {
-    mock$transaction.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('test', { code: 'P2025', clientVersion: '5.0.0' }));
-    await expect(service.updateAcademicYear('not-exist', { isActive: true })).rejects.toThrow(NotFoundException);
+    mock$transaction.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('test', { code: 'P2025', clientVersion: '5.0.0' }),
+    );
+    await expect(service.updateAcademicYear('not-exist', { isActive: true })).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   it('createSemester duplikat → Conflict', async () => {
     mockSem.findUnique.mockResolvedValue({ id: 's1' });
     await expect(
-      service.createSemester({ academicYearId: 'ay1', number: 1, startDate: new Date('2026-07-13'), endDate: new Date('2026-12-19'), isActive: true }),
+      service.createSemester({
+        academicYearId: 'ay1',
+        number: 1,
+        startDate: new Date('2026-07-13'),
+        endDate: new Date('2026-12-19'),
+        isActive: true,
+      }),
     ).rejects.toThrow(ConflictException);
     expect(mockSem.create).not.toHaveBeenCalled();
   });
@@ -380,7 +545,13 @@ describe('SchoolConfigService', () => {
     mock$transaction.mockImplementation(async (cb: (tx: any) => Promise<unknown>) => cb(prisma));
     mockSem.updateMany.mockResolvedValue({ count: 1 });
     mockSem.create.mockResolvedValue(SEM);
-    await service.createSemester({ academicYearId: 'ay1', number: 1, startDate: new Date('2026-07-13'), endDate: new Date('2026-12-19'), isActive: true });
+    await service.createSemester({
+      academicYearId: 'ay1',
+      number: 1,
+      startDate: new Date('2026-07-13'),
+      endDate: new Date('2026-12-19'),
+      isActive: true,
+    });
     expect(mock$transaction).toHaveBeenCalledTimes(1);
     expect(mockSem.updateMany).toHaveBeenCalledWith({ data: { isActive: false } });
   });
@@ -388,7 +559,12 @@ describe('SchoolConfigService', () => {
   it('updateSemester with isActive → transactional activate', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mock$transaction.mockImplementation(async (cb: (tx: any) => Promise<unknown>) => cb(prisma));
-    mockSem.findUnique.mockResolvedValue({ id: 's1', academicYearId: 'ay1', number: 1, isActive: false });
+    mockSem.findUnique.mockResolvedValue({
+      id: 's1',
+      academicYearId: 'ay1',
+      number: 1,
+      isActive: false,
+    });
     mockSem.updateMany.mockResolvedValue({ count: 1 });
     mockSem.update.mockResolvedValue({ ...SEM, isActive: true });
     const result = await service.updateSemester('s1', { isActive: true });
@@ -397,14 +573,20 @@ describe('SchoolConfigService', () => {
   });
 
   it('updateSemester → not found → NotFoundException', async () => {
-    mock$transaction.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('test', { code: 'P2025', clientVersion: '5.0.0' }));
-    await expect(service.updateSemester('not-exist', { isActive: true })).rejects.toThrow(NotFoundException);
+    mock$transaction.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('test', { code: 'P2025', clientVersion: '5.0.0' }),
+    );
+    await expect(service.updateSemester('not-exist', { isActive: true })).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   it('getSemesters → filter by academicYearId', async () => {
     mockSem.findMany.mockResolvedValue([SEM]);
     await service.getSemesters('ay1');
-    expect(mockSem.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { academicYearId: 'ay1' } }));
+    expect(mockSem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { academicYearId: 'ay1' } }),
+    );
   });
 
   it('getActiveSemester → return active', async () => {
@@ -416,19 +598,45 @@ describe('SchoolConfigService', () => {
   it('getCalendarEvents → filter by type', async () => {
     mockCal.findMany.mockResolvedValue([]);
     await service.getCalendarEvents(undefined, 'exam');
-    expect(mockCal.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { type: 'exam' } }));
+    expect(mockCal.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { type: 'exam' } }),
+    );
   });
 
   it('createCalendarEvent → insert', async () => {
     mockAY.findUnique.mockResolvedValue(AY);
-    mockCal.create.mockResolvedValue({ id: 'e1', academicYearId: 'ay1', name: 'UTS', startDate: new Date(), endDate: new Date(), type: 'exam', description: null, createdAt: new Date(), updatedAt: new Date() });
-    await service.createCalendarEvent({ academicYearId: 'ay1', name: 'UTS', startDate: new Date(), endDate: new Date(), type: 'exam' });
+    mockCal.create.mockResolvedValue({
+      id: 'e1',
+      academicYearId: 'ay1',
+      name: 'UTS',
+      startDate: new Date(),
+      endDate: new Date(),
+      type: 'exam',
+      description: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    mock$transaction.mockImplementation(async (cb) => cb(prisma));
+    await service.createCalendarEvent(
+      {
+        academicYearId: 'ay1',
+        name: 'UTS',
+        startDate: new Date('2026-10-02'),
+        endDate: new Date('2026-10-03'),
+        type: 'exam',
+      },
+      { keycloakId: 'qa-sa', roles: ['SUPER_ADMIN'] } as import('@smk/auth').AuthUser,
+    );
     expect(mockCal.create).toHaveBeenCalledTimes(1);
   });
 
   it('deleteCalendarEvent → delete', async () => {
     mockCal.delete.mockResolvedValue({ id: 'e1' });
-    await service.deleteCalendarEvent('e1');
+    mock$transaction.mockImplementation(async (cb) => cb(prisma));
+    await service.deleteCalendarEvent('e1', {
+      keycloakId: 'qa-sa',
+      roles: ['SUPER_ADMIN'],
+    } as import('@smk/auth').AuthUser);
     expect(mockCal.delete).toHaveBeenCalledWith({ where: { id: 'e1' } });
   });
 });
@@ -440,15 +648,27 @@ describe('SchoolConfigService', () => {
 describe('SchoolConfigController', () => {
   let controller: SchoolConfigController;
   const mock = {
-    getProfile: jest.fn(), updateProfile: jest.fn(),
-    getMajors: jest.fn(), createMajor: jest.fn(), updateMajor: jest.fn(),
-    getAcademicYears: jest.fn(), getActiveAcademicYear: jest.fn(), createAcademicYear: jest.fn(), updateAcademicYear: jest.fn(),
-    getSemesters: jest.fn(), getActiveSemester: jest.fn(), createSemester: jest.fn(), updateSemester: jest.fn(),
-    getCalendarEvents: jest.fn(), createCalendarEvent: jest.fn(), updateCalendarEvent: jest.fn(), deleteCalendarEvent: jest.fn(),
+    getProfile: jest.fn(),
+    updateProfile: jest.fn(),
+    getMajors: jest.fn(),
+    createMajor: jest.fn(),
+    updateMajor: jest.fn(),
+    getAcademicYears: jest.fn(),
+    getActiveAcademicYear: jest.fn(),
+    createAcademicYear: jest.fn(),
+    updateAcademicYear: jest.fn(),
+    getSemesters: jest.fn(),
+    getActiveSemester: jest.fn(),
+    createSemester: jest.fn(),
+    updateSemester: jest.fn(),
+    getCalendarEvents: jest.fn(),
+    createCalendarEvent: jest.fn(),
+    updateCalendarEvent: jest.fn(),
+    deleteCalendarEvent: jest.fn(),
   };
 
   beforeEach(async () => {
-    Object.values(mock).forEach(m => m.mockReset());
+    Object.values(mock).forEach((m) => m.mockReset());
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SchoolConfigController],
       providers: [{ provide: SchoolConfigService, useValue: mock }],
@@ -482,14 +702,27 @@ describe('SchoolConfigController', () => {
 
   it('createCalendarEvent → service create', async () => {
     mock.createCalendarEvent.mockResolvedValue({ id: 'e1' });
-    await controller.createCalendarEvent({
-      academicYearId: 'ay1', name: 'UTS', startDate: '2026-09-28' as unknown as Date, endDate: '2026-10-03' as unknown as Date, type: 'exam',
-    } as Record<string, unknown>);
+    await controller.createCalendarEvent(
+      {
+        academicYearId: 'ay1',
+        name: 'UTS',
+        startDate: '2026-09-28' as unknown as Date,
+        endDate: '2026-10-03' as unknown as Date,
+        type: 'exam',
+      },
+      { keycloakId: 'qa-sa', roles: ['SUPER_ADMIN'] } as import('@smk/auth').AuthUser,
+    );
     expect(mock.createCalendarEvent).toHaveBeenCalledTimes(1);
   });
 
   it('deleteCalendarEvent → service delete', async () => {
-    await controller.deleteCalendarEvent('e1');
-    expect(mock.deleteCalendarEvent).toHaveBeenCalledWith('e1');
+    await controller.deleteCalendarEvent('e1', {
+      keycloakId: 'qa-sa',
+      roles: ['SUPER_ADMIN'],
+    } as import('@smk/auth').AuthUser);
+    expect(mock.deleteCalendarEvent).toHaveBeenCalledWith(
+      'e1',
+      expect.objectContaining({ keycloakId: 'qa-sa' }),
+    );
   });
 });

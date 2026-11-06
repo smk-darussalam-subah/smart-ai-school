@@ -14,20 +14,29 @@ export interface CalendarEvent {
   endDate: string;
   type: 'holiday' | 'exam' | 'event' | 'break';
   description: string | null;
+  startAt?: string | null;
+  endAt?: string | null;
+  location?: string | null;
 }
 
-const EDITORS = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA'];
+const EDITORS = ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'TATA_USAHA', 'WAKA_HUMAS'];
 
 export default async function KalenderPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
   const authority = await resolveDashboardAuthority(session);
-  if (!authority.can('academic.period.read') || !EDITORS.some((role) => authority.hasRole(role))) {
+  if (
+    !authority.can('school.calendar.manage') ||
+    !EDITORS.some((role) => authority.hasRole(role))
+  ) {
     redirect('/dashboard');
   }
 
   const token = session?.accessToken ?? '';
-  const activeYearResult = await apiFetchResult<{ id: string; code: string } | null>('/school/academic-years/active', token);
+  const activeYearResult = await apiFetchResult<{ id: string; code: string } | null>(
+    '/school/academic-years/active',
+    token,
+  );
   const scope = resolveCalendarScope(activeYearResult);
   const calendarResult = scope.query
     ? await apiFetchResult<CalendarEvent[]>('/school/calendar', token, scope.query)
@@ -37,16 +46,22 @@ export default async function KalenderPage() {
     return (
       <LoadError
         title="Kalender belum dapat dimuat"
-        message={calendarResult.status === 'forbidden'
-          ? 'Akses kalender ditolak untuk akun ini.'
-          : calendarResult.message}
+        message={
+          calendarResult.status === 'forbidden'
+            ? 'Akses kalender ditolak untuk akun ini.'
+            : calendarResult.message
+        }
       />
     );
   }
 
   return (
     <KalenderClient
-      events={calendarResult?.status === 'success' && Array.isArray(calendarResult.data) ? calendarResult.data : []}
+      events={
+        calendarResult?.status === 'success' && Array.isArray(calendarResult.data)
+          ? calendarResult.data
+          : []
+      }
       academicYear={scope.academicYear}
       periodWarning={scope.periodWarning}
     />

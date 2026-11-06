@@ -76,6 +76,7 @@ describe('UsersService', () => {
     getUserRealmRoles: jest.fn(),
   };
   const mockPerms = {
+    hasFreshPermission: jest.fn().mockResolvedValue(true),
     invalidateUser: jest.fn(),
     invalidateAll: jest.fn(),
     getEffectivePermissions: jest.fn(),
@@ -111,6 +112,7 @@ describe('UsersService', () => {
     mockKc.findByEmail.mockReset();
     mockKc.setTempPassword.mockReset();
     mockKc.getUserRealmRoles.mockReset();
+    mockPerms.hasFreshPermission.mockReset().mockResolvedValue(true);
     mockPerms.invalidateUser.mockReset();
     mockPerms.invalidateAll.mockReset();
     mockPerms.getEffectivePermissions.mockReset();

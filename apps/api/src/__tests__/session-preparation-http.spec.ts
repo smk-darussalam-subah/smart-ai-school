@@ -44,6 +44,7 @@ describe('manual session HTTP role/permission and confirmation boundary', () => 
       getAuthoritativePrimaryRole: async (id: string) => actors[id]?.primary ?? null,
       getActivePositionCodes: async (id: string) => new Set(actors[id]?.positions ?? []),
       hasPermission: async (id: string) => actors[id]?.permission ?? false,
+      getEffectivePermissions: async (id: string) => new Set(actors[id]?.permission ? ['*'] : []),
     } as unknown as PermissionsService;
     const reflector = new Reflector();
     app.useGlobalGuards(

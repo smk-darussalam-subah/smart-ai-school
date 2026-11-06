@@ -159,7 +159,10 @@ describe('KeycloakGuard — APP_GUARD Global Protection (FIX-T02)', () => {
     });
 
     await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
-    expect(userStatus.getAuthorizationState).toHaveBeenCalledWith('kc-orphan');
+    expect(userStatus.getAuthorizationState).toHaveBeenCalledWith(
+      'kc-orphan',
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+    );
   });
 
   it('token SUPER_ADMIN lama dinormalisasi ke role database terkini', async () => {

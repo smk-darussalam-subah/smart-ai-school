@@ -12,6 +12,7 @@ export async function apiAction<T = unknown>(
   path: string,
   method: string,
   body?: unknown,
+  timeoutMs?: number,
 ): Promise<{ data?: T; error?: string; status?: number }> {
   const session = await getServerSession(authOptions);
   const token = session?.accessToken ?? '';
@@ -23,19 +24,23 @@ export async function apiAction<T = unknown>(
         ? { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
         : { Authorization: `Bearer ${token}` },
       body: body ? JSON.stringify(body) : undefined,
+      ...(timeoutMs === undefined ? {} : { signal: AbortSignal.timeout(timeoutMs) }),
     });
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
       return {
-        error: res.status === 429 ? rateLimitMessage(res.headers) : apiErrorMessage(err, `HTTP ${res.status}`),
+        error:
+          res.status === 429
+            ? rateLimitMessage(res.headers)
+            : apiErrorMessage(err, `HTTP ${res.status}`),
         status: res.status,
       };
     }
 
     invalidatePublicAcademicCatalog(path, method);
     const text = await res.text();
-    const data = text ? JSON.parse(text) as T : undefined;
+    const data = text ? (JSON.parse(text) as T) : undefined;
     return { data, status: res.status };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Network error' };
