@@ -1,3 +1,7 @@
+// Session-status HTTP is exercised separately; these tests retain their cookie/proxy boundary.
+jest.mock('../lib/server-session-status', () => ({
+  checkServerSession: jest.fn(async () => 'active'),
+}));
 import fs from 'node:fs';
 import path from 'node:path';
 import { NextRequest } from 'next/server';

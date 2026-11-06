@@ -13,17 +13,18 @@ import { LoggingInterceptor } from '../common/interceptors/logging.interceptor';
  * Persistence/identity are isolated adapters, not PostgreSQL/Keycloak acceptance. */
 describe('assessment stream through actual HTTP framework boundary', () => {
   const sid = '00000000-0000-4000-8000-000000000101';
-  const good = 'a'.repeat(64),
-    wrongRole = 'b'.repeat(64),
-    expired = 'c'.repeat(64),
-    foreign = 'd'.repeat(64);
+  const good = 'a'.repeat(43) + '.' + 'e'.repeat(64),
+    wrongRole = 'b'.repeat(43) + '.' + 'e'.repeat(64),
+    expired = 'c'.repeat(43) + '.' + 'e'.repeat(64),
+    foreign = 'd'.repeat(43) + '.' + 'e'.repeat(64);
   let app: NestFastifyApplication,
     service: AssessmentService,
     origin: string,
     reads = 0,
     score = 100,
     pending = false,
-    broken = false;
+    broken = false,
+    revoked = false;
   let remedialCount = 1;
   const responseScopes: unknown[] = [];
   const countRemedials = jest.fn(async () => remedialCount);
@@ -41,6 +42,7 @@ describe('assessment stream through actual HTTP framework boundary', () => {
   const info = jest.spyOn(logger, 'info').mockImplementation(() => logger);
   const error = jest.spyOn(logger, 'error').mockImplementation(() => logger);
   const db = {
+    auditLog: { findUnique: async () => (revoked ? { id: 'synthetic-revoked' } : null) },
     sseToken: {
       findUnique: async ({ where }: { where: { token: string } }) =>
         [good, wrongRole, expired, foreign].includes(where.token)
@@ -55,9 +57,10 @@ describe('assessment stream through actual HTTP framework boundary', () => {
               fullName: 'Synthetic Teacher',
             }
           : null,
-      update: async ({ where }: { where: { id: string } }) => {
+      updateMany: async ({ where }: { where: { id: string } }) => {
+        if (used.has(where.id)) return { count: 0 };
         used.add(where.id);
-        return {};
+        return { count: 1 };
       },
     },
     teacher: {
@@ -119,6 +122,7 @@ describe('assessment stream through actual HTTP framework boundary', () => {
     score = 100;
     pending = false;
     broken = false;
+    revoked = false;
     session.status = 'active';
     session.purpose = 'regular';
     remedialCount = 1;
@@ -229,6 +233,19 @@ describe('assessment stream through actual HTTP framework boundary', () => {
       c.stop();
     }
   });
+  it('closes an already-open stream before publishing any data after logout', async () => {
+    const c = await frames(good, 1);
+    try {
+      expect(await c.next()).toHaveLength(1);
+      const before = reads;
+      revoked = true;
+      await new Promise((r) => setTimeout(r, 3400));
+      expect(reads).toBe(before);
+      expect((await fetch(streamUrl('z'.repeat(43) + '.' + 'e'.repeat(64)))).status).toBe(401);
+    } finally {
+      c.stop();
+    }
+  }, 12000);
   it.each([0, 1])(
     'uses %i eligible remedial participants consistently in HTTP stream and results',
     async (count) => {

@@ -2,10 +2,11 @@
 // AuthService — /auth/me, consent, heartbeat, login-events
 // =============================================================================
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
-import { UserRole } from '@smk/auth';
+import { UserRole, AuthUser } from '@smk/auth';
+import { logoutAuditId } from './session-binding';
 import { logger } from '@smk/logger';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { RecordLoginEventDto } from './dto/login-event.dto';
@@ -40,6 +41,28 @@ export type MeResponse = {
 
 @Injectable()
 export class AuthService {
+  async logoutSession(user: AuthUser): Promise<void> {
+    if (!user.sessionBinding) throw new UnauthorizedException('Sesi tidak dapat diverifikasi.');
+    await this.prisma.auditLog.createMany({
+      data: [
+        {
+          id: logoutAuditId(user.sessionBinding),
+          actorId: user.keycloakId,
+          actorRoles: user.roles,
+          action: 'auth.session.logout',
+          resourceType: 'auth.session',
+          resourceId: user.sessionBinding,
+          method: 'POST',
+          path: '/auth/session/logout',
+          statusCode: 204,
+          outcome: 'success',
+          metadata: { bindingKind: user.sessionBindingKind ?? 'token' },
+        },
+      ],
+      skipDuplicates: true,
+    });
+  }
+
   constructor(
     private prisma: PrismaService,
     private permissionsService: PermissionsService,

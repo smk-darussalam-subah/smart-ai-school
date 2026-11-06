@@ -3,7 +3,7 @@
 //
 // Replaces full Keycloak JWT in ?token=xxx query param for SSE endpoints.
 // Tokens are:
-//   - Cryptographically random (256-bit / 64 hex chars)
+//   - Cryptographically random (256-bit) plus an opaque session binding
 //   - One-time use (consumed on validation, cannot be replayed)
 //   - Expire in 5 minutes
 //   - Stored in auth.sse_tokens table
@@ -21,11 +21,12 @@ import { randomBytes } from 'crypto';
 import { AuthUser, UserRole } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { PrismaService } from '../prisma/prisma.service';
+import { logoutAuditId } from './session-binding';
 
 /** Token TTL: 5 minutes (generous for EventSource connection setup). */
 const SSE_TOKEN_TTL_MS = 5 * 60 * 1000;
 
-/** Random bytes for token generation (256 bits → 64 hex chars). */
+/** Random bytes for token generation (256 bits). */
 const SSE_TOKEN_BYTES = 32;
 
 @Injectable()
@@ -35,12 +36,14 @@ export class SseTokenService {
   /**
    * Create a short-lived, one-time-use SSE token.
    * The token encodes a snapshot of the user's identity at creation time,
-   * so subsequent role/permission changes don't affect active SSE sessions.
+   * with an opaque session binding for logout revocation.
    *
-   * @returns `{ token, expiresIn }` — token is a 64-char hex string
+   * @returns `{ token, expiresIn }` — opaque, random, session-bound ticket
    */
   async createToken(user: AuthUser): Promise<{ token: string; expiresIn: number }> {
-    const token = randomBytes(SSE_TOKEN_BYTES).toString('hex');
+    if (!user.sessionBinding || !/^[a-f0-9]{64}$/.test(user.sessionBinding))
+      throw new UnauthorizedException('Sesi tidak dapat diverifikasi. Silakan masuk kembali.');
+    const token = `${randomBytes(SSE_TOKEN_BYTES).toString('base64url')}.${user.sessionBinding}`;
     const expiresAt = new Date(Date.now() + SSE_TOKEN_TTL_MS);
 
     await this.prisma.sseToken.create({
@@ -67,7 +70,7 @@ export class SseTokenService {
    * @throws UnauthorizedException if token is invalid, expired, or already used
    */
   async validateAndConsumeToken(token: string): Promise<AuthUser> {
-    if (!token || token.length !== SSE_TOKEN_BYTES * 2) {
+    if (!token || !/^[A-Za-z0-9_-]{43}\.[a-f0-9]{64}$/.test(token)) {
       throw new UnauthorizedException('SSE token tidak valid');
     }
 
@@ -91,11 +94,20 @@ export class SseTokenService {
       throw new UnauthorizedException('SSE token sudah expired');
     }
 
-    // Mark as consumed (one-time use — prevents replay even if token is intercepted)
-    await this.prisma.sseToken.update({
-      where: { id: record.id },
+    const sessionBinding = token.slice(token.indexOf('.') + 1);
+    if (
+      await this.prisma.auditLog.findUnique({
+        where: { id: logoutAuditId(sessionBinding) },
+        select: { id: true },
+      })
+    )
+      throw new UnauthorizedException('Sesi telah berakhir.');
+    // Atomic consumption also rejects simultaneous connections with the same ticket.
+    const consumed = await this.prisma.sseToken.updateMany({
+      where: { id: record.id, used: false, expiresAt: { gt: new Date() } },
       data: { used: true, consumedAt: new Date() },
     });
+    if (consumed.count !== 1) throw new UnauthorizedException('SSE token sudah digunakan');
 
     // Reconstruct AuthUser from token record
     const validRoles = record.roles.filter((r: string): r is UserRole =>
@@ -108,6 +120,7 @@ export class SseTokenService {
       username: record.username,
       roles: validRoles,
       fullName: record.fullName,
+      sessionBinding,
     };
   }
 

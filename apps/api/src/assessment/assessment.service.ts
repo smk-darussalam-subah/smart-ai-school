@@ -6,6 +6,7 @@
 // =============================================================================
 
 import {
+  UnauthorizedException,
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -1861,10 +1862,6 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         id: true,
         startedAt: true,
         submittedAt: true,
-        score: true,
-        timeSpentSec: true,
-        answers: true,
-        itemScores: true,
         clientRevision: true,
         lastMutationId: true,
         lastSavedAt: true,
@@ -2913,7 +2910,19 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       let pollCount = 0;
       const maxPolls = 7_200;
 
+      const assertSessionActive = async () => {
+        if (
+          user.sessionBinding &&
+          (await this.prisma.auditLog.findUnique({
+            where: { id: `session-logout-${user.sessionBinding}` },
+            select: { id: true },
+          }))
+        )
+          throw new UnauthorizedException('Sesi telah berakhir.');
+      };
       const poll = async () => {
+        if (subscriber.closed) return;
+        await assertSessionActive();
         if (!verified) {
           await verifyAndStream();
           verified = true;
@@ -3041,7 +3050,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           notStartedNames: [] as string[], // would need class roster join
         };
 
-        subscriber.next({ data } as MessageEvent);
+        await assertSessionActive();
+        if (!subscriber.closed) subscriber.next({ data } as MessageEvent);
       };
 
       // Initial poll
@@ -3057,9 +3067,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           subscriber.complete();
           return;
         }
-        poll().catch(() => {
-          // Silently skip errors during polling
-        });
+        poll().catch((error: unknown) => subscriber.error(error));
       }, 3000);
 
       // Cleanup on unsubscribe

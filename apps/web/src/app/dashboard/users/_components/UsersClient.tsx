@@ -61,6 +61,8 @@ import {
   type PasswordResetResult,
 } from '../actions';
 import AddUserDialog from './AddUserDialog';
+import SelectedLearnerCredentials from './SelectedLearnerCredentials';
+import TemporaryCredentialExports from '@/components/TemporaryCredentialExports';
 import UserAccessDialog from './UserAccessDialog';
 import { canDismissPasswordReset, canOfferPasswordReset } from './password-reset-policy';
 import type { PermissionItem } from '../page';
@@ -142,6 +144,10 @@ export default function UsersClient({
   canResetPasswords,
 }: Props) {
   const router = useRouter();
+  const [credentialSelection, setCredentialSelection] = useState<UserItem[]>([]);
+  useEffect(() => {
+    setCredentialSelection([]);
+  }, [users]);
   const { setParams, isPending } = useQueryState();
   const requestSeq = useRef(0);
   const [search, setSearch] = useState(query.search);
@@ -477,10 +483,23 @@ export default function UsersClient({
 
       <Card>
         <CardHeader>
-          <CardTitle>Daftar Pengguna</CardTitle>
+          <CardTitle id="users-list-heading" tabIndex={-1}>
+            Daftar Pengguna
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="overflow-x-auto rounded-xl border">
+            {canResetPasswords && (
+              <div className="flex flex-wrap items-center gap-3 border-b p-4">
+                <SelectedLearnerCredentials
+                  targets={credentialSelection}
+                  onClear={() => setCredentialSelection([])}
+                />
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  Pilih hingga 5 akun siswa/orang tua pada halaman ini.
+                </p>
+              </div>
+            )}
             <Table>
               <TableHeader>
                 <TableRow>
@@ -503,7 +522,33 @@ export default function UsersClient({
                     const isArchived = user.deletedAt !== null;
                     return (
                       <TableRow key={user.id}>
-                        <TableCell className="font-medium">{user.fullName}</TableCell>
+                        <TableCell className="font-medium">
+                          <label className="flex min-h-11 items-center gap-3">
+                            {canResetPasswords &&
+                              ['SISWA', 'ORANG_TUA'].includes(user.role) &&
+                              user.isActive &&
+                              !isArchived && (
+                                <input
+                                  type="checkbox"
+                                  className="h-5 w-5 accent-emerald-700"
+                                  aria-label={`Pilih akun ${user.fullName}`}
+                                  checked={credentialSelection.some((t) => t.id === user.id)}
+                                  disabled={
+                                    !credentialSelection.some((t) => t.id === user.id) &&
+                                    credentialSelection.length >= 5
+                                  }
+                                  onChange={(e) =>
+                                    setCredentialSelection((previous) =>
+                                      e.target.checked
+                                        ? [...previous.filter((t) => t.id !== user.id), user]
+                                        : previous.filter((t) => t.id !== user.id),
+                                    )
+                                  }
+                                />
+                              )}
+                            {user.fullName}
+                          </label>
+                        </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {user.email}
                         </TableCell>
@@ -679,6 +724,16 @@ export default function UsersClient({
           </DialogHeader>
           {resetCredential ? (
             <div className="space-y-3">
+              <TemporaryCredentialExports
+                credentials={[
+                  {
+                    username: resetCredential.username,
+                    tempPassword: resetCredential.temporaryPassword,
+                    fullName: resetCredential.fullName ?? resetTarget?.fullName,
+                    role: resetCredential.role ?? resetTarget?.role,
+                  },
+                ]}
+              />
               <div className="rounded-lg border bg-slate-50 p-3">
                 <p className="text-xs text-slate-500">Nama pengguna</p>
                 <p className="break-all font-medium">{resetCredential.username}</p>

@@ -3,6 +3,8 @@ import QuestionContent from '@/components/learning/QuestionContent';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useDialogReturnFocus } from '@/lib/use-dialog-return-focus';
+import { learningRecordStatus } from '@/lib/learning-recap';
 import {
   Activity,
   AlertTriangle,
@@ -18,7 +20,6 @@ import {
   Send,
   Users,
   UserX,
-  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { TodayClass } from './guru-types';
@@ -106,6 +107,7 @@ export default function PenilaianSesiModal({
   initialTab = 'diag',
   onClose,
 }: Props) {
+  const returnFocus = useDialogReturnFocus();
   const [mode, setMode] = useState<'preview' | 'monitor' | 'analysis'>(initialMode);
   const [tab, setTab] = useState<AssessmentStudioTab>(initialTab);
   const [workingSessionId, setWorkingSessionId] = useState<string | null>(
@@ -365,40 +367,38 @@ export default function PenilaianSesiModal({
   const incidentTotal = (liveData?.roster ?? []).reduce((sum, row) => sum + row.incidentCount, 0);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !saving && !lateReviewTarget && !essayGradingOpen && !bankOpen) onClose();
       }}
     >
-      <div
-        className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
+      <DialogContent
+        className="block max-h-[92dvh] w-[calc(100%-1.5rem)] max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
+        {...returnFocus}
+        closeDisabled={saving || !!lateReviewTarget || essayGradingOpen || bankOpen}
+        onEscapeKeyDown={(event) => {
+          if (saving || lateReviewTarget || essayGradingOpen || bankOpen) event.preventDefault();
+        }}
+        onInteractOutside={(event) => {
+          if (saving || lateReviewTarget || essayGradingOpen || bankOpen) event.preventDefault();
+        }}
         aria-modal={!lateReviewTarget && !essayGradingOpen && !bankOpen}
         inert={lateReviewTarget || essayGradingOpen || bankOpen ? true : undefined}
         aria-label="Penilaian sesi"
       >
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-3 pr-10">
           <div>
-            <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
+            <DialogTitle className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]">
               <ClipboardPenLine className="h-5 w-5 text-emerald-600" />
               Penilaian - {session.subject} - {session.className}
-            </h3>
-            <p className="mt-1 text-[11px] font-semibold text-[#6b8079]">
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-[11px] font-semibold text-[#6b8079]">
               {workingSessionId
-                ? `Sesi ${sessionData?.status ?? 'memuat'}`
+                ? `Sesi ${sessionData ? learningRecordStatus(sessionData.status) : 'sedang dimuat'}`
                 : 'Pilih soal, buat draft, lalu aktifkan untuk siswa.'}
-            </p>
+            </DialogDescription>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-[#6b8079] hover:bg-[#f4f7f5]"
-            aria-label="Tutup"
-          >
-            <X className="h-5 w-5" />
-          </button>
         </div>
 
         <div className="mt-3 flex gap-1 rounded-lg bg-[#f4f7f5] p-1">
@@ -639,8 +639,10 @@ export default function PenilaianSesiModal({
                   <>
                     <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-bold text-emerald-800">
                       {sessionData?.title ?? 'Sesi asesmen'} - {sessionData?.questions?.length ?? 0}{' '}
-                      soal - Status {sessionData?.status ?? '-'} - Target nilai{' '}
-                      {sessionData?.gradeTarget ?? 'tidak masuk Grade'}
+                      soal · {sessionData ? learningRecordStatus(sessionData.status) : 'Sedang dimuat'} ·{' '}
+                      {sessionData?.gradeTarget
+                        ? `Rekap nilai: ${sessionData.gradeTarget.toUpperCase()}`
+                        : 'Tidak masuk rekap nilai'}
                     </div>
                     <div className="space-y-2">
                       {(sessionData?.questions ?? []).map((question, index) => {
@@ -919,7 +921,7 @@ export default function PenilaianSesiModal({
             )}
           </div>
         )}
-      </div>
+      </DialogContent>
 
       {bankOpen && (
         <QuestionBankEditor
@@ -1017,7 +1019,7 @@ export default function PenilaianSesiModal({
           </DialogContent>
         </Dialog>
       )}
-    </div>
+    </Dialog>
   );
 }
 

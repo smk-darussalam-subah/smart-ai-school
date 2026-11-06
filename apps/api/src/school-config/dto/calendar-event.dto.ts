@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
 export const CalendarEventTypeSchema = z.enum(['holiday', 'exam', 'event', 'break']);
+const CalendarDateSchema = z
+  .string()
+  .date()
+  .transform((value) => new Date(`${value}T00:00:00.000Z`));
 
 const OptionalDescriptionSchema = z
   .string()
@@ -14,10 +18,29 @@ export const CreateCalendarEventSchema = z
   .object({
     academicYearId: z.string().uuid(),
     name: z.string().trim().min(2).max(255),
-    startDate: z.coerce.date(),
-    endDate: z.coerce.date(),
+    startDate: CalendarDateSchema,
+    endDate: CalendarDateSchema,
     type: CalendarEventTypeSchema,
     description: OptionalDescriptionSchema,
+    startAt: z
+      .string()
+      .datetime({ offset: true })
+      .transform((v) => new Date(v))
+      .nullable()
+      .optional(),
+    endAt: z
+      .string()
+      .datetime({ offset: true })
+      .transform((v) => new Date(v))
+      .nullable()
+      .optional(),
+    location: z
+      .string()
+      .trim()
+      .max(255)
+      .transform((v) => v || null)
+      .nullable()
+      .optional(),
   })
   .strict()
   .refine((data) => data.endDate >= data.startDate, {
@@ -31,10 +54,29 @@ export const UpdateCalendarEventSchema = z
   .object({
     academicYearId: z.string().uuid().optional(),
     name: z.string().trim().min(2).max(255).optional(),
-    startDate: z.coerce.date().optional(),
-    endDate: z.coerce.date().optional(),
+    startDate: CalendarDateSchema.optional(),
+    endDate: CalendarDateSchema.optional(),
     type: CalendarEventTypeSchema.optional(),
     description: OptionalDescriptionSchema,
+    startAt: z
+      .string()
+      .datetime({ offset: true })
+      .transform((v) => new Date(v))
+      .nullable()
+      .optional(),
+    endAt: z
+      .string()
+      .datetime({ offset: true })
+      .transform((v) => new Date(v))
+      .nullable()
+      .optional(),
+    location: z
+      .string()
+      .trim()
+      .max(255)
+      .transform((v) => v || null)
+      .nullable()
+      .optional(),
   })
   .strict()
   .refine((data) => Object.keys(data).length > 0, {

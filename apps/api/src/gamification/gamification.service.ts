@@ -5,19 +5,13 @@
 // Level thresholds: L1=0, L2=500, L3=1500, L4=3000, L5=5000, L6=8000.
 // =============================================================================
 
-import {
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { AuthUser } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { PrismaService } from '../prisma/prisma.service';
+import { getSchoolDate } from '../common/helpers/school-date.helper';
 import { resolveSiswaId, resolveUserId, isElevated } from '../common/helpers/role-helpers';
-import {
-  AwardXpDto,
-  LeaderboardXpDto,
-  AddXpInternalDto,
-} from './dto/gamification.dto';
+import { AwardXpDto, LeaderboardXpDto, AddXpInternalDto } from './dto/gamification.dto';
 
 // Level thresholds: index 0 = L1 (0 XP), index 1 = L2 (500 XP), etc.
 const LEVEL_THRESHOLDS: number[] = [0, 500, 1500, 3000, 5000, 8000];
@@ -106,9 +100,7 @@ export class GamificationService {
 
   /** GURU/KS/SA: view class XP leaderboard */
   async findLeaderboardXp(query: LeaderboardXpDto) {
-    const where = query.classId
-      ? { student: { classId: query.classId } }
-      : {};
+    const where = query.classId ? { student: { classId: query.classId } } : {};
     const entries = await this.prisma.studentXp.findMany({
       where,
       orderBy: { totalXp: 'desc' },
@@ -129,7 +121,7 @@ export class GamificationService {
     }
     return entries.map((entry, idx) => ({
       ...entry,
-      rank: ranks[idx] ?? (idx + 1),
+      rank: ranks[idx] ?? idx + 1,
     }));
   }
 
@@ -154,7 +146,9 @@ export class GamificationService {
    * Idempotency: if idempotencyKey is provided, checks for existing transaction.
    * Fail-soft: errors are logged, not thrown (called from event listeners).
    */
-  async addXp(dto: AddXpInternalDto): Promise<{ awarded: boolean; newTotal: number; level: number }> {
+  async addXp(
+    dto: AddXpInternalDto,
+  ): Promise<{ awarded: boolean; newTotal: number; level: number }> {
     try {
       // Ensure StudentXp exists
       let xp = await this.prisma.studentXp.findUnique({
@@ -176,7 +170,8 @@ export class GamificationService {
         });
         if (existing) {
           logger.debug('[GamificationService] XP already awarded (idempotent skip)', {
-            studentId: dto.studentId, idempotencyKey: dto.idempotencyKey,
+            studentId: dto.studentId,
+            idempotencyKey: dto.idempotencyKey,
           });
           return { awarded: false, newTotal: xp.totalXp, level: xp.level };
         }
@@ -202,12 +197,16 @@ export class GamificationService {
       });
 
       logger.info('[GamificationService] XP awarded', {
-        studentId: dto.studentId, amount: dto.amount, newTotal, newLevel,
+        studentId: dto.studentId,
+        amount: dto.amount,
+        newTotal,
+        newLevel,
       });
       return { awarded: true, newTotal, level: newLevel };
     } catch (err) {
       logger.warn('[GamificationService] addXp error (fail-soft)', {
-        studentId: dto.studentId, amount: dto.amount,
+        studentId: dto.studentId,
+        amount: dto.amount,
         error: err instanceof Error ? err.message : String(err),
       });
       return { awarded: false, newTotal: 0, level: 1 };
@@ -233,21 +232,71 @@ export class GamificationService {
     const seed = hash(`${studentId}-${dateStr}`);
 
     const allQuests = [
-      { id: 'q1', title: 'Hadiri semua pelajaran hari ini', desc: 'Tanpa alpha', xp: 50, icon: 'calendar-check', type: 'attendance' },
-      { id: 'q2', title: 'Selesaikan 1 modul LMS', desc: 'Tandai modul sebagai selesai', xp: 30, icon: 'book', type: 'module' },
-      { id: 'q3', title: 'Cek nilai terbaru', desc: 'Lihat hasil penilaian guru', xp: 10, icon: 'star', type: 'grade' },
-      { id: 'q4', title: 'Buka 3 materi pembelajaran', desc: 'Aktif belajar hari ini', xp: 20, icon: 'book-open', type: 'module' },
-      { id: 'q5', title: 'Capai kehadiran 5 hari beruntun', desc: 'Streak bonus', xp: 100, icon: 'flame', type: 'streak' },
-      { id: 'q6', title: 'Kumpulkan 1 tugas tepat waktu', desc: 'Disiplin dengan deadline', xp: 40, icon: 'clock', type: 'assignment' },
+      {
+        id: 'q1',
+        title: 'Hadiri semua pelajaran hari ini',
+        desc: 'Tanpa alpha',
+        xp: 50,
+        icon: 'calendar-check',
+        type: 'attendance',
+      },
+      {
+        id: 'q2',
+        title: 'Selesaikan 1 modul LMS',
+        desc: 'Tandai modul sebagai selesai',
+        xp: 30,
+        icon: 'book',
+        type: 'module',
+      },
+      {
+        id: 'q3',
+        title: 'Cek nilai terbaru',
+        desc: 'Lihat hasil penilaian guru',
+        xp: 10,
+        icon: 'star',
+        type: 'grade',
+      },
+      {
+        id: 'q4',
+        title: 'Buka 3 materi pembelajaran',
+        desc: 'Aktif belajar hari ini',
+        xp: 20,
+        icon: 'book-open',
+        type: 'module',
+      },
+      {
+        id: 'q5',
+        title: 'Capai kehadiran 5 hari beruntun',
+        desc: 'Streak bonus',
+        xp: 100,
+        icon: 'flame',
+        type: 'streak',
+      },
+      {
+        id: 'q6',
+        title: 'Kumpulkan 1 tugas tepat waktu',
+        desc: 'Disiplin dengan deadline',
+        xp: 40,
+        icon: 'clock',
+        type: 'assignment',
+      },
     ];
 
     // Pick 3 quests deterministically
-    const quests = [allQuests[seed % allQuests.length]!, allQuests[(seed + 2) % allQuests.length]!, allQuests[(seed + 4) % allQuests.length]!];
+    const quests = [
+      allQuests[seed % allQuests.length]!,
+      allQuests[(seed + 2) % allQuests.length]!,
+      allQuests[(seed + 4) % allQuests.length]!,
+    ];
 
     // Check completion status from existing data
     const [todayAtt, lmsCompleted, recentGrades] = await Promise.all([
       this.prisma.attendance.findFirst({
-        where: { studentId, date: { gte: new Date(dateStr), lt: new Date(dateStr + 'T23:59:59Z') }, status: 'alpha' },
+        where: {
+          studentId,
+          date: { gte: new Date(dateStr), lt: new Date(dateStr + 'T23:59:59Z') },
+          status: 'alpha',
+        },
         select: { id: true },
       }),
       this.prisma.lmsModuleProgress.findFirst({
@@ -289,7 +338,11 @@ export class GamificationService {
     const schedule = await this.prisma.schedule.findMany({
       where: { classId: student.classId },
       select: {
-        id: true, dayOfWeek: true, jpStart: true, jpEnd: true, room: true,
+        id: true,
+        dayOfWeek: true,
+        jpStart: true,
+        jpEnd: true,
+        room: true,
         teachingAssignment: {
           select: {
             subject: true,
@@ -302,9 +355,20 @@ export class GamificationService {
 
     // School-wide calendar events
     const events = await this.prisma.academicCalendar.findMany({
+      where: { academicYear: { isActive: true }, endDate: { gte: getSchoolDate() } },
       orderBy: { startDate: 'asc' },
       take: 20,
-      select: { id: true, name: true, startDate: true, endDate: true, type: true, description: true },
+      select: {
+        id: true,
+        name: true,
+        startDate: true,
+        endDate: true,
+        type: true,
+        description: true,
+        startAt: true,
+        endAt: true,
+        location: true,
+      },
     });
 
     return {
@@ -325,6 +389,9 @@ export class GamificationService {
         end: e.endDate.toISOString().slice(0, 10),
         type: e.type,
         description: e.description,
+        startAt: e.startAt?.toISOString() ?? null,
+        endAt: e.endAt?.toISOString() ?? null,
+        location: e.location,
       })),
     };
   }

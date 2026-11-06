@@ -80,6 +80,8 @@ function withEnrollmentMetadata(
 export interface TempCredential {
   username: string;
   tempPassword: string;
+  role?: string;
+  fullName?: string;
 }
 
 export interface ProvisionResult {
@@ -215,7 +217,9 @@ export class ProvisioningService {
 
       return {
         user: result.user,
-        tempCredentials: [{ username, tempPassword: tempPw }],
+        tempCredentials: [
+          { username, tempPassword: tempPw, role: dto.role, fullName: dto.fullName },
+        ],
       };
     } catch (err: unknown) {
       if (kcId) {
@@ -495,9 +499,21 @@ export class ProvisioningService {
 
       createdKcIds.forEach((id) => this.invalidateCaches(id));
 
-      const creds: TempCredential[] = [{ username: siswaUsername, tempPassword: siswaTempPw }];
+      const creds: TempCredential[] = [
+        {
+          username: siswaUsername,
+          tempPassword: siswaTempPw,
+          role: 'SISWA',
+          fullName: dto.siswa.fullName,
+        },
+      ];
       if (ortuIsNew) {
-        creds.unshift({ username: ortuUsername, tempPassword: ortuTempPw });
+        creds.unshift({
+          username: ortuUsername,
+          tempPassword: ortuTempPw,
+          role: 'ORANG_TUA',
+          fullName: dto.ortu.name,
+        });
       }
 
       return {
@@ -592,7 +608,9 @@ export class ProvisioningService {
         userId: ortu.id,
         keycloakId: ortu.keycloakId,
         isNew: true,
-        tempCredentials: [{ username: ortuUsername, tempPassword: tempPw }],
+        tempCredentials: [
+          { username: ortuUsername, tempPassword: tempPw, role: 'ORANG_TUA', fullName: input.name },
+        ],
       };
     } catch (err: unknown) {
       if (ortuKcId) {

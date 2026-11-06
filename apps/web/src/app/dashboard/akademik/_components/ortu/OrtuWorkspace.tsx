@@ -106,7 +106,7 @@ interface OrtuWorkspaceProps {
     studentId: string;
     recipient: string;
     message: string;
-    eventType: string;
+    eventType: string | null;
     createdAt: string;
   }>;
   viewAs?: string | null;

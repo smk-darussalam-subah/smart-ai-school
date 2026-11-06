@@ -189,6 +189,9 @@ function toSchoolCalendarEvent(value: unknown): SchoolCalendarEvent | null {
     end: readString(value.end) ?? start,
     type: readString(value.type),
     description: readString(value.description),
+    startAt: readString(value.startAt),
+    endAt: readString(value.endAt),
+    location: readString(value.location),
   };
 }
 
@@ -207,7 +210,15 @@ function toSiswaKalenderEvent(event: SchoolCalendarEvent): SiswaKalenderEvent {
     d: validDate ? date.getDate() : 0,
     m: validDate ? (MONTH_SHORT_ID[date.getMonth()] ?? '-') : '-',
     title: event.name ?? 'Agenda sekolah',
-    desc: event.description ?? `${start}${end}`,
+    desc: [
+      event.description ?? `${start}${end}`,
+      event.startAt
+        ? `${new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }).format(new Date(event.startAt))} WIB`
+        : null,
+      event.location,
+    ]
+      .filter(Boolean)
+      .join(' · '),
     color: eventColor(event.type),
   };
 }
@@ -672,7 +683,10 @@ export default function SiswaWorkspace({
           showToast={showToast}
           onOpenModule={(uuid) => {
             const target = displayedModules.find((module) => module.uuid === uuid);
-            if (!target) { showToast('Materi belum tersedia untuk akun ini. Muat ulang daftar modul.'); return; }
+            if (!target) {
+              showToast('Materi belum tersedia untuk akun ini. Muat ulang daftar modul.');
+              return;
+            }
             setModal({ type: null });
             go('modul');
             setActiveModulId(target.id);

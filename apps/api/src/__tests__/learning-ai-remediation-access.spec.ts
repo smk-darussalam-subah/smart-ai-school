@@ -40,6 +40,27 @@ function learnerFixture(role: 'SISWA' | 'ORANG_TUA' = 'SISWA') {
   };
   db.$transaction.mockImplementation((run: (tx: typeof db) => unknown) => run(db));
   const permissions = { hasFreshPermission: jest.fn().mockResolvedValue(true) };
+  const freshPermissions = {
+    ...permissions,
+    findFreshActorWithPermission: jest.fn(
+      async (
+        keycloakId: string,
+        required: string | ((primaryRole: string) => string | null),
+        tx: typeof db,
+      ) => {
+        // This fixture isolates learner ownership/wiring. The real permission
+        // resolver and lookup-count contract are tested separately on DB/service.
+        const actor = await tx.user.findFirst({
+          where: { keycloakId, isActive: true, deletedAt: null },
+          select: { id: true, role: true },
+        });
+        const code = actor && (typeof required === 'string' ? required : required(actor.role));
+        return actor && code && (await permissions.hasFreshPermission(keycloakId, code, tx))
+          ? actor
+          : null;
+      },
+    ),
+  };
   const periodValue = {
     semesterId: id(4),
     academicYear: '2026/2027',
@@ -53,11 +74,11 @@ function learnerFixture(role: 'SISWA' | 'ORANG_TUA' = 'SISWA') {
   };
   const service = new StudentSessionAttendanceService(
     db as unknown as PrismaService,
-    permissions as unknown as PermissionsService,
+    freshPermissions as unknown as PermissionsService,
     period as unknown as AcademicPeriodService,
     {} as NotificationService,
   );
-  return { db, permissions, period, service };
+  return { db, permissions: freshPermissions, period, service };
 }
 
 describe('learning remediation: learner JP and notice authority', () => {
@@ -293,6 +314,7 @@ describe('learning remediation: read-only recap JP', () => {
 describe('production controller permission metadata through the real global guard', () => {
   function fixture(method: 'learner' | 'read', code: string | null, user: AuthUser | null) {
     const permissions = {
+      getEffectivePermissions: jest.fn(async () => new Set<string>(code ? [code] : [])),
       hasPermission: jest.fn(
         async (_id: string, _roles: string[], required: string) => required === code,
       ),

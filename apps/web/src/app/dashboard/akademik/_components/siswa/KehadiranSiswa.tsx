@@ -18,6 +18,9 @@ export interface AttendanceEntry {
 }
 
 export interface SchoolCalendarEvent {
+  startAt?: string | null;
+  endAt?: string | null;
+  location?: string | null;
   name?: string | null;
   start?: string | null;
   end?: string | null;

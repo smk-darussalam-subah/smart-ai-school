@@ -7,10 +7,17 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { FastifyRequest } from 'fastify';
-import { verifyKeycloakToken, extractAuthUser, AuthUser } from '@smk/auth';
+import {
+  verifyKeycloakToken,
+  verifyKeycloakLogoutProof,
+  extractAuthUser,
+  AuthUser,
+} from '@smk/auth';
+import { SESSION_LOGOUT_KEY } from '../decorators/session-logout.decorator';
 import { auditLog } from '@smk/logger';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { UserStatusService } from '../user-status.service';
+import { verifiedSessionBinding } from '../session-binding';
 
 @Injectable()
 export class KeycloakGuard implements CanActivate {
@@ -34,10 +41,18 @@ export class KeycloakGuard implements CanActivate {
       throw new UnauthorizedException('Token tidak ditemukan');
     }
 
+    const logoutOnly = this.reflector.getAllAndOverride<boolean>(SESSION_LOGOUT_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
     let user: AuthUser;
     try {
-      const payload = await verifyKeycloakToken(token);
+      const payload = await (logoutOnly
+        ? verifyKeycloakLogoutProof(token)
+        : verifyKeycloakToken(token));
       user = extractAuthUser(payload);
+      const binding = verifiedSessionBinding(payload, token);
+      user = { ...user, sessionBinding: binding.id, sessionBindingKind: binding.kind };
     } catch (error) {
       throw new UnauthorizedException('Token tidak valid atau sudah expired');
     }
@@ -46,11 +61,20 @@ export class KeycloakGuard implements CanActivate {
       throw new UnauthorizedException('Token tidak valid atau sudah expired');
     }
 
+    if (logoutOnly) {
+      (request as FastifyRequest & { user: AuthUser }).user = { ...user, roles: [] };
+      return true;
+    }
     // 2J-0 (A4b): user dinonaktifkan/di-soft-delete dari dashboard TIDAK boleh
     // lewat meski token KC masih hidup. (Saklar KC menyusul di 2J-1/2.)
-    const authorizationState = await this.userStatus.getAuthorizationState(user.keycloakId);
+    const authorizationState = await this.userStatus.getAuthorizationState(
+      user.keycloakId,
+      user.sessionBinding,
+    );
     if (authorizationState.blocked || !authorizationState.primaryRole) {
-      throw new UnauthorizedException('Akun dinonaktifkan. Hubungi administrator.');
+      throw new UnauthorizedException(
+        'Sesi tidak lagi berlaku atau akun tidak aktif. Silakan masuk kembali.',
+      );
     }
 
     // Database aplikasi adalah source of truth authority. Token lama tetap sah

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { PapanRow } from './PapanPembelajaran';
 import { classSessionStatusMeta } from '@/lib/class-session-status';
+import AttendanceRecap from '../akademik/_components/AttendanceRecap';
 
 interface HomeStats {
   totalSiswa: number | null;
@@ -31,6 +32,8 @@ interface AgendaItem {
   name: string;
   date: string;
   endDate?: string;
+  time?: string | null;
+  location?: string | null;
 }
 
 interface SessionItem {
@@ -57,6 +60,7 @@ export interface RoleBasedHomeProps {
   monitoringSummary?: { active: number; late: number; missed: number } | null;
   dataAvailability: { schedule: boolean; agenda: boolean; sessions: boolean };
   generatedAt: string;
+  attendancePeriod?: { academicYear: string; semester: number };
 }
 
 interface QuickLink {
@@ -213,6 +217,7 @@ export default function RoleBasedHome({
   monitoringSummary,
   dataAvailability,
   generatedAt,
+  attendancePeriod,
 }: RoleBasedHomeProps) {
   const identity = roles.find((role) => IDENTITY_LABELS[role]);
   const positions = roles.filter((role) => POSITION_LABELS[role]);
@@ -281,26 +286,30 @@ export default function RoleBasedHome({
             ) : sessions.length > 0 ? (
               sessions.slice(0, 6).map((session) => {
                 const statusMeta = classSessionStatusMeta(session.status);
-                return <article
-                  key={session.id}
-                  className="grid grid-cols-[80px_minmax(0,1fr)_120px] items-center border-b border-slate-100 px-4 py-3 last:border-b-0"
-                >
-                  <span className="text-sm font-semibold text-slate-700">
-                    {timeLabel(session.scheduledStartAt)}
-                  </span>
-                  <div className="min-w-0 pr-3">
-                    <p className="truncate text-sm font-semibold text-slate-950">
-                      {session.className} · {session.subject}
-                    </p>
-                    <p className="truncate text-xs text-slate-500">
-                      {session.room || 'Ruang belum ditetapkan'} · hingga{' '}
-                      {timeLabel(session.scheduledEndAt)}
-                    </p>
-                  </div>
-                  <span className={`justify-self-start rounded-md px-2 py-1 text-xs font-semibold ${statusMeta.className}`}>
-                    {statusMeta.label}
-                  </span>
-                </article>
+                return (
+                  <article
+                    key={session.id}
+                    className="grid grid-cols-[80px_minmax(0,1fr)_120px] items-center border-b border-slate-100 px-4 py-3 last:border-b-0"
+                  >
+                    <span className="text-sm font-semibold text-slate-700">
+                      {timeLabel(session.scheduledStartAt)}
+                    </span>
+                    <div className="min-w-0 pr-3">
+                      <p className="truncate text-sm font-semibold text-slate-950">
+                        {session.className} · {session.subject}
+                      </p>
+                      <p className="truncate text-xs text-slate-500">
+                        {session.room || 'Ruang belum ditetapkan'} · hingga{' '}
+                        {timeLabel(session.scheduledEndAt)}
+                      </p>
+                    </div>
+                    <span
+                      className={`justify-self-start rounded-md px-2 py-1 text-xs font-semibold ${statusMeta.className}`}
+                    >
+                      {statusMeta.label}
+                    </span>
+                  </article>
+                );
               })
             ) : !dataAvailability.schedule ? (
               <div role="alert" className="p-5 text-sm leading-6 text-amber-900">
@@ -309,7 +318,12 @@ export default function RoleBasedHome({
             ) : scheduleRows.length > 0 ? (
               <div className="p-5 text-sm text-slate-600">
                 Jadwal tersedia, tetapi sesi harian belum dibentuk.
-                <a href="/dashboard/jadwal#session-preparation" className="ml-1 inline-flex min-h-11 items-center font-semibold text-emerald-800 underline">Buka jadwal dan sesi</a>
+                <a
+                  href="/dashboard/jadwal#session-preparation"
+                  className="ml-1 inline-flex min-h-11 items-center font-semibold text-emerald-800 underline"
+                >
+                  Buka jadwal dan sesi
+                </a>
               </div>
             ) : (
               <div className="p-5 text-sm text-slate-600">
@@ -333,7 +347,16 @@ export default function RoleBasedHome({
                     <time className="w-12 shrink-0 text-xs font-semibold text-emerald-800">
                       {dateLabel(item.date)}
                     </time>
-                    <p className="text-sm leading-5 text-slate-700">{item.name}</p>
+                    <div>
+                      <p className="text-sm leading-5 text-slate-700">{item.name}</p>
+                      {(item.time || item.location) && (
+                        <p className="mt-1 text-xs text-slate-600">
+                          {[item.time && `${item.time} WIB`, item.location]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </p>
+                      )}
+                    </div>
                   </article>
                 ))
               ) : (
@@ -451,10 +474,14 @@ export default function RoleBasedHome({
           {[
             ['Siswa terdaftar aktif', stats?.totalSiswa],
             ['Rombel tahun aktif', stats?.totalKelas],
-            [
-              'Kehadiran harian hari ini',
-              stats?.kehadiranHariIni == null ? null : `${stats.kehadiranHariIni}%`,
-            ],
+            ...(!attendancePeriod
+              ? [
+                  [
+                    'Kehadiran harian hari ini',
+                    stats?.kehadiranHariIni == null ? null : `${stats.kehadiranHariIni}%`,
+                  ],
+                ]
+              : []),
             ['Pipeline PPDB', stats?.ppdbLeads],
           ].map(([label, value]) => (
             <article key={String(label)} className="bg-white p-4">
@@ -474,9 +501,18 @@ export default function RoleBasedHome({
         )}
       </section>
 
+      {attendancePeriod && (
+        <AttendanceRecap
+          compact
+          context="authorized"
+          academicYear={attendancePeriod.academicYear}
+          semester={attendancePeriod.semester}
+        />
+      )}
+
       <footer className="flex items-center gap-2 border-t border-slate-200 pt-4 text-xs text-slate-500">
         <Activity className="h-4 w-4" aria-hidden="true" />
-        Ringkasan ini mengikuti data, Appointment, dan permission aktif pada saat halaman dimuat.
+        Data dan tindakan mengikuti kewenangan aktif Anda.
       </footer>
     </div>
   );

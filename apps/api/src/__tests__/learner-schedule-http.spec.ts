@@ -16,6 +16,7 @@ describe('learner timetable HTTP authorization and strict DTO boundary', () => {
   let grants: Set<string>;
   const service = { findAll: jest.fn(async () => ({ data: [], total: 0, page: 1, limit: 100 })), create: jest.fn() };
   const permissions = {
+    getEffectivePermissions: jest.fn(async () => grants),
     getAuthoritativePrimaryRole: jest.fn(async () => authoritativeRole),
     getActivePositionCodes: jest.fn(async () => new Set<string>()),
     hasPermission: jest.fn(async (_id: string, _roles: UserRole[], permission: string) => grants.has(permission)),

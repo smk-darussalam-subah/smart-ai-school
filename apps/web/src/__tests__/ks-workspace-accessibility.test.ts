@@ -40,7 +40,7 @@ const render = () =>
   );
 
 describe('KS workspace native interaction semantics', () => {
-  it('R05 all five interactive overview KPIs are native keyboard buttons', () => {
+  it('R05 overview KPIs and the attendance menu remain native keyboard buttons', () => {
     const html = render();
     const buttons = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? [];
     for (const label of [

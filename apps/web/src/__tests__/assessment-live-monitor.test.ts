@@ -189,7 +189,7 @@ it('mints only via the same-origin authenticated proxy and validates the token c
   const originalFetch = global.fetch;
   const fetcher = jest
     .fn()
-    .mockResolvedValueOnce(Response.json({ token: 'a'.repeat(64) }))
+    .mockResolvedValueOnce(Response.json({ token: 'a'.repeat(43) + '.' + 'e'.repeat(64) }))
     .mockResolvedValueOnce(Response.json({ token: 'invalid' }))
     .mockResolvedValueOnce(new Response(null, { status: 403 }));
   global.fetch = fetcher;
@@ -197,7 +197,7 @@ it('mints only via the same-origin authenticated proxy and validates the token c
   try {
     expect(await requestAssessmentMonitorToken(signal)).toEqual({
       success: true,
-      token: 'a'.repeat(64),
+      token: 'a'.repeat(43) + '.' + 'e'.repeat(64),
     });
     expect(await requestAssessmentMonitorToken(signal)).toEqual({ success: false });
     expect(await requestAssessmentMonitorToken(signal)).toEqual({ success: false });

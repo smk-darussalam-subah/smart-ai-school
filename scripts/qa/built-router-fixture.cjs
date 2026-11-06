@@ -43,6 +43,8 @@ const backend = http.createServer(async (request, response) => {
   if (!authorized && !publicCatalog.includes(endpoint)) {
     status = 401;
     body = { message: 'Synthetic identity required' };
+  } else if (endpoint === '/auth/session-status') {
+    body = { active: true, binding: 'oidc' };
   } else if (endpoint === '/auth/me') {
     body = {
       id: 'synthetic-router-guru',
