@@ -30,3 +30,11 @@ Residual owners/gates: capacity and transport isolation -> future bounded SRE wo
 Next: literal package, draft PR to develop, clean-install Linux CI, then stop for independent exact-PR review. Merge/protection changes/environment approval/runtime/production/commissioning remain HOLD.
 
 Recommended next model: GPT-6.1 Terra / medium for mechanical packaging; GPT-6.1 Sol / high if actual source/base drift requires new semantic judgment. Actual session model/effort is not asserted by this note.
+
+## CI fixture follow-up, 6 November 2026
+
+Draft PR738 was published at9a0f8418. Its first CI passed lint/type-check, build and lifecycle checks; the Unit Tests job failed during the legacy SMA-50 HTTP E2E stage. All earlier unit suites passed. The E2E fixture returned hasPermission=true but getEffectivePermissions=empty Set, whereas the production guard now consumes the latter. This was a stale test fixture, not permission denial to remove from production.
+
+A test-only correction makes the documented permission-granted fixture coherent with the guard's Set contract. The real PermissionGuard, RolesGuard, controllers/services and all existing role/ownership assertions remain. A new same-identity control proves empty permissions403, then restored permissions200. Disposable PostgreSQL/Redis reproduced17 failures of29 before;30/30 passed after. Auth/permission/Ollama remain explicit CI mocks; this suite is not real Keycloak or database-RBAC acceptance. The original failed CI/run/logs remain preserved.
+
+The cumulative package now contains153 paths: the previous152 plus apps/api/test/app.e2e-spec.ts. Only that test file and this note changed after the initial draft commit. Application production inputs remain byte-identical to the locally reviewed candidate; the full image context includes the changed test, so earlier whole-input image hashes are historical bindings, not a claim that every final input is identical. Clean-install CI must run on the appended commit before exact-PR review. No amend, force-push, merge or runtime change belongs to this follow-up. Capacity725, React418 and all earlier residuals remain open.
