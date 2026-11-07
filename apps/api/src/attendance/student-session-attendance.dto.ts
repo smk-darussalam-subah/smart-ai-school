@@ -1,5 +1,31 @@
 import { z } from 'zod';
 const date = z.string().date();
+export const SessionAttendanceOverviewSchema = z
+  .object({
+    academicYear: z
+      .string()
+      .regex(/^\d{4}\/\d{4}$/)
+      .optional(),
+    semester: z.coerce.number().int().min(1).max(2).optional(),
+    from: date.optional(),
+    to: date.optional(),
+    scope: z.literal('own').optional(),
+    teacherId: z.string().uuid().optional(),
+    classId: z.string().uuid().optional(),
+    majorCode: z.string().trim().min(1).max(20).optional(),
+    subject: z.string().trim().min(1).max(100).optional(),
+  })
+  .strict()
+  .refine((q) => Boolean(q.academicYear) === Boolean(q.semester), 'Pilih periode lengkap.')
+  .refine((q) => Boolean(q.from) === Boolean(q.to), 'Pilih kedua batas tanggal.')
+  .refine(
+    (q) =>
+      !q.from ||
+      !q.to ||
+      (q.from <= q.to && Date.parse(q.to) - Date.parse(q.from) <= 92 * 86400000),
+    'Rentang maksimal 93 hari.',
+  );
+export type SessionAttendanceOverviewQuery = z.infer<typeof SessionAttendanceOverviewSchema>;
 export const SessionAttendanceReadSchema = z
   .object({ scope: z.literal('own').optional() })
   .strict();

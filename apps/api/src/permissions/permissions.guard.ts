@@ -1,9 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { FastifyRequest } from 'fastify';
 import { AuthUser } from '@smk/auth';
@@ -35,9 +30,7 @@ export class PermissionGuard implements CanActivate {
 
     if (!requiredPermission) return true;
 
-    const request = context
-      .switchToHttp()
-      .getRequest<FastifyRequest & { user?: AuthUser }>();
+    const request = context.switchToHttp().getRequest<FastifyRequest & { user?: AuthUser }>();
 
     const user = request.user;
     // FAIL-CLOSED: endpoint ber-@RequirePermission tanpa user terautentikasi
@@ -53,17 +46,16 @@ export class PermissionGuard implements CanActivate {
       ? requiredPermission
       : [requiredPermission];
 
-    const checks = await Promise.all(
-      requiredPermissions.map((permission) =>
-        this.permissionsService.hasPermission(
-          user.keycloakId,
-          user.roles,
-          permission,
-        ),
-      ),
+    // Alternative permissions share one authoritative resolution. Resolving each
+    // branch separately duplicates status/role queries, especially on a cold cache.
+    const effective = await this.permissionsService.getEffectivePermissions(
+      user.keycloakId,
+      user.roles,
+      request,
     );
-
-    const hasPermission = checks.some(Boolean);
+    const hasPermission =
+      requiredPermissions.length > 0 &&
+      (effective.has('*') || requiredPermissions.some((permission) => effective.has(permission)));
 
     if (!hasPermission) {
       throw new ForbiddenException(

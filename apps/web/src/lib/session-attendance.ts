@@ -37,6 +37,157 @@ function verifyTotals(t: z.infer<typeof TotalsObject>, ctx: z.RefinementCtx) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Perhitungan kehadiran tidak konsisten' });
 }
 export const JpTotalsSchema = TotalsObject.superRefine(verifyTotals);
+export const JpOverviewQuerySchema = z
+  .object({
+    academicYear: z
+      .string()
+      .regex(/^\d{4}\/\d{4}$/)
+      .optional(),
+    semester: z.number().int().min(1).max(2).optional(),
+    from: z.string().date().optional(),
+    to: z.string().date().optional(),
+    scope: z.literal('own').optional(),
+    teacherId: z.string().uuid().optional(),
+    classId: z.string().uuid().optional(),
+    majorCode: z.string().trim().min(1).max(20).optional(),
+    subject: z.string().trim().min(1).max(100).optional(),
+  })
+  .strict()
+  .refine((q) => Boolean(q.academicYear) === Boolean(q.semester))
+  .refine((q) => Boolean(q.from) === Boolean(q.to))
+  .refine(
+    (q) =>
+      !q.from ||
+      !q.to ||
+      (q.from <= q.to && Date.parse(q.to) - Date.parse(q.from) <= 92 * 86400000),
+  );
+export type JpOverviewQuery = z.infer<typeof JpOverviewQuerySchema>;
+const SessionCompletionSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    scheduleId: z.string().uuid().nullable(),
+    classId: z.string().uuid(),
+    date: z.string().date(),
+    subject: z.string(),
+    jpStart: z.number().int().positive(),
+    jpEnd: z.number().int().positive(),
+    expected: z.number().int().nonnegative(),
+    recorded: z.number().int().nonnegative(),
+    unknown: z.number().int().nonnegative(),
+    complete: z.boolean(),
+  })
+  .superRefine((s, ctx) => {
+    if (
+      s.jpEnd < s.jpStart ||
+      s.expected !== s.recorded + s.unknown ||
+      s.complete !== (s.expected > 0 && s.unknown === 0)
+    )
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Kelengkapan sesi tidak konsisten.' });
+  });
+export const JpOverviewSchema = z
+  .object({
+    academicYear: z.string().regex(/^\d{4}\/\d{4}$/),
+    semester: z.number().int().min(1).max(2),
+    from: z.string().date(),
+    to: z.string().date(),
+    observedThrough: z.string().date(),
+    generatedAt: z.string().datetime(),
+    unit: z.literal('student_session_jp'),
+    rosterBasis: z.literal('current_roster_and_recorded_history'),
+    scope: z.enum(['own', 'authorized']),
+    filters: z.object({
+      classId: z.string().uuid().nullable(),
+      teacherId: z.string().uuid().nullable(),
+      subject: z.string().nullable(),
+      majorCode: z.string().nullable(),
+    }),
+    totals: JpTotalsSchema,
+    sessionCompletion: z.array(SessionCompletionSchema).max(10000).optional(),
+    days: z
+      .array(TotalsObject.extend({ date: z.string().date() }).superRefine(verifyTotals))
+      .max(93),
+  })
+  .superRefine((data, ctx) => {
+    const fields = ['expected', 'recorded', 'unknown', 'hadir', 'izin', 'sakit', 'alpha'] as const;
+    if (
+      data.from > data.to ||
+      new Set(data.days.map((d) => d.date)).size !== data.days.length ||
+      data.days.some(
+        (d) => d.date < data.from || d.date > data.to || d.date > data.observedThrough,
+      ) ||
+      fields.some((k) => data.totals[k] !== data.days.reduce((n, d) => n + d[k], 0)) ||
+      (data.sessionCompletion &&
+        (data.scope !== 'own' ||
+          data.from !== data.to ||
+          new Set(data.sessionCompletion.map((s) => s.sessionId)).size !==
+            data.sessionCompletion.length ||
+          data.sessionCompletion.some((s) => s.date !== data.from)))
+    )
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Ringkasan JP tidak konsisten.' });
+  });
+export type JpOverview = z.infer<typeof JpOverviewSchema>;
+export function jpOverviewCsv(data: JpOverview): string {
+  const columns = [
+    'Unit',
+    'Tahun ajaran',
+    'Semester',
+    'Mulai',
+    'Akhir',
+    'Cakupan',
+    'Jurusan',
+    'Mapel',
+    'Tanggal',
+    'Target siswa-JP',
+    'Tercatat',
+    'Belum lengkap',
+    'Hadir',
+    'Izin',
+    'Sakit',
+    'Alpha',
+    'Persentase',
+  ];
+  const rows = [...data.days, { date: 'TOTAL', ...data.totals }].map((day) => [
+    data.unit,
+    data.academicYear,
+    data.semester,
+    data.from,
+    data.to,
+    data.scope,
+    data.filters.majorCode ?? '',
+    data.filters.subject ?? '',
+    day.date,
+    day.expected,
+    day.recorded,
+    day.unknown,
+    day.hadir,
+    day.izin,
+    day.sakit,
+    day.alpha,
+    day.pct ?? '',
+  ]);
+  const cell = (value: string | number) => {
+    const text = String(value);
+    return '"' + (/^\s*[=+@-]/.test(text) ? "'" : '') + text.replaceAll('"', '""') + '"';
+  };
+  return '\ufeff' + [columns, ...rows].map((row) => row.map(cell).join(',')).join('\r\n') + '\r\n';
+}
+export function readJpOverview(value: unknown, query: JpOverviewQuery): JpOverview | null {
+  const parsed = JpOverviewSchema.safeParse(value);
+  if (!parsed.success) return null;
+  const data = parsed.data;
+  if (
+    (query.academicYear && query.academicYear !== data.academicYear) ||
+    (query.semester && query.semester !== data.semester) ||
+    (query.from && query.from !== data.from) ||
+    (query.to && query.to !== data.to) ||
+    (query.scope === 'own' && data.scope !== 'own') ||
+    (['classId', 'teacherId', 'subject', 'majorCode'] as const).some(
+      (k) => (query[k] ?? null) !== data.filters[k],
+    )
+  )
+    return null;
+  return data;
+}
 const LearnerJpObject = z.object({
   studentId: z.string().uuid(),
   academicYear: z.string().regex(/^\d{4}\/\d{4}$/),

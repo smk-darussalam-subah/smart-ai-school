@@ -103,6 +103,8 @@ describe('PermissionsService', () => {
       user: { findUnique: mockUserFindUnique, findFirst: mockUserFindFirst },
       academicYear: { findMany: mockAyFindMany },
       appointment: { findMany: mockAppointmentFindMany },
+      $executeRaw: jest.fn().mockResolvedValue(1),
+      $queryRaw: jest.fn().mockResolvedValue([]),
       $transaction: mockTransaction,
     };
     mockTransaction.mockImplementation(async (input: unknown) => {
@@ -146,7 +148,7 @@ describe('PermissionsService', () => {
 
       await expect(
         service.hasPermission('kc-sa', ['SUPER_ADMIN'], 'permissions.manage'),
-      ).resolves.toBe(false);
+      ).rejects.toMatchObject({ response: { code: 'AUTHORITY_UNAVAILABLE' }, status: 503 });
       expect(mockRpFindMany).not.toHaveBeenCalled();
     });
 
@@ -631,6 +633,16 @@ describe('PermissionsService', () => {
       await service.setRolePermissions('GURU', ['p1', 'p2']);
       expect(mockTransaction).toHaveBeenCalledTimes(1);
     });
+    it('role replacement reads the previous grant IDs inside the same writer transaction', async () => {
+      mockRpFindMany.mockResolvedValue([{ permissionId: 'p-old' }]);
+      await service.setRolePermissions('GURU', ['p1', 'p2']);
+      expect(mockRpFindMany).toHaveBeenCalledWith({
+        where: { role: 'GURU' },
+        select: { permissionId: true },
+      });
+      expect(typeof mockTransaction.mock.calls[0]?.[0]).toBe('function');
+      expect(mockTransaction.mock.calls[0]?.[1]).toEqual({ timeout: 30000 });
+    });
   });
 
   describe('User overrides', () => {
@@ -707,6 +719,10 @@ describe('PermissionsService', () => {
       const result = await service.grantUserPermission('auth-1', 'p1');
 
       expect(result).toEqual({ id: 'o-existing', grant: true });
+      expect(mockTransaction).toHaveBeenCalledTimes(2);
+      expect(mockTransaction.mock.calls.every(([callback]) => typeof callback === 'function')).toBe(
+        true,
+      );
       expect(mockUpoUpdate).toHaveBeenCalledWith({
         where: { id: 'o-existing' },
         data: expect.objectContaining({
@@ -726,15 +742,18 @@ describe('PermissionsService', () => {
 describe('PermissionGuard', () => {
   let guard: PermissionGuard;
   let reflector: Reflector;
-  const mockHasPermission = jest.fn();
+  const mockGetEffectivePermissions = jest.fn();
 
   beforeEach(async () => {
-    mockHasPermission.mockReset();
+    mockGetEffectivePermissions.mockReset();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PermissionGuard,
         Reflector,
-        { provide: PermissionsService, useValue: { hasPermission: mockHasPermission } },
+        {
+          provide: PermissionsService,
+          useValue: { getEffectivePermissions: mockGetEffectivePermissions },
+        },
       ],
     }).compile();
     guard = module.get(PermissionGuard);
@@ -767,7 +786,7 @@ describe('PermissionGuard', () => {
       if (key === REQUIRED_PERMISSION_KEY) return 'student.read';
       return undefined;
     });
-    mockHasPermission.mockResolvedValue(true);
+    mockGetEffectivePermissions.mockResolvedValue(new Set(['student.read']));
     expect(await guard.canActivate(buildCtx())).toBe(true);
   });
 
@@ -776,13 +795,17 @@ describe('PermissionGuard', () => {
       if (key === REQUIRED_PERMISSION_KEY) return ['finance.read', 'finance.child.read'];
       return undefined;
     });
-    mockHasPermission.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    mockGetEffectivePermissions.mockResolvedValue(new Set(['finance.child.read']));
 
     expect(await guard.canActivate(buildCtx({ keycloakId: 'kc-ortu', roles: ['ORANG_TUA'] }))).toBe(
       true,
     );
-    expect(mockHasPermission).toHaveBeenCalledWith('kc-ortu', ['ORANG_TUA'], 'finance.read');
-    expect(mockHasPermission).toHaveBeenCalledWith('kc-ortu', ['ORANG_TUA'], 'finance.child.read');
+    expect(mockGetEffectivePermissions).toHaveBeenCalledTimes(1);
+    expect(mockGetEffectivePermissions).toHaveBeenCalledWith(
+      'kc-ortu',
+      ['ORANG_TUA'],
+      expect.objectContaining({ user: expect.objectContaining({ keycloakId: 'kc-ortu' }) }),
+    );
   });
 
   it('TIDAK punya permission → ForbiddenException', async () => {
@@ -790,10 +813,24 @@ describe('PermissionGuard', () => {
       if (key === REQUIRED_PERMISSION_KEY) return 'permissions.manage';
       return undefined;
     });
-    mockHasPermission.mockResolvedValue(false);
+    mockGetEffectivePermissions.mockResolvedValue(new Set());
     await expect(
       guard.canActivate(buildCtx({ keycloakId: 'kc-guru', roles: ['GURU'] })),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('wildcard permits a real requirement, but an empty requirement still fails closed', async () => {
+    mockGetEffectivePermissions.mockResolvedValue(new Set(['*']));
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockImplementation((key) =>
+        key === REQUIRED_PERMISSION_KEY ? ['student.read', 'student.child.read'] : undefined,
+      );
+    expect(await guard.canActivate(buildCtx())).toBe(true);
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockImplementation((key) => (key === REQUIRED_PERMISSION_KEY ? [] : undefined));
+    await expect(guard.canActivate(buildCtx())).rejects.toThrow(ForbiddenException);
   });
 });
 

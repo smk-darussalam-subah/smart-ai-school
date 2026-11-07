@@ -17,6 +17,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { serializeDisplayEvent } from '../operational-monitoring/operational-monitoring.controller';
 import { DisplayPlaybackLeaseService } from '../operational-monitoring/display-playback-lease.service';
 import { OperationalMonitoringService } from '../operational-monitoring/operational-monitoring.service';
+import { StaffAttendanceService } from '../staff-attendance/staff-attendance.service';
 import { sessionActivationFixture } from './fixtures/session-activation.fixture';
 
 const playbackLeases = {
@@ -304,6 +305,7 @@ describe('Wave 8.5 pairing credential invariants', () => {
         deviceService,
         {} as BellScheduleService,
         playbackLeases,
+        {} as StaffAttendanceService,
       );
       await expect(monitoring.privateSnapshot({ date: '2026-08-24' })).resolves.toMatchObject({
         devices: [expect.objectContaining({ status: 'EXPIRED', health: 'EXPIRED' })],
@@ -433,6 +435,7 @@ describe('Wave 8.5 durable display playback', () => {
         devices as unknown as DisplayDeviceService,
         bells as unknown as BellScheduleService,
         leases as unknown as DisplayPlaybackLeaseService,
+        {} as StaffAttendanceService,
       ),
       updateMany,
       leases,
@@ -561,13 +564,35 @@ describe('Wave 8.5 display operational projection', () => {
           resolveForDate: jest.fn().mockResolvedValue(profile),
         } as unknown as BellScheduleService,
         playbackLeases,
+        {
+          report: jest.fn().mockResolvedValue({
+            teacherDays: [
+              {
+                date: '2026-08-24',
+                present: 7,
+                presentRequired: 7,
+                dueRequired: 10,
+                unknown: 0,
+                notRequired: 0,
+              },
+              {
+                date: '2026-08-25',
+                present: 8,
+                presentRequired: 8,
+                dueRequired: 10,
+                unknown: 0,
+                notRequired: 0,
+              },
+            ],
+          }),
+        } as unknown as StaffAttendanceService,
       );
 
       const result = await service.deviceSnapshot('opaque');
 
       expect(result.attendance).toEqual({
         students: { present: 19, recorded: 20, total: 20 },
-        teachers: { present: 8, recorded: 8, total: 10 },
+        teachers: { present: 8, recorded: 8, total: 10, unknown: 0, notRequired: 0 },
         trend: [
           {
             date: '2026-08-24',
@@ -577,6 +602,7 @@ describe('Wave 8.5 display operational projection', () => {
             teacherPresent: 7,
             teacherRecorded: 7,
             teacherTotal: 10,
+            teacherUnknown: 0,
           },
           {
             date: '2026-08-25',
@@ -586,6 +612,7 @@ describe('Wave 8.5 display operational projection', () => {
             teacherPresent: 8,
             teacherRecorded: 8,
             teacherTotal: 10,
+            teacherUnknown: 0,
           },
         ],
       });
@@ -650,6 +677,9 @@ describe('Wave 8.5 display operational projection', () => {
       } as unknown as DisplayDeviceService,
       { resolveForDate: jest.fn().mockResolvedValue(profile) } as unknown as BellScheduleService,
       playbackLeases,
+      {
+        report: jest.fn().mockResolvedValue({ teacherDays: [] }),
+      } as unknown as StaffAttendanceService,
     );
 
     await expect(service.deviceSnapshot('opaque')).resolves.toMatchObject({

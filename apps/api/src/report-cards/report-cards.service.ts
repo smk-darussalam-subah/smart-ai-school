@@ -39,6 +39,11 @@ import { normalizePhoneE164 } from '../common/helpers/phone';
 import { PersistedKktpProvenance, resolveKktpThreshold } from '../academic/kktp-resolver';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { EVENTS, ReportDistributedPayload } from '../events/events.types';
+import { assertFreshMutationAuthority, USER_IDENTITY_MUTATION_LOCK } from '../common/helpers/identity-mutation-lock';
+import { APPOINTMENT_ACTIVATION_LOCK_KEY } from '../appointments/appointments.service';
+import { lockReportPermissionSnapshot } from '../permissions/permission-mutation-coordination';
+import { readAttendancePeriod, type AttendancePeriod } from '../attendance/attendance-period';
+import { readReportJpAnnexes, reportAttendanceForRead, reportAttendanceForList } from './report-jp-annex';
 import {
   GenerateReportsDto,
   ListReportsQueryDto,
@@ -73,6 +78,7 @@ const REPORT_SELECT = {
 } as const;
 
 type ReportSnapshotDb = Prisma.TransactionClient;
+class RetryReportAuthoritySnapshot extends Error {}
 
 // Transisi sah: action → { dari, ke, stempel waktu }
 const TRANSITIONS: Record<
@@ -237,6 +243,7 @@ export class ReportCardsService {
     return {
       data: data.map((item) => ({
         ...item,
+        attendance: reportAttendanceForList(item.attendance, item),
         canManageDraft: manageableClassIds === null || manageableClassIds.has(item.classId),
       })),
       total,
@@ -248,11 +255,18 @@ export class ReportCardsService {
   /** Generate rapor massal satu kelas — idempoten (yang sudah ada dilewati). */
   async generate(dto: GenerateReportsDto, user?: AuthUser) {
     if (user) await this.assertDraftManager(dto.classId, user);
-    return this.prisma.$transaction(async (tx) => {
+    return this.reportSnapshotTransaction(async (tx) => {
       const lockKey = `${dto.classId}:${dto.academicYear}:${dto.semester}`;
-      await tx.$executeRaw(
-        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('report-card-generate'), hashtext(${lockKey}))`,
+      const [lock] = await tx.$queryRaw<Array<{ acquired: boolean }>>(
+        Prisma.sql`SELECT pg_try_advisory_xact_lock(hashtext('report-card-generate'), hashtext(${lockKey})) AS acquired`,
       );
+      if (!lock?.acquired) {
+        await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('report-card-generate'), hashtext(${lockKey}))`);
+        // Waiting may have aged a RepeatableRead snapshot, including permission
+        // inserts. Restart the entire attempt; never authorize against that snapshot.
+        throw new RetryReportAuthoritySnapshot();
+      }
+      await this.lockFreshReportDomain(tx, APPOINTMENT_ACTIVATION_LOCK_KEY);
       const activePeriod = await this.resolveActiveReportPeriod(tx);
       if (dto.academicYear !== activePeriod.academicYear || dto.semester !== activePeriod.semester) {
         throw new BadRequestException(
@@ -263,6 +277,31 @@ export class ReportCardsService {
         academicYear: dto.academicYear,
         semester: dto.semester,
       });
+      // Same class row as ClassesService.update; a changed row under RR forces
+      // a complete retry. Hold it through commit so a winning generate and a
+      // later homeroom revocation have a single, deterministic order.
+      const classLock = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT id FROM academic.classes WHERE id = ${dto.classId}::uuid FOR UPDATE SKIP LOCKED`);
+      if (!classLock.length) {
+        const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT id FROM academic.classes WHERE id = ${dto.classId}::uuid FOR UPDATE`);
+        if (!rows.length) throw new NotFoundException('Kelas tidak ditemukan');
+        throw new RetryReportAuthoritySnapshot();
+      }
+      if (user) {
+        // Account activation can hold the lifecycle lock before reserving a
+        // class seat. Never wait for that lock while this class row is held.
+        await this.lockFreshReportDomain(tx, USER_IDENTITY_MUTATION_LOCK, false);
+        await lockReportPermissionSnapshot(tx, user.keycloakId, 'report.wali.manage');
+        await assertFreshMutationAuthority(tx, this.permissions, user.keycloakId, 'report.wali.manage', ['GURU']);
+        const teacher = await tx.teacher.findFirst({
+          where: { deletedAt: null, user: { keycloakId: user.keycloakId, role: 'GURU', isActive: true, deletedAt: null } },
+          select: { id: true },
+        });
+        const mandate = teacher && await tx.class.findFirst({
+          where: { id: dto.classId, teacherId: teacher.id, isActive: true }, select: { id: true },
+        });
+        if (!mandate) throw new ForbiddenException('Mandat wali kelas tidak lagi berlaku. Muat ulang halaman.');
+      }
+      const attendancePeriod = await readAttendancePeriod(tx, dto);
       const kelas = await tx.class.findUnique({
         where: { id: dto.classId },
         select: {
@@ -273,7 +312,8 @@ export class ReportCardsService {
           teacher: { select: { user: { select: { fullName: true } } } },
           students: {
             where: { status: 'active', deletedAt: null },
-            select: { id: true, nis: true, user: { select: { fullName: true } } },
+            select: { id: true, nis: true, joinedAt: true, user: { select: { fullName: true, isActive: true, deletedAt: true } } },
+            take: 1001,
           },
         },
       });
@@ -285,6 +325,7 @@ export class ReportCardsService {
       if (kelas.students.length === 0) {
         throw new BadRequestException('Kelas tidak memiliki siswa aktif');
       }
+      if (kelas.students.length > 1000) throw new ConflictException('Daftar siswa terlalu besar untuk satu proses rapor.');
 
       const existing = await tx.reportCard.findMany({
         where: {
@@ -292,9 +333,13 @@ export class ReportCardsService {
           semester: dto.semester,
           studentId: { in: kelas.students.map((student) => student.id) },
         },
-        select: { id: true, studentId: true, status: true },
+        select: { id: true, studentId: true, status: true, updatedAt: true },
       });
       const existingByStudent = new Map(existing.map((item) => [item.studentId, item]));
+      const jpAnnexes = await readReportJpAnnexes(tx, attendancePeriod, dto.classId,
+        kelas.students.filter(s => !existingByStudent.has(s.id) || existingByStudent.get(s.id)!.status === 'draft')
+          .map(s => ({ id: s.id, joinedAt: s.joinedAt, eligible: s.user.isActive && !s.user.deletedAt })),
+      );
 
       let generated = 0;
       let refreshed = 0;
@@ -307,7 +352,7 @@ export class ReportCardsService {
         }
         const [grades, attendance] = await Promise.all([
           this.buildGradeSnapshot(tx, student.id, dto.classId, dto.academicYear, dto.semester),
-          this.buildAttendanceSnapshot(tx, student.id, dto.classId, dto.academicYear, dto.semester),
+          this.buildAttendanceSnapshot(tx, student.id, dto.classId, dto.academicYear, dto.semester, attendancePeriod),
         ]);
         const data = {
           studentId: student.id,
@@ -315,11 +360,12 @@ export class ReportCardsService {
           academicYear: dto.academicYear,
           semester: dto.semester,
           grades: grades as unknown as Prisma.InputJsonValue,
-          attendance: attendance as Prisma.InputJsonValue,
+          attendance: { ...attendance, jp: jpAnnexes.get(student.id)! } as unknown as Prisma.InputJsonValue,
           studentNameSnapshot: student.user.fullName,
           studentNisSnapshot: student.nis,
           classNameSnapshot: kelas.name,
           homeroomTeacherNameSnapshot: kelas.teacher?.user.fullName ?? null,
+          ...(current ? { updatedAt: new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1)) } : {}),
         };
         if (current) {
           const changed = await tx.reportCard.updateMany({
@@ -336,6 +382,38 @@ export class ReportCardsService {
 
       return { generated, refreshed, skipped, totalStudents: kelas.students.length };
     });
+  }
+
+  /** One consistent snapshot; retry only fully rolled-back PostgreSQL conflicts. */
+  private async lockFreshReportDomain(tx: Prisma.TransactionClient, key: string, wait = true): Promise<void> {
+    const [lock] = await tx.$queryRaw<Array<{ acquired: boolean }>>(
+      Prisma.sql`SELECT pg_try_advisory_xact_lock(hashtext(${key})) AS acquired`,
+    );
+    if (!lock?.acquired) {
+      if (!wait) throw new RetryReportAuthoritySnapshot();
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
+      throw new RetryReportAuthoritySnapshot();
+    }
+  }
+
+  private async reportSnapshotTransaction<T>(run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await this.prisma.$transaction(run, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 20000 });
+      } catch (error) {
+        if (error instanceof RetryReportAuthoritySnapshot) {
+          if (attempt === 2) throw new ConflictException('Kewenangan rapor sedang berubah. Coba siapkan draft kembali.');
+          continue;
+        }
+        if (!(error instanceof Prisma.PrismaClientKnownRequestError)) throw error;
+        const target = error.meta?.target;
+        const reportCollision = error.code === 'P2002' && error.meta?.modelName === 'ReportCard' && Array.isArray(target) && target.length === 3 && ['student_id', 'academic_year', 'semester'].every(column => target.includes(column));
+        const rawSerialization = error.code === 'P2010' && ['40001', '40P01'].includes(String(error.meta?.code));
+        if (error.code !== 'P2034' && !rawSerialization && !reportCollision) throw error;
+        if (attempt === 2) throw new ConflictException('Data rapor sedang berubah. Coba siapkan draft kembali.');
+      }
+    }
+    throw new ConflictException('Snapshot rapor belum dapat disiapkan.');
   }
 
   private async buildGradeSnapshot(
@@ -395,28 +473,17 @@ export class ReportCardsService {
     classId: string,
     academicYear: string,
     semester: number,
+    resolvedPeriod?: AttendancePeriod,
   ): Promise<Record<string, number>> {
-    const { from, to } = this.semesterDateRange(academicYear, semester);
+    const period = resolvedPeriod ?? await readAttendancePeriod(db, { academicYear, semester });
     const grouped = await db.attendance.groupBy({
       by: ['status'],
-      where: { studentId, classId, date: { gte: from, lte: to } },
+      where: { studentId, classId, date: { gte: period.startDate, lte: period.endDate } },
       _count: { _all: true },
     });
     const result: Record<string, number> = { hadir: 0, izin: 0, sakit: 0, alpha: 0 };
     for (const g of grouped) result[g.status] = g._count._all;
     return result;
-  }
-
-  private semesterDateRange(academicYear: string, semester: number): { from: Date; to: Date } {
-    const match = /^(\d{4})\/(\d{4})$/.exec(academicYear);
-    if (!match || Number(match[2]) !== Number(match[1]) + 1 || ![1, 2].includes(semester)) {
-      throw new BadRequestException('Tahun ajaran atau semester tidak valid');
-    }
-    const firstYear = Number(match[1]);
-    const secondYear = Number(match[2]);
-    return semester === 1
-      ? { from: new Date(Date.UTC(firstYear, 6, 1)), to: new Date(Date.UTC(firstYear, 11, 31, 23, 59, 59, 999)) }
-      : { from: new Date(Date.UTC(secondYear, 0, 1)), to: new Date(Date.UTC(secondYear, 5, 30, 23, 59, 59, 999)) };
   }
 
   /** Transisi status sesuai pipeline; aksi tidak sah → 409 dengan pesan jelas. */
@@ -901,6 +968,9 @@ export class ReportCardsService {
         id: true,
         status: true,
         grades: true,
+        studentId: true,
+        classId: true,
+        updatedAt: true,
         attendance: true,
         studentNameSnapshot: true,
         studentNisSnapshot: true,
@@ -927,8 +997,9 @@ export class ReportCardsService {
       ? (report.grades as unknown as SubjectSnapshot[]).filter((item) =>
           typeof item?.subject === 'string' && Number.isFinite(item.average))
       : [];
-    const attendanceValue = report.attendance && typeof report.attendance === 'object' && !Array.isArray(report.attendance)
-      ? report.attendance as Record<string, unknown>
+    const readableAttendance = reportAttendanceForRead(report.attendance, { studentId: report.studentId, classId: report.classId, academicYear: year, semester });
+    const attendanceValue = readableAttendance && typeof readableAttendance === 'object' && !Array.isArray(readableAttendance)
+      ? readableAttendance as Record<string, unknown>
       : {};
     const attendance = {
       hadir: Number(attendanceValue.hadir ?? 0),
@@ -959,9 +1030,11 @@ export class ReportCardsService {
     return {
       reportCardId: report.id,
       snapshotStatus: report.status,
+      snapshotUpdatedAt: report.updatedAt,
       identity: {
         studentName: report.studentNameSnapshot ?? '-',
         nis: report.studentNisSnapshot ?? '-',
+        classId: report.classId,
       },
       muatanLokal: {
         subjects: grades
@@ -976,7 +1049,7 @@ export class ReportCardsService {
               : 'Snapshot KKTP tidak tersedia',
           })),
       },
-      attendance: { ...attendance, total },
+      attendance: { ...attendance, total, ...(attendanceValue.jp !== undefined ? { jp: attendanceValue.jp } : {}) },
       development: { description, spiritual: '-', social: '-', academic: academicLevel },
       approval: {
         homeroomTeacher: report.homeroomTeacherNameSnapshot ?? '-',

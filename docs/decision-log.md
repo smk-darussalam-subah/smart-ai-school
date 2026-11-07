@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-10-27 - Retire Metabase; use DIIS native analytics
+
+**Decision.** The Director confirms that the old Metabase dashboard, reports and
+school data were experiments/mockups and are no longer needed. Remove Metabase
+runtime, its dedicated image/volume and positively identified application objects.
+DIIS continues to use its native executive dashboard and analytics API.
+
+**Boundary.** Metabase shares PostgreSQL with DIIS. Preserve `smk_db`, schema
+`public`, `public._prisma_migrations`, all DIIS/shared application objects and
+existing full-system recovery points. Delete only objects tied to the installed
+Metabase image; use explicit names and RESTRICT, never schema/database CASCADE.
+Remove Compose startup dependencies, obsolete embed configuration and the health
+shortcut. The retired analytics hostname returns HTTP410 after source deployment.
+Runtime removal is authorized separately from Git packaging or an application
+release; historical audit documents remain evidence of the former installation.
+
+---
+
 ## 2026-08-27 - Keycloak public theme assets use content-addressed filenames
 
 **Decision.** Custom DIIS login CSS and JavaScript filenames include the first 12 characters of

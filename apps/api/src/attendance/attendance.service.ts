@@ -39,6 +39,7 @@ import { ListAttendanceQuery } from './dto/list-attendance.dto';
 import { AttendanceSessionsQuery } from './dto/attendance-sessions.dto';
 import { EVENTS, AttendanceRecordedPayload } from '../events/events.types';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
+import { getSchoolDate } from '../common/helpers/school-date.helper';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -273,8 +274,7 @@ export class AttendanceService {
   // ═══════════════════════════════════════════════════════════════════════════
 
   async heatmap(days: number) {
-    const now = new Date();
-    const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const today = getSchoolDate();
     const from = new Date(today);
     from.setUTCDate(from.getUTCDate() - (days - 1));
 

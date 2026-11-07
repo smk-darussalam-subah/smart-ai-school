@@ -1260,6 +1260,7 @@ proof('R01–R03: real PostgreSQL and production services', () => {
       } as unknown as DisplayDeviceService,
       bells,
       leases as unknown as DisplayPlaybackLeaseService,
+      {} as StaffAttendanceService,
     );
     try {
       expect(await display.claimPlayback('synthetic', delivery.id)).toMatchObject({

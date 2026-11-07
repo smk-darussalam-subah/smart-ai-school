@@ -1,3 +1,8 @@
+// Business-contract tests already stub the auth boundary; writable-cookie
+// behavior is exercised separately in action-session tests and real Next HTTP.
+jest.mock('@/lib/action-session', () => ({
+  getActionSession: (...args: unknown[]) => jest.requireMock('next-auth').getServerSession(...args),
+}));
 const mockGetServerSession = jest.fn();
 const mockResolveDashboardAuthority = jest.fn();
 const mockRedirect = jest.fn((url: string) => {

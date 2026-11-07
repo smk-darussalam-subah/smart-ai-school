@@ -2,7 +2,7 @@
 
 import type { AssessmentQuestion } from '@smk/types';
 import { z } from 'zod';
-import { getServerSession } from 'next-auth';
+import { getActionSession as getServerSession } from '@/lib/action-session';
 import { authOptions } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -57,6 +57,8 @@ async function apiCall(path: string, method: string, body?: unknown) {
 }
 
 function apiErrorCode(body: unknown): string | undefined {
+  if (body && typeof body === 'object' && 'code' in body && body.code === 'ASSESSMENT_WRITE_BUSY')
+    return 'ASSESSMENT_WRITE_BUSY';
   if (!body || typeof body !== 'object' || !('error' in body)) return undefined;
   const value = (body as { error?: unknown }).error;
   return typeof value === 'string' && value.startsWith('AI_') ? value : undefined;
@@ -325,7 +327,8 @@ export async function fetchBadgeCatalog(): Promise<{
 export interface OfficialReportSections {
   reportCardId: string;
   snapshotStatus: string;
-  identity: { studentName: string; nis: string };
+  snapshotUpdatedAt?: string;
+  identity: { studentName: string; nis: string; classId?: string };
   muatanLokal: {
     subjects: {
       name: string;
@@ -335,7 +338,7 @@ export interface OfficialReportSections {
       predikat: string;
     }[];
   };
-  attendance: { hadir: number; izin: number; sakit: number; alpha: number; total: number };
+  attendance: { hadir: number; izin: number; sakit: number; alpha: number; total: number; jp?: unknown };
   development: { description: string; spiritual: string; social: string; academic: string };
   approval: {
     homeroomTeacher: string;

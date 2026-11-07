@@ -1,9 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { PermissionOverrideSource, PermissionOverrideStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserRole, isPrimaryRole } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { getSchoolDate } from '../common/helpers/school-date.helper';
+import {
+  acquirePermissionMutationLock,
+  touchPermissionAnchors,
+} from './permission-mutation-coordination';
 
 interface CacheEntry {
   permissions: Set<string>;
@@ -17,13 +21,26 @@ const ACTIVE_APPOINTMENT_STATUS = 'ACTIVE' as const;
 @Injectable()
 export class PermissionsService {
   private cache = new Map<string, CacheEntry>();
+  // Only the two entry guards share this read. Transaction/post-queue callers
+  // omit the request and must perform their own fresh authority lookup.
+  private readonly requestRoles = new WeakMap<
+    object,
+    {
+      keycloakId: string;
+      pending: Promise<UserRole | null>;
+    }
+  >();
   private readonly TTL_MS = 5 * 60 * 1000;
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async getEffectivePermissions(keycloakId: string, _roles: UserRole[]): Promise<Set<string>> {
+  async getEffectivePermissions(
+    keycloakId: string,
+    _roles: UserRole[],
+    request?: object,
+  ): Promise<Set<string>> {
     const schoolDate = getSchoolDate();
-    const primaryRole = await this.getAuthoritativePrimaryRole(keycloakId);
+    const primaryRole = await this.getAuthoritativePrimaryRole(keycloakId, undefined, request);
     if (!primaryRole) return new Set();
 
     const cached = this.cache.get(keycloakId);
@@ -39,7 +56,9 @@ export class PermissionsService {
     const permissions =
       primaryRole === 'SUPER_ADMIN'
         ? new Set(['*'])
-        : await this.resolvePermissions(keycloakId, [primaryRole], schoolDate);
+        : await this.resolvePermissions(keycloakId, [primaryRole], schoolDate).catch((error) => {
+            throw this.authorityUnavailable(error);
+          });
     this.cache.set(keycloakId, {
       permissions,
       expiresAt: Date.now() + this.TTL_MS,
@@ -73,7 +92,18 @@ export class PermissionsService {
     return permissions.has('*') || permissions.has(requiredPermission);
   }
 
-  async getAuthoritativePrimaryRole(keycloakId: string, db: Prisma.TransactionClient = this.prisma): Promise<UserRole | null> {
+  async getAuthoritativePrimaryRole(
+    keycloakId: string,
+    db: Prisma.TransactionClient = this.prisma,
+    request?: object,
+  ): Promise<UserRole | null> {
+    if (request && db === this.prisma) {
+      const memo = this.requestRoles.get(request);
+      if (memo?.keycloakId === keycloakId) return memo.pending;
+      const pending = this.getAuthoritativePrimaryRole(keycloakId);
+      this.requestRoles.set(request, { keycloakId, pending });
+      return pending;
+    }
     try {
       const user = await db.user.findFirst({
         where: { keycloakId, isActive: true, deletedAt: null },
@@ -81,10 +111,7 @@ export class PermissionsService {
       });
       return user && isPrimaryRole(user.role) ? user.role : null;
     } catch (err) {
-      logger.error('[PermissionsService] primary role lookup gagal — akses ditolak', {
-        errorType: err instanceof Error ? err.name : 'unknown',
-      });
-      return null;
+      throw this.authorityUnavailable(err);
     }
   }
 
@@ -125,12 +152,7 @@ export class PermissionsService {
 
       return new Set(appointments.map((appointment) => appointment.position.code));
     } catch (err) {
-      // Fail-soft: jika tabel appointments tidak ada atau query error, kembalikan Set kosong.
-      // Guard gagal closed (user tidak dapat position-code access) tapi tidak 500.
-      logger.warn('[PermissionsService] getActivePositionCodes gagal (fail-soft)', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return new Set();
+      throw this.authorityUnavailable(err);
     }
   }
 
@@ -150,7 +172,13 @@ export class PermissionsService {
   }
 
   async deletePermission(id: string) {
-    const result = await this.prisma.permission.delete({ where: { id } });
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        await acquirePermissionMutationLock(tx);
+        return tx.permission.delete({ where: { id } });
+      },
+      { timeout: 30000 },
+    );
     this.invalidateAll();
     return result;
   }
@@ -165,15 +193,27 @@ export class PermissionsService {
   }
 
   async setRolePermissions(role: UserRole, permissionIds: string[]) {
-    await this.prisma.$transaction([
-      this.prisma.rolePermission.deleteMany({ where: { role } }),
-      this.prisma.rolePermission.createMany({
-        data: permissionIds.map((permId) => ({
-          role,
-          permissionId: permId,
-        })),
-      }),
-    ]);
+    await this.prisma.$transaction(
+      async (tx) => {
+        await acquirePermissionMutationLock(tx);
+        const existing = await tx.rolePermission.findMany({
+          where: { role },
+          select: { permissionId: true },
+        });
+        await touchPermissionAnchors(tx, [
+          ...existing.map((row) => row.permissionId),
+          ...permissionIds,
+        ]);
+        await tx.rolePermission.deleteMany({ where: { role } });
+        await tx.rolePermission.createMany({
+          data: permissionIds.map((permId) => ({
+            role,
+            permissionId: permId,
+          })),
+        });
+      },
+      { timeout: 30000 },
+    );
 
     this.invalidateAll();
     logger.info(`Permissions updated for role ${role}`, { permissionIds });
@@ -230,12 +270,55 @@ export class PermissionsService {
    * but no longer grant appointment-derived authority.
    */
   /** No token authority or cache at a mutation's serialization point. */
-  async hasFreshPermission(keycloakId: string, permission: string, db: Prisma.TransactionClient): Promise<boolean> {
+  async hasFreshPermission(
+    keycloakId: string,
+    permission: string,
+    db: Prisma.TransactionClient,
+  ): Promise<boolean> {
     const role = await this.getAuthoritativePrimaryRole(keycloakId, db);
     if (!role) return false;
     if (role === 'SUPER_ADMIN') return true;
-    const permissions = await this.resolvePermissions(keycloakId, [role], getSchoolDate(), db);
+    const permissions = await this.resolvePermissions(
+      keycloakId,
+      [role],
+      getSchoolDate(),
+      db,
+    ).catch((error) => {
+      throw this.authorityUnavailable(error);
+    });
     return permissions.has('*') || permissions.has(permission);
+  }
+
+  /**
+   * Read identity and permissions together inside the caller's fresh DB scope.
+   * The actor is fetched here, never supplied or cached by a previous caller.
+   */
+  async findFreshActorWithPermission(
+    keycloakId: string,
+    required: string | ((role: UserRole) => string | null),
+    db: Prisma.TransactionClient,
+  ): Promise<{ id: string; role: UserRole } | null> {
+    const actor = await db.user
+      .findFirst({
+        where: { keycloakId, isActive: true, deletedAt: null },
+        select: { id: true, role: true },
+      })
+      .catch((error) => {
+        throw this.authorityUnavailable(error);
+      });
+    if (!actor || !isPrimaryRole(actor.role)) return null;
+    const permission = typeof required === 'string' ? required : required(actor.role);
+    if (!permission) return null;
+    if (actor.role === 'SUPER_ADMIN') return actor;
+    const permissions = await this.resolvePermissionsForActor(
+      actor.id,
+      [actor.role],
+      getSchoolDate(),
+      db,
+    ).catch((error) => {
+      throw this.authorityUnavailable(error);
+    });
+    return permissions.has('*') || permissions.has(permission) ? actor : null;
   }
 
   private async resolvePermissions(
@@ -244,10 +327,18 @@ export class PermissionsService {
     schoolDate: Date,
     db: Prisma.TransactionClient = this.prisma,
   ): Promise<Set<string>> {
+    const authUserId = await this.findAuthUserId(keycloakId, db);
+    return this.resolvePermissionsForActor(authUserId, roles, schoolDate, db);
+  }
+
+  private async resolvePermissionsForActor(
+    authUserId: string | null,
+    roles: UserRole[],
+    schoolDate: Date,
+    db: Prisma.TransactionClient,
+  ): Promise<Set<string>> {
     const permSet = new Set<string>();
     const primaryRoles = roles.filter(isPrimaryRole);
-
-    const authUserId = await this.findAuthUserId(keycloakId, db);
 
     // TF2-P1-1: Ambil active academic year untuk filter override.
     const activeYearId = await this.resolveSingleActiveAcademicYearId(db);
@@ -305,51 +396,39 @@ export class PermissionsService {
       reason: grant ? 'Manual global grant via Users UI' : 'Manual global revoke via Users UI',
     };
 
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.userPermissionOverride.findFirst({
-          where: {
-            userId,
-            permissionId,
-            academicYearId: null,
-            status: PermissionOverrideStatus.ACTIVE,
-          },
-          select: { id: true },
-        });
-
-        return existing
-          ? tx.userPermissionOverride.update({
-              where: { id: existing.id },
-              data,
-            })
-          : tx.userPermissionOverride.create({
-              data: { userId, permissionId, ...data },
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => {
+            await acquirePermissionMutationLock(tx);
+            await touchPermissionAnchors(tx, [permissionId]);
+            const existing = await tx.userPermissionOverride.findFirst({
+              where: {
+                userId,
+                permissionId,
+                academicYearId: null,
+                status: PermissionOverrideStatus.ACTIVE,
+              },
+              select: { id: true },
             });
-      });
-    } catch (err) {
-      if (!this.isUniqueConflict(err)) {
-        throw err;
+
+            return existing
+              ? tx.userPermissionOverride.update({
+                  where: { id: existing.id },
+                  data,
+                })
+              : tx.userPermissionOverride.create({
+                  data: { userId, permissionId, ...data },
+                });
+          },
+          { timeout: 30000 },
+        );
+      } catch (err) {
+        // Retry the entire protocol, never a fallback write outside its anchor.
+        if (!this.isUniqueConflict(err) || attempt === 1) throw err;
       }
-
-      const existing = await this.prisma.userPermissionOverride.findFirst({
-        where: {
-          userId,
-          permissionId,
-          academicYearId: null,
-          status: PermissionOverrideStatus.ACTIVE,
-        },
-        select: { id: true },
-      });
-
-      if (!existing) {
-        throw err;
-      }
-
-      return this.prisma.userPermissionOverride.update({
-        where: { id: existing.id },
-        data,
-      });
     }
+    throw new Error('Permission mutation did not complete');
   }
 
   private isUniqueConflict(err: unknown): err is Prisma.PrismaClientKnownRequestError {
@@ -374,12 +453,19 @@ export class PermissionsService {
     }
   }
 
-  private async findAuthUserId(keycloakId: string, db: Prisma.TransactionClient = this.prisma): Promise<string | null> {
-    const user = await db.user.findUnique({
-      where: { keycloakId },
-      select: { id: true },
-    });
-    return user?.id ?? null;
+  private async findAuthUserId(
+    keycloakId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<string | null> {
+    try {
+      const user = await db.user.findUnique({
+        where: { keycloakId },
+        select: { id: true },
+      });
+      return user?.id ?? null;
+    } catch (error) {
+      throw this.authorityUnavailable(error);
+    }
   }
 
   private async resolveActiveAppointmentPermissionCodes(
@@ -434,20 +520,14 @@ export class PermissionsService {
       });
       return permissions.map((permission) => permission.code);
     } catch (err) {
-      // Fail-soft: jika tabel appointments tidak ada atau query error, kembalikan array kosong.
-      // Resolver tidak menambahkan appointment permissions, tapi tidak crash.
-      logger.warn(
-        '[PermissionsService] resolveActiveAppointmentPermissionCodes gagal (fail-soft)',
-        {
-          error: err instanceof Error ? err.message : String(err),
-        },
-      );
-      return [];
+      throw this.authorityUnavailable(err);
     }
   }
 
   /** Appointment authority is undefined unless exactly one academic year is active. */
-  private async resolveSingleActiveAcademicYearId(db: Prisma.TransactionClient = this.prisma): Promise<string | null> {
+  private async resolveSingleActiveAcademicYearId(
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<string | null> {
     try {
       const activeYears = await db.academicYear.findMany({
         where: { isActive: true },
@@ -464,10 +544,18 @@ export class PermissionsService {
       }
       return activeYears[0]?.id ?? null;
     } catch (err) {
-      logger.warn('[PermissionsService] active academic year resolution failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return null;
+      throw this.authorityUnavailable(err);
     }
+  }
+
+  private authorityUnavailable(error: unknown): ServiceUnavailableException {
+    if (error instanceof ServiceUnavailableException) return error;
+    logger.error('[PermissionsService] authority unavailable — request denied temporarily', {
+      errorType: error instanceof Error ? error.name : 'unknown',
+    });
+    return new ServiceUnavailableException({
+      message: 'Kewenangan akun sementara belum dapat diperiksa. Coba lagi sebentar.',
+      code: 'AUTHORITY_UNAVAILABLE',
+    });
   }
 }

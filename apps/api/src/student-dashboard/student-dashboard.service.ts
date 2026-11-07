@@ -5,7 +5,7 @@
 // No new tables — aggregation endpoints only.
 // =============================================================================
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuthUser } from '@smk/auth';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,6 +17,8 @@ import {
 } from '../common/helpers/role-helpers';
 import { naOf, NaComponents } from '../analytics/analytics.math';
 import { resolveKktpThreshold } from '../academic/kktp-resolver';
+import { learnerChangeQuery, learnerRevision } from './student-dashboard-changes';
+import { parentChangeQuery } from './parent-dashboard-changes';
 
 interface StudentBrief {
   id: string;
@@ -29,6 +31,31 @@ interface StudentBrief {
 @Injectable()
 export class StudentDashboardService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** Only opaque data/scope revisions for the authenticated parent's current children. */
+  async getParentChanges(user: AuthUser): Promise<{ revision: string; scopeRevision: string }> {
+    if (!isOrangTuaOnly(user)) throw new ForbiddenException('Konteks orang tua diperlukan.');
+    const [row] = await this.prisma.$queryRaw<Array<{ snapshot: unknown; scope: unknown }>>(
+      parentChangeQuery(user.keycloakId),
+    );
+    if (!row) throw new ForbiddenException('Akses orang tua tidak tersedia.');
+    return {
+      revision: learnerRevision(`${user.keycloakId}:parent-data`, row.snapshot),
+      scopeRevision: learnerRevision(`${user.keycloakId}:parent-scope`, row.scope),
+    };
+  }
+
+  /** Lightweight private revision; heartbeat/autosave do not force whole-page refresh. */
+  async getChanges(user: AuthUser): Promise<{ revision: string }> {
+    if (!isSiswaOnly(user)) throw new NotFoundException('Konteks siswa diperlukan.');
+    const [student] = await this.resolveStudents(user);
+    if (!student) throw new NotFoundException('Siswa tidak ditemukan.');
+    const [row] = await this.prisma.$queryRaw<Array<{ snapshot: unknown }>>(
+      learnerChangeQuery(student.id, student.classId),
+    );
+    if (!row) throw new NotFoundException('Perubahan data belum dapat diverifikasi.');
+    return { revision: learnerRevision(student.id, row.snapshot) };
+  }
 
   private async resolveStudents(user: AuthUser): Promise<StudentBrief[]> {
     if (isSiswaOnly(user)) {
@@ -201,7 +228,12 @@ export class StudentDashboardService {
             },
             responses: {
               where: { studentId: s.id },
-              select: { score: true, startedAt: true, submittedAt: true, lateSubmissionStatus: true },
+              select: {
+                score: true,
+                startedAt: true,
+                submittedAt: true,
+                lateSubmissionStatus: true,
+              },
             },
           },
         });
@@ -210,9 +242,15 @@ export class StudentDashboardService {
             const resp = sess.responses[0];
             const status =
               !resp || !resp.submittedAt
-                ? sess.purpose !== 'remedial' && sess.status === 'completed' && !resp?.startedAt ? 'closed' : 'pending'
-                : resp.lateSubmissionStatus === 'pending' || resp.lateSubmissionStatus === 'rejected' ? 'submitted'
-                : resp.score !== null ? 'graded' : 'submitted';
+                ? sess.purpose !== 'remedial' && sess.status === 'completed' && !resp?.startedAt
+                  ? 'closed'
+                  : 'pending'
+                : resp.lateSubmissionStatus === 'pending' ||
+                    resp.lateSubmissionStatus === 'rejected'
+                  ? 'submitted'
+                  : resp.score !== null
+                    ? 'graded'
+                    : 'submitted';
             const subject = sess.module?.subject ?? sess.teachingAssignment?.subject ?? null;
             const participant = sess.remedialParticipants[0];
             const exposeOwnRemedialLifecycle =

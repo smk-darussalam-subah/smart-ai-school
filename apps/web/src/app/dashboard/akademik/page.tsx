@@ -25,6 +25,8 @@ import type {
 import { slotsForDay, type BellProfile } from '@/lib/bell-patterns';
 import { wibTodayISO, scheduleDayOfWeek, currentJp, jpStartLabel, wibNow } from '@/lib/bell-times';
 import AcademicOperationsWorkspace from './_components/AcademicOperationsWorkspace';
+import AttendanceRecap from './_components/AttendanceRecap';
+import LearningRecap from './_components/LearningRecap';
 import AcademicRoleModeSwitcher from './_components/AcademicRoleModeSwitcher';
 import AcademicDataNotice from '../_components/AcademicDataNotice';
 import type {
@@ -132,6 +134,12 @@ export default async function AkademikPage({
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
   const requestedParams = await searchParams;
+  const requestedSessionId = oneSearchParam(requestedParams.sessionId);
+  const initialSessionId = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
+    requestedSessionId,
+  )
+    ? requestedSessionId
+    : undefined;
   const openNotifications = oneSearchParam(requestedParams.panel) === 'notifications';
   const initialStudentId = oneSearchParam(requestedParams.studentId).trim();
   const requestedAttendanceDate = oneSearchParam(requestedParams.attendanceDate).trim();
@@ -213,22 +221,28 @@ export default async function AkademikPage({
     subjectsRes,
     assignmentOptionsRes,
   ] = await Promise.all([
-    academicPagesResult<GradeItem>(pp('/grades'), token),
-    academicPagesResult<AttendanceItem>(pp('/attendance', 'attendance'), token),
+    !isSiswa && !isOrtu
+      ? academicPagesResult<GradeItem>(pp('/grades'), token)
+      : Promise.resolve(null),
+    !isSiswa && !isOrtu
+      ? academicPagesResult<AttendanceItem>(pp('/attendance', 'attendance'), token)
+      : Promise.resolve(null),
     canReadAllClasses
       ? academicPages<ClassItem>(pp('/classes', 'year'), token)
       : Promise.resolve({ data: [] as ClassItem[] }),
-    academicPages<Assignment>(
-      pp(isGuru ? '/teaching-assignments?scope=own' : '/teaching-assignments', 'year'),
-      token,
-    ),
-    academicCatalog<SubjectItem>('/subjects', token),
+    !isSiswa && !isOrtu
+      ? academicPages<Assignment>(
+          pp(isGuru ? '/teaching-assignments?scope=own' : '/teaching-assignments', 'year'),
+          token,
+        )
+      : Promise.resolve(null),
+    !isSiswa && !isOrtu ? academicCatalog<SubjectItem>('/subjects', token) : Promise.resolve(null),
     canReadAssignmentOptions
       ? apiFetch<TeachingAssignmentOptions>('/teaching-assignments/options/active', token)
       : Promise.resolve(null),
   ]);
-  const gradesData = gradesRead.status === 'success' ? gradesRead.data : null;
-  const attendanceData = attendanceRead.status === 'success' ? attendanceRead.data : null;
+  const gradesData = gradesRead?.status === 'success' ? gradesRead.data : null;
+  const attendanceData = attendanceRead?.status === 'success' ? attendanceRead.data : null;
   const todayDate = wibTodayISO();
   const todayPeriodState = teacherTodayState(activePeriod, selectedPeriod, todayDate);
 
@@ -246,6 +260,12 @@ export default async function AkademikPage({
   // ── Dashboard Siswa (W2 — mobile-first, 7 bottom-nav tabs). ──────────────
   if (isSiswa) {
     const initialWorkflowView = resolveAcademicWorkflowView(requestedParams.view, 'student');
+    // Snapshot before page reads: an update during rendering is detected by
+    // the first poll rather than accepted as a new, already-rendered baseline.
+    const initialChanges = await apiFetch<{ revision: string }>(
+      '/student-dashboard/changes',
+      token,
+    );
     // Fetch siswa-specific data
     // Note: studentId lookup from keycloakId — backend should resolve this
     const studentId = session.keycloakId ?? '';
@@ -390,7 +410,7 @@ export default async function AkademikPage({
 
     const ownedSchedule = readLearnerSchedule(scheduleRes);
     return (
-      <SiswaRefreshWrapper>
+      <SiswaRefreshWrapper key={studentId} initialRevision={initialChanges?.revision ?? null}>
         <SiswaWorkspace
           initialAttendanceDate={initialAttendanceDate}
           grades={gradesRes.data}
@@ -475,6 +495,7 @@ export default async function AkademikPage({
 
     return (
       <AkademikWorkspace
+        initialSessionId={initialSessionId}
         allowGeneralLmsClass={roles.some((role) =>
           ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'].includes(role),
         )}
@@ -487,8 +508,8 @@ export default async function AkademikPage({
         schedules={schedules}
         scheduleAvailable={!!schedulesRes}
         summaryAvailability={{
-          grades: summaryState(gradesRead),
-          attendance: summaryState(attendanceRead),
+          grades: gradesRead ? summaryState(gradesRead) : 'unavailable',
+          attendance: attendanceRead ? summaryState(attendanceRead) : 'unavailable',
           journal: summaryState(activitiesRead),
           rpp: summaryState(rppRead),
           assessments:
@@ -564,6 +585,7 @@ export default async function AkademikPage({
         rppAvailable={!!rppRes}
         assessmentsAvailable={!assessmentRes.failed}
         initialWorkflowView={initialWorkflowView}
+        initialSessionId={initialSessionId}
       />,
     );
   }
@@ -571,6 +593,11 @@ export default async function AkademikPage({
   // ── Dashboard Orang Tua (P25 — wired to real APIs, mobile-first, 5 tabs). ────
   if (isOrtu) {
     const initialWorkflowView = resolveAcademicWorkflowView(requestedParams.view, 'parent');
+    // Snapshot before parent/child reads, so an update during render is retried.
+    const initialParentChanges = await apiFetch<{ revision: string; scopeRevision: string }>(
+      '/student-dashboard/parent-changes',
+      token,
+    );
     // Round 1: fetch announcements + children list
     const [announcementsRes, childrenRes] = await Promise.all([
       apiFetch<{ data: { id: string; title: string; createdAt: string }[] }>(
@@ -638,16 +665,16 @@ export default async function AkademikPage({
                 data: { data: [] as ScheduleItem[] },
               }),
           apiFetch<OrtuBadgeApiItem[]>(`/badges/student/${studentId}`, token),
-          apiFetch<{
-            data: Array<{
+          apiFetch<
+            Array<{
               id: string;
               studentId: string;
               recipient: string;
               message: string;
-              eventType: string;
+              eventType: string | null;
               createdAt: string;
-            }>;
-          }>(`/wa-log/student/${studentId}?limit=20`, token),
+            }>
+          >(`/wa-log/student/${studentId}?limit=20`, token),
         ]);
         const childSchedule = readLearnerSchedule(scheduleRes);
         const childAttendance = readLearnerAttendance(
@@ -664,7 +691,7 @@ export default async function AkademikPage({
               : [],
           schedule: tagWithStudentId(childSchedule.data, studentId),
           badges: tagWithStudentId(badgesRes ?? [], studentId),
-          waLog: tagWithStudentId(waLogRes?.data, studentId),
+          waLog: tagWithStudentId(waLogRes ?? [], studentId),
         };
       }),
     );
@@ -723,7 +750,11 @@ export default async function AkademikPage({
     }));
 
     return (
-      <OrtuRefreshWrapper>
+      <OrtuRefreshWrapper
+        key={session.keycloakId ?? ''}
+        initialRevision={initialParentChanges?.revision ?? null}
+        initialScopeRevision={initialParentChanges?.scopeRevision ?? null}
+      >
         <OrtuWorkspace
           initialAttendanceDate={initialAttendanceDate}
           attendancePeriod={
@@ -764,6 +795,16 @@ export default async function AkademikPage({
     );
   }
 
+  // The attendance reader resolves its own server authority and does not depend
+  // on the assignment-management catalog being available to Waka/Kaprog.
+  if (oneSearchParam(requestedParams.view) === 'learning-recap' &&
+      authority.can('academic.class-session.read')) {
+    return withOwnTeaching(<LearningRecap key={`${academicYear}|${semester}`} academicYear={academicYear} semester={semester} scope="operations" initialSessionId={initialSessionId} canRead canOperate={false} />);
+  }
+  if (oneSearchParam(requestedParams.view) === 'attendance-recap' &&
+      authority.can('academic.attendance.read') && authority.can('academic.class-session.read')) {
+    return withOwnTeaching(<AttendanceRecap academicYear={academicYear} semester={semester} context="authorized" />);
+  }
   if (!assignmentsRes || (canReadAssignmentOptions && !assignmentOptionsRes)) {
     return (
       <AcademicDataNotice
@@ -774,32 +815,38 @@ export default async function AkademikPage({
   }
 
   const operationsWorkspace = (
-    <AcademicOperationsWorkspace
-      assignments={assignmentsRes.data}
-      assignmentTotal={assignmentsRes.total}
-      options={
-        assignmentOptionsRes ?? {
-          teachers: [],
-          classes: [],
-          subjects: [],
-          academicYears: [],
-          scope: { type: 'global', labels: [] },
+    <div className="space-y-4">
+      {authority.can('academic.attendance.read') &&
+        authority.can('academic.class-session.read') && (
+          <AttendanceRecap academicYear={academicYear} semester={semester} context="authorized" compact />
+        )}
+      <AcademicOperationsWorkspace
+        assignments={assignmentsRes.data}
+        assignmentTotal={assignmentsRes.total}
+        options={
+          assignmentOptionsRes ?? {
+            teachers: [],
+            classes: [],
+            subjects: [],
+            academicYears: [],
+            scope: { type: 'global', labels: [] },
+          }
         }
-      }
-      canManageAssignments={canEditAssignment}
-      canDeleteAssignments={
-        authority.can('academic.teaching.manage') && roles.includes('SUPER_ADMIN')
-      }
-      workflowAccess={{
-        schedule: authority.can('academic.schedule.read'),
-        report: authority.can('report.read'),
-        activities: authority.can('activity.read'),
-        reviewRpp:
-          authority.can('rpp.curriculum.review') ||
-          authority.can('rpp.final.approve') ||
-          (authority.hasRole('SUPER_ADMIN') && authority.can('rpp.read')),
-      }}
-    />
+        canManageAssignments={canEditAssignment}
+        canDeleteAssignments={
+          authority.can('academic.teaching.manage') && roles.includes('SUPER_ADMIN')
+        }
+        workflowAccess={{
+          schedule: authority.can('academic.schedule.read'),
+          report: authority.can('report.read'),
+          activities: authority.can('activity.read'),
+          reviewRpp:
+            authority.can('rpp.curriculum.review') ||
+            authority.can('rpp.final.approve') ||
+            (authority.hasRole('SUPER_ADMIN') && authority.can('rpp.read')),
+        }}
+      />
+    </div>
   );
 
   return withOwnTeaching(operationsWorkspace);
@@ -984,6 +1031,7 @@ export default async function AkademikPage({
 
     const teachingWorkspace = (
       <AkademikWorkspace
+        initialSessionId={initialSessionId}
         allowGeneralLmsClass={roles.some((role) =>
           ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM'].includes(role),
         )}

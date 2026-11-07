@@ -24,6 +24,8 @@ import {
 } from '@/lib/academic';
 import { STATUS_TEXT_CLASS } from './grade-meta';
 import { fetchOfficialReportSections } from '@/app/dashboard/akademik/actions';
+import ReportJpAnnex from './ReportJpAnnex';
+import { useDialogReturnFocus } from '@/lib/use-dialog-return-focus';
 
 export interface RaporRow {
   subject: string;
@@ -63,6 +65,7 @@ export function RaporModal({
   academicYear,
   semester,
 }: RaporModalProps) {
+  const returnFocus = useDialogReturnFocus();
   const computed = rows.map(r => ({ ...r, na: naOf(r.components), threshold: r.kktp === undefined ? kktp : r.kktp }));
   const nas = computed.map((r) => r.na).filter((n): n is number => n !== null);
   const avg = nas.length ? round1(nas.reduce((a, b) => a + b, 0) / nas.length) : null;
@@ -71,7 +74,9 @@ export function RaporModal({
 
   // T2-01: Fetch sections B-G data
   const [sectionB, setSectionB] = useState<{ subjects: { name: string; na: number; kktp: number | null; kktpProvenance?: string | null; predikat: string }[] } | null>(null);
-  const [sectionD, setSectionD] = useState<{ hadir: number; izin: number; sakit: number; alpha: number; total: number } | null>(null);
+  const [sectionD, setSectionD] = useState<{ hadir: number; izin: number; sakit: number; alpha: number; total: number; jp?: unknown } | null>(null);
+  const [reportClassId, setReportClassId] = useState<string | undefined>();
+  const [reportStudentName, setReportStudentName] = useState('');
   const [sectionF, setSectionF] = useState<{ description: string; spiritual: string; social: string; academic: string } | null>(null);
   const [sectionG, setSectionG] = useState<{ homeroomTeacher: string; principal: string; approvedAt: string | null; schoolYear: string; semester: number; className: string } | null>(null);
   const [sectionsLoading, setSectionsLoading] = useState(false);
@@ -86,6 +91,8 @@ export function RaporModal({
     const requestId = ++requestIdRef.current;
     setSectionB(null);
     setSectionD(null);
+    setReportClassId(undefined);
+    setReportStudentName('');
     setSectionF(null);
     setSectionG(null);
     setLoadedKey(null);
@@ -102,6 +109,8 @@ export function RaporModal({
         }
         setSectionB(result.data.muatanLokal);
         setSectionD(result.data.attendance);
+        setReportClassId(result.data.identity.classId);
+        setReportStudentName(result.data.identity.studentName);
         setSectionF(result.data.development);
         setSectionG(result.data.approval);
         setLoadedKey(sectionKey);
@@ -125,10 +134,10 @@ export function RaporModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn('max-w-2xl', contentClassName)}>
-        <DialogHeader>
+      <DialogContent {...returnFocus} className={cn('max-h-[92dvh] max-w-2xl overflow-y-auto bg-[var(--bg2,#fff)] text-[var(--text,#0f172a)] dark:border-slate-700 dark:bg-[var(--bg2,#020617)] dark:text-[var(--text,#f1f5f9)] dark:[&_.text-muted-foreground]:text-[var(--muted,#cbd5e1)] [&>button]:flex [&>button]:h-11 [&>button]:w-11 [&>button]:items-center [&>button]:justify-center', contentClassName)}>
+        <DialogHeader className="pr-8">
           <DialogTitle>Rapor Semester — {studentName}</DialogTitle>
-          {subtitle && <DialogDescription>{subtitle}</DialogDescription>}
+          <DialogDescription className="text-slate-600 dark:text-slate-300">{subtitle || 'Rapor untuk semester yang dipilih.'}</DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-3">
@@ -246,13 +255,15 @@ export function RaporModal({
 
         {/* D. Ketidakhadiran */}
         <RaporSection title="D. KETIDAKHADIRAN">
+          <p className="mb-2 text-sm text-muted-foreground">Catatan harian · satuan hari</p>
           <div className="grid grid-cols-4 gap-2">
-            <AttendanceStat label="Hadir" value={visibleSectionD ? String(visibleSectionD.hadir) : '—'} className="text-emerald-600" />
-            <AttendanceStat label="Izin" value={visibleSectionD ? String(visibleSectionD.izin) : '—'} className="text-sky-600" />
-            <AttendanceStat label="Sakit" value={visibleSectionD ? String(visibleSectionD.sakit) : '—'} className="text-amber-600" />
-            <AttendanceStat label="Alpha" value={visibleSectionD ? String(visibleSectionD.alpha) : '—'} className="text-rose-600" />
+            <AttendanceStat label="Hadir" value={visibleSectionD ? String(visibleSectionD.hadir) : '—'} className="text-emerald-700 dark:text-emerald-300" />
+            <AttendanceStat label="Izin" value={visibleSectionD ? String(visibleSectionD.izin) : '—'} className="text-sky-700 dark:text-sky-300" />
+            <AttendanceStat label="Sakit" value={visibleSectionD ? String(visibleSectionD.sakit) : '—'} className="text-amber-700 dark:text-amber-300" />
+            <AttendanceStat label="Alpha" value={visibleSectionD ? String(visibleSectionD.alpha) : '—'} className="text-rose-700 dark:text-rose-300" />
           </div>
         </RaporSection>
+        {sectionsReady && studentId && academicYear && semester && <ReportJpAnnex key={sectionKey} value={visibleSectionD?.jp} identity={{ studentId, classId: reportClassId, academicYear, semester }} studentName={reportStudentName || studentName} />}
 
         {/* E. Catatan Guru Mapel */}
         <RaporSection title="E. CATATAN GURU MAPEL">
@@ -333,7 +344,7 @@ function Stat({ label, value, tone }: { label: string; value: string | number; t
 function RaporSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="mb-1.5 text-[12px] font-bold text-emerald-700">{title}</div>
+      <div className="mb-1.5 text-[12px] font-bold text-emerald-700 dark:text-emerald-300">{title}</div>
       {children}
     </div>
   );
@@ -341,8 +352,8 @@ function RaporSection({ title, children }: { title: string; children: React.Reac
 
 function AttendanceStat({ label, value, className }: { label: string; value: string; className: string }) {
   return (
-    <div className="rounded-lg bg-slate-50 px-2 py-2 text-center">
-      <div className="text-[9px] font-semibold uppercase text-slate-400">{label}</div>
+    <div className="rounded-lg bg-slate-50 px-2 py-2 text-center dark:bg-slate-900">
+      <div className="text-xs font-semibold uppercase text-slate-600 dark:text-slate-300">{label}</div>
       <div className={cn('text-lg font-extrabold', className)}>{value}</div>
     </div>
   );

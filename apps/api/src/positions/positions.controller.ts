@@ -12,6 +12,7 @@ import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { PositionsService } from './positions.service';
 import { AssignPositionSchema } from './dto/position.dto';
 import type { AssignPositionDto } from './dto/position.dto';
+import { SharedReadBudget } from '../common/guards/api-throttler.guard';
 
 @Controller('positions')
 @Roles('SUPER_ADMIN')
@@ -36,6 +37,7 @@ export class PositionsController {
   // agar semua role terautentikasi bisa akses jabatannya sendiri.
   @Roles(...PRIMARY_ROLES)
   @Get('my-positions')
+  @SharedReadBudget()
   myPositions(@CurrentUser() user: AuthUser) {
     return this.positions.getMyPositions(user.keycloakId);
   }

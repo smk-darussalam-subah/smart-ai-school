@@ -4,7 +4,7 @@
 // Token diambil server-side via getServerSession; tidak pernah dikirim ke client.
 // =============================================================================
 
-import { getServerSession } from 'next-auth';
+import { getActionSession as getServerSession } from '@/lib/action-session';
 import { revalidatePath } from 'next/cache';
 import { authOptions } from '@/lib/auth';
 import { apiFetch } from '@/lib/api';

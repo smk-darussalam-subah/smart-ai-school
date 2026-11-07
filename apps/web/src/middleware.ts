@@ -1,4 +1,5 @@
 import { getToken } from 'next-auth/jwt';
+import { matchesSignedOutSession, signedOutCookieName } from './lib/session-cookie-state';
 import { NextRequest, NextResponse } from 'next/server';
 import { isMobileOnlyDashboardRoleSet } from './lib/dashboard-routing';
 import {
@@ -39,7 +40,7 @@ function buildCsp(nonce: string, isPublicStatic: boolean): string {
     `connect-src ${connectSrc}`,
     "media-src 'none'",
     "object-src 'none'",
-    `frame-src https://www.youtube-nocookie.com${process.env.METABASE_SITE_URL ? ` ${process.env.METABASE_SITE_URL}` : ''}`,
+    'frame-src https://www.youtube-nocookie.com',
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
@@ -115,14 +116,33 @@ export async function middleware(request: NextRequest) {
   requestHeaders.set('x-nonce', nonce);
   requestHeaders.set('Content-Security-Policy', csp);
 
-  const token = await getToken({
+  let token = await getToken({
     req: request,
     secret: process.env.NEXTAUTH_SECRET,
   }).catch(() => null);
 
+  // Mutations refresh at their writable HTTP/Server Action boundary. A307 to
+  // the GET-only refresh route preserves POST and causes405 (and a full-page
+  // recovery can discard drafts). Backend handlers/Server Actions still verify
+  // their own session and authorization; no mutation is executed by middleware.
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    const res = NextResponse.next({ request: { headers: requestHeaders } });
+    res.headers.set('Content-Security-Policy', csp);
+    return res;
+  }
+
+  if (
+    matchesSignedOutSession(
+      token,
+      request.cookies.get(signedOutCookieName(sessionAppOrigin(request.url).startsWith('https:')))
+        ?.value,
+    )
+  )
+    token = null;
   const isLogin = pathname === '/login' || pathname === '/auth';
   const query = new URL(request.url).searchParams;
-  const recovering = query.get('reason') === 'session' || query.has('error');
+  const recovering =
+    ['session', 'logout'].includes(query.get('reason') ?? '') || query.has('error');
   const usable = hasUsableAccessToken(token);
   if (isLogin && !recovering && usable && token && !shouldRefreshSession(token)) {
     const res = NextResponse.redirect(new URL('/dashboard', sessionAppOrigin(request.url)));

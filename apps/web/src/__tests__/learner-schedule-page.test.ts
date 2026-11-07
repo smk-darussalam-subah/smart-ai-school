@@ -1,3 +1,8 @@
+// Business-contract tests already stub the auth boundary; writable-cookie
+// behavior is exercised separately in action-session tests and real Next HTTP.
+jest.mock('@/lib/action-session', () => ({
+  getActionSession: (...args: unknown[]) => jest.requireMock('next-auth').getServerSession(...args),
+}));
 import React from 'react';
 const mockSession = jest.fn();
 const mockApiFetch = jest.fn();
@@ -45,9 +50,15 @@ jest.mock('@/app/dashboard/akademik/_components/ortu/OrtuRefreshWrapper', () => 
   __esModule: true,
   default: () => null,
 }));
+jest.mock('@/app/dashboard/akademik/_components/AttendanceRecap', () => ({
+  __esModule: true,
+  default: () => null,
+}));
 import AcademicPage from '@/app/dashboard/akademik/page';
 import AcademicOperationsWorkspace from '@/app/dashboard/akademik/_components/AcademicOperationsWorkspace';
 import AcademicRoleModeSwitcher from '@/app/dashboard/akademik/_components/AcademicRoleModeSwitcher';
+import KsWorkspace from '@/app/dashboard/akademik/_components/KsWorkspace';
+import LearningRecap from '@/app/dashboard/akademik/_components/LearningRecap';
 
 type WorkspaceProps = {
   children?: unknown[];
@@ -60,6 +71,7 @@ type WorkspaceProps = {
   scheduleStates?: Record<string, string>;
   taskRead?: import('@/lib/learner-dashboard-read').DashboardRead<unknown>;
   sppRead?: import('@/lib/learner-dashboard-read').DashboardRead<unknown>;
+  waLog?: unknown[];
 };
 async function workspaceProps(): Promise<WorkspaceProps> {
   const element = await AcademicPage({ searchParams: Promise.resolve({}) });
@@ -91,6 +103,38 @@ beforeEach(() => {
 });
 
 describe('real SSR page schedule-state wiring', () => {
+  it('passes the real child WA-log array to the parent workspace with child identity', async () => {
+    mockSession.mockResolvedValue({ accessToken: 'synthetic', roles: ['ORANG_TUA'] });
+    mockAuthority.mockResolvedValue({
+      roles: ['ORANG_TUA'],
+      hasRole: () => false,
+      can: () => false,
+    });
+    const baseFetch = mockApiFetch.getMockImplementation()!;
+    mockApiFetch.mockImplementation(async (url: string) =>
+      url.startsWith('/wa-log/student/child-a')
+        ? [{ id: 'message-a', message: 'Pesan sintetis', createdAt: '2026-10-29' }]
+        : baseFetch(url),
+    );
+    mockApiFetchResult.mockImplementation(async (url: string) => ({
+      status: 'success',
+      httpStatus: 200,
+      data: {
+        data:
+          url === '/students/my-children'
+            ? [{ id: 'child-a', class: null, user: { fullName: 'Anak QA' } }]
+            : [],
+        total: 1,
+        page: 1,
+        limit: 100,
+      },
+    }));
+    const props = await workspaceProps();
+    expect(props.waLog).toEqual([
+      { id: 'message-a', message: 'Pesan sintetis', createdAt: '2026-10-29', studentId: 'child-a' },
+    ]);
+    expect(mockApiFetch).toHaveBeenCalledWith('/wa-log/student/child-a?limit=20', 'synthetic');
+  });
   it.each([403, 429, 503, 200])(
     'preserves student task HTTP%s availability through SSR',
     async (status) => {
@@ -220,7 +264,14 @@ describe('real SSR page schedule-state wiring', () => {
           operationsWorkspace: React.ReactElement;
           initialMode: string;
         }>;
-        expect(mode.props.operationsWorkspace.type).toBe(AcademicOperationsWorkspace);
+        const operationChildren = React.Children.toArray(
+          (mode.props.operationsWorkspace.props as { children: React.ReactNode }).children,
+        );
+        expect(
+          operationChildren.some(
+            (child) => React.isValidElement(child) && child.type === AcademicOperationsWorkspace,
+          ),
+        ).toBe(true);
         expect(mode.props.initialMode).toBe('operations');
         expect(
           calls
@@ -356,10 +407,13 @@ describe('real SSR page schedule-state wiring', () => {
         mockApiFetchResult.mock.calls.some(([url]) => String(url).startsWith('/schedules')),
       ).toBe(false);
       expect(
-        mockApiFetch.mock.calls.some(([url]) =>
-          /studentId=|my-children|leaderboard|student-dashboard/.test(String(url)),
+        mockApiFetch.mock.calls.some(
+          ([url]) =>
+            String(url) !== '/student-dashboard/parent-changes' &&
+            /studentId=|my-children|leaderboard|student-dashboard/.test(String(url)),
         ),
       ).toBe(false);
+      expect(mockApiFetch).toHaveBeenCalledWith('/student-dashboard/parent-changes', 'synthetic');
     },
   );
   it('keeps a successful empty child list honest', async () => {
@@ -502,4 +556,69 @@ describe('real SSR page schedule-state wiring', () => {
       expect(props.grades).toEqual([]);
     },
   );
+});
+
+// Bounded integration regressions for the attendance -> source session handoff.
+jest.mock('@/app/dashboard/akademik/_components/LearningRecap', () => ({
+  __esModule: true,
+  default: () => null,
+}));
+describe('attendance drill-through for leadership roles', () => {
+  const sessionId = '31000000-0000-4000-8000-000000000001';
+  function setup(position: string) {
+    mockSession.mockResolvedValue({
+      accessToken: 'synthetic',
+      keycloakId: 'qa-leadership',
+      roles: ['GURU'],
+    });
+    mockAuthority.mockResolvedValue({
+      roles: ['GURU', position],
+      hasRole: (...roles: string[]) => roles.some((r) => r === 'GURU' || r === position),
+      can: () => true,
+    });
+  }
+  function operations(element: unknown): React.ReactElement<Record<string, unknown>> {
+    const wrapper = element as React.ReactElement<{
+      operationsWorkspace: React.ReactElement<Record<string, unknown>>;
+    }>;
+    return wrapper.props.operationsWorkspace;
+  }
+  it('KS hands the selected source session to its actual learning consumer', async () => {
+    setup('KEPALA_SEKOLAH');
+    const node = operations(
+      await AcademicPage({
+        searchParams: Promise.resolve({
+          view: 'learning-recap',
+          workspace: 'operations',
+          sessionId,
+        }),
+      }),
+    );
+    expect(node.type).toBe(KsWorkspace);
+    expect(node.props.initialSessionId).toBe(sessionId);
+  });
+  it('Waka opens the selected source session even when assignment management catalog is unavailable', async () => {
+    setup('WAKA_KURIKULUM');
+    mockApiFetchResult.mockResolvedValue({
+      status: 'forbidden',
+      httpStatus: 403,
+      message: 'QA catalog denied',
+    });
+    const node = operations(
+      await AcademicPage({
+        searchParams: Promise.resolve({
+          view: 'learning-recap',
+          workspace: 'operations',
+          sessionId,
+        }),
+      }),
+    );
+    expect(node.type).toBe(LearningRecap);
+    expect(node.props).toMatchObject({
+      initialSessionId: sessionId,
+      scope: 'operations',
+      canRead: true,
+      canOperate: false,
+    });
+  });
 });

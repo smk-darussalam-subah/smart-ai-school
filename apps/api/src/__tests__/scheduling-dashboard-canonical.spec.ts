@@ -110,6 +110,16 @@ describe('canonical staff presence aggregation', () => {
       unknown: 0,
     });
     expect(JSON.stringify(report.teacherSummary)).not.toMatch(/latitude|longitude|fullName|latIn/);
+    expect(report.teacherDays).toHaveLength(1);
+    expect(report.teacherDays[0]).toMatchObject({
+      date,
+      total: 101,
+      presentRequired: 1,
+      dueRequired: 99,
+      notRequired: 1,
+      unknown: 0,
+    });
+    expect(JSON.stringify(report.teacherDays)).not.toMatch(/latitude|longitude|fullName|latIn/);
   });
   it('unknown bell/schedule authority cannot create absent or late counts', async () => {
     const { service, bell } = fixture();
@@ -124,6 +134,7 @@ describe('canonical staff presence aggregation', () => {
       absent: 0,
       unknown: 99,
     });
+    expect(report.teacherDays[0]).toMatchObject({ date, unknown: 99, absent: 0 });
   });
   it('teacher-filter scope is bound at the employee database query', async () => {
     const { service, db } = fixture();

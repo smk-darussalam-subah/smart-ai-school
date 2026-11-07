@@ -12,7 +12,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { WaLogService } from './wa-log.service';
-import { ListWaLogSchema } from './dto/wa-log.dto';
+import { ListStudentWaLogSchema, ListWaLogSchema } from './dto/wa-log.dto';
 
 @Controller('wa-log')
 export class WaLogController {
@@ -33,8 +33,11 @@ export class WaLogController {
   findStudentLogs(
     @Param('studentId', ParseUUIDPipe) studentId: string,
     @CurrentUser() user: AuthUser,
+    @Query() rawQuery: unknown,
   ) {
-    return this.service.findStudentLogs(studentId, user);
+    const parsed = ListStudentWaLogSchema.safeParse(rawQuery ?? {});
+    if (!parsed.success) throw new BadRequestException('Jumlah pesan harus antara 1 dan 100.');
+    return this.service.findStudentLogs(studentId, user, parsed.data.limit);
   }
 
   // ── General route ──────────────────────────────────────────────────────────

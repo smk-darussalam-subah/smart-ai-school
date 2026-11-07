@@ -223,7 +223,6 @@ smk-api             healthy          3001/tcp
 smk-web             running          3000/tcp
 smk-n8n             running          5678/tcp
 smk-ollama          running          11434/tcp
-smk-metabase        running          3000/tcp
 smk-minio           running          9000-9001/tcp
 smk-uptime-kuma     running          3001/tcp
 smk-prometheus      running          9090/tcp
@@ -302,7 +301,6 @@ Tambahkan A records berikut (semua mengarah ke IP VPS):
 | `api` | A | `<IP-VPS>` | ✅ Proxied |
 | `auth` | A | `<IP-VPS>` | ✅ Proxied |
 | `n8n` | A | `<IP-VPS>` | ✅ Proxied |
-| `analytics` | A | `<IP-VPS>` | ✅ Proxied |
 | `monitor` | A | `<IP-VPS>` | ✅ Proxied |
 | `status` | A | `<IP-VPS>` | ✅ Proxied |
 

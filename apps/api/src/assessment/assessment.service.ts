@@ -6,6 +6,7 @@
 // =============================================================================
 
 import {
+  UnauthorizedException,
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -64,6 +65,7 @@ import { NotificationService } from '../notification/notification.service';
 import { resolveKktpThreshold, PersistedKktpProvenance } from '../academic/kktp-resolver';
 import { APPOINTMENT_ACTIVATION_LOCK_KEY } from '../appointments/appointments.service';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
+import { AssessmentWriteAdmission } from './assessment-write-admission';
 
 const REVIEWER_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] as const;
 const OUTBOX_RETRY_LIMIT = 5;
@@ -167,6 +169,7 @@ const REMEDIAL_SESSION_SELECT = {
 
 @Injectable()
 export class AssessmentService implements OnModuleInit, OnModuleDestroy {
+  private readonly writeAdmission = new AssessmentWriteAdmission();
   private outboxWorkerTimer: NodeJS.Timeout | null = null;
   private outboxWorkerRunning = false;
   private remedialReminderTimer: NodeJS.Timeout | null = null;
@@ -1336,6 +1339,10 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
    *       emit assessment.completed (audit / analytics hook).
    */
   async completeSession(id: string, user: AuthUser) {
+    return this.writeAdmission.run(user.keycloakId, () => this.completeSessionNow(id, user));
+  }
+
+  private async completeSessionNow(id: string, user: AuthUser) {
     const teacherId = await this.resolveTeacherId(user.keycloakId);
     const { session, gradingSummary } = await this.prisma.$transaction(async (tx) => {
       await this.lockAssessmentSession(tx, id);
@@ -1698,6 +1705,10 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
 
   /** U2 Wave 1: SISWA memulai pengerjaan — mencatat startedAt, return shuffled questions jika randomizeOrder. */
   async startResponse(sessionId: string, user: AuthUser) {
+    return this.writeAdmission.run(user.keycloakId, () => this.startResponseNow(sessionId, user));
+  }
+
+  private async startResponseNow(sessionId: string, user: AuthUser) {
     const student = await this.resolveStudent(user.keycloakId);
     const session = await this.prisma.assessmentSession.findUnique({
       where: { id: sessionId },
@@ -1818,6 +1829,12 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
   }
 
   async autosaveResponse(sessionId: string, dto: AutosaveResponseDto, user: AuthUser) {
+    return this.writeAdmission.run(user.keycloakId, () =>
+      this.autosaveResponseNow(sessionId, dto, user),
+    );
+  }
+
+  private async autosaveResponseNow(sessionId: string, dto: AutosaveResponseDto, user: AuthUser) {
     const student = await this.resolveStudent(user.keycloakId);
     const session = await this.prisma.assessmentSession.findUnique({
       where: { id: sessionId },
@@ -1845,10 +1862,6 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         id: true,
         startedAt: true,
         submittedAt: true,
-        score: true,
-        timeSpentSec: true,
-        answers: true,
-        itemScores: true,
         clientRevision: true,
         lastMutationId: true,
         lastSavedAt: true,
@@ -1864,7 +1877,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      await this.assertWritablePeriodInTransaction(tx, {
+      // Different attempts can save concurrently while cutover remains fenced.
+      // Response revision CAS below still protects overlapping tabs/requests.
+      await this.academicPeriod.assertWritablePeriodWithSharedCutoverLock(tx, {
         academicYear: session.academicYear,
         semester: session.semester,
       });
@@ -1953,6 +1968,12 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
 
   /** SISWA submit jawaban untuk sesi active di kelasnya. U2 Wave 1: timer enforcement. */
   async submitResponse(sessionId: string, dto: SubmitResponseDto, user: AuthUser) {
+    return this.writeAdmission.run(user.keycloakId, () =>
+      this.submitResponseNow(sessionId, dto, user),
+    );
+  }
+
+  private async submitResponseNow(sessionId: string, dto: SubmitResponseDto, user: AuthUser) {
     const submittedSignals = dto.signals ?? [];
     const student = await this.resolveStudent(user.keycloakId);
     const accessSession = await this.prisma.assessmentSession.findUnique({
@@ -2889,7 +2910,19 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       let pollCount = 0;
       const maxPolls = 7_200;
 
+      const assertSessionActive = async () => {
+        if (
+          user.sessionBinding &&
+          (await this.prisma.auditLog.findUnique({
+            where: { id: `session-logout-${user.sessionBinding}` },
+            select: { id: true },
+          }))
+        )
+          throw new UnauthorizedException('Sesi telah berakhir.');
+      };
       const poll = async () => {
+        if (subscriber.closed) return;
+        await assertSessionActive();
         if (!verified) {
           await verifyAndStream();
           verified = true;
@@ -3017,7 +3050,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           notStartedNames: [] as string[], // would need class roster join
         };
 
-        subscriber.next({ data } as MessageEvent);
+        await assertSessionActive();
+        if (!subscriber.closed) subscriber.next({ data } as MessageEvent);
       };
 
       // Initial poll
@@ -3033,9 +3067,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           subscriber.complete();
           return;
         }
-        poll().catch(() => {
-          // Silently skip errors during polling
-        });
+        poll().catch((error: unknown) => subscriber.error(error));
       }, 3000);
 
       // Cleanup on unsubscribe

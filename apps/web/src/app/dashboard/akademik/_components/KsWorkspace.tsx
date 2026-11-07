@@ -13,11 +13,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import ScheduleBoard, { ScheduleReadProvider, useScheduleRead } from './ks/ScheduleBoard';
 import SchedulingMonitoringPanel from './ks/SchedulingMonitoringPanel';
 import LearningRecap from './LearningRecap';
+import AttendanceRecap from './AttendanceRecap';
 import { MonitoringSchema, type SchedulingMonitoring } from '@/lib/scheduling-monitoring';
 import {
   LayoutDashboard, FileCheck2, ClipboardPenLine, Monitor, ClipboardCheck,
   Target, CalendarClock, Users, BadgeCheck, Presentation, FileClock,
-  AlertTriangle, Activity, TrendingUp, ListChecks, ChevronRight,
+  AlertTriangle, Activity, ListChecks, ChevronRight,
   Check, CheckCircle2, Info, LayoutGrid, SlidersHorizontal,
   Route, Lightbulb, Paperclip, FileText,
   type LucideIcon,
@@ -28,12 +29,14 @@ import type { GradeItem, AttendanceItem } from '@/lib/api';
 import type { ScheduleItem, ActivityItem, RppItem, ClassRef, LmsModuleItem } from './guru-types';
 import { resolveProfileFramework } from './modul-ajar-profile';
 import KktpKs from './ks/KktpKs';
-import { scheduleDayOfWeek, wibTodayISO, wibDateLabel } from '@/lib/bell-times';
+import { scheduleDayOfWeek, wibDateLabel } from '@/lib/bell-times';
 import { fetchMonitoringKbm, fetchTeacherAttendanceToday } from '../actions';
 import type { AssessmentSessionData, TeacherAttendanceSummary } from '../actions';
 import RaporPipelineKs from './ks/RaporPipelineKs';
 import {
   academicWorkflowPresentation,
+  academicPeriodQuery,
+  resolveAcademicWorkflowView,
   type AcademicWorkflowView,
 } from '@/lib/academic-workflow-deep-link';
 
@@ -59,14 +62,16 @@ interface Props {
   assessmentsAvailable?: boolean;
   scheduleAvailable?: boolean;
   initialWorkflowView?: AcademicWorkflowView | null;
+  initialSessionId?: string;
   canReadClassSessions?: boolean;
 }
 
-type Screen = 'beranda' | 'modul' | 'sumatif' | 'monitor' | 'rekap' | 'kktp' | 'jadwal' | 'rapor' | 'sesi';
+type Screen = 'beranda' | 'modul' | 'sumatif' | 'monitor' | 'rekap' | 'kktp' | 'jadwal' | 'rapor' | 'sesi' | 'kehadiran';
 
 const NAV: { key: Screen; label: string; icon: LucideIcon; badge?: number }[] = [
   { key: 'beranda', label: 'Beranda', icon: LayoutDashboard },
   { key: 'sesi', label: 'Rekap Pembelajaran', icon: CalendarClock },
+  { key: 'kehadiran', label: 'Kehadiran Siswa', icon: Users },
   { key: 'modul', label: 'Modul Ajar', icon: FileCheck2 },
   { key: 'sumatif', label: 'Sumatif', icon: ClipboardPenLine },
   { key: 'monitor', label: 'Monitoring KBM', icon: Monitor },
@@ -111,7 +116,7 @@ function sumatifStatus(status: string): SumatifStatus {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function KsWorkspace({
-  grades: _sourceGrades, attendances: sourceAttendances, classes: sourceClasses, assignments: sourceAssignments, rpp: sourceRpp, schedules: sourceSchedules, activities: _sourceActivities, lmsModules: _lmsModules, realSumatif, subjects, academicYear, semester, dataWarning, scheduleAvailable = false, rppAvailable = false, assessmentsAvailable = false, initialWorkflowView = null, canReadClassSessions = false,
+  grades: _sourceGrades, attendances: _sourceAttendances, classes: sourceClasses, assignments: sourceAssignments, rpp: sourceRpp, schedules: sourceSchedules, activities: _sourceActivities, lmsModules: _lmsModules, realSumatif, subjects, academicYear, semester, dataWarning, scheduleAvailable = false, rppAvailable = false, assessmentsAvailable = false, initialWorkflowView = null, initialSessionId, canReadClassSessions = false,
 }: Props) {
   const router = useRouter(), searchParams = useSearchParams();
   const [filterGuru, setFilterGuru] = useState('');
@@ -124,7 +129,6 @@ export default function KsWorkspace({
   const filtered = !!filterGuru || !!filterMapel;
   const schedules = sourceSchedules.filter(s => !filtered || !!s.teachingAssignment.id && assignmentIds.has(s.teachingAssignment.id));
   const classes = sourceClasses.filter(c => !filtered || classIds.has(c.id));
-  const attendances = sourceAttendances.filter(a => !filtered || classIds.has(a.classId));
   const rpp = sourceRpp.filter(row => (!filterMapel || row.subject === filterMapel) && (!filterGuru || row.teacherId === filterGuru));
   const [loadedMonitoring, setMonitoring] = useState<SchedulingMonitoring | null>(null);
   const monitoring = loadedMonitoring?.academicYear === academicYear && loadedMonitoring?.semester === semester && loadedMonitoring?.filters.teacherId === (filterGuru || null) && loadedMonitoring?.filters.subject === (filterMapel || null) ? loadedMonitoring : null;
@@ -142,6 +146,14 @@ export default function KsWorkspace({
   const monitoringRead = { data: monitoring, error: monitorError, loading: monitorBusy, retry: () => setMonitorRevision(value => value+1) };
   const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
   const [screen, setScreen] = useState<Screen>(initialWorkflow.leadershipScreen);
+  const routeWorkflow=resolveAcademicWorkflowView(searchParams.get('view') ?? undefined,'principal');
+  useEffect(() => {
+    if(routeWorkflow) setScreen(academicWorkflowPresentation(routeWorkflow).leadershipScreen);
+    else if(!initialWorkflowView) setScreen('beranda');
+  }, [initialWorkflowView,routeWorkflow]);
+  const navigate=(next:Screen)=>{
+    setScreen(next);const url=new URL(window.location.href);url.searchParams.delete('view');url.searchParams.delete('sessionId');window.history.replaceState(null,'',url.toString());
+  };
   // Opsi B (mobile nav): auto-center tab aktif saat ganti screen (anti hidden).
   const navRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -183,10 +195,6 @@ export default function KsWorkspace({
     return n;
   });
 
-  // KPI calculations from real data
-  const todayISO = wibTodayISO();
-  const todayAtt = attendances.filter((a) => a.date?.slice(0, 10) === todayISO);
-  const hadirPct = attendances.length ? Math.round((attendances.filter((a) => a.status === 'hadir').length / attendances.length) * 100) : null;
 
   // Thresholds and counts are resolved by the authoritative API, never by a local fallback.
   const kelasMapel = useMemo(() => (monitoring?.data ?? []).map(row => ({
@@ -216,7 +224,7 @@ export default function KsWorkspace({
         <div className="inline-flex rounded-xl bg-[#f4f7f5] p-1">
           {([1,2] as const).map((s) => (
             <button key={s} type="button" onClick={() => {
-              const query = new URLSearchParams(searchParams.toString()); query.set('academicYear', academicYear); query.set('semester', String(s));
+              const query = academicPeriodQuery(searchParams.toString(), academicYear, s);
               if (screen === 'sesi') query.set('view', 'learning-recap');
               router.push('/dashboard/akademik?' + query.toString());
             }}
@@ -258,8 +266,8 @@ export default function KsWorkspace({
                 key={n.key}
                 type="button"
                 data-active={on || undefined}
-                onClick={() => setScreen(n.key)}
-                className={clsx('inline-flex shrink-0 items-center gap-2 rounded-xl border px-3.5 py-2 text-[13px] font-bold',
+                onClick={() => navigate(n.key)}
+                className={clsx('inline-flex shrink-0 items-center gap-2 rounded-xl border px-3.5 py-2 text-[13px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600',
                   on ? 'border-emerald-600 bg-emerald-600 text-white shadow-[0_8px_18px_-8px_rgba(5,150,105,.5)]' : 'border-[#e6efea] bg-white text-[#355a4e] hover:border-emerald-200')}>
                 <Icon className={clsx('h-4 w-4', on ? 'text-white' : 'text-[#6b8079]')} />{n.label}
                 {n.badge ? <span className={clsx('rounded-full px-1.5 py-0.5 text-[9px] font-extrabold', on ? 'bg-white/25 text-white' : 'bg-rose-500 text-white')}>{n.badge}</span> : null}
@@ -272,8 +280,9 @@ export default function KsWorkspace({
       </div>
 
       <div className="pt-4">
-        {screen === 'sesi' && <LearningRecap key={`${academicYear}|${semester}`} academicYear={academicYear} semester={semester} scope="operations" canRead={canReadClassSessions} />}
-        {screen === 'beranda' && <BerandaKs hadirPct={hadirPct} todayAtt={todayAtt} attendances={attendances} dataComplete={!dataWarning && !!monitoring} pendingRpp={rppAvailable ? pendingRpp.length : null} activeSumatif={assessmentsAvailable ? activeSumatif.length : null} belowKktp={belowKktp} schedules={schedules} classes={classes} onNavigate={setScreen} />}
+        {screen === 'sesi' && <LearningRecap key={`${academicYear}|${semester}`} academicYear={academicYear} semester={semester} scope="operations" canRead={canReadClassSessions} initialSessionId={initialSessionId} />}
+        {screen === 'kehadiran' && <AttendanceRecap key={`${academicYear}|${semester}|${filterGuru}|${filterMapel}`} academicYear={academicYear} semester={semester} teacherId={filterGuru || undefined} subject={filterMapel || undefined} context="authorized" />}
+        {screen === 'beranda' && <BerandaKs dataComplete={!dataWarning && !!monitoring} pendingRpp={rppAvailable ? pendingRpp.length : null} activeSumatif={assessmentsAvailable ? activeSumatif.length : null} belowKktp={belowKktp} schedules={schedules} classes={classes} onNavigate={navigate} />}
         {screen === 'modul' && <ModulAjarKs rpp={rpp} onReview={setSelRpp} />}
         {screen === 'sumatif' && <AuditSumatifKs onOpenDetail={setSelSumatif} data={sumatifData} />}
         {screen === 'monitor' && <SchedulingMonitoringPanel academicYear={academicYear} semester={semester} teacherId={filterGuru || undefined} subject={filterMapel || undefined} subjects={subjects} readResult={monitoringRead} />}
@@ -301,32 +310,18 @@ export default function KsWorkspace({
 
 // ═══ SCREEN 1: BERANDA ════════════════════════════════════════════════════════
 
-function BerandaKs({ hadirPct: _hadirPct, todayAtt, attendances, dataComplete, pendingRpp, activeSumatif, belowKktp, schedules, classes, onNavigate }: {
-  hadirPct: number | null; todayAtt: AttendanceItem[]; attendances: AttendanceItem[]; dataComplete: boolean; pendingRpp: number | null; activeSumatif: number | null;
+function BerandaKs({ dataComplete, pendingRpp, activeSumatif, belowKktp, schedules, classes, onNavigate }: {
+  dataComplete: boolean; pendingRpp: number | null; activeSumatif: number | null;
   belowKktp: { kelas: string; mapel: string; tuntasPct: number | null }[];
   schedules: ScheduleItem[]; classes: ClassRef[]; onNavigate: (s: Screen) => void;
 }) {
-  const [trenPeriod, setTrenPeriod] = useState<'10H' | '1B' | '3B'>('10H');
-  const [berandaModal, setBerandaModal] = useState<null | 'kehadiran' | 'guruHadir' | 'kelasBerjalan'>(null);
+  const [berandaModal, setBerandaModal] = useState<null | 'guruHadir' | 'kelasBerjalan'>(null);
   // P1 (S-05): Fetch real teacher attendance for KS dashboard
   const [teacherAtt, setTeacherAtt] = useState<TeacherAttendanceSummary | null>(null);
   const read = useScheduleRead();
-  const trenData = useMemo(() => {
-    if (!read.period.period) return null;
-    const days = trenPeriod === '10H' ? 10 : trenPeriod === '1B' ? 30 : 90;
-    const end = Math.min(Date.parse(wibTodayISO()),Date.parse(read.period.period.endDate.slice(0,10)));
-    const start = Math.max(end-(days-1)*86400000,Date.parse(read.period.period.startDate.slice(0,10)));
-    const siswa: (number | null)[] = [];
-    for (let stamp = start; stamp <= end; stamp += 86400000) {
-      const date = new Date(stamp).toISOString().slice(0,10), recorded = attendances.filter(row => row.date.slice(0,10) === date);
-      siswa.push(recorded.length ? Math.round(recorded.filter(row => row.status === 'hadir').length/recorded.length*100) : null);
-    }
-    return siswa.some(value => value !== null) ? { siswa, guru: [] as (number | null)[] } : null;
-  }, [read.period.period,attendances,trenPeriod]);
   const dow = scheduleDayOfWeek();
   const todaySchedules = schedules.filter((s) => s.dayOfWeek === dow);
   const activeClasses = new Set(todaySchedules.map((s) => s.classId)).size;
-  const todayHadirPct = todayAtt.length ? Math.round((todayAtt.filter((a) => a.status === 'hadir').length / todayAtt.length) * 100) : null;
 
   // P1 (S-05): Fetch teacher attendance on mount
   useEffect(() => {
@@ -341,9 +336,9 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, attendances, dataComplete, p
   return (
     <div className="space-y-4">
       {/* KPI grid */}
+      <AttendanceRecap academicYear={read.academicYear} semester={read.semester} teacherId={read.teacherId || undefined} subject={read.subject || undefined} context="authorized" compact />
       {!dataComplete && <p role="status" className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">Sebagian sumber belum terverifikasi dalam cakupan ini. Tidak dapat menyimpulkan seluruh tugas selesai; gunakan muat ulang pada panel terkait.</p>}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Kpi icon={Users} label="Kehadiran Siswa" value={todayHadirPct !== null ? `${todayHadirPct}%` : '—'} sub={todayAtt.length ? `${todayAtt.length} catatan hari ini` : undefined} onClick={() => setBerandaModal('kehadiran')} />
         <Kpi icon={BadgeCheck} label="Presensi Guru Tercatat" value={teacherAtt ? `${teacherAtt.present}/${teacherAtt.total}` : '—'} sub={teacherAtt ? `${teacherAtt.absent} wajib belum tercatat · ${teacherAtt.notRequired} bebas kewajiban` : 'Belum tersedia'} onClick={() => setBerandaModal('guruHadir')} />
         <Kpi icon={Presentation} label="Kelas Terjadwal Hari Ini" value={read.available && read.todayInPeriod ? `${activeClasses}` : '—'} sub={read.available && read.todayInPeriod ? `${todaySchedules.length} blok terencana, bukan sesi aktif` : 'Jadwal tidak tersedia untuk hari ini'} onClick={() => setBerandaModal('kelasBerjalan')} />
         <Kpi icon={FileClock} label="Modul Pending" value={pendingRpp === null ? '—' : String(pendingRpp)} valueClass="text-amber-600" onClick={() => onNavigate('modul')} />
@@ -398,28 +393,9 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, attendances, dataComplete, p
           </div>
         </div>
 
-        {/* Tren Kehadiran */}
-        <div className="rounded-2xl border border-[#e6efea] bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><TrendingUp className="h-[18px] w-[18px] text-emerald-600" />Tren Kehadiran — {trenPeriod === '10H' ? '10 Hari' : trenPeriod === '1B' ? '1 Bulan' : '3 Bulan'}</h3>
-            <div className="inline-flex rounded-xl bg-[#f4f7f5] p-1">
-              {(['10H', '1B', '3B'] as const).map((p) => (
-                <button key={p} type="button" onClick={() => setTrenPeriod(p)} className={clsx('rounded-lg px-3 py-1.5 text-[12px] font-bold', trenPeriod === p ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]')}>{p}</button>
-              ))}
-            </div>
-          </div>
-          {trenData ? (
-            <TrenChart siswa={trenData.siswa} guru={trenData.guru} />
-          ) : (
-            /* U6: SIM_TREN fallback replaced with honest empty state */
-            <div className="flex h-32 items-center justify-center text-[12px] font-medium text-[#9bb0a8]">Belum ada data tren kehadiran</div>
-          )}
-          <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700"><TrendingUp className="h-3 w-3" /> {trenData ? 'Catatan harian periode dan kelas pilihan; celah = data belum ada' : 'Data harian belum tersedia pada cakupan pilihan'}</div>
-        </div>
       </div>
 
       {/* Drill-down Modals */}
-      {berandaModal === 'kehadiran' && <KehadiranDetailModal todayAtt={todayAtt} onClose={() => setBerandaModal(null)} />}
       {berandaModal === 'guruHadir' && <GuruHadirModal data={teacherAtt} onClose={() => setBerandaModal(null)} />}
       {berandaModal === 'kelasBerjalan' && <KelasBerjalanModal schedules={schedules} classes={classes} onClose={() => setBerandaModal(null)} />}
     </div>
@@ -430,65 +406,6 @@ function BerandaKs({ hadirPct: _hadirPct, todayAtt, attendances, dataComplete, p
 
 function PapanHeatmap({ schedules, classes }: { schedules: ScheduleItem[]; classes: ClassRef[] }) {
   return <ScheduleBoard schedules={schedules} classes={classes} />;
-}
-
-function KehadiranDetailModal({ todayAtt, onClose }: { todayAtt: AttendanceItem[]; onClose: () => void }) {
-  const byClass = useMemo(() => {
-    const m = new Map<string, { hadir: number; izin: number; sakit: number; alpha: number; total: number }>();
-    for (const a of todayAtt) {
-      const kelas = a.class?.name ?? '—';
-      if (!m.has(kelas)) m.set(kelas, { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0 });
-      const row = m.get(kelas)!;
-      row.total++;
-      if (a.status === 'hadir') row.hadir++;
-      else if (a.status === 'izin') row.izin++;
-      else if (a.status === 'sakit') row.sakit++;
-      else if (a.status === 'alpha') row.alpha++;
-    }
-    return [...m.entries()].map(([kelas, c]) => ({ kelas, ...c, pct: c.total ? Math.round((c.hadir / c.total) * 100) : 0 }));
-  }, [todayAtt]);
-
-  const totalHadir = todayAtt.filter((a) => a.status === 'hadir').length;
-  const totalPct = todayAtt.length ? Math.round((totalHadir / todayAtt.length) * 100) : 0;
-
-  return (
-    <KsDetailDialog title="Kehadiran Siswa — Rincian" onClose={onClose}>
-        <div className="sticky top-0 flex items-center justify-between border-b border-[#e6efea] bg-white py-4 pl-5 pr-16">
-          <div><h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0f2e25]"><Users className="h-5 w-5 text-emerald-600" />Kehadiran Siswa — Rincian</h3><p className="text-[11.5px] text-[#6b8079]">Per kelas · {wibDateLabel()}</p></div>
-        </div>
-        <div className="space-y-4 p-5">
-          <div className="flex flex-wrap gap-2">
-            <StatPill n={`${totalPct}%`} l="Kehadiran" />
-            <StatPill n={`${totalHadir}/${todayAtt.length}`} l="Hadir/Total" />
-            <StatPill n={`${todayAtt.length - totalHadir}`} l="Tidak Hadir" />
-          </div>
-          {byClass.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-[12px]">
-                <thead><tr className="border-b border-[#e6efea] text-left text-[10.5px] uppercase tracking-wide text-[#6b8079]">
-                  <th className="py-2 pr-3">Kelas</th><th className="py-2 pr-3 text-right">Hadir</th><th className="py-2 pr-3 text-right">Izin</th><th className="py-2 pr-3 text-right">Sakit</th><th className="py-2 pr-3 text-right">Alpha</th><th className="py-2 text-right">% Hadir</th>
-                </tr></thead>
-                <tbody>
-                  {byClass.map((row) => (
-                    <tr key={row.kelas} className="border-b border-[#f0f4f2]">
-                      <td className="py-2.5 pr-3 font-bold text-[#0f2e25]">{row.kelas}</td>
-                      <td className="py-2.5 pr-3 text-right font-bold text-emerald-700">{row.hadir}</td>
-                      <td className="py-2.5 pr-3 text-right text-[#355a4e]">{row.izin}</td>
-                      <td className="py-2.5 pr-3 text-right text-[#355a4e]">{row.sakit}</td>
-                      <td className="py-2.5 pr-3 text-right text-rose-600">{row.alpha}</td>
-                      <td className="py-2.5 text-right"><span className={clsx('rounded-md px-2 py-0.5 text-[10.5px] font-bold', row.pct >= 90 ? 'bg-emerald-50 text-emerald-700' : row.pct >= 80 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-600')}>{row.pct}%</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : <div className="grid h-20 place-items-center rounded-xl bg-[#f4f7f5] text-[12.5px] text-[#9bb0a8]">Belum ada data kehadiran hari ini.</div>}
-        </div>
-        <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[#e6efea] bg-white px-5 py-3">
-          <button type="button" onClick={onClose} className="rounded-xl border border-[#e6efea] bg-white px-4 py-2 text-[12.5px] font-bold text-[#355a4e] hover:bg-[#f4f7f5]">Tutup</button>
-        </div>
-    </KsDetailDialog>
-  );
 }
 
 function GuruHadirModal({ data, onClose }: { data: TeacherAttendanceSummary | null; onClose: () => void }) {
@@ -916,26 +833,6 @@ function Kpi({ icon: Icon, label, value, sub, valueClass, onClick }: { icon: Luc
   return onClick
     ? <button type="button" onClick={onClick} className={clsx(className, 'w-full transition hover:border-emerald-200 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600')}>{content}</button>
     : <div className={className}>{content}</div>;
-}
-
-function TrenChart({ siswa, guru }: { siswa: (number | null)[]; guru: (number | null)[] }) {
-  const W = 620, H = 120;
-  const y = (value: number) => H - 10 - value / 100 * (H - 30);
-  const x = (index: number, length: number) => 10 + index * (W-20) / Math.max(1,length-1);
-  const segments = (values: (number | null)[]) => {
-    const parts: string[][] = [[]];
-    values.forEach((value,index) => {
-      if (value === null) parts.push([]);
-      else parts[parts.length-1]!.push(x(index,values.length)+','+y(value));
-    });
-    return parts.filter(part => part.length);
-  };
-  return <figure><svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Persentase hadir dari catatan harian, skala nol sampai seratus. Celah berarti data belum tersedia." className="mt-2 w-full">
-    {[0,25,50,75,100].map(value => <g key={value}><line x1={0} y1={y(value)} x2={W} y2={y(value)} stroke="#e6efea" /><text x={0} y={y(value)-2} fontSize={8} fill="#6b8079">{value}%</text></g>)}
-    {segments(siswa).map((points,index) => <polyline key={index} points={points.join(' ')} fill="none" stroke="#059669" strokeWidth={2.5} />)}
-    {siswa.map((value,index) => value === null ? null : <circle key={index} cx={x(index,siswa.length)} cy={y(value)} r={2} fill="#059669"><title>{value}% dari catatan harian</title></circle>)}
-    {segments(guru).map((points,index) => <polyline key={index} points={points.join(' ')} fill="none" stroke="#0284c7" strokeWidth={2} />)}
-  </svg><figcaption className="text-xs text-slate-500">Tidak ada garis penghubung pada tanggal tanpa catatan. Kehadiran guru tidak diperkirakan dari data siswa.</figcaption></figure>;
 }
 
 function StatPill({ n, l }: { n: string; l: string }) {

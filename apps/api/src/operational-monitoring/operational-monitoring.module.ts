@@ -8,9 +8,10 @@ import {
 } from './operational-monitoring.controller';
 import { DisplayPlaybackLeaseService } from './display-playback-lease.service';
 import { OperationalMonitoringService } from './operational-monitoring.service';
+import { StaffAttendanceModule } from '../staff-attendance/staff-attendance.module';
 
 @Module({
-  imports: [PrismaModule, BellScheduleModule, DisplayDeviceModule],
+  imports: [PrismaModule, BellScheduleModule, DisplayDeviceModule, StaffAttendanceModule],
   controllers: [OperationalMonitoringController, OperationalDisplayController],
   providers: [OperationalMonitoringService, DisplayPlaybackLeaseService],
   exports: [OperationalMonitoringService],

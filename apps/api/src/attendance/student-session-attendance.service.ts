@@ -20,9 +20,9 @@ import {
 import { lockOperationalTeachers } from '../common/helpers/operational-teacher';
 import { lockSessionInputs } from '../common/helpers/class-session-activation';
 import {
-  jpAttendanceTotals,
   sessionJpSlots,
-  physicalJpStatuses,
+  physicalJpAttendance,
+  jpDailyTotals,
   attendanceNoticeBody,
 } from './student-session-attendance.math';
 import type {
@@ -30,6 +30,7 @@ import type {
   SessionAttendanceRosterQuery,
   SessionAttendanceSave,
 } from './student-session-attendance.dto';
+import { assertJpReadSession, withJpRead } from './jp-read-admission';
 
 const includeSession = {
   bellScheduleProfile: { include: { segments: true } },
@@ -324,15 +325,24 @@ export class StudentSessionAttendanceService {
     return { saved: result.saved, replayed: result.replayed };
   }
   async learner(query: LearnerSessionAttendanceQuery, user: AuthUser) {
+    return withJpRead(this.prisma, user.keycloakId, () => this.learnerSnapshot(query, user));
+  }
+
+  private async learnerSnapshot(query: LearnerSessionAttendanceQuery, user: AuthUser) {
     return this.prisma.$transaction(
       async (tx) => {
-        const actor = await this.actor(tx, user, (role) =>
-          role === 'SISWA'
-            ? 'attendance.own.read'
-            : role === 'ORANG_TUA'
-              ? 'attendance.child.read'
-              : null,
+        await assertJpReadSession(tx, user);
+        const actor = await this.permissions.findFreshActorWithPermission(
+          user.keycloakId,
+          (role) =>
+            role === 'SISWA'
+              ? 'attendance.own.read'
+              : role === 'ORANG_TUA'
+                ? 'attendance.child.read'
+                : null,
+          tx,
         );
+        if (!actor) throw new ForbiddenException('Akses kehadiran tidak diizinkan');
         if (!['SISWA', 'ORANG_TUA'].includes(actor.role))
           throw new ForbiddenException('Gunakan tampilan pemantauan sesuai kewenangan');
         const student = await tx.student.findFirst({
@@ -374,7 +384,36 @@ export class StudentSessionAttendanceService {
               { studentAttendance: { some: { studentId: student.id } } },
             ],
           },
-          include: { ...includeSession, studentAttendance: { where: { studentId: student.id } } },
+          // The learner response does not use teacher/user, year or semester
+          // relations. Select only the immutable session fields and own JP rows.
+          select: {
+            id: true,
+            serviceDate: true,
+            academicYearId: true,
+            subjectSnapshot: true,
+            assignedTeacherName: true,
+            classNameSnapshot: true,
+            status: true,
+            scheduledStartAt: true,
+            scheduledEndAt: true,
+            bellScheduleProfile: {
+              select: {
+                segments: {
+                  select: {
+                    type: true,
+                    jpNumber: true,
+                    dayOfWeek: true,
+                    startMinute: true,
+                    endMinute: true,
+                  },
+                },
+              },
+            },
+            studentAttendance: {
+              where: { studentId: student.id },
+              select: { jp: true, status: true, notes: true, updatedAt: true },
+            },
+          },
           orderBy: [{ serviceDate: 'asc' }, { scheduledStartAt: 'asc' }],
           take: 1001,
         });
@@ -425,10 +464,7 @@ export class StudentSessionAttendanceService {
               }),
             };
           });
-        const days = [...new Set(rows.map((s) => s.date))].map((date) => ({
-          date,
-          ...jpAttendanceTotals(physicalJpStatuses(rows.filter((s) => s.date === date))),
-        }));
+        const daily = jpDailyTotals(physicalJpAttendance(rows));
         return {
           studentId: student.id,
           academicYear: period.academicYear,
@@ -439,8 +475,7 @@ export class StudentSessionAttendanceService {
           scope:
             'Sesi yang disiapkan untuk kelas saat ini dan catatan sesi tersimpan. Data kelas historis tidak direka. JP beririsan dihitung sekali; status yang berbeda/belum lengkap memerlukan pemeriksaan.',
           sessions: rows,
-          days,
-          totals: jpAttendanceTotals(physicalJpStatuses(rows)),
+          ...daily,
         };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },

@@ -6,6 +6,7 @@ import { resolveDashboardAuthority } from '@/lib/dashboard-authority';
 import MonitoringClient from './MonitoringClient';
 import SessionPreparationPanel from '../jadwal/_components/SessionPreparationPanel';
 import { wibTodayISO } from '@/lib/bell-times';
+import AttendanceJpSummary from '../akademik/_components/AttendanceJpSummary';
 import {
   hasMonitoringReaderRole,
   normalizeMonitoringDevices,
@@ -17,40 +18,69 @@ export default async function MonitoringPage() {
   if (!session) redirect('/login?callbackUrl=%2Fdashboard%2Fmonitoring');
   const authority = await resolveDashboardAuthority(session);
   const identityOrAppointmentAllowed = hasMonitoringReaderRole(authority.roles);
-  const canRead = identityOrAppointmentAllowed
-    && authority.can('operational.monitoring.read');
+  const canRead = identityOrAppointmentAllowed && authority.can('operational.monitoring.read');
 
   if (!authority.permissionCheckAvailable) {
-    return <MonitoringClient initialSnapshot={null} initialDevices={[]} initialError="Izin monitoring belum dapat diverifikasi. Muat ulang setelah koneksi pulih." canManageDevices={false} />;
+    return (
+      <MonitoringClient
+        initialSnapshot={null}
+        initialDevices={[]}
+        initialError="Izin monitoring belum dapat diverifikasi. Muat ulang setelah koneksi pulih."
+        canManageDevices={false}
+      />
+    );
   }
   if (!canRead) {
-    return <MonitoringClient initialSnapshot={null} initialDevices={[]} initialError="Akun ini tidak memiliki kewenangan monitoring operasional." forbidden canManageDevices={false} />;
+    return (
+      <MonitoringClient
+        initialSnapshot={null}
+        initialDevices={[]}
+        initialError="Akun ini tidak memiliki kewenangan monitoring operasional."
+        forbidden
+        canManageDevices={false}
+      />
+    );
   }
 
   const token = session.accessToken ?? '';
-  const canManageDevices = authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH')
-    && authority.can('operational.display.manage');
+  const canManageDevices =
+    authority.hasRole('SUPER_ADMIN', 'KEPALA_SEKOLAH') &&
+    authority.can('operational.display.manage');
   const [monitoringResult, deviceResult] = await Promise.all([
     apiFetchResult<unknown>('/operational-monitoring/snapshot', token),
     apiFetchResult<unknown>('/display-devices', token),
   ]);
-  const snapshot = monitoringResult.status === 'success' ? normalizeMonitoringSnapshot(monitoringResult.data) : null;
-  const devices = deviceResult.status === 'success' ? normalizeMonitoringDevices(deviceResult.data) : [];
-  const initialError = monitoringResult.status === 'success'
-    ? snapshot ? null : 'Respons monitoring tidak sesuai kontrak.'
-    : monitoringResult.message;
+  const snapshot =
+    monitoringResult.status === 'success'
+      ? normalizeMonitoringSnapshot(monitoringResult.data)
+      : null;
+  const devices =
+    deviceResult.status === 'success' ? normalizeMonitoringDevices(deviceResult.data) : [];
+  const initialError =
+    monitoringResult.status === 'success'
+      ? snapshot
+        ? null
+        : 'Respons monitoring tidak sesuai kontrak.'
+      : monitoringResult.message;
   const deviceWarning = deviceResult.status === 'success' ? null : deviceResult.message;
 
   return (
     <div className="space-y-4">
-    {authority.can('academic.schedule.manage') && authority.hasRole('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM') && <SessionPreparationPanel today={wibTodayISO()} />}
-    <MonitoringClient
-      initialSnapshot={snapshot}
-      initialDevices={devices}
-      initialError={initialError}
-      deviceWarning={deviceWarning}
-      canManageDevices={canManageDevices}
-    />
+      {authority.can('academic.attendance.read') &&
+        authority.can('academic.class-session.read') && (
+          <AttendanceJpSummary query={{ from: wibTodayISO(), to: wibTodayISO() }} />
+        )}
+      {authority.can('academic.schedule.manage') &&
+        authority.hasRole('SUPER_ADMIN', 'TATA_USAHA', 'WAKA_KURIKULUM') && (
+          <SessionPreparationPanel today={wibTodayISO()} />
+        )}
+      <MonitoringClient
+        initialSnapshot={snapshot}
+        initialDevices={devices}
+        initialError={initialError}
+        deviceWarning={deviceWarning}
+        canManageDevices={canManageDevices}
+      />
     </div>
   );
 }

@@ -81,6 +81,7 @@ export class AnalyticsController {
       query,
       effective.has('*') || effective.has('rpp.read'),
       effective.has('*') || effective.has('academic.teaching.read'),
+      effective.has('*') || effective.has('student.read'),
     );
   }
 

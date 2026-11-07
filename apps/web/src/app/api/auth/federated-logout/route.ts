@@ -1,54 +1,122 @@
-// =============================================================================
-// GET /api/auth/federated-logout — Logout yang JUGA mengakhiri sesi SSO Keycloak.
-//
-// Masalah: signOut() NextAuth hanya menghapus cookie aplikasi; sesi SSO Keycloak
-// (cookie di domain auth.*) tetap hidup → klik "login" berikutnya langsung masuk
-// TANPA password (memakai sesi lama) & tak bisa ganti akun.
-//
-// Solusi: navigasi penuh ke route ini (saat masih login) → baca id_token dari
-// JWT → redirect ke endpoint end-session Keycloak (id_token_hint) → Keycloak
-// hapus sesi SSO lalu redirect balik ke /login. Cookie sesi aplikasi dibersihkan
-// di response ini.
-//
-// PRASYARAT KEYCLOAK: client `diis-web` harus punya "Valid post logout redirect
-// URIs" mencakup origin app (mis. https://smkdarussalamsubah.sch.id/login atau `+`).
-// =============================================================================
-
-import { getToken } from 'next-auth/jwt';
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveRequestSession, decodeSessionCookies } from '@/lib/request-session';
+import { sessionAppOrigin, SESSION_MAX_AGE_SECONDS } from '@/lib/auth-session-state';
+import { signedOutCookieName } from '@/lib/session-cookie-state';
 
-export async function GET(req: NextRequest) {
-  const issuer = process.env.KEYCLOAK_ISSUER;
-  const base = process.env.NEXTAUTH_URL ?? req.nextUrl.origin;
-  const postLogoutRedirect = `${base}/login`;
+export const dynamic = 'force-dynamic';
 
-  // Tanpa issuer terkonfigurasi → fallback ke /login (tetap bersihkan cookie).
-  let redirectTo = postLogoutRedirect;
-  if (issuer) {
-    const token = await getToken({ req });
-    const url = new URL(`${issuer}/protocol/openid-connect/logout`);
-    url.searchParams.set('post_logout_redirect_uri', postLogoutRedirect);
-    if (process.env.KEYCLOAK_CLIENT_ID) url.searchParams.set('client_id', process.env.KEYCLOAK_CLIENT_ID);
-    if (token?.idToken) url.searchParams.set('id_token_hint', token.idToken as string);
-    redirectTo = url.toString();
-  }
-
-  const res = NextResponse.redirect(redirectTo);
-  // Hapus SEMUA cookie sesi NextAuth. PENTING:
-  //  - token besar (berisi id_token) → NextAuth memecah cookie jadi chunk
-  //    (`…session-token.0`, `.1`) → menghapus nama dasar saja TIDAK cukup.
-  //  - cookie ber-prefix `__Secure-`/`__Host-` HANYA bisa dihapus bila Set-Cookie
-  //    menyertakan flag Secure (kalau tidak, browser mengabaikannya → tetap login).
-  for (const c of req.cookies.getAll()) {
-    if (/next-auth\.(session-token|csrf-token|callback-url|pkce|state)/.test(c.name)) {
-      res.cookies.set(c.name, '', {
-        maxAge: 0,
-        path: '/',
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: c.name.startsWith('__Secure-') || c.name.startsWith('__Host-'),
-      });
+/** Revoke before clearing cookies. A response already in flight can restore a
+ * cookie, but cannot restore its durable API authority or navigation identity. */
+export async function GET(request: NextRequest): Promise<Response> {
+  const origin = sessionAppOrigin(request.url);
+  if (
+    ['cross-site', 'same-site'].includes(request.headers.get('sec-fetch-site') ?? '') ||
+    (request.headers.has('origin') && request.headers.get('origin') !== origin)
+  )
+    return Response.json({ message: 'Asal permintaan tidak diizinkan.' }, { status: 403 });
+  const initial = await decodeSessionCookies(request.headers, request.cookies.getAll(), []).catch(
+    () => null,
+  );
+  const secure = origin.startsWith('https:');
+  const marker =
+    typeof initial?.browserSessionId === 'string' ? initial.browserSessionId : 'legacy';
+  const mark = (response: NextResponse) => {
+    response.cookies.set(signedOutCookieName(secure), marker, {
+      secure,
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: SESSION_MAX_AGE_SECONDS,
+    });
+    response.headers.set('cache-control', 'private, no-store');
+    return response;
+  };
+  const unavailable = () =>
+    mark(
+      new NextResponse(
+        '<!doctype html><html lang="id"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Keluar belum tuntas</title><main style="max-width:32rem;margin:12vh auto;padding:24px;font:16px/1.6 system-ui"><h1>Keluar belum tuntas</h1><p>Layanan akun sementara belum tersedia. Coba lagi untuk menyelesaikan proses keluar.</p><a style="display:inline-block;padding:12px 18px;border:1px solid #087354;border-radius:8px;color:#075640" href="/api/auth/federated-logout">Coba lagi</a></main></html>',
+        { status: 503, headers: { 'content-type': 'text/html; charset=utf-8' } },
+      ),
+    );
+  try {
+    let providerConfirmation = false;
+    const resolved = initial
+      ? await resolveRequestSession(request, true)
+      : { session: null, cookies: [] };
+    const latest = await decodeSessionCookies(
+      request.headers,
+      request.cookies.getAll(),
+      resolved.cookies,
+    );
+    const logoutProof = resolved.session?.accessToken ?? initial?.accessToken;
+    if (logoutProof) {
+      const revoked = await fetch(
+        new URL('/api/v1/auth/session/logout', process.env.API_URL ?? 'http://localhost:3001'),
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${logoutProof}` },
+          cache: 'no-store',
+          signal: AbortSignal.timeout(5000),
+        },
+      );
+      await revoked.body?.cancel();
+      if (![204, 401, 403].includes(revoked.status)) return unavailable();
+    } else if (initial && resolved.session?.error === 'RefreshAccessTokenTemporaryError') {
+      return unavailable();
     }
+
+    if (latest?.refreshToken) {
+      const issuer = process.env.KEYCLOAK_ISSUER;
+      const clientId = process.env.KEYCLOAK_CLIENT_ID;
+      const clientSecret = process.env.KEYCLOAK_CLIENT_SECRET;
+      if (!issuer || !clientId || !clientSecret) return unavailable();
+      const provider = await fetch(`${issuer}/protocol/openid-connect/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: latest.refreshToken,
+        }),
+        cache: 'no-store',
+        signal: AbortSignal.timeout(5000),
+      });
+      const expired =
+        provider.status === 400 &&
+        ((await provider.json().catch(() => null)) as { error?: string } | null)?.error ===
+          'invalid_grant';
+      await provider.body?.cancel().catch(() => undefined);
+      if (!provider.ok && !expired) return unavailable();
+      // invalid_grant can also mean a concurrently rotated refresh token.
+      // Do not pretend it proves the provider session has ended.
+      providerConfirmation = expired;
+    } else if (initial) {
+      providerConfirmation = true;
+    }
+    const login = new URL('/login', origin);
+    login.searchParams.set('reason', 'logout');
+    let destination = login;
+    if (providerConfirmation) {
+      const issuer = process.env.KEYCLOAK_ISSUER,
+        clientId = process.env.KEYCLOAK_CLIENT_ID;
+      if (!issuer || !clientId) return unavailable();
+      destination = new URL(`${issuer}/protocol/openid-connect/logout`);
+      destination.searchParams.set('client_id', clientId);
+      destination.searchParams.set('post_logout_redirect_uri', login.href);
+    }
+    const response = mark(NextResponse.redirect(destination));
+    for (const cookie of request.cookies.getAll()) {
+      if (/^(?:(?:__Secure-|__Host-))?next-auth\./.test(cookie.name))
+        response.cookies.set(cookie.name, '', {
+          maxAge: 0,
+          path: '/',
+          httpOnly: true,
+          sameSite: 'lax',
+          secure: cookie.name.startsWith('__'),
+        });
+    }
+    return response;
+  } catch {
+    return unavailable();
   }
-  return res;
 }

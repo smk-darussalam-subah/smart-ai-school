@@ -26,6 +26,8 @@ import {
 } from '@/components/ui/table';
 import { ImportRowEditor, type ImportField } from '@/components/import/ImportRowEditor';
 import { provisionStudentsBulkAction } from '../actions';
+import TemporaryCredentialExports from '@/components/TemporaryCredentialExports';
+import type { TemporaryCredential } from '@/lib/temporary-credentials';
 import {
   STUDENT_IMPORT_MAX_ROWS,
   escapeCsvReportCell,
@@ -59,7 +61,7 @@ interface BulkRowResult {
   status: 'ok' | 'error';
   error?: string;
   user?: { fullName: string; email: string };
-  tempCredentials?: Array<{ username: string; tempPassword: string }>;
+  tempCredentials?: TemporaryCredential[];
 }
 
 interface RowResult extends BulkRowResult {
@@ -291,28 +293,6 @@ export default function StudentImportDialog({
     downloadImportBlob(blob, 'hasil-import-siswa.csv');
   };
 
-  const exportCredentials = () => {
-    const header = 'row,nis,namaSiswa,username,tempPassword';
-    const lines = results.flatMap((result) => {
-      const raw = parsed[result.sourceIndex]?.raw ?? {};
-      return (result.tempCredentials ?? []).map((credential) =>
-        [
-          String(parsed[result.sourceIndex]?.sourceRow ?? ''),
-          raw.nis ?? '',
-          raw.namaSiswa ?? '',
-          credential.username,
-          credential.tempPassword,
-        ]
-          .map((cell) => escapeCsvReportCell(String(cell)))
-          .join(','),
-      );
-    });
-    const blob = new Blob([[header, ...lines].join('\n'), '\n'], {
-      type: 'text/csv;charset=utf-8;',
-    });
-    downloadImportBlob(blob, 'kredensial-import-siswa.csv');
-  };
-
   return (
     <Dialog
       open={open}
@@ -447,16 +427,9 @@ export default function StudentImportDialog({
                 Export Hasil
               </Button>
             )}
-            {results.some((result) => (result.tempCredentials ?? []).length > 0) && (
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-2"
-                onClick={exportCredentials}
-              >
-                <Download className="h-4 w-4" />
-                Export Kredensial
-              </Button>
-            )}
+            <TemporaryCredentialExports
+              credentials={results.flatMap((result) => result.tempCredentials ?? [])}
+            />
             <Button
               variant="ghost"
               className="min-h-11 w-full justify-start gap-2"

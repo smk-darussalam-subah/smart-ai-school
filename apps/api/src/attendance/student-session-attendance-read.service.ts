@@ -6,6 +6,8 @@ import { PermissionsService } from '../permissions/permissions.service';
 import { resolveClassSessionReadScope } from '../class-sessions/class-session-read-scope';
 import type { SessionAttendanceReadQuery } from './student-session-attendance.dto';
 import { sessionJpSlots } from './student-session-attendance.math';
+import type { SessionAttendanceOverviewQuery } from './student-session-attendance.dto';
+import { readSessionAttendanceOverview } from './session-attendance-overview';
 
 /** Read-only audit: use the recap's exact session scope, never the teacher's write authority. */
 @Injectable()
@@ -14,6 +16,24 @@ export class StudentSessionAttendanceReadService {
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
   ) {}
+
+  async overview(query: SessionAttendanceOverviewQuery, user: AuthUser) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        if (
+          !(await this.permissions.hasFreshPermission(
+            user.keycloakId,
+            'academic.attendance.read',
+            tx,
+          ))
+        )
+          throw new ForbiddenException('Izin membaca kehadiran tidak tersedia.');
+        const access = await resolveClassSessionReadScope(tx, this.permissions, user, query);
+        return readSessionAttendanceOverview(tx, query, access.where);
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 20000 },
+    );
+  }
 
   async read(id: string, query: SessionAttendanceReadQuery, user: AuthUser) {
     return this.prisma.$transaction(

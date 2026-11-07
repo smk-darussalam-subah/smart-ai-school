@@ -11,6 +11,9 @@ export const ListWaLogSchema = z.object({
 });
 export type ListWaLogDto = z.infer<typeof ListWaLogSchema>;
 
+/** Parent dashboard asks for the latest messages, not unbounded audit history. */
+export const ListStudentWaLogSchema = ListWaLogSchema.pick({ limit: true }).strict();
+
 export const LogWaNotificationSchema = z.object({
   studentId: z.string().uuid().optional(),
   parentId: z.string().uuid().optional(),

@@ -2,11 +2,11 @@
 
 import { useSession } from 'next-auth/react';
 import { useEffect, useRef } from 'react';
-import { recordLoginEventAction } from '@/app/dashboard/actions';
+import { postSessionActivity } from '@/lib/session-activity-client';
 
 /**
  * LoginEventRecorder — fires a login event once per authenticated session.
- * Placed in dashboard layout. Uses server action for full request context (IP, UA).
+ * The JSON endpoint captures request context (IP, UA) without an RSC update.
  */
 export function LoginEventRecorder() {
   const { status } = useSession();
@@ -15,7 +15,7 @@ export function LoginEventRecorder() {
   useEffect(() => {
     if (status === 'authenticated' && !recorded.current) {
       recorded.current = true;
-      recordLoginEventAction(); // fire-and-forget
+      void postSessionActivity('login'); // fire-and-forget
     }
   }, [status]);
 

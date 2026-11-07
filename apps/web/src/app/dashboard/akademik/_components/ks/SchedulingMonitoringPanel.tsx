@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, RefreshCw, Download, Printer, Search, Info } from 'lucide-react';
 import { fetchMonitoringKbm } from '../../actions';
+import AttendanceJpSummary from '../AttendanceJpSummary';
 import {
   MonitoringSchema,
   monitoringSummary,
@@ -154,6 +155,10 @@ export default function SchedulingMonitoringPanel({
   );
   return (
     <section className="space-y-4" aria-busy={busy}>
+      <AttendanceJpSummary
+        query={{ academicYear, semester, teacherId, subject }}
+        refreshToken={revision}
+      />
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-lg font-bold text-emerald-950">

@@ -1,4 +1,5 @@
 'use client';
+import React from 'react';
 
 // =============================================================================
 // Primitif UI Dasbor Eksekutif — Card, Badge kejujuran data, label seksi,
@@ -28,9 +29,9 @@ export const LINE_COLORS = ['#059669', '#0284c7', '#d97706', '#7c3aed', '#e11d48
 export type DataLevel = 'real' | 'soon' | 'vision';
 
 const BADGE_STYLE: Record<DataLevel, string> = {
-  real: 'bg-emerald-50 text-emerald-700',
-  soon: 'bg-amber-100 text-amber-700',
-  vision: 'bg-slate-100 text-slate-500',
+  real: 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200',
+  soon: 'bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
+  vision: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
 };
 const BADGE_LABEL: Record<DataLevel, string> = {
   real: 'Nyata',
@@ -40,7 +41,7 @@ const BADGE_LABEL: Record<DataLevel, string> = {
 
 export function Badge({ level }: { level: DataLevel }) {
   return (
-    <span className={clsx('rounded-md px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide', BADGE_STYLE[level])}>
+    <span className={clsx('rounded px-2 py-1 text-xs font-semibold', BADGE_STYLE[level])}>
       {BADGE_LABEL[level]}
     </span>
   );
@@ -56,24 +57,42 @@ interface CardProps {
   children: React.ReactNode;
 }
 
-export function Card({ title, subtitle, icon: Icon, level, className, right, children }: CardProps) {
+export function Card({
+  title,
+  subtitle,
+  icon: Icon,
+  level,
+  className,
+  right,
+  children,
+}: CardProps) {
   return (
-    <div
+    <section
+      aria-label={title}
       className={clsx(
-        'relative overflow-hidden rounded-2xl border border-[#e3ece8] bg-white p-4 shadow-[0_1px_2px_rgba(16,40,33,.04),0_8px_24px_-12px_rgba(16,40,33,.12)]',
+        'relative min-w-0 rounded-2xl border border-[#e3ece8] bg-white p-4 text-slate-900 shadow-[0_1px_2px_rgba(16,40,33,.04),0_8px_24px_-12px_rgba(16,40,33,.12)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:shadow-none',
         className,
       )}
     >
       {(title || level || right) && (
-        <div className="mb-3 flex items-start justify-between gap-2">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             {title && (
-              <h3 className="flex items-center gap-2 text-[13.5px] font-bold tracking-tight text-[#0f2e25]">
-                {Icon && <Icon className="h-[17px] w-[17px] text-emerald-600" />}
+              <h3 className="flex items-start gap-2 text-sm font-bold text-[#0f2e25] dark:text-slate-100">
+                {Icon && (
+                  <Icon
+                    className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400"
+                    aria-hidden="true"
+                  />
+                )}
                 {title}
               </h3>
             )}
-            {subtitle && <p className="mt-0.5 text-[11.5px] font-medium text-[#6b8079]">{subtitle}</p>}
+            {subtitle && (
+              <p className="mt-1 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                {subtitle}
+              </p>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {right}
@@ -82,24 +101,36 @@ export function Card({ title, subtitle, icon: Icon, level, className, right, chi
         </div>
       )}
       {children}
-    </div>
+    </section>
   );
 }
 
-export function SectionLabel({ icon: Icon, children }: { icon: LucideIcon; children: React.ReactNode }) {
+export function SectionLabel({
+  icon: Icon,
+  children,
+}: {
+  icon: LucideIcon;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="col-span-12 mt-2 flex items-center gap-2.5 text-[11.5px] font-extrabold uppercase tracking-wider text-emerald-700">
-      <Icon className="h-4 w-4" />
+    <h2 className="col-span-12 mt-3 flex items-center gap-2.5 text-sm font-bold uppercase text-emerald-800 dark:text-emerald-200">
+      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       {children}
-      <span className="ml-1 h-px flex-1 bg-gradient-to-r from-emerald-200 to-transparent" />
-    </div>
+      <span
+        className="ml-1 h-px min-w-4 flex-1 bg-emerald-100 dark:bg-emerald-900"
+        aria-hidden="true"
+      />
+    </h2>
   );
 }
 
 /** Empty-state jujur di dalam kartu. */
 export function EmptyState({ label = 'Belum ada data' }: { label?: string }) {
   return (
-    <div className="flex h-24 items-center justify-center rounded-xl bg-[#f4f7f5] text-[12px] font-medium text-[#9bb0a8]">
+    <div
+      role="status"
+      className="flex min-h-28 items-center justify-center rounded-lg bg-[#f4f7f5] px-3 py-6 text-center text-sm leading-relaxed text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+    >
       {label}
     </div>
   );
@@ -107,7 +138,8 @@ export function EmptyState({ label = 'Belum ada data' }: { label?: string }) {
 
 /** Buat fungsi skala Y untuk SVG (nilai → koordinat). */
 export function yScale(min: number, max: number, height: number, pad: number) {
-  return (v: number) => height - pad - ((Math.max(min, Math.min(max, v)) - min) / (max - min)) * (height - 2 * pad);
+  return (v: number) =>
+    height - pad - ((Math.max(min, Math.min(max, v)) - min) / (max - min)) * (height - 2 * pad);
 }
 
 export function fmtRupiah(amount: number): string {

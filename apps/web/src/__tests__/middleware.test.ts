@@ -47,6 +47,8 @@ beforeEach(() => {
 
 function makeRequest(pathname: string) {
   return {
+    method: 'GET',
+    cookies: { get: () => undefined },
     nextUrl: { pathname },
     headers: new Headers(),
     url: `http://localhost:3000${pathname}`,

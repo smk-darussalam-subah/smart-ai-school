@@ -9,7 +9,7 @@
 
 ## 1. Gambaran Umum
 
-DIIS (Digital Integrated Information System) adalah sistem manajemen sekolah terintegrasi berbasis cloud yang dibangun di atas arsitektur microservice-lite dengan monorepo Turborepo. Sistem terdiri dari 14 Docker service yang berjalan dalam satu VPS, di-proxy oleh Nginx sebagai satu-satunya titik masuk publik.
+DIIS (Digital Integrated Information System) adalah sistem manajemen sekolah terintegrasi berbasis cloud yang dibangun di atas arsitektur microservice-lite dengan monorepo Turborepo. Layanan berjalan dalam satu VPS, di-proxy oleh Nginx sebagai satu-satunya titik masuk publik. Analitik menggunakan dashboard dan API native DIIS; Metabase dipensiunkan pada 27 Oktober 2026.
 
 ```
 Internet (HTTPS)
@@ -44,7 +44,7 @@ Internet (HTTPS)
 
 ---
 
-## 2. 14 Docker Services
+## 2. Layanan Docker utama
 
 | # | Service | Image | Container | Port Internal | Fungsi |
 |---|---------|-------|-----------|--------------|--------|
@@ -55,13 +55,12 @@ Internet (HTTPS)
 | 5 | **web** | Custom (Next.js) | smk-web | 3000 | Frontend — Next.js 15 + React 19 |
 | 6 | **n8n** | n8nio/n8n:latest | smk-n8n | 5678 | Automation workflow engine |
 | 7 | **ollama** | ollama/ollama:latest | smk-ollama | 11434 | AI lokal — LLM inference (data sensitif tidak keluar) |
-| 8 | **metabase** | metabase/metabase:v0.49.10 | smk-metabase | 3000 | Analytics dashboard |
-| 9 | **minio** | minio/minio:latest | smk-minio | 9000/9001 | File storage (backup, dokumen) |
-| 10 | **uptime-kuma** | louislam/uptime-kuma:1 | smk-uptime-kuma | 3001 | Status page & uptime monitoring |
-| 11 | **prometheus** | prom/prometheus:latest | smk-prometheus | 9090 | Metrics collector |
-| 12 | **grafana** | grafana/grafana:latest | smk-grafana | 3000 | Metrics visualization dashboard |
-| 13 | **pg-backup** | postgres:16-alpine | smk-pg-backup | — | Cron backup PostgreSQL → MinIO (02:00 WIB) |
-| 14 | **nginx** | nginx:alpine | smk-nginx | 80 | Reverse proxy, rate limit, security headers |
+| 8 | **minio** | minio/minio:latest | smk-minio | 9000/9001 | File storage (backup, dokumen) |
+| 9 | **uptime-kuma** | louislam/uptime-kuma:1 | smk-uptime-kuma | 3001 | Status page & uptime monitoring |
+| 10 | **prometheus** | prom/prometheus:latest | smk-prometheus | 9090 | Metrics collector |
+| 11 | **grafana** | grafana/grafana:latest | smk-grafana | 3000 | Metrics visualization dashboard |
+| 12 | **pg-backup** | postgres:16-alpine | smk-pg-backup | — | Cron backup PostgreSQL → MinIO (02:00 WIB) |
+| 13 | **nginx** | nginx:alpine | smk-nginx | 80 | Reverse proxy, rate limit, security headers |
 
 > **Catatan:** Port internal hanya aksesibel via `smk-network` Docker bridge. Tidak ada port yang di-expose ke host kecuali Nginx (80) dan Keycloak (8080 — untuk admin setup awal).
 
@@ -86,17 +85,17 @@ Internet (HTTPS)
               └────────┬─────────┘
                        │
           ─────────────── smk-network (Docker bridge) ───────────────
-          │              │              │              │             │
-    ┌─────▼────┐  ┌──────▼────┐  ┌─────▼────┐  ┌────▼─────┐ ┌────▼──────┐
-    │  web     │  │   api     │  │ keycloak │  │  n8n     │ │ metabase  │
-    │ :3000    │  │  :3001    │  │  :8080   │  │  :5678   │ │   :3000   │
-    └──────────┘  └──────────┘  └──────────┘  └──────────┘ └───────────┘
+          │              │              │              │
+    ┌─────▼────┐  ┌──────▼────┐  ┌─────▼────┐  ┌────▼─────┐
+    │  web     │  │   api     │  │ keycloak │  │  n8n     │
+    │ :3000    │  │  :3001    │  │  :8080   │  │  :5678   │
+    └──────────┘  └──────────┘  └──────────┘  └──────────┘
                         │              │
                   ┌─────▼──────────────▼──────────────────────┐
                   │              postgres:5432                  │
                   │         (pgvector/pgvector:pg16)            │
                   │   Schemas: public, keycloak, n8n,           │
-                  │   metabase, auth, diis_*                    │
+                  │   auth, academic, student, teacher, ...     │
                   └─────────────────────────────────────────────┘
 ```
 
@@ -108,7 +107,7 @@ Internet (HTTPS)
 | `api.smkdarussalamsubah.sch.id` | api:3001 | REST API (Bearer token) |
 | `auth.smkdarussalamsubah.sch.id` | keycloak:8080 | SSO login, JWKS |
 | `n8n.smkdarussalamsubah.sch.id` | n8n:5678 | Automation (Basic Auth) |
-| `analytics.smkdarussalamsubah.sch.id` | metabase:3000 | Laporan data |
+| `analytics.smkdarussalamsubah.sch.id` | HTTP410 | Portal lama dipensiunkan; gunakan dasbor DIIS |
 | `monitor.smkdarussalamsubah.sch.id` | grafana:3000 | Metrics & alert |
 | `status.smkdarussalamsubah.sch.id` | uptime-kuma:3001 | Status uptime |
 
@@ -149,7 +148,7 @@ Internet (HTTPS)
 - **Image:** `pgvector/pgvector:pg16`
 - **Extension:** pgvector — untuk AI embedding/similarity search
 - **ORM:** Prisma 5 + multi-schema
-- **Schemas:** `public`, `keycloak`, `n8n`, `metabase`, domain schemas
+- **Schemas:** `public`, `keycloak`, `n8n`, domain schemas
 - **Backup:** Otomatis setiap 02:00 WIB via `pg-backup` → MinIO
 
 ### Layer 5 — Cache (Redis 7)
@@ -272,12 +271,12 @@ bukan tabel dokumentasi statis yang mudah tertinggal.
 | Automation | n8n | latest | workflow engine |
 | AI Utama | OpenAI gpt-4.1-mini | managed API | Generate terstruktur dan chat |
 | AI Lokal | Ollama | deployment-managed | Fallback terkontrol dan embedding lokal |
-| Analytics | Metabase | 0.49.10 | self-hosted BI |
+| Analytics | API DIIS + grafik native | — | Dasbor Eksekutif |
 | File Storage | MinIO | latest | S3-compatible |
 | Monitoring | Prometheus + Grafana | latest | metrics + dashboard |
 | Uptime | Uptime Kuma | 1.x | status page |
 | Reverse Proxy | Nginx | alpine | satu-satunya public port |
-| Containers | Docker Compose | v2 | 14 services |
+| Containers | Docker Compose | v2+ | Layanan inti dan profile operasional |
 | CI/CD | GitHub Actions | — | ci.yml + deploy.yml |
 | Monorepo | Turborepo | 2.x | + npm workspaces |
 | Validation | Zod | 3.x | BUKAN class-validator |

@@ -1,7 +1,7 @@
 'use client';
 import React from 'react';
 
-import { Calendar, BarChart3, MessageCircle } from 'lucide-react';
+import { Calendar, BarChart3, Info, MessageCircle } from 'lucide-react';
 import type { OrtuScreen, ModalState } from './OrtuWorkspace';
 import type { AttendanceCellStatus } from '@/lib/academic';
 import type { AttendanceItem } from '@/lib/api';
@@ -76,17 +76,20 @@ function statusText(status: AttendanceCellStatus): string {
 function waIcon(status: string): string {
   if (status === 'izin') return 'mail';
   if (status === 'sakit') return 'thermometer';
-  return 'alert-triangle';
+  if (status === 'alpha') return 'alert-triangle';
+  return 'info';
 }
 function waColor(status: string): string {
   if (status === 'izin') return 'var(--sky)';
   if (status === 'sakit') return 'var(--amber)';
-  return 'var(--rose)';
+  if (status === 'alpha') return 'var(--rose)';
+  return 'var(--muted)';
 }
 function waBg(status: string): string {
   if (status === 'izin') return 'rgba(14,165,233,.15)';
   if (status === 'sakit') return 'rgba(245,158,11,.15)';
-  return 'rgba(239,68,68,.15)';
+  if (status === 'alpha') return 'rgba(239,68,68,.15)';
+  return 'var(--bg2)';
 }
 
 export function DailyKehadiranOrtu({
@@ -345,7 +348,7 @@ export function DailyKehadiranOrtu({
         </div>
         {waHistory.length === 0 ? (
           <div className="py-6 text-center text-[12px] font-semibold text-[var(--dim)]">
-            Tidak ada notifikasi absence
+            Belum ada notifikasi
           </div>
         ) : (
           waHistory.map((w, i) => {
@@ -364,6 +367,9 @@ export function DailyKehadiranOrtu({
                   {ic === 'mail' && <span style={{ color: icC }}>✉</span>}
                   {ic === 'thermometer' && <span style={{ color: icC }}>🌡</span>}
                   {ic === 'alert-triangle' && <span style={{ color: icC }}>⚠</span>}
+                  {ic === 'info' && (
+                    <Info className="h-4 w-4" style={{ color: icC }} aria-hidden="true" />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <b className="block text-[12px]">
@@ -377,7 +383,7 @@ export function DailyKehadiranOrtu({
                   className="rounded-md px-1.5 py-0.5 text-[9px] font-extrabold"
                   style={{ background: bgC, color: icC }}
                 >
-                  {w.status}
+                  {w.status === 'info' ? 'Informasi' : w.status}
                 </span>
               </div>
             );

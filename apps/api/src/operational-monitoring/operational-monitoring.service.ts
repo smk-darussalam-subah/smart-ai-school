@@ -8,6 +8,8 @@ import {
 } from '../display-devices/display-device.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DisplayPlaybackLeaseService } from './display-playback-lease.service';
+import { StaffAttendanceService } from '../staff-attendance/staff-attendance.service';
+import { AttendanceQuerySchema } from '../staff-attendance/staff-attendance.dto';
 import {
   lockSessionActivation,
   lockSessionInputs,
@@ -28,12 +30,19 @@ type DisplayAttendancePoint = {
   teacherPresent: number;
   teacherRecorded: number;
   teacherTotal: number;
+  teacherUnknown: number;
 };
 
 type DisplayOperationalProjection = {
   attendance: {
     students: { present: number; recorded: number; total: number };
-    teachers: { present: number; recorded: number; total: number };
+    teachers: {
+      present: number;
+      recorded: number;
+      total: number;
+      unknown: number;
+      notRequired: number;
+    };
     trend: DisplayAttendancePoint[];
   };
   agenda: Array<{
@@ -70,6 +79,7 @@ export class OperationalMonitoringService {
     private readonly devices: DisplayDeviceService,
     private readonly bells: BellScheduleService,
     private readonly playbackLeases: DisplayPlaybackLeaseService,
+    private readonly staffAttendance: StaffAttendanceService,
   ) {}
 
   async privateSnapshot(input: { date?: string; classId?: string; status?: string }) {
@@ -521,69 +531,65 @@ export class OperationalMonitoringService {
     const trendFrom = this.shiftDate(serviceDate, -(DISPLAY_TREND_LOOKBACK_DAYS - 1));
     const agendaUntil = this.shiftDate(serviceDate, DISPLAY_AGENDA_HORIZON_DAYS);
     const audienceRole = profile === 'RUANG_GURU' ? 'GURU' : 'TATA_USAHA';
-    const [studentGroups, teacherGroups, studentTotal, teacherTotal, agenda, announcements] =
-      await Promise.all([
-        this.prisma.attendance.groupBy({
-          by: ['date', 'status'],
-          where: {
-            date: { gte: trendFrom, lte: serviceDate },
-            student: { status: 'active', deletedAt: null, classId: { not: null } },
-          },
-          _count: { _all: true },
-          orderBy: { date: 'asc' },
+    const [studentGroups, teacherReport, studentTotal, agenda, announcements] = await Promise.all([
+      this.prisma.attendance.groupBy({
+        by: ['date', 'status'],
+        where: {
+          date: { gte: trendFrom, lte: serviceDate },
+          student: { status: 'active', deletedAt: null, classId: { not: null } },
+        },
+        _count: { _all: true },
+        orderBy: { date: 'asc' },
+      }),
+      this.staffAttendance.report(
+        AttendanceQuerySchema.parse({
+          from: this.dateOnly(trendFrom),
+          to: date,
+          unit: 'TEACHER',
         }),
-        this.prisma.teacherAttendance.groupBy({
-          by: ['date'],
-          where: {
-            date: { gte: trendFrom, lte: serviceDate },
-            teacher: { deletedAt: null },
-          },
-          _count: { _all: true },
-          orderBy: { date: 'asc' },
-        }),
-        this.prisma.student.count({
-          where: { status: 'active', deletedAt: null, classId: { not: null } },
-        }),
-        this.prisma.teacher.count({ where: { deletedAt: null } }),
-        this.prisma.academicCalendar.findMany({
-          where: {
-            academicYear: { isActive: true },
-            endDate: { gte: serviceDate },
-            startDate: { lte: agendaUntil },
-          },
-          select: { id: true, name: true, startDate: true, endDate: true, type: true },
-          orderBy: [{ startDate: 'asc' }, { name: 'asc' }],
-          take: 6,
-        }),
-        this.prisma.announcement.findMany({
-          where: {
-            status: 'published',
-            OR: [
-              { audience: { array_contains: ['ALL'] } },
-              { audience: { array_contains: [audienceRole] } },
-            ],
-            AND: [
-              { OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }] },
-              { OR: [{ isPinned: true }, { priority: { in: ['penting', 'urgent'] } }] },
-            ],
-          },
-          select: {
-            id: true,
-            title: true,
-            priority: true,
-            isPinned: true,
-            publishedAt: true,
-            scheduledAt: true,
-            createdAt: true,
-          },
-          orderBy: [
-            { isPinned: 'desc' },
-            { publishedAt: { sort: 'desc', nulls: 'last' } },
-            { createdAt: 'desc' },
+      ),
+      this.prisma.student.count({
+        where: { status: 'active', deletedAt: null, classId: { not: null } },
+      }),
+      this.prisma.academicCalendar.findMany({
+        where: {
+          academicYear: { isActive: true },
+          endDate: { gte: serviceDate },
+          startDate: { lte: agendaUntil },
+        },
+        select: { id: true, name: true, startDate: true, endDate: true, type: true },
+        orderBy: [{ startDate: 'asc' }, { name: 'asc' }],
+        take: 6,
+      }),
+      this.prisma.announcement.findMany({
+        where: {
+          status: 'published',
+          OR: [
+            { audience: { array_contains: ['ALL'] } },
+            { audience: { array_contains: [audienceRole] } },
           ],
-          take: 6,
-        }),
-      ]);
+          AND: [
+            { OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }] },
+            { OR: [{ isPinned: true }, { priority: { in: ['penting', 'urgent'] } }] },
+          ],
+        },
+        select: {
+          id: true,
+          title: true,
+          priority: true,
+          isPinned: true,
+          publishedAt: true,
+          scheduledAt: true,
+          createdAt: true,
+        },
+        orderBy: [
+          { isPinned: 'desc' },
+          { publishedAt: { sort: 'desc', nulls: 'last' } },
+          { createdAt: 'desc' },
+        ],
+        take: 6,
+      }),
+    ]);
 
     const points = new Map<
       string,
@@ -606,16 +612,16 @@ export class OperationalMonitoringService {
       if (group.status === 'hadir') point.studentPresent += group._count._all;
       points.set(key, point);
     }
-    for (const group of teacherGroups) {
-      const key = this.dateOnly(group.date);
+    for (const group of teacherReport.teacherDays) {
+      const key = group.date;
       const point = points.get(key) ?? {
         studentPresent: 0,
         studentRecorded: 0,
         teacherPresent: 0,
         teacherRecorded: 0,
       };
-      point.teacherPresent = group._count._all;
-      point.teacherRecorded = group._count._all;
+      point.teacherPresent = group.presentRequired;
+      point.teacherRecorded = group.presentRequired;
       points.set(key, point);
     }
 
@@ -626,7 +632,10 @@ export class OperationalMonitoringService {
         date: pointDate,
         ...point,
         studentTotal,
-        teacherTotal,
+        teacherTotal:
+          teacherReport.teacherDays.find((day) => day.date === pointDate)?.dueRequired ?? 0,
+        teacherUnknown:
+          teacherReport.teacherDays.find((day) => day.date === pointDate)?.unknown ?? 0,
       }));
     const today = points.get(date);
     const operations = profile === 'RUANG_TU' ? await this.tuOperations() : [];
@@ -640,7 +649,9 @@ export class OperationalMonitoringService {
         teachers: {
           present: today?.teacherPresent ?? 0,
           recorded: today?.teacherRecorded ?? 0,
-          total: teacherTotal,
+          total: teacherReport.teacherDays.find((day) => day.date === date)?.dueRequired ?? 0,
+          unknown: teacherReport.teacherDays.find((day) => day.date === date)?.unknown ?? 0,
+          notRequired: teacherReport.teacherDays.find((day) => day.date === date)?.notRequired ?? 0,
         },
         trend,
       },

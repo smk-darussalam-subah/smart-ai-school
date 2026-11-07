@@ -4,13 +4,9 @@
 // getSingleMetric guard mencegah error "already registered" di hot-reload / test.
 // =============================================================================
 
-import { Counter, register } from 'prom-client';
+import { Counter, Gauge, register } from 'prom-client';
 
-function getOrCreateCounter(
-  name: string,
-  help: string,
-  labelNames: string[],
-): Counter<string> {
+function getOrCreateCounter(name: string, help: string, labelNames: string[]): Counter<string> {
   const existing = register.getSingleMetric(name);
   if (existing) return existing as Counter<string>;
   return new Counter({ name, help, labelNames });
@@ -24,4 +20,22 @@ export const httpRequestsTotal = getOrCreateCounter(
   'smk_http_requests_total',
   'Total HTTP requests processed by smk-api',
   ['method'],
+);
+
+function getOrCreateGauge(name: string, help: string): Gauge<string> {
+  return (register.getSingleMetric(name) as Gauge<string> | undefined) ?? new Gauge({ name, help });
+}
+
+export const assessmentWritesActive = getOrCreateGauge(
+  'smk_assessment_writes_active',
+  'Assessment writes admitted before database acquisition',
+);
+export const assessmentWritesWaiting = getOrCreateGauge(
+  'smk_assessment_writes_waiting',
+  'Assessment writes waiting without holding database connections',
+);
+export const assessmentWritesBusy = getOrCreateCounter(
+  'smk_assessment_writes_busy_total',
+  'Assessment writes rejected before execution by bounded admission',
+  [],
 );

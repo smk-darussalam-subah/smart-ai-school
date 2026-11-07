@@ -38,6 +38,8 @@ import {
   RAPOR_LEARNER_COLORS,
 } from '../../akademik/_components/learner-navigation';
 import { generateReports, recoverReport, transitionReport, updateReportNotes } from '../actions';
+import ReportJpLoader from '@/components/academic/shared/ReportJpLoader';
+import { useDialogReturnFocus } from '@/lib/use-dialog-return-focus';
 
 interface SubjectSnapshot {
   subject: string;
@@ -49,13 +51,14 @@ interface SubjectSnapshot {
 }
 export interface ReportItem {
   id: string;
+  studentNameSnapshot?: string | null;
   studentId: string;
   classId: string;
   academicYear: string;
   semester: number;
   status: 'draft' | 'checked' | 'published' | 'distributed';
   grades: SubjectSnapshot[];
-  attendance?: Record<string, number> | null;
+  attendance?: { hadir?: number; izin?: number; sakit?: number; alpha?: number; jp?: unknown; jpAvailable?: boolean } | null;
   notes?: string | null;
   generatedAt: string;
   updatedAt: string;
@@ -469,7 +472,7 @@ function LearnerReportCard({ report, onDetail }: { report: ReportItem; onDetail:
       <div className="grid gap-0 border-b border-[var(--border)] sm:grid-cols-4">
         <SummaryCell icon={GraduationCap} label="Rata-rata" value={average === null ? '-' : String(average)} />
         <SummaryCell icon={ClipboardCheck} label="Mapel" value={String(report.grades.length)} />
-        <SummaryCell icon={UserRound} label="Hadir" value={String(attendance.hadir ?? 0)} />
+        <SummaryCell icon={UserRound} label="Hadir (hari)" value={String(attendance.hadir ?? 0)} />
         <SummaryCell icon={CalendarDays} label="Dibagikan" value={formatDate(report.distributedAt)} />
       </div>
 
@@ -617,16 +620,18 @@ function ReportDetail({ report, pending, learnerShell, onClose, run }: {
   report: ReportItem | null; pending: boolean; learnerShell?: 'student' | 'parent' | null; onClose: () => void;
   run: (action: () => Promise<{ success: boolean; error?: string }>, onSuccess?: () => void) => void;
 }) {
+  const returnFocus = useDialogReturnFocus();
   const [notes, setNotes] = useState('');
   useEffect(() => { if (report) setNotes(report.notes ?? ''); }, [report]);
   const attendance = report?.attendance;
   const shellClass = learnerShell ? (learnerShell === 'parent' ? 'ortu-app' : 'siswa-app') : '';
-  const dialogTone = learnerShell ? 'border-[var(--border)] bg-[var(--bg2)] text-[var(--text)]' : '';
+  const dialogTone = learnerShell ? 'border-[var(--border)] bg-[var(--bg2)] text-[var(--text)] [&_.text-muted-foreground]:text-[var(--muted)]' : 'bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:[&_.text-muted-foreground]:text-slate-300';
   return <Dialog open={!!report} onOpenChange={(open: boolean) => !open && onClose()}>
-    <DialogContent className={`${shellClass} max-h-[92vh] overflow-y-auto sm:max-w-3xl ${dialogTone} [&>button]:flex [&>button]:h-11 [&>button]:w-11 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-xl`}>
-      <DialogHeader><DialogTitle>Rapor {report?.student.user.fullName}</DialogTitle><DialogDescription>{report?.class.name} | {report?.academicYear} Semester {report?.semester}</DialogDescription></DialogHeader>
+    <DialogContent {...returnFocus} className={`${shellClass} max-h-[92vh] overflow-y-auto sm:max-w-3xl ${dialogTone} [&>button]:flex [&>button]:h-11 [&>button]:w-11 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-xl`}>
+      <DialogHeader className="pr-8"><DialogTitle>Rapor {report?.student.user.fullName}</DialogTitle><DialogDescription className={learnerShell ? 'text-[var(--text)]' : 'text-slate-600 dark:text-slate-300'}>{report?.class.name} | {report?.academicYear} Semester {report?.semester}</DialogDescription></DialogHeader>
       {report && report.grades.length > 0 ? <div className="overflow-x-auto rounded border"><Table><TableHeader><TableRow><TableHead>Mata pelajaran</TableHead><TableHead className="text-right">Nilai akhir</TableHead><TableHead>KKTP snapshot</TableHead><TableHead>Komponen</TableHead></TableRow></TableHeader><TableBody>{report.grades.map((grade) => <TableRow key={grade.subject}><TableCell>{grade.subject}</TableCell><TableCell className="text-right font-semibold">{grade.average}</TableCell><TableCell className="text-xs">{typeof grade.kktp === 'number' ? `${grade.kktp} · ${kktpProvenanceLabel(grade.kktpProvenance)}` : 'Belum tersedia'}</TableCell><TableCell className="text-xs text-muted-foreground">{Object.entries(grade.byType).map(([type, value]) => `${type.toUpperCase()}: ${value}`).join(' | ')}</TableCell></TableRow>)}</TableBody></Table></div> : <p className="text-sm text-muted-foreground">Belum ada nilai pada snapshot ini.</p>}
-      {attendance && <p className="text-sm">Kehadiran: <b>{attendance.hadir ?? 0}</b> hadir | {attendance.izin ?? 0} izin | {attendance.sakit ?? 0} sakit | {attendance.alpha ?? 0} alpa</p>}
+      {attendance && <p className="text-sm">Catatan harian (hari): <b>{attendance.hadir ?? 0}</b> hadir | {attendance.izin ?? 0} izin | {attendance.sakit ?? 0} sakit | {attendance.alpha ?? 0} alpa</p>}
+      {report && <ReportJpLoader key={report.id} report={report} value={attendance?.jp} available={attendance?.jpAvailable} studentName={report.studentNameSnapshot ?? report.student.user.fullName} />}
       {report?.canManageDraft && report.status === 'draft' ? <div className="space-y-2"><Label htmlFor="report-notes">Catatan wali kelas</Label><Textarea id="report-notes" rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} /><Button size="sm" disabled={pending} onClick={() => run(() => updateReportNotes(report.id, notes.trim() || null, report.updatedAt), onClose)}>Simpan catatan</Button></div> : report?.notes ? <p className="rounded border bg-muted/30 p-3 text-sm"><b>Catatan wali kelas:</b> {report.notes}</p> : null}
       {report?.returnReason && <p className="rounded border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><b>Alasan pengembalian terakhir:</b> {report.returnReason}</p>}
       {report && <div className="border-t pt-3 text-xs text-muted-foreground"><p>Diperiksa oleh: {report.checkedByName ?? '-'}</p>{report.returnedAt && <p>Dikembalikan oleh: {report.returnedByName ?? '-'}</p>}<p>Diterbitkan oleh: {report.publishedByName ?? '-'}</p><p>Didistribusikan oleh: {report.distributedByName ?? '-'}</p></div>}

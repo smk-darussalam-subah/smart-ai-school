@@ -5,6 +5,7 @@
 // =============================================================================
 
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
@@ -13,7 +14,7 @@ import { AuthUser } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { PrismaService } from '../prisma/prisma.service';
 import { isElevated, resolveSiswaId, resolveUserId } from '../common/helpers/role-helpers';
-import { ListWaLogDto, LogWaNotificationDto } from './dto/wa-log.dto';
+import { ListStudentWaLogSchema, ListWaLogDto, LogWaNotificationDto } from './dto/wa-log.dto';
 
 const WA_LOG_SELECT = {
   id: true,
@@ -69,7 +70,9 @@ export class WaLogService {
   }
 
   /** ORANG_TUA: list child WA logs (with ownership check) */
-  async findStudentLogs(studentId: string, user: AuthUser) {
+  async findStudentLogs(studentId: string, user: AuthUser, limit = 20) {
+    const query = ListStudentWaLogSchema.safeParse({ limit });
+    if (!query.success) throw new BadRequestException('Jumlah pesan harus antara 1 dan 100.');
     if (!user.roles.includes('ORANG_TUA') && !isElevated(user)) {
       throw new ForbiddenException('Akses ditolak');
     }
@@ -87,7 +90,8 @@ export class WaLogService {
 
     return this.prisma.waLog.findMany({
       where: { studentId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.data.limit,
       select: WA_LOG_SELECT,
     });
   }

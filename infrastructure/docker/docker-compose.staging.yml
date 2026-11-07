@@ -186,9 +186,6 @@ services:
       # API_URL internal → container name smk-staging-api (reachable via smk-staging-net)
       API_URL: http://smk-staging-api:3001
       HOSTNAME: "0.0.0.0"
-      METABASE_SITE_URL: ${METABASE_SITE_URL}
-      METABASE_SECRET_KEY: ${METABASE_SECRET_KEY}
-      METABASE_DASHBOARD_ID: ${METABASE_DASHBOARD_ID}
     ports:
       - "3100:3000"
     networks: !override

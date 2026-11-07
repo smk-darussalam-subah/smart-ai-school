@@ -32,7 +32,7 @@ export interface DataRefreshIndicatorProps {
   /** Manually trigger a refresh. */
   onRefresh: () => void;
   /** Seconds remaining until the next auto-refresh. */
-  countdown: number;
+  countdown?: number;
   /** Optional className for the wrapper. */
   className?: string;
 }
@@ -51,7 +51,7 @@ export function DataRefreshIndicator({
     : 'Belum diperbarui';
 
   // When countdown < 5 seconds, show nothing (avoid anxiety)
-  const isNearRefresh = countdown > 0 && countdown < 5;
+  const isNearRefresh = countdown !== undefined && countdown > 0 && countdown < 5;
 
   return (
     <div
@@ -67,17 +67,23 @@ export function DataRefreshIndicator({
     >
       {/* Left: timestamp + countdown */}
       <div className="flex items-center gap-2 min-w-0">
-        <Clock className="h-3 w-3 shrink-0 text-[var(--muted)] sm:h-3.5 sm:w-3.5" aria-hidden="true" />
+        <Clock
+          className="h-3 w-3 shrink-0 text-[var(--muted)] sm:h-3.5 sm:w-3.5"
+          aria-hidden="true"
+        />
 
         {/* Desktop: full text */}
         <span className="hidden sm:inline truncate">
           {lastRefreshed ? (
             <>
               Diperbarui{' '}
-              <time dateTime={lastRefreshed.toISOString()} className="font-semibold text-[var(--text)]">
+              <time
+                dateTime={lastRefreshed.toISOString()}
+                className="font-semibold text-[var(--text)]"
+              >
                 {formatTime(lastRefreshed)}
               </time>
-              {!isNearRefresh && (
+              {countdown !== undefined && !isNearRefresh && (
                 <span className="ml-1 text-[var(--muted)]">
                   · berikutnya {formatCountdown(countdown)}
                 </span>
@@ -91,7 +97,10 @@ export function DataRefreshIndicator({
         {/* Mobile: compact — timestamp only, no countdown text */}
         <span className="sm:hidden truncate" title={timeLabel}>
           {lastRefreshed ? (
-            <time dateTime={lastRefreshed.toISOString()} className="font-semibold text-[var(--text)]">
+            <time
+              dateTime={lastRefreshed.toISOString()}
+              className="font-semibold text-[var(--text)]"
+            >
               {formatTime(lastRefreshed)}
             </time>
           ) : (

@@ -1,3 +1,8 @@
+// Business-contract tests already stub the auth boundary; writable-cookie
+// behavior is exercised separately in action-session tests and real Next HTTP.
+jest.mock('@/lib/action-session', () => ({
+  getActionSession: (...args: unknown[]) => jest.requireMock('next-auth').getServerSession(...args),
+}));
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { GradeItem } from '@/lib/api';
@@ -18,7 +23,10 @@ jest.mock('next-auth', () => ({ getServerSession: mockSession }));
 jest.mock('@/lib/auth', () => ({ authOptions: {} }));
 jest.mock('@/lib/view-as', () => ({ getActiveViewAs: async () => null }));
 jest.mock('@/lib/dashboard-authority', () => ({ resolveDashboardAuthority: mockAuthority }));
-jest.mock('@/lib/api', () => ({ apiFetch: mockApiFetch, apiFetchResult: mockApiFetchResult }));
+jest.mock('@/lib/api', () => ({
+  apiFetch: (...args: unknown[]) => mockApiFetch(...args),
+  apiFetchResult: (...args: unknown[]) => mockApiFetchResult(...args),
+}));
 jest.mock('@/app/dashboard/akademik/_components/AcademicOperationsWorkspace', () => ({
   __esModule: true,
   default: () => null,

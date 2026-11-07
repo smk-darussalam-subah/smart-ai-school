@@ -5,7 +5,7 @@ import QuestionContent from '@/components/learning/QuestionContent';
 // Displays score distribution, ketuntasan gauge, and per-question item analysis
 // (difficulty index + discrimination index) for a completed assessment session.
 
-import { useState, useTransition, useEffect, useMemo } from 'react';
+import React, { useState, useTransition, useEffect, useMemo } from 'react';
 import {
   TrendingUp, Users, GraduationCap, Activity, BarChart3, Loader2,
   AlertTriangle, Target, ArrowUpDown,
@@ -30,6 +30,8 @@ interface AnalysisData {
     ketuntasanPct: number;
     tuntasCount: number;
     belumTuntasCount: number;
+    kktpValue?: number | null;
+    kktpProvenance?: string;
   };
   scoreDistribution: Array<{ label: string; count: number }>;
   itemAnalysis: Array<{
@@ -98,7 +100,11 @@ export default function SessionAnalysisPanel({ sessionId, refreshVersion = 0 }: 
   }
 
   const s = data.summary;
-  const ketuntasanColor = s.ketuntasanPct >= 75 ? 'text-emerald-600' : s.ketuntasanPct >= 50 ? 'text-amber-600' : 'text-rose-600';
+  const kktp = typeof s.kktpValue === 'number' && Number.isFinite(s.kktpValue) &&
+    s.kktpValue >= 0 && s.kktpValue <= 100 &&
+    ['config', 'module', 'system_default'].includes(s.kktpProvenance ?? '')
+    ? s.kktpValue : null;
+  const ketuntasanColor = kktp === null ? 'text-slate-500' : s.ketuntasanPct >= 75 ? 'text-emerald-600' : s.ketuntasanPct >= 50 ? 'text-amber-600' : 'text-rose-600';
 
   return (
     <div className="space-y-4">
@@ -121,7 +127,7 @@ export default function SessionAnalysisPanel({ sessionId, refreshVersion = 0 }: 
         </div>
         <div className="rounded-xl border border-[#e6efea] p-2.5 text-center">
           <Target className="mx-auto h-3.5 w-3.5 text-amber-500" />
-          <div className={clsx('mt-1 text-[18px] font-extrabold', ketuntasanColor)}>{s.ketuntasanPct}%</div>
+          <div className={clsx('mt-1 text-[18px] font-extrabold', ketuntasanColor)}>{kktp === null ? '—' : `${s.ketuntasanPct}%`}</div>
           <div className="text-[9.5px] font-semibold text-[#6b8079]">Tuntas</div>
         </div>
       </div>
@@ -130,8 +136,8 @@ export default function SessionAnalysisPanel({ sessionId, refreshVersion = 0 }: 
       <div className="flex items-center justify-between rounded-lg bg-[#f4f7f5] px-3 py-2 text-[11px] font-semibold text-[#6b8079]">
         <span>Min: <b className="text-[#0f2e25]">{s.minScore}</b></span>
         <span>Max: <b className="text-[#0f2e25]">{s.maxScore}</b></span>
-        <span className="text-emerald-700">Tuntas: {s.tuntasCount}/{s.totalStudents}</span>
-        <span className="text-rose-600">Belum: {s.belumTuntasCount}/{s.totalStudents}</span>
+        {kktp !== null && <><span className="text-emerald-700">Tuntas: {s.tuntasCount}/{s.totalStudents}</span>
+        <span className="text-rose-600">Belum: {s.belumTuntasCount}/{s.totalStudents}</span></>}
       </div>
 
       {/* Score Distribution Bar Chart */}
@@ -170,9 +176,9 @@ export default function SessionAnalysisPanel({ sessionId, refreshVersion = 0 }: 
             <circle cx="18" cy="18" r="15.5" fill="none" stroke="#e6efea" strokeWidth="4" />
             <circle
               cx="18" cy="18" r="15.5" fill="none"
-              stroke={s.ketuntasanPct >= 75 ? '#10b981' : s.ketuntasanPct >= 50 ? '#f59e0b' : '#ef4444'}
+              stroke={kktp === null ? '#94a3b8' : s.ketuntasanPct >= 75 ? '#10b981' : s.ketuntasanPct >= 50 ? '#f59e0b' : '#ef4444'}
               strokeWidth="4" strokeLinecap="round"
-              strokeDasharray={`${(s.ketuntasanPct / 100) * 97.4} 97.4`}
+              strokeDasharray={`${kktp === null ? 0 : (s.ketuntasanPct / 100) * 97.4} 97.4`}
             />
           </svg>
           <div className="absolute inset-0 flex items-center justify-center">
@@ -182,7 +188,9 @@ export default function SessionAnalysisPanel({ sessionId, refreshVersion = 0 }: 
         <div className="flex-1">
           <div className="text-[13px] font-bold text-[#0f2e25]">Ketuntasan Belajar</div>
           <div className="text-[11px] text-[#6b8079]">
-            {s.ketuntasanPct}% siswa mencapai KKTP (75). {s.tuntasCount} dari {s.totalStudents} siswa tuntas.
+            {kktp === null
+              ? 'Batas ketuntasan belum tersedia.'
+              : `${s.ketuntasanPct}% siswa mencapai KKTP ${kktp}${s.kktpProvenance === 'system_default' ? ' (batas bawaan)' : ''}. ${s.tuntasCount} dari ${s.totalStudents} siswa tuntas.`}
           </div>
         </div>
       </div>

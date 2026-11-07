@@ -70,7 +70,6 @@ export default function HealthClient() {
         <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
           {[
             { label: 'Grafana', url: 'https://monitor.smkdarussalamsubah.sch.id' },
-            { label: 'Metabase', url: 'https://analytics.smkdarussalamsubah.sch.id' },
             { label: 'n8n', url: 'https://n8n.smkdarussalamsubah.sch.id' },
             { label: 'Keycloak Admin', url: 'https://auth.smkdarussalamsubah.sch.id' },
             { label: 'Uptime Kuma', url: 'https://status.smkdarussalamsubah.sch.id' },
