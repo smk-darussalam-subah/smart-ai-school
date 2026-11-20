@@ -91,15 +91,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
         >
           <HeartbeatProvider>
             <LoginEventRecorder />
-            <AppShell
-              viewAs={viewAs}
-              permissions={userPermissions}
-              permError={permError}
-              hideChrome={hideChrome}
-              positionRoles={positionRoles}
-            >
-              {children}
-            </AppShell>
+            {/* Learner pages own their shell. Render the routed boundary directly
+                so hydration can claim its streaming markers without an extra wrapper. */}
+            {hideChrome ? children : (
+              <AppShell
+                viewAs={viewAs}
+                permissions={userPermissions}
+                permError={permError}
+                positionRoles={positionRoles}
+              >
+                {children}
+              </AppShell>
+            )}
           </HeartbeatProvider>
         </AttendanceEngine>
       </BellPatternProvider>

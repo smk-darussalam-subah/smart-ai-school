@@ -116,6 +116,12 @@ const NAV_GROUPS: NavGroup[] = [
         permissions: ['academic.grade.read', 'academic.teaching.read'],
       },
       {
+        label: 'Ujian',
+        href: '/dashboard/ujian',
+        icon: CalendarDays,
+        roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU', 'TATA_USAHA', 'SISWA'],
+      },
+      {
         label: 'Jadwal',
         href: '/dashboard/jadwal',
         icon: CalendarDays,

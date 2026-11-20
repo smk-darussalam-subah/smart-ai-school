@@ -1,4 +1,5 @@
 import DOMPurify from 'dompurify';
+import { MAX_FORMULA_LENGTH } from './question-math';
 
 /** Existing plain text stays plain text; formatted modules share this browser-only policy. */
 export function formatMaterialInput(value: string): string {
@@ -71,6 +72,51 @@ export function sanitizeMaterialHtml(value: string): string {
   });
 }
 
+export function sanitizeQuestionHtml(value: string): string {
+  if (typeof DOMPurify.sanitize !== 'function') return '';
+  const host = document.createElement('div');
+  // DOMPurify returns the permitted document; the checks below narrow the custom attributes.
+  host.innerHTML = DOMPurify.sanitize(formatMaterialInput(value), {
+    ALLOWED_TAGS: [
+      'p', 'br', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'b', 'em', 'i', 'u',
+      's', 'del', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'hr', 'a', 'table',
+      'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'colgroup', 'col', 'span', 'img',
+    ],
+    ALLOWED_ATTR: [
+      'href', 'title', 'colspan', 'rowspan', 'start', 'dir', 'lang', 'alt',
+      'data-diis-latex', 'data-diis-display', 'data-diis-media',
+    ],
+    ALLOW_DATA_ATTR: false,
+    ALLOW_ARIA_ATTR: false,
+    ADD_URI_SAFE_ATTR: ['data-diis-latex', 'data-diis-display', 'data-diis-media', 'dir', 'lang'],
+    ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|#|\/(?![\\/]))/i,
+  });
+  for (const element of host.querySelectorAll('[dir], [lang]')) {
+    const dir = element.getAttribute('dir');
+    const lang = element.getAttribute('lang');
+    if (dir && !['auto', 'rtl', 'ltr'].includes(dir)) element.removeAttribute('dir');
+    if (lang && !['id', 'ar', 'jv-Java'].includes(lang)) element.removeAttribute('lang');
+  }
+  for (const element of host.querySelectorAll('[data-diis-latex], [data-diis-display]')) {
+    const latex = element.getAttribute('data-diis-latex') ?? '';
+    if (element.tagName !== 'SPAN' || !latex.trim() || latex.length > MAX_FORMULA_LENGTH) {
+      element.removeAttribute('data-diis-latex');
+      element.removeAttribute('data-diis-display');
+    } else {
+      element.textContent = latex;
+      if (element.getAttribute('data-diis-display') !== 'true') {
+        element.removeAttribute('data-diis-display');
+      }
+    }
+  }
+  for (const element of host.querySelectorAll('img, [data-diis-media]')) {
+    const media = element.getAttribute('data-diis-media');
+    if (element.tagName !== 'IMG') element.removeAttribute('data-diis-media');
+    else if (!media || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(media)) element.remove();
+  }
+  return host.innerHTML;
+}
+
 export function materialHasText(value: string): boolean {
   return (
     value
@@ -81,6 +127,7 @@ export function materialHasText(value: string): boolean {
 }
 
 export const MATERIAL_STYLE = `
+@font-face{font-family:"DIIS Javanese";src:url("/diis/fonts/noto-sans-javanese.woff2") format("woff2");font-display:swap;unicode-range:U+200C-200D,U+25CC,U+A980-A9DF}
 .diis-material{max-width:70ch;overflow-wrap:anywhere;color:inherit;font-size:1rem;line-height:1.8}
 .diis-material[role=textbox]{max-width:none}
 .diis-material>*+*{margin-top:1rem}.diis-material h1,.diis-material h2{margin-top:1.75rem;font-size:1.35rem;line-height:1.4;font-weight:700}
@@ -93,4 +140,9 @@ export const MATERIAL_STYLE = `
 .diis-material th,.diis-material td{min-width:5rem;border:1px solid var(--material-line,var(--border,#cbd5e1));padding:.65rem .8rem;text-align:start;vertical-align:top}
 .diis-material th{font-weight:700}.diis-material hr{margin:1.5rem 0;border-color:var(--material-line,var(--border,#cbd5e1))}
 .diis-material [contenteditable=true]:focus{outline:none}
+.diis-material [data-diis-display=true]{display:block;max-width:100%;overflow-x:auto}
+.diis-material [data-diis-latex]{direction:ltr;unicode-bidi:isolate}
+.diis-material img[data-diis-media]{display:block;max-width:100%;height:auto;border-radius:.5rem}
+.diis-material [lang=ar],.diis-material [lang=jv-Java]{line-height:2;font-size:1.12em}
+.diis-material [lang=jv-Java]{font-family:"DIIS Javanese","Javanese Text",sans-serif}
 `;

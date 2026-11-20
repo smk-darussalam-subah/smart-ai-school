@@ -3,6 +3,7 @@ import { AnswerMapSchema, QuestionSelectionListSchema } from '../assessment-cont
 
 export const CreateAssessmentSessionSchema = z
   .object({
+    requestId: z.string().uuid().optional(),
     moduleId: z.string().uuid(),
     title: z.string().trim().min(3).max(255),
     type: z.enum(['diagnostik', 'formatif', 'sumatif']),
@@ -158,6 +159,7 @@ export const SubmitResponseSchema = z
     answers: AnswerMapSchema,
     revision: z.number().int().min(0),
     mutationId: z.string().uuid(),
+    deviceId: z.string().uuid().optional(),
     signals: z
       .array(
         z
@@ -198,6 +200,7 @@ export const AutosaveResponseSchema = z
     answers: AnswerMapSchema,
     revision: z.number().int().min(1),
     mutationId: z.string().uuid(),
+    deviceId: z.string().uuid().optional(),
   })
   .strict();
 export type AutosaveResponseDto = z.infer<typeof AutosaveResponseSchema>;
@@ -220,10 +223,16 @@ export const AssessmentRuntimeSignalSchema = z
   .strict();
 export type AssessmentRuntimeSignalDto = z.infer<typeof AssessmentRuntimeSignalSchema>;
 
+const EssayCriteriaScoresSchema = z.record(
+  z.string().min(1).max(80),
+  z.number().finite().min(0).max(100),
+);
+
 export const GradeEssaySchema = z
   .object({
     questionId: z.string().uuid(),
-    criteriaScores: z.record(z.string().min(1).max(80), z.number().finite().min(0).max(100)),
+    criteriaScores: EssayCriteriaScoresSchema,
+    expectedCriteriaScores: EssayCriteriaScoresSchema.nullable().optional(),
   })
   .strict();
 export type GradeEssayDto = z.infer<typeof GradeEssaySchema>;

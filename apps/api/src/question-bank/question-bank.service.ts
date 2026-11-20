@@ -11,6 +11,9 @@ import { AuthUser } from '@smk/auth';
 import { dbQuestionToSnapshot, questionPayloadToData, sanitizeCsvCell } from '../assessment/assessment-runtime';
 import { PrismaService } from '../prisma/prisma.service';
 import { isElevated, resolveTeacherId } from '../common/helpers/role-helpers';
+import { escapeOfficeXml, OfficeRow, previewOfficeQuestions } from './office-question-import';
+import { exportOfficeQuestions, type QuestionExportFormat } from './office-question-export';
+import { listQuestionMediaIds } from './question-media';
 import {
   CreateQuestionDto,
   CreateQuestionSetDto,
@@ -339,6 +342,66 @@ export class QuestionBankService {
   }
 
   async importQuestionsCsv(dto: ImportQuestionsDto, user: AuthUser) {
+    return this.importQuestionRows(dto, user);
+  }
+
+  async previewOffice(subject: string, bytes: Buffer, user: AuthUser) {
+    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+    await this.assertTeacherSubject(teacherId, subject);
+    const result = previewOfficeQuestions(bytes, subject);
+    return {
+      rows: result.rows.map(({ code, question, assets }) => ({
+        code, type: question.type,
+        body: question.body.replace(/^<!--diis-question-html:v1-->/, ''),
+        imageCount: assets.length,
+        answerSummary: question.type === 'essay' ? question.guideAnswer ?? null :
+          question.type === 'matching' ? question.pairs.map(({ prompt, match }) => `${prompt} → ${match}`).join(' | ') :
+          question.type === 'true_false' ? (question.answer ? 'Benar' : 'Salah') :
+          question.options.find(({ id }) => id === question.answer)?.text ?? null,
+      })),
+      errors: result.errors,
+    };
+  }
+
+  async importOffice(subject: string, bytes: Buffer, selected: string[], user: AuthUser) {
+    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+    await this.assertTeacherSubject(teacherId, subject);
+    const decoded = previewOfficeQuestions(bytes, subject);
+    const selectedCodes = new Set(selected);
+    const rows = decoded.rows.filter(({ code }) => selectedCodes.has(code));
+    if (rows.length !== selectedCodes.size || decoded.errors.some(({ code }) => selectedCodes.has(code))) {
+      throw new BadRequestException('Periksa kembali soal yang dipilih dari pratinjau.');
+    }
+    return this.importQuestionRows({
+      subject,
+      batchKey: 'office:' + createHash('sha256').update(subject).update('\0').update(bytes).digest('hex'),
+      rows: rows.map(({ code, question }) => ({ rowKey: code, question })),
+    }, user, new Map(rows.map(({ code, assets }) => [code, assets])));
+  }
+
+  async exportOffice(ids: string[], format: QuestionExportFormat, user: AuthUser) {
+    const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
+    const questions = await this.prisma.question.findMany({
+      where: { teacherId, id: { in: ids } },
+      select: { id: true, subject: true, type: true, body: true, options: true,
+        answer: true, difficulty: true, tags: true, rubric: true },
+    });
+    if (questions.length !== ids.length) throw new NotFoundException('Sebagian soal tidak tersedia.');
+    const mediaIds = [...new Set(questions.flatMap(({ body }) => listQuestionMediaIds(body)))];
+    if (mediaIds.length > 12) throw new BadRequestException('Pilih maksimal 12 gambar per ekspor.');
+    const images = mediaIds.length ? await this.prisma.questionMedia.findMany({
+      where: { teacherId, id: { in: mediaIds } },
+      select: { id: true, bytes: true, contentType: true, width: true, height: true },
+    }) : [];
+    const byId = new Map(questions.map((question) => [question.id, question]));
+    return exportOfficeQuestions(ids.map((id) => byId.get(id)!), images, format);
+  }
+
+  private async importQuestionRows(
+    dto: ImportQuestionsDto,
+    user: AuthUser,
+    media = new Map<string, OfficeRow['assets']>(),
+  ) {
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
     await this.assertTeacherSubject(teacherId, dto.subject);
     const errors: Array<{ row: number; column?: string; message: string }> = [];
@@ -350,10 +413,22 @@ export class QuestionBankService {
         if (row.question.subject !== dto.subject) {
           throw new BadRequestException('Subject baris harus sama dengan subject import');
         }
-        const data = this.questionData(row.question);
-        const fingerprint = this.questionIdentityFingerprint(data);
         await this.prisma.$transaction(async (tx) => {
           await this.lockQuestionImportRow(tx, teacherId, dto.batchKey, row.rowKey);
+          let body = row.question.body;
+          for (const { alt, image } of media.get(row.rowKey) ?? []) {
+            const digest = createHash('sha256').update(image.bytes).digest('hex');
+            const saved = await tx.questionMedia.upsert({
+              where: { teacherId_digest: { teacherId, digest } },
+              update: {},
+              create: { teacherId, digest, ...image },
+              select: { id: true },
+            });
+            body += `<p><img data-diis-media="${saved.id}" alt="${escapeOfficeXml(alt)}"></p>`;
+          }
+          if (body.length > 5_000) throw new BadRequestException('Isi dan media soal terlalu panjang.');
+          const data = this.questionData({ ...row.question, body });
+          const fingerprint = this.questionIdentityFingerprint(data);
           const ledger = await tx.questionImportRow.upsert({
             where: {
               teacherId_batchKey_rowKey: {

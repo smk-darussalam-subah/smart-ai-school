@@ -199,6 +199,13 @@ export class StudentDashboardService {
           where: {
             status: { in: ['active', 'completed'] },
             OR: sessionVisibility,
+            AND: [{ OR: [
+              { examSchedule: { is: null } },
+              { examSchedule: { is: {
+                publishedAt: { not: null }, cancelledAt: null,
+                participants: { some: { studentId: s.id } },
+              } } },
+            ] }],
           },
           orderBy: [{ createdAt: 'desc' }],
           select: {

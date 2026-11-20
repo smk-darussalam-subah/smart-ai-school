@@ -84,7 +84,7 @@ export default function TugasSiswa({
   if (taskState !== 'ready')
     return (
       <div className="space-y-4 px-5 py-4">
-        <h1 className="text-2xl font-extrabold tracking-tight">Tugas</h1>
+        <h1 id="siswa-tugas-heading" tabIndex={-1} className="text-2xl font-extrabold tracking-tight">Tugas</h1>
         <DashboardReadNotice state={taskState} domain="Tugas" onRetry={onRetryTasks} />
       </div>
     );
@@ -107,7 +107,7 @@ export default function TugasSiswa({
     <div>
       {/* Header */}
       <div className="px-5 py-4">
-        <h1 className="text-2xl font-extrabold tracking-tight">Tugas</h1>
+        <h1 id="siswa-tugas-heading" tabIndex={-1} className="text-2xl font-extrabold tracking-tight">Tugas</h1>
         <div className="mt-2 flex items-center gap-2 text-sm text-[var(--muted)]">
           <ClipboardList className="h-4 w-4" />
           <span>
