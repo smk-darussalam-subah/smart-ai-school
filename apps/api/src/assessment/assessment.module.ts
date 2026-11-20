@@ -8,11 +8,13 @@ import { AssessmentController } from './assessment.controller';
 import { RemedialController } from './remedial.controller';
 import { SubmissionController } from './submission.controller';
 import { AssessmentService } from './assessment.service';
+import { ExamScheduleService } from './exam-schedule.service';
+import { ExamScheduleController } from './exam-schedule.controller';
 
 @Module({
   imports: [PrismaModule, PermissionModule, AuthModule, NotificationModule, AcademicPeriodModule],
-  controllers: [AssessmentController, RemedialController, SubmissionController],
-  providers: [AssessmentService],
+  controllers: [AssessmentController, RemedialController, SubmissionController, ExamScheduleController],
+  providers: [AssessmentService, ExamScheduleService],
   exports: [AssessmentService],
 })
 export class AssessmentModule {}

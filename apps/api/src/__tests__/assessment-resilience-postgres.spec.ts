@@ -1,13 +1,17 @@
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { AssessmentService } from '../assessment/assessment.service';
+import { AssessmentController } from '../assessment/assessment.controller';
+import { SseTokenService } from '../auth/sse-token.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuestionBankService } from '../question-bank/question-bank.service';
 import { QuestionPayloadSchema, AssessmentAnswerMap } from '../assessment/assessment-contract';
-import { CreateAssessmentSessionSchema } from '../assessment/dto/assessment.dto';
 import { parseSnapshotQuestions } from '../assessment/assessment-runtime';
 import { LmsService } from '../lms/lms.service';
 import { CreateQuestionSchema } from '../question-bank/dto/question.dto';
@@ -98,10 +102,39 @@ describePostgres('Assessment resilience PostgreSQL service integration proof', (
       prisma as unknown as PrismaService,
       { emitAsync: jest.fn().mockResolvedValue([]) } as unknown as EventEmitter2,
       academicPeriodService,
+      undefined,
+      new PermissionsService(prisma as unknown as PrismaService),
     );
     const mutable = service as unknown as { runAssessmentOutboxWorker: () => void };
     mutable.runAssessmentOutboxWorker = () => undefined;
     return service;
+  }
+
+  const teacherHeaders = { 'x-synthetic-assessment': 'teacher' };
+  async function openAssessmentHttp(service: AssessmentService): Promise<NestFastifyApplication> {
+    const httpModule = await Test.createTestingModule({
+      controllers: [AssessmentController],
+      providers: [
+        { provide: AssessmentService, useValue: service },
+        { provide: SseTokenService, useValue: {} },
+      ],
+    }).compile();
+    const app = httpModule.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
+      logger: false,
+    });
+    app.useGlobalGuards({
+      canActivate(context: ExecutionContext) {
+        const req = context.switchToHttp().getRequest<{
+          headers: Record<string, string>;
+          user: AuthUser;
+        }>();
+        if (req.headers['x-synthetic-assessment'] !== 'teacher') throw new UnauthorizedException();
+        req.user = GURU;
+        return true;
+      },
+    });
+    await app.init();
+    return app;
   }
 
   function pauseFirstSessionLock(service: AssessmentService): {
@@ -271,6 +304,20 @@ describePostgres('Assessment resilience PostgreSQL service integration proof', (
   beforeAll(async () => {
     assertDisposableDatabase(databaseUrl!);
     prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    const permission = await prisma.permission.upsert({
+      where: { code: 'lms.own.manage' },
+      create: {
+        code: 'lms.own.manage',
+        description: 'Mengelola LMS dan asesmen milik sendiri',
+        module: 'academic',
+      },
+      update: {},
+    });
+    await prisma.rolePermission.upsert({
+      where: { role_permissionId: { role: 'GURU', permissionId: permission.id } },
+      create: { role: 'GURU', permissionId: permission.id },
+      update: {},
+    });
     await prisma.user.createMany({
       data: [
         {
@@ -580,11 +627,14 @@ describePostgres('Assessment resilience PostgreSQL service integration proof', (
     },
   );
 
-  it('runs manual rich questions through canonical storage, snapshot, start, autosave, resume and final submit', async () => {
+  it('recovers the same draft over HTTP and protects a completed essay score and Gradebook', async () => {
     const bank = new QuestionBankService(prisma as unknown as PrismaService);
     const service = buildActualService();
     const createdQuestions: string[] = [];
     let createdSession: string | undefined;
+    let app: NestFastifyApplication | undefined;
+    const requestId = randomUUID();
+    const receiptId = `assessment-draft:${teacherId}:${requestId}`;
     try {
       const common = {
         subject: 'Pemrograman Web',
@@ -632,23 +682,65 @@ describePostgres('Assessment resilience PostgreSQL service integration proof', (
         );
         expect((await bank.findOne(question.id, GURU)).body).toContain('<strong>data</strong>');
       }
-      const created = await service.create(
-        CreateAssessmentSessionSchema.parse({
-          moduleId,
-          title: 'Manual four-type QA',
-          type: 'formatif',
-          classId,
-          academicYear,
-          semester: 1,
-          questionSelections: createdQuestions.map((questionId, order) => ({
-            questionId,
-            order,
-            points: 25,
-          })),
-        }),
-        GURU,
+      app = await openAssessmentHttp(service);
+      const headers = teacherHeaders;
+      const base = '/assessment/sessions';
+      const createPayload = {
+        requestId,
+        moduleId,
+        title: 'Manual four-type QA',
+        type: 'formatif',
+        classId,
+        academicYear,
+        semester: 1,
+        questionSelections: createdQuestions.map((questionId, order) => ({
+          questionId,
+          order,
+          points: 25,
+        })),
+      };
+      expect(
+        (await app.inject({ method: 'POST', url: base, payload: createPayload })).statusCode,
+      ).toBe(401);
+      expect(
+        (
+          await app.inject({
+            method: 'POST',
+            url: base,
+            headers,
+            payload: { ...createPayload, requestId: 'invalid' },
+          })
+        ).statusCode,
+      ).toBe(400);
+      // The first client loses the receipt. The test oracle reads its committed ID from the DB.
+      const writes = await Promise.all(
+        [1, 2].map(() =>
+          app!.inject({ method: 'POST', url: base, headers, payload: createPayload }),
+        ),
       );
-      createdSession = created.id;
+      expect(writes.map(({ statusCode }) => statusCode)).toEqual([201, 201]);
+      createdSession = (await prisma.auditLog.findUniqueOrThrow({ where: { id: receiptId } }))
+        .resourceId!;
+      expect(writes[1]?.json()).toMatchObject({ id: createdSession, status: 'draft' });
+      const retry = await app.inject({
+        method: 'POST',
+        url: base,
+        headers,
+        payload: createPayload,
+      });
+      expect(retry.statusCode).toBe(201);
+      expect(retry.json()).toMatchObject({ id: createdSession, status: 'draft' });
+      const different = await app.inject({
+        method: 'POST',
+        url: base,
+        headers,
+        payload: { ...createPayload, title: 'Changed request' },
+      });
+      expect(different.statusCode).toBe(409);
+      expect(
+        await prisma.assessmentSession.count({ where: { teacherId, title: createPayload.title } }),
+      ).toBe(1);
+      const created = { id: createdSession };
       await service.startSession(created.id, GURU);
       const attempt = await service.startResponse(created.id, SISWA);
       const session = await prisma.assessmentSession.findUniqueOrThrow({
@@ -692,7 +784,44 @@ describePostgres('Assessment resilience PostgreSQL service integration proof', (
       expect(await prisma.grade.count({ where: { sourceAssessmentSessionId: created.id } })).toBe(
         0,
       );
+      expect(
+        (await app.inject({ method: 'PATCH', url: `${base}/${created.id}/complete`, headers }))
+          .statusCode,
+      ).toBe(200);
+      const gradeUrl = `${base}/${created.id}/responses/${attempt.responseId}/grade-essay`;
+      const essayId = createdQuestions[3]!;
+      const grade = (score: number, expectedCriteriaScores: { r1: number } | null) =>
+        app!.inject({
+          method: 'PATCH',
+          url: gradeUrl,
+          headers,
+          payload: {
+            questionId: essayId,
+            criteriaScores: { r1: score },
+            expectedCriteriaScores,
+          },
+        });
+      expect((await grade(10, null)).statusCode).toBe(200);
+      expect((await grade(0, null)).statusCode).toBe(409);
+      expect(
+        await prisma.assessmentResponse.findUnique({ where: { id: attempt.responseId } }),
+      ).toMatchObject({ score: 100 });
+      expect(
+        await prisma.grade.findMany({
+          where: { sourceAssessmentSessionId: created.id },
+          select: { score: true },
+        }),
+      ).toEqual([{ score: new Prisma.Decimal(100) }]);
+      expect((await grade(0, { r1: 10 })).statusCode).toBe(200);
+      expect(
+        await prisma.grade.findMany({
+          where: { sourceAssessmentSessionId: created.id },
+          select: { score: true },
+        }),
+      ).toEqual([{ score: new Prisma.Decimal(75) }]);
     } finally {
+      await app?.close();
+      await prisma.auditLog.deleteMany({ where: { id: receiptId } });
       if (createdSession) {
         await prisma.assessmentEventOutbox.deleteMany({
           where: { payload: { path: ['sessionId'], equals: createdSession } },
@@ -704,6 +833,159 @@ describePostgres('Assessment resilience PostgreSQL service integration proof', (
       await prisma.question.deleteMany({ where: { id: { in: createdQuestions } } });
     }
   });
+
+  it.each([
+    { action: 'pemulihan', change: 'akun nonaktif', recover: true },
+    { action: 'pemulihan', change: 'izin dicabut', recover: true },
+    { action: 'pemulihan', change: 'penugasan berubah', recover: true },
+    { action: 'pembuatan', change: 'akun nonaktif', recover: false },
+  ])(
+    'denies queued draft $action after $change',
+    async ({ change, recover }) => {
+      const bank = new QuestionBankService(prisma as unknown as PrismaService);
+      const question = await bank.create(
+        QuestionPayloadSchema.parse({
+          subject: 'Pemrograman Web',
+          body: 'Pertanyaan integrasi sintetis.',
+          type: 'true_false',
+          answer: true,
+          difficulty: 'medium',
+          tags: [],
+        }),
+        GURU,
+      );
+      const requestId = randomUUID();
+      const receiptId = `assessment-draft:${teacherId}:${requestId}`;
+      const payload = {
+        requestId,
+        moduleId,
+        title: `QA kewenangan draf ${requestId}`,
+        type: 'formatif',
+        classId,
+        academicYear,
+        semester: 1,
+        questionSelections: [{ questionId: question.id, order: 0, points: 10 }],
+      };
+      const period = new AcademicPeriodService(
+        prisma as unknown as PrismaService,
+        new PermissionsService(prisma as unknown as PrismaService),
+      );
+      const app = await openAssessmentHttp(buildActualService(period));
+      const createDraft = () =>
+        app.inject({
+          method: 'POST',
+          url: '/assessment/sessions',
+          headers: teacherHeaders,
+          payload,
+        });
+      let overrideId: string | undefined;
+      let originalId: string | undefined;
+
+      const restore = async () => {
+        if (change === 'akun nonaktif') {
+          await prisma.user.update({ where: { id: teacherUserId }, data: { isActive: true } });
+        } else if (change === 'penugasan berubah') {
+          await prisma.teachingAssignment.update({
+            where: { id: assignmentId },
+            data: { subject: 'Pemrograman Web' },
+          });
+        } else if (overrideId) {
+          await prisma.userPermissionOverride.delete({ where: { id: overrideId } });
+          overrideId = undefined;
+        }
+      };
+
+      try {
+        if (recover) {
+          const original = await createDraft();
+          expect(original.statusCode).toBe(201);
+          originalId = original.json<{ id: string }>().id;
+        }
+        const locked = deferred();
+        const release = deferred();
+        let blockerPid: number;
+        const blocker = prisma.$transaction(
+          async (tx) => {
+            const [connection] = await tx.$queryRaw<
+              { pid: number }[]
+            >`SELECT pg_backend_pid() AS pid`;
+            blockerPid = connection!.pid;
+            if (recover) {
+              await tx.$executeRaw(
+                Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${receiptId}, 0))`,
+              );
+            } else {
+              await period.acquireCutoverLock(tx);
+            }
+            locked.resolve();
+            await release.promise;
+          },
+          { timeout: 10_000 },
+        );
+        await Promise.race([locked.promise, blocker]);
+        const queued = createDraft();
+        let denied: Awaited<ReturnType<typeof createDraft>>;
+        try {
+          const deadline = Date.now() + 2_000;
+          let waiting = false;
+          while (!waiting && Date.now() < deadline) {
+            const [probe] = await prisma.$queryRaw<{ waiting: boolean }[]>`
+              SELECT EXISTS (
+                SELECT 1 FROM pg_stat_activity
+                WHERE datname = current_database() AND wait_event = 'advisory'
+                  AND ${blockerPid!}::integer = ANY(pg_blocking_pids(pid))
+              ) AS waiting
+            `;
+            waiting = probe?.waiting ?? false;
+            if (!waiting) await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          expect(waiting).toBe(true);
+
+          if (change === 'akun nonaktif') {
+            await prisma.user.update({ where: { id: teacherUserId }, data: { isActive: false } });
+          } else if (change === 'penugasan berubah') {
+            await prisma.teachingAssignment.update({
+              where: { id: assignmentId },
+              data: { subject: 'Penugasan QA pengganti' },
+            });
+          } else {
+            const permission = await prisma.permission.findUniqueOrThrow({
+              where: { code: 'lms.own.manage' },
+            });
+            const override = await prisma.userPermissionOverride.create({
+              data: { userId: teacherUserId, permissionId: permission.id, grant: false },
+            });
+            overrideId = override.id;
+          }
+        } finally {
+          release.resolve();
+          await blocker;
+          denied = await queued;
+        }
+        expect(denied.statusCode).toBe(403);
+        expect(denied.json()).not.toHaveProperty('questions');
+        expect(denied.json()).not.toHaveProperty('id');
+        const scope = { teacherId, title: payload.title };
+        expect(await prisma.assessmentSession.count({ where: scope })).toBe(recover ? 1 : 0);
+        const receipt = await prisma.auditLog.findUnique({ where: { id: receiptId } });
+        expect(receipt?.resourceId).toBe(originalId);
+
+        await restore();
+        const allowed = await createDraft();
+        expect(allowed.statusCode).toBe(201);
+        expect(allowed.json()).toMatchObject({ status: 'draft' });
+        if (originalId) expect(allowed.json()).toHaveProperty('id', originalId);
+        expect(await prisma.assessmentSession.count({ where: scope })).toBe(1);
+      } finally {
+        await restore();
+        await app.close();
+        await prisma.auditLog.deleteMany({ where: { id: receiptId } });
+        await prisma.assessmentSession.deleteMany({ where: { teacherId, title: payload.title } });
+        await prisma.question.delete({ where: { id: question.id } });
+      }
+    },
+    15_000,
+  );
 
   it('records module opening separately from completion without regressing completed progress', async () => {
     const period = new AcademicPeriodService(

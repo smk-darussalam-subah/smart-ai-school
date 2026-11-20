@@ -1,5 +1,24 @@
 # TASK QUEUE — DIIS Tahap 0 → Sprint-0 Tahap 1
 
+> **2026-11-19 — Assessment native wave 1, local Executor verification.**
+> Student preview reuses real learner controls; unsaved studio/essay work is
+> protected on close/Escape and beforeunload. Essay fields are isolated by
+> response and question. Closing an active session reads fresh readiness,
+> asks confirmation and rechecks before the existing complete action.
+> Focused Web 53/53 and local component-browser controls passed; full Next/SSO,
+> API/database E2E and Linux CI are NOT VERIFIED by this wave.
+> Media, XLSX and DOCX are designs/templates only; the current importer is CSV.
+> See `.tasks/done/ASSESSMENT-WAVE1-2026-11-19-DONE.md`.
+> Independent re-review is next. Git/staging/production remain HOLD.
+> Refinement adds AI-to-studio handoff, reads Bank Soal on demand, and recovers
+> authoritative completed status after an ambiguous close response. Latest
+> Executor evidence: 120 targeted Web tests, 18 candidate browser controls,
+> five comparison controls and three anonymous built HTTP controls.
+> Standard build stops on two unchanged lint errors. The diagnostic build
+> runs via Next, with Windows standalone tracing still unverified.
+> Independent-review follow-up adds fresh essay reads, guarded grade updates
+> and one persistent draft receipt per recovery request. Gates remain HOLD.
+
 > **2026-11-01 — React #310: local built-browser reproduction and regression.**
 > Guru denial still protects Executive data and returns an interactive Beranda,
 > but emits #310 with the attendance provider enabled. Regression is deliberately

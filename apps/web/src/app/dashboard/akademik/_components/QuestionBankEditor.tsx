@@ -39,6 +39,7 @@ import {
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import QuestionBankAiReview from './QuestionBankAiReview';
+import QuestionOfficeTools from './QuestionOfficeTools';
 import {
   distributeQuestionCount,
   questionDraftGenerateKey,
@@ -69,18 +70,19 @@ import {
 import { buildQuestionImportIdentity } from './question-bank-import-identity';
 import MaterialEditor from '@/components/learning/MaterialEditor';
 import QuestionContent from '@/components/learning/QuestionContent';
-import { sanitizeMaterialHtml } from '@/lib/material-content';
+import { sanitizeQuestionHtml } from '@/lib/material-content';
 import { QUESTION_HTML_PREFIX, questionBodyForEditor } from '@/lib/question-content';
 
 export type { QuestionSourceOption } from './question-bank-ai-request';
 
-interface QuestionRecord {
+export interface QuestionRecord {
   id: string;
   subject: string;
   type: QuestionType;
   body: string;
   options?: unknown;
   answer?: unknown;
+  guideAnswer?: string;
   pairs?: MatchingPair[];
   difficulty: QuestionDifficulty;
   tags?: string[];
@@ -92,7 +94,8 @@ interface Props {
   onClose: () => void;
   selectable?: boolean;
   selectedPoints?: Record<string, number>;
-  onSelectedPointsChange?: (next: Record<string, number>) => void;
+  onSelectedPointsChange?: (next: Record<string, number>, questions?: QuestionRecord[]) => void;
+  onQuestionsLoaded?: (questions: QuestionRecord[]) => void;
   moduleId?: string;
   rppId?: string;
   defaultTpRefs?: string[];
@@ -337,6 +340,7 @@ function QuestionBankWorkspace({
   selectable = false,
   selectedPoints = {},
   onSelectedPointsChange,
+  onQuestionsLoaded,
   moduleId,
   rppId,
   defaultTpRefs = DEFAULT_TP_REFS,
@@ -349,9 +353,7 @@ function QuestionBankWorkspace({
   const [mode, setMode] = useState<'bank' | 'ai' | 'manual'>('bank');
   const [aiStep, setAiStep] = useState<'setup' | 'review' | 'saved'>('setup');
   const [aiReviewed, setAiReviewed] = useState<Set<string>>(new Set());
-  const [aiSaved, setAiSaved] = useState<Array<{ id: string; aiItemKey: string; body: string }>>(
-    [],
-  );
+  const [aiSaved, setAiSaved] = useState<QuestionRecord[]>([]);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
   const [aiAction, setAiAction] = useState<'generate' | 'accept' | 'regenerate' | 'reject' | null>(
@@ -551,6 +553,7 @@ function QuestionBankWorkspace({
         ? data.length
         : ((res.data as { total?: number }).total ?? data.length);
       setQuestions(data);
+      onQuestionsLoaded?.(data);
       setQuestionTotal(total);
     })()
       .catch(() => {
@@ -713,7 +716,7 @@ function QuestionBankWorkspace({
       .split(',')
       .map((tag) => tag.trim())
       .filter(Boolean);
-    const body = sanitizeMaterialHtml(fBody).trim();
+    const body = sanitizeQuestionHtml(fBody).trim();
     const plain = new DOMParser().parseFromString(body, 'text/html').body.textContent?.trim() ?? '';
     const base = { subject, body: QUESTION_HTML_PREFIX + body, difficulty: fDifficulty, tags };
     if (plain.length < 3) {
@@ -832,6 +835,7 @@ function QuestionBankWorkspace({
           );
           return;
         }
+        if (editingId) onQuestionsLoaded?.([{ ...data, id: editingId }]);
         toast.success(editingId ? 'Soal diperbarui.' : 'Soal ditambahkan.');
         resetForm();
         load();
@@ -843,11 +847,11 @@ function QuestionBankWorkspace({
     });
   };
 
-  const toggleSelection = (questionId: string) => {
+  const toggleSelection = (question: QuestionRecord) => {
     const next = { ...selectedPoints };
-    if (next[questionId]) delete next[questionId];
-    else next[questionId] = 10;
-    onSelectedPointsChange?.(next);
+    if (next[question.id]) delete next[question.id];
+    else next[question.id] = 10;
+    onSelectedPointsChange?.(next, [question]);
   };
 
   const updatePoints = (questionId: string, value: string) => {
@@ -866,6 +870,11 @@ function QuestionBankWorkspace({
       }
       setDeleteTarget(null);
       setQuestions((prev) => prev.filter((question) => question.id !== id));
+      if (selectedPoints[id]) {
+        const next = { ...selectedPoints };
+        delete next[id];
+        onSelectedPointsChange?.(next);
+      }
     });
   };
 
@@ -1196,9 +1205,14 @@ function QuestionBankWorkspace({
           return false;
         }
         setSaveUncertain(false);
+        const acceptedPayloads = new Map(items.map((item) => [item.itemKey, item.question]));
+        const savedQuestions = receipt.data.questions.flatMap(({ id, aiItemKey, body }) => {
+          const question = acceptedPayloads.get(aiItemKey);
+          return question ? [{ ...question, id, body }] : [];
+        });
         setAiSaved((previous) => [
           ...new Map(
-            [...previous, ...receipt.data.questions].map((question) => [question.id, question]),
+            [...previous, ...savedQuestions].map((question) => [question.id, question]),
           ).values(),
         ]);
         const acceptedKeys = new Set(items.map((item) => item.itemKey));
@@ -1271,12 +1285,15 @@ function QuestionBankWorkspace({
   };
   const useSavedQuestions = () => {
     if (busy || !aiSaved.length || aiDrafts.length) return;
-    onSelectedPointsChange?.({
-      ...selectedPoints,
-      ...Object.fromEntries(
-        aiSaved.map((question) => [question.id, selectedPoints[question.id] ?? 10]),
-      ),
-    });
+    onSelectedPointsChange?.(
+      {
+        ...selectedPoints,
+        ...Object.fromEntries(
+          aiSaved.map((question) => [question.id, selectedPoints[question.id] ?? 10]),
+        ),
+      },
+      aiSaved,
+    );
     onClose();
   };
   const activateMode = (target: typeof mode) => {
@@ -1517,7 +1534,7 @@ function QuestionBankWorkspace({
                             {selectable && (
                               <button
                                 type="button"
-                                onClick={() => toggleSelection(question.id)}
+                                onClick={() => toggleSelection(question)}
                                 className={clsx(
                                   BTN,
                                   selected ? 'bg-emerald-600 text-white' : QB_OUTLINE,
@@ -1859,6 +1876,7 @@ function QuestionBankWorkspace({
                   )}
                   {mode === 'bank' && (
                     <div className="space-y-3">
+                      {subject && <QuestionOfficeTools subject={subject} questions={questions} reload={load} />}
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -2043,11 +2061,12 @@ function QuestionBankWorkspace({
                       disabled={busy || manualSaveUncertain}
                       ariaLabel="Pertanyaan"
                       compact
+                      question
                       invalid={!!formError}
                       describedBy={`${workspaceId}-body-help`}
                     />
                     <p id={`${workspaceId}-body-help`} className="text-xs text-[var(--qb-muted)]">
-                      Format teks, daftar, atau tabel. Maksimal 5.000 karakter termasuk format.
+                      Gunakan gambar, rumus, atau arah teks sesuai soal. Maksimal 5.000 karakter termasuk format.
                     </p>
                   </div>
                   <label className="block text-sm font-semibold">
