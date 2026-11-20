@@ -415,7 +415,7 @@ export async function listAssessmentSignals(
   try {
     database = await openDatabase();
     const transaction = database.transaction(RECORD_STORE, 'readonly');
-    return resolveAssessmentSignalQueue(
+    return await resolveAssessmentSignalQueue(
       async () => {
         const records = (await requestResult(
           transaction.objectStore(RECORD_STORE).index('responseId').getAll(responseId),

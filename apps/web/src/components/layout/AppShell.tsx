@@ -18,20 +18,13 @@ interface Props {
   viewAs: string | null;
   permissions: string[];
   permError: boolean;
-  hideChrome?: boolean;
   positionRoles?: string[];
   children: React.ReactNode;
 }
 
-export default function AppShell({ viewAs, permissions, permError, hideChrome, positionRoles = [], children }: Props) {
+export default function AppShell({ viewAs, permissions, permError, positionRoles = [], children }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const effectivePositionRoles = visiblePositionRoles(viewAs, [], positionRoles);
-
-  // SISWA & ORANG_TUA dashboards are self-contained mobile-first apps with
-  // native bottom navigation. Skip all AppShell chrome and render children directly.
-  if (hideChrome) {
-    return <div className="min-h-screen">{children}</div>;
-  }
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">

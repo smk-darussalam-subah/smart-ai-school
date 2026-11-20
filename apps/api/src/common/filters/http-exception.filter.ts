@@ -15,7 +15,12 @@ interface ErrorResponse {
   timestamp: string;
   path: string;
   requestId?: string;
-  code?: 'ASSESSMENT_WRITE_BUSY' | 'JP_READ_BUSY' | 'AUTHORITY_UNAVAILABLE';
+  code?:
+    | 'ASSESSMENT_WRITE_BUSY'
+    | 'JP_READ_BUSY'
+    | 'AUTHORITY_UNAVAILABLE'
+    | 'EXAM_DEVICE_CHANGED'
+    | 'EXAM_DEADLINE';
 }
 
 @Catch()
@@ -48,6 +53,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ) {
           safeCode = resp.code;
           reply.header('Retry-After', '2');
+        } else if (
+          statusCode === HttpStatus.CONFLICT &&
+          (resp.code === 'EXAM_DEVICE_CHANGED' || resp.code === 'EXAM_DEADLINE')
+        ) {
+          safeCode = resp.code;
         }
       }
 

@@ -133,6 +133,7 @@ interface SiswaWorkspaceProps {
   viewAs?: string | null;
   openNotifications?: boolean;
   initialWorkflowView?: AcademicWorkflowView | null;
+  initialExamSessionId?: string;
 }
 
 function initials(name?: string | null): string {
@@ -244,6 +245,7 @@ export default function SiswaWorkspace({
   viewAs,
   openNotifications = false,
   initialWorkflowView = null,
+  initialExamSessionId,
 }: SiswaWorkspaceProps) {
   const { data: session } = useSession();
   const router = useRouter();
@@ -269,6 +271,15 @@ export default function SiswaWorkspace({
   const [modal, setModal] = useState<ModalState>(
     openNotifications ? { type: 'pengumuman' } : { type: null },
   );
+  const openedExam = useRef<string | undefined>(undefined);
+  const linkedExam = initialExamSessionId
+    ? currentTasks.find((task) => task.assessmentSessionId === initialExamSessionId)
+    : undefined;
+  useEffect(() => {
+    if (!initialExamSessionId || activeScreen !== 'tugas' || openedExam.current === initialExamSessionId || !linkedExam || modal.type) return;
+    openedExam.current = initialExamSessionId;
+    setModal({ type: 'task', data: { task: linkedExam } });
+  }, [activeScreen, initialExamSessionId, linkedExam, modal.type]);
   const currentTask =
     modal.type === 'task'
       ? currentTasks.find((task) =>
@@ -635,6 +646,12 @@ export default function SiswaWorkspace({
       )}
 
       {/* Modals & Overlays */}
+      {activeScreen === 'tugas' && initialExamSessionId && !linkedExam && tasksRead.state === 'ready' && (
+        <p role="status" className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-sm">
+          Ujian dari tautan ini tidak tersedia. Periksa daftar tugas atau kembali ke{' '}
+          <Link href="/dashboard/ujian" className="font-semibold underline underline-offset-2">Jadwal Ujian</Link>.
+        </p>
+      )}
       {modal.type === 'pengumuman' && (
         <PengumumanModal
           announcements={

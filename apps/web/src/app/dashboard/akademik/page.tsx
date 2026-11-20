@@ -412,6 +412,7 @@ export default async function AkademikPage({
     return (
       <SiswaRefreshWrapper key={studentId} initialRevision={initialChanges?.revision ?? null}>
         <SiswaWorkspace
+          initialExamSessionId={initialWorkflowView === 'assessment' ? initialSessionId : undefined}
           initialAttendanceDate={initialAttendanceDate}
           grades={gradesRes.data}
           gradeState={gradesRes.state}

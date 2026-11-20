@@ -72,9 +72,8 @@ async function readEntry(bytes: Uint8Array, entry: ZipEntry): Promise<Uint8Array
     const chunks: Uint8Array[] = [];
     let length = 0;
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+        const { value } = chunk;
         length += value.length;
         if (length > entry.uncompressed || length > MAX_XML_BYTES)
           throw new Error('XLSX terlalu besar atau tidak aman.');

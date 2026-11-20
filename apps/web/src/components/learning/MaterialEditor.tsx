@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { TableKit } from '@tiptap/extension-table';
+import { NodeSelection } from '@tiptap/pm/state';
 import {
   Bold,
   Italic,
@@ -15,9 +16,13 @@ import {
   Table2,
   Code,
   Quote,
+  ImagePlus,
+  Sigma,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { MATERIAL_STYLE, safeMaterialLink, sanitizeMaterialHtml } from '@/lib/material-content';
+import { MATERIAL_STYLE, safeMaterialLink, sanitizeMaterialHtml, sanitizeQuestionHtml } from '@/lib/material-content';
+import { QuestionFormula, QuestionImage, QuestionLanguage } from './QuestionEditorExtensions';
+import { QuestionInsertDialog } from './QuestionInsertDialog';
 
 interface Props {
   value: string;
@@ -27,6 +32,7 @@ interface Props {
   describedBy?: string;
   invalid?: boolean;
   compact?: boolean;
+  question?: boolean;
 }
 const tool =
   'inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-lg px-2 text-sm hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 aria-pressed:bg-emerald-100 aria-pressed:text-emerald-900 disabled:opacity-40 dark:hover:bg-slate-800 dark:aria-pressed:bg-emerald-950 dark:aria-pressed:text-emerald-200';
@@ -39,18 +45,25 @@ export default function MaterialEditor({
   describedBy,
   invalid = false,
   compact = false,
+  question = false,
 }: Props) {
+  const sanitize = question ? sanitizeQuestionHtml : sanitizeMaterialHtml;
   const changeRef = useRef(onChange),
     lastEmitted = useRef(value);
   changeRef.current = onChange;
   const initialHtml = useRef<string | null>(null);
   if (initialHtml.current === null && typeof window !== 'undefined')
-    initialHtml.current = sanitizeMaterialHtml(value);
+    initialHtml.current = sanitize(value);
   const [linkOpen, setLinkOpen] = useState(false),
     [href, setHref] = useState(''),
     [linkError, setLinkError] = useState('');
   const linkButton = useRef<HTMLButtonElement>(null),
     id = useId();
+  const insertButton = useRef<HTMLButtonElement | null>(null);
+  const [insertDialog, setInsertDialog] = useState<{
+    mode: 'formula' | 'image';
+    initial?: { latex: string; display: boolean };
+  } | null>(null);
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -64,6 +77,7 @@ export default function MaterialEditor({
         },
       }),
       TableKit.configure({ table: { resizable: false } }),
+      ...(question ? [QuestionLanguage, QuestionFormula, QuestionImage] : []),
     ],
     editable: !disabled,
     // Seed the document before any editor transaction can emit an update.
@@ -82,7 +96,7 @@ export default function MaterialEditor({
         'aria-multiline': 'true',
         class: `diis-material ${compact ? 'min-h-40' : 'min-h-72'} px-4 py-5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-600 sm:px-6`,
       },
-      transformPastedHTML: (html) => sanitizeMaterialHtml(html),
+      transformPastedHTML: sanitize,
     },
   });
   const state = useEditorState({
@@ -103,6 +117,8 @@ export default function MaterialEditor({
           : 'p',
       undo: editor?.can().undo() ?? false,
       redo: editor?.can().redo() ?? false,
+      language: (editor?.getAttributes(editor?.isActive('heading') ? 'heading' : 'paragraph').lang ??
+        'auto') as string,
     }),
   });
   useEffect(() => {
@@ -113,10 +129,10 @@ export default function MaterialEditor({
   }, [editor, invalid]);
   useEffect(() => {
     if (editor && value !== lastEmitted.current) {
-      editor.commands.setContent(sanitizeMaterialHtml(value), { emitUpdate: false });
+      editor.commands.setContent(sanitize(value), { emitUpdate: false });
       lastEmitted.current = value;
     }
-  }, [editor, value]);
+  }, [editor, value, sanitize]);
 
   return (
     <div className="min-w-0 overflow-hidden rounded-xl border border-[var(--material-line)] bg-[var(--material-bg)]">
@@ -149,6 +165,42 @@ export default function MaterialEditor({
           <option value="h2">Judul bagian</option>
           <option value="h3">Subjudul</option>
         </select>
+        {question && (
+          <>
+            <select aria-label="Bahasa dan arah teks" className="min-h-11 rounded-lg border border-[var(--material-line)] bg-[var(--material-bg)] px-2 text-sm"
+              disabled={!editor || disabled} value={state?.language ?? 'auto'}
+              onChange={(event) => {
+                const lang = event.target.value;
+                editor?.chain().focus().updateAttributes(editor.isActive('heading') ? 'heading' : 'paragraph', {
+                  lang: lang === 'auto' ? null : lang,
+                  dir: lang === 'ar' ? 'rtl' : lang === 'auto' ? 'auto' : 'ltr',
+                }).run();
+              }}>
+              <option value="auto">Arah otomatis</option>
+              <option value="id">Indonesia</option>
+              <option value="ar">Arab · kanan ke kiri</option>
+              <option value="jv-Java">Aksara Jawa</option>
+            </select>
+            <button type="button" disabled={!editor || disabled} className={tool} onClick={(event) => {
+              insertButton.current = event.currentTarget;
+              const selection = editor?.state.selection;
+              const node = selection instanceof NodeSelection && selection.node.type.name === 'questionFormula'
+                ? selection.node : null;
+              setInsertDialog({
+                mode: 'formula',
+                initial: node ? { latex: String(node.attrs.latex), display: node.attrs.display === true } : undefined,
+              });
+            }}>
+              <Sigma className="h-4 w-4" aria-hidden="true" /> Rumus
+            </button>
+            <button type="button" disabled={!editor || disabled} className={tool} onClick={(event) => {
+              insertButton.current = event.currentTarget;
+              setInsertDialog({ mode: 'image' });
+            }}>
+              <ImagePlus className="h-4 w-4" aria-hidden="true" /> Gambar
+            </button>
+          </>
+        )}
         <button
           type="button"
           className={tool}
@@ -314,6 +366,14 @@ export default function MaterialEditor({
         </p>
       )}
       <EditorContent editor={editor} />
+      {insertDialog && (
+        <QuestionInsertDialog mode={insertDialog.mode} initialFormula={insertDialog.initial}
+          onClose={() => setInsertDialog(null)} restoreFocus={() => insertButton.current?.focus()}
+          onInsert={(content) => {
+            if (!editor?.commands.insertContent(content)) throw new Error('Konten belum bisa disisipkan pada posisi ini.');
+            setInsertDialog(null);
+          }} />
+      )}
       {linkOpen && (
         <Dialog open onOpenChange={setLinkOpen}>
           <DialogContent
