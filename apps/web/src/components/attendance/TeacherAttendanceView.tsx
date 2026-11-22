@@ -81,13 +81,13 @@ export default function TeacherAttendanceView() {
         </div>
       ) : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
-            <p className="text-sm font-medium text-blue-950">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 dark:border-sky-900 dark:bg-sky-950">
+            <p className="text-sm font-medium text-blue-950 dark:text-sky-200">
               {formatAttendanceDate(context.date)}{' '}
-              <span className="ml-2 text-xs text-slate-500">WIB · waktu server</span>
+              <span className="ml-2 text-xs text-slate-600 dark:text-sky-300">WIB · waktu server</span>
             </p>
-            {context.holiday && <span className="text-xs text-blue-800">{context.holiday}</span>}
-            <span className="text-xs text-slate-600">
+            {context.holiday && <span className="text-xs text-blue-800 dark:text-sky-300">{context.holiday}</span>}
+            <span className="text-xs text-slate-600 dark:text-sky-300">
               Radius sekolah: {context.policy.geofenceRadiusM} meter
             </span>
           </div>
@@ -128,7 +128,7 @@ export default function TeacherAttendanceView() {
                     </p>
                   </div>
                 </div>
-                <div className="mt-4 rounded-xl bg-blue-50 p-3 text-sm text-blue-950 sm:mt-5 sm:p-4">
+                <div className="mt-4 rounded-xl bg-blue-50 p-3 text-sm text-blue-950 dark:bg-sky-950 dark:text-sky-200 sm:mt-5 sm:p-4">
                   {context.arrival.basis === 'TEACHING' ? (
                     <>
                       <p className="font-semibold">
@@ -281,14 +281,14 @@ export default function TeacherAttendanceView() {
                       strokeDasharray="5 4"
                     />
                   </svg>
-                  <div className="relative rounded-xl border border-white bg-white/90 px-5 py-3 text-center shadow-sm">
-                    <MapPin className="mx-auto mb-2 text-emerald-600" size={26} />
-                    <p className="text-xs font-semibold text-slate-800">
+                  <div className="relative rounded-xl border border-white bg-white/90 px-5 py-3 text-center shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                    <MapPin className="mx-auto mb-2 text-emerald-600 dark:text-emerald-400" size={26} />
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
                       {receipt
                         ? 'Status lokasi pada saat presensi'
                         : 'Lokasi diperiksa saat presensi'}
                     </p>
-                    <p className="mt-1 text-[11px] text-slate-500">
+                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">
                       Ilustrasi area · bukan peta pelacakan
                     </p>
                   </div>
