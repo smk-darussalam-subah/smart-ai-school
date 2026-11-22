@@ -217,6 +217,8 @@ export class StudentDashboardService {
             academicYear: true,
             semester: true,
             dueAt: true,
+            examSchedule: { select: { opensAt: true, latestEntryAt: true, closesAt: true } },
+            durationMinutes: true,
             instructions: true,
             module: { select: { subject: true, kktp: true } },
             teachingAssignment: { select: { subject: true } },
@@ -288,6 +290,9 @@ export class StudentDashboardService {
               status,
               sessionStatus: sess.status,
               attemptStarted: Boolean(resp?.startedAt),
+              ...(user.roles.includes('SISWA') && sess.examSchedule && sess.durationMinutes
+                ? { examSchedule: { ...sess.examSchedule, durationMinutes: sess.durationMinutes } }
+                : {}),
               lateSubmissionStatus: resp?.lateSubmissionStatus ?? null,
               ...(exposeOwnRemedialLifecycle
                 ? {

@@ -420,7 +420,7 @@ export function Sidebar({
   return (
     <aside
       className={clsx(
-        'flex min-h-screen w-64 flex-col overflow-hidden border-r border-emerald-900/10 bg-white shadow-soft-sm',
+        'flex min-h-screen w-64 flex-col overflow-hidden border-r border-emerald-900/10 bg-white shadow-soft-sm dark:bg-slate-900',
         className,
       )}
     >

@@ -3,19 +3,20 @@ import { Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { resolveKktpThreshold } from '../academic/kktp-resolver';
-import { assertFreshMutationAuthority } from '../common/helpers/identity-mutation-lock';
+import { acquireIdentityMutationLock, assertFreshMutationAuthority } from '../common/helpers/identity-mutation-lock';
 import { OPERATIONAL_TEACHER_WHERE } from '../common/helpers/operational-teacher';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { parseSnapshotQuestions, secureMatchingSnapshot } from './assessment-runtime';
-import { ExamDecision, ExamIncidentInput, ExamList, ExamPlan } from './exam-contract';
+import { ExamDecision, ExamIncidentInput, ExamList, ExamPlan, TransferDeviceInput } from './exam-contract';
 import { readMakeupGradeSnapshot, type ExamMakeupGradeSnapshot } from './exam-makeup-grade';
 import { examDeadline, examDeviceHash } from './scheduled-exam-runtime';
+import { examRoomKey, examStaffWhere, lockExamPlanning } from './exam-operations.service';
 
 const managerRoles = ['SUPER_ADMIN', 'WAKA_KURIKULUM'];
 type MakeupCandidate = { fullName: string; gradeId?: string; snapshot?: ExamMakeupGradeSnapshot };
 const examWindowSelect = {
-  sessionId: true, room: true, opensAt: true, latestEntryAt: true, closesAt: true,
+  sessionId: true, room: true, opensAt: true, latestEntryAt: true, closesAt: true, agendaId: true, cohortGrade: true,
   publishedAt: true, cancelledAt: true, makeupOfSessionId: true,
   package: { select: { id: true, title: true, version: true, subject: true } },
   session: { select: { title: true, durationMinutes: true, status: true, academicYear: true, semester: true, class: { select: { name: true } },
@@ -39,11 +40,19 @@ export class ExamScheduleService {
     return { OR: [
       { session: { teacher: { ...OPERATIONAL_TEACHER_WHERE, user: { ...OPERATIONAL_TEACHER_WHERE.user, ...identity } } } },
       { publishedAt: { not: null }, proctors: { some: { user: { ...identity, staff: { is: { deletedAt: null } } } } } },
+      ...this.cohortScope(user.keycloakId),
     ] };
   }
 
+  private cohortScope(keycloakId: string, transfer = false): Prisma.ExamScheduleWhereInput[] {
+    return [10, 11, 12].map((grade) => ({
+      cohortGrade: grade, publishedAt: { not: null }, cancelledAt: null,
+      agenda: { proctors: { some: { grade, ...(transfer ? { canTransfer: true } : {}), user: { keycloakId, ...examStaffWhere } } } },
+    }));
+  }
+
   private async lock(tx: Prisma.TransactionClient, sessionId: string) {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('exam-schedule:planning', 0))`;
+    await lockExamPlanning(tx);
     await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${'assessment-session:' + sessionId}, 0))`);
   }
 
@@ -124,7 +133,10 @@ export class ExamScheduleService {
     const end = new Date(start.getTime() + 86_400_000);
     const rows = await this.db.examSchedule.findMany({
       where: { AND: [this.scope(user), { opensAt: { lt: end }, closesAt: { gt: start } }] },
-      select: examWindowSelect,
+      select: { ...examWindowSelect, participants: {
+        where: { student: { user: { keycloakId: user.keycloakId } } },
+        select: { roomSlot: { select: { room: true } } }, take: 1,
+      } },
       orderBy: [{ opensAt: 'asc' }, { sessionId: 'asc' }],
       take: input.limit + 1,
       ...(input.cursor ? { cursor: { sessionId: input.cursor }, skip: 1 } : {}),
@@ -141,16 +153,15 @@ export class ExamScheduleService {
       WHERE session_id IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))})
       GROUP BY session_id`);
     const stats = new Map(counts.map((row) => [row.sessionId, { working: row.working, done: row.done }]));
-    return { rows: page.map((row) => ({ ...row, counts: stats.get(row.sessionId) })),
+    return { rows: page.map(({ participants, ...row }) => ({ ...row, room: participants[0]?.roomSlot?.room ?? row.room, counts: stats.get(row.sessionId) })),
       asOf: new Date(), nextCursor: rows.length > input.limit ? page.at(-1)?.sessionId : null };
   }
 
   async monitor(sessionId: string, user: AuthUser) {
     const schedule = await this.db.examSchedule.findFirst({
       where: { AND: [{ sessionId }, this.scope(user, true)] },
-      select: { ...examWindowSelect, proctors: { where: { user: { keycloakId: user.keycloakId,
-        isActive: true, deletedAt: null, staff: { is: { deletedAt: null } } } }, select: { userId: true } },
-        participants: { select: { studentId: true, extraMinutes: true,
+      select: { ...examWindowSelect, proctors: { where: { user: { keycloakId: user.keycloakId, ...examStaffWhere } }, select: { userId: true } },
+        participants: { select: { studentId: true, extraMinutes: true, roomSlotId: true,
         student: { select: { user: { select: { fullName: true } } } } } },
         incidents: { orderBy: { createdAt: 'desc' }, take: 30, select: {
           id: true, kind: true, reason: true, decision: true, decisionNote: true, createdAt: true, resolvedAt: true,
@@ -165,11 +176,25 @@ export class ExamScheduleService {
     });
     const states = new Map(responses.map((row) => [row.studentId, row]));
     const { proctors, ...data } = schedule;
-    return { ...data, canReport: Boolean(schedule.publishedAt && !schedule.cancelledAt &&
-      (proctors.length || user.roles.some((role) => managerRoles.includes(role)))),
+    const cohort = schedule.agendaId && schedule.cohortGrade
+      ? await this.db.examCohortProctor.findFirst({ where: { agendaId: schedule.agendaId, grade: schedule.cohortGrade,
+          user: { keycloakId: user.keycloakId, ...examStaffWhere } }, select: { canTransfer: true } }) : null;
+    const manager = user.roles.some((role) => managerRoles.includes(role));
+    const canDecide = !schedule.cancelledAt && manager && await this.hasManagerAuthority(user);
+    return { ...data, canDecide, canReport: Boolean(schedule.publishedAt && !schedule.cancelledAt &&
+      (canDecide || proctors.length || cohort)), canTransfer: cohort?.canTransfer === true,
       asOf: new Date(), participants: schedule.participants.map((entry) => ({
       ...entry, response: states.get(entry.studentId) ?? null,
     })) };
+  }
+
+  private async hasManagerAuthority(user: AuthUser, db: Prisma.TransactionClient = this.db) {
+    const role = await this.permissions.getAuthoritativePrimaryRole(user.keycloakId, db);
+    if (role === 'SUPER_ADMIN') return true;
+    if (!role) return false;
+    const positions = await this.permissions.getActivePositionCodes(user.keycloakId, undefined, db);
+    return positions.has('WAKA_KURIKULUM') &&
+      this.permissions.hasFreshPermission(user.keycloakId, 'academic.schedule.edit', db);
   }
 
   async ownStatus(sessionId: string, user: AuthUser) {
@@ -184,14 +209,16 @@ export class ExamScheduleService {
     if (!participant) throw new NotFoundException('Anda belum terdaftar untuk ujian ini.');
     const response = await this.db.assessmentResponse.findUnique({
       where: { sessionId_studentId: { sessionId, studentId: participant.studentId } },
-      select: { startedAt: true, submittedAt: true, clientRevision: true, score: true },
+      select: { startedAt: true, submittedAt: true, clientRevision: true, score: true, lateSubmissionStatus: true },
     });
     const { closesAt, session } = participant.schedule;
     const deadline = response?.startedAt && session.durationMinutes
       ? examDeadline(closesAt, response.startedAt, session.durationMinutes, participant.extraMinutes) : closesAt;
     const now = new Date();
     return { state: response?.submittedAt ? 'submitted' : now >= deadline ? 'expired' : 'working',
-      confirmedRevision: response?.clientRevision ?? null, score: response?.submittedAt ? response.score : null };
+      serverNow: now, deadlineAt: response?.startedAt ? deadline : null,
+      confirmedRevision: response?.clientRevision ?? null, score: response?.submittedAt ? response.score : null,
+      lateSubmissionStatus: response?.submittedAt ? response.lateSubmissionStatus : null };
   }
 
   async authorOptions(user: AuthUser) {
@@ -253,6 +280,7 @@ export class ExamScheduleService {
         where: { id: sessionId },
         select: { id: true, classId: true, teacherId: true, status: true, purpose: true, type: true,
           durationMinutes: true, gradeTarget: true, academicYear: true, semester: true, teachingAssignmentId: true,
+          class: { select: { grade: true, academicYear: true, isActive: true } },
           teachingAssignment: { select: { subject: true, classId: true, teacherId: true, academicYear: true } },
           examSchedule: { select: { publishedAt: true } } },
       });
@@ -270,9 +298,9 @@ export class ExamScheduleService {
         id: input.packageId, teacherId: session.teacherId, subject: assignment.subject,
       }, select: { id: true } });
       if (!pkg) throw new BadRequestException('Paket harus dari guru dan mapel yang sama.');
-      const proctorCount = await tx.user.count({ where: { id: { in: input.proctorIds }, isActive: true, deletedAt: null,
-        staff: { is: { deletedAt: null } }, role: { in: ['GURU', 'TATA_USAHA'] } } });
-      if (proctorCount !== input.proctorIds.length) throw new BadRequestException('Proktor harus staf aktif.');
+      const proctorIds = input.proctorIds ?? [];
+      if (proctorIds.length && await tx.user.count({ where: { id: { in: proctorIds }, ...examStaffWhere } }) !== proctorIds.length)
+        throw new BadRequestException('Proktor harus staf aktif.');
       const makeup = input.makeupOfSessionId && input.participantIds;
       let candidates: Map<string, MakeupCandidate> | undefined;
       if (makeup && input.makeupOfSessionId) {
@@ -293,15 +321,29 @@ export class ExamScheduleService {
         select: { id: true }, take: 501 });
       if (!roster.length || roster.length > 500 || (input.participantIds && roster.length !== input.participantIds.length))
         throw new BadRequestException('Rombel atau peserta susulan tidak valid.');
-      const values = { packageId: pkg.id, room: input.room, roomKey: input.room.normalize('NFKC').toLowerCase().replace(/\s+/g, ' '),
+      const placements = new Map(input.roomAssignments?.flatMap(({ slotId, studentIds }) =>
+        studentIds.map((studentId) => [studentId, slotId] as const)) ?? []);
+      let room = input.room ?? '';
+      let cohortGrade: number | null = null;
+      if (input.agendaId) {
+        if (!session.class?.isActive || session.class.academicYear !== session.academicYear ||
+          placements.size !== roster.length || roster.some(({ id }) => !placements.has(id)))
+          throw new BadRequestException('Tempatkan setiap peserta rombel tepat satu kali.');
+        cohortGrade = session.class.grade;
+        const slots = await this.validatePlacement(tx, sessionId, input.agendaId, cohortGrade, session, opensAt, closesAt, placements, false);
+        room = (slots.length === 1 ? slots[0]?.room : null) ?? 'Beberapa ruang';
+      }
+      const roomKey = examRoomKey(room);
+      if (!roomKey || roomKey.length > 80) throw new BadRequestException('Nama ruang tidak valid.');
+      const values = { packageId: pkg.id, room, roomKey, agendaId: input.agendaId ?? null, cohortGrade,
         opensAt, latestEntryAt, closesAt, makeupOfSessionId: input.makeupOfSessionId ?? null };
       await tx.examSchedule.upsert({ where: { sessionId }, create: { sessionId, ...values }, update: values });
       await tx.examProctor.deleteMany({ where: { sessionId } });
-      await tx.examProctor.createMany({ data: input.proctorIds.map((userId) => ({ sessionId, userId })) });
+      if (proctorIds.length) await tx.examProctor.createMany({ data: proctorIds.map((userId) => ({ sessionId, userId })) });
       await tx.examParticipant.deleteMany({ where: { sessionId } });
       await tx.examParticipant.createMany({ data: roster.map(({ id }) => {
         const item = candidates?.get(id);
-        return { sessionId, studentId: id, makeupSourceGradeId: item?.gradeId,
+        return { sessionId, studentId: id, roomSlotId: placements.get(id) ?? null, makeupSourceGradeId: item?.gradeId,
           makeupGradeSnapshot: item?.snapshot };
       }) });
       await this.audit(tx, user, sessionId, 'exam.plan', { opensAt: input.opensAt, closesAt: input.closesAt, participantCount: roster.length });
@@ -309,12 +351,49 @@ export class ExamScheduleService {
     });
   }
 
+  private async validatePlacement(tx: Prisma.TransactionClient, sessionId: string, agendaId: string, cohortGrade: number,
+    period: { academicYear: string; semester: number }, opensAt: Date, closesAt: Date,
+    placements: ReadonlyMap<string, string>, publishing: boolean) {
+    const slotIds = [...new Set(placements.values())];
+    const schedule = await tx.examAgenda.findFirst({ where: { id: agendaId,
+      academicYear: period.academicYear, semester: period.semester,
+      opensAt: { lte: opensAt }, closesAt: { gte: closesAt },
+      proctors: { some: { grade: cohortGrade, user: examStaffWhere } },
+    }, select: { id: true } });
+    if (!schedule) throw new ConflictException('Agenda atau proktor aktif untuk angkatan belum sesuai.');
+    const slots = await tx.examRoomSlot.findMany({ where: { id: { in: slotIds }, agendaId,
+      opensAt: { lte: opensAt }, closesAt: { gte: closesAt }, supervisor: examStaffWhere },
+      select: { id: true, room: true, capacity: true } });
+    if (slots.length !== slotIds.length) throw new ConflictException('Slot atau Pengawas Ruang tidak sesuai.');
+    const assigned = await tx.examParticipant.findMany({ where: { roomSlotId: { in: slotIds },
+      schedule: { sessionId: { not: sessionId }, publishedAt: { not: null }, cancelledAt: null } },
+      select: { roomSlotId: true, studentId: true }, take: 15_001 });
+    const occupied = new Map(slotIds.map((id) => [id, new Set<string>()]));
+    for (const row of assigned) {
+      if (row.roomSlotId) occupied.get(row.roomSlotId)?.add(row.studentId);
+    }
+    for (const [studentId, slotId] of placements) {
+      const people = occupied.get(slotId);
+      if (!people || people.has(studentId)) throw new ConflictException('Peserta sudah memiliki tempat di slot ini.');
+      people.add(studentId);
+    }
+    if (assigned.length > 15_000 || slots.some(({ id, capacity }) => occupied.get(id)!.size > capacity))
+      throw new ConflictException('Jumlah peserta melebihi kapasitas ruang.');
+    if (publishing) {
+      const prior = await tx.examSchedule.findFirst({ where: { agendaId: null, publishedAt: { not: null }, cancelledAt: null,
+        opensAt: { lt: closesAt }, closesAt: { gt: opensAt }, roomKey: { in: slots.map(({ room }) => examRoomKey(room)) },
+      }, select: { sessionId: true } });
+      if (prior) throw new ConflictException('Slot bertabrakan dengan jadwal lama.');
+    }
+    return slots;
+  }
+
   async publish(sessionId: string, user: AuthUser) {
     return this.db.$transaction(async (tx) => {
       await this.lock(tx, sessionId);
       const draft = await tx.examSchedule.findUnique({
-        where: { sessionId }, include: { session: true, package: true, participants: {
-          select: { studentId: true, makeupSourceGradeId: true, makeupGradeSnapshot: true,
+        where: { sessionId }, include: { session: { include: { class: { select: { grade: true, academicYear: true, isActive: true } } } }, package: true, participants: {
+          select: { studentId: true, roomSlotId: true, makeupSourceGradeId: true, makeupGradeSnapshot: true,
             student: { select: { deletedAt: true, classId: true, status: true,
             user: { select: { isActive: true, deletedAt: true } } } } },
         }, proctors: { select: { userId: true, user: { select: { isActive: true, deletedAt: true, staff: { select: { deletedAt: true } } } } } } },
@@ -355,12 +434,29 @@ export class ExamScheduleService {
         });
         if (scheduledAgain) throw new ConflictException('Sebagian peserta sudah terdaftar pada jadwal susulan ujian ini.');
       }
+      if (draft.agendaId) {
+        if (!draft.session.class?.isActive || draft.cohortGrade !== draft.session.class.grade ||
+          draft.session.class.academicYear !== draft.session.academicYear || students.some(({ roomSlotId }) => !roomSlotId)) {
+          throw new ConflictException('Angkatan atau penempatan peserta telah berubah.');
+        }
+        await this.validatePlacement(tx, sessionId, draft.agendaId, draft.cohortGrade!, draft.session, draft.opensAt, draft.closesAt,
+          new Map(students.map(({ studentId, roomSlotId }) => [studentId, roomSlotId!])), true);
+      } else {
+        const roomReserved = await tx.examRoomSlot.findFirst({ where: {
+          opensAt: { lt: draft.closesAt }, closesAt: { gt: draft.opensAt }, OR: [
+            { roomKey: draft.roomKey }, { supervisorId: { in: draft.proctors.map(({ userId }) => userId) } },
+          ],
+        }, select: { id: true } });
+        if (roomReserved) throw new ConflictException('Waktu ruang atau Pengawas bertabrakan dengan slot agenda.');
+      }
       const conflict = await tx.examSchedule.findFirst({ where: {
         sessionId: { not: sessionId }, publishedAt: { not: null }, cancelledAt: null,
         opensAt: { lt: draft.closesAt }, closesAt: { gt: draft.opensAt },
         OR: [
-          { roomKey: draft.roomKey },
-          { proctors: { some: { userId: { in: draft.proctors.map(({ userId }) => userId) } } } },
+          ...(!draft.agendaId ? [
+            { agendaId: null, roomKey: draft.roomKey },
+            { proctors: { some: { userId: { in: draft.proctors.map(({ userId }) => userId) } } } },
+          ] : []),
           { participants: { some: { studentId: { in: students.map(({ studentId }) => studentId) } } } },
         ],
       }, select: { sessionId: true } });
@@ -392,16 +488,85 @@ export class ExamScheduleService {
     return this.db.$transaction(async (tx) => {
       await this.lock(tx, sessionId);
       const where: Prisma.ExamScheduleWhereInput = { sessionId, publishedAt: { not: null }, cancelledAt: null };
-      if (user.roles.some((role) => managerRoles.includes(role))) await this.assertManager(tx, user);
-      else {
+      await acquireIdentityMutationLock(tx);
+      const managerRole = user.roles.some((role) => managerRoles.includes(role));
+      const canManage = managerRole && await this.hasManagerAuthority(user, tx);
+      if (!canManage) {
         if (input.kind === 'school') throw new ForbiddenException('Insiden sekolah memerlukan panitia.');
-        where.proctors = { some: { user: { keycloakId: user.keycloakId, isActive: true, deletedAt: null,
-          staff: { is: { deletedAt: null } } } } };
+        where.OR = [
+          { proctors: { some: { user: { keycloakId: user.keycloakId, ...examStaffWhere } } } },
+          ...(input.kind === 'device' ? this.cohortScope(user.keycloakId) : []),
+        ];
       }
-      if (!await tx.examSchedule.findFirst({ where, select: { sessionId: true } }))
+      const schedule = await tx.examSchedule.findFirst({ where, select: { agendaId: true } });
+      if (!schedule) {
+        if (managerRole && !canManage) throw new ForbiddenException('Kewenangan melaporkan insiden tidak berlaku untuk sesi ini.');
         throw new NotFoundException('Insiden hanya untuk sesi dalam cakupan Anda.');
+      }
+      if (schedule.agendaId && input.kind === 'room')
+        throw new BadRequestException('Catat gangguan pada ruang fisik di Operasional Ujian.');
       return tx.examIncident.create({ data: { sessionId, ...input, createdBy: user.keycloakId },
         select: { id: true, kind: true, reason: true, createdAt: true } });
+    });
+  }
+
+
+  async transferDevice(sessionId: string, input: TransferDeviceInput, user: AuthUser) {
+    return this.db.$transaction(async (tx) => {
+      await this.lock(tx, sessionId);
+      const period = await tx.examSchedule.findUnique({ where: { sessionId },
+        select: { session: { select: { academicYear: true, semester: true } } } });
+      if (!period) throw new NotFoundException('Sesi di luar mandat Proktor.');
+      await this.periods.assertWritablePeriodWithSharedCutoverLock(tx, period.session);
+      await acquireIdentityMutationLock(tx);
+      const schedule = await tx.examSchedule.findFirst({ where: { sessionId, OR: this.cohortScope(user.keycloakId, true) },
+        select: { closesAt: true, opensAt: true, session: { select: { status: true, durationMinutes: true } } } });
+      if (!schedule) throw new NotFoundException('Sesi di luar mandat Proktor.');
+      const student = await tx.examParticipant.findFirst({ where: { sessionId, studentId: input.studentId,
+        roomSlotId: input.slotId, student: { status: 'active', deletedAt: null, user: { isActive: true, deletedAt: null } },
+      }, select: { studentId: true } });
+      if (!student) throw new NotFoundException('Peserta tidak berada di ruang dan sesi yang dipilih.');
+      await tx.$queryRaw`SELECT student_id FROM academic.exam_participants
+        WHERE session_id = ${sessionId}::uuid AND student_id = ${input.studentId}::uuid FOR UPDATE`;
+      const current = await tx.examParticipant.findUniqueOrThrow({
+        where: { sessionId_studentId: { sessionId, studentId: input.studentId } },
+        select: { deviceVersion: true, deviceHash: true, extraMinutes: true },
+      });
+      const previous = await tx.auditLog.findFirst({ where: {
+        actorId: user.keycloakId, resourceId: sessionId, action: 'exam.device.transfer',
+        metadata: { path: ['intentId'], equals: input.intentId },
+      }, select: { metadata: true } });
+      const deviceHash = examDeviceHash(input.newDeviceId);
+      if (previous) {
+        const metadata = previous.metadata;
+        if (metadata && typeof metadata === 'object' && !Array.isArray(metadata) &&
+          metadata.studentId === input.studentId && metadata.slotId === input.slotId &&
+          metadata.reason === input.reason && metadata.before === input.expectedVersion &&
+          current.deviceVersion === input.expectedVersion + 1 && current.deviceHash === deviceHash) {
+          return { deviceVersion: current.deviceVersion };
+        }
+        throw new ConflictException('Permintaan transfer berbeda atau tidak lagi mutakhir.');
+      }
+      const attempt = await tx.assessmentResponse.findUnique({
+        where: { sessionId_studentId: { sessionId, studentId: input.studentId } },
+        select: { startedAt: true, submittedAt: true },
+      });
+      const now = new Date();
+      if (schedule.session.status !== 'active' || now < schedule.opensAt || !attempt?.startedAt || attempt.submittedAt ||
+        !schedule.session.durationMinutes ||
+        now >= examDeadline(schedule.closesAt, attempt.startedAt, schedule.session.durationMinutes, current.extraMinutes))
+        throw new ConflictException('Attempt belum mulai, sudah terkirim, atau waktunya habis.');
+      if (!current.deviceHash || current.deviceHash === deviceHash || current.deviceVersion !== input.expectedVersion)
+        throw new ConflictException('Perangkat atau versi penugasan berubah. Muat ulang rincian.');
+      const result = await tx.examParticipant.update({
+        where: { sessionId_studentId: { sessionId, studentId: input.studentId } },
+        data: { deviceVersion: { increment: 1 }, deviceHash }, select: { deviceVersion: true },
+      });
+      await this.audit(tx, user, sessionId, 'exam.device.transfer', {
+        intentId: input.intentId, studentId: input.studentId, slotId: input.slotId, reason: input.reason,
+        before: current.deviceVersion, after: result.deviceVersion,
+      });
+      return result;
     });
   }
 

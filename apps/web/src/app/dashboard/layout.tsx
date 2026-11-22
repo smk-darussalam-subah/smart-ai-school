@@ -1,5 +1,7 @@
 import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
+import { isStaffTheme, STAFF_THEME_COOKIE } from '@/lib/staff-theme';
 import { authOptions } from '@/lib/auth';
 import AppShell from '@/components/layout/AppShell';
 import { DashboardProviders } from '@/components/providers/DashboardProviders';
@@ -38,6 +40,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
     (roles.includes('SISWA') || roles.includes('ORANG_TUA')) &&
     !roles.includes('GURU') &&
     !roles.includes('KEPALA_SEKOLAH');
+
+  const preference = hideChrome ? undefined : (await cookies()).get(STAFF_THEME_COOKIE)?.value;
 
   // Ambil effective permissions dari backend
   const token = session.accessToken ?? '';
@@ -99,6 +103,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 permissions={userPermissions}
                 permError={permError}
                 positionRoles={positionRoles}
+                initialTheme={isStaffTheme(preference) ? preference : 'system'}
               >
                 {children}
               </AppShell>

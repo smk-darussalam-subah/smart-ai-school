@@ -6,11 +6,11 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from 
 import { Menu } from 'lucide-react';
 import { identityRoleLabel, positionRoleLabel } from '@/lib/display-shell';
 
-export default function MobileNav({ viewAs = null, permissions = [], permError = false, positionRoles = [] }: { viewAs?: string | null; permissions?: string[]; permError?: boolean; positionRoles?: string[] }) {
+export default function MobileNav({ viewAs = null, permissions = [], permError = false, themeControl, positionRoles = [] }: { viewAs?: string | null; permissions?: string[]; permError?: boolean; themeControl?: React.ReactNode; positionRoles?: string[] }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="flex md:hidden items-center justify-between px-4 py-3 bg-white border-b border-gray-100 sticky top-0 z-40">
+    <div className="flex md:hidden items-center justify-between px-4 py-3 bg-white dark:bg-slate-900 border-b border-gray-100 sticky top-0 z-40">
       <div className="flex min-w-0 items-center gap-2">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-smk-emerald-deep">
           <span className="text-white text-xs font-bold">D</span>
@@ -23,20 +23,23 @@ export default function MobileNav({ viewAs = null, permissions = [], permError =
         </div>
       </div>
 
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetTrigger asChild>
-          <button type="button" aria-label="Buka menu navigasi" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-gray-100 transition-colors">
-            <Menu className="h-6 w-6 text-gray-600" aria-hidden="true" />
-          </button>
-        </SheetTrigger>
-        <SheetContent side="left" className="p-0 w-64 border-none">
-          <SheetTitle className="sr-only">Menu navigasi</SheetTitle>
-          <SheetDescription className="sr-only">
-            Navigasi utama sesuai peran dan kewenangan aktif.
-          </SheetDescription>
-          <Sidebar viewAs={viewAs} permissions={permissions} permError={permError} positionRoles={positionRoles} onNavigate={() => setOpen(false)} className="h-full w-full border-none shadow-none" />
-        </SheetContent>
-      </Sheet>
+      <div className="flex shrink-0 items-center gap-1">
+        {themeControl}
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetTrigger asChild>
+            <button type="button" aria-label="Buka menu navigasi" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-gray-100 transition-colors dark:hover:bg-slate-800">
+              <Menu className="h-6 w-6 text-gray-600" aria-hidden="true" />
+            </button>
+          </SheetTrigger>
+          <SheetContent side="left" className="p-0 w-64 border-none">
+            <SheetTitle className="sr-only">Menu navigasi</SheetTitle>
+            <SheetDescription className="sr-only">
+              Navigasi utama sesuai peran dan kewenangan aktif.
+            </SheetDescription>
+            <Sidebar viewAs={viewAs} permissions={permissions} permError={permError} positionRoles={positionRoles} onNavigate={() => setOpen(false)} className="h-full w-full border-none shadow-none" />
+          </SheetContent>
+        </Sheet>
+      </div>
     </div>
   );
 }
