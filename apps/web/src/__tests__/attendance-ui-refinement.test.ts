@@ -173,8 +173,10 @@ describe('attendance UI presentation without changing domain values', () => {
     },
   );
   it('formats dates and counts locally, while leaving numerical and CSV contracts untouched', () => {
-    expect(attendanceRangeLabel('2026-10-19', '2026-10-20')).toContain('2026');
-    expect(attendanceRangeLabel('2026-10-19', '2026-10-20')).not.toContain('2026-10-19');
+    expect(attendanceRangeLabel('2026-10-19', '2026-10-19')).toBe('19 Okt 2026');
+    expect(attendanceRangeLabel('2026-10-19', '2026-10-20')).toBe('19–20 Okt 2026');
+    expect(attendanceRangeLabel('2026-10-22', '2026-11-21')).toBe('22 Okt – 21 Nov 2026');
+    expect(attendanceRangeLabel('2025-12-31', '2026-01-01')).toBe('31 Des 2025 – 1 Jan 2026');
     expect(attendanceNumber(12345)).toBe('12.345');
     expect(attendanceDayLabel('10-20')).toContain('20');
   });
