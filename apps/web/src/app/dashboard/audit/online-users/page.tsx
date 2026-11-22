@@ -36,5 +36,12 @@ export default async function OnlineUsersPage({
   if (roleFilter) params.set('role', roleFilter);
   const data = await apiFetch<OnlineResponse>(`/users/online?${params}`, session.accessToken ?? '');
   if (data === null) return <LoadError />;
-  return <OnlineUsersClient initialData={data} threshold={threshold} roleFilter={roleFilter} />;
+  return (
+    <OnlineUsersClient
+      initialData={data}
+      initialUpdatedAt={Date.now()}
+      threshold={threshold}
+      roleFilter={roleFilter}
+    />
+  );
 }

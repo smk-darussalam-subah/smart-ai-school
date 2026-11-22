@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -52,8 +52,8 @@ const ROLE_COLORS: Record<string, string> = {
   INDUSTRI: 'bg-gray-100 text-gray-800 hover:bg-gray-100',
 };
 
-function relativeTime(value: string): string {
-  const seconds = Math.floor((Date.now() - new Date(value).getTime()) / 1000);
+function relativeTime(value: string, snapshotAt: number): string {
+  const seconds = Math.floor((snapshotAt - new Date(value).getTime()) / 1000);
   if (seconds < 60) return 'Baru saja';
   if (seconds < 120) return '1 menit lalu';
   if (seconds < 3600) return `${Math.floor(seconds / 60)} menit lalu`;
@@ -63,17 +63,18 @@ function relativeTime(value: string): string {
 
 export default function OnlineUsersClient({
   initialData,
+  initialUpdatedAt,
   threshold,
   roleFilter,
 }: {
   initialData: OnlineResponse;
+  initialUpdatedAt: number;
   threshold: number;
   roleFilter: string;
 }) {
   const [data, setData] = useState(initialData);
   const [status, setStatus] = useState<OnlineUsersPollingStatus>('idle');
-  const [updatedAt, setUpdatedAt] = useState(() => Date.now());
-  const initialUpdatedAt = useRef(updatedAt);
+  const [updatedAt, setUpdatedAt] = useState(initialUpdatedAt);
   const controller = useMemo(
     () =>
       createOnlineUsersPollingController<OnlineResponse>({
@@ -97,21 +98,19 @@ export default function OnlineUsersClient({
   );
 
   useEffect(() => {
-    const receivedAt = Date.now();
     setData(initialData);
-    setUpdatedAt(receivedAt);
-    initialUpdatedAt.current = receivedAt;
-  }, [initialData]);
+    setUpdatedAt(initialUpdatedAt);
+    setStatus('idle');
 
-  useEffect(() => {
-    controller.start(initialUpdatedAt.current);
     const onVisibility = () => controller.setVisible(document.visibilityState === 'visible');
+    onVisibility();
+    controller.start(initialUpdatedAt);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       controller.stop();
     };
-  }, [controller]);
+  }, [controller, initialData, initialUpdatedAt]);
 
   const grouped = data.users.reduce<Record<string, OnlineUser[]>>((result, user) => {
     if (!roleFilter || user.role === roleFilter) (result[user.role] ??= []).push(user);
@@ -136,7 +135,7 @@ export default function OnlineUsersClient({
               ? 'Pembaruan gagal. Data terakhir tetap ditampilkan.'
               : status === 'refreshing'
                 ? 'Memperbarui data…'
-                : `Diperbarui ${new Date(updatedAt).toLocaleTimeString('id-ID')}`}
+                : `Diperbarui ${new Date(updatedAt).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -218,9 +217,9 @@ export default function OnlineUsersClient({
                   </div>
                   <span
                     className="ml-3 shrink-0 text-xs text-muted-foreground"
-                    title={new Date(user.lastSeenAt).toLocaleString('id-ID')}
+                    title={`${new Date(user.lastSeenAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`}
                   >
-                    {relativeTime(user.lastSeenAt)}
+                    {relativeTime(user.lastSeenAt, updatedAt)}
                   </span>
                 </div>
               ))}

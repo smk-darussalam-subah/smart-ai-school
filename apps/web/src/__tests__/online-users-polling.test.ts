@@ -117,4 +117,36 @@ describe('online users polling', () => {
     expect(statuses.at(-1)).toBe('idle');
     controller.stop();
   });
+
+  it('keeps a restarted polling session separate from requests aborted by the previous session', async () => {
+    const pending: Array<{ signal: AbortSignal; resolve: (value: string) => void }> = [];
+    const onData = jest.fn();
+    const onStatus = jest.fn();
+    const controller = createOnlineUsersPollingController({
+      fetchData: (signal) =>
+        new Promise<string>((resolve) => pending.push({ signal, resolve })),
+      onData,
+      onStatus,
+    });
+
+    controller.start(100);
+    const oldRefresh = controller.refresh();
+    controller.stop();
+    expect(pending[0]?.signal.aborted).toBe(true);
+    controller.start(200);
+    const newRefresh = controller.refresh();
+    onStatus.mockClear();
+
+    pending[0]?.resolve('old response');
+    await oldRefresh;
+    expect(onData).not.toHaveBeenCalled();
+    expect(onStatus).not.toHaveBeenCalled();
+
+    pending[1]?.resolve('new response');
+    await newRefresh;
+    expect(onData).toHaveBeenCalledTimes(1);
+    expect(onData).toHaveBeenCalledWith('new response', expect.any(Number));
+    expect(onStatus).toHaveBeenLastCalledWith('idle');
+    controller.stop();
+  });
 });
