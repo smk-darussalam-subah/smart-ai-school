@@ -1,6 +1,11 @@
 import type { Config } from 'tailwindcss';
 
 const config: Config = {
+  // Outside the staff shell, preserve the existing device-driven utilities.
+  darkMode: ['variant', [
+    '&:where(body:has([data-staff-theme="dark"]) *)',
+    '@media (prefers-color-scheme: dark) { &:where(body:not(:has([data-staff-theme="light"])) *) }',
+  ]],
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',

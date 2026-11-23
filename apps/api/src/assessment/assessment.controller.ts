@@ -153,8 +153,9 @@ export class AssessmentController {
   @RequirePermission('lms.progress.manage')
   @Post(':id/start-response')
   @HttpCode(HttpStatus.CREATED)
-  startResponse(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
-    return this.service.startResponse(id, user);
+  startResponse(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser,
+    @Body('deviceId') deviceId?: string) {
+    return this.service.startResponse(id, user, deviceId);
   }
 
   // U2 Wave 2: GURU menilai essay dengan rubrik (per-criteria weighted scoring)

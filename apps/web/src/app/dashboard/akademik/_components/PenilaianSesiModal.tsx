@@ -1,9 +1,9 @@
 'use client';
-import QuestionContent from '@/components/learning/QuestionContent';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useDialogReturnFocus } from '@/lib/use-dialog-return-focus';
+import QuestionContent from '@/components/learning/QuestionContent';
 import { learningRecordStatus } from '@/lib/learning-recap';
 import {
   Activity,
@@ -24,22 +24,25 @@ import {
 import { toast } from 'sonner';
 import type { TodayClass } from './guru-types';
 import EssayGradingModal from './EssayGradingModal';
-import QuestionBankEditor from './QuestionBankEditor';
+import QuestionBankEditor, { type QuestionRecord } from './QuestionBankEditor';
 import SessionAnalysisPanel from './SessionAnalysisPanel';
+import AssessmentQuestionPreview from './AssessmentQuestionPreview';
+import AssessmentDiscardDialog, { useAssessmentExitWarning } from './AssessmentDiscardDialog';
+import AssessmentCompletionDialog from './AssessmentCompletionDialog';
+import { parsePreviewQuestion } from './assessment-question-preview';
 import {
   assessmentCompletionLabel,
   assessmentCompletionMessage,
 } from './assessment-completion-feedback';
 import {
-  completeAssessmentSession,
   createAssessmentSession,
   fetchAssessmentResults,
   fetchAssessmentSession,
-  fetchQuestions,
   reviewLateAssessmentSubmission,
   startAssessmentSession,
   type AssessmentResultsData,
   type AssessmentSessionData,
+  type CreateAssessmentSessionData,
 } from '../actions';
 
 import {
@@ -59,13 +62,6 @@ interface Props {
 }
 
 type AssessmentStudioTab = 'diag' | 'form' | 'uts' | 'uas' | 'fb';
-
-interface QuestionRecord {
-  id: string;
-  type: string;
-  body: string;
-  difficulty: string;
-}
 
 const INCIDENT_LABELS: Record<string, string> = {
   fullscreen_exit: 'Keluar layar penuh',
@@ -114,8 +110,13 @@ export default function PenilaianSesiModal({
     session?.assessmentSessionId ?? null,
   );
   const [sessionData, setSessionData] = useState<AssessmentSessionData | null>(null);
-  const [bankQuestions, setBankQuestions] = useState<QuestionRecord[]>([]);
-  const [selectedPoints, setSelectedPoints] = useState<Record<string, number>>({});
+  const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
+  const [sessionLoadVersion, setSessionLoadVersion] = useState(0);
+  const [selection, setSelection] = useState<{
+    points: Record<string, number>;
+    questions: ReadonlyMap<string, QuestionRecord>;
+  }>({ points: {}, questions: new Map() });
+  const { points: selectedPoints, questions: selectedQuestions } = selection;
   const [bankOpen, setBankOpen] = useState(false);
   const [studioStep, setStudioStep] = useState<'konteks' | 'soal' | 'review' | 'aktifkan'>(
     session?.assessmentSessionId ? 'aktifkan' : 'konteks',
@@ -123,7 +124,12 @@ export default function PenilaianSesiModal({
   const [durationMinutes, setDurationMinutes] = useState<number | ''>('');
   const [randomizeOrder, setRandomizeOrder] = useState(true);
   const [resultsData, setResultsData] = useState<AssessmentResultsData | null>(null);
-  const [essayGradingOpen, setEssayGradingOpen] = useState(false);
+  const [resultsError, setResultsError] = useState<string | null>(null);
+  const resultsRequest = useRef(0);
+  const [gradingResults, setGradingResults] = useState<AssessmentResultsData | null>(null);
+  const essayGradingOpen = gradingResults !== null;
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [completionOpen, setCompletionOpen] = useState(false);
   const [lateReviewTarget, setLateReviewTarget] = useState<{
     responseId: string;
     studentName: string;
@@ -132,6 +138,9 @@ export default function PenilaianSesiModal({
   const [lateReviewNote, setLateReviewNote] = useState('');
   const [loading, startLoad] = useTransition();
   const [saving, startSave] = useTransition();
+  const studioSaveFlight = useRef(false);
+  const draftAttempt = useRef<CreateAssessmentSessionData | null>(null);
+  const [draftUncertain, setDraftUncertain] = useState(false);
   const [liveData, setLiveData] = useState<LiveMonitorData | null>(null);
   const [liveState, setLiveState] = useState<LiveMonitorState>('idle');
   const [liveRetry, setLiveRetry] = useState(0);
@@ -181,9 +190,27 @@ export default function PenilaianSesiModal({
       })),
     [selectedPoints],
   );
+  const draftDirty =
+    !workingSessionId &&
+    (selectedList.length > 0 || durationMinutes !== '' || !randomizeOrder || tab !== initialTab);
+  useAssessmentExitWarning(draftDirty);
+  const previewItems = useMemo(
+    () =>
+      workingSessionId
+        ? (sessionData?.questions ?? []).map((question) => parsePreviewQuestion(question))
+        : selectedList.map((selection) =>
+            parsePreviewQuestion(selectedQuestions.get(selection.questionId), selection.points),
+          ),
+    [workingSessionId, sessionData?.questions, selectedList, selectedQuestions],
+  );
+  const previewQuestions = previewItems.filter((question) => question !== null);
+  const missingPreviewCount = previewItems.length - previewQuestions.length;
   const pendingEssayCorrections = useMemo(
-    () => (resultsData?.essayCorrections ?? []).filter((item) => item.status === 'manual_pending'),
-    [resultsData],
+    () =>
+      ((gradingResults ?? resultsData)?.essayCorrections ?? []).filter(
+        (item) => item.status === 'manual_pending',
+      ),
+    [gradingResults, resultsData],
   );
   const essayQuestions = useMemo(() => {
     const byId = new Map<
@@ -221,61 +248,84 @@ export default function PenilaianSesiModal({
     return Array.from(byId.values());
   }, [pendingEssayCorrections]);
 
-  const loadBank = () => {
-    if (!session?.subject) return;
-    startLoad(async () => {
-      const res = await fetchQuestions(session.subject);
-      if (!res.success || !res.data) {
-        toast.error(res.error ?? 'Gagal memuat Bank Soal.');
-        return;
-      }
-      const data = Array.isArray(res.data)
-        ? res.data
-        : ((res.data as { data?: QuestionRecord[] }).data ?? []);
-      setBankQuestions(data);
+  const updateSelectedQuestions = (questions: QuestionRecord[]) => {
+    setSelection((previous) => {
+      const updates = questions.filter(({ id }) => Object.hasOwn(previous.points, id));
+      if (!updates.length) return previous;
+      const next = new Map(previous.questions);
+      for (const question of updates) next.set(question.id, question);
+      return { ...previous, questions: next };
     });
   };
 
-  const loadResults = () => {
+  const changeSelection = (points: Record<string, number>, details: QuestionRecord[] = []) => {
+    setSelection((previous) => {
+      const questions = new Map(previous.questions);
+      for (const detail of details) questions.set(detail.id, detail);
+      for (const id of questions.keys()) {
+        if (!Object.hasOwn(points, id)) questions.delete(id);
+      }
+      return { points, questions };
+    });
+  };
+
+  const loadResults = (openGrading = false) => {
     if (!workingSessionId) {
       setResultsData(null);
       return;
     }
+    const request = ++resultsRequest.current;
+    setResultsError(null);
     startLoad(async () => {
-      const res = await fetchAssessmentResults(workingSessionId);
-      if (!res.success) {
-        toast.error(res.error ?? 'Gagal memuat hasil asesmen.');
-        return;
+      try {
+        const res = await fetchAssessmentResults(workingSessionId);
+        if (request !== resultsRequest.current) return;
+        if (!res.success || res.data?.session.id !== workingSessionId) {
+          setResultsError(res.error ?? 'Gagal memuat hasil asesmen.');
+          return;
+        }
+        setResultsData(res.data);
+        if (openGrading) {
+          if (res.data.essayCorrections.some((item) => item.status === 'manual_pending')) {
+            setGradingResults(res.data);
+          } else {
+            toast.info('Tidak ada jawaban esai yang perlu dikoreksi.');
+          }
+        }
+      } catch {
+        if (request === resultsRequest.current)
+          setResultsError('Hasil asesmen belum dapat dimuat. Coba lagi.');
       }
-      setResultsData(res.data ?? null);
     });
   };
 
   useEffect(() => {
-    if (!session?.subject) return;
-    loadBank();
-  }, [session?.subject]);
-
-  useEffect(() => {
-    if (!workingSessionId) {
-      setSessionData(null);
-      setResultsData(null);
-      return;
-    }
-    startLoad(async () => {
-      const res = await fetchAssessmentSession(workingSessionId);
-      if (!res.success) {
-        toast.error(res.error ?? 'Gagal memuat sesi asesmen.');
-        return;
+    const existingSessionId = session?.assessmentSessionId;
+    if (!existingSessionId) return;
+    let current = true;
+    setSessionLoadError(null);
+    void (async () => {
+      try {
+        const res = await fetchAssessmentSession(existingSessionId);
+        if (!current) return;
+        if (!res.success || res.data?.id !== existingSessionId) {
+          setSessionLoadError(res.error ?? 'Sesi asesmen belum dapat dimuat.');
+          return;
+        }
+        setSessionData(res.data);
+      } catch {
+        if (current) setSessionLoadError('Sesi asesmen belum dapat dimuat.');
       }
-      setSessionData(res.data ?? null);
-    });
-  }, [workingSessionId]);
+    })();
+    return () => {
+      current = false;
+    };
+  }, [session?.assessmentSessionId, sessionLoadVersion]);
 
   useEffect(() => {
-    if (!workingSessionId) return;
+    if (!workingSessionId || mode !== 'analysis') return;
     loadResults();
-  }, [workingSessionId]);
+  }, [mode, workingSessionId]);
 
   useEffect(() => {
     if (mode !== 'monitor' || !workingSessionId) {
@@ -304,9 +354,14 @@ export default function PenilaianSesiModal({
       toast.error('Pilih minimal satu soal dari Bank Soal.');
       return;
     }
+    if (missingPreviewCount > 0) {
+      toast.error('Rincian beberapa soal belum lengkap. Buka Bank Soal untuk memuatnya kembali.');
+      return;
+    }
     const config = assessmentConfigFromTab(tab);
-    startSave(async () => {
-      const res = await createAssessmentSession({
+    runStudioSave(async () => {
+      const payload = draftAttempt.current ?? {
+        requestId: crypto.randomUUID(),
         moduleId: session.moduleId!,
         classId: session.classId,
         title: `${config.label} ${session.subject} - ${session.className}`,
@@ -317,43 +372,70 @@ export default function PenilaianSesiModal({
         semester,
         ...(durationMinutes ? { durationMinutes: Number(durationMinutes) } : {}),
         randomizeOrder,
-      });
-      if (!res.success || !res.data) {
-        toast.error(res.error ?? 'Gagal membuat sesi.');
-        return;
+      };
+      draftAttempt.current = payload;
+      try {
+        const res = await createAssessmentSession(payload);
+        if (!res.success || !res.data?.id) {
+          const definitivelyNotCreated =
+            !draftUncertain &&
+            !res.success &&
+            res.httpStatus !== undefined &&
+            [400, 401, 403, 404, 422, 429].includes(res.httpStatus);
+          if (definitivelyNotCreated) {
+            draftAttempt.current = null;
+          } else {
+            setDraftUncertain(true);
+          }
+          toast.error(res.error ?? 'Penyimpanan draf belum terkonfirmasi.');
+          return;
+        }
+        draftAttempt.current = null;
+        setDraftUncertain(false);
+        setWorkingSessionId(res.data.id);
+        setSessionData(res.data);
+        setStudioStep('aktifkan');
+        toast.success(
+          draftUncertain ? 'Draf yang sama berhasil dipulihkan.' : 'Draft sesi asesmen dibuat.',
+        );
+      } catch {
+        setDraftUncertain(true);
+        toast.error('Penyimpanan draf belum terkonfirmasi.');
       }
-      setWorkingSessionId(res.data.id);
-      setSessionData(res.data);
-      setStudioStep('aktifkan');
-      toast.success('Draft sesi asesmen dibuat.');
+    });
+  };
+
+  const runStudioSave = (action: () => Promise<void>) => {
+    if (studioSaveFlight.current || saving) return;
+    studioSaveFlight.current = true;
+    startSave(async () => {
+      try {
+        await action();
+      } catch {
+        toast.error('Hasil belum dapat dipastikan. Periksa daftar sesi sebelum mencoba lagi.');
+      } finally {
+        studioSaveFlight.current = false;
+      }
     });
   };
 
   const activateOrComplete = () => {
     if (!workingSessionId || !sessionData) return;
-    startSave(async () => {
+    if (sessionData.status === 'active') {
+      setCompletionOpen(true);
+      return;
+    }
+    runStudioSave(async () => {
       if (sessionData.status === 'draft') {
         const res = await startAssessmentSession(workingSessionId);
-        if (!res.success) {
+        if (!res.success || res.data?.id !== workingSessionId || res.data.status !== 'active') {
           toast.error(res.error ?? 'Gagal mengaktifkan sesi.');
           return;
         }
-        setSessionData(res.data ?? null);
+        setSessionData(res.data);
         setMode('monitor');
         toast.success('Sesi aktif untuk siswa.');
         return;
-      }
-      if (sessionData.status === 'active') {
-        const res = await completeAssessmentSession(workingSessionId);
-        if (!res.success) {
-          toast.error(res.error ?? 'Gagal menyelesaikan sesi.');
-          return;
-        }
-        setSessionData(res.data ?? null);
-        setMode('analysis');
-        loadResults();
-        setAnalysisVersion((version) => version + 1);
-        toast.success(assessmentCompletionMessage(res.data));
       }
     });
   };
@@ -370,13 +452,31 @@ export default function PenilaianSesiModal({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !saving && !lateReviewTarget && !essayGradingOpen && !bankOpen) onClose();
+        if (
+          !open &&
+          !saving &&
+          !lateReviewTarget &&
+          !essayGradingOpen &&
+          !bankOpen &&
+          !completionOpen &&
+          !discardOpen
+        ) {
+          if (draftDirty) setDiscardOpen(true);
+          else onClose();
+        }
       }}
     >
       <DialogContent
         className="block max-h-[92dvh] w-[calc(100%-1.5rem)] max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
         {...returnFocus}
-        closeDisabled={saving || !!lateReviewTarget || essayGradingOpen || bankOpen}
+        closeDisabled={
+          saving ||
+          !!lateReviewTarget ||
+          essayGradingOpen ||
+          bankOpen ||
+          completionOpen ||
+          discardOpen
+        }
         onEscapeKeyDown={(event) => {
           if (saving || lateReviewTarget || essayGradingOpen || bankOpen) event.preventDefault();
         }}
@@ -398,6 +498,11 @@ export default function PenilaianSesiModal({
                 ? `Sesi ${sessionData ? learningRecordStatus(sessionData.status) : 'sedang dimuat'}`
                 : 'Pilih soal, buat draft, lalu aktifkan untuk siswa.'}
             </DialogDescription>
+            {draftDirty && (
+              <p role="status" className="mt-1 text-sm font-semibold text-amber-800">
+                {draftUncertain ? 'Status simpan belum terkonfirmasi' : 'Draft belum disimpan'}
+              </p>
+            )}
           </div>
         </div>
 
@@ -436,8 +541,9 @@ export default function PenilaianSesiModal({
                     <button
                       key={key}
                       type="button"
+                      disabled={saving || draftUncertain}
                       onClick={() => setStudioStep(key as typeof studioStep)}
-                      className={`rounded-md px-2 py-2 text-center text-[11px] font-bold ${studioStep === key ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]'}`}
+                      className={`rounded-md px-2 py-2 text-center text-[11px] font-bold disabled:opacity-50 ${studioStep === key ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]'}`}
                     >
                       <span className="mr-1 text-[10px]">{index + 1}</span>
                       {label}
@@ -473,21 +579,24 @@ export default function PenilaianSesiModal({
                       ))}
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2">
-                      <input
-                        type="number"
-                        min={1}
-                        max={300}
-                        value={durationMinutes}
-                        onChange={(event) =>
-                          setDurationMinutes(
-                            event.target.value === ''
-                              ? ''
-                              : Math.max(1, Math.min(300, Number(event.target.value))),
-                          )
-                        }
-                        className="rounded-lg border border-[#dfe9e4] px-3 py-2 text-[12px] font-semibold text-[#0f2e25]"
-                        placeholder="Durasi menit opsional"
-                      />
+                      <label className="space-y-1 text-sm font-semibold text-slate-700">
+                        <span>Durasi pengerjaan (menit)</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={300}
+                          value={durationMinutes}
+                          onChange={(event) =>
+                            setDurationMinutes(
+                              event.target.value === ''
+                                ? ''
+                                : Math.max(1, Math.min(300, Number(event.target.value))),
+                            )
+                          }
+                          className="rounded-lg border border-[#dfe9e4] px-3 py-2 text-[12px] font-semibold text-[#0f2e25]"
+                          placeholder="Durasi menit opsional"
+                        />
+                      </label>
                       <label className="flex items-center justify-center gap-2 rounded-lg border border-[#dfe9e4] bg-white px-3 py-2 text-[12px] font-bold text-[#355a4e]">
                         <input
                           type="checkbox"
@@ -529,22 +638,24 @@ export default function PenilaianSesiModal({
                         </div>
                       ) : (
                         selectedList.map((selection, index) => {
-                          const question = bankQuestions.find(
-                            (item) => item.id === selection.questionId,
-                          );
+                          const question = selectedQuestions.get(selection.questionId);
                           return (
                             <div
                               key={selection.questionId}
                               className="flex items-start justify-between gap-3 border-b border-[#eef4f1] px-3 py-2 last:border-b-0"
                             >
-                              <div>
+                              <div className="min-w-0">
                                 <div className="text-[11px] font-bold text-emerald-700">
                                   #{index + 1} - {question?.type ?? 'soal'} - {selection.points}{' '}
                                   poin
                                 </div>
-                                <p className="text-[12px] font-semibold text-[#0f2e25]">
-                                  {question?.body ?? selection.questionId}
-                                </p>
+                                {question ? (
+                                  <QuestionContent body={question.body} />
+                                ) : (
+                                  <p className="text-sm text-slate-600">
+                                    Rincian soal belum dimuat.
+                                  </p>
+                                )}
                               </div>
                             </div>
                           );
@@ -578,36 +689,39 @@ export default function PenilaianSesiModal({
                       {selectedList.reduce((sum, item) => sum + item.points, 0)} poin -{' '}
                       {durationMinutes ? `${durationMinutes} menit` : 'tanpa timer'}
                     </div>
-                    {selectedList.map((selection, index) => {
-                      const question = bankQuestions.find(
-                        (item) => item.id === selection.questionId,
-                      );
-                      return (
-                        <article
-                          key={selection.questionId}
-                          className="rounded-lg border border-[#eef4f1] px-3 py-2"
-                        >
-                          <div className="text-[11px] font-bold text-emerald-700">
-                            #{index + 1} - {question?.type ?? 'soal'} - {selection.points} poin
-                          </div>
-                          <p className="text-[12px] font-semibold text-[#0f2e25]">
-                            {question?.body ?? selection.questionId}
-                          </p>
-                        </article>
-                      );
-                    })}
+                    {missingPreviewCount > 0 && (
+                      <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+                        Rincian {missingPreviewCount} soal belum lengkap. Buka Bank Soal untuk
+                        memuatnya kembali sebelum menyimpan draft.
+                      </p>
+                    )}
+                    {draftUncertain && (
+                      <p
+                        role="status"
+                        className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900"
+                      >
+                        Draf mungkin sudah tersimpan. Pulihkan untuk memeriksa hasil pengaturan ini.
+                      </p>
+                    )}
+                    <AssessmentQuestionPreview questions={previewQuestions} />
                     <div className="flex justify-between gap-2">
                       <button
                         type="button"
+                        disabled={saving || draftUncertain}
                         onClick={() => setStudioStep('soal')}
-                        className="rounded-lg border border-[#dfe9e4] px-3 py-2 text-[12px] font-bold text-[#355a4e]"
+                        className="rounded-lg border border-[#dfe9e4] px-3 py-2 text-[12px] font-bold text-[#355a4e] disabled:opacity-50"
                       >
                         Kembali
                       </button>
                       <button
                         type="button"
                         onClick={createDraft}
-                        disabled={saving || selectedList.length === 0 || !session.moduleId}
+                        disabled={
+                          saving ||
+                          selectedList.length === 0 ||
+                          !session.moduleId ||
+                          missingPreviewCount > 0
+                        }
                         className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-[12px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
                       >
                         {saving ? (
@@ -615,7 +729,7 @@ export default function PenilaianSesiModal({
                         ) : (
                           <Send className="h-4 w-4" />
                         )}
-                        Buat Draft
+                        {draftUncertain ? 'Pulihkan Draft' : 'Buat Draft'}
                       </button>
                     </div>
                   </section>
@@ -631,48 +745,48 @@ export default function PenilaianSesiModal({
 
             {workingSessionId && (
               <div className="space-y-3">
-                {loading ? (
-                  <div className="grid h-24 place-items-center rounded-lg border border-dashed border-[#dfe9e4] text-[12px] font-semibold text-[#6b8079]">
+                {sessionLoadError ? (
+                  <div className="space-y-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+                    <p role="alert">{sessionLoadError}</p>
+                    <button
+                      type="button"
+                      onClick={() => setSessionLoadVersion((version) => version + 1)}
+                      className="min-h-11 rounded-lg border border-amber-700 px-3 font-semibold"
+                    >
+                      Muat ulang sesi
+                    </button>
+                  </div>
+                ) : !sessionData ? (
+                  <div
+                    role="status"
+                    className="grid h-24 place-items-center rounded-lg border border-dashed border-[#dfe9e4] text-[12px] font-semibold text-[#6b8079]"
+                  >
                     Memuat sesi...
                   </div>
                 ) : (
                   <>
                     <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-bold text-emerald-800">
                       {sessionData?.title ?? 'Sesi asesmen'} - {sessionData?.questions?.length ?? 0}{' '}
-                      soal · {sessionData ? learningRecordStatus(sessionData.status) : 'Sedang dimuat'} ·{' '}
+                      soal ·{' '}
+                      {sessionData ? learningRecordStatus(sessionData.status) : 'Sedang dimuat'} ·{' '}
                       {sessionData?.gradeTarget
                         ? `Rekap nilai: ${sessionData.gradeTarget.toUpperCase()}`
                         : 'Tidak masuk rekap nilai'}
                     </div>
-                    <div className="space-y-2">
-                      {(sessionData?.questions ?? []).map((question, index) => {
-                        const record = question as {
-                          id?: string;
-                          type?: string;
-                          body?: string;
-                          points?: number;
-                        };
-                        return (
-                          <article
-                            key={record.id ?? index}
-                            className="rounded-lg border border-[#dfe9e4] p-3"
-                          >
-                            <div className="text-[11px] font-bold text-emerald-700">
-                              #{index + 1} - {record.type} - {record.points ?? 0} poin
-                            </div>
-                            <div className="mt-2">
-                              <QuestionContent body={record.body ?? ''} />
-                            </div>
-                          </article>
-                        );
-                      })}
-                    </div>
+                    {missingPreviewCount > 0 && (
+                      <p role="alert" className="text-sm text-amber-900">
+                        Sebagian soal belum dapat dipratinjau. Periksa paket sebelum aktivasi.
+                      </p>
+                    )}
+                    <AssessmentQuestionPreview questions={previewQuestions} />
                     {sessionData &&
                       (sessionData.status === 'draft' || sessionData.status === 'active') && (
                         <button
                           type="button"
                           onClick={activateOrComplete}
-                          disabled={saving}
+                          disabled={
+                            saving || (sessionData.status === 'draft' && missingPreviewCount > 0)
+                          }
                           className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-[13px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
                         >
                           {saving ? (
@@ -769,14 +883,12 @@ export default function PenilaianSesiModal({
                     </div>
                     <button
                       type="button"
-                      onClick={() =>
-                        pendingEssayCorrections.length ? setEssayGradingOpen(true) : loadResults()
-                      }
+                      onClick={() => loadResults(true)}
                       disabled={loading}
                       className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-600"
                     >
                       <ClipboardPenLine className="h-3.5 w-3.5" />
-                      {pendingEssayCorrections.length ? 'Koreksi esai' : 'Muat jawaban'}
+                      Koreksi esai
                     </button>
                   </div>
                 )}
@@ -895,16 +1007,30 @@ export default function PenilaianSesiModal({
           </div>
         )}
 
+        {resultsError && (mode === 'monitor' || mode === 'analysis') && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+            <p role="alert">{resultsError}</p>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => loadResults(true)}
+              className="min-h-11 rounded-lg border border-amber-700 px-3 font-semibold"
+            >
+              Muat ulang koreksi
+            </button>
+          </div>
+        )}
         {mode === 'analysis' && (
           <div className="mt-4 space-y-3">
-            {pendingEssayCorrections.length > 0 && (
+            {pendingEssayCorrections.length > 0 && !resultsError && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                 <div className="text-[12px] font-bold text-amber-800">
                   Analisis belum final: {pendingEssayCorrections.length} jawaban esai perlu dinilai.
                 </div>
                 <button
                   type="button"
-                  onClick={() => setEssayGradingOpen(true)}
+                  onClick={() => loadResults(true)}
+                  disabled={loading}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-600"
                 >
                   <ClipboardPenLine className="h-3.5 w-3.5" />
@@ -932,11 +1058,9 @@ export default function PenilaianSesiModal({
           semester={semester}
           selectable
           selectedPoints={selectedPoints}
-          onSelectedPointsChange={setSelectedPoints}
-          onClose={() => {
-            setBankOpen(false);
-            loadBank();
-          }}
+          onSelectedPointsChange={changeSelection}
+          onQuestionsLoaded={updateSelectedQuestions}
+          onClose={() => setBankOpen(false)}
         />
       )}
       {essayGradingOpen && workingSessionId && (
@@ -945,13 +1069,52 @@ export default function PenilaianSesiModal({
           questions={essayQuestions}
           responses={essayResponses}
           onClose={() => {
-            setEssayGradingOpen(false);
+            setGradingResults(null);
+            loadResults();
             requestAnimationFrame(() => analysisTab.current?.focus());
           }}
-          onSaved={() => {
-            loadResults();
+          onSaved={(responseId, questionId) => {
+            setResultsData((current) =>
+              current
+                ? {
+                    ...current,
+                    essayCorrections: current.essayCorrections.map((item) =>
+                      item.responseId === responseId && item.questionId === questionId
+                        ? { ...item, status: 'manual_scored' }
+                        : item,
+                    ),
+                  }
+                : null,
+            );
             setAnalysisVersion((version) => version + 1);
           }}
+        />
+      )}
+      {completionOpen && workingSessionId && (
+        <AssessmentCompletionDialog
+          key={workingSessionId}
+          sessionId={workingSessionId}
+          session={sessionData}
+          onClose={() => setCompletionOpen(false)}
+          onCompleted={(completed) => {
+            setSessionData(completed);
+            setCompletionOpen(false);
+            setMode('analysis');
+            setAnalysisVersion((version) => version + 1);
+            toast.success(assessmentCompletionMessage(completed));
+            requestAnimationFrame(() => analysisTab.current?.focus());
+          }}
+        />
+      )}
+      {discardOpen && (
+        <AssessmentDiscardDialog
+          description={
+            draftUncertain
+              ? 'Status simpan belum diketahui. Jika keluar, periksa daftar sesi sebelum membuat draf lagi.'
+              : 'Pilihan soal dan pengaturan yang belum disimpan akan dibuang jika jendela ini ditutup.'
+          }
+          onKeepEditing={() => setDiscardOpen(false)}
+          onDiscard={onClose}
         />
       )}
       {lateReviewTarget && (

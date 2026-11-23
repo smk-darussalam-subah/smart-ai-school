@@ -18,14 +18,14 @@ function initials(name?: string | null): string {
   return name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 }
 
-export default function TopBar({ viewAs = null, onToggleSidebar, sidebarExpanded, positionRoles = [] }: { viewAs?: string | null; onToggleSidebar: () => void; sidebarExpanded: boolean; positionRoles?: string[] }) {
+export default function TopBar({ viewAs = null, onToggleSidebar, sidebarExpanded, themeControl, positionRoles = [] }: { viewAs?: string | null; onToggleSidebar: () => void; sidebarExpanded: boolean; themeControl?: React.ReactNode; positionRoles?: string[] }) {
   const { data: session } = useSession();
   const pathname = usePathname();
   const identity = identityRoleLabel(viewAs ?? ((session?.roles as string[] | undefined) ?? [])[0] ?? '');
   const appointment = positionRoles[0] ? positionRoleLabel(positionRoles[0]) : null;
 
   return (
-    <header className="hidden md:flex h-16 shrink-0 items-center justify-between px-6 bg-white/85 backdrop-blur border-b border-emerald-900/10 sticky top-0 z-30">
+    <header className="hidden md:flex h-16 shrink-0 items-center justify-between px-6 bg-white/85 backdrop-blur dark:bg-slate-900 border-b border-emerald-900/10 sticky top-0 z-30">
       <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
@@ -33,7 +33,7 @@ export default function TopBar({ viewAs = null, onToggleSidebar, sidebarExpanded
           aria-label="Sembunyikan atau tampilkan menu"
           aria-expanded={sidebarExpanded}
           aria-controls="dashboard-sidebar"
-          className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700"
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 dark:hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700"
         >
           <PanelLeft className="h-5 w-5" aria-hidden="true" />
         </button>
@@ -46,6 +46,7 @@ export default function TopBar({ viewAs = null, onToggleSidebar, sidebarExpanded
       </div>
 
       <div className="flex items-center gap-3">
+        {themeControl}
         <Link
           href={`/dashboard/panduan?from=${encodeURIComponent(pathname)}`}
           className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700"

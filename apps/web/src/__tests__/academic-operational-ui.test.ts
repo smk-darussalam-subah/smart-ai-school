@@ -191,7 +191,12 @@ describe('academic operational UI contracts', () => {
     );
 
     expect(taskDetail).toContain("task.status === 'submitted' || task.status === 'graded'");
-    expect(startAttempt).toContain('startAssessmentResponse(task.assessmentSessionId!)');
+    expect(startAttempt).toContain('const deviceId = getAssessmentDeviceId()');
+    const startOrResumeCall = 'startAssessmentResponse(task.assessmentSessionId!, deviceId)';
+    expect(startAttempt.match(/startAssessmentResponse\([^)]*\)/g)).toEqual([
+      startOrResumeCall,
+      startOrResumeCall,
+    ]);
     expect(startAttempt).toContain('loadAssessmentDraft(parsed.responseId)');
     expect(startAttempt).toContain('setPendingSubmit(selected.pendingSubmit)');
     expect(startAttempt).toContain('if (selected.pendingSubmit) await submitCurrentAnswers()');

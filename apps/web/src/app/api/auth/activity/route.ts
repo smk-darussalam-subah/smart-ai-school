@@ -30,9 +30,8 @@ export async function POST(request: NextRequest): Promise<Response> {
     const chunks: Uint8Array[] = [];
     let bytes = 0;
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+        const { value } = chunk;
         bytes += value.byteLength;
         if (bytes > 128) {
           await reader.cancel().catch(() => undefined);

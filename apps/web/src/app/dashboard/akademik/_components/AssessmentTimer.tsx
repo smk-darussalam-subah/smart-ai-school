@@ -12,39 +12,41 @@ import clsx from 'clsx';
 interface Props {
   durationMinutes: number;
   startedAt: string; // ISO string
+  deadlineAt?: string;
+  serverNow?: string;
   onExpire: () => void;
 }
 
-export default function AssessmentTimer({ durationMinutes, startedAt, onExpire }: Props) {
-  const [secondsLeft, setSecondsLeft] = useState(() => {
-    const elapsed = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000);
-    return Math.max(0, durationMinutes * 60 - elapsed);
-  });
+export default function AssessmentTimer({ durationMinutes, startedAt, deadlineAt, serverNow, onExpire }: Props) {
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const expiredRef = useRef(false);
+  const callback = useRef(onExpire);
+  callback.current = onExpire;
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          if (!expiredRef.current) {
-            expiredRef.current = true;
-            onExpire();
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    expiredRef.current = false;
+    const cutoff = deadlineAt ? Date.parse(deadlineAt) : Date.parse(startedAt) + durationMinutes * 60_000;
+    const origin = serverNow ? Date.parse(serverNow) : Date.now();
+    const mountedAt = performance.now();
+    function tick() {
+      const remaining = Math.max(0, Math.ceil((cutoff - origin - (performance.now() - mountedAt)) / 1000));
+      setSecondsLeft(remaining);
+      if (!remaining && !expiredRef.current) {
+        expiredRef.current = true;
+        callback.current();
+      }
+    }
+    const interval = setInterval(tick, 1000);
+    tick();
     return () => clearInterval(interval);
-  }, [onExpire]);
+  }, [durationMinutes, startedAt, deadlineAt, serverNow]);
 
-  const minutes = Math.floor(secondsLeft / 60);
-  const seconds = secondsLeft % 60;
-  const display = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  const minutes = Math.floor((secondsLeft ?? 0) / 60);
+  const seconds = (secondsLeft ?? 0) % 60;
+  const display = secondsLeft === null ? '—' : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
-  const isUrgent = secondsLeft <= 60;
-  const isWarning = secondsLeft <= 300 && !isUrgent;
+  const isUrgent = secondsLeft !== null && secondsLeft <= 60;
+  const isWarning = secondsLeft !== null && secondsLeft <= 300 && !isUrgent;
 
   return (
     <div

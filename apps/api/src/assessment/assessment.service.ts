@@ -21,9 +21,11 @@ import { NotifChannel, Prisma } from '@prisma/client';
 import { AuthUser } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { Observable } from 'rxjs';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertFreshMutationAuthority } from '../common/helpers/identity-mutation-lock';
 import { resolveOwnTeachingRead } from '../common/helpers/own-teaching-read';
+import { PermissionsService } from '../permissions/permissions.service';
 import {
   AutosaveResponseDto,
   AssessmentRuntimeSignalDto,
@@ -66,6 +68,8 @@ import { resolveKktpThreshold, PersistedKktpProvenance } from '../academic/kktp-
 import { APPOINTMENT_ACTIVATION_LOCK_KEY } from '../appointments/appointments.service';
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { AssessmentWriteAdmission } from './assessment-write-admission';
+import { makeupFinalScore, readMakeupGradeSnapshot } from './exam-makeup-grade';
+import { assertExamWindow, authorizeExamDevice, examAccessSelect, examDeadline } from './scheduled-exam-runtime';
 
 const REVIEWER_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] as const;
 const OUTBOX_RETRY_LIMIT = 5;
@@ -144,6 +148,7 @@ const SESSION_SELECT = {
   teachingAssignment: { select: { id: true, subject: true } },
   teacher: { select: { id: true, user: { select: { fullName: true } } } },
   class: { select: { id: true, name: true } },
+  examSchedule: { select: examAccessSelect },
   _count: { select: { responses: true, remedialParticipants: true } },
 } as const;
 
@@ -174,12 +179,15 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
   private outboxWorkerRunning = false;
   private remedialReminderTimer: NodeJS.Timeout | null = null;
   private remedialReminderRunning = false;
+  private examFinalizerTimer: NodeJS.Timeout | null = null;
+  private examFinalizerRunning = false;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
     private readonly academicPeriod: AcademicPeriodService,
     @Optional() private readonly notificationService?: NotificationService,
+    @Optional() private readonly permissions?: PermissionsService,
   ) {}
 
   private async lockAssessmentSession(
@@ -231,6 +239,14 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       REMEDIAL_REMINDER_INTERVAL_MS,
     );
     this.remedialReminderTimer.unref?.();
+    this.examFinalizerTimer = setInterval(() => {
+      if (this.examFinalizerRunning) return;
+      this.examFinalizerRunning = true;
+      void this.finalizeDueScheduledExams().catch((error: unknown) => {
+        logger.warn('[AssessmentService] Finalisasi ujian belum berjalan', { error: this.errorMessage(error) });
+      }).finally(() => { this.examFinalizerRunning = false; });
+    }, 5_000);
+    this.examFinalizerTimer.unref?.();
   }
 
   onModuleDestroy(): void {
@@ -242,6 +258,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       clearInterval(this.remedialReminderTimer);
       this.remedialReminderTimer = null;
     }
+    if (this.examFinalizerTimer) clearInterval(this.examFinalizerTimer);
   }
 
   private runAssessmentOutboxWorker(source: 'startup' | 'interval' | 'completion'): void {
@@ -353,8 +370,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     classId: string,
     academicYear: string,
     _semester: number,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
   ) {
-    const assignment = await this.prisma.teachingAssignment.findFirst({
+    const assignment = await db.teachingAssignment.findFirst({
       where: {
         teacherId,
         subject,
@@ -811,7 +829,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     return {
       ...rest,
       questionCount: questions.length,
-      questions: legacyMatching ? [] : questions.map(sanitizeQuestionForStudent),
+      questions: legacyMatching || session.examSchedule ? [] : questions.map(sanitizeQuestionForStudent),
       ...(legacyMatching
         ? {
             attemptBlockedReason:
@@ -822,79 +840,174 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
   }
 
   async create(dto: CreateAssessmentSessionDto, user: AuthUser) {
+    const permissions = this.permissions;
+    if (!permissions) throw new ForbiddenException('Izin pembuatan draf belum dapat diperiksa');
+
     const teacherId = await this.resolveTeacherId(user.keycloakId);
-    // Verify module exists and is owned by this teacher (or reviewer)
-    const mod = await this.prisma.lmsModule.findUnique({
-      where: { id: dto.moduleId },
-      select: {
-        id: true,
-        teacherId: true,
-        subject: true,
-        title: true,
-        academicYear: true,
-        semester: true,
-        kktp: true,
-        classId: true,
-      },
-    });
-    if (!mod) throw new NotFoundException('Modul LMS tidak ditemukan');
-    if (!this.isReviewer(user) && mod.teacherId !== teacherId) {
-      throw new ForbiddenException('Anda bukan pemilik modul LMS ini');
-    }
-    if (!mod.classId) {
-      throw new BadRequestException(
-        'Modul LMS harus memiliki kelas sebelum dibuat menjadi asesmen siswa',
-      );
-    }
-    if (dto.classId !== undefined && dto.classId !== null && dto.classId !== mod.classId) {
-      throw new BadRequestException('Kelas asesmen harus sama dengan kelas Modul LMS');
-    }
-    if (dto.academicYear !== mod.academicYear || dto.semester !== mod.semester) {
-      throw new BadRequestException('Tahun ajaran dan semester asesmen harus mengikuti Modul LMS');
-    }
-    const assignment = await this.assertTeachingScope(
-      teacherId,
-      mod.subject,
-      mod.classId,
-      mod.academicYear,
-      mod.semester,
-    );
-    const snapshot = await this.buildQuestionSnapshot(
-      teacherId,
-      mod.subject,
-      dto.questionSelections,
-    );
     const gradeTarget = this.gradeTargetFor(
       dto.type,
       dto.gradeTarget ?? (dto.type === 'formatif' ? 'uh' : null),
     );
 
-    return this.prisma.$transaction(async (tx) => {
-      await this.assertWritablePeriodInTransaction(tx, {
-        academicYear: mod.academicYear,
-        semester: mod.semester,
-      });
-      return tx.assessmentSession.create({
-        data: {
-          moduleId: dto.moduleId,
-          teachingAssignmentId: assignment.id,
+    const requestKey = dto.requestId
+      ? `assessment-draft:${teacherId}:${dto.requestId.toLowerCase()}`
+      : null;
+    return this.prisma.$transaction(
+      async (tx) => {
+        if (requestKey) {
+          // The receipt and draft commit together, including across API instances.
+          await tx.$executeRaw(
+            Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${requestKey}, 0))`,
+          );
+        }
+        const receipt = requestKey
+          ? await tx.auditLog.findUnique({
+              where: { id: requestKey },
+              select: { resourceId: true, metadata: true },
+            })
+          : null;
+
+        // Cutover can delay new drafts. Check live authority after the last domain lock.
+        if (!receipt) await this.academicPeriod.acquireCutoverLock(tx);
+        await assertFreshMutationAuthority(tx, permissions, user.keycloakId, 'lms.own.manage', [
+          'GURU',
+        ]);
+        if ((await this.resolveTeacherId(user.keycloakId, tx)) !== teacherId) {
+          throw new ForbiddenException('Profil guru berubah sejak permintaan draf dimulai');
+        }
+
+        const mod = await tx.lmsModule.findUnique({
+          where: { id: dto.moduleId },
+          select: {
+            teacherId: true,
+            subject: true,
+            academicYear: true,
+            semester: true,
+            classId: true,
+          },
+        });
+        if (!mod) throw new NotFoundException('Modul LMS tidak ditemukan');
+        if (mod.teacherId !== teacherId) {
+          throw new ForbiddenException('Anda bukan pemilik modul LMS ini');
+        }
+        if (!mod.classId) {
+          throw new BadRequestException(
+            'Modul LMS harus memiliki kelas sebelum dibuat menjadi asesmen siswa',
+          );
+        }
+        if (dto.classId !== undefined && dto.classId !== null && dto.classId !== mod.classId) {
+          throw new BadRequestException('Kelas asesmen harus sama dengan kelas Modul LMS');
+        }
+        if (dto.academicYear !== mod.academicYear || dto.semester !== mod.semester) {
+          throw new BadRequestException(
+            'Tahun ajaran dan semester asesmen harus mengikuti Modul LMS',
+          );
+        }
+        const assignment = await this.assertTeachingScope(
           teacherId,
-          classId: mod.classId,
-          title: dto.title,
-          type: dto.type,
-          status: 'draft',
-          purpose: 'regular',
-          questions: snapshot as Prisma.InputJsonValue,
-          gradeTarget,
+          mod.subject,
+          mod.classId,
+          mod.academicYear,
+          mod.semester,
+          tx,
+        );
+
+        const fingerprint = requestKey
+          ? createHash('sha256')
+              .update(
+                JSON.stringify({
+                  moduleId: dto.moduleId,
+                  classId: mod.classId,
+                  title: dto.title,
+                  type: dto.type,
+                  gradeTarget,
+                  academicYear: dto.academicYear,
+                  semester: dto.semester,
+                  durationMinutes: dto.durationMinutes ?? null,
+                  randomizeOrder: dto.randomizeOrder ?? false,
+                  questions: [...dto.questionSelections]
+                    .sort((a, b) => a.order - b.order)
+                    .map(({ questionId, points, order }) => [questionId, points, order]),
+                }),
+              )
+              .digest('hex')
+          : null;
+
+        if (receipt) {
+          if (receipt.metadata !== fingerprint) {
+            throw new ConflictException(
+              'Permintaan draf ini sudah dipakai untuk pengaturan berbeda.',
+            );
+          }
+          const existing = receipt.resourceId
+            ? await tx.assessmentSession.findFirst({
+                where: {
+                  id: receipt.resourceId,
+                  teacherId,
+                  moduleId: dto.moduleId,
+                  classId: mod.classId,
+                  academicYear: mod.academicYear,
+                  semester: mod.semester,
+                  purpose: 'regular',
+                },
+                select: SESSION_SELECT,
+              })
+            : null;
+          if (!existing)
+            throw new ConflictException('Draf dari permintaan ini sudah tidak tersedia.');
+          return existing;
+        }
+        await this.academicPeriod.assertWritablePeriod(tx, {
           academicYear: mod.academicYear,
           semester: mod.semester,
-          // U2 Wave 1: timer + randomization
-          ...(dto.durationMinutes !== undefined ? { durationMinutes: dto.durationMinutes } : {}),
-          ...(dto.randomizeOrder !== undefined ? { randomizeOrder: dto.randomizeOrder } : {}),
-        },
-        select: SESSION_SELECT,
-      });
-    });
+        });
+        const snapshot = await this.buildQuestionSnapshot(
+          teacherId,
+          mod.subject,
+          dto.questionSelections,
+          tx,
+        );
+        const draft = await tx.assessmentSession.create({
+          data: {
+            moduleId: dto.moduleId,
+            teachingAssignmentId: assignment.id,
+            teacherId,
+            classId: mod.classId,
+            title: dto.title,
+            type: dto.type,
+            status: 'draft',
+            purpose: 'regular',
+            questions: snapshot as Prisma.InputJsonValue,
+            gradeTarget,
+            academicYear: mod.academicYear,
+            semester: mod.semester,
+            // U2 Wave 1: timer + randomization
+            ...(dto.durationMinutes !== undefined ? { durationMinutes: dto.durationMinutes } : {}),
+            ...(dto.randomizeOrder !== undefined ? { randomizeOrder: dto.randomizeOrder } : {}),
+          },
+          select: SESSION_SELECT,
+        });
+        if (requestKey && fingerprint) {
+          await tx.auditLog.create({
+            data: {
+              id: requestKey,
+              actorId: user.keycloakId,
+              actorRoles: user.roles,
+              action: 'assessment.draft.create',
+              resourceType: 'AssessmentSession',
+              resourceId: draft.id,
+              method: 'POST',
+              path: '/assessment/sessions',
+              statusCode: 201,
+              outcome: 'success',
+              metadata: fingerprint,
+            },
+          });
+        }
+        return draft;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+    );
   }
 
   async findAll(query: ListAssessmentSessionDto, user: AuthUser) {
@@ -941,7 +1054,14 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           ...filters,
           ...statusFilter,
           purpose: 'regular',
-          classId: student.classId,
+          AND: [
+            { classId: student.classId },
+            { OR: [
+              { examSchedule: { is: null } },
+              { examSchedule: { is: { publishedAt: { not: null }, cancelledAt: null,
+                participants: { some: { studentId: student.id } } } } },
+            ] },
+          ],
         });
       }
       if (!purpose || purpose === 'remedial') {
@@ -1149,7 +1269,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async findOne(id: string, user: AuthUser) {
+  async findOne(id: string, user: AuthUser, mediaRead = false) {
     const session = await this.prisma.assessmentSession.findUnique({
       where: { id },
       select: SESSION_SELECT,
@@ -1168,12 +1288,32 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       const activeOrCompleted = session.status === 'active' || session.status === 'completed';
       let visible =
         activeOrCompleted && session.purpose === 'regular' && session.classId === student.classId;
+      if (visible && session.examSchedule) {
+        visible = Boolean(session.examSchedule.publishedAt && !session.examSchedule.cancelledAt &&
+          await this.prisma.examParticipant.findUnique({
+            where: { sessionId_studentId: { sessionId: id, studentId: student.id } },
+            select: { studentId: true },
+          }));
+      }
       if (activeOrCompleted && session.purpose === 'remedial') {
         const participant = await this.prisma.remedialParticipant.findFirst({
           where: { sessionId: session.id, studentId: student.id, status: { not: 'cancelled' } },
           select: { id: true },
         });
         visible = Boolean(participant);
+      }
+      if (visible && mediaRead && session.examSchedule) {
+        const [attempt, participant] = await Promise.all([
+          this.prisma.assessmentResponse.findUnique({ where: { sessionId_studentId: { sessionId: id, studentId: student.id } },
+            select: { startedAt: true, submittedAt: true } }),
+          this.prisma.examParticipant.findUnique({ where: { sessionId_studentId: { sessionId: id, studentId: student.id } },
+            select: { extraMinutes: true } }),
+        ]);
+        if (!attempt?.startedAt || attempt.submittedAt || !participant || !session.durationMinutes ||
+            new Date() >= examDeadline(session.examSchedule.closesAt, attempt.startedAt, session.durationMinutes, participant.extraMinutes)) {
+          throw new ForbiddenException('Gambar hanya tersedia saat mengerjakan ujian ini.');
+        }
+        return session;
       }
       if (visible) return this.sanitizeSessionForStudent(session);
     }
@@ -1263,10 +1403,11 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
   ): Promise<StoredQuestionSnapshot[]> {
     const current = await tx.assessmentSession.findUnique({
       where: { id },
-      select: { status: true, questions: true },
+      select: { status: true, questions: true, examSchedule: { select: { sessionId: true } } },
     });
     if (!current || current.status !== 'draft')
       throw new ConflictException('Sesi bukan draft. Muat ulang sebelum mengaktifkan.');
+    if (current.examSchedule) throw new ConflictException('Terbitkan sesi ini dari Jadwal Ujian.');
     return parseSnapshotQuestions(current.questions).map(secureMatchingSnapshot);
   }
 
@@ -1364,6 +1505,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           gradeTarget: true,
           module: { select: { subject: true, teacherId: true } },
           teachingAssignment: { select: { subject: true } },
+          examSchedule: { select: { ...examAccessSelect, makeupOfSessionId: true } },
         },
       });
       if (!existing) throw new NotFoundException('Sesi asesmen tidak ditemukan');
@@ -1376,10 +1518,19 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         academicYear: existing.academicYear,
         semester: existing.semester,
       });
+      if (existing.examSchedule) {
+        if (new Date() < existing.examSchedule.closesAt) {
+          throw new ConflictException('Tunggu sampai jendela ujian ditutup oleh server.');
+        }
+        const pending = await tx.assessmentResponse.count({
+          where: { sessionId: id, startedAt: { not: null }, submittedAt: null },
+        });
+        if (pending) throw new ConflictException('Server masih menyelesaikan jawaban. Coba kembali.');
+      }
 
       const grading =
         (existing.purpose ?? 'regular') === 'regular'
-          ? await this.syncGradesForCompletedSession(existing, tx)
+          ? await this.syncGradesForCompletedSession(existing, user, tx)
           : ({
               gradedCount: 0,
               pendingManualCount: 0,
@@ -1435,7 +1586,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       questions: Prisma.JsonValue;
       gradeTarget: string | null;
       module: { subject: string; teacherId: string } | null;
+      examSchedule?: { makeupOfSessionId: string | null } | null;
     },
+    actor: AuthUser,
     db: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<GradeSyncSummary> {
     if (!session.module || !session.moduleId) {
@@ -1501,12 +1654,19 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       select: { userId: true },
     });
     const submittedBy = teacherUser?.userId ?? '00000000-0000-0000-0000-000000000000';
+    const makeupRows = session.examSchedule?.makeupOfSessionId ? await db.examParticipant.findMany({
+      where: { sessionId: session.id, makeupSourceGradeId: { not: null } },
+      select: { studentId: true, makeupGradeSnapshot: true, makeupSourceGrade: {
+        select: { id: true, score: true, updatedAt: true, assignmentId: true, sourceAssessmentSessionId: true },
+      } },
+    }) : [];
+    const makeupByStudent = new Map(makeupRows.map((row) => [row.studentId, row]));
     let gradedCount = 0;
     let pendingManualCount = 0;
     let skippedCount = 0;
     const gradeEvents: GradeSubmittedPayload[] = [];
 
-    for (const response of responses) {
+    for (const response of responses.sort((left, right) => left.studentId.localeCompare(right.studentId))) {
       const itemScores = Array.isArray(response.itemScores)
         ? (response.itemScores as unknown as AssessmentItemScore[])
         : [];
@@ -1519,6 +1679,52 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
 
+      const makeup = makeupByStudent.get(response.studentId);
+      if (makeup) {
+        const grade = makeup.makeupSourceGrade;
+        const snapshot = readMakeupGradeSnapshot(makeup.makeupGradeSnapshot);
+        if (!grade || grade.assignmentId !== assignment.id ||
+            grade.sourceAssessmentSessionId !== session.examSchedule?.makeupOfSessionId) {
+          throw new ConflictException('Nilai sumber tidak lagi cocok dengan penugasan sesi susulan.');
+        }
+        const rawScore = Number(response.score);
+        const version = snapshot.applied?.gradeVersion ?? snapshot.originalGradeVersion;
+        const previousScore = snapshot.applied?.finalScore ?? snapshot.originalScore;
+        if (grade.updatedAt.toISOString() !== version || Number(grade.score) !== previousScore) {
+          throw new ConflictException('Nilai resmi berubah. Periksa Gradebook sebelum menerapkan hasil susulan.');
+        }
+        if (snapshot.applied?.rawScore !== rawScore) {
+          const boundary = { studentId: response.studentId, academicYear: session.academicYear,
+            semester: session.semester, assignment: { classId: session.classId } };
+          await this.lockGradeSnapshot(db, boundary);
+          await this.assertNoLockedReportForGrade(boundary, db);
+          const finalScore = makeupFinalScore(snapshot.originalScore, rawScore, snapshot.kktp);
+          const mutation = await db.grade.updateMany({
+            where: { id: grade.id, updatedAt: grade.updatedAt, score: grade.score },
+            data: { score: finalScore, submittedBy },
+          });
+          if (mutation.count !== 1) throw new ConflictException('Nilai resmi berubah saat hasil susulan disimpan.');
+          const updated = await db.grade.findUniqueOrThrow({
+            where: { id: grade.id },
+            select: { updatedAt: true },
+          });
+          await db.examParticipant.update({
+            where: { sessionId_studentId: { sessionId: session.id, studentId: response.studentId } },
+            data: { makeupGradeSnapshot: { ...snapshot,
+              applied: { rawScore, finalScore, gradeVersion: updated.updatedAt.toISOString() } } },
+          });
+          await db.auditLog.create({ data: {
+            action: 'exam.makeup.grade', actorId: actor.keycloakId, actorRoles: actor.roles,
+            resourceType: 'Grade', resourceId: grade.id, method: 'PATCH',
+            path: '/assessment/sessions', statusCode: 200, outcome: 'success',
+            metadata: { reason: 'Penilaian susulan', originalScore: snapshot.originalScore, kktp: snapshot.kktp,
+              rawScore, before: previousScore, after: finalScore, sessionId: session.id },
+          } });
+        }
+        gradedCount++;
+        continue;
+      }
+
       const uniqueWhere = {
         sourceAssessmentSessionId_studentId: {
           sourceAssessmentSessionId: session.id,
@@ -1527,8 +1733,20 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       };
       const previousGrade = await db.grade.findUnique({
         where: uniqueWhere,
-        select: { id: true },
+        select: { id: true, examMakeupParticipants: {
+          where: { schedule: { session: { status: 'completed' } } },
+          select: { makeupGradeSnapshot: true },
+        } },
       });
+      const appliedMakeup = previousGrade?.examMakeupParticipants?.map(({ makeupGradeSnapshot }) =>
+        readMakeupGradeSnapshot(makeupGradeSnapshot)).find(({ applied }) => applied);
+      if (appliedMakeup) {
+        if (Number(response.score) !== appliedMakeup.originalScore) {
+          throw new ConflictException('Nilai awal sudah dipakai untuk susulan. Koreksi melalui sesi susulan.');
+        }
+        gradedCount++;
+        continue;
+      }
       const grade = await db.grade
         .upsert({
           where: uniqueWhere,
@@ -1704,11 +1922,11 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** U2 Wave 1: SISWA memulai pengerjaan — mencatat startedAt, return shuffled questions jika randomizeOrder. */
-  async startResponse(sessionId: string, user: AuthUser) {
-    return this.writeAdmission.run(user.keycloakId, () => this.startResponseNow(sessionId, user));
+  async startResponse(sessionId: string, user: AuthUser, deviceId?: string) {
+    return this.writeAdmission.run(user.keycloakId, () => this.startResponseNow(sessionId, user, deviceId));
   }
 
-  private async startResponseNow(sessionId: string, user: AuthUser) {
+  private async startResponseNow(sessionId: string, user: AuthUser, deviceId?: string) {
     const student = await this.resolveStudent(user.keycloakId);
     const session = await this.prisma.assessmentSession.findUnique({
       where: { id: sessionId },
@@ -1745,6 +1963,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           classId: true,
           academicYear: true,
           semester: true,
+          durationMinutes: true,
+          examSchedule: { select: examAccessSelect },
         },
       });
       if (!currentSession) throw new NotFoundException('Sesi asesmen tidak ditemukan');
@@ -1763,11 +1983,26 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           lastMutationId: true,
         },
       });
+      const scheduled = currentSession.examSchedule;
+      let windowCheckedAt: Date | undefined;
+      let deadlineAt: Date | null = null;
+      if (scheduled) {
+        if (currentSession.status !== 'active' || !currentSession.durationMinutes)
+          throw new ConflictException('Sesi ujian terjadwal tidak lagi aktif.');
+        // Different rooms may start together while semester cutover stays exclusive.
+        await this.academicPeriod.assertWritablePeriodWithSharedCutoverLock(tx, currentSession);
+        const participant = await authorizeExamDevice(tx, sessionId, student.id, deviceId, true);
+        windowCheckedAt = new Date();
+        assertExamWindow(scheduled, windowCheckedAt, !currentResponse?.startedAt);
+        deadlineAt = examDeadline(scheduled.closesAt, currentResponse?.startedAt ?? windowCheckedAt,
+          currentSession.durationMinutes, participant.extraMinutes);
+        if (windowCheckedAt >= deadlineAt) throw new ConflictException('Waktu ujian telah habis.');
+      }
       if (currentResponse?.submittedAt) {
         throw new ConflictException('Anda sudah mengirimkan jawaban untuk sesi ini');
       }
       if (currentResponse?.startedAt && ['active', 'completed'].includes(currentSession.status)) {
-        return currentResponse;
+        return { ...currentResponse, deadlineAt };
       }
       if (currentSession.status !== 'active') {
         throw new ConflictException('Sesi tidak aktif — tidak bisa dimulai');
@@ -1779,11 +2014,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         throw new ConflictException('Status peserta remedial tidak dapat memulai pengerjaan baru');
       }
 
-      await this.assertWritablePeriodInTransaction(tx, {
-        academicYear: currentSession.academicYear,
-        semester: currentSession.semester,
-      });
-      const startedAt = new Date();
+      if (!scheduled) await this.assertWritablePeriodInTransaction(tx, currentSession);
+      const startedAt = windowCheckedAt ?? new Date();
       const created = await tx.assessmentResponse.create({
         data: {
           sessionId,
@@ -1810,6 +2042,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         answers: {},
         clientRevision: 0,
         lastMutationId: null,
+        deadlineAt,
       };
     });
 
@@ -1821,6 +2054,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       responseId: response.id,
       startedAt: response.startedAt,
       durationMinutes: session.durationMinutes,
+      deadlineAt: response.deadlineAt,
+      serverNow: new Date(),
       answers: response.answers ?? {},
       revision: response.clientRevision,
       mutationId: response.lastMutationId,
@@ -1845,6 +2080,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         classId: true,
         questions: true,
         durationMinutes: true,
+        examSchedule: { select: examAccessSelect },
         academicYear: true,
         semester: true,
       },
@@ -1870,7 +2106,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     if (!existing?.startedAt) throw new ConflictException('Mulai asesmen terlebih dahulu');
     if (existing.submittedAt) throw new ConflictException('Jawaban sudah dikirim');
     if (
-      session.durationMinutes &&
+      !session.examSchedule && session.durationMinutes &&
       Date.now() > existing.startedAt.getTime() + (session.durationMinutes + 1) * 60_000
     ) {
       throw new ConflictException('Waktu pengerjaan telah habis; autosave tidak diterima');
@@ -1883,6 +2119,14 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         academicYear: session.academicYear,
         semester: session.semester,
       });
+      if (session.examSchedule) {
+        const participant = await authorizeExamDevice(tx, sessionId, student.id, dto.deviceId, false);
+        const now = new Date();
+        assertExamWindow(session.examSchedule, now, false);
+        if (!session.durationMinutes || now >= examDeadline(
+          session.examSchedule.closesAt, existing.startedAt!, session.durationMinutes, participant.extraMinutes,
+        )) throw new ConflictException('Waktu ujian habis; penyimpanan baru tidak diterima.');
+      }
       return tx.assessmentResponse.updateMany({
         where: { id: existing.id, submittedAt: null, clientRevision: { lt: dto.revision } },
         data: {
@@ -1909,6 +2153,80 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       revision: current?.clientRevision ?? existing.clientRevision,
       savedAt: current?.lastSavedAt ?? existing.lastSavedAt,
     };
+  }
+
+  async finalizeDueScheduledExams(): Promise<number> {
+    const due = await this.prisma.$queryRaw<{ id: string; sessionId: string }[]>`
+      SELECT r.id, r.session_id AS "sessionId"
+      FROM academic.exam_schedules e
+      JOIN academic.assessment_sessions a ON a.id = e.session_id
+      JOIN academic.assessment_responses r ON r.session_id = a.id
+      JOIN academic.exam_participants p ON p.session_id = r.session_id AND p.student_id = r.student_id
+      WHERE e.published_at IS NOT NULL AND e.cancelled_at IS NULL AND a.status = 'active'
+        AND r.started_at IS NOT NULL AND r.submitted_at IS NULL
+        AND LEAST(e.closes_at, r.started_at + ((a.duration_minutes + p.extra_minutes) * INTERVAL '1 minute')) <= now()
+      ORDER BY e.closes_at, r.id
+      LIMIT 40`;
+    const groups = new Map<string, string[]>();
+    for (const row of due) {
+      const existing = groups.get(row.sessionId) ?? [];
+      existing.push(row.id);
+      groups.set(row.sessionId, existing);
+    }
+    let total = 0;
+    for (const [sessionId, ids] of groups) {
+      total += await this.prisma.$transaction(async (tx) => {
+        const [lock] = await tx.$queryRaw<{ acquired: boolean }[]>(Prisma.sql`
+          SELECT pg_try_advisory_xact_lock(hashtextextended(${'assessment-session:' + sessionId}, 0)) AS acquired`);
+        if (!lock?.acquired) return 0;
+        const current = await tx.assessmentSession.findUnique({ where: { id: sessionId }, select: {
+          status: true, academicYear: true, semester: true, durationMinutes: true, questions: true,
+          examSchedule: { select: examAccessSelect },
+        } });
+        const window = current?.examSchedule;
+        if (!window?.publishedAt || window.cancelledAt || !current?.durationMinutes || current.status !== 'active') return 0;
+        await this.academicPeriod.assertWritablePeriodWithSharedCutoverLock(tx, current);
+        // Use the same participant-row fence as autosave and device rebind. Read
+        // the saved revision only after acquiring those rows, in stable order.
+        const locked = await tx.$queryRaw<{ studentId: string; extraMinutes: number }[]>(Prisma.sql`
+          SELECT p.student_id AS "studentId", p.extra_minutes AS "extraMinutes"
+          FROM academic.exam_participants p
+          JOIN academic.assessment_responses r ON r.session_id = p.session_id AND r.student_id = p.student_id
+          WHERE p.session_id = ${sessionId}::uuid
+            AND r.id IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))})
+          ORDER BY p.student_id
+          FOR UPDATE OF p`);
+        const pending = await tx.assessmentResponse.findMany({
+          where: { id: { in: ids }, submittedAt: null, startedAt: { not: null } },
+          select: { id: true, studentId: true, startedAt: true, answers: true, clientRevision: true },
+        });
+        const extra = new Map(locked.map((row) => [row.studentId, row.extraMinutes]));
+        const questions = parseSnapshotQuestions(current.questions);
+        let finalized = 0;
+        for (const attempt of pending) {
+          const added = extra.get(attempt.studentId);
+          if (added === undefined || !attempt.startedAt) continue;
+          const deadline = examDeadline(window.closesAt, attempt.startedAt, current.durationMinutes, added);
+          if (deadline > new Date()) continue;
+          const result = scoreAnswers((attempt.answers ?? {}) as AssessmentAnswerMap, questions);
+          const write = await tx.assessmentResponse.updateMany({ where: {
+            id: attempt.id, submittedAt: null, clientRevision: attempt.clientRevision,
+          }, data: { submittedAt: deadline, score: result.score, itemScores: result.itemScores as Prisma.InputJsonValue,
+            timeSpentSec: Math.floor((deadline.getTime() - attempt.startedAt.getTime()) / 1_000) } });
+          if (write.count) {
+            await tx.auditLog.create({ data: {
+              actorRoles: [], action: 'exam.finalize.deadline', resourceType: 'AssessmentResponse',
+              resourceId: attempt.id, method: 'WORKER', path: '/exam-schedule/finalize',
+              statusCode: 200, outcome: 'success',
+              metadata: { sessionId, revision: attempt.clientRevision, from: 'working', to: 'submitted', deadline: deadline.toISOString() },
+            } });
+            finalized++;
+          }
+        }
+        return finalized;
+      });
+    }
+    return total;
   }
 
   async recordRuntimeSignal(sessionId: string, dto: AssessmentRuntimeSignalDto, user: AuthUser) {
@@ -2015,6 +2333,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           completedAt: true,
           academicYear: true,
           semester: true,
+          examSchedule: { select: examAccessSelect },
         },
       });
       if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
@@ -2039,6 +2358,13 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           lateSubmittedAt: true,
         },
       });
+      const scheduled = session.examSchedule;
+      let extraMinutes = 0;
+      if (scheduled) {
+        await this.academicPeriod.assertWritablePeriodWithSharedCutoverLock(tx, session);
+        extraMinutes = (await authorizeExamDevice(tx, sessionId, student.id, dto.deviceId, false)).extraMinutes;
+        assertExamWindow(scheduled, new Date(), false);
+      }
       if (existing?.submittedAt) {
         const matchesNormal = existing.lastMutationId === dto.mutationId;
         const matchesLate = existing.lateMutationId === dto.mutationId;
@@ -2066,19 +2392,23 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         throw new ConflictException('Jawaban versi lama tidak dapat dikirim');
       }
       const timeSpentSec = Math.round((now.getTime() - existing.startedAt.getTime()) / 1000);
-      const durationDeadline = session.durationMinutes
+      const durationDeadline = scheduled && session.durationMinutes
+        ? examDeadline(scheduled.closesAt, existing.startedAt, session.durationMinutes, extraMinutes)
+        : session.durationMinutes
         ? new Date(existing.startedAt.getTime() + (session.durationMinutes + 1) * 60_000)
         : null;
       const isLate =
-        (durationDeadline ? now > durationDeadline : false) ||
+        (durationDeadline ? (scheduled ? now >= durationDeadline : now > durationDeadline) : false) ||
         (session.dueAt ? now > session.dueAt : false) ||
         session.status === 'completed' ||
         Boolean(session.completedAt);
 
-      await this.assertWritablePeriodInTransaction(tx, {
-        academicYear: session.academicYear,
-        semester: session.semester,
-      });
+      if (scheduled && isLate) {
+        throw new ConflictException({ code: 'EXAM_DEADLINE',
+          message: 'Waktu ujian telah habis. Server menilai revisi yang terakhir dikonfirmasi.' });
+      }
+
+      if (!scheduled) await this.assertWritablePeriodInTransaction(tx, session);
 
       if (isLate) {
         const updated = await tx.assessmentResponse.updateMany({
@@ -2232,6 +2562,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         questions: true,
         gradeTarget: true,
         module: { select: { subject: true, teacherId: true } },
+        examSchedule: { select: { makeupOfSessionId: true } },
       },
     });
     if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
@@ -2340,7 +2671,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         currentSession.status === 'completed' &&
         session.purpose === 'regular'
       ) {
-        await this.syncGradesForCompletedSession(session, tx);
+        await this.syncGradesForCompletedSession(session, user, tx);
       }
 
       const reviewedResponse = await tx.assessmentResponse.findUniqueOrThrow({
@@ -2544,6 +2875,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         gradeTarget: true,
         module: { select: { subject: true, teacherId: true } },
         teachingAssignment: { select: { subject: true, teacherId: true } },
+        examSchedule: { select: { makeupOfSessionId: true } },
       },
     });
     if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
@@ -2639,6 +2971,23 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       const previousItemScores = Array.isArray(response.itemScores)
         ? (response.itemScores as unknown as AssessmentItemScore[])
         : [];
+      if (dto.expectedCriteriaScores !== undefined) {
+        const stored = previousItemScores.find((item) => item.questionId === dto.questionId);
+        const expected = dto.expectedCriteriaScores;
+        const matchesExpected =
+          expected === null
+            ? !stored || stored.status === 'manual_pending'
+            : stored?.status === 'manual_scored' &&
+              rubric.every(
+                ({ id }) =>
+                  Object.hasOwn(expected, id) && stored.rubricScores?.[id] === expected[id],
+              );
+        if (!matchesExpected) {
+          throw new ConflictException(
+            'Nilai esai sudah berubah. Buka kembali koreksi untuk membaca hasil terbaru.',
+          );
+        }
+      }
       const manualItem: AssessmentItemScore = {
         questionId: question.id,
         type: 'essay',
@@ -2671,7 +3020,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         },
       });
       if (currentSession.status === 'completed' && session.purpose === 'regular') {
-        await this.syncGradesForCompletedSession(session, tx);
+        await this.syncGradesForCompletedSession(session, user, tx);
       }
       return {
         response: updatedResponse,

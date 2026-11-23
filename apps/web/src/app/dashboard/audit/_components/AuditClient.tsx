@@ -56,7 +56,7 @@ function MetaPanel({ entry, onClose }: { entry: AuditLogEntry; onClose: () => vo
             <div><span className="font-medium">Role:</span> {entry.actorRole ?? '—'}</div>
             <div><span className="font-medium">Status:</span> {entry.statusCode}</div>
             <div><span className="font-medium">IP:</span> {entry.ipAddress ?? '—'}</div>
-            <div className="col-span-2"><span className="font-medium">Waktu:</span> {new Date(entry.createdAt).toLocaleString('id')}</div>
+            <div className="col-span-2"><span className="font-medium">Waktu:</span> {new Date(entry.createdAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB</div>
           </div>
           <div>
             <p className="font-medium text-gray-700 mb-1">Metadata:</p>
@@ -153,7 +153,7 @@ export default function AuditClient({ entries, total, limit, offset, filters }: 
               entries.map((e) => (
                 <TableRow key={e.id} className="hover:bg-gray-50">
                   <TableCell className="text-xs text-gray-500 whitespace-nowrap">
-                    {new Date(e.createdAt).toLocaleString('id', { dateStyle: 'short', timeStyle: 'short' })}
+                    {new Date(e.createdAt).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Jakarta' })}
                   </TableCell>
                   <TableCell>
                     <p className="text-sm font-medium text-gray-800 truncate max-w-[140px]">{e.actorName ?? e.actorId.slice(0, 12)}</p>

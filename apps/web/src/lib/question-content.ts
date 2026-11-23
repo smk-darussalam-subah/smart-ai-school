@@ -1,6 +1,11 @@
 /** Versioned text envelope: old questions remain literal text, including HTML/code examples. */
 export const QUESTION_HTML_PREFIX = '<!--diis-question-html:v1-->';
 
+export function questionMediaSource(id: string, sessionId?: string) {
+  const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
+  return `/api/backend/question-media/${encodeURIComponent(id)}${query}`;
+}
+
 export function questionBodyForEditor(body: string): string {
   if (body.startsWith(QUESTION_HTML_PREFIX)) return body.slice(QUESTION_HTML_PREFIX.length);
   const escaped = body.replace(

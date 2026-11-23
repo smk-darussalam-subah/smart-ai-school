@@ -57,8 +57,15 @@ async function apiCall(path: string, method: string, body?: unknown) {
 }
 
 function apiErrorCode(body: unknown): string | undefined {
-  if (body && typeof body === 'object' && 'code' in body && body.code === 'ASSESSMENT_WRITE_BUSY')
-    return 'ASSESSMENT_WRITE_BUSY';
+  if (body && typeof body === 'object' && 'code' in body) {
+    if (
+      body.code === 'ASSESSMENT_WRITE_BUSY' ||
+      body.code === 'EXAM_DEVICE_CHANGED' ||
+      body.code === 'EXAM_DEADLINE'
+    ) {
+      return body.code;
+    }
+  }
   if (!body || typeof body !== 'object' || !('error' in body)) return undefined;
   const value = (body as { error?: unknown }).error;
   return typeof value === 'string' && value.startsWith('AI_') ? value : undefined;
@@ -571,6 +578,7 @@ export interface QuestionSelectionData {
 }
 
 export interface CreateAssessmentSessionData {
+  requestId?: string;
   moduleId: string;
   title: string;
   type: 'diagnostik' | 'formatif' | 'sumatif';
@@ -585,9 +593,14 @@ export interface CreateAssessmentSessionData {
 
 export async function createAssessmentSession(
   data: CreateAssessmentSessionData,
-): Promise<{ success: boolean; data?: AssessmentSessionData; error?: string }> {
+): Promise<{
+  success: boolean;
+  data?: AssessmentSessionData;
+  error?: string;
+  httpStatus?: number;
+}> {
   const r = await apiCall('/assessment/sessions', 'POST', data);
-  if (!r.success) return { success: false, error: r.error };
+  if (!r.success) return { success: false, error: r.error, httpStatus: r.httpStatus };
   revalidatePath('/dashboard/akademik');
   return { success: true, data: r.data as AssessmentSessionData };
 }
@@ -742,8 +755,8 @@ export async function regenerateQuestionDraftItem(
 // ── Assessment Sessions (U2 — comprehensive assessment) ────────────────────
 
 /** U2 Wave 1: SISWA memulai pengerjaan — mencatat startedAt, return shuffled questions. */
-export async function startAssessmentResponse(sessionId: string) {
-  const r = await apiCall(`/assessment/sessions/${sessionId}/start-response`, 'POST');
+export async function startAssessmentResponse(sessionId: string, deviceId?: string) {
+  const r = await apiCall(`/assessment/sessions/${sessionId}/start-response`, 'POST', { deviceId });
   return r;
 }
 
@@ -781,7 +794,11 @@ export async function submitAssessmentResponse(
 export async function gradeEssayResponse(
   sessionId: string,
   responseId: string,
-  data: { questionId: string; criteriaScores: Record<string, number> },
+  data: {
+    questionId: string;
+    criteriaScores: Record<string, number>;
+    expectedCriteriaScores?: Record<string, number> | null;
+  },
 ) {
   const r = await apiCall(
     `/assessment/sessions/${sessionId}/responses/${responseId}/grade-essay`,

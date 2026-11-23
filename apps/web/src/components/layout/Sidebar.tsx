@@ -116,6 +116,12 @@ const NAV_GROUPS: NavGroup[] = [
         permissions: ['academic.grade.read', 'academic.teaching.read'],
       },
       {
+        label: 'Ujian',
+        href: '/dashboard/ujian',
+        icon: CalendarDays,
+        roles: ['SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU', 'TATA_USAHA', 'SISWA'],
+      },
+      {
         label: 'Jadwal',
         href: '/dashboard/jadwal',
         icon: CalendarDays,
@@ -414,7 +420,7 @@ export function Sidebar({
   return (
     <aside
       className={clsx(
-        'flex min-h-screen w-64 flex-col overflow-hidden border-r border-emerald-900/10 bg-white shadow-soft-sm',
+        'flex min-h-screen w-64 flex-col overflow-hidden border-r border-emerald-900/10 bg-white shadow-soft-sm dark:bg-slate-900',
         className,
       )}
     >

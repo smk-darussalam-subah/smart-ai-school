@@ -352,3 +352,141 @@
     break-inside: avoid;
   }
 }
+
+/* The dashboard marker is rendered on the server and includes body-level portals. */
+body:has([data-staff-theme]) {
+  --staff-page: #f9fafb;
+  --staff-panel: #fff;
+  --staff-inset: #f1f5f9;
+  --staff-text: #0f172a;
+  --staff-muted: #475569;
+  --staff-line: #cbd5e1;
+  --staff-focus: #0965ab;
+  background-color: var(--staff-page);
+  color: var(--staff-text);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  body:has([data-staff-theme='system']) { color-scheme: dark; }
+}
+
+body:has([data-staff-theme='dark']) { color-scheme: dark; }
+
+/* Switch the foreground and background in one paint. */
+body:has([data-staff-theme-switching]) :is(.transition-colors, .transition) {
+  transition-duration: 0s;
+}
+
+@supports (color: light-dark(white, black)) {
+  body:has([data-staff-theme]) {
+    --staff-page: light-dark(#f9fafb, #1e293b);
+    --staff-panel: light-dark(#ffffff, #142324);
+    --staff-inset: light-dark(#f1f5f9, #1c3030);
+    --staff-text: light-dark(#0f172a, #f1f5f9);
+    --staff-muted: light-dark(#475569, #cbd5e1);
+    --staff-line: light-dark(#cbd5e1, #53736b);
+    --staff-focus: light-dark(#0965ab, #80c7fb);
+  }
+
+  /* Reuse the same palette on dashboard tables, forms and older cards. */
+
+  :where(body:has([data-staff-theme])) .bg-background { background-color: var(--staff-page); }
+
+  :where(body:has([data-staff-theme])) :is(.bg-white, .bg-white\/85, .bg-white\/95, .bg-card, .bg-popover,
+    .bg-slate-50, .bg-gray-50, .bg-neutral-50, .bg-zinc-50, .bg-slate-50\/50,
+    .bg-slate-50\/60, .bg-gray-50\/50) { background-color: var(--staff-panel); }
+
+  :where(body:has([data-staff-theme])) :is(.bg-slate-100, .bg-slate-200, .bg-gray-100, .bg-gray-200,
+    .bg-neutral-100, .bg-zinc-100, .bg-muted, .bg-accent),
+  :where(body:has([data-staff-theme])) :is(.hover\:bg-slate-100, .hover\:bg-gray-100, .hover\:bg-slate-50, .hover\:bg-gray-50):hover {
+    background-color: var(--staff-inset);
+  }
+
+  :where(body:has([data-staff-theme])) :is(.text-slate-900, .text-slate-950, .text-slate-800,
+    .text-gray-900, .text-gray-950, .text-gray-800, .text-zinc-900, .text-neutral-900,
+    .text-foreground, .text-card-foreground, .text-popover-foreground, .text-accent-foreground) {
+    color: var(--staff-text);
+  }
+
+  :where(body:has([data-staff-theme])) :is(.text-slate-400, .text-slate-500, .text-slate-600, .text-slate-700,
+    .text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700, .text-neutral-600, .text-zinc-600, .text-muted-foreground) {
+    color: var(--staff-muted);
+  }
+
+  :where(body:has([data-staff-theme])) :is(.border-slate-100, .border-slate-200, .border-slate-300,
+    .border-gray-100, .border-gray-200, .border-gray-300, .border-emerald-900\/10, .border-border, .border-input) {
+    border-color: var(--staff-line);
+  }
+
+  :where(body:has([data-staff-theme])) :is(.bg-emerald-50, .bg-emerald-50\/50, .bg-emerald-100, .bg-green-50, .bg-green-100) {
+    background-color: light-dark(#ecfdf5, #1e443a);
+  }
+  :where(body:has([data-staff-theme])) :is(.text-emerald-600, .text-emerald-700, .text-emerald-800, .text-emerald-900, .text-emerald-950,
+    .text-green-600, .text-green-700, .text-green-800, .text-green-900) {
+    color: light-dark(#065f46, #8ae9c8);
+  }
+  :where(body:has([data-staff-theme])) :is(.bg-amber-50, .bg-amber-100, .bg-yellow-50, .bg-yellow-100, .bg-orange-50, .bg-orange-100) {
+    background-color: light-dark(#fff3d9, #403021);
+  }
+  :where(body:has([data-staff-theme])) :is(.text-amber-600, .text-amber-700, .text-amber-800, .text-amber-900,
+    .text-yellow-700, .text-yellow-800, .text-orange-700, .text-orange-800, .text-orange-950) {
+    color: light-dark(#754000, #ffda9a);
+  }
+  :where(body:has([data-staff-theme])) :is(.bg-rose-50, .bg-rose-50\/60, .bg-rose-100, .bg-red-50, .bg-red-100) {
+    background-color: light-dark(#fff1f2, #48252d);
+  }
+  :where(body:has([data-staff-theme])) :is(.text-rose-600, .text-rose-700, .text-rose-800,
+    .text-red-600, .text-red-700, .text-red-800, .text-red-900) {
+    color: light-dark(#991b1b, #ffc0c9);
+  }
+  :where(body:has([data-staff-theme])) :is(.bg-blue-50, .bg-blue-100, .bg-sky-50, .bg-sky-100) {
+    background-color: light-dark(#eff6ff, #203b51);
+  }
+  :where(body:has([data-staff-theme])) :is(.text-blue-600, .text-blue-700, .text-blue-800,
+    .text-sky-600, .text-sky-700, .text-sky-800) {
+    color: light-dark(#1e40af, #b8deff);
+  }
+
+  :where(body:has([data-staff-theme])) .bg-muted\/40 { background-color: var(--staff-inset); }
+
+  :where(body:has([data-staff-theme])) .text-smk-blue {
+    color: light-dark(#1d4ed8, #93c5fd);
+  }
+
+  /* Keep white labels readable on the existing action colors. */
+  :where(body:has([data-staff-theme])) .bg-emerald-600:is(.text-white, .text-slate-50) {
+    background-color: #047857;
+  }
+  :where(body:has([data-staff-theme])) .bg-emerald-600:is(.text-white, .text-slate-50):hover {
+    background-color: #065f46;
+  }
+  :where(body:has([data-staff-theme])) .bg-red-500:is(.text-white, .text-slate-50) {
+    background-color: #b91c1c;
+  }
+  :where(body:has([data-staff-theme])) .bg-red-500:is(.text-white, .text-slate-50):hover {
+    background-color: #991b1b;
+  }
+
+  /* Legacy academic workspace surfaces with DIIS green-tinted colors. */
+  :where(body:has([data-staff-theme])) .bg-\[\#f4f7f5\] { background-color: light-dark(#f4f7f5, var(--staff-inset)); }
+  :where(body:has([data-staff-theme])) .bg-\[\#f9fbfa\] { background-color: light-dark(#f9fbfa, var(--staff-inset)); }
+  :where(body:has([data-staff-theme])) .bg-\[\#f0f4f2\] { background-color: light-dark(#f0f4f2, var(--staff-inset)); }
+  :where(body:has([data-staff-theme])) .bg-\[\#e6efea\] { background-color: light-dark(#e6efea, var(--staff-inset)); }
+  :where(body:has([data-staff-theme])) .bg-\[\#f3f8f5\] { background-color: light-dark(#f3f8f5, var(--staff-inset)); }
+  :where(body:has([data-staff-theme])) .bg-\[\#eef3f0\] { background-color: light-dark(#eef3f0, var(--staff-inset)); }
+  :where(body:has([data-staff-theme])) .text-\[\#0f2e25\] { color: light-dark(#0f2e25, var(--staff-text)); }
+  :where(body:has([data-staff-theme])) .text-\[\#032a20\] { color: light-dark(#032a20, var(--staff-text)); }
+  :where(body:has([data-staff-theme])) .text-\[\#294c41\] { color: light-dark(#294c41, var(--staff-text)); }
+  :where(body:has([data-staff-theme])) .text-\[\#355a4e\] { color: light-dark(#355a4e, var(--staff-muted)); }
+  :where(body:has([data-staff-theme])) .text-\[\#6b8079\] { color: var(--staff-muted); }
+  :where(body:has([data-staff-theme])) .text-\[\#9bb0a8\] { color: var(--staff-muted); }
+  :where(body:has([data-staff-theme])) .text-\[\#526b62\] { color: light-dark(#526b62, var(--staff-muted)); }
+  :where(body:has([data-staff-theme])) .border-\[\#e6efea\] { border-color: light-dark(#e6efea, var(--staff-line)); }
+  :where(body:has([data-staff-theme])) .border-\[\#dfe9e4\] { border-color: light-dark(#dfe9e4, var(--staff-line)); }
+  :where(body:has([data-staff-theme])) .border-\[\#f0f4f2\] { border-color: light-dark(#f0f4f2, var(--staff-line)); }
+  :where(body:has([data-staff-theme])) .border-\[\#eef4f1\] { border-color: light-dark(#eef4f1, var(--staff-line)); }
+  :where(body:has([data-staff-theme])) .border-\[\#d5e2dc\] { border-color: light-dark(#d5e2dc, var(--staff-line)); }
+  :where(body:has([data-staff-theme])) .border-\[\#e3ece8\] { border-color: light-dark(#e3ece8, var(--staff-line)); }
+  :where(body:has([data-staff-theme])) .border-\[\#cbdad4\] { border-color: light-dark(#cbdad4, var(--staff-line)); }
+}

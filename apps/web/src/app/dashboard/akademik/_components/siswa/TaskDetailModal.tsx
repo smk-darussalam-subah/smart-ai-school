@@ -1,9 +1,14 @@
 'use client';
 import QuestionContent from '@/components/learning/QuestionContent';
+import QuestionAnswerInput, {
+  type StudentQuestion,
+  type AnswerValue,
+} from '@/components/learning/QuestionAnswerInput';
 import { useLearningRefreshPause } from '@/lib/learning-refresh';
 import { AssessmentAutosaveWindow } from '@/lib/assessment-autosave-window';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
 import {
   AlertTriangle,
   CheckCircle,
@@ -19,7 +24,9 @@ import {
   X,
 } from 'lucide-react';
 import AssessmentTimer from '../AssessmentTimer';
+import { getAssessmentDeviceId } from '@/lib/assessment-device';
 import type { SiswaTugas } from './siswa-types';
+import { formatExamTime, getScheduledEntry, readScheduledExamStatus } from '@/lib/scheduled-exam-entry';
 import { startAssessmentResponse } from '../../actions';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
@@ -45,46 +52,12 @@ interface Props {
   onOpenModule?: (moduleUuid: string) => void;
 }
 
-type StudentQuestion =
-  | {
-      id: string;
-      type: 'multiple_choice';
-      body: string;
-      points: number;
-      options: Array<{ id: string; text: string }>;
-    }
-  | {
-      id: string;
-      type: 'true_false';
-      body: string;
-      points: number;
-    }
-  | {
-      id: string;
-      type: 'matching';
-      body: string;
-      points: number;
-      prompts: Array<{ id: string; prompt: string }>;
-      choices: Array<{ id: string; text: string }>;
-    }
-  | {
-      id: string;
-      type: 'essay';
-      body: string;
-      points: number;
-      rubricCriteria?: Array<{ id: string; name: string; maxScore: number }>;
-    };
-
-type AnswerValue =
-  | { type: 'multiple_choice'; optionId: string }
-  | { type: 'true_false'; value: boolean }
-  | { type: 'matching'; pairs: Record<string, string> }
-  | { type: 'essay'; text: string };
-
 interface AttemptState {
   responseId: string;
   startedAt: string;
   durationMinutes: number | null;
+  deadlineAt?: string;
+  serverNow?: string;
   revision: number;
   mutationId: string | null;
   questions: StudentQuestion[];
@@ -118,6 +91,8 @@ function parseAttempt(data: unknown): AttemptState | null {
     responseId: data.responseId,
     startedAt,
     durationMinutes: typeof data.durationMinutes === 'number' ? data.durationMinutes : null,
+    deadlineAt: typeof data.deadlineAt === 'string' ? data.deadlineAt : undefined,
+    serverNow: typeof data.serverNow === 'string' ? data.serverNow : undefined,
     revision:
       typeof data.revision === 'number' && Number.isInteger(data.revision) ? data.revision : 0,
     mutationId: typeof data.mutationId === 'string' ? data.mutationId : null,
@@ -137,14 +112,14 @@ function isStandaloneDisplay(): boolean {
 async function postAssessmentRequest(
   sessionId: string,
   action: 'autosave' | 'submit' | 'runtime-signal',
-  body: unknown,
+  body: Record<string, unknown>,
   keepalive = false,
 ): Promise<AssessmentRequestResult> {
   try {
     const response = await fetch(`/api/backend/assessment/sessions/${sessionId}/${action}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(action === 'runtime-signal' ? body : { ...body, deviceId: getAssessmentDeviceId() }),
       cache: 'no-store',
       credentials: 'same-origin',
       keepalive,
@@ -263,6 +238,22 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     task.status === 'submitted' || task.status === 'graded',
   );
   const [pendingSubmit, setPendingSubmit] = useState(false);
+  const [examExpired, setExamExpired] = useState(false);
+  const examExpiredRef = useRef(false);
+  const [serverTime, setServerTime] = useState<number | null>(null);
+  const [scheduleStatus, setScheduleStatus] = useState<
+    (NonNullable<ReturnType<typeof readScheduledExamStatus>> & { receivedAt: number }) | null
+  >(null);
+  const [lateRejected, setLateRejected] = useState(task.lateSubmissionStatus === 'rejected');
+  const [scheduleReadError, setScheduleReadError] = useState(false);
+  const [scheduleRetry, setScheduleRetry] = useState(0);
+  const entry = getScheduledEntry(task, serverTime, scheduleStatus);
+  const canResumeExpiredAttempt = examExpired && entry.allowed && entry.resume === true;
+  const statusRequestRef = useRef<AbortController | null>(null);
+  const resumeButtonRef = useRef<HTMLButtonElement>(null);
+  const focusResumeRef = useRef(false);
+  const [examStatusBusy, setExamStatusBusy] = useState(false);
+  const [examStatusMessage, setExamStatusMessage] = useState('');
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -276,6 +267,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
   const [confirmUnanswered, setConfirmUnanswered] = useState(false);
   const [busy, startTransition] = useTransition();
   const attemptRef = useRef<AttemptState | null>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
   const answersRef = useRef<Record<string, AnswerValue>>({});
   const revisionRef = useRef(0);
   const mutationIdRef = useRef<string | null>(null);
@@ -300,7 +292,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       task.remedialParticipant?.status === 'needs_retry')
       ? task.remedialParticipant.status
       : null;
-  const lateDecisionAttention = lateReviewRequired || task.lateSubmissionStatus === 'rejected';
+  const lateDecisionAttention = lateReviewRequired || lateRejected;
 
   const persistDraft = useCallback(
     async (
@@ -475,7 +467,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     if (submitFlightRef.current) return submitFlightRef.current;
     const submission = (async (): Promise<boolean> => {
       const currentAttempt = attemptRef.current;
-      if (!currentAttempt || !task.assessmentSessionId || submitted) return false;
+      if (!currentAttempt || !task.assessmentSessionId || submitted || examExpiredRef.current) return false;
       autosaveWindow.cancel();
       pendingSubmitRef.current = true;
       setPendingSubmit(true);
@@ -616,12 +608,14 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
   }, [autosaveWindow, persistDraft, showToast, submitted, task.assessmentSessionId]);
 
   const startAttempt = () => {
-    if (!task.assessmentSessionId) return;
+    if (!task.assessmentSessionId ||
+      ((!attempt || examExpiredRef.current) && (!entry.allowed || scheduleReadError || examStatusBusy))) return;
     if (!isStandaloneDisplay() && document.fullscreenEnabled && !document.fullscreenElement) {
       void document.documentElement.requestFullscreen().catch(() => undefined);
     }
     startTransition(async () => {
-      let res = await startAssessmentResponse(task.assessmentSessionId!);
+      const deviceId = getAssessmentDeviceId();
+      let res = await startAssessmentResponse(task.assessmentSessionId!, deviceId);
       // Only explicit admission rejection proves that this request did not
       // execute. Do not blindly replay network/unknown mutation failures.
       for (
@@ -631,10 +625,13 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       ) {
         await new Promise((resolve) => setTimeout(resolve, 2000 + Math.random() * 3000));
         if (!mountedRef.current) return;
-        res = await startAssessmentResponse(task.assessmentSessionId!);
+        res = await startAssessmentResponse(task.assessmentSessionId!, deviceId);
       }
       if (!mountedRef.current) return;
       if (!res.success) {
+        if (res.errorCode === 'EXAM_DEVICE_CHANGED' && deviceId) {
+          setIntegrityWarning(`Hubungi proktor untuk pindah perangkat. Kode perangkat: ${deviceId}`);
+        }
         showToast(res.error ?? 'Gagal membuka asesmen.');
         return;
       }
@@ -658,6 +655,10 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       pendingSubmitRef.current = selected.pendingSubmit;
       submitRequestedAtRef.current = selected.submitRequestedAt;
       setAttempt(hydratedAttempt);
+      setScheduleStatus(null);
+      examExpiredRef.current = false;
+      setExamExpired(false);
+      setExamStatusMessage('');
       setCurrentIndex(0);
       setSaveState(selected.source === 'device' ? 'device' : 'server');
       setAnswers(selectedAnswers);
@@ -711,6 +712,12 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
   );
 
   const handleExpire = useCallback(() => {
+    if (attemptRef.current?.deadlineAt) {
+      examExpiredRef.current = true;
+      autosaveWindow.cancel();
+      setExamExpired(true);
+      return;
+    }
     if (!submitted) {
       showToast(
         navigator.onLine
@@ -719,7 +726,87 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       );
       submitAnswers({ skipConfirm: true });
     }
-  }, [showToast, submitAnswers, submitted]);
+  }, [autosaveWindow, showToast, submitAnswers, submitted]);
+
+  const refreshScheduledStatus = useCallback(async (manual = false) => {
+    if (!task.assessmentSessionId) return;
+    statusRequestRef.current?.abort();
+    const controller = new AbortController();
+    statusRequestRef.current = controller;
+    setExamStatusBusy(manual);
+    setExamStatusMessage('');
+    try {
+      const response = await fetch(`/api/backend/exam-schedule/${task.assessmentSessionId}/my-status`, {
+        cache: 'no-store', signal: controller.signal,
+      });
+      if (!response.ok) throw new Error('Status belum dapat diperiksa. Coba lagi saat tersambung.');
+      const status = readScheduledExamStatus(await response.json());
+      if (!status) throw new Error('Status belum dapat diperiksa. Coba lagi.');
+      if (controller.signal.aborted) return;
+      setScheduleStatus({ ...status, receivedAt: performance.now() });
+      setServerTime(status.serverTime);
+      setScheduleReadError(false);
+      if (status.state === 'submitted') {
+        finishedRef.current = true;
+        setSubmittedScore(status.score);
+        setLateReviewRequired(status.lateSubmissionStatus === 'pending');
+        setLateRejected(status.lateSubmissionStatus === 'rejected');
+        setSubmitted(true);
+      } else if (manual && status.state === 'expired') {
+        setExamStatusMessage('Jawaban terakhir yang dikonfirmasi sedang diselesaikan oleh server.');
+      } else if (manual && status.deadline !== null && status.serverTime < status.deadline) {
+        focusResumeRef.current = true;
+      }
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setScheduleReadError(true);
+      if (manual) setExamStatusMessage(error instanceof Error ? error.message : 'Status belum tersedia.');
+    } finally {
+      if (!controller.signal.aborted) setExamStatusBusy(false);
+    }
+  }, [task.assessmentSessionId]);
+
+  useEffect(() => {
+    if (!task.examSchedule || !task.assessmentSessionId || submitted || attempt) return;
+    const returnToTab = () => {
+      if (document.visibilityState === 'visible') void refreshScheduledStatus();
+      else {
+        statusRequestRef.current?.abort();
+        setExamStatusBusy(false);
+      }
+    };
+    const onOffline = () => {
+      statusRequestRef.current?.abort();
+      setExamStatusBusy(false);
+      setScheduleReadError(true);
+    };
+    void refreshScheduledStatus();
+    document.addEventListener('visibilitychange', returnToTab);
+    window.addEventListener('online', returnToTab);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      statusRequestRef.current?.abort();
+      document.removeEventListener('visibilitychange', returnToTab);
+      window.removeEventListener('online', returnToTab);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, [task.examSchedule, task.assessmentSessionId, submitted, attempt, scheduleRetry, refreshScheduledStatus]);
+
+  useEffect(() => () => statusRequestRef.current?.abort(), [task.assessmentSessionId]);
+
+  useEffect(() => {
+    if (!scheduleStatus || submitted || (attempt && !examExpired)) return;
+    const timer = setInterval(() => {
+      setServerTime(scheduleStatus.serverTime + performance.now() - scheduleStatus.receivedAt);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [scheduleStatus, submitted, attempt, examExpired]);
+
+  useEffect(() => {
+    if (!focusResumeRef.current || !entry.allowed || !entry.resume) return;
+    focusResumeRef.current = false;
+    resumeButtonRef.current?.focus();
+  }, [entry.allowed, entry.resume]);
 
   const requestExamDisplay = useCallback(() => {
     if (isStandaloneDisplay() || !document.fullscreenEnabled || document.fullscreenElement) {
@@ -883,31 +970,35 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
   ]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm"
-      onClick={handleClose}
-    >
-      <div
-        className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-t-[20px] border border-[var(--border)] bg-[var(--bg2)] p-5"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Detail tugas"
+    <Dialog.Root open onOpenChange={(open) => { if (!open) handleClose(); }}>
+      <Dialog.Portal>
+      <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
+      <Dialog.Content
+        className="siswa-app fixed bottom-0 left-1/2 z-50 max-h-[92dvh] w-full max-w-[560px] -translate-x-1/2 overflow-y-auto rounded-t-[20px] border border-[var(--border)] bg-[var(--bg2)] p-5 text-[var(--text)]"
+        onOpenAutoFocus={() => {
+          returnFocus.current = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+            ? document.activeElement : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          const target = returnFocus.current?.isConnected ? returnFocus.current : document.getElementById('siswa-tugas-heading');
+          target?.focus();
+        }}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-500">
               {task.mp} - {task.type}
             </div>
-            <h2 className="mt-1 text-lg font-extrabold text-[var(--text)]">{task.title}</h2>
-            <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
-              {task.guru} - Deadline {task.deadline}
-            </p>
+            <Dialog.Title className="mt-1 text-lg font-extrabold text-[var(--text)]">{task.title}</Dialog.Title>
+            <Dialog.Description className="mt-1 text-xs font-semibold text-[var(--muted)]">
+              {task.guru} · {task.examSchedule ? `Tutup ${formatExamTime(task.examSchedule.closesAt)}` : `Tenggat ${task.deadline}`}
+            </Dialog.Description>
           </div>
           <button
             type="button"
             onClick={handleClose}
-            className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--surface)]"
+            className="grid min-h-11 min-w-11 shrink-0 place-items-center rounded-lg text-[var(--muted)] hover:bg-[var(--surface)]"
             aria-label="Tutup"
           >
             <X className="h-5 w-5" />
@@ -987,14 +1078,14 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
                     lateDecisionAttention ? 'text-amber-500' : 'text-emerald-500'
                   }`}
                 >
-                  {task.lateSubmissionStatus === 'rejected'
+                  {lateRejected
                     ? 'Jawaban terlambat ditolak'
                     : lateReviewRequired
                       ? 'Menunggu keputusan guru'
                       : 'Jawaban sudah terkirim'}
                 </div>
                 <p className="mt-1 text-sm text-[var(--muted)]">
-                  {task.lateSubmissionStatus === 'rejected'
+                  {lateRejected
                     ? 'Guru telah menolak jawaban yang masuk setelah batas waktu. Hubungi guru bila Anda memerlukan penjelasan.'
                     : lateReviewRequired
                       ? 'Jawaban telah diterima server setelah batas waktu dan belum dinilai. Guru akan mengonfirmasi alasan keterlambatan sebelum menerima atau menolak.'
@@ -1005,6 +1096,16 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
               </div>
             </div>
           </div>
+        ) : (attempt ? examExpired && !canResumeExpiredAttempt : entry.expired) ? (
+          <div className="mt-5 space-y-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+            <h3 className="font-bold">Waktu ujian habis</h3>
+            <p className="text-sm text-[var(--muted)]">Server menyelesaikan jawaban dari versi terakhir yang berhasil tersimpan.</p>
+            {examStatusMessage && <p role="status" className="text-sm">{examStatusMessage}</p>}
+            <button type="button" className="min-h-11 rounded-lg border border-[var(--border)] px-3 text-sm font-semibold"
+              disabled={examStatusBusy || busy} onClick={() => void refreshScheduledStatus(true)}>
+              {examStatusBusy ? 'Memeriksa…' : 'Periksa status ujian'}
+            </button>
+          </div>
         ) : !attempt && task.sessionStatus === 'completed' && task.attemptStarted === false ? (
           <div
             role="status"
@@ -1013,19 +1114,34 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
             Asesmen sudah ditutup. Anda belum memulai asesmen ini. Hubungi guru bila memerlukan
             tindak lanjut.
           </div>
-        ) : !attempt ? (
+        ) : !attempt || canResumeExpiredAttempt ? (
           <div className="mt-5 space-y-4">
             <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--muted)]">
-              Baca petunjuk sebelum mulai. Waktu pengerjaan mengikuti ketentuan guru.
+              {task.examSchedule ? (
+                <>
+                  <p>Buka {formatExamTime(task.examSchedule.opensAt)} · Batas masuk {formatExamTime(task.examSchedule.latestEntryAt)}</p>
+                  <p>Durasi maksimum {task.examSchedule.durationMinutes} menit.</p>
+                  <p className="mt-1 font-semibold">{scheduleReadError ? 'Waktu ujian belum dapat diperiksa.' : entry.message}</p>
+                  {scheduleReadError && (
+                    <button type="button" className="mt-2 min-h-11 underline" onClick={() => setScheduleRetry((value) => value + 1)}>
+                      Periksa ulang waktu
+                    </button>
+                  )}
+                </>
+              ) : 'Baca petunjuk sebelum mulai. Waktu pengerjaan mengikuti ketentuan guru.'}
             </div>
+            {integrityWarning && <p role="alert" className="break-words rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm font-semibold">
+              {integrityWarning}
+            </p>}
             <button
               type="button"
+              ref={resumeButtonRef}
               onClick={startAttempt}
-              disabled={busy}
+              disabled={busy || !entry.allowed || scheduleReadError || examStatusBusy}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-60"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock className="h-4 w-4" />}
-              {task.attemptStarted
+              {entry.resume || task.attemptStarted
                 ? 'Lanjutkan asesmen'
                 : task.attemptStarted === false
                   ? 'Mulai asesmen'
@@ -1076,6 +1192,8 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
                 <AssessmentTimer
                   durationMinutes={attempt.durationMinutes}
                   startedAt={attempt.startedAt}
+                  deadlineAt={attempt.deadlineAt}
+                  serverNow={attempt.serverNow}
                   onExpire={handleExpire}
                 />
               )}
@@ -1113,10 +1231,10 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
                 <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-emerald-500">
                   Soal {currentIndex + 1} dari {totalQuestions} - {currentQuestion.points} poin
                 </div>
-                <QuestionContent body={currentQuestion.body} />
+                <QuestionContent body={currentQuestion.body} sessionId={task.assessmentSessionId} />
                 <QuestionAnswerInput
                   question={currentQuestion}
-                  answers={answers}
+                  answer={answers[currentQuestion.id]}
                   setAnswer={setAnswer}
                   locked={pendingSubmit || revisionConflict}
                 />
@@ -1183,7 +1301,8 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
             )}
           </div>
         )}
-      </div>
+      </Dialog.Content>
+      </Dialog.Portal>
       <ConfirmDialog
         open={confirmUnanswered}
         onOpenChange={setConfirmUnanswered}
@@ -1197,126 +1316,6 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
           return true;
         }}
       />
-    </div>
-  );
-}
-
-function QuestionAnswerInput({
-  question,
-  answers,
-  setAnswer,
-  locked,
-}: {
-  question: StudentQuestion;
-  answers: Record<string, AnswerValue>;
-  setAnswer: (questionId: string, answer: AnswerValue) => void;
-  locked: boolean;
-}) {
-  const current = answers[question.id];
-
-  if (question.type === 'multiple_choice') {
-    return (
-      <div className="mt-3 space-y-2">
-        {question.options.map((option) => {
-          const selected = current?.type === 'multiple_choice' && current.optionId === option.id;
-          return (
-            <button
-              key={option.id}
-              type="button"
-              disabled={locked}
-              onClick={() =>
-                setAnswer(question.id, { type: 'multiple_choice', optionId: option.id })
-              }
-              className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold ${selected ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500' : 'border-[var(--border)] text-[var(--text)] hover:border-[var(--border2)]'}`}
-            >
-              {option.text}
-            </button>
-          );
-        })}
-      </div>
-    );
-  }
-
-  if (question.type === 'true_false') {
-    const value = current?.type === 'true_false' ? current.value : null;
-    return (
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {(
-          [
-            [true, 'Benar'],
-            [false, 'Salah'],
-          ] as const
-        ).map(([choice, label]) => (
-          <button
-            key={String(choice)}
-            type="button"
-            disabled={locked}
-            onClick={() => setAnswer(question.id, { type: 'true_false', value: choice })}
-            className={`rounded-xl border px-3 py-2 text-sm font-bold ${value === choice ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500' : 'border-[var(--border)] text-[var(--text)] hover:border-[var(--border2)]'}`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-    );
-  }
-
-  if (question.type === 'matching') {
-    const pairs = current?.type === 'matching' ? current.pairs : {};
-    return (
-      <div className="mt-3 space-y-2">
-        {question.prompts.map((prompt) => (
-          <label key={prompt.id} className="block rounded-xl border border-[var(--border)] p-3">
-            <span className="text-xs font-bold text-[var(--muted)]">{prompt.prompt}</span>
-            <select
-              value={pairs[prompt.id] ?? ''}
-              disabled={locked}
-              onChange={(event) =>
-                setAnswer(question.id, {
-                  type: 'matching',
-                  pairs: { ...pairs, [prompt.id]: event.target.value },
-                })
-              }
-              className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm font-semibold text-[var(--text)]"
-            >
-              <option value="">Pilih pasangan</option>
-              {question.choices.map((choice) => (
-                <option key={choice.id} value={choice.id}>
-                  {choice.text}
-                </option>
-              ))}
-            </select>
-          </label>
-        ))}
-      </div>
-    );
-  }
-
-  const text = current?.type === 'essay' ? current.text : '';
-  return (
-    <div className="mt-3 space-y-2">
-      {question.rubricCriteria && question.rubricCriteria.length > 0 && (
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3">
-          <div className="text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted)]">
-            Rubrik
-          </div>
-          <ul className="mt-2 space-y-1 text-xs font-semibold text-[var(--muted)]">
-            {question.rubricCriteria.map((criterion) => (
-              <li key={criterion.id}>
-                {criterion.name} - maks {criterion.maxScore}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <textarea
-        value={text}
-        disabled={locked}
-        onChange={(event) => setAnswer(question.id, { type: 'essay', text: event.target.value })}
-        rows={5}
-        className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm font-semibold text-[var(--text)]"
-        placeholder="Tulis jawaban esai..."
-      />
-    </div>
+    </Dialog.Root>
   );
 }
