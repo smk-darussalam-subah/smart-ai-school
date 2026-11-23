@@ -33,6 +33,9 @@ const task = z.object({
   sessionStatus: z.string().optional(),
   attemptStarted: z.boolean().optional(),
   dueAt: date.nullable().optional(),
+  examSchedule: z.object({
+    opensAt: date, latestEntryAt: date, closesAt: date, durationMinutes: z.number().int().positive(),
+  }).optional(),
   instructions: z.string().nullable().optional(),
   lateSubmissionStatus: z.enum(['pending', 'accepted', 'rejected']).nullable().optional(),
   remedialParticipant: participant.nullable().optional(),
@@ -85,7 +88,8 @@ export function readStudentTasks(
   return {
     state: 'ready',
     data: group.assignments.map((item, index) => {
-      const due = item.dueAt ? new Date(item.dueAt) : null;
+      const dueAt = item.examSchedule?.closesAt ?? item.dueAt ?? null;
+      const due = dueAt ? new Date(dueAt) : null;
       const remedialStatus = item.remedialParticipant?.status;
       const status =
         item.purpose !== 'remedial' || !remedialStatus
@@ -104,7 +108,7 @@ export function readStudentTasks(
         attemptStarted: item.attemptStarted,
         purpose: item.purpose,
         sessionStatus: item.sessionStatus,
-        dueAt: item.dueAt ?? null,
+        dueAt, examSchedule: item.examSchedule,
         remedialParticipant: item.remedialParticipant ?? null,
         mp: item.subject,
         title: item.title,

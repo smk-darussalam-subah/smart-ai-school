@@ -54,6 +54,8 @@ model User {
   staffAttendances StaffAttendance[]
   recordedSessionAttendance StudentSessionAttendance[]
   proctoredExams ExamProctor[]
+  examCohorts ExamCohortProctor[]
+  supervisedExamSlots ExamRoomSlot[]
 
   @@index([role])
   @@index([isActive])
@@ -2267,7 +2269,81 @@ model ExamPackage {
   @@schema("academic")
 }
 
+model ExamAgenda {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title        String    @db.VarChar(120)
+  academicYear String    @map("academic_year") @db.VarChar(9)
+  semester     Int
+  opensAt      DateTime  @map("opens_at") @db.Timestamptz(3)
+  closesAt     DateTime  @map("closes_at") @db.Timestamptz(3)
+  schedules    ExamSchedule[]
+  slots        ExamRoomSlot[]
+  proctors     ExamCohortProctor[]
+
+  @@index([opensAt, closesAt])
+  @@map("exam_agendas")
+  @@schema("academic")
+}
+
+model ExamCohortProctor {
+  agendaId String @map("agenda_id") @db.Uuid
+  grade    Int
+  userId   String @map("user_id") @db.Uuid
+  canTransfer Boolean @default(false) @map("can_transfer")
+  agenda   ExamAgenda @relation(fields: [agendaId], references: [id], onDelete: Restrict)
+  user     User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([agendaId, grade])
+  @@unique([agendaId, userId])
+  @@index([userId, agendaId])
+  @@map("exam_cohort_proctors")
+  @@schema("academic")
+}
+
+model ExamRoomSlot {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agendaId     String    @map("agenda_id") @db.Uuid
+  room         String    @db.VarChar(80)
+  roomKey      String    @map("room_key") @db.VarChar(80)
+  capacity     Int
+  opensAt      DateTime  @map("opens_at") @db.Timestamptz(3)
+  closesAt     DateTime  @map("closes_at") @db.Timestamptz(3)
+  supervisorId String    @map("supervisor_id") @db.Uuid
+  readyAt      DateTime? @map("ready_at") @db.Timestamptz(3)
+  agenda       ExamAgenda @relation(fields: [agendaId], references: [id], onDelete: Restrict)
+  supervisor   User       @relation(fields: [supervisorId], references: [id], onDelete: Restrict)
+  assignments  ExamParticipant[]
+  incidents    ExamRoomIncident[]
+
+  @@index([agendaId, opensAt, closesAt])
+  @@index([supervisorId, opensAt])
+  @@map("exam_room_slots")
+  @@schema("academic")
+}
+
+model ExamRoomIncident {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slotId      String    @map("slot_id") @db.Uuid
+  intentId    String    @map("intent_id") @db.Uuid
+  reason      String    @db.VarChar(500)
+  createdBy   String    @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  decision    String?   @db.VarChar(24)
+  decisionNote String?  @map("decision_note") @db.VarChar(500)
+  resolvedBy  String?   @map("resolved_by") @db.Uuid
+  resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz(3)
+  slot        ExamRoomSlot @relation(fields: [slotId], references: [id], onDelete: Restrict)
+
+  @@unique([slotId, createdBy, intentId])
+  @@index([slotId, createdAt])
+  @@map("exam_room_incidents")
+  @@schema("academic")
+}
+
 model ExamSchedule {
+  agendaId          String? @map("agenda_id") @db.Uuid
+  cohortGrade       Int? @map("cohort_grade")
+  agenda            ExamAgenda? @relation(fields: [agendaId], references: [id], onDelete: Restrict)
   sessionId         String @id @map("session_id") @db.Uuid
   packageId         String @map("package_id") @db.Uuid
   room              String @db.VarChar(80)
@@ -2287,11 +2363,14 @@ model ExamSchedule {
 
   @@index([opensAt, closesAt])
   @@index([roomKey, opensAt])
+  @@index([agendaId, cohortGrade])
   @@map("exam_schedules")
   @@schema("academic")
 }
 
 model ExamParticipant {
+  roomSlotId    String? @map("room_slot_id") @db.Uuid
+  roomSlot      ExamRoomSlot? @relation(fields: [roomSlotId], references: [id], onDelete: Restrict)
   sessionId     String @map("session_id") @db.Uuid
   studentId     String @map("student_id") @db.Uuid
   extraMinutes  Int @default(0) @map("extra_minutes")
@@ -2306,6 +2385,7 @@ model ExamParticipant {
   @@id([sessionId, studentId])
   @@index([studentId, sessionId])
   @@index([makeupSourceGradeId])
+  @@index([roomSlotId, sessionId])
   @@map("exam_participants")
   @@schema("academic")
 }

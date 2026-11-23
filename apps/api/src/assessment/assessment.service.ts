@@ -1984,6 +1984,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         },
       });
       const scheduled = currentSession.examSchedule;
+      let windowCheckedAt: Date | undefined;
       let deadlineAt: Date | null = null;
       if (scheduled) {
         if (currentSession.status !== 'active' || !currentSession.durationMinutes)
@@ -1991,11 +1992,11 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         // Different rooms may start together while semester cutover stays exclusive.
         await this.academicPeriod.assertWritablePeriodWithSharedCutoverLock(tx, currentSession);
         const participant = await authorizeExamDevice(tx, sessionId, student.id, deviceId, true);
-        const now = new Date();
-        assertExamWindow(scheduled, now, !currentResponse?.startedAt);
-        deadlineAt = examDeadline(scheduled.closesAt, currentResponse?.startedAt ?? now,
+        windowCheckedAt = new Date();
+        assertExamWindow(scheduled, windowCheckedAt, !currentResponse?.startedAt);
+        deadlineAt = examDeadline(scheduled.closesAt, currentResponse?.startedAt ?? windowCheckedAt,
           currentSession.durationMinutes, participant.extraMinutes);
-        if (now >= deadlineAt) throw new ConflictException('Waktu ujian telah habis.');
+        if (windowCheckedAt >= deadlineAt) throw new ConflictException('Waktu ujian telah habis.');
       }
       if (currentResponse?.submittedAt) {
         throw new ConflictException('Anda sudah mengirimkan jawaban untuk sesi ini');
@@ -2014,7 +2015,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (!scheduled) await this.assertWritablePeriodInTransaction(tx, currentSession);
-      const startedAt = new Date();
+      const startedAt = windowCheckedAt ?? new Date();
       const created = await tx.assessmentResponse.create({
         data: {
           sessionId,

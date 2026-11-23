@@ -26,6 +26,7 @@ import {
 import AssessmentTimer from '../AssessmentTimer';
 import { getAssessmentDeviceId } from '@/lib/assessment-device';
 import type { SiswaTugas } from './siswa-types';
+import { formatExamTime, getScheduledEntry, readScheduledExamStatus } from '@/lib/scheduled-exam-entry';
 import { startAssessmentResponse } from '../../actions';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
@@ -239,6 +240,18 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
   const [pendingSubmit, setPendingSubmit] = useState(false);
   const [examExpired, setExamExpired] = useState(false);
   const examExpiredRef = useRef(false);
+  const [serverTime, setServerTime] = useState<number | null>(null);
+  const [scheduleStatus, setScheduleStatus] = useState<
+    (NonNullable<ReturnType<typeof readScheduledExamStatus>> & { receivedAt: number }) | null
+  >(null);
+  const [lateRejected, setLateRejected] = useState(task.lateSubmissionStatus === 'rejected');
+  const [scheduleReadError, setScheduleReadError] = useState(false);
+  const [scheduleRetry, setScheduleRetry] = useState(0);
+  const entry = getScheduledEntry(task, serverTime, scheduleStatus);
+  const canResumeExpiredAttempt = examExpired && entry.allowed && entry.resume === true;
+  const statusRequestRef = useRef<AbortController | null>(null);
+  const resumeButtonRef = useRef<HTMLButtonElement>(null);
+  const focusResumeRef = useRef(false);
   const [examStatusBusy, setExamStatusBusy] = useState(false);
   const [examStatusMessage, setExamStatusMessage] = useState('');
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
@@ -279,7 +292,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       task.remedialParticipant?.status === 'needs_retry')
       ? task.remedialParticipant.status
       : null;
-  const lateDecisionAttention = lateReviewRequired || task.lateSubmissionStatus === 'rejected';
+  const lateDecisionAttention = lateReviewRequired || lateRejected;
 
   const persistDraft = useCallback(
     async (
@@ -595,7 +608,8 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
   }, [autosaveWindow, persistDraft, showToast, submitted, task.assessmentSessionId]);
 
   const startAttempt = () => {
-    if (!task.assessmentSessionId) return;
+    if (!task.assessmentSessionId ||
+      ((!attempt || examExpiredRef.current) && (!entry.allowed || scheduleReadError || examStatusBusy))) return;
     if (!isStandaloneDisplay() && document.fullscreenEnabled && !document.fullscreenElement) {
       void document.documentElement.requestFullscreen().catch(() => undefined);
     }
@@ -641,6 +655,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       pendingSubmitRef.current = selected.pendingSubmit;
       submitRequestedAtRef.current = selected.submitRequestedAt;
       setAttempt(hydratedAttempt);
+      setScheduleStatus(null);
       examExpiredRef.current = false;
       setExamExpired(false);
       setExamStatusMessage('');
@@ -713,30 +728,85 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     }
   }, [autosaveWindow, showToast, submitAnswers, submitted]);
 
-  async function checkScheduledStatus() {
-    if (!task.assessmentSessionId || examStatusBusy) return;
-    setExamStatusBusy(true);
+  const refreshScheduledStatus = useCallback(async (manual = false) => {
+    if (!task.assessmentSessionId) return;
+    statusRequestRef.current?.abort();
+    const controller = new AbortController();
+    statusRequestRef.current = controller;
+    setExamStatusBusy(manual);
     setExamStatusMessage('');
     try {
-      const res = await fetch(`/api/backend/exam-schedule/${task.assessmentSessionId}/my-status`, { cache: 'no-store' });
-      if (!res.ok) throw new Error('Status belum dapat diperiksa. Coba lagi saat tersambung.');
-      const status: { state: string; score: number | null } = await res.json();
-      if (!mountedRef.current) return;
+      const response = await fetch(`/api/backend/exam-schedule/${task.assessmentSessionId}/my-status`, {
+        cache: 'no-store', signal: controller.signal,
+      });
+      if (!response.ok) throw new Error('Status belum dapat diperiksa. Coba lagi saat tersambung.');
+      const status = readScheduledExamStatus(await response.json());
+      if (!status) throw new Error('Status belum dapat diperiksa. Coba lagi.');
+      if (controller.signal.aborted) return;
+      setScheduleStatus({ ...status, receivedAt: performance.now() });
+      setServerTime(status.serverTime);
+      setScheduleReadError(false);
       if (status.state === 'submitted') {
         finishedRef.current = true;
-        setSubmittedScore(typeof status.score === 'number' ? status.score : null);
+        setSubmittedScore(status.score);
+        setLateReviewRequired(status.lateSubmissionStatus === 'pending');
+        setLateRejected(status.lateSubmissionStatus === 'rejected');
         setSubmitted(true);
-      } else if (status.state === 'working') {
-        startAttempt();
-      } else {
+      } else if (manual && status.state === 'expired') {
         setExamStatusMessage('Jawaban terakhir yang dikonfirmasi sedang diselesaikan oleh server.');
+      } else if (manual && status.deadline !== null && status.serverTime < status.deadline) {
+        focusResumeRef.current = true;
       }
     } catch (error) {
-      if (mountedRef.current) setExamStatusMessage(error instanceof Error ? error.message : 'Status belum tersedia.');
+      if (controller.signal.aborted) return;
+      setScheduleReadError(true);
+      if (manual) setExamStatusMessage(error instanceof Error ? error.message : 'Status belum tersedia.');
     } finally {
-      if (mountedRef.current) setExamStatusBusy(false);
+      if (!controller.signal.aborted) setExamStatusBusy(false);
     }
-  }
+  }, [task.assessmentSessionId]);
+
+  useEffect(() => {
+    if (!task.examSchedule || !task.assessmentSessionId || submitted || attempt) return;
+    const returnToTab = () => {
+      if (document.visibilityState === 'visible') void refreshScheduledStatus();
+      else {
+        statusRequestRef.current?.abort();
+        setExamStatusBusy(false);
+      }
+    };
+    const onOffline = () => {
+      statusRequestRef.current?.abort();
+      setExamStatusBusy(false);
+      setScheduleReadError(true);
+    };
+    void refreshScheduledStatus();
+    document.addEventListener('visibilitychange', returnToTab);
+    window.addEventListener('online', returnToTab);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      statusRequestRef.current?.abort();
+      document.removeEventListener('visibilitychange', returnToTab);
+      window.removeEventListener('online', returnToTab);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, [task.examSchedule, task.assessmentSessionId, submitted, attempt, scheduleRetry, refreshScheduledStatus]);
+
+  useEffect(() => () => statusRequestRef.current?.abort(), [task.assessmentSessionId]);
+
+  useEffect(() => {
+    if (!scheduleStatus || submitted || (attempt && !examExpired)) return;
+    const timer = setInterval(() => {
+      setServerTime(scheduleStatus.serverTime + performance.now() - scheduleStatus.receivedAt);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [scheduleStatus, submitted, attempt, examExpired]);
+
+  useEffect(() => {
+    if (!focusResumeRef.current || !entry.allowed || !entry.resume) return;
+    focusResumeRef.current = false;
+    resumeButtonRef.current?.focus();
+  }, [entry.allowed, entry.resume]);
 
   const requestExamDisplay = useCallback(() => {
     if (isStandaloneDisplay() || !document.fullscreenEnabled || document.fullscreenElement) {
@@ -922,7 +992,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
             </div>
             <Dialog.Title className="mt-1 text-lg font-extrabold text-[var(--text)]">{task.title}</Dialog.Title>
             <Dialog.Description className="mt-1 text-xs font-semibold text-[var(--muted)]">
-              {task.guru} · Tenggat {task.deadline}
+              {task.guru} · {task.examSchedule ? `Tutup ${formatExamTime(task.examSchedule.closesAt)}` : `Tenggat ${task.deadline}`}
             </Dialog.Description>
           </div>
           <button
@@ -1008,14 +1078,14 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
                     lateDecisionAttention ? 'text-amber-500' : 'text-emerald-500'
                   }`}
                 >
-                  {task.lateSubmissionStatus === 'rejected'
+                  {lateRejected
                     ? 'Jawaban terlambat ditolak'
                     : lateReviewRequired
                       ? 'Menunggu keputusan guru'
                       : 'Jawaban sudah terkirim'}
                 </div>
                 <p className="mt-1 text-sm text-[var(--muted)]">
-                  {task.lateSubmissionStatus === 'rejected'
+                  {lateRejected
                     ? 'Guru telah menolak jawaban yang masuk setelah batas waktu. Hubungi guru bila Anda memerlukan penjelasan.'
                     : lateReviewRequired
                       ? 'Jawaban telah diterima server setelah batas waktu dan belum dinilai. Guru akan mengonfirmasi alasan keterlambatan sebelum menerima atau menolak.'
@@ -1026,13 +1096,13 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
               </div>
             </div>
           </div>
-        ) : examExpired ? (
+        ) : (attempt ? examExpired && !canResumeExpiredAttempt : entry.expired) ? (
           <div className="mt-5 space-y-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
             <h3 className="font-bold">Waktu ujian habis</h3>
             <p className="text-sm text-[var(--muted)]">Server menyelesaikan jawaban dari versi terakhir yang berhasil tersimpan.</p>
             {examStatusMessage && <p role="status" className="text-sm">{examStatusMessage}</p>}
             <button type="button" className="min-h-11 rounded-lg border border-[var(--border)] px-3 text-sm font-semibold"
-              disabled={examStatusBusy || busy} onClick={() => void checkScheduledStatus()}>
+              disabled={examStatusBusy || busy} onClick={() => void refreshScheduledStatus(true)}>
               {examStatusBusy ? 'Memeriksa…' : 'Periksa status ujian'}
             </button>
           </div>
@@ -1044,22 +1114,34 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
             Asesmen sudah ditutup. Anda belum memulai asesmen ini. Hubungi guru bila memerlukan
             tindak lanjut.
           </div>
-        ) : !attempt ? (
+        ) : !attempt || canResumeExpiredAttempt ? (
           <div className="mt-5 space-y-4">
             <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--muted)]">
-              Baca petunjuk sebelum mulai. Waktu pengerjaan mengikuti ketentuan guru.
+              {task.examSchedule ? (
+                <>
+                  <p>Buka {formatExamTime(task.examSchedule.opensAt)} · Batas masuk {formatExamTime(task.examSchedule.latestEntryAt)}</p>
+                  <p>Durasi maksimum {task.examSchedule.durationMinutes} menit.</p>
+                  <p className="mt-1 font-semibold">{scheduleReadError ? 'Waktu ujian belum dapat diperiksa.' : entry.message}</p>
+                  {scheduleReadError && (
+                    <button type="button" className="mt-2 min-h-11 underline" onClick={() => setScheduleRetry((value) => value + 1)}>
+                      Periksa ulang waktu
+                    </button>
+                  )}
+                </>
+              ) : 'Baca petunjuk sebelum mulai. Waktu pengerjaan mengikuti ketentuan guru.'}
             </div>
             {integrityWarning && <p role="alert" className="break-words rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm font-semibold">
               {integrityWarning}
             </p>}
             <button
               type="button"
+              ref={resumeButtonRef}
               onClick={startAttempt}
-              disabled={busy}
+              disabled={busy || !entry.allowed || scheduleReadError || examStatusBusy}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-60"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock className="h-4 w-4" />}
-              {task.attemptStarted
+              {entry.resume || task.attemptStarted
                 ? 'Lanjutkan asesmen'
                 : task.attemptStarted === false
                   ? 'Mulai asesmen'
