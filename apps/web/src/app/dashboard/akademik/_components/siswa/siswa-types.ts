@@ -43,6 +43,7 @@ export interface SiswaTugas {
   purpose?: 'regular' | 'remedial';
   sessionStatus?: string;
   dueAt?: string | null;
+  examSchedule?: { opensAt: string; latestEntryAt: string; closesAt: string; durationMinutes: number };
   remedialParticipant?: {
     status: 'assigned' | 'in_progress' | 'submitted' | 'passed' | 'needs_retry';
     assignedAt: string;

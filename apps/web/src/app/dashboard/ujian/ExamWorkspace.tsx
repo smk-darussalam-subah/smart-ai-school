@@ -5,10 +5,11 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { ExamIncidentActions } from './ExamIncidentActions';
+import { ExamOperationsPanel, RoomPlacementFields, type ExamAgendaPlacement, type ExamRoomAssignment } from './ExamOperationsPanel';
 
 type Exam = {
   sessionId: string; room: string; opensAt: string; latestEntryAt: string; closesAt: string;
-  publishedAt: string | null; cancelledAt: string | null; makeupOfSessionId: string | null;
+  publishedAt: string | null; cancelledAt: string | null; makeupOfSessionId: string | null; agendaId?: string | null;
   package: { title: string; version: number; subject: string };
   session: { title: string; status: string; durationMinutes: number; academicYear: string; semester: number; class: { name: string } | null };
   _count: { participants: number; incidents: number }; counts?: { working: number; done: number };
@@ -19,7 +20,7 @@ type Person = { studentId: string; extraMinutes: number; student: { user: { full
 };
 type MakeupCandidate = { studentId: string; fullName: string; mode: 'absence' | 'improvement' };
 type Incident = { id: string; kind: string; reason: string; decision: string | null; resolvedAt: string | null };
-type Monitor = Exam & { participants: Person[]; incidents: Incident[]; asOf: string; canReport: boolean };
+type Monitor = Exam & { participants: Person[]; incidents: Incident[]; asOf: string; canReport: boolean; canDecide?: boolean };
 type MonitorLabel = 'Belum mulai' | 'Mengerjakan' | 'Koneksi tidak terpantau' | 'Perlu keputusan' | 'Terkirim' | 'Ditolak';
 const monitorLabels: MonitorLabel[] = ['Belum mulai', 'Mengerjakan', 'Koneksi tidak terpantau', 'Perlu keputusan', 'Terkirim', 'Ditolak'];
 function participantLabel(person: Person, asOf: number): MonitorLabel {
@@ -40,8 +41,10 @@ type Options = {
   packages: { id: string; title: string; subject: string; version: number }[];
   proctors: { id: string; fullName: string }[];
 };
-const panel = 'min-w-0 space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5';
-const control = 'min-h-11 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm';
+const surface = 'border-[var(--staff-line,#e2e8f0)] bg-[var(--staff-panel,#fff)] text-[var(--staff-text,#0f172a)]';
+const muted = 'text-[var(--staff-muted,#475569)]';
+const panel = `min-w-0 space-y-4 rounded-2xl border p-4 sm:p-5 ${surface}`;
+const control = `min-h-11 rounded-lg border px-3 py-2 text-sm ${surface}`;
 const primary = 'min-h-11 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50';
 const time = new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
 function status(exam: Exam, now: number) {
@@ -81,6 +84,8 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
   const [date, setDate] = useState(day);
   const [result, setResult] = useState<{ rows: Exam[]; asOf: string; nextCursor: string | null }>();
   const [options, setOptions] = useState<Options>();
+  const monitorTrigger = useRef<HTMLButtonElement | null>(null);
+  const examHeading = useRef<HTMLHeadingElement>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [monitorData, setMonitor] = useState<Monitor>();
   const monitor = monitorData?.sessionId === selected ? monitorData : undefined;
@@ -99,15 +104,22 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
   const [starts, setStarts] = useState('');
   const [entry, setEntry] = useState('');
   const [ends, setEnds] = useState('');
+  const [agendaPlacement, setAgendaPlacement] = useState<ExamAgendaPlacement | null>(null);
+  const [useAgenda, setUseAgenda] = useState(false);
+  const [assignments, setAssignments] = useState<ExamRoomAssignment[] | null>(null);
   const [proctors, setProctors] = useState<string[]>([]);
   const [makeupOf, setMakeupOf] = useState('');
   const [makeupRoster, setMakeupRoster] = useState<MakeupCandidate[]>([]);
   const [makeupParticipants, setMakeupParticipants] = useState<string[]>([]);
+  const makeupPlacement = useMemo(() => makeupOf ? makeupRoster
+    .filter(({ studentId }) => makeupParticipants.includes(studentId))
+    .map(({ studentId, fullName }) => ({ id: studentId, fullName })) : null,
+  [makeupOf, makeupRoster, makeupParticipants]);
   const [makeupLoading, setMakeupLoading] = useState(false);
   const [roomFilter, setRoomFilter] = useState('');
   const request = useRef(0);
   const mutation = useRef(false);
-  const refreshMonitor = useRef<{ sessionId: string; refresh: () => Promise<void> } | undefined>(undefined);
+  const refreshMonitor = useRef<{ sessionId: string; refresh: (restart?: boolean) => Promise<void> } | undefined>(undefined);
   const monitorSummary = useMemo(() => {
     if (!monitor) return;
     const now = Date.parse(monitor.asOf);
@@ -137,7 +149,7 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
   }, [date]);
   useEffect(() => { void reload(); return () => { request.current++; }; }, [reload]);
   useEffect(() => {
-    if (!panelOpen || (!canAuthor && !canPlan)) return;
+    if (!canPlan && (!panelOpen || !canAuthor)) return;
     let live = true;
     void api<Options>('/options').then((value) => { if (live) setOptions(value); },
       (error: Error) => { if (live) setFailure(error.message); });
@@ -168,7 +180,8 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
       request?.abort();
       request = undefined;
     }
-    async function refresh() {
+    async function refresh(restart = false) {
+      if (restart) cancelRead();
       if (!active || request || document.visibilityState !== 'visible') return;
       clearTimeout(timer);
       const controller = new AbortController();
@@ -185,7 +198,9 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
           setMonitorFailure((error as Error).message);
           return;
         }
-        setMonitorFailure('Pembaruan monitor gagal. Periksa koneksi atau coba muat ulang.');
+        setMonitor((snapshot) => snapshot?.sessionId === sessionId
+          ? { ...snapshot, canReport: false, canDecide: false } : snapshot);
+        setMonitorFailure('Pembaruan monitor gagal. Data sebelumnya mungkin berubah. Muat ulang monitor.');
       } finally {
         if (request === controller) request = undefined;
       }
@@ -218,7 +233,8 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
 
   function plan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!sessionId || !selectedPackage || !proctors.length || starts > entry || entry >= ends ||
+    if (!sessionId || !selectedPackage || (useAgenda ? !agendaPlacement || !assignments : !proctors.length) ||
+        starts > entry || starts >= ends || entry > ends ||
         (makeupOf && !makeupParticipants.length)) {
       setFailure('Pilih paket, draft, proktor, dan urutkan waktu buka, batas masuk, lalu tutup.');
       return;
@@ -226,8 +242,8 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
     void save(async () => {
       const tz = (value: string) => `${value}:00+07:00`;
       await api(`/${sessionId}`, { method: 'PUT', body: JSON.stringify({
-        packageId: selectedPackage, room, opensAt: tz(starts), latestEntryAt: tz(entry), closesAt: tz(ends),
-        proctorIds: proctors,
+        packageId: selectedPackage, opensAt: tz(starts), latestEntryAt: tz(entry), closesAt: tz(ends),
+        ...(useAgenda ? { agendaId: agendaPlacement?.agendaId, roomAssignments: assignments } : { room, proctorIds: proctors }),
         ...(makeupOf ? { makeupOfSessionId: makeupOf, participantIds: makeupParticipants } : {}),
       }) });
       setNotice('Draf jadwal tersimpan. Periksa sebelum diterbitkan.');
@@ -242,16 +258,17 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
     `${exam.room} ${exam.session.class?.name ?? ''} ${exam.session.title}`.toLocaleLowerCase('id').includes(roomFilter.trim().toLocaleLowerCase('id')));
 
   return (
-    <main className="mx-auto max-w-7xl space-y-5 text-[var(--text)]">
+    <main className="mx-auto max-w-7xl space-y-5 text-[var(--text,var(--staff-text,#0f172a))]">
       <header className="flex flex-wrap items-start justify-between gap-3">
-        <div><h1 className="flex items-center gap-2 text-2xl font-bold"><ClipboardCheck className="h-6 w-6 text-emerald-600" />{student ? 'Jadwal Ujian' : 'Ujian'}</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">{student ? 'Lihat jadwal dan waktu masuk ujian Anda.' : 'Lihat jadwal, peserta, dan status ujian sesuai kewenangan Anda.'}</p></div>
+        <div><h1 ref={examHeading} tabIndex={-1} className="flex items-center gap-2 text-2xl font-bold"><ClipboardCheck className="h-6 w-6 text-emerald-600" />{student ? 'Jadwal Ujian' : 'Ujian'}</h1>
+          <p className="mt-1 text-sm text-[var(--staff-muted,#475569)]">{student ? 'Lihat jadwal dan waktu masuk ujian Anda.' : 'Lihat jadwal, peserta, dan status ujian sesuai kewenangan Anda.'}</p></div>
         {(canAuthor || canPlan) && <button className={primary} onClick={() => setPanelOpen((open) => !open)} aria-expanded={panelOpen}>
           {panelOpen ? 'Tutup penyusunan' : 'Siapkan ujian'}
         </button>}
       </header>
       {failure && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-900">{failure}</p>}
       {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-900">{notice}</p>}
+      {!student && <ExamOperationsPanel day={date} canPlan={canPlan} onPlacement={setAgendaPlacement} />}
       {panelOpen && (
         <section className={panel}>
           <h2 className="text-lg font-bold">Siapkan ujian</h2>
@@ -275,15 +292,20 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
                     {options.packages.map((pkg) => <option key={pkg.id} value={pkg.id}>{pkg.subject} · {pkg.title} · versi {pkg.version}</option>)}
                   </select>
                 </label>
-                <label className="grid gap-1 text-sm font-semibold">Ruang
-                  <input className={control} value={room} onChange={(event) => setRoom(event.target.value)} required maxLength={80} />
+                <label className="flex min-h-11 items-center gap-2 text-sm font-semibold">
+                  <input type="checkbox" checked={useAgenda} disabled={!agendaPlacement && !useAgenda}
+                    onChange={(event) => { setAssignments(null); setUseAgenda(event.target.checked); }} />
+                  Gunakan ruang dan penugasan dari agenda aktif
                 </label>
+                {!useAgenda && <label className="grid gap-1 text-sm font-semibold">Ruang
+                  <input className={control} value={room} onChange={(event) => setRoom(event.target.value)} required maxLength={80} />
+                </label>}
                 {([['Waktu buka (WIB)', starts, setStarts], ['Batas masuk (WIB)', entry, setEntry], ['Tutup (WIB)', ends, setEnds]] as const).map(([label, value, change]) =>
                   <label className="grid gap-1 text-sm font-semibold" key={label}>{label}
                     <input className={control} type="datetime-local" value={value} onChange={(event) => change(event.target.value)} required />
                   </label>)}
-                <fieldset className="space-y-2 sm:col-span-2">
-                  <legend className="font-semibold">Proktor</legend>
+                {!useAgenda && <fieldset className="space-y-2 sm:col-span-2">
+                  <legend className="font-semibold">Proktor sesi</legend>
                   <div className="grid max-h-44 gap-1 overflow-y-auto sm:grid-cols-2">
                     {options.proctors.map((person) => <label key={person.id} className="flex min-h-11 items-center gap-2 px-2 text-sm">
                       <input type="checkbox" checked={proctors.includes(person.id)} onChange={(event) => setProctors((previous) =>
@@ -291,7 +313,7 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
                       {person.fullName}
                     </label>)}
                   </div>
-                </fieldset>
+                </fieldset>}
                 <label className="grid gap-1 text-sm font-semibold">Sesi asal untuk ujian susulan
                   <select className={control} value={makeupOf} onChange={(event) => {
                     setMakeupOf(event.target.value); setMakeupRoster([]); setMakeupParticipants([]);
@@ -302,24 +324,27 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
                         {exam.session.title} · {exam.session.class?.name}
                       </option>)}
                   </select>
-                  <span className="font-normal text-[var(--muted)]">Pilih tanggal ujian asal untuk memuat sesi yang sudah selesai.</span>
+                  <span className="font-normal text-[var(--staff-muted,#475569)]">Pilih tanggal ujian asal untuk memuat sesi yang sudah selesai.</span>
                 </label>
                 {makeupOf && <fieldset className="space-y-2 sm:col-span-2">
                   <legend className="font-semibold">Peserta susulan</legend>
-                  <p className="text-sm text-[var(--muted)]">Untuk perbaikan nilai, pilih paket soal dari materi yang masih belum dikuasai siswa.</p>
+                  <p className="text-sm text-[var(--staff-muted,#475569)]">Untuk perbaikan nilai, pilih paket soal dari materi yang masih belum dikuasai siswa.</p>
                   {makeupLoading ? <p role="status">Memuat peserta…</p> : !makeupRoster.length ?
-                    <p className="text-sm text-[var(--muted)]">Tidak ada peserta yang dapat dijadwalkan dari sesi ini.</p> :
+                    <p className="text-sm text-[var(--staff-muted,#475569)]">Tidak ada peserta yang dapat dijadwalkan dari sesi ini.</p> :
                     <div className="grid max-h-44 gap-1 overflow-y-auto sm:grid-cols-2">
                       {makeupRoster.map((person) => <label className="flex min-h-11 items-center gap-2 px-2 text-sm" key={person.studentId}>
                         <input type="checkbox" checked={makeupParticipants.includes(person.studentId)} onChange={(event) => {
                           setMakeupParticipants(event.target.checked ? [...makeupParticipants, person.studentId] :
                             makeupParticipants.filter((id) => id !== person.studentId));
-                        }} /><span>{person.fullName}<small className="block text-[var(--muted)]">
+                        }} /><span>{person.fullName}<small className="block text-[var(--staff-muted,#475569)]">
                           {person.mode === 'improvement' ? 'Perbaikan nilai' : 'Belum memiliki nilai'}</small></span>
                       </label>)}
                     </div>}
                 </fieldset>}
-                <button type="submit" disabled={busy || (Boolean(makeupOf) && !makeupParticipants.length)} className={primary}>Simpan draf jadwal</button>
+                {useAgenda && agendaPlacement && <RoomPlacementFields key={agendaPlacement.agendaId + ':' + sessionId}
+                  sessionId={sessionId} slots={agendaPlacement.slots} makeup={makeupPlacement} onChange={setAssignments} />}
+                {useAgenda && !agendaPlacement && <p role="status">Pilih agenda dan pemakaian ruang terlebih dahulu.</p>}
+                <button type="submit" disabled={busy || (useAgenda && (!agendaPlacement || !assignments)) || (Boolean(makeupOf) && !makeupParticipants.length)} className={primary}>Simpan draf jadwal</button>
               </>}
             </form>
           )}
@@ -337,13 +362,13 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
           <button className={control} disabled={loading} onClick={() => void reload()}><RefreshCw className="mr-1 inline h-4 w-4" />Muat ulang</button>
         </div>
         {loading && !result && <p role="status">Memuat jadwal…</p>}
-        {rows?.length === 0 && <p className="text-sm text-[var(--muted)]">{roomFilter ? 'Tidak ada ujian yang cocok.' : 'Belum ada ujian dalam cakupan Anda pada tanggal ini.'}</p>}
+        {rows?.length === 0 && <p className="text-sm text-[var(--staff-muted,#475569)]">{roomFilter ? 'Tidak ada ujian yang cocok.' : 'Belum ada ujian dalam cakupan Anda pada tanggal ini.'}</p>}
         {rows?.map((exam) => {
           if (!result) return null;
           const state = status(exam, Date.parse(result.asOf));
-          return <article key={exam.sessionId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] p-3 sm:p-4">
+          return <article key={exam.sessionId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--staff-line,#cbd5e1)] p-3 sm:p-4">
             <div className="min-w-0 space-y-1"><h2 className="font-bold">{exam.session.title}</h2>
-              <p className="text-sm text-[var(--muted)]"><CalendarDays className="mr-1 inline h-4 w-4" />
+              <p className="text-sm text-[var(--staff-muted,#475569)]"><CalendarDays className="mr-1 inline h-4 w-4" />
                 {time.format(new Date(exam.opensAt))}–{time.format(new Date(exam.closesAt))} WIB · {exam.session.class?.name ?? 'Kelas'} · {exam.room}</p>
               <p className="text-sm"><strong>{state}</strong>{exam.makeupOfSessionId ? ' · Susulan' : ''}
                 {student ? ` · Batas masuk ${time.format(new Date(exam.latestEntryAt))} WIB` :
@@ -356,7 +381,7 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
                   academicYear: exam.session.academicYear, semester: exam.session.semester,
                 } }}>Lihat detail ujian</Link>
               )}
-              {!student && <button className={control} onClick={() => setSelected(exam.sessionId)}>Pantau sesi</button>}
+              {!student && <button className={control} onClick={(event) => { monitorTrigger.current = event.currentTarget; setSelected(exam.sessionId); }}>Pantau sesi</button>}
               {canPlan && state === 'Draf' && <button className={primary} onClick={() => setConfirm(exam)}>Terbitkan</button>}
               {canPlan && ['Draf', 'Terjadwal'].includes(state) && <button className={control} onClick={() => {
                 setCancelReason(''); setFailure(''); setCancel(exam);
@@ -367,7 +392,7 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
         {result?.nextCursor && <button className={control} disabled={loading} onClick={() => void reload(result.nextCursor!)}>Muat sesi berikutnya</button>}
       </section>
       {cancel && <Dialog open onOpenChange={(open) => { if (!open && !busy) setCancel(undefined); }}>
-        <DialogContent className="bg-white dark:bg-slate-900">
+        <DialogContent className={surface}>
           <DialogTitle>Batalkan jadwal ujian?</DialogTitle>
           <DialogDescription>{cancel.session.title}. Pembatalan tersedia selama belum ada peserta yang mulai.</DialogDescription>
           <form className="space-y-3" onSubmit={(event) => {
@@ -386,7 +411,7 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
         </DialogContent>
       </Dialog>}
       {confirm && <Dialog open onOpenChange={(open) => { if (!open && !busy) setConfirm(undefined); }}>
-        <DialogContent className="bg-white dark:bg-slate-900">
+        <DialogContent className={surface}>
           <DialogTitle>Terbitkan ujian?</DialogTitle><DialogDescription>{confirm.session.title} · {confirm.room} · {confirm._count.participants} peserta.</DialogDescription>
           {failure && <p role="alert" className="text-sm text-rose-700">{failure}</p>}
           <button className={primary} disabled={busy} onClick={() => void save(async () => {
@@ -396,26 +421,34 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
         </DialogContent>
       </Dialog>}
       {selected && <Dialog open onOpenChange={(open) => { if (!open) setSelected(null); }}>
-        <DialogContent className="max-h-[85dvh] max-w-4xl overflow-y-auto bg-white dark:bg-slate-900">
+        <DialogContent
+          className={`max-h-[85dvh] w-[calc(100%_-_1.5rem)] max-w-4xl overflow-y-auto ${surface}`}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const trigger = monitorTrigger.current;
+            monitorTrigger.current = null;
+            (trigger?.isConnected && !trigger.disabled && trigger.getClientRects().length > 0 ? trigger : examHeading.current)?.focus();
+          }}
+        >
           <DialogTitle>{monitor?.session.title ?? 'Pantau sesi ujian'}</DialogTitle>
-          <DialogDescription>{monitor ? `Diperbarui ${time.format(new Date(monitor.asOf))} WIB` : 'Status peserta sesuai cakupan Anda.'}</DialogDescription>
-          {monitorFailure && <div className="space-y-2 rounded-lg border border-[var(--border)] p-3">
+          <DialogDescription className={muted}>{monitor ? `Diperbarui ${time.format(new Date(monitor.asOf))} WIB` : 'Status peserta sesuai cakupan Anda.'}</DialogDescription>
+          {monitorFailure && <div className="space-y-2 rounded-lg border border-[var(--staff-line,#cbd5e1)] bg-amber-50 p-3 text-amber-900">
             <p role="alert" className="text-sm">{monitorFailure}</p>
             <button type="button" className={control} onClick={() => void refreshMonitor.current?.refresh()}>Muat ulang monitor</button>
           </div>}
           {!monitor || !monitorSummary ? (!monitorFailure && <p role="status">Memuat monitor…</p>) : <>
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-b border-[var(--border)] pb-3 text-sm sm:grid-cols-3">
-              {monitorLabels.map((label) => <div key={label} className="flex items-baseline justify-between gap-2">
-                <dt className="text-[var(--muted)]">{label}</dt>
-                <dd className="font-semibold tabular-nums">{monitorSummary.counts.get(label) ?? 0}</dd>
+            <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
+              {monitorLabels.map((label) => <div key={label} className="rounded-lg border border-[var(--staff-line,#cbd5e1)] bg-[var(--staff-inset,#f1f5f9)] p-2.5">
+                <dt className="text-[var(--staff-muted,#475569)]">{label}</dt>
+                <dd className="text-lg font-semibold tabular-nums">{monitorSummary.counts.get(label) ?? 0}</dd>
               </div>)}
             </dl>
-            <div className="overflow-x-auto" role="region" aria-label="Status peserta" tabIndex={0}>
+            <div className="hidden overflow-x-auto sm:block" role="region" aria-label="Status peserta" tabIndex={0}>
               <table className="w-full text-left text-sm">
                 <thead><tr>{['Peserta', 'Status', 'Simpan terakhir', 'Insiden'].map((label) => <th key={label} scope="col" className="p-2">{label}</th>)}</tr></thead>
                 <tbody>{monitorSummary.rows.map(({ person, label }) => {
                   const response = person.response;
-                  return <tr key={person.studentId} className="border-t border-[var(--border)]">
+                  return <tr key={person.studentId} className="border-t border-[var(--staff-line,#cbd5e1)]">
                     <th scope="row" className="p-2 text-left font-medium">{person.student.user.fullName}</th><td className="p-2">{label}</td>
                     <td className="p-2">{response?.lastSavedAt ? time.format(new Date(response.lastSavedAt)) : '—'}</td>
                     <td className="p-2">{response?._count.integrityEvents ?? 0}</td>
@@ -423,10 +456,33 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
                 })}</tbody>
               </table>
             </div>
-            <ExamIncidentActions key={selected} canReport={monitor.canReport} canDecide={canPlan}
+            <ul className="divide-y divide-[var(--staff-line,#cbd5e1)] rounded-lg border border-[var(--staff-line,#cbd5e1)] sm:hidden" aria-label="Status peserta">
+              {monitorSummary.rows.map(({ person, label }) => {
+                const response = person.response;
+                return <li key={person.studentId} className="space-y-1 p-3 text-sm">
+                  <p className="break-words font-semibold">{person.student.user.fullName}</p>
+                  <p>{label}</p>
+                  <p className={muted}>Simpan terakhir {response?.lastSavedAt ? time.format(new Date(response.lastSavedAt)) + ' WIB' : '—'}
+                    {' · '}{response?._count.integrityEvents ?? 0} sinyal</p>
+                </li>;
+              })}
+            </ul>
+            <ExamIncidentActions key={`${selected}:${monitor.canReport}:${monitor.canDecide}`} canReport={monitor.canReport} canDecide={monitor.canDecide === true} allowRoomReport={!monitor.agendaId}
               incidents={monitor.incidents} participants={monitor.participants}
               save={async (path, payload) => {
-                await api(`/${selected}${path}`, { method: 'POST', body: JSON.stringify(payload) });
+                try {
+                  await api(`/${selected}${path}`, { method: 'POST', body: JSON.stringify(payload) });
+                } catch (error) {
+                  if (lostMonitorAccess(error) && refreshMonitor.current?.sessionId === selected) {
+                    if (error instanceof ExamRequestError && error.status === 403) {
+                      setMonitor((snapshot) => snapshot?.sessionId === selected
+                        ? { ...snapshot, canReport: false, canDecide: false } : snapshot);
+                    } else setMonitor(undefined);
+                    setMonitorFailure((error as Error).message);
+                    void refreshMonitor.current.refresh(true);
+                  }
+                  throw error;
+                }
                 const current = refreshMonitor.current;
                 if (current?.sessionId === selected) await current.refresh();
               }} />

@@ -5,7 +5,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ExamCancelSchema, ExamDecision, ExamDecisionSchema, ExamIncidentInput, ExamIncidentSchema, ExamListSchema,
-  ExamPlan, ExamPlanSchema } from './exam-contract';
+  ExamPlan, ExamPlanSchema, TransferDeviceSchema, type TransferDeviceInput } from './exam-contract';
 import { ExamScheduleService } from './exam-schedule.service';
 
 @Controller('exam-schedule')
@@ -71,6 +71,13 @@ export class ExamScheduleController {
   report(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(ExamIncidentSchema)) body: ExamIncidentInput,
     @CurrentUser() user: AuthUser) {
     return this.exams.recordIncident(id, body, user);
+  }
+
+  @Post(':id/device-transfer')
+  @Roles('GURU', 'TATA_USAHA')
+  transferDevice(@Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(TransferDeviceSchema)) body: TransferDeviceInput, @CurrentUser() user: AuthUser) {
+    return this.exams.transferDevice(id, body, user);
   }
 
   @Post(':id/cancel')
