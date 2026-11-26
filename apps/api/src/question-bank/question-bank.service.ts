@@ -13,7 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { isElevated, resolveTeacherId } from '../common/helpers/role-helpers';
 import { escapeOfficeXml, OfficeRow, previewOfficeQuestions } from './office-question-import';
 import { exportOfficeQuestions, type QuestionExportFormat } from './office-question-export';
-import { listQuestionMediaIds } from './question-media';
+import { listOptionMediaIds, questionMediaIds } from './question-media';
 import {
   CreateQuestionDto,
   CreateQuestionSetDto,
@@ -35,6 +35,7 @@ const QUESTION_SELECT = {
   difficulty: true,
   tags: true,
   rubric: true,
+  allowAnswerPhotos: true,
   source: true,
   aiGenerationId: true,
   aiItemKey: true,
@@ -88,9 +89,16 @@ export class QuestionBankService {
     };
   }
 
+  private async assertOptionMediaOwner(db: Prisma.TransactionClient | PrismaService, teacherId: string, dto: CreateQuestionDto | UpdateQuestionDto) {
+    const ids = dto.type === 'multiple_choice' ? listOptionMediaIds(dto.options) : [];
+    if (ids.length && await db.questionMedia.count({ where: { teacherId, id: { in: ids } } }) !== ids.length)
+      throw new BadRequestException('Sebagian gambar opsi tidak tersedia di Bank Soal Anda.');
+  }
+
   async create(dto: CreateQuestionDto, user: AuthUser) {
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
     await this.assertTeacherSubject(teacherId, dto.subject);
+    await this.assertOptionMediaOwner(this.prisma, teacherId, dto);
     if (dto.requestId) {
       const data = this.questionData(dto);
       const batchKey = `manual:${dto.requestId}`;
@@ -212,6 +220,7 @@ export class QuestionBankService {
   async update(id: string, dto: UpdateQuestionDto, user: AuthUser) {
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
     await this.assertTeacherSubject(teacherId, dto.subject);
+    await this.assertOptionMediaOwner(this.prisma, teacherId, dto);
     const existing = await this.prisma.question.findFirst({
       where: { id, teacherId },
       select: { id: true },
@@ -349,11 +358,18 @@ export class QuestionBankService {
     const teacherId = await resolveTeacherId(this.prisma, user.keycloakId);
     await this.assertTeacherSubject(teacherId, subject);
     const result = previewOfficeQuestions(bytes, subject);
+    const images = new Map(result.rows.flatMap(({ assets }) => assets.flatMap(({ optionRef, image }) =>
+      optionRef ? [[optionRef, image] as const] : [])));
+    if ([...images.values()].reduce((size, image) => size + image.bytes.length, 0) > 1_500_000)
+      throw new BadRequestException('Pratinjau gambar opsi terlalu besar. Bagi dokumen menjadi beberapa berkas.');
     return {
+      optionImages: Object.fromEntries([...images].map(([id, image]) =>
+        [id, `data:${image.contentType};base64,${image.bytes.toString('base64')}`])),
       rows: result.rows.map(({ code, question, assets }) => ({
         code, type: question.type,
         body: question.body.replace(/^<!--diis-question-html:v1-->/, ''),
         imageCount: assets.length,
+        ...(question.type === 'multiple_choice' ? { options: question.options } : {}),
         answerSummary: question.type === 'essay' ? question.guideAnswer ?? null :
           question.type === 'matching' ? question.pairs.map(({ prompt, match }) => `${prompt} → ${match}`).join(' | ') :
           question.type === 'true_false' ? (question.answer ? 'Benar' : 'Salah') :
@@ -387,7 +403,7 @@ export class QuestionBankService {
         answer: true, difficulty: true, tags: true, rubric: true },
     });
     if (questions.length !== ids.length) throw new NotFoundException('Sebagian soal tidak tersedia.');
-    const mediaIds = [...new Set(questions.flatMap(({ body }) => listQuestionMediaIds(body)))];
+    const mediaIds = [...new Set(questions.flatMap(questionMediaIds))];
     if (mediaIds.length > 12) throw new BadRequestException('Pilih maksimal 12 gambar per ekspor.');
     const images = mediaIds.length ? await this.prisma.questionMedia.findMany({
       where: { teacherId, id: { in: mediaIds } },
@@ -416,7 +432,8 @@ export class QuestionBankService {
         await this.prisma.$transaction(async (tx) => {
           await this.lockQuestionImportRow(tx, teacherId, dto.batchKey, row.rowKey);
           let body = row.question.body;
-          for (const { alt, image } of media.get(row.rowKey) ?? []) {
+          const optionIds = new Map<string, string>();
+          for (const { alt, image, optionRef } of media.get(row.rowKey) ?? []) {
             const digest = createHash('sha256').update(image.bytes).digest('hex');
             const saved = await tx.questionMedia.upsert({
               where: { teacherId_digest: { teacherId, digest } },
@@ -424,10 +441,19 @@ export class QuestionBankService {
               create: { teacherId, digest, ...image },
               select: { id: true },
             });
-            body += `<p><img data-diis-media="${saved.id}" alt="${escapeOfficeXml(alt)}"></p>`;
+            if (optionRef) optionIds.set(optionRef, saved.id);
+            else body += `<p><img data-diis-media="${saved.id}" alt="${escapeOfficeXml(alt)}"></p>`;
           }
           if (body.length > 5_000) throw new BadRequestException('Isi dan media soal terlalu panjang.');
-          const data = this.questionData({ ...row.question, body });
+          const payload = row.question.type === 'multiple_choice' ? {
+            ...row.question, body,
+            options: row.question.options.map((option) => option.parts ? {
+              ...option, parts: option.parts.map((part) => part.type === 'image' && optionIds.has(part.mediaId)
+                ? { ...part, mediaId: optionIds.get(part.mediaId)! } : part),
+            } : option),
+          } : { ...row.question, body };
+          await this.assertOptionMediaOwner(tx, teacherId, payload);
+          const data = this.questionData(payload);
           const fingerprint = this.questionIdentityFingerprint(data);
           const ledger = await tx.questionImportRow.upsert({
             where: {

@@ -510,10 +510,7 @@ export interface EssayRubricCriteria {
 export type QuestionType = 'multiple_choice' | 'essay' | 'true_false' | 'matching';
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
 export type CognitiveLevel = 'C1' | 'C2' | 'C3' | 'C4' | 'C5' | 'C6';
-export interface QuestionOption {
-  id: string;
-  text: string;
-}
+export type QuestionOption = import('@smk/types').AssessmentOption;
 export interface MatchingPair {
   id: string;
   prompt: string;
@@ -532,7 +529,7 @@ export type QuestionData =
   | (QuestionBaseData & { type: 'multiple_choice'; options: QuestionOption[]; answer: string })
   | (QuestionBaseData & { type: 'true_false'; answer: boolean })
   | (QuestionBaseData & { type: 'matching'; pairs: MatchingPair[]; answer: Record<string, string> })
-  | (QuestionBaseData & { type: 'essay'; guideAnswer?: string; rubric: EssayRubricCriteria[] });
+  | (QuestionBaseData & { type: 'essay'; guideAnswer?: string; allowAnswerPhotos?: boolean; rubric: EssayRubricCriteria[] });
 
 /** Fetch questions for a subject (or all if no subject). */
 export async function fetchQuestions(
@@ -837,6 +834,8 @@ export interface AssessmentEssayCorrection {
   body: string;
   rubric: EssayRubricCriteria[];
   answer: string;
+  answerDocument?: import('@smk/types').EssayDocument;
+  answerPhotoIds?: string[];
   status: 'manual_pending' | 'manual_scored' | 'auto';
   scorePct: number | null;
 }

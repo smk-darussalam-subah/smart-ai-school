@@ -22,8 +22,10 @@ import { AuthUser } from '@smk/auth';
 import { logger } from '@smk/logger';
 import { Observable } from 'rxjs';
 import { createHash, randomUUID } from 'crypto';
+import { validateQuestionMedia } from '../question-bank/question-media';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertFreshMutationAuthority } from '../common/helpers/identity-mutation-lock';
+import { programAuthority, requireProgramStaff } from './assessment-program-authority';
 import { resolveOwnTeachingRead } from '../common/helpers/own-teaching-read';
 import { PermissionsService } from '../permissions/permissions.service';
 import {
@@ -120,6 +122,13 @@ interface GradeSyncSummary {
   assessmentEvent: AssessmentCompletedPayload;
 }
 
+const programGradeSelect = {
+  ownerId: true, kind: { select: { category: true, allowsGrade: true } },
+  package: { select: { subject: true, teacherId: true } },
+  classes: { select: { classId: true, assignmentId: true } },
+} as const;
+const profileProgramSelect = { kind: { select: { category: true } } } as const;
+
 const SESSION_SELECT = {
   id: true,
   moduleId: true,
@@ -149,6 +158,7 @@ const SESSION_SELECT = {
   teacher: { select: { id: true, user: { select: { fullName: true } } } },
   class: { select: { id: true, name: true } },
   examSchedule: { select: examAccessSelect },
+  program: { select: { id: true, kind: { select: { category: true, name: true } } } },
   _count: { select: { responses: true, remedialParticipants: true } },
 } as const;
 
@@ -737,7 +747,14 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     remedialParticipantStatus: string | null;
   }> {
     if ((session.purpose ?? 'regular') === 'regular') {
-      if (session.classId === student.classId) {
+      if (session.classId && session.classId === student.classId) {
+        return { remedialParticipantId: null, remedialParticipantStatus: null };
+      }
+      if (!session.classId && await db.examParticipant.findFirst({
+        where: { sessionId: session.id, studentId: student.id, schedule: {
+          publishedAt: { not: null }, cancelledAt: null, session: { program: { isNot: null } },
+        } }, select: { studentId: true },
+      })) {
         return { remedialParticipantId: null, remedialParticipantStatus: null };
       }
       throw new ForbiddenException('Sesi tidak tersedia untuk kelas Anda');
@@ -807,6 +824,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         difficulty: true,
         tags: true,
         rubric: true,
+        allowAnswerPhotos: true,
       },
     });
     if (questions.length !== ids.length) {
@@ -1064,6 +1082,13 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           ],
         });
       }
+      if (!purpose || purpose === 'regular') {
+        visibility.push({
+          ...filters, ...statusFilter, purpose: 'regular', program: { isNot: null },
+          examSchedule: { is: { publishedAt: { not: null }, cancelledAt: null,
+            participants: { some: { studentId: student.id } } } },
+        });
+      }
       if (!purpose || purpose === 'remedial') {
         visibility.push({
           ...filters,
@@ -1287,7 +1312,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       const student = await this.resolveStudent(user.keycloakId);
       const activeOrCompleted = session.status === 'active' || session.status === 'completed';
       let visible =
-        activeOrCompleted && session.purpose === 'regular' && session.classId === student.classId;
+        activeOrCompleted && session.purpose === 'regular' &&
+        (Boolean(session.program && session.examSchedule) || Boolean(session.classId && session.classId === student.classId));
       if (visible && session.examSchedule) {
         visible = Boolean(session.examSchedule.publishedAt && !session.examSchedule.cancelledAt &&
           await this.prisma.examParticipant.findUnique({
@@ -1506,6 +1532,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           module: { select: { subject: true, teacherId: true } },
           teachingAssignment: { select: { subject: true } },
           examSchedule: { select: { ...examAccessSelect, makeupOfSessionId: true } },
+          program: { select: programGradeSelect },
         },
       });
       if (!existing) throw new NotFoundException('Sesi asesmen tidak ditemukan');
@@ -1587,12 +1614,14 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       gradeTarget: string | null;
       module: { subject: string; teacherId: string } | null;
       examSchedule?: { makeupOfSessionId: string | null } | null;
+      program?: Prisma.AssessmentProgramGetPayload<{ select: typeof programGradeSelect }> | null;
     },
     actor: AuthUser,
     db: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<GradeSyncSummary> {
-    if (!session.module || !session.moduleId) {
-      throw new ConflictException('Sesi reguler tidak memiliki Modul LMS untuk sinkronisasi Grade');
+    const curriculum = session.program?.package ?? session.module;
+    if (!curriculum || (!session.program && !session.moduleId)) {
+      throw new ConflictException('Konteks mapel untuk sinkronisasi nilai tidak tersedia.');
     }
     const responses = await db.assessmentResponse.findMany({
       where: {
@@ -1614,10 +1643,10 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           sessionId: session.id,
           title: session.title,
           type: session.type,
-          teacherId: session.module.teacherId,
+          teacherId: curriculum.teacherId,
           classId: session.classId,
           moduleId: session.moduleId,
-          subject: session.module.subject,
+          subject: curriculum.subject,
           academicYear: session.academicYear,
           semester: session.semester,
           gradedCount: responses.filter((response) => response.score != null).length,
@@ -1635,22 +1664,40 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       throw new ConflictException('Target nilai asesmen tidak valid');
     }
 
-    if (!session.classId) throw new ConflictException('Sesi bernilai wajib memiliki kelas');
-
-    const assignment = await db.teachingAssignment.findFirst({
-      where: {
-        teacherId: session.module.teacherId,
-        subject: session.module.subject,
-        academicYear: session.academicYear,
-        classId: session.classId,
-      },
-      select: { id: true, academicYear: true },
-    });
-    if (!assignment)
-      throw new ConflictException('TeachingAssignment tidak ditemukan untuk sinkronisasi Grade');
+    if (!session.program && !session.classId) throw new ConflictException('Sesi bernilai wajib memiliki kelas');
+    const assignments = new Map<string, { id: string; academicYear: string; classId: string }>();
+    const rosterByStudent = new Map<string, string>();
+    if (session.program) {
+      const permissions = this.permissions;
+      if (!permissions || !session.program.kind.allowsGrade || session.program.kind.category !== 'custom')
+        throw new ForbiddenException('Jenis asesmen ini tidak dapat masuk nilai akhir.');
+      await assertFreshMutationAuthority(db as Prisma.TransactionClient, permissions, actor.keycloakId, 'lms.own.manage', ['GURU']);
+      const actorRecord = await db.user.findUnique({ where: { keycloakId: actor.keycloakId }, select: { id: true } });
+      if (actorRecord?.id !== session.program.ownerId)
+        throw new ForbiddenException('Hanya guru pengampu pemilik asesmen dapat menyinkronkan hasil resmi.');
+      const ids = session.program.classes.flatMap(({ assignmentId }) => assignmentId ? [assignmentId] : []);
+      const rows = await db.teachingAssignment.findMany({ where: { id: { in: ids }, teacherId: curriculum.teacherId,
+        subject: curriculum.subject, academicYear: session.academicYear },
+        select: { id: true, academicYear: true, classId: true } });
+      for (const row of rows) assignments.set(row.classId, row);
+      if (session.program.classes.some((row) => assignments.get(row.classId)?.id !== row.assignmentId || !row.assignmentId))
+        throw new ConflictException('Penugasan rombel berubah. Sinkronisasi seluruh program dibatalkan.');
+      const roster = await db.examParticipant.findMany({ where: { sessionId: session.id }, select: {
+        studentId: true, rosterClassId: true, student: { select: { classId: true } },
+      } });
+      for (const row of roster) {
+        if (row.rosterClassId && row.rosterClassId === row.student.classId) rosterByStudent.set(row.studentId, row.rosterClassId);
+      }
+    } else {
+      const assignment = await db.teachingAssignment.findFirst({ where: {
+        teacherId: curriculum.teacherId, subject: curriculum.subject, academicYear: session.academicYear, classId: session.classId!,
+      }, select: { id: true, academicYear: true, classId: true } });
+      if (!assignment) throw new ConflictException('TeachingAssignment tidak ditemukan untuk sinkronisasi Grade');
+      assignments.set(session.classId!, assignment);
+    }
 
     const teacherUser = await db.teacher.findUnique({
-      where: { id: session.module.teacherId },
+      where: { id: curriculum.teacherId },
       select: { userId: true },
     });
     const submittedBy = teacherUser?.userId ?? '00000000-0000-0000-0000-000000000000';
@@ -1679,6 +1726,15 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
 
+      const classId = session.program ? rosterByStudent.get(response.studentId) : session.classId;
+      const assignment = classId ? assignments.get(classId) : undefined;
+      if (!assignment || !classId) throw new ConflictException('Rombel peserta berubah. Periksa sebelum sinkronisasi nilai.');
+      if (session.program) {
+        const boundary = { studentId: response.studentId, academicYear: session.academicYear,
+          semester: session.semester, assignment: { classId } };
+        await this.lockGradeSnapshot(db, boundary);
+        await this.assertNoLockedReportForGrade(boundary, db);
+      }
       const makeup = makeupByStudent.get(response.studentId);
       if (makeup) {
         const grade = makeup.makeupSourceGrade;
@@ -1695,7 +1751,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         }
         if (snapshot.applied?.rawScore !== rawScore) {
           const boundary = { studentId: response.studentId, academicYear: session.academicYear,
-            semester: session.semester, assignment: { classId: session.classId } };
+            semester: session.semester, assignment: { classId } };
           await this.lockGradeSnapshot(db, boundary);
           await this.assertNoLockedReportForGrade(boundary, db);
           const finalScore = makeupFinalScore(snapshot.originalScore, rawScore, snapshot.kktp);
@@ -1787,7 +1843,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         gradeEvents.push({
           gradeId: grade.id,
           studentId: response.studentId,
-          subject: session.module.subject,
+          subject: curriculum.subject,
           score: String(response.score),
           type: grade.type,
           semester: session.semester,
@@ -1807,10 +1863,10 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         sessionId: session.id,
         title: session.title,
         type: session.type,
-        teacherId: session.module.teacherId,
+        teacherId: curriculum.teacherId,
         classId: session.classId,
         moduleId: session.moduleId,
-        subject: session.module.subject,
+        subject: curriculum.subject,
         academicYear: session.academicYear,
         semester: session.semester,
         gradedCount,
@@ -2063,6 +2119,116 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+
+  async uploadAnswerPhoto(sessionId: string, questionId: string, photoId: string,
+    deviceId: string | undefined, body: unknown, mime: string, user: AuthUser) {
+    const photo = validateQuestionMedia(body, mime);
+    const digest = createHash('sha256').update(photo.bytes).digest('hex');
+    return this.writeAdmission.run(user.keycloakId, () => this.prisma.$transaction(async (tx) => {
+      const session = await tx.assessmentSession.findUnique({
+        where: { id: sessionId },
+        select: { id: true, status: true, purpose: true, classId: true, academicYear: true, semester: true,
+          durationMinutes: true, dueAt: true, questions: true, examSchedule: { select: examAccessSelect } },
+      });
+      if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
+      const student = await tx.student.findFirst({
+        where: { deletedAt: null, status: 'active',
+          user: { keycloakId: user.keycloakId, role: 'SISWA', deletedAt: null, isActive: true } },
+        select: { id: true, classId: true },
+      });
+      if (!student) throw new NotFoundException('Profil siswa tidak ditemukan');
+      await this.assertStudentCanAccessSession(session, student, tx);
+      const question = parseSnapshotQuestions(session.questions).find((item) => item.id === questionId);
+      if (question?.type !== 'essay' || !question.allowAnswerPhotos)
+        throw new NotFoundException('Foto tidak tersedia untuk soal ini');
+      await this.academicPeriod.assertWritablePeriodWithSharedCutoverLock(tx, session);
+      const device = session.examSchedule
+        ? await authorizeExamDevice(tx, sessionId, student.id, deviceId, false) : undefined;
+      // Serialize photo quota and final submission on this attempt, never across the class.
+      const [response] = await tx.$queryRaw<Array<{ id: string; startedAt: Date | null; submittedAt: Date | null }>>`
+        SELECT id, started_at AS "startedAt", submitted_at AS "submittedAt"
+        FROM academic.assessment_responses WHERE session_id = ${sessionId}::uuid AND student_id = ${student.id}::uuid
+        FOR UPDATE`;
+      if (!response?.startedAt) throw new ConflictException('Mulai asesmen terlebih dahulu');
+      const permissions = this.permissions;
+      if (!permissions || !await permissions.hasFreshPermission(user.keycloakId, 'lms.progress.manage', tx))
+        throw new ForbiddenException('Izin mengerjakan tidak lagi tersedia.');
+      const existing = await tx.assessmentAnswerPhoto.findFirst({
+        where: { id: photoId, responseId: response.id, questionId }, select: { digest: true },
+      });
+      if (existing) {
+        if (existing.digest !== digest) throw new ConflictException('Foto berbeda dari unggahan sebelumnya');
+        return { id: photoId };
+      }
+      const live = await tx.assessmentSession.findUnique({ where: { id: sessionId },
+        select: { status: true, durationMinutes: true, dueAt: true, examSchedule: { select: examAccessSelect } } });
+      if (live?.status !== 'active' || response.submittedAt) throw new ConflictException('Pengerjaan telah ditutup');
+      if (Boolean(live.examSchedule) !== Boolean(session.examSchedule))
+        throw new ConflictException('Jadwal berubah. Muat ulang ujian sebelum melampirkan foto.');
+      const now = new Date();
+      if (live.examSchedule) {
+        assertExamWindow(live.examSchedule, now, false);
+        if (!live.durationMinutes || now >= examDeadline(
+          live.examSchedule.closesAt, response.startedAt, live.durationMinutes, device?.extraMinutes ?? 0,
+        )) throw new ConflictException('Waktu ujian habis; foto baru tidak diterima');
+      } else if ((live.dueAt && now >= live.dueAt)
+        || (live.durationMinutes && now.getTime() >= response.startedAt.getTime() + live.durationMinutes * 60_000)) {
+        throw new ConflictException('Waktu ujian habis; foto baru tidak diterima');
+      }
+      const count = await tx.assessmentAnswerPhoto.count({ where: { responseId: response.id } });
+      if (count >= 24) throw new ConflictException('Batas penyimpanan foto untuk pengerjaan ini tercapai');
+      await tx.assessmentAnswerPhoto.create({
+        data: { id: photoId, responseId: response.id, questionId, digest,
+          bytes: photo.bytes, contentType: photo.contentType },
+        select: { id: true },
+      }).catch((error: unknown) => {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')
+          throw new ConflictException('Referensi foto sudah dipakai');
+        throw error;
+      });
+      return { id: photoId };
+    }));
+  }
+
+  async readAnswerPhoto(sessionId: string, photoId: string, user: AuthUser) {
+    const asStudent = user.roles.includes('SISWA');
+    const session = await this.prisma.assessmentSession.findUnique({
+      where: { id: sessionId }, select: { id: true, teacherId: true, classId: true, purpose: true },
+    });
+    if (!session) throw new NotFoundException('Foto jawaban tidak tersedia');
+    const student = asStudent ? await this.resolveStudent(user.keycloakId) : null;
+    if (student) await this.assertStudentCanAccessSession(session, student);
+    if (!student && !this.isReviewer(user) && session.teacherId !== await this.resolveTeacherId(user.keycloakId))
+      throw new NotFoundException('Foto jawaban tidak tersedia');
+    const photo = await this.prisma.assessmentAnswerPhoto.findFirst({
+      where: { id: photoId, response: { sessionId, ...(student ? { studentId: student.id } : {
+        submittedAt: { not: null },
+        OR: [{ lateSubmissionStatus: null }, { lateSubmissionStatus: 'accepted' }],
+      }) } },
+      select: { bytes: true, contentType: true, questionId: true, response: { select: { answers: true } } },
+    });
+    const answer = photo ? (photo.response.answers as unknown as AssessmentAnswerMap | null)?.[photo.questionId] : null;
+    if (!photo || (!student && !(answer?.type === 'essay' && answer.photoIds?.includes(photoId))))
+      throw new NotFoundException('Foto jawaban tidak tersedia');
+    return { bytes: photo.bytes, contentType: photo.contentType };
+  }
+
+  private async assertAnswerPhotos(tx: Prisma.TransactionClient, responseId: string,
+    answers: AssessmentAnswerMap, questions: StoredQuestionSnapshot[]) {
+    const expected = Object.entries(answers).flatMap(([questionId, answer]) => answer.type === 'essay'
+      ? (answer.photoIds ?? []).map((id) => ({ id, questionId })) : []);
+    if (!expected.length) return;
+    if (expected.length > 24 || expected.some(({ questionId }) => !questions.some(
+      (question) => question.id === questionId && question.type === 'essay' && question.allowAnswerPhotos,
+    ))) throw new BadRequestException('Foto tidak diizinkan pada satu atau beberapa soal');
+    const photos = await tx.assessmentAnswerPhoto.findMany({
+      where: { responseId, id: { in: expected.map(({ id }) => id) } }, select: { id: true, questionId: true },
+    });
+    const byId = new Map(photos.map(({ id, questionId }) => [id, questionId]));
+    if (expected.some(({ id, questionId }) => byId.get(id) !== questionId))
+      throw new BadRequestException('Foto belum tersimpan untuk soal dan pengerjaan ini');
+  }
+
   async autosaveResponse(sessionId: string, dto: AutosaveResponseDto, user: AuthUser) {
     return this.writeAdmission.run(user.keycloakId, () =>
       this.autosaveResponseNow(sessionId, dto, user),
@@ -2127,6 +2293,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           session.examSchedule.closesAt, existing.startedAt!, session.durationMinutes, participant.extraMinutes,
         )) throw new ConflictException('Waktu ujian habis; penyimpanan baru tidak diterima.');
       }
+      await this.assertAnswerPhotos(tx, existing.id, dto.answers, questions);
       return tx.assessmentResponse.updateMany({
         where: { id: existing.id, submittedAt: null, clientRevision: { lt: dto.revision } },
         data: {
@@ -2181,7 +2348,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         if (!lock?.acquired) return 0;
         const current = await tx.assessmentSession.findUnique({ where: { id: sessionId }, select: {
           status: true, academicYear: true, semester: true, durationMinutes: true, questions: true,
-          examSchedule: { select: examAccessSelect },
+          examSchedule: { select: examAccessSelect }, program: { select: profileProgramSelect },
         } });
         const window = current?.examSchedule;
         if (!window?.publishedAt || window.cancelledAt || !current?.durationMinutes || current.status !== 'active') return 0;
@@ -2211,7 +2378,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           const result = scoreAnswers((attempt.answers ?? {}) as AssessmentAnswerMap, questions);
           const write = await tx.assessmentResponse.updateMany({ where: {
             id: attempt.id, submittedAt: null, clientRevision: attempt.clientRevision,
-          }, data: { submittedAt: deadline, score: result.score, itemScores: result.itemScores as Prisma.InputJsonValue,
+          }, data: { submittedAt: deadline, score: current.program?.kind.category === 'profile' ? null : result.score,
+            itemScores: result.itemScores as Prisma.InputJsonValue,
             timeSpentSec: Math.floor((deadline.getTime() - attempt.startedAt.getTime()) / 1_000) } });
           if (write.count) {
             await tx.auditLog.create({ data: {
@@ -2334,6 +2502,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           academicYear: true,
           semester: true,
           examSchedule: { select: examAccessSelect },
+          program: { select: profileProgramSelect },
         },
       });
       if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
@@ -2381,13 +2550,14 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           })),
           skipDuplicates: true,
         });
-        return existing;
+        return session.program?.kind.category === 'profile' ? { ...existing, itemScores: null } : existing;
       }
       if (!existing?.startedAt) throw new ConflictException('Mulai asesmen terlebih dahulu');
 
       const now = new Date();
       const questions = parseSnapshotQuestions(session.questions);
       validateAnswersForSnapshot(dto.answers as AssessmentAnswerMap, questions);
+      await this.assertAnswerPhotos(tx, existing.id, dto.answers, questions);
       if (dto.revision < existing.clientRevision) {
         throw new ConflictException('Jawaban versi lama tidak dapat dikirim');
       }
@@ -2494,7 +2664,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           answers: dto.answers as Prisma.InputJsonValue,
           submittedAt: now,
           timeSpentSec,
-          score: scored.score,
+          score: session.program?.kind.category === 'profile' ? null : scored.score,
           itemScores: scored.itemScores as Prisma.InputJsonValue,
           clientRevision: dto.revision,
           lastMutationId: dto.mutationId,
@@ -2530,7 +2700,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           id: true,
           sessionId: true,
           score: true,
-          itemScores: true,
+          itemScores: session.program?.kind.category !== 'profile',
           submittedAt: true,
           startedAt: true,
           timeSpentSec: true,
@@ -2563,9 +2733,11 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         gradeTarget: true,
         module: { select: { subject: true, teacherId: true } },
         examSchedule: { select: { makeupOfSessionId: true } },
+        program: { select: programGradeSelect },
       },
     });
     if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
+    await this.assertProfileResultAccess(session.program, user);
     if (!this.isReviewer(user)) {
       const teacherId = await this.resolveTeacherId(user.keycloakId);
       if (session.teacherId !== teacherId) throw new ForbiddenException('Bukan sesi Anda');
@@ -2618,7 +2790,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         const answers = response.lateAnswers as unknown as AssessmentAnswerMap;
         validateAnswersForSnapshot(answers, questions, true);
         const scored = scoreAnswers(answers, questions, []);
-        score = scored.score;
+        score = session.program?.kind.category === 'profile' ? null : scored.score;
         itemScores = scored.itemScores;
       }
 
@@ -2732,6 +2904,17 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       : Promise.resolve(null);
   }
 
+  private async assertProfileResultAccess(
+    program: { ownerId: string; kind: { category: string } } | null | undefined,
+    user: AuthUser, db: Prisma.TransactionClient = this.prisma, write = false,
+  ) {
+    if (program?.kind.category !== 'profile') return;
+    const actor = await requireProgramStaff(db, user, write);
+    if (actor.id !== program.ownerId || !this.permissions ||
+        !(await programAuthority(db, this.permissions, user, actor)).counselor)
+      throw new ForbiddenException('Respons Bakat dan Minat hanya tersedia bagi pengelola instrumen.');
+  }
+
   /** GURU pemilik / KS / SA: lihat semua respons untuk sesi (realtime monitor). */
   async getResults(sessionId: string, user: AuthUser) {
     const session = await this.prisma.assessmentSession.findUnique({
@@ -2745,9 +2928,11 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         status: true,
         purpose: true,
         questions: true,
+        program: { select: { ownerId: true, ...profileProgramSelect } },
       },
     });
     if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
+    await this.assertProfileResultAccess(session.program, user);
 
     if (!this.isReviewer(user)) {
       const teacherId = await this.resolveTeacherId(user.keycloakId);
@@ -2842,6 +3027,8 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
             body: question.body,
             rubric: question.rubric,
             answer: answer?.type === 'essay' ? answer.text : '',
+            ...(answer?.type === 'essay' && answer.document ? { answerDocument: answer.document } : {}),
+            ...(answer?.type === 'essay' && answer.photoIds?.length ? { answerPhotoIds: answer.photoIds } : {}),
             status: itemScore?.status ?? 'manual_pending',
             scorePct: itemScore?.scorePct ?? null,
           };
@@ -2876,24 +3063,20 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         module: { select: { subject: true, teacherId: true } },
         teachingAssignment: { select: { subject: true, teacherId: true } },
         examSchedule: { select: { makeupOfSessionId: true } },
+        program: { select: programGradeSelect },
       },
     });
     if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
+    await this.assertProfileResultAccess(session.program, user);
 
     if (!this.isReviewer(user)) {
       const teacherId = await this.resolveTeacherId(user.keycloakId);
       if (session.teacherId !== teacherId) throw new ForbiddenException('Bukan sesi Anda');
       const classId = session.classId;
-      if (!classId) throw new BadRequestException('Sesi asesmen wajib memiliki kelas');
-      const subject = session.module?.subject ?? session.teachingAssignment?.subject;
+      if (!classId && !session.program) throw new BadRequestException('Sesi asesmen wajib memiliki kelas');
+      const subject = session.program?.package.subject ?? session.module?.subject ?? session.teachingAssignment?.subject;
       if (!subject) throw new ConflictException('Konteks mapel sesi tidak valid');
-      await this.assertTeachingScope(
-        teacherId,
-        subject,
-        classId,
-        session.academicYear,
-        session.semester,
-      );
+      if (classId) await this.assertTeachingScope(teacherId, subject, classId, session.academicYear, session.semester);
     }
 
     const questions = parseSnapshotQuestions(session.questions);
@@ -2935,6 +3118,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         academicYear: session.academicYear,
         semester: session.semester,
       });
+      await this.assertProfileResultAccess(session.program, user, tx, true);
       const lockedRows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT "id"
         FROM "academic"."assessment_responses"
@@ -3008,7 +3192,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       const updatedResponse = await tx.assessmentResponse.update({
         where: { id: responseId },
         data: {
-          score: scored.score,
+          score: session.program?.kind.category === 'profile' ? null : scored.score,
           itemScores: scored.itemScores as Prisma.InputJsonValue,
         },
         select: {
@@ -3049,9 +3233,11 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         semester: true,
         module: { select: { subject: true, kktp: true } },
         teachingAssignment: { select: { subject: true } },
+        program: { select: { ownerId: true, ...profileProgramSelect } },
       },
     });
     if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
+    await this.assertProfileResultAccess(session.program, user);
 
     if (!this.isReviewer(user)) {
       const teacherId = await this.resolveTeacherId(user.keycloakId);

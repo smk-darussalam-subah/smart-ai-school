@@ -1,4 +1,7 @@
 'use client';
+import type { EssayDocument } from '@smk/types';
+import { EssayPhotoList } from '@/components/learning/EssayPhotoList';
+import EssayAnswerContent from '@/components/learning/EssayAnswerContent';
 import QuestionContent from '@/components/learning/QuestionContent';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useDialogReturnFocus } from '@/lib/use-dialog-return-focus';
@@ -23,7 +26,9 @@ interface EssayResponse {
   responseId: string;
   studentName: string;
   nis: string;
-  answers: Record<string, string>; // questionId -> student answer text
+  answers: Record<string, string>;
+  documents?: Record<string, EssayDocument>;
+  photoIds?: Record<string, string[]>;
 }
 
 interface Props {
@@ -286,7 +291,10 @@ export default function EssayGradingModal({
                     </div>
                     <div className="mt-2 whitespace-pre-wrap break-words rounded-lg border border-dashed border-[#e6efea] bg-[#f9fbfa] px-3 py-3 text-base leading-relaxed text-[#355a4e]">
                       <span className="font-bold text-emerald-900">Jawaban siswa </span>
-                      {answerText.trim() || 'Tidak dijawab'}
+                      {(answerText.trim() || !current?.photoIds?.[q.questionId]?.length) && (
+                        <EssayAnswerContent text={answerText} document={current?.documents?.[q.questionId]} />
+                      )}
+                      <EssayPhotoList openOriginal sessionId={sessionId} ids={current?.photoIds?.[q.questionId] ?? []} />
                     </div>
 
                     {/* Rubric criteria */}

@@ -185,9 +185,14 @@ export class StudentDashboardService {
           };
         });
 
-        // Assessment sessions: regular by class, remedial strictly by participant.
+        // School programs and remedial work both require an explicit participant.
         const sessionVisibility: Prisma.AssessmentSessionWhereInput[] = [
           ...(s.classId ? [{ purpose: 'regular' as const, classId: s.classId }] : []),
+          ...(user.roles.includes('SISWA') ? [{
+            purpose: 'regular' as const,
+            program: { isNot: null },
+            examSchedule: { isNot: null },
+          }] : []),
           {
             purpose: 'remedial' as const,
             remedialParticipants: {
@@ -222,6 +227,7 @@ export class StudentDashboardService {
             instructions: true,
             module: { select: { subject: true, kktp: true } },
             teachingAssignment: { select: { subject: true } },
+            program: { select: { package: { select: { subject: true } } } },
             remedialParticipants: {
               where: { studentId: s.id, status: { not: 'cancelled' } },
               take: 1,
@@ -260,7 +266,7 @@ export class StudentDashboardService {
                   : resp.score !== null
                     ? 'graded'
                     : 'submitted';
-            const subject = sess.module?.subject ?? sess.teachingAssignment?.subject ?? null;
+            const subject = sess.module?.subject ?? sess.teachingAssignment?.subject ?? sess.program?.package.subject ?? null;
             const participant = sess.remedialParticipants[0];
             const exposeOwnRemedialLifecycle =
               user.roles.includes('SISWA') && sess.purpose === 'remedial' && Boolean(participant);

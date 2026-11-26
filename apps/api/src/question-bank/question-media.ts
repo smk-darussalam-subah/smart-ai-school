@@ -52,3 +52,18 @@ export function listQuestionMediaIds(body: string): string[] {
   const matches = body.matchAll(/<img\s+[^>]*?\bdata-diis-media\s*=\s*["']([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})["'][^>]*>/gi);
   return [...new Set([...matches].map((match) => match[1]!.toLowerCase()))];
 }
+
+export function listOptionMediaIds(options: unknown): string[] {
+  if (!Array.isArray(options)) return [];
+  return [...new Set(options.flatMap((option) => Array.isArray(option?.parts)
+    ? option.parts.flatMap((part: unknown) => {
+      if (!part || typeof part !== 'object') return [];
+      const item = part as { type?: unknown; mediaId?: unknown };
+      return item.type === 'image' && typeof item.mediaId === 'string' &&
+        /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(item.mediaId) ? [item.mediaId.toLowerCase()] : [];
+    }) : []))];
+}
+
+export function questionMediaIds(question: { body: string; options?: unknown }): string[] {
+  return [...new Set([...listQuestionMediaIds(question.body), ...listOptionMediaIds(question.options)])];
+}

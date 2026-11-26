@@ -72,10 +72,7 @@ export type AssessmentGradeTarget = 'uh' | 'uts' | 'uas';
 export type AssessmentQuestionType = 'multiple_choice' | 'essay' | 'true_false' | 'matching';
 export type AssessmentDifficulty = 'easy' | 'medium' | 'hard';
 
-export interface AssessmentOption {
-  id: string;
-  text: string;
-}
+import type { AssessmentOption } from './assessment-option';
 
 export interface AssessmentRubricCriterion {
   id: string;
@@ -146,11 +143,15 @@ export interface AssessmentQuestionSelection {
   order: number;
 }
 
+import type { AssessmentEssayAnswer } from './assessment-essay';
+export * from './assessment-essay';
+export * from './assessment-option';
+
 export type AssessmentAnswerValue =
   | { type: 'multiple_choice'; optionId: string }
   | { type: 'true_false'; value: boolean }
   | { type: 'matching'; pairs: Record<string, string> }
-  | { type: 'essay'; text: string };
+  | AssessmentEssayAnswer;
 
 export type AssessmentAnswerMap = Record<string, AssessmentAnswerValue>;
 

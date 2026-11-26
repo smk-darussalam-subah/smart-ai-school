@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { assessmentOptionContentKey, essayDocumentText, MAX_ESSAY_PHOTOS, MAX_ESSAY_TEXT, readEssayDocument, type AssessmentOption } from '@smk/types';
 
 const idSchema = z.string().trim().min(1).max(80);
 const bodySchema = z
@@ -20,10 +21,20 @@ const bodySchema = z
   }, 'Isi soal minimal 3 karakter yang dapat dibaca');
 const tagSchema = z.string().trim().min(1).max(50);
 
+export const AssessmentOptionPartSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('text'), text: z.string().min(1).max(500) }).strict(),
+  z.object({ type: z.literal('formula'), latex: z.string().trim().min(1).max(480).refine(
+    (value) => !/\\(?:def|gdef|edef|xdef|let|futurelet|global|includegraphics|html[A-Za-z]*|url|href)\b/.test(value),
+    'Rumus tidak boleh berisi tautan, gambar, atau makro.',
+  ) }).strict(),
+  z.object({ type: z.literal('image'), mediaId: z.string().uuid(), alt: z.string().trim().min(1).max(180) }).strict(),
+]);
+
 export const AssessmentOptionSchema = z.object({
   id: idSchema,
   text: z.string().trim().min(1).max(500),
-}).strict();
+  parts: z.array(AssessmentOptionPartSchema).min(1).max(10).optional(),
+}).strict() satisfies z.ZodType<AssessmentOption>;
 
 export const RubricCriterionSchema = z.object({
   id: idSchema,
@@ -51,16 +62,16 @@ function hasUniqueValues(values: string[]): boolean {
 }
 
 function refineMultipleChoice(
-  value: { options: Array<{ id: string; text: string }>; answer: string },
+  value: { options: AssessmentOption[]; answer: string },
   ctx: z.RefinementCtx,
 ): void {
   const optionIds = value.options.map((option) => option.id);
-  const optionTexts = value.options.map((option) => option.text.toLocaleLowerCase('id-ID'));
+  const optionKeys = value.options.map(assessmentOptionContentKey);
   if (!hasUniqueValues(optionIds)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['options'], message: 'ID opsi harus unik' });
   }
-  if (!hasUniqueValues(optionTexts)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['options'], message: 'Teks opsi harus unik' });
+  if (!hasUniqueValues(optionKeys)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['options'], message: 'Isi setiap opsi harus berbeda' });
   }
   if (!optionIds.includes(value.answer)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['answer'], message: 'Kunci harus salah satu ID opsi' });
@@ -126,6 +137,7 @@ export const MatchingQuestionSchema = MatchingQuestionRawSchema.superRefine(refi
 const EssayQuestionRawSchema = questionBase.extend({
   type: z.literal('essay'),
   guideAnswer: z.string().trim().max(5000).optional(),
+  allowAnswerPhotos: z.boolean().optional(),
   rubric: z.array(RubricCriterionSchema).min(1).max(12),
 }).strict();
 
@@ -227,10 +239,24 @@ export const MatchingAnswerSchema = z.object({
   }
 });
 
+const EssayDocumentSchema = z.unknown().transform((value, ctx) => {
+  const document = readEssayDocument(value);
+  if (document) return document;
+  ctx.addIssue({ code: z.ZodIssueCode.custom, fatal: true, message: 'Format dokumen jawaban esai tidak valid' });
+  return z.NEVER;
+});
+
 export const EssayAnswerSchema = z.object({
   type: z.literal('essay'),
-  text: z.string().trim().max(10000),
-}).strict();
+  text: z.string().trim().max(MAX_ESSAY_TEXT),
+  document: EssayDocumentSchema.optional(),
+  photoIds: z.array(z.string().uuid().transform((id) => id.toLowerCase())).max(MAX_ESSAY_PHOTOS)
+    .refine((ids) => hasUniqueValues(ids), 'Foto jawaban harus unik').optional(),
+}).strict().superRefine(({ document, text }, ctx) => {
+  if (document && essayDocumentText(document) !== text) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['text'], message: 'Teks dan dokumen jawaban tidak cocok' });
+  }
+});
 
 export const AnswerValueSchema = z.union([
   MultipleChoiceAnswerSchema,
