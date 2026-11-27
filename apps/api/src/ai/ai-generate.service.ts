@@ -446,22 +446,24 @@ export class AiGenerateService {
         difficulty: string;
         aiItemKey: string | null;
       }> = [];
+      const acceptedQuestionSelect = {
+        id: true,
+        subject: true,
+        type: true,
+        body: true,
+        options: true,
+        answer: true,
+        difficulty: true,
+        tags: true,
+        rubric: true,
+        allowAnswerPhotos: true,
+        aiItemKey: true,
+        tpRefs: true,
+        cognitiveLevel: true,
+      } as const;
       const existingForGeneration = await tx.question.findMany({
         where: { aiGenerationId: generation.id },
-        select: {
-          id: true,
-          subject: true,
-          type: true,
-          body: true,
-          options: true,
-          answer: true,
-          difficulty: true,
-          tags: true,
-          rubric: true,
-          aiItemKey: true,
-          tpRefs: true,
-          cognitiveLevel: true,
-        },
+        select: acceptedQuestionSelect,
       });
       // Committed receipts outlive hard deletion of a bank question. Their item keys
       // remain tombstones; a new operation key must not bypass an old acceptance.
@@ -509,20 +511,7 @@ export class AiGenerateService {
               tpRefs: item.tpRefs,
               cognitiveLevel: item.cognitiveLevel,
             },
-            select: {
-              id: true,
-              subject: true,
-              type: true,
-              body: true,
-              options: true,
-              answer: true,
-              difficulty: true,
-              tags: true,
-              rubric: true,
-              aiItemKey: true,
-              tpRefs: true,
-              cognitiveLevel: true,
-            },
+            select: acceptedQuestionSelect,
           }));
         const expected = {
           ...data,
@@ -539,6 +528,7 @@ export class AiGenerateService {
           difficulty: question.difficulty,
           tags: question.tags,
           rubric: question.rubric,
+          allowAnswerPhotos: question.allowAnswerPhotos,
           aiItemKey: question.aiItemKey,
           tpRefs: question.tpRefs,
           cognitiveLevel: question.cognitiveLevel,

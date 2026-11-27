@@ -1,6 +1,7 @@
 'use client';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useDialogReturnFocus } from '@/lib/use-dialog-return-focus';
 import QuestionContent from '@/components/learning/QuestionContent';
@@ -54,6 +55,9 @@ import {
 
 interface Props {
   session: TodayClass | null;
+  moduleOptions?: { id: string; title: string }[];
+  moduleReadUnavailable?: boolean;
+  onRetryModules?: () => void;
   academicYear: string;
   semester: number;
   initialMode?: 'preview' | 'monitor' | 'analysis';
@@ -97,6 +101,9 @@ function assessmentConfigFromTab(tab: AssessmentStudioTab): {
 
 export default function PenilaianSesiModal({
   session,
+  moduleOptions = [],
+  moduleReadUnavailable = false,
+  onRetryModules,
   academicYear,
   semester,
   initialMode = 'preview',
@@ -118,6 +125,10 @@ export default function PenilaianSesiModal({
   }>({ points: {}, questions: new Map() });
   const { points: selectedPoints, questions: selectedQuestions } = selection;
   const [bankOpen, setBankOpen] = useState(false);
+  const [pickedModuleId, setPickedModuleId] = useState<string>();
+  const pickedModule = moduleOptions.find((option) => option.id === pickedModuleId);
+  const moduleId = session?.moduleId ?? pickedModule?.id;
+  const moduleTitle = session?.moduleTitle ?? moduleOptions.find((option) => option.id === moduleId)?.title;
   const [studioStep, setStudioStep] = useState<'konteks' | 'soal' | 'review' | 'aktifkan'>(
     session?.assessmentSessionId ? 'aktifkan' : 'konteks',
   );
@@ -233,7 +244,9 @@ export default function PenilaianSesiModal({
   const essayResponses = useMemo(() => {
     const byId = new Map<
       string,
-      { responseId: string; studentName: string; nis: string; answers: Record<string, string> }
+      { responseId: string; studentName: string; nis: string; answers: Record<string, string>;
+        documents: Record<string, import('@smk/types').EssayDocument>;
+        photoIds: Record<string, string[]> }
     >();
     for (const item of pendingEssayCorrections) {
       const current = byId.get(item.responseId) ?? {
@@ -241,8 +254,12 @@ export default function PenilaianSesiModal({
         studentName: item.studentName,
         nis: item.nis,
         answers: {},
+        documents: {},
+        photoIds: {},
       };
       current.answers[item.questionId] = item.answer;
+      if (item.answerDocument) current.documents[item.questionId] = item.answerDocument;
+      if (item.answerPhotoIds?.length) current.photoIds[item.questionId] = item.answerPhotoIds;
       byId.set(item.responseId, current);
     }
     return Array.from(byId.values());
@@ -344,10 +361,8 @@ export default function PenilaianSesiModal({
   if (!session) return null;
 
   const createDraft = () => {
-    if (!session.moduleId) {
-      toast.error(
-        'Belum ada modul LMS untuk kelas dan mapel ini. Buat modul dulu dari tab Pembelajaran.',
-      );
+    if (!moduleId) {
+      toast.error('Pilih modul LMS yang sesuai untuk menyimpan draf.');
       return;
     }
     if (selectedList.length === 0) {
@@ -362,7 +377,7 @@ export default function PenilaianSesiModal({
     runStudioSave(async () => {
       const payload = draftAttempt.current ?? {
         requestId: crypto.randomUUID(),
-        moduleId: session.moduleId!,
+        moduleId,
         classId: session.classId,
         title: `${config.label} ${session.subject} - ${session.className}`,
         type: config.type,
@@ -541,7 +556,7 @@ export default function PenilaianSesiModal({
                     <button
                       key={key}
                       type="button"
-                      disabled={saving || draftUncertain}
+                      disabled={saving || draftUncertain || (key !== 'konteks' && !moduleId)}
                       onClick={() => setStudioStep(key as typeof studioStep)}
                       className={`rounded-md px-2 py-2 text-center text-[11px] font-bold disabled:opacity-50 ${studioStep === key ? 'bg-white text-emerald-700 shadow-sm' : 'text-[#6b8079]'}`}
                     >
@@ -550,16 +565,43 @@ export default function PenilaianSesiModal({
                     </button>
                   ))}
                 </div>
-                {!session.moduleId && (
-                  <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-700">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                    Belum ada modul LMS untuk kelas-mapel ini. Sesi asesmen dibuat dari modul LMS
-                    agar tugas siswa punya konteks pembelajaran.
+                {moduleId && moduleTitle && (
+                  <p className="break-words rounded-lg border border-[#dfe9e4] px-3 py-2 text-sm font-semibold text-[#355a4e]">
+                    Modul LMS · {moduleTitle}
+                  </p>
+                )}
+                {!moduleId && !workingSessionId && (
+                  <div role="status" className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />
+                    <span>{moduleReadUnavailable
+                      ? 'Pilihan modul LMS belum dapat dimuat.'
+                      : moduleOptions.length
+                        ? 'Pilih modul LMS untuk sesi ini.'
+                        : 'Belum ada modul LMS yang sesuai. Buat modul dari tab Pembelajaran.'}</span>
+                    {moduleReadUnavailable && onRetryModules && (
+                      <button type="button" onClick={onRetryModules} className="min-h-10 rounded-lg border border-amber-600 px-3 font-semibold">
+                        Muat ulang modul
+                      </button>
+                    )}
                   </div>
                 )}
 
                 {studioStep === 'konteks' && (
                   <section className="space-y-3 rounded-lg border border-[#dfe9e4] p-3">
+                    {!session.moduleId && moduleOptions.length > 0 && (
+                      <label className="block space-y-1 text-sm font-semibold text-slate-700">
+                        <span>Pilih modul LMS</span>
+                        <select
+                          value={pickedModule?.id ?? ''}
+                          onChange={(event) => setPickedModuleId(event.target.value || undefined)}
+                          disabled={saving || draftUncertain || !!workingSessionId}
+                          className="block min-h-11 w-full rounded-lg border border-[#dfe9e4] bg-white px-3 text-sm text-[#0f2e25]"
+                        >
+                          <option value="">Pilih modul</option>
+                          {moduleOptions.map(({ id, title }) => <option key={id} value={id}>{title}</option>)}
+                        </select>
+                      </label>
+                    )}
                     <div className="grid gap-2 sm:grid-cols-2">
                       {[
                         ['diag', 'Diagnostik', 'Tidak masuk Grade'],
@@ -610,11 +652,15 @@ export default function PenilaianSesiModal({
                     <button
                       type="button"
                       onClick={() => setStudioStep('soal')}
-                      disabled={!session.moduleId}
+                      disabled={!moduleId}
                       className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-[13px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
                     >
                       Lanjut ke Soal
                     </button>
+                    <Link href="/dashboard/ujian#program-asesmen"
+                      className="inline-flex min-h-11 items-center rounded-md px-2 text-sm font-semibold text-emerald-800 underline underline-offset-4 focus-visible:outline focus-visible:outline-2 dark:text-emerald-300">
+                      Atur simulasi atau asesmen lintas rombel
+                    </Link>
                   </section>
                 )}
 
@@ -719,7 +765,7 @@ export default function PenilaianSesiModal({
                         disabled={
                           saving ||
                           selectedList.length === 0 ||
-                          !session.moduleId ||
+                          !moduleId ||
                           missingPreviewCount > 0
                         }
                         className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-[12px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
@@ -1052,7 +1098,7 @@ export default function PenilaianSesiModal({
       {bankOpen && (
         <QuestionBankEditor
           subject={session.subject}
-          moduleId={session.moduleId}
+          moduleId={moduleId}
           classId={session.classId}
           academicYear={academicYear}
           semester={semester}

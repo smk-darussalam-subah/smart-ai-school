@@ -15,13 +15,16 @@ interface Props {
   deadlineAt?: string;
   serverNow?: string;
   onExpire: () => void;
+  onTick?: (remainingSeconds: number) => void;
 }
 
-export default function AssessmentTimer({ durationMinutes, startedAt, deadlineAt, serverNow, onExpire }: Props) {
+export default function AssessmentTimer({ durationMinutes, startedAt, deadlineAt, serverNow, onExpire, onTick }: Props) {
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const expiredRef = useRef(false);
   const callback = useRef(onExpire);
   callback.current = onExpire;
+  const onTickRef = useRef(onTick);
+  onTickRef.current = onTick;
 
   useEffect(() => {
     expiredRef.current = false;
@@ -31,6 +34,7 @@ export default function AssessmentTimer({ durationMinutes, startedAt, deadlineAt
     function tick() {
       const remaining = Math.max(0, Math.ceil((cutoff - origin - (performance.now() - mountedAt)) / 1000));
       setSecondsLeft(remaining);
+      onTickRef.current?.(remaining);
       if (!remaining && !expiredRef.current) {
         expiredRef.current = true;
         callback.current();

@@ -1,12 +1,18 @@
 'use client';
 
+import { Check } from 'lucide-react';
+import type { AssessmentAnswerValue, AssessmentOption } from '@smk/types';
+import EssayEditor from './EssayEditor';
+import EssayPhotoPicker from './EssayPhotoPicker';
+import AssessmentOptionContent from './AssessmentOptionContent';
+
 export type StudentQuestion =
   | {
       id: string;
       type: 'multiple_choice';
       body: string;
       points: number;
-      options: Array<{ id: string; text: string }>;
+      options: AssessmentOption[];
     }
   | {
       id: string;
@@ -27,25 +33,26 @@ export type StudentQuestion =
       type: 'essay';
       body: string;
       points: number;
+      allowAnswerPhotos?: boolean;
       rubricCriteria?: Array<{ id: string; name: string; maxScore: number }>;
     };
 
-export type AnswerValue =
-  | { type: 'multiple_choice'; optionId: string }
-  | { type: 'true_false'; value: boolean }
-  | { type: 'matching'; pairs: Record<string, string> }
-  | { type: 'essay'; text: string };
+export type AnswerValue = AssessmentAnswerValue;
 
 export default function QuestionAnswerInput({
   question,
   answer: current,
   setAnswer,
   locked,
+  photoContext,
+  sessionId,
 }: {
   question: StudentQuestion;
   answer: AnswerValue | undefined;
   setAnswer: (questionId: string, answer: AnswerValue) => void;
   locked: boolean;
+  photoContext?: import('./EssayPhotoPicker').EssayPhotoContext;
+  sessionId?: string;
 }) {
   if (question.type === 'multiple_choice') {
     return (
@@ -63,7 +70,10 @@ export default function QuestionAnswerInput({
               }
               className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold ${selected ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500' : 'border-[var(--border)] text-[var(--text)] hover:border-[var(--border2)]'}`}
             >
-              {option.text}
+              <span className="flex items-center justify-between gap-3">
+                <AssessmentOptionContent option={option} sessionId={sessionId} />
+                {selected && <Check aria-hidden="true" className="h-5 w-5 shrink-0 text-emerald-700 dark:text-emerald-300" />}
+              </span>
             </button>
           );
         })}
@@ -89,7 +99,10 @@ export default function QuestionAnswerInput({
             onClick={() => setAnswer(question.id, { type: 'true_false', value: choice })}
             className={`rounded-xl border px-3 py-2 text-sm font-bold ${value === choice ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500' : 'border-[var(--border)] text-[var(--text)] hover:border-[var(--border2)]'}`}
           >
-            {label}
+            <span className="inline-flex items-center justify-center gap-2">
+              {label}
+              {value === choice && <Check aria-hidden="true" className="h-5 w-5 text-emerald-700 dark:text-emerald-300" />}
+            </span>
           </button>
         ))}
       </div>
@@ -127,7 +140,7 @@ export default function QuestionAnswerInput({
     );
   }
 
-  const text = current?.type === 'essay' ? current.text : '';
+  const answer = current?.type === 'essay' ? current : undefined;
   return (
     <div className="mt-3 space-y-2">
       {question.rubricCriteria && question.rubricCriteria.length > 0 && (
@@ -144,15 +157,12 @@ export default function QuestionAnswerInput({
           </ul>
         </div>
       )}
-      <textarea
-        aria-label="Jawaban esai"
-        value={text}
-        disabled={locked}
-        onChange={(event) => setAnswer(question.id, { type: 'essay', text: event.target.value })}
-        rows={5}
-        className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm font-semibold text-[var(--text)]"
-        placeholder="Tulis jawaban esai..."
-      />
+      <EssayEditor key={question.id} answer={answer} disabled={locked}
+        onChange={(next) => setAnswer(question.id, next)} />
+      {question.allowAnswerPhotos && photoContext && (
+        <EssayPhotoPicker key={question.id} context={photoContext} questionId={question.id}
+          photoIds={answer?.photoIds ?? []} disabled={locked} />
+      )}
     </div>
   );
 }

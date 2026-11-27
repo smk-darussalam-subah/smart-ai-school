@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
+import type { AssessmentOption } from '@smk/types';
 import {
   AssessmentAnswerMap,
   AssessmentItemScore,
@@ -19,6 +20,7 @@ type QuestionRecord = {
   difficulty: string;
   tags: string[];
   rubric: Prisma.JsonValue | null;
+  allowAnswerPhotos?: boolean;
 };
 
 function legacyMatchingChoiceId(questionId: string, pairId: string): string {
@@ -68,16 +70,18 @@ export function questionPayloadToData(dto: QuestionPayload): {
   options?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
   answer?: string | null;
   rubric?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+  allowAnswerPhotos?: boolean;
 } {
   switch (dto.type) {
     case 'multiple_choice':
-      return { options: dto.options as Prisma.InputJsonValue, answer: dto.answer, rubric: Prisma.JsonNull };
+      return { options: dto.options as Prisma.InputJsonValue, answer: dto.answer, rubric: Prisma.JsonNull, allowAnswerPhotos: false };
     case 'true_false':
-      return { options: Prisma.JsonNull, answer: String(dto.answer), rubric: Prisma.JsonNull };
+      return { options: Prisma.JsonNull, answer: String(dto.answer), rubric: Prisma.JsonNull, allowAnswerPhotos: false };
     case 'matching':
-      return { options: dto.pairs as Prisma.InputJsonValue, answer: JSON.stringify(dto.answer), rubric: Prisma.JsonNull };
+      return { options: dto.pairs as Prisma.InputJsonValue, answer: JSON.stringify(dto.answer), rubric: Prisma.JsonNull, allowAnswerPhotos: false };
     case 'essay':
-      return { options: Prisma.JsonNull, answer: dto.guideAnswer ?? null, rubric: dto.rubric as Prisma.InputJsonValue };
+      return { options: Prisma.JsonNull, answer: dto.guideAnswer ?? null, rubric: dto.rubric as Prisma.InputJsonValue,
+        allowAnswerPhotos: dto.allowAnswerPhotos ?? false };
   }
 }
 
@@ -98,7 +102,7 @@ export function dbQuestionToSnapshot(question: QuestionRecord, points: number): 
     return {
       ...base,
       type: 'multiple_choice',
-      options: question.options as Array<{ id: string; text: string }>,
+      options: question.options as unknown as AssessmentOption[],
       answer: question.answer,
     };
   }
@@ -140,6 +144,7 @@ export function dbQuestionToSnapshot(question: QuestionRecord, points: number): 
       ...base,
       type: 'essay',
       guideAnswer: question.answer ?? undefined,
+      ...(question.allowAnswerPhotos ? { allowAnswerPhotos: true } : {}),
       rubric: question.rubric as Array<{ id: string; name: string; description?: string; weight: number; maxScore: number }>,
     };
   }
@@ -172,6 +177,7 @@ export function sanitizeQuestionForStudent(question: StoredQuestionSnapshot) {
     case 'essay':
       return {
         ...base,
+        ...(question.allowAnswerPhotos ? { allowAnswerPhotos: true } : {}),
         rubricCriteria: question.rubric.map((criterion) => ({
           id: criterion.id,
           name: criterion.name,

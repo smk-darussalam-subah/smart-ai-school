@@ -1,12 +1,22 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import QuestionContent from '@/components/learning/QuestionContent';
+import AssessmentOptionContent from '@/components/learning/AssessmentOptionContent';
+import type { AssessmentOption } from '@smk/types';
 import { QUESTION_HTML_PREFIX } from '@/lib/question-content';
 import { renderQuestionFormula } from '@/lib/question-math';
 
 type Preview = {
-  rows: Array<{ code: string; type: string; body: string; imageCount: number; answerSummary: string | null }>;
+  optionImages?: Record<string, string>;
+  rows: Array<{
+    code: string;
+    type: string;
+    body: string;
+    imageCount: number;
+    options?: AssessmentOption[];
+    answerSummary: string | null;
+  }>;
   errors: Array<{ code: string; message: string }>;
 };
 type OfficeMode = 'xlsx' | 'docx' | 'student-docx';
@@ -37,7 +47,17 @@ export default function QuestionOfficeTools({ subject, questions, reload }: {
   const [result, setResult] = useState('');
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
+  const outcomeRef = useRef<HTMLDivElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const visibleExport = questions.filter(({ id }) => exportIds.includes(id)).map(({ id }) => id);
+
+  useEffect(() => {
+    if (!preview && !error && !result) return;
+    const hasOutcome = Boolean(error || result);
+    const target = (hasOutcome ? outcomeRef : previewRef).current;
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: hasOutcome ? 'nearest' : 'center' });
+  }, [preview, error, result]);
 
   async function run(task: () => Promise<void>) {
     if (lock.current) return;
@@ -130,17 +150,21 @@ export default function QuestionOfficeTools({ subject, questions, reload }: {
   return <details className="rounded-xl border border-[var(--qb-line)] bg-[var(--qb-bg)] p-3">
     <summary className="cursor-pointer py-1 text-sm font-semibold">Impor dan ekspor Word / Excel</summary>
     <div className="mt-3 space-y-4">
-      {error && <p role="alert" className="rounded-lg bg-[var(--qb-warn-bg)] p-2 text-sm text-[var(--qb-warn-ink)]">{error}</p>}
-      {result && <p role="status" className="text-sm">{result}</p>}
-      <section className="space-y-2">
+      {(error || result) && (
+        <div ref={outcomeRef} tabIndex={-1} className="space-y-2">
+          {error && <p role="alert" className="rounded-lg bg-[var(--qb-warn-bg)] p-2 text-sm text-[var(--qb-warn-ink)]">{error}</p>}
+          {result && <p role="status" className="text-sm">{result}</p>}
+        </div>
+      )}
+      <section className="space-y-2" aria-busy={busy}>
         <h3 className="text-sm font-semibold">Impor ke Bank Soal</h3>
         <p className="text-xs text-[var(--qb-muted)]">Gunakan template. Untuk Excel bergambar, pilih ZIP berisi XLSX dan folder media.</p>
         <div className="flex flex-wrap gap-2">
           <button type="button" className={button} disabled={busy} onClick={() => download('template', 'xlsx')}>Template Excel</button>
           <button type="button" className={button} disabled={busy} onClick={() => download('template', 'docx')}>Template Word</button>
-          <label className={`${button} inline-flex cursor-pointer items-center focus-within:outline`}>
+          <label className={`${button} relative inline-flex cursor-pointer items-center focus-within:outline`}>
             Pilih berkas<input type="file" accept=".docx,.xlsx,.zip" aria-label="Pilih berkas soal Word atau Excel"
-              disabled={busy} className="sr-only" onChange={(event) => {
+              disabled={busy} className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed" onChange={(event) => {
                 const chosen = event.target.files?.[0];
                 event.target.value = '';
                 if (chosen) previewFile(chosen);
@@ -148,9 +172,25 @@ export default function QuestionOfficeTools({ subject, questions, reload }: {
           </label>
         </div>
         {file && preview && <div className="space-y-2 rounded-lg border border-[var(--qb-line)] p-3">
-          <p className="break-all text-sm font-semibold">{file.name} · {codes.length} dipilih</p>
-          {preview.errors.length > 0 && <ul className="space-y-1 text-xs text-[var(--qb-warn-ink)]">{preview.errors.map((item, index) =>
-            <li key={`${item.code}-${index}`}>{item.code} · {item.message}</li>)}</ul>}
+          <div ref={previewRef} tabIndex={-1} role="region" aria-label="Hasil pemeriksaan berkas" className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="min-w-0 break-all text-sm font-semibold">{file.name} · {codes.length} dipilih</p>
+              <button type="button" className={button} disabled={busy || !codes.length} onClick={() => void run(async () => {
+                const saved: { imported: number; errors: Array<{ column: string; message: string }> } =
+                  await (await office('import', { subject, file: file.encoded, codes })).json();
+                setResult(`${saved.imported} soal tersedia di Bank Soal.`);
+                if (saved.errors.length) {
+                  setError(saved.errors.map(({ column, message }) => `${column} · ${message}`).join(' | '));
+                  setCodes(saved.errors.map(({ column }) => column));
+                } else {
+                  setCodes([]); setPreview(undefined); setFile(undefined);
+                }
+                reload();
+              })}>Impor soal terpilih</button>
+            </div>
+            {preview.errors.length > 0 && <ul className="max-h-32 space-y-1 overflow-y-auto text-sm text-[var(--qb-warn-ink)]">{preview.errors.map((item, index) =>
+              <li key={`${item.code}-${index}`}>{item.code} · {item.message}</li>)}</ul>}
+          </div>
           {preview.rows.map((row) => <div key={row.code} className="border-t border-[var(--qb-line)] pt-2">
             <label className="flex items-center gap-2 text-sm font-semibold">
               <input type="checkbox" checked={codes.includes(row.code)} disabled={busy || preview.errors.some(({ code }) => code === row.code)}
@@ -158,23 +198,21 @@ export default function QuestionOfficeTools({ subject, questions, reload }: {
               {row.code}{row.imageCount > 0 ? ` · ${row.imageCount} gambar` : ''}
             </label>
             <QuestionContent body={QUESTION_HTML_PREFIX + row.body} />
+            {row.options?.length ? (
+              <ul aria-label={`Pilihan jawaban ${row.code}`} className="mt-1 space-y-1 text-sm">
+                {row.options.map((option) => (
+                  <li key={option.id} className="flex gap-2">
+                    <span className="font-semibold">{option.id.toUpperCase()}.</span>
+                    <AssessmentOptionContent option={option} previewImages={preview.optionImages ?? {}} />
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {row.answerSummary && <details className="mt-1 text-xs">
               <summary className="cursor-pointer font-semibold">Periksa kunci atau panduan</summary>
               <p dir="auto" className="mt-1 break-words">{row.answerSummary}</p>
             </details>}
           </div>)}
-          <button type="button" className={button} disabled={busy || !codes.length} onClick={() => void run(async () => {
-            const saved: { imported: number; errors: Array<{ column: string; message: string }> } =
-              await (await office('import', { subject, file: file.encoded, codes })).json();
-            setResult(`${saved.imported} soal tersedia di Bank Soal.`);
-            if (saved.errors.length) {
-              setError(saved.errors.map(({ column, message }) => `${column} · ${message}`).join(' | '));
-              setCodes(saved.errors.map(({ column }) => column));
-            } else {
-              setCodes([]); setPreview(undefined); setFile(undefined);
-            }
-            reload();
-          })}>Impor soal terpilih</button>
         </div>}
       </section>
       <section className="space-y-2 border-t border-[var(--qb-line)] pt-3">

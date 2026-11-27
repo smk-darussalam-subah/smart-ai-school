@@ -4,7 +4,11 @@ import type { StudentQuestion } from '@/components/learning/QuestionAnswerInput'
 const id = z.string().trim().min(1);
 const text = z.string().refine((value) => value.trim().length > 0);
 const base = { id, body: text, points: z.number().finite().positive().max(100) };
-const option = z.object({ id, text });
+const option = z.object({ id, text, parts: z.array(z.discriminatedUnion('type', [
+  z.object({ type: z.literal('text'), text: z.string() }),
+  z.object({ type: z.literal('formula'), latex: z.string() }),
+  z.object({ type: z.literal('image'), mediaId: z.string().uuid(), alt: z.string() }),
+])).optional() });
 const pair = z.object({ id, prompt: text, match: text });
 const criterion = z.object({
   id,

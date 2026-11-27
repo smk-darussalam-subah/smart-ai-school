@@ -1,19 +1,15 @@
 'use client';
 
-import { CalendarDays, ClipboardCheck, RefreshCw } from 'lucide-react';
-import Link from 'next/link';
+import { ClipboardCheck } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { ExamIncidentActions } from './ExamIncidentActions';
+import { AssessmentProgramsPanel } from './AssessmentProgramsPanel';
 import { ExamOperationsPanel, RoomPlacementFields, type ExamAgendaPlacement, type ExamRoomAssignment } from './ExamOperationsPanel';
 
-type Exam = {
-  sessionId: string; room: string; opensAt: string; latestEntryAt: string; closesAt: string;
-  publishedAt: string | null; cancelledAt: string | null; makeupOfSessionId: string | null; agendaId?: string | null;
-  package: { title: string; version: number; subject: string };
-  session: { title: string; status: string; durationMinutes: number; academicYear: string; semester: number; class: { name: string } | null };
-  _count: { participants: number; incidents: number }; counts?: { working: number; done: number };
-};
+import { ExamScheduleList, defaultExamFilters, type Exam, type ExamView, type ExamFilters, type ExamPageResult } from './ExamScheduleList';
+import { ExamScheduleDetails } from './ExamScheduleDetails';
+
 type Person = { studentId: string; extraMinutes: number; student: { user: { fullName: string } };
   response: { startedAt: string | null; submittedAt: string | null; lastSavedAt: string | null; lastHeartbeatAt: string | null;
     lateSubmissionStatus: string | null; _count: { integrityEvents: number } } | null;
@@ -47,13 +43,6 @@ const panel = `min-w-0 space-y-4 rounded-2xl border p-4 sm:p-5 ${surface}`;
 const control = `min-h-11 rounded-lg border px-3 py-2 text-sm ${surface}`;
 const primary = 'min-h-11 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50';
 const time = new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-function status(exam: Exam, now: number) {
-  if (exam.cancelledAt) return 'Dibatalkan';
-  if (!exam.publishedAt) return 'Draf';
-  if (exam.session.status === 'completed') return 'Selesai';
-  if (now >= Date.parse(exam.closesAt)) return 'Menunggu penutupan';
-  return now >= Date.parse(exam.opensAt) ? 'Berlangsung' : 'Terjadwal';
-}
 class ExamRequestError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -81,8 +70,33 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
   student: boolean; canAuthor: boolean; canPlan: boolean; day: string;
 }) {
-  const [date, setDate] = useState(day);
-  const [result, setResult] = useState<{ rows: Exam[]; asOf: string; nextCursor: string | null }>();
+  const [view, setView] = useState<ExamView>('schedule');
+  const [filterState, setFilterState] = useState(() => ({
+    schedule: defaultExamFilters(day, 'schedule'), archive: defaultExamFilters(day, 'archive'),
+  }));
+  const filters = filterState[view];
+  const date = filterState.schedule.day;
+  function setDate(value: string) {
+    setView('schedule');
+    setFilterState((state) => ({ ...state, schedule: { ...state.schedule, day: value, through: '', status: '' } }));
+  }
+  function updateFilters(values: Partial<ExamFilters>) {
+    setFilterState((state) => ({ ...state, [view]: { ...state[view], ...values } }));
+  }
+  const query = useMemo(() => {
+    if (filters.through && filters.through < filters.day) return '';
+    const params = new URLSearchParams({ view });
+    for (const [key, raw] of Object.entries(filters)) {
+      const value = raw.trim();
+      if (value) params.set(key, value);
+    }
+    return params.toString();
+  }, [filters, view]);
+  const [list, setList] = useState<{ query: string; result: ExamPageResult }>();
+  const result = list?.query === query ? list.result : undefined;
+  const [listError, setListError] = useState<{ query: string; message: string }>();
+  const [detailTarget, setDetailTarget] = useState<{ exam: Exam; action?: 'publish' | 'edit' }>();
+  const detailTrigger = useRef<HTMLButtonElement | null>(null);
   const [options, setOptions] = useState<Options>();
   const monitorTrigger = useRef<HTMLButtonElement | null>(null);
   const examHeading = useRef<HTMLHeadingElement>(null);
@@ -108,6 +122,10 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
   const [useAgenda, setUseAgenda] = useState(false);
   const [assignments, setAssignments] = useState<ExamRoomAssignment[] | null>(null);
   const [proctors, setProctors] = useState<string[]>([]);
+  const [makeupDay, setMakeupDay] = useState('');
+  const [makeupOptions, setMakeupOptions] = useState<ExamPageResult>();
+  const [makeupOptionsError, setMakeupOptionsError] = useState('');
+  const [makeupOptionsLoading, setMakeupOptionsLoading] = useState(false);
   const [makeupOf, setMakeupOf] = useState('');
   const [makeupRoster, setMakeupRoster] = useState<MakeupCandidate[]>([]);
   const [makeupParticipants, setMakeupParticipants] = useState<string[]>([]);
@@ -116,8 +134,7 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
     .map(({ studentId, fullName }) => ({ id: studentId, fullName })) : null,
   [makeupOf, makeupRoster, makeupParticipants]);
   const [makeupLoading, setMakeupLoading] = useState(false);
-  const [roomFilter, setRoomFilter] = useState('');
-  const request = useRef(0);
+  const request = useRef<AbortController | null>(null);
   const mutation = useRef(false);
   const refreshMonitor = useRef<{ sessionId: string; refresh: (restart?: boolean) => Promise<void> } | undefined>(undefined);
   const monitorSummary = useMemo(() => {
@@ -132,22 +149,37 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
     return { counts, rows };
   }, [monitor]);
 
-  const reload = useCallback(async (cursor?: string) => {
-    const id = ++request.current;
+  const reload = useCallback(async (cursor?: string, asOf?: string) => {
+    if (!query) return;
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
     setLoading(true);
-    setFailure('');
+    setListError(undefined);
     try {
-      const query = new URLSearchParams({ day: date, ...(cursor ? { cursor } : {}) });
-      const data = await api<NonNullable<typeof result>>(`?${query}`);
-      if (request.current !== id) return;
-      setResult((previous) => cursor && previous ? { ...data, rows: [...previous.rows, ...data.rows] } : data);
+      const params = new URLSearchParams(query);
+      if (cursor && asOf) { params.set('cursor', cursor); params.set('asOf', asOf); }
+      const data = await api<ExamPageResult>('?' + params, { signal: controller.signal });
+      if (controller.signal.aborted) return;
+      setList((previous) => {
+        if (!cursor || previous?.query !== query) return { query, result: data };
+        const known = new Set(previous.result.rows.map(({ sessionId }) => sessionId));
+        return { query, result: { ...data, rows: [...previous.result.rows, ...data.rows.filter(({ sessionId }) => !known.has(sessionId))] } };
+      });
     } catch (error) {
-      if (request.current === id) setFailure((error as Error).message);
+      if (controller.signal.aborted) return;
+      if (lostMonitorAccess(error)) setList(undefined);
+      setListError({ query, message: (error as Error).message });
     } finally {
-      if (request.current === id) setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  }, [date]);
-  useEffect(() => { void reload(); return () => { request.current++; }; }, [reload]);
+  }, [query]);
+  useEffect(() => {
+    if (!query) { setLoading(false); return; }
+    setLoading(true);
+    const delay = setTimeout(() => void reload(), 220);
+    return () => { clearTimeout(delay); request.current?.abort(); };
+  }, [query, reload]);
   useEffect(() => {
     if (!canPlan && (!panelOpen || !canAuthor)) return;
     let live = true;
@@ -155,6 +187,27 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
       (error: Error) => { if (live) setFailure(error.message); });
     return () => { live = false; };
   }, [panelOpen, canAuthor, canPlan]);
+
+  const loadMakeupOptions = useCallback(async (signal?: AbortSignal, next?: ExamPageResult) => {
+    if (!makeupDay) return;
+    const params = new URLSearchParams({ day: makeupDay, status: 'completed' });
+    if (next?.nextCursor) { params.set('cursor', next.nextCursor); params.set('asOf', next.asOf); }
+    setMakeupOptionsError(''); setMakeupOptionsLoading(true);
+    try {
+      const page = await api<ExamPageResult>('?' + params, { signal });
+      if (!signal?.aborted) setMakeupOptions({ ...page, rows: [...(next?.rows ?? []), ...page.rows] });
+    } catch (error) {
+      if (!signal?.aborted) setMakeupOptionsError((error as Error).message);
+    } finally {
+      if (!signal?.aborted) setMakeupOptionsLoading(false);
+    }
+  }, [makeupDay]);
+  useEffect(() => {
+    if (!makeupDay || !canPlan || !panelOpen || view !== 'schedule') return;
+    const controller = new AbortController();
+    void loadMakeupOptions(controller.signal);
+    return () => controller.abort();
+  }, [makeupDay, canPlan, panelOpen, view, loadMakeupOptions]);
 
   useEffect(() => {
     if (!makeupOf || !canPlan) return;
@@ -254,22 +307,29 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
     });
   }
 
-  const rows = result?.rows.filter((exam) => !roomFilter ||
-    `${exam.room} ${exam.session.class?.name ?? ''} ${exam.session.title}`.toLocaleLowerCase('id').includes(roomFilter.trim().toLocaleLowerCase('id')));
-
   return (
     <main className="mx-auto max-w-7xl space-y-5 text-[var(--text,var(--staff-text,#0f172a))]">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div><h1 ref={examHeading} tabIndex={-1} className="flex items-center gap-2 text-2xl font-bold"><ClipboardCheck className="h-6 w-6 text-emerald-600" />{student ? 'Jadwal Ujian' : 'Ujian'}</h1>
           <p className="mt-1 text-sm text-[var(--staff-muted,#475569)]">{student ? 'Lihat jadwal dan waktu masuk ujian Anda.' : 'Lihat jadwal, peserta, dan status ujian sesuai kewenangan Anda.'}</p></div>
-        {(canAuthor || canPlan) && <button className={primary} onClick={() => setPanelOpen((open) => !open)} aria-expanded={panelOpen}>
+        {view === 'schedule' && (canAuthor || canPlan) && <button className={primary} onClick={() => setPanelOpen((open) => !open)} aria-expanded={panelOpen}>
           {panelOpen ? 'Tutup penyusunan' : 'Siapkan ujian'}
         </button>}
       </header>
       {failure && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-900">{failure}</p>}
       {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-900">{notice}</p>}
-      {!student && <ExamOperationsPanel day={date} canPlan={canPlan} onPlacement={setAgendaPlacement} />}
-      {panelOpen && (
+      <ExamScheduleList view={view} filters={filters} student={student} canPlan={canPlan} result={result}
+        error={listError?.query === query ? listError.message : ''} loading={Boolean(query) && (loading || (!result && listError?.query !== query))}
+        onView={(next) => { setView(next); if (next === 'archive') setPanelOpen(false); }}
+        onFilters={updateFilters} onReset={() => setFilterState((state) => ({ ...state, [view]: defaultExamFilters(day, view) }))}
+        onReload={(cursor) => void reload(cursor, result?.asOf)}
+        onDetail={(exam, event, action) => { detailTrigger.current = event.currentTarget; setDetailTarget({ exam, action }); }}
+        onMonitor={(exam, event) => { monitorTrigger.current = event.currentTarget; setSelected(exam.sessionId); }}
+        onPublish={setConfirm}
+        onCancel={(exam) => { setCancelReason(''); setFailure(''); setCancel(exam); }} />
+      {view === 'schedule' && <AssessmentProgramsPanel student={student} canAuthor={canAuthor} onPublished={() => { void reload(); }} />}
+      {view === 'schedule' && !student && <ExamOperationsPanel day={date} canPlan={canPlan} onPlacement={setAgendaPlacement} /> }
+      {view === 'schedule' && panelOpen && (
         <section className={panel}>
           <h2 className="text-lg font-bold">Siapkan ujian</h2>
           {!options ? <p role="status">Memuat draft dan paket…</p> : (
@@ -314,18 +374,32 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
                     </label>)}
                   </div>
                 </fieldset>}
+                <label className="grid gap-1 text-sm font-semibold">Tanggal ujian asal (opsional)
+                  <input className={control} type="date" value={makeupDay} disabled={makeupOptionsLoading} onChange={(event) => {
+                    setMakeupDay(event.target.value); setMakeupOptions(undefined); setMakeupOptionsError('');
+                    setMakeupOf(''); setMakeupRoster([]); setMakeupParticipants([]);
+                  }} />
+                </label>
                 <label className="grid gap-1 text-sm font-semibold">Sesi asal untuk ujian susulan
                   <select className={control} value={makeupOf} onChange={(event) => {
                     setMakeupOf(event.target.value); setMakeupRoster([]); setMakeupParticipants([]);
                   }}>
                     <option value="">Ujian reguler</option>
-                    {result?.rows.filter((exam) => exam.session.status === 'completed' && !exam.makeupOfSessionId)
+                    {makeupOptions?.rows.filter((exam) => !exam.makeupOfSessionId)
                       .map((exam) => <option key={exam.sessionId} value={exam.sessionId}>
                         {exam.session.title} · {exam.session.class?.name}
                       </option>)}
                   </select>
-                  <span className="font-normal text-[var(--staff-muted,#475569)]">Pilih tanggal ujian asal untuk memuat sesi yang sudah selesai.</span>
                 </label>
+                {makeupOptionsLoading && <p role="status" className="text-sm">Memuat ujian asal…</p>}
+                {makeupOptionsError && <div className="space-y-2">
+                  <p role="alert" className="text-sm">{makeupOptionsError}</p>
+                  <button type="button" className={control} onClick={() => void loadMakeupOptions()}>Muat ulang ujian asal</button>
+                </div>}
+                {makeupOptions?.nextCursor && <button type="button" className={control} disabled={makeupOptionsLoading}
+                  onClick={() => void loadMakeupOptions(undefined, makeupOptions)}>Muat ujian asal berikutnya</button>}
+                {!makeupOptionsLoading && makeupOptions && !makeupOptions.nextCursor && !makeupOptions.rows.some((exam) => !exam.makeupOfSessionId) &&
+                  <p role="status" className="text-sm">Belum ada ujian asal yang selesai pada tanggal ini.</p>}
                 {makeupOf && <fieldset className="space-y-2 sm:col-span-2">
                   <legend className="font-semibold">Peserta susulan</legend>
                   <p className="text-sm text-[var(--staff-muted,#475569)]">Untuk perbaikan nilai, pilih paket soal dari materi yang masih belum dikuasai siswa.</p>
@@ -350,47 +424,15 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
           )}
         </section>
       )}
-      <section className={panel} aria-busy={loading}>
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <label className="grid gap-1 text-sm font-semibold">Tanggal ujian
-            <input type="date" className={control} value={date} onChange={(event) => { if (event.target.value) { setResult(undefined); setDate(event.target.value); } }} />
-          </label>
-          {!student && <label className="grid gap-1 text-sm font-semibold">Cari pada jadwal yang dimuat
-            <input type="search" className={control} value={roomFilter} onChange={(event) => setRoomFilter(event.target.value)}
-              placeholder="Ruang, kelas, atau judul" />
-          </label>}
-          <button className={control} disabled={loading} onClick={() => void reload()}><RefreshCw className="mr-1 inline h-4 w-4" />Muat ulang</button>
-        </div>
-        {loading && !result && <p role="status">Memuat jadwal…</p>}
-        {rows?.length === 0 && <p className="text-sm text-[var(--staff-muted,#475569)]">{roomFilter ? 'Tidak ada ujian yang cocok.' : 'Belum ada ujian dalam cakupan Anda pada tanggal ini.'}</p>}
-        {rows?.map((exam) => {
-          if (!result) return null;
-          const state = status(exam, Date.parse(result.asOf));
-          return <article key={exam.sessionId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--staff-line,#cbd5e1)] p-3 sm:p-4">
-            <div className="min-w-0 space-y-1"><h2 className="font-bold">{exam.session.title}</h2>
-              <p className="text-sm text-[var(--staff-muted,#475569)]"><CalendarDays className="mr-1 inline h-4 w-4" />
-                {time.format(new Date(exam.opensAt))}–{time.format(new Date(exam.closesAt))} WIB · {exam.session.class?.name ?? 'Kelas'} · {exam.room}</p>
-              <p className="text-sm"><strong>{state}</strong>{exam.makeupOfSessionId ? ' · Susulan' : ''}
-                {student ? ` · Batas masuk ${time.format(new Date(exam.latestEntryAt))} WIB` :
-                  ` · ${exam._count.participants} peserta · ${exam.counts?.working ?? 0} mengerjakan · ${exam.counts?.done ?? 0} terkirim`}</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {student && exam.publishedAt && !exam.cancelledAt && (
-                <Link className={`${control} inline-flex items-center`} href={{ pathname: '/dashboard/akademik', query: {
-                  view: 'assessment', sessionId: exam.sessionId,
-                  academicYear: exam.session.academicYear, semester: exam.session.semester,
-                } }}>Lihat detail ujian</Link>
-              )}
-              {!student && <button className={control} onClick={(event) => { monitorTrigger.current = event.currentTarget; setSelected(exam.sessionId); }}>Pantau sesi</button>}
-              {canPlan && state === 'Draf' && <button className={primary} onClick={() => setConfirm(exam)}>Terbitkan</button>}
-              {canPlan && ['Draf', 'Terjadwal'].includes(state) && <button className={control} onClick={() => {
-                setCancelReason(''); setFailure(''); setCancel(exam);
-              }}>Batalkan jadwal</button>}
-            </div>
-          </article>;
-        })}
-        {result?.nextCursor && <button className={control} disabled={loading} onClick={() => void reload(result.nextCursor!)}>Muat sesi berikutnya</button>}
-      </section>
+      {detailTarget && <ExamScheduleDetails exam={detailTarget.exam} initialAction={detailTarget.action} student={student} onClose={() => setDetailTarget(undefined)}
+        restoreFocus={() => {
+          const trigger = detailTrigger.current;
+          (trigger?.isConnected ? trigger : examHeading.current)?.focus();
+        }}
+        onSaved={(message, nextDate) => {
+          setNotice(message);
+          if (nextDate && nextDate !== date) setDate(nextDate); else void reload();
+        }} />}
       {cancel && <Dialog open onOpenChange={(open) => { if (!open && !busy) setCancel(undefined); }}>
         <DialogContent className={surface}>
           <DialogTitle>Batalkan jadwal ujian?</DialogTitle>

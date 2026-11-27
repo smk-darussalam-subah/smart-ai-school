@@ -4,9 +4,18 @@ const uuid = z.string().uuid();
 const iso = z.string().datetime({ offset: true });
 export const ExamListSchema = z.object({
   day: z.string().date(),
+  through: z.string().date().optional(),
+  view: z.enum(['schedule', 'archive']).optional(),
+  status: z.enum(['ongoing', 'upcoming', 'attention', 'draft', 'completed', 'cancelled']).optional(),
+  className: z.string().trim().min(1).max(80).optional(),
+  subject: z.string().trim().min(1).max(100).optional(),
+  search: z.string().trim().min(1).max(100).optional(),
+  sort: z.enum(['priority', 'oldest', 'newest', 'title']).optional(),
+  asOf: iso.optional(),
   limit: z.coerce.number().int().min(1).max(60).default(30),
   cursor: uuid.optional(),
-}).strict();
+}).strict().refine(({ day, through }) => !through || (through >= day &&
+  (Date.parse(through) - Date.parse(day)) <= 366 * 86_400_000), 'Rentang tanggal ujian tidak valid.');
 
 export const ExamPlanSchema = z.object({
   packageId: uuid,
@@ -40,11 +49,29 @@ export const ExamPlanSchema = z.object({
     ctx.addIssue({ code: 'custom', message: 'Proktor dan peserta harus unik.' });
 });
 
+export const RescheduleExamSchema = z.object({
+  opensAt: iso, latestEntryAt: iso, closesAt: iso,
+  room: z.string().trim().min(1).max(80).optional(),
+  proctorIds: z.array(uuid).min(1).max(12).refine((ids) => new Set(ids).size === ids.length).optional(),
+  agendaId: uuid.optional(),
+  roomAssignments: ExamPlanSchema.innerType().shape.roomAssignments,
+  reason: z.string().trim().min(8).max(500),
+  version: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict().refine(({ opensAt, latestEntryAt, closesAt, agendaId, roomAssignments, room, proctorIds }) => {
+  const open = Date.parse(opensAt), entry = Date.parse(latestEntryAt), close = Date.parse(closesAt);
+  return open <= entry && entry <= close && open < close && close - open <= 12 * 60 * 60_000 &&
+    Boolean(agendaId) === Boolean(roomAssignments) && !(agendaId && (room || proctorIds));
+}, 'Periksa urutan waktu, durasi jadwal, serta penempatan ruang dan Proktor.');
+
+export type RescheduleExam = z.infer<typeof RescheduleExamSchema>;
+
 export const ExamIncidentSchema = z.object({
   kind: z.enum(['device', 'room', 'school']),
   reason: z.string().trim().min(8).max(500),
 }).strict();
 export const ExamCancelSchema = z.object({ reason: z.string().trim().min(8).max(500) }).strict();
+export const PublishExamNowSchema = ExamCancelSchema.extend({ version: z.string().regex(/^[a-f0-9]{64}$/) });
+export const PublishRequestNowSchema = ExamCancelSchema.extend({ revision: z.number().int().min(1) });
 export const ExamDecisionSchema = z.object({
   decision: z.enum(['resume', 'extra_time', 'makeup', 'transfer']),
   reason: z.string().trim().min(8).max(500),

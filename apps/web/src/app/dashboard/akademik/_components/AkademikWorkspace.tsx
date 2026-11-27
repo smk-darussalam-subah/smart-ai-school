@@ -1,6 +1,6 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutDashboard,
@@ -83,6 +83,8 @@ interface Props {
   activities: ActivityItem[];
   rpp: RppItem[];
   lmsModules: LmsModuleItem[];
+  lmsReadUnavailable?: boolean;
+  unavailableLmsAssignmentIds?: string[];
   todayClasses: TodayClass[];
   assessmentSessions: AssessmentSessionData[];
   assessmentSessionTotal?: number;
@@ -137,6 +139,8 @@ export default function AkademikWorkspace({
   activities,
   rpp,
   lmsModules,
+  lmsReadUnavailable = false,
+  unavailableLmsAssignmentIds = [],
   todayClasses,
   assessmentSessions,
   assessmentSessionTotal,
@@ -155,6 +159,7 @@ export default function AkademikWorkspace({
   todayDate,
 }: Props) {
   const initialWorkflow = academicWorkflowPresentation(initialWorkflowView);
+  const router = useRouter();
   const routeParams = useSearchParams();
   const routeWorkflow = resolveAcademicWorkflowView(
     routeParams.get('view') ?? undefined,
@@ -312,19 +317,31 @@ export default function AkademikWorkspace({
         .filter((item) => selClass === 'all' || item.classId === selClass),
     [selClass, subject, todayClasses],
   );
-  const assignmentSessionCandidates = useMemo<TodayClass[]>(
-    () =>
-      buildAssignmentSessionCandidates({
-        assignments,
-        lmsModules,
-        todayClasses: todaySessionCandidates,
-        subject,
-        classId: selClass,
-        academicYear,
-        semester,
-      }),
-    [academicYear, assignments, lmsModules, selClass, semester, subject, todaySessionCandidates],
+  const assignmentModuleChoices = useMemo(
+    () => buildAssignmentSessionCandidates({
+      assignments, lmsModules, subject: 'all', classId: 'all', academicYear, semester,
+    }),
+    [academicYear, assignments, lmsModules, semester],
   );
+  const assignmentSessionCandidates = assignmentModuleChoices.filter((item) =>
+    (subject === 'all' || item.subject === subject) &&
+    (selClass === 'all' || item.classId === selClass),
+  );
+  const studioContext = penilaian?.session;
+  const studioModules = studioContext
+    ? assignmentModuleChoices.flatMap((item) => item.classId === studioContext.classId &&
+      item.subject === studioContext.subject && item.moduleId && item.moduleTitle
+      ? [{ id: item.moduleId, title: item.moduleTitle }]
+      : [])
+    : [];
+  const hasUnavailableLms = lmsReadUnavailable || assignments.some((item) =>
+    unavailableLmsAssignmentIds.includes(item.id) &&
+    (subject === 'all' || item.subject === subject) && (selClass === 'all' || item.class.id === selClass),
+  );
+  const studioLmsUnavailable = lmsReadUnavailable || Boolean(studioContext && assignments.some((item) =>
+    item.class.id === studioContext.classId && item.subject === studioContext.subject &&
+    unavailableLmsAssignmentIds.includes(item.id),
+  ));
   const bankSourceOptions = useMemo<QuestionSourceOption[]>(
     () =>
       buildQuestionSourceOptions({
@@ -955,7 +972,15 @@ export default function AkademikWorkspace({
                     </button>
                   </div>
                 )}
-                {sessionPanelState === 'empty' && (
+                {hasUnavailableLms && (
+                  <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    <span>Sebagian pilihan modul LMS belum dapat dimuat.</span>
+                    <button type="button" onClick={() => router.refresh()} className="min-h-10 rounded-lg border border-amber-600 px-3 font-semibold">
+                      Muat ulang modul
+                    </button>
+                  </div>
+                )}
+                {sessionPanelState === 'empty' && !hasUnavailableLms && (
                   <div className="rounded-xl border border-dashed border-[#dfe9e4] p-6 text-center text-[12.5px] font-semibold text-[#9bb0a8]">
                     Belum ada sesi atau penugasan mengajar yang cocok untuk filter ini.
                   </div>
@@ -1169,6 +1194,9 @@ export default function AkademikWorkspace({
       {penilaian && (
         <PenilaianSesiModal
           session={penilaian.session}
+          moduleOptions={studioModules}
+          moduleReadUnavailable={studioLmsUnavailable}
+          onRetryModules={() => router.refresh()}
           academicYear={academicYear}
           semester={semester}
           initialMode={penilaian.mode}

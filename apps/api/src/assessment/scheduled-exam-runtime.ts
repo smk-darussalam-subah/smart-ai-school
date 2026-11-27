@@ -11,6 +11,21 @@ export function examDeviceHash(deviceId: string): string {
   return createHash('sha256').update(deviceId.toLowerCase()).digest('hex');
 }
 
+export function effectiveExamClose(closesAt: Date, dueAt?: Date | null): Date {
+  return dueAt && dueAt < closesAt ? dueAt : closesAt;
+}
+
+export function latePublicationState(
+  window: Pick<ExamWindow, 'opensAt' | 'latestEntryAt' | 'closesAt'>,
+  durationMinutes: number | null,
+  now: Date,
+): 'upcoming' | 'ready' | 'reschedule' {
+  if (now < window.opensAt) return 'upcoming';
+  return durationMinutes && now <= window.latestEntryAt &&
+    window.closesAt.getTime() - now.getTime() >= durationMinutes * 60_000
+    ? 'ready' : 'reschedule';
+}
+
 export function examDeadline(closesAt: Date, startedAt: Date, duration: number, extra: number): Date {
   return new Date(Math.min(closesAt.getTime(), startedAt.getTime() + (duration + extra) * 60_000));
 }

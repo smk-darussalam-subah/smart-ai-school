@@ -10,7 +10,6 @@ export interface AssessmentTeachingAssignment {
 interface BuildAssignmentSessionCandidatesInput {
   assignments: AssessmentTeachingAssignment[];
   lmsModules: LmsModuleItem[];
-  todayClasses: TodayClass[];
   subject: string;
   classId: string;
   academicYear: string;
@@ -24,15 +23,11 @@ function contextKey(classId: string, subject: string): string {
 export function buildAssignmentSessionCandidates({
   assignments,
   lmsModules,
-  todayClasses,
   subject,
   classId,
   academicYear,
   semester,
 }: BuildAssignmentSessionCandidatesInput): TodayClass[] {
-  const scheduledContexts = new Set(
-    todayClasses.map((item) => contextKey(item.classId, item.subject)),
-  );
   const moduleByContext = new Map<string, LmsModuleItem[]>();
 
   for (const module of lmsModules) {
@@ -57,8 +52,7 @@ export function buildAssignmentSessionCandidates({
     if (
       assignment.academicYear !== academicYear ||
       (subject !== 'all' && assignment.subject !== subject) ||
-      (classId !== 'all' && assignmentClassId !== classId) ||
-      scheduledContexts.has(key)
+      (classId !== 'all' && assignmentClassId !== classId)
     ) {
       return [];
     }

@@ -1,4 +1,8 @@
 'use client';
+
+import { AssessmentPhotoActivity } from '@/lib/assessment-photo-activity';
+import { useAssessmentPhotoQueue } from '@/lib/use-assessment-photo-queue';
+import { MAX_ESSAY_PHOTOS, readEssayDocument } from '@smk/types';
 import QuestionContent from '@/components/learning/QuestionContent';
 import QuestionAnswerInput, {
   type StudentQuestion,
@@ -16,6 +20,7 @@ import {
   FileText,
   Loader2,
   Maximize,
+  PartyPopper,
   Save,
   Send,
   ShieldAlert,
@@ -35,6 +40,8 @@ import {
   deleteAssessmentSignal,
   createAssessmentClientId,
   listAssessmentSignals,
+  listAssessmentPhotos,
+  deleteAssessmentPhoto,
   loadAssessmentDraft,
   prepareAssessmentSignalsForSubmit,
   queueAssessmentSignal,
@@ -197,7 +204,12 @@ function parseAnswers(value: unknown): Record<string, AnswerValue> {
       }
       result[questionId] = { type: 'matching', pairs };
     } else if (answer.type === 'essay' && typeof answer.text === 'string') {
-      result[questionId] = { type: 'essay', text: answer.text };
+      const document = readEssayDocument(answer.document);
+      const photoIds = Array.isArray(answer.photoIds)
+        ? answer.photoIds.filter((id): id is string => typeof id === 'string' && /^[a-f0-9-]{36}$/i.test(id)).slice(0, MAX_ESSAY_PHOTOS)
+        : [];
+      result[questionId] = { type: 'essay', text: answer.text, ...(document ? { document } : {}),
+        ...(photoIds.length ? { photoIds } : {}) };
     }
   }
   return result;
@@ -212,7 +224,7 @@ function answerProgress(question: StudentQuestion, answers: Record<string, Answe
   if (question.type === 'matching' && answer.type === 'matching') {
     return question.prompts.every((prompt) => Boolean(answer.pairs[prompt.id]));
   }
-  if (question.type === 'essay' && answer.type === 'essay') return answer.text.trim().length > 0;
+  if (question.type === 'essay' && answer.type === 'essay') return answer.text.trim().length > 0 || Boolean(answer.photoIds?.length);
   return false;
 }
 
@@ -264,9 +276,30 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
   );
   const [submitRetryAttempt, setSubmitRetryAttempt] = useState(0);
   const [autosaveRetryAttempt, setAutosaveRetryAttempt] = useState(0);
-  const [confirmUnanswered, setConfirmUnanswered] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [reviewSeconds, setReviewSeconds] = useState<number | null>(null);
+  const reviewHeading = useRef<HTMLHeadingElement>(null);
+  const questionHeading = useRef<HTMLDivElement>(null);
+  const returnToQuestion = useRef(false);
+  const remainingSeconds = useRef<number | null>(null);
+  const submitTrigger = useRef<HTMLButtonElement>(null);
+  const trackReviewTime = (seconds: number) => {
+    remainingSeconds.current = seconds;
+    if (reviewing) setReviewSeconds(seconds);
+  };
+  useEffect(() => {
+    if (reviewing) reviewHeading.current?.focus();
+    else if (returnToQuestion.current) {
+      returnToQuestion.current = false;
+      questionHeading.current?.focus();
+    }
+  }, [reviewing]);
   const [busy, startTransition] = useTransition();
   const attemptRef = useRef<AttemptState | null>(null);
+  const photoActivity = useMemo(() => new AssessmentPhotoActivity(), []);
+  const startPhotoPicker = useCallback(() => photoActivity.begin(), [photoActivity]);
+  const finishPhotoPicker = useCallback(() => photoActivity.complete(), [photoActivity]);
   const returnFocus = useRef<HTMLElement | null>(null);
   const answersRef = useRef<Record<string, AnswerValue>>({});
   const revisionRef = useRef(0);
@@ -285,6 +318,24 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     [answers, attempt?.questions],
   );
   const totalQuestions = attempt?.questions.length ?? 0;
+  const emptyQuestions = useMemo(() => attempt?.questions.flatMap((question, index) =>
+    answerProgress(question, answers) ? [] : [index]) ?? [], [attempt?.questions, answers]);
+  const reviewTime = reviewSeconds === null ? '—'
+    : `${Math.floor(reviewSeconds / 60)} menit ${reviewSeconds % 60} detik`;
+  const syncSummary = saveState === 'server' ? 'Tersimpan di server'
+    : saveState === 'saving' ? 'Sedang menyimpan'
+      : saveState === 'failed' ? 'Penyimpanan perlu perhatian'
+        : saveState === 'idle' ? 'Belum ada perubahan baru'
+          : 'Menunggu sinkronisasi server';
+  function openReview() {
+    setReviewSeconds(remainingSeconds.current);
+    setReviewing(true);
+  }
+  function goToQuestion(index: number) {
+    if (reviewing) returnToQuestion.current = true;
+    setReviewing(false);
+    setCurrentIndex(index);
+  }
   const currentQuestion = attempt?.questions[currentIndex] ?? null;
   const remedialTerminalStatus =
     task.purpose === 'remedial' &&
@@ -386,9 +437,13 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     });
   }, [autosaveWindow, syncDraftToServer]);
 
-  const setAnswer = (questionId: string, answer: AnswerValue) => {
-    if (pendingSubmitRef.current || revisionConflict || submitted) return;
-    const nextAnswers = { ...answersRef.current, [questionId]: answer };
+  const setAnswer = (questionId: string, answer: AnswerValue, updatePhoto = false) => {
+    if (pendingSubmitRef.current || revisionConflict || submitted || examExpiredRef.current || !mountedRef.current)
+      return Promise.resolve<LocalSaveResult>('unavailable');
+    const previous = answersRef.current[questionId];
+    const next = !updatePhoto && answer.type === 'essay' && previous?.type === 'essay' && previous.photoIds?.length
+      ? { ...answer, photoIds: previous.photoIds } : answer;
+    const nextAnswers = { ...answersRef.current, [questionId]: next };
     const nextRevision = revisionRef.current + 1;
     const nextMutationId = createAssessmentClientId();
     answersRef.current = nextAnswers;
@@ -396,9 +451,39 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     mutationIdRef.current = nextMutationId;
     setAnswers(nextAnswers);
     setRevision(nextRevision);
-    void persistDraft(nextAnswers, nextRevision, false);
+    const saved = persistDraft(nextAnswers, nextRevision, false);
     scheduleAutosave();
+    return saved;
   };
+
+  const applyPhoto = async (questionId: string, id: string, remove: boolean) => {
+    const previous = answersRef.current[questionId];
+    const answer = previous?.type === 'essay' ? previous : { type: 'essay' as const, text: '' };
+    const old = answer.photoIds ?? [];
+    if (!remove && old.length >= MAX_ESSAY_PHOTOS && !old.includes(id)) return false;
+    const photoIds = remove ? old.filter((value) => value !== id) : [...new Set([...old, id])];
+    const result = await setAnswer(questionId, { ...answer, photoIds }, true);
+    return result === 'saved' || (result === 'stale' &&
+      (answersRef.current[questionId]?.type === 'essay' && answersRef.current[questionId].photoIds?.includes(id) === !remove));
+  };
+
+  const photoQueue = useAssessmentPhotoQueue({
+    sessionId: task.assessmentSessionId,
+    responseId: attempt?.questions.some((question) => question.type === 'essay' && question.allowAnswerPhotos)
+      ? attempt.responseId : undefined,
+    disabled: submitted || pendingSubmit || revisionConflict || examExpired,
+    canEdit: (responseId) => mountedRef.current && !pendingSubmitRef.current &&
+      !finishedRef.current && !examExpiredRef.current && attemptRef.current?.responseId === responseId,
+    isAttached: (questionId, id) => {
+      const answer = answersRef.current[questionId];
+      return answer?.type === 'essay' && Boolean(answer.photoIds?.includes(id));
+    },
+    attach: (questionId, id) => applyPhoto(questionId, id, false),
+  });
+  const { isBusy: isPhotoQueueBusy } = photoQueue;
+  const offscreenPhoto = photoQueue.pending.find(({ questionId }) => questionId !== currentQuestion?.id);
+  const pendingPhotoIndex = offscreenPhoto && attempt
+    ? attempt.questions.findIndex(({ id }) => id === offscreenPhoto.questionId) : -1;
 
   const flushSignals = useCallback(async (): Promise<boolean> => {
     const currentAttempt = attemptRef.current;
@@ -468,6 +553,18 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     const submission = (async (): Promise<boolean> => {
       const currentAttempt = attemptRef.current;
       if (!currentAttempt || !task.assessmentSessionId || submitted || examExpiredRef.current) return false;
+      if (!pendingSubmitRef.current && currentAttempt.questions.some((q) => q.type === 'essay' && q.allowAnswerPhotos)) {
+        const photos = await listAssessmentPhotos(currentAttempt.responseId);
+        const waiting = photos?.some(({ questionId, id }) => {
+          const answer = answersRef.current[questionId];
+          return answer?.type !== 'essay' || !answer.photoIds?.includes(id);
+        });
+        if (isPhotoQueueBusy() || photoActivity.awaitingResult() || photos === null || waiting) {
+          showToast('Periksa foto yang belum terlampir. Kirim ulang atau hapus dari antrean sebelum mengirim jawaban.');
+          return false;
+        }
+        if (examExpiredRef.current || finishedRef.current || !mountedRef.current) return false;
+      }
       autosaveWindow.cancel();
       pendingSubmitRef.current = true;
       setPendingSubmit(true);
@@ -577,6 +674,10 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       }
       await Promise.all(queuedSignals.map((signal) => deleteAssessmentSignal(signal.eventId)));
       await deleteAssessmentDraft(currentAttempt.responseId);
+      if (currentAttempt.questions.some((q) => q.type === 'essay' && q.allowAnswerPhotos)) {
+        const photos = await listAssessmentPhotos(currentAttempt.responseId);
+        if (photos) await Promise.all(photos.map(({ id }) => deleteAssessmentPhoto(id)));
+      }
       setIntegrityWarning(null);
       const score = typeof result.data?.score === 'number' ? result.data.score : null;
       const pendingTeacherReview = result.data?.lateSubmissionStatus === 'pending';
@@ -605,7 +706,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     } finally {
       if (submitFlightRef.current === submission) submitFlightRef.current = null;
     }
-  }, [autosaveWindow, persistDraft, showToast, submitted, task.assessmentSessionId]);
+  }, [autosaveWindow, isPhotoQueueBusy, persistDraft, photoActivity, showToast, submitted, task.assessmentSessionId]);
 
   const startAttempt = () => {
     if (!task.assessmentSessionId ||
@@ -630,7 +731,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       if (!mountedRef.current) return;
       if (!res.success) {
         if (res.errorCode === 'EXAM_DEVICE_CHANGED' && deviceId) {
-          setIntegrityWarning(`Hubungi proktor untuk pindah perangkat. Kode perangkat: ${deviceId}`);
+          setIntegrityWarning(`Tunjukkan kode perangkat ini kepada Proktor: ${deviceId}. Jika pemindahan gagal atau tidak tersedia, hubungi Super Admin melalui Panitia.`);
         }
         showToast(res.error ?? 'Gagal membuka asesmen.');
         return;
@@ -660,6 +761,8 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       setExamExpired(false);
       setExamStatusMessage('');
       setCurrentIndex(0);
+      setReviewing(false);
+      setConfirmSubmit(false);
       setSaveState(selected.source === 'device' ? 'device' : 'server');
       setAnswers(selectedAnswers);
       setRevision(selected.revision);
@@ -699,19 +802,20 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
   const submitAnswers = useCallback(
     (options?: { skipConfirm?: boolean }) => {
       if (!task.assessmentSessionId || !attempt || submitted) return;
-      const unanswered = attempt.questions.length - answeredCount;
-      if (!options?.skipConfirm && unanswered > 0) {
-        setConfirmUnanswered(true);
+      if (!options?.skipConfirm) {
+        setConfirmSubmit(true);
         return;
       }
       startTransition(async () => {
         await submitCurrentAnswers();
       });
     },
-    [answeredCount, attempt, submitCurrentAnswers, submitted, task.assessmentSessionId],
+    [attempt, submitCurrentAnswers, submitted, task.assessmentSessionId],
   );
 
   const handleExpire = useCallback(() => {
+    setConfirmSubmit(false);
+    setReviewing(false);
     if (attemptRef.current?.deadlineAt) {
       examExpiredRef.current = true;
       autosaveWindow.cancel();
@@ -861,21 +965,27 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     };
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
-        void sendRuntimeSignal('visibility_hidden', { keepalive: true, throttleMs: 2_000 });
-      } else if (!isStandaloneDisplay() && !document.fullscreenElement) {
+        const send = () => { void sendRuntimeSignal('visibility_hidden', { keepalive: true, throttleMs: 2_000 }); };
+        if (!photoActivity.hold('visibility_hidden', send)) send();
+      } else if (!photoActivity.inProgress() && !isStandaloneDisplay() && !document.fullscreenElement) {
         setIntegrityWarning('Anda meninggalkan layar ujian. Kejadian ini dicatat untuk guru.');
       }
     };
     const onFullscreen = () => {
       if (!isStandaloneDisplay() && !document.fullscreenElement) {
-        void sendRuntimeSignal('fullscreen_exit', { throttleMs: 2_000 });
-        setIntegrityWarning('Mode layar penuh berakhir. Kembali ke mode ujian untuk melanjutkan.');
+        const send = () => { void sendRuntimeSignal('fullscreen_exit', { throttleMs: 2_000 }); };
+        if (!photoActivity.hold('fullscreen_exit', send)) {
+          send();
+          setIntegrityWarning('Mode layar penuh berakhir. Kembali ke mode ujian untuk melanjutkan.');
+        }
       }
     };
     const onBlur = () => {
-      void sendRuntimeSignal('window_blur', { throttleMs: 3_000 });
+      const send = () => { void sendRuntimeSignal('window_blur', { throttleMs: 3_000 }); };
+      if (!photoActivity.hold('window_blur', send)) send();
     };
     const onPageHide = () => {
+      photoActivity.close();
       void sendRuntimeSignal('pagehide', { keepalive: true, throttleMs: 2_000 });
     };
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -907,6 +1017,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     submitted,
     submitCurrentAnswers,
     syncDraftToServer,
+    photoActivity,
   ]);
 
   useEffect(() => {
@@ -1073,17 +1184,20 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
                 <CheckCircle className="mt-0.5 h-5 w-5 text-emerald-500" />
               )}
               <div>
-                <div
-                  className={`text-sm font-bold ${
-                    lateDecisionAttention ? 'text-amber-500' : 'text-emerald-500'
-                  }`}
-                >
+                <div className="text-sm font-bold text-[var(--text)]">
                   {lateRejected
                     ? 'Jawaban terlambat ditolak'
                     : lateReviewRequired
                       ? 'Menunggu keputusan guru'
                       : 'Jawaban sudah terkirim'}
                 </div>
+                {!lateDecisionAttention && (
+                  <p className="mt-1 text-sm text-[var(--text)]">
+                    Selamat, Anda telah menyelesaikan asesmen. Terima kasih sudah mengerjakan.
+                    Semoga mendapat hasil terbaik.{' '}
+                    <PartyPopper aria-hidden="true" className="inline h-4 w-4 align-text-bottom" />
+                  </p>
+                )}
                 <p className="mt-1 text-sm text-[var(--muted)]">
                   {lateRejected
                     ? 'Guru telah menolak jawaban yang masuk setelah batas waktu. Hubungi guru bila Anda memerlukan penjelasan.'
@@ -1195,6 +1309,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
                   deadlineAt={attempt.deadlineAt}
                   serverNow={attempt.serverNow}
                   onExpire={handleExpire}
+                  onTick={trackReviewTime}
                 />
               )}
             </div>
@@ -1207,7 +1322,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
                   <button
                     key={question.id}
                     type="button"
-                    onClick={() => setCurrentIndex(index)}
+                    onClick={() => goToQuestion(index)}
                     className={`h-9 w-9 rounded-lg border text-xs font-extrabold ${
                       active
                         ? 'border-emerald-500 bg-emerald-500 text-white'
@@ -1223,25 +1338,64 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
               })}
             </div>
 
-            {currentQuestion && (
+            {pendingPhotoIndex >= 0 && !pendingSubmit && !examExpired && (
+              <div className="flex flex-wrap items-center gap-x-3 rounded-lg border border-[var(--border)] px-3 text-sm">
+                <p role="status" className="text-[var(--text)]">Foto Soal {pendingPhotoIndex + 1} masih dalam antrean.</p>
+                <button type="button" className="min-h-11 font-semibold text-[var(--text)] underline"
+                  onClick={() => goToQuestion(pendingPhotoIndex)}>Buka Soal {pendingPhotoIndex + 1}</button>
+              </div>
+            )}
+
+            {reviewing && (
+              <section className="space-y-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
+                <h3 ref={reviewHeading} tabIndex={-1} className="text-base font-bold">Tinjau jawaban</h3>
+                <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                  {[
+                    ['Terjawab', `${answeredCount} dari ${totalQuestions}`],
+                    ['Belum terjawab', emptyQuestions.length],
+                    ['Sisa waktu', attempt.durationMinutes ? reviewTime : 'Tanpa batas waktu'],
+                    ['Penyimpanan', syncSummary],
+                  ].map(([label, value]) => <div key={label} className="min-w-0">
+                    <dt className="text-[var(--muted)]">{label}</dt>
+                    <dd className="font-semibold tabular-nums">{value}</dd>
+                  </div>)}
+                </dl>
+                {answeredCount * 5 < totalQuestions * 4 && (
+                  <p className="text-sm text-[var(--muted)]">Jawaban terisi di bawah 80%. Periksa soal kosong jika waktu masih tersedia.</p>
+                )}
+                {emptyQuestions.length > 0 && (
+                  <div className="flex flex-wrap gap-2" aria-label="Soal belum terjawab">
+                    {emptyQuestions.map((index) => <button key={index} type="button" onClick={() => goToQuestion(index)}
+                      className="min-h-11 rounded-lg border border-[var(--border)] px-3 text-sm font-semibold">Soal {index + 1}</button>)}
+                  </div>
+                )}
+                <button type="button" onClick={() => goToQuestion(currentIndex)} className="min-h-11 font-semibold underline">Kembali ke soal</button>
+              </section>
+            )}
+            {!reviewing && currentQuestion && (
               <article
                 key={currentQuestion.id}
                 className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4"
               >
-                <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-emerald-500">
+                <div ref={questionHeading} tabIndex={-1} className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-emerald-500">
                   Soal {currentIndex + 1} dari {totalQuestions} - {currentQuestion.points} poin
                 </div>
                 <QuestionContent body={currentQuestion.body} sessionId={task.assessmentSessionId} />
                 <QuestionAnswerInput
                   question={currentQuestion}
+                  sessionId={task.assessmentSessionId}
                   answer={answers[currentQuestion.id]}
                   setAnswer={setAnswer}
-                  locked={pendingSubmit || revisionConflict}
+                  locked={pendingSubmit || revisionConflict || examExpired}
+                  photoContext={task.assessmentSessionId && attempt && currentQuestion.type === 'essay'
+                    ? { sessionId: task.assessmentSessionId, queue: photoQueue, applyPhoto,
+                        startPicker: startPhotoPicker, finishPicker: finishPhotoPicker }
+                    : undefined}
                 />
               </article>
             )}
 
-            <div className="grid grid-cols-2 gap-2">
+            {!reviewing && <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setCurrentIndex((index) => Math.max(0, index - 1))}
@@ -1252,13 +1406,13 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
               </button>
               <button
                 type="button"
-                onClick={() => setCurrentIndex((index) => Math.min(totalQuestions - 1, index + 1))}
+                onClick={() => setCurrentIndex(currentIndex + 1)}
                 disabled={currentIndex >= totalQuestions - 1}
                 className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-bold text-[var(--text)] disabled:opacity-50"
               >
                 Berikutnya
               </button>
-            </div>
+            </div>}
 
             <div className="sticky bottom-0 grid gap-2 border-t border-[var(--border)] bg-[var(--bg2)] pt-3 sm:grid-cols-2">
               <button
@@ -1272,16 +1426,17 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
               </button>
               <button
                 type="button"
-                onClick={() => submitAnswers()}
-                disabled={busy || pendingSubmit || revisionConflict}
+                ref={submitTrigger}
+                onClick={() => reviewing ? submitAnswers() : openReview()}
+                disabled={busy || pendingSubmit || revisionConflict || examExpired}
                 className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-60"
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Kirim jawaban
+                {reviewing ? 'Kirim jawaban' : 'Tinjau jawaban'}
               </button>
             </div>
 
-            {answeredCount < totalQuestions && (
+            {!reviewing && answeredCount < totalQuestions && (
               <div className="flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-xs font-semibold text-amber-500">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 Masih ada soal yang belum terjawab. Sistem tetap mengizinkan simpan sementara; kirim
@@ -1304,15 +1459,17 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       </Dialog.Content>
       </Dialog.Portal>
       <ConfirmDialog
-        open={confirmUnanswered}
-        onOpenChange={setConfirmUnanswered}
-        title="Kirim jawaban belum lengkap?"
-        description={`${Math.max(0, totalQuestions - answeredCount)} soal belum terjawab. Jawaban akan dikirim apa adanya dan tidak dapat dilengkapi setelah terkirim.`}
-        confirmLabel="Tetap kirim"
+        open={confirmSubmit && !examExpired && !submitted}
+        onOpenChange={setConfirmSubmit}
+        title="Kirim jawaban ujian?"
+        description={`${answeredCount} dari ${totalQuestions} soal terjawab · ${emptyQuestions.length} kosong${attempt?.durationMinutes ? ` · sisa ${reviewTime}` : ''} · ${syncSummary}. Jawaban yang terkirim tidak dapat diubah.`}
+        confirmLabel="Kirim jawaban"
+        cancelLabel="Kembali periksa"
+        restoreFocus={() => { if (!examExpiredRef.current) submitTrigger.current?.focus(); }}
         variant="warning"
         onConfirm={() => {
-          setConfirmUnanswered(false);
-          submitAnswers({ skipConfirm: true });
+          setConfirmSubmit(false);
+          if (!examExpiredRef.current) submitAnswers({ skipConfirm: true });
           return true;
         }}
       />
