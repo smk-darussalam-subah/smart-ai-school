@@ -15,6 +15,7 @@ interface ConfirmDialogProps {
   error?: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  restoreFocus?: () => void;
   variant?: 'danger' | 'warning' | 'info';
   onConfirm: () => void | boolean | Promise<void | boolean>;
 }
@@ -42,6 +43,7 @@ export function ConfirmDialog({
   error,
   confirmLabel = 'Konfirmasi',
   cancelLabel = 'Batal',
+  restoreFocus,
   variant = 'warning',
   onConfirm,
 }: ConfirmDialogProps) {
@@ -62,7 +64,10 @@ export function ConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o: boolean) => { if (!loading) onOpenChange(o); }}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" onCloseAutoFocus={restoreFocus ? (event) => {
+        event.preventDefault();
+        restoreFocus();
+      } : undefined}>
         <DialogHeader>
           <div className={`mb-2 grid h-11 w-11 place-items-center rounded-full ${styles.icon}`}>
             <AlertTriangle className="h-5 w-5" />

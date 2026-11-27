@@ -5,7 +5,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { ZodPipe } from '../common/pipes/zod-validation.pipe';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { ExamCancelSchema, ExamDecision, ExamDecisionSchema, ExamIncidentInput, ExamIncidentSchema, ExamListSchema,
-  ExamPlan, ExamPlanSchema, TransferDeviceSchema, type TransferDeviceInput } from './exam-contract';
+  ExamPlan, ExamPlanSchema, RescheduleExam, RescheduleExamSchema, PublishExamNowSchema, PublishRequestNowSchema, TransferDeviceSchema, type TransferDeviceInput } from './exam-contract';
 import { ExamScheduleService } from './exam-schedule.service';
 import { programStaffRoles } from './assessment-program-authority';
 import { ScheduleRequestSchema, PublishScheduleRequestSchema, ScheduleRequestPackagesQuerySchema, type ScheduleRequest } from './assessment-program-contract';
@@ -44,6 +44,14 @@ export class ExamScheduleController {
   publishRequest(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(PublishScheduleRequestSchema)) input: { revision: number },
     @CurrentUser() user: AuthUser) { return this.exams.publishRequest(id, input.revision, user); }
 
+  @Post('requests/:id/publish-now')
+  @Roles('SUPER_ADMIN', 'WAKA_KURIKULUM')
+  @RequirePermission('academic.schedule.edit')
+  publishRequestNow(@Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(PublishRequestNowSchema)) body: { revision: number; reason: string }, @CurrentUser() user: AuthUser) {
+    return this.exams.publishRequest(id, body.revision, user, body.reason);
+  }
+
   @Get('options')
   @Roles('SUPER_ADMIN', 'WAKA_KURIKULUM', 'GURU')
   options(@CurrentUser() user: AuthUser) {
@@ -56,6 +64,24 @@ export class ExamScheduleController {
   freeze(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.exams.freezePackage(id, user);
   }
+
+  @Get(':id/details')
+  @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU', 'TATA_USAHA', 'SISWA')
+  details(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.exams.details(id, user);
+  }
+
+  @Put(':id/reschedule')
+  @Roles('SUPER_ADMIN', 'WAKA_KURIKULUM')
+  @RequirePermission('academic.schedule.edit')
+  reschedule(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(RescheduleExamSchema)) body: RescheduleExam,
+    @CurrentUser() user: AuthUser) { return this.exams.reschedule(id, body, user); }
+
+  @Post(':id/close-admission')
+  @Roles('SUPER_ADMIN', 'WAKA_KURIKULUM')
+  @RequirePermission('academic.schedule.edit')
+  closeAdmission(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(ExamCancelSchema)) body: { reason: string },
+    @CurrentUser() user: AuthUser) { return this.exams.closeAdmission(id, body.reason, user); }
 
   @Get(':id/monitor')
   @Roles('SUPER_ADMIN', 'KEPALA_SEKOLAH', 'WAKA_KURIKULUM', 'GURU', 'TATA_USAHA')
@@ -88,6 +114,14 @@ export class ExamScheduleController {
   @RequirePermission('academic.schedule.edit')
   publish(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.exams.publish(id, user);
+  }
+
+  @Post(':id/publish-now')
+  @Roles('SUPER_ADMIN', 'WAKA_KURIKULUM')
+  @RequirePermission('academic.schedule.edit')
+  publishNow(@Param('id', ParseUUIDPipe) id: string,
+    @Body(ZodPipe(PublishExamNowSchema)) body: { version: string; reason: string }, @CurrentUser() user: AuthUser) {
+    return this.exams.publish(id, user, undefined, body);
   }
 
   @Post(':id/incidents')
