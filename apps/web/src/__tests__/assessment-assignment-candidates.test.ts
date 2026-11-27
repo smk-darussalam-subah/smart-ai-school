@@ -1,6 +1,7 @@
 import { buildAssignmentSessionCandidates } from '../app/dashboard/akademik/_components/assessment-assignment-candidates';
 import type { AssessmentTeachingAssignment } from '../app/dashboard/akademik/_components/assessment-assignment-candidates';
 import type { LmsModuleItem, TodayClass } from '../app/dashboard/akademik/_components/guru-types';
+import { lessonLinks } from '../lib/academic-scheduling';
 
 const ACTIVE_YEAR = '2026/2027';
 const ACTIVE_SEMESTER = 1;
@@ -38,12 +39,10 @@ function module(overrides: Partial<LmsModuleItem> = {}): LmsModuleItem {
 function build(
   assignments: AssessmentTeachingAssignment[],
   lmsModules: LmsModuleItem[],
-  todayClasses: TodayClass[] = [],
 ): TodayClass[] {
   return buildAssignmentSessionCandidates({
     assignments,
     lmsModules,
-    todayClasses,
     subject: 'all',
     classId: 'all',
     academicYear: ACTIVE_YEAR,
@@ -77,28 +76,26 @@ describe('assignment-based assessment session candidates', () => {
     expect(build([assignment()], [module({ semester: 2 })])).toEqual([]);
   });
 
-  it('only exposes active-year assignments and avoids duplicating a scheduled context', () => {
-    const scheduled: TodayClass = {
-      classId: 'class-1',
-      className: 'X TKJ 1',
-      subject: 'TJKT',
-      room: 'Lab 1',
-      jpStart: 1,
-      jpEnd: 2,
-      startLabel: '07.00',
-      isNow: false,
-      moduleId: 'module-1',
+  it('keeps explicit choices when the KBM shortcut links only a published module', () => {
+    const draft = module({ teacherId: 'teacher-1' });
+    const published = module({ id: 'published-1', teacherId: 'teacher-1', status: 'published' });
+    const period = { academicYear: ACTIVE_YEAR, semester: ACTIVE_SEMESTER };
+    const schedule = {
+      id: 'schedule-1', classId: 'class-1', academicYear: ACTIVE_YEAR, semester: ACTIVE_SEMESTER,
+      dayOfWeek: 4, jpStart: 1, jpEnd: 2, class: { id: 'class-1', name: 'X TKJ 1' },
+      teachingAssignment: { id: 'assignment-1', subject: 'TJKT', teacher: { id: 'teacher-1', user: { fullName: 'Guru sintetis' } } },
     };
 
-    expect(build([assignment({ academicYear: '2025/2026' })], [module()])).toEqual([]);
-    expect(build([assignment()], [module()], [scheduled])).toEqual([]);
+    expect(lessonLinks(schedule, period, [draft], [])).toMatchObject({ moduleId: undefined });
+    expect(lessonLinks(schedule, period, [draft, published], [])).toMatchObject({ moduleId: 'published-1' });
+    expect(build([assignment()], [draft, published]).map(({ moduleId }) => moduleId)).toEqual(['module-1', 'published-1']);
+    expect(build([assignment({ academicYear: '2025/2026' })], [draft])).toEqual([]);
   });
 
   it('respects the active subject and class filters', () => {
     const input = {
       assignments: [assignment()],
       lmsModules: [module()],
-      todayClasses: [],
       academicYear: ACTIVE_YEAR,
       semester: ACTIVE_SEMESTER,
     };

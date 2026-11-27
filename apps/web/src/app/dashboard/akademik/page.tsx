@@ -527,6 +527,7 @@ export default async function AkademikPage({
         activities={activitiesRes?.data ?? []}
         rpp={rppRes?.data ?? []}
         lmsModules={lmsRes?.data ?? []}
+        lmsReadUnavailable={!lmsRes}
         todayClasses={todayClasses}
         assessmentSessions={assessmentRes.data}
         assessmentSessionTotal={assessmentRes.total}
@@ -1067,6 +1068,8 @@ export default async function AkademikPage({
         activities={ownActivities}
         rpp={ownRpp}
         lmsModules={ownLmsModules}
+        lmsReadUnavailable={!ownAssignmentsRes}
+        unavailableLmsAssignmentIds={ownAssignments.filter((_, index) => lmsResponses[index] === null).map(({ id }) => id)}
         todayClasses={ownTodayClasses}
         assessmentSessions={ownAssessmentSessions.slice(0, ASSESSMENT_SESSION_PAGE_SIZE)}
         assessmentSessionTotal={ownAssessmentSessions.length}

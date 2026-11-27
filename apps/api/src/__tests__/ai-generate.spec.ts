@@ -227,6 +227,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
         options: args.data.options ?? null,
         answer: args.data.answer ?? null,
         rubric: args.data.rubric ?? null,
+        allowAnswerPhotos: args.data.allowAnswerPhotos ?? false,
         aiItemKey: args.data.aiItemKey ?? null,
         tpRefs: args.data.tpRefs ?? [],
         cognitiveLevel: args.data.cognitiveLevel ?? null,
@@ -1002,6 +1003,7 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
       difficulty: trueFalseItem.question.difficulty,
       tags: trueFalseItem.question.tags,
       rubric: null,
+      allowAnswerPhotos: false,
       aiItemKey: trueFalseItem.itemKey,
       tpRefs: ['TP 1'],
       cognitiveLevel: 'C2',
@@ -1030,6 +1032,62 @@ describe('AiGenerateService - AI-0A Modul Ajar containment', () => {
         data: { status: 'accepted' },
       }),
     );
+  });
+
+  it('replays accepted essay photos without a duplicate and rejects changed photo permission', async () => {
+    const generationId = '33333333-3333-4333-8333-333333333333';
+    const item = {
+      itemKey: AI_QUESTION_ITEM.itemKey,
+      question: {
+        subject: 'Pemrograman Web',
+        type: 'essay' as const,
+        body: 'Jelaskan cara membuat tautan dan sertakan bukti.',
+        difficulty: 'easy' as const,
+        tags: ['html'],
+        allowAnswerPhotos: true,
+        rubric: [{ id: 'r1', name: 'Ketepatan', description: 'Tautan berfungsi', weight: 100, maxScore: 4 }],
+      },
+      tpRefs: ['TP 1'],
+      cognitiveLevel: 'C2' as const,
+    };
+    aiGenerationFindFirst.mockResolvedValue({
+      id: generationId,
+      teacherId: 'teacher-1',
+      output: JSON.stringify({ items: [{ ...item, rationale: 'Mengukur penerapan.', warnings: [] }] }),
+      status: 'drafted',
+      contextSnapshot: {
+        subject: 'Pemrograman Web',
+        tpOptions: [{ ref: 'TP 1', text: 'Mengidentifikasi tag HTML dasar.' }],
+      },
+      sourceType: 'module',
+      sourceId: MODULE_ID,
+    });
+    lmsModuleFindFirst.mockResolvedValue(ownedModule);
+    const intent = { idempotencyKey: 'accept-essay-photo', items: [item] };
+
+    const first = await service.acceptQuestionDrafts(generationId, intent, GURU);
+    expect(first.acceptedCount).toBe(1);
+    expect(questionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ allowAnswerPhotos: true }),
+        select: expect.objectContaining({ allowAnswerPhotos: true }),
+      }),
+    );
+
+    const [created] = questionCreate.mock.results;
+    if (created?.type !== 'return') throw new Error('Expected one stored essay record');
+    const stored = await created.value;
+    questionFindMany.mockResolvedValue([stored]);
+    await expect(service.acceptQuestionDrafts(generationId, intent, GURU)).resolves.toEqual(first);
+    expect(questionFindMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ select: expect.objectContaining({ allowAnswerPhotos: true }) }),
+    );
+
+    questionFindMany.mockResolvedValue([{ ...stored, allowAnswerPhotos: false }]);
+    await expect(service.acceptQuestionDrafts(generationId, intent, GURU)).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'AI_ACCEPTED_ITEM_CHANGED' }),
+    });
+    expect(questionCreate).toHaveBeenCalledTimes(1);
   });
 
   it('rejects accept retry when the same idempotency key has a different payload', async () => {

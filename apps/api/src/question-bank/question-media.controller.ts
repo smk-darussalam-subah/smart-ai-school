@@ -13,7 +13,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { OPERATIONAL_TEACHER_WHERE } from '../common/helpers/operational-teacher';
 import { RequirePermission } from '../permissions/decorators/require-permission.decorator';
 import { PrismaService } from '../prisma/prisma.service';
-import { listQuestionMediaIds, validateQuestionMedia } from './question-media';
+import { questionMediaIds, validateQuestionMedia } from './question-media';
 
 @Controller('question-media')
 export class QuestionMediaController {
@@ -50,7 +50,7 @@ export class QuestionMediaController {
   ) {
     const session = sessionId ? await this.assessments.findOne(sessionId, user, true) : null;
     if (sessionId && (!session || !parseSnapshotQuestions(session.questions).some(
-      (question) => listQuestionMediaIds(question.body).includes(id),
+      (question) => questionMediaIds(question).includes(id.toLowerCase()),
     ))) throw new NotFoundException('Gambar soal tidak tersedia.');
     const media = await this.db.questionMedia.findFirst({
       where: {

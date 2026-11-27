@@ -10,6 +10,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -17,9 +18,14 @@ import {
   Patch,
   Post,
   Query,
+  Put,
+  Res,
+  StreamableFile,
   Sse,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import type { FastifyReply } from 'fastify';
 import { Observable } from 'rxjs';
 import { AuthUser } from '@smk/auth';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -156,6 +162,39 @@ export class AssessmentController {
   startResponse(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser,
     @Body('deviceId') deviceId?: string) {
     return this.service.startResponse(id, user, deviceId);
+  }
+
+
+  @Roles('SISWA')
+  @RequirePermission('lms.progress.manage')
+  @Throttle({ default: { limit: 12, ttl: 60_000 } })
+  @Put(':id/answer-photos/:questionId/:photoId')
+  uploadAnswerPhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('questionId', ParseUUIDPipe) questionId: string,
+    @Param('photoId', ParseUUIDPipe) photoId: string,
+    @Query('deviceId', new ParseUUIDPipe({ optional: true })) deviceId: string | undefined,
+    @Body() body: unknown,
+    @Headers('content-type') mime: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.uploadAnswerPhoto(id, questionId, photoId.toLowerCase(), deviceId, body, mime, user);
+  }
+
+  @Roles('GURU', 'SISWA', 'KEPALA_SEKOLAH', 'SUPER_ADMIN')
+  @RequirePermission('lms.read')
+  @Get(':id/answer-photos/:photoId')
+  async readAnswerPhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('photoId', ParseUUIDPipe) photoId: string,
+    @CurrentUser() user: AuthUser,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const photo = await this.service.readAnswerPhoto(id, photoId.toLowerCase(), user);
+    void reply.header('Content-Type', photo.contentType);
+    void reply.header('Cache-Control', 'private, no-store');
+    void reply.header('X-Content-Type-Options', 'nosniff');
+    return new StreamableFile(photo.bytes);
   }
 
   // U2 Wave 2: GURU menilai essay dengan rubrik (per-criteria weighted scoring)

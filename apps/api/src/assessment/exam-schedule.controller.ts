@@ -7,6 +7,8 @@ import { RequirePermission } from '../permissions/decorators/require-permission.
 import { ExamCancelSchema, ExamDecision, ExamDecisionSchema, ExamIncidentInput, ExamIncidentSchema, ExamListSchema,
   ExamPlan, ExamPlanSchema, TransferDeviceSchema, type TransferDeviceInput } from './exam-contract';
 import { ExamScheduleService } from './exam-schedule.service';
+import { programStaffRoles } from './assessment-program-authority';
+import { ScheduleRequestSchema, PublishScheduleRequestSchema, ScheduleRequestPackagesQuerySchema, type ScheduleRequest } from './assessment-program-contract';
 
 @Controller('exam-schedule')
 export class ExamScheduleController {
@@ -19,6 +21,28 @@ export class ExamScheduleController {
     if (!parsed.success) throw new BadRequestException('Tanggal ujian atau batas halaman belum valid.');
     return this.exams.list(parsed.data, user);
   }
+
+  @Get('requests')
+  @Roles(...programStaffRoles)
+  listRequests(@CurrentUser() user: AuthUser) { return this.exams.listRequests(user); }
+
+  @Get('requests/:id/packages')
+  @Roles(...programStaffRoles)
+  requestPackages(@Param('id', ParseUUIDPipe) id: string, @Query() input: unknown, @CurrentUser() user: AuthUser) {
+    const parsed = ScheduleRequestPackagesQuerySchema.safeParse(input);
+    if (!parsed.success) throw new BadRequestException('Halaman paket soal tidak valid.');
+    return this.exams.requestPackages(id, user, parsed.data.after);
+  }
+
+  @Put('requests/:id')
+  @Roles(...programStaffRoles)
+  saveRequest(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(ScheduleRequestSchema)) input: ScheduleRequest,
+    @CurrentUser() user: AuthUser) { return this.exams.saveRequest(id, input, user); }
+
+  @Post('requests/:id/publish')
+  @Roles(...programStaffRoles)
+  publishRequest(@Param('id', ParseUUIDPipe) id: string, @Body(ZodPipe(PublishScheduleRequestSchema)) input: { revision: number },
+    @CurrentUser() user: AuthUser) { return this.exams.publishRequest(id, input.revision, user); }
 
   @Get('options')
   @Roles('SUPER_ADMIN', 'WAKA_KURIKULUM', 'GURU')

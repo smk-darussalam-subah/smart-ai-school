@@ -40,7 +40,7 @@ interface EncryptedRecord {
   id: string;
   responseId: string;
   revision: number;
-  kind: 'draft' | 'signal';
+  kind: 'draft' | 'signal' | 'photo';
   mutationId?: string;
   pendingSubmit?: boolean;
   submitRequestedAt?: string | null;
@@ -315,6 +315,71 @@ async function decryptPayload<T>(database: IDBDatabase, record: EncryptedRecord)
     base64ToBytes(record.ciphertext),
   );
   return JSON.parse(new TextDecoder().decode(plaintext)) as T;
+}
+
+
+export interface AssessmentPendingPhoto {
+  id: string;
+  responseId: string;
+  questionId: string;
+  jpeg: string;
+}
+
+export async function queueAssessmentPhoto(responseId: string, questionId: string, id: string, jpeg: Blob) {
+  let database: IDBDatabase | null = null;
+  try {
+    const payload: AssessmentPendingPhoto = {
+      id, responseId, questionId, jpeg: bytesToBase64(new Uint8Array(await jpeg.arrayBuffer())),
+    };
+    database = await openDatabase();
+    const encrypted = await encryptPayload(database, 'photo:' + id, responseId, 0, 'photo', payload);
+    const transaction = database.transaction(RECORD_STORE, 'readwrite');
+    const completed = transactionDone(transaction);
+    transaction.objectStore(RECORD_STORE).put(encrypted);
+    await completed;
+    return payload;
+  } catch {
+    return null;
+  } finally {
+    database?.close();
+  }
+}
+
+export async function listAssessmentPhotos(responseId: string): Promise<AssessmentPendingPhoto[] | null> {
+  let database: IDBDatabase | null = null;
+  try {
+    database = await openDatabase();
+    const transaction = database.transaction(RECORD_STORE, 'readonly');
+    const records = (await requestResult(
+      transaction.objectStore(RECORD_STORE).index('responseId').getAll(responseId),
+    )) as EncryptedRecord[];
+    return await Promise.all(records.filter((record) => record.kind === 'photo')
+      .map((record) => decryptPayload<AssessmentPendingPhoto>(database!, record)));
+  } catch {
+    return null;
+  } finally {
+    database?.close();
+  }
+}
+
+export function assessmentPhotoBlob(photo: AssessmentPendingPhoto): Blob {
+  return new Blob([base64ToBytes(photo.jpeg)], { type: 'image/jpeg' });
+}
+
+export async function deleteAssessmentPhoto(id: string): Promise<boolean> {
+  let database: IDBDatabase | null = null;
+  try {
+    database = await openDatabase();
+    const transaction = database.transaction(RECORD_STORE, 'readwrite');
+    const completed = transactionDone(transaction);
+    transaction.objectStore(RECORD_STORE).delete('photo:' + id);
+    await completed;
+    return true;
+  } catch {
+    return false;
+  } finally {
+    database?.close();
+  }
 }
 
 export async function saveAssessmentDraft(

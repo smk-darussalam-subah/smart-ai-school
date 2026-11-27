@@ -5,13 +5,15 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { ExamIncidentActions } from './ExamIncidentActions';
+import { AssessmentProgramsPanel } from './AssessmentProgramsPanel';
 import { ExamOperationsPanel, RoomPlacementFields, type ExamAgendaPlacement, type ExamRoomAssignment } from './ExamOperationsPanel';
 
 type Exam = {
   sessionId: string; room: string; opensAt: string; latestEntryAt: string; closesAt: string;
   publishedAt: string | null; cancelledAt: string | null; makeupOfSessionId: string | null; agendaId?: string | null;
   package: { title: string; version: number; subject: string };
-  session: { title: string; status: string; durationMinutes: number; academicYear: string; semester: number; class: { name: string } | null };
+  session: { title: string; status: string; durationMinutes: number; academicYear: string; semester: number; class: { name: string } | null;
+    gradeTarget?: string | null; program?: { kind: { name: string }; _count: { classes: number } } | null };
   _count: { participants: number; incidents: number }; counts?: { working: number; done: number };
 };
 type Person = { studentId: string; extraMinutes: number; student: { user: { fullName: string } };
@@ -268,7 +270,8 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
       </header>
       {failure && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-900">{failure}</p>}
       {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-900">{notice}</p>}
-      {!student && <ExamOperationsPanel day={date} canPlan={canPlan} onPlacement={setAgendaPlacement} />}
+      <AssessmentProgramsPanel student={student} canAuthor={canAuthor} onPublished={() => { void reload(); }} />
+      {!student && <ExamOperationsPanel day={date} canPlan={canPlan} onPlacement={setAgendaPlacement} /> }
       {panelOpen && (
         <section className={panel}>
           <h2 className="text-lg font-bold">Siapkan ujian</h2>
@@ -369,7 +372,9 @@ export function ExamWorkspace({ student, canAuthor, canPlan, day }: {
           return <article key={exam.sessionId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--staff-line,#cbd5e1)] p-3 sm:p-4">
             <div className="min-w-0 space-y-1"><h2 className="font-bold">{exam.session.title}</h2>
               <p className="text-sm text-[var(--staff-muted,#475569)]"><CalendarDays className="mr-1 inline h-4 w-4" />
-                {time.format(new Date(exam.opensAt))}–{time.format(new Date(exam.closesAt))} WIB · {exam.session.class?.name ?? 'Kelas'} · {exam.room}</p>
+                {time.format(new Date(exam.opensAt))}–{time.format(new Date(exam.closesAt))} WIB · {exam.session.class?.name ?? (exam.session.program ? exam.session.program._count.classes + ' rombel' : 'Kelas')} · {exam.room}</p>
+              {exam.session.program && <p className={'text-sm ' + muted}>{exam.session.program.kind.name} · {exam.session.gradeTarget
+                ? exam.session.gradeTarget.toUpperCase() + ' masuk penilaian mapel' : 'Tidak masuk rapor'}</p>}
               <p className="text-sm"><strong>{state}</strong>{exam.makeupOfSessionId ? ' · Susulan' : ''}
                 {student ? ` · Batas masuk ${time.format(new Date(exam.latestEntryAt))} WIB` :
                   ` · ${exam._count.participants} peserta · ${exam.counts?.working ?? 0} mengerjakan · ${exam.counts?.done ?? 0} terkirim`}</p>

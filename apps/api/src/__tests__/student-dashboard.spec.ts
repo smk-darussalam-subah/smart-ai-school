@@ -122,7 +122,7 @@ describe('StudentDashboardService remedial visibility', () => {
     });
   });
 
-  it('membatasi remedial assignment ke peserta remedial yang terikat ke siswa', async () => {
+  it('membatasi program sekolah dan remedial ke peserta yang terikat ke siswa', async () => {
     const assessmentFindMany = jest.fn().mockResolvedValue([]);
     const prisma = {
       user: { findUnique: jest.fn().mockResolvedValue({ id: 'user-siswa' }) },
@@ -151,6 +151,7 @@ describe('StudentDashboardService remedial visibility', () => {
         where: expect.objectContaining({
           OR: expect.arrayContaining([
             expect.objectContaining({ purpose: 'regular', classId: 'class-1' }),
+            { purpose: 'regular', program: { isNot: null }, examSchedule: { isNot: null } },
             expect.objectContaining({
               purpose: 'remedial',
               remedialParticipants: {
@@ -158,6 +159,9 @@ describe('StudentDashboardService remedial visibility', () => {
               },
             }),
           ]),
+          AND: [{ OR: [{ examSchedule: { is: null } }, { examSchedule: { is: {
+            publishedAt: { not: null }, cancelledAt: null, participants: { some: { studentId: 'student-1' } },
+          } } }] }],
         }),
         select: expect.not.objectContaining({ questions: true }),
       }),
