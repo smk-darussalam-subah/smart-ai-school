@@ -1184,11 +1184,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
                 <CheckCircle className="mt-0.5 h-5 w-5 text-emerald-500" />
               )}
               <div>
-                <div
-                  className={`text-sm font-bold ${
-                    lateDecisionAttention ? 'text-amber-800 dark:text-amber-200' : 'text-emerald-700 dark:text-emerald-300'
-                  }`}
-                >
+                <div className="text-sm font-bold text-[var(--text)]">
                   {lateRejected
                     ? 'Jawaban terlambat ditolak'
                     : lateReviewRequired
@@ -1199,7 +1195,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
                   <p className="mt-1 text-sm text-[var(--text)]">
                     Selamat, Anda telah menyelesaikan asesmen. Terima kasih sudah mengerjakan.
                     Semoga mendapat hasil terbaik.{' '}
-                    <PartyPopper aria-hidden="true" className="inline h-4 w-4 align-text-bottom text-emerald-700 dark:text-emerald-300" />
+                    <PartyPopper aria-hidden="true" className="inline h-4 w-4 align-text-bottom" />
                   </p>
                 )}
                 <p className="mt-1 text-sm text-[var(--muted)]">
