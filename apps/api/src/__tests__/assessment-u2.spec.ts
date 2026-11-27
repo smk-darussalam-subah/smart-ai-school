@@ -1831,6 +1831,28 @@ describe('AssessmentService runtime attempt contract', () => {
     expect(responseFindUnique).toHaveBeenCalledTimes(1);
   });
 
+  it('creates an attempt from the locked snapshot when publication wins before start', async () => {
+    const prePublication = { id: 'session-1', status: 'draft', purpose: 'regular', classId: 'class-1',
+      questions: [mcQuestion], durationMinutes: 30, randomizeOrder: false };
+    const postPublication = { ...prePublication, status: 'active',
+      questions: [trueFalseQuestion], durationMinutes: 60 };
+    const findUnique = jest.fn().mockResolvedValueOnce(prePublication).mockResolvedValueOnce(postPublication);
+    const create = jest.fn().mockResolvedValue({ id: 'response-1', startedAt: new Date(), questionOrder: [TF_ID] });
+    const service = await buildService(studentPrisma({
+      assessmentSession: { findUnique },
+      assessmentResponse: { findUnique: jest.fn().mockResolvedValue(null), create },
+    }));
+
+    const result = await service.startResponse('session-1', SISWA);
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ questionOrder: [TF_ID] }),
+    }));
+    expect(result.questions.map(({ id }) => id)).toEqual([TF_ID]);
+    expect(result.durationMinutes).toBe(60);
+  });
+
   it('sanitizes matching questions without exposing raw pair mapping', async () => {
     const service = await buildService(
       studentPrisma({

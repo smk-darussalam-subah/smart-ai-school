@@ -20,6 +20,7 @@ import {
   FileText,
   Loader2,
   Maximize,
+  PartyPopper,
   Save,
   Send,
   ShieldAlert,
@@ -275,7 +276,25 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
   );
   const [submitRetryAttempt, setSubmitRetryAttempt] = useState(0);
   const [autosaveRetryAttempt, setAutosaveRetryAttempt] = useState(0);
-  const [confirmUnanswered, setConfirmUnanswered] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [reviewSeconds, setReviewSeconds] = useState<number | null>(null);
+  const reviewHeading = useRef<HTMLHeadingElement>(null);
+  const questionHeading = useRef<HTMLDivElement>(null);
+  const returnToQuestion = useRef(false);
+  const remainingSeconds = useRef<number | null>(null);
+  const submitTrigger = useRef<HTMLButtonElement>(null);
+  const trackReviewTime = (seconds: number) => {
+    remainingSeconds.current = seconds;
+    if (reviewing) setReviewSeconds(seconds);
+  };
+  useEffect(() => {
+    if (reviewing) reviewHeading.current?.focus();
+    else if (returnToQuestion.current) {
+      returnToQuestion.current = false;
+      questionHeading.current?.focus();
+    }
+  }, [reviewing]);
   const [busy, startTransition] = useTransition();
   const attemptRef = useRef<AttemptState | null>(null);
   const photoActivity = useMemo(() => new AssessmentPhotoActivity(), []);
@@ -299,6 +318,24 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     [answers, attempt?.questions],
   );
   const totalQuestions = attempt?.questions.length ?? 0;
+  const emptyQuestions = useMemo(() => attempt?.questions.flatMap((question, index) =>
+    answerProgress(question, answers) ? [] : [index]) ?? [], [attempt?.questions, answers]);
+  const reviewTime = reviewSeconds === null ? '—'
+    : `${Math.floor(reviewSeconds / 60)} menit ${reviewSeconds % 60} detik`;
+  const syncSummary = saveState === 'server' ? 'Tersimpan di server'
+    : saveState === 'saving' ? 'Sedang menyimpan'
+      : saveState === 'failed' ? 'Penyimpanan perlu perhatian'
+        : saveState === 'idle' ? 'Belum ada perubahan baru'
+          : 'Menunggu sinkronisasi server';
+  function openReview() {
+    setReviewSeconds(remainingSeconds.current);
+    setReviewing(true);
+  }
+  function goToQuestion(index: number) {
+    if (reviewing) returnToQuestion.current = true;
+    setReviewing(false);
+    setCurrentIndex(index);
+  }
   const currentQuestion = attempt?.questions[currentIndex] ?? null;
   const remedialTerminalStatus =
     task.purpose === 'remedial' &&
@@ -694,7 +731,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       if (!mountedRef.current) return;
       if (!res.success) {
         if (res.errorCode === 'EXAM_DEVICE_CHANGED' && deviceId) {
-          setIntegrityWarning(`Hubungi proktor untuk pindah perangkat. Kode perangkat: ${deviceId}`);
+          setIntegrityWarning(`Tunjukkan kode perangkat ini kepada Proktor: ${deviceId}. Jika pemindahan gagal atau tidak tersedia, hubungi Super Admin melalui Panitia.`);
         }
         showToast(res.error ?? 'Gagal membuka asesmen.');
         return;
@@ -724,6 +761,8 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       setExamExpired(false);
       setExamStatusMessage('');
       setCurrentIndex(0);
+      setReviewing(false);
+      setConfirmSubmit(false);
       setSaveState(selected.source === 'device' ? 'device' : 'server');
       setAnswers(selectedAnswers);
       setRevision(selected.revision);
@@ -763,19 +802,20 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
   const submitAnswers = useCallback(
     (options?: { skipConfirm?: boolean }) => {
       if (!task.assessmentSessionId || !attempt || submitted) return;
-      const unanswered = attempt.questions.length - answeredCount;
-      if (!options?.skipConfirm && unanswered > 0) {
-        setConfirmUnanswered(true);
+      if (!options?.skipConfirm) {
+        setConfirmSubmit(true);
         return;
       }
       startTransition(async () => {
         await submitCurrentAnswers();
       });
     },
-    [answeredCount, attempt, submitCurrentAnswers, submitted, task.assessmentSessionId],
+    [attempt, submitCurrentAnswers, submitted, task.assessmentSessionId],
   );
 
   const handleExpire = useCallback(() => {
+    setConfirmSubmit(false);
+    setReviewing(false);
     if (attemptRef.current?.deadlineAt) {
       examExpiredRef.current = true;
       autosaveWindow.cancel();
@@ -1146,7 +1186,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
               <div>
                 <div
                   className={`text-sm font-bold ${
-                    lateDecisionAttention ? 'text-amber-500' : 'text-emerald-500'
+                    lateDecisionAttention ? 'text-amber-800 dark:text-amber-200' : 'text-emerald-700 dark:text-emerald-300'
                   }`}
                 >
                   {lateRejected
@@ -1155,6 +1195,13 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
                       ? 'Menunggu keputusan guru'
                       : 'Jawaban sudah terkirim'}
                 </div>
+                {!lateDecisionAttention && (
+                  <p className="mt-1 text-sm text-[var(--text)]">
+                    Selamat, Anda telah menyelesaikan asesmen. Terima kasih sudah mengerjakan.
+                    Semoga mendapat hasil terbaik.{' '}
+                    <PartyPopper aria-hidden="true" className="inline h-4 w-4 align-text-bottom text-emerald-700 dark:text-emerald-300" />
+                  </p>
+                )}
                 <p className="mt-1 text-sm text-[var(--muted)]">
                   {lateRejected
                     ? 'Guru telah menolak jawaban yang masuk setelah batas waktu. Hubungi guru bila Anda memerlukan penjelasan.'
@@ -1266,6 +1313,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
                   deadlineAt={attempt.deadlineAt}
                   serverNow={attempt.serverNow}
                   onExpire={handleExpire}
+                  onTick={trackReviewTime}
                 />
               )}
             </div>
@@ -1278,7 +1326,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
                   <button
                     key={question.id}
                     type="button"
-                    onClick={() => setCurrentIndex(index)}
+                    onClick={() => goToQuestion(index)}
                     className={`h-9 w-9 rounded-lg border text-xs font-extrabold ${
                       active
                         ? 'border-emerald-500 bg-emerald-500 text-white'
@@ -1298,16 +1346,42 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
               <div className="flex flex-wrap items-center gap-x-3 rounded-lg border border-[var(--border)] px-3 text-sm">
                 <p role="status" className="text-[var(--text)]">Foto Soal {pendingPhotoIndex + 1} masih dalam antrean.</p>
                 <button type="button" className="min-h-11 font-semibold text-[var(--text)] underline"
-                  onClick={() => setCurrentIndex(pendingPhotoIndex)}>Buka Soal {pendingPhotoIndex + 1}</button>
+                  onClick={() => goToQuestion(pendingPhotoIndex)}>Buka Soal {pendingPhotoIndex + 1}</button>
               </div>
             )}
 
-            {currentQuestion && (
+            {reviewing && (
+              <section className="space-y-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
+                <h3 ref={reviewHeading} tabIndex={-1} className="text-base font-bold">Tinjau jawaban</h3>
+                <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                  {[
+                    ['Terjawab', `${answeredCount} dari ${totalQuestions}`],
+                    ['Belum terjawab', emptyQuestions.length],
+                    ['Sisa waktu', attempt.durationMinutes ? reviewTime : 'Tanpa batas waktu'],
+                    ['Penyimpanan', syncSummary],
+                  ].map(([label, value]) => <div key={label} className="min-w-0">
+                    <dt className="text-[var(--muted)]">{label}</dt>
+                    <dd className="font-semibold tabular-nums">{value}</dd>
+                  </div>)}
+                </dl>
+                {answeredCount * 5 < totalQuestions * 4 && (
+                  <p className="text-sm text-[var(--muted)]">Jawaban terisi di bawah 80%. Periksa soal kosong jika waktu masih tersedia.</p>
+                )}
+                {emptyQuestions.length > 0 && (
+                  <div className="flex flex-wrap gap-2" aria-label="Soal belum terjawab">
+                    {emptyQuestions.map((index) => <button key={index} type="button" onClick={() => goToQuestion(index)}
+                      className="min-h-11 rounded-lg border border-[var(--border)] px-3 text-sm font-semibold">Soal {index + 1}</button>)}
+                  </div>
+                )}
+                <button type="button" onClick={() => goToQuestion(currentIndex)} className="min-h-11 font-semibold underline">Kembali ke soal</button>
+              </section>
+            )}
+            {!reviewing && currentQuestion && (
               <article
                 key={currentQuestion.id}
                 className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4"
               >
-                <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-emerald-500">
+                <div ref={questionHeading} tabIndex={-1} className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-emerald-500">
                   Soal {currentIndex + 1} dari {totalQuestions} - {currentQuestion.points} poin
                 </div>
                 <QuestionContent body={currentQuestion.body} sessionId={task.assessmentSessionId} />
@@ -1325,7 +1399,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
               </article>
             )}
 
-            <div className="grid grid-cols-2 gap-2">
+            {!reviewing && <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setCurrentIndex((index) => Math.max(0, index - 1))}
@@ -1336,13 +1410,13 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
               </button>
               <button
                 type="button"
-                onClick={() => setCurrentIndex((index) => Math.min(totalQuestions - 1, index + 1))}
+                onClick={() => setCurrentIndex(currentIndex + 1)}
                 disabled={currentIndex >= totalQuestions - 1}
                 className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-bold text-[var(--text)] disabled:opacity-50"
               >
                 Berikutnya
               </button>
-            </div>
+            </div>}
 
             <div className="sticky bottom-0 grid gap-2 border-t border-[var(--border)] bg-[var(--bg2)] pt-3 sm:grid-cols-2">
               <button
@@ -1356,16 +1430,17 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
               </button>
               <button
                 type="button"
-                onClick={() => submitAnswers()}
-                disabled={busy || pendingSubmit || revisionConflict}
+                ref={submitTrigger}
+                onClick={() => reviewing ? submitAnswers() : openReview()}
+                disabled={busy || pendingSubmit || revisionConflict || examExpired}
                 className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-60"
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Kirim jawaban
+                {reviewing ? 'Kirim jawaban' : 'Tinjau jawaban'}
               </button>
             </div>
 
-            {answeredCount < totalQuestions && (
+            {!reviewing && answeredCount < totalQuestions && (
               <div className="flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-xs font-semibold text-amber-500">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 Masih ada soal yang belum terjawab. Sistem tetap mengizinkan simpan sementara; kirim
@@ -1388,15 +1463,17 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       </Dialog.Content>
       </Dialog.Portal>
       <ConfirmDialog
-        open={confirmUnanswered}
-        onOpenChange={setConfirmUnanswered}
-        title="Kirim jawaban belum lengkap?"
-        description={`${Math.max(0, totalQuestions - answeredCount)} soal belum terjawab. Jawaban akan dikirim apa adanya dan tidak dapat dilengkapi setelah terkirim.`}
-        confirmLabel="Tetap kirim"
+        open={confirmSubmit && !examExpired && !submitted}
+        onOpenChange={setConfirmSubmit}
+        title="Kirim jawaban ujian?"
+        description={`${answeredCount} dari ${totalQuestions} soal terjawab · ${emptyQuestions.length} kosong${attempt?.durationMinutes ? ` · sisa ${reviewTime}` : ''} · ${syncSummary}. Jawaban yang terkirim tidak dapat diubah.`}
+        confirmLabel="Kirim jawaban"
+        cancelLabel="Kembali periksa"
+        restoreFocus={() => { if (!examExpiredRef.current) submitTrigger.current?.focus(); }}
         variant="warning"
         onConfirm={() => {
-          setConfirmUnanswered(false);
-          submitAnswers({ skipConfirm: true });
+          setConfirmSubmit(false);
+          if (!examExpiredRef.current) submitAnswers({ skipConfirm: true });
           return true;
         }}
       />

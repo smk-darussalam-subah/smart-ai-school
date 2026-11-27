@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { PublishNowFields } from './ExamScheduleDetails';
+import { draftPublicationNotice, examSurface, getDraftPublicationState, useExamServerClock } from './ExamScheduleList';
 import { AssessmentProfiles, ProgramProfileEditor } from './AssessmentProfiles';
 import { AssessmentRequestError, assessmentRequest, programButton, programField, programPanel as box, programPrimary } from './assessment-program-client';
 
@@ -21,6 +24,7 @@ type Request = {
   sessionId: string; title: string; packageId: string | null; revision: number; examDate: string | null;
   room: string | null; opensAt: string | null; latestEntryAt: string | null; closesAt: string | null;
   proctorIds: string[]; missing: string[]; status: string; canEdit: boolean; canPublish: boolean; publishedAt: string | null;
+  asOf?: string; durationMinutes: number | null; canPublishNow?: boolean; hasPlan?: boolean;
 };
 type Staff = { id: string; fullName: string };
 type Draft = { id: string; title: string; class: { name: string } | null };
@@ -298,6 +302,9 @@ export function AssessmentProgramsPanel({ student, canAuthor, onPublished }: {
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [editing, setEditing] = useState('');
   const scheduleTrigger = useRef<HTMLElement | null>(null);
+  const [publishTarget, setPublishTarget] = useState<{ sessionId: string; revision: number }>();
+  const [publishError, setPublishError] = useState('');
+  const publishTrigger = useRef<HTMLButtonElement>(null);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -339,11 +346,18 @@ export function AssessmentProgramsPanel({ student, canAuthor, onPublished }: {
     if (trigger) requestAnimationFrame(() => { if (trigger.isConnected) trigger.focus(); });
   };
 
-  if (student) return <AssessmentProfiles />;
   const outstanding = requests.filter((item) => item.status === 'draft' && item.missing.length > 0).length;
   const request = requests.find(({ sessionId }) => sessionId === editing);
   const program = programs.find(({ sessionId }) => sessionId === editing);
   const canEdit = editing && (!request || request.canEdit);
+  const watchRequests = show && requests.some((row) => row.canPublish && !row.hasPlan && row.opensAt);
+  const clock = useExamServerClock(watchRequests ? requests[0]?.asOf : undefined);
+  if (student) return <AssessmentProfiles />;
+  const publishRequest = requests.find((row) => row.sessionId === publishTarget?.sessionId &&
+    row.revision === publishTarget?.revision && row.canPublishNow && !row.hasPlan);
+  const requestPublication = (row: Request) => row.opensAt && row.latestEntryAt && row.closesAt
+    ? getDraftPublicationState(clock, row.opensAt, row.latestEntryAt, row.closesAt, row.durationMinutes) : null;
+  const canConfirmNow = publishRequest && requestPublication(publishRequest) === 'ready';
 
   return <section id="program-asesmen" className={box}>
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -406,18 +420,81 @@ export function AssessmentProgramsPanel({ student, canAuthor, onPublished }: {
       <h3 className="font-semibold">Pengajuan jadwal</h3>
       {!requests.length && <p className="text-sm">Belum ada pengajuan.</p>}
       <ul className="space-y-2" aria-label="Pengajuan jadwal ujian">
-        {requests.map((row) => <li className={box} key={row.sessionId}>
+        {requests.map((row) => {
+          const publication = row.canPublish && !row.hasPlan && !row.missing.length ? requestPublication(row) : null;
+          const reminder = row.canPublish && !row.hasPlan && row.opensAt ? draftPublicationNotice(clock, row.opensAt) : null;
+          return <li className={box} key={row.sessionId}>
           <p className="font-semibold">{row.title}</p>
           <p className="text-sm">{row.publishedAt ? 'Terbit' : row.missing.length ? 'Perlu dilengkapi · ' + row.missing.join(', ') : 'Siap diterbitkan'}</p>
+          {reminder && <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">{reminder}</p>}
+          {row.status === 'draft' && row.hasPlan && <p className="text-sm">Lanjutkan penerbitan dari daftar Jadwal.</p>}
+          {publication === 'reschedule' && <p className="text-sm">Batas masuk terlewati atau sisa waktu kurang dari durasi ujian. Lengkapi jadwal baru.</p>}
+          {publication === 'ready' && !row.canPublishNow && <p className="text-sm">Hubungi Panitia untuk penerbitan setelah jam buka.</p>}
           <div className="flex flex-wrap gap-2">
-            {row.canEdit && <button type="button" className={programButton} onClick={(event) => openSchedule(row.sessionId, event.currentTarget)}>Lengkapi {row.title}</button>}
-            {row.canPublish && !row.missing.length && <button type="button" className={programPrimary} disabled={busy} onClick={() => run(async () => {
+            {row.canEdit && !row.hasPlan && <button type="button" className={programButton} onClick={(event) => openSchedule(row.sessionId, event.currentTarget)}>Lengkapi {row.title}</button>}
+            {publication === 'upcoming' && <button type="button" className={programPrimary} disabled={busy} onClick={() => run(async () => {
               await assessmentRequest('exam-schedule/requests/' + row.sessionId + '/publish', 'POST', { revision: row.revision });
               await reload(); setNotice('Jadwal ujian diterbitkan.'); onPublished(); router.refresh();
             })}>Terbitkan {row.title}</button>}
+            {publication === 'ready' && row.canPublishNow && <button type="button" className={programPrimary} disabled={busy}
+              onClick={(event) => {
+                publishTrigger.current = event.currentTarget;
+                setPublishTarget({ sessionId: row.sessionId, revision: row.revision });
+                setPublishError('');
+              }}>Terbitkan sekarang</button>}
           </div>
-        </li>)}
+        </li>;
+        })}
       </ul>
+      {publishRequest && <Dialog open onOpenChange={(open) => { if (!open && !busy) setPublishTarget(undefined); }}>
+        <DialogContent className={`max-h-[85dvh] w-[calc(100%_-_1.5rem)] overflow-y-auto ${examSurface}`}
+          closeDisabled={busy} onCloseAutoFocus={(event) => { event.preventDefault(); publishTrigger.current?.focus(); }}>
+          <DialogTitle>Terbitkan sekarang?</DialogTitle>
+          <DialogDescription>{publishRequest.title}</DialogDescription>
+          {publishRequest.opensAt && publishRequest.latestEntryAt && publishRequest.closesAt &&
+            publishRequest.durationMinutes && Number.isFinite(clock) && <PublishNowFields
+              opensAt={publishRequest.opensAt} latestEntryAt={publishRequest.latestEntryAt} closesAt={publishRequest.closesAt}
+              now={clock} duration={publishRequest.durationMinutes} />}
+          {!canConfirmNow && <p role="status" className="text-sm">Waktu tersisa tidak mencukupi. Atur jadwal baru.</p>}
+          {publishError && <p role="alert" className="text-sm text-rose-700 dark:text-rose-200">{publishError}</p>}
+          <form className="space-y-3" onSubmit={(event) => {
+            event.preventDefault();
+            if (!canConfirmNow) return;
+            const reason = String(new FormData(event.currentTarget).get('reason') ?? '').trim();
+            if (reason.length < 8) { setPublishError('Alasan minimal 8 karakter.'); return; }
+            setPublishError('');
+            run(async () => {
+              try {
+                await assessmentRequest('exam-schedule/requests/' + publishRequest.sessionId + '/publish-now', 'POST',
+                  { revision: publishRequest.revision, reason });
+              } catch (failure) {
+                const message = failure instanceof Error ? failure.message : 'Jadwal belum berhasil diterbitkan.';
+                if (failure instanceof AssessmentRequestError && [401, 403, 404, 409].includes(failure.status)) {
+                  setPublishTarget(undefined);
+                  setRequests((rows) => rows.map((row) => row.sessionId === publishRequest.sessionId
+                    ? { ...row, canPublish: false, canPublishNow: false } : row));
+                  setError(message);
+                  await reloadRequests().catch(() => setError(message + ' Muat ulang pengajuan sebelum menerbitkan.'));
+                } else setPublishError(message);
+                return;
+              }
+              setPublishTarget(undefined);
+              setNotice('Jadwal terbit. Peserta dapat mulai ujian.');
+              onPublished();
+              router.refresh();
+              await reload();
+            });
+          }}>
+            <label className="grid gap-1 text-sm font-semibold">Alasan
+              <textarea className={programField} name="reason" required minLength={8} maxLength={500} disabled={busy} />
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={programButton} disabled={busy} onClick={() => setPublishTarget(undefined)}>Batal</button>
+              <button type="submit" className={programPrimary} disabled={busy || !canConfirmNow}>Terbitkan sekarang</button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>}
       {canEdit && <ScheduleForm key={editing + ':' + (request?.revision ?? 0)} sessionId={editing}
         title={request?.title ?? program?.session.title ?? drafts.find(({ id }) => id === editing)?.title}
         item={request} pkg={program?.package.id}
