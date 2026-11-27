@@ -11,6 +11,7 @@ import type { ProgramDraft, ProgramKind, ProgramProfile } from './assessment-pro
 import { programAuthority, requireProgramStaff } from './assessment-program-authority';
 import { assertSecureStudentQuestions, parseSnapshotQuestions } from './assessment-runtime';
 import { AssessmentService } from './assessment.service';
+import { effectiveExamClose } from './scheduled-exam-runtime';
 import { examStaffWhere } from './exam-operations.service';
 
 const activeStudent = {
@@ -24,7 +25,7 @@ const programSelect = {
   package: { select: packageSelect },
   classes: { select: { class: { select: { id: true, name: true, grade: true } } }, orderBy: { class: { name: 'asc' } } },
   session: { select: { title: true, status: true, academicYear: true, semester: true,
-    durationMinutes: true, gradeTarget: true, examSchedule: { select: { publishedAt: true, closesAt: true } },
+    durationMinutes: true, gradeTarget: true, dueAt: true, examSchedule: { select: { publishedAt: true, closesAt: true } },
     scheduleRequest: { select: { revision: true } } } },
 } satisfies Prisma.AssessmentProgramSelect;
 
@@ -202,7 +203,7 @@ export class AssessmentProgramService {
         throw new ForbiddenException('Wewenang pemilik kegiatan tidak lagi berlaku.');
       if (program.session.status === 'completed') return { id, status: 'completed' };
       if (program.session.status !== 'active' || !program.session.examSchedule?.publishedAt ||
-          program.session.examSchedule.closesAt > new Date())
+          effectiveExamClose(program.session.examSchedule.closesAt, program.session.dueAt) > new Date())
         throw new ConflictException('Selesaikan setelah jadwal ujian ditutup.');
       if (await tx.assessmentResponse.count({ where: { sessionId: initial.sessionId, startedAt: { not: null }, submittedAt: null } }))
         throw new ConflictException('Masih ada jawaban yang sedang difinalisasi.');

@@ -71,7 +71,7 @@ import { APPOINTMENT_ACTIVATION_LOCK_KEY } from '../appointments/appointments.se
 import { AcademicPeriodService } from '../academic-period/academic-period.service';
 import { AssessmentWriteAdmission } from './assessment-write-admission';
 import { makeupFinalScore, readMakeupGradeSnapshot } from './exam-makeup-grade';
-import { assertExamWindow, authorizeExamDevice, examAccessSelect, examDeadline } from './scheduled-exam-runtime';
+import { assertExamWindow, authorizeExamDevice, effectiveExamClose, examAccessSelect, examDeadline } from './scheduled-exam-runtime';
 
 const REVIEWER_ROLES = ['SUPER_ADMIN', 'KEPALA_SEKOLAH'] as const;
 const OUTBOX_RETRY_LIMIT = 5;
@@ -1479,7 +1479,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       });
       const questions = await this.secureLockedDraftQuestions(tx, id);
       const updated = await tx.assessmentSession.updateMany({
-        where: { id, status: 'draft' },
+        where: { id, status: 'draft', examSchedule: { is: null }, scheduleRequest: { is: null } },
         data: {
           status: 'active',
           startedAt: new Date(),
@@ -1488,7 +1488,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         },
       });
       if (updated.count !== 1) {
-        throw new ConflictException('Sesi sudah diproses oleh permintaan lain');
+        throw new ConflictException('Sesi sudah berubah atau memiliki jadwal. Terbitkan ujian terjadwal melalui Panitia.');
       }
       return tx.assessmentSession.findUniqueOrThrow({
         where: { id },
@@ -1532,6 +1532,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           module: { select: { subject: true, teacherId: true } },
           teachingAssignment: { select: { subject: true } },
           examSchedule: { select: { ...examAccessSelect, makeupOfSessionId: true } },
+          dueAt: true,
           program: { select: programGradeSelect },
         },
       });
@@ -1546,7 +1547,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         semester: existing.semester,
       });
       if (existing.examSchedule) {
-        if (new Date() < existing.examSchedule.closesAt) {
+        if (new Date() < effectiveExamClose(existing.examSchedule.closesAt, existing.dueAt)) {
           throw new ConflictException('Tunggu sampai jendela ujian ditutup oleh server.');
         }
         const pending = await tx.assessmentResponse.count({
@@ -1988,26 +1989,13 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       where: { id: sessionId },
       select: {
         id: true,
-        status: true,
         purpose: true,
         classId: true,
-        questions: true,
-        durationMinutes: true,
-        randomizeOrder: true,
-        academicYear: true,
-        semester: true,
       },
     });
     if (!session) throw new NotFoundException('Sesi asesmen tidak ditemukan');
     await this.assertStudentCanAccessSession(session, student);
 
-    const questions = parseSnapshotQuestions(session.questions);
-    // Decide resume or create only while holding the lifecycle lock shared by
-    // completion and remedial cancellation.
-    assertSecureStudentQuestions(questions);
-    const questionOrder = session.randomizeOrder
-      ? shuffleQuestionIds(questions)
-      : questions.map((question) => question.id);
     const response = await this.prisma.$transaction(async (tx) => {
       await this.lockAssessmentSession(tx, sessionId);
       const currentSession = await tx.assessmentSession.findUnique({
@@ -2020,6 +2008,9 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           academicYear: true,
           semester: true,
           durationMinutes: true,
+          dueAt: true,
+          questions: true,
+          randomizeOrder: true,
           examSchedule: { select: examAccessSelect },
         },
       });
@@ -2047,30 +2038,39 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
           throw new ConflictException('Sesi ujian terjadwal tidak lagi aktif.');
         // Different rooms may start together while semester cutover stays exclusive.
         await this.academicPeriod.assertWritablePeriodWithSharedCutoverLock(tx, currentSession);
+        const closesAt = effectiveExamClose(scheduled.closesAt, currentSession.dueAt);
+        if (new Date() >= closesAt) throw new ConflictException('Waktu ujian telah habis.');
         const participant = await authorizeExamDevice(tx, sessionId, student.id, deviceId, true);
         windowCheckedAt = new Date();
-        assertExamWindow(scheduled, windowCheckedAt, !currentResponse?.startedAt);
-        deadlineAt = examDeadline(scheduled.closesAt, currentResponse?.startedAt ?? windowCheckedAt,
+        assertExamWindow({ ...scheduled, closesAt }, windowCheckedAt, !currentResponse?.startedAt);
+        deadlineAt = examDeadline(closesAt, currentResponse?.startedAt ?? windowCheckedAt,
           currentSession.durationMinutes, participant.extraMinutes);
         if (windowCheckedAt >= deadlineAt) throw new ConflictException('Waktu ujian telah habis.');
       }
       if (currentResponse?.submittedAt) {
         throw new ConflictException('Anda sudah mengirimkan jawaban untuk sesi ini');
       }
-      if (currentResponse?.startedAt && ['active', 'completed'].includes(currentSession.status)) {
-        return { ...currentResponse, deadlineAt };
-      }
-      if (currentSession.status !== 'active') {
+      const resume = currentResponse?.startedAt && ['active', 'completed'].includes(currentSession.status);
+      if (!resume && currentSession.status !== 'active') {
         throw new ConflictException('Sesi tidak aktif — tidak bisa dimulai');
       }
       if (
-        currentSession.purpose === 'remedial' &&
+        !resume && currentSession.purpose === 'remedial' &&
         currentAccess.remedialParticipantStatus !== 'assigned'
       ) {
         throw new ConflictException('Status peserta remedial tidak dapat memulai pengerjaan baru');
       }
 
+      // The publication transaction can replace the draft questions while a start is queued.
+      const questions = parseSnapshotQuestions(currentSession.questions);
+      assertSecureStudentQuestions(questions);
+      const snapshot = { questions, durationMinutes: currentSession.durationMinutes, deadlineAt };
+      if (resume) return { ...currentResponse, ...snapshot };
+
       if (!scheduled) await this.assertWritablePeriodInTransaction(tx, currentSession);
+      const questionOrder = currentSession.randomizeOrder
+        ? shuffleQuestionIds(questions)
+        : questions.map((question) => question.id);
       const startedAt = windowCheckedAt ?? new Date();
       const created = await tx.assessmentResponse.create({
         data: {
@@ -2098,18 +2098,18 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
         answers: {},
         clientRevision: 0,
         lastMutationId: null,
-        deadlineAt,
+        ...snapshot,
       };
     });
 
-    const questionsForStudent = orderSnapshotForAttempt(questions, response.questionOrder).map(
+    const questionsForStudent = orderSnapshotForAttempt(response.questions, response.questionOrder).map(
       sanitizeQuestionForStudent,
     );
 
     return {
       responseId: response.id,
       startedAt: response.startedAt,
-      durationMinutes: session.durationMinutes,
+      durationMinutes: response.durationMinutes,
       deadlineAt: response.deadlineAt,
       serverNow: new Date(),
       answers: response.answers ?? {},
@@ -2563,7 +2563,7 @@ export class AssessmentService implements OnModuleInit, OnModuleDestroy {
       }
       const timeSpentSec = Math.round((now.getTime() - existing.startedAt.getTime()) / 1000);
       const durationDeadline = scheduled && session.durationMinutes
-        ? examDeadline(scheduled.closesAt, existing.startedAt, session.durationMinutes, extraMinutes)
+        ? examDeadline(effectiveExamClose(scheduled.closesAt, session.dueAt), existing.startedAt, session.durationMinutes, extraMinutes)
         : session.durationMinutes
         ? new Date(existing.startedAt.getTime() + (session.durationMinutes + 1) * 60_000)
         : null;
