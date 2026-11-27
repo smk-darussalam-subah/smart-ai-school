@@ -56,6 +56,9 @@ model User {
   proctoredExams ExamProctor[]
   examCohorts ExamCohortProctor[]
   supervisedExamSlots ExamRoomSlot[]
+  assessmentPrograms AssessmentProgram[]
+  assessmentKinds AssessmentKind[]
+  examScheduleRequests ExamScheduleRequest[]
 
   @@index([role])
   @@index([isActive])
@@ -221,6 +224,8 @@ model Class {
   activities          ClassActivity[]
   lmsModules          LmsModule[]
   assessmentSessions   AssessmentSession[]
+  assessmentProgramClasses AssessmentProgramClass[]
+  examRosterSnapshots ExamParticipant[]
 
   @@unique([name, academicYear])
   @@map("classes")
@@ -255,6 +260,7 @@ model Student {
   lmsProgress LmsModuleProgress[]
   assessmentResponses AssessmentResponse[]
   examParticipations ExamParticipant[]
+  assessmentProgramProfiles AssessmentProgramProfile[]
   remedialParticipants RemedialParticipant[]
   studentBadges       StudentBadge[]
   studentXp           StudentXp?
@@ -412,6 +418,7 @@ model TeachingAssignment {
   schedules Schedule[]
   assessmentSessions AssessmentSession[]
   classSessions      ClassSession[]
+  assessmentProgramClasses AssessmentProgramClass[]
 
   @@unique([teacherId, classId, subject, academicYear])
   @@index([classId])  // TeachingAssignmentService.findAll(classId-only, elevated) — unik composite mulai dari teacherId, tidak cover classId standalone
@@ -1176,6 +1183,9 @@ model AssessmentSession {
   remedialParticipants RemedialParticipant[]
   examSchedule ExamSchedule? @relation("ScheduledExam")
   examMakeups ExamSchedule[] @relation("ExamMakeupSource")
+  schoolProgram Boolean             @default(false) @map("school_program")
+  program     AssessmentProgram?
+  scheduleRequest ExamScheduleRequest?
 
   @@index([moduleId, status])
   @@index([teachingAssignmentId, purpose, status])
@@ -1187,6 +1197,7 @@ model AssessmentSession {
 }
 
 model AssessmentResponse {
+  answerPhotos AssessmentAnswerPhoto[]
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   sessionId   String    @map("session_id") @db.Uuid
   studentId   String    @map("student_id") @db.Uuid
@@ -1219,6 +1230,21 @@ model AssessmentResponse {
   @@unique([sessionId, studentId])
   @@index([studentId])
   @@map("assessment_responses")
+  @@schema("academic")
+}
+
+model AssessmentAnswerPhoto {
+  id          String   @id @db.Uuid
+  responseId  String   @map("response_id") @db.Uuid
+  questionId  String   @map("question_id") @db.Uuid
+  digest      String   @db.Char(64)
+  contentType String   @map("content_type") @db.VarChar(20)
+  bytes       Bytes    @db.ByteA
+  createdAt   DateTime @default(now()) @map("created_at")
+  response    AssessmentResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@index([responseId, questionId])
+  @@map("assessment_answer_photos")
   @@schema("academic")
 }
 
@@ -2214,6 +2240,7 @@ model Question {
   answer     String?            @db.Text
   difficulty QuestionDifficulty @default(medium)
   tags       String[]
+  allowAnswerPhotos Boolean @default(false) @map("allow_answer_photos")
   rubric     Json?              @db.JsonB // U2: essay rubrik — Array<{ id, name, weight, maxScore, description }>
   source     QuestionSource     @default(MANUAL)
   aiGenerationId String?        @map("ai_generation_id") @db.Uuid
@@ -2263,6 +2290,9 @@ model ExamPackage {
   createdAt   DateTime @default(now()) @map("created_at")
   teacher     Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
   schedules   ExamSchedule[]
+  programs    AssessmentProgram[]
+  scheduleRequests ExamScheduleRequest[]
+  sharedForPrograms Boolean @default(false) @map("shared_for_programs")
 
   @@unique([teacherId, subject, title, version])
   @@map("exam_packages")
@@ -2340,6 +2370,106 @@ model ExamRoomIncident {
   @@schema("academic")
 }
 
+model AssessmentKind {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String @db.VarChar(80)
+  nameKey         String @map("name_key") @db.VarChar(100)
+  version         Int @default(1)
+  category        String @default("custom") @db.VarChar(16)
+  allowsGrade     Boolean @default(false) @map("allows_grade")
+  active          Boolean @default(true)
+  createdById     String? @map("created_by_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy       User? @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  programs        AssessmentProgram[]
+
+  @@unique([nameKey, version])
+  @@index([active, name])
+  @@map("assessment_kinds")
+  @@schema("academic")
+}
+
+model AssessmentProgram {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestId   String @map("request_id") @db.Uuid
+  requestFingerprint String @map("request_fingerprint") @db.Char(64)
+  ownerId     String @map("owner_id") @db.Uuid
+  kindId      String @map("kind_id") @db.Uuid
+  packageId   String @map("package_id") @db.Uuid
+  sessionId   String @unique @map("session_id") @db.Uuid
+  enumerationMode String @map("enumeration_mode") @db.VarChar(16)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  owner       User @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  kind        AssessmentKind @relation(fields: [kindId], references: [id], onDelete: Restrict)
+  package     ExamPackage @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  session     AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  classes     AssessmentProgramClass[]
+  profiles    AssessmentProgramProfile[]
+
+  @@unique([ownerId, requestId])
+  @@index([kindId])
+  @@index([packageId])
+  @@map("assessment_programs")
+  @@schema("academic")
+}
+
+model AssessmentProgramClass {
+  programId String @map("program_id") @db.Uuid
+  classId String @map("class_id") @db.Uuid
+  assignmentId String? @map("assignment_id") @db.Uuid
+  program AssessmentProgram @relation(fields: [programId], references: [id], onDelete: Restrict)
+  class Class @relation(fields: [classId], references: [id], onDelete: Restrict)
+  assignment TeachingAssignment? @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+
+  @@id([programId, classId])
+  @@index([classId])
+  @@index([assignmentId])
+  @@map("assessment_program_classes")
+  @@schema("academic")
+}
+
+model AssessmentProgramProfile {
+  programId       String @map("program_id") @db.Uuid
+  studentId       String @map("student_id") @db.Uuid
+  instrument      String @db.VarChar(180)
+  instrumentVersion String @map("instrument_version") @db.VarChar(40)
+  observations    Json @db.JsonB
+  summary         String @db.VarChar(1600)
+  nextSteps       String @map("next_steps") @db.VarChar(1600)
+  publishedAt     DateTime? @map("published_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  program         AssessmentProgram @relation(fields: [programId], references: [id], onDelete: Restrict)
+  student         Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@id([programId, studentId])
+  @@index([studentId, publishedAt])
+  @@map("assessment_program_profiles")
+  @@schema("academic")
+}
+
+model ExamScheduleRequest {
+  sessionId       String @id @map("session_id") @db.Uuid
+  requesterId     String @map("requester_id") @db.Uuid
+  packageId       String? @map("package_id") @db.Uuid
+  examDate        DateTime? @map("exam_date") @db.Date
+  room            String? @db.VarChar(80)
+  opensAt         DateTime? @map("opens_at") @db.Timestamptz(3)
+  latestEntryAt   DateTime? @map("latest_entry_at") @db.Timestamptz(3)
+  closesAt        DateTime? @map("closes_at") @db.Timestamptz(3)
+  proctorIds      String[] @default([]) @map("proctor_ids") @db.Uuid
+  revision        Int @default(1)
+  requestedAt     DateTime @default(now()) @map("requested_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  session         AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  requester       User @relation(fields: [requesterId], references: [id], onDelete: Restrict)
+  package         ExamPackage? @relation(fields: [packageId], references: [id], onDelete: Restrict)
+
+  @@index([requesterId, requestedAt])
+  @@index([requestedAt, sessionId])
+  @@map("exam_schedule_requests")
+  @@schema("academic")
+}
+
 model ExamSchedule {
   agendaId          String? @map("agenda_id") @db.Uuid
   cohortGrade       Int? @map("cohort_grade")
@@ -2369,6 +2499,8 @@ model ExamSchedule {
 }
 
 model ExamParticipant {
+  rosterClassId String? @map("roster_class_id") @db.Uuid
+  rosterClass   Class? @relation(fields: [rosterClassId], references: [id], onDelete: Restrict)
   roomSlotId    String? @map("room_slot_id") @db.Uuid
   roomSlot      ExamRoomSlot? @relation(fields: [roomSlotId], references: [id], onDelete: Restrict)
   sessionId     String @map("session_id") @db.Uuid
@@ -2386,6 +2518,7 @@ model ExamParticipant {
   @@index([studentId, sessionId])
   @@index([makeupSourceGradeId])
   @@index([roomSlotId, sessionId])
+  @@index([rosterClassId])
   @@map("exam_participants")
   @@schema("academic")
 }

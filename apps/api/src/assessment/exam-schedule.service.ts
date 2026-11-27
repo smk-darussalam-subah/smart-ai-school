@@ -8,18 +8,39 @@ import { OPERATIONAL_TEACHER_WHERE } from '../common/helpers/operational-teacher
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { parseSnapshotQuestions, secureMatchingSnapshot } from './assessment-runtime';
-import { ExamDecision, ExamIncidentInput, ExamList, ExamPlan, TransferDeviceInput } from './exam-contract';
+import { ExamDecision, ExamIncidentInput, ExamList, ExamPlan, ExamPlanSchema, TransferDeviceInput } from './exam-contract';
+import { requireProgramStaff, programAuthority } from './assessment-program-authority';
+import type { ScheduleRequest } from './assessment-program-contract';
 import { readMakeupGradeSnapshot, type ExamMakeupGradeSnapshot } from './exam-makeup-grade';
 import { examDeadline, examDeviceHash } from './scheduled-exam-runtime';
 import { examRoomKey, examStaffWhere, lockExamPlanning } from './exam-operations.service';
 
 const managerRoles = ['SUPER_ADMIN', 'WAKA_KURIKULUM'];
 type MakeupCandidate = { fullName: string; gradeId?: string; snapshot?: ExamMakeupGradeSnapshot };
+const programSelect = {
+  ownerId: true, packageId: true, kind: { select: { category: true, allowsGrade: true } },
+  classes: { select: { classId: true, assignmentId: true,
+    class: { select: { isActive: true, academicYear: true } } } },
+} satisfies Prisma.AssessmentProgramSelect;
+const scheduleRequestDraftSelect = {
+  status: true, type: true, purpose: true, durationMinutes: true, teacherId: true,
+  academicYear: true, semester: true, teacher: { select: { userId: true } },
+  teachingAssignment: { select: { subject: true } },
+  program: { select: { ownerId: true, packageId: true } },
+} satisfies Prisma.AssessmentSessionSelect;
+type ScheduleRequestDraft = Prisma.AssessmentSessionGetPayload<{ select: typeof scheduleRequestDraftSelect }>;
+const requestPackageSelect = { id: true, title: true, version: true } satisfies Prisma.ExamPackageSelect;
+
+function requestPackageScope(session: ScheduleRequestDraft): Prisma.ExamPackageWhereInput {
+  return { teacherId: session.teacherId, subject: session.teachingAssignment!.subject };
+}
+
 const examWindowSelect = {
   sessionId: true, room: true, opensAt: true, latestEntryAt: true, closesAt: true, agendaId: true, cohortGrade: true,
   publishedAt: true, cancelledAt: true, makeupOfSessionId: true,
   package: { select: { id: true, title: true, version: true, subject: true } },
   session: { select: { title: true, durationMinutes: true, status: true, academicYear: true, semester: true, class: { select: { name: true } },
+    gradeTarget: true, program: { select: { kind: { select: { name: true } }, _count: { select: { classes: true } } } },
     teacher: { select: { user: { select: { fullName: true } } } } } },
   _count: { select: { participants: true, incidents: true } },
 } satisfies Prisma.ExamScheduleSelect;
@@ -39,6 +60,7 @@ export class ExamScheduleService {
     if (user.roles.includes('SISWA')) throw new ForbiddenException('Monitor khusus pengawas ujian.');
     return { OR: [
       { session: { teacher: { ...OPERATIONAL_TEACHER_WHERE, user: { ...OPERATIONAL_TEACHER_WHERE.user, ...identity } } } },
+      { session: { program: { owner: identity } } },
       { publishedAt: { not: null }, proctors: { some: { user: { ...identity, staff: { is: { deletedAt: null } } } } } },
       ...this.cohortScope(user.keycloakId),
     ] };
@@ -59,6 +81,28 @@ export class ExamScheduleService {
   private assertManager(tx: Prisma.TransactionClient, user: AuthUser) {
     return assertFreshMutationAuthority(tx, this.permissions, user.keycloakId,
       'academic.schedule.edit', ['SUPER_ADMIN'], ['WAKA_KURIKULUM']);
+  }
+
+  private async assertScheduler(tx: Prisma.TransactionClient, user: AuthUser,
+    program?: { ownerId: string; kind: { category: string } } | null) {
+    if (program?.kind.category === 'simulation' &&
+        (await requireProgramStaff(tx, user, true)).id === program.ownerId) return;
+    await this.assertManager(tx, user);
+  }
+
+  private async assertProgramClasses(tx: Prisma.TransactionClient, program: Prisma.AssessmentProgramGetPayload<{ select: typeof programSelect }>,
+    session: { teacherId: string; academicYear: string; gradeTarget: string | null }, subject: string) {
+    if (!program.classes.length || program.classes.some(({ class: cls }) => !cls.isActive || cls.academicYear !== session.academicYear))
+      throw new ConflictException('Rombel program sudah berubah.');
+    if (!session.gradeTarget) return;
+    if (!program.kind.allowsGrade || program.kind.category !== 'custom')
+      throw new ConflictException('Jenis asesmen ini menyimpan hasil terpisah.');
+    const rows = await tx.teachingAssignment.findMany({ where: { id: { in: program.classes.flatMap(({ assignmentId }) =>
+      assignmentId ? [assignmentId] : []) }, teacherId: session.teacherId, academicYear: session.academicYear, subject },
+      select: { id: true, classId: true } });
+    const verified = new Map(rows.map((row) => [row.classId, row.id]));
+    if (program.classes.some((row) => verified.get(row.classId) !== row.assignmentId || !row.assignmentId))
+      throw new ConflictException('Penugasan pengampu berubah. Tinjau seluruh rombel sebelum menerbitkan.');
   }
 
   private async makeupCandidates(db: Prisma.TransactionClient, originalId: string, studentIds?: string[]) {
@@ -273,8 +317,138 @@ export class ExamScheduleService {
     });
   }
 
-  async plan(sessionId: string, input: ExamPlan, user: AuthUser) {
+  async listRequests(user: AuthUser) {
+    const actor = await requireProgramStaff(this.db, user);
+    const authority = await programAuthority(this.db, this.permissions, user, actor);
+    const requests = await this.db.examScheduleRequest.findMany({
+      where: authority.canReadSchool ? {} : { OR: [{ requesterId: actor.id },
+        { session: { program: { ownerId: actor.id } } }, { session: { program: null, teacher: { userId: actor.id } } }] },
+      orderBy: [{ updatedAt: 'desc' }, { sessionId: 'asc' }], take: 60,
+      include: { session: { select: { title: true, academicYear: true, semester: true, status: true,
+        program: { select: { ownerId: true, kind: { select: { category: true } } } },
+        teacher: { select: { userId: true } }, examSchedule: { select: { publishedAt: true, cancelledAt: true } } },
+      } },
+    });
+    return requests.map(({ session, ...row }) => ({
+      ...row, title: session.title, academicYear: session.academicYear, semester: session.semester,
+      status: session.status, publishedAt: session.examSchedule?.publishedAt ?? null,
+      missing: this.requestMissing(row),
+      canEdit: session.status === 'draft' && (authority.manager ||
+        (session.program ? session.program.ownerId : session.teacher.userId) === actor.id),
+      canPublish: session.status === 'draft' && (authority.manager ||
+        (session.program?.kind.category === 'simulation' && session.program.ownerId === actor.id)),
+    }));
+  }
+
+  private requestMissing(row: { packageId: string | null; examDate: Date | null; opensAt: Date | null;
+    latestEntryAt: Date | null; closesAt: Date | null; room: string | null; proctorIds: string[] }) {
+    return [
+      !row.packageId && 'Paket soal', !row.examDate && 'Tanggal', !row.opensAt && 'Jam buka',
+      !row.latestEntryAt && 'Batas mulai', !row.closesAt && 'Jam tutup', !row.room && 'Ruang',
+      !row.proctorIds.length && 'Proktor',
+    ].filter(Boolean);
+  }
+
+  private async requestDraft(db: Prisma.TransactionClient, sessionId: string) {
+    const session = await db.assessmentSession.findUnique({ where: { id: sessionId }, select: scheduleRequestDraftSelect });
+    if (!session || session.status !== 'draft' || session.purpose !== 'regular' || !session.durationMinutes ||
+        (!session.program && (session.type !== 'sumatif' || !session.teachingAssignment)))
+      throw new NotFoundException('Draf ujian belum tersedia.');
+    return session;
+  }
+
+  private async assertRequestEditor(db: Prisma.TransactionClient, session: ScheduleRequestDraft, user: AuthUser, write = false) {
+    const actor = await requireProgramStaff(db, user, write);
+    const authority = await programAuthority(db, this.permissions, user, actor);
+    const ownerId = session.program?.ownerId ?? session.teacher.userId;
+    if (!authority.manager && (ownerId !== actor.id || (!session.program &&
+        !await this.permissions.hasFreshPermission(user.keycloakId, 'lms.own.manage', db))))
+      throw new ForbiddenException('Pengajuan ini di luar kewenangan Anda.');
+    return actor;
+  }
+
+  async requestPackages(sessionId: string, user: AuthUser, after?: string) {
+    const session = await this.requestDraft(this.db, sessionId);
+    await this.assertRequestEditor(this.db, session, user);
+    if (session.program) return { packages: [], nextCursor: null };
+
+    const where = requestPackageScope(session);
+    const anchor = after ? await this.db.examPackage.findFirst({
+      where: { ...where, id: after }, select: { id: true, createdAt: true },
+    }) : null;
+    if (after && !anchor) throw new BadRequestException('Halaman paket soal tidak valid.');
+
+    const limit = 100;
+    const rows = await this.db.examPackage.findMany({
+      where: anchor ? { ...where, OR: [
+        { createdAt: { lt: anchor.createdAt } },
+        { createdAt: anchor.createdAt, id: { gt: anchor.id } },
+      ] } : where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], take: limit + 1, select: requestPackageSelect,
+    });
+    const options = rows.slice(0, limit);
+    const nextCursor = rows.length > limit ? options.at(-1)?.id ?? null : null;
+    if (!after && nextCursor) {
+      const request = await this.db.examScheduleRequest.findUnique({
+        where: { sessionId }, select: { packageId: true },
+      });
+      if (request?.packageId && !options.some(({ id }) => id === request.packageId)) {
+        const selected = await this.db.examPackage.findFirst({
+          where: { ...where, id: request.packageId }, select: requestPackageSelect,
+        });
+        if (selected) options.push(selected);
+      }
+    }
+    return { packages: options, nextCursor };
+  }
+
+  async saveRequest(sessionId: string, input: ScheduleRequest, user: AuthUser) {
     return this.db.$transaction(async (tx) => {
+      await this.lock(tx, sessionId);
+      const session = await this.requestDraft(tx, sessionId);
+      await this.periods.assertWritablePeriodWithCutoverLock(tx, session);
+      const actor = await this.assertRequestEditor(tx, session, user, true);
+      const current = await tx.examScheduleRequest.findUnique({ where: { sessionId }, select: { revision: true } });
+      if ((current?.revision ?? 0) !== input.revision) throw new ConflictException('Pengajuan sudah berubah. Muat ulang sebelum menyimpan.');
+      const packageId = session.program?.packageId ?? input.packageId ?? null;
+      if (!session.program && packageId && !await tx.examPackage.findFirst({
+        where: { ...requestPackageScope(session), id: packageId }, select: { id: true },
+      })) throw new BadRequestException('Paket soal tidak cocok dengan guru dan mapel sesi.');
+      if (input.proctorIds.length && await tx.user.count({ where: { id: { in: input.proctorIds }, ...examStaffWhere } }) !== input.proctorIds.length)
+        throw new BadRequestException('Proktor harus staf aktif.');
+      const data = { packageId, examDate: input.examDate ? new Date(input.examDate) : null, room: input.room ?? null,
+        opensAt: input.opensAt ? new Date(input.opensAt) : null, latestEntryAt: input.latestEntryAt ? new Date(input.latestEntryAt) : null,
+        closesAt: input.closesAt ? new Date(input.closesAt) : null, proctorIds: input.proctorIds };
+      const saved = await tx.examScheduleRequest.upsert({ where: { sessionId }, create: { sessionId, requesterId: actor.id, ...data },
+        update: { ...data, revision: { increment: 1 } } });
+      await this.audit(tx, user, sessionId, 'exam.schedule-request', { revision: saved.revision });
+      return { ...saved, missing: this.requestMissing(saved) };
+    });
+  }
+
+  async publishRequest(sessionId: string, revision: number, user: AuthUser) {
+    return this.db.$transaction(async (tx) => {
+      await this.lock(tx, sessionId);
+      const request = await tx.examScheduleRequest.findUnique({ where: { sessionId },
+        include: { session: { select: { academicYear: true, semester: true,
+          program: { select: programSelect }, examSchedule: { select: { publishedAt: true } } } } } });
+      if (!request) throw new NotFoundException('Pengajuan jadwal belum tersedia.');
+      await this.periods.assertWritablePeriodWithCutoverLock(tx, request.session);
+      await this.assertScheduler(tx, user, request.session.program);
+      if (request.revision !== revision) throw new ConflictException('Jadwal telah diubah. Periksa ulang rincian pengajuan.');
+      if (request.session.examSchedule?.publishedAt) return this.publish(sessionId, user, tx);
+      if (this.requestMissing(request).length) throw new ConflictException('Lengkapi semua rincian jadwal sebelum menerbitkan.');
+      const parsed = ExamPlanSchema.safeParse({ packageId: request.packageId, room: request.room,
+        opensAt: request.opensAt?.toISOString(), latestEntryAt: request.latestEntryAt?.toISOString(),
+        closesAt: request.closesAt?.toISOString(), proctorIds: request.proctorIds });
+      if (!parsed.success) throw new BadRequestException('Rincian jadwal belum valid.');
+      await this.plan(sessionId, parsed.data, user, tx);
+      return this.publish(sessionId, user, tx);
+    }, { timeout: 15000 });
+  }
+
+  async plan(sessionId: string, input: ExamPlan, user: AuthUser, transaction?: Prisma.TransactionClient) {
+    const operation = async (tx: Prisma.TransactionClient) => {
       await this.lock(tx, sessionId);
       const session = await tx.assessmentSession.findUnique({
         where: { id: sessionId },
@@ -282,22 +456,30 @@ export class ExamScheduleService {
           durationMinutes: true, gradeTarget: true, academicYear: true, semester: true, teachingAssignmentId: true,
           class: { select: { grade: true, academicYear: true, isActive: true } },
           teachingAssignment: { select: { subject: true, classId: true, teacherId: true, academicYear: true } },
-          examSchedule: { select: { publishedAt: true } } },
+          examSchedule: { select: { publishedAt: true } }, program: { select: programSelect } },
       });
       const assignment = session?.teachingAssignment;
-      if (!session?.classId || !session.durationMinutes || !assignment || session.status !== 'draft' ||
-          session.purpose !== 'regular' || session.type !== 'sumatif' || session.examSchedule?.publishedAt ||
+      if (!session?.durationMinutes || session.status !== 'draft' || session.purpose !== 'regular' || session.examSchedule?.publishedAt)
+        throw new ConflictException('Pilih draf ujian yang dapat direncanakan.');
+      const program = session.program;
+      if (!program && (!session.classId || !assignment || session.type !== 'sumatif' ||
           assignment.classId !== session.classId || assignment.teacherId !== session.teacherId ||
-          assignment.academicYear !== session.academicYear)
+          assignment.academicYear !== session.academicYear))
         throw new ConflictException('Pilih draft sumatif berkelas, berdurasi, dan berpenugasan aktif.');
+      if (program && (input.packageId !== program.packageId || input.makeupOfSessionId || input.agendaId))
+        throw new BadRequestException('Pilih paket program yang tersimpan serta ruang dan proktor sesi.');
       await this.periods.assertWritablePeriodWithCutoverLock(tx, session);
-      await this.assertManager(tx, user);
+      await this.assertScheduler(tx, user, program);
       const opensAt = new Date(input.opensAt), latestEntryAt = new Date(input.latestEntryAt), closesAt = new Date(input.closesAt);
       if (opensAt <= new Date()) throw new BadRequestException('Pilih waktu buka di masa depan.');
       const pkg = await tx.examPackage.findFirst({ where: {
-        id: input.packageId, teacherId: session.teacherId, subject: assignment.subject,
-      }, select: { id: true } });
-      if (!pkg) throw new BadRequestException('Paket harus dari guru dan mapel yang sama.');
+        id: input.packageId, teacherId: session.teacherId, ...(assignment ? { subject: assignment.subject } : {}),
+        ...(program ? { teacher: OPERATIONAL_TEACHER_WHERE, OR: [
+          { teacher: { userId: program.ownerId } }, { sharedForPrograms: true },
+        ] } : {}),
+      }, select: { id: true, subject: true } });
+      if (!pkg) throw new BadRequestException('Paket harus masih tersedia untuk pemilik sesi.');
+      if (program) await this.assertProgramClasses(tx, program, session, pkg.subject);
       const proctorIds = input.proctorIds ?? [];
       if (proctorIds.length && await tx.user.count({ where: { id: { in: proctorIds }, ...examStaffWhere } }) !== proctorIds.length)
         throw new BadRequestException('Proktor harus staf aktif.');
@@ -316,9 +498,10 @@ export class ExamScheduleService {
         }
         candidates = eligible;
       }
-      const roster = await tx.student.findMany({ where: { classId: session.classId, deletedAt: null, status: 'active',
+      const classFilter = program ? { in: program.classes.map(({ classId }) => classId) } : session.classId;
+      const roster = await tx.student.findMany({ where: { classId: classFilter, deletedAt: null, status: 'active',
         user: { isActive: true, deletedAt: null }, ...(input.participantIds ? { id: { in: input.participantIds } } : {}) },
-        select: { id: true }, take: 501 });
+        select: { id: true, classId: true }, take: 501 });
       if (!roster.length || roster.length > 500 || (input.participantIds && roster.length !== input.participantIds.length))
         throw new BadRequestException('Rombel atau peserta susulan tidak valid.');
       const placements = new Map(input.roomAssignments?.flatMap(({ slotId, studentIds }) =>
@@ -341,14 +524,16 @@ export class ExamScheduleService {
       await tx.examProctor.deleteMany({ where: { sessionId } });
       if (proctorIds.length) await tx.examProctor.createMany({ data: proctorIds.map((userId) => ({ sessionId, userId })) });
       await tx.examParticipant.deleteMany({ where: { sessionId } });
-      await tx.examParticipant.createMany({ data: roster.map(({ id }) => {
+      await tx.examParticipant.createMany({ data: roster.map(({ id, classId }) => {
         const item = candidates?.get(id);
-        return { sessionId, studentId: id, roomSlotId: placements.get(id) ?? null, makeupSourceGradeId: item?.gradeId,
+        return { sessionId, studentId: id, ...(program ? { rosterClassId: classId } : {}),
+          roomSlotId: placements.get(id) ?? null, makeupSourceGradeId: item?.gradeId,
           makeupGradeSnapshot: item?.snapshot };
       }) });
       await this.audit(tx, user, sessionId, 'exam.plan', { opensAt: input.opensAt, closesAt: input.closesAt, participantCount: roster.length });
       return tx.examSchedule.findUniqueOrThrow({ where: { sessionId }, select: examWindowSelect });
-    });
+    };
+    return transaction ? operation(transaction) : this.db.$transaction(operation);
   }
 
   private async validatePlacement(tx: Prisma.TransactionClient, sessionId: string, agendaId: string, cohortGrade: number,
@@ -388,26 +573,31 @@ export class ExamScheduleService {
     return slots;
   }
 
-  async publish(sessionId: string, user: AuthUser) {
-    return this.db.$transaction(async (tx) => {
+  async publish(sessionId: string, user: AuthUser, transaction?: Prisma.TransactionClient) {
+    const operation = async (tx: Prisma.TransactionClient) => {
       await this.lock(tx, sessionId);
       const draft = await tx.examSchedule.findUnique({
-        where: { sessionId }, include: { session: { include: { class: { select: { grade: true, academicYear: true, isActive: true } } } }, package: true, participants: {
-          select: { studentId: true, roomSlotId: true, makeupSourceGradeId: true, makeupGradeSnapshot: true,
+        where: { sessionId }, include: { session: { include: { class: { select: { grade: true, academicYear: true, isActive: true } },
+          program: { select: programSelect } } }, package: { include: { teacher: { select: { userId: true } } } }, participants: {
+          select: { studentId: true, rosterClassId: true, roomSlotId: true, makeupSourceGradeId: true, makeupGradeSnapshot: true,
             student: { select: { deletedAt: true, classId: true, status: true,
             user: { select: { isActive: true, deletedAt: true } } } } },
         }, proctors: { select: { userId: true, user: { select: { isActive: true, deletedAt: true, staff: { select: { deletedAt: true } } } } } } },
       });
       if (!draft || draft.cancelledAt) throw new NotFoundException('Rencana ujian belum tersedia.');
       await this.periods.assertWritablePeriodWithCutoverLock(tx, draft.session);
-      await this.assertManager(tx, user);
+      const program = draft.session.program;
+      await this.assertScheduler(tx, user, program);
       if (draft.publishedAt) return tx.examSchedule.findUniqueOrThrow({ where: { sessionId }, select: examWindowSelect });
       if (draft.opensAt <= new Date() || draft.session.status !== 'draft')
         throw new ConflictException('Status atau waktu ujian berubah. Periksa kembali rencana.');
-      const students = draft.participants.filter(({ student }) => student.classId === draft.session.classId &&
+      const programClasses = new Set(program?.classes.map(({ classId }) => classId));
+      const students = draft.participants.filter(({ student, rosterClassId }) => (program
+        ? Boolean(rosterClassId && rosterClassId === student.classId && programClasses.has(rosterClassId))
+        : student.classId === draft.session.classId) &&
         student.status === 'active' && !student.deletedAt && student.user.isActive && !student.user.deletedAt);
       const currentCount = draft.makeupOfSessionId ? students.length : await tx.student.count({
-        where: { classId: draft.session.classId, status: 'active', deletedAt: null,
+        where: { classId: program ? { in: [...programClasses] } : draft.session.classId, status: 'active', deletedAt: null,
           user: { isActive: true, deletedAt: null } },
       });
       if (students.length !== draft.participants.length || !students.length ||
@@ -463,25 +653,31 @@ export class ExamScheduleService {
       if (conflict) throw new ConflictException('Jadwal bertabrakan dengan ruang, peserta, atau proktor yang sama.');
       const assignmentId = draft.session.teachingAssignmentId;
       const classId = draft.session.classId;
-      if (!classId || !assignmentId || draft.package.teacherId !== draft.session.teacherId)
+      if (draft.package.teacherId !== draft.session.teacherId || (!program && (!classId || !assignmentId)))
         throw new ConflictException('Penugasan ujian berubah. Periksa kembali rencana.');
+      if (program) {
+        if (program.packageId !== draft.packageId || (!draft.package.sharedForPrograms && draft.package.teacher.userId !== program.ownerId))
+          throw new ConflictException('Paket program tidak lagi tersedia untuk pemiliknya.');
+        await this.assertProgramClasses(tx, program, draft.session, draft.package.subject);
+      }
       const activated = await tx.assessmentSession.updateMany({ where: {
         id: sessionId,
         status: 'draft',
         classId,
         teachingAssignmentId: assignmentId,
         teacher: OPERATIONAL_TEACHER_WHERE,
-        teachingAssignment: { is: {
-          classId, teacherId: draft.session.teacherId,
+        ...(!program ? { teachingAssignment: { is: {
+          classId: classId!, teacherId: draft.session.teacherId,
           subject: draft.package.subject, academicYear: draft.session.academicYear,
-        } },
+        } } } : {}),
       }, data: {
         status: 'active', dueAt: draft.closesAt, questions: draft.package.questions as Prisma.InputJsonValue,
       } });
       if (activated.count !== 1) throw new ConflictException('Penugasan atau guru ujian sudah berubah. Periksa kembali rencana.');
       await this.audit(tx, user, sessionId, 'exam.publish', { before: 'draft', after: 'published', packageId: draft.packageId });
       return tx.examSchedule.update({ where: { sessionId }, data: { publishedAt: new Date() }, select: examWindowSelect });
-    });
+    };
+    return transaction ? operation(transaction) : this.db.$transaction(operation);
   }
 
   async recordIncident(sessionId: string, input: ExamIncidentInput, user: AuthUser) {

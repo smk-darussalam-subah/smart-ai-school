@@ -2,6 +2,7 @@
 
 import React, { useEffect, useId, useMemo, useRef, useState, useTransition } from 'react';
 import { z } from 'zod';
+import { assessmentOptionContentKey } from '@smk/types';
 import {
   AlertTriangle,
   Check,
@@ -70,6 +71,7 @@ import {
 import { buildQuestionImportIdentity } from './question-bank-import-identity';
 import MaterialEditor from '@/components/learning/MaterialEditor';
 import QuestionContent from '@/components/learning/QuestionContent';
+import AssessmentOptionContent from '@/components/learning/AssessmentOptionContent';
 import { sanitizeQuestionHtml } from '@/lib/material-content';
 import { QUESTION_HTML_PREFIX, questionBodyForEditor } from '@/lib/question-content';
 
@@ -83,6 +85,7 @@ export interface QuestionRecord {
   options?: unknown;
   answer?: unknown;
   guideAnswer?: string;
+  allowAnswerPhotos?: boolean;
   pairs?: MatchingPair[];
   difficulty: QuestionDifficulty;
   tags?: string[];
@@ -166,6 +169,7 @@ function normalizeOptions(value: unknown): QuestionOption[] {
       return {
         id: typeof record.id === 'string' ? record.id : optionId(index),
         text: typeof record.text === 'string' ? record.text : '',
+        ...(Array.isArray(record.parts) ? { parts: record.parts as NonNullable<QuestionOption['parts']> } : {}),
       };
     }
     return { id: optionId(index), text: '' };
@@ -467,6 +471,7 @@ function QuestionBankWorkspace({
     p2: 'p2',
   });
   const [fGuideAnswer, setFGuideAnswer] = useState('');
+  const [fAllowPhotos, setFAllowPhotos] = useState(false);
   const [fRubric, setFRubric] = useState<EssayRubricCriteria[]>(defaultRubric);
 
   const selectedCount = useMemo(() => Object.keys(selectedPoints).length, [selectedPoints]);
@@ -651,6 +656,7 @@ function QuestionBankWorkspace({
     setFPairs(defaultPairs());
     setFMatchingAnswer({ p1: 'p1', p2: 'p2' });
     setFGuideAnswer('');
+    setFAllowPhotos(false);
     setFRubric(defaultRubric());
     setShowForm(false);
   };
@@ -677,6 +683,7 @@ function QuestionBankWorkspace({
       typeof question.answer === 'string' && question.type === 'essay' ? question.answer : '',
     );
     setFRubric(normalizeRubric(question.rubric));
+    setFAllowPhotos(question.type === 'essay' && question.allowAnswerPhotos === true);
     setShowForm(true);
   };
 
@@ -708,6 +715,7 @@ function QuestionBankWorkspace({
         : '',
     );
     setFRubric(normalizeRubric('rubric' in item.question ? item.question.rubric : undefined));
+    setFAllowPhotos(item.question.type === 'essay' && item.question.allowAnswerPhotos === true);
     setShowForm(true);
   };
 
@@ -741,10 +749,7 @@ function QuestionBankWorkspace({
         setFormError('Pilih jawaban benar dari opsi yang tersedia.');
         return null;
       }
-      if (
-        new Set(options.map((option) => option.text.toLocaleLowerCase('id-ID'))).size !==
-        options.length
-      ) {
+      if (new Set(options.map(assessmentOptionContentKey)).size !== options.length) {
         setFormError('Setiap pilihan jawaban harus berbeda.');
         return null;
       }
@@ -798,7 +803,7 @@ function QuestionBankWorkspace({
       );
       return null;
     }
-    return { ...base, type: 'essay', guideAnswer: fGuideAnswer.trim() || undefined, rubric };
+    return { ...base, type: 'essay', guideAnswer: fGuideAnswer.trim() || undefined, rubric, ...(fAllowPhotos ? { allowAnswerPhotos: true } : {}) };
   };
 
   const handleSave = () => {
@@ -1311,7 +1316,7 @@ function QuestionBankWorkspace({
         }}
       >
         <DialogContent
-          className="diis-question-bank flex h-[92dvh] max-h-[56rem] w-[calc(100%-1rem)] max-w-6xl flex-col gap-0 overflow-hidden border-[var(--qb-line)] bg-[var(--qb-bg)] p-0 sm:w-[calc(100%-3rem)]"
+          className="diis-question-bank flex h-[92dvh] max-h-[56rem] w-[calc(100%-1rem)] max-w-6xl flex-col gap-0 overflow-clip border-[var(--qb-line)] bg-[var(--qb-bg)] p-0 sm:w-[calc(100%-3rem)]"
           closeDisabled={busy}
           onInteractOutside={(event: Event) => event.preventDefault()}
           onEscapeKeyDown={(event: Event) => {
@@ -1876,7 +1881,7 @@ function QuestionBankWorkspace({
                   )}
                   {mode === 'bank' && (
                     <div className="space-y-3">
-                      {subject && <QuestionOfficeTools subject={subject} questions={questions} reload={load} />}
+                      {subject && <QuestionOfficeTools key={subject} subject={subject} questions={questions} reload={load} />}
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -2080,44 +2085,57 @@ function QuestionBankWorkspace({
                   </label>
 
                   {fType === 'multiple_choice' && (
-                    <div className="space-y-1.5">
-                      {fOptions.map((option, index) => (
-                        <div key={option.id} className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setFAnswer(option.id)}
-                            className={clsx(
-                              'grid min-h-11 min-w-11 place-items-center rounded-lg text-sm font-bold focus-visible:ring-2 focus-visible:ring-emerald-500',
-                              fAnswer === option.id
-                                ? 'bg-emerald-700 text-white'
-                                : 'bg-[var(--qb-soft)] text-[var(--qb-muted)]',
-                            )}
-                            aria-pressed={fAnswer === option.id}
-                            aria-label={`Jadikan opsi ${option.id.toUpperCase()} jawaban benar`}
-                          >
-                            {fAnswer === option.id ? (
-                              <Check className="h-3.5 w-3.5" />
-                            ) : (
-                              option.id.toUpperCase()
-                            )}
-                          </button>
-                          <input
-                            aria-label={`Pilihan ${option.id.toUpperCase()}`}
-                            maxLength={500}
-                            value={option.text}
-                            onChange={(event) =>
-                              setFOptions((prev) =>
-                                prev.map((item, idx) =>
-                                  idx === index ? { ...item, text: event.target.value } : item,
-                                ),
-                              )
-                            }
-                            className={FIELD}
-                            placeholder={`Opsi ${option.id.toUpperCase()}`}
-                          />
-                        </div>
-                      ))}
-                    </div>
+                    <fieldset className="min-w-0">
+                      <legend className="text-sm font-semibold">Pilihan jawaban</legend>
+                      <p className="mb-3 mt-1 text-sm text-[var(--qb-muted)]">Pilih huruf untuk menetapkan kunci jawaban.</p>
+                      <div className="divide-y divide-[var(--qb-line)] border-y border-[var(--qb-line)]">
+                        {fOptions.map((option, index) => (
+                          <div key={option.id} className="flex items-start gap-3 py-3">
+                            <button
+                              type="button"
+                              onClick={() => setFAnswer(option.id)}
+                              className={clsx(
+                                'inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500',
+                                fAnswer === option.id
+                                  ? 'bg-emerald-700 text-white'
+                                  : 'bg-[var(--qb-soft)] text-[var(--qb-muted)]',
+                              )}
+                              aria-pressed={fAnswer === option.id}
+                              aria-label={`Jadikan opsi ${option.id.toUpperCase()} jawaban benar`}
+                            >
+                              {option.id.toUpperCase()}
+                              {fAnswer === option.id && <Check className="h-3.5 w-3.5" aria-hidden="true" />}
+                            </button>
+                            {option.parts ? (
+                              <div className="min-w-0 flex-1">
+                                <div className="rounded-lg bg-[var(--qb-soft)] px-3 py-2">
+                                  <AssessmentOptionContent option={option} />
+                                </div>
+                                <button type="button" aria-label={`Ganti opsi ${option.id.toUpperCase()} dengan teks`}
+                                  className="inline-flex min-h-11 items-center rounded text-sm font-semibold text-[var(--qb-ok-ink)] underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                                  onClick={() => setFOptions((prev) => prev.map((item, idx) => idx === index
+                                    ? { id: item.id, text: item.text } : item))}>
+                                  Ganti dengan teks
+                                </button>
+                              </div>
+                            ) : <input
+                              aria-label={`Pilihan ${option.id.toUpperCase()}`}
+                              maxLength={500}
+                              value={option.text}
+                              onChange={(event) =>
+                                setFOptions((prev) =>
+                                  prev.map((item, idx) =>
+                                    idx === index ? { ...item, text: event.target.value } : item,
+                                  ),
+                                )
+                              }
+                              className={FIELD}
+                              placeholder={`Opsi ${option.id.toUpperCase()}`}
+                            />}
+                          </div>
+                        ))}
+                      </div>
+                    </fieldset>
                   )}
 
                   {fType === 'true_false' && (
@@ -2215,6 +2233,10 @@ function QuestionBankWorkspace({
                           className={FIELD}
                           rows={3}
                         />
+                      </label>
+                      <label className="flex min-h-11 items-center gap-2 text-sm font-semibold">
+                        <input type="checkbox" checked={fAllowPhotos} onChange={(event) => setFAllowPhotos(event.target.checked)} />
+                        Izinkan foto jawaban
                       </label>
                       {fRubric.map((criterion, index) => (
                         <div

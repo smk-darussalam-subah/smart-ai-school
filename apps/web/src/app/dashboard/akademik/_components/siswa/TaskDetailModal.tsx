@@ -1,4 +1,8 @@
 'use client';
+
+import { AssessmentPhotoActivity } from '@/lib/assessment-photo-activity';
+import { useAssessmentPhotoQueue } from '@/lib/use-assessment-photo-queue';
+import { MAX_ESSAY_PHOTOS, readEssayDocument } from '@smk/types';
 import QuestionContent from '@/components/learning/QuestionContent';
 import QuestionAnswerInput, {
   type StudentQuestion,
@@ -35,6 +39,8 @@ import {
   deleteAssessmentSignal,
   createAssessmentClientId,
   listAssessmentSignals,
+  listAssessmentPhotos,
+  deleteAssessmentPhoto,
   loadAssessmentDraft,
   prepareAssessmentSignalsForSubmit,
   queueAssessmentSignal,
@@ -197,7 +203,12 @@ function parseAnswers(value: unknown): Record<string, AnswerValue> {
       }
       result[questionId] = { type: 'matching', pairs };
     } else if (answer.type === 'essay' && typeof answer.text === 'string') {
-      result[questionId] = { type: 'essay', text: answer.text };
+      const document = readEssayDocument(answer.document);
+      const photoIds = Array.isArray(answer.photoIds)
+        ? answer.photoIds.filter((id): id is string => typeof id === 'string' && /^[a-f0-9-]{36}$/i.test(id)).slice(0, MAX_ESSAY_PHOTOS)
+        : [];
+      result[questionId] = { type: 'essay', text: answer.text, ...(document ? { document } : {}),
+        ...(photoIds.length ? { photoIds } : {}) };
     }
   }
   return result;
@@ -212,7 +223,7 @@ function answerProgress(question: StudentQuestion, answers: Record<string, Answe
   if (question.type === 'matching' && answer.type === 'matching') {
     return question.prompts.every((prompt) => Boolean(answer.pairs[prompt.id]));
   }
-  if (question.type === 'essay' && answer.type === 'essay') return answer.text.trim().length > 0;
+  if (question.type === 'essay' && answer.type === 'essay') return answer.text.trim().length > 0 || Boolean(answer.photoIds?.length);
   return false;
 }
 
@@ -267,6 +278,9 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
   const [confirmUnanswered, setConfirmUnanswered] = useState(false);
   const [busy, startTransition] = useTransition();
   const attemptRef = useRef<AttemptState | null>(null);
+  const photoActivity = useMemo(() => new AssessmentPhotoActivity(), []);
+  const startPhotoPicker = useCallback(() => photoActivity.begin(), [photoActivity]);
+  const finishPhotoPicker = useCallback(() => photoActivity.complete(), [photoActivity]);
   const returnFocus = useRef<HTMLElement | null>(null);
   const answersRef = useRef<Record<string, AnswerValue>>({});
   const revisionRef = useRef(0);
@@ -386,9 +400,13 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     });
   }, [autosaveWindow, syncDraftToServer]);
 
-  const setAnswer = (questionId: string, answer: AnswerValue) => {
-    if (pendingSubmitRef.current || revisionConflict || submitted) return;
-    const nextAnswers = { ...answersRef.current, [questionId]: answer };
+  const setAnswer = (questionId: string, answer: AnswerValue, updatePhoto = false) => {
+    if (pendingSubmitRef.current || revisionConflict || submitted || examExpiredRef.current || !mountedRef.current)
+      return Promise.resolve<LocalSaveResult>('unavailable');
+    const previous = answersRef.current[questionId];
+    const next = !updatePhoto && answer.type === 'essay' && previous?.type === 'essay' && previous.photoIds?.length
+      ? { ...answer, photoIds: previous.photoIds } : answer;
+    const nextAnswers = { ...answersRef.current, [questionId]: next };
     const nextRevision = revisionRef.current + 1;
     const nextMutationId = createAssessmentClientId();
     answersRef.current = nextAnswers;
@@ -396,9 +414,39 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     mutationIdRef.current = nextMutationId;
     setAnswers(nextAnswers);
     setRevision(nextRevision);
-    void persistDraft(nextAnswers, nextRevision, false);
+    const saved = persistDraft(nextAnswers, nextRevision, false);
     scheduleAutosave();
+    return saved;
   };
+
+  const applyPhoto = async (questionId: string, id: string, remove: boolean) => {
+    const previous = answersRef.current[questionId];
+    const answer = previous?.type === 'essay' ? previous : { type: 'essay' as const, text: '' };
+    const old = answer.photoIds ?? [];
+    if (!remove && old.length >= MAX_ESSAY_PHOTOS && !old.includes(id)) return false;
+    const photoIds = remove ? old.filter((value) => value !== id) : [...new Set([...old, id])];
+    const result = await setAnswer(questionId, { ...answer, photoIds }, true);
+    return result === 'saved' || (result === 'stale' &&
+      (answersRef.current[questionId]?.type === 'essay' && answersRef.current[questionId].photoIds?.includes(id) === !remove));
+  };
+
+  const photoQueue = useAssessmentPhotoQueue({
+    sessionId: task.assessmentSessionId,
+    responseId: attempt?.questions.some((question) => question.type === 'essay' && question.allowAnswerPhotos)
+      ? attempt.responseId : undefined,
+    disabled: submitted || pendingSubmit || revisionConflict || examExpired,
+    canEdit: (responseId) => mountedRef.current && !pendingSubmitRef.current &&
+      !finishedRef.current && !examExpiredRef.current && attemptRef.current?.responseId === responseId,
+    isAttached: (questionId, id) => {
+      const answer = answersRef.current[questionId];
+      return answer?.type === 'essay' && Boolean(answer.photoIds?.includes(id));
+    },
+    attach: (questionId, id) => applyPhoto(questionId, id, false),
+  });
+  const { isBusy: isPhotoQueueBusy } = photoQueue;
+  const offscreenPhoto = photoQueue.pending.find(({ questionId }) => questionId !== currentQuestion?.id);
+  const pendingPhotoIndex = offscreenPhoto && attempt
+    ? attempt.questions.findIndex(({ id }) => id === offscreenPhoto.questionId) : -1;
 
   const flushSignals = useCallback(async (): Promise<boolean> => {
     const currentAttempt = attemptRef.current;
@@ -468,6 +516,18 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     const submission = (async (): Promise<boolean> => {
       const currentAttempt = attemptRef.current;
       if (!currentAttempt || !task.assessmentSessionId || submitted || examExpiredRef.current) return false;
+      if (!pendingSubmitRef.current && currentAttempt.questions.some((q) => q.type === 'essay' && q.allowAnswerPhotos)) {
+        const photos = await listAssessmentPhotos(currentAttempt.responseId);
+        const waiting = photos?.some(({ questionId, id }) => {
+          const answer = answersRef.current[questionId];
+          return answer?.type !== 'essay' || !answer.photoIds?.includes(id);
+        });
+        if (isPhotoQueueBusy() || photoActivity.awaitingResult() || photos === null || waiting) {
+          showToast('Periksa foto yang belum terlampir. Kirim ulang atau hapus dari antrean sebelum mengirim jawaban.');
+          return false;
+        }
+        if (examExpiredRef.current || finishedRef.current || !mountedRef.current) return false;
+      }
       autosaveWindow.cancel();
       pendingSubmitRef.current = true;
       setPendingSubmit(true);
@@ -577,6 +637,10 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
       }
       await Promise.all(queuedSignals.map((signal) => deleteAssessmentSignal(signal.eventId)));
       await deleteAssessmentDraft(currentAttempt.responseId);
+      if (currentAttempt.questions.some((q) => q.type === 'essay' && q.allowAnswerPhotos)) {
+        const photos = await listAssessmentPhotos(currentAttempt.responseId);
+        if (photos) await Promise.all(photos.map(({ id }) => deleteAssessmentPhoto(id)));
+      }
       setIntegrityWarning(null);
       const score = typeof result.data?.score === 'number' ? result.data.score : null;
       const pendingTeacherReview = result.data?.lateSubmissionStatus === 'pending';
@@ -605,7 +669,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     } finally {
       if (submitFlightRef.current === submission) submitFlightRef.current = null;
     }
-  }, [autosaveWindow, persistDraft, showToast, submitted, task.assessmentSessionId]);
+  }, [autosaveWindow, isPhotoQueueBusy, persistDraft, photoActivity, showToast, submitted, task.assessmentSessionId]);
 
   const startAttempt = () => {
     if (!task.assessmentSessionId ||
@@ -861,21 +925,27 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     };
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
-        void sendRuntimeSignal('visibility_hidden', { keepalive: true, throttleMs: 2_000 });
-      } else if (!isStandaloneDisplay() && !document.fullscreenElement) {
+        const send = () => { void sendRuntimeSignal('visibility_hidden', { keepalive: true, throttleMs: 2_000 }); };
+        if (!photoActivity.hold('visibility_hidden', send)) send();
+      } else if (!photoActivity.inProgress() && !isStandaloneDisplay() && !document.fullscreenElement) {
         setIntegrityWarning('Anda meninggalkan layar ujian. Kejadian ini dicatat untuk guru.');
       }
     };
     const onFullscreen = () => {
       if (!isStandaloneDisplay() && !document.fullscreenElement) {
-        void sendRuntimeSignal('fullscreen_exit', { throttleMs: 2_000 });
-        setIntegrityWarning('Mode layar penuh berakhir. Kembali ke mode ujian untuk melanjutkan.');
+        const send = () => { void sendRuntimeSignal('fullscreen_exit', { throttleMs: 2_000 }); };
+        if (!photoActivity.hold('fullscreen_exit', send)) {
+          send();
+          setIntegrityWarning('Mode layar penuh berakhir. Kembali ke mode ujian untuk melanjutkan.');
+        }
       }
     };
     const onBlur = () => {
-      void sendRuntimeSignal('window_blur', { throttleMs: 3_000 });
+      const send = () => { void sendRuntimeSignal('window_blur', { throttleMs: 3_000 }); };
+      if (!photoActivity.hold('window_blur', send)) send();
     };
     const onPageHide = () => {
+      photoActivity.close();
       void sendRuntimeSignal('pagehide', { keepalive: true, throttleMs: 2_000 });
     };
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -907,6 +977,7 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
     submitted,
     submitCurrentAnswers,
     syncDraftToServer,
+    photoActivity,
   ]);
 
   useEffect(() => {
@@ -1223,6 +1294,14 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
               })}
             </div>
 
+            {pendingPhotoIndex >= 0 && !pendingSubmit && !examExpired && (
+              <div className="flex flex-wrap items-center gap-x-3 rounded-lg border border-[var(--border)] px-3 text-sm">
+                <p role="status" className="text-[var(--text)]">Foto Soal {pendingPhotoIndex + 1} masih dalam antrean.</p>
+                <button type="button" className="min-h-11 font-semibold text-[var(--text)] underline"
+                  onClick={() => setCurrentIndex(pendingPhotoIndex)}>Buka Soal {pendingPhotoIndex + 1}</button>
+              </div>
+            )}
+
             {currentQuestion && (
               <article
                 key={currentQuestion.id}
@@ -1234,9 +1313,14 @@ export default function TaskDetailModal({ task, onClose, showToast, onOpenModule
                 <QuestionContent body={currentQuestion.body} sessionId={task.assessmentSessionId} />
                 <QuestionAnswerInput
                   question={currentQuestion}
+                  sessionId={task.assessmentSessionId}
                   answer={answers[currentQuestion.id]}
                   setAnswer={setAnswer}
-                  locked={pendingSubmit || revisionConflict}
+                  locked={pendingSubmit || revisionConflict || examExpired}
+                  photoContext={task.assessmentSessionId && attempt && currentQuestion.type === 'essay'
+                    ? { sessionId: task.assessmentSessionId, queue: photoQueue, applyPhoto,
+                        startPicker: startPhotoPicker, finishPicker: finishPhotoPicker }
+                    : undefined}
                 />
               </article>
             )}

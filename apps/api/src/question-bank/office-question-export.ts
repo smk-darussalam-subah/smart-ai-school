@@ -1,7 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { strToU8, zipSync } from 'fflate';
 import { Prisma } from '@prisma/client';
-import { escapeOfficeXml as esc } from './office-question-import';
+import { escapeOfficeXml as esc, SHEET_OPTION_MARKER } from './office-question-import';
+import type { AssessmentOption } from '@smk/types';
 import { listQuestionMediaIds } from './question-media';
 
 type Question = {
@@ -11,7 +12,7 @@ type Question = {
 type Image = { id: string; bytes: Uint8Array; contentType: string; width: number; height: number };
 type OfficeQuestion = {
   code: string; subject: string; type: string; kind: string; body: string; formula: string[];
-  options: Array<{ id: string; text: string }>; pairs: Array<{ id: string; prompt: string; match: string }>;
+  options: AssessmentOption[]; pairs: Array<{ id: string; prompt: string; match: string }>;
   rubric: Array<{ id: string; name: string; maxScore: number; weight: number; description?: string }>;
   answer: string; difficulty: string; tags: string[]; media: { id: string; alt: string }[];
 };
@@ -84,7 +85,12 @@ function xlsx(questions: OfficeQuestion[], images: Image[]) {
   const data = [
     ['Soal', [['Kode', 'Jenis', 'Mapel', 'Isi Soal', 'Pilihan A', 'Pilihan B', 'Pilihan C', 'Pilihan D', 'Pilihan E', 'Kunci atau Panduan', 'Tingkat', 'Tujuan Pembelajaran', 'Rumus LaTeX', 'Gambar', 'Deskripsi Gambar'],
       ...questions.map((q) => [q.code, q.type, q.subject, q.body,
-        ...Array.from({ length: 5 }, (_, i) => q.options[i]?.text ?? ''),
+        ...Array.from({ length: 5 }, (_, i) => {
+          const option = q.options[i];
+          return option?.parts?.length ? SHEET_OPTION_MARKER + JSON.stringify(option.parts.map((part) =>
+            part.type === 'image' ? { type: 'image', file: media.get(part.mediaId)!, alt: part.alt } : part,
+          )) : option?.text ?? '';
+        }),
         q.answer, q.difficulty, q.tags.join(', '), q.formula[0] ?? '', q.media[0] ? media.get(q.media[0].id) ?? '' : '', q.media[0]?.alt ?? '']),
     ]],
     ['Pasangan', [['Kode Soal', 'ID Pasangan', 'Kolom Kiri', 'Jawaban Kolom Kanan'], ...questions.flatMap((q) =>
@@ -131,7 +137,12 @@ function docx(questions: OfficeQuestion[], images: Image[], student: boolean) {
     p(`Soal ${q.code}`), p(`${q.kind} · Tingkat ${q.difficulty.toLowerCase()}`),
     ...q.body.split('\n').map(p), ...q.formula.map((formula) => p(`Rumus LaTeX: ${formula}`)),
     ...q.media.map(picture),
-    ...q.options.map((item, i) => p(`${String.fromCharCode(65 + i)}. ${item.text}`)),
+    ...q.options.flatMap((item, i) => {
+      const label = String.fromCharCode(65 + i) + '. ';
+      return item.parts?.length ? [p(label), ...item.parts.map((part) => part.type === 'text' ? p(part.text)
+        : part.type === 'formula' ? p('Rumus LaTeX: ' + part.latex) : picture({ id: part.mediaId, alt: part.alt }))]
+        : [p(label + item.text)];
+    }),
     ...(q.type === 'BS' && student ? [p('Pilih Benar atau Salah.')] : []),
     ...(q.type === 'PASANGAN' ? student
       ? [p('Pasangkan setiap pertanyaan dengan salah satu pilihan.'),
@@ -160,18 +171,23 @@ function studentPrint(questions: OfficeQuestion[], images: Image[]) {
   const list = (values: string[], type = '1') => values.length
     ? '<ol type="' + type + '">' + values.map((value) => '<li dir="auto">' + esc(value) + '</li>').join('') + '</ol>'
     : '';
+  const renderImage = (id: string, alt: string) => {
+    const image = lookup.get(id)!;
+    const source = 'data:' + esc(image.contentType) + ';base64,' + Buffer.from(image.bytes).toString('base64');
+    return '<figure><img src="' + source + '" alt="' + esc(alt) + '"></figure>';
+  };
   const body = questions.map((question, index) => {
     const elements = [
       '<h2>Soal ' + (index + 1) + ' <small>' + esc(question.kind) + '</small></h2>',
       ...question.body.split('\n').filter((line) => line.trim())
         .map((line) => '<p dir="auto">' + esc(line) + '</p>'),
       ...question.formula.map((latex) => '<p class="formula" dir="ltr" data-print-math>' + esc(latex) + '</p>'),
-      ...question.media.map(({ id, alt }) => {
-        const image = lookup.get(id)!;
-        const source = 'data:' + esc(image.contentType) + ';base64,' + Buffer.from(image.bytes).toString('base64');
-        return '<figure><img src="' + source + '" alt="' + esc(alt) + '"></figure>';
-      }),
-      list(question.options.map(({ text }) => text), 'A'),
+      ...question.media.map(({ id, alt }) => renderImage(id, alt)),
+      ...(question.options.length ? ['<ol type="A">' + question.options.map((option) =>
+        '<li dir="auto">' + (option.parts?.map((part) => part.type === 'text' ? esc(part.text)
+          : part.type === 'formula' ? '<span dir="ltr" data-print-math>' + esc(part.latex) + '</span>'
+          : renderImage(part.mediaId, part.alt)).join('') ?? esc(option.text)) + '</li>',
+      ).join('') + '</ol>'] : []),
       ...(question.type === 'BS' ? ['<p>☐ Benar &nbsp; ☐ Salah</p>'] : []),
       ...(question.type === 'ESAI' ? ['<div class="answer-lines" aria-hidden="true"></div>'] : []),
       ...(question.type === 'PASANGAN' ? [
@@ -206,7 +222,10 @@ function studentPrint(questions: OfficeQuestion[], images: Image[]) {
 
 export function exportOfficeQuestions(rows: Question[], images: Image[], mode: QuestionExportFormat) {
   const questions = flatten(rows);
-  const expected = new Set(questions.flatMap(({ media }) => media.map(({ id }) => id)));
+  const expected = new Set(questions.flatMap(({ media, options }) => [
+    ...media.map(({ id }) => id),
+    ...options.flatMap(({ parts }) => parts?.flatMap((part) => part.type === 'image' ? [part.mediaId] : []) ?? []),
+  ]));
   if (images.length !== expected.size || images.some(({ id }) => !expected.has(id)))
     throw new BadRequestException('Media salah satu soal tidak tersedia.');
   if (mode === 'student-print') return studentPrint(questions, images);
